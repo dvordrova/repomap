@@ -1,6 +1,7 @@
 package documentationreduce
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	_ "embed"
@@ -464,7 +465,7 @@ func joinReductions(candidates []normalizedReduction) normalizedReduction {
 		}
 	}
 	for _, source := range byRef {
-		source.Concepts = capConcepts(source.Concepts)
+		source.Concepts = canonicalConcepts(source.Concepts)
 		result.sources = append(result.sources, source)
 	}
 	sort.Slice(result.sources, func(i, j int) bool { return result.sources[i].Ref < result.sources[j].Ref })
@@ -712,22 +713,37 @@ func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normal
 		Overview json.RawMessage   `json:"overview"`
 		Sources  []json.RawMessage `json:"sources"`
 	}
-	if json.Unmarshal(normalized, &response) != nil || response.Sources == nil {
+	// A bare sources array is the same answer without its wrapper and without
+	// an overview. Missing or null sources stay refused: reading an omission
+	// as "no sources" would let the overview claim complete evidence.
+	if trimmed := bytes.TrimSpace(normalized); len(trimmed) > 0 && trimmed[0] == '[' {
+		if json.Unmarshal(normalized, &response.Sources) != nil {
+			return result, fmt.Errorf("documentation reduce: response sources must be an array")
+		}
+	} else if json.Unmarshal(normalized, &response) != nil || response.Sources == nil {
 		return result, fmt.Errorf("documentation reduce: response sources must be an array")
 	}
 	badSources := make(map[string]bool)
 	currentRef := ""
 	invalid := false
-	reject := func(position, reason string) {
-		if currentRef == "" {
-			invalid = true
-		} else if _, known := allowed[currentRef]; known {
-			badSources[currentRef] = true
-			invalid = true
-		}
+	journal := func(position, reason string) {
 		result.rejected = append(result.rejected, llm.ResponseRejection{Kind: "documentation_rejected", Count: 1, Samples: []string{position}, Reason: reason})
 	}
-	if json.Unmarshal(response.Overview, &result.overview) != nil {
+	// record discards one value; a discarded member such as one concept leaves
+	// its source accepted. reject also refuses the source row it is in.
+	record := func(position, reason string) {
+		invalid = true
+		journal(position, reason)
+	}
+	reject := func(position, reason string) {
+		if currentRef != "" {
+			badSources[currentRef] = true
+		}
+		record(position, reason)
+	}
+	if nothingSaid(response.Overview) {
+		result.overview = ""
+	} else if json.Unmarshal(response.Overview, &result.overview) != nil {
 		reject("overview", "overview must be text")
 		result.overview = ""
 	}
@@ -738,7 +754,14 @@ func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normal
 	}
 	textSet := func(raw json.RawMessage, position string) []string {
 		var entries []json.RawMessage
-		if json.Unmarshal(raw, &entries) != nil || entries == nil {
+		switch trimmed := bytes.TrimSpace(raw); {
+		case nothingSaid(trimmed):
+			// No concepts said: the source adds nothing and is not refused.
+			return nil
+		case trimmed[0] == '"':
+			// One concept string is a one-member list.
+			entries = []json.RawMessage{trimmed}
+		case json.Unmarshal(trimmed, &entries) != nil:
 			reject(position, "source concepts must be an array")
 			return nil
 		}
@@ -746,12 +769,12 @@ func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normal
 		for i, rawEntry := range entries {
 			var text string
 			if json.Unmarshal(rawEntry, &text) != nil {
-				reject(fmt.Sprintf("%s[%d]", position, i), "concept must be text")
+				record(fmt.Sprintf("%s[%d]", position, i), "concept must be text")
 				continue
 			}
 			text = strings.TrimSpace(text)
 			if !validText(text) {
-				reject(fmt.Sprintf("%s[%d]", position, i), "concept must be non-empty text")
+				record(fmt.Sprintf("%s[%d]", position, i), "concept must be non-empty text")
 				continue
 			}
 			values = append(values, text)
@@ -771,11 +794,12 @@ func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normal
 			reject(position, "source must have a string ref")
 			continue
 		}
-		currentRef = source.Ref
 		if _, known := allowed[source.Ref]; !known {
-			reject(position, "source ref was not advertised")
+			// An unadvertised ref is discarded before its values are read.
+			journal(position, "source ref was not advertised")
 			continue
 		}
+		currentRef = source.Ref
 		concepts := textSet(source.Concepts, position+".concepts")
 		if len(concepts) == 0 {
 			continue
@@ -786,18 +810,7 @@ func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normal
 		byRef[source.Ref] = value
 	}
 	for ref, source := range byRef {
-		distinct := distinctConcepts(source.Concepts)
-		if dropped := len(distinct) - MaxConceptsPerSource; dropped > 0 {
-			// A ceiling, not a refusal: the document keeps its first concepts
-			// and stays accepted; the drop is journaled beside real rejections.
-			result.rejected = append(result.rejected, llm.ResponseRejection{
-				Kind: "documentation_concepts_capped", Count: dropped, Samples: []string{ref},
-				Reason: fmt.Sprintf("concepts beyond %d per document are dropped", MaxConceptsPerSource),
-			})
-			distinct = distinct[:MaxConceptsPerSource]
-		}
-		sort.Strings(distinct)
-		source.Concepts = distinct
+		source.Concepts = canonicalConcepts(source.Concepts)
 		result.sources = append(result.sources, source)
 		if !badSources[ref] {
 			result.accepted = append(result.accepted, ref)
@@ -927,6 +940,12 @@ func cloneResponseSources(values []responseSource) []responseSource {
 		return []responseSource{}
 	}
 	return result
+}
+
+// nothingSaid reports an omitted field or an explicit null.
+func nothingSaid(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) == 0 || string(trimmed) == "null"
 }
 
 func emptyReduction(value normalizedReduction) bool {

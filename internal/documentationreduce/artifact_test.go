@@ -104,27 +104,37 @@ func TestPersistAndReadOwnReductionMemory(t *testing.T) {
 	}
 }
 
-func TestSealCapsConceptsAndValidateRejectsAnOverfullSource(t *testing.T) {
+func TestSealKeepsEveryConceptAndValidateStillRefusesAMalformedSource(t *testing.T) {
 	guidance := guidanceFixture(t, []readmetargetscout.GuidanceDocument{{
 		Path: "README.md", Kind: readmetargetscout.GuidanceReadme, Content: "Vocabulary.\n",
 	}})
-	concepts := make([]string, 0, MaxConceptsPerSource+3)
-	for index := range MaxConceptsPerSource + 3 {
+	concepts := make([]string, 0, 15)
+	for index := range 15 {
 		concepts = append(concepts, fmt.Sprintf("Concept %02d", index))
 	}
 	result, err := sealResult(guidance, "", []Source{{
-		Path: "README.md", Kind: readmetargetscout.GuidanceReadme, Concepts: concepts,
+		Path: "README.md", Kind: readmetargetscout.GuidanceReadme, Concepts: append(concepts, concepts[0]),
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Sources) != 1 || !reflect.DeepEqual(result.Sources[0].Concepts, concepts[:MaxConceptsPerSource]) {
-		t.Fatalf("sealed concepts = %v, want the first %d", result.Sources[0].Concepts, MaxConceptsPerSource)
+	if len(result.Sources) != 1 || !reflect.DeepEqual(result.Sources[0].Concepts, concepts) {
+		t.Fatalf("sealed concepts = %v, want all %d once", result.Sources[0].Concepts, len(concepts))
 	}
-	overfull := result
-	overfull.Sources = []Source{{Path: "README.md", Kind: readmetargetscout.GuidanceReadme, Concepts: concepts}}
-	if err := overfull.Validate(); err == nil || !strings.Contains(err.Error(), "source 0 is invalid") {
-		t.Fatalf("Validate accepted %d concepts: %v", len(concepts), err)
+	if err := result.Validate(); err != nil {
+		t.Fatalf("Validate refused %d valid concepts: %v", len(concepts), err)
+	}
+	for name, malformed := range map[string][]string{
+		"repeated":  {"Concept 00", "Concept 00"},
+		"unordered": {"Concept 01", "Concept 00"},
+		"empty":     {},
+		"blank":     {" "},
+	} {
+		broken := result
+		broken.Sources = []Source{{Path: "README.md", Kind: readmetargetscout.GuidanceReadme, Concepts: malformed}}
+		if err := broken.Validate(); err == nil || !strings.Contains(err.Error(), "source 0 is invalid") {
+			t.Fatalf("Validate accepted %s concepts: %v", name, err)
+		}
 	}
 }
 

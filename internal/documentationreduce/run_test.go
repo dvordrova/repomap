@@ -118,15 +118,15 @@ func TestNormalizeResponseDiscardsUnknownRefsBeforeTheirValues(t *testing.T) {
 	}
 }
 
-func TestNormalizeResponseKeepsTheFirstTwelveDistinctConceptsAndJournalsTheRest(t *testing.T) {
+func TestNormalizeResponseKeepsEveryValidConceptOfADocument(t *testing.T) {
 	authority := map[string]documentAuthority{
 		"d1": {path: "README.md", kind: readmetargetscout.GuidanceReadme},
 		"d2": {path: "docs/README.md", kind: readmetargetscout.GuidanceReadme},
 	}
-	// Fifteen entries in the model's order: the repeated leading concept
-	// counts once, so fourteen distinct concepts arrive and two are dropped.
+	// Sixteen entries: the repeated leading concept counts once, so all
+	// fifteen distinct concepts are kept.
 	supplied := []string{"Zeta ledger", "Zeta ledger"}
-	for index := range 13 {
+	for index := range 14 {
 		supplied = append(supplied, fmt.Sprintf("Concept %02d", index))
 	}
 	raw, err := json.Marshal(map[string]any{"overview": "Ledger.", "sources": []map[string]any{
@@ -138,19 +138,82 @@ func TestNormalizeResponseKeepsTheFirstTwelveDistinctConceptsAndJournalsTheRest(
 	}
 	result, err := normalizeResponse(raw, authority)
 	if err != nil {
-		t.Fatalf("normalizeResponse refused a capped row: %v", err)
+		t.Fatalf("normalizeResponse: %v", err)
 	}
-	want := append([]string{"Zeta ledger"}, supplied[2:2+MaxConceptsPerSource-1]...)
+	want := append([]string(nil), supplied[1:]...)
 	sort.Strings(want)
 	if len(result.sources) != 2 || !reflect.DeepEqual(result.sources[0].Concepts, want) || result.sources[0].Ref != "d1" {
-		t.Fatalf("capped concepts = %#v, want %v", result.sources, want)
+		t.Fatalf("concepts = %#v, want all %d: %v", result.sources, len(want), want)
 	}
-	if len(result.rejected) != 1 || result.rejected[0].Kind != "documentation_concepts_capped" ||
-		result.rejected[0].Count != 2 || !reflect.DeepEqual(result.rejected[0].Samples, []string{"d1"}) {
-		t.Fatalf("cap journal = %#v", result.rejected)
+	if len(result.rejected) != 0 || result.overview != "Ledger." || result.AcceptedRowKeys() != nil || len(result.refusedSources) != 0 {
+		t.Fatalf("a long document lost concepts or acceptance: %+v", result)
 	}
-	if result.overview != "Ledger." || !reflect.DeepEqual(result.AcceptedRowKeys(), []string{"d1", "d2", ""}) || len(result.refusedSources) != 0 {
-		t.Fatalf("a capped document lost acceptance: %+v", result)
+}
+
+func TestNormalizeResponseAcceptsHarmlessFormsAndRefusesOnlyTheBadPart(t *testing.T) {
+	authority := map[string]documentAuthority{
+		"d1": {path: "README.md", kind: readmetargetscout.GuidanceReadme},
+		"d2": {path: "docs/README.md", kind: readmetargetscout.GuidanceReadme},
+	}
+	for name, test := range map[string]struct {
+		raw          string
+		wantOverview string
+		wantSources  map[string][]string
+		wantAccepted []string
+		wantRejected int
+	}{
+		"bare sources array": {
+			raw:         `[{"ref":"d1","concepts":["Ledger"]}]`,
+			wantSources: map[string][]string{"d1": {"Ledger"}},
+		},
+		"absent overview": {
+			raw:         `{"sources":[{"ref":"d1","concepts":["Ledger"]}]}`,
+			wantSources: map[string][]string{"d1": {"Ledger"}},
+		},
+		"null or absent concepts": {
+			raw:          `{"overview":"Ledger service.","sources":[{"ref":"d1","concepts":null},{"ref":"d2"},{"ref":"d1","concepts":["Ledger"]}]}`,
+			wantOverview: "Ledger service.", wantSources: map[string][]string{"d1": {"Ledger"}},
+		},
+		"one concept string": {
+			raw:         `{"overview":"","sources":[{"ref":"d1","concepts":"  Ledger "}]}`,
+			wantSources: map[string][]string{"d1": {"Ledger"}},
+		},
+		"one bad concept": {
+			raw:         `{"overview":"","sources":[{"ref":"d1","concepts":[42,"Ledger"]},{"ref":"d2","concepts":["Order"]}]}`,
+			wantSources: map[string][]string{"d1": {"Ledger"}, "d2": {"Order"}}, wantAccepted: []string{"d1", "d2"}, wantRejected: 1,
+		},
+		"bad concepts field": {
+			raw:         `{"overview":"","sources":[{"ref":"d1","concepts":{"name":"Ledger"}},{"ref":"d2","concepts":["Order"]}]}`,
+			wantSources: map[string][]string{"d2": {"Order"}}, wantAccepted: []string{"d2"}, wantRejected: 1,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := normalizeResponse([]byte(test.raw), authority)
+			if err != nil {
+				t.Fatalf("harmless form refused: %v", err)
+			}
+			got := make(map[string][]string)
+			for _, source := range result.sources {
+				got[source.Ref] = source.Concepts
+			}
+			if result.overview != test.wantOverview || !reflect.DeepEqual(got, test.wantSources) {
+				t.Fatalf("result = %q %v, want %q %v", result.overview, got, test.wantOverview, test.wantSources)
+			}
+			if !reflect.DeepEqual(result.AcceptedRowKeys(), test.wantAccepted) || len(result.rejected) != test.wantRejected {
+				t.Fatalf("accepted %v / rejected %+v, want %v / %d", result.AcceptedRowKeys(), result.rejected, test.wantAccepted, test.wantRejected)
+			}
+		})
+	}
+	for name, raw := range map[string]string{
+		"missing sources":         `{"overview":"Ledger service."}`,
+		"null sources":            `{"overview":"Ledger service.","sources":null}`,
+		"sources object":          `{"overview":"Ledger service.","sources":{"d1":["Ledger"]}}`,
+		"only bad concepts":       `{"overview":"","sources":[{"ref":"d1","concepts":[42,""]}]}`,
+		"overview without source": `{"overview":"Ledger service.","sources":[]}`,
+	} {
+		if result, err := normalizeResponse([]byte(raw), authority); err == nil {
+			t.Fatalf("%s accepted: %+v", name, result)
+		}
 	}
 }
 
