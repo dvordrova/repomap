@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -97,5 +99,68 @@ func TestExtractionGraphPreservesDeclarationsAndInventorySeparately(t *testing.T
 		if node := nodes[producer+":absent"]; node.Entity.Status != "not_in_corpus" || len(node.Entity.Files) != 0 {
 			t.Fatalf("missing output lost: %+v", node)
 		}
+	}
+}
+
+// Repomap's own report listed 111 tables and 180 SQL texts as the program's
+// data; every one came from a _test.go file or a testdata fixture, which no
+// program holds. Code gives its data only to the programs holding it; a
+// schema or migration no adapter reads still belongs to the program.
+func TestDataOutsideEveryProgramIsNoProgramsData(t *testing.T) {
+	root := t.TempDir()
+	for path, content := range map[string]string{
+		"migrations/001.sql":           "CREATE TABLE users(id integer);",
+		"testdata/fixture/schema.sql":  "CREATE TABLE fixtures(id integer);",
+		"internal/store/store.go":      "package store\n\nfunc Create(db DB) { db.Exec(\"CREATE TABLE orders(id integer)\") }\n",
+		"internal/store/store_test.go": "package store\n\nfunc seed(db DB) { db.Exec(\"CREATE TABLE audit_log(id integer)\") }\n",
+		"scripts/backfill/backfill.py": "db.execute(\"INSERT INTO archive (id) VALUES (1)\")\n",
+	} {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repository, err := corpus.Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	extracted, err := extractors.Run(context.Background(), root, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := facts.Build(facts.Input{Repository: repository, Extractions: extracted.Extractions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := atlas.Graph{Version: atlas.GraphVersion, Places: []atlas.Place{}, Edges: []atlas.Edge{}, Seeds: []string{}}
+	b := &builder{input: Input{Facts: result}, files: map[string]*fileState{"internal/store/store.go": {targets: map[string]struct{}{"t1": {}}}}}
+	b.addExtractions(&graph)
+	held := map[string][]string{}
+	for _, place := range graph.Places {
+		if place.Kind == atlas.PlaceEntity {
+			held[place.Path] = place.TargetIDs
+		}
+	}
+	for _, edge := range graph.Edges {
+		for _, end := range []string{edge.From, edge.To} {
+			if strings.HasPrefix(end, "entity:") && !slices.ContainsFunc(graph.Places, func(place atlas.Place) bool { return place.ID == end }) {
+				t.Fatalf("edge %+v names a data place that was not drawn", edge)
+			}
+		}
+	}
+	if !reflect.DeepEqual(held["internal/store/store.go"], []string{"t1"}) {
+		t.Fatalf("the program's own SQL lost its program: %v", held)
+	}
+	for _, path := range []string{"internal/store/store_test.go", "testdata/fixture/schema.sql", "scripts/backfill/backfill.py"} {
+		if targets, ok := held[path]; ok {
+			t.Fatalf("%s became data of %v", path, targets)
+		}
+	}
+	if _, ok := held["migrations/001.sql"]; !ok {
+		t.Fatalf("a migration beside the code is no longer the program's data: %v", held)
 	}
 }

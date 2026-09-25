@@ -21,8 +21,8 @@ func TestRepositoryToolingPathMatchesDirectoriesAtAnyDepth(t *testing.T) {
 		"main.py":                                   false,
 		".vscode":                                   false,
 	} {
-		if repositoryToolingPath(filePath) != want {
-			t.Errorf("repositoryToolingPath(%q) = %v, want %v", filePath, !want, want)
+		if corpus.ToolingPath(filePath) != want {
+			t.Errorf("corpus.ToolingPath(%q) = %v, want %v", filePath, !want, want)
 		}
 	}
 }
@@ -86,7 +86,7 @@ func TestToolingDirectoryScriptsAreNoTargetCandidates(t *testing.T) {
 	if portfolio.calls != 1 || !strings.Contains(portfolio.prompt.User, "native/runtime.py") {
 		t.Fatalf("portfolio request lost the ordinary script: calls=%d user=%s", portfolio.calls, portfolio.prompt.User)
 	}
-	for _, dir := range repositoryToolingDirectories {
+	for _, dir := range corpus.ToolingDirectories {
 		if strings.Contains(portfolio.prompt.User, dir+"/") {
 			t.Fatalf("portfolio request offers a %s file: %s", dir, portfolio.prompt.User)
 		}

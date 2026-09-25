@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/facts"
 )
 
@@ -21,6 +22,7 @@ func (b *builder) addExtractions(graph *atlas.Graph) {
 			owners[key] = append(owners[key], symbol)
 		}
 	}
+	outside := map[string]bool{}
 	programTargets := make(map[string]string, len(b.input.Facts.Targets))
 	for _, target := range b.input.Facts.Targets {
 		programTargets[target.ID] = target.ID
@@ -44,11 +46,18 @@ func (b *builder) addExtractions(graph *atlas.Graph) {
 					Evidence: &atlas.EdgeEvidence{Label: "file at or beneath referenced path", Path: member.Path, LineNo: 1}})
 			}
 		}
+		if len(targets) == 0 && (facts.IsSourceFile(fact.Path) || corpus.ToolingPath(fact.Path)) {
+			// Code belongs to the programs that hold it: SQL in a test, a
+			// fixture or a script no program holds is no program's data, and
+			// neither is anything under a tooling directory (test inputs, CI).
+			outside[fact.ID] = true
+			continue
+		}
 		if len(targets) == 0 {
-			// A repository-level extraction (migrations, a schema) belongs to
-			// the targets whose root holds its path, and when none does, to
-			// every target of the run: a schema beside cmd/ and internal/ is
-			// the program's schema.
+			// A repository-level extraction no adapter reads (migrations, a
+			// schema) belongs to the targets whose root holds its path, and
+			// when none does, to every target of the run: a schema beside
+			// cmd/ and internal/ is the program's schema.
 			for _, target := range b.input.Targets {
 				if root := atlasPath(target.Root); root == "." || strings.HasPrefix(fact.Path, root+"/") {
 					targets[target.Index.Target.ID] = struct{}{}
@@ -75,7 +84,7 @@ func (b *builder) addExtractions(graph *atlas.Graph) {
 		graph.Places = append(graph.Places, place)
 	}
 	for _, fact := range b.input.Facts.Facts {
-		if fact.Kind != facts.KindRelation {
+		if fact.Kind != facts.KindRelation || outside[fact.Refs[0]] || outside[fact.Refs[1]] {
 			continue
 		}
 		graph.Edges = append(graph.Edges, atlas.Edge{From: "entity:" + fact.Refs[0], To: "entity:" + fact.Refs[1], Kind: "observation", Count: 1, Witnesses: []atlas.Witness{},

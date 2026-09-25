@@ -142,7 +142,8 @@ func sourceExtension(filePath string) string {
 	return strings.ToLower(filePath[dot:])
 }
 
-func isSourceFile(filePath string) bool {
+// IsSourceFile reports whether a file is code a language adapter reads.
+func IsSourceFile(filePath string) bool {
 	switch sourceExtension(filePath) {
 	case ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".go":
 		return true

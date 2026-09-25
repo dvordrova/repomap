@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Test SQL is no program's data; the map says what its boxes are
+
+- Repomap's own Data section listed 111 tables and 180 SQL texts, and both
+  programs showed the same 291 rows: all 295 data places came from `_test.go`
+  files (189) and `testdata/` (106). Places gave an extraction no program's
+  file holds to every target whose root holds it, and the root `.` holds
+  everything. Such an extraction in a code file (`facts.IsSourceFile`) or
+  under a tooling directory (`corpus.ToolingPath`, the one list the target
+  portfolio already used) now belongs to no program; a schema or migration no
+  adapter reads keeps the root rule. The new places test failed without it.
+- Canvas: a part's one-sentence description stands under its name (three
+  lines at most); a closed area's line fills the whole lines its box leaves;
+  a loose part beside areas is as tall as a peer, so its title reads at an
+  area's size (it was about 5 px). Looking at an area or a component darkens
+  the arrows that cross its border only; before, zooming into repomap's CLI
+  selected it and turned all 25 of its area arrows dark.
+- An owner-proxy review of the walk (Playwright, 1600x1000) found these; its
+  "wait" items are recorded in CURRENT, not done.
+
 ## 2026-09-25 — Map of parts review: resample, empty answers, method-only files
 
 - The llm layer's one resample (branch `parts/one-time-resample`, merged into

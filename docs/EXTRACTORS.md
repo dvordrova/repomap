@@ -61,7 +61,15 @@ At the acceptance boundary repomap replaces producer IDs with `u1..uN` in
 producer order and rewrites every link to those same IDs. It then assigns fact
 identities and target membership, attaches the
 producer's name, and lists current corpus files beneath a directory. An
-output directory can be absent. No model classifications, confidence
+output directory can be absent.
+
+An extraction belongs to the programs that hold one of its files. One no
+program holds is repository-level: in a code file (a test, a fixture, a
+script) or under a tooling directory (`testdata`, `.github`, `.claude`,
+`.vscode`) it belongs to no program, so test SQL and fixture schemas never
+become a program's data. Any other file no adapter reads, such as a schema
+or a migration, belongs to the programs whose root holds it, and to every
+program of the run when none does. No model classifications, confidence
 numbers, symbol IDs, target IDs, file lists or special generator types are
 required from the plugin.
 
