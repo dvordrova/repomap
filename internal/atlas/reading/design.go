@@ -475,17 +475,17 @@ func validatePartition(answer partsAnswer, listed []string) partition {
 	return result
 }
 
-// designPartsCall is the parts request of one window of a target's files.
+// designPartsCall is the parts request of one window of a target's files. An
+// answer refused whole is asked once more with the same bytes (the llm
+// layer's one resample) before the window counts as refused.
 func designPartsCall(input designPartsInput) (llm.Call[partsAnswer], error) {
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return llm.Call[partsAnswer]{}, err
 	}
-	// TODO(parts resample): opt this call into the llm layer's one-time
-	// resample of a refused answer once it lands (spec §10); a refused answer
-	// is then asked once more before the target's map fails.
 	return llm.Call[partsAnswer]{
-		State: []byte(designPartsTask),
+		Resample: true,
+		State:    []byte(designPartsTask),
 		Prompt: llm.Prompt{System: designPartsPrompt, User: string(raw), ResponseFormatJSON: true, NoResponseAdjunct: true,
 			ResponseExample: `{"groups":[{"name":"Move search","files":["f4","f9"]},{"name":"Board state","files":["f2"]}]}`},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designOutputTokens(len(input.Files))},

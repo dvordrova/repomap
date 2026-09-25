@@ -54,9 +54,45 @@
   and areas judges), B (python-tutorial-game dogfood) and C (ordinary online
   self-run, warm run, cache clear, browser walkthrough), so there are no
   per-stage online timings yet. The one-time resample of a refused parts or
-  areas answer waits for the llm layer's opt-in (TODO(parts resample) in
-  `design.go` and `areas.go`); today a refused answer is a map failure after
-  one call.
+  areas answer was not wired in this entry; merging `parts/one-time-resample`
+  wires it: the parts and areas calls opt in.
+
+## 2026-09-25 — One resample of a whole refusal (parts spec §10)
+
+- `llm.Call.Resample` opts a call in. `ExecuteJSON` wraps `executeJSON`, so
+  replay, which calls `executeLive` itself, is never resampled. It asks once
+  more with the same bytes in three cases. The owner's decoder refused the
+  whole answer. The provider's answer was empty, had an undecodable envelope,
+  or did not stop (a content filter excepted). Or the answer was cut at the
+  output-token cap and the adaptive owner cannot split the item. The adaptive
+  executors mark each opted-in item as divisible or not by asking its owner's
+  split once. Transport classes, context or request-size refusals, other
+  statuses, cached answers and owner-recovered refusals
+  (`SplitRejectedResponse`, `SplitHTTP500`, attempt deadline) keep one call.
+- A refused draw is never cached; the accepted second draw is cached under
+  the same key with its own measurements; `Outcome.Metrics` sums both draws.
+  The journal already told the draws apart: each exchange gets its own
+  `instance_ordinal`, so no draw number was added.
+- The design parts and areas proposals opt in. A parts answer with no groups
+  is now a whole refusal (spec §10 "no groups"), and an empty areas answer
+  stays an abstention. A target without units no longer sends a parts request
+  (spec §2), which would otherwise draw that refusal twice.
+- Tests (fail-closed local providers):
+  - The llm layer covers five first-draw refusal classes and two refused
+    draws (exactly two provider calls, summed metrics, nothing cached).
+    Eleven classes keep one call. Output-token refusals are split by a
+    divisible adaptive owner (each and batch forms) and resampled otherwise.
+    A cached answer is served with no call, and a stale one is replaced by
+    exactly one call. Replay makes one call.
+  - A debugdump test writes the two exchanges with one request SHA-256 and
+    distinct `instance_ordinal`s.
+  - The reading tests check that a parts answer with no groups followed by a
+    good one draws the map after two parts requests. Two empty answers leave
+    the declarations loose after two. A target without units sends none.
+  - Mutations that always resample, drop the batch divisibility mark or drop
+    the zero-unit skip each fail these tests.
+  - `make test` and `make vet` pass, and `make build` builds. No online run
+    was made for this piece.
 
 ## 2026-09-25 — Critical-path work before and after the models
 

@@ -118,8 +118,9 @@ never entered into or read from a repository-wide unqualified map.
   the model's `tests` role are removed; a part made only of test code leaves
   the canvas by the `TestSources` fact. The atlas and GroupsIndex carry an
   explicit off-map record and `map_failure`; the component card lists Tests
-  and Not on the map. The one-time resample of a refused parts answer belongs
-  to the llm layer and is wired separately.
+  and Not on the map. A parts or areas answer refused whole is asked once
+  more with the same bytes through the llm layer's resample before the map
+  fails.
 - **Known remaining violation:** key selection still sends a declaration's
   full docstring as `author_documentation`, and symbol selection sends
   docstrings too. The trusted-inputs rule covers both; the next change strips
@@ -163,6 +164,9 @@ never entered into or read from a repository-wide unqualified map.
   the provider ceiling. Output refusals partition independent questions first;
   input/context refusals preserve and repartition complete evidence. A new
   limit/packing policy is tested on one saved complete window before a full run.
+  A call may opt into one resample (spec 2026-09-25): a live answer refused whole
+  for what the model wrote is asked once more with the same bytes. Only the
+  parts and areas answers of the map of parts opt in.
 - **Glossary:** only accepted prose enters a separate p-ref generation/reduction
   pass with its own 32,768-token output allowance: legitimate windows need 1–16 thousand tokens, and two Watchtower windows looped to 128,000. Source/prose/fill context
   stays local in Prepared and the accepted cache record; no deferred g-ref

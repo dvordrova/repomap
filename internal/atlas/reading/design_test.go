@@ -203,11 +203,9 @@ func TestFollowUpPlacesLeftOutAndConflictingFiles(t *testing.T) {
 	}
 }
 
-// A refused parts answer leaves the target with an explicit map failure:
-// every file and its boundaries stay in the atlas off the map, with their
-// lines and declarations, and no part or area is invented. The one-time
-// resample of the llm layer is not part of this stage: here the refusal comes
-// after one provider call.
+// A parts answer refused on both draws leaves the target with an explicit
+// map failure: every file and its boundaries stay in the atlas off the map,
+// with their lines and declarations, and no part or area is invented.
 func TestRefusedPartsAnswerIsAnExplicitMapFailure(t *testing.T) {
 	graph := twoTargetGraph(t)
 	provider := &tableProvider{partsResponse: func([]map[string]any) string { return `{"groups":[]}` }}
@@ -248,8 +246,8 @@ func TestRefusedPartsAnswerIsAnExplicitMapFailure(t *testing.T) {
 	if boundaries != 2 {
 		t.Fatalf("boundaries off the map: %+v", svc.Boundaries)
 	}
-	if provider.designRequests[designPartsTask] != 2 {
-		t.Fatalf("parts requests: %v", provider.designRequests)
+	if provider.designRequests[designPartsTask] != 4 {
+		t.Fatalf("parts requests of two targets asked twice: %v", provider.designRequests)
 	}
 	refused := 0
 	for _, row := range result.Rejected {

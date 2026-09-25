@@ -173,10 +173,10 @@ a left-out file chooses among every drawn part, a conflicting one only
 between the parts that listed it, with its own calls and imports to and
 from placed files as part refs. An unknown, missing or refused choice leaves
 the file off the map with its reason. Only an answer that is not JSON or
-holds no groups (or ends at the output allowance) is refused whole; the
-llm layer's one-time resample then applies, and a target whose answer stays
-refused gets an explicit `map_failure` with every file off the map. Its other
-analysis survives.
+holds no groups (or ends at the output allowance) is refused whole; it is
+asked once more with the same bytes ([one resample](EXECUTION.md#one-resample)),
+and a target whose answer stays refused gets an explicit `map_failure` with
+every file off the map. Its other analysis survives.
 
 **Membership and the off-map record.** Atlas v11 saves explicit `member_ids`
 per part, and an explicit per-target `off_map` record: every file, or stray
