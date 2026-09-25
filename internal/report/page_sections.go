@@ -93,6 +93,12 @@ var offMapReasons = map[string]string{
 	"map_failure": "No map of parts",
 }
 
+// mapFailureReasons are the reader's words for why there is no map at all.
+var mapFailureReasons = map[string]string{
+	"refused":  "the model's answer was refused twice",
+	"no_model": "no model was asked",
+}
+
 // fillSectionOffMap lists the files the map does not draw from the complete
 // group graph, so test code the overview hides stays reachable here.
 func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
@@ -100,7 +106,7 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 	if index == nil {
 		return
 	}
-	section.MapFailure = index.MapFailure
+	section.MapFailure = mapFailureReasons[index.MapFailure]
 	for _, file := range index.OffMap {
 		row := pageOffMapRow{Anchor: builder.links.anchor(file.Path, 0, 0), Part: file.Part}
 		if file.Reason == groupindex.OffMapTests {

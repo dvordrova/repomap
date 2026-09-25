@@ -866,18 +866,16 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 		// target's name.
 		drafts = []designPart{{name: target.Name, files: []string{view.files[0].id}}}
 	case r.dry:
-		outcome.failure = "no model was asked for the parts of this program"
+		outcome.failure = atlas.MapFailureNoModel
 	default:
 		windows, err := r.askParts(ctx, view, round)
 		if err != nil {
 			return err
 		}
 		refused := 0
-		var reasons []string
 		for _, window := range windows {
 			if window.err != nil {
 				refused++
-				reasons = append(reasons, window.err.Error())
 				for _, file := range window.files {
 					leftOut = append(leftOut, file.id)
 				}
@@ -907,7 +905,7 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 			}
 		}
 		if refused == len(windows) {
-			outcome.failure = "the parts answer was refused: " + strings.Join(reasons, "; ")
+			outcome.failure = atlas.MapFailureRefused
 			drafts, leftOut, conflicts = nil, nil, map[string][]int{}
 		}
 	}

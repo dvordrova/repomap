@@ -182,8 +182,10 @@ output allowance. Such an answer is asked once more with the same bytes
 ([one resample](EXECUTION.md#one-resample)). A window refused on both draws
 is recorded as `window_rejected`; its files are left out for the follow-up
 when another window of the target drew parts. A target all of whose windows
-are refused gets an explicit `map_failure` with every file off the map. Its
-other analysis survives.
+are refused gets an explicit `map_failure` with every file off the map, and
+the atlas target's `map_failure` word `refused` (`no_model` when no model was
+asked); the refusal texts stay in `rejected.jsonl`. Its other analysis
+survives.
 
 **Membership and the off-map record.** Atlas v11 saves explicit `member_ids`
 per part, and an explicit per-target `off_map` record: every file, or stray

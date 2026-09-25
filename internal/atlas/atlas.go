@@ -467,10 +467,11 @@ type Target struct {
 	// holds, with why. Its files keep their lines, captions and keys here;
 	// their boundaries name no box.
 	OffMap []OffMapFile `json:"off_map"`
-	// MapFailure says why the target has no map of parts at all: its parts
-	// answer was refused, or no model was asked. Every file is then in OffMap
-	// with the reason map_failure. Empty when the map was drawn, including
-	// the legitimate empty map of a target without code.
+	// MapFailure says why the target has no map of parts at all, in one of
+	// the closed MapFailure* words: its parts answer was refused, or no model
+	// was asked. The refusals themselves are rejected rows. Every file is then
+	// in OffMap with the reason map_failure. Empty when the map was drawn,
+	// including the legitimate empty map of a target without code.
 	MapFailure string `json:"map_failure,omitempty"`
 	// Files and Symbols are the denominators the page shows; it recounts
 	// nothing.
@@ -530,6 +531,12 @@ const (
 	OffMapNoUnits = "no_units"
 	// OffMapFailure: the target has no map of parts at all.
 	OffMapFailure = "map_failure"
+
+	// MapFailureRefused: every window of the parts answer was refused, after
+	// its one resample.
+	MapFailureRefused = "refused"
+	// MapFailureNoModel: no model was asked for the parts.
+	MapFailureNoModel = "no_model"
 )
 
 // ValidOffMapReason reports one of the closed off-map reasons.
@@ -1231,7 +1238,7 @@ func Validate(value Atlas) error {
 			target.Boundaries == nil || target.Trace == nil {
 			return fmt.Errorf("atlas: target %q is missing collections", target.ID)
 		}
-		if invalidText(target.MapFailure) {
+		if target.MapFailure != "" && target.MapFailure != MapFailureRefused && target.MapFailure != MapFailureNoModel {
 			return fmt.Errorf("atlas: target %q has an invalid map failure", target.ID)
 		}
 		boxes := make(map[string]struct{}, len(target.Boxes))

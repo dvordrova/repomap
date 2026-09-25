@@ -8,7 +8,7 @@
 {{template "input-catalog" .}}
 {{template "data.html" .}}
 <div id="{{.ID}}-parts" class="component-parts"><a href="#system-component-{{.ID}}">{{t "System map"}} →</a></div>
-{{if .MapFailure}}<p class="map-failure meta">{{t "The map of parts is unavailable: {0}" .MapFailure}}</p>{{end}}
+{{if .MapFailure}}<p class="map-failure meta">{{t "The map of parts is unavailable: {0}" (t .MapFailure)}}</p>{{end}}
 {{template "off-map" .}}
 {{if or .Flow .Start}}<section class="component-flow"><h3 id="{{$.ID}}-flow">{{t "Main flow"}}</h3>
 {{if .Flow}}{{if .Flow.Title}}<p class="model flow-title"><span data-display-ref="{{.Flow.TitleRef}}">{{.Flow.Title}}</span></p>{{end}}<ol class="flow">{{range .Flow.Steps}}<li class="flow-step"><span class="flow-what">{{if .Label}}<code>{{.Label}}</code>{{end}}{{if .Target}} <span class="flow-where">{{.Target}}</span>{{end}}</span>{{if .Anchor}} {{template "anchor" .Anchor}}{{end}}<span class="model flow-why"><span data-display-ref="{{.ExplanationRef}}">{{.Explanation}}</span></span></li>{{end}}</ol>{{else}}{{if .Start}}<p class="meta">{{t "No model flow passes through this target. Read forward from its entrypoints:"}}</p><ol class="flow fact">{{range .Start}}<li class="flow-step"><span class="flow-what"><code>{{.Symbol}}</code>{{if .Group}} <span class="flow-where">{{t "in"}} <a href="{{.Href}}">{{.Group}}</a></span>{{end}}</span>{{if .Anchor}} {{template "anchor" .Anchor}}{{end}}{{if .Reaches}}<span class="flow-why">{{range $i, $r := .Reaches}}{{if $i}} · {{end}}{{$r.Label}} <a href="{{$r.Href}}">{{$r.Title}}</a>{{end}}</span>{{end}}</li>{{end}}</ol>{{end}}{{end}}</section>{{end}}

@@ -41,13 +41,21 @@ func projectOutbound(program programindex.Index, target atlas.Target, groups map
 		}
 	}
 	var calls []OutboundCall
+	// A use step may pass through a declaration off the map, such as every
+	// declaration of a target whose map failed.
 	localSymbols := make(map[string]string)
+	addSymbols := func(file atlas.File) {
+		for _, symbol := range file.Symbols {
+			localSymbols[symbol.ID] = local[sourceRefs[symbol.ObjectID]]
+		}
+	}
 	for _, box := range target.Boxes {
 		for _, file := range box.Files {
-			for _, symbol := range file.Symbols {
-				localSymbols[symbol.ID] = local[sourceRefs[symbol.ObjectID]]
-			}
+			addSymbols(file)
 		}
+	}
+	for _, off := range target.OffMap {
+		addSymbols(off.File)
 	}
 	for _, boundary := range target.Boundaries {
 		if boundary.Direction != atlas.DirectionOut || !communicationKind(boundary.Kind) {

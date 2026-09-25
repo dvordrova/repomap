@@ -80,3 +80,18 @@ func TestOutboundCustomProtocolDoesNotRequireDependencyLane(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOutboundUseStepsPassThroughDeclarationsOffTheMap(t *testing.T) {
+	program := atlasTestProgram(t, "executable", "peer.go")
+	object := program.Objects[0]
+	boundary := atlas.Boundary{ID: "send", Kind: atlas.BoundaryOther, Direction: atlas.DirectionOut,
+		Destination: "Replication peer", Source: "model", Path: "peer.go", LineNo: 20, Column: 7,
+		Uses: []atlas.DestinationUse{{Steps: []atlas.DestinationStep{{SubjectID: "s1", Name: object.Name, Path: "peer.go", Line: 20}}}}}
+	// A target whose map failed holds every declaration off the map.
+	target := atlas.Target{Boundaries: []atlas.Boundary{boundary},
+		OffMap: []atlas.OffMapFile{{ID: "f1", Reason: "map_failure", File: atlas.File{Path: "peer.go", Symbols: []atlas.Symbol{{ID: "s1", ObjectID: "o1", Name: object.Name}}}}}}
+	calls := projectOutbound(program, target, nil, map[string]string{"o1": declarationKey(object)})
+	if len(calls) != 1 || calls[0].Uses[0].Steps[0].SubjectID != object.ID {
+		t.Fatalf("a use step through an off-map declaration lost its subject: %+v", calls)
+	}
+}

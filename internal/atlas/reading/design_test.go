@@ -221,7 +221,7 @@ func TestRefusedPartsAnswerIsAnExplicitMapFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := targetOf(t, result, "svc")
-	if !strings.Contains(svc.MapFailure, "no groups") || len(svc.Boxes) != 0 || len(svc.Zones) != 0 {
+	if svc.MapFailure != atlas.MapFailureRefused || len(svc.Boxes) != 0 || len(svc.Zones) != 0 {
 		t.Fatalf("map failure %q boxes %d zones %d", svc.MapFailure, len(svc.Boxes), len(svc.Zones))
 	}
 	files := 0
