@@ -15,7 +15,9 @@ func Answer() table.Definition {
 		Columns: []table.Column{
 			{Name: "answer", Kind: table.Prose, EmptyValue: "none"},
 			{Name: "basis", Kind: table.Prose, EmptyValue: "none"},
-			{Name: "sources", Kind: table.Sequence, OptionsFrom: "candidate_options"},
+			// An unanswered row has no sources; a substantive answer without
+			// them is still refused by its owner (Optional is decoder-only).
+			{Name: "sources", Kind: table.Sequence, OptionsFrom: "candidate_options", Optional: true},
 			{Name: "remaining", Kind: table.Prose, EmptyValue: "none"},
 			{Name: "state", Kind: table.Choice, Options: []string{"answered", "partial", "unanswered", "not_applicable"}},
 		}}

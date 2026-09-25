@@ -925,13 +925,13 @@ func TestLearningMenuReducesCompletePoolsAndReusesTheirCache(t *testing.T) {
 // learningMenuLimit refs per intent: one over the ceiling is refused as a
 // malformed row, with the count in the journal and the intent's candidates
 // left inspectable; a smaller menu is read as before.
-func TestLearningMenuRefusesAnIntentOverItsCeiling(t *testing.T) {
+func TestLearningMenuKeepsEveryChosenQuestionPastItsLimit(t *testing.T) {
 	for _, refs := range []int{learningMenuLimit + 2, learningMenuLimit - 2} {
 		t.Run(fmt.Sprintf("refs=%d", refs), func(t *testing.T) {
 			provider := &learningProvider{menuRefs: refs}
 			r := isolatedLearningReader(t, t.TempDir(), provider)
 			// Seven purpose candidates, and one data candidate whose menu of one
-			// stays within the ceiling beside the refused purpose menu.
+			// stays within the limit beside the purpose menu.
 			var questions []atlas.LearningQuestion
 			for i := 0; i < learningMenuLimit+2; i++ {
 				q := fmt.Sprintf("How does part %d start?", i)
@@ -960,11 +960,13 @@ func TestLearningMenuRefusesAnIntentOverItsCeiling(t *testing.T) {
 				audiences[selection.Intent+"/"+selection.Audience]++
 			}
 			if refs > learningMenuLimit {
-				if r.learning.State != "partial" || !reflect.DeepEqual(r.learning.Questions, []atlas.LearningQuestion{data}) || audiences["purpose/unavailable"] != learningMenuLimit+2 || audiences["data/first_day"] != 1 {
-					t.Fatalf("a menu over the ceiling was read or refused its neighbour: state %q, audiences %v, questions %+v", r.learning.State, audiences, r.learning.Questions)
+				// Every advertised question the model chose stays chosen; the
+				// journal names the menu and its count.
+				if r.learning.State != "ready" || !reflect.DeepEqual(r.learning.Questions, questions) || audiences["purpose/first_day"] != refs || audiences["data/first_day"] != 1 {
+					t.Fatalf("a menu past its limit was cut or refused: state %q, audiences %v, questions %+v", r.learning.State, audiences, r.learning.Questions)
 				}
-				if len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || !reflect.DeepEqual(r.rejected[0].Samples, []string{"purpose", "purpose"}) || !strings.Contains(r.rejected[0].Reason, fmt.Sprintf("chooses %d items, limit %d", refs, learningMenuLimit)) {
-					t.Fatalf("journal does not name the refused menu and its count: %+v", r.rejected)
+				if len(r.rejected) != 1 || r.rejected[0].Kind != "menu_over_limit" || !reflect.DeepEqual(r.rejected[0].Samples, []string{"purpose"}) || !strings.Contains(r.rejected[0].Reason, fmt.Sprintf("chose %d questions, limit %d", refs, learningMenuLimit)) {
+					t.Fatalf("journal does not name the menu past its limit and its count: %+v", r.rejected)
 				}
 				return
 			}

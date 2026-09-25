@@ -256,7 +256,7 @@ func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Resul
 					result.Rejections = append(result.Rejections, table.RowRejection{Key: window.table.Rows[i].ID, Reason: err.Error()})
 				}
 			}
-			if len(result.AcceptedRowKeys()) == 0 {
+			if result.Accepted() == 0 {
 				return result, fmt.Errorf("answer: no rows accepted: %s", result.Rejections[0].Reason)
 			}
 			return result, nil

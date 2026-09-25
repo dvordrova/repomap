@@ -1133,12 +1133,10 @@ func (r *reader) selectLearning(ctx context.Context) error {
 		}})
 	}
 	intents := learningIntents()
-	// A menu over the limit is refused as any malformed known row: the table
-	// rule for a sequence past limit_from. Cutting the tail instead would make
-	// the code choose which five of seven the model meant as the clearest,
-	// completing its decision, and the cut menu would carry a rationale
-	// written for the full one. The refusal names the count; the intent's
-	// candidates stay inspectable as unavailable and the plan says partial.
+	// The limit tells the model how many to choose. A menu past it keeps
+	// every advertised question the model chose: cutting the tail would make
+	// the code choose which five of seven the model meant, and refusing it
+	// lost the intent's whole menu. The journal names the count.
 	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v4", System: learningSelectPrompt,
 		Window: len(intents), Columns: []table.Column{
 			{Name: "questions", Kind: table.Sequence, OptionsFrom: "candidate_options", LimitFrom: "limit"},
@@ -1216,6 +1214,10 @@ func (r *reader) selectLearning(ctx context.Context) error {
 				intentIndex := slices.IndexFunc(intents, func(intent learningIntent) bool { return intent.ID == batch[rowIndex].ID })
 				intent := intents[intentIndex]
 				chosen := strings.Fields(answer.answer["questions"])
+				if len(chosen) > learningMenuLimit {
+					r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "menu_over_limit", Count: 1, Samples: []string{intent.ID},
+						Reason: fmt.Sprintf("learn: the %s menu chose %d questions, limit %d; every chosen question is kept", intent.ID, len(chosen), learningMenuLimit)})
+				}
 				for i, id := range pool {
 					if !slices.ContainsFunc(r.learning.Questions[id].Origins, func(o atlas.LearningOrigin) bool { return o.Intent == intent.ID }) {
 						continue

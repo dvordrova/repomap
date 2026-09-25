@@ -78,11 +78,16 @@ func TestLinePromptExamplesMatchRequestedOpenMode(t *testing.T) {
 					t.Fatalf("owner prompt example was refused: %+v / %v", result, err)
 				}
 				if mode == 1 {
+					// A missing open is refused alone: nothing invents it, and
+					// the row keeps its captions beside a complete sibling.
 					delete(example.Rows[0], "open")
 					incomplete, _ := json.Marshal(example)
 					refused, err := table.DecodeResult(def, windows[0], incomplete)
-					if err != nil || len(refused.Rejections) != 1 || refused.Answers[0] != nil || refused.Answers[1]["open"] != "yes" {
-						t.Fatalf("missing open was invented or a complete sibling was lost: %+v / %v", refused, err)
+					if err != nil || len(refused.Rejections) != 1 || refused.Rejections[0].Cell != "open" || refused.Answers[1]["open"] != "yes" {
+						t.Fatalf("missing open was not refused alone or a complete sibling was lost: %+v / %v", refused, err)
+					}
+					if _, invented := refused.Answers[0]["open"]; invented || refused.Answers[0]["line"] != "Starts the analysis." {
+						t.Fatalf("missing open was invented or its row lost its line: %+v", refused.Answers[0])
 					}
 				}
 			}

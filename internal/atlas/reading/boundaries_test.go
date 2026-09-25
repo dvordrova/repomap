@@ -49,7 +49,9 @@ func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *te
 	if len(r.boundaries) != 2 || !reflect.DeepEqual(r.boundaries[native.ID].place, native) || r.boundaries[native.ID].kind != atlas.BoundaryHTTPClient || r.boundaries[native.ID].line != native.Given || r.boundaries[native.ID].address != native.Boundary.Values[0] || r.boundaries[native.ID].basis != "dispatch" {
 		t.Fatalf("refused prose deleted source fact: %+v", r.boundaries)
 	}
-	if len(r.rejected) != 1 || !strings.Contains(r.rejected[0].Reason, "line") {
+	// Each outbound row loses only its refused line; its destination and
+	// address decisions stand beside it.
+	if len(r.rejected) != 2 || r.rejected[0].Kind != "cell_rejected" || !strings.Contains(r.rejected[0].Reason, `"line"`) || r.rejected[1].Kind != "cell_rejected" {
 		raw, _ := json.Marshal(r.rejected)
 		t.Fatalf("fixed fact prose was not locally validated: %s", raw)
 	}

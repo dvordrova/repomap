@@ -52,8 +52,10 @@ func Directories() table.Definition {
 		Stage: StageDirectories, Contract: directoriesContract,
 		System: directoriesPrompt, Memoize: true,
 		Columns: []table.Column{
-			{Name: "title", Kind: table.Text, MaxRunes: TitleRunes, Note: "two to four words for the box"},
-			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what the directory's code does"},
+			// A refused caption loses only itself: the directory keeps its
+			// given title or line (Alone is decoder-only).
+			{Name: "title", Kind: table.Text, MaxRunes: TitleRunes, Note: "two to four words for the box", Alone: true},
+			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what the directory's code does", Alone: true},
 		},
 	}
 }
@@ -70,11 +72,16 @@ func Files() table.Definition {
 }
 
 // WithOpen adds the budget cell: whether the model would open this place to
-// read what is beneath it.
+// read what is beneath it. Each cell then fails alone: a refused open closes
+// nothing, and a refused caption keeps the place's given one.
 func WithOpen(def table.Definition) table.Definition {
 	def.Contract += ".open"
-	def.Columns = append(append([]table.Column{}, def.Columns...), table.Column{
-		Name: "open", Kind: table.Choice, Options: []string{"yes", "no"},
+	def.Columns = append([]table.Column{}, def.Columns...)
+	for i := range def.Columns {
+		def.Columns[i].Alone = true
+	}
+	def.Columns = append(def.Columns, table.Column{
+		Name: "open", Kind: table.Choice, Options: []string{"yes", "no"}, Alone: true,
 		Note: "yes when a reader of the architecture should look inside; no for vendored, generated, test or trivial code",
 	})
 	return def

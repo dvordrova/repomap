@@ -67,15 +67,25 @@ func TestSequencePreservesOrderAndFiltersOnlyExactKnownRefs(t *testing.T) {
 	row := Row{Fields: []Field{{Name: "options", Value: []string{"c1", "c2", "c3"}}, {Name: "limit", Value: 2}}}
 	// Unknown refs were never selectable and drop out; a selection of only
 	// unknown refs is an empty selection, not a refused row. Commas separate
-	// refs as whitespace does. Only exceeding the limit refuses the cell.
-	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": "", "": "", "c999": "", "c01": "", "c1,c2": "c1 c2"} {
+	// refs as whitespace does. The limit is guidance: a selection past it
+	// keeps every distinct advertised ref in the written order, never the
+	// first N.
+	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": "", "": "", "c999": "", "c01": "", "c1,c2": "c1 c2", "c2 c3 c1": "c2 c3 c1"} {
 		value, err := normalizeCell(column, nil, row, input)
 		if err != nil || value != expected {
 			t.Fatalf("%q -> %q, %v", input, value, err)
 		}
 	}
-	if _, err := normalizeCell(column, nil, row, "c1 c2 c3"); err == nil {
-		t.Fatal("accepted a selection over the limit")
+	// The limit the model is told is the owner's to supply: a row without a
+	// positive integer limit is a preparation error, not a refused answer.
+	def := Definition{Stage: "atlas_learn", Columns: []Column{column}}
+	for _, fields := range [][]Field{{row.Fields[0]}, {row.Fields[0], {Name: "limit", Value: "2"}}, {row.Fields[0], {Name: "limit", Value: 0}}} {
+		if _, err := Request(def, Window{Rows: []Row{{ID: "menu", Fields: fields}}}); err == nil || !strings.Contains(err.Error(), `"limit"`) {
+			t.Fatalf("a menu without a usable limit was prepared: %v / %v", fields, err)
+		}
+	}
+	if _, err := Request(def, Window{Rows: []Row{{ID: "menu", Fields: row.Fields}}}); err != nil {
+		t.Fatal(err)
 	}
 	// An options list without a limit is its own bound: a selection can never
 	// hold more refs than it offers, and a repeated ref counts once.

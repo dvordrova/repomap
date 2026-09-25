@@ -529,7 +529,9 @@ func TestRejectedWindowFallsBackAndIsNotCached(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Rejected) != 1 || result.Rejected[0].Kind != "window_rejected" || result.Rejected[0].Stage != lines.StageFiles {
+	// The refused window is journaled, and so is each of its rows' own reason.
+	if len(result.Rejected) != 2 || result.Rejected[0].Kind != "window_rejected" || result.Rejected[0].Stage != lines.StageFiles ||
+		result.Rejected[1].Kind != "row_rejected" || !strings.Contains(result.Rejected[1].Reason, "answered more than once, differently") {
 		t.Fatalf("rejected rows: %+v", result.Rejected)
 	}
 	for _, box := range result.Atlas.Targets[0].Boxes {

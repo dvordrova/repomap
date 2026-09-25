@@ -473,15 +473,24 @@ func (r *reader) readDirectories(ctx context.Context) error {
 		}
 		for i, place := range asked {
 			r.openDirs[place.ID] = true
-			if answer := answers[i]; answer.answer != nil {
-				r.titles[place.ID] = cell{value: answer.answer["title"], source: answer.source}
-				r.lines[place.ID] = cell{value: answer.answer["line"], source: answer.source}
-				if r.budget {
-					r.openDirs[place.ID] = answer.answer["open"] == "yes"
-				}
+			answer := answers[i]
+			// A cell refused alone takes the fallback the whole row takes: the
+			// given title or line, and an open that closes nothing.
+			r.titles[place.ID] = cell{value: directoryTitle(place.Path), source: atlas.SourceGiven}
+			r.lines[place.ID] = cell{value: place.Given, source: answer.source}
+			if answer.answer == nil {
+				continue
+			}
+			if title, ok := answer.answer["title"]; ok {
+				r.titles[place.ID] = cell{value: title, source: answer.source}
+			}
+			if line, ok := answer.answer["line"]; ok {
+				r.lines[place.ID] = cell{value: line, source: answer.source}
 			} else {
-				r.titles[place.ID] = cell{value: directoryTitle(place.Path), source: atlas.SourceGiven}
-				r.lines[place.ID] = cell{value: place.Given, source: answer.source}
+				r.lines[place.ID] = cell{value: place.Given, source: atlas.SourceGiven}
+			}
+			if r.budget {
+				r.openDirs[place.ID] = answer.answer["open"] != "no"
 			}
 		}
 	}
@@ -546,13 +555,19 @@ func (r *reader) readFiles(ctx context.Context) error {
 	for i, row := range rows {
 		place := r.places[row.ID]
 		r.openFiles[row.ID] = true
-		if answer := answers[i]; answer.answer != nil {
-			r.lines[row.ID] = cell{value: answer.answer["line"], source: answer.source}
-			if r.budget {
-				r.openFiles[row.ID] = answer.answer["open"] == "yes"
-			}
+		answer := answers[i]
+		// A refused line keeps the given one; a refused open closes nothing.
+		r.lines[row.ID] = cell{value: place.Given, source: answer.source}
+		if answer.answer == nil {
+			continue
+		}
+		if line, ok := answer.answer["line"]; ok {
+			r.lines[row.ID] = cell{value: line, source: answer.source}
 		} else {
-			r.lines[row.ID] = cell{value: place.Given, source: answer.source}
+			r.lines[row.ID] = cell{value: place.Given, source: atlas.SourceGiven}
+		}
+		if r.budget {
+			r.openFiles[row.ID] = answer.answer["open"] != "no"
 		}
 	}
 	r.reportStage(def.Stage)
@@ -834,19 +849,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 					r.opts.State(def.Stage, "ready", reason)
 				}
 			}
-			for _, rejection := range value.Rejections {
-				samples := []string{rejection.Key}
-				for _, row := range window.Rows {
-					if rejection.Key == row.ID {
-						samples = append(samples, row.ID)
-						break
-					}
-				}
-				r.rejected = append(r.rejected, modeldiag.Row{
-					Stage: def.Stage, Kind: "row_rejected", Count: 1, Reason: rejection.Reason, Samples: samples,
-					ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))),
-				})
-			}
+			r.journalRowRejections(def, window, value.Rejections)
 			if err := r.writeWindowResult(window, value.Answers, source, reason); err != nil {
 				return nil, err
 			}
@@ -878,12 +881,44 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 			ResponseRef: responseRef,
 			Samples:     []string{fmt.Sprintf("round %d window %d", window.Round, window.Index)},
 		})
+		// A response with no accepted row is not cached; each row's own
+		// reason still reaches the journal, not only the first one.
+		var refused *table.NoRowsAccepted
+		if errors.As(result.Err, &refused) {
+			r.journalRowRejections(def, window, refused.Rejections)
+		}
 		if err := r.writeWindowResult(window, nil, atlas.SourceGiven, reason); err != nil {
 			return nil, err
 		}
 		r.printWindow(def, window, nil, "rejected: "+reason, result.Outcome.Metrics.Latency)
 	}
 	return answers, nil
+}
+
+// journalRowRejections writes one journal row per refused row or cell of a
+// window's response.
+func (r *reader) journalRowRejections(def table.Definition, window table.Window, rejections []table.RowRejection) {
+	for _, rejection := range rejections {
+		samples := []string{rejection.Key}
+		for _, row := range window.Rows {
+			if rejection.Key == row.ID {
+				samples = append(samples, row.ID)
+				break
+			}
+		}
+		r.rejected = append(r.rejected, modeldiag.Row{
+			Stage: def.Stage, Kind: rejectionKind(rejection), Count: 1, Reason: rejection.Reason, Samples: samples,
+			ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))),
+		})
+	}
+}
+
+// rejectionKind names a refused row, or one refused cell of a kept row.
+func rejectionKind(rejection table.RowRejection) string {
+	if rejection.Cell != "" {
+		return "cell_rejected"
+	}
+	return "row_rejected"
 }
 
 // classifies reports whether the decision model answers this table: it is

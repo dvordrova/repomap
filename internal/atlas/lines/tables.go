@@ -71,7 +71,7 @@ func Symbols() table.Definition {
 		System: withVocabulary(symbolsPrompt), Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what this declaration does or is"},
-			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
+			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Alone: true, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
 		},
 	}
 }
@@ -84,7 +84,7 @@ func Types() table.Definition {
 		System: typesPrompt, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Prose, Note: "briefly explain what this represents or controls and any consequential documented rule, preserving its conditions; no method inventory or invented effects"},
-			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
+			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Alone: true, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
 		},
 	}
 }
@@ -195,7 +195,10 @@ func FixedBoundaries(outgoing bool) table.Definition {
 			Note: "at most ten words, no subject: what this native observation reads, receives or sends; a configuration read is not itself a remote exchange"}},
 	}
 	if outgoing {
+		// Each outbound cell fails alone: a refused line keeps the fact's
+		// given line, a refused destination or address names none.
 		def.Contract += ".outbound"
+		def.Columns[0].Alone = true
 		def.Columns = append(def.Columns, destinationColumn(), addressColumn())
 	}
 	return def
@@ -205,15 +208,16 @@ func FixedBoundaries(outgoing bool) table.Definition {
 const DestinationOther = "other: "
 
 func destinationColumn() table.Column {
-	return table.Column{Name: "destination", Kind: table.Choice, OptionsFrom: "destination_options", Free: DestinationOther, FreeMaxRunes: LabelRunes,
+	return table.Column{Name: "destination", Kind: table.Choice, OptionsFrom: "destination_options", Free: DestinationOther, FreeMaxRunes: LabelRunes, Alone: true,
 		Note: "one d* ref from context.destination_catalog, or other: followed by the runtime system's short name; never a host, URL or address"}
 }
 
 // addressColumn is asked only where the row carries address candidates: a
 // row whose address the code already knows, or that has no candidate
-// literal, has no address decision.
+// literal, has no address decision. A missing address is the declared
+// unknown, which keeps no address.
 func addressColumn() table.Column {
-	return table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", WhenOptionsFrom: "address_options",
+	return table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", WhenOptionsFrom: "address_options", Missing: "unknown", Alone: true,
 		Note: "one supplied a* address value, or unknown when no observed value identifies the destination"}
 }
 
@@ -578,8 +582,10 @@ func Targets(rolesBound ...bool) table.Definition {
 		Stage: StageTargets, Contract: targetsContract, Window: WindowRows,
 		System: targetsPrompt,
 		Columns: []table.Column{
-			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what this target is and does"},
-			{Name: "role", Kind: table.Choice, Options: atlas.Roles()},
+			// Each cell fails alone: a target keeps its fallback role or an
+			// empty line for a refused one.
+			{Name: "line", Kind: table.Text, MaxRunes: LineRunes, Note: "one sentence, what this target is and does", Alone: true},
+			{Name: "role", Kind: table.Choice, Options: atlas.Roles(), Alone: true},
 		},
 	}
 	if len(rolesBound) > 0 && rolesBound[0] {
@@ -665,7 +671,7 @@ func Joints() table.Definition {
 		System: jointsPrompt,
 		Columns: []table.Column{
 			{Name: "same", Kind: table.Choice, Options: []string{"yes", "no"}},
-			{Name: "label", Kind: table.Text, MaxRunes: LabelRunes, Note: "at most six words, or - when same is no"},
+			{Name: "label", Kind: table.Text, MaxRunes: LabelRunes, Missing: "-", Note: "at most six words, or - when same is no"},
 		},
 	}
 }
@@ -676,7 +682,7 @@ func Peers() table.Definition {
 		System: jointsPrompt,
 		Columns: []table.Column{
 			{Name: "peer", Kind: table.Choice, OptionsFrom: "peer_options", Note: "a ref from context.peers, or none"},
-			{Name: "label", Kind: table.Text, MaxRunes: LabelRunes, Note: "at most six words, or - when peer is none"},
+			{Name: "label", Kind: table.Text, MaxRunes: LabelRunes, Missing: "-", Note: "at most six words, or - when peer is none"},
 		},
 	}
 }
