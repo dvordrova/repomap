@@ -2,7 +2,9 @@ package table
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/llm"
@@ -95,21 +97,26 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 	for i, row := range window.Rows {
 		key := row.ID
 		cells := byKey[key]
-		var reason string
-		switch len(cells) {
-		case 0:
-			reason = "row was not answered"
-		case 1:
-			answer, err := decodeIndependentCells(def, window.Context, row, cells[0])
-			if err == nil {
-				result.Answers[i] = answer
-				continue
-			}
-			reason = err.Error()
-		default:
-			reason = "row key was answered more than once"
+		if len(cells) == 0 {
+			result.Rejections = append(result.Rejections, RowRejection{Key: key, Reason: "row was not answered"})
+			continue
 		}
-		result.Rejections = append(result.Rejections, RowRejection{Key: key, Reason: reason})
+		// A repeat of the same answer is one answer; two different answers
+		// for one row leave no decision.
+		answer, err := decodeIndependentCells(def, window.Context, row, cells[0])
+		for _, repeat := range cells[1:] {
+			if err != nil {
+				break
+			}
+			if again, repeatErr := decodeIndependentCells(def, window.Context, row, repeat); repeatErr != nil || !maps.Equal(answer, again) {
+				err = errors.New("row key was answered more than once, differently")
+			}
+		}
+		if err == nil {
+			result.Answers[i] = answer
+			continue
+		}
+		result.Rejections = append(result.Rejections, RowRejection{Key: key, Reason: err.Error()})
 	}
 	if len(window.Rows) > 0 && len(result.AcceptedRowKeys()) == 0 {
 		rejection := result.Rejections[0]

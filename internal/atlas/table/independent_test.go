@@ -16,11 +16,11 @@ func TestIndependentRowsKeepValidNeighbours(t *testing.T) {
 		{ID: "third", Fields: []Field{{Name: "entry_options", Value: []string{"self", "none"}}}},
 	}}
 	for name, middle := range map[string]string{
-		"unknown scalar": `{"key":"second","entry":"u1"}`,
-		"missing cell":   `{"key":"second"}`,
-		"wrong type":     `{"key":"second","entry":{"value":"self"}}`,
-		"duplicate key":  `{"key":"second","entry":"self"},{"key":"second","entry":"self"}`,
-		"missing row":    `{"key":"unknown","entry":"self"}`,
+		"unknown scalar":     `{"key":"second","entry":"u1"}`,
+		"missing cell":       `{"key":"second"}`,
+		"wrong type":         `{"key":"second","entry":{"value":"self"}}`,
+		"conflicting repeat": `{"key":"second","entry":"self"},{"key":"second","entry":"none"}`,
+		"missing row":        `{"key":"unknown","entry":"self"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			raw := []byte(`{"notes":{"ignored":true},"rows":[{"key":"first","entry":"self","extra":[1,2]},` + middle + `,{"key":"third","entry":"none"}]}`)
@@ -44,6 +44,11 @@ func TestIndependentRowsKeepValidNeighbours(t *testing.T) {
 				t.Fatal("coupled table accepted an incomplete response")
 			}
 		})
+	}
+	// A model that repeats the same answer for a row gave one answer.
+	repeated, err := DecodeResult(def, window, []byte(`{"rows":[{"key":"first","entry":"self"},{"key":"second","entry":"none"},{"key":"second","entry":"none"},{"key":"third","entry":"none"}]}`))
+	if err != nil || len(repeated.Rejections) != 0 || repeated.Answers[1]["entry"] != "none" {
+		t.Fatalf("an identical repeat refused its row: %+v / %v", repeated, err)
 	}
 	if _, err := DecodeResult(def, window, []byte(`{"rows":[{"key":"second","entry":"u1"}]}`)); err == nil || !strings.Contains(err.Error(), "no rows accepted") {
 		t.Fatalf("a wholly refused response became a cacheable success: %v", err)

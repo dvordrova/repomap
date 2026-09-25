@@ -103,9 +103,10 @@ new description or selection requests.
   as before. A sequence cell citing only refs outside its row's options, or nothing at
   all (a provider may send null), is an empty selection and keeps the row's
   other cells; commas separate refs like spaces; exceeding the limit still
-  refuses the cell. Every response row must copy an asked artifact ID. Missing,
-  unknown and duplicate keys are refused; response order never substitutes for
-  identity. Every row and answer is printed to `tables.md`, with prompts, requests, raw
+  refuses the cell. Every response row must copy an asked artifact ID. Missing
+  and unknown keys are refused; a key answered twice the same way is one
+  answer, and twice differently is refused; response order never substitutes
+  for identity. Every row and answer is printed to `tables.md`, with prompts, requests, raw
   responses and normalized source-bound results under `tables/`. The ordinary
   path saves `reading-input.json` before its first atlas call, from the same
   sealed graph bytes as `places.json`; `read` consumes
