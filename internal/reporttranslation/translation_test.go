@@ -23,6 +23,17 @@ type testWire struct {
 	Limits llm.Limits `json:"limits"`
 }
 
+// modelResponse is the test provider's ordered answer before responseWire
+// writes it as the requested keyed object.
+type modelResponse struct {
+	Translations []responseEntry
+}
+
+type responseEntry struct {
+	Ref  string
+	Text string
+}
+
 // Test-only request reader checks the typed ordered wire and its complete texts.
 type modelRequest struct {
 	Terms   []requestTerm
@@ -209,7 +220,7 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 	}
 	result := report.DisplayTranslations{
 		Version: report.DisplayTextVersion, Language: report.Russian,
-		CatalogSHA256: catalog.SHA256, Entries: seeded.Value,
+		CatalogSHA256: catalog.SHA256, Entries: seeded.Value.Entries,
 	}
 	if len(provider.requests) != 1 {
 		t.Fatalf("requests = %d, want all %d complete entries in one request", len(provider.requests), len(entries))
@@ -273,11 +284,33 @@ func TestTranslatePreservesCatalogAndUsesSharedCache(t *testing.T) {
 	}
 }
 
+// placeholderEntries holds sixteen texts of equal weight, so the initial plan
+// is eight windows of two: t1 (with a source placeholder) beside t2, and so on.
+func placeholderEntries() []report.DisplayTextEntry {
+	entries := plainEntries(16)
+	entries[0].Text = strings.Replace(entries[0].Text, "value", "__REPOMAP_P1__", 1)
+	entries[0].Protected = []report.DisplayProtectedText{{Ref: "__REPOMAP_P1__", Text: "code"}}
+	return entries
+}
+
+func requestSizes(t *testing.T, wires []testWire) map[int]int {
+	t.Helper()
+	sizes := make(map[int]int)
+	for _, wire := range wires {
+		var request modelRequest
+		if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil {
+			t.Fatal(err)
+		}
+		sizes[len(request.Entries)]++
+	}
+	return sizes
+}
+
+// One refused text does not refuse its window: its neighbour is published at
+// once, with no halving, and only the refused text is asked again, alone. A
+// text refused again keeps its source language, named with its refusal.
 func TestTranslateRejectsIncompleteOrChangedPlaceholders(t *testing.T) {
-	catalog := testCatalog(t, []report.DisplayTextEntry{
-		{Role: "answer", Text: "Use __REPOMAP_P1__ if possible.", Protected: []report.DisplayProtectedText{{Ref: "__REPOMAP_P1__", Text: "code"}}},
-		{Role: "label", Text: "Start here"},
-	})
+	catalog := testCatalog(t, placeholderEntries())
 	for _, test := range []struct {
 		name string
 		kept string
@@ -312,7 +345,7 @@ func TestTranslateRejectsIncompleteOrChangedPlaceholders(t *testing.T) {
 			// accepted neighbour and the complete artifact survive.
 			result, untranslated, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
 			if err != nil || result.Validate(catalog) != nil {
-				t.Fatalf("a refused singleton failed the whole translation: %#v, %v", result, err)
+				t.Fatalf("a refused text failed the whole translation: %#v, %v", result, err)
 			}
 			if len(untranslated) != 1 || untranslated[0].Ref != test.kept || untranslated[0].Reason == "" {
 				t.Fatalf("kept text was not named with its refusal: %+v", untranslated)
@@ -326,6 +359,14 @@ func TestTranslateRejectsIncompleteOrChangedPlaceholders(t *testing.T) {
 					t.Fatalf("refused text was repaired or its neighbour was lost: %#v", entry)
 				}
 			}
+			// Eight windows of two, then one request of only the refused text.
+			if sizes := requestSizes(t, provider.requests); len(provider.requests) != 9 || sizes[2] != 8 || sizes[1] != 1 {
+				t.Fatalf("the refused text halved its window or was not asked again alone: %v", sizes)
+			}
+			var retry modelRequest
+			if err := json.Unmarshal([]byte(provider.requests[8].Prompt.User), &retry); err != nil || retry.Entries[0].Ref != test.kept {
+				t.Fatalf("the follow-up asked for another text: %+v %v", retry, err)
+			}
 			refused := 0
 			for _, event := range events {
 				if event.Failure == llm.FailureValidation {
@@ -336,23 +377,71 @@ func TestTranslateRejectsIncompleteOrChangedPlaceholders(t *testing.T) {
 				}
 			}
 			if refused != 1 {
-				t.Fatalf("expected one refused singleton, got %d validation failures", refused)
+				t.Fatalf("expected only the refused follow-up, got %d validation failures", refused)
 			}
 			provider.respond = nil
 			before := len(provider.requests)
 			if _, kept, err := Translate(t.Context(), executor, provider, catalog, report.Russian); err != nil || len(kept) != 0 {
 				t.Fatalf("a later valid answer did not translate the kept text: %+v, %v", kept, err)
 			}
-			if len(provider.requests) != before+1 {
-				t.Fatal("only the refused singleton should be requested again")
-			}
-			for _, wire := range provider.requests[before:] {
-				var request modelRequest
-				if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil || len(request.Entries) != 1 {
-					t.Fatalf("saved refusal was retried as a whole window: %v", err)
-				}
+			if sizes := requestSizes(t, provider.requests[before:]); len(provider.requests) != before+1 || sizes[1] != 1 {
+				t.Fatal("only the refused text should be requested again")
 			}
 		})
+	}
+}
+
+// A refused follow-up is the only second request: when the smaller request
+// translates the text, nothing is kept in the source language.
+func TestTranslateReasksARefusedTextOnceInASmallerRequest(t *testing.T) {
+	catalog := testCatalog(t, placeholderEntries())
+	provider := &testProvider{respond: func(request modelRequest) modelResponse {
+		response := translatedResponse(request)
+		if len(request.Entries) > 1 {
+			editTranslationRef("t1", func(entry *responseEntry) { entry.Text = "Translated text" })(&response)
+		}
+		return response
+	}}
+	result, untranslated, err := Translate(t.Context(), llm.Executor{Enabled: true, RootDir: t.TempDir()}, provider, catalog, report.Russian)
+	if err != nil || result.Validate(catalog) != nil || len(untranslated) != 0 {
+		t.Fatalf("the smaller request did not translate the refused text: %+v %v", untranslated, err)
+	}
+	for i, entry := range result.Entries {
+		if entry.Text != "Перевод: "+catalog.Entries[i].Text {
+			t.Fatalf("entry %d was not translated: %#v", i, entry)
+		}
+	}
+	if sizes := requestSizes(t, provider.requests); len(provider.requests) != 9 || sizes[2] != 8 || sizes[1] != 1 {
+		t.Fatalf("requests: %v", sizes)
+	}
+}
+
+// An answer that translates nothing, such as a bare number, still halves its
+// window; an entry introducing a placeholder it does not own is still refused.
+func TestTranslateUnreadableAnswerHalvesAndForeignPlaceholderStaysRefused(t *testing.T) {
+	catalog := testCatalog(t, placeholderEntries())
+	provider := &testProvider{rawRespond: func(request modelRequest) []byte {
+		if len(request.Entries) > 1 {
+			return []byte(`42`)
+		}
+		return responseWire(translatedResponse(request))
+	}}
+	result, untranslated, err := Translate(t.Context(), llm.Executor{Enabled: true, RootDir: t.TempDir()}, provider, catalog, report.Russian)
+	if err != nil || result.Validate(catalog) != nil || len(untranslated) != 0 {
+		t.Fatalf("halved children did not translate the catalogue: %+v %v", untranslated, err)
+	}
+	if sizes := requestSizes(t, provider.requests); len(provider.requests) != 24 || sizes[2] != 8 || sizes[1] != 16 {
+		t.Fatalf("an unreadable answer did not halve its window: %v", sizes)
+	}
+	provider = &testProvider{respond: func(request modelRequest) modelResponse {
+		response := translatedResponse(request)
+		editTranslationRef("t2", func(entry *responseEntry) { entry.Text += " __REPOMAP_P1__" })(&response)
+		return response
+	}}
+	result, untranslated, err = Translate(t.Context(), llm.Executor{Enabled: true, RootDir: t.TempDir()}, provider, catalog, report.Russian)
+	if err != nil || result.Validate(catalog) != nil || len(untranslated) != 1 || untranslated[0].Ref != "t2" ||
+		!strings.Contains(untranslated[0].Reason, "introduced a source placeholder") || result.Entries[1].Text != catalog.Entries[1].Text {
+		t.Fatalf("a placeholder owned by another text was accepted: %+v %v", untranslated, err)
 	}
 }
 
@@ -393,37 +482,76 @@ func TestTranslateKeyedWirePreservesOnlyOriginalPlaceholderAuthority(t *testing.
 	}
 }
 
+// Each text's value is judged on its own. The requested keyed object, a bare
+// string, one wrapper member and a {ref, text} list (including the echoed
+// entries shape) carry the same ref identity; a wrong value refuses only its
+// own text, and an answer with no usable text is refused whole.
 func TestTranslateRejectsInvalidKeyedWireBeforeCache(t *testing.T) {
 	catalog := testCatalog(t, plainEntries(2))
-	for _, test := range []struct{ name, raw string }{
-		{"root array", `[{"t1":"one","t2":"two"}]`},
-		{"root null", `null`},
-		{"missing object", `{}`},
-		{"legacy array", `{"translations":[{"ref":"t1","text":"one"},{"ref":"t2","text":"two"}]}`},
-		{"legacy wrapper", `{"translations":{"t1":"one","t2":"two"}}`},
-		{"known null", `{"t1":null,"t2":"two"}`},
-		{"known number", `{"t1":1,"t2":"two"}`},
-		{"known bool", `{"t1":true,"t2":"two"}`},
-		{"known array", `{"t1":["one"],"t2":"two"}`},
-		{"missing mandatory ref", `{"t1":{"text":"one"},"t999":{"text":"two"}}`},
-		{"last parsed duplicate is invalid", `{"t1":{"text":"one"},"t2":{"text":"two"},"t\u0031":null}`},
-		{"unclosed ref quote", `{"t1":"one","t2:"two"}`},
-		{"extra closing brace", `{"t1":"one","t2":"two"}}`},
-		{"trailing JSON", `{"t1":"one","t2":"two"} {}`},
+	for _, test := range []struct {
+		name, raw string
+		kept      []string
+	}{
+		{"keyed text objects", `{"t1":{"text":"one"},"t2":{"text":"two"}}`, nil},
+		{"bare strings", `{"t1":"one","t2":"two"}`, nil},
+		{"wrapped list", `{"translations":[{"ref":"t1","text":"one"},{"ref":"t2","text":"two"}]}`, nil},
+		{"wrapped keyed object", `{"translations":{"t1":"one","t2":"two"}}`, nil},
+		{"echoed entries", `{"entries":[{"ref":"t1","role":"answer.explanation","text":"one"},{"ref":"t2","role":"answer.explanation","text":"two"}]}`, nil},
+		{"root list", `[{"ref":"t1","text":"one"},{"ref":"t2","text":"two"}]`, nil},
+		{"identical list repeat", `[{"ref":"t1","text":"one"},{"ref":"t1","text":"one"},{"ref":"t2","text":"two"}]`, nil},
+		{"different list repeat", `[{"ref":"t1","text":"one"},{"ref":"t1","text":"uno"},{"ref":"t2","text":"two"}]`, []string{"t1"}},
+		{"known null", `{"t1":null,"t2":"two"}`, []string{"t1"}},
+		{"known number", `{"t1":1,"t2":"two"}`, []string{"t1"}},
+		{"known bool", `{"t1":true,"t2":"two"}`, []string{"t1"}},
+		{"known array", `{"t1":["one"],"t2":"two"}`, []string{"t1"}},
+		{"text not a string", `{"t1":{"text":7},"t2":"two"}`, []string{"t1"}},
+		{"missing text", `{"t1":{"translation":"one"},"t2":"two"}`, []string{"t1"}},
+		{"missing mandatory ref", `{"t1":{"text":"one"},"t999":{"text":"two"}}`, []string{"t2"}},
+		{"last parsed duplicate is invalid", `{"t1":{"text":"one"},"t2":{"text":"two"},"t1":null}`, []string{"t1"}},
+		{"root array of keyed objects", `[{"t1":"one","t2":"two"}]`, []string{"t1", "t2"}},
+		{"root null", `null`, []string{"t1", "t2"}},
+		{"root number", `42`, []string{"t1", "t2"}},
+		{"missing object", `{}`, []string{"t1", "t2"}},
+		{"two wrappers", `{"a":{"t1":"one","t2":"two"},"b":{"t1":"uno","t2":"dos"}}`, []string{"t1", "t2"}},
+		{"unclosed ref quote", `{"t1":"one","t2:"two"}`, []string{"t1", "t2"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			kept := make(map[string]bool)
+			for _, ref := range test.kept {
+				kept[ref] = true
+			}
+			// One window of both texts: the refused text alone is named.
+			call, err := translationCall(catalog.Entries, report.Russian)
+			if err != nil {
+				t.Fatal(err)
+			}
+			value, decodeErr := call.DecodeValidate([]byte(test.raw))
+			if len(test.kept) == len(catalog.Entries) {
+				if decodeErr == nil {
+					t.Fatalf("an answer with no usable text was accepted: %+v", value)
+				}
+			} else if decodeErr != nil || len(value.Entries)+len(value.Refused) != 2 || len(value.Refused) != len(test.kept) {
+				t.Fatalf("window value: %+v %v", value, decodeErr)
+			} else {
+				for _, refused := range value.Refused {
+					if !kept[refused.Ref] || refused.Reason == "" {
+						t.Fatalf("the wrong text was refused: %+v", value.Refused)
+					}
+				}
+			}
+
 			provider := &testProvider{rawResponse: []byte(test.raw)}
 			executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 			result, untranslated, err := Translate(t.Context(), executor, provider, catalog, report.Russian)
-			if err != nil || result.Validate(catalog) != nil || len(untranslated) == 0 {
-				t.Fatalf("invalid singleton wire became a semantic repair or failed the translation: %#v %+v %v", result, untranslated, err)
-			}
-			kept := make(map[string]bool)
-			for _, entry := range untranslated {
-				kept[entry.Ref] = true
+			if err != nil || result.Validate(catalog) != nil || len(untranslated) != len(test.kept) {
+				t.Fatalf("keyed wire was repaired, over-refused or failed the translation: %#v %+v %v", result, untranslated, err)
 			}
 			for i, entry := range result.Entries {
-				if kept[entry.Ref] != (entry.Text == catalog.Entries[i].Text) {
+				want := []string{"one", "two"}[i]
+				if kept[entry.Ref] {
+					want = catalog.Entries[i].Text
+				}
+				if entry.Text != want {
 					t.Fatalf("kept and translated texts disagree with the refusal list: %#v %+v", entry, untranslated)
 				}
 			}
@@ -433,7 +561,7 @@ func TestTranslateRejectsInvalidKeyedWireBeforeCache(t *testing.T) {
 				t.Fatalf("valid answers did not replace the kept texts: %+v %v", again, err)
 			}
 			if len(provider.requests) != before+len(untranslated) {
-				t.Fatal("invalid keyed response was cached or its refused whole window was retried")
+				t.Fatal("a refused answer was cached or an accepted text was asked again")
 			}
 		})
 	}
@@ -631,8 +759,8 @@ func TestTranslateKeepsARefusedSingletonInTheSourceLanguage(t *testing.T) {
 			t.Fatalf("entry %d was repaired, lost or reordered: %#v", i, entry)
 		}
 	}
-	// Eight windows of four; the window holding t5 halves twice as before:
-	// four, then two, then the one text that stays refused.
+	// Eight windows of four. The window holding t5 is accepted for its other
+	// three texts, with no halving; t5 alone is asked once more and refused.
 	refused := 0
 	for _, event := range events {
 		if event.Failure == llm.FailureValidation {
@@ -642,22 +770,14 @@ func TestTranslateKeepsARefusedSingletonInTheSourceLanguage(t *testing.T) {
 			}
 		}
 	}
-	if len(provider.requests) != 12 || refused != 3 {
-		t.Fatalf("requests=%d refused=%d; want the same halving as before the fallback", len(provider.requests), refused)
+	if len(provider.requests) != 9 || refused != 1 {
+		t.Fatalf("requests=%d refused=%d; want eight windows and one follow-up of t5", len(provider.requests), refused)
 	}
-	sizes := make(map[int]int)
-	for _, wire := range provider.requests {
-		var request modelRequest
-		if err := json.Unmarshal([]byte(wire.Prompt.User), &request); err != nil {
-			t.Fatal(err)
-		}
-		sizes[len(request.Entries)]++
-	}
-	if sizes[4] != 8 || sizes[2] != 2 || sizes[1] != 2 {
+	if sizes := requestSizes(t, provider.requests); sizes[4] != 8 || sizes[1] != 1 {
 		t.Fatalf("window sizes changed: %v", sizes)
 	}
-	// A warm run reuses the accepted children and the split memos; only the
-	// refused text is asked again, and it is kept again without an error.
+	// A warm run reuses the accepted windows; only the refused text is asked
+	// again, and it is kept again without an error.
 	warmProvider := &testProvider{respond: withoutT5}
 	warm, warmUntranslated, err := Translate(t.Context(), executor, warmProvider, catalog, report.Russian)
 	if err != nil || !reflect.DeepEqual(warm, result) || !reflect.DeepEqual(warmUntranslated, untranslated) || len(warmProvider.requests) != 1 {
