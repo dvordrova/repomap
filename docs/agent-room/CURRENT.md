@@ -140,7 +140,10 @@ never entered into or read from a repository-wide unqualified map.
   translation entry, glossary group, Learn review, concept or portfolio batch
   loses only itself; an unambiguous doubled closer, a prose tail and an
   identical second root are syntax, not refusals. A cached answer the current
-  decoder refuses stays on disk for a later decoder. Refusals that keep the
+  decoder refuses stays on disk for a later decoder. A refused answer, or an
+  accepted one with a part refused, keeps its bodies in its run's
+  `payloads/` for debugging; the cache holds only accepted answers, and
+  `cache clear` leaves runs readable. Refusals that keep the
   report true stay: unknown refs, a missing or out-of-choice required
   decision, two different answers for one row, unsourced substantive answers.
   Still the owner's: caching refused answers, the classifier's absolute 0.5
