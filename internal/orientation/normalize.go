@@ -28,7 +28,7 @@ const (
 
 type modelResponse struct {
 	Summary     string            `json:"summary"`
-	SummaryRefs []string          `json:"summary_refs"`
+	SummaryRefs refList           `json:"summary_refs"`
 	Roles       []json.RawMessage `json:"roles"`
 	RunRecipe   []json.RawMessage `json:"run_recipe"`
 	MainFlow    flowResponse      `json:"main_flow"`
@@ -40,18 +40,39 @@ type flowResponse struct {
 }
 
 type roleResponse struct {
-	Target  string   `json:"target"`
-	Role    string   `json:"role"`
-	Purpose string   `json:"purpose"`
-	Refs    []string `json:"refs"`
+	Target  string  `json:"target"`
+	Role    string  `json:"role"`
+	Purpose string  `json:"purpose"`
+	Refs    refList `json:"refs"`
 }
 
 type recipeResponse struct {
-	Target  string   `json:"target,omitempty"`
-	Command string   `json:"command"`
-	Cwd     string   `json:"cwd,omitempty"`
-	Note    string   `json:"note,omitempty"`
-	Refs    []string `json:"refs"`
+	Target  string  `json:"target,omitempty"`
+	Command string  `json:"command"`
+	Cwd     string  `json:"cwd,omitempty"`
+	Note    string  `json:"note,omitempty"`
+	Refs    refList `json:"refs"`
+}
+
+// refList is a list of request-local refs. One ref written as a bare string
+// is the same one-element list; any other non-list value keeps its type error.
+type refList []string
+
+func (refs *refList) UnmarshalJSON(raw []byte) error {
+	if string(bytes.TrimSpace(raw)) == "null" {
+		return nil
+	}
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		*refs = refList{single}
+		return nil
+	}
+	var list []string
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return err
+	}
+	*refs = list
+	return nil
 }
 
 type flowStepResponse struct {
@@ -124,9 +145,22 @@ func normalize(raw []byte, cat catalog) (normalized, error) {
 		result.acceptFlow(response.MainFlow, cat)
 	}
 	if len(result.rejected) > 0 && len(result.accepted) == 0 {
-		return result, fmt.Errorf("orientation: no output accepted: %s", result.rejected[0].Reason)
+		return result, &noOutputError{rejected: result.rejected}
 	}
 	return result, nil
+}
+
+// noOutputError refuses a response in which every row was refused. It keeps
+// each row's own rejection so the journal names every reason, not the first.
+type noOutputError struct {
+	rejected []RejectedRow
+}
+
+func (err *noOutputError) Error() string {
+	if len(err.rejected) == 1 {
+		return fmt.Sprintf("orientation: no output accepted: %s", err.rejected[0].Reason)
+	}
+	return fmt.Sprintf("orientation: no output accepted: %d rows refused, first: %s", len(err.rejected), err.rejected[0].Reason)
 }
 
 func (result *normalized) decodeField(section, name string, fields map[string]json.RawMessage, value any) bool {
@@ -196,7 +230,7 @@ func (result *normalized) acceptSummary(response modelResponse, cat catalog) {
 	}
 	result.rejectRefs(sectionSummary, ignored)
 	result.summary = response.Summary
-	result.summaryRefs = ids(refs)
+	result.summaryRefs = qualifiedIDs(refs)
 	result.accepted["summary"] = true
 }
 
@@ -208,6 +242,7 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 	}
 	row.Role = strings.Join(strings.Fields(row.Role), " ")
 	row.Purpose = strings.TrimSpace(row.Purpose)
+	row.Target = strings.TrimSpace(row.Target)
 	targetID, known := cat.targets[row.Target]
 	if !known {
 		result.reject(sectionRoles, raw, fmt.Sprintf("unknown target ref %q", row.Target))
@@ -217,7 +252,8 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 		result.reject(sectionRoles, raw, sentenceReason("role"))
 		return
 	}
-	if !validSentence(row.Purpose) {
+	// The label is the decision; an empty purpose stays empty, never filled.
+	if row.Purpose != "" && !validSentence(row.Purpose) {
 		result.reject(sectionRoles, raw, sentenceReason("purpose"))
 		return
 	}
@@ -235,7 +271,7 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 		case classClaim:
 			role.ClaimIDs = append(role.ClaimIDs, ref.id)
 		case classSubject:
-			role.SubjectIDs = append(role.SubjectIDs, ref.id)
+			role.SubjectIDs = append(role.SubjectIDs, ref.ref)
 		}
 	}
 	if result.ambiguousRoles[targetID] {
@@ -246,7 +282,7 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 		if accepted.TargetID != targetID {
 			continue
 		}
-		if accepted.Role == role.Role && accepted.Purpose == role.Purpose {
+		if accepted.Role == role.Role && samePurpose(accepted.Purpose, role.Purpose) {
 			result.roles[i].FactIDs = unionRefs(accepted.FactIDs, role.FactIDs)
 			result.roles[i].ClaimIDs = unionRefs(accepted.ClaimIDs, role.ClaimIDs)
 			result.roles[i].SubjectIDs = unionRefs(accepted.SubjectIDs, role.SubjectIDs)
@@ -270,6 +306,12 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 	result.roleRows[targetID] = append(result.roleRows[targetID], slot)
 }
 
+// samePurpose treats purposes that differ only in whitespace as one answer.
+// The first accepted spelling is kept; any other difference is a conflict.
+func samePurpose(left, right string) bool {
+	return strings.Join(strings.Fields(left), " ") == strings.Join(strings.Fields(right), " ")
+}
+
 func unionRefs(left, right []string) []string {
 	for _, ref := range right {
 		if !slices.Contains(left, ref) {
@@ -287,6 +329,8 @@ func (result *normalized) acceptRecipe(raw json.RawMessage, cat catalog, slot st
 	}
 	row.Command = strings.TrimSpace(row.Command)
 	row.Note = strings.TrimSpace(row.Note)
+	row.Cwd = strings.TrimSpace(row.Cwd)
+	row.Target = strings.TrimSpace(row.Target)
 	targetID := ""
 	if row.Target != "" {
 		known := false
@@ -297,10 +341,6 @@ func (result *normalized) acceptRecipe(raw json.RawMessage, cat catalog, slot st
 	}
 	if !validSentence(row.Command) {
 		result.reject(sectionRunRecipe, raw, sentenceReason("command"))
-		return
-	}
-	if row.Note != "" && !validSentence(row.Note) {
-		result.reject(sectionRunRecipe, raw, sentenceReason("note"))
 		return
 	}
 	if row.Cwd != "" && !validText(row.Cwd) {
@@ -316,6 +356,12 @@ func (result *normalized) acceptRecipe(raw json.RawMessage, cat catalog, slot st
 	if !citesRunEvidence(refs) {
 		result.reject(sectionRunRecipe, raw, "a run step must cite at least one manifest or entrypoint fact")
 		return
+	}
+	if row.Note != "" && !validSentence(row.Note) {
+		// The note is optional: only it is dropped, and the step stays.
+		note, _ := json.Marshal(row.Note)
+		result.reject(sectionRunRecipe, note, sentenceReason("note")+"; the note is dropped and the step kept")
+		row.Note = ""
 	}
 	result.recipe = append(result.recipe, RecipeStep{
 		TargetID: targetID, Command: row.Command, Cwd: row.Cwd, Note: row.Note, FactIDs: ids(refs),
@@ -359,6 +405,7 @@ func (result *normalized) acceptFlowStep(raw json.RawMessage, cat catalog, slot 
 		return
 	}
 	row.Explanation = strings.TrimSpace(row.Explanation)
+	row.Target = strings.TrimSpace(row.Target)
 	targetID, known := cat.targets[row.Target]
 	if !known {
 		result.reject(sectionMainFlow, raw, fmt.Sprintf("unknown target ref %q", row.Target))
@@ -453,6 +500,21 @@ func classNames(classes []byte) string {
 		}
 	}
 	return names
+}
+
+// qualifiedIDs keeps a subject's target-qualified ref: a bare subject id
+// repeats across targets (t1.n3 and t2.n3), and the report resolves the
+// qualified form. Facts and claims keep their own artifact ids.
+func qualifiedIDs(refs []resolvedRef) []string {
+	result := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.class == classSubject {
+			result = append(result, ref.ref)
+			continue
+		}
+		result = append(result, ref.id)
+	}
+	return result
 }
 
 func ids(refs []resolvedRef) []string {

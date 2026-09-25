@@ -107,7 +107,14 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	if err != nil {
 		// A rejected model response supplies no orientation, but the facts
 		// and report remain useful. Local and transport errors retain their
-		// existing error path.
+		// existing error path. A response whose every row was refused journals
+		// each row's own reason; it is still not cached.
+		var none *noOutputError
+		if errors.As(err, &none) && ctx.Err() == nil {
+			rejected := append([]RejectedRow(nil), none.rejected...)
+			result, sealErr := Empty(input.Facts.SHA256, input.Claims.SHA256, digests, len(rejected))
+			return result, rejected, sealErr
+		}
 		for _, refusal := range outcome.ResponseRejections {
 			if refusal.Kind == "response_validation" && ctx.Err() == nil {
 				raw, _ := json.Marshal(string(outcome.Response))

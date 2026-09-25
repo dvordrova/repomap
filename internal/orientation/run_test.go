@@ -66,7 +66,7 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 		!reflect.DeepEqual(result.Roles[0].FactIDs, []string{fixture.factID("entrypoint"), fixture.factID("route")}) ||
 		result.Roles[0].TargetID != fixture.targetID("alpha") ||
 		!reflect.DeepEqual(result.Roles[1].FactIDs, []string{fixture.factID("call")}) ||
-		!reflect.DeepEqual(result.Roles[1].SubjectIDs, []string{fixture.subjectID("beta", "core")}) {
+		!reflect.DeepEqual(result.Roles[1].SubjectIDs, []string{refs.subject("beta", "core")}) {
 		t.Fatalf("roles = %#v", result.Roles)
 	}
 	if len(result.RunRecipe) != 1 || result.RunRecipe[0].Cwd != "alpha" ||
@@ -138,7 +138,7 @@ func TestRunDeduplicatesEquivalentRolesAndRefusesConflictingTargetOnly(t *testin
 		}
 		if !conflict && (!reflect.DeepEqual(result.Roles[0].FactIDs, []string{fixture.factID("route"), fixture.factID("entrypoint")}) ||
 			!reflect.DeepEqual(result.Roles[0].ClaimIDs, []string{fixture.claimID("readme")}) ||
-			!reflect.DeepEqual(result.Roles[0].SubjectIDs, []string{fixture.subjectID("alpha", "core")})) {
+			!reflect.DeepEqual(result.Roles[0].SubjectIDs, []string{refs.subject("alpha", "core")})) {
 			t.Fatal("equivalent interpretations lost or duplicated their distinct supporting references")
 		}
 		if conflict && (len(result.Roles) != 1 || result.Roles[0].TargetID != fixture.targetID("beta") || len(rejected) != 1) {
@@ -247,7 +247,15 @@ func TestRunAllRejectedYieldsEmptySealedResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(rejected) != 1 || !strings.Contains(rejected[0].Reason, "no output accepted") {
+	// Every refused row keeps its own raw JSON and reason in the journal.
+	sections := make(map[string]int)
+	for _, row := range rejected {
+		sections[row.Section]++
+		if row.Reason == "" || len(row.Raw) == 0 || strings.Contains(row.Reason, "no output accepted") {
+			t.Fatalf("a refused row lost its own reason: %#v", row)
+		}
+	}
+	if len(rejected) != 5 || sections["summary"] != 1 || sections["roles"] != 1 || sections["run_recipe"] != 1 || sections["main_flow"] != 2 {
 		t.Fatalf("rejected = %#v", rejected)
 	}
 	want, err := Empty(fixture.input.Facts.SHA256, fixture.input.Claims.SHA256, groupDigests(fixture.input.Groups), len(rejected))

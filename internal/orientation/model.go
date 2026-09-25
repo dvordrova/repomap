@@ -24,7 +24,10 @@ const (
 )
 
 // Role is the model's one-line description of what one target is. SubjectIDs
-// name GroupsIndex subjects (group members) the role points at.
+// name GroupsIndex subjects (group members) the role points at, qualified by
+// their target (t1.n3) because bare subject ids repeat across targets. Summary
+// refs qualify subjects the same way. Purpose may be empty: the label alone is
+// the model's decision.
 type Role struct {
 	TargetID   string   `json:"target_id"`
 	Role       string   `json:"role"`
@@ -155,7 +158,7 @@ func (result Result) Validate() error {
 		return fmt.Errorf("orientation: summary refs: %w", err)
 	}
 	for position, role := range result.Roles {
-		if !validText(role.TargetID) || !validSentence(role.Role) || !validSentence(role.Purpose) {
+		if !validText(role.TargetID) || !validSentence(role.Role) || role.Purpose != "" && !validSentence(role.Purpose) {
 			return fmt.Errorf("orientation: role %d is invalid", position)
 		}
 		if err := validRefs(role.FactIDs); err != nil {
