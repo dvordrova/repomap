@@ -290,8 +290,13 @@ func acceptableTail(root, tail []byte) bool {
 	}
 }
 
-// proseTail reports text that cannot hide a JSON value or a fence.
+// proseTail reports text that cannot hide a JSON value or a fence. A tail that
+// starts like a continued member or a second value (`, "b": 2`) is not prose.
 func proseTail(raw []byte) bool {
+	trimmed := bytes.TrimLeftFunc(raw, unicode.IsSpace)
+	if len(trimmed) > 0 && bytes.IndexByte([]byte(`,:"`), trimmed[0]) >= 0 {
+		return false
+	}
 	return bytes.IndexAny(raw, "{}[]") < 0 && !bytes.Contains(raw, []byte("```"))
 }
 

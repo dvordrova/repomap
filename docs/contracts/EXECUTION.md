@@ -214,8 +214,10 @@ that gives one valid root and the other reading is invalid or decodes to the
 same value, as for the journaled doubled `}` after a table's last row. Readings
 that differ, such as `[{"a":[1}, 2]`, stay refused; past 64 readings the answer
 is refused rather than searched. After the root closes, a tail with no `{`,
-`}`, `[`, `]` or fence is discarded as prose, and a repeated root that decodes
-to the same value counts once. An unfinished escape, invalid string character,
+`}`, `[`, `]` or fence that does not start with `,`, `:` or `"` is discarded as
+prose, and a repeated root that decodes to the same value counts once; a tail
+such as `, "b": 2` continues the answer and is refused. An unfinished escape,
+invalid string character,
 missing value, a different second root, a structural tail or an ambiguous
 closer is still refused; interior quotes and commas are never inserted and no
 value is chosen from inside a malformed answer.
