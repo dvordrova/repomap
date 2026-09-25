@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -295,7 +296,7 @@ func designCallFor(mode string, input any, documents []table.Field) (llm.Call[de
 
 // propose asks for one closed catalogue of parts or areas. A refused answer
 // leaves nothing to assign; the declarations stay source inventory.
-func (r *reader) propose(ctx context.Context, mode string, input any, documents []table.Field) ([]designProposal, error) {
+func (r *reader) propose(ctx context.Context, mode string, round int, input any, documents []table.Field) ([]designProposal, error) {
 	if r.dry {
 		return nil, nil
 	}
@@ -310,8 +311,7 @@ func (r *reader) propose(ctx context.Context, mode string, input any, documents 
 	use := r.use(lines.StageZones)
 	var proposals []designProposal
 	for _, result := range results {
-		r.designRound++
-		window := table.Window{Stage: lines.StageZones, Round: r.designRound}
+		window := table.Window{Stage: lines.StageZones, Round: round}
 		responseRef := path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))
 		call, err := build(result.Item)
 		if err != nil {
@@ -340,7 +340,7 @@ func (r *reader) propose(ctx context.Context, mode string, input any, documents 
 		if result.Err != nil {
 			use.Rejected++
 			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Kind: "window_rejected", Count: 1, Reason: result.Err.Error(), ResponseRef: responseRef})
-			fmt.Fprintf(&r.tables, "## %s · %s · round %d\n\nProposal unavailable: %s\n\n", lines.StageZones, mode, r.designRound, result.Err)
+			fmt.Fprintf(&r.tables, "## %s · %s · round %d\n\nProposal unavailable: %s\n\n", lines.StageZones, mode, round, result.Err)
 			continue
 		}
 		raw, err := json.MarshalIndent(result.Outcome.Value, "", "  ")
@@ -350,7 +350,7 @@ func (r *reader) propose(ctx context.Context, mode string, input any, documents 
 		if err := r.writeWindowFile(window, "result.json", raw); err != nil {
 			return nil, err
 		}
-		fmt.Fprintf(&r.tables, "## %s · %s · round %d\n\n%s\n\n", lines.StageZones, mode, r.designRound, raw)
+		fmt.Fprintf(&r.tables, "## %s · %s · round %d\n\n%s\n\n", lines.StageZones, mode, round, raw)
 		proposals = append(proposals, result.Outcome.Value.Groups...)
 	}
 	return proposals, nil
@@ -386,100 +386,47 @@ func (r *reader) readDesign(ctx context.Context) error {
 	r.boxes = map[string]*boxState{}
 	r.designBoxOf = map[string]map[string]string{}
 	r.zones = map[string][]*zoneState{}
-	// A target's assignment tables use its position as their round, like the
-	// core table, so two targets never share window files or table headings.
-	for position, target := range r.opts.Targets {
-		round := position + 1
-		units := r.designUnits(target.ID)
-		overview, docs := r.designOverview(target.ID, units)
-		parts, err := r.propose(ctx, "parts", overview, docs)
-		if err != nil {
-			return err
-		}
-		membership := map[string]string{}
-		r.designBoxOf[target.ID] = membership
-		partOf := make([]int, len(units))
-		for i := range partOf {
-			partOf[i] = -1
-		}
-		if len(parts) > 0 && len(units) > 0 {
-			unitByID := map[string]*designUnit{}
-			rows := make([]table.Row, len(units))
-			for i, unit := range units {
-				unitByID[unit.id] = unit
-				rows[i] = unit.row
-				var calls []string
-				for other := range unit.calls {
-					calls = append(calls, r.places[other].Given)
-				}
-				sort.Strings(calls)
-				if len(calls) > 0 {
-					rows[i].Fields = append(append([]table.Field(nil), rows[i].Fields...), table.Field{Name: "calls", Value: calls})
-				}
+	targets := r.opts.Targets
+	// The declaration maps are filled for every target first; the targets
+	// below only read them.
+	units := make([][]*designUnit, len(targets))
+	for position, target := range targets {
+		units[position] = r.designUnits(target.ID)
+		r.designBoxOf[target.ID] = map[string]string{}
+	}
+	// Every target proposes and assigns on its own view at once. Its parts,
+	// then its zones, take their compact IDs in target order, as they did
+	// one target after another: that is the only place a target waits for
+	// the ones before it. A target's proposals are rounds 2p+1 and 2p+2 and
+	// its assignment tables round p+1, so no two targets share window files
+	// or table headings. The first failure cancels the other targets and is
+	// the error returned; nothing a view did reaches the reader then.
+	order := &designOrder{parts: newDesignTurns(len(targets)), zones: newDesignTurns(len(targets))}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	views := make([]*reader, len(targets))
+	var failed sync.Once
+	var failure error
+	var wg sync.WaitGroup
+	for position := range targets {
+		views[position] = r.view(nil)
+		wg.Add(1)
+		go func(position int) {
+			defer wg.Done()
+			if err := views[position].designTarget(ctx, r, order, position, units[position]); err != nil {
+				failed.Do(func() {
+					failure = err
+					cancel()
+				})
 			}
-			answers, err := r.runTableWith(ctx, lines.ZoneParts(), round, catalogue("part", parts), rows, nil)
-			if err != nil {
-				return err
-			}
-			for i := range units {
-				partOf[i] = chosen(answers[i], "part", parts)
-			}
-		}
-		// A part is drawn only when at least one unit chose it.
-		boxOfPart := map[int]string{}
-		var drawn []int
-		for position := range parts {
-			var ids []string
-			for i, unit := range units {
-				if partOf[i] == position {
-					ids = append(ids, unit.members...)
-				}
-			}
-			if len(ids) == 0 {
-				continue
-			}
-			r.addDesignBox(target.ID, designItem{Name: parts[position].Title, Purpose: parts[position].Purpose, IDs: ids}, membership)
-			boxOfPart[position] = membership[ids[0]]
-			drawn = append(drawn, position)
-		}
-		// Missing decisions remain source inventory, not a directory-derived
-		// architectural claim. Every unassigned declaration stays available.
-		for _, file := range r.opts.Graph.Places {
-			if file.File == nil || !contains(file.TargetIDs, target.ID) {
-				continue
-			}
-			var ids []string
-			for _, decl := range file.File.Decls {
-				id := r.symbolID(file.Path, decl.LineNo, decl.Name)
-				if membership[id] == "" {
-					ids = append(ids, id)
-				}
-			}
-			if len(ids) > 0 || len(file.File.Decls) == 0 {
-				if len(ids) == 0 {
-					ids = []string{file.ID}
-				}
-				r.addDesignBox(target.ID, designItem{Name: file.Path, Purpose: "Declarations from this source file.", IDs: ids}, membership)
-				r.boxes[membership[ids[0]]].inventory = true
-			}
-			// A file endpoint is unambiguous only when all its declarations
-			// actually belong to one part. Never choose an arbitrary owner.
-			owners := map[string]bool{}
-			for _, decl := range file.File.Decls {
-				owners[membership[r.symbolID(file.Path, decl.LineNo, decl.Name)]] = true
-			}
-			if len(owners) == 1 {
-				for id := range owners {
-					membership[file.ID] = id
-				}
-			}
-		}
-		if len(drawn) == 0 {
-			continue
-		}
-		if err := r.readAreas(ctx, round, target.ID, units, partOf, parts, drawn, boxOfPart); err != nil {
-			return err
-		}
+		}(position)
+	}
+	wg.Wait()
+	if failure != nil {
+		return failure
+	}
+	for _, view := range views {
+		r.joinDesign(view)
 	}
 	r.reportStage(lines.StageZones)
 	r.reportStage(lines.StageZoneParts)
@@ -487,8 +434,151 @@ func (r *reader) readDesign(ctx context.Context) error {
 	return nil
 }
 
+// designOrder hands out the compact part and zone IDs in target order.
+// Drawing takes the owner's lock as well, so a canceled target that passes
+// its turn early never draws beside another.
+type designOrder struct {
+	parts, zones *designTurns
+	drawing      sync.Mutex
+}
+
+// designTurns lets target p go once every target before it has passed.
+type designTurns struct {
+	ready  []chan struct{}
+	passed []sync.Once
+}
+
+func newDesignTurns(targets int) *designTurns {
+	turns := &designTurns{ready: make([]chan struct{}, targets+1), passed: make([]sync.Once, targets+1)}
+	for i := range turns.ready {
+		turns.ready[i] = make(chan struct{})
+	}
+	turns.passed[0].Do(func() { close(turns.ready[0]) })
+	return turns
+}
+
+func (turns *designTurns) wait(ctx context.Context, position int) error {
+	select {
+	case <-turns.ready[position]:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (turns *designTurns) pass(position int) {
+	turns.passed[position+1].Do(func() { close(turns.ready[position+1]) })
+}
+
+// designTarget is one target's parts and areas, read on the view r. Boxes
+// and zones are drawn on owner, the reader the views share.
+func (r *reader) designTarget(ctx context.Context, owner *reader, order *designOrder, position int, units []*designUnit) error {
+	defer order.parts.pass(position)
+	defer order.zones.pass(position)
+	target := r.opts.Targets[position]
+	round := position + 1
+	overview, docs := r.designOverview(target.ID, units)
+	parts, err := r.propose(ctx, "parts", 2*position+1, overview, docs)
+	if err != nil {
+		return err
+	}
+	partOf := make([]int, len(units))
+	for i := range partOf {
+		partOf[i] = -1
+	}
+	if len(parts) > 0 && len(units) > 0 {
+		rows := make([]table.Row, len(units))
+		for i, unit := range units {
+			rows[i] = unit.row
+			var calls []string
+			for other := range unit.calls {
+				calls = append(calls, r.places[other].Given)
+			}
+			sort.Strings(calls)
+			if len(calls) > 0 {
+				rows[i].Fields = append(append([]table.Field(nil), rows[i].Fields...), table.Field{Name: "calls", Value: calls})
+			}
+		}
+		answers, err := r.runTableWith(ctx, lines.ZoneParts(), round, catalogue("part", parts), rows, nil)
+		if err != nil {
+			return err
+		}
+		for i := range units {
+			partOf[i] = chosen(answers[i], "part", parts)
+		}
+	}
+	if err := order.parts.wait(ctx, position); err != nil {
+		return err
+	}
+	order.drawing.Lock()
+	boxOfPart, drawn := owner.drawParts(target.ID, units, partOf, parts)
+	order.drawing.Unlock()
+	order.parts.pass(position)
+	if len(drawn) == 0 {
+		return nil
+	}
+	return r.readAreas(ctx, owner, order, position, units, partOf, parts, drawn, boxOfPart)
+}
+
+// drawParts draws every part at least one unit chose, then the target's
+// unassigned declarations as source inventory, and returns each drawn
+// part's box.
+func (r *reader) drawParts(targetID string, units []*designUnit, partOf []int, parts []designProposal) (map[int]string, []int) {
+	membership := r.designBoxOf[targetID]
+	boxOfPart := map[int]string{}
+	var drawn []int
+	for position := range parts {
+		var ids []string
+		for i, unit := range units {
+			if partOf[i] == position {
+				ids = append(ids, unit.members...)
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		r.addDesignBox(targetID, designItem{Name: parts[position].Title, Purpose: parts[position].Purpose, IDs: ids}, membership)
+		boxOfPart[position] = membership[ids[0]]
+		drawn = append(drawn, position)
+	}
+	// Missing decisions remain source inventory, not a directory-derived
+	// architectural claim. Every unassigned declaration stays available.
+	for _, file := range r.opts.Graph.Places {
+		if file.File == nil || !contains(file.TargetIDs, targetID) {
+			continue
+		}
+		var ids []string
+		for _, decl := range file.File.Decls {
+			id := r.symbolID(file.Path, decl.LineNo, decl.Name)
+			if membership[id] == "" {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) > 0 || len(file.File.Decls) == 0 {
+			if len(ids) == 0 {
+				ids = []string{file.ID}
+			}
+			r.addDesignBox(targetID, designItem{Name: file.Path, Purpose: "Declarations from this source file.", IDs: ids}, membership)
+			r.boxes[membership[ids[0]]].inventory = true
+		}
+		// A file endpoint is unambiguous only when all its declarations
+		// actually belong to one part. Never choose an arbitrary owner.
+		owners := map[string]bool{}
+		for _, decl := range file.File.Decls {
+			owners[membership[r.symbolID(file.Path, decl.LineNo, decl.Name)]] = true
+		}
+		if len(owners) == 1 {
+			for id := range owners {
+				membership[file.ID] = id
+			}
+		}
+	}
+	return boxOfPart, drawn
+}
+
 // readAreas proposes areas over the drawn parts and assigns each part to one.
-func (r *reader) readAreas(ctx context.Context, round int, targetID string, units []*designUnit, partOf []int, parts []designProposal, drawn []int, boxOfPart map[int]string) error {
+func (r *reader) readAreas(ctx context.Context, owner *reader, order *designOrder, position int, units []*designUnit, partOf []int, parts []designProposal, drawn []int, boxOfPart map[int]string) error {
+	targetID := r.opts.Targets[position].ID
 	unitPart := map[string]int{}
 	for i, unit := range units {
 		unitPart[unit.id] = partOf[i]
@@ -519,29 +609,56 @@ func (r *reader) readAreas(ctx context.Context, round int, targetID string, unit
 		}
 		rows = append(rows, table.Row{ID: boxOfPart[position], Fields: fields})
 	}
-	areas, err := r.propose(ctx, "areas", input, nil)
+	areas, err := r.propose(ctx, "areas", 2*position+2, input, nil)
 	if err != nil || len(areas) == 0 {
 		return err
 	}
-	answers, err := r.runTableWith(ctx, lines.ZoneAreas(), round, catalogue("area", areas), rows, nil)
+	answers, err := r.runTableWith(ctx, lines.ZoneAreas(), position+1, catalogue("area", areas), rows, nil)
 	if err != nil {
 		return err
 	}
+	if err := order.zones.wait(ctx, position); err != nil {
+		return err
+	}
+	order.drawing.Lock()
+	defer order.drawing.Unlock()
 	zones := make([]*zoneState, len(areas))
-	for i, position := range drawn {
+	for i, part := range drawn {
 		area := chosen(answers[i], "area", areas)
 		if area < 0 {
 			continue
 		}
 		if zones[area] == nil {
-			zones[area] = &zoneState{id: r.compactID("z", &r.nextZone), title: areas[area].Title, line: areas[area].Purpose}
-			r.zones[targetID] = append(r.zones[targetID], zones[area])
+			zones[area] = &zoneState{id: owner.compactID("z", &owner.nextZone), title: areas[area].Title, line: areas[area].Purpose}
+			owner.zones[targetID] = append(owner.zones[targetID], zones[area])
 		}
-		box := boxOfPart[position]
+		box := boxOfPart[part]
 		zones[area].boxes = append(zones[area].boxes, box)
-		r.boxes[box].zoneID[targetID] = zones[area].id
+		owner.boxes[box].zoneID[targetID] = zones[area].id
 	}
 	return nil
+}
+
+// joinDesign adds what one target's view printed, counted and rejected
+// after the targets before it; stages it started keep their earliest start.
+func (r *reader) joinDesign(view *reader) {
+	r.tables.WriteString(view.tables.String())
+	r.rejected = append(r.rejected, view.rejected...)
+	for stage, use := range view.uses {
+		total := r.use(stage)
+		total.Rows += use.Rows
+		total.Windows += use.Windows
+		total.Live += use.Live
+		total.Cached += use.Cached
+		total.Reused += use.Reused
+		total.Rejected += use.Rejected
+		total.Given += use.Given
+	}
+	for stage, at := range view.started {
+		if first, ok := r.started[stage]; !ok || at.Before(first) {
+			r.started[stage] = at
+		}
+	}
 }
 
 // designItem is what addDesignBox draws: a titled set of symbol places.

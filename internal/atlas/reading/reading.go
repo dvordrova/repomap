@@ -141,7 +141,6 @@ type reader struct {
 	designBoxOf         map[string]map[string]string // target -> declaration/file -> accepted part
 	designFiles         map[string]string            // declaration -> its source file
 	designSubjects      map[string]string            // native declaration -> place
-	designRound         int
 	nextPart            int
 	nextZone            int
 	nextBoundary        int

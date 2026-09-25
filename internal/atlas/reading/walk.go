@@ -192,7 +192,7 @@ func (r *reader) join(view *reader, chain []string) {
 		case lines.StageZones:
 			r.boxes, r.designBoxOf, r.zones = view.boxes, view.designBoxOf, view.zones
 			r.designFiles, r.designSubjects = view.designFiles, view.designSubjects
-			r.designRound, r.nextPart, r.nextZone = view.designRound, view.nextPart, view.nextZone
+			r.nextPart, r.nextZone = view.nextPart, view.nextZone
 		}
 	}
 }

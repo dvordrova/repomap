@@ -57,7 +57,10 @@ new description or selection requests.
   `rejected.jsonl` as responses arrive, interleaves. The first failure stops the stages beside it
   and is the error reported; `--through` stops inside them at its own stage.
   The zone assignment tables of a target use its position as their round, as
-  the core table does. A row carries the place's own facts and its directory's line, one step up.
+  the core table does; its parts and areas proposals are rounds 2p+1 and 2p+2.
+  Targets propose and assign their zones side by side, each on its own record
+  joined in target order; parts, then zones, take their compact IDs in target
+  order, the one point where a target waits for the ones before it. A row carries the place's own facts and its directory's line, one step up.
   File callers contribute deterministic facts, never another file's model
   line. Description candidates include every eligible declaration in authored
   code; visibility, documentation and callers order them without removing
