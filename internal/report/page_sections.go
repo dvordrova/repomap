@@ -847,8 +847,10 @@ func (builder *pageBuilder) groupConnections(
 	group groupindex.Group,
 ) []pageConnection {
 	here := groupindex.Endpoint{TargetID: index.Target.ID, GroupID: group.ID}
+	incident := builder.incidentConnections()
 	var rows []pageConnection
-	for _, connection := range builder.allConnections() {
+	for _, position := range incident.byEndpoint[here] {
+		connection := incident.all[position]
 		var other groupindex.Endpoint
 		var arrow string
 		switch {
@@ -976,6 +978,33 @@ func (builder *pageBuilder) allConnections() []groupindex.Connection {
 		rows = append(rows, index.Connections...)
 	}
 	return rows
+}
+
+// connectionEnds finds every connection of the page by the groups at its
+// two ends, in allConnections order.
+type connectionEnds struct {
+	indexes    *groupindex.Index
+	count      int
+	all        []groupindex.Connection
+	byEndpoint map[groupindex.Endpoint][]int
+}
+
+func (builder *pageBuilder) incidentConnections() *connectionEnds {
+	indexes := firstOf(builder.indexes)
+	// Only for the very indexes it was built from: a map copy of the builder
+	// reads other ones.
+	if builder.connectionEnds != nil && builder.connectionEnds.indexes == indexes && builder.connectionEnds.count == len(builder.indexes) {
+		return builder.connectionEnds
+	}
+	ends := &connectionEnds{indexes: indexes, count: len(builder.indexes), all: builder.allConnections(), byEndpoint: map[groupindex.Endpoint][]int{}}
+	for position, connection := range ends.all {
+		ends.byEndpoint[connection.From] = append(ends.byEndpoint[connection.From], position)
+		if connection.To != connection.From {
+			ends.byEndpoint[connection.To] = append(ends.byEndpoint[connection.To], position)
+		}
+	}
+	builder.connectionEnds = ends
+	return ends
 }
 
 // laneShare is how much of the target one group holds. The same number sizes

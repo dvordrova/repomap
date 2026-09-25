@@ -252,6 +252,10 @@ type pageBuilder struct {
 	// subjectAt finds the symbol declared at a path:line, which is how an
 	// entrypoint fact meets the group graph.
 	subjectAt map[string]string
+	// groupEdges is each target's relations between its groups, built once.
+	groupEdges map[string]*groupEdges
+	// connectionEnds is every connection by the groups at its ends.
+	connectionEnds *connectionEnds
 }
 
 // subjectKey is the only identity used by the report projection. Subject IDs

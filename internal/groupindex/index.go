@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1271,13 +1273,10 @@ func compileStructuralEdges(index programindex.Index, retained map[string]struct
 			}
 		}
 	}
-	result := make([]StructuralEdge, 0, len(byKey))
-	for _, edge := range byKey {
-		result = append(result, edge)
-	}
-	sort.Slice(result, func(i, j int) bool { return structuralEdgeKey(result[i]) < structuralEdgeKey(result[j]) })
-	if result == nil {
-		result = []StructuralEdge{}
+	keys := slices.Sorted(maps.Keys(byKey))
+	result := make([]StructuralEdge, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, byKey[key])
 	}
 	return result
 }

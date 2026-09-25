@@ -191,6 +191,7 @@ type PreparedPage struct {
 	namesFrom  *string
 	namesCount int
 	terms      map[string]pageTerms // by scope and own term
+	syntax     map[string]displaySyntax
 }
 
 type displayConcepts struct {
@@ -316,22 +317,40 @@ func protectedDisplayText(text string, names []string) (string, []DisplayProtect
 	return protectedDisplayTextIndexed(text, newDisplayNameIndex(names))
 }
 
+// displaySyntax is where a text holds source syntax: verbatim spans and bare
+// absolute paths. Bare absolute paths are source syntax too; a leading word
+// boundary keeps ordinary prose such as input/output outside them.
+type displaySyntax struct {
+	verbatim [][]int
+	paths    [][2]int
+}
+
+func findDisplaySyntax(text string) displaySyntax {
+	syntax := displaySyntax{verbatim: displayVerbatimSyntax.FindAllStringIndex(text, -1)}
+	for _, bounds := range displayAbsolutePath.FindAllStringSubmatchIndex(text, -1) {
+		syntax.paths = append(syntax.paths, [2]int{bounds[2], bounds[3]})
+	}
+	return syntax
+}
+
 func protectedDisplayTextIndexed(text string, index *displayNameIndex) (string, []DisplayProtectedText) {
+	return protectedDisplayTextWith(text, findDisplaySyntax(text), index)
+}
+
+func protectedDisplayTextWith(text string, syntax displaySyntax, index *displayNameIndex) (string, []DisplayProtectedText) {
 	type span struct{ start, end int }
 	var spans []span
-	for _, bounds := range displayVerbatimSyntax.FindAllStringIndex(text, -1) {
+	for _, bounds := range syntax.verbatim {
 		spans = append(spans, span{bounds[0], bounds[1]})
 	}
-	// Bare absolute paths are source syntax too. A leading word boundary keeps
-	// ordinary prose such as input/output outside this protection.
-	for _, bounds := range displayAbsolutePath.FindAllStringSubmatchIndex(text, -1) {
+	for _, bounds := range syntax.paths {
 		// Sentence punctuation is not part of a bare path. Explicit quoted
 		// or code-formatted paths retain their complete syntax above.
-		end := bounds[3]
-		for end > bounds[2] && text[end-1] == '.' {
+		end := bounds[1]
+		for end > bounds[0] && text[end-1] == '.' {
 			end--
 		}
-		spans = append(spans, span{bounds[2], end})
+		spans = append(spans, span{bounds[0], end})
 	}
 	for _, name := range index.candidates(text) {
 		// A repository may declare Run, service or protocol. Seeing the same

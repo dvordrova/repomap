@@ -106,9 +106,16 @@ func glossaryMatchesBySpelling(text string, byName map[string][]string) []glossa
 	if len(byName) == 0 {
 		return nil
 	}
-	blocked := displayVerbatimSyntax.FindAllStringIndex(text, -1)
-	for _, bounds := range displayAbsolutePath.FindAllStringSubmatchIndex(text, -1) {
-		blocked = append(blocked, []int{bounds[2], bounds[3]})
+	return glossaryMatchesWith(text, findDisplaySyntax(text), byName)
+}
+
+func glossaryMatchesWith(text string, syntax displaySyntax, byName map[string][]string) []glossaryMatch {
+	if len(byName) == 0 {
+		return nil
+	}
+	blocked := slices.Clip(syntax.verbatim)
+	for _, bounds := range syntax.paths {
+		blocked = append(blocked, []int{bounds[0], bounds[1]})
 	}
 	var matches []glossaryMatch
 	for spelling, ids := range byName {
@@ -201,8 +208,9 @@ func (page *PreparedPage) prepareTerminology(role, text, scope string, names []s
 	}
 	terms := page.terminologyFor(scope, own)
 	all := terms.all
+	syntax := page.displaySyntax(text)
 	used := make(map[string]bool)
-	for _, match := range glossaryMatchesBySpelling(text, terms.bySpelling) {
+	for _, match := range glossaryMatchesWith(text, syntax, terms.bySpelling) {
 		for _, id := range match.ids {
 			used[id] = true
 		}
@@ -212,8 +220,22 @@ func (page *PreparedPage) prepareTerminology(role, text, scope string, names []s
 			entry.Terms = append(entry.Terms, term)
 		}
 	}
-	entry.Text, entry.Protected = protectedDisplayTextIndexed(text, page.nameIndex(names))
+	entry.Text, entry.Protected = protectedDisplayTextWith(text, syntax, page.nameIndex(names))
 	return entry
+}
+
+// displaySyntax finds a text's source syntax once per page: the same label
+// stands on both cards of a connection and on its map edge.
+func (page *PreparedPage) displaySyntax(text string) displaySyntax {
+	if syntax, ok := page.syntax[text]; ok {
+		return syntax
+	}
+	syntax := findDisplaySyntax(text)
+	if page.syntax == nil {
+		page.syntax = make(map[string]displaySyntax)
+	}
+	page.syntax[text] = syntax
+	return syntax
 }
 
 // nameIndex builds the protected-name index once for the page's name list.
