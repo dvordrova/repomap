@@ -787,6 +787,76 @@ func TestTooLargePartsRequestIsAskedInWindows(t *testing.T) {
 	}
 }
 
+// cutProvider cuts the answers of one design task at the output-token cap,
+// the way the provider reports a looping answer.
+type cutProvider struct {
+	*tableProvider
+	task string
+}
+
+func (provider *cutProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	var request struct {
+		Task string `json:"task"`
+	}
+	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
+		return llm.Completion{}, err
+	}
+	if request.Task == provider.task {
+		provider.mu.Lock()
+		if provider.designRequests == nil {
+			provider.designRequests = map[string]int{}
+		}
+		provider.designRequests[request.Task]++
+		provider.mu.Unlock()
+		return llm.Completion{FinishReason: llm.FinishLength, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}},
+			llm.NewResourceLimitError(llm.ResourceLimitError{Stage: lines.StageZones, Kind: llm.ResourceLimitOutputTokens, FinishReason: "length"})
+	}
+	return provider.tableProvider.Complete(ctx, prepared)
+}
+
+// A parts or areas answer cut at the output-token cap is an ordinary refusal
+// of its window: asked once, neither split nor accepted in part. A cut parts
+// answer of a one-window target is its map failure; a cut areas answer draws
+// no areas and the parts stay drawn.
+func TestAnswerCutAtTheOutputCapIsAnOrdinaryRefusal(t *testing.T) {
+	graph := twoTargetGraph(t)
+	parts := &cutProvider{tableProvider: &tableProvider{}, task: designPartsTask}
+	opts := twoTargetOptions(t, graph, parts.tableProvider)
+	opts.Provider = parts
+	result, err := Read(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := targetOf(t, result, "svc")
+	if svc.MapFailure != atlas.MapFailureRefused || len(svc.Boxes) != 0 || parts.designRequests[designPartsTask] != 2 {
+		t.Fatalf("cut parts: failure %q boxes %d requests %v", svc.MapFailure, len(svc.Boxes), parts.designRequests)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+
+	areas := &cutProvider{tableProvider: &tableProvider{areaFor: func(map[string]any) string { return "Everything" }}, task: designAreasTask}
+	opts = twoTargetOptions(t, graph, areas.tableProvider)
+	opts.Provider = areas
+	result, err = Read(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc = targetOf(t, result, "svc")
+	refused := 0
+	for _, row := range result.Rejected {
+		if row.Stage == lines.StageAreas && row.Kind == "window_rejected" {
+			refused++
+		}
+	}
+	if len(svc.Zones) != 0 || len(svc.Boxes) == 0 || svc.MapFailure != "" || refused != 1 || areas.designRequests[designAreasTask] != 1 {
+		t.Fatalf("cut areas: zones %d boxes %d failure %q refusals %d requests %v", len(svc.Zones), len(svc.Boxes), svc.MapFailure, refused, areas.designRequests)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // sizeLimitedProvider refuses a parts request listing more than maxFiles
 // files the way a provider refuses too large an input.
 type sizeLimitedProvider struct {
