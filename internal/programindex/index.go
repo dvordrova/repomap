@@ -867,12 +867,15 @@ func Decode(encoded []byte) (Index, error) {
 	if len(encoded) == 0 {
 		return Index{}, fmt.Errorf("program index: invalid artifact size")
 	}
+	// The artifact shape is decoded here directly: through Index's own
+	// UnmarshalJSON the decoder would scan the whole value twice more.
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
-	var index Index
-	if err := decoder.Decode(&index); err != nil {
+	var decoded indexArtifact
+	if err := decoder.Decode(&decoded); err != nil {
 		return Index{}, fmt.Errorf("program index: decode artifact: %w", err)
 	}
+	index := decoded.restore()
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		if err == nil {
@@ -890,14 +893,21 @@ func Decode(encoded []byte) (Index, error) {
 // it omits: every observed count is its retained rows plus the stored omission,
 // empty collections are absent, and coverage is compiled from the rows.
 func (index *Index) UnmarshalJSON(encoded []byte) error {
-	type artifact Index
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
-	var decoded artifact
+	var decoded indexArtifact
 	if err := decoder.Decode(&decoded); err != nil {
 		return err
 	}
-	*index = Index(decoded)
+	*index = decoded.restore()
+	return nil
+}
+
+// indexArtifact is the stored shape of an Index, without its UnmarshalJSON.
+type indexArtifact Index
+
+func (decoded indexArtifact) restore() Index {
+	index := Index(decoded)
 	index.Objects = emptyIfNil(index.Objects)
 	index.Relations = emptyIfNil(index.Relations)
 	for position := range index.Relations {
@@ -905,7 +915,7 @@ func (index *Index) UnmarshalJSON(encoded []byte) error {
 	}
 	index.Coverage = compileCoverage(index.Objects, index.Relations,
 		len(index.Objects)+decoded.Coverage.ObjectsOmitted, len(index.Relations)+decoded.Coverage.RelationsOmitted)
-	return nil
+	return index
 }
 
 func restoreRelationCounts(relation *Relation) {
