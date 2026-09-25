@@ -13,19 +13,16 @@ import (
 const maxCoreDeclarations = 12
 
 // readCore asks the model the one role each part plays. The program exists
-// for its domain parts; a tests part leaves the map.
+// for its domain parts.
 func (r *reader) readCore(ctx context.Context) error {
 	for round, target := range r.opts.Targets {
-		// The code answers what it can see: a part made of test files exists
-		// for the tests, and the part where the program starts calls the core
-		// rather than being it. The model is asked about the rest.
+		// The code answers what it can see: a part made only of test code is
+		// the tests' (a fact of its files), and the part where the program
+		// starts calls the core rather than being it. The model is asked about
+		// the rest.
 		var parts []*boxState
 		for _, part := range r.boxesOfTarget(target.ID) {
-			if r.onlyTestFiles(part) {
-				part.forTests = true
-				continue
-			}
-			if !part.inventory && !r.startsProgram(part, target.ID) {
+			if !part.forTests && !r.startsProgram(part, target.ID) {
 				parts = append(parts, part)
 			}
 		}
@@ -37,11 +34,18 @@ func (r *reader) readCore(ctx context.Context) error {
 		var listed []string
 		for _, part := range parts {
 			title[part.id] = part.title
-			listed = append(listed, part.title+" — "+part.line)
+			if part.line == "" {
+				listed = append(listed, part.title)
+			} else {
+				listed = append(listed, part.title+" — "+part.line)
+			}
 		}
 		rows := make([]table.Row, 0, len(parts))
 		for _, part := range parts {
-			fields := []table.Field{{Name: "part", Value: part.title}, {Name: "purpose", Value: part.line}}
+			fields := []table.Field{{Name: "part", Value: part.title}}
+			if part.line != "" {
+				fields = append(fields, table.Field{Name: "purpose", Value: part.line})
+			}
 			if names := r.partDeclarations(part); len(names) > 0 {
 				fields = append(fields, table.Field{Name: "declarations", Value: names})
 			}
@@ -95,21 +99,11 @@ func (r *reader) readCore(ctx context.Context) error {
 				continue
 			}
 			part.role = answer["role"]
-			part.forTests = part.role == lines.PartTests
 			part.core = part.role == lines.PartDomain
 		}
 	}
 	r.reportStage(lines.StageCore)
 	return nil
-}
-
-func (r *reader) onlyTestFiles(part *boxState) bool {
-	for _, fileID := range part.files {
-		if file := r.places[fileID].File; file == nil || !file.Test {
-			return false
-		}
-	}
-	return len(part.files) > 0
 }
 
 func (r *reader) startsProgram(part *boxState, targetID string) bool {

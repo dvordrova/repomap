@@ -1,0 +1,520 @@
+{
+ "groups": [
+  {
+   "name": "CLI entry",
+   "about": "Starts the repomap command and dispatches runs",
+   "files": [
+    "f1",
+    "f279",
+    "f280",
+    "f285",
+    "f286",
+    "f272",
+    "f273"
+   ]
+  },
+  {
+   "name": "Run orchestration",
+   "about": "Coordinates analysis stages and target dispatch for a run",
+   "files": [
+    "f270",
+    "f271",
+    "f274",
+    "f275",
+    "f276",
+    "f277",
+    "f278",
+    "f281",
+    "f282",
+    "f283",
+    "f284",
+    "f287",
+    "f288",
+    "f289",
+    "f290",
+    "f291",
+    "f292",
+    "f293",
+    "f294",
+    "f295",
+    "f296",
+    "f297",
+    "f298",
+    "f299",
+    "f300",
+    "f301"
+   ]
+  },
+  {
+   "name": "Repository corpus",
+   "about": "Reads repository files and builds the corpus snapshot",
+   "files": [
+    "f72",
+    "f73",
+    "f115",
+    "f185",
+    "f186",
+    "f302",
+    "f303",
+    "f304",
+    "f305"
+   ]
+  },
+  {
+   "name": "Go target analysis",
+   "about": "Discovers Go targets and scopes facts to them",
+   "files": [
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9"
+   ]
+  },
+  {
+   "name": "Go facts",
+   "about": "Loads Go packages, modules and declarations into facts",
+   "files": [
+    "f118",
+    "f119",
+    "f120",
+    "f121",
+    "f122",
+    "f123"
+   ]
+  },
+  {
+   "name": "Go surface discovery",
+   "about": "Builds SSA call indexes and dynamic handoff evidence",
+   "files": [
+    "f116",
+    "f117",
+    "f161",
+    "f162",
+    "f163",
+    "f164",
+    "f165",
+    "f311",
+    "f312",
+    "f313",
+    "f314",
+    "f315",
+    "f316",
+    "f317",
+    "f318",
+    "f319",
+    "f320",
+    "f321",
+    "f322",
+    "f323",
+    "f324",
+    "f325",
+    "f326"
+   ]
+  },
+  {
+   "name": "Python targets",
+   "about": "Discovers Python targets and builds their program index",
+   "files": [
+    "f169",
+    "f170",
+    "f171",
+    "f172",
+    "f173",
+    "f174",
+    "f175",
+    "f176"
+   ]
+  },
+  {
+   "name": "JS/TS targets",
+   "about": "Discovers JS/TS projects and projects them to program index",
+   "files": [
+    "f131",
+    "f132",
+    "f133",
+    "f134"
+   ]
+  },
+  {
+   "name": "Clojure targets",
+   "about": "Scouts and analyzes Clojure projects into results",
+   "files": [
+    "f67",
+    "f68",
+    "f69",
+    "f70",
+    "f71"
+   ]
+  },
+  {
+   "name": "Program index",
+   "about": "Holds the canonical program model and artifacts",
+   "files": [
+    "f158",
+    "f159",
+    "f160",
+    "f166",
+    "f167",
+    "f168"
+   ]
+  },
+  {
+   "name": "Group index",
+   "about": "Groups program subjects into lanes and connections",
+   "files": [
+    "f124",
+    "f125",
+    "f126",
+    "f127",
+    "f128",
+    "f129",
+    "f130"
+   ]
+  },
+  {
+   "name": "Dependencies",
+   "about": "Builds and persists dependency catalogs from importers",
+   "files": [
+    "f82",
+    "f83",
+    "f84"
+   ]
+  },
+  {
+   "name": "Repository facts",
+   "about": "Extracts manifests, routes, data and risk facts",
+   "files": [
+    "f94",
+    "f95",
+    "f96",
+    "f97",
+    "f99",
+    "f100",
+    "f101",
+    "f102",
+    "f103",
+    "f104",
+    "f105",
+    "f106",
+    "f107",
+    "f108",
+    "f109",
+    "f111"
+   ]
+  },
+  {
+   "name": "Claims",
+   "about": "Extracts documentation claims from repository text",
+   "files": [
+    "f59",
+    "f60",
+    "f61",
+    "f62",
+    "f63",
+    "f64",
+    "f65",
+    "f66"
+   ]
+  },
+  {
+   "name": "Documentation reduce",
+   "about": "Reduces README guidance into a documentation result",
+   "files": [
+    "f85",
+    "f86",
+    "f87"
+   ]
+  },
+  {
+   "name": "Readme target scout",
+   "about": "Classifies README files into target guidance",
+   "files": [
+    "f177",
+    "f178",
+    "f179",
+    "f180",
+    "f181",
+    "f182",
+    "f183",
+    "f184"
+   ]
+  },
+  {
+   "name": "Target portfolio",
+   "about": "Selects repository targets from candidate files",
+   "files": [
+    "f328",
+    "f329",
+    "f330",
+    "f331",
+    "f332",
+    "f333",
+    "f334",
+    "f335"
+   ]
+  },
+  {
+   "name": "Target outcome",
+   "about": "Records selected, analyzed and failed target outcomes",
+   "files": [
+    "f327"
+   ]
+  },
+  {
+   "name": "Orientation",
+   "about": "Builds first-day orientation from facts and groups",
+   "files": [
+    "f151",
+    "f152",
+    "f153",
+    "f154",
+    "f155",
+    "f156",
+    "f157"
+   ]
+  },
+  {
+   "name": "Atlas model",
+   "about": "Defines the atlas graph, places and persistence",
+   "files": [
+    "f10",
+    "f11",
+    "f12",
+    "f13",
+    "f28",
+    "f30",
+    "f32"
+   ]
+  },
+  {
+   "name": "Atlas lines",
+   "about": "Renders atlas tables for directories, files and symbols",
+   "files": [
+    "f14",
+    "f15",
+    "f16",
+    "f17",
+    "f18",
+    "f19",
+    "f20",
+    "f21",
+    "f22",
+    "f23",
+    "f24",
+    "f25",
+    "f26",
+    "f27"
+   ]
+  },
+  {
+   "name": "Atlas reading",
+   "about": "Reads atlas places into answers and learning",
+   "files": [
+    "f33",
+    "f34",
+    "f35",
+    "f36",
+    "f37",
+    "f38",
+    "f39",
+    "f40",
+    "f41",
+    "f42",
+    "f43",
+    "f44",
+    "f45",
+    "f46",
+    "f47",
+    "f48",
+    "f49",
+    "f50",
+    "f51",
+    "f53",
+    "f54",
+    "f55"
+   ]
+  },
+  {
+   "name": "Table prompting",
+   "about": "Builds table windows and decodes model answers",
+   "files": [
+    "f56",
+    "f57",
+    "f58"
+   ]
+  },
+  {
+   "name": "LLM execution",
+   "about": "Executes, caches and replays model calls",
+   "files": [
+    "f135",
+    "f136",
+    "f137",
+    "f138",
+    "f139",
+    "f140",
+    "f141",
+    "f142",
+    "f143",
+    "f144",
+    "f145",
+    "f146",
+    "f147",
+    "f148",
+    "f149"
+   ]
+  },
+  {
+   "name": "DeepSeek provider",
+   "about": "Talks to the DeepSeek chat completion API",
+   "files": [
+    "f76",
+    "f77",
+    "f78",
+    "f79",
+    "f80",
+    "f81"
+   ]
+  },
+  {
+   "name": "Typesafe provider",
+   "about": "Talks to the Typesafe model provider",
+   "files": [
+    "f340"
+   ]
+  },
+  {
+   "name": "Extractors",
+   "about": "Extracts database and SQLC structures from sources",
+   "files": [
+    "f88",
+    "f89",
+    "f90",
+    "f91",
+    "f92",
+    "f93"
+   ]
+  },
+  {
+   "name": "SQL text",
+   "about": "Parses SQL statements, tables and object names",
+   "files": [
+    "f307",
+    "f308",
+    "f309",
+    "f310"
+   ]
+  },
+  {
+   "name": "Terminology",
+   "about": "Collects and reduces repository terminology into a catalog",
+   "files": [
+    "f336",
+    "f337",
+    "f338",
+    "f339"
+   ]
+  },
+  {
+   "name": "Report data",
+   "about": "Assembles report data from run artifacts",
+   "files": [
+    "f187",
+    "f188",
+    "f189",
+    "f190",
+    "f191",
+    "f196",
+    "f215",
+    "f216",
+    "f217",
+    "f218",
+    "f221",
+    "f223",
+    "f224"
+   ]
+  },
+  {
+   "name": "Report pages",
+   "about": "Builds report page sections, maps and cards",
+   "files": [
+    "f197",
+    "f198",
+    "f199",
+    "f200",
+    "f201",
+    "f202",
+    "f203",
+    "f204",
+    "f205",
+    "f206",
+    "f207",
+    "f208",
+    "f209",
+    "f210",
+    "f211",
+    "f212",
+    "f213",
+    "f214"
+   ]
+  },
+  {
+   "name": "Report rendering",
+   "about": "Renders HTML reports and serves saved pages",
+   "files": [
+    "f219",
+    "f220",
+    "f222",
+    "f225",
+    "f267",
+    "f268"
+   ]
+  },
+  {
+   "name": "Report localization",
+   "about": "Translates and localizes report display text",
+   "files": [
+    "f192",
+    "f193",
+    "f194",
+    "f195",
+    "f269"
+   ]
+  },
+  {
+   "name": "Freshness",
+   "about": "Captures repository dirty state and revisions",
+   "files": [
+    "f112",
+    "f113",
+    "f114"
+   ]
+  },
+  {
+   "name": "Debug dump",
+   "about": "Writes run metadata and semantic exchange dumps",
+   "files": [
+    "f74",
+    "f75"
+   ]
+  },
+  {
+   "name": "Model diagnostics",
+   "about": "Appends and summarizes model diagnostic rows",
+   "files": [
+    "f150"
+   ]
+  },
+  {
+   "name": "Source values",
+   "about": "Validates and clones source value anchors",
+   "files": [
+    "f306"
+   ]
+  }
+ ]
+}

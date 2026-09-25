@@ -101,6 +101,11 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 				}
 			}
 		}
+		for _, entry := range target.OffMap {
+			for _, symbol := range entry.File.Symbols {
+				sourceRefs[symbol.ObjectID] = ""
+			}
+		}
 		for _, boundary := range target.Boundaries {
 			sourceRefs[boundary.ObjectID] = ""
 		}
@@ -253,7 +258,6 @@ func categoryOfLane(lane Lane) programindex.Category {
 }
 
 func projectTarget(program programindex.Index, target atlas.Target, sourceRefs map[string]string) (projectedTarget, error) {
-	boxOfFile := make(map[string]*atlas.Box)
 	boxOfDeclaration := make(map[string]*atlas.Box)
 	objects := make(map[string]programindex.Object, len(program.Objects))
 	declarations := make(map[string]bool, len(program.Objects))
@@ -262,6 +266,14 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		declarations[declarationKey(object)] = true
 	}
 	interpretations := make(map[string]Interpretation)
+	interpret := func(file atlas.File) {
+		for _, symbol := range file.Symbols {
+			interpretation := Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary, Role: symbol.Role}
+			if interpretation != (Interpretation{}) {
+				interpretations[sourceRefs[symbol.ObjectID]] = interpretation
+			}
+		}
+	}
 	for position := range target.Boxes {
 		box := &target.Boxes[position]
 		for _, id := range box.MemberIDs {
@@ -280,16 +292,13 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			boxOfDeclaration[key] = box
 		}
 		for _, file := range box.Files {
-			if box.MemberIDs == nil {
-				boxOfFile[file.Path] = box
-			}
-			for _, symbol := range file.Symbols {
-				interpretation := Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary, Role: symbol.Role}
-				if interpretation != (Interpretation{}) {
-					interpretations[sourceRefs[symbol.ObjectID]] = interpretation
-				}
-			}
+			interpret(file)
 		}
+	}
+	// A file off the map keeps its declarations' captions and keys; its
+	// subjects stay outside every group.
+	for _, entry := range target.OffMap {
+		interpret(entry.File)
 	}
 	// Every object remains a subject. Explicit declarations select semantic
 	// membership; only native lexical ownership carries it to inner objects.
@@ -318,9 +327,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if box == nil && object.ContainerID != "" && objects[object.ContainerID].Kind != programindex.ObjectModule {
 			box = locate(object.ContainerID, seen)
 		}
-		if box == nil && object.Location != nil {
-			box = boxOfFile[atlasPath(object.Location.Path)]
-		}
 		if box != nil {
 			memberBoxes[id] = box
 		}
@@ -338,7 +344,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	for _, object := range program.Objects {
 		categories := []programindex.Category{}
-		if box := locate(object.ID, map[string]bool{}); box != nil {
+		if box := locate(object.ID, map[string]bool{}); box != nil && !box.ForTests {
 			categories = []programindex.Category{categoryOfLane(laneOfSide(box.Side))}
 			membersOfBox[box.ID] = append(membersOfBox[box.ID], object.ID)
 		}
@@ -357,16 +363,15 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	groups := make([]Group, 0, len(target.Boxes))
 	for _, box := range target.Boxes {
 		members := membersOfBox[box.ID]
-		// A part that exists only for the tests is not a part of the program.
+		// A part made only of test code is not a part of the program's map;
+		// its files are listed off the map as tests.
 		if len(members) == 0 || box.ForTests {
 			continue
 		}
 		sort.Slice(members, func(i, j int) bool { return subjectIDLess(members[i], members[j]) })
 		members = compactSorted(members)
+		// An empty line is the part's explicit no-description state.
 		summary := strings.TrimSpace(box.Line)
-		if summary == "" {
-			summary = strings.TrimSpace(box.Title)
-		}
 		group := Group{
 			Title: strings.TrimSpace(box.Title), Summary: summary, Lane: laneOfSide(box.Side), Core: box.Core,
 			MemberSubjectIDs: members, EvidenceSubjectIDs: []string{},
@@ -420,9 +425,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			lane = LaneTriggers
 		}
 		summary := strings.TrimSpace(zone.Line)
-		if summary == "" {
-			summary = strings.TrimSpace(zone.Title)
-		}
 		container := Container{Title: strings.TrimSpace(zone.Title), Summary: summary, Lane: lane, Core: core, GroupIDs: ids}
 		containers = append(containers, container)
 	}
@@ -500,19 +502,25 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 	}
 
+	// An operation belongs to its subject's group; one in a file off the map
+	// belongs to none and is still read. Test-only parts publish none.
 	var operations []Operation
-	for _, group := range groups {
-		for _, id := range group.MemberSubjectIDs {
-			subject := byID[id]
-			if subject.Interpretation == nil || subject.Interpretation.Activation == "" {
-				continue
-			}
-			if subject.Object == nil || subject.Object.Location == nil {
-				continue
-			}
-			v := subject.Interpretation
-			operations = append(operations, Operation{ID: id, SubjectID: id, GroupID: group.ID, Kind: v.Activation, Name: v.Operation, Summary: v.OperationSummary, Source: "model", Location: *subject.Object.Location})
+	for _, subject := range subjects {
+		if subject.Interpretation == nil || subject.Interpretation.Activation == "" {
+			continue
 		}
+		if subject.Object == nil || subject.Object.Location == nil {
+			continue
+		}
+		groupID := ""
+		if box := memberBoxes[subject.ID]; box != nil {
+			if box.ForTests {
+				continue
+			}
+			groupID = groupOfBox[box.ID]
+		}
+		v := subject.Interpretation
+		operations = append(operations, Operation{ID: subject.ID, SubjectID: subject.ID, GroupID: groupID, Kind: v.Activation, Name: v.Operation, Summary: v.OperationSummary, Source: "model", Location: *subject.Object.Location})
 	}
 	boundRequests := make(map[string]bool)
 	for _, boundary := range target.Boundaries {
@@ -520,8 +528,10 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if boundary.Direction != atlas.DirectionIn || kind == "" {
 			continue
 		}
+		// A boundary in a file off the map names no box: its operation
+		// belongs to no group. One in a test-only part is the tests'.
 		groupID := groupOfBox[boundary.BoxID]
-		if groupID == "" {
+		if groupID == "" && boundary.BoxID != "" {
 			continue
 		}
 		// A request interpreted on a declaration is already an operation.
@@ -596,9 +606,42 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		Containers:         containers,
 		StructuralEdges:    compileStructuralEdges(program, retained),
 		Connections:        connections,
+		OffMap:             projectOffMap(target),
+		MapFailure:         strings.TrimSpace(target.MapFailure),
 	}
 	applyPhases(&index, program)
 	return projectedTarget{index: index, groupOfBox: groupOfBox}, nil
+}
+
+// projectOffMap lists the files the map of parts does not draw: the atlas's
+// off-map record with its reasons, and the files of parts made only of test
+// code under the reason tests with their part's name. A file a part holds is
+// not listed for the few declarations of it that are off the map; their
+// interpretations are still read.
+func projectOffMap(target atlas.Target) []OffMapFile {
+	var files []OffMapFile
+	seen := map[OffMapFile]bool{}
+	add := func(file OffMapFile) {
+		if !seen[file] {
+			seen[file] = true
+			files = append(files, file)
+		}
+	}
+	for _, entry := range target.OffMap {
+		if entry.BoxID == "" {
+			add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: entry.Reason})
+		}
+	}
+	for _, box := range target.Boxes {
+		if !box.ForTests {
+			continue
+		}
+		for _, file := range box.Files {
+			add(OffMapFile{Path: atlasPath(file.Path), Reason: OffMapTests, Part: strings.TrimSpace(box.Title)})
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return offMapKey(files[i]) < offMapKey(files[j]) })
+	return files
 }
 
 func operationKey(operation Operation) string {

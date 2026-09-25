@@ -118,18 +118,6 @@ func (provider *mutatedTableProvider) Complete(ctx context.Context, request llm.
 	return completion, err
 }
 
-func TestRefusedZoneAssignmentDoesNotAcquireMatchingNameOrAncestor(t *testing.T) {
-	proposals := []designProposal{{Title: "Accepted title", Purpose: "Works."}, {Title: "Rejected title", Purpose: "Unknown."}}
-	for _, cell := range []string{"Rejected title", "c3", "outside", "none", ""} {
-		if position := chosen(rowAnswer{answer: map[string]string{"part": cell}}, "part", proposals); position != -1 {
-			t.Fatalf("cell %q acquired part %d", cell, position)
-		}
-	}
-	if position := chosen(rowAnswer{answer: map[string]string{"part": "c2"}}, "part", proposals); position != 1 {
-		t.Fatalf("closed ref c2 chose %d", position)
-	}
-}
-
 func TestRefusedJointAndPeerRowsDoNotCreateConnections(t *testing.T) {
 	for _, mode := range []string{"joints", "peers"} {
 		t.Run(mode, func(t *testing.T) {

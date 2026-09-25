@@ -19,6 +19,15 @@ A bad launch projection refuses only that target while its neighbours keep
 their already parsed inputs. A failed shared parser preparation retains the
 existing exact-target fallback; cancellation stops dispatch immediately.
 
+A module-level function, class or variable is public unless its name starts
+with an underscore; a module that declares a literal `__all__` list or tuple
+of strings exports exactly the names it lists, so an unlisted module-level
+name is internal. Methods and attributes keep the underscore rule. The map of
+parts shows the signatures of public names only
+(`testdata/repositories/python/src/fixture_app/exports.py`). A class's methods
+are always declared in its body: Python has no method outside its class for
+the map of parts to move.
+
 ## Imports and callable identity
 
 The Python adapter owns package/module scope, import restoration, call and

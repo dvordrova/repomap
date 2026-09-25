@@ -274,40 +274,44 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 		Table string           `json:"table"`
 		Fill  []map[string]any `json:"fill"`
 		Rows  []map[string]any `json:"rows"`
-		Mode  string           `json:"mode"`
-		Items []struct {
+		Files []struct {
 			Ref  string `json:"ref"`
 			Path string `json:"path"`
-		} `json:"items"`
+		} `json:"files"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
 	}
 	var response []byte
 	switch {
-	case request.Task != "" && request.Mode == "parts":
-		// Two parts a reader would draw: what serves requests and what holds
-		// the data. Every other declaration stays source inventory.
-		response = []byte(`{"groups":{"Request handling":"Request handling.","Stored users":"Stored users."}}`)
-	case request.Table == "atlas_zone_parts":
-		rows := make([]map[string]any, 0, len(request.Rows))
-		for _, row := range request.Rows {
-			pkg, _ := row["package"].(string)
-			part := "none"
+	case request.Task == "repomap.atlas.parts.v1":
+		// The parts a reader would draw: what serves requests, what holds
+		// the data, and the program's setup around them.
+		parts := map[string][]string{}
+		for _, file := range request.Files {
+			part := "Program setup"
 			switch {
-			case strings.Contains(pkg+"/", "/handler/"):
-				part = "c1"
-			case strings.Contains(pkg+"/", "/database/"):
-				part = "c2"
+			case strings.Contains(file.Path, "/handler/"):
+				part = "Request handling"
+			case strings.Contains(file.Path, "/database/"):
+				part = "Stored users"
 			}
-			rows = append(rows, map[string]any{"key": row["key"], "part": part})
+			parts[part] = append(parts[part], file.Ref)
+		}
+		var groups []map[string]any
+		for _, name := range []string{"Request handling", "Stored users", "Program setup"} {
+			if len(parts[name]) > 0 {
+				groups = append(groups, map[string]any{"name": name, "files": parts[name]})
+			}
 		}
 		var err error
-		if response, err = json.Marshal(map[string]any{"rows": rows}); err != nil {
+		if response, err = json.Marshal(map[string]any{"groups": groups}); err != nil {
 			return llm.Completion{}, err
 		}
-	case request.Task != "":
-		response = []byte(`{"groups":{}}`)
+	case request.Task == "repomap.atlas.describe.v1":
+		response = []byte(`{"description":"Preset description."}`)
+	case request.Task == "repomap.atlas.areas.v1":
+		response = []byte(`{"areas":[]}`)
 	default:
 		rows := make([]map[string]any, 0, len(request.Rows))
 		for _, row := range request.Rows {

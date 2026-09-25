@@ -20,6 +20,28 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   excerpts preserve Markdown-authored command/code examples; implementation
   source-file bodies are not sent.
 
+- No file or inventory box is drawn: every box is a part of the map of
+  parts. The atlas's explicit off-map record lists, per target, every file (or
+  stray declaration) no drawn part holds with its reason (`left_out`,
+  `conflict`, `no_units` for a file that declares nothing, `map_failure`),
+  keeping its file line, captions and keys. Stray declarations in a file a
+  part holds name that part (`box_id`); their file stays on the map and is
+  not listed. GroupsIndex carries that record as `off_map`, adds the files of
+  parts made only of test code under the reason `tests` with their part's
+  name, and carries `map_failure`. Subjects off the map keep their interpretations
+  outside every group; a boundary in a file off the map names no box and its
+  operation belongs to no group, yet it stays in the component's inputs. A part
+  made only of test code is a fact (every file is a `TestSources` file): it is
+  not a group and leaves the canvas.
+
+- The component card lists, after its parts, the compact inventories
+  **Tests** (test-only parts' files, with their part) and **Not on the map**
+  (every other off-map file, with its reason), five rows each and `All N`
+  for the rest. A target with a map failure says "The map of parts is
+  unavailable: <reason>" and lists all of its files under Not on the map. A
+  part or area without a description shows the explicit "No description"
+  state; its title is never repeated as a description.
+
 - Observed HTTP routes join their target's catalogue through the original
   FactID restored by atlas projection. The renderer neither repairs foreign
   identities nor merges model operations by matching names or paths. Listener

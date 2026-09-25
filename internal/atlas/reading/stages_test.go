@@ -241,24 +241,11 @@ func twoTargetOptions(t *testing.T, graph atlas.Graph, provider *tableProvider) 
 func TestAreasContainOnlyExplicitlyChosenParts(t *testing.T) {
 	graph := twoTargetGraph(t)
 	provider := &tableProvider{
-		designFor: func(mode string, input []map[string]any) designProposals {
-			if mode == "areas" {
-				return designProposals{Groups: []designProposal{{Title: "Serving", Purpose: "Coordinates the selected parts."}}}
+		areaFor: func(part map[string]any) string {
+			if part["name"] == "svc/api" || part["name"] == "svc/core" {
+				return "Serving"
 			}
-			result := designProposals{Groups: []designProposal{}}
-			for _, pkg := range input {
-				result.Groups = append(result.Groups, designProposal{Title: pkg["package"].(string), Purpose: "Reads the supplied declarations."})
-			}
-			return result
-		},
-		zoneFor: func(column string, row map[string]any) string {
-			if column == "area" {
-				if row["title"] == "svc/api" || row["title"] == "svc/core" {
-					return "Serving"
-				}
-				return ""
-			}
-			return row["package"].(string)
+			return ""
 		},
 	}
 	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
@@ -329,44 +316,6 @@ func TestConfigReadDoesNotTurnCoreIntoDependencyOrShareASeed(t *testing.T) {
 	r.boundaries["token"].kind = "http"
 	if got := r.side(owner, "lib"); got != atlas.SideOut {
 		t.Fatalf("outbound integration lost its direction: %s", got)
-	}
-}
-
-func TestRefusedDesignKeepsSourceInventoryWithoutInventingAreas(t *testing.T) {
-	graph := twoTargetGraph(t)
-	provider := &tableProvider{designFor: func(string, []map[string]any) designProposals {
-		return designProposals{Groups: []designProposal{{Title: "Odd"}}}
-	}}
-	result, err := Read(context.Background(), twoTargetOptions(t, graph, provider))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var svc atlas.Target
-	for _, target := range result.Atlas.Targets {
-		if target.ID == "svc" {
-			svc = target
-		}
-	}
-	if len(svc.Zones) != 0 {
-		t.Fatalf("invented fallback zones: %+v", svc.Zones)
-	}
-	expected := 0
-	for _, place := range graph.Places {
-		if place.File != nil && contains(place.TargetIDs, "svc") {
-			expected++
-		}
-	}
-	if svc.Files != expected {
-		t.Fatalf("refused design lost source files: %d, want %d", svc.Files, expected)
-	}
-	rejected := 0
-	for _, row := range result.Rejected {
-		if row.Stage == lines.StageZones {
-			rejected++
-		}
-	}
-	if rejected < 1 {
-		t.Fatalf("zone rejections: %+v", result.Rejected)
 	}
 }
 

@@ -1,0 +1,525 @@
+{
+ "groups": [
+  {
+   "name": "CLI entry",
+   "about": "Starts the repomap command and dispatches runs",
+   "files": [
+    "f1",
+    "f279",
+    "f280",
+    "f285",
+    "f286",
+    "f272",
+    "f273"
+   ]
+  },
+  {
+   "name": "Run orchestration",
+   "about": "Coordinates pipeline stages and repository target dispatch",
+   "files": [
+    "f270",
+    "f271",
+    "f274",
+    "f275",
+    "f276",
+    "f277",
+    "f278",
+    "f281",
+    "f282",
+    "f283",
+    "f284",
+    "f287",
+    "f288",
+    "f289",
+    "f290",
+    "f291",
+    "f292",
+    "f293",
+    "f294",
+    "f295",
+    "f296",
+    "f297",
+    "f298",
+    "f299",
+    "f300",
+    "f301"
+   ]
+  },
+  {
+   "name": "Repository corpus",
+   "about": "Reads repository files and git listings",
+   "files": [
+    "f72",
+    "f73",
+    "f115",
+    "f186",
+    "f304",
+    "f305",
+    "f302",
+    "f303",
+    "f112",
+    "f113",
+    "f114"
+   ]
+  },
+  {
+   "name": "Go target analysis",
+   "about": "Discovers and scopes Go analysis targets",
+   "files": [
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9"
+   ]
+  },
+  {
+   "name": "Go facts",
+   "about": "Loads Go packages, modules and declarations",
+   "files": [
+    "f118",
+    "f119",
+    "f120",
+    "f121",
+    "f122",
+    "f123"
+   ]
+  },
+  {
+   "name": "Go surface discovery",
+   "about": "Builds SSA call graphs and dynamic handoffs",
+   "files": [
+    "f311",
+    "f312",
+    "f313",
+    "f314",
+    "f315",
+    "f316",
+    "f317",
+    "f318",
+    "f319",
+    "f320",
+    "f321",
+    "f322",
+    "f323",
+    "f324",
+    "f325",
+    "f326",
+    "f116",
+    "f117"
+   ]
+  },
+  {
+   "name": "Program index",
+   "about": "Builds canonical program index and Go adapter",
+   "files": [
+    "f158",
+    "f159",
+    "f160",
+    "f161",
+    "f162",
+    "f163",
+    "f164",
+    "f165",
+    "f166",
+    "f167"
+   ]
+  },
+  {
+   "name": "Python targets",
+   "about": "Discovers Python targets and builds program index",
+   "files": [
+    "f169",
+    "f170",
+    "f171",
+    "f172",
+    "f173",
+    "f174",
+    "f175",
+    "f176"
+   ]
+  },
+  {
+   "name": "JS/TS targets",
+   "about": "Discovers JS/TS projects and builds program index",
+   "files": [
+    "f131",
+    "f132",
+    "f133",
+    "f134"
+   ]
+  },
+  {
+   "name": "Clojure targets",
+   "about": "Scouts and builds Clojure project analysis",
+   "files": [
+    "f67",
+    "f68",
+    "f69",
+    "f70",
+    "f71"
+   ]
+  },
+  {
+   "name": "Atlas model",
+   "about": "Defines atlas graph model and persistence",
+   "files": [
+    "f10",
+    "f11",
+    "f13",
+    "f32"
+   ]
+  },
+  {
+   "name": "Atlas places",
+   "about": "Builds atlas places from repository files",
+   "files": [
+    "f28",
+    "f30"
+   ]
+  },
+  {
+   "name": "Atlas lines",
+   "about": "Renders atlas tables and question evidence",
+   "files": [
+    "f14",
+    "f15",
+    "f16",
+    "f17",
+    "f18",
+    "f19",
+    "f20",
+    "f21",
+    "f22",
+    "f23",
+    "f24",
+    "f25",
+    "f26",
+    "f27"
+   ]
+  },
+  {
+   "name": "Atlas reading",
+   "about": "Reads atlas into answers and learning",
+   "files": [
+    "f33",
+    "f34",
+    "f35",
+    "f36",
+    "f37",
+    "f38",
+    "f39",
+    "f40",
+    "f41",
+    "f42",
+    "f43",
+    "f44",
+    "f45",
+    "f46",
+    "f47",
+    "f48",
+    "f49",
+    "f50",
+    "f51",
+    "f53",
+    "f54",
+    "f55"
+   ]
+  },
+  {
+   "name": "Table LLM",
+   "about": "Builds and decodes LLM table requests",
+   "files": [
+    "f56",
+    "f57",
+    "f58"
+   ]
+  },
+  {
+   "name": "LLM execution",
+   "about": "Executes LLM calls with caching and retries",
+   "files": [
+    "f135",
+    "f136",
+    "f137",
+    "f138",
+    "f139",
+    "f140",
+    "f141",
+    "f142",
+    "f143",
+    "f144",
+    "f145",
+    "f146",
+    "f147",
+    "f148",
+    "f149"
+   ]
+  },
+  {
+   "name": "DeepSeek provider",
+   "about": "Talks to DeepSeek chat completions API",
+   "files": [
+    "f76",
+    "f77",
+    "f78",
+    "f79",
+    "f80",
+    "f81",
+    "f340"
+   ]
+  },
+  {
+   "name": "Claims extraction",
+   "about": "Extracts claims from docs and git history",
+   "files": [
+    "f59",
+    "f60",
+    "f61",
+    "f62",
+    "f63",
+    "f64",
+    "f65",
+    "f66"
+   ]
+  },
+  {
+   "name": "Dependencies catalog",
+   "about": "Builds and persists dependency catalogs",
+   "files": [
+    "f82",
+    "f83",
+    "f84"
+   ]
+  },
+  {
+   "name": "Documentation reduce",
+   "about": "Reduces repository documentation into concepts",
+   "files": [
+    "f85",
+    "f86",
+    "f87"
+   ]
+  },
+  {
+   "name": "Extractors",
+   "about": "Extracts database and SQLC facts from code",
+   "files": [
+    "f88",
+    "f89",
+    "f90",
+    "f91",
+    "f92",
+    "f93"
+   ]
+  },
+  {
+   "name": "Facts build",
+   "about": "Builds repository facts from manifests and code",
+   "files": [
+    "f94",
+    "f95",
+    "f96",
+    "f97",
+    "f99",
+    "f100",
+    "f101",
+    "f102",
+    "f103",
+    "f104",
+    "f105",
+    "f106",
+    "f107",
+    "f108",
+    "f109",
+    "f111"
+   ]
+  },
+  {
+   "name": "Group index",
+   "about": "Builds group index from program and atlas",
+   "files": [
+    "f124",
+    "f125",
+    "f126",
+    "f127",
+    "f128",
+    "f129",
+    "f130"
+   ]
+  },
+  {
+   "name": "Orientation",
+   "about": "Orients newcomers with roles and flows",
+   "files": [
+    "f153",
+    "f154",
+    "f155",
+    "f156",
+    "f157"
+   ]
+  },
+  {
+   "name": "Readme target scout",
+   "about": "Scouts README guidance and classifies files",
+   "files": [
+    "f177",
+    "f178",
+    "f179",
+    "f180",
+    "f181",
+    "f182",
+    "f183",
+    "f184"
+   ]
+  },
+  {
+   "name": "Report data",
+   "about": "Assembles report data and run manifests",
+   "files": [
+    "f187",
+    "f188",
+    "f189",
+    "f190",
+    "f191",
+    "f196",
+    "f215",
+    "f216",
+    "f217",
+    "f218",
+    "f221",
+    "f223",
+    "f224"
+   ]
+  },
+  {
+   "name": "Report pages",
+   "about": "Builds report page sections and maps",
+   "files": [
+    "f197",
+    "f198",
+    "f199",
+    "f200",
+    "f201",
+    "f202",
+    "f203",
+    "f204",
+    "f205",
+    "f206",
+    "f207",
+    "f208",
+    "f209",
+    "f210",
+    "f211",
+    "f212",
+    "f213",
+    "f214"
+   ]
+  },
+  {
+   "name": "Report render",
+   "about": "Renders HTML report and localization",
+   "files": [
+    "f192",
+    "f193",
+    "f194",
+    "f195",
+    "f219",
+    "f220",
+    "f222",
+    "f225",
+    "f269"
+   ]
+  },
+  {
+   "name": "Report server",
+   "about": "Serves reports and opens editor links",
+   "files": [
+    "f267",
+    "f268"
+   ]
+  },
+  {
+   "name": "Target portfolio",
+   "about": "Selects repository targets via LLM portfolio",
+   "files": [
+    "f327",
+    "f328",
+    "f329",
+    "f330",
+    "f331",
+    "f332",
+    "f333",
+    "f334",
+    "f335"
+   ]
+  },
+  {
+   "name": "Terminology",
+   "about": "Collects and reduces repository terminology",
+   "files": [
+    "f336",
+    "f337",
+    "f338",
+    "f339"
+   ]
+  },
+  {
+   "name": "SQL text",
+   "about": "Parses SQL statements and table names",
+   "files": [
+    "f307",
+    "f308",
+    "f309",
+    "f310"
+   ]
+  },
+  {
+   "name": "Source values",
+   "about": "Holds source value anchors and validation",
+   "files": [
+    "f306"
+   ]
+  },
+  {
+   "name": "Model diagnostics",
+   "about": "Records and summarizes model diagnostics",
+   "files": [
+    "f150"
+   ]
+  },
+  {
+   "name": "Orient entry",
+   "about": "Runs orientation stage and progress",
+   "files": [
+    "f151",
+    "f152"
+   ]
+  },
+  {
+   "name": "Repo config",
+   "about": "Loads and ensures repository config",
+   "files": [
+    "f185"
+   ]
+  },
+  {
+   "name": "Program pages",
+   "about": "Builds program page portfolios",
+   "files": [
+    "f168"
+   ]
+  },
+  {
+   "name": "Debug dump",
+   "about": "Writes debug dumps and semantic observations",
+   "files": [
+    "f74",
+    "f75"
+   ]
+  }
+ ]
+}

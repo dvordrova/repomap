@@ -1,6 +1,6 @@
 # Current product decision
 
-Status: active living ADR. Updated: 2026-09-17.
+Status: active living ADR. Updated: 2026-09-25.
 
 [CONSTITUTION](../CONSTITUTION.md) takes precedence. This page records the
 current decision and acceptance state; [AGENTS](../../AGENTS.md) routes work to
@@ -71,7 +71,7 @@ not a presentation-specific graph, and stores GroupsIndex as the same thin
 semantic overlays. Native group subjects and structural edges exist only as an
 in-memory join while the HTML is built.
 
-GroupsIndex v12 is now that thin overlay: `g*` groups, `k*` containers, `o*`
+GroupsIndex v13 is now that thin overlay: `g*` groups, `k*` containers, `o*`
 operations and `x*`
 connections are deterministic target-local ordinals over canonical content;
 subject rows contain only `n*`/`e*p*` refs, categories and interpretations.
@@ -102,6 +102,30 @@ never entered into or read from a repository-wide unqualified map.
   with SQL statement structure (the shared `internal/sqltext` admission, not a
   leading verb; a table filled in by `%s` or a template hole still counts). Without a model there are
   candidates, not routes; the Echo preset test is the offline acceptance.
+- **Map of parts (2026-09-25, owner's proxy spec; the owner's open questions
+  1–7 of that spec still stand):** one DeepSeek request per target splits the
+  target's unit-bearing source files into named parts from code structure only
+  (paths, names, exported signatures, exact file calls and file imports); no
+  README, AGENTS, docstring or package documentation reaches it. A
+  declaration takes its file's part, a method its type's, a lexical child its
+  parent's. The answer is validated file by file; a file left out or listed in
+  two parts gets one closed-choice placement follow-up, and only what that
+  cannot place stays off the map with its reason. Each drawn part is described
+  from its members' names and signatures in a separate request; a refused
+  description is an explicit no-description state. Areas are a closed split of
+  the described parts asked beside the keys, with no count. The Jev zone
+  tables, the 0.50 floor, the proposal catalogue, the file inventory boxes and
+  the model's `tests` role are removed; a part made only of test code leaves
+  the canvas by the `TestSources` fact. The atlas and GroupsIndex carry an
+  explicit off-map record and `map_failure`; the component card lists Tests
+  and Not on the map. A parts or areas answer refused whole, including one
+  that decodes but draws nothing, is asked once more with the same bytes
+  through the llm layer's resample before the map fails.
+- **Known remaining violation:** key selection still sends a declaration's
+  full docstring as `author_documentation`, and symbol selection sends
+  docstrings too. The trusted-inputs rule covers both; the next change strips
+  them with its own before/after on keys. Docstrings stay for captions,
+  orientation, glossary and claims until the owner extends the rule.
 - **Reading:** role/activation/outgoing selection is independent of captions and
   directory closure. Native boundaries and accepted operations survive missing
   prose. Questions retain original evidence, explicit coverage and independent
@@ -140,6 +164,9 @@ never entered into or read from a repository-wide unqualified map.
   the provider ceiling. Output refusals partition independent questions first;
   input/context refusals preserve and repartition complete evidence. A new
   limit/packing policy is tested on one saved complete window before a full run.
+  A call may opt into one resample (spec 2026-09-25): a live answer refused whole
+  for what the model wrote is asked once more with the same bytes. Only the
+  parts and areas answers of the map of parts opt in.
 - **Glossary:** only accepted prose enters a separate p-ref generation/reduction
   pass with its own 32,768-token output allowance: legitimate windows need 1–16 thousand tokens, and two Watchtower windows looped to 128,000. Source/prose/fill context
   stays local in Prepared and the accepted cache record; no deferred g-ref
@@ -181,8 +208,8 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 17, places graph 16, reading input 18, atlas 10,
-GroupsIndex 12, dependency catalog 2, extraction artifact 2, facts 3, claims 2
+This wave uses ProgramIndex 17, places graph 16, reading input 18, atlas 11,
+GroupsIndex 13, dependency catalog 2, extraction artifact 2, facts 3, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
 dependencies. Accepted extractor nodes use `u*`; arbitrary public-protocol IDs
@@ -208,6 +235,7 @@ There are no old-format readers or manually rewritten seals.
 | Saved issue-bot retrieval response | Current per-anchor validation accepts 21/21 original rows (previously 18/21); offline response validation only. |
 | Syn / issue-bot / Watchtower ordinary reports | Third series completed in 225 / 575 / 307 seconds, with 30 / 20 / 27 questions and no unavailable answers. Native routes, operation activation, remote client/option distinctions and glossary provenance were checked. Watchtower's worker answer and required launch argument, issue-bot's per-call argument exception, and a mixed route counter still needed correction; current follow-up checks remain pending. The issue-bot glossary exhausted 128k output before lossless splitting. |
 | repomap self-run, no `--target` (2026-09-25) | `.bin/repomap .` cold, report server ready: 58.2 / 57.2 / 66.2 s over three consecutive runs (two targets), each reaching the glossary at 46–47 s; `make test`, `make vet` pass; one browser walkthrough (map, glossary page, part card connections). The remaining spread is model output: glossary draws of 37–90 terms took 7–17 s, enumerating draws (165–618 terms) 23–60 s plus a reduce pass; a design proposal that loops to its 8,192-token allowance is refused and leaves that target's map as file inventory. |
+| Map of parts, no-model self-run (2026-09-25) | `.bin/repomap . --no-model --target '…::…/cmd/repomap'` completed (exit 0, 18 s): 0 parts, 0 file boxes, 300 of 300 files in the off-map record as `map_failure` with 4,962 declarations and 9 boundaries, "The map of parts is unavailable" and Not on the map on the card. `make test`, `make vet` pass. The spec's gates A (product-bytes draws, placement re-judge, gallery, large window, description re-judge, areas draws), B (python-tutorial-game dogfood) and C (ordinary online run, warm run, cache clear, walkthrough) have not been run for this change. |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 

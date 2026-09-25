@@ -18,8 +18,6 @@ Give every row exactly one `role`:
 - `support`: helpers any program could have: errors, logging, validation
   plumbing, tokens and crypto utilities, generic utilities, build, lint and
   release tooling.
-- `tests`: exists only so the program's tests can run: tests, mocks,
-  fixtures, helpers that build test requests or inspect results.
 
 A part that touches a database is `domain` only when it holds the program's
 own models and queries; opening, pooling or migrating the connection is

@@ -14,30 +14,30 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// boxState holds an accepted responsibility and its exact declaration members.
-// Before design reading, temporary boxes describe source-file inventory only.
+// boxState is one drawn part of a target and its exact declaration members.
 type boxState struct {
 	targetID string
-	symbols  map[string]bool // explicit declaration membership; nil before design reading
+	symbols  map[string]bool // explicit declaration membership
 	id       string
 	dir      string
 	title    string
-	line     string
-	files    []string // file place IDs
-	open     bool
-	zoneID   map[string]string // per target
-	// core and forTests are the model's: the program exists for this part;
-	// this part exists only for the program's tests.
+	// line is the part's description; empty is the no-description state.
+	line  string
+	files []string // file place IDs holding its declarations
+	// rows are the files the parts answer placed in it: its file endpoints.
+	rows  []string
+	units int
+	open  bool
+	// core is the model's: the program exists for this part. forTests is a
+	// fact: every file placed in the part is test code.
 	core, forTests bool
+	test           bool
 	role           string
-	// inventory is a source file no part took, not a part the model read.
-	inventory bool
 }
 
 // overviewKeys chooses the declarations the overview describes, before any
-// part is drawn: every file of a target is its own source-inventory box, and
-// a box shows up to three of the keys the selection found in its file, the
-// documented ones first. A declaration shared by targets is chosen once. A
+// part is drawn: each file of a target shows up to three of the keys the
+// selection found in it, the documented ones first. A declaration shared by targets is chosen once. A
 // file without a selected key shows ranked keys, which the selection did not
 // choose and which are therefore not described.
 func (r *reader) overviewKeys() map[string]bool {
@@ -99,14 +99,6 @@ func (r *reader) targetFiles(owner *boxState, targetID string) int {
 
 func (r *reader) summary(owner *boxState, targetID string) lines.BoxSummary {
 	return lines.BoxSummary{ID: owner.id, Title: owner.title, Line: owner.line, Files: r.targetFiles(owner, targetID)}
-}
-
-// zoneState is one part of a target.
-type zoneState struct {
-	id    string
-	title string
-	line  string
-	boxes []string
 }
 
 // arrowState is one box-to-box arrow of one target.

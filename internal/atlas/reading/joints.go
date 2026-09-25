@@ -82,7 +82,14 @@ func (r *reader) targetSummary(target TargetMeta) lines.TargetSummary {
 	}
 	summary.Dirs = len(dirs)
 	for _, box := range r.boxesOfTarget(target.ID) {
-		summary.Parts = append(summary.Parts, box.title+": "+box.line)
+		if box.forTests {
+			continue
+		}
+		if box.line == "" {
+			summary.Parts = append(summary.Parts, box.title)
+		} else {
+			summary.Parts = append(summary.Parts, box.title+": "+box.line)
+		}
 	}
 	seenOperations := make(map[string]bool)
 	for _, state := range r.boundaries {

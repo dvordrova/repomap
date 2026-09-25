@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 12
+	Version          = 13
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -43,6 +43,7 @@ func (lane Lane) Valid() bool {
 
 // Group is one model-proposed responsibility restored to canonical
 // ProgramIndex subject identities. Membership is sparse and overlapping.
+// An empty Summary is the explicit no-description state; nothing fills it.
 type Group struct {
 	ID      string `json:"id"`
 	Title   string `json:"title"`
@@ -304,7 +305,24 @@ type Index struct {
 	Containers      []Container      `json:"containers"`
 	StructuralEdges []StructuralEdge `json:"structural_edges"`
 	Connections     []Connection     `json:"connections"`
-	SHA256          string           `json:"sha256"`
+	// OffMap names the target's files the map of parts does not draw, and
+	// MapFailure why the target has no map at all. Their subjects remain
+	// subjects, with their interpretations, outside every group.
+	OffMap     []OffMapFile `json:"off_map,omitempty"`
+	MapFailure string       `json:"map_failure,omitempty"`
+	SHA256     string       `json:"sha256"`
+}
+
+// OffMapTests is the off-map reason of a file of a part made only of test
+// code; the atlas's own reasons name the other files off the map.
+const OffMapTests = "tests"
+
+// OffMapFile is one file the map of parts does not draw, and why. Part names
+// the test-only part a file of reason tests belongs to.
+type OffMapFile struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+	Part   string `json:"part,omitempty"`
 }
 
 // GroupProposal is one already-restored grouping row. Key exists only to join
@@ -737,10 +755,13 @@ func (index Index) Validate() error {
 		}
 		groupsByID[group.ID] = struct{}{}
 	}
+	if err := validateOffMap(index.OffMap, index.MapFailure); err != nil {
+		return err
+	}
 	seenContainerGroups := make(map[string]struct{})
 	for position, container := range index.Containers {
 		if container.ID != compactOrdinal("k", position) || !validContainerID(container.ID) ||
-			!validText(container.Title) || !validText(container.Summary) || !container.Lane.Valid() || len(container.GroupIDs) < 2 {
+			!validText(container.Title) || !validOptionalText(container.Summary) || !container.Lane.Valid() || len(container.GroupIDs) < 2 {
 			return fmt.Errorf("group index: invalid container")
 		}
 		for groupPosition, groupID := range container.GroupIDs {
@@ -757,9 +778,10 @@ func (index Index) Validate() error {
 		if !validOperationKind(operation.Kind) {
 			return fmt.Errorf("group index: invalid operation kind %q", operation.Kind)
 		}
+		// An operation in a file off the map belongs to no group.
 		_, groupExists := groupsByID[operation.GroupID]
 		_, subjectExists := subjectsByID[operation.SubjectID]
-		if !groupExists || operation.SubjectID != "" && !subjectExists || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validOptionalText(operation.Summary) ||
+		if operation.GroupID != "" && !groupExists || operation.SubjectID != "" && !subjectExists || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validOptionalText(operation.Summary) ||
 			(operation.Source != "model" && operation.Source != "fact") || operation.Location.Path == "" || operation.Location.Line < 1 || operation.Location.Column < 1 {
 			return fmt.Errorf("group index: invalid operation %q", operation.ID)
 		}
@@ -1303,7 +1325,7 @@ func validateSubject(subject Subject) error {
 }
 
 func validateGroup(targetID string, subjects map[string]Subject, group Group) error {
-	if !validGroupID(group.ID) || !validText(group.Title) || !validText(group.Summary) || !group.Lane.Valid() ||
+	if !validGroupID(group.ID) || !validText(group.Title) || !validOptionalText(group.Summary) || !group.Lane.Valid() ||
 		len(group.MemberSubjectIDs) == 0 || !canonicalDirectSubjectIDs(group.MemberSubjectIDs) ||
 		group.EvidenceSubjectIDs == nil || !canonicalDirectSubjectIDs(group.EvidenceSubjectIDs) {
 		return fmt.Errorf("group index: invalid group")
@@ -2073,7 +2095,38 @@ type Overlay struct {
 	Outbound           []OutboundCall      `json:"outbound,omitempty"`
 	Containers         []Container         `json:"containers"`
 	Connections        []Connection        `json:"connections"`
+	OffMap             []OffMapFile        `json:"off_map,omitempty"`
+	MapFailure         string              `json:"map_failure,omitempty"`
 	SHA256             string              `json:"sha256"`
+}
+
+// validateOffMap checks the off-map record: known reasons, repository paths,
+// canonical order, and a map failure only with every file off for it.
+func validateOffMap(files []OffMapFile, failure string) error {
+	if !validOptionalText(failure) {
+		return fmt.Errorf("group index: invalid map failure")
+	}
+	for position, file := range files {
+		switch file.Reason {
+		case "left_out", "conflict", "no_units", "map_failure", OffMapTests:
+		default:
+			return fmt.Errorf("group index: invalid off-map reason %q", file.Reason)
+		}
+		if !validText(file.Path) || strings.HasPrefix(file.Path, "/") || !validOptionalText(file.Part) || (file.Part != "") != (file.Reason == OffMapTests) {
+			return fmt.Errorf("group index: invalid off-map file %q", file.Path)
+		}
+		if failure != "" && file.Reason != "map_failure" && file.Reason != OffMapTests || failure == "" && file.Reason == "map_failure" {
+			return fmt.Errorf("group index: off-map file %q disagrees with the map failure", file.Path)
+		}
+		if position > 0 && offMapKey(files[position-1]) >= offMapKey(file) {
+			return fmt.Errorf("group index: off-map files are not canonical")
+		}
+	}
+	return nil
+}
+
+func offMapKey(file OffMapFile) string {
+	return file.Path + "\x00" + file.Reason + "\x00" + file.Part
 }
 
 func OverlayFromIndex(index Index) Overlay {
@@ -2093,7 +2146,7 @@ func OverlayFromIndex(index Index) Overlay {
 		Version: index.Version, TargetID: index.Target.ID, ProgramIndexSHA256: index.ProgramIndexSHA256,
 		Role: index.Role, SharedCode: index.SharedCode, Summary: index.Summary, Data: index.Data,
 		Subjects: subjects, Groups: index.Groups, Operations: index.Operations, Outbound: index.Outbound,
-		Containers: index.Containers, Connections: index.Connections, SHA256: index.SHA256,
+		Containers: index.Containers, Connections: index.Connections, OffMap: index.OffMap, MapFailure: index.MapFailure, SHA256: index.SHA256,
 	}
 }
 
@@ -2160,7 +2213,8 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		Target: program.Target.Snapshot(), ProgramIndexSHA256: artifact.ProgramIndexSHA256,
 		Data: artifact.Data, Subjects: subjects, Groups: artifact.Groups, Operations: operations,
 		Outbound: artifact.Outbound, Chains: projectChains(program, operations, artifact.Outbound), Containers: artifact.Containers,
-		StructuralEdges: compileStructuralEdges(program, retained), Connections: artifact.Connections, SHA256: artifact.SHA256,
+		StructuralEdges: compileStructuralEdges(program, retained), Connections: artifact.Connections,
+		OffMap: artifact.OffMap, MapFailure: artifact.MapFailure, SHA256: artifact.SHA256,
 	}
 	applyPhases(&index, program)
 	if err := index.Validate(); err != nil {

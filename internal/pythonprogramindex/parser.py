@@ -42,10 +42,33 @@ def callee_location(path, node):
     return source_location(path, node)
 
 
-def visibility(name, forced_internal=False):
+def visibility(name, forced_internal=False, scope=None):
     if forced_internal or name.startswith("_"):
         return "internal"
+    # A module that declares __all__ exports exactly the names it lists.
+    if scope is not None and scope.kind == "module" and scope.declared_all is not None and name not in scope.declared_all:
+        return "internal"
     return "public"
+
+
+def declared_all(tree):
+    """The names a module's top-level __all__ lists, or None when it declares
+    none or not as a literal list or tuple of strings."""
+    names = None
+    for statement in getattr(tree, "body", []):
+        if isinstance(statement, ast.Assign):
+            targets, value = statement.targets, statement.value
+        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+            targets, value = [statement.target], statement.value
+        else:
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == "__all__" for target in targets):
+            continue
+        if not isinstance(value, (ast.List, ast.Tuple)) or not all(
+                isinstance(item, ast.Constant) and isinstance(item.value, str) for item in value.elts):
+            return None
+        names = {item.value for item in value.elts}
+    return names
 
 
 def bounded_text(value):
@@ -127,6 +150,7 @@ class Scope:
         self.class_ref = class_ref or (parent.class_ref if parent else "")
         self.class_qname = class_qname or (parent.class_qname if parent else "")
         self.bindings = {}
+        self.declared_all = None
         self.export_bindings = {}
         self.export_star_import = False
         self.global_names = set()
@@ -370,6 +394,7 @@ class Analyzer:
 
         for module in decoded:
             scope = Scope(module["source_ref"], module["name"], "module")
+            scope.declared_all = declared_all(module["tree"])
             self.module_scopes[module["name"]] = scope
             collector = Collector(self, module, scope)
             collector.visit(module["tree"])
@@ -496,7 +521,7 @@ class Collector(ast.NodeVisitor):
             "source_ref": ref,
             "kind": "variable",
             "name": name,
-            "visibility": visibility(name, forced_internal or self.scope.kind in ("function", "method", "lambda")),
+            "visibility": visibility(name, forced_internal or self.scope.kind in ("function", "method", "lambda"), self.scope),
             **({"owner_ref": self.scope.ref} if self.scope.kind == "type" else {}),
             **({"signature": signature} if signature else {}),
             "container_ref": self.scope.ref,
@@ -598,7 +623,7 @@ class Collector(ast.NodeVisitor):
             "source_ref": ref,
             "kind": kind,
             "name": node.name,
-            "visibility": visibility(node.name),
+            "visibility": visibility(node.name, scope=parent),
             "signature": function_signature(node),
             **({"owner_ref": owner_ref} if owner_ref else {}),
             "container_ref": parent.ref,
@@ -643,7 +668,7 @@ class Collector(ast.NodeVisitor):
             "source_ref": ref,
             "kind": "type",
             "name": node.name,
-            "visibility": visibility(node.name),
+            "visibility": visibility(node.name, scope=parent),
             "signature": class_signature(node),
             **({"owner_ref": parent.ref} if parent.kind == "type" else {}),
             "container_ref": parent.ref,

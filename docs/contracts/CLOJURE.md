@@ -40,6 +40,14 @@ example, Othello's board vector and game map have no type declarations; its
 Board representation and Game state responsibilities remain in GroupsIndex.
 No runtime mutation or entity ownership is inferred from `assoc`/`update` names.
 
+A var is public unless it is `defn-` or `^:private` (clj-kondo's `private`);
+the map of parts shows signatures of public vars only. `defmethod`,
+`extend-type` and `extend-protocol` are not declarations this adapter
+projects, so a method implemented in another namespace than its multimethod
+or protocol has no declaration of its own to move with its type; this
+equivalent of a Go method declared outside its type's file is recorded as
+missing, not fabricated.
+
 ## Test sources
 
 A namespace that requires `clojure.test` or `speclj.core` is a test source.

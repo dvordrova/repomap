@@ -47,7 +47,7 @@ func TestAtlasInterpretationRebindsTheSameDeclarationAcrossTargets(t *testing.T)
 
 func TestObservedRoutesReplaceTheDeclarationOperationAndKeepAliases(t *testing.T) {
 	p := atlasTestProgram(t, "server", "api/handler.go")
-	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "handler", ObjectID: p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Returns status.", Activation: "request", Operation: "get status"}}}}}}}
+	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{p.Objects[0].ID}, Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "handler", ObjectID: p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Returns status.", Activation: "request", Operation: "get status"}}}}}}}
 	for i, route := range []string{"/status", "/health"} {
 		target.Boundaries = append(target.Boundaries, atlas.Boundary{ID: fmt.Sprintf("route%d", i), ObjectID: p.Objects[0].ID, BoxID: "api", Path: "api/handler.go", LineNo: 2 + i, Column: 1, Direction: atlas.DirectionIn, Kind: atlas.BoundaryHTTPServer, Method: "GET", Values: []string{route}, Line: "Returns status.", FactID: "fact"})
 	}
@@ -163,6 +163,16 @@ func TestSharedCodeLinksRemainBoundToTheirCompleteTarget(t *testing.T) {
 
 func atlasTestProgram(t *testing.T, name string, files ...string) programindex.Index {
 	t.Helper()
+	return atlasTestProgramWith(t, name, nil, files...)
+}
+
+// atlasTestProgramWith is atlasTestProgram with native relations between its
+// objects oa, ob, ... (one per file, in file order).
+func atlasTestProgramWith(t *testing.T, name string, relations []programindex.RelationInput, files ...string) programindex.Index {
+	t.Helper()
+	if relations == nil {
+		relations = []programindex.RelationInput{}
+	}
 	objects := make([]programindex.ObjectInput, 0, len(files))
 	for i, file := range files {
 		objects = append(objects, programindex.ObjectInput{
@@ -178,8 +188,8 @@ func atlasTestProgram(t *testing.T, name string, files ...string) programindex.I
 			Sources: []programindex.TargetSource{{FileRef: "f1", Path: files[0]}}, AnchorFileRef: "f1",
 		},
 		Objects:   objects,
-		Relations: []programindex.RelationInput{},
-		Coverage:  programindex.CoverageInput{Measured: true, ObjectsObserved: len(objects)},
+		Relations: relations,
+		Coverage:  programindex.CoverageInput{Measured: true, ObjectsObserved: len(objects), RelationsObserved: len(relations)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -188,10 +198,25 @@ func atlasTestProgram(t *testing.T, name string, files ...string) programindex.I
 }
 
 func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
-	svc := atlasTestProgram(t, "svc", "svc/api/h.go", "svc/core/c.go")
+	// The handler calls the domain: a native relation the arrow's sentence
+	// describes between the two parts.
+	svc := atlasTestProgramWith(t, "svc", []programindex.RelationInput{{
+		SourceRef: "handler-calls-domain", Kind: programindex.RelationCalls, FromRef: "oa", ToRefs: []string{"ob"},
+		Resolution: programindex.ResolutionExact, TargetsObserved: 1, Location: &programindex.Location{Path: "svc/api/h.go", Line: 4, Column: 2},
+		Witnesses: []programindex.Witness{{Kind: "call", Location: &programindex.Location{Path: "svc/api/h.go", Line: 4, Column: 2}}}, WitnessesObserved: 1,
+	}}, "svc/api/h.go", "svc/core/c.go")
 	web := atlasTestProgram(t, "web", "web/src/app.ts")
 	rebound := rebindTestTargets(t, svc, web)
 	svc, web = rebound[0], rebound[1]
+	objectIn := func(p programindex.Index, path string) []string {
+		for _, object := range p.Objects {
+			if object.Location != nil && object.Location.Path == path {
+				return []string{object.ID}
+			}
+		}
+		t.Fatalf("no object in %s", path)
+		return nil
+	}
 	value := atlas.Atlas{
 		Version: atlas.Version, Repository: "x", Revision: "abc",
 		Targets: []atlas.Target{
@@ -199,9 +224,9 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 				ID: svc.Target.ID, Language: "go", Kind: "executable", Name: "svc", Root: "svc",
 				Zones: []atlas.Zone{{ID: "serving", Title: "Serving", Line: "Serves things.", BoxIDs: []string{"svc/api", "svc/core"}}},
 				Boxes: []atlas.Box{
-					{ID: "svc/api", Dir: "svc/api", Title: "HTTP handlers", Line: "Answers requests.", ZoneID: "serving", Side: atlas.SideIn, Open: true,
+					{ID: "svc/api", Dir: "svc/api", Title: "HTTP handlers", Line: "Answers requests.", ZoneID: "serving", Side: atlas.SideIn, Open: true, MemberIDs: objectIn(svc, "svc/api/h.go"),
 						Files: []atlas.File{{Path: "svc/api/h.go", Line: "Handler file.", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{}}}, Keys: []atlas.Key{}},
-					{ID: "svc/core", Dir: "svc/core", Title: "Domain", Line: "Does the work.", ZoneID: "serving", Side: atlas.SideMid, Open: true,
+					{ID: "svc/core", Dir: "svc/core", Title: "Domain", Line: "Does the work.", ZoneID: "serving", Side: atlas.SideMid, Open: true, MemberIDs: objectIn(svc, "svc/core/c.go"),
 						Files: []atlas.File{{Path: "svc/core/c.go", Line: "Core file.", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{}}}, Keys: []atlas.Key{}},
 				},
 				Arrows:     []atlas.Arrow{{ID: "x1", From: "svc/api", To: "svc/core", Calls: 3, Witnesses: []atlas.Witness{}, Sentence: "The handlers hand requests to the domain."}},
@@ -211,7 +236,7 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 			{
 				ID: web.Target.ID, Language: "typescript", Kind: "package", Name: "web", Root: "web",
 				Zones: []atlas.Zone{},
-				Boxes: []atlas.Box{{ID: "web/src", Dir: "web/src", Title: "Client", Line: "Calls the API.", Side: atlas.SideOut, Open: true,
+				Boxes: []atlas.Box{{ID: "web/src", Dir: "web/src", Title: "Client", Line: "Calls the API.", Side: atlas.SideOut, Open: true, MemberIDs: objectIn(web, "web/src/app.ts"),
 					Files: []atlas.File{{Path: "web/src/app.ts", Line: "App.", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{}}}, Keys: []atlas.Key{}}},
 				Arrows:     []atlas.Arrow{},
 				Boundaries: []atlas.Boundary{{ID: "b-out", BoxID: "web/src", Path: "web/src/app.ts", LineNo: 5, Caller: "FA", Direction: atlas.DirectionOut, Kind: atlas.BoundaryHTTPClient, Values: []string{"/api/levels"}, Line: "Fetches levels."}},
@@ -264,7 +289,7 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 	if svcIndex.Containers[0].Title != "Serving" || len(svcIndex.Containers[0].GroupIDs) != 2 {
 		t.Fatalf("container: %+v", svcIndex.Containers[0])
 	}
-	if svcIndex.Connections[0].Label != "The handlers hand requests to the domain." {
+	if svcIndex.Connections[0].Summary != "The handlers hand requests to the domain." || svcIndex.Connections[0].FromSubjectID == "" {
 		t.Fatalf("arrow: %+v", svcIndex.Connections[0])
 	}
 	webIndex := byTarget["web"]

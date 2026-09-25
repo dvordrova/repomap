@@ -164,6 +164,13 @@ signatures already keep their parameters, with regression examples in
 ([Python](PYTHON.md#generic-declarations)); Clojure declares no type parameters
 and has no equivalent.
 
+A Go method may be declared in another file than its type. Its native owner
+is the type, so on the map of parts it goes with its type's file part, and
+a file holding only such methods has no unit of its own
+(`internal/localstore/ledger_append.go` in the cumulative Go fixture). A
+closure (`f$1`) has no native parent in the index (its container is the
+package); the map of parts finds it as a lexical child by source range.
+
 ## Source-aware diagnostics
 
 The etcd report exposed a shared-root ownership defect: the first target at a

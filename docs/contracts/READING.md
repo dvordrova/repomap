@@ -45,24 +45,26 @@ new description or selection requests.
   a sibling target's fact. Shared source context uses the original SubjectID
   before a target-scoped ObjectID. `reading` walks them in rounds and asks
   one keyed table per round: directories by depth, independent files with direct caller facts,
-  symbols, boundaries, declaration-based responsibilities and their larger areas,
-  the drawn arrows, the portfolio, the joints. Stages with no data dependency
-  run concurrently: after the files, the symbols; the outside symbols with the
-  boundaries their roles make and the layers between them; and the zones read
-  nothing of one another and join before the arrows, which read them all.
-  After the core, the keys of each part and the targets with their joints
-  likewise run at once. Each
+  symbols, boundaries, the parts of each target's files with their placement
+  follow-up and descriptions, the drawn arrows, the core, the areas over the
+  described parts, the keys, the portfolio, the joints. Stages with no data
+  dependency run concurrently: after the files, the symbols; the outside
+  symbols with the boundaries their roles make and the layers between them;
+  and the parts read nothing of one another and join before the arrows, which
+  read them all. After the core, the areas (`atlas_areas`), the keys of each
+  part and the targets with their joints likewise run at once. Each
   prints, counts and rejects into its own record, added at the join in step
   order, so `tables.md` keeps step order and the requests, compact IDs,
   knowledge, the reading's rejected rows and atlas are those of the serial
   walk; only the exchange journal, with the response rejections it appends to
   `rejected.jsonl` as responses arrive, interleaves. The first failure stops the stages beside it
   and is the error reported; `--through` stops inside them at its own stage.
-  The zone assignment tables of a target use its position as their round, as
-  the core table does; its parts and areas proposals are rounds 2p+1 and 2p+2.
-  Targets propose and assign their zones side by side, each on its own record
-  joined in target order; parts, then zones, take their compact IDs in target
-  order, the one point where a target waits for the ones before it. A row carries the place's own facts and its directory's line, one step up.
+  A target's parts request, placement follow-up and part descriptions use its
+  position p+1 as their round, as the core table does; its areas request uses
+  it too. Targets read their parts side by side, each on its own record joined
+  in target order; parts take their compact IDs in target order, the one point
+  where a target waits for the ones before it, and areas take theirs in target
+  order once every target's areas answer is in. A row carries the place's own facts and its directory's line, one step up.
   File callers contribute deterministic facts, never another file's model
   line. Description candidates include every eligible declaration in authored
   code; visibility, documentation and callers order them without removing
@@ -117,67 +119,115 @@ new description or selection requests.
 
 ## Architectural responsibilities
 
-`reading/design.go` owns the ordinary `atlas_zones` stage. File captions do not
-assign files to directories, neighbouring boxes or a `new:` title. Temporary
-file inventory is used during caption selection only. Design reading works on
-units a reader recognizes: a function (package, name, signature, first
-documentation sentence) and a type (package, name, methods). Every declaration
-belongs to exactly one unit. It proposes before it assigns, one decision per
-request: `atlas_zones` proposes the parts from a names-only package overview
-and README/AGENTS documents; `atlas_zone_parts` assigns every unit to one
-proposed part or `none` by closed choice, with the other units it calls as
-evidence; `atlas_zones` proposes 4 to 8 areas over the drawn parts; and
-`atlas_zone_areas` assigns every part to one area or `none`. A part no unit
-chose is not drawn; a unit that chose `none` stays source inventory. Paths are
-context and do not decide ownership.
+`reading/design.go` owns the map of parts; `reading/areas.go` owns its areas.
+File captions do not assign files to parts. Owner, 2026-09-25: "я доверяю
+только имени пакета, имени символа, и сигнатуре" — every request of the map
+sees code structure only: paths, names, signatures, kinds and counts. No
+README or AGENTS text, docstring, package documentation or `author_context`
+reaches it.
 
-Source-located module bodies with observed calls, external invocations,
-execution, reads or writes enter the same closed declaration catalogue. This
-retains top-level startup and registration activity without assigning it to an
-unrelated function in the file. Imports and containment alone do not create a
-module-body candidate. Its native kind and exact source/call identities remain
-visible to the existing symbol, boundary and design stages.
+**The grouping unit is the source file.** One `atlas_zones` request per target
+lists one row per target file holding at least one unit: `ref` (the sealed
+graph's `f*`), `path`, `units`, `types`, `functions` and `variables`. A unit
+is a function, a variable, a type together with its methods, or a
+source-located module body. An exported name (the adapter's visibility fact:
+Go capitalization, JS/TS `export`, Python `__all__` when the module declares
+it and otherwise no leading underscore, Clojure not `defn-` nor `^:private`)
+is followed by its signature, a type's by its form. Method names are not
+sent. A declaration takes its file's part. A method goes with its type
+through the native owner the type's members name, even from another file; a
+lexical child (a declaration inside the source range of a function or method
+of its file, by the adapter's own positions and end lines, such as Go `f$1`
+closures and nested JS or Python functions) takes its parent's part and is
+neither a row, a name nor a unit. `calls` counts exact call sites between
+listed files once per distinct pair (`"f3 -> f7 (12)"`); calls resolved only
+to alternatives are left out. `imports` lists imports the adapter resolves to
+one listed file (`"f3 -> f7"`); Go package imports resolve to a directory and
+add nothing. Files without a unit are not listed. A file that declares only
+what follows units of other files, such as a Go method declared outside its
+type's file, is therefore no row, yet it is on the map through those
+declarations. The prompt sets no count of parts.
 
-The model selects cohesive responsibilities by closed declaration refs. A part
-may cross directories, and declarations in one file may belong to different
-parts. A meaningful collaborator may be a single declaration. There is no fixed
-number of parts or areas. Consequential responsibilities such as input checks
-and supplied-code execution retain their actual runtime/caller context; shared
-types or absent observations cannot establish a runtime check or its absence.
-The same owner groups accepted parts into larger areas with their declarations
-and native collaboration context, rather than only titles and file counts.
-Original declarations use their already scoped `t*.n*` refs. Accepted parts,
-areas and cross-target joints are born as short `p*`, `z*` and `j*` IDs; no
-`design:<sha>`, composed joint path or second post-model renumbering exists.
+**Small targets.** A target without a unit-bearing file sends no request and
+has a legitimate empty map. A target of one such file sends no parts request:
+its one part takes the target's name. Without a model a target of several
+files has no map: an explicit map failure, never an invented grouping.
 
-A parts or areas proposal is one request answered as a title → purpose
-object and accepted only whole: an empty or repeated title refuses it, and an
-empty object is an explicit abstention. There is no fixed number of parts or
-areas; the areas prompt suggests 4 to 8 and no count is validated. Proposals
-use an 8,192-token output allowance (accepted proposals used 105–1,026 tokens;
-one parts proposal looped to 128,000 in 344 s); a refused proposal leaves no
-catalogue and every declaration stays source inventory. Assignment by closed
-choice then decides membership; a unit that chose `none` or no option above
-the acceptance floor stays source inventory, with no inherited directory
-membership or invented area. Rejections point to the saved raw response. Caption whitespace follows the ordinary
-table text normalization. Diagnostics distinguish ungrouped inputs and discarded
-unknown members from refused groups. Stage rejection counts count affected
-windows once, not each group or omitted input. Accepted groups are canonically
-ordered and receive target-local `g1`, `g2`, ... IDs; containers use `k*` and
-group connections use `x*`. These are references inside one sealed overlay,
-not content hashes or cross-revision identities. A target description reads its accepted responsibilities
-even for a single-target run; it does not inherit a directory caption.
+**Too large.** A parts request is split into windows only when its prepared
+request does not fit the provider or the provider refuses its input or
+context size, through the shared adaptive split memo. A window is a whole
+directory subtree, halved by file count until it fits; a single flat
+directory halves into contiguous runs in path order. Parts never cross
+windows; nothing is sampled or truncated.
 
-Atlas v8 saves explicit `member_ids`; one file may appear in multiple parts with
-different declarations. Native lexical children inherit their owning
-declaration's part. ProgramIndex retains every original subject and structural
-relation. GroupsIndex persists only semantic annotations and projects
-cross-part native relationships with exact subject IDs,
-locations and original resolution, including calls within one source file.
-File endpoints acquire a part only when all their declarations share that part.
-Selecting a module body does not assign other declarations in its file; those
-retain their separate accepted or unassigned membership. Native lexical
-inheritance within a selected callable or class is unchanged.
+**Validation, placement and refusal.** Owner, on a decoder that refused a
+whole good answer: "кто ему дал такое право?" A parts answer
+(`{"groups":[{"name","files"}]}`) is validated as independent file → part
+rows: an unknown ref is discarded and recorded, a file named twice in one
+part is kept once, a file listed in two parts loses both memberships (no
+first-wins) and a file left out stays unplaced; a group without a name or
+without a listed file is not drawn and its files are left out; two parts
+sharing a name are both kept. One part holding everything, or one part per
+file, is accepted as returned and recorded. Every annotation is recorded in
+`rejected.jsonl` without refusing the answer. When at least one part was
+drawn, one closed-choice `atlas_placement` table places the unplaced files:
+a left-out file chooses among every drawn part, a conflicting one only
+between the parts that listed it, with its own calls and imports to and
+from placed files as part refs. An unknown, missing or refused choice leaves
+the file off the map with its reason. Only an answer that draws no part is
+refused whole: it is not JSON, holds no groups, has no group holding a
+listed file of its own (every ref unknown, such as paths instead of refs,
+every group without a name, or every file in two groups), or ends at the
+output allowance. Such an answer is asked once more with the same bytes
+([one resample](EXECUTION.md#one-resample)). A window refused on both draws
+is recorded as `window_rejected`; its files are left out for the follow-up
+when another window of the target drew parts. A target all of whose windows
+are refused gets an explicit `map_failure` with every file off the map. Its
+other analysis survives.
+
+**Membership and the off-map record.** Atlas v11 saves explicit `member_ids`
+per part, and an explicit per-target `off_map` record: every file, or stray
+declaration, no drawn part holds, with its reason (`left_out`, `conflict`,
+`no_units`, `map_failure`), its file line, captions and keys. `no_units` is a
+file that declares nothing. A type's methods declared elsewhere follow it off
+the map; a method whose file is off the map stays with its placed type. A
+file endpoint is its partitioned part directly; a method that follows its
+type into another part changes only its own membership. A file that is no
+row takes as endpoint the one part its drawn declarations share (none when
+they sit in two parts) and has no entry of its own. Declarations off the map
+in a file a part holds, such as a method whose type is off the map, are
+listed under their type's reason with that part as `box_id`: the file itself
+stays on the map. A boundary takes its declaration's part, else its file's
+part; one in a file off the map names no box and is still read. A part whose every
+file is test code (the adapter's `TestSources` fact) keeps its membership,
+file lines, captions and keys in the atlas, is not described, not grouped
+into areas and not asked for a core role, and leaves the canvas. The model
+has no `tests` role. Accepted parts and areas are born as short `p*` and `z*`
+IDs.
+
+**Descriptions.** Each drawn part that is not test code gets one
+`atlas_describe` request (`prompts/design_describe.md`): the part's name and
+every member unit grouped dir → file with its name and signature, never
+documentation; the answer is `{"description":"…"}`. A long description is
+kept; an empty or undecodable one leaves the explicit no-description state,
+recorded, and nothing fills it in. The requests of a target run at once
+after its parts and placement. Core, keys, arrows and orientation read the
+part lines. Descriptions, like the parts names, are asked in every model
+run, with or without `--captions`.
+
+**Areas.** When a target has at least three drawn parts that are not test
+code, one `atlas_areas` request (`prompts/design_areas.md`) lists them with
+`ref`, `name`, `description`, `dirs` and `units`, and the exact call sites
+between them (`"p3 -> p7 (12)"`), and answers a closed split
+`{"areas":[{"name","parts"}]}`. It sets no count; a part may stay outside
+every area. A part in two areas or in none stands alone, an area of fewer
+than two parts is not drawn. An empty list leaves every part alone; an answer
+that is not JSON, has no list, or lists areas none of which holds a listed
+part (parts named instead of referenced, every area without a name) is
+refused whole, asked once more with the same bytes, and on a second refusal
+draws no areas and is recorded. Each area's line comes from the same
+description prompt with its parts' names and lines as members. Jev assigns nothing in this stage.
+
 The browser does not choose, validate or repair architectural membership.
 
 ## Operation ownership

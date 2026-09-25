@@ -69,6 +69,47 @@ type pageSection struct {
 	Todos       []pageTodo
 	DeadFolders []pageFileFolder
 	TodoFiles   []pageTodoFile
+	// TestFiles and OffMap are the component's files the map of parts does
+	// not draw: those of parts made only of test code, and every other file
+	// no part holds, with why. MapFailure says why there is no map at all.
+	TestFiles  []pageOffMapRow
+	OffMap     []pageOffMapRow
+	MapFailure string
+}
+
+// pageOffMapRow is one file outside the map of parts: its source link, the
+// test part it belongs to or why no part holds it.
+type pageOffMapRow struct {
+	Anchor pageAnchor
+	Part   string
+	Reason string
+}
+
+// offMapReasons are the reader's words for why a file is off the map.
+var offMapReasons = map[string]string{
+	"left_out":    "Left out of the parts",
+	"conflict":    "Listed in two parts",
+	"no_units":    "No declarations of its own",
+	"map_failure": "No map of parts",
+}
+
+// fillSectionOffMap lists the files the map does not draw from the complete
+// group graph, so test code the overview hides stays reachable here.
+func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
+	index := builder.graphIndex(section.programTargetID)
+	if index == nil {
+		return
+	}
+	section.MapFailure = index.MapFailure
+	for _, file := range index.OffMap {
+		row := pageOffMapRow{Anchor: builder.links.anchor(file.Path, 0, 0), Part: file.Part}
+		if file.Reason == groupindex.OffMapTests {
+			section.TestFiles = append(section.TestFiles, row)
+			continue
+		}
+		row.Reason = offMapReasons[file.Reason]
+		section.OffMap = append(section.OffMap, row)
+	}
 }
 
 type pageFileFolder struct {
@@ -254,6 +295,7 @@ func (builder *pageBuilder) buildSections() {
 	builder.testPaths = overview.testPaths
 	for _, section := range builder.sections {
 		builder.fillSectionFacts(section)
+		builder.fillSectionOffMap(section)
 		section.Map = overview.buildMap(section)
 		overview.fillSectionGroups(section)
 		overview.fillSectionOperations(section)

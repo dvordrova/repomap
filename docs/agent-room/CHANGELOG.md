@@ -1,5 +1,137 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Map of parts review: resample, empty answers, method-only files
+
+- The llm layer's one resample (branch `parts/one-time-resample`, merged into
+  this branch) now serves the map of parts: the parts and areas calls opt in
+  and the `TODO(parts resample)` markers are gone. A parts answer that decodes
+  but draws no part is refused whole in its decoder, so it is resampled and
+  then recorded as `window_rejected`, like an answer without groups: every
+  ref unknown (paths instead of `f*`), every group without a name, or every
+  file in two groups. Before, such an answer gave zero parts, no
+  `map_failure` and every file `left_out`. An areas answer whose areas hold
+  no listed part is refused the same way; an empty list is still an
+  abstention.
+- A file that is no row (it declares only methods of types in other files)
+  was marked `no_units`, and the card listed it under Not on the map as "No
+  declarations of its own" while its methods were drawn. Now `no_units` is
+  only a file that declares nothing; a row-less file is on the map through
+  its declarations, with the one part they share as its endpoint, and has no
+  entry. Declarations off the map in a file a part holds carry that part as
+  `box_id` (atlas 11, not yet released, so no version change); GroupsIndex
+  and the card no longer list such a file. On the saved no-model
+  `cmd/repomap` graph read with every row as its own part: 290 parts hold all
+  300 files and nothing is off the map; the 10 row-less files (among them
+  `internal/atlas/reading/walk.go`) were `no_units` before.
+- Tests: `TestRefusedPartsAnswerIsAskedOnceMore` (spec D4 on the reading
+  side, replacing the resample branch's test of the removed proposal code:
+  refused then good draws the map, refused twice is a `map_failure`, exactly
+  two parts requests, the other target asked once);
+  `TestRefusedPartsAnswerIsAnExplicitMapFailure` now expects two draws per
+  target; decoder cases for answers that draw nothing (parts and areas);
+  `TestFilesOfMethodsDeclaredElsewhereStayOnTheMap` (a methods-only file and
+  its boundary stay in the type's part, a method of a type off the map names
+  its file's part); the shared fixture checker refuses a file-level off-map
+  entry for a file that declares code, and the Go fixture checks that
+  `ledger_append.go` is not in GroupsIndex's `off_map`, the card's list. The
+  summed metrics of two draws stay covered in `internal/llm/resample_test.go`.
+  Each new expectation fails on the code before the fix (checked by
+  mutation). No online run was made for this round.
+
+## 2026-09-25 — Map of parts from one file split per target
+
+- Probe evidence behind the change (spec `parts-spec.md`, measured before the
+  code): placement judged on 80 units (60 Go, 20 UI) — file split (FILES)
+  78/80 and 58/60, directory split 75 and 55, names plus Jev with no
+  threshold 67 and 54, the product of the day 51 and 42. FILES beats the
+  product 28:1 (p=1.1e-7); against names plus Jev the all-unit 12:1
+  (p=0.0034) is the UI alone (7:0), on Go 5:1 (p=0.22, not significant);
+  against the directory split 5:2 (p=0.45). Go draw stability, unit ARI over
+  10 pairs: median 0.929, mean 0.897, minimum 0.804 (three draws passing the
+  old rules: median 0.817). 3 of 5 Go draws passed the old rules (go-1 listed
+  f180 twice, go-2 left out f12); all 3 UI draws did. Parts came out at
+  package level (30 of go-4's 37 parts one directory). Descriptions from
+  members (v1) beat the proposal `about` 23:4 on U+A (p=0.00031).
+- Implemented: `atlas_zones` sends one parts request per target over the
+  unit-bearing files (sealed `f*`, path, units, type/function/variable names,
+  exported signatures, exact file calls once per call site and file pair,
+  file imports); validation keeps every good file and sends left-out and
+  conflicting files to one `atlas_placement` closed-choice table; each drawn
+  part not made only of test code gets an `atlas_describe` request with the
+  v1 prompt; `atlas_areas` splits three or more described parts, beside the
+  keys, and describes each area from its parts. Windows are directory
+  subtrees, only on an actual prepared-size or input/context refusal, through
+  the shared split memo. Atlas 11 and GroupsIndex 13 carry the off-map record
+  (`left_out`, `conflict`, `no_units`, `map_failure`; `tests` in GroupsIndex)
+  and `map_failure`; operations in files off the map have no group; empty
+  part/area summaries are the no-description state. Removed: the Jev
+  `atlas_zone_parts`/`atlas_zone_areas` tables and prompts, the proposal
+  catalogue and its title → purpose decoder, the file inventory boxes, the
+  model's `tests` role (core v5). Python visibility now follows a module's
+  literal `__all__` (fixture `src/fixture_app/exports.py`).
+- Lexical children are found by source range: a declaration inside a
+  function or method of its file (adapter positions and end lines). Go
+  closures carry no native parent (their container is the package), so the
+  range is the one rule for every language.
+- Fixtures: Go `internal/localstore/ledger.go` + `ledger_append.go` (a method
+  declared outside its type's file); Python `exports.py`. Equivalents: Python
+  and TypeScript have no method outside its class; Clojure `defmethod`,
+  `extend-type` and `extend-protocol` are not declarations its adapter
+  projects (recorded, not fabricated). Replay fixture
+  `internal/atlas/reading/testdata/parts-replay` holds the saved go-1, go-2
+  and go-4 answers mapped to accept2's sealed refs: go-1 sends only
+  internal/repoconfig/config.go (f185 sealed) to the follow-up, go-2 only
+  internal/atlas/destinations/destinations.go, go-4 nothing; none refused.
+- No-model self-run of `cmd/repomap` (exit 0, 18 s wall): 0 parts, 0 file
+  boxes, 300/300 files off the map as `map_failure` (4,962 declarations,
+  9 boundaries without a box); the card says "The map of parts is
+  unavailable: no model was asked for the parts of this program" and lists
+  Not on the map · 300 (five rows, All 300).
+- Not run for this change: the spec's gate A (product-bytes parts draws,
+  placement re-judge, gallery repositories, a >1,000-file window, description
+  and areas judges), B (python-tutorial-game dogfood) and C (ordinary online
+  self-run, warm run, cache clear, browser walkthrough), so there are no
+  per-stage online timings yet. The one-time resample of a refused parts or
+  areas answer was not wired in this entry; merging `parts/one-time-resample`
+  wires it: the parts and areas calls opt in.
+
+## 2026-09-25 — One resample of a whole refusal (parts spec §10)
+
+- `llm.Call.Resample` opts a call in. `ExecuteJSON` wraps `executeJSON`, so
+  replay, which calls `executeLive` itself, is never resampled. It asks once
+  more with the same bytes in three cases. The owner's decoder refused the
+  whole answer. The provider's answer was empty, had an undecodable envelope,
+  or did not stop (a content filter excepted). Or the answer was cut at the
+  output-token cap and the adaptive owner cannot split the item. The adaptive
+  executors mark each opted-in item as divisible or not by asking its owner's
+  split once. Transport classes, context or request-size refusals, other
+  statuses, cached answers and owner-recovered refusals
+  (`SplitRejectedResponse`, `SplitHTTP500`, attempt deadline) keep one call.
+- A refused draw is never cached; the accepted second draw is cached under
+  the same key with its own measurements; `Outcome.Metrics` sums both draws.
+  The journal already told the draws apart: each exchange gets its own
+  `instance_ordinal`, so no draw number was added.
+- The design parts and areas proposals opt in. A parts answer with no groups
+  is now a whole refusal (spec §10 "no groups"), and an empty areas answer
+  stays an abstention. A target without units no longer sends a parts request
+  (spec §2), which would otherwise draw that refusal twice.
+- Tests (fail-closed local providers):
+  - The llm layer covers five first-draw refusal classes and two refused
+    draws (exactly two provider calls, summed metrics, nothing cached).
+    Eleven classes keep one call. Output-token refusals are split by a
+    divisible adaptive owner (each and batch forms) and resampled otherwise.
+    A cached answer is served with no call, and a stale one is replaced by
+    exactly one call. Replay makes one call.
+  - A debugdump test writes the two exchanges with one request SHA-256 and
+    distinct `instance_ordinal`s.
+  - The reading tests check that a parts answer with no groups followed by a
+    good one draws the map after two parts requests. Two empty answers leave
+    the declarations loose after two. A target without units sends none.
+  - Mutations that always resample, drop the batch divisibility mark or drop
+    the zero-unit skip each fail these tests.
+  - `make test` and `make vet` pass, and `make build` builds. No online run
+    was made for this piece.
+
 ## 2026-09-25 — Test sources from the Node runner and Playwright
 
 - The JS/TS helper now derives `TestSources` from three runner facts. The
