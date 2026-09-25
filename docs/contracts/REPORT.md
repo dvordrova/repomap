@@ -502,15 +502,25 @@ An operation or native route exposes Data links only when the existing accepted 
   ResponseLanguage means English; the final translator supplies its language.
   Exact-byte replay does not rebuild or add this instruction.
 
-- Display translation alone also halves a whole refused response window after
-  JSON or translation validation fails, per the owner's 2026-09-09 request for
-  automatic recovery. Original entries remain complete; no refused fragments
-  are published or cached as accepted answers. The same exact-request split
+- Display translation accepts texts independently. Each text's value is
+  judged alone: a string, or an object whose `text` is a string; one wrapper
+  member or a `{ref, text}` list (including the echoed `entries` shape) keeps
+  the same ref identity, and only the window's refs count. A missing,
+  malformed, twice differently answered or invalid text (placeholder mismatch)
+  is refused alone and journaled; its neighbours are published and the answer
+  is cached. The refused texts of each window are asked once more, in a request
+  of only those texts, and a text refused again keeps its source language.
+  Display translation alone also halves a whole refused response window when
+  an answer translates nothing (unreadable JSON, a bare number, no usable
+  text), per the owner's 2026-09-09 request for automatic recovery. Original
+  entries remain complete; no refused fragments are published or cached as
+  accepted answers. The same exact-request split
   memo records this as `response_validation`, not a provider resource limit,
   and applies it only while the owning stage opts in. Valid child windows keep
-  their ordinary cache entries. A singleton the provider answered but refused
-  (missing entry, placeholder mismatch, validation or envelope failure, resource
-  refusal) keeps its source-language text: the entry is published untranslated,
+  their ordinary cache entries. A text refused again after its follow-up, or a
+  singleton the provider answered but refused (missing entry, placeholder
+  mismatch, validation or envelope failure, resource refusal), keeps its
+  source-language text: the entry is published untranslated,
   `rejected.jsonl` gets an `entry_untranslated` row per text and the console
   names them once; a failure before any provider answer still fails the stage.
 - Display translation starts with at least eight complete windows (or one per

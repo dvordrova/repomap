@@ -694,15 +694,26 @@ claims and target-qualified graph subjects such as `t1.n22`. Groups likewise use
 qualified existing IDs such as `t1.g3`. Go does not allocate a second numbering
 scheme before the call. Validation is a pure
 function over the response and the advertised catalog. Set refs filter unknown
-or incompatible members and deduplicate repeats, recording ignored refs; a row
+or incompatible members and deduplicate repeats, recording ignored refs; one ref
+written as a bare string is the same one-element list. A cited member keeps its
+target-qualified ref (`t1.n22`) in the summary refs and a role's subject ids,
+because bare member ids repeat across targets; the report resolves that
+qualified ref to the member's own source. Flow steps keep their target beside
+the bare member id. A row
 with no required evidence, a recipe step with no manifest or entrypoint evidence,
+a row naming an unknown target, a role without a label, a multi-line `cwd`,
 or a flow step naming another target's member is rejected with its raw JSON and
-a reason into `rejected.jsonl`. Summary, roles, recipe and flow validate separately,
+a reason into `rejected.jsonl`. Target refs and `cwd` are trimmed before they
+are checked. A role keeps an empty purpose, never filled in: the label is the
+decision. An invalid optional recipe note is dropped and recorded while its
+step stays. Summary, roles, recipe and flow validate separately,
 so a wrong field type does not discard accepted sections. Equivalent target
-roles combine their evidence; conflicting roles leave only that target's role
+roles, including purposes that differ only in whitespace, combine their
+evidence; conflicting roles leave only that target's role
 unavailable. Complete prose and qualifications survive; only short labels collapse
-whitespace. Unparseable responses yield the legitimate empty orientation and are
-not cached. Optional terms follow accepted sections and rows on live and cached
+whitespace. Unparseable responses, and responses whose every row was refused,
+yield the legitimate empty orientation and are not cached; the latter journal
+each row's own reason. Optional terms follow accepted sections and rows on live and cached
 responses. Rejection never aborts the run and no replacement is invented.
 Preparation keeps complete author claims and all validated group members with their native evidence against the actual provider envelope; no first-twelve-members or short-claim slice substitutes for the complete input.
 the former 2 MiB limit and its size-triggered claim/member/fact removal are gone.
