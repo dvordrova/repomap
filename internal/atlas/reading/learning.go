@@ -869,8 +869,12 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				if result.Err != nil {
 					use.Rejected++
 					reason = result.Err.Error()
+					responseRef := ""
+					if len(result.Outcome.Response) > 0 {
+						responseRef = filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))
+					}
 					r.rejected = append(r.rejected, modeldiag.Row{Stage: stageLearn, Kind: "window_rejected", Count: len(pool.Intents), Reason: reason,
-						ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json")))})
+						ResponseRef: responseRef})
 					// A response that named none of its intents decided nothing
 					// about them: they are asked again, each alone, below.
 					var refusal *learningRefusal

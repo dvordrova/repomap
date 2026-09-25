@@ -325,7 +325,9 @@ is written: a journal entry from its event's rejections, which become exactly
 the rows pointing at it; a window from its outcome's rejections and from the
 annotations its stage records before writing the refs. A wholly accepted
 answer makes no copy. After cache clear every `response_ref` of a run leads
-to bytes. One case stays uncovered: an answer its decoder accepted whole but
+to bytes. A window whose call failed without any response has no response
+ref, so its row names none; its journal entry records the response as
+unavailable. One case stays uncovered: an answer its decoder accepted whole but
 the atlas reader annotated keeps its window refs in the run, while its journal
 entry, written before the annotation existed and named by no row, links the
 store.

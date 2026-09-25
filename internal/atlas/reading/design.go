@@ -714,6 +714,10 @@ func (r *reader) askParts(ctx context.Context, view *designView, round int) ([]p
 			}
 			if result.Err != nil {
 				use.Rejected++
+				// A refusal that left no response has no response ref to name.
+				if len(result.Outcome.Response) == 0 {
+					responseRef = ""
+				}
 				r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Target: view.targetID, Kind: "window_rejected", Count: len(windows[i]), Reason: result.Err.Error(), ResponseRef: responseRef})
 				fmt.Fprintf(&r.tables, "%d files · parts answer refused: %s\n\n", len(windows[i]), result.Err)
 				answered = append(answered, answer)
@@ -1401,8 +1405,12 @@ func (r *reader) describe(ctx context.Context, stage string, round int, calls []
 			}
 			use.Rejected++
 			use.Given++
+			responseRef := ""
+			if len(result.Outcome.Response) > 0 {
+				responseRef = path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))
+			}
 			r.rejected = append(r.rejected, modeldiag.Row{Stage: stage, Kind: "description_refused", Count: 1, Samples: []string{input.Part}, Reason: result.Err.Error(),
-				ResponseRef: path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))})
+				ResponseRef: responseRef})
 			fmt.Fprintf(&r.tables, "## %s · round %d · window %d\n\n%s: no description (%s)\n\n", stage, round, i, input.Part, result.Err)
 			continue
 		}

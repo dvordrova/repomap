@@ -621,6 +621,29 @@ func TestLearningPartitionMemoRevalidatesReplayAndExactInputs(t *testing.T) {
 	}
 }
 
+// A learning window the provider failed without a response is recorded with
+// no response to point at: every response_ref of its rows leads to bytes.
+func TestLearningResponselessRefusalNamesNoResponse(t *testing.T) {
+	provider := &learningResourceProvider{refuse: func(learningRequest) error { return fmt.Errorf("provider unavailable") }}
+	r := isolatedLearningReader(t, t.TempDir(), provider)
+	r.learning = &atlas.LearningPlan{Version: 1, State: "ready"}
+	pool := newLearningPool([]learningEvidence{{Context: map[string]any{"ordinal": 0}}}, false)
+	if err := r.executeLearning(t.Context(), []learningRequest{pool}, learningPrompt); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.rejected) != 1 || r.rejected[0].Kind != "window_rejected" {
+		t.Fatalf("the failed window was not recorded: %+v", r.rejected)
+	}
+	for _, row := range r.rejected {
+		if row.ResponseRef == "" {
+			continue
+		}
+		if _, err := readWindowPayload(filepath.Join(r.opts.OwnerRunDir, filepath.FromSlash(row.ResponseRef))); err != nil {
+			t.Errorf("the %s row's %s leads nowhere: %v", row.Kind, row.ResponseRef, err)
+		}
+	}
+}
+
 func TestLearningPartitionDoesNotRememberUnavailableWindows(t *testing.T) {
 	provider := &learningResourceProvider{refuse: func(pool learningRequest) error {
 		if len(pool.Evidence) > 1 {

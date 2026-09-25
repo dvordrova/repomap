@@ -328,6 +328,10 @@ func (r *reader) readAreas(ctx context.Context) error {
 		fmt.Fprintf(&r.tables, "## %s · round %d · window 0 · %s\n\n", lines.StageAreas, target.round, path.Join(atlas.TablesDir, r.windowFileName(window, "request.ref.json")))
 		if result.Err != nil {
 			use.Rejected++
+			// A refusal that left no response has no response ref to name.
+			if len(result.Outcome.Response) == 0 {
+				responseRef = ""
+			}
 			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageAreas, Target: target.targetID, Kind: "window_rejected", Count: len(target.parts), Reason: result.Err.Error(), ResponseRef: responseRef})
 			fmt.Fprintf(&r.tables, "areas answer refused, no areas drawn: %s\n\n", result.Err)
 			continue

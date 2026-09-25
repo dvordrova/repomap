@@ -295,23 +295,63 @@ func TestPartlyRefusedAnswerStaysInItsRunAndInTheCache(t *testing.T) {
 	if len(coldBodies) != 6 {
 		t.Fatalf("the partly refused exchange must be linked by its journal (request, response) and its table (prompt, input, request, response): %d links", len(coldBodies))
 	}
-	// Those are the run's only copies: a wholly accepted answer made none.
-	copies, err := os.ReadDir(filepath.Join(cold, llm.RunPayloadDirectoryName))
-	if err != nil {
-		t.Fatal(err)
+	// Without its row memos a run asks the same window again, and the
+	// accepted record answers that exact request: the hit is unchanged, the
+	// same rows are refused again, and this run keeps its own copy too.
+	memos, err := filepath.Glob(filepath.Join(cache, "memo-*.json"))
+	if err != nil || len(memos) == 0 {
+		t.Fatalf("no row memos to forget: %v", err)
 	}
-	linked := make(map[string]bool)
-	for _, link := range exchangeLinks(t, cold) {
-		if link.stage == lines.StageFiles {
-			linked[filepath.Base(link.path)] = true
+	for _, memo := range memos {
+		if err := os.Remove(memo); err != nil {
+			t.Fatal(err)
 		}
 	}
-	for _, entry := range copies {
-		if !linked[entry.Name()] {
-			t.Errorf("the cold run copied %s, which no partly refused exchange links", entry.Name())
+	exact := read("exact")
+	if provider.calls != calls {
+		t.Fatalf("exact run asked the provider %d more times; want the accepted record's hit", provider.calls-calls)
+	}
+	exactBodies := payloads(exact)
+	if len(exactBodies) != 6 {
+		t.Fatalf("the exact hit must be linked by its journal (request, response) and its table (prompt, input, request, response): %d links", len(exactBodies))
+	}
+	hit := false
+	for _, link := range exchangeLinks(t, exact) {
+		if link.kind != "journal" || link.stage != lines.StageFiles {
+			continue
+		}
+		raw, err := os.ReadFile(link.from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record debugdump.SemanticExchangeRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			t.Fatal(err)
+		}
+		hit = hit || record.State == debugdump.SemanticStateCacheHit
+	}
+	if !hit {
+		t.Fatal("the exact run did not journal a cache hit of the accepted record")
+	}
+	before := map[string]map[string][]byte{cold: coldBodies, warm: payloads(warm), exact: exactBodies}
+	// Those are each run's only copies: a wholly accepted answer made none.
+	for run := range before {
+		copies, err := os.ReadDir(filepath.Join(run, llm.RunPayloadDirectoryName))
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		linked := make(map[string]bool)
+		for _, link := range exchangeLinks(t, run) {
+			if link.stage == lines.StageFiles {
+				linked[filepath.Base(link.path)] = true
+			}
+		}
+		for _, entry := range copies {
+			if !linked[entry.Name()] {
+				t.Errorf("%s copied %s, which no partly refused exchange links", filepath.Base(run), entry.Name())
+			}
 		}
 	}
-	before := map[string]map[string][]byte{cold: coldBodies, warm: payloads(warm)}
 
 	if err := clearPersistentCaches(debugDir, io.Discard); err != nil {
 		t.Fatal(err)
@@ -331,9 +371,10 @@ func TestPartlyRefusedAnswerStaysInItsRunAndInTheCache(t *testing.T) {
 				}
 			}
 		}
-		// Both the journal's row and the table's row name the refused row.
-		if run == cold && (!pointers[debugdump.SemanticExchangesDir] || !pointers[atlas.TablesDir]) {
-			t.Errorf("the refused row must be named from the journal and from the table: %v", pointers)
+		// Both the journal's row and the table's row name the refused row in
+		// each run that exchanged it, live or as an exact hit.
+		if run != warm && (!pointers[debugdump.SemanticExchangesDir] || !pointers[atlas.TablesDir]) {
+			t.Errorf("%s: the refused row must be named from the journal and from the table: %v", filepath.Base(run), pointers)
 		}
 		for _, link := range exchangeLinks(t, run) {
 			if link.stage != lines.StageFiles {

@@ -337,6 +337,64 @@ func TestAnnotatedMapAnswersStayInTheRun(t *testing.T) {
 	}
 }
 
+// failingTasks is a provider that fails every request of the named design
+// tasks without any response, as a timeout or a refused connection does.
+type failingTasks struct {
+	*tableProvider
+	tasks map[string]bool
+}
+
+func (p failingTasks) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	var request struct {
+		Task string `json:"task"`
+	}
+	if json.Unmarshal(prepared.Bytes(), &request) == nil && p.tasks[request.Task] {
+		return llm.Completion{Metrics: llm.Metrics{Attempts: 1}}, fmt.Errorf("provider unavailable")
+	}
+	return p.tableProvider.Complete(ctx, prepared)
+}
+
+// A map request the provider failed without a response is recorded with no
+// response to point at, like a failed table window: every response_ref the
+// reading records leads to bytes.
+func TestResponselessMapRefusalsNameNoResponse(t *testing.T) {
+	for name, stages := range map[string]map[string]string{
+		"parts":              {designPartsTask: lines.StageZones},
+		"areas and describe": {designAreasTask: lines.StageAreas, designDescribeTask: lines.StageDescribe},
+	} {
+		t.Run(name, func(t *testing.T) {
+			provider := &tableProvider{}
+			opts := twoTargetOptions(t, twoTargetGraph(t), provider)
+			failing := failingTasks{tableProvider: provider, tasks: map[string]bool{}}
+			for task := range stages {
+				failing.tasks[task] = true
+			}
+			opts.Provider = failing
+			result, err := Read(t.Context(), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			refused := map[string]bool{}
+			for _, row := range result.Rejected {
+				if row.Kind == "window_rejected" || row.Kind == "description_refused" {
+					refused[row.Stage] = true
+				}
+				if row.ResponseRef == "" {
+					continue
+				}
+				if _, err := readWindowPayload(filepath.Join(opts.OwnerRunDir, filepath.FromSlash(row.ResponseRef))); err != nil {
+					t.Errorf("the %s %s row's %s leads nowhere: %v", row.Stage, row.Kind, row.ResponseRef, err)
+				}
+			}
+			for _, stage := range stages {
+				if !refused[stage] {
+					t.Fatalf("no %s request was refused: %+v", stage, result.Rejected)
+				}
+			}
+		})
+	}
+}
+
 // A files string of refs separated by spaces or commas is that list, and
 // each ref is still checked; an object is not a list of files.
 func TestPartsFilesStringIsAListOfRefs(t *testing.T) {
