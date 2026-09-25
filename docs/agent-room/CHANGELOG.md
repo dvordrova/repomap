@@ -1,5 +1,41 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Critical-path work before and after the models
+
+- Render (saved self-run, byte-identical HTML on two saved runs): 6.2 s →
+  4.4 s. Group edges and connections indexed once per target instead of per
+  card; a display text's source-syntax regexes run once per page, not twice
+  per text; structural edges sorted by precomputed keys.
+- Symbol selection answered by 29.6 s but handed over at 32.4 s: 4,800 row
+  memos were written one after another. They are written by one worker per
+  processor (handover 28.8 s in the next cold run).
+- Program index reads: `Decode` parsed the 24 MB Go index four times through
+  `Index.UnmarshalJSON` (0.68 → 0.43 s per read); places and the group
+  projection no longer revalidate what `ReadFile` validated; the TODO facts
+  skip files and lines without a marker word; route values encode each
+  expression once. No-model `cmd/repomap` snapshot run 18.2 → 16.0 s, every
+  artifact equal apart from run IDs and timing.
+- Side by side, each on its own view joined in step order: the targets'
+  zones (compact IDs still taken in target order; proposals are rounds 2p+1
+  and 2p+2), the functions and types selection rounds, the two atlas_api
+  rounds, and after the core the keys beside targets → joints. Warm runs of
+  old and new binaries over one snapshot cache: atlas, places, knowledge,
+  tables.md, groups, orientation and glossary byte-identical, rejected.jsonl
+  the same rows with the reading's own in order.
+- TypeScript helper memoizes its two path functions: 4.4 → 3.2 s on the
+  report UI project, output byte-identical.
+- The guidance classifier starts before the 1.0 s Go planning snapshot:
+  it needs only the repository name, now `snapshot.RepositoryName`, the
+  derivation BuildContext uses; a run refuses a name mismatch.
+- Measured, not changed: the model's enumerating mode dominates the tail.
+  Cold self-runs drew a 168-part design proposal (usual 30–38; zone
+  assignment then took 492 Jev requests / 11.5 M tokens, hit Jev's 429 and
+  25 s), glossary outputs of 6–17k tokens (23–49 s), and an atlas_api
+  window that put a cell on every one of 334 rows (3,745 output tokens,
+  12.7 s; 130 "validates"). A "list only rows with a cell" instruction did
+  not change the output in 18 paired draws (every draw echoed all rows).
+  The DeepSeek gate wait was 0.5–3.5 s for the requests that queued.
+
 ## 2026-09-25 — Full no-target self-run: 184 s → 70 s cold
 
 - Cold `repomap .` on repomap (two targets after testdata left the plan),
