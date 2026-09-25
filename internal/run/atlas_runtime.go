@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -25,14 +27,17 @@ import (
 // atlasOutcome is what the atlas path hands to publication: the atlas, the
 // facts and claims it was read over, and where the owner's tables are.
 type atlasOutcome struct {
-	Graph       atlas.Graph
-	TablesPath  string
-	Atlas       atlas.Atlas
-	Facts       facts.Result
-	Claims      claims.Result
-	Orientation *orientation.Result
-	Questions   []atlas.QuestionRoute
-	Learning    *atlas.LearningPlan
+	// DeclarationKeys waits for the lookup pass of the group projection,
+	// read while the tables wait on the models.
+	DeclarationKeys func() (groupindex.DeclarationKeys, error)
+	Graph           atlas.Graph
+	TablesPath      string
+	Atlas           atlas.Atlas
+	Facts           facts.Result
+	Claims          claims.Result
+	Orientation     *orientation.Result
+	Questions       []atlas.QuestionRoute
+	Learning        *atlas.LearningPlan
 }
 
 // readRepositoryAtlas is the atlas path after every target page has its
@@ -129,6 +134,16 @@ func readRepositoryAtlas(
 	if err := atlas.WriteGraph(owner.RunDir, sealed); err != nil {
 		return atlasOutcome{}, err
 	}
+	// The group projection looks up the declaration keys of what the atlas
+	// cites. With places done, the programs are read for them now, one at a
+	// time, beside the tables, in the atlas target order (by name).
+	byName := slices.Clone(metas)
+	sort.Slice(byName, func(i, j int) bool { return byName[i].Name < byName[j].Name })
+	keyTargets := make([]string, len(byName))
+	for i, meta := range byName {
+		keyTargets[i] = meta.ID
+	}
+	declarationKeys := startDeclarationKeys(keyTargets, runs)
 	dirs, files, boundaries := 0, 0, 0
 	for _, place := range graph.Places {
 		switch place.Kind {
@@ -220,7 +235,35 @@ func readRepositoryAtlas(
 		))
 	}
 	options.Output.State("Atlas", "ready", details...)
-	return atlasOutcome{Graph: graph, TablesPath: result.TablesPath, Atlas: result.Atlas, Facts: factsResult, Claims: claimsResult, Questions: result.Questions, Learning: result.Learning}, nil
+	return atlasOutcome{DeclarationKeys: declarationKeys, Graph: graph, TablesPath: result.TablesPath, Atlas: result.Atlas, Facts: factsResult, Claims: claimsResult, Questions: result.Questions, Learning: result.Learning}, nil
+}
+
+// startDeclarationKeys reads the runs' declaration keys in the background
+// and returns the wait.
+func startDeclarationKeys(targetIDs []string, runs []targetPublishedRun) func() (groupindex.DeclarationKeys, error) {
+	programs := make(map[string]*targetPublishedRun, len(runs))
+	for position := range runs {
+		programs[runs[position].programTarget().ID] = &runs[position]
+	}
+	type read struct {
+		keys groupindex.DeclarationKeys
+		err  error
+	}
+	done := make(chan read, 1)
+	go func() {
+		keys, err := groupindex.ReadDeclarationKeys(targetIDs, func(id string) (programindex.Index, error) {
+			run, ok := programs[id]
+			if !ok {
+				return programindex.Index{}, fmt.Errorf("atlas: target %s has no program index", id)
+			}
+			return run.validProgramIndex()
+		})
+		done <- read{keys: keys, err: err}
+	}()
+	return sync.OnceValues(func() (groupindex.DeclarationKeys, error) {
+		result := <-done
+		return result.keys, result.err
+	})
 }
 
 // projectAtlasRuns gives every run the GroupsIndex the page reads, built
@@ -232,7 +275,15 @@ func projectAtlasRuns(runs []targetPublishedRun, outcome atlasOutcome, output *r
 		run := &runs[position]
 		programs[run.programTarget().ID] = run
 	}
-	projected, err := groupindex.ProjectAtlasFrom(outcome.Atlas, func(id string) (programindex.Index, error) {
+	var keys *groupindex.DeclarationKeys
+	if outcome.DeclarationKeys != nil {
+		read, err := outcome.DeclarationKeys()
+		if err != nil {
+			return nil, err
+		}
+		keys = &read
+	}
+	projected, err := groupindex.ProjectAtlasWithKeys(outcome.Atlas, keys, func(id string) (programindex.Index, error) {
 		run, ok := programs[id]
 		if !ok {
 			return programindex.Index{}, fmt.Errorf("atlas: target %s has no program index", id)

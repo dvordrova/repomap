@@ -2,6 +2,7 @@ package groupindex
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -27,7 +28,7 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 			return nil, fmt.Errorf("group index: project atlas: target %s: %w", programs[id].Target.Name, err)
 		}
 	}
-	return projectAtlasFrom(ids, value, func(id string) (programindex.Index, error) {
+	return projectAtlasFrom(ids, value, nil, func(id string) (programindex.Index, error) {
 		program, ok := programs[id]
 		if !ok {
 			return programindex.Index{}, fmt.Errorf("group index: project atlas: target %s has no program index", id)
@@ -40,14 +41,48 @@ func ProjectAtlas(programs map[string]programindex.Index, value atlas.Atlas) ([]
 // validated index. Only declaration keys used by the atlas survive between
 // the lookup and projection passes.
 func ProjectAtlasFrom(value atlas.Atlas, read func(string) (programindex.Index, error)) ([]Index, error) {
+	return ProjectAtlasWithKeys(value, nil, read)
+}
+
+// ProjectAtlasWithKeys is ProjectAtlasFrom with the lookup pass already
+// read: keys read for the atlas targets in their order replace it, so each
+// program is read once more, for its projection. Keys read for other targets
+// or another order are read again here.
+func ProjectAtlasWithKeys(value atlas.Atlas, keys *DeclarationKeys, read func(string) (programindex.Index, error)) ([]Index, error) {
 	ids := make([]string, 0, len(value.Targets))
 	for _, target := range value.Targets {
 		ids = append(ids, target.ID)
 	}
-	return projectAtlasFrom(ids, value, read)
+	return projectAtlasFrom(ids, value, keys, read)
 }
 
-func projectAtlasFrom(ids []string, value atlas.Atlas, read func(string) (programindex.Index, error)) ([]Index, error) {
+// DeclarationKeys are the declaration keys of every object of some programs,
+// by target-qualified and by bare object ID. A bare ID two programs share
+// keeps the later program's key, as the lookup pass always has.
+type DeclarationKeys struct {
+	targets []string
+	byRef   map[string]string
+}
+
+// ReadDeclarationKeys reads the programs one at a time, in order, and keeps
+// only their declaration keys.
+func ReadDeclarationKeys(ids []string, read func(string) (programindex.Index, error)) (DeclarationKeys, error) {
+	keys := DeclarationKeys{targets: slices.Clone(ids), byRef: make(map[string]string)}
+	for _, id := range ids {
+		program, err := read(id)
+		if err != nil {
+			return DeclarationKeys{}, err
+		}
+		for _, object := range program.Objects {
+			key := declarationKey(object)
+			keys.byRef[program.Target.ID+"."+object.ID] = key
+			keys.byRef[object.ID] = key
+		}
+	}
+	return keys, nil
+}
+
+func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, read func(string) (programindex.Index, error)) ([]Index, error) {
 	if err := atlas.Validate(value); err != nil {
 		return nil, fmt.Errorf("group index: project atlas: %w", err)
 	}
@@ -70,18 +105,15 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, read func(string) (progra
 			sourceRefs[boundary.ObjectID] = ""
 		}
 	}
-	for _, id := range ids {
-		program, err := read(id)
+	if keys == nil || !slices.Equal(keys.targets, ids) {
+		read, err := ReadDeclarationKeys(ids, read)
 		if err != nil {
 			return nil, err
 		}
-		for _, object := range program.Objects {
-			for _, ref := range []string{program.Target.ID + "." + object.ID, object.ID} {
-				if _, needed := sourceRefs[ref]; needed {
-					sourceRefs[ref] = declarationKey(object)
-				}
-			}
-		}
+		keys = &read
+	}
+	for ref := range sourceRefs {
+		sourceRefs[ref] = keys.byRef[ref]
 	}
 	for _, target := range value.Targets {
 		program, err := read(target.ID)

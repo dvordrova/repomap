@@ -60,7 +60,9 @@ script entrypoints or sidecar tools.
   remain separate facts even when they share ASTs. The owner approved this
   shared storage on 2026-09-09, independently of tools/examples' full analyses.
   Release completed child indexes after persistence; facts, places and group
-  projection load one target at a time, without memoizing all children. Places
+  projection load one target at a time, without memoizing all children. The
+  projection's declaration-key lookup reads the targets while the atlas
+  tables wait on the models and keeps only the keys. Places
   loads each target once, retaining only its boundary observations for the
   later source-documentation pass. Its sequential file reader reuses one
   decoded target Index until the sequential consumer releases it
