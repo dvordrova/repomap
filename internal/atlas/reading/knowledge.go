@@ -368,6 +368,13 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 			}
 		}
 	}
+	// Each exact basis remembers the request and row that answered it. The
+	// small memo files are independent, so they are written at once.
+	type memo struct {
+		key string
+		raw []byte
+	}
+	var memos []memo
 	saved := make(map[string]bool)
 	for i, answer := range answers {
 		if answer.answer == nil {
@@ -391,10 +398,17 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 			if err != nil {
 				return nil, err
 			}
-			if err := llm.SaveMemo(r.opts.Executor, k.BasisID, raw); err != nil && r.opts.State != nil {
-				r.opts.State(def.Stage, "cache write failed", err.Error())
-			}
+			memos = append(memos, memo{key: k.BasisID, raw: raw})
 			saved[k.BasisID] = true
+		}
+	}
+	failed := make([]error, len(memos))
+	eachIndex(len(memos), func(i int) {
+		failed[i] = llm.SaveMemo(r.opts.Executor, memos[i].key, memos[i].raw)
+	})
+	for _, err := range failed {
+		if err != nil && r.opts.State != nil {
+			r.opts.State(def.Stage, "cache write failed", err.Error())
 		}
 	}
 	return answers, nil
