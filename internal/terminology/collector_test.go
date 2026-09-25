@@ -575,12 +575,12 @@ func TestCodeNamesAreDroppedByExactNameAndJournaled(t *testing.T) {
 		{"name":"JSON","kind":"format","explanation":"JavaScript Object Notation.","rows":["p1"]},
 		{"name":"ROI","kind":"acronym","explanation":"Return on investment.","rows":["p1"]},
 		{"name":"ROI","kind":"identifier","explanation":"A retired kind.","rows":["p1"]},
-		{"name":"ROI","explanation":"No kind at all.","rows":["p1"]}]}`))
+		{"name":"ROI","explanation":"No kind at all.","rows":["p1"],"note":"unused"}]}`))
 	var published []string
 	for _, term := range got.Terms {
 		published = append(published, term.candidate.Name)
 	}
-	if err != nil || !reflect.DeepEqual(published, []string{"candle", "Exchange", "JSON", "ROI"}) {
+	if err != nil || !reflect.DeepEqual(published, []string{"candle", "Exchange", "JSON", "ROI", "ROI"}) {
 		t.Fatalf("published terms: %v %+v %v", published, got, err)
 	}
 	wantJournal := []llm.ResponseRejection{
@@ -588,8 +588,7 @@ func TestCodeNamesAreDroppedByExactNameAndJournaled(t *testing.T) {
 		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[1]"}, Reason: "term names a code file: main.go"},
 		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[2]"}, Reason: "term names a code declaration: ExchangeWS"},
 		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[3]"}, Reason: "term names a code declaration: funding_rate"},
-		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[8]"}, Reason: "unknown optional term kind"},
-		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[9]"}, Reason: "invalid optional term shape"},
+		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[8]"}, Reason: "term declares itself an identifier, not a concept"},
 	}
 	if !reflect.DeepEqual(got.Rejections, wantJournal) {
 		t.Fatalf("journal: %+v", got.Rejections)
