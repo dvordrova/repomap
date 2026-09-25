@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Full no-target self-run: 184 s → 70 s cold
+
+- Cold `repomap .` on repomap (two targets after testdata left the plan),
+  report server ready: 184 s (first run that completed) → 125 s (render
+  index, testdata, classifier fixes) → 74 s (atlas branches, run lanes,
+  report assembled during the orientation, served page rendered alongside)
+  → 70 s (64 concurrent decision requests instead of 24; no 429).
+- Remaining serial tail after the atlas (~44 s): groups 3 s, orientation
+  10 s, glossary 11–15 s. Inside the atlas the longest branch ends with the
+  type descriptions (~9 s of DeepSeek behind the four-call gate).
+
 ## 2026-09-25 — Part roles on Jev
 
 - `atlas_core` opts in to the decision model. On repomap's 50 saved parts Jev

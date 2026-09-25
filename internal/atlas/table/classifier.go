@@ -25,8 +25,10 @@ const (
 	ClassifierQuestions = 150
 	// ClassifierConcurrency is how many decision requests run at once. A
 	// 150-question request takes ~3 s whatever the load: 26 of them took 23 s
-	// four at a time and 5.7 s all at once, far inside 1,200 requests/min.
-	ClassifierConcurrency = 24
+	// four at a time and 5.7 s all at once; 57 key-selection requests took
+	// 20.8 s 24 at a time and 12 s all at once, with no refusal. 64 stays far
+	// inside 1,200 requests a minute; a 429 still backs off.
+	ClassifierConcurrency = 64
 	// ClassifierMinProbability is the probability of the chosen option
 	// below which a choice is not taken: the cell is left unanswered instead
 	// of guessed. It is not the model's confidence, which measures how
