@@ -7,9 +7,9 @@
   more with the same bytes in three cases. The owner's decoder refused the
   whole answer. The provider's answer was empty, had an undecodable envelope,
   or did not stop (a content filter excepted). Or the answer was cut at the
-  output-token cap and the adaptive owner cannot split the item. The adaptive
-  executors mark each opted-in item as divisible or not by asking its owner's
-  split once. Transport classes, context or request-size refusals, other
+  output-token cap: a loop, asked again before any adaptive owner could split
+  the item into windows (spec §2 windows only on envelope or input/context
+  refusals). Transport classes, context or request-size refusals, other
   statuses, cached answers and owner-recovered refusals
   (`SplitRejectedResponse`, `SplitHTTP500`, attempt deadline) keep one call.
 - A refused draw is never cached; the accepted second draw is cached under
@@ -23,8 +23,9 @@
 - Tests (fail-closed local providers):
   - The llm layer covers five first-draw refusal classes and two refused
     draws (exactly two provider calls, summed metrics, nothing cached).
-    Eleven classes keep one call. Output-token refusals are split by a
-    divisible adaptive owner (each and batch forms) and resampled otherwise.
+    Eleven classes keep one call. An output-token refusal of an item its
+    adaptive owner could split is asked again whole, not split (each and
+    batch forms).
     A cached answer is served with no call, and a stale one is replaced by
     exactly one call. Replay makes one call.
   - A debugdump test writes the two exchanges with one request SHA-256 and
@@ -32,8 +33,8 @@
   - The reading tests check that a parts answer with no groups followed by a
     good one draws the map after two parts requests. Two empty answers leave
     the declarations loose after two. A target without units sends none.
-  - Mutations that always resample, drop the batch divisibility mark or drop
-    the zero-unit skip each fail these tests.
+  - Mutations that always resample or drop the zero-unit skip each fail
+    these tests.
   - `make test` and `make vet` pass, and `make build` builds. No online run
     was made for this piece.
 

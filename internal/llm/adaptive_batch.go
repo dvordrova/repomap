@@ -64,11 +64,6 @@ func ExecuteAdaptiveJSONBatchWithAccounting[Item any, Value any](
 				len(calls), len(plan),
 			)
 		}
-		for index := range calls {
-			if calls[index].Resample {
-				_, _, calls[index].divisible = split(plan[index])
-			}
-		}
 		replanned := false
 		for index, call := range calls {
 			found, err := loadAdaptiveSplit(executor, provider, call)

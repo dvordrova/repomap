@@ -143,24 +143,25 @@ func TestResampleLeavesTransportRepeatableAndRecoveredFailures(t *testing.T) {
 	}
 }
 
-// An adaptive owner that can split an item splits its output-token refusal
-// instead of asking the whole item again; an item it cannot split is asked
-// once more.
-func TestResampleLeavesOutputTokenRefusalsToAnAdaptiveSplit(t *testing.T) {
+// A cut at the output-token cap is a looping answer, not an oversized
+// request: even an item its adaptive owner could split is asked once more
+// whole, and the accepted second draw leaves it unsplit.
+func TestResampleAsksAnOutputCapCutAgainBeforeAnAdaptiveSplit(t *testing.T) {
 	build := func(user string) (Call[testValue], error) {
 		call := resampledTestCall()
 		call.Prompt.User = user
 		return call, nil
 	}
-	executors := map[string]func(*testProvider, func(string) (string, string, bool)) error{
-		"each": func(provider *testProvider, split func(string) (string, string, bool)) error {
+	split := func(user string) (string, string, bool) { return user + "-left", user + "-right", user == "whole" }
+	executors := map[string]func(*testProvider) error{
+		"each": func(provider *testProvider) error {
 			results, err := ExecuteAdaptiveJSONEachResults(t.Context(), Executor{}, provider, []string{"whole"}, build, split)
 			for _, result := range results {
 				err = errors.Join(err, result.Err)
 			}
 			return err
 		},
-		"batch": func(provider *testProvider, split func(string) (string, string, bool)) error {
+		"batch": func(provider *testProvider) error {
 			buildAll := func(users []string) ([]Call[testValue], error) {
 				calls := make([]Call[testValue], len(users))
 				for i, user := range users {
@@ -173,22 +174,13 @@ func TestResampleLeavesOutputTokenRefusalsToAnAdaptiveSplit(t *testing.T) {
 		},
 	}
 	for name, execute := range executors {
-		for _, divisible := range []bool{true, false} {
-			provider := baseTestProvider()
-			provider.errors = []error{NewResourceLimitError(ResourceLimitError{Kind: ResourceLimitOutputTokens, FinishReason: "length"}), nil}
-			split := func(user string) (string, string, bool) {
-				return user + "-left", user + "-right", divisible && user == "whole"
-			}
-			if err := execute(provider, split); err != nil {
-				t.Fatalf("%s divisible=%v: %v", name, divisible, err)
-			}
-			want := []string{"whole", "whole"}
-			if divisible {
-				want = []string{"whole", "whole-left", "whole-right"}
-			}
-			if !reflect.DeepEqual(provider.completeOrder, want) {
-				t.Fatalf("%s divisible=%v: provider saw %v, want %v", name, divisible, provider.completeOrder, want)
-			}
+		provider := baseTestProvider()
+		provider.errors = []error{NewResourceLimitError(ResourceLimitError{Kind: ResourceLimitOutputTokens, FinishReason: "length"}), nil}
+		if err := execute(provider); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if want := []string{"whole", "whole"}; !reflect.DeepEqual(provider.completeOrder, want) {
+			t.Fatalf("%s: provider saw %v, want %v", name, provider.completeOrder, want)
 		}
 	}
 }

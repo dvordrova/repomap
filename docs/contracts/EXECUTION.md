@@ -85,8 +85,9 @@ live answer is refused whole for what the model wrote:
 - the provider's answer was empty, its envelope was undecodable, or it did not
   stop (other than a content filter);
 - the answer was cut at the output-token cap (finish reason `length`, or the
-  output-token resource refusal), unless the call's adaptive owner can split
-  the item.
+  output-token resource refusal). Such a cut is a looping answer, not an
+  oversized request, so it is asked again before an adaptive owner sees it;
+  only a second cut reaches the owner's split rules.
 
 These are never asked again:
 
@@ -95,8 +96,7 @@ These are never asked again:
   content filter;
 - cached answers, replay, and answers with some rows accepted;
 - refusals the owner recovers from itself: `SplitRejectedResponse`,
-  `SplitHTTP500`, an attempt deadline, or an adaptive split of an
-  output-token refusal.
+  `SplitHTTP500`, an attempt deadline.
 
 A refused answer is never cached, so the second draw sends the same bytes. An
 accepted second draw is cached under the same key with its own measurements.

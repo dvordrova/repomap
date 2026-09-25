@@ -218,13 +218,10 @@ type Call[T any] struct {
 	// provider already retried them), repeatable refusals (context or
 	// request size, other statuses, a content filter) and cached answers are
 	// never re-asked, and neither is a refusal the owner splits or recovers
-	// from (SplitRejectedResponse, SplitHTTP500, AttemptTimeout, an adaptive
-	// split of an output-token refusal). An owner opts in only when a second
-	// draw is its whole recovery.
-	Resample bool
-	// divisible is set by the shared adaptive executors when their owner can
-	// split this item: its output-token refusal is then split, not re-asked.
-	divisible      bool
+	// from (SplitRejectedResponse, SplitHTTP500, AttemptTimeout). An
+	// output-token cut is re-asked before an adaptive owner may split it. An
+	// owner opts in only when a second draw is its whole recovery.
+	Resample       bool
 	State          []byte
 	Prompt         Prompt
 	Limits         Limits
