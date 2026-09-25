@@ -281,3 +281,29 @@ func TestDocumentationPartialMergeKeepsOriginalsOnlyForRefusedSource(t *testing.
 		t.Fatal("already accepted source concept disappeared after a malformed merge source row")
 	}
 }
+
+// A merge row whose every concept is malformed says nothing readable about its
+// document. It refuses that row alone, so the document keeps its already
+// accepted concepts instead of being read as a deliberate omission; a row with
+// one readable concept is still the model's merged answer.
+func TestDocumentationMergeRowWithOnlyMalformedConceptsKeepsItsOriginals(t *testing.T) {
+	_, candidates, authority := packingEvidence(2)
+	for i := range candidates {
+		candidates[i].sources[0].Concepts[0] = strings.TrimSpace(candidates[i].sources[0].Concepts[0])
+	}
+	provider := &partialDocumentationProvider{raw: []byte(`{"overview":"","sources":[
+		{"ref":"d0001","concepts":[42,"  "]},
+		{"ref":"d0002","concepts":[7,"Accepted reduction of second source."]}]}`)}
+	result, err := mergeTournament(t.Context(), llm.Executor{}, provider, "guidance", authority, candidates)
+	if err != nil || len(result) != 1 || provider.calls != 1 {
+		t.Fatalf("partial merge failed: %+v / %v", result, err)
+	}
+	sources := result[0].sources
+	if len(sources) != 2 || sources[0].Ref != "d0001" ||
+		!reflect.DeepEqual(sources[0].Concepts, []string{candidates[0].sources[0].Concepts[0]}) {
+		t.Fatalf("a malformed-only merge row erased its accepted document: %+v", sources)
+	}
+	if !reflect.DeepEqual(sources[1].Concepts, []string{"Accepted reduction of second source."}) {
+		t.Fatalf("one malformed concept kept the replaced original: %+v", sources[1])
+	}
+}

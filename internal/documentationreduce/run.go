@@ -779,6 +779,11 @@ func normalizeResponse(raw []byte, allowed map[string]documentAuthority) (normal
 			}
 			values = append(values, text)
 		}
+		if len(entries) > 0 && len(values) == 0 && currentRef != "" {
+			// Every concept of the row is malformed: the row is refused, not
+			// an omission, so a merge keeps the document's accepted concepts.
+			badSources[currentRef] = true
+		}
 		return values
 	}
 	byRef := make(map[string]responseSource)

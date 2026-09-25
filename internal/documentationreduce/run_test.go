@@ -182,6 +182,10 @@ func TestNormalizeResponseAcceptsHarmlessFormsAndRefusesOnlyTheBadPart(t *testin
 			raw:         `{"overview":"","sources":[{"ref":"d1","concepts":[42,"Ledger"]},{"ref":"d2","concepts":["Order"]}]}`,
 			wantSources: map[string][]string{"d1": {"Ledger"}, "d2": {"Order"}}, wantAccepted: []string{"d1", "d2"}, wantRejected: 1,
 		},
+		"row with only bad concepts": {
+			raw:         `{"overview":"","sources":[{"ref":"d1","concepts":[42]},{"ref":"d2","concepts":["Order"]}]}`,
+			wantSources: map[string][]string{"d2": {"Order"}}, wantAccepted: []string{"d2"}, wantRejected: 1,
+		},
 		"bad concepts field": {
 			raw:         `{"overview":"","sources":[{"ref":"d1","concepts":{"name":"Ledger"}},{"ref":"d2","concepts":["Order"]}]}`,
 			wantSources: map[string][]string{"d2": {"Order"}}, wantAccepted: []string{"d2"}, wantRejected: 1,

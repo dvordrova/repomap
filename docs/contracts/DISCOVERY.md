@@ -132,7 +132,9 @@ and hypotheses independently. Invalid members retain a recorded reason without
 erasing valid neighbours or the native target inventory. Documentation likewise
 keeps valid concepts beside malformed ones: a malformed concept is dropped and
 journaled alone, and its document stays an accepted scope; only a malformed
-`concepts` field or an unlocatable row refuses its source row. An absent or
+`concepts` field, a row none of whose concepts is readable, or an unlocatable
+row refuses its source row, so a merge keeps that document's accepted
+concepts. An absent or
 null overview is simply empty, null concepts add nothing, one concept string is
 a one-member list, and a bare sources array is the answer without its wrapper.
 Missing or null `sources` stay refused, so an omission never lets an overview
@@ -212,9 +214,10 @@ Regression comparisons preserve every materialized byte while checking that repe
   The provider cannot suppress a required representative: every
   classification answer restores it locally from the compilation, never from
   the answer, and a guidance candidate the answer did not select stays
-  unclassified. An extra field, a non-text or unadvertised member, and an
-  unknown, stray (not a selected target) or missing default are discarded and
-  journaled, never added to the targets. The candidate reservoir is classified
+  unclassified. An extra field is ignored; a non-text or unadvertised member
+  and an unknown or stray (not a selected target) default are discarded and
+  journaled, never added to the targets; a missing default chooses nothing.
+  The candidate reservoir is classified
   in independent batches: a refused classification answer loses only its own
   batch, whose required representatives stay targets, whose native targets
   stay `standalone` with the recorded refusal, and whose guidance candidates
