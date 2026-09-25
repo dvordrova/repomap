@@ -74,6 +74,9 @@ func executeAdaptiveJSONEach[Item any, Value any](
 	}
 	makeNode := func(item Item) (node, error) {
 		call, err := build(item)
+		if call.Resample {
+			_, _, call.divisible = split(item)
+		}
 		return node{item: item, call: call}, err
 	}
 	children := func(item Item) ([]node, error) {

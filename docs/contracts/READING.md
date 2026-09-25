@@ -151,11 +151,14 @@ areas and cross-target joints are born as short `p*`, `z*` and `j*` IDs; no
 `design:<sha>`, composed joint path or second post-model renumbering exists.
 
 A parts or areas proposal is one request answered as a title → purpose
-object and accepted only whole: an empty or repeated title refuses it, and an
-empty object is an explicit abstention. There is no fixed number of parts or
+object and accepted only whole: an empty or repeated title refuses it. A parts
+answer with no groups is refused too; an empty areas object is an explicit
+abstention. A target without units sends no parts request. There is no fixed number of parts or
 areas; the areas prompt suggests 4 to 8 and no count is validated. Proposals
 use an 8,192-token output allowance (accepted proposals used 105–1,026 tokens;
-one parts proposal looped to 128,000 in 344 s); a refused proposal leaves no
+one parts proposal looped to 128,000 in 344 s). A proposal refused whole, or
+cut at that allowance, is asked once more with the same bytes
+([one resample](EXECUTION.md#one-resample)); a second refusal leaves no
 catalogue and every declaration stays source inventory. Assignment by closed
 choice then decides membership; a unit that chose `none` or no option above
 the acceptance floor stays source inventory, with no inherited directory

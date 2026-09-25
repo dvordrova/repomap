@@ -80,7 +80,12 @@ saved request bytes rather than applying new environment settings to them.
   It does not add semantic instructions.
 - The serialized request is immutable across transport retries. Retryable
   network errors and HTTP statuses receive at most three retries after the
-  first attempt; schema or semantic rejection never triggers a new model call.
+  first attempt. Transport retries never follow a schema or semantic
+  rejection. The shared executor, not this adapter, may send the same bytes
+  once more as a new model call. It does so only for an owner that opted into
+  a resample, after the whole answer was refused. That call starts its own
+  transport attempts. The [execution contract](contracts/EXECUTION.md#one-resample)
+  lists which refusals qualify.
 - An owning stage may set a local attempt deadline through the shared executor.
   Translation uses four minutes. The timer starts after acquiring the shared
   attempt gate; its expiry returns an `attempt_time_ms` resource refusal directly

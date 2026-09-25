@@ -281,17 +281,30 @@ func designCallFor(mode string, input any, documents []table.Field) (llm.Call[de
 	if err != nil {
 		return llm.Call[designProposals]{}, err
 	}
-	prompt := designPartsPrompt
+	prompt, decode := designPartsPrompt, decodeDesignParts
 	if mode == "areas" {
-		prompt = designAreasPrompt
+		prompt, decode = designAreasPrompt, decodeDesignProposals
 	}
+	// A whole refusal is asked once more with the same bytes; nothing else
+	// recovers a proposal, and its declarations would otherwise stay loose.
 	return llm.Call[designProposals]{
-		State: []byte("repomap.atlas.design.v4"),
+		Resample: true,
+		State:    []byte("repomap.atlas.design.v4"),
 		Prompt: llm.Prompt{System: prompt, User: string(raw), ResponseFormatJSON: true,
 			ResponseExample: `{"groups":{"Move search":"Chooses a move by exploring legal continuations.","Board state":"Holds the position and applies moves."}}`, NoResponseAdjunct: true},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designProposalOutputTokens},
-		DecodeValidate: decodeDesignProposals,
+		DecodeValidate: decode,
 	}, nil
+}
+
+// decodeDesignParts refuses a parts answer with no groups: it draws nothing.
+// An areas answer may leave every part alone.
+func decodeDesignParts(raw []byte) (designProposals, error) {
+	result, err := decodeDesignProposals(raw)
+	if err == nil && len(result.Groups) == 0 {
+		return designProposals{}, fmt.Errorf("design: the answer proposes no parts")
+	}
+	return result, err
 }
 
 // propose asks for one closed catalogue of parts or areas. A refused answer
@@ -477,10 +490,14 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 	defer order.zones.pass(position)
 	target := r.opts.Targets[position]
 	round := position + 1
-	overview, docs := r.designOverview(target.ID, units)
-	parts, err := r.propose(ctx, "parts", 2*position+1, overview, docs)
-	if err != nil {
-		return err
+	// A target without units has nothing to split and sends no request.
+	var parts []designProposal
+	if len(units) > 0 {
+		overview, docs := r.designOverview(target.ID, units)
+		var err error
+		if parts, err = r.propose(ctx, "parts", 2*position+1, overview, docs); err != nil {
+			return err
+		}
 	}
 	partOf := make([]int, len(units))
 	for i := range partOf {

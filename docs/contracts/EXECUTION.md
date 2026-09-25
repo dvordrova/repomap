@@ -75,6 +75,41 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   headers accompany those diagnostics. Request authorization and cookies never
   enter that metadata, which has no role in semantic or cache identity.
 
+## One resample
+
+A call may opt into one resample with `llm.Call.Resample`. The shared
+`ExecuteJSON` then asks once more, with the identical prepared bytes, when a
+live answer is refused whole for what the model wrote:
+
+- the owner's decoder or validator refused the whole answer;
+- the provider's answer was empty, its envelope was undecodable, or it did not
+  stop (other than a content filter);
+- the answer was cut at the output-token cap (finish reason `length`, or the
+  output-token resource refusal), unless the call's adaptive owner can split
+  the item.
+
+These are never asked again:
+
+- transport failures, which the provider already retried;
+- repeatable refusals: context or request size, other HTTP statuses, a
+  content filter;
+- cached answers, replay, and answers with some rows accepted;
+- refusals the owner recovers from itself: `SplitRejectedResponse`,
+  `SplitHTTP500`, an attempt deadline, or an adaptive split of an
+  output-token refusal.
+
+A refused answer is never cached, so the second draw sends the same bytes. An
+accepted second draw is cached under the same key with its own measurements.
+`Outcome.Metrics` sums both draws, and the outcome keeps the issues of both.
+The journal holds two exchanges with one request SHA-256, told apart by their
+`instance_ordinal`. A second refusal is the call's refusal and is recorded
+like any other.
+
+Only the design parts and areas proposals opt in. A parts answer with no
+groups is refused whole. An areas answer with no groups leaves every part
+alone. A target without units sends no parts request. Jev and classifier
+tables and all other stages do not opt in.
+
 ## Results and prompt ownership
 
 - A model-assisted stage returns a fully validated result, a contractually

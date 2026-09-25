@@ -140,6 +140,9 @@ never entered into or read from a repository-wide unqualified map.
   the provider ceiling. Output refusals partition independent questions first;
   input/context refusals preserve and repartition complete evidence. A new
   limit/packing policy is tested on one saved complete window before a full run.
+  A call may opt into one resample (spec 2026-09-25): a live answer refused whole
+  for what the model wrote is asked once more with the same bytes. Only the
+  design parts and areas proposals opt in.
 - **Glossary:** only accepted prose enters a separate p-ref generation/reduction
   pass with its own 32,768-token output allowance: legitimate windows need 1–16 thousand tokens, and two Watchtower windows looped to 128,000. Source/prose/fill context
   stays local in Prepared and the accepted cache record; no deferred g-ref
