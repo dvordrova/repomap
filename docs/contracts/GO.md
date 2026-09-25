@@ -155,12 +155,16 @@ map[string]int] struct`, `[T interface{~int | ~string}] interface`, and
 `[T storefixture.Labeled[int]] []T` with the constraint's package path
 shortened. Its fields and struct tags never enter that text; before this, the
 form began at the first space, inside the parameters, and leaked every field
-and tag. A generic function's signature keeps its parameters
+and tag. A struct tag inside a constraint is skipped as one quoted string, so
+a `]` in its text does not end the list (`[T interface{~struct{Key string
+"split:\"]\""}}] struct`). A generic function's signature keeps its parameters
 (`func[T any](items []T) T`). The cumulative Go repository's
 `internal/storefixture/generic_types.go` asserts both. Equivalents: TypeScript
-class headers, type aliases (`Pair<T>`, the compiler's rendering) and function
-signatures already keep their parameters, with regression examples in
-`src/type-members.ts`; Python writes PEP 695 parameters since the same change
+class headers and function signatures keep their parameters; a generic type
+alias is written from its source parameters (`Keyed<K extends string, V =
+number>`), because the compiler's rendering (`Keyed<K, V>`) drops constraints
+and defaults. Regression examples are in `src/type-members.ts`. Python writes
+PEP 695 parameters since the same change
 ([Python](PYTHON.md#generic-declarations)); Clojure declares no type parameters
 and has no equivalent.
 

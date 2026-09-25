@@ -53,6 +53,13 @@ func typeSignature(signature string) string {
 	if rest[end] == '[' {
 		depth := 0
 		for i := end; i < len(rest); i++ {
+			if rest[i] == '"' {
+				// A struct tag inside a constraint may hold brackets.
+				if quoted, err := strconv.QuotedPrefix(rest[i:]); err == nil {
+					i += len(quoted) - 1
+				}
+				continue
+			}
 			if rest[i] == '[' {
 				depth++
 			} else if rest[i] == ']' {

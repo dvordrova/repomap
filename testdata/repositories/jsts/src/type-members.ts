@@ -35,6 +35,9 @@ export class Box<T extends { id: string }> {
 // A generic alias keeps its parameter list, not its body.
 export type Pair<T> = { first: T; second: T };
 
+// An alias's parameters keep their constraints and defaults.
+export type Keyed<K extends string, V = number> = Record<K, V>;
+
 export function firstOf<T>(items: T[]): T {
   return items[0];
 }

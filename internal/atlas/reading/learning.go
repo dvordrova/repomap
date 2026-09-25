@@ -219,8 +219,11 @@ func (r *reader) learningEvidence() []learningEvidence {
 	seenFiles := map[string]bool{}
 	for _, chunk := range r.questionRows() {
 		area := ""
-		if box := r.boxes[r.boxOf[chunk.Place.ID]]; box != nil {
-			area = box.title + ": " + box.line
+		for _, targetID := range chunk.Place.TargetIDs {
+			if box := r.boxes[r.boxFor(targetID, chunk.Place.ID)]; box != nil {
+				area = box.title + ": " + box.line
+				break
+			}
 		}
 		var components []string
 		for _, meta := range r.opts.Targets {

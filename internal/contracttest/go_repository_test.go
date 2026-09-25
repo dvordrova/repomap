@@ -260,6 +260,7 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 		"Labeled": "[T interface{~int | ~string}] interface",
 		"Batch":   "[T storefixture.Labeled[int]] []T",
 		"First":   "func[T any](items []T) T",
+		"Keyed":   `[T interface{~struct{Key string "split:\"]\""}}] struct`,
 	})
 	adaptertest.AssertExecutionScope(t, index, graph, "cmd/app/main.go", 12, programindex.ObjectFunction)
 	adaptertest.AssertRegistrationArgument(t, graph, "cmd/app/main.go", "getLevel", map[int]string{21: "/api/levels", 115: "/api/embedded", 117: "/api/overridden-lookalike"})

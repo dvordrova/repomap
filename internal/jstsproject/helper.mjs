@@ -916,6 +916,12 @@ function signatureOf(node) {
       const signature = checker.getSignatureFromDeclaration(node)
       return signature ? safeTypeText(checker.signatureToString(signature, node, ts.TypeFormatFlags?.NoTruncation || 0)) : ""
     }
+    // The compiler renders a generic alias as `Pair<T>`, without its
+    // parameters' constraints and defaults; the source keeps them.
+    if (ts.isTypeAliasDeclaration(node) && node.typeParameters?.length) {
+      const source = node.getSourceFile()
+      return `${node.name.text}<${node.typeParameters.map((parameter) => parameter.getText(source).replace(/\s+/g, " ")).join(", ")}>`
+    }
     if (node.name) return safeTypeText(checker.typeToString(checker.getTypeAtLocation(node.name), node, ts.TypeFormatFlags?.NoTruncation || 0))
   } catch {}
   return ""

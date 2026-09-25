@@ -348,6 +348,7 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	adaptertest.AssertDeclarationSignatures(t, graph, "src/type-members.ts", map[string]string{
 		"Box":     "export class Box<T extends { id: string }>",
 		"Pair":    "Pair<T>",
+		"Keyed":   "Keyed<K extends string, V = number>",
 		"firstOf": "<T>(items: T[]): T",
 	})
 	assertCumulativeJSTSValueReads(t, result, index)
