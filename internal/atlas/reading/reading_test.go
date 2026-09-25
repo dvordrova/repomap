@@ -361,7 +361,15 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 		rows = append(rows, answer)
 	}
 	if refused && len(rows) > 0 {
-		rows = append(rows, rows[0])
+		// A second, different answer for the first row leaves it undecided.
+		repeat := map[string]string{}
+		for name, value := range rows[0] {
+			repeat[name] = value
+			if name != "key" {
+				repeat[name] = value + " (answered again differently)"
+			}
+		}
+		rows = append(rows, repeat)
 	}
 	response, _ := json.Marshal(map[string]any{"rows": rows})
 	return llm.Completion{
