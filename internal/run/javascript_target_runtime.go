@@ -107,15 +107,14 @@ func validateJSTSTargetMaterialization(
 	if err := target.ValidateAgainst(repository); err != nil {
 		return fmt.Errorf("scout target: %w", err)
 	}
-	if err := result.Validate(); err != nil {
+	// TargetFromResult validates the project result before the corpus binding
+	// reads it.
+	materialized, err := jstsproject.TargetFromResult(result)
+	if err != nil {
 		return fmt.Errorf("project result: %w", err)
 	}
 	if _, err := validateJSTSProjectCorpusBinding(repository, result); err != nil {
 		return fmt.Errorf("project corpus binding: %w", err)
-	}
-	materialized, err := jstsproject.TargetFromResult(result)
-	if err != nil {
-		return fmt.Errorf("restore materialized target: %w", err)
 	}
 	if err := target.ValidateMaterialization(materialized); err != nil {
 		return err

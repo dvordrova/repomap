@@ -66,9 +66,7 @@ func jstsRepositoryProgramFacts(
 	if !ok || !selectedOK {
 		return jstsproject.Result{}, fmt.Errorf("invalid JavaScript/TypeScript compiler fact snapshot")
 	}
-	if err := result.Validate(); err != nil {
-		return jstsproject.Result{}, fmt.Errorf("validate JavaScript/TypeScript compiler facts: %w", err)
-	}
+	// TargetFromResult validates the compiler facts before restoring the target.
 	materialized, err := jstsproject.TargetFromResult(result)
 	if err != nil {
 		return jstsproject.Result{}, fmt.Errorf("restore materialized JavaScript/TypeScript target: %w", err)

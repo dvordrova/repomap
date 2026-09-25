@@ -743,20 +743,27 @@ func (result Result) Validate() error {
 			}
 		}
 	}
-	canonical := result.Snapshot()
-	canonical.SHA256 = ""
-	canonicalize(&canonical)
-	encoded, err := json.Marshal(canonical)
+	// The seal covers the canonical encoding. The result's own encoding is
+	// decoded into an independent copy and canonicalized; a canonical result
+	// equals that copy, and then its encoding is the sealed one.
+	unsealed := result
+	unsealed.SHA256 = ""
+	encoded, err := json.Marshal(unsealed)
 	if err != nil {
 		return fmt.Errorf("jsts project: validate seal: %w", err)
+	}
+	var canonical Result
+	if err := json.Unmarshal(encoded, &canonical); err != nil {
+		return fmt.Errorf("jsts project: validate seal: %w", err)
+	}
+	canonicalize(&canonical)
+	canonical.SHA256 = result.SHA256
+	if !reflect.DeepEqual(result, canonical) {
+		return fmt.Errorf("jsts project: result is not canonical")
 	}
 	digest := sha256.Sum256(encoded)
 	if result.SHA256 != hex.EncodeToString(digest[:]) {
 		return fmt.Errorf("jsts project: result SHA mismatch")
-	}
-	canonical.SHA256 = result.SHA256
-	if !reflect.DeepEqual(result, canonical) {
-		return fmt.Errorf("jsts project: result is not canonical")
 	}
 	return nil
 }
