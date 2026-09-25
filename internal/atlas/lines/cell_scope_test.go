@@ -31,7 +31,8 @@ func TestAPIDecisionsFailAloneWhileTheCoreRoleIsRequired(t *testing.T) {
 }
 
 // A missing address is the declared unknown and names no address; the line
-// and destination stand. An unlisted destination loses only itself.
+// and destination stand. An unlisted destination, or a free destination
+// without its name, loses only itself.
 func TestOutboundAddressMissingReadsUnknown(t *testing.T) {
 	def := FixedBoundaries(true)
 	window := table.Window{
@@ -52,5 +53,9 @@ func TestOutboundAddressMissingReadsUnknown(t *testing.T) {
 	}
 	if want := (table.Answer{"line": "Sends the order.", "address": "a1"}); !reflect.DeepEqual(result.Answers[1], want) || len(result.Rejections) != 1 || result.Rejections[0].Cell != "destination" {
 		t.Fatalf("an unlisted destination was not refused alone: %+v / %+v", result.Answers[1], result.Rejections)
+	}
+	free, err := table.DecodeResult(def, table.Window{Context: window.Context, Rows: window.Rows[:1]}, []byte(`{"rows":[{"key":"b1","line":"Sends the order.","destination":"other: ","address":"a1"}]}`))
+	if want := (table.Answer{"line": "Sends the order.", "address": "a1"}); err != nil || !reflect.DeepEqual(free.Answers[0], want) || len(free.Rejections) != 1 || free.Rejections[0].Cell != "destination" {
+		t.Fatalf("a free destination without its name was not refused alone: %+v / %v", free, err)
 	}
 }
