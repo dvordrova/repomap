@@ -15,7 +15,9 @@ import (
 // messages, O in the completion)" and a gateway's "Requested token count
 // exceeds the model's maximum context length of L tokens. You requested a
 // total of R tokens: I tokens from the input messages and O tokens for the
-// completion". Both are explicit refusals with consistent counts.
+// completion". Both are explicit refusals once the requested count exceeds
+// the limit. Counts that do not add up are still that refusal, but they are not
+// reported as observed.
 var numericContextLimit = regexp.MustCompile(`(?i)maximum context length (?:is|of) ([0-9]+) tokens\.? ?(?:However, )?you requested (?:a total of )?([0-9]+) tokens[:( ]+([0-9]+) (?:tokens )?(?:in|from) the (?:input )?messages,? (?:and )?([0-9]+) (?:tokens )?(?:in|for) the completion`)
 var inputTokenLimit = regexp.MustCompile(`(?i)^input token exceed the limit(?: \(request id: [^\r\n]*\))?\.?$`)
 
@@ -58,10 +60,14 @@ func providerContextLimit(status int, body []byte) *ResourceLimitError {
 			numbers[i] = n
 		}
 		limit, requested, input, output := numbers[0], numbers[1], numbers[2], numbers[3]
-		if limit <= 0 || requested <= limit || input > requested || output != requested-input {
+		if limit <= 0 || requested <= limit {
 			return nil
 		}
-		resource.Limit, resource.Observed, resource.ObservedKnown = limit, requested, true
+		resource.Limit = limit
+		if input > requested || output != requested-input {
+			return resource
+		}
+		resource.Observed, resource.ObservedKnown = requested, true
 		resource.InputTokens, resource.ConfiguredMaxTokens = input, output
 		return resource
 	}

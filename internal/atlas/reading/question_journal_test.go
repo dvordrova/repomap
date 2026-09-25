@@ -14,8 +14,9 @@ func TestRefusedQuestionIsJournaledOnceAndRetainedInSummary(t *testing.T) {
 	opts, provider := questionFixture(t)
 	opts.WindowRows = 0
 	opts.Questions = []string{"Where is state stored?", "Where is it encrypted?"}
-	// A question the model answered badly is refused in place. (A question the
-	// model left out is re-asked instead; see TestOmittedQuestionIsRecovered….)
+	// A cell the model answered badly is refused in place; the question keeps
+	// its other rows. (A question the model left out is re-asked instead; see
+	// TestOmittedQuestionIsRecovered….)
 	provider.questionBatchFor = func(request questionBatchRequest, response questionbatch.Response) questionbatch.Response {
 		for i, question := range request.Questions {
 			if question.Question == opts.Questions[1] {
@@ -38,14 +39,14 @@ func TestRefusedQuestionIsJournaledOnceAndRetainedInSummary(t *testing.T) {
 	if len(result.Rejected) != 1 || !result.Rejected[0].AlreadyJournaled || len(modeldiag.Summary(result.Rejected)) != 1 {
 		t.Fatalf("owner lost rejection summary or emitted duplicate: %+v", result.Rejected)
 	}
-	if len(result.Questions) != 2 || len(result.Questions[0].Stops) == 0 || len(result.Questions[1].Stops) != 0 {
-		t.Fatalf("refused question affected its accepted neighbour: %+v", result.Questions)
+	if len(result.Questions) != 2 || len(result.Questions[0].Stops) != 4 || len(result.Questions[1].Stops) != 3 || result.Questions[1].Coverage.UnresolvedChunks != 1 {
+		t.Fatalf("refused cell affected its accepted neighbours: %+v", result.Questions)
 	}
 	if err := modeldiag.Append(opts.OwnerRunDir, result.Rejected); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := modeldiag.Read(opts.OwnerRunDir)
-	if err != nil || len(rows) != 1 || rows[0].Kind != "question_rejected" || rows[0].Count != 4 {
+	if err != nil || len(rows) != 1 || rows[0].Kind != "question_rejected" || rows[0].Count != 1 {
 		t.Fatalf("shared journal has duplicate or lost coverage: %+v / %v", rows, err)
 	}
 }

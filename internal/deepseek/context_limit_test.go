@@ -48,7 +48,8 @@ func TestContextLimitRequiresAnExplicitContextRefusal(t *testing.T) {
 		{"unknown parameter", `{"error":{"message":"context_length is not a supported parameter"}}`, 400, false},
 		{"setting mention", `{"error":{"message":"maximum context length is 1024 tokens"}}`, 400, false},
 		{"not over limit", `{"message":"maximum context length is 1024 tokens. However, you requested 1000 tokens (800 in the messages, 200 in the completion)"}`, 400, false},
-		{"inconsistent counts", `{"message":"maximum context length is 1024 tokens. However, you requested 1200 tokens (1200 in the messages, 200 in the completion)"}`, 400, false},
+		{"inconsistent counts over the limit", `{"message":"maximum context length is 1024 tokens. However, you requested 1200 tokens (1200 in the messages, 200 in the completion)"}`, 400, true},
+		{"inconsistent counts within the limit", `{"message":"maximum context length is 1024 tokens. However, you requested 1000 tokens (1200 in the messages, 200 in the completion)"}`, 400, false},
 		{"different status", `{"error":{"code":"context_length_exceeded"}}`, 429, false},
 		{"plain error", `context_length_exceeded`, 400, false},
 		{"quoted request", `{"request":{"code":"context_length_exceeded"},"message":"invalid schema"}`, 400, false},
@@ -59,6 +60,13 @@ func TestContextLimitRequiresAnExplicitContextRefusal(t *testing.T) {
 				t.Fatalf("context limit=%#v, want %t", got, test.want)
 			}
 		})
+	}
+	// Counts that do not add up still name an explicit context refusal over its
+	// limit, so a split may answer it; they are not reported as observed.
+	inconsistent := providerContextLimit(400, []byte(`{"message":"maximum context length is 1024 tokens. However, you requested 1200 tokens (1200 in the messages, 200 in the completion)"}`))
+	if inconsistent == nil || inconsistent.Kind != ResourceLimitContextTokens || inconsistent.Limit != 1024 || inconsistent.ObservedKnown ||
+		inconsistent.Observed != 0 || inconsistent.InputTokens != 0 || inconsistent.ConfiguredMaxTokens != 0 {
+		t.Fatalf("inconsistent refusal = %#v", inconsistent)
 	}
 	overflow, _ := json.Marshal(map[string]string{"message": "maximum context length is " + strings.Repeat("9", 40) + " tokens. However, you requested 1200 tokens (1000 in the messages, 200 in the completion)"})
 	if providerContextLimit(400, overflow) != nil {

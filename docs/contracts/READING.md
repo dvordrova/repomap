@@ -554,9 +554,24 @@ execution result or assertion semantics.
 The shared question cube selects closed source anchors for every question
 from one evidence catalogue. Complete evidence precedes the changing questions;
 unselected rows need no separate negative explanation. Every question is
-mandatory in a response and retains per-chunk inspection coverage. A refused
-question stays unavailable for that chunk rather than becoming a negative finding;
-accepted neighbouring questions survive, including cache and memo reuse. Only explicit
+mandatory in a response and retains per-chunk inspection coverage. Decisions are
+read per (question,row) cell. An unknown entry, row or anchor is discarded; a
+selection that names no known row is journaled as discarded. A malformed
+selection, including one that names a known row only in another shape (the
+bare ref, a list or another field), a positive selection with no advertised
+anchor, a relevance other than direct/context, or one anchor given both
+relevances refuses only that cell. An entry whose selections are not a list
+has no cell to compare and refuses its question in that window, even beside a
+readable entry. A refused cell stays unavailable rather than becoming a
+negative finding and blocks optional glossary metadata of its row; the
+question's other rows and accepted neighbouring questions survive, including
+cache and memo reuse. A later run asks a refused cell again in its own smaller
+window. Harmless forms are the same answer: relevance in any letter case or
+padding, one anchor written as a string, a blank reason (a selection without a
+hint), a bare array of entries, or one wrapper object around `questions`.
+Repeated entries for one question are compared cell by cell: cells they answer
+alike are one answer with merged hints, and a cell they answer differently,
+including a selection against an explicit empty list, is refused. Only explicit
 provider context/output/response resource refusals authorize lossless partition
 of complete evidence rows; there is no ordinary row-count or 64KiB planning cap
 for this cube. A window asks at most eight questions over its complete rows:
@@ -565,9 +580,11 @@ anchors) got four back, the same rows with eight questions got eight, and the
 same 64 questions over document rows got 64 — density of decisions per response,
 not key names, loses answers. Windows over the same rows share a request prefix;
 the first of them runs before its siblings so the provider's prefix cache serves
-the rest. A question the model left out of an accepted response is asked once
-more over the same rows with the other omitted questions (`question_omitted`
-journal rows, marked recovered when the second round answers); a question
+the rest. A question the model left out, or named only with missing or null
+selections, is asked once more over the same rows with the other omitted
+questions (`question_omitted` journal rows, marked recovered when the second
+round answers). That also follows a response that decided no question, unless
+asking every one of its questions again would repeat its request; a question
 omitted twice stays unavailable. Output refusals split independent questions
 first while retaining their complete evidence; input/context refusals split by
 actual encoded input weight. Explicit development budgets remain available.
@@ -600,7 +617,7 @@ Connections retain their source kind; the route is not an execution trace.
 
 ## Question evidence and per-anchor relevance
 
-Question-batch v3 validates relevance for each original `(row, anchor)`. Distinct anchors in one chunk may be direct/context independently; different rationales are retained in stable order. Conflicting relevance for the same anchor still refuses that question, with accepted neighbours intact. Each selected declaration retains its native call/API facts, safe source arguments, receiver/result expressions and source-qualified ownership. `BoundarySourceContext` and question call catalogues use the same safe source projection; canonical IDs stay local. A main-flow or business-effect claim must follow actual observations or remain an explicitly qualified interpretation. A source path is not proof of a call, and its reading order is not execution order.
+Question-batch v3 validates relevance for each original `(row, anchor)`. Distinct anchors in one chunk may be direct/context independently; different rationales are retained in stable order. Conflicting relevance for the same anchor refuses only that (question,row) cell; the question's other rows and accepted neighbours stay intact. The prompt still says such a conflict leaves the question unavailable, so that the request bytes stay unchanged. Each selected declaration retains its native call/API facts, safe source arguments, receiver/result expressions and source-qualified ownership. `BoundarySourceContext` and question call catalogues use the same safe source projection; canonical IDs stay local. A main-flow or business-effect claim must follow actual observations or remain an explicitly qualified interpretation. A source path is not proof of a call, and its reading order is not execution order.
 
 ## Entity knowledge
 

@@ -524,9 +524,10 @@ func TestAnswerDoesNotTurnMissingEvidenceIntoInapplicability(t *testing.T) {
 		if err := json.Unmarshal(raw, &request); err != nil {
 			t.Fatal(err)
 		}
+		// Only the (question,row) cell with the unknown anchor stays unresolved.
 		for _, row := range request.Evidence {
 			if row["path"] == "pkg/a/y.go" {
-				unresolved += len(request.Evidence)
+				unresolved++
 			}
 		}
 	}

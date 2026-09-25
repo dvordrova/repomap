@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,9 +65,14 @@ type QuestionRejection struct {
 	Question string `json:"question"`
 	Reason   string `json:"reason"`
 	Chunks   int    `json:"chunks"`
-	// Omitted marks a question an accepted first-round response did not name
-	// at all. That is no decision and not yet a loss: the cube asks it once
-	// more over the same rows, and the re-asking window's own result counts.
+	// Rows names the refused (question,row) cells of a question whose other
+	// rows were decided. Those cells stay uninspected; empty Rows refuses the
+	// whole question in this window.
+	Rows []string `json:"rows,omitempty"`
+	// Omitted marks a question a first-round response made no decision for:
+	// named nowhere, or only without selections. That is not yet a loss: the
+	// cube asks it once more over the same rows in a request without the
+	// questions it did decide, and the re-asking window's own result counts.
 	Omitted bool `json:"omitted,omitempty"`
 	// Recovered marks an omitted question whose second round then decided
 	// every row of this window.
@@ -74,13 +80,17 @@ type QuestionRejection struct {
 }
 
 type Response struct {
-	Questions    []Decision          `json:"questions"`
-	Rejections   []QuestionRejection `json:"rejections,omitempty"`
+	Questions  []Decision          `json:"questions"`
+	Rejections []QuestionRejection `json:"rejections,omitempty"`
+	// Discarded records selections that name no readable or known row. They
+	// decide and refuse nothing.
+	Discarded    []QuestionRejection `json:"discarded,omitempty"`
 	metadataRows []string
 }
 
 // Retrieval terms bind to evidence rows, which may be shared by questions.
-// A row mentioned by a refused question cannot authorize optional metadata.
+// A row of a refused cell, or mentioned by a refused question, cannot
+// authorize optional metadata.
 func (response Response) AcceptedRowKeys() []string { return response.metadataRows }
 
 // An omission is journaled under its own kind so rejected.jsonl does not
@@ -94,7 +104,34 @@ func (response Response) ResponseRejections() []llm.ResponseRejection {
 		}
 		result = append(result, llm.ResponseRejection{Kind: kind, Count: rejection.Chunks, Reason: rejection.Reason, Samples: []string{rejection.Question}})
 	}
+	for _, discarded := range response.Discarded {
+		result = append(result, llm.ResponseRejection{Kind: "selection_discarded", Count: 1, Reason: discarded.Reason, Samples: []string{discarded.Question}})
+	}
 	return result
+}
+
+// refusedRows returns the refused cells of one decided question.
+func (response Response) refusedRows(key string) map[string]bool {
+	refused := make(map[string]bool)
+	for _, rejection := range response.Rejections {
+		if rejection.Question == key {
+			for _, row := range rejection.Rows {
+				refused[row] = true
+			}
+		}
+	}
+	return refused
+}
+
+// questionRefusal refuses a response that decided no asked question. It
+// keeps each question's rejection, so the questions it made no decision for
+// can be asked again in a request that differs from the refused one.
+type questionRefusal struct {
+	rejections []QuestionRejection
+}
+
+func (refusal *questionRefusal) Error() string {
+	return "question batch: no questions accepted: " + refusal.rejections[0].Reason
 }
 
 // ChunkResult has one slot per original input chunk. Only an inspected chunk
@@ -624,6 +661,11 @@ func splittableResource(err error) bool {
 	}
 }
 
+// decode reads each asked question independently, and within a question each
+// (question,row) cell. A defect refuses the smallest scope it touches: an
+// unknown entry or row is discarded, a malformed or conflicting cell stays
+// uninspected, and the question's other rows and the other questions keep
+// their decisions.
 func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte, reask bool) (Response, error) {
 	normalized, err := llm.NormalizeJSON(raw)
 	if err != nil {
@@ -637,78 +679,331 @@ func (data catalogue) decode(rows []int, questions []modelQuestion, raw []byte, 
 	for _, question := range questions {
 		allowed[question.Key] = true
 	}
-	byQuestion := make(map[string][]Decision)
-	failures := make(map[string]string)
-	original := make(map[string][]json.RawMessage)
+	byQuestion := make(map[string][]json.RawMessage)
 	var unknown []json.RawMessage
-	for _, rawQuestion := range entries {
+	for _, entry := range entries {
 		var named struct {
 			Key string `json:"key"`
 		}
-		key := ""
-		if json.Unmarshal(rawQuestion, &named) == nil && allowed[named.Key] {
-			key = named.Key
-		}
-		if key == "" {
-			unknown = append(unknown, rawQuestion)
+		if json.Unmarshal(entry, &named) != nil || !allowed[named.Key] {
+			unknown = append(unknown, entry)
 			continue
 		}
-		original[key] = append(original[key], rawQuestion)
-		var decision Decision
-		if err := json.Unmarshal(rawQuestion, &decision); err != nil {
-			failures[key] = "question has an invalid selection shape"
-			continue
-		}
-		byQuestion[key] = append(byQuestion[key], decision)
+		byQuestion[named.Key] = append(byQuestion[named.Key], entry)
 	}
 	// A missing question says what the response did contain, so the
 	// journal and the console show the provider's shape, not only the gap.
 	shape := responseShape(unknown)
 	result := Response{Questions: []Decision{}}
 	unsafe := append([]json.RawMessage(nil), unknown...)
+	refusedCells := make(map[string]bool)
 	for _, question := range questions {
-		reason := failures[question.Key]
-		omitted := false
-		if reason == "" {
-			// Strip unknown optional fields before the existing closed-ref and
-			// scalar checks. Each question still needs one coherent selection.
-			encoded, _ := json.Marshal(Response{Questions: byQuestion[question.Key]})
-			accepted, err := data.decodeComplete(rows, []modelQuestion{question}, encoded)
-			if err == nil {
-				result.Questions = append(result.Questions, accepted.Questions...)
-				continue
-			}
-			reason = err.Error()
-			if len(byQuestion[question.Key]) == 0 {
-				// Named nowhere in an accepted response: no decision was made.
-				// The first round asks it again; a re-asking window's gap is final.
-				omitted = !reask
-				if shape != "" {
-					reason += " (" + shape + ")"
+		reading := data.readQuestion(rows, question.Key, byQuestion[question.Key])
+		result.Discarded = append(result.Discarded, reading.discarded...)
+		if reading.decided {
+			result.Questions = append(result.Questions, reading.decision)
+			if len(reading.refused) > 0 {
+				result.Rejections = append(result.Rejections, QuestionRejection{Question: question.Key, Reason: reading.reason, Chunks: len(reading.refused), Rows: reading.refused})
+				for _, row := range reading.refused {
+					refusedCells[row] = true
 				}
+			}
+			continue
+		}
+		reason, omitted := reading.reason, false
+		if reading.undecided {
+			// No decision was made. The first round asks it again; a
+			// re-asking window's gap is final.
+			omitted = !reask
+			if len(byQuestion[question.Key]) == 0 && shape != "" {
+				reason += " (" + shape + ")"
 			}
 		}
 		result.Rejections = append(result.Rejections, QuestionRejection{Question: question.Key, Reason: reason, Chunks: len(rows), Omitted: omitted})
-		unsafe = append(unsafe, original[question.Key]...)
+		unsafe = append(unsafe, byQuestion[question.Key]...)
 	}
 	if len(result.Questions) == 0 {
-		return result, fmt.Errorf("question batch: no questions accepted: %s", result.Rejections[0].Reason)
+		return result, &questionRefusal{rejections: result.Rejections}
 	}
 	if len(result.Rejections) > 0 || len(unknown) > 0 {
-		result.metadataRows = safeQuestionMetadataRows(rows, unsafe)
+		result.metadataRows = safeQuestionMetadataRows(rows, unsafe, refusedCells)
 	}
 	return result, nil
 }
 
-// questionEntriesOf reads the `questions` array of a response.
+// questionReading is one question's decision in one response.
+type questionReading struct {
+	decision Decision
+	// decided is true when at least one row of the window was decided.
+	decided bool
+	// refused lists the refused cells of a decided question, in row order.
+	refused []string
+	reason  string
+	// undecided marks a question named nowhere or only without selections.
+	undecided bool
+	discarded []QuestionRejection
+}
+
+// questionCells is one entry's reading of a question: each row's selected
+// anchors with their relevance, their hints, and the rows it refused.
+type questionCells struct {
+	relevance map[string]map[string]string
+	hints     map[string]map[string]bool
+	refused   map[string]string
+}
+
+// readQuestion combines the entries of one question cell by cell. The same
+// answer given twice is one answer; a row the entries answer differently,
+// including a selection against an explicit empty list, is refused alone.
+func (data catalogue) readQuestion(rows []int, key string, entries []json.RawMessage) questionReading {
+	var reading questionReading
+	if len(entries) == 0 {
+		reading.undecided = true
+		reading.reason = fmt.Sprintf("question batch: missing question %s", key)
+		return reading
+	}
+	allowedRows := make(map[string]int, len(rows))
+	for _, row := range rows {
+		allowedRows[rowRef(row)] = row
+	}
+	var readings []questionCells
+	for _, entry := range entries {
+		var wire struct {
+			Selections json.RawMessage `json:"selections"`
+		}
+		_ = json.Unmarshal(entry, &wire)
+		if len(wire.Selections) == 0 || bytes.Equal(wire.Selections, []byte("null")) {
+			continue // an entry without selections made no decision
+		}
+		var selections []json.RawMessage
+		if json.Unmarshal(wire.Selections, &selections) != nil {
+			// No cell of this entry can be read or compared, so no other
+			// entry for the question may stand in for it.
+			return questionReading{reason: fmt.Sprintf("question batch: question %s has an invalid selection shape", key)}
+		}
+		cells, discarded := data.readCells(allowedRows, key, selections)
+		readings = append(readings, cells)
+		reading.discarded = append(reading.discarded, discarded...)
+	}
+	if len(readings) == 0 {
+		reading.undecided = true
+		reading.reason = fmt.Sprintf("question batch: missing selections for %s", key)
+		return reading
+	}
+	reading.decision = Decision{Key: key, Selections: []Selection{}}
+	var reasons []string
+	for _, row := range rows {
+		ref := rowRef(row)
+		reason := ""
+		for _, cells := range readings {
+			if refused, ok := cells.refused[ref]; ok {
+				reason = refused
+				break
+			}
+		}
+		for _, other := range readings[1:] {
+			if reason == "" && !maps.Equal(readings[0].relevance[ref], other.relevance[ref]) {
+				reason = fmt.Sprintf("question batch: conflicting answers for %s/%s", key, ref)
+			}
+		}
+		if reason != "" {
+			reading.refused = append(reading.refused, ref)
+			reasons = append(reasons, reason)
+			continue
+		}
+		reading.decided = true
+		for _, anchor := range data.anchorOptions[row] {
+			relevance, selected := readings[0].relevance[ref][anchor]
+			if !selected {
+				continue
+			}
+			// Different explanations of the same relevance decision are
+			// independent hints. Preserve every original hint in stable order;
+			// neither the first nor the last response row wins.
+			seen := make(map[string]bool)
+			var hints []string
+			for _, cells := range readings {
+				for hint := range cells.hints[ref+"/"+anchor] {
+					if !seen[hint] {
+						seen[hint] = true
+						hints = append(hints, hint)
+					}
+				}
+			}
+			sort.Strings(hints)
+			reading.decision.Selections = append(reading.decision.Selections, Selection{Row: ref, Anchors: []string{anchor}, Relevance: relevance, Why: strings.Join(hints, "\n\n")})
+		}
+	}
+	if len(reasons) > 0 {
+		reading.reason = reasons[0]
+		if len(reasons) > 1 {
+			reading.reason += fmt.Sprintf("; %d cells refused", len(reasons))
+		}
+	}
+	if !reading.decided {
+		reading.refused = nil
+	}
+	return reading
+}
+
+// readCells reads one entry's selections field by field, so a malformed
+// selection refuses only its own (question,row) cell. A selection without a
+// readable known row is discarded and recorded.
+func (data catalogue) readCells(allowedRows map[string]int, key string, selections []json.RawMessage) (questionCells, []QuestionRejection) {
+	cells := questionCells{relevance: make(map[string]map[string]string), hints: make(map[string]map[string]bool), refused: make(map[string]string)}
+	var discarded []QuestionRejection
+	refuse := func(ref, reason string) {
+		if _, done := cells.refused[ref]; !done {
+			cells.refused[ref] = reason
+		}
+	}
+	for _, raw := range selections {
+		var wire struct {
+			Row       json.RawMessage `json:"row"`
+			Anchors   json.RawMessage `json:"anchors"`
+			Relevance json.RawMessage `json:"relevance"`
+			Why       json.RawMessage `json:"why"`
+		}
+		var ref string
+		if json.Unmarshal(raw, &wire) != nil || json.Unmarshal(wire.Row, &ref) != nil || ref == "" {
+			// Discarding a selection that still names a known row would turn
+			// the model's positive into a negative: that cell is refused.
+			named := knownRowsNamed(raw, allowedRows)
+			for _, row := range named {
+				refuse(row, fmt.Sprintf("question batch: invalid selection shape for %s/%s", key, row))
+			}
+			if len(named) == 0 {
+				discarded = append(discarded, QuestionRejection{Question: key, Reason: fmt.Sprintf("question batch: a selection of %s has no readable row", key)})
+			}
+			continue
+		}
+		row, known := allowedRows[ref]
+		if !known {
+			discarded = append(discarded, QuestionRejection{Question: key, Reason: fmt.Sprintf("question batch: a selection of %s names an unknown row", key)})
+			continue
+		}
+		anchors, anchorsOK := selectionAnchors(wire.Anchors)
+		var relevance, why string
+		relevanceOK := json.Unmarshal(wire.Relevance, &relevance) == nil
+		whyOK := len(wire.Why) == 0 || bytes.Equal(wire.Why, []byte("null")) || json.Unmarshal(wire.Why, &why) == nil
+		if !anchorsOK || !relevanceOK || !whyOK {
+			refuse(ref, fmt.Sprintf("question batch: invalid selection shape for %s/%s", key, ref))
+			continue
+		}
+		advertised := make(map[string]bool, len(data.anchorOptions[row]))
+		for _, anchor := range data.anchorOptions[row] {
+			advertised[anchor] = true
+		}
+		var selected, unknownAnchors []string
+		for _, anchor := range anchors {
+			if advertised[anchor] {
+				selected = append(selected, anchor)
+			} else {
+				unknownAnchors = append(unknownAnchors, anchor)
+			}
+		}
+		if len(selected) == 0 {
+			refuse(ref, fmt.Sprintf("question batch: positive selection has no advertised anchors for %s/%s %q", key, ref, unknownAnchors))
+			continue
+		}
+		relevance = strings.ToLower(strings.TrimSpace(relevance))
+		if relevance != "direct" && relevance != "context" {
+			refuse(ref, fmt.Sprintf("question batch: invalid relevance for %s/%s", key, ref))
+			continue
+		}
+		if cells.relevance[ref] == nil {
+			cells.relevance[ref] = make(map[string]string)
+		}
+		// Relevance belongs to the selected source, not the arbitrary file
+		// chunk containing it. Preserve each hint only at its own anchors.
+		for _, anchor := range selected {
+			if previous, seen := cells.relevance[ref][anchor]; seen && previous != relevance {
+				refuse(ref, fmt.Sprintf("question batch: conflicting selection for %s/%s/%s", key, ref, anchor))
+			}
+			cells.relevance[ref][anchor] = relevance
+			if hint := ref + "/" + anchor; strings.TrimSpace(why) != "" {
+				if cells.hints[hint] == nil {
+					cells.hints[hint] = make(map[string]bool)
+				}
+				cells.hints[hint][why] = true
+			}
+		}
+	}
+	return cells, discarded
+}
+
+// knownRowsNamed returns the known row refs a selection without a readable
+// row still names in any of its strings: written as the selection itself, as
+// a list, or under another field.
+func knownRowsNamed(raw json.RawMessage, allowedRows map[string]int) []string {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var named []string
+	var visit func(any)
+	visit = func(value any) {
+		switch value := value.(type) {
+		case string:
+			if _, known := allowedRows[value]; known && !seen[value] {
+				seen[value] = true
+				named = append(named, value)
+			}
+		case []any:
+			for _, child := range value {
+				visit(child)
+			}
+		case map[string]any:
+			for _, child := range value {
+				visit(child)
+			}
+		}
+	}
+	visit(value)
+	return named
+}
+
+// selectionAnchors reads a list of anchor refs; one ref written as a single
+// string is the same list.
+func selectionAnchors(raw json.RawMessage) ([]string, bool) {
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil, true
+	}
+	var anchors []string
+	if json.Unmarshal(raw, &anchors) == nil {
+		return anchors, true
+	}
+	var anchor string
+	if json.Unmarshal(raw, &anchor) == nil {
+		return []string{anchor}, true
+	}
+	return nil, false
+}
+
+// questionEntriesOf reads the `questions` array of a response. A bare array of
+// entries, or a root whose only field is an object holding `questions`, is the
+// same answer in another form; missing or null questions are no answer.
 func questionEntriesOf(normalized []byte) ([]json.RawMessage, error) {
+	var entries []json.RawMessage
+	if json.Unmarshal(normalized, &entries) == nil {
+		return entries, nil
+	}
 	var envelope struct {
 		Questions []json.RawMessage `json:"questions"`
 	}
-	if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Questions == nil {
-		return nil, fmt.Errorf("question batch: response must contain a questions array")
+	if json.Unmarshal(normalized, &envelope) == nil && envelope.Questions != nil {
+		return envelope.Questions, nil
 	}
-	return envelope.Questions, nil
+	var wrapper map[string]json.RawMessage
+	if json.Unmarshal(normalized, &wrapper) == nil && len(wrapper) == 1 {
+		for _, inner := range wrapper {
+			if json.Unmarshal(inner, &envelope) == nil && envelope.Questions != nil {
+				return envelope.Questions, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("question batch: response must contain a questions array")
 }
 
 // responseShape describes entries that named no asked question: the field
@@ -750,9 +1045,13 @@ func responseShape(unknown []json.RawMessage) string {
 }
 
 // The glossary observes the exact raw result. Suppress source-row metadata
-// touched by a refused question, even if an accepted question shares that row.
-func safeQuestionMetadataRows(rows []int, refused []json.RawMessage) []string {
-	blocked := make(map[string]bool)
+// of a refused cell or touched by a refused question, even if an accepted
+// question shares that row.
+func safeQuestionMetadataRows(rows []int, refused []json.RawMessage, refusedCells map[string]bool) []string {
+	blocked := make(map[string]bool, len(refusedCells))
+	for row := range refusedCells {
+		blocked[row] = true
+	}
 	var visit func(any)
 	visit = func(value any) {
 		switch value := value.(type) {
@@ -786,104 +1085,10 @@ func safeQuestionMetadataRows(rows []int, refused []json.RawMessage) []string {
 	return accepted
 }
 
-func (data catalogue) decodeComplete(rows []int, questions []modelQuestion, raw []byte) (Response, error) {
-	response, err := llm.DecodeJSON[Response](nil)(raw)
-	if err != nil {
-		return Response{}, err
-	}
-	allowedRows := make(map[string]int, len(rows))
-	for _, row := range rows {
-		allowedRows[rowRef(row)] = row
-	}
-	allowedQuestions := make(map[string]bool, len(questions))
-	for _, question := range questions {
-		allowedQuestions[question.Key] = true
-	}
-	byQuestion := make(map[string]Decision, len(questions))
-	for _, decision := range response.Questions {
-		if !allowedQuestions[decision.Key] {
-			continue
-		}
-		if decision.Selections == nil {
-			return Response{}, fmt.Errorf("question batch: missing selections for %s", decision.Key)
-		}
-		byAnchor := make(map[string]Selection)
-		reasons := make(map[string]map[string]bool)
-		for _, selection := range decision.Selections {
-			row, known := allowedRows[selection.Row]
-			if !known {
-				continue
-			}
-			allowedAnchors := make(map[string]bool, len(data.anchorOptions[row]))
-			for _, ref := range data.anchorOptions[row] {
-				allowedAnchors[ref] = true
-			}
-			anchors := make(map[string]bool)
-			for _, ref := range selection.Anchors {
-				if allowedAnchors[ref] {
-					anchors[ref] = true
-				}
-			}
-			if len(anchors) == 0 {
-				return Response{}, fmt.Errorf("question batch: positive selection has no advertised anchors for %s/%s", decision.Key, selection.Row)
-			}
-			if selection.Relevance != "direct" && selection.Relevance != "context" || strings.TrimSpace(selection.Why) == "" {
-				return Response{}, fmt.Errorf("question batch: invalid relevance or reason for %s/%s", decision.Key, selection.Row)
-			}
-			// Relevance belongs to the selected source, not the arbitrary file
-			// chunk containing it. Preserve each hint only at its own anchors.
-			for ref := range anchors {
-				key := selection.Row + "/" + ref
-				if previous, duplicate := byAnchor[key]; duplicate && previous.Relevance != selection.Relevance {
-					return Response{}, fmt.Errorf("question batch: conflicting selection for %s/%s", decision.Key, key)
-				}
-				if reasons[key] == nil {
-					reasons[key] = make(map[string]bool)
-				}
-				reasons[key][selection.Why] = true
-				byAnchor[key] = Selection{Row: selection.Row, Anchors: []string{ref}, Relevance: selection.Relevance}
-			}
-		}
-		normalized := Decision{Key: decision.Key, Selections: []Selection{}}
-		for _, row := range rows {
-			for _, ref := range data.anchorOptions[row] {
-				key := rowRef(row) + "/" + ref
-				selection, selected := byAnchor[key]
-				if !selected {
-					continue
-				}
-				// Different explanations of the same relevance decision are
-				// independent hints. Preserve every original hint in stable order;
-				// neither the first nor the last response row wins.
-				var hints []string
-				for reason := range reasons[key] {
-					hints = append(hints, reason)
-				}
-				sort.Strings(hints)
-				selection.Why = strings.Join(hints, "\n\n")
-				normalized.Selections = append(normalized.Selections, selection)
-			}
-		}
-		if previous, duplicate := byQuestion[decision.Key]; duplicate {
-			first, _ := json.Marshal(previous)
-			second, _ := json.Marshal(normalized)
-			if !bytes.Equal(first, second) {
-				return Response{}, fmt.Errorf("question batch: conflicting question result %s", decision.Key)
-			}
-		}
-		byQuestion[decision.Key] = normalized
-	}
-	result := Response{Questions: make([]Decision, 0, len(questions))}
-	for _, question := range questions {
-		decision, found := byQuestion[question.Key]
-		if !found {
-			return Response{}, fmt.Errorf("question batch: missing question %s", question.Key)
-		}
-		result.Questions = append(result.Questions, decision)
-	}
-	return result, nil
-}
-
+// apply records one window's decided cells of a question. Its refused cells
+// stay uninspected, never a negative. A window never overwrites a cell another
+// window already decided: a later window over a refused cell is its own
+// decision, and two decisions for one cell leave the later window unused.
 func (data catalogue) apply(question *QuestionResult, rows []int, ref string, outcome llm.Outcome[Response]) bool {
 	accepted := false
 	byRow := make(map[string][]Selection)
@@ -898,11 +1103,20 @@ func (data catalogue) apply(question *QuestionResult, rows []int, ref string, ou
 	if !accepted {
 		return false
 	}
+	refused := outcome.Value.refusedRows(ref)
+	for _, row := range rows {
+		if !refused[rowRef(row)] && question.Chunks[row].Inspected {
+			return false
+		}
+	}
 	source := atlas.SourceModel
 	if outcome.Cached {
 		source = atlas.SourceCache
 	}
 	for _, row := range rows {
+		if refused[rowRef(row)] {
+			continue
+		}
 		question.Chunks[row] = ChunkResult{
 			Inspected: true, Selections: cloneSelections(byRow[rowRef(row)]),
 			Source: source, QuestionRef: ref, RequestKey: outcome.CacheKey, RequestSHA256: outcome.RequestSHA256, ResponseSHA256: outcome.ResponseSHA256,
@@ -936,18 +1150,33 @@ func (data catalogue) missing(result Result) []window {
 	return windows
 }
 
-// omittedWindows plans the second round: for every accepted first-round
-// response, its rows with only the questions it did not name. A refused
-// window decided nothing that could be re-asked without repeating a request.
+// omittedWindows plans the second round: for every first-round response,
+// its rows with only the questions it made no decision for. A response that
+// decided no question still names them, unless re-asking them all would
+// repeat its request.
 func (data catalogue) omittedWindows(exchanges []Exchange) []window {
 	byRows := make(map[string]int)
 	seen := make(map[string]bool)
 	var windows []window
 	for _, exchange := range exchanges {
+		rejections := exchange.Outcome.Value.Rejections
 		if exchange.Err != nil {
-			continue
+			var refusal *questionRefusal
+			if !errors.As(exchange.Err, &refusal) {
+				continue
+			}
+			rejections = refusal.rejections
+			omitted := 0
+			for _, rejection := range rejections {
+				if rejection.Omitted {
+					omitted++
+				}
+			}
+			if omitted == len(exchange.QuestionRefs) {
+				continue
+			}
 		}
-		for _, rejection := range exchange.Outcome.Value.Rejections {
+		for _, rejection := range rejections {
 			q, known := data.exchangeQuestion(exchange, rejection.Question)
 			key := rowsKey(exchange.ChunkIndexes)
 			if !rejection.Omitted || !known || seen[key+" "+rejection.Question] {

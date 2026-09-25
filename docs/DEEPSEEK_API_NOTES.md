@@ -126,13 +126,17 @@ saved request bytes rather than applying new environment settings to them.
   and asks in-flight HTTP requests to terminate through their request context.
   Client cancellation is a fail-fast transport mechanism, not a guarantee
   about provider-side billing after disconnect.
-- Responses are byte-bounded. The adapter decodes exactly one provider choice
-  and its finish reason; the shared executor then accepts one unambiguous JSON
-  object or array with harmless whitespace, one JSON fence, or short leading
-  prose. A single complete leading `<think>...</think>` block is separated
-  before JSON parsing, so draft JSON and code fences inside it are never
-  mistaken for the final answer. Missing closing tags, nested/repeated leading
-  blocks and invalid final JSON remain rejected. This does not disable provider
+- Responses are byte-bounded. The adapter decodes exactly one provider choice,
+  its content and its finish reason, read in any letter case (`STOP` is
+  `stop`); a missing or unknown reason stays refused. Usage is decoded in a
+  second step: token counts it cannot read are reported as unavailable and
+  never refuse the answer beside them. The shared executor then accepts one
+  unambiguous JSON object or array with harmless whitespace, one JSON fence,
+  non-structural leading prose and a trailing remark without brackets or
+  fences. Complete leading `<think>...</think>` blocks, repeated or nested,
+  are separated before JSON parsing, so draft JSON and code fences inside them
+  are never mistaken for the final answer. Missing or unbalanced closing tags
+  and invalid final JSON remain rejected. This does not disable provider
   reasoning; the complete original response remains in diagnostics and cache.
   It never repairs fields, refs, schema, or values. Non-2xx outcomes
   retain their bounded response bytes for the normal secret-guarded semantic
@@ -143,7 +147,9 @@ saved request bytes rather than applying new environment settings to them.
   resource result, with the unchanged body retained for diagnostics. The
   adapter recognizes the closed `context_length_exceeded` code, the explicit
   `Input token exceed the limit` message, or a numeric maximum-context refusal
-  whose requested/input/reserved-output counts agree. A generic 400, quota
+  whose requested count exceeds the limit. When its input and reserved-output
+  counts do not add up to that request, it is still the refusal, without an
+  observed count. A generic 400, quota
   failure or unsupported parameter does not authorize splitting. Transport
   does not retry unchanged bytes for this failure. A cube with a lossless
   repartition can split complete input items through the shared executor;

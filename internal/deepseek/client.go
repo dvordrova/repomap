@@ -297,12 +297,14 @@ type chatMessage struct {
 	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
+// chatResponse reads usage in a second step: token counts are metrics, and
+// a count the adapter cannot read never refuses the answer beside it.
 type chatResponse struct {
 	Choices []struct {
 		FinishReason string      `json:"finish_reason"`
 		Message      chatMessage `json:"message"`
 	} `json:"choices"`
-	Usage *chatUsage `json:"usage"`
+	Usage json.RawMessage `json:"usage"`
 }
 
 type chatUsage struct {
@@ -568,9 +570,10 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		)
 	}
 	usage := chatUsage{}
-	usageReported := parsed.Usage != nil
-	if usageReported {
-		usage = *parsed.Usage
+	usageReported := len(parsed.Usage) > 0 && !bytes.Equal(parsed.Usage, []byte("null")) &&
+		json.Unmarshal(parsed.Usage, &usage) == nil
+	if !usageReported {
+		usage = chatUsage{}
 	}
 	completion := chatCompletion{
 		ResponseBytes:         len(respBody),
@@ -593,7 +596,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	completion.finishReasonClass = closedFinishReason(choice.FinishReason)
 	content := choice.Message.Content
 	completion.Content = []byte(content)
-	if choice.FinishReason == "length" {
+	if completion.FinishReason == "length" {
 		return completion, false, newResourceLimitError(ResourceLimitError{
 			Kind:            ResourceLimitOutputTokens,
 			Observed:        usage.CompletionTokens,
@@ -606,8 +609,8 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	}
 	if strings.TrimSpace(content) == "" {
 		details := make([]string, 0, 4)
-		if finishReason := knownFinishReason(choice.FinishReason); finishReason != "" {
-			details = append(details, "finish_reason="+finishReason)
+		if completion.FinishReason != "" {
+			details = append(details, "finish_reason="+completion.FinishReason)
 		}
 		if usage.CompletionTokens > 0 {
 			details = append(details, fmt.Sprintf("completion_tokens=%d", usage.CompletionTokens))
@@ -660,8 +663,10 @@ func closedFinishReason(reason string) string {
 	return "unknown"
 }
 
+// knownFinishReason reads the closed provider values in any letter case; a
+// missing or unknown reason stays unknown.
 func knownFinishReason(reason string) string {
-	switch reason {
+	switch reason = strings.ToLower(reason); reason {
 	case "stop", "length", "content_filter", "tool_calls", "insufficient_system_resource":
 		return reason
 	default:

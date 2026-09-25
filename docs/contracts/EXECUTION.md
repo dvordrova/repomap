@@ -178,21 +178,39 @@ open bracket anywhere in the active stack becomes whitespace; missing closing
 brackets are appended at EOF. Whitespace prevents separate tokens from merging
 (`1}2` must not become `12`). An unfinished quoted string may receive its
 closing quote at EOF before those brackets, preserving its original contents,
-including trailing spaces and literal bracket characters. An unfinished escape,
-invalid string character, missing value, crossed nesting, multiple roots or
-trailing prose is still refused; interior quotes and commas are never inserted.
-The same rule applies
-inside the existing JSON fence and after the existing complete thinking block.
+including trailing spaces and literal bracket characters. Since 2026-09-25 a
+crossed closer, whose opener lies deeper in the stack, has two readings:
+deleting it, or closing the inner brackets before it. It is deleted only when
+that gives one valid root and the other reading is invalid or decodes to the
+same value, as for the journaled doubled `}` after a table's last row. Readings
+that differ, such as `[{"a":[1}, 2]`, stay refused; past 64 readings the answer
+is refused rather than searched. After the root closes, a tail with no `{`,
+`}`, `[`, `]` or fence that does not start with `,`, `:` or `"` is discarded as
+prose, and a repeated root that decodes to the same value counts once; a tail
+such as `, "b": 2` continues the answer and is refused. An unfinished escape,
+invalid string character,
+missing value, a different second root, a structural tail or an ambiguous
+closer is still refused; interior quotes and commas are never inserted and no
+value is chosen from inside a malformed answer.
+The same rule applies inside a fence and after complete thinking blocks. The
+fence tag (`json`, `jsonc` or another) and an inline fence layout carry no
+content. Prose may precede the fence, including brackets that close before it
+outside any string and form no complete JSON object or array. A complete value
+before the fence competes and is refused, and so does an unfinished one, or a
+string the fence may belong to. After the closing fence prose is discarded, and a second fence must
+repeat the same value. A string still open at the closing fence refuses any
+following text, because the fence may belong to that string.
 The entire resulting object or array must pass JSON decoding and the owning
 stage's unchanged completeness, schema and closed-ref validation. This does not
 override provider-reported truncation or resource limits. Raw responses in
 cache and journals remain original; normalization needs no model call and does
 not change request identity.
 
-The shared JSON normalizer separates one complete leading
-`<think>...</think>` block before inspecting the final answer. Code fences or
-draft JSON inside that block cannot become the answer. An incomplete block,
-nested/repeated leading blocks, multiple final values or malformed final JSON
+The shared JSON normalizer separates complete leading `<think>...</think>`
+blocks before inspecting the final answer: consecutive blocks are removed in
+turn, and a nested block ends at the `</think>` that balances its openers.
+Code fences or draft JSON inside a block cannot become the answer. An
+incomplete or unbalanced block, different final values or malformed final JSON
 remain rejected. The live outcome, observer and reused response retain all
 original bytes; normalization changes only the input to semantic validation.
 This compatibility handling does not itself turn thinking off at the provider.
@@ -215,8 +233,8 @@ explicit on/off/omission overrides and unchanged client configuration. An HTTP
 executor regression alternates fast/reasoning requests, parses a Qwen-style
 leading think block containing a non-JSON code fence, retains the original
 response bytes and reuses each mode only from its own exact-response cache.
-Parser rules remain unchanged: a complete `</think>` terminator is required;
-a literal `<think/>`, truncation or ambiguous final JSON is refused.
+A balancing `</think>` terminator is required; a literal `<think/>`,
+truncation or ambiguous final JSON is refused.
 
 ## Exact cache and replay
 
