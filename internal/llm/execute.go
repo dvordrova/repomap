@@ -144,6 +144,10 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 			), outcome.Issues)
 			return outcome, nil
 		}
+		// The current decoder refusing a saved answer is a miss, not proof of
+		// corruption: the record stays until an accepted live answer replaces
+		// it, so a failed live call still leaves it for a more tolerant
+		// decoder. Only proven corruption evicts, above.
 		outcome.Issues = append(outcome.Issues, Issue{Kind: IssueCacheValidate, Err: validateErr})
 		setOutcomeResponse(&outcome, record.Response)
 		outcome.FinishReason = record.FinishReason
@@ -154,9 +158,6 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 			EventFailure, SourceCache, FailureValidation, outcome,
 		), outcome.Issues)
 		outcome.Cached = false
-		if evictErr := removeAcceptedCache(executor.RootDir, cacheKey); evictErr != nil {
-			outcome.Issues = append(outcome.Issues, Issue{Kind: IssueCacheEvict, Err: evictErr})
-		}
 	}
 
 	if cacheOnly {
@@ -548,6 +549,46 @@ func closedFinishReason(reason FinishReason) FinishReason {
 	default:
 		return FinishUnknown
 	}
+}
+
+// AcceptsCachedAnswer reports whether the exact request of call has a cached
+// answer its owner accepts now, through the provider's response adapter and
+// the owner's decoder as ExecuteJSON applies them. A split memo yields only
+// to such an answer, for example a later successful replay: a record the
+// current decoder refuses stays on disk for a later decoder, but it is no
+// answer now. It never calls the provider, the observer or an adapter's
+// Accept hook, and it removes nothing.
+func AcceptsCachedAnswer[T any](executor Executor, provider Provider, call Call[T]) bool {
+	if !executor.Enabled || provider == nil {
+		return false
+	}
+	providerState, err := canonicalProviderState(provider.State())
+	if err != nil {
+		return false
+	}
+	prepared, err := Prepare(provider, call.Prompt, call.Limits)
+	if err != nil {
+		return false
+	}
+	request := prepared.Bytes()
+	record, found, err := loadAcceptedCache(executor.RootDir, executionCacheKey(providerState, nil, request), request, call.Limits)
+	return err == nil && found && acceptsCachedRecord(provider, call, prepared, record)
+}
+
+func acceptsCachedRecord[T any](provider Provider, call Call[T], prepared Prepared, record acceptedCacheRecord) bool {
+	decode, err := decoderForCall(call)
+	if err != nil {
+		return false
+	}
+	_, err = decodeAcceptedJSON(func(raw []byte) (T, error) {
+		adapted, err := AdaptResponse(provider, prepared.ResponseContext(), prepared.Bytes(), raw)
+		if err != nil {
+			var zero T
+			return zero, err
+		}
+		return decode(adapted.Domain)
+	}, record.Response)
+	return err == nil
 }
 
 func decodeAcceptedJSON[T any](decodeValidate DecodeValidate[T], raw []byte) (T, error) {

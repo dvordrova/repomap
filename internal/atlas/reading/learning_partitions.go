@@ -99,13 +99,18 @@ func validateLearningPartition(memo learningPartitionMemo, count int) error {
 
 func (r *reader) recallLearningPartition(original learningWindow, prompt string, call llm.Call[learningResponse], memo learningPartitionMemo) ([]learningWindow, error) {
 	// A later successful replay of the original request supersedes the older
-	// split. The normal executor will validate that current response too.
+	// split: an answer the current decoder accepts. The normal executor will
+	// validate that current response too. A record the decoder refuses stays
+	// on disk for a later decoder, but the split stands and the original is
+	// not asked live again.
 	key, err := llm.MemoIdentity(r.opts.Provider, nil, call.Prompt, call.Limits)
 	if err != nil {
 		return nil, err
 	}
-	if _, found, err := llm.CachedExchange(r.opts.Executor.RootDir, key); err != nil || found {
+	if _, found, err := llm.CachedExchange(r.opts.Executor.RootDir, key); err != nil {
 		return nil, err
+	} else if found && llm.AcceptsCachedAnswer(r.opts.Executor, r.opts.Provider, call) {
+		return nil, nil
 	}
 	var windows []learningWindow
 	for _, part := range memo.Windows {

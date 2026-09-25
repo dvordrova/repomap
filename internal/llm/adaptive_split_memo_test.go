@@ -193,9 +193,11 @@ func TestAdaptiveSplitMemoParentAndChildReplayRemainAuthoritative(t *testing.T) 
 	}
 	// Replay accepts JSON; the stage still owns its schema and must reject a
 	// wrong shape before it can supersede a split with semantic authority.
+	// The refused parent record is kept for a later decoder, yet the split
+	// stands at once: no live call is spent on the whole parent.
 	replay(items[0], `{"wrong":"shape"}`)
 	plan, outcomes = run()
-	if len(plan) != 2 || len(p.calls) != 1 || !outcomes[0].Cached || outcomes[0].Value.Value != "a" {
+	if len(plan) != 2 || len(p.calls) != 0 || !outcomes[0].Cached || outcomes[0].Value.Value != "a" {
 		t.Fatalf("invalid replay bypassed domain validation: %#v / %#v / %#v", plan, outcomes, p.calls)
 	}
 	replay([]string{"a"}, `{"value":"child replay"}`)

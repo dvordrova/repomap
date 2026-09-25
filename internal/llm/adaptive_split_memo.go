@@ -64,12 +64,16 @@ func loadAdaptiveSplit[T any](executor Executor, provider Provider, call Call[T]
 		(memo.RejectionReason == adaptiveHTTP500 && !call.SplitHTTP500)) {
 		return false, nil
 	}
-	// A successful whole-parent replay supersedes the old split. Even a
-	// damaged cache record goes through ExecuteJSON's ordinary diagnosis,
-	// eviction and domain validation rather than being hidden by this hint.
-	// Check only hinted requests: ordinary hits need no second payload read.
+	// A whole-parent answer the current owner accepts, such as a later
+	// successful replay, supersedes the old split. A damaged cache record goes
+	// through ExecuteJSON's ordinary diagnosis and eviction rather than being
+	// hidden by this hint. A record the current decoder refuses is kept for a
+	// later decoder, not evicted, so it is no answer now: the split stands
+	// and no live call is spent on the whole parent again. Check only hinted
+	// requests: ordinary hits need no second payload read.
 	parentKey := executionCacheKey(providerState, nil, request)
-	if _, parentFound, parentErr := loadAcceptedCache(executor.RootDir, parentKey, request, call.Limits); parentFound || parentErr != nil {
+	parent, parentFound, parentErr := loadAcceptedCache(executor.RootDir, parentKey, request, call.Limits)
+	if parentErr != nil || (parentFound && acceptsCachedRecord(provider, call, prepared, parent)) {
 		return false, nil
 	}
 	if err != nil {

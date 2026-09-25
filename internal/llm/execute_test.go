@@ -574,6 +574,67 @@ func TestExecuteJSONEvictsTamperedCacheAccounting(t *testing.T) {
 	}
 }
 
+// A cached answer the current decoder refuses is a miss, not corruption: it
+// stays on disk when the live call that follows fails, and a later, more
+// tolerant decoder reads it without a provider call. Proven corruption is
+// still evicted, even when the live call fails.
+func TestExecuteJSONKeepsARefusedCachedAnswerForALaterDecoder(t *testing.T) {
+	root := t.TempDir()
+	provider := baseTestProvider()
+	provider.responses = [][]byte{[]byte(`{"value":"old"}`)}
+	provider.errors = []error{nil, errors.New("provider unavailable")}
+	executor := Executor{RootDir: root, Enabled: true}
+	call := baseTestCall("cube-v1", "same-input")
+	cold, err := ExecuteJSON(t.Context(), executor, provider, call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, cacheDirectoryName, cold.CacheKey+".json")
+	strict := call
+	strict.Validate = func(value testValue) error {
+		if value.Value != "new" {
+			return errors.New("the current decoder refuses this answer")
+		}
+		return nil
+	}
+	refused, err := ExecuteJSON(t.Context(), executor, provider, strict)
+	if err == nil || refused.Cached || !hasIssue(refused.Issues, IssueCacheValidate) || hasIssue(refused.Issues, IssueCacheEvict) || provider.completeCalls != 2 {
+		t.Fatalf("refused = %#v, calls = %d, err = %v", refused, provider.completeCalls, err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("a refused cached answer was evicted: %v", err)
+	}
+	recovered, err := ExecuteJSON(t.Context(), executor, provider, call)
+	if err != nil || !recovered.Cached || recovered.Value.Value != "old" || provider.completeCalls != 2 {
+		t.Fatalf("recovered = %#v, calls = %d, err = %v", recovered, provider.completeCalls, err)
+	}
+
+	// A record whose response hash does not match its bytes is proven
+	// corruption: it is removed although the live call then fails.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record acceptedCacheRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	record.ResponseSHA256 = strings.Repeat("0", 64)
+	if data, err = json.Marshal(record); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	corrupt, err := ExecuteJSON(t.Context(), executor, provider, call)
+	if err == nil || corrupt.Cached || !hasIssue(corrupt.Issues, IssueCacheRead) || provider.completeCalls != 3 {
+		t.Fatalf("corrupt = %#v, calls = %d, err = %v", corrupt, provider.completeCalls, err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a corrupt cached record survived: %v", err)
+	}
+}
+
 func TestExecuteJSONDisabledCacheBypassesStateReadAndWrite(t *testing.T) {
 	root := t.TempDir()
 	provider := baseTestProvider()

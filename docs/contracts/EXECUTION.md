@@ -269,10 +269,15 @@ Cache reads distinguish proven corruption from operational failures. Invalid
 JSON, identity/accounting, unsafe entries and missing referenced payloads may
 evict an accepted pointer; an I/O failure, an observed inode replacement during
 opening, or a stricter current response-byte limit is a diagnosed miss and
-does not remove it. Domain validation still rejects and evicts incompatible
-answers. A subsequent provider failure therefore leaves a previously usable
-answer available for another run. This classification does not make pathname
-eviction atomic against a later concurrent writer.
+does not remove it. So is an answer the owning decoder or validator refuses
+(`cache_validate`): it is not used and not evicted, an accepted live answer
+replaces it, and a later, more tolerant decoder reads it without a provider
+call. Only proven corruption evicts. A split memo yields only to a
+whole-request answer the current decoder accepts, so a refused record never
+costs another live call on the split request. A subsequent provider failure
+therefore leaves a previously usable answer available for another run. This
+classification does not make pathname eviction atomic against a later
+concurrent writer.
 
 - Persistent caches remain part of the ordinary path. Cache hits must be
   identity-bound and fully validated before use; `--no-cache` is the explicit
