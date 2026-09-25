@@ -333,8 +333,10 @@ tool-only root does not promote itself into an application.
 
 ## Test source scope
 
-Exact Go test inventories and authored pytest/Vitest configuration populate
-Target.TestSources. The overview omits known test-only nodes and edges while
+Exact Go test inventories, authored pytest configuration, JS/TS runner facts
+(`node --test` script globs, Vitest and Playwright configurations) and
+Clojure test-framework requires populate Target.TestSources; each language
+contract names its rules. The overview omits known test-only nodes and edges while
 retaining mixed/unknown regions and the complete saved graph, questions and
 source checks. Names alone do not authorize exclusion. This is presentation,
 not deletion from analysis or a claim about test coverage.

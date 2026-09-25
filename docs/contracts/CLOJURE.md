@@ -40,6 +40,16 @@ example, Othello's board vector and game map have no type declarations; its
 Board representation and Game state responsibilities remain in GroupsIndex.
 No runtime mutation or entity ownership is inferred from `assoc`/`update` names.
 
+## Test sources
+
+A namespace that requires `clojure.test` or `speclj.core` is a test source.
+Runner-configured test directories are a missing equivalent of Playwright's
+`testDir`: the adapter reads no manifest contents, so Leiningen
+`:test-paths` and a `deps.edn` alias that runs `cognitect.test-runner` or
+Kaocha are not derived. An alias's `:extra-paths` carries no runner
+authority by itself. A helper namespace under `test/` that requires neither
+framework stays unclassified.
+
 ## Environment and native serialization
 
 Install Clojure CLI and clj-kondo in the normal environment (on macOS:

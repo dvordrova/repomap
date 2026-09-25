@@ -2,9 +2,7 @@ package contracttest
 
 import "testing"
 
+// Materializing the fixture checks its exact tracked-file inventory.
 func TestCumulativeJSTSRepositoryFileInventory(t *testing.T) {
-	_, repository := materializeFixtureRepository(t, "jsts")
-	if len(repository.Entries()) != 37 {
-		t.Fatalf("JSTS fixture tracked-file count = %d, want exact inventory of 37", len(repository.Entries()))
-	}
+	materializeFixtureRepository(t, "jsts")
 }

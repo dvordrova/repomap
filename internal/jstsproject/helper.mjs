@@ -589,76 +589,162 @@ const sourceByteSHA = new Map(sourceFiles.map(({ path: filePath }) => [
   createHash("sha256").update(readFileSync(absolute(filePath))).digest("hex"),
 ]))
 
-// Test-file metadata comes only from an authored, literal Vitest configuration.
-// The config is parsed with the compiler already loaded above, never imported.
-// Unsupported expressions/globs leave files unclassified instead of guessing.
-function declaredVitestFiles() {
-  const selected = new Set()
-  if (request.vitest !== true) return selected
-  const glob = (value) => {
-    if (typeof value !== "string" || /[{}[\]\\!()]/.test(value) || value.startsWith("/") || value.split("/").includes("..")) return undefined
-    let result = "^"
-    value = value.replace(/^\.\//, "")
-    for (let i = 0; i < value.length; i++) {
-      if (value[i] === "*" && value[i + 1] === "*") {
-        if (i !== 0 && value[i - 1] !== "/" || i + 2 < value.length && value[i + 2] !== "/") return undefined
-        result += value[i + 2] === "/" ? "(?:.*/)?" : ".*"
-        i += value[i + 2] === "/" ? 2 : 1
-      } else if (value[i] === "*") result += "[^/]*"
-      else if (value[i] === "?") result += "[^/]"
-      else result += value[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    }
-    return new RegExp(result + "$")
+// Test-file metadata comes only from authored runner facts: `node --test`
+// globs in package scripts, and literal Vitest or Playwright configurations
+// whose runner the manifest declares. Configs are parsed with the compiler
+// already loaded above, never imported. Unsupported expressions/globs leave
+// files unclassified instead of guessing.
+const testGlob = (value) => {
+  if (typeof value !== "string" || /[{}[\]\\!()]/.test(value) || value.startsWith("/") || value.split("/").includes("..")) return undefined
+  let result = "^"
+  value = value.replace(/^\.\//, "")
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === "*" && value[i + 1] === "*") {
+      if (i !== 0 && value[i - 1] !== "/" || i + 2 < value.length && value[i + 2] !== "/") return undefined
+      result += value[i + 2] === "/" ? "(?:.*/)?" : ".*"
+      i += value[i + 2] === "/" ? 2 : 1
+    } else if (value[i] === "*") result += "[^/]*"
+    else if (value[i] === "?") result += "[^/]"
+    else result += value[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   }
-  const object = (node) => {
-    if (!node || !ts.isObjectLiteralExpression(node)) return undefined
-    const values = new Map()
-    for (const property of node.properties) {
-      if (!ts.isPropertyAssignment(property) || !property.name || !(ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) return undefined
-      const key = property.name.text
-      if (values.has(key)) return undefined
-      values.set(key, property.initializer)
-    }
-    return values
+  return new RegExp(result + "$")
+}
+const literalObject = (node) => {
+  if (!node || !ts.isObjectLiteralExpression(node)) return undefined
+  const values = new Map()
+  for (const property of node.properties) {
+    if (!ts.isPropertyAssignment(property) || !property.name || !(ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) return undefined
+    const key = property.name.text
+    if (values.has(key)) return undefined
+    values.set(key, property.initializer)
   }
-  const strings = (node) => node && ts.isArrayLiteralExpression(node) && node.elements.every(ts.isStringLiteral)
-    ? node.elements.map((element) => element.text) : undefined
+  return values
+}
+const literalStrings = (node) => node && ts.isArrayLiteralExpression(node) && node.elements.every(ts.isStringLiteral)
+  ? node.elements.map((element) => element.text) : undefined
+const literalNames = (node) => node && ts.isStringLiteral(node) ? [node.text] : literalStrings(node)
+const ownedFile = (name) => {
+  const relativePath = name.replace(/^\.\//, "")
+  return cleanRelative(relativePath) && fileRefByPath.has(relativePath) ? relativePath : ""
+}
+
+// Package-root runner configs by name. `config` is the object literal of the
+// single `export default defineConfig({...})`, with defineConfig imported from
+// the runner's own module; any other shape leaves it undefined.
+function runnerConfigs(namePattern, moduleName) {
+  const result = []
   for (const filePath of [...fileRefByPath.keys()].sort(compareText)) {
-    if (path.posix.dirname(filePath) !== "." || !/^vitest(?:\.[\w-]+)?\.config\.[cm]?[jt]s$/.test(filePath)) continue
+    if (path.posix.dirname(filePath) !== "." || !namePattern.test(filePath)) continue
     const syntax = sourceByPath.get(filePath)?.sourceFile
-    if (!syntax || syntax.parseDiagnostics?.length) continue
     const bindings = new Set()
-    for (const statement of syntax.statements) {
-      if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier?.text !== "vitest/config") continue
+    for (const statement of syntax && !syntax.parseDiagnostics?.length ? syntax.statements : []) {
+      if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier?.text !== moduleName) continue
       const named = statement.importClause?.namedBindings
       if (named && ts.isNamedImports(named)) for (const item of named.elements) {
         if ((item.propertyName || item.name).text === "defineConfig") bindings.add(item.name.text)
       }
     }
-    const exports = syntax.statements.filter((statement) => ts.isExportAssignment(statement) && !statement.isExportEquals)
-    if (exports.length !== 1) continue
-    const call = exports[0].expression
-    if (!ts.isCallExpression(call) || !ts.isIdentifier(call.expression) || !bindings.has(call.expression.text) || call.arguments.length !== 1) continue
-    const config = object(call.arguments[0]), test = object(config?.get("test"))
-    if (!test || config.has("root") || test.has("root") || test.has("dir") || test.has("projects") || test.has("includeSource")) continue
-    const includes = strings(test.get("include")), excludes = test.has("exclude") ? strings(test.get("exclude")) : []
-    if (!includes || !excludes) continue
-    const include = includes.map(glob), exclude = excludes.map(glob)
-    if (include.some((item) => !item) || exclude.some((item) => !item)) continue
+    const exports = bindings.size === 0 ? [] : syntax.statements.filter((statement) => ts.isExportAssignment(statement) && !statement.isExportEquals)
+    const call = exports.length === 1 ? exports[0].expression : undefined
+    const config = call && ts.isCallExpression(call) && ts.isIdentifier(call.expression) && bindings.has(call.expression.text) && call.arguments.length === 1
+      ? literalObject(call.arguments[0]) : undefined
+    result.push({ path: filePath, config })
+  }
+  return result
+}
+
+// Playwright's documented default testMatch, **/*.@(spec|test).?(c|m)[jt]s?(x).
+const playwrightDefaultMatch = /(?:^|\/)[^/]*\.(?:spec|test)\.[cm]?[jt]sx?$/
+const playwrightPatterns = (node, fallback) => {
+  if (node === undefined) return fallback
+  // Playwright matches a pattern anywhere below its test directory.
+  const globs = literalNames(node)?.map((value) => testGlob(value.startsWith("**/") ? value : `**/${value}`))
+  return globs && globs.every(Boolean) ? globs : undefined
+}
+const playwrightDirectory = (node) => {
+  if (node === undefined) return "."
+  if (!ts.isStringLiteral(node)) return undefined
+  const value = path.posix.normalize(node.text).replace(/\/$/, "")
+  return value === "." || cleanRelative(value) ? value : undefined
+}
+
+function declaredTestFiles() {
+  const selected = new Set()
+  const addMatches = (include, exclude = []) => {
     for (const { path: sourcePath } of sourceFiles) {
       if (include.some((item) => item.test(sourcePath)) && !exclude.some((item) => item.test(sourcePath))) selected.add(sourcePath)
     }
+  }
+  // npm runs a script in its package directory, so these globs are
+  // package-relative. Node has no file exclusions; each glob stands alone.
+  for (const value of Array.isArray(request.node_test_globs) ? request.node_test_globs : []) {
+    const glob = testGlob(value)
+    if (glob) addMatches([glob])
+  }
+  if (request.vitest === true) for (const { path: configPath, config } of runnerConfigs(/^vitest(?:\.[\w-]+)?\.config\.[cm]?[jt]s$/, "vitest/config")) {
+    selected.add(configPath)
+    const test = literalObject(config?.get("test"))
+    if (!test || config.has("root") || test.has("root") || test.has("dir") || test.has("projects") || test.has("includeSource")) continue
+    const includes = literalStrings(test.get("include")), excludes = test.has("exclude") ? literalStrings(test.get("exclude")) : []
+    if (!includes || !excludes) continue
+    const include = includes.map(testGlob), exclude = excludes.map(testGlob)
+    if (include.some((item) => !item) || exclude.some((item) => !item)) continue
+    addMatches(include, exclude)
     for (const field of ["globalSetup", "setupFiles"]) {
-      const node = test.get(field), names = node && ts.isStringLiteral(node) ? [node.text] : strings(node) || []
-      for (const name of names) {
-        const relativePath = name.replace(/^\.\//, "")
-        if (cleanRelative(relativePath) && fileRefByPath.has(relativePath)) selected.add(relativePath)
+      for (const name of literalNames(test.get(field)) || []) {
+        const owned = ownedFile(name)
+        if (owned) selected.add(owned)
       }
+    }
+  }
+  if (request.playwright === true) for (const { path: configPath, config } of runnerConfigs(/^playwright(?:\.[\w-]+)?\.config\.[cm]?[jt]s$/, "@playwright/test")) {
+    selected.add(configPath)
+    if (!config) continue
+    // A reporter module runs only inside the runner.
+    const reporter = config.get("reporter")
+    const reporters = reporter && ts.isArrayLiteralExpression(reporter)
+      ? reporter.elements.flatMap((item) => ts.isArrayLiteralExpression(item) && item.elements.length > 0 && ts.isStringLiteral(item.elements[0]) ? [item.elements[0].text] : [])
+      : literalNames(reporter) || []
+    for (const name of reporters) {
+      const owned = ownedFile(name)
+      if (owned) selected.add(owned)
+    }
+    // A source that a literal webServer command names runs for the checks,
+    // unless the manifest also names it as a package entry point: then the
+    // checks start the application itself. The command runs in the config's
+    // directory; a server with its own cwd is not read.
+    const servers = config.get("webServer"), packageEntries = new Set(request.package_entries || [])
+    for (const server of servers === undefined ? [] : ts.isArrayLiteralExpression(servers) ? servers.elements.map(literalObject) : [literalObject(servers)]) {
+      const command = server?.get("command")
+      if (!command || !ts.isStringLiteral(command) || server.has("cwd")) continue
+      for (const word of command.text.split(/[\s;&|()<>"']+/)) {
+        const owned = ownedFile(word)
+        if (owned && !packageEntries.has(owned)) selected.add(owned)
+      }
+    }
+    // Each project inherits the top-level test directory and patterns.
+    const projects = config.get("projects")
+    const collections = projects === undefined ? [config] : ts.isArrayLiteralExpression(projects) ? projects.elements.map(literalObject) : []
+    for (const project of collections) {
+      if (!project) continue
+      const setting = (key) => project.has(key) ? project.get(key) : config.get(key)
+      const testDir = playwrightDirectory(setting("testDir"))
+      if (testDir === undefined) continue
+      if (testDir !== ".") {
+        // An explicit test directory holds only test code: specs, fixtures
+        // and helpers that testMatch does not select.
+        for (const { path: sourcePath } of sourceFiles) {
+          if (sourcePath.startsWith(`${testDir}/`)) selected.add(sourcePath)
+        }
+        continue
+      }
+      const match = playwrightPatterns(setting("testMatch"), [playwrightDefaultMatch]), ignore = playwrightPatterns(setting("testIgnore"), [])
+      if (match && ignore) addMatches(match, ignore)
     }
   }
   return selected
 }
-const declaredTests = declaredVitestFiles()
+const declaredTests = declaredTestFiles()
 
 const files = sourceFiles.map(({ path: filePath }) => ({
   file_ref: fileRefByPath.get(filePath),

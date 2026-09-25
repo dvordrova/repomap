@@ -1,5 +1,41 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Test sources from the Node runner and Playwright
+
+- The JS/TS helper now derives `TestSources` from three runner facts. The
+  first is the globs that package scripts pass to `node --test`; the
+  arguments end at a shell operator whether or not it is spaced
+  (`node --test t/*.mjs; node build.mjs` no longer marks `build.mjs`). The
+  second is a literal Playwright config when the manifest declares
+  `@playwright/test`: the config itself, every source under an explicit
+  `testDir`, `testMatch` minus `testIgnore` with the default directory,
+  reporter modules, and the sources a `webServer` command names unless the
+  manifest also names them as a package entry point (module fields,
+  `exports`, `bin`, `dev`/`start`). The third is the existing Vitest config,
+  which now also counts itself.
+- The `webServer` rule is the spec's default for the open question on test
+  harness files, with the entry-point exception added so an application
+  server the checks also start stays drawn. The owner has not confirmed it
+  and no skeptic has reviewed it; JSTS.md says so.
+- Measured with a no-model run of `jsts:internal/report/web/package.json`,
+  this branch rebased on main 0d78db85 (exit 0): 27 of its 41 JavaScript
+  sources are test sources. The saved self-run flagged 0. They are the
+  eleven `*.test.mjs` files, the Playwright config and all 15 sources under
+  `visual/`, including the `webServer` harness `visual/server.mjs`. The
+  production modules and `build.mjs` stay unflagged.
+- The cumulative JS/TS fixture gained `packages/canvas-ui`, which mirrors
+  that UI and adds a stub API that only `webServer` starts. Its test checks
+  the fixture and four contrasts: the manifest without the runner, the
+  application server without its `start` script, a non-literal `testDir`,
+  and the default directory with `testIgnore`. A table test pins which
+  `node --test` arguments are globs, attached operators included. The JS/TS
+  inventory test's file-count pin was removed; materializing the fixture
+  already checks the exact inventory.
+- Equivalents: pytest `conftest.py` under a resolved pytest table is now test
+  code (cumulative `tests/conftest.py`). Pytest `testpaths`, unittest
+  discovery and Clojure runner test directories are recorded as not derived
+  in PYTHON.md and CLOJURE.md. Go `_test.go` was already native.
+
 ## 2026-09-25 — Generic declarations keep their type parameters
 
 - Go `typeSignature` began the short form at the first space, which for a

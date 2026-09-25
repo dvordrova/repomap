@@ -167,6 +167,27 @@ not indexed as a declaration yet; that gap remains open. See
 
 The original AST call site, result identity, positional/keyword arguments and callback targets remain separate. `Thread(target=...)`, async-task and supported schedule registrations preserve their written activation evidence. A later `start`, `join` or liveness check on that same result does not invent a callback call. Lifespan setup and finite retry loops remain negative controls; final scheduled/continuous roles belong to [operation review](READING.md#operation-ownership).
 
+## Test sources
+
+A resolved pytest table in `pyproject.toml` (`[tool.pytest]` or
+`[tool.pytest.ini_options]`) owns the Python files below it. Its
+`python_files` patterns select test modules. Without that setting, pytest's
+default patterns apply only when pytest is a declared dependency. Every
+`conftest.py` under a resolved table is test code too: it is pytest's own
+plugin file, the equivalent of a JS runner's config. The nearest table owns a
+file, and an unresolved one classifies nothing. The cumulative fixture's
+`tests/conftest.py` is test code; `tests/__init__.py` stays unclassified.
+
+Equivalents that are not derived:
+
+- `testpaths` is a collection root, not a test-only directory. Large
+  projects point it at their production package (pandas sets
+  `testpaths = "pandas"`), so a file under it is not test code by that
+  fact. Only the `python_files` matches and `conftest.py` below it are.
+- `unittest` discovery has no manifest declaration. Its `discover -s/-p`
+  arguments live in Makefiles, tox or CI, which the adapter does not read.
+- `pytest.ini`, `tox.ini` and `setup.cfg` pytest sections are not read.
+
 ## No execution for inference
 
 No Python module, dynamic setup expression, factory or imported package is executed to infer target ownership or method authority. Unknown, overwritten, conflicting or conditional bindings remain unresolved. All extraction changes require the real cumulative Python fixture and applicable equivalents in the other languages; see [development](DEVELOPMENT.md).

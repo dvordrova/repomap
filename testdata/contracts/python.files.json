@@ -163,18 +163,22 @@
     },
     {
       "id": "f41",
-      "path": "tests/test_facade.py"
+      "path": "tests/conftest.py"
     },
     {
       "id": "f42",
-      "path": "workspace/pyproject.toml"
+      "path": "tests/test_facade.py"
     },
     {
       "id": "f43",
-      "path": "workspace/src/fixture_shared/local/__init__.py"
+      "path": "workspace/pyproject.toml"
     },
     {
       "id": "f44",
+      "path": "workspace/src/fixture_shared/local/__init__.py"
+    },
+    {
+      "id": "f45",
       "path": "workspace/src/fixture_shared/local/consumer.py"
     }
   ]

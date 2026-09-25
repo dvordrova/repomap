@@ -53,7 +53,7 @@ func TestCumulativeNativeEvidenceSeparatesGoConsumersAndJSTSPackages(t *testing.
 				}
 			}
 			if language == "jsts" {
-				if len(native) != 4 {
+				if len(native) != 5 {
 					t.Fatalf("source-owning packages merged: %d", len(native))
 				}
 				var roots []string
@@ -64,7 +64,7 @@ func TestCumulativeNativeEvidenceSeparatesGoConsumersAndJSTSPackages(t *testing.
 					}
 				}
 				slices.Sort(roots)
-				if !slices.Equal(roots, []string{".", "packages/documentation-tools", "packages/local-store", "packages/second-store"}) {
+				if !slices.Equal(roots, []string{".", "packages/canvas-ui", "packages/documentation-tools", "packages/local-store", "packages/second-store"}) {
 					t.Fatalf("native JS/TS package roots = %v", roots)
 				}
 				return

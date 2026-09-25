@@ -12,12 +12,14 @@ import (
 // configuredPythonTests records the pytest file-discovery contract, without
 // importing tests or executing configuration. An authored pytest table owns its
 // explicit patterns; default patterns also require a declared pytest dependency.
+// Under a resolved configuration, conftest.py is pytest's own plugin file.
 // Unsupported settings
 // retain unknown source classification. Configurations are read once per batch.
 func configuredPythonTests(repository *corpus.Corpus) (map[string]bool, error) {
 	type config struct {
 		root     string
 		patterns []string
+		resolved bool
 	}
 	var configs []config
 	for _, entry := range repository.Entries() {
@@ -76,6 +78,7 @@ func configuredPythonTests(repository *corpus.Corpus) (map[string]bool, error) {
 		if _, explicit := settings["python_files"]; !explicit && !authority {
 			continue
 		}
+		resolved := true
 		if value, exists := settings["python_files"]; exists {
 			patterns = nil
 			switch value := value.(type) {
@@ -85,14 +88,17 @@ func configuredPythonTests(repository *corpus.Corpus) (map[string]bool, error) {
 				for _, item := range value {
 					text, ok := item.(string)
 					if !ok {
-						patterns = nil
+						patterns, resolved = nil, false
 						break
 					}
 					patterns = append(patterns, text)
 				}
+			default:
+				resolved = false
 			}
 		}
 		configs[configPosition].patterns = patterns
+		configs[configPosition].resolved = resolved
 	}
 	// The nearest authored configuration owns a file; an unresolved nearer
 	// configuration never falls through to a broader parent rule.
@@ -105,6 +111,9 @@ func configuredPythonTests(repository *corpus.Corpus) (map[string]bool, error) {
 		for _, config := range configs {
 			if config.root != "." && !strings.HasPrefix(entry.Path, config.root+"/") {
 				continue
+			}
+			if config.resolved && path.Base(entry.Path) == "conftest.py" {
+				tests[entry.Path] = true
 			}
 			for _, pattern := range config.patterns {
 				if strings.Contains(pattern, "/") {

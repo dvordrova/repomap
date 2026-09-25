@@ -179,3 +179,59 @@ with TypeScript 7.0.2 while preparing the ordinary Webernetes acceptance run.
 ## Framework-neutral registrations
 
 Compiler-observed `setInterval`, worker construction, callbacks and native source expressions enter existing observations. Constructor/helper names do not prove a persistent responsibility. A periodic callback and a supported one-shot scheduled task remain distinct legitimate operation candidates; the initializer is not automatically that work. Explicit imports and compiler-resolved barrels retain original native identities; no export or target is inferred by name alone.
+
+## Test sources
+
+`Target.TestSources` lists the package sources that a test runner owns. Only
+authored runner facts count; a file name alone never does. Configs are parsed
+by the helper's compiler and never imported.
+
+- **Node test runner.** Each glob that a package script passes to
+  `node --test` is matched against the package's sources. npm runs a script in
+  its package directory, so the glob is package-relative. Node's own
+  value-taking options (`--import`, `--test-reporter`,
+  `--test-coverage-include` and the like) are not globs. The arguments end
+  at a shell operator (`;`, `&&`, `|`, a redirection), spaced or not. A bare
+  `node --test` selects files by Node's version-dependent defaults and
+  contributes nothing. A script that changes directory with `cd` is not read.
+- **Vitest**, when the manifest declares `vitest`. The package-root
+  `vitest.config.*` itself is test code. From its single literal
+  `defineConfig({test: ...})` imported from `vitest/config`, the `include`
+  matches minus `exclude` are test code, and so are the named `globalSetup`
+  and `setupFiles`.
+- **Playwright**, when the manifest declares `@playwright/test`. The
+  package-root `playwright.config.*` itself is test code, and it joins the
+  compiler roots like other tool configs. The config must be a single literal
+  `defineConfig({...})` imported from `@playwright/test`. It is read for the
+  top level and for each literal project, which inherits the top-level
+  values:
+  - An explicit `testDir` other than the package root makes every source
+    under it test code: specs, fixtures and helpers.
+  - With the default test directory, the literal `testMatch` globs (or
+    Playwright's default `*.spec`/`*.test` pattern) minus `testIgnore` select
+    test code.
+  - A reporter module named by path is test code.
+  - A source named in a literal `webServer` command is test code, unless the
+    manifest also names it as a package entry point (module fields,
+    `exports`, `bin`, or the `dev`/`start` script). Such a server is the
+    application, which the checks start too. A server with its own `cwd` is
+    not read. Pending the owner: this is the default answer to whether test
+    harness files leave the map. The owner has not confirmed it, and no
+    skeptic has reviewed the entry-point exception.
+- A non-literal value, a `--config` path, or a pattern with braces, extglobs
+  or a regular expression leaves the affected files unclassified.
+
+This is classification, not deletion; every file keeps its complete analysis.
+The cumulative fixture's `packages/canvas-ui` mirrors the report UI: Node
+runner unit tests beside production modules, and Playwright checks in
+`visual/` with a named reporter. Its `webServer` starts a stub API that
+nothing else runs, which is test code, and the application server that the
+`start` script also runs, which is not. Its other contrasts are a
+`*.test.mjs` draft below the root that the script glob does not select, and
+a manifest without the runner.
+
+Equivalents: Go test sources come from `go list`'s build-selected `_test.go`
+files. Python has pytest `python_files` and `conftest.py`
+([Python](PYTHON.md#test-sources)). Clojure has native `clojure.test` and
+`speclj.core` requires ([Clojure](CLOJURE.md#test-sources)). Those two
+contracts record the runner-directory equivalents that are not derived.

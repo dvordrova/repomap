@@ -108,3 +108,16 @@ for it. A Clojure Java instance chain (`(.. s (replace "/" "-"))`) carries no
 call pattern and becomes no fact. Python knows no type for an untyped
 parameter or for what `subscribe` returns, so those calls name no external
 symbol; they are still separate facts.
+
+Test code comes from runner facts, never from a file name alone:
+
+| Language | Test code | Stays production or unclassified |
+| --- | --- | --- |
+| JS/TS | `node --test *.test.mjs` matches, the Playwright config, its `testDir`, reporter and the stub API only its `webServer` starts in [packages/canvas-ui](jsts/packages/canvas-ui); the Vitest config and its matches | the application server that `start` runs and `webServer` starts too, a draft test the script glob does not select, [src/excluded/retained.test.ts](jsts/src/excluded/retained.test.ts) |
+| Python | pytest `python_files` matches and [tests/conftest.py](python/tests/conftest.py) | `tests/__init__.py` |
+| Go | build-selected `_test.go` files | [internal/testhelper/helper.go](go/internal/testhelper/helper.go) |
+| Clojure | namespaces that require `clojure.test` | none in the fixture |
+
+Runner-configured test directories have no derived equivalent in Python
+(`testpaths` often names the production package) or Clojure (no manifest is
+read). The Python and Clojure contracts record both gaps.

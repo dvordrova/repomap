@@ -15,138 +15,186 @@
     },
     {
       "id": "f4",
-      "path": "packages/documentation-tools/package.json"
+      "path": "packages/canvas-ui/build.mjs"
     },
     {
       "id": "f5",
-      "path": "packages/documentation-tools/scripts/check-links.ts"
+      "path": "packages/canvas-ui/canvas.mjs"
     },
     {
       "id": "f6",
-      "path": "packages/documentation-tools/scripts/prepare-readme.mjs"
+      "path": "packages/canvas-ui/drafts/wide-layout.test.mjs"
     },
     {
       "id": "f7",
-      "path": "packages/documentation-tools/scripts/unused.mjs"
+      "path": "packages/canvas-ui/harness/api-stub.mjs"
     },
     {
       "id": "f8",
-      "path": "packages/documentation-tools/tsconfig.json"
+      "path": "packages/canvas-ui/layout.mjs"
     },
     {
       "id": "f9",
-      "path": "packages/local-store/package.json"
+      "path": "packages/canvas-ui/layout.test.mjs"
     },
     {
       "id": "f10",
-      "path": "packages/local-store/src/index.ts"
+      "path": "packages/canvas-ui/package.json"
     },
     {
       "id": "f11",
-      "path": "packages/second-store/package.json"
+      "path": "packages/canvas-ui/playwright.config.mjs"
     },
     {
       "id": "f12",
-      "path": "packages/second-store/src/index.ts"
+      "path": "packages/canvas-ui/reporters/journey.mjs"
     },
     {
       "id": "f13",
-      "path": "shared/contracts.ts"
+      "path": "packages/canvas-ui/serve.mjs"
     },
     {
       "id": "f14",
-      "path": "src/ambiguity.tsx"
+      "path": "packages/canvas-ui/visual/canvas.spec.mjs"
     },
     {
       "id": "f15",
-      "path": "src/data-sources.ts"
+      "path": "packages/canvas-ui/visual/fixture.mjs"
     },
     {
       "id": "f16",
-      "path": "src/destinations.ts"
+      "path": "packages/documentation-tools/package.json"
     },
     {
       "id": "f17",
-      "path": "src/excluded/retained.test.ts"
+      "path": "packages/documentation-tools/scripts/check-links.ts"
     },
     {
       "id": "f18",
-      "path": "src/facade-exports/consumer.ts"
+      "path": "packages/documentation-tools/scripts/prepare-readme.mjs"
     },
     {
       "id": "f19",
-      "path": "src/facade-exports/exchange-index.ts"
+      "path": "packages/documentation-tools/scripts/unused.mjs"
     },
     {
       "id": "f20",
-      "path": "src/facade-exports/exchange.ts"
+      "path": "packages/documentation-tools/tsconfig.json"
     },
     {
       "id": "f21",
-      "path": "src/facade-exports/index.ts"
+      "path": "packages/local-store/package.json"
     },
     {
       "id": "f22",
-      "path": "src/facade-exports/resolver.ts"
+      "path": "packages/local-store/src/index.ts"
     },
     {
       "id": "f23",
-      "path": "src/http-registrations.ts"
+      "path": "packages/second-store/package.json"
     },
     {
       "id": "f24",
-      "path": "src/market-worker.js"
+      "path": "packages/second-store/src/index.ts"
     },
     {
       "id": "f25",
-      "path": "src/market.test.ts"
+      "path": "shared/contracts.ts"
     },
     {
       "id": "f26",
-      "path": "src/platform.ts"
+      "path": "src/ambiguity.tsx"
     },
     {
       "id": "f27",
-      "path": "src/route-mounts.ts"
+      "path": "src/data-sources.ts"
     },
     {
       "id": "f28",
-      "path": "src/runtime-registrations.ts"
+      "path": "src/destinations.ts"
     },
     {
       "id": "f29",
-      "path": "src/server.ts"
+      "path": "src/excluded/retained.test.ts"
     },
     {
       "id": "f30",
-      "path": "src/sql-literals.ts"
+      "path": "src/facade-exports/consumer.ts"
     },
     {
       "id": "f31",
-      "path": "src/test-setup.ts"
+      "path": "src/facade-exports/exchange-index.ts"
     },
     {
       "id": "f32",
-      "path": "src/testing/real-service.ts"
+      "path": "src/facade-exports/exchange.ts"
     },
     {
       "id": "f33",
-      "path": "src/type-members.ts"
+      "path": "src/facade-exports/index.ts"
     },
     {
       "id": "f34",
-      "path": "src/workspace-origins-js.js"
+      "path": "src/facade-exports/resolver.ts"
     },
     {
       "id": "f35",
-      "path": "src/workspace-origins.ts"
+      "path": "src/http-registrations.ts"
     },
     {
       "id": "f36",
-      "path": "tsconfig.json"
+      "path": "src/market-worker.js"
     },
     {
       "id": "f37",
+      "path": "src/market.test.ts"
+    },
+    {
+      "id": "f38",
+      "path": "src/platform.ts"
+    },
+    {
+      "id": "f39",
+      "path": "src/route-mounts.ts"
+    },
+    {
+      "id": "f40",
+      "path": "src/runtime-registrations.ts"
+    },
+    {
+      "id": "f41",
+      "path": "src/server.ts"
+    },
+    {
+      "id": "f42",
+      "path": "src/sql-literals.ts"
+    },
+    {
+      "id": "f43",
+      "path": "src/test-setup.ts"
+    },
+    {
+      "id": "f44",
+      "path": "src/testing/real-service.ts"
+    },
+    {
+      "id": "f45",
+      "path": "src/type-members.ts"
+    },
+    {
+      "id": "f46",
+      "path": "src/workspace-origins-js.js"
+    },
+    {
+      "id": "f47",
+      "path": "src/workspace-origins.ts"
+    },
+    {
+      "id": "f48",
+      "path": "tsconfig.json"
+    },
+    {
+      "id": "f49",
       "path": "vitest.config.ts"
     }
   ]

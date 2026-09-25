@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -51,6 +52,9 @@ type packageManifest struct {
 
 type helperRequest struct {
 	Vitest              bool                    `json:"vitest,omitempty"`
+	Playwright          bool                    `json:"playwright,omitempty"`
+	NodeTestGlobs       []string                `json:"node_test_globs,omitempty"`
+	PackageEntries      []string                `json:"package_entries,omitempty"`
 	Version             int                     `json:"version"`
 	ProjectDir          string                  `json:"project_dir,omitempty"`
 	ConfigPath          string                  `json:"config_path,omitempty"`
@@ -212,6 +216,12 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 	}
 	request := newHelperRequest(compilerPackages, nestedPackageDirs)
 	request.Vitest = manifest.Dependencies["vitest"] != "" || manifest.DevDependencies["vitest"] != ""
+	request.Playwright = manifest.Dependencies["@playwright/test"] != "" || manifest.DevDependencies["@playwright/test"] != ""
+	request.NodeTestGlobs = nodeTestGlobs(manifest.Scripts)
+	if request.Playwright {
+		sources, binaries := packageEntryPaths(manifest)
+		request.PackageEntries = canonicalStrings(append(sources, binaries...))
+	}
 	request.PackageBoundaries, err = helperPackageBoundaries(repository, entries, manifestPath)
 	if err != nil {
 		return Result{}, err
@@ -236,7 +246,7 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 	toolConfigs := []ProjectFile{}
 	for _, entry := range projectEntries {
 		base := path.Base(entry.Path)
-		if path.Dir(entry.Path) == "." && (strings.HasPrefix(base, "vite.config.") || strings.HasPrefix(base, "vitest.config.") || strings.HasPrefix(base, "drizzle.config.") || strings.HasPrefix(base, "tailwind.config.") || strings.HasPrefix(base, "eslint.config.") || strings.HasPrefix(base, "postcss.config.")) {
+		if path.Dir(entry.Path) == "." && (strings.HasPrefix(base, "vite.config.") || strings.HasPrefix(base, "vitest.config.") || strings.HasPrefix(base, "playwright.config.") || strings.HasPrefix(base, "drizzle.config.") || strings.HasPrefix(base, "tailwind.config.") || strings.HasPrefix(base, "eslint.config.") || strings.HasPrefix(base, "postcss.config.")) {
 			toolConfigs = append(toolConfigs, ProjectFile{Path: repositoryProjectPath(projectDir, entry.Path), FileRef: string(entry.ID)})
 			if sourceExtension(entry.Path) {
 				request.AdditionalFiles = append(request.AdditionalFiles, entry.Path)
@@ -638,6 +648,24 @@ func declaresWorkspaces(raw json.RawMessage) bool {
 }
 
 func hasExactOwnedPackageEntry(manifest packageManifest, candidate packageProjectCandidate) bool {
+	sources, binaries := packageEntryPaths(manifest)
+	for _, entry := range sources {
+		if _, ok := candidate.ownSources[repositoryProjectPath(candidate.projectDir, entry)]; ok {
+			return true
+		}
+	}
+	for _, binary := range binaries {
+		if _, ok := candidate.ownFiles[repositoryProjectPath(candidate.projectDir, binary)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// packageEntryPaths are the package-relative files that the manifest names as
+// the package's own entry points: module fields and exports, binaries, and the
+// dev and start scripts.
+func packageEntryPaths(manifest packageManifest) (sources, binaries []string) {
 	entries := []string{manifest.Main, manifest.Module, manifest.Source, manifest.Types, manifest.Typings}
 	for _, raw := range []json.RawMessage{manifest.Browser, manifest.Exports} {
 		entries = append(entries, jsonStringLeaves(raw)...)
@@ -648,26 +676,15 @@ func hasExactOwnedPackageEntry(manifest packageManifest, candidate packageProjec
 			!safeRepositoryPath(entry) || !sourceExtension(entry) {
 			continue
 		}
-		repositoryPath := repositoryProjectPath(candidate.projectDir, entry)
-		if _, ok := candidate.ownSources[repositoryPath]; ok {
-			return true
-		}
-	}
-	for _, binary := range packageBinaryCandidates(manifest.Name, manifest.Bin) {
-		repositoryPath := repositoryProjectPath(candidate.projectDir, binary.Path)
-		if _, ok := candidate.ownFiles[repositoryPath]; ok {
-			return true
-		}
+		sources = append(sources, entry)
 	}
 	for _, name := range []string{"dev", "start"} {
-		for _, entry := range scriptEntryPathsAtWorkingDirectory(manifest.Scripts[name]) {
-			repositoryPath := repositoryProjectPath(candidate.projectDir, entry)
-			if _, ok := candidate.ownSources[repositoryPath]; ok {
-				return true
-			}
-		}
+		sources = append(sources, scriptEntryPathsAtWorkingDirectory(manifest.Scripts[name])...)
 	}
-	return false
+	for _, binary := range packageBinaryCandidates(manifest.Name, manifest.Bin) {
+		binaries = append(binaries, binary.Path)
+	}
+	return sources, binaries
 }
 
 func jsonStringLeaves(raw json.RawMessage) []string {
@@ -1216,6 +1233,101 @@ func scriptEntryPaths(command string) []string {
 		}
 	}
 	return canonicalStrings(result)
+}
+
+// nodeTestValueOptions are the Node.js options that take a separate value
+// argument; in `node --test`, every other non-option argument is a test glob.
+var nodeTestValueOptions = map[string]bool{
+	"-r": true, "--require": true, "--import": true, "--loader": true, "--experimental-loader": true,
+	"-C": true, "--conditions": true, "--env-file": true, "--input-type": true, "--watch-path": true,
+	"--test-reporter": true, "--test-reporter-destination": true, "--test-name-pattern": true,
+	"--test-skip-pattern": true, "--test-concurrency": true, "--test-timeout": true, "--test-shard": true,
+	"--test-isolation": true, "--test-coverage-include": true, "--test-coverage-exclude": true,
+	"--test-coverage-branches": true, "--test-coverage-functions": true, "--test-coverage-lines": true,
+}
+
+// nodeTestGlobs returns the file globs that package scripts pass to the Node
+// test runner. npm runs a script in its package directory, so a script that
+// changes directory is not read. A bare `node --test` selects files by Node's
+// version-dependent defaults and contributes no glob.
+func nodeTestGlobs(scripts map[string]string) []string {
+	result := []string{}
+	for _, command := range scripts {
+		words := scriptWords(command)
+		if slices.Contains(words, "cd") {
+			continue
+		}
+		for start, word := range words {
+			if word != "node" {
+				continue
+			}
+			test, globs := false, []string{}
+		arguments:
+			for index := start + 1; index < len(words); index++ {
+				value := words[index]
+				switch {
+				case len(value) == 1 && strings.Contains(scriptOperators, value):
+					break arguments
+				case value == "--test":
+					test = true
+				case strings.HasPrefix(value, "-"):
+					if nodeTestValueOptions[value] {
+						index++
+					}
+				case !test:
+					break arguments // node runs this script; later options are its own
+				default:
+					globs = append(globs, value)
+				}
+			}
+			if test {
+				result = append(result, globs...)
+			}
+		}
+	}
+	return canonicalStrings(result)
+}
+
+// scriptOperators are the shell characters that end a command's arguments:
+// separators, pipes, background, subshells and redirections.
+const scriptOperators = ";&|()<>"
+
+// scriptWords splits a package script into shell words. Quotes group a word
+// and are removed. Each operator character is a word of its own even when it
+// is written against its neighbour (`a.mjs;`, `a.mjs&&`), and the file
+// descriptor before a redirection (`2>&1`) belongs to the redirection.
+func scriptWords(command string) []string {
+	words := []string{}
+	var word strings.Builder
+	quote := rune(0)
+	flush := func() {
+		if word.Len() > 0 {
+			words = append(words, word.String())
+			word.Reset()
+		}
+	}
+	for _, character := range command {
+		switch {
+		case quote != 0 && character == quote:
+			quote = 0
+		case quote != 0:
+			word.WriteRune(character)
+		case character == '\'' || character == '"':
+			quote = character
+		case character == ' ' || character == '\t' || character == '\n':
+			flush()
+		case strings.ContainsRune(scriptOperators, character):
+			if (character == '<' || character == '>') && word.Len() > 0 && strings.Trim(word.String(), "0123456789") == "" {
+				word.Reset()
+			}
+			flush()
+			words = append(words, string(character))
+		default:
+			word.WriteRune(character)
+		}
+	}
+	flush()
+	return words
 }
 
 func buildScriptFacts(scripts map[string]string, files []File) []Script {
