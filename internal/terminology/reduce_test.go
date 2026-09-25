@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -166,23 +168,27 @@ func TestReduceClosedReferencesAndCompleteCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A group whose own choice is wrong or missing keeps its original entry;
+	// the window is refused whole only when no choice at all is accepted.
 	for _, test := range []struct {
-		name, response string
-		valid          bool
+		name, response    string
+		accepted, partial bool
 	}{
-		{"unknown group", `{"assignments":[{"ref":"g1","representative":"v1"},{"ref":"unknown","representative":"unknown"},{"ref":"g2","representative":"v2"}]}`, true},
-		{"missing first original", `{"assignments":[{"ref":"g2","representative":"v2"}]}`, false},
-		{"missing last original", `{"assignments":[{"ref":"g1","representative":"v1"}]}`, false},
-		{"unknown representative", `{"assignments":[{"ref":"g1","representative":"unknown"},{"ref":"g2","representative":"v2"}]}`, false},
-		{"cyclic representatives", `{"assignments":[{"ref":"g1","representative":"v2"},{"ref":"g2","representative":"v1"}]}`, false},
-		{"conflicting group assignment", `{"assignments":[{"ref":"g1","representative":"v1"},{"ref":"g1","representative":"v2"},{"ref":"g2","representative":"v2"}]}`, false},
-		{"reverse conflicting assignment", `{"assignments":[{"ref":"g1","representative":"v2"},{"ref":"g1","representative":"v1"},{"ref":"g2","representative":"v2"}]}`, false},
-		{"identical repeated assignment", `{"assignments":[{"ref":"g1","representative":"v1"},{"ref":"g1","representative":"v1"},{"ref":"g2","representative":"v2"}]}`, true},
+		{"unknown group", `{"assignments":[{"ref":"g1","representative":"v1"},{"ref":"unknown","representative":"unknown"},{"ref":"g2","representative":"v2"}]}`, true, false},
+		{"missing first original", `{"assignments":[{"ref":"g2","representative":"v2"}]}`, true, true},
+		{"missing last original", `{"assignments":[{"ref":"g1","representative":"v1"}]}`, true, true},
+		{"unknown representative", `{"assignments":[{"ref":"g1","representative":"unknown"},{"ref":"g2","representative":"v2"}]}`, true, true},
+		{"malformed representative", `{"assignments":[{"ref":"g1","representative":42},{"ref":"g2","representative":"v2"}]}`, true, true},
+		{"conflicting group assignment", `{"assignments":[{"ref":"g1","representative":"v1"},{"ref":"g1","representative":"v2"},{"ref":"g2","representative":"v2"}]}`, true, true},
+		{"reverse conflicting assignment", `{"assignments":[{"ref":"g1","representative":"v2"},{"ref":"g1","representative":"v1"},{"ref":"g2","representative":"v2"}]}`, true, true},
+		{"identical repeated assignment", `{"assignments":[{"ref":"g1","representative":"v1"},{"ref":"g1","representative":"v1"},{"ref":"g2","representative":"v2"}]}`, true, false},
+		{"cyclic representatives", `{"assignments":[{"ref":"g1","representative":"v2"},{"ref":"g2","representative":"v1"}]}`, false, true},
+		{"no assignment", `{"assignments":[]}`, false, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, decodeErr := call.DecodeValidate([]byte(test.response))
-			if (decodeErr == nil) != test.valid {
-				t.Fatalf("decoder valid=%v, err=%v", test.valid, decodeErr)
+			decoded, decodeErr := call.DecodeValidate([]byte(test.response))
+			if (decodeErr == nil) != test.accepted || test.accepted && (decoded.Refused > 0) != test.partial {
+				t.Fatalf("decoder accepted=%v partial=%v, got %+v err=%v", test.accepted, test.partial, decoded, decodeErr)
 			}
 			provider := &reductionProvider{response: test.response}
 			var failures []llm.FailureKind
@@ -193,27 +199,95 @@ func TestReduceClosedReferencesAndCompleteCoverage(t *testing.T) {
 				return nil
 			})}
 			got, err := Reduce(t.Context(), executor, provider, items)
-			if err != nil || len(got.Entries) != 2 || got.PartialComparison == test.valid || provider.calls != 1 {
-				t.Fatalf("valid=%v, got=%+v err=%v", test.valid, got, err)
+			if err != nil || len(got.Entries) != 2 || got.PartialComparison != test.partial || provider.calls != 1 {
+				t.Fatalf("accepted=%v, got=%+v err=%v", test.accepted, got, err)
 			}
-			if !test.valid {
-				if !reflect.DeepEqual(failures, []llm.FailureKind{llm.FailureValidation}) || len(got.Requests) != 0 {
-					t.Fatal("refused response was not rejected or gained accepted provenance")
+			for _, original := range originals {
+				found := false
+				for _, entry := range got.Entries {
+					found = found || reflect.DeepEqual(original, entry)
 				}
-				for _, original := range originals {
-					found := false
-					for _, entry := range got.Entries {
-						found = found || reflect.DeepEqual(original, entry)
-					}
-					if !found {
-						t.Fatal("refused response modified an original entry")
-					}
+				if !found {
+					t.Fatal("a refused or separate group changed its original entry")
 				}
-				if _, err := Reduce(t.Context(), executor, provider, items); err != nil || provider.calls != 2 {
-					t.Fatal("refused consolidation was cached")
-				}
+			}
+			if test.accepted != (len(failures) == 0) || test.accepted != (len(got.Requests) == 1) {
+				t.Fatalf("window acceptance and provenance disagree: failures=%v requests=%v", failures, got.Requests)
+			}
+			calls := provider.calls
+			if _, err := Reduce(t.Context(), executor, provider, items); err != nil || (provider.calls == calls) != test.accepted {
+				t.Fatal("an accepted window was not cached, or a refused window was")
 			}
 		})
+	}
+}
+
+// One window mixes a consistent join with every kind of refused choice. Only
+// the groups involved keep their original entries; nothing joins transitively.
+func TestReductionRefusesOnlyTheGroupsInvolved(t *testing.T) {
+	var entries []Entry
+	for i := range 9 {
+		item := termCandidate(fmt.Sprintf("Term%d", i+1), fmt.Sprintf("Original meaning %d.", i+1), fmt.Sprintf("t%d.py", i+1))
+		entry, err := makeEntry(item.Explanation, []Candidate{item})
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, entry)
+	}
+	call, err := reductionCall(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Group gN owns variant vN. g6 joins g1; g2 names an unknown variant and
+	// g7 chose g2's variant; g3→g4→g5 is a chain; g8 is omitted; g9 answers
+	// twice differently.
+	got, err := call.DecodeValidate([]byte(`{"assignments":[
+		{"ref":"g1","representative":"v1"},{"ref":"g6","representative":"v1"},
+		{"ref":"g2","representative":"v404"},{"ref":"g7","representative":"v2"},
+		{"ref":"g3","representative":"v4"},{"ref":"g4","representative":"v5"},{"ref":"g5","representative":"v5"},
+		{"ref":"g9","representative":"v9"},{"ref":"g9","representative":"v1"}]}`))
+	if err != nil || len(got.Entries) != 8 || got.Refused != 7 {
+		t.Fatalf("refused choices spread or the consistent join was lost: %+v %v", got, err)
+	}
+	joined := 0
+	for _, entry := range got.Entries {
+		if len(entry.Variants) == 1 {
+			found := false
+			for _, original := range entries {
+				found = found || reflect.DeepEqual(original, entry)
+			}
+			if !found {
+				t.Fatalf("a separate group lost its original entry: %+v", entry)
+			}
+			continue
+		}
+		joined++
+		if !reflect.DeepEqual(entry.Names, []string{"Term1", "Term6"}) || entry.Explanation != "Original meaning 1." {
+			t.Fatalf("a join other than g1+g6 was accepted: %+v", entry)
+		}
+	}
+	if joined != 1 {
+		t.Fatalf("joins = %d, want only g1+g6", joined)
+	}
+	unjoined := make(map[string][]string)
+	for _, rejection := range got.Rejections {
+		if rejection.Kind == "glossary_group_unjoined" {
+			unjoined[rejection.Reason] = append(unjoined[rejection.Reason], rejection.Samples...)
+		}
+	}
+	want := map[string][]string{
+		"unknown representative":                            {"g2"},
+		"choice joins a group whose own choice was refused": {"g7"},
+		"representative chain or cycle":                     {"g3", "g4", "g5"},
+		"group omitted":                                     {"g8"},
+		"conflicting group assignment":                      {"g9"},
+	}
+	for reason, refs := range want {
+		got := append([]string(nil), unjoined[reason]...)
+		sort.Strings(got)
+		if !reflect.DeepEqual(got, refs) {
+			t.Fatalf("%s: unjoined %v, want %v (%+v)", reason, got, refs, unjoined)
+		}
 	}
 }
 
@@ -234,11 +308,11 @@ func TestReductionAssignmentsKeepWholeGroupsAndRepresentativeOwnership(t *testin
 		t.Fatal(err)
 	}
 	got, err := call.DecodeValidate([]byte(`{"assignments":[{"ref":"g1","representative":"v2"},{"ref":"g2","representative":"v3"},{"ref":"g3","representative":"v3"}]}`))
-	if err != nil || len(got) != 2 {
+	if err != nil || len(got.Entries) != 2 || got.Refused != 0 {
 		t.Fatalf("same-spelling senses or alias grouping changed: %+v / %v", got, err)
 	}
 	var originals []Candidate
-	for _, entry := range got {
+	for _, entry := range got.Entries {
 		if len(entry.Variants) != 2 {
 			t.Fatal("an earlier group was split or an alias omitted")
 		}
@@ -249,12 +323,18 @@ func TestReductionAssignmentsKeepWholeGroupsAndRepresentativeOwnership(t *testin
 	if !reflect.DeepEqual(want, actual) {
 		t.Fatal("assignment changed original meanings, sources or provenance")
 	}
-	for _, invalid := range []string{
-		`{"assignments":[{"ref":"g1","representative":"v3"},{"ref":"g2","representative":"v4"},{"ref":"g3","representative":"v4"}]}`,
-		`{"assignments":[{"ref":"g1","representative":"v3"},{"ref":"g2","representative":"v2"},{"ref":"g3","representative":"v4"}]}`,
-	} {
-		if _, err := call.DecodeValidate([]byte(invalid)); err == nil {
-			t.Fatal("representative chain or cycle was repaired into an accepted grouping")
+	// A chain through every group leaves nothing accepted.
+	if _, err := call.DecodeValidate([]byte(`{"assignments":[{"ref":"g1","representative":"v3"},{"ref":"g2","representative":"v4"},{"ref":"g3","representative":"v4"}]}`)); err == nil {
+		t.Fatal("representative chain was repaired into an accepted grouping")
+	}
+	// A cycle keeps its own groups' original entries; the independent g3 stays.
+	got, err = call.DecodeValidate([]byte(`{"assignments":[{"ref":"g1","representative":"v3"},{"ref":"g2","representative":"v2"},{"ref":"g3","representative":"v4"}]}`))
+	if err != nil || len(got.Entries) != 3 || got.Refused != 2 {
+		t.Fatalf("representative cycle was repaired or spread: %+v %v", got, err)
+	}
+	for _, entry := range got.Entries {
+		if !slices.ContainsFunc(entries, func(original Entry) bool { return reflect.DeepEqual(original, entry) }) {
+			t.Fatalf("a cycle member or its independent neighbour changed: %+v", entry)
 		}
 	}
 }
@@ -267,7 +347,7 @@ func TestRefusedGlossaryRecordsItsReasonAndExactResponse(t *testing.T) {
 	}
 	defer writer.Close()
 	executor := debugdump.BindStage(llm.Executor{Enabled: true, RootDir: root, Observer: debugdump.NewSemanticObserver(writer)}, StageName)
-	provider := &reductionProvider{response: `{"assignments":[{"ref":"g2","representative":"v2"}]}`}
+	provider := &reductionProvider{response: `{"assignments":[{"ref":"g2","representative":"v404"}]}`}
 	items := []Candidate{termCandidate("BLD", "An endpoint identifier.", "README.md"), termCandidate("bld", "The same identifier in lower case.", "README.md")}
 	got, err := Reduce(t.Context(), executor, provider, items)
 	if err != nil || !got.PartialComparison || len(got.Entries) != 2 || len(got.Requests) != 0 {
@@ -275,7 +355,7 @@ func TestRefusedGlossaryRecordsItsReasonAndExactResponse(t *testing.T) {
 	}
 	runDir := filepath.Join(root, "glossary-refused")
 	rows, err := modeldiag.Read(runDir)
-	if err != nil || len(rows) != 1 || rows[0].Stage != StageName || rows[0].Kind != "response_validation" || rows[0].Reason != "glossary: response omits original groups" || rows[0].ResponseRef == "" {
+	if err != nil || len(rows) != 1 || rows[0].Stage != StageName || rows[0].Kind != "response_validation" || rows[0].Reason != "glossary: no group assignment accepted: group omitted" || rows[0].ResponseRef == "" {
 		t.Fatalf("rejection reason is not discoverable: %+v / %v", rows, err)
 	}
 	journalPath := filepath.Join(runDir, rows[0].ResponseRef)
