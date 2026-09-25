@@ -59,15 +59,15 @@ script entrypoints or sidecar tools.
   sealed target index without parsing code. Distinct package/import contexts
   remain separate facts even when they share ASTs. The owner approved this
   shared storage on 2026-09-09, independently of tools/examples' full analyses.
-  Release completed child indexes after persistence; facts, places and group
-  projection load one target at a time, without memoizing all children. The
-  projection's declaration-key lookup reads the targets while the atlas
-  tables wait on the models and keeps only the keys. Places
-  loads each target once, retaining only its boundary observations for the
-  later source-documentation pass. Its sequential file reader reuses one
-  decoded target Index until the sequential consumer releases it
-  after graph construction; it never stores the complete child indexes. Other
-  handoffs reuse a value in memory when available. The report server consumes the generated result directly,
+  Completed child indexes stay in memory for the whole run (owner decision
+  2026-09-25; before, each was released after persistence and re-read one
+  target at a time). Facts, places, the group projection and the report share
+  each sealed index read-only: they allocate what they sort or change, and a
+  reader that must change an index takes its snapshot. The saved
+  `program-index.json` stays the artifact of record and the fallback for a run
+  without the index in memory. The projection's declaration-key lookup reads
+  the targets while the atlas tables wait on the models and keeps only the
+  keys. Other handoffs reuse a value in memory when available. The report server consumes the generated result directly,
   or restores one common report and manifest in another process. Every target
   is a section of that common page.
   Single-target publication uses the same one-page `ProgramPagePortfolio` and

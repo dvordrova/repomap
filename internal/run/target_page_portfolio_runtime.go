@@ -70,8 +70,12 @@ func reportAnalyzedTargetPagePublicationFailure(output *runOutput, targets []tar
 	output.State("Report publication", "failed", details...)
 }
 
-// Deferred portfolio stages read one saved index at a time. Do not attach it
-// back to the run: that would retain every child's index until publication.
+// programIndex is the target's sealed program index. The run keeps every
+// child's index in memory (owner decision 2026-09-25) and its readers share
+// it read-only: facts, places, the group projection and the report allocate
+// what they sort or change (audited 2026-09-25), and a reader that must
+// change the index itself takes Index.Snapshot. A run without one in memory
+// reads the saved file.
 func (run *targetPublishedRun) programIndex() (programindex.Index, error) {
 	if run.ProgramIndex == nil {
 		return readRunProgramIndex(run.RunDir)
@@ -80,13 +84,10 @@ func (run *targetPublishedRun) programIndex() (programindex.Index, error) {
 }
 
 // validProgramIndex is the target's program index, validated: a saved one
-// by the reader that decodes it, one still in memory here.
+// by the reader that decodes it; one in memory was validated when the
+// adapter sealed it and nothing writes it, so it needs no second check.
 func (run *targetPublishedRun) validProgramIndex() (programindex.Index, error) {
-	if run.ProgramIndex == nil {
-		return readRunProgramIndex(run.RunDir)
-	}
-	index := *run.ProgramIndex
-	return index, index.Validate()
+	return run.programIndex()
 }
 
 func (run *targetPublishedRun) programTarget() programindex.Target {
