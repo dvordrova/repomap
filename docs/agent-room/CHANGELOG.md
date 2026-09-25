@@ -33,6 +33,15 @@
   clamped and the answer kept. The glossary reads table prose through the
   same row reader.
 - `make test`, `make vet`, `make build` pass on the merged branch.
+- Ordinary run, `.bin/repomap .` at f819f4be on a checkout named `repomap`,
+  own cold cache: exit 0 in 108.0 s (atlas ready at 48.8 s; an enumerating
+  glossary draw took 48 s of it, 15 s the run before). CLI: 53 parts in 8
+  areas, 2 loose; UI: 5 drawn parts and 1 test-only; no map failure, 0 data
+  rows. Rejected: 4 `atlas_core` rows under Jev's floor, the oversized
+  `atlas_symbols` window, 3 guidance file refs the model invented
+  (discarded), 43 glossary terms without an occurrence, 4 glossary code
+  names. Warm rerun exit 0 in 25.1 s (only that Jev window live);
+  `cache clear` removed 47 MB. Playwright walk without page errors.
 
 ## 2026-09-25 — Ordinary acceptance of the map of parts
 
