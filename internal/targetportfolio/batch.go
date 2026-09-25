@@ -1,7 +1,6 @@
 package targetportfolio
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -155,35 +154,24 @@ func classificationBatchesWithFit(
 }
 
 type classificationPacking struct {
-	size                int
-	candidates          int
-	requiredRefs        int
-	executableRefs      int
-	requiredAuthority   map[corpus.FileID]struct{}
-	executableAuthority map[corpus.FileID]struct{}
-	requiredBound       bool
-	executableBound     bool
+	size              int
+	candidates        int
+	requiredRefs      int
+	requiredAuthority map[corpus.FileID]struct{}
+	requiredBound     bool
 }
 
 func newClassificationPacking(compilation Compilation) classificationPacking {
 	packing := classificationPacking{
-		size:                len(`{"candidates":[]}`),
-		requiredAuthority:   make(map[corpus.FileID]struct{}, len(compilation.requiredTargetFileRefs)),
-		executableAuthority: make(map[corpus.FileID]struct{}, len(compilation.executableFileRefs)),
-		requiredBound:       compilation.requiredAuthorityBound,
-		executableBound:     compilation.executableAuthorityBound,
+		size:              len(`{"candidates":[]}`),
+		requiredAuthority: make(map[corpus.FileID]struct{}, len(compilation.requiredTargetFileRefs)),
+		requiredBound:     compilation.requiredAuthorityBound,
 	}
 	if packing.requiredBound {
 		packing.size += len(`,"required_target_file_refs":[]`)
 	}
-	if packing.executableBound {
-		packing.size += len(`,"executable_file_refs":[]`)
-	}
 	for _, ref := range compilation.requiredTargetFileRefs {
 		packing.requiredAuthority[ref] = struct{}{}
-	}
-	for _, ref := range compilation.executableFileRefs {
-		packing.executableAuthority[ref] = struct{}{}
 	}
 	return packing
 }
@@ -200,12 +188,6 @@ func (packing classificationPacking) projectedSize(ref corpus.FileID, rowBytes i
 			size++
 		}
 	}
-	if _, executable := packing.executableAuthority[ref]; executable {
-		size += len(refWire)
-		if packing.executableRefs > 0 {
-			size++
-		}
-	}
 	return size
 }
 
@@ -215,22 +197,16 @@ func (packing *classificationPacking) add(ref corpus.FileID, rowBytes int) {
 	if _, required := packing.requiredAuthority[ref]; required {
 		packing.requiredRefs++
 	}
-	if _, executable := packing.executableAuthority[ref]; executable {
-		packing.executableRefs++
-	}
 }
 
 func compileSubset(compilation Compilation, candidates []Candidate) (Compilation, error) {
 	if err := validateLaunchSubset(compilation, candidates); err != nil {
 		return Compilation{}, err
 	}
-	executableRefs := authorityRefsInCandidates(compilation.executableFileRefs, candidates)
 	requiredRefs := authorityRefsInCandidates(compilation.requiredTargetFileRefs, candidates)
 	return compile(
 		compilation.corpus,
 		cloneCandidates(candidates),
-		compilation.executableAuthorityBound,
-		executableRefs,
 		compilation.requiredAuthorityBound,
 		requiredRefs,
 		nativeSubset(compilation, candidates),
@@ -442,15 +418,11 @@ func (batch defaultBatch) resolve(raw []byte) (Selection, error) {
 	if len(raw) == 0 || len(raw) > MaxResponseBytes {
 		return Selection{}, fmt.Errorf("target portfolio: default response exceeds bounded envelope")
 	}
+	// Only default_file_ref decides; any other field, such as a reason, has no
+	// authority. A missing, non-text or unadvertised choice is still refused.
 	var response DefaultResponse
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&response); err != nil || ensureJSONEOF(decoder) != nil {
+	if err := json.Unmarshal(raw, &response); err != nil {
 		return Selection{}, fmt.Errorf("target portfolio: invalid default JSON response")
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil || len(fields) != 1 || fields["default_file_ref"] == nil {
-		return Selection{}, fmt.Errorf("target portfolio: default response must contain exactly default_file_ref")
 	}
 	candidate, known := batch.authority[response.DefaultFileRef]
 	if !known {

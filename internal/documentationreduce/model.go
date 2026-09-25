@@ -20,15 +20,9 @@ import (
 
 const Version = 2
 
-// MaxConceptsPerSource bounds the vocabulary one document contributes. The
-// decoder keeps the first MaxConceptsPerSource distinct concepts of a
-// response row in the model's order and drops the rest; it never refuses
-// the row for exceeding the ceiling.
-const MaxConceptsPerSource = 12
-
 // Source is compact model-authored context restored to one exact guidance
-// document. Concepts is a set of at most MaxConceptsPerSource entries; its
-// canonical order is local.
+// document. Concepts is a set of every accepted distinct concept; its
+// canonical order is local. No local ceiling drops a valid concept.
 type Source struct {
 	Path     string                         `json:"path"`
 	Kind     readmetargetscout.GuidanceKind `json:"kind"`
@@ -86,8 +80,7 @@ func (result Result) Validate() error {
 	}
 	for position, source := range result.Sources {
 		if !validRepositoryPath(source.Path) || !validGuidanceKind(source.Kind) ||
-			len(source.Concepts) == 0 || len(source.Concepts) > MaxConceptsPerSource ||
-			!canonicalTextSet(source.Concepts) {
+			len(source.Concepts) == 0 || !canonicalTextSet(source.Concepts) {
 			return fmt.Errorf("documentation reduce: source %d is invalid", position)
 		}
 		if position > 0 && result.Sources[position-1].Path >= source.Path {
@@ -189,7 +182,7 @@ func canonicalSources(values []Source) ([]Source, error) {
 	}
 	result := make([]Source, 0, len(byPath))
 	for _, source := range byPath {
-		source.Concepts = capConcepts(source.Concepts)
+		source.Concepts = canonicalConcepts(source.Concepts)
 		result = append(result, source)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
@@ -222,9 +215,8 @@ func cloneResult(result Result) Result {
 	return cloned
 }
 
-// distinctConcepts keeps the first occurrence of every concept in the order
-// the values were supplied, so a ceiling keeps the model's leading choices.
-func distinctConcepts(values []string) []string {
+// canonicalConcepts returns every distinct concept once, in canonical order.
+func canonicalConcepts(values []string) []string {
 	result := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
@@ -234,18 +226,8 @@ func distinctConcepts(values []string) []string {
 		seen[value] = struct{}{}
 		result = append(result, value)
 	}
+	sort.Strings(result)
 	return result
-}
-
-// capConcepts keeps the first MaxConceptsPerSource distinct concepts in their
-// supplied order and returns them in canonical order.
-func capConcepts(values []string) []string {
-	kept := distinctConcepts(values)
-	if len(kept) > MaxConceptsPerSource {
-		kept = kept[:MaxConceptsPerSource]
-	}
-	sort.Strings(kept)
-	return kept
 }
 
 func canonicalTextSet(values []string) bool {

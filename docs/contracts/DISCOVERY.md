@@ -102,18 +102,20 @@ repository's name, which the corpus and go.mod give before any language
 adapter's prerequisites exist, so it asks while the Go planning snapshot is
 built; the snapshot must name the repository the same way.
 
-The classifier restores accepted rows only to advertised file refs. Its
-repository-guidance result supplies exact documentation inputs and optional
-target evidence. It does not create program objects, program edges, or target
-identity.
+The classifier restores accepted rows only to advertised file refs. A bare
+files array is the same answer without its wrapper, and one hypothesis string
+is a one-member list; missing or null `files`, or a row without a hypothesis
+string or non-empty list, classify nothing. The repository-guidance result
+supplies exact documentation inputs and optional target evidence. It does not
+create program objects, program edges, or target identity.
 
 `documentation_reduce` consumes the complete validated guidance snapshot and
 produces one sealed `reduced-documentation.json` handoff:
 
 - an optional repository overview;
-- source-bound concepts, at most twelve per document (the rest are dropped
-  and journaled; claims are no longer requested, nothing read them but the
-  glossary collector);
+- source-bound concepts, every valid distinct one of each document (no local
+  ceiling drops a valid concept; claims are no longer requested, nothing read
+  them but the glossary collector);
 - the exact guidance digest;
 - the exact reduction digest.
 
@@ -128,13 +130,23 @@ uses it.
 The 2026-09-09 validation correction accepts guidance files, classifications
 and hypotheses independently. Invalid members retain a recorded reason without
 erasing valid neighbours or the native target inventory. Documentation likewise
-keeps valid source claims and concepts beside malformed ones. Independent source
+keeps valid concepts beside malformed ones: a malformed concept is dropped and
+journaled alone, and its document stays an accepted scope; only a malformed
+`concepts` field, a row none of whose concepts is readable, or an unlocatable
+row refuses its source row, so a merge keeps that document's accepted
+concepts. An absent or
+null overview is simply empty, null concepts add nothing, one concept string is
+a one-member list, and a bare sources array is the answer without its wrapper.
+Missing or null `sources` stay refused, so an omission never lets an overview
+claim complete evidence. Independent source
 and merge requests use the shared worker pool without cancelling accepted
 siblings; real resource refusals split every affected request in the round.
 Successful input snapshots stay unchanged for exact warm-cache reuse, including
 after children are added. A failed merge preserves its already accepted input
 claims, and an incomplete merge supplies no invented whole-repository overview.
-Optional terms are collected only from fully accepted file/source scopes.
+Optional terms are collected only from accepted file/source scopes: a guidance
+file with a refused hypothesis is not one, a document that lost only a
+malformed concept is.
 
 Source and merge packing find the largest complete request prefix by probing
 exponentially growing windows, then searching within the last fit/refusal
@@ -171,7 +183,10 @@ Regression comparisons preserve every materialized byte while checking that repe
   library.
   Missing or invalid decisions retain `standalone` with the original evidence
   and rejection reason in `target-placements.json`; there is no default seed
-  owner. Exact equivalent argument-free Python launch forms receive one
+  owner. A decision word is read without its surrounding space and letter
+  case; a malformed decision row counts as a missing decision for the target
+  it names and leaves every other row's decision intact. Exact equivalent
+  argument-free Python launch forms receive one
   `launch_groups` owner choice in the same portfolio call. The group retains
   every original member, complete callable identity and source evidence in one
   provider window. A positive advertised owner choice restores one standalone
@@ -196,8 +211,22 @@ Regression comparisons preserve every materialized byte while checking that repe
   File refs remain exact restoration addresses, and positively supported
   guidance-only candidates may additionally be selected. Restore each file
   through exactly one adapter and apply validated placements to the typed plan.
-  The portfolio chooses a retained repository default. An exact `--target`
-  bypasses the model portfolio but must still
+  The provider cannot suppress a required representative: every
+  classification answer restores it locally from the compilation, never from
+  the answer, and a guidance candidate the answer did not select stays
+  unclassified. An extra field is ignored; a non-text or unadvertised member
+  and an unknown or stray (not a selected target) default are discarded and
+  journaled, never added to the targets; a missing default chooses nothing.
+  The candidate reservoir is classified
+  in independent batches: a refused classification answer loses only its own
+  batch, whose required representatives stay targets, whose native targets
+  stay `standalone` with the recorded refusal, and whose guidance candidates
+  stay unclassified; it does not end the run. The portfolio chooses a retained
+  repository default: the single eligible target, the default of the only
+  batch that retained targets when that batch chose one, or otherwise a
+  separate closed-ref default comparison, which reads only its
+  `default_file_ref`. An unknown comparison answer still ends the run. An
+  exact `--target` bypasses the model portfolio but must still
   resolve unambiguously through that same typed adapter boundary. Target scouts
   may not execute an adapter's page-local ProgramIndex, dependency, or semantic
   path. A compiler projection used to build that page, including the JSTS

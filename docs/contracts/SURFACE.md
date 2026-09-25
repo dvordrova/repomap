@@ -91,7 +91,11 @@ script entrypoints or sidecar tools.
   locally and keep every later Go target isolated; never reuse a target-local
   fallback workspace as sibling authority. Context cancellation and shared
   portfolio, persistence, manifest, repository-overview, or bundle failures
-  remain publication-terminal. When at least one target succeeds, the analyzed-page
+  remain publication-terminal. A refused model answer for one portfolio
+  classification batch is not a shared portfolio failure: it leaves that
+  batch's candidates standalone or unclassified with a recorded reason (see
+  [Discovery](DISCOVERY.md#target-selection)). When at least one target
+  succeeds, the analyzed-page
   portfolio and its neutral bundle remain valid even if that is the only
   successful page; the first successful page owns the one physical HTML while
   the originally selected default remains the logical default in

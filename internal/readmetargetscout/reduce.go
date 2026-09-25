@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -14,7 +13,7 @@ import (
 )
 
 const (
-	schemaContract  = "response is one JSON object {files:[{file_ref,hypotheses}]}; extra fields have no authority; independently validate file refs and hypotheses; repeated set-valued rows are permitted; no local hypothesis-count or hypothesis-byte ceiling; unknown file_ref rows are ignorable-v7"
+	schemaContract  = "response is one JSON object {files:[{file_ref,hypotheses}]} or the bare files array; missing or null files are refused; extra fields have no authority; independently validate file refs and hypotheses; one hypothesis string is a one-member list; repeated set-valued rows are permitted; no local hypothesis-count or hypothesis-byte ceiling; unknown file_ref rows are ignorable-v8"
 	reducerContract = "ignore rows whose FileID is outside request-local candidate authority before their hypotheses are interpreted; retain every valid hypothesis beside rejected siblings and record reasons; normalize short hypothesis whitespace; merge repeated known file rows and deduplicate identical hypotheses without local count or text ceilings; every accepted file is one target_entry classification; union accepted shards against aggregate authority; canonical path/hypothesis order-v11"
 )
 
@@ -48,15 +47,21 @@ func resolveResponse(compilation Compilation, raw []byte) (responseResult, error
 	if len(raw) == 0 || len(raw) > MaxResponseBytes {
 		return result, fmt.Errorf("README file classifier: response exceeds bounded envelope")
 	}
-	var wire struct {
-		Files []json.RawMessage `json:"files"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	if err := decoder.Decode(&wire); err != nil || wire.Files == nil {
-		return result, fmt.Errorf("README file classifier: response must be one JSON object with a files array")
-	}
-	if err := ensureResponseEOF(decoder); err != nil {
-		return result, err
+	// The bare files array is the same answer without its wrapper. Missing or
+	// null files are an omission, not an empty classification.
+	var files []json.RawMessage
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 && trimmed[0] == '[' {
+		if json.Unmarshal(raw, &files) != nil {
+			return result, fmt.Errorf("README file classifier: response must be a files array")
+		}
+	} else {
+		var wire struct {
+			Files []json.RawMessage `json:"files"`
+		}
+		if json.Unmarshal(raw, &wire) != nil || wire.Files == nil {
+			return result, fmt.Errorf("README file classifier: response must be one JSON object with a files array")
+		}
+		files = wire.Files
 	}
 	badFiles := make(map[corpus.FileID]bool)
 	var currentFile corpus.FileID
@@ -66,9 +71,9 @@ func resolveResponse(compilation Compilation, raw []byte) (responseResult, error
 		}
 		result.rejected = append(result.rejected, llm.ResponseRejection{Kind: "classification_rejected", Count: 1, Samples: []string{position}, Reason: reason})
 	}
-	files := make(map[corpus.FileID]map[string]struct{})
+	classified := make(map[corpus.FileID]map[string]struct{})
 	invalid := false
-	for i, rawFile := range wire.Files {
+	for i, rawFile := range files {
 		currentFile = ""
 		position := fmt.Sprintf("files[%d]", i)
 		var file struct {
@@ -86,7 +91,10 @@ func resolveResponse(compilation Compilation, raw []byte) (responseResult, error
 			continue
 		}
 		var hypotheses []json.RawMessage
-		if json.Unmarshal(file.Hypotheses, &hypotheses) != nil || len(hypotheses) == 0 {
+		if trimmed := bytes.TrimSpace(file.Hypotheses); len(trimmed) > 0 && trimmed[0] == '"' {
+			// One hypothesis string is a one-member list.
+			hypotheses = []json.RawMessage{trimmed}
+		} else if json.Unmarshal(file.Hypotheses, &hypotheses) != nil || len(hypotheses) == 0 {
 			invalid = true
 			reject(position, "hypotheses must be a non-empty array")
 			continue
@@ -105,13 +113,13 @@ func resolveResponse(compilation Compilation, raw []byte) (responseResult, error
 				reject(at, "hypothesis must be non-empty text")
 				continue
 			}
-			if files[file.FileRef] == nil {
-				files[file.FileRef] = make(map[string]struct{})
+			if classified[file.FileRef] == nil {
+				classified[file.FileRef] = make(map[string]struct{})
 			}
-			files[file.FileRef][hypothesis] = struct{}{}
+			classified[file.FileRef][hypothesis] = struct{}{}
 		}
 	}
-	for fileRef, hypotheses := range files {
+	for fileRef, hypotheses := range classified {
 		result.Result = append(result.Result, entryFile(fileRef, hypotheses))
 	}
 	sortByPath(result.Result, compilation.authority)
@@ -156,15 +164,4 @@ func validHypothesis(value string) bool {
 
 func validFileClass(value FileClass) bool {
 	return value == ClassTargetEntry
-}
-
-func ensureResponseEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("README file classifier: trailing JSON value")
-		}
-		return fmt.Errorf("README file classifier: invalid trailing response data")
-	}
-	return nil
 }
