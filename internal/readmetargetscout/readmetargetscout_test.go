@@ -542,17 +542,19 @@ func TestResolveResponseRejectsUnreadableOrEntirelyUnusableResults(t *testing.T)
 	}
 	mainID, _ := repository.ID("main.go")
 	tests := map[string]string{
-		"top-level array":      `[]`,
 		"null":                 `null`,
 		"object without files": `{}`,
 		"null files":           `{"files":null}`,
 		"files object":         `{"files":{}}`,
+		"files string":         `{"files":"main.go"}`,
 		"missing file_ref":     `{"files":[{"hypotheses":["a"]}]}`,
 		"missing hypotheses":   fmt.Sprintf(`{"files":[{"file_ref":%q}]}`, mainID),
 		"null hypotheses":      fmt.Sprintf(`{"files":[{"file_ref":%q,"hypotheses":null}]}`, mainID),
 		"empty hypotheses":     fmt.Sprintf(`{"files":[{"file_ref":%q,"hypotheses":[]}]}`, mainID),
+		"empty hypothesis":     fmt.Sprintf(`{"files":[{"file_ref":%q,"hypotheses":"  "}]}`, mainID),
 		"numeric hypothesis":   fmt.Sprintf(`{"files":[{"file_ref":%q,"hypotheses":[7]}]}`, mainID),
-		"trailing value":       fmt.Sprintf(`{"files":[{"file_ref":%q,"hypotheses":["a"]}]} {}`, mainID),
+		"numeric hypotheses":   fmt.Sprintf(`{"files":[{"file_ref":%q,"hypotheses":7}]}`, mainID),
+		"array without rows":   fmt.Sprintf(`[{"file_ref":%q}]`, mainID),
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -560,6 +562,37 @@ func TestResolveResponseRejectsUnreadableOrEntirelyUnusableResults(t *testing.T)
 				t.Fatalf("ResolveResponse accepted %s", raw)
 			}
 		})
+	}
+}
+
+func TestResolveResponseAcceptsABareFilesArrayAndOneHypothesisString(t *testing.T) {
+	repository, _ := testCorpus(t, map[string]string{
+		"README.md": "Run main.go.\n",
+		"main.go":   "package main\n",
+	})
+	compilation, err := compileWithTestHints(t, "sample", repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainID, _ := repository.ID("main.go")
+	want := Result{{FileRef: mainID, Classifications: []Classification{{
+		Class: ClassTargetEntry, Hypotheses: []string{"Runs the API"},
+	}}}}
+	for name, raw := range map[string]string{
+		"bare files array":  fmt.Sprintf(`[{"file_ref":%q,"hypotheses":["Runs the API"]}]`, mainID),
+		"hypothesis string": fmt.Sprintf(`{"files":[{"file_ref":%q,"hypotheses":"  Runs the API "}]}`, mainID),
+		"both":              fmt.Sprintf(`[{"file_ref":%q,"hypotheses":"Runs the API"}]`, mainID),
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := ResolveResponse(compilation, []byte(raw))
+			if err != nil || !reflect.DeepEqual(result, want) {
+				t.Fatalf("harmless form = %#v / %v", result, err)
+			}
+		})
+	}
+	empty, err := ResolveResponse(compilation, []byte(`[]`))
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Fatalf("bare empty files array = %#v / %v", empty, err)
 	}
 }
 

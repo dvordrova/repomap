@@ -63,9 +63,12 @@ func TestMalformedClassifierDoesNotBlockNativeDiscoveryOrCacheAResult(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	mainID, _ := repository.ID("main.go")
 	for name, raw := range map[string]string{
 		"wrong object": `{"wrong":"shape"}`,
-		"legacy array": `[{"file_ref":"f1","classifications":[{"class":"target_entry","hypotheses":["old shape"]}]}]`,
+		// A bare files array is accepted, but a known row without hypotheses
+		// still classifies nothing.
+		"legacy array": fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["old shape"]}]}]`, mainID),
 	} {
 		t.Run(name, func(t *testing.T) {
 			provider := &classificationResponseProvider{raw: []byte(raw)}
