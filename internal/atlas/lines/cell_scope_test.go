@@ -58,4 +58,16 @@ func TestOutboundAddressMissingReadsUnknown(t *testing.T) {
 	if want := (table.Answer{"line": "Sends the order.", "address": "a1"}); err != nil || !reflect.DeepEqual(free.Answers[0], want) || len(free.Rejections) != 1 || free.Rejections[0].Cell != "destination" {
 		t.Fatalf("a free destination without its name was not refused alone: %+v / %v", free, err)
 	}
+	// The unknown a missing address reads as is no answer of its own: a row
+	// that wrote nothing valid is refused, not remembered as answered, while
+	// an address the model wrote still keeps its row.
+	for _, raw := range []string{`{"rows":[{"key":"b1"}]}`, `{"rows":[{"key":"b1","line":"","destination":"d9"}]}`, `{"rows":[{"key":"b1","line":" ","destination":null,"address":null}]}`} {
+		if refused, err := table.DecodeResult(def, table.Window{Context: window.Context, Rows: window.Rows[:1]}, []byte(raw)); err == nil || refused.Answers[0] != nil {
+			t.Fatalf("a row with only its missing-address value was accepted: %s -> %+v", raw, refused.Answers)
+		}
+	}
+	written, err := table.DecodeResult(def, table.Window{Context: window.Context, Rows: window.Rows[:1]}, []byte(`{"rows":[{"key":"b1","line":"","destination":"d9","address":"unknown"}]}`))
+	if want := (table.Answer{"address": "unknown"}); err != nil || !reflect.DeepEqual(written.Answers[0], want) {
+		t.Fatalf("a written address lost its row: %+v / %v", written, err)
+	}
 }

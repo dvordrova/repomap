@@ -208,8 +208,9 @@ type cellRefusal struct {
 func decodeCopies(def Definition, context []Field, row Row, copies []map[string]json.RawMessage) (Answer, []cellRefusal, error) {
 	answers := make([]Answer, len(copies))
 	var refused []cellRefusal
+	written := make(map[string]bool)
 	for i, cells := range copies {
-		answer, cellRefused, err := decodeCells(def, context, row, cells)
+		answer, cellRefused, wrote, err := decodeCells(def, context, row, cells)
 		if err != nil {
 			if len(copies) > 1 {
 				return nil, nil, fmt.Errorf("row key was answered more than once, differently: %w", err)
@@ -217,6 +218,9 @@ func decodeCopies(def Definition, context []Field, row Row, copies []map[string]
 			return nil, nil, err
 		}
 		answers[i] = answer
+		for name := range wrote {
+			written[name] = true
+		}
 		for _, cell := range cellRefused {
 			if !slices.ContainsFunc(refused, func(known cellRefusal) bool { return known.column == cell.column }) {
 				refused = append(refused, cell)
@@ -240,70 +244,83 @@ func decodeCopies(def Definition, context []Field, row Row, copies []map[string]
 			}
 		}
 	}
-	if len(refused) > 0 && len(answer) == 0 {
+	// A value the column fills in for an absent cell, such as an address's
+	// unknown, is no answer: a row whose every written cell was refused has
+	// none, and is not remembered as answered.
+	decided := false
+	for name := range answer {
+		decided = decided || written[name]
+	}
+	if len(refused) > 0 && !decided {
 		return nil, nil, fmt.Errorf("every cell was refused; cell %q: %s", refused[0].column, refused[0].reason)
 	}
 	return answer, refused, nil
 }
 
 // decodeCells reads one copy of a row. A cell without Alone or Optional that
-// fails refuses the copy; an Alone or Optional one is refused by itself.
-func decodeCells(def Definition, context []Field, row Row, cells map[string]json.RawMessage) (Answer, []cellRefusal, error) {
+// fails refuses the copy; an Alone or Optional one is refused by itself. The
+// written set names the kept cells the model wrote a value for.
+func decodeCells(def Definition, context []Field, row Row, cells map[string]json.RawMessage) (Answer, []cellRefusal, map[string]bool, error) {
 	answer := make(Answer, len(def.Columns))
+	written := make(map[string]bool, len(def.Columns))
 	var refused []cellRefusal
 	for _, column := range def.Columns {
 		if column.WhenOptionsFrom != "" && len(optionsFrom(context, row, column.WhenOptionsFrom)) == 0 {
 			// Empty choices have no decision to request or validate.
 			continue
 		}
-		value, present, err := decodeCell(column, context, row, cells)
+		value, present, wrote, err := decodeCell(column, context, row, cells)
 		if err != nil {
 			if column.Alone || column.Optional {
 				refused = append(refused, cellRefusal{column.Name, err.Error()})
 				continue
 			}
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if present {
 			answer[column.Name] = value
 		}
+		if present && wrote {
+			written[column.Name] = true
+		}
 	}
-	return answer, refused, nil
+	return answer, refused, written, nil
 }
 
-// decodeCell reads one cell: its value and whether the row has one.
-func decodeCell(column Column, context []Field, row Row, cells map[string]json.RawMessage) (string, bool, error) {
+// decodeCell reads one cell: its value, whether the row has one, and whether
+// the model wrote it rather than the column filling in its own absence value.
+func decodeCell(column Column, context []Field, row Row, cells map[string]json.RawMessage) (string, bool, bool, error) {
 	raw, found := cells[column.Name]
 	null := found && bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 	if !found || null {
 		switch {
 		case column.Missing != "":
-			return column.Missing, true, nil
+			return column.Missing, true, false, nil
 		case column.Optional:
-			return "", false, nil
+			return "", false, false, nil
 		case column.EmptyValue != "":
 			// The column's own spelling of absent prose.
-			return column.EmptyValue, true, nil
+			return column.EmptyValue, true, false, nil
 		case !found:
-			return "", false, fmt.Errorf("missing %q cell", column.Name)
+			return "", false, false, fmt.Errorf("missing %q cell", column.Name)
 		}
 		raw = json.RawMessage(`""`)
 	}
 	cell, absent, err := cellText(column, context, row, raw)
 	if err != nil || absent {
-		return "", false, err
+		return "", false, false, err
 	}
 	if column.Optional {
 		// A small model says "no" where it should leave the cell out.
 		if trimmed := strings.TrimSpace(cell); trimmed == "" || strings.EqualFold(trimmed, "no") || strings.EqualFold(trimmed, "none") {
-			return "", false, nil
+			return "", false, false, nil
 		}
 	}
 	value, err := normalizeCell(column, context, row, cell)
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
-	return value, true, nil
+	return value, true, strings.TrimSpace(cell) != "", nil
 }
 
 // cellText reads a cell's JSON value as the text the column validates. A

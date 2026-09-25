@@ -80,8 +80,10 @@ type Column struct {
 	// Alone lets this cell fail by itself: a missing, null, mistyped, empty
 	// or unlisted value, or repeated copies that differ, refuse only this
 	// cell, recorded as a rejection. The row keeps its other decisions unless
-	// a cell without Alone failed or no cell survived. A decoder rule like
-	// Missing; the owner reads an absent cell with its own fallback.
+	// a cell without Alone failed or no cell the model wrote survived: a
+	// Missing or EmptyValue filled in for an absent cell is no answer. A
+	// decoder rule like Missing; the owner reads an absent cell with its own
+	// fallback.
 	Alone bool `json:"-"`
 	// WhenOptionsFrom requires this cell only when the named input field, in
 	// the row or the window context, has advertised choices. A row without

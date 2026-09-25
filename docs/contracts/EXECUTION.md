@@ -171,7 +171,9 @@ tables and all other stages do not opt in.
   outbound line, destination or address, an alias) loses only itself on a
   missing, null, mistyped, empty or unlisted value or on differing copies; the
   owner reads it with the fallback the whole row takes, and the row keeps its
-  other decisions unless a cell without Alone failed or no cell survived. An
+  other decisions unless a cell without Alone failed or no cell the model
+  wrote survived (a value filled in for an absent cell, such as a missing
+  address's `unknown`, is no answer). An
   optional cell with a bad value is likewise discarded alone. Refused cells
   are journaled as `cell_rejected`, and a row that lost a cell authorizes no
   glossary prose. Accepted neighbours keep their exact-response cache.
