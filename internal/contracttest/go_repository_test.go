@@ -254,6 +254,13 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 		t.Fatal(err)
 	}
 	assertGoTypeFormsInQuestionEvidence(t, index, graph)
+	adaptertest.AssertDeclarationSignatures(t, graph, "internal/storefixture/generic_types.go", map[string]string{
+		"Page":    "[T any] struct",
+		"Tally":   "[K comparable, V map[string]int] struct",
+		"Labeled": "[T interface{~int | ~string}] interface",
+		"Batch":   "[T storefixture.Labeled[int]] []T",
+		"First":   "func[T any](items []T) T",
+	})
 	adaptertest.AssertExecutionScope(t, index, graph, "cmd/app/main.go", 12, programindex.ObjectFunction)
 	adaptertest.AssertRegistrationArgument(t, graph, "cmd/app/main.go", "getLevel", map[int]string{21: "/api/levels", 115: "/api/embedded", 117: "/api/overridden-lookalike"})
 	seen := make(map[string]bool)

@@ -151,6 +151,18 @@ JS/TS and Clojure adapters do not emit comparable target-bound field-write
 relations; their mutation-tracing equivalent remains unavailable rather than
 being inferred from call or field-initializer evidence.
 
+## Generic declarations
+
+Class and function signatures keep PEP 695 type parameters as written after
+the name: `class Crate[T]`, `class Keyed[K: str, V: (int, str)](Box[V])`,
+`first[T](items: list[T]) -> T`. A `Generic[T]` base already stays in the
+class header (`class Box(Generic[T])`). The cumulative Python repository's
+`src/fixture_app/generic_types.py` asserts all four, so that fixture needs
+Python 3.12 or later; the parser itself still reads older interpreters' trees,
+which have no type-parameter field. A PEP 695 `type Pair[T] = ...` statement is
+not indexed as a declaration yet; that gap remains open. See
+[Go](GO.md#owned-declarations) for the equivalents.
+
 ## Framework-neutral registrations
 
 The original AST call site, result identity, positional/keyword arguments and callback targets remain separate. `Thread(target=...)`, async-task and supported schedule registrations preserve their written activation evidence. A later `start`, `join` or liveness check on that same result does not invent a callback call. Lifespan setup and finite retry loops remain negative controls; final scheduled/continuous roles belong to [operation review](READING.md#operation-ownership).

@@ -1,5 +1,34 @@
 # Implementation and acceptance journal
 
+## 2026-09-25 — Generic declarations keep their type parameters
+
+- Go `typeSignature` began the short form at the first space, which for a
+  generic type lies inside its parameters: the saved self-run `places.json`
+  showed `llm.Call` as `"any] struct{SplitRejectedResponse bool; …}"`, fields
+  and a struct tag included. It now skips the bracketed list by depth:
+  `[T any] struct`, `[K comparable, V map[string]int] struct`,
+  `[T interface{~int | ~string}] interface`, `[T storefixture.Labeled[int]] []T`.
+  With the old function the new cumulative expectation failed on all four
+  (`any] struct{Items []T "json:\"items\""; …}`, `interface` without its
+  parameters). Generic functions already kept theirs (`func[T any](items []T) T`).
+  A no-model `cmd/repomap` run with the fixed binary (exit 0) wrote `Call
+  [T any] struct`, `AdaptiveEachResult [Item, Value any] struct` and
+  `DecodeValidate [T any] func([]byte) (T, error)`; no type signature in its
+  `places.json` holds `struct{`.
+- Equivalents, each asserted on the file's places declarations
+  (`adaptertest.AssertDeclarationSignatures`): TypeScript `export class
+  Box<T extends { id: string }>`, `type Pair<T>` (compiler rendering `Pair<T>`)
+  and `firstOf<T>` (`<T>(items: T[]): T`) were already correct and gained
+  regression examples in `src/type-members.ts`. Python kept `class
+  Box(Generic[T])` but dropped PEP 695 parameters (`class Crate`, `class
+  Keyed(Box[V])`, `first(items: list[T]) -> T`); the parser now writes them
+  (`class Crate[T]`, `class Keyed[K: str, V: (int, str)](Box[V])`,
+  `first[T](items: list[T]) -> T`). The cumulative Python fixture therefore
+  needs Python 3.12+ (checked with 3.14.3). Clojure has no type parameters: no
+  equivalent. Open: a Python `type Pair[T] = …` statement is not indexed at all.
+- New fixture files `go/internal/storefixture/generic_types.go` and
+  `python/src/fixture_app/generic_types.py`; both inventories renumbered.
+
 ## 2026-09-25 — Critical-path work before and after the models
 
 - Render (saved self-run, byte-identical HTML on two saved runs): 6.2 s →

@@ -149,6 +149,21 @@ type-owned variable objects used by Python class fields. The same atlas members
 and question evidence carry them onward; no field creates a runtime call or an
 inherited declaration at a new owner. Comparable count-field examples live in the cumulative TypeScript, Python and Go testdata repositories.
 
+A generic type's short signature keeps its whole type-parameter list, whose
+constraints may hold spaces and brackets: `[T any] struct`, `[K comparable, V
+map[string]int] struct`, `[T interface{~int | ~string}] interface`, and
+`[T storefixture.Labeled[int]] []T` with the constraint's package path
+shortened. Its fields and struct tags never enter that text; before this, the
+form began at the first space, inside the parameters, and leaked every field
+and tag. A generic function's signature keeps its parameters
+(`func[T any](items []T) T`). The cumulative Go repository's
+`internal/storefixture/generic_types.go` asserts both. Equivalents: TypeScript
+class headers, type aliases (`Pair<T>`, the compiler's rendering) and function
+signatures already keep their parameters, with regression examples in
+`src/type-members.ts`; Python writes PEP 695 parameters since the same change
+([Python](PYTHON.md#generic-declarations)); Clojure declares no type parameters
+and has no equivalent.
+
 ## Source-aware diagnostics
 
 The etcd report exposed a shared-root ownership defect: the first target at a

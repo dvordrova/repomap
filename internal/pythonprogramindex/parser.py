@@ -78,9 +78,19 @@ def declaration_arguments(arguments):
     return ast.unparse(arguments)
 
 
+def type_parameters(node):
+    # PEP 695 type parameters are part of the declaration, as in
+    # class Box[T]: and def first[T](items: list[T]) -> T. Interpreters
+    # before Python 3.12 have no such field.
+    parameters = getattr(node, "type_params", None)
+    if not parameters:
+        return ""
+    return "[" + ", ".join(ast.unparse(value) for value in parameters) + "]"
+
+
 def function_signature(node):
     prefix = "async " if isinstance(node, ast.AsyncFunctionDef) else ""
-    signature = prefix + node.name + "(" + declaration_arguments(node.args) + ")"
+    signature = prefix + node.name + type_parameters(node) + "(" + declaration_arguments(node.args) + ")"
     if node.returns is not None:
         signature += " -> " + ast.unparse(node.returns)
     return signature
@@ -89,9 +99,10 @@ def function_signature(node):
 def class_signature(node):
     bases = [ast.unparse(value) for value in node.bases]
     bases.extend(ast.unparse(keyword) for keyword in node.keywords)
+    header = "class " + node.name + type_parameters(node)
     if not bases:
-        return "class " + node.name
-    return "class " + node.name + "(" + ", ".join(bases) + ")"
+        return header
+    return header + "(" + ", ".join(bases) + ")"
 
 
 def relative_module(current, is_package, level, module):
