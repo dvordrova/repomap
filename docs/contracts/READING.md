@@ -98,15 +98,36 @@ new description or selection requests.
   matched values, counts and identities. Rejected independent rows fall back on
   their own deterministic lines and are written to `rejected.jsonl`; valid
   neighbours survive in the original exact-response cache. An entirely refused
-  window is never cached. A symbol row whose `activation` is missing or null settles as `unassessed`,
+  window is never cached, and each of its rows' reasons is journaled; a
+  decision-model window whose every row was answered, even below its
+  probability floor, is an explicit answer that decides none of them and is
+  cached, and one malformed decision-model answer leaves only its question
+  unanswered. A response may carry its rows as `{"rows": [...]}`, as a bare array, or in one
+  wrapping object; rows match by key alone, trimmed of surrounding whitespace.
+  A cell is a JSON string, a list of refs for a sequence, or `true`/`false` on
+  a yes/no choice (`false` on an optional choice is no value). A choice may
+  carry surrounding quotes or backticks and one final `.`, `,`, `;` or `!`;
+  `p3: Storage` is still not `p3`. A prose or text cell with an empty value
+  such as `none` reads empty, null, missing, `None.` or `NONE` as that value;
+  without one, empty text is refused. A symbol row whose `activation` is missing or null settles as `unassessed`,
   the choice that already means no decision; a written choice is validated
-  as before. A sequence cell citing only refs outside its row's options, or nothing at
+  as before. A missing outbound `address` is the declared `unknown`, and an
+  empty or missing joint or peer label is `-`. A sequence cell citing only refs outside its row's options, or nothing at
   all (a provider may send null), is an empty selection and keeps the row's
-  other cells; commas separate refs like spaces; exceeding the limit still
-  refuses the cell. Every response row must copy an asked artifact ID. Missing
+  other cells; commas separate refs like spaces. A selection past its
+  `limit_from` keeps every advertised ref the model chose, in its order: the
+  limit is guidance, the owner journals the excess (`menu_over_limit` for
+  Learn), and a row without a positive integer limit is a preparation error.
+  Every response row must copy an asked artifact ID. Missing
   and unknown keys are refused; a key answered twice the same way is one
-  answer, and twice differently is refused; response order never substitutes
-  for identity. Every row and answer is printed to `tables.md`, with prompts, requests, raw
+  answer, and twice differently is refused, except that copies differing only
+  in Alone cells lose those cells; response order never substitutes
+  for identity. Directory and file captions, `open`, a target's line and
+  role, an outbound boundary's line, destination and address, and an alias are
+  Alone: a refused one loses only itself, is journaled as `cell_rejected`,
+  and takes the fallback its whole row takes (the given title or line, no
+  destination or address, the native role). A type's prose line is shown as
+  one line in the atlas. Every row and answer is printed to `tables.md`, with prompts, requests, raw
   responses and normalized source-bound results under `tables/`. The ordinary
   path saves `reading-input.json` before its first atlas call, from the same
   sealed graph bytes as `places.json`; `read` consumes
@@ -116,7 +137,8 @@ new description or selection requests.
   The directories/files owner prompts follow the complete request `fill`
   catalogue and demonstrate both modes. If requested, `open` is a mandatory
   `yes`/`no` string; prompts must not forbid it by prescribing only the base
-  two cells. A missing choice still refuses only its own row.
+  two cells. A missing or unlisted `open` is refused alone and closes
+  nothing; its row keeps its captions.
 
 ## Architectural responsibilities
 
@@ -428,8 +450,8 @@ has been removed; requesting it returns migration guidance. `question-routes.jso
 stores the current reading records, retaining every candidate and its original
 evidence. The answer batch reads the complete union of those original sources
 once, with each question's own allowed refs and retrieval coverage. Each accepted
-row returns an answer, its basis, sources in useful reading order, and a specific
-remaining gap. The supporting guide projects those ordered sources; it makes no
+row returns its state, an answer, its basis, sources in useful reading order,
+and the remaining gap. The supporting guide projects those ordered sources; it makes no
 separate selection and requests no extra open question.
 Questions and source records are canonically ordered for exact-request reuse;
 results retain the user's question order. Adding a question changes its answer
@@ -439,8 +461,14 @@ prepared-input, context, output or response-envelope refusals split questions
 first and rebuild each child's complete evidence union. Only a singleton question
 whose complete evidence does not fit partitions its original sources into
 separate answer parts. Each question validates independently: a malformed,
-missing or duplicate answer leaves that question unavailable while accepted
-neighbours survive. An unparseable response, a failed provider call or a
+missing or differently repeated answer leaves that question unavailable while
+accepted neighbours survive, and an identical repeat is one answer. The state
+is the model's closed decision and is never promoted: an `unanswered` row
+keeps its state and gap, and the answer, basis and sources it carries anyway
+are discarded and journaled as `cell_rejected`. An `unanswered` or `partial`
+answer may leave its gap unnamed (`none`), and a sourced answer its basis. A
+substantive answer without text or original sources, a settled answer with a
+gap, and inapplicability on incomplete evidence are refused. An unparseable response, a failed provider call or a
 response with no accepted row on a window of several questions divides the
 questions the same way a resource refusal does, rebuilding each child's complete
 evidence, until a request holds one question; that question's refusal is its
@@ -496,14 +524,24 @@ budgets remain available. Actual context/output/response resource refusals
 partition complete original evidence by encoded byte weight; accepted sibling
 reviews survive, children retain their partial-context scope, and failed parents
 supply no semantic review. Proposal and menu decisions validate per intent;
-a refused intent remains unavailable without deleting its neighbours. Within a
-`questions` review each proposed question validates alone: one that fails a rule
-(blank wording or why, no or only unadvertised sources) is dropped with a
-`question_rejected` journal row and the review keeps the rest; a review is refused
+a refused intent remains unavailable without deleting its neighbours. The
+reviews may arrive as a bare array. An intent matches after trimming and
+case-folding, a state after trimming, case-folding and reading spaces or
+hyphens as underscores. A review is read field by field: a string of refs is
+a list and a reason that is not text is none. Two identical reviews of one
+intent are one review; two different ones are refused, never joined. Within a
+`questions` review each proposed question validates alone: one that is
+malformed or fails a rule (blank wording, no or only unadvertised sources) is
+dropped with a `question_rejected` journal row and the review keeps the rest;
+a question without a why keeps its wording and sources. A review is refused
 only when none survive. A `questions` review that arrives without a reason takes
 the first sentence of its first accepted question's why and records
-`reason_from: why`; `not_applicable` and `unknown` reviews still need their own
-reason. An intent with no entry at all in an accepted response is re-asked over the
+`reason_from: why`. A `not_applicable` or `unknown` review keeps its state,
+reason and sources as written, even an empty reason; questions it carries
+anyway are dropped as `question_rejected` rows and never promote its state.
+`not_applicable` still needs complete context and positive sources, and a
+review without a readable state, or in a state outside the set, is refused.
+An intent with no entry at all in an accepted response is re-asked over the
 same evidence — first together with the other omitted intents, then alone —
 before it is unavailable (`intent_omitted` journal rows, `recovered` when a
 later window reviewed it); the intents are listed in the request after the
@@ -514,10 +552,14 @@ consolidation preserves original accepted questions and any accepted comparisons
 with the plan marked partial. The owner explicitly approved this for user-selected
 repositories on 2026-09-06. `read --through learn` stops after the plan.
 `learning-plan.json` retains each context review and every proposal's original
-intent, reason and sources. Each intent's menu selects at most five of its candidates; the merge step
-groups the selected questions by information need in one call per pool
-(`groups` of members with a representative), an unplaced question staying its
-own group and a refused window keeping every question.
+intent, reason and sources. Each intent's menu is asked for at most five of its
+candidates; a menu past that limit keeps every advertised question it chose,
+journaled as `menu_over_limit`, and a menu without its rationale keeps its
+choices. The merge step groups the selected questions by information need in
+one call per pool (`groups` of members with a representative; members may be
+one string of refs), an unplaced question staying its own group, an empty
+`groups` list meaning no repeats, and a refused window keeping every question.
+A merge answer whose groups name no advertised question is refused.
 Overlapping automatic questions share one answer;
 explicit questions remain visible. Exact duplicate explicit/generated wording
 shares a result carrying both origins. Questions expose their selection reasons

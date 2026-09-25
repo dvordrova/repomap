@@ -164,19 +164,28 @@ tables and all other stages do not opt in.
   owns exhaustive batching, completeness, and identity. If filtering leaves a
   mandatory scalar choice or complete assignment unresolved, reject that
   incomplete result without inventing a replacement. An atlas table row asks
-  one short line or one closed choice. Independent atlas rows validate separately:
-  an invalid, missing or duplicate known row loses only its own model answer;
-  accepted neighbours keep their exact-response cache. Description and operation
-  rows additionally retain their entity memos. Independent arrows and target
+  one short line or one closed choice, and every atlas table validates its
+  rows separately: a missing, invalid or differently repeated known row loses
+  only its own model answer, and a row repeated the same way is one answer.
+  A cell its owner declares Alone (a caption, `open`, a target's role, an
+  outbound line, destination or address, an alias) loses only itself on a
+  missing, null, mistyped, empty or unlisted value or on differing copies; the
+  owner reads it with the fallback the whole row takes, and the row keeps its
+  other decisions unless a cell without Alone failed or no cell survived. An
+  optional cell with a bad value is likewise discarded alone. Refused cells
+  are journaled as `cell_rejected`, and a row that lost a cell authorizes no
+  glossary prose. Accepted neighbours keep their exact-response cache.
+  Description and operation rows additionally retain their entity memos,
+  recalled under the same rules. Independent arrows and target
   lines use the ordinary window cache. Aggregate architecture decisions use the
   same exact prepared-request cache and the owning closed-ref decoder for
   parts, merge and areas; there is no directory-assignment memo or browser
   validation step. Joint/peer decisions also retain their existing exact complete-row memos. Unknown
   keys are recorded and ignored; unused extra fields do not invalidate answers.
-  Unparseable envelopes and incomplete coupled assignments still refuse their
-  window.
+  A response without a rows array, or with no accepted row, is refused and
+  not cached, and each of its rows' reasons is journaled.
 
-Only complete coupled assignments can establish their shared result. Unknown set members are removed; an unresolved mandatory scalar or conflicting known assignment is refused, without first-wins repair or a manufactured semantic complement.
+Unknown set members are removed; an unresolved mandatory scalar or conflicting known assignment is refused, without first-wins repair or a manufactured semantic complement.
 
 A parts answer is not a coupled assignment: it is validated as independent
 file → part rows. An unknown ref is discarded, a file named twice in one part
