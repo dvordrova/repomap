@@ -358,12 +358,31 @@ func cleanText(text string) string {
 	return strings.Join(strings.FieldsFunc(text, space), " ")
 }
 
+// refList reads a list of refs: a JSON array of strings, or one string of
+// refs separated by spaces or commas, the form a table sequence cell takes.
+// Every ref is still checked by the caller. Anything else is not a list.
+func refList(raw json.RawMessage) ([]string, bool) {
+	if len(raw) == 0 {
+		return nil, true
+	}
+	var refs []string
+	if json.Unmarshal(raw, &refs) == nil {
+		return refs, true
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return strings.Fields(strings.ReplaceAll(text, ",", " ")), true
+	}
+	return nil, false
+}
+
 // decodeParts reads {"groups":[{"name":…,"files":[…]}]} over the file refs
 // one request listed. Every group is read on its own, and extra fields such
-// as an "about" are ignored. Only an answer that draws no part is refused
-// whole: it is not JSON, holds no groups, or no group holds a listed file of
-// its own (every ref unknown, such as a path, every group without a name, or
-// every file listed in two groups).
+// as an "about" are ignored; "files" may also be one string of refs. Only an
+// answer that draws no part is refused whole: it is not JSON, holds no
+// groups, or no group holds a listed file of its own (every ref unknown, such
+// as a path, every group without a name, or every file listed in two
+// different groups).
 func decodeParts(raw []byte, listed []string) (partsAnswer, error) {
 	var envelope struct {
 		Groups json.RawMessage `json:"groups"`
@@ -378,14 +397,19 @@ func decodeParts(raw []byte, listed []string) (partsAnswer, error) {
 	answer := partsAnswer{Groups: make([]partsGroup, 0, len(elements))}
 	for _, element := range elements {
 		var group struct {
-			Name  string   `json:"name"`
-			Files []string `json:"files"`
+			Name  string          `json:"name"`
+			Files json.RawMessage `json:"files"`
 		}
 		if err := json.Unmarshal(element, &group); err != nil {
 			answer.Groups = append(answer.Groups, partsGroup{Malformed: true})
 			continue
 		}
-		answer.Groups = append(answer.Groups, partsGroup{Name: cleanText(group.Name), Files: group.Files})
+		files, ok := refList(group.Files)
+		if !ok {
+			answer.Groups = append(answer.Groups, partsGroup{Malformed: true})
+			continue
+		}
+		answer.Groups = append(answer.Groups, partsGroup{Name: cleanText(group.Name), Files: files})
 	}
 	for _, files := range validatePartition(answer, listed).files {
 		if len(files) > 0 {
@@ -417,6 +441,10 @@ type partition struct {
 	// repeated are names given to more than one accepted group, ignoring
 	// case; each group keeps its own files.
 	repeated []string
+	// repeatedGroups are groups that restate an earlier accepted group: the
+	// same name, ignoring case, over the same set of listed files. The same
+	// statement twice is one answer, so the repeat is not drawn again.
+	repeatedGroups []string
 }
 
 func validatePartition(answer partsAnswer, listed []string) partition {
@@ -427,6 +455,7 @@ func validatePartition(answer partsAnswer, listed []string) partition {
 	result := partition{conflicts: map[string][]int{}}
 	holders := map[string][]int{}
 	unknown := map[string]bool{}
+	var sets [][]string // each accepted group's listed files, sorted
 	for position, group := range answer.Groups {
 		switch {
 		case group.Malformed:
@@ -453,9 +482,16 @@ func validatePartition(answer partsAnswer, listed []string) partition {
 			result.refused = append(result.refused, fmt.Sprintf("group %q holds no listed file", group.Name))
 			continue
 		}
+		set := slices.Clone(files)
+		sort.Strings(set)
+		if earlier := sameGroup(result.names, sets, group.Name, set); earlier >= 0 {
+			result.repeatedGroups = append(result.repeatedGroups, fmt.Sprintf("group %d repeats group %q", position+1, result.names[earlier]))
+			continue
+		}
 		index := len(result.names)
 		result.names = append(result.names, group.Name)
 		result.files = append(result.files, nil)
+		sets = append(sets, set)
 		for _, ref := range files {
 			holders[ref] = append(holders[ref], index)
 		}
@@ -481,6 +517,18 @@ func validatePartition(answer partsAnswer, listed []string) partition {
 		}
 	}
 	return result
+}
+
+// sameGroup returns the earlier accepted group with the same name, ignoring
+// case, and the same set of listed refs, or -1. Equal names alone never make
+// two groups one.
+func sameGroup(names []string, sets [][]string, name string, set []string) int {
+	for i := range names {
+		if strings.EqualFold(names[i], name) && slices.Equal(sets[i], set) {
+			return i
+		}
+	}
+	return -1
 }
 
 // designPartsCall is the parts request of one window of a target's files. An
@@ -717,6 +765,7 @@ func (r *reader) recordPartition(targetID string, result partition, responseRef 
 	note("part_unknown_ref", result.unknown, "refs the request did not list, discarded")
 	note("part_refused_group", result.refused, "groups not drawn")
 	note("part_repeated_name", result.repeated, "names given to two parts, each kept")
+	note("part_repeated_group", result.repeatedGroups, "groups given twice, drawn once")
 	switch {
 	case drawn == 1 && listed > 1:
 		fmt.Fprintf(&r.tables, "- one part holds every placed file; accepted as returned\n")

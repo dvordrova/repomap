@@ -117,31 +117,33 @@ func TestSavedPartsAnswersKeepEveryGoodFile(t *testing.T) {
 
 // A partition is validated file by file: an unknown ref is discarded, a file
 // named twice in one part is kept once, a file in two parts loses both
-// memberships, a group without a name is not drawn and its files are asked
-// again, two parts sharing a name both stay. Only an answer that draws no
-// part is refused whole: not JSON, no groups, or no group holding a listed
-// file of its own.
+// memberships, a group without a name or without a list of files is not
+// drawn and its files are asked again, two parts sharing a name over
+// different files both stay. Only an answer that draws no part is refused
+// whole: not JSON, no groups, or no group holding a listed file of its own.
 func TestPartitionRefusesOnlyWhatIsWrong(t *testing.T) {
-	listed := []string{"f1", "f2", "f3", "f4", "f5", "f6"}
+	listed := []string{"f1", "f2", "f3", "f4", "f5", "f6", "f7"}
 	answer, err := decodeParts([]byte(`{"groups":[
 		{"name":"Entry","files":["f1","f1","f9"]},
 		{"name":"Store","files":["f2","f3"]},
 		{"name":"store","files":["f3","f4"]},
 		{"name":"","files":["f5"]},
 		{"name":"Tools","files":"f6"},
+		{"name":"Broken","files":{"f7":true}},
 		{"name":"Ghost","files":["f99"]}]}`), listed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := validatePartition(answer, listed)
-	if !slices.Equal(result.files[0], []string{"f1"}) || !slices.Equal(result.files[1], []string{"f2"}) || !slices.Equal(result.files[2], []string{"f4"}) {
+	if len(result.files) != 4 || !slices.Equal(result.files[0], []string{"f1"}) || !slices.Equal(result.files[1], []string{"f2"}) ||
+		!slices.Equal(result.files[2], []string{"f4"}) || !slices.Equal(result.files[3], []string{"f6"}) {
 		t.Fatalf("placements: %v %v", result.names, result.files)
 	}
-	if !slices.Equal(result.conflicts["f3"], []int{1, 2}) || !slices.Equal(result.leftOut, []string{"f5", "f6"}) {
+	if !slices.Equal(result.conflicts["f3"], []int{1, 2}) || !slices.Equal(result.leftOut, []string{"f5", "f7"}) {
 		t.Fatalf("conflicts %v left out %v", result.conflicts, result.leftOut)
 	}
-	if !slices.Equal(result.unknown, []string{"f9", "f99"}) || len(result.refused) != 3 || len(result.repeated) != 2 {
-		t.Fatalf("unknown %v refused %v repeated %v", result.unknown, result.refused, result.repeated)
+	if !slices.Equal(result.unknown, []string{"f9", "f99"}) || len(result.refused) != 3 || len(result.repeated) != 2 || len(result.repeatedGroups) != 0 {
+		t.Fatalf("unknown %v refused %v repeated %v %v", result.unknown, result.refused, result.repeated, result.repeatedGroups)
 	}
 	for _, raw := range []string{
 		`not json`, `{"groups":[]}`, `{"parts":[{"name":"A","files":["f1"]}]}`,
@@ -150,6 +152,138 @@ func TestPartitionRefusesOnlyWhatIsWrong(t *testing.T) {
 		`{"groups":[{"name":"A","files":["f1","f2"]},{"name":"B","files":["f1","f2"]}]}`,
 	} {
 		if _, err := decodeParts([]byte(raw), []string{"f1", "f2"}); err == nil {
+			t.Fatalf("accepted %s", raw)
+		}
+	}
+}
+
+// A group stated twice, with the same name ignoring case and the same set of
+// listed files, is one answer: it is drawn once and the repeat is recorded.
+// Equal names alone never make two groups one, and different names over one
+// file never settle it: those files stay conflicts for the follow-up.
+func TestIdenticalRepeatedGroupIsDrawnOnce(t *testing.T) {
+	listed := []string{"f1", "f2", "f3"}
+	partition := func(raw string) partition {
+		t.Helper()
+		answer, err := decodeParts([]byte(raw), listed)
+		if err != nil {
+			t.Fatalf("%s refused: %v", raw, err)
+		}
+		return validatePartition(answer, listed)
+	}
+	repeated := partition(`{"groups":[{"name":"Board","files":["f1","f2"]},{"name":" board ","files":["f2","f1","f9"]},{"name":"Search","files":["f3"]}]}`)
+	if !slices.Equal(repeated.names, []string{"Board", "Search"}) || !slices.Equal(repeated.files[0], []string{"f1", "f2"}) ||
+		!slices.Equal(repeated.files[1], []string{"f3"}) || len(repeated.conflicts) != 0 || len(repeated.leftOut) != 0 ||
+		len(repeated.repeatedGroups) != 1 || len(repeated.repeated) != 0 {
+		t.Fatalf("repeated group: %+v", repeated)
+	}
+	otherName := partition(`{"groups":[{"name":"Store","files":["f1"]},{"name":"Cache","files":["f1"]},{"name":"Rest","files":["f2","f3"]}]}`)
+	if !slices.Equal(otherName.conflicts["f1"], []int{0, 1}) || len(otherName.repeatedGroups) != 0 {
+		t.Fatalf("different names over one file: %+v", otherName)
+	}
+	otherFiles := partition(`{"groups":[{"name":"Board","files":["f1","f2"]},{"name":"Board","files":["f2","f3"]}]}`)
+	if !slices.Equal(otherFiles.conflicts["f2"], []int{0, 1}) || !slices.Equal(otherFiles.files[0], []string{"f1"}) ||
+		!slices.Equal(otherFiles.files[1], []string{"f3"}) || len(otherFiles.repeatedGroups) != 0 {
+		t.Fatalf("one name over different files: %+v", otherFiles)
+	}
+
+	// An answer made only of one group stated twice draws it; two different
+	// groups over the same files hold no file of their own and stay refused.
+	answer, err := decodeParts([]byte(`{"groups":[{"name":"Board","files":["f1","f2"]},{"name":"Board","files":["f1","f2"]}]}`), []string{"f1", "f2"})
+	if err != nil {
+		t.Fatalf("a group stated twice was refused: %v", err)
+	}
+	if drawn := validatePartition(answer, []string{"f1", "f2"}); len(drawn.names) != 1 || !slices.Equal(drawn.files[0], []string{"f1", "f2"}) {
+		t.Fatalf("a group stated twice: %+v", drawn)
+	}
+	if _, err := decodeParts([]byte(`{"groups":[{"name":"Board","files":["f1","f2"]},{"name":"Game","files":["f1","f2"]}]}`), []string{"f1", "f2"}); err == nil ||
+		!strings.Contains(err.Error(), "no group holds a listed file of its own") {
+		t.Fatalf("two groups over the same files: %v", err)
+	}
+}
+
+// The target's map draws a group stated twice once and records the repeat
+// as part_repeated_group; nothing is left for the follow-up.
+func TestRepeatedGroupRecordedOnTheMap(t *testing.T) {
+	var mu sync.Mutex
+	placed := 0
+	provider := &tableProvider{placeFor: func(row map[string]any) string {
+		mu.Lock()
+		placed++
+		mu.Unlock()
+		options, _ := row["part_options"].([]any)
+		return fmt.Sprint(options[0])
+	}}
+	provider.partsResponse = func(files []map[string]any) string {
+		var refs []string
+		for _, file := range files {
+			refs = append(refs, fmt.Sprintf("%q", file["ref"]))
+		}
+		if !strings.HasPrefix(fmt.Sprint(files[0]["path"]), "svc/") {
+			return `{"groups":[{"name":"Client","files":[` + strings.Join(refs, ",") + `]}]}`
+		}
+		rest := refs[:len(refs)-1]
+		reversed := slices.Clone(rest)
+		slices.Reverse(reversed)
+		return `{"groups":[{"name":"Board","files":[` + strings.Join(rest, ",") + `]},` +
+			`{"name":"board","files":[` + strings.Join(reversed, ",") + `]},` +
+			`{"name":"Search","files":[` + refs[len(refs)-1] + `]}]}`
+	}
+	result, err := Read(t.Context(), twoTargetOptions(t, twoTargetGraph(t), provider))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := targetOf(t, result, "svc")
+	var titles []string
+	for _, box := range svc.Boxes {
+		titles = append(titles, box.Title)
+	}
+	slices.Sort(titles)
+	if !slices.Equal(titles, []string{"Board", "Search"}) || svc.MapFailure != "" || len(svc.OffMap) != 0 {
+		t.Fatalf("parts %v, failure %q, off the map %+v", titles, svc.MapFailure, svc.OffMap)
+	}
+	recorded := 0
+	for _, row := range result.Rejected {
+		if row.Stage == lines.StageZones && row.Target == "svc" {
+			if row.Kind != "part_repeated_group" {
+				t.Fatalf("unexpected annotation: %+v", row)
+			}
+			recorded++
+		}
+	}
+	if recorded != 1 || placed != 0 {
+		t.Fatalf("recorded %d repeats; %d files placed by the follow-up", recorded, placed)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A files string of refs separated by spaces or commas is that list, and
+// each ref is still checked; an object is not a list of files.
+func TestPartsFilesStringIsAListOfRefs(t *testing.T) {
+	listed := []string{"f1", "f2", "f3"}
+	for _, files := range []string{`"f1 f2"`, `"f1, f2"`, `" f1,f2 "`} {
+		answer, err := decodeParts([]byte(`{"groups":[{"name":"Board","files":`+files+`},{"name":"Search","files":["f3"]}]}`), listed)
+		if err != nil {
+			t.Fatalf("%s: %v", files, err)
+		}
+		if result := validatePartition(answer, listed); len(result.files) != 2 || !slices.Equal(result.files[0], []string{"f1", "f2"}) || len(result.refused) != 0 {
+			t.Fatalf("%s: %+v", files, result)
+		}
+	}
+	answer, err := decodeParts([]byte(`{"groups":[{"name":"Board","files":{"x":1}},{"name":"Ghost","files":"f99"},{"name":"Search","files":["f3"]}]}`), listed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := validatePartition(answer, listed)
+	if !slices.Equal(result.names, []string{"Search"}) || !slices.Equal(result.unknown, []string{"f99"}) ||
+		!slices.Equal(result.leftOut, []string{"f1", "f2"}) || len(result.refused) != 2 ||
+		!strings.Contains(result.refused[0], "not a name with a list of files") {
+		t.Fatalf("an object or an unknown ref in a string gained a part: %+v", result)
+	}
+	for _, raw := range []string{`{"groups":[{"name":"Board","files":"f99 f98"}]}`, `{"groups":[{"name":"Board","files":7}]}`} {
+		if _, err := decodeParts([]byte(raw), listed); err == nil {
 			t.Fatalf("accepted %s", raw)
 		}
 	}
@@ -488,6 +622,44 @@ func TestAreasAreAClosedSplitOfTheParts(t *testing.T) {
 	} {
 		if _, err := decodeAreas([]byte(raw), listed); (err != nil) != whole {
 			t.Fatalf("%s: %v", raw, err)
+		}
+	}
+}
+
+// An area stated twice, with the same name ignoring case and the same set of
+// listed parts, is drawn once and noted; two different areas that list one
+// part still leave that part alone. A parts string of refs is that list.
+func TestIdenticalRepeatedAreaIsDrawnOnce(t *testing.T) {
+	listed := []string{"p1", "p2", "p3", "p4"}
+	areas := func(raw string) validAreas {
+		t.Helper()
+		answer, err := decodeAreas([]byte(raw), listed)
+		if err != nil {
+			t.Fatalf("%s refused: %v", raw, err)
+		}
+		return validateAreas(answer, listed)
+	}
+	repeated := areas(`{"areas":[{"name":"Core","parts":["p1","p2"]},{"name":"core","parts":["p2","p1","p9"]},{"name":"Infra","parts":["p3","p4"]}]}`)
+	if !slices.Equal(repeated.names, []string{"Core", "Infra"}) || !slices.Equal(repeated.parts[0], []string{"p1", "p2"}) ||
+		!slices.Equal(repeated.parts[1], []string{"p3", "p4"}) || len(repeated.notes) != 1 || !strings.Contains(repeated.notes[0], "repeats") {
+		t.Fatalf("repeated area: %+v", repeated)
+	}
+	shared := areas(`{"areas":[{"name":"Core","parts":["p1","p2"]},{"name":"Infra","parts":["p2","p3"]}]}`)
+	if len(shared.names) != 0 || !slices.ContainsFunc(shared.notes, func(note string) bool { return strings.HasPrefix(note, "p2 is in two areas") }) {
+		t.Fatalf("a part in two different areas: %+v", shared)
+	}
+	sameName := areas(`{"areas":[{"name":"Core","parts":["p1","p2","p3"]},{"name":"Core","parts":["p3","p4"]}]}`)
+	if !slices.Equal(sameName.names, []string{"Core"}) || !slices.Equal(sameName.parts[0], []string{"p1", "p2"}) {
+		t.Fatalf("one name over different parts: %+v", sameName)
+	}
+	for _, parts := range []string{`"p1 p2"`, `"p1, p2"`} {
+		if read := areas(`{"areas":[{"name":"Core","parts":` + parts + `}]}`); !slices.Equal(read.names, []string{"Core"}) || !slices.Equal(read.parts[0], []string{"p1", "p2"}) {
+			t.Fatalf("%s: %+v", parts, read)
+		}
+	}
+	for _, raw := range []string{`{"areas":[{"name":"Core","parts":"Board Search"}]}`, `{"areas":[{"name":"Core","parts":{"p1":true}}]}`} {
+		if _, err := decodeAreas([]byte(raw), listed); err == nil {
+			t.Fatalf("accepted %s", raw)
 		}
 	}
 }

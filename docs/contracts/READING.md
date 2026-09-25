@@ -175,11 +175,16 @@ drawn, one closed-choice `atlas_placement` table places the unplaced files:
 a left-out file chooses among every drawn part, a conflicting one only
 between the parts that listed it, with its own calls and imports to and
 from placed files as part refs. An unknown, missing or refused choice leaves
-the file off the map with its reason. Only an answer that draws no part is
-refused whole: it is not JSON, holds no groups, has no group holding a
+the file off the map with its reason. A group given twice with the same name,
+ignoring case, and the same set of listed files is one answer: it is drawn
+once and the repeat is recorded as `part_repeated_group`. The same name over
+other files keeps both parts, and a file two different groups list is a
+conflict. A `files` string of refs separated by spaces or commas is read as
+that list, and each ref is still checked. Only an answer that draws no part
+is refused whole: it is not JSON, holds no groups, has no group holding a
 listed file of its own (every ref unknown, such as paths instead of refs,
-every group without a name, or every file in two groups), or ends at the
-output allowance. Such an answer is not asked again, split or accepted in
+every group without a name, or every file in two different groups), or ends
+at the output allowance. Such an answer is not asked again, split or accepted in
 part. A refused window is recorded as `window_rejected`; its files are left
 out for the follow-up when another window of the target drew parts. A target all of whose windows
 are refused gets an explicit `map_failure` with every file off the map, and
@@ -223,7 +228,11 @@ code, one `atlas_areas` request (`prompts/design_areas.md`) lists them with
 between them (`"p3 -> p7 (12)"`), and answers a closed split
 `{"areas":[{"name","parts"}]}`. It sets no count; a part may stay outside
 every area. A part in two areas or in none stands alone, an area of fewer
-than two parts is not drawn. An empty list leaves every part alone; an answer
+than two parts is not drawn. An area given twice with the same name,
+ignoring case, and the same set of listed parts is one answer, drawn once
+and noted; two different areas that list one part leave that part alone. A
+`parts` string of refs separated by spaces or commas is read as that list.
+An empty list leaves every part alone; an answer
 that is not JSON, has no list, or lists areas none of which holds a listed
 part (parts named instead of referenced, every area without a name) is
 refused whole, draws no areas and is recorded. Each area's line comes from the same

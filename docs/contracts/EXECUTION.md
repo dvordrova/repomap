@@ -147,13 +147,18 @@ file → part rows. An unknown ref is discarded, a file named twice in one part
 is kept once, a file listed in two parts loses both memberships (no first
 wins) and, like a file left out, goes to one closed-choice placement
 follow-up; a group without a name or without a listed file is not drawn and
-its files are left out. Only an answer that draws no part is refused whole:
-not JSON, no groups, or no group holding a listed file of its own. An areas
-answer follows the same rules at part level: a part in two areas or in none
-stands alone. A refused answer, including one cut at the output-token cap,
-is the window's refusal: it is not asked again, not accepted in part and not
-cached. Only a provider refusal of the request's input size splits a parts
-window.
+its files are left out. A group given twice with the same name, ignoring
+case, and the same set of listed files is one answer and is drawn once; two
+groups that differ in name or in files keep the rules above, so a file both
+list is a conflict. `files` may also be one string of refs separated by
+spaces or commas; each ref is still checked. Only an answer that draws no
+part is refused whole: not JSON, no groups, or no group holding a listed file
+of its own. An areas answer follows the same rules at part level: a part in
+two areas or in none stands alone, and an area given twice with the same name
+and the same parts is drawn once. A refused answer, including one cut at the
+output-token cap, is the window's refusal: it is not asked again, not
+accepted in part and not cached. Only a provider refusal of the request's
+input size splits a parts window.
 
 Validation preserves unambiguous formatting variants before checking meaning.
 Table choices with an advertised free-text tag normalize whitespace around its

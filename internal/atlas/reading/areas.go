@@ -71,10 +71,11 @@ func (answer areasAnswer) MarshalJSON() ([]byte, error) {
 }
 
 // decodeAreas reads {"areas":[{"name":…,"parts":[…]}]} over the part refs
-// one request listed. An empty list says every part stands alone, and each
-// area is read on its own. An answer is refused whole when it is not JSON,
-// has no areas list, or lists areas none of which holds a listed part (every
-// ref unknown, such as a part's name, or every area without a name).
+// one request listed; "parts" may also be one string of refs. An empty list
+// says every part stands alone, and each area is read on its own. An answer
+// is refused whole when it is not JSON, has no areas list, or lists areas
+// none of which holds a listed part (every ref unknown, such as a part's
+// name, or every area without a name).
 func decodeAreas(raw []byte, listed []string) (areasAnswer, error) {
 	var envelope struct {
 		Areas json.RawMessage `json:"areas"`
@@ -89,14 +90,19 @@ func decodeAreas(raw []byte, listed []string) (areasAnswer, error) {
 	answer := areasAnswer{Areas: make([]areasGroup, 0, len(elements))}
 	for _, element := range elements {
 		var area struct {
-			Name  string   `json:"name"`
-			Parts []string `json:"parts"`
+			Name  string          `json:"name"`
+			Parts json.RawMessage `json:"parts"`
 		}
 		if err := json.Unmarshal(element, &area); err != nil {
 			answer.Areas = append(answer.Areas, areasGroup{Malformed: true})
 			continue
 		}
-		answer.Areas = append(answer.Areas, areasGroup{Name: cleanText(area.Name), Parts: area.Parts})
+		parts, ok := refList(area.Parts)
+		if !ok {
+			answer.Areas = append(answer.Areas, areasGroup{Malformed: true})
+			continue
+		}
+		answer.Areas = append(answer.Areas, areasGroup{Name: cleanText(area.Name), Parts: parts})
 	}
 	if len(answer.Areas) > 0 && !validateAreas(answer, listed).holds {
 		return areasAnswer{}, fmt.Errorf("areas: no area holds a listed part")
@@ -106,7 +112,8 @@ func decodeAreas(raw []byte, listed []string) (areasAnswer, error) {
 
 // validAreas is a validated areas answer: a closed split of the listed
 // parts. A part in two areas or in none stands alone; an area of fewer than
-// two parts is that part, not an area.
+// two parts is that part, not an area. An area given twice, with the same
+// name ignoring case and the same set of listed parts, is one area.
 type validAreas struct {
 	names   []string
 	parts   [][]string
@@ -124,14 +131,13 @@ func validateAreas(answer areasAnswer, listed []string) validAreas {
 	}
 	holders := map[string][]int{}
 	var names []string
+	var sets [][]string // each read area's listed parts, sorted
 	var result validAreas
 	for position, area := range answer.Areas {
 		if area.Malformed || area.Name == "" {
 			result.notes = append(result.notes, fmt.Sprintf("area %d has no name or no list of parts", position+1))
 			continue
 		}
-		index := len(names)
-		names = append(names, area.Name)
 		var seen []string
 		for _, ref := range area.Parts {
 			ref = strings.TrimSpace(ref)
@@ -140,9 +146,20 @@ func validateAreas(answer areasAnswer, listed []string) validAreas {
 				result.unknown = appendUnique(result.unknown, ref)
 			case !slices.Contains(seen, ref):
 				seen = append(seen, ref)
-				holders[ref] = append(holders[ref], index)
-				result.holds = true
 			}
+		}
+		set := slices.Clone(seen)
+		sort.Strings(set)
+		if earlier := sameGroup(names, sets, area.Name, set); earlier >= 0 {
+			result.notes = append(result.notes, fmt.Sprintf("area %d repeats area %q, drawn once", position+1, names[earlier]))
+			continue
+		}
+		index := len(names)
+		names = append(names, area.Name)
+		sets = append(sets, set)
+		for _, ref := range seen {
+			holders[ref] = append(holders[ref], index)
+			result.holds = true
 		}
 	}
 	members := make([][]string, len(names))
