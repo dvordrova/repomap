@@ -127,7 +127,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         // an interior card. Give both the same column width before routing.
         const peer=record.branch==='area'||root.branch==='component'&&parent.get(id)===root.id&&!children.has(id);
         const min={width:Math.max(record.minimumWidth||0,derived?.width||0,peer?400:0),
-          height:Math.max(record.minimumHeight||0,derived?.height||0,peer&&!children.has(id)?record.height:0)};
+          height:Math.max(record.minimumHeight||0,derived?.height||0,peer&&!children.has(id)?Math.max(record.height,200):0)};
         if(min.width||min.height){local['elk.nodeSize.constraints']='MINIMUM_SIZE';local['elk.nodeSize.minimum']=`(${min.width},${min.height})`;}
         const result=children.has(id)?{id,children:children.get(id).map(tree),layoutOptions:local}
           :{id,width:Math.max(record.width,min.width),height:Math.max(record.height,min.height),layoutOptions:local};

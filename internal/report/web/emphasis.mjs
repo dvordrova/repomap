@@ -7,9 +7,13 @@ export function emphasis(view, hoverArea, leaves, edges) {
     mode==='selection'?view.selected:mode==='hover'?[hoverArea,...leaves(hoverArea)]:[]);
   focus.delete('');
   const activeEdges=new Set(),participants=new Set(focus);
+  // Looking at a frame (an area or a whole component) asks how it connects
+  // outward: its arrows crossing the border are dark, the ones between its
+  // own parts stay ordinary. A single part's arrows are all its own.
+  const frame=mode!=='operation'&&!!subject&&leaves(subject).some(id=>id!==subject);
   if(mode!=='search'&&mode!=='all')for(const edge of edges){
     const active=mode==='operation'?edge.relations.some(r=>r.operations?.includes(view.operation)):
-      focus.has(edge.from)||focus.has(edge.to);
+      frame?focus.has(edge.from)!==focus.has(edge.to):focus.has(edge.from)||focus.has(edge.to);
     if(active){activeEdges.add(edge.id);participants.add(edge.from);participants.add(edge.to);}
   }
   const readingOutside=mode==='operation'&&!!view.scope&&!participants.has(view.scope)&&

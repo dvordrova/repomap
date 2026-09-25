@@ -63,8 +63,12 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     const label=wrap(n.title,152,'12px system-ui');
     const metadata=[n.language,n.componentKind?translate(n.componentKind):''].filter(Boolean).join(' · ');
     const roleLines=n.role?wrap(n.role,228,'600 13px system-ui'):[];
-    const description=n.branch==='component'||n.category==='component'?n.summary:'';
-    const descriptionLines=description?wrap(description,228,'13px system-ui'):[];
+    // A part's name alone does not say what it is: its one-sentence
+    // description stands under the name, at most three lines.
+    const part=!frame&&!n.activation&&!n.branch&&n.category==='part';
+    const description=n.branch==='component'||n.category==='component'||part?n.summary:'';
+    let descriptionLines=description?wrap(description,228,'13px system-ui'):[];
+    if(part&&descriptionLines.length>3)descriptionLines=[...descriptionLines.slice(0,2),descriptionLines[2].replace(/\s*\S*$/,'')+' …'];
     const subtitle=n.category==='external'&&!n.title.endsWith(n.subtitle||'')?n.subtitle:'';
     const subtitleLines=subtitle?wrap(subtitle,228,'13px system-ui'):[];
     const names=n.branch==='component'?childNames(n.id):[];

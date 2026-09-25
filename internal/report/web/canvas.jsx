@@ -81,6 +81,9 @@ function Part({data}) {
   // step of a zoom.
   const far=useStore(state=>box.width*(scale||1)*state.transform[2]>=860);
   const deep=far&&!data.activation&&data.symbols?.length>0;
+  // A loose part's heading is fitted to its box; its description takes the
+  // whole lines left under the title and the zoom mark's row.
+  const standaloneLines=heading?Math.floor((heading.height-12-heading.title.split('\n').length*16-16)/15):0;
   if(deep)return <div className={`flow-part flow-part-deep flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''}`}
       style={{width:box.width,height:box.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
@@ -93,7 +96,7 @@ function Part({data}) {
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
     <strong data-input-name={data.activation?'':undefined}>{heading?.title||data.title}</strong>
-    {data.description&&<div className="flow-description">{data.description}</div>}
+    {data.description&&(!heading||standaloneLines>0)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines}:undefined}>{heading?data.description.replace(/\n/g,' '):data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
     {data.symbols?.length>0&&!data.activation&&<button type="button" className="flow-part-zoom nopan" aria-label={t('Zoom into {0}',data.name||data.title)}
       onClick={event=>{event.stopPropagation();data.zoomInto?.();}}>

@@ -18,11 +18,11 @@ test('hovering a child retains its component frame without borrowing sibling arr
   assert.deepEqual([...focusAncestors(new Set(['handler']),placed)],['area','front']);
   assert.deepEqual([...focusAncestors(new Set(),placed)],[]);
 });
-test('hover names and marks the whole area, with exactly the endpoints of its arrows',()=>{
+test('hover names the whole area and darkens only the arrows that cross its border',()=>{
   const result=emphasis(empty,'area',leaves,edges);
   assert.equal(result.mode,'hover');assert.equal(result.subject,'area');
   assert.deepEqual([...result.focus],['area','handler','paint']);
-  assert.deepEqual([...result.activeEdges],['hp','ht','pt']);
+  assert.deepEqual([...result.activeEdges],['ht','pt'],'handler -> paint stays inside the area');
   assert.ok(result.participants.has('test'));
   assert.ok(!result.participants.has('unrelated'));
 });
