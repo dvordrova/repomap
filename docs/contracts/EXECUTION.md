@@ -37,7 +37,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 ## Parallelism and provider failures
 
 - Execute independent stage-planned batch items through the shared bounded LLM
-  worker pool, with the ordinary product limit set to four. Preserve the
+  worker pool, with the ordinary product limit set to twelve (owner decision
+  2026-09-25; it was four). Preserve the
   caller's item index as the only in-memory result slot and replay observer
   events in that order; do not add a random batch identity to semantic or cache
   state. Every provider transport attempt acquires the run-shared adaptive
@@ -46,8 +47,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   relative `retry after`/`reset after` duration in its error message. Later
   429s can extend but never shorten that shared cooldown. Already-started
   attempts finish while retries and new calls wait and then become serial.
-  After cooldown, four successes in the current gate epoch raise concurrency
-  from one to two; four more restore four. A new 429 resets recovery, and older
+  After cooldown, every four successes in the current gate epoch double
+  concurrency from one, up to the configured twelve. A new 429 resets recovery, and older
   in-flight successes cannot shorten that new cooldown or restore concurrency.
   Cancellation interrupts the wait; other retryable failures retain their
   short backoff. `ExecuteJSONBatch` fails closed: a terminal item

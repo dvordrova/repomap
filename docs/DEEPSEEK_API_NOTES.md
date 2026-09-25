@@ -111,15 +111,16 @@ saved request bytes rather than applying new environment settings to them.
   Invalid, negative and unitless body values are ignored. The original error
   bytes remain unchanged. Other HTTP statuses do not use body wait hints.
 - Independent batch calls start behind a run-shared bounded attempt gate. The
-  ordinary product limit is four live provider attempts. A DeepSeek HTTP 429
+  ordinary product limit is twelve live provider attempts (four before
+  2026-09-25). A DeepSeek HTTP 429
   atomically collapses that gate to one and sets the same cooldown before
   releasing the failed attempt. New calls in other batches sharing this gate
   also wait; another 429 may extend, but never shorten, the cooldown.
   Attempts already on the wire are not
   replayed or canceled merely because of the 429; once they finish, that retry
-  and new attempts are initially serialized. After the cooldown, four successful
-  attempts from the current gate epoch raise concurrency to two, and four more
-  restore the configured limit of four. A later 429 starts a new epoch; older
+  and new attempts are initially serialized. After the cooldown, every four
+  successful attempts from the current gate epoch double concurrency, up to the
+  configured limit of twelve. A later 429 starts a new epoch; older
   in-flight successes cannot restore that gate. If retries are exhausted,
   the terminal batch item cancels the batch child context, stops queued work,
   and asks in-flight HTTP requests to terminate through their request context.

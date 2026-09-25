@@ -9,10 +9,11 @@ import (
 	"time"
 )
 
-// DefaultBatchConcurrency is the conservative product concurrency for
-// independent model calls. Executor's zero value remains sequential so tests,
-// fixtures, and callers that have not opted in retain their original behavior.
-const DefaultBatchConcurrency = 4
+// DefaultBatchConcurrency is the product concurrency for independent model
+// calls (owner decision 2026-09-25; a twelve-attempt self-run saw no HTTP
+// 429). Executor's zero value remains sequential so tests, fixtures, and
+// callers that have not opted in retain their original behavior.
+const DefaultBatchConcurrency = 12
 
 // DefaultMaxOutputTokens is the shared request allowance for analytical output.
 // The provider applies its configured ceiling.
