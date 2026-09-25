@@ -32,8 +32,9 @@ var readingStages = map[string]func(*reader, context.Context) error{
 // the chains of one phase read nothing another writes, so they run at once
 // and join before the next phase. After the files, the symbols; the outside
 // symbols, the boundaries their roles make and the layers between them; and
-// the zones are such chains. The arrows read all three. Flattened, the
-// phases are the step order: tables.md, rejected rows, compact IDs and
+// the zones are such chains. The arrows read all three. After the core, the
+// keys of each part and the targets with their joints are two more. Flattened,
+// the phases are the step order: tables.md, rejected rows, compact IDs and
 // every request stay those of the serial walk.
 var readingPhases = [][][]string{
 	{{lines.StageDirectories}},
@@ -41,9 +42,7 @@ var readingPhases = [][][]string{
 	{{lines.StageSymbols}, {lines.StageAPI, lines.StageBoundaries, lines.StageLayers}, {lines.StageZones}},
 	{{lines.StageArrows}},
 	{{lines.StageCore}},
-	{{lines.StageKeys}},
-	{{lines.StageTargets}},
-	{{lines.StageJoints}},
+	{{lines.StageKeys}, {lines.StageTargets, lines.StageJoints}},
 }
 
 // recallStages restore remembered descriptions before question-only reading,
@@ -193,6 +192,12 @@ func (r *reader) join(view *reader, chain []string) {
 			r.boxes, r.designBoxOf, r.zones = view.boxes, view.designBoxOf, view.zones
 			r.designFiles, r.designSubjects = view.designFiles, view.designSubjects
 			r.nextPart, r.nextZone = view.nextPart, view.nextZone
+		case lines.StageKeys:
+			r.partKeys = view.partKeys
+		case lines.StageTargets:
+			r.targets = view.targets
+		case lines.StageJoints:
+			r.joints, r.nextJoint = view.joints, view.nextJoint
 		}
 	}
 }

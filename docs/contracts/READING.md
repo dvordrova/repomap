@@ -49,7 +49,9 @@ new description or selection requests.
   the drawn arrows, the portfolio, the joints. Stages with no data dependency
   run concurrently: after the files, the symbols; the outside symbols with the
   boundaries their roles make and the layers between them; and the zones read
-  nothing of one another and join before the arrows, which read them all. Each
+  nothing of one another and join before the arrows, which read them all.
+  After the core, the keys of each part and the targets with their joints
+  likewise run at once. Each
   prints, counts and rejects into its own record, added at the join in step
   order, so `tables.md` keeps step order and the requests, compact IDs,
   knowledge, the reading's rejected rows and atlas are those of the serial
