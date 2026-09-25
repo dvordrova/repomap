@@ -170,14 +170,19 @@ func (r *reader) writeQuestionExchange(index int, exchange questionbatch.Exchang
 		data []byte
 	}{
 		{"prompt.md", []byte(exchange.System)}, {"input.json", exchange.Input},
-		{"request.json", exchange.Outcome.Request}, {"response.json", exchange.Outcome.Response},
 	}
-	for _, file := range files {
-		if len(file.data) > 0 {
-			if err := r.writeWindowFile(window, file.name, file.data); err != nil {
-				return err
+	writeFiles := func() error {
+		for _, file := range files {
+			if len(file.data) > 0 {
+				if err := r.writeWindowFile(window, file.name, file.data); err != nil {
+					return err
+				}
 			}
 		}
+		return r.writeWindowExchange(window, exchange.Outcome.Request, exchange.Outcome.Response, exchange.Err != nil)
+	}
+	if err := writeFiles(); err != nil {
+		return err
 	}
 	source := atlas.SourceModel
 	if exchange.Outcome.Cached {
@@ -208,12 +213,8 @@ func (r *reader) writeQuestionExchange(index int, exchange questionbatch.Exchang
 			return fmt.Errorf("question: exchange has an invalid question position")
 		}
 		r.questionKey = fmt.Sprintf("%x", sha256.Sum256([]byte(questions[q])))
-		for _, file := range files {
-			if len(file.data) > 0 {
-				if err := r.writeWindowFile(window, file.name, file.data); err != nil {
-					return err
-				}
-			}
+		if err := writeFiles(); err != nil {
+			return err
 		}
 	}
 	r.questionKey = ""

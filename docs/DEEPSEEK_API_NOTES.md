@@ -176,7 +176,9 @@ by the configured client. Streaming requests are unsupported.
 
 Replay always calls the provider and replaces the shared exact-request answer
 on successful provider-envelope and JSON validation. Owning stages revalidate
-their own schemas on reuse. Request/response payloads are content-addressed in
-`.llm-cache/payloads`; journal records reference those files. Use the original
+their own schemas on reuse. Accepted request/response payloads are
+content-addressed in `.llm-cache/payloads`, and a refused replay stores none.
+Journal records reference those files, or the run's own `payloads/` copy of a
+refused exchange, which is also a valid replay file. Use the original
 run's `--debug-dir` to update the same cache. Existing run snapshots are not
 rewritten. A failed replay keeps the previous accepted answer.

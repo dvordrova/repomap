@@ -161,7 +161,8 @@ question reuses existing retrieval decisions but changes the common answer batch
 Inspect `tables.md`, or compare `tables/*.result.json`: the latter holds
 normalized cells with source IDs, paths and lines, or an explicit rejection
 reason. The matching `.prompt.ref.json`, `.request.ref.json` and `.response.ref.json`
-link to the exact bytes in the shared `.llm-cache/payloads/` directory.
+link to the exact bytes in the shared `.llm-cache/payloads/` directory; a
+refused window's request and response link the run's own `payloads/` copy.
 `.input.ref.json` holds the table input before the provider envelope is built. `reading-result.json` records completion,
 stage counts and wall time. Stopping early produces no partial `atlas.json`
 and no HTML. These artifacts are for development, not another reader UI.
@@ -412,18 +413,22 @@ exchange's `request.file`. Replay always contacts the provider through the same
 configured client. The exact saved model, messages, token limit, temperature,
 thinking mode and response format are preserved; endpoint, authentication,
 timeout and retries come from the client configuration. Assistant content goes
-to stdout; shared request/response paths, timing and token usage go to stderr.
+to stdout; an accepted answer's shared request/response paths, timing and token
+usage go to stderr. A refused replay stores nothing in the cache.
 Replay checks the provider envelope and JSON. The owning stage validates its
 own schema when it next uses that answer. A failed replay leaves the previous
 accepted answer available. It generates no report and does not rewrite an old
 run; the next reading uses the updated answer.
 
-Requests and responses are stored once by content hash under
-`.llm-cache/payloads/`. Run directories contain exchange metadata and relative
-references, along with their normalized results and report snapshot. Cache
-clear removes these payloads too: existing HTML and result snapshots remain,
-but their raw-exchange links stop resolving. `--no-cache` still saves shared
-payloads for diagnostics, without updating reusable answer pointers.
+Accepted requests and responses are stored once by content hash under
+`.llm-cache/payloads/`. A refused or failed exchange is kept for debugging in
+its run's own `payloads/` directory instead: it is no cache entry, the next run
+asks again, and cache clear leaves it. Run directories contain exchange
+metadata and relative references, along with their normalized results and
+report snapshot. Cache clear removes the shared payloads: existing HTML, result
+snapshots and refused exchanges remain, but links to accepted exchanges stop
+resolving. `--no-cache` still saves accepted answers' shared payloads for
+diagnostics, without updating reusable answer pointers.
 
 Repository input is trusted. repomap does not scan it for credentials, and it
 does not redact what it writes: whatever a prompt or a response contains is

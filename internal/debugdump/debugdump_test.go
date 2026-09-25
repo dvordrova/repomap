@@ -66,6 +66,64 @@ func TestSemanticExchangesSharePayloadsAcrossRunDirectories(t *testing.T) {
 	}
 }
 
+// Only an accepted answer's bytes are shared with the cache. A refused,
+// failed or canceled exchange keeps its bytes in its own run, so cache clear
+// cannot take a developer's evidence and the cache holds nothing it owns.
+func TestSemanticExchangeKeepsUnacceptedPayloadsInItsRun(t *testing.T) {
+	t.Parallel()
+
+	cacheHit := validExchange(SemanticStageOrientation)
+	cacheHit.State, cacheHit.ValidationCode = SemanticStateCacheHit, SemanticValidationCache
+	cacheHit.RequestProvenance, cacheHit.SemanticCalls, cacheHit.TransportAttempts = SemanticRequestPrepared, 0, 0
+	refused := func(state, code string, response []byte) SemanticExchange {
+		exchange := validExchange(SemanticStageOrientation)
+		exchange.State, exchange.ValidationCode, exchange.Response = state, code, response
+		if response == nil {
+			exchange.ResponseUnavailable = &SemanticUnavailable{Code: SemanticUnavailableCanceled}
+		}
+		return exchange
+	}
+	for _, exchange := range []SemanticExchange{
+		validExchange(SemanticStageOrientation),
+		cacheHit,
+		refused(SemanticStateRejected, SemanticValidationDecode, []byte("not json")),
+		refused(SemanticStateRejected, SemanticValidationResponse, []byte(`{"rows":[]}`)),
+		refused(SemanticStateProviderFailed, SemanticValidationProvider, []byte("<html>upstream exploded</html>")),
+		refused(SemanticStateCanceled, SemanticValidationCanceled, nil),
+	} {
+		t.Run(exchange.State+"/"+exchange.ValidationCode, func(t *testing.T) {
+			root := t.TempDir()
+			writer, err := NewWriter(root, "run")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer writer.Close()
+			reference := writer.RecordSemanticExchange(exchange)
+			runDir := filepath.Join(root, writer.RunID)
+			record := readOnlySemanticExchange(t, runDir, reference)
+			accepted := exchange.State == SemanticStateAccepted || exchange.State == SemanticStateCacheHit
+			for _, payload := range []SemanticPayloadRecord{record.Request, record.Response} {
+				path := filepath.Clean(filepath.Join(runDir, filepath.Dir(reference), payload.File))
+				if inRun := strings.HasPrefix(path, runDir+string(filepath.Separator)); inRun == accepted {
+					t.Fatalf("payload %s: in run = %t, want %t", path, inRun, !accepted)
+				}
+			}
+			if accepted {
+				return
+			}
+			if err := os.RemoveAll(filepath.Join(root, ".llm-cache")); err != nil {
+				t.Fatal(err)
+			}
+			assertSavedPayload(t, runDir, reference, record.Request, exchange.Request)
+			if exchange.Response != nil {
+				assertSavedPayload(t, runDir, reference, record.Response, exchange.Response)
+			} else if _, err := os.Stat(filepath.Join(runDir, filepath.Dir(reference), record.Response.File)); err != nil {
+				t.Fatalf("unavailable-response marker lost: %v", err)
+			}
+		})
+	}
+}
+
 func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 	t.Parallel()
 

@@ -700,13 +700,15 @@ func (r *reader) askParts(ctx context.Context, view *designView, round int) ([]p
 				data []byte
 			}{
 				{"prompt.md", []byte(calls[i].Prompt.System)}, {"input.json", []byte(calls[i].Prompt.User)},
-				{"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response},
 			} {
 				if len(item.data) > 0 {
 					if err := r.writeWindowFile(window, item.name, item.data); err != nil {
 						return nil, err
 					}
 				}
+			}
+			if err := r.writeWindowExchange(window, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+				return nil, err
 			}
 			responseRef := path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))
 			fmt.Fprintf(&r.tables, "## %s · round %d · window %d · %s\n\n", lines.StageZones, round, window.Index, path.Join(atlas.TablesDir, r.windowFileName(window, "request.ref.json")))
@@ -1394,17 +1396,13 @@ func (r *reader) describe(ctx context.Context, stage string, round int, calls []
 		} else {
 			use.Live++
 		}
-		for _, item := range []struct {
-			name string
-			data []byte
-		}{
-			{"input.json", []byte(calls[i].Prompt.User)}, {"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response},
-		} {
-			if len(item.data) > 0 {
-				if err := r.writeWindowFile(window, item.name, item.data); err != nil {
-					return nil, err
-				}
+		if input := []byte(calls[i].Prompt.User); len(input) > 0 {
+			if err := r.writeWindowFile(window, "input.json", input); err != nil {
+				return nil, err
 			}
+		}
+		if err := r.writeWindowExchange(window, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+			return nil, err
 		}
 		var input describeInput
 		_ = json.Unmarshal([]byte(calls[i].Prompt.User), &input)

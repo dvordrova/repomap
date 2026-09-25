@@ -826,13 +826,15 @@ func (r *reader) executeLearning(ctx context.Context, pools []learningRequest, p
 				data []byte
 			}{
 				{"prompt.md", []byte(prompt)}, {"input.json", []byte(calls[i].Prompt.User)},
-				{"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response},
 			} {
 				if len(item.data) > 0 {
 					if err := r.writeWindowFile(window, item.name, item.data); err != nil {
 						return err
 					}
 				}
+			}
+			if err := r.writeWindowExchange(window, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+				return err
 			}
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -1646,15 +1648,8 @@ func (r *reader) mergeLearning(ctx context.Context) error {
 	}
 	for i, result := range results {
 		current := windows[i]
-		for _, item := range []struct {
-			name string
-			data []byte
-		}{{"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response}} {
-			if len(item.data) > 0 {
-				if err := r.writeWindowFile(current.window, item.name, item.data); err != nil {
-					return err
-				}
-			}
+		if err := r.writeWindowExchange(current.window, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+			return err
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()

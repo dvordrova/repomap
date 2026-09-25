@@ -274,7 +274,8 @@ const (
 type Event struct {
 	ResponseRejections []ResponseRejection
 	HTTPResponse       *HTTPResponse
-	// CacheRoot selects the shared exchange store for a run journal.
+	// CacheRoot selects the shared payload store a run journal links for an
+	// accepted exchange; a refused exchange's bytes stay in the run.
 	CacheRoot      string
 	Kind           EventKind
 	Source         EventSource

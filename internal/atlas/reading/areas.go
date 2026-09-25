@@ -319,13 +319,15 @@ func (r *reader) readAreas(ctx context.Context) error {
 			data []byte
 		}{
 			{"prompt.md", []byte(calls[i].Prompt.System)}, {"input.json", []byte(calls[i].Prompt.User)},
-			{"request.json", result.Outcome.Request}, {"response.json", result.Outcome.Response},
 		} {
 			if len(item.data) > 0 {
 				if err := r.writeWindowFile(window, item.name, item.data); err != nil {
 					return err
 				}
 			}
+		}
+		if err := r.writeWindowExchange(window, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+			return err
 		}
 		responseRef := path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))
 		fmt.Fprintf(&r.tables, "## %s · round %d · window 0 · %s\n\n", lines.StageAreas, target.round, path.Join(atlas.TablesDir, r.windowFileName(window, "request.ref.json")))

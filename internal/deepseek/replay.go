@@ -23,7 +23,7 @@ func PrepareReplay(raw []byte) (llm.Prepared, error) {
 		return llm.Prepared{}, fmt.Errorf("replay: invalid provider request JSON: %w", err)
 	}
 	if strings.TrimSpace(request.Model) == "" || len(request.Messages) == 0 || request.MaxTokens <= 0 || request.Temperature == nil {
-		return llm.Prepared{}, fmt.Errorf("replay: request needs model, messages, max_tokens and temperature; use .llm-cache/payloads/<request-sha>.json, not a tables/ input")
+		return llm.Prepared{}, fmt.Errorf("replay: request needs model, messages, max_tokens and temperature; use the payload a request.ref.json or journal names (.llm-cache/payloads or the run's payloads), not a tables/ input")
 	}
 	for i, message := range request.Messages {
 		if strings.TrimSpace(message.Role) == "" || strings.TrimSpace(message.Content) == "" {

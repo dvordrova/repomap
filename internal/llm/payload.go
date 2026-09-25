@@ -2,23 +2,42 @@ package llm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 )
 
+// RunPayloadDirectoryName holds, inside one run directory, the exact bytes of
+// that run's exchanges that no accepted cache record owns.
+const RunPayloadDirectoryName = "payloads"
+
 // SavePayload stores exact request or response bytes once in the shared cache.
-// Run journals retain references to these files, including failed exchanges.
+// Accepted records and the run journals of accepted exchanges reference them.
 func SavePayload(rootDir string, raw []byte) (string, error) {
 	cacheDir, err := ensureCacheDirectory(rootDir)
 	if err != nil {
 		return "", err
 	}
+	return savePayloadIn(filepath.Join(cacheDir, "payloads"), raw)
+}
+
+// SaveRunPayload stores the exact bytes of a refused or failed exchange once
+// in its own run directory. No accepted record owns them, so they are a
+// developer's diagnostics, not the user's cache: cache clear leaves them and a
+// later run never reads them.
+func SaveRunPayload(runDir string, raw []byte) (string, error) {
+	if runDir == "" {
+		return "", errors.New("llm: run directory is empty")
+	}
+	return savePayloadIn(filepath.Join(runDir, RunPayloadDirectoryName), raw)
+}
+
+func savePayloadIn(dir string, raw []byte) (string, error) {
 	extension := ".txt"
 	if json.Valid(raw) {
 		extension = ".json"
 	}
-	dir := filepath.Join(cacheDir, "payloads")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}

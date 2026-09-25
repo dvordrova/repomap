@@ -159,7 +159,7 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 	files := []struct {
 		name string
 		data []byte
-	}{{"prompt.md", []byte(def.System)}, {"input.json", window.table.Request}, {"request.json", outcome.Request}, {"response.json", outcome.Response}, {"result.json", result}}
+	}{{"prompt.md", []byte(def.System)}, {"input.json", window.table.Request}, {"result.json", result}}
 	r.questionKey = ""
 	defer func() { r.questionKey = "" }()
 	// Question-keyed references all point to the same immutable complete bytes.
@@ -181,6 +181,9 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 					return err
 				}
 			}
+		}
+		if err := r.writeWindowExchange(window.table, outcome.Request, outcome.Response, failure != nil); err != nil {
+			return err
 		}
 	}
 	r.questionKey = ""

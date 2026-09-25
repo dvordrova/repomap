@@ -574,11 +574,19 @@ func (w *Writer) writeSemanticExchange(
 	if cacheRoot == "" {
 		cacheRoot = w.BaseDir
 	}
+	// An accepted answer's bytes are its cache record's payloads, shared by
+	// every run that reuses it. A refused or failed exchange's bytes belong to
+	// no record: they stay in this run for whoever fixes the decoder, and
+	// cache clear leaves them. Both are linked by the same relative file.
+	save := func(raw []byte) (string, error) { return llm.SaveRunPayload(w.runDir, raw) }
+	if exchange.State == SemanticStateAccepted || exchange.State == SemanticStateCacheHit {
+		save = func(raw []byte) (string, error) { return llm.SavePayload(cacheRoot, raw) }
+	}
 	for _, payload := range []struct {
 		data   []byte
 		record *SemanticPayloadRecord
 	}{{request.data, &record.Request}, {response.data, &record.Response}} {
-		filename, err := llm.SavePayload(cacheRoot, payload.data)
+		filename, err := save(payload.data)
 		if err != nil {
 			return nil, err
 		}

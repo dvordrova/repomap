@@ -815,15 +815,8 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	results := llm.ExecuteJSONEach(ctx, executor, provider, calls)
 	for i, window := range windows {
 		result := results[i]
-		if len(result.Outcome.Request) > 0 {
-			if err := r.writeWindowFile(window, "request.json", result.Outcome.Request); err != nil {
-				return nil, err
-			}
-		}
-		if len(result.Outcome.Response) > 0 {
-			if err := r.writeWindowFile(window, "response.json", result.Outcome.Response); err != nil {
-				return nil, err
-			}
+		if err := r.writeWindowExchange(window, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+			return nil, err
 		}
 		if result.Err == nil {
 			value := result.Outcome.Value
@@ -974,12 +967,38 @@ func (r *reader) windowFileName(window table.Window, suffix string) string {
 }
 
 func (r *reader) writeWindowFile(window table.Window, suffix string, data []byte) error {
+	return r.saveWindowFile(window, suffix, data, false)
+}
+
+// writeWindowExchange references the exact request and response of one
+// window's model exchange. A refused answer's bytes belong to no accepted
+// cache record: they are saved in this run, beside its journal, where cache
+// clear leaves them and no later run reads them.
+func (r *reader) writeWindowExchange(window table.Window, request, response []byte, refused bool) error {
+	for _, item := range []struct {
+		suffix string
+		data   []byte
+	}{{"request.json", request}, {"response.json", response}} {
+		if len(item.data) > 0 {
+			if err := r.saveWindowFile(window, item.suffix, item.data, refused); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (r *reader) saveWindowFile(window table.Window, suffix string, data []byte, inRun bool) error {
 	if suffix != "result.json" {
 		cacheRoot := r.opts.Executor.RootDir
 		if cacheRoot == "" {
 			cacheRoot = filepath.Dir(r.opts.OwnerRunDir)
 		}
-		filename, err := llm.SavePayload(cacheRoot, data)
+		save := func(raw []byte) (string, error) { return llm.SavePayload(cacheRoot, raw) }
+		if inRun {
+			save = func(raw []byte) (string, error) { return llm.SaveRunPayload(r.opts.OwnerRunDir, raw) }
+		}
+		filename, err := save(data)
 		if err != nil {
 			return err
 		}

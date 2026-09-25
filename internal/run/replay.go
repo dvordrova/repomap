@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/dvordrova/repomap/internal/deepseek"
@@ -32,7 +33,7 @@ func runReplayWithProvider(ctx context.Context, args []string, stdout, stderr io
 func runReplayConfigured(ctx context.Context, args []string, stdout io.Writer, factory targetPortfolioProviderFactory, output *runOutput) error {
 	fs := flag.NewFlagSet("repomap replay", flag.ContinueOnError)
 	fs.SetOutput(stdout)
-	filename := fs.String("file", "", "saved .llm-cache/payloads/<request-sha>.json")
+	filename := fs.String("file", "", "saved request payload: .llm-cache/payloads/<request-sha>.json, or a run's payloads/<request-sha>.json")
 	cacheRoot := fs.String("debug-dir", defaultDebugDir(), "shared model cache directory")
 	fs.Usage = func() {
 		fmt.Fprintln(stdout, "Usage: repomap replay --file REQUEST.json")
@@ -78,16 +79,25 @@ func runReplayConfigured(ctx context.Context, args []string, stdout io.Writer, f
 		}
 	}
 	metrics := completion.Metrics
-	requestPath, err := llm.SavePayload(*cacheRoot, raw)
+	// An accepted replay's bytes are its cache record's payloads. A refused
+	// one stored nothing: its request is the given file, its answer is above.
+	requestPath, err := filepath.Abs(*filename)
 	if err != nil {
 		return err
 	}
-	output.Stage("Request", requestPath)
-	if len(completion.Response) > 0 {
-		responsePath, err := llm.SavePayload(*cacheRoot, completion.Response)
-		if err != nil {
+	responsePath := ""
+	if callErr == nil {
+		if requestPath, err = llm.SavePayload(*cacheRoot, raw); err != nil {
 			return err
 		}
+		if len(completion.Response) > 0 {
+			if responsePath, err = llm.SavePayload(*cacheRoot, completion.Response); err != nil {
+				return err
+			}
+		}
+	}
+	output.Stage("Request", requestPath)
+	if responsePath != "" {
 		output.Stage("Response", responsePath)
 	}
 	output.Stage("Replay", fmt.Sprintf("%s; %d attempts; finish=%s; input=%d output=%d reasoning=%d tokens",

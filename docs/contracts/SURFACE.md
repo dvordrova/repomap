@@ -17,7 +17,9 @@ supported user-facing surface is deliberately small:
 - `repomap replay --file REQUEST.json [--debug-dir DIR]` resends exact saved
   provider bytes through the configured client and refreshes its cached answer.
 - `repomap cache clear [--debug-dir DIR]` clears persistent model-response
-  caches.
+  caches. Run directories remain, with each run's own `payloads/`: the exact
+  bytes of its refused or failed exchanges stay readable for debugging, while
+  links to accepted answers' shared payloads stop resolving.
 - `repomap render RUN_DIR --output FILE.html` applies the current ordinary
   report templates to a saved common report, manifest and saved translations.
   It performs no analysis, reads no model configuration or response cache, and
@@ -146,9 +148,10 @@ the original error still propagates unchanged.
 After a failed model exchange is committed, the same journal recorder supplies
 direct absolute request, raw-response and journal paths to the run console.
 An unavailable body is identified explicitly rather than linking its marker as
-raw content. Buffered first-layer failures notify only after their journal is
-flushed; accepted answers with discarded optional terminology do not emit a
-failure notice. Payloads are not copied or reformatted for the console.
+raw content. A failed exchange's bodies live in the run's own `payloads/`, so
+these paths survive `cache clear`. Buffered first-layer failures notify only
+after their journal is flushed; accepted answers with discarded optional
+terminology do not emit a failure notice. Payloads are not copied or reformatted for the console.
 The provider carries the last transport attempt's HTTP status and selected
 diagnostic response headers through the shared executor into this journal and
 notice. Request/trace/correlation IDs, retry/rate-limit headers, date and server

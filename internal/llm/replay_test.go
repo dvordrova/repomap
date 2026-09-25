@@ -62,8 +62,16 @@ func TestFailedReplayKeepsPreviousAcceptedAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	prepared, _ := NewPrepared(first.Request)
-	if _, err := ReplayJSON(t.Context(), executor, provider, prepared); err == nil {
-		t.Fatal("invalid replay accepted")
+	refused, err := ReplayJSON(t.Context(), executor, provider, prepared)
+	if err == nil || string(refused.Response) != "not json" {
+		t.Fatalf("invalid replay accepted or its answer lost: %q / %v", refused.Response, err)
+	}
+	// The cache keeps only what the accepted answer needs: the refused
+	// replay's answer is the caller's to show, not another stored payload.
+	paths, _ := filepath.Glob(filepath.Join(executor.RootDir, CacheDirectoryName, "payloads", "*"))
+	want := map[string]bool{sha256Hex(first.Request) + ".json": true, sha256Hex(first.Response) + ".json": true}
+	if len(paths) != len(want) || !want[filepath.Base(paths[0])] || !want[filepath.Base(paths[1])] {
+		t.Fatalf("cache payloads after a refused replay = %v, want only the accepted request and response", paths)
 	}
 	warm, err := ExecuteJSON(t.Context(), executor, provider, call)
 	if err != nil || warm.Value.Value != "old" || provider.completeCalls != 2 {

@@ -1,6 +1,7 @@
 package reading
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -192,5 +193,18 @@ func TestLearningRefusedMergeWindowLeavesThePoolUnchanged(t *testing.T) {
 	}
 	if use := r.use(stageLearn); use.Windows != 1 || use.Rows != 5 || use.Live != 1 || use.Rejected != 1 || use.Given != 5 {
 		t.Fatalf("use: %+v", use)
+	}
+	// The refused exchange is this run's evidence, not the cache's: after
+	// cache clear the journal's reference still leads to its exact bytes.
+	if err := os.RemoveAll(filepath.Join(r.opts.Executor.RootDir, llm.CacheDirectoryName)); err != nil {
+		t.Fatal(err)
+	}
+	response, err := readWindowPayload(filepath.Join(r.opts.OwnerRunDir, filepath.FromSlash(r.rejected[0].ResponseRef)))
+	if err != nil || string(response) != `{"groups":[{"representative":"q9","members":["q8","q9"]}]}` {
+		t.Fatalf("refused response after cache clear: %q / %v", response, err)
+	}
+	request, err := readWindowPayload(filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, "atlas_learn-r1-w0.request.ref.json"))
+	if err != nil || !bytes.Equal(request, provider.requests[0]) {
+		t.Fatalf("refused request after cache clear: %v", err)
 	}
 }
