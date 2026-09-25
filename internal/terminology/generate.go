@@ -81,7 +81,7 @@ func generationCall(items []proseSource, code map[string]CodeNameKind) (llm.Call
 	// Validation checks occurrence in the original accepted prose; the model
 	// cannot supply or rewrite that prose in its glossary response.
 	return llm.Call[generationResult]{
-		State: []byte(`{"contract":"repomap.glossary.generate.v4"}`),
+		State: []byte(`{"contract":"repomap.glossary.generate.v5"}`),
 		Prompt: llm.Prompt{System: generatePrompt, User: string(input), ResponseFormatJSON: true, NoResponseAdjunct: true,
 			ResponseExample: `{"terms":[{"name":"<exact name in accepted prose>","kind":"<acronym, domain, protocol or format>","explanation":"<prose-context definition>","rows":["<supporting p ref>"]}]}`},
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: glossaryOutputTokens},

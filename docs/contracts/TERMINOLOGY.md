@@ -17,7 +17,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   request cannot invalidate an accepted analytical answer. Terms must occur in
   accepted prose and select its advertised prose-row refs; they name
   [concepts, not code names](#concepts-not-code-names). Generation
-  (`repomap.glossary.generate.v4`) has one `p*` catalogue and no separate
+  (`repomap.glossary.generate.v5`) has one `p*` catalogue and no separate
   source-ref namespace; Go restores the complete original source scope of every selected row, plus its analytical
   request and row, including warm reuse. A same-numbered old `g*` ref has no
   authority and is never repaired into a prose ref. Non-table owners declare
@@ -112,6 +112,14 @@ modules, files, paths, environment and configuration keys, command-line flags,
 headers, commands and rule or ticket codes. A word, acronym, protocol or format
 that code also uses as a name is still a concept; only its code spelling is
 skipped.
+
+The reader is an engineer new to the repository (owner decision 2026-09-25):
+general engineering, computing and version-control vocabulary (repository,
+commit, package, interface, cache, JSON, HTTP) is not explained; terms of the
+repository's own field, and ones an engineer would have to look up, are. On
+one saved self-run request the prompt without this reader drew 36–618 terms
+(6–69 s, four of six draws above 240); with it 66–89 terms in 10–12 s in five
+of six draws and 277 terms (41 s) in one.
 
 After validation, Go also drops a valid term whose whole name equals, exactly
 and case-sensitively, a code name that the glossary owner already holds and

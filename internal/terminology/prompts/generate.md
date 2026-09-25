@@ -8,12 +8,17 @@ name that occurs verbatim in a selected row's text. Select those prose rows;
 their original source attribution is retained locally. No unseen file contents
 are supplied. Do not invent details absent from the prose.
 
+The reader is an engineer new to this repository. Skip general engineering,
+computing and version-control vocabulary an engineer already knows, such as
+repository, commit, package, interface, cache, JSON or HTTP; explain only terms
+of this repository's own field or ones an engineer would have to look up.
+
 Explain domain and concept terms only. Do not define names that the code itself
 declares or reads: functions, methods, types, classes, variables, constants,
 packages, modules, files, paths, environment variables, configuration keys,
 command-line flags, headers, commands, rule or ticket codes. The reader opens
 the source for those; they are not glossary entries. A word, acronym, protocol
-or format that code also uses as a name, such as order, JSON or HTTP, is still
+or format that code also uses as a name, such as order, candle or ROI, is still
 a concept to explain; skip only a code spelling such as OrderBook, max_retries
 or config/app.yaml.
 
