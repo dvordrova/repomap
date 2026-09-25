@@ -205,3 +205,29 @@ func TestNoRowsAcceptedCarriesEveryRowReason(t *testing.T) {
 		t.Fatalf("a wholly refused response lost its row reasons: %v", err)
 	}
 }
+
+// A value the column fills in for an absent cell is no answer: a row whose
+// every written cell was refused is refused, while an explicit empty list is
+// a written empty selection that keeps its row.
+func TestFilledInAbsenceIsNoAnswer(t *testing.T) {
+	def := Definition{Stage: "atlas_learn", Columns: []Column{
+		{Name: "questions", Kind: Sequence, OptionsFrom: "options"},
+		{Name: "reason", Kind: Text, Optional: true},
+		{Name: "label", Kind: Text, Missing: "-"},
+	}}
+	options := []Field{{Name: "options", Value: []string{"q1"}}}
+	window := Window{Rows: []Row{{ID: "a", Fields: options}, {ID: "b", Fields: options}, {ID: "c", Fields: options}}}
+	result, err := DecodeResult(def, window, []byte(`{"rows":[
+		{"key":"a","questions":[],"reason":5},
+		{"key":"b","questions":null,"reason":5},
+		{"key":"c","questions":"q1"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (Answer{"questions": "", "label": "-"}); !reflect.DeepEqual(result.Answers[0], want) {
+		t.Fatalf("an explicit empty selection lost its row: %+v", result.Answers[0])
+	}
+	if result.Answers[1] != nil || result.Answers[2]["questions"] != "q1" {
+		t.Fatalf("a row of filled-in absences was accepted, or a neighbour lost: %+v", result.Answers)
+	}
+}

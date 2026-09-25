@@ -320,7 +320,9 @@ func decodeCell(column Column, context []Field, row Row, cells map[string]json.R
 	if err != nil {
 		return "", false, false, err
 	}
-	return value, true, strings.TrimSpace(cell) != "", nil
+	// An empty list is a written empty selection; an empty string is not.
+	written := strings.TrimSpace(cell) != "" || bytes.HasPrefix(bytes.TrimSpace(raw), []byte("["))
+	return value, true, written, nil
 }
 
 // cellText reads a cell's JSON value as the text the column validates. A
