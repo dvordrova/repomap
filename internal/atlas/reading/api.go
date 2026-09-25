@@ -114,8 +114,10 @@ func (r *reader) readAPI(ctx context.Context) error {
 		}
 	}
 	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d outside symbols: %d handed a callable, %d given values", len(symbols), len(handed), len(other)))
-	for round, group := range [][]*apiSymbol{handed, other} {
-		rows := make([]table.Row, 0, len(group))
+	groups := [][]*apiSymbol{handed, other}
+	rows := make([][]table.Row, len(groups))
+	for round, group := range groups {
+		rows[round] = make([]table.Row, 0, len(group))
 		for i, s := range group {
 			fields := []table.Field{{Name: "symbol", Value: s.name}}
 			if s.signature != "" {
@@ -134,13 +136,36 @@ func (r *reader) readAPI(ctx context.Context) error {
 			if s.handsCallable {
 				fields = append(fields, table.Field{Name: "hands_callable", Value: true})
 			}
-			rows = append(rows, table.Row{ID: fmt.Sprintf("sym%d", i+1), Fields: fields})
+			rows[round] = append(rows[round], table.Row{ID: fmt.Sprintf("sym%d", i+1), Fields: fields})
 		}
-		answers, err := r.runTable(ctx, lines.API(round == 0), round+1, rows)
-		if err != nil {
-			return err
-		}
-		for i, s := range group {
+	}
+	// The handed and the other symbols are asked at once: neither round
+	// reads the other. The second runs on its own view, joined after the
+	// first; a failure of the first cancels the second and is reported.
+	asking, cancel := context.WithCancel(ctx)
+	defer cancel()
+	second := r.view(nil)
+	var secondAnswers []rowAnswer
+	var secondErr error
+	secondDone := make(chan struct{})
+	go func() {
+		defer close(secondDone)
+		secondAnswers, secondErr = second.runTable(asking, lines.API(false), 2, rows[1])
+	}()
+	firstAnswers, err := r.runTable(asking, lines.API(true), 1, rows[0])
+	if err != nil {
+		cancel()
+	}
+	<-secondDone
+	if err != nil {
+		return err
+	}
+	if secondErr != nil {
+		return secondErr
+	}
+	r.joinView(second)
+	for round, answers := range [][]rowAnswer{firstAnswers, secondAnswers} {
+		for i, s := range groups[round] {
 			answer := answers[i].answer
 			if answer == nil {
 				continue
