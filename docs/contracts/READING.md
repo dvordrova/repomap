@@ -549,10 +549,13 @@ from one evidence catalogue. Complete evidence precedes the changing questions;
 unselected rows need no separate negative explanation. Every question is
 mandatory in a response and retains per-chunk inspection coverage. Decisions are
 read per (question,row) cell. An unknown entry, row or anchor is discarded; a
-selection without a readable or known row is journaled as discarded. A
-malformed selection, a positive selection with no advertised anchor, a
-relevance other than direct/context, or one anchor given both relevances
-refuses only that cell. A refused cell stays unavailable rather than becoming a
+selection that names no known row is journaled as discarded. A malformed
+selection, including one that names a known row only in another shape (the
+bare ref, a list or another field), a positive selection with no advertised
+anchor, a relevance other than direct/context, or one anchor given both
+relevances refuses only that cell. An entry whose selections are not a list
+has no cell to compare and refuses its question in that window, even beside a
+readable entry. A refused cell stays unavailable rather than becoming a
 negative finding and blocks optional glossary metadata of its row; the
 question's other rows and accepted neighbouring questions survive, including
 cache and memo reuse. A later run asks a refused cell again in its own smaller

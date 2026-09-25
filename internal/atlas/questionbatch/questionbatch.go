@@ -767,7 +767,6 @@ func (data catalogue) readQuestion(rows []int, key string, entries []json.RawMes
 		allowedRows[rowRef(row)] = row
 	}
 	var readings []questionCells
-	unreadable := false
 	for _, entry := range entries {
 		var wire struct {
 			Selections json.RawMessage `json:"selections"`
@@ -778,21 +777,17 @@ func (data catalogue) readQuestion(rows []int, key string, entries []json.RawMes
 		}
 		var selections []json.RawMessage
 		if json.Unmarshal(wire.Selections, &selections) != nil {
-			unreadable = true
-			reading.discarded = append(reading.discarded, QuestionRejection{Question: key, Reason: fmt.Sprintf("question batch: selections of %s are not a list", key)})
-			continue
+			// No cell of this entry can be read or compared, so no other
+			// entry for the question may stand in for it.
+			return questionReading{reason: fmt.Sprintf("question batch: question %s has an invalid selection shape", key)}
 		}
 		cells, discarded := data.readCells(allowedRows, key, selections)
 		readings = append(readings, cells)
 		reading.discarded = append(reading.discarded, discarded...)
 	}
 	if len(readings) == 0 {
-		if unreadable {
-			reading.reason = fmt.Sprintf("question batch: question %s has an invalid selection shape", key)
-		} else {
-			reading.undecided = true
-			reading.reason = fmt.Sprintf("question batch: missing selections for %s", key)
-		}
+		reading.undecided = true
+		reading.reason = fmt.Sprintf("question batch: missing selections for %s", key)
 		return reading
 	}
 	reading.decision = Decision{Key: key, Selections: []Selection{}}
@@ -870,8 +865,16 @@ func (data catalogue) readCells(allowedRows map[string]int, key string, selectio
 			Why       json.RawMessage `json:"why"`
 		}
 		var ref string
-		if json.Unmarshal(raw, &wire) != nil || json.Unmarshal(wire.Row, &ref) != nil {
-			discarded = append(discarded, QuestionRejection{Question: key, Reason: fmt.Sprintf("question batch: a selection of %s has no readable row", key)})
+		if json.Unmarshal(raw, &wire) != nil || json.Unmarshal(wire.Row, &ref) != nil || ref == "" {
+			// Discarding a selection that still names a known row would turn
+			// the model's positive into a negative: that cell is refused.
+			named := knownRowsNamed(raw, allowedRows)
+			for _, row := range named {
+				refuse(row, fmt.Sprintf("question batch: invalid selection shape for %s/%s", key, row))
+			}
+			if len(named) == 0 {
+				discarded = append(discarded, QuestionRejection{Question: key, Reason: fmt.Sprintf("question batch: a selection of %s has no readable row", key)})
+			}
 			continue
 		}
 		row, known := allowedRows[ref]
@@ -927,6 +930,38 @@ func (data catalogue) readCells(allowedRows map[string]int, key string, selectio
 		}
 	}
 	return cells, discarded
+}
+
+// knownRowsNamed returns the known row refs a selection without a readable
+// row still names in any of its strings: written as the selection itself, as
+// a list, or under another field.
+func knownRowsNamed(raw json.RawMessage, allowedRows map[string]int) []string {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var named []string
+	var visit func(any)
+	visit = func(value any) {
+		switch value := value.(type) {
+		case string:
+			if _, known := allowedRows[value]; known && !seen[value] {
+				seen[value] = true
+				named = append(named, value)
+			}
+		case []any:
+			for _, child := range value {
+				visit(child)
+			}
+		case map[string]any:
+			for _, child := range value {
+				visit(child)
+			}
+		}
+	}
+	visit(value)
+	return named
 }
 
 // selectionAnchors reads a list of anchor refs; one ref written as a single

@@ -57,6 +57,11 @@ func TestQuestionCellFormsAreAcceptedAndDefectsRefuseOnlyTheirCell(t *testing.T)
 		{"anchors of another shape", `{"row":"r1","anchors":42,"relevance":"direct","why":"w"}`, "invalid selection shape"},
 		{"missing relevance", `{"row":"r1","anchors":["a1"],"why":"w"}`, "invalid selection shape"},
 		{"why of another shape", `{"row":"r1","anchors":["a1"],"relevance":"direct","why":7}`, "invalid selection shape"},
+		// A known row named in another shape is still that row's answer:
+		// discarding it would turn the model's positive into a negative.
+		{"selection written as its row", `"r1"`, "invalid selection shape"},
+		{"row written as a list", `{"row":["r1"],"anchors":["a1"],"relevance":"direct","why":"w"}`, "invalid selection shape"},
+		{"row under another field", `{"rows":"r1","anchors":["a1"],"relevance":"direct","why":"w"}`, "invalid selection shape"},
 		{"one anchor as direct and context", `{"row":"r1","anchors":["a1"],"relevance":"direct","why":"w"},{"row":"r1","anchors":["a1"],"relevance":"context","why":"w"}`, "conflicting selection"},
 	} {
 		t.Run("refused "+test.name, func(t *testing.T) {
@@ -73,8 +78,8 @@ func TestQuestionCellFormsAreAcceptedAndDefectsRefuseOnlyTheirCell(t *testing.T)
 			}
 		})
 	}
-	// A selection without a readable known row decides and refuses nothing.
-	for _, selection := range []string{`{"anchors":["a1"],"relevance":"direct","why":"w"}`, `{"row":"r9","anchors":["a1"],"relevance":"direct","why":"w"}`, `"r1"`} {
+	// A selection that names no known row decides and refuses nothing.
+	for _, selection := range []string{`{"anchors":["a1"],"relevance":"direct","why":"w"}`, `{"row":"r9","anchors":["a1"],"relevance":"direct","why":"w"}`, `"r9"`} {
 		result, err := decode(selection)
 		if err != nil || len(result.Rejections) != 0 || len(result.Discarded) != 1 || len(result.Questions[0].Selections) != 1 {
 			t.Fatalf("selection %s was not discarded and recorded: %+v / %v", selection, result, err)
@@ -82,6 +87,32 @@ func TestQuestionCellFormsAreAcceptedAndDefectsRefuseOnlyTheirCell(t *testing.T)
 		if kinds := result.ResponseRejections(); len(kinds) != 1 || kinds[0].Kind != "selection_discarded" {
 			t.Fatalf("discarded selection was not journaled: %+v", kinds)
 		}
+	}
+}
+
+// An entry whose selections cannot be read has no cell to compare, so a
+// readable entry for the same question cannot stand in for it; the neighbour
+// question keeps its decision.
+func TestUnreadableQuestionEntryRefusesItsQuestion(t *testing.T) {
+	const readable = `{"key":"q1","selections":[{"row":"r2","anchors":["a2"],"relevance":"context","why":"w"}]}`
+	const q2 = `{"key":"q2","selections":[]}`
+	for _, entries := range []string{
+		readable + `,{"key":"q1","selections":{"row":"r1","anchors":["a1"],"relevance":"direct","why":"w"}},` + q2,
+		`{"key":"q1","selections":"none"},` + readable + `,` + q2,
+		`{"key":"q1","selections":{"row":"r1","anchors":["a1"],"relevance":"direct","why":"w"}},` + q2,
+	} {
+		result, err := decodeQuestions(t, 2, 2, `{"questions":[`+entries+`]}`)
+		if err != nil || len(result.Questions) != 1 || result.Questions[0].Key != "q2" || len(result.Rejections) != 1 {
+			t.Fatalf("%s: %+v / %v", entries, result, err)
+		}
+		if rejection := result.Rejections[0]; rejection.Question != "q1" || rejection.Omitted || len(rejection.Rows) != 0 || rejection.Chunks != 2 || !strings.Contains(rejection.Reason, "invalid selection shape") {
+			t.Fatalf("%s: rejection = %+v", entries, rejection)
+		}
+	}
+	// A null entry beside a readable one made no decision; the readable one is the answer.
+	result, err := decodeQuestions(t, 2, 2, `{"questions":[{"key":"q1","selections":null},`+readable+`,`+q2+`]}`)
+	if err != nil || len(result.Questions) != 2 || len(result.Rejections) != 0 || len(result.Questions[0].Selections) != 1 {
+		t.Fatalf("a null sibling entry refused its question: %+v / %v", result, err)
 	}
 }
 
