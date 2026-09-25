@@ -430,7 +430,7 @@ var russianUI = map[string]string{
 	"No map of parts":                      "Карты частей нет",
 	"No description":                       "Нет описания",
 	"The map of parts is unavailable: {0}": "Карта частей недоступна: {0}",
-	"the model's answer was refused twice": "ответ модели дважды отклонён",
+	"the model's answer was refused":       "ответ модели отклонён",
 	"no model was asked":                   "модель не спрашивали",
 	"Nothing here runs code from a string or another process.":               "Здесь не найден запуск кода из строки или другого процесса.",
 	"Nothing quotable was found in the README, comments or commit messages.": "В README, комментариях и сообщениях коммитов не найдено подходящих цитат.",

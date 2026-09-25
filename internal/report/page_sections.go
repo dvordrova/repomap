@@ -95,7 +95,7 @@ var offMapReasons = map[string]string{
 
 // mapFailureReasons are the reader's words for why there is no map at all.
 var mapFailureReasons = map[string]string{
-	"refused":  "the model's answer was refused twice",
+	"refused":  "the model's answer was refused",
 	"no_model": "no model was asked",
 }
 

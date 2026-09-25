@@ -19,8 +19,7 @@ const (
 )
 
 // ExecuteJSON prepares one exact request, attempts a fully revalidated cache
-// hit, and otherwise makes one live Provider call, or two when the call opts
-// into Resample and the first answer is refused whole. Only a successfully
+// hit, and otherwise makes exactly one live Provider call. Only a successfully
 // decoded and validated live response is eligible for persistence.
 func ExecuteJSON[T any](
 	ctx context.Context,
@@ -28,7 +27,7 @@ func ExecuteJSON[T any](
 	provider Provider,
 	call Call[T],
 ) (Outcome[T], error) {
-	return executeJSONResampled(ctx, executor, provider, call)
+	return executeJSON(ctx, executor, provider, call, false)
 }
 
 // RecallJSON uses the same preparation, cache diagnostics and current owning
@@ -176,9 +175,8 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 // Providers may use AcquireProviderAttempt around each transport attempt and
 // call CollapseProviderAttempts on HTTP 429. That collapses the shared attempt
 // gate while the Provider keeps ownership of its normal retry/backoff policy;
-// only a terminal ExecuteJSON error cancels this batch. Beyond an opted-in
-// call's one resample, the executor adds no semantic retry and never replays
-// a started call.
+// only a terminal ExecuteJSON error cancels this batch. The executor never adds
+// a semantic retry or replays a started call.
 func ExecuteJSONBatch[T any](
 	ctx context.Context,
 	executor Executor,

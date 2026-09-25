@@ -532,8 +532,7 @@ const (
 	// OffMapFailure: the target has no map of parts at all.
 	OffMapFailure = "map_failure"
 
-	// MapFailureRefused: every window of the parts answer was refused, after
-	// its one resample.
+	// MapFailureRefused: every window of the parts answer was refused.
 	MapFailureRefused = "refused"
 	// MapFailureNoModel: no model was asked for the parts.
 	MapFailureNoModel = "no_model"

@@ -179,10 +179,9 @@ the file off the map with its reason. Only an answer that draws no part is
 refused whole: it is not JSON, holds no groups, has no group holding a
 listed file of its own (every ref unknown, such as paths instead of refs,
 every group without a name, or every file in two groups), or ends at the
-output allowance. Such an answer is asked once more with the same bytes
-([one resample](EXECUTION.md#one-resample)). A window refused on both draws
-is recorded as `window_rejected`; its files are left out for the follow-up
-when another window of the target drew parts. A target all of whose windows
+output allowance. Such an answer is not asked again, split or accepted in
+part. A refused window is recorded as `window_rejected`; its files are left
+out for the follow-up when another window of the target drew parts. A target all of whose windows
 are refused gets an explicit `map_failure` with every file off the map, and
 the atlas target's `map_failure` word `refused` (`no_model` when no model was
 asked); the refusal texts stay in `rejected.jsonl`. Its other analysis
@@ -227,8 +226,7 @@ every area. A part in two areas or in none stands alone, an area of fewer
 than two parts is not drawn. An empty list leaves every part alone; an answer
 that is not JSON, has no list, or lists areas none of which holds a listed
 part (parts named instead of referenced, every area without a name) is
-refused whole, asked once more with the same bytes, and on a second refusal
-draws no areas and is recorded. Each area's line comes from the same
+refused whole, draws no areas and is recorded. Each area's line comes from the same
 description prompt with its parts' names and lines as members. Jev assigns nothing in this stage.
 
 The browser does not choose, validate or repair architectural membership.

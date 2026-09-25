@@ -210,9 +210,10 @@ func TestFollowUpPlacesLeftOutAndConflictingFiles(t *testing.T) {
 	}
 }
 
-// A parts answer refused on both draws leaves the target with an explicit
-// map failure: every file and its boundaries stay in the atlas off the map,
-// with their lines and declarations, and no part or area is invented.
+// A refused parts answer leaves the target with an explicit map failure:
+// every file and its boundaries stay in the atlas off the map, with their
+// lines and declarations, and no part or area is invented. The refused
+// answer is not asked again.
 func TestRefusedPartsAnswerIsAnExplicitMapFailure(t *testing.T) {
 	graph := twoTargetGraph(t)
 	provider := &tableProvider{partsResponse: func([]map[string]any) string { return `{"groups":[]}` }}
@@ -253,8 +254,8 @@ func TestRefusedPartsAnswerIsAnExplicitMapFailure(t *testing.T) {
 	if boundaries != 2 {
 		t.Fatalf("boundaries off the map: %+v", svc.Boundaries)
 	}
-	if provider.designRequests[designPartsTask] != 4 {
-		t.Fatalf("parts requests of two targets asked twice: %v", provider.designRequests)
+	if provider.designRequests[designPartsTask] != 2 {
+		t.Fatalf("parts requests of two targets, want one each: %v", provider.designRequests)
 	}
 	refused := 0
 	for _, row := range result.Rejected {
@@ -264,6 +265,62 @@ func TestRefusedPartsAnswerIsAnExplicitMapFailure(t *testing.T) {
 	}
 	if refused != 2 {
 		t.Fatalf("refusals: %+v", result.Rejected)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// One target's refused parts answer is that target's map failure after its
+// one request; the other target, answered well, draws its map.
+func TestRefusedPartsAnswerLeavesItsSiblingDrawn(t *testing.T) {
+	var mu sync.Mutex
+	asked := map[string]int{}
+	provider := &tableProvider{}
+	provider.partsResponse = func(files []map[string]any) string {
+		target := strings.SplitN(fmt.Sprint(files[0]["path"]), "/", 2)[0]
+		mu.Lock()
+		asked[target]++
+		mu.Unlock()
+		if target == "svc" {
+			return `{"groups":[]}`
+		}
+		var groups []string
+		for _, file := range files {
+			groups = append(groups, fmt.Sprintf(`{"name":%q,"files":[%q]}`, file["path"], file["ref"]))
+		}
+		return `{"groups":[` + strings.Join(groups, ",") + `]}`
+	}
+	result, err := Read(t.Context(), twoTargetOptions(t, twoTargetGraph(t), provider))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asked["svc"] != 1 || asked["web"] != 1 {
+		t.Fatalf("parts requests %v, want one per target", asked)
+	}
+	svc := targetOf(t, result, "svc")
+	if svc.MapFailure != atlas.MapFailureRefused || len(svc.Boxes) != 0 || len(svc.OffMap) == 0 {
+		t.Fatalf("svc: failure %q boxes %d off-map %d", svc.MapFailure, len(svc.Boxes), len(svc.OffMap))
+	}
+	for _, entry := range svc.OffMap {
+		if entry.Reason != atlas.OffMapFailure {
+			t.Fatalf("%s: %s", entry.File.Path, entry.Reason)
+		}
+	}
+	rejected := 0
+	for _, row := range result.Rejected {
+		if row.Stage == lines.StageZones && row.Kind == "window_rejected" {
+			if row.Target != "svc" {
+				t.Fatalf("a refusal of the answered target: %+v", row)
+			}
+			rejected++
+		}
+	}
+	if rejected != 1 {
+		t.Fatalf("refusals: %+v", result.Rejected)
+	}
+	if web := targetOf(t, result, "web"); web.MapFailure != "" || len(web.Boxes) == 0 {
+		t.Fatalf("web: failure %q boxes %d", web.MapFailure, len(web.Boxes))
 	}
 	if err := atlas.Validate(result.Atlas); err != nil {
 		t.Fatal(err)

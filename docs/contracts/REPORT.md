@@ -39,8 +39,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   parts' files, with their part) and **Not on the map** (every other off-map
   file, with its reason), five rows each and `All N` for the rest. A target
   with a map failure says "The map of parts is unavailable:" with the reader's
-  words for its closed reason (`refused`: the model's answer was refused
-  twice; `no_model`: no model was asked; the refusals themselves are rejected
+  words for its closed reason (`refused`: the model's answer was refused;
+  `no_model`: no model was asked; the refusals themselves are rejected
   rows, never card text) and lists all of its files under Not on the map. A
   part or area without a description shows the explicit "No description"
   state; its title is never repeated as a description.

@@ -177,10 +177,8 @@ func areasCall(input areasInput) (llm.Call[areasAnswer], error) {
 	for i, part := range input.Parts {
 		listed[i] = part.Ref
 	}
-	// An answer refused whole is asked once more with the same bytes.
 	return llm.Call[areasAnswer]{
-		Resample: true,
-		State:    []byte(designAreasTask),
+		State: []byte(designAreasTask),
 		Prompt: llm.Prompt{System: designAreasPrompt, User: string(raw), ResponseFormatJSON: true, NoResponseAdjunct: true,
 			ResponseExample: `{"areas":[{"name":"Game rules","parts":["p1","p4"]}]}`},
 		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designOutputTokens(len(input.Parts))},
@@ -238,7 +236,7 @@ func (r *reader) areasInput(targetID string, parts []*boxState) areasInput {
 // readAreas groups each target's described parts into areas by one closed
 // split, then describes each area from its parts. Areas take their compact
 // IDs in target order. Without a model, or with fewer than three parts, no
-// area is drawn; an answer refused on both draws draws none and is recorded.
+// area is drawn; a refused answer draws none and is recorded.
 func (r *reader) readAreas(ctx context.Context) error {
 	r.zones = map[string][]*zoneState{}
 	type asked struct {

@@ -92,8 +92,7 @@ func (prepared Prepared) Len() int {
 
 // Metrics are transport measurements for one live completion. Cache hits
 // preserve the measurements of the accepted call that populated the entry.
-// ProviderResponseBytes is cumulative across all transport Attempts. A
-// resampled call's outcome carries the sum of both live draws.
+// ProviderResponseBytes is cumulative across all transport Attempts.
 type Metrics struct {
 	InputTokens           int           `json:"input_tokens"`
 	OutputTokens          int           `json:"output_tokens"`
@@ -210,18 +209,7 @@ type Call[T any] struct {
 	// SplitHTTP500 returns HTTP 500 directly to the adaptive owner instead of
 	// repeating identical transport bytes. Only a complete, divisible input
 	// opts in; singleton calls retain the provider's ordinary retry policy.
-	SplitHTTP500 bool
-	// Resample asks once more, with the identical request bytes, when a live
-	// answer is refused whole for what the model wrote: the owner's decoder
-	// or validator refused it, or the provider's answer was empty,
-	// undecodable or cut at the output-token cap. Transport failures (the
-	// provider already retried them), repeatable refusals (context or
-	// request size, other statuses, a content filter) and cached answers are
-	// never re-asked, and neither is a refusal the owner splits or recovers
-	// from (SplitRejectedResponse, SplitHTTP500, AttemptTimeout). An
-	// output-token cut is re-asked before an adaptive owner may split it. An
-	// owner opts in only when a second draw is its whole recovery.
-	Resample       bool
+	SplitHTTP500   bool
 	State          []byte
 	Prompt         Prompt
 	Limits         Limits

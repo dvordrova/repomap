@@ -67,51 +67,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   binds exact prepared bytes, provider state and all request limits; it stores
   no child boundaries or answers. A later run rebuilds children through the
   current owner and validates their ordinary cached or live responses. A cached
-  whole-parent answer/replay takes precedence. Semantic refusals never create
-  this memo, NoCache bypasses it and cache clear removes it. Existing run journals
+  whole-parent answer/replay takes precedence. A semantic refusal creates this
+  memo only for an owner that opts into `SplitRejectedResponse` (display
+  translation). NoCache bypasses it and cache clear removes it. Existing run journals
   are not migrated into split memos.
   Failed model exchanges show their committed request/response/journal paths
   beside the error, with an explicit unavailable-body marker when necessary.
   The last attempt's HTTP status and diagnostic response IDs/retry/rate-limit
   headers accompany those diagnostics. Request authorization and cookies never
   enter that metadata, which has no role in semantic or cache identity.
-
-## One resample
-
-A call may opt into one resample with `llm.Call.Resample`. The shared
-`ExecuteJSON` then asks once more, with the identical prepared bytes, when a
-live answer is refused whole for what the model wrote:
-
-- the owner's decoder or validator refused the whole answer;
-- the provider's answer was empty, its envelope was undecodable, or it did not
-  stop (other than a content filter);
-- the answer was cut at the output-token cap (finish reason `length`, or the
-  output-token resource refusal). Such a cut is a looping answer, not an
-  oversized request, so it is asked again before an adaptive owner sees it;
-  only a second cut reaches the owner's split rules.
-
-These are never asked again:
-
-- transport failures, which the provider already retried;
-- repeatable refusals: context or request size, other HTTP statuses, a
-  content filter;
-- cached answers, replay, and answers with some rows accepted;
-- refusals the owner recovers from itself: `SplitRejectedResponse`,
-  `SplitHTTP500`, an attempt deadline.
-
-A refused answer is never cached, so the second draw sends the same bytes. An
-accepted second draw is cached under the same key with its own measurements.
-`Outcome.Metrics` sums both draws, and the outcome keeps the issues of both.
-The journal holds two exchanges with one request SHA-256, told apart by their
-`instance_ordinal`. A second refusal is the call's refusal and is recorded
-like any other.
-
-Only the parts and areas answers of the map of parts (`atlas_zones`,
-`atlas_areas`) opt in. A parts answer that draws no part is refused whole;
-an areas answer with an empty list leaves every part alone, and one whose
-areas hold no listed part is refused whole. A target without units sends no
-parts request. The placement follow-up, descriptions, Jev and classifier
-tables and all other stages do not opt in.
 
 ## Results and prompt ownership
 
@@ -186,10 +150,10 @@ follow-up; a group without a name or without a listed file is not drawn and
 its files are left out. Only an answer that draws no part is refused whole:
 not JSON, no groups, or no group holding a listed file of its own. An areas
 answer follows the same rules at part level: a part in two areas or in none
-stands alone. The one-time resample of a whole
-refusal belongs to the shared llm layer ([one resample](#one-resample)),
-never to the stage; a refused answer is not cached, so the resample sends
-the same bytes.
+stands alone. A refused answer, including one cut at the output-token cap,
+is the window's refusal: it is not asked again, not accepted in part and not
+cached. Only a provider refusal of the request's input size splits a parts
+window.
 
 Validation preserves unambiguous formatting variants before checking meaning.
 Table choices with an advertised free-text tag normalize whitespace around its
