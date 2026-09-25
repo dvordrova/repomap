@@ -36,9 +36,8 @@ type boxState struct {
 }
 
 // overviewKeys chooses the declarations the overview describes, before any
-// part is drawn: every file of a target is its own source-inventory box, and
-// a box shows up to three of the keys the selection found in its file, the
-// documented ones first. A declaration shared by targets is chosen once. A
+// part is drawn: each file of a target shows up to three of the keys the
+// selection found in it, the documented ones first. A declaration shared by targets is chosen once. A
 // file without a selected key shows ranked keys, which the selection did not
 // choose and which are therefore not described.
 func (r *reader) overviewKeys() map[string]bool {

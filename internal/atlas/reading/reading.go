@@ -309,7 +309,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 			r.directoriesByPath[place.Path] = place.ID
 		}
 		if place.Kind == atlas.PlaceFile {
-			// Before a part holds it, a file is its own source-inventory box.
+			// Before the parts are drawn, a file stands for itself.
 			r.boxOf[place.ID] = place.Path
 		}
 		if place.Kind == atlas.PlaceSymbol && place.Symbol != nil {

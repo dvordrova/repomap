@@ -13,7 +13,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   safe-corpus dictionary as a lossless prefix-compressed path tree with
   compact `f*` leaves, the complete closed set of prose-file refs derived from
   that same dictionary, plus complete textual README and AGENTS.md documents;
-  it sends no other source-file contents. Before any `f*` identity exists, exclude
+  it sends no other source-file contents. README and AGENTS text, docstrings
+  and package documentation never reach the map of parts: its parts,
+  placement, description and areas requests see code structure only (paths,
+  names, signatures, counts). Before any `f*` identity exists, exclude
   `.npmrc`, every `.env*`, installed dependency subtrees such as `node_modules`, and every `*.tsbuildinfo` file from the
   shared corpus, freshness state, model input, debug output, and publication.
   A dependency cache a project keeps inside its own checkout is excluded by the
@@ -93,7 +96,8 @@ with compact `f*` leaves, plus the complete textual README and AGENTS.md
 documents, and reads back `{"files":[{"file_ref","hypotheses"}]}` in JSON
 mode; `target_entry` is the only class, since nothing consumed the others. A
 repository with no candidate file is `not_applicable` (`no_candidate_files`).
-It sends no other source-file contents. It needs only the corpus and the
+It sends no other source-file contents; these documents reach no parts,
+placement, description or areas request. It needs only the corpus and the
 repository's name, which the corpus and go.mod give before any language
 adapter's prerequisites exist, so it asks while the Go planning snapshot is
 built; the snapshot must name the repository the same way.

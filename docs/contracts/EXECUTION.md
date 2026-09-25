@@ -91,7 +91,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   shape; glossary work has a separate request and cannot add a `result/terms`
   wrapper. Table examples derive from the current `fill` columns and mode.
 - Models select only closed short refs already owned by their source artifacts:
-  `t*`, `n*`, `e*`, `a*`, `h*`, `g*`, `o*`, `k*` and `x*`. Cross-target refs
+  `t*`, `n*`, `e*`, `a*`, `h*`, `g*`, `o*`, `k*`, `x*`, and the sealed graph's
+  file refs `f*` and the atlas's part refs `p*`. Cross-target refs
   qualify those identities rather than renumbering them. Only genuine
   request-local alternatives use `c*` refs. Catalog rows may show
   exact repository-relative paths, file names, symbol names/signatures, and
@@ -105,7 +106,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   unselected raw internal edges, digests, the LLM client's authentication
   credentials, or unadvertised paths.
   A complete names-only tracked-file dictionary is explicitly allowed for the
-  README file-role classifier.
+  README file-role classifier. The map of parts may send aggregates over the
+  refs its request advertises: `calls` as `"f3 -> f7 (12)"`, exact call sites
+  between two listed files counted once per distinct pair of files (calls
+  resolved only to alternatives are left out), `imports` as `"f3 -> f7"` for
+  an import the adapter resolves to one listed file, and the same call counts
+  between parts as `"p3 -> p7 (12)"`. These are counts over advertised refs,
+  not raw edges. A parts or areas request allows min(128,000, max(8,192,
+  16 × listed rows)) output tokens; a part or area description 200.
 
 ## Independent validation
 
@@ -131,6 +139,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   window.
 
 Only complete coupled assignments can establish their shared result. Unknown set members are removed; an unresolved mandatory scalar or conflicting known assignment is refused, without first-wins repair or a manufactured semantic complement.
+
+A parts answer is not a coupled assignment: it is validated as independent
+file → part rows. An unknown ref is discarded, a file named twice in one part
+is kept once, a file listed in two parts loses both memberships (no first
+wins) and, like a file left out, goes to one closed-choice placement
+follow-up; a group without a name or without a listed file is not drawn and
+its files are left out. Only an answer that is not JSON or holds no groups is
+refused whole. An areas answer follows the same rules at part level: a part
+in two areas or in none stands alone. The one-time resample of a whole
+refusal belongs to the shared llm layer, never to the stage; a refused answer
+is not cached, so the resample sends the same bytes.
 
 Validation preserves unambiguous formatting variants before checking meaning.
 Table choices with an advertised free-text tag normalize whitespace around its
