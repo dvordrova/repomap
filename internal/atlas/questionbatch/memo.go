@@ -225,7 +225,6 @@ func (data catalogue) validateMemo(question modelQuestion, memo questionMemo) er
 	if memo.Version != 1 || len(memo.Windows) == 0 {
 		return fmt.Errorf("invalid question memo")
 	}
-	covered := make(map[string]bool)
 	for _, ref := range memo.Windows {
 		if raw, err := hex.DecodeString(ref.RequestKey); err != nil || len(raw) != 32 {
 			return fmt.Errorf("invalid request reference")
@@ -233,11 +232,14 @@ func (data catalogue) validateMemo(question modelQuestion, memo questionMemo) er
 		if len(ref.Rows) == 0 || len(ref.Questions) == 0 {
 			return fmt.Errorf("empty original window")
 		}
+		// A window may repeat a row another window left as a refused cell;
+		// apply never lets two windows decide one cell.
+		seenRows := make(map[string]bool, len(ref.Rows))
 		for _, row := range ref.Rows {
-			if _, known := data.rowByRef[row]; !known || covered[row] {
-				return fmt.Errorf("unknown or overlapping original row reference")
+			if _, known := data.rowByRef[row]; !known || seenRows[row] {
+				return fmt.Errorf("unknown or repeated original row reference")
 			}
-			covered[row] = true
+			seenRows[row] = true
 		}
 		seen := make(map[string]bool)
 		matched := false

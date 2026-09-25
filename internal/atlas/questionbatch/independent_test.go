@@ -104,28 +104,30 @@ func TestQuestionMalformedSiblingKeepsExactMemoReplayAndMetadataScope(t *testing
 	if err != nil || len(first.Exchanges) != 1 || first.Exchanges[0].Err != nil || provider.completed != 1 {
 		t.Fatalf("malformed neighbour refused the entire window: %+v / %v", first, err)
 	}
-	for _, chunk := range first.Questions[0].Chunks {
-		if chunk.Inspected || len(chunk.Selections) != 0 {
-			t.Fatal("unavailable question became a negative or positive finding")
-		}
+	// The malformed r1 selection refuses only its cell; q1 decided r2.
+	if refused := first.Questions[0].Chunks[0]; refused.Inspected || len(refused.Selections) != 0 {
+		t.Fatal("unavailable cell became a negative or positive finding")
+	}
+	if decided := first.Questions[0].Chunks[1]; !decided.Inspected || len(decided.Selections) != 0 {
+		t.Fatal("the malformed cell took its question's other row with it")
 	}
 	if !first.Questions[1].Chunks[0].Inspected || len(first.Questions[1].Chunks[0].Selections) != 0 || !first.Questions[1].Chunks[1].Inspected || first.Questions[1].Chunks[1].Selections[0].Why != "Accepted original reason." {
 		t.Fatal("valid question lost its complete per-chunk coverage")
 	}
 	if !reflect.DeepEqual(provider.accepted, [][]string{{"r2"}}) {
-		t.Fatalf("refused question authorized glossary metadata: %v", provider.accepted)
+		t.Fatalf("refused cell authorized glossary metadata: %v", provider.accepted)
 	}
 	data, err := prepareCatalogue(input, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, question := range data.questions {
+	for _, question := range data.questions {
 		key, err := data.memoIdentity(provider, question)
 		if err != nil {
 			t.Fatal(err)
 		}
 		_, found, err := llm.LoadMemo(executor, key, llm.DecodeJSON[questionMemo](nil))
-		if err != nil || found != (i == 1) {
+		if err != nil || !found {
 			t.Fatalf("memo for %s exists=%t: %v", question.Key, found, err)
 		}
 	}
@@ -158,21 +160,24 @@ func TestQuestionMalformedSiblingKeepsExactMemoReplayAndMetadataScope(t *testing
 	}
 	for _, event := range events {
 		if event.Kind == llm.EventLive || event.Kind == llm.EventCacheHit {
-			if len(event.ResponseRejections) != 1 || event.ResponseRejections[0].Kind != "question_rejected" || event.ResponseRejections[0].Count != 2 {
-				t.Fatalf("shared diagnostics omitted refused question coverage: %+v", event.ResponseRejections)
+			if len(event.ResponseRejections) != 1 || event.ResponseRejections[0].Kind != "question_rejected" || event.ResponseRejections[0].Count != 1 {
+				t.Fatalf("shared diagnostics omitted the refused cell: %+v", event.ResponseRejections)
 			}
 		}
 	}
 }
 
-func TestRetrievalMetadataSharedWithRefusedQuestionIsDiscarded(t *testing.T) {
+func TestRetrievalMetadataOfARefusedCellIsDiscarded(t *testing.T) {
 	data, err := prepareCatalogue(testInput(2, 2), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw := []byte(`{"questions":[{"key":"q1","selections":[{"row":"r1","anchors":["a999"],"relevance":"direct","why":"Invalid interpretation."}]},{"key":"q2","selections":[{"row":"r1","anchors":["a1"],"relevance":"direct","why":"Accepted interpretation."}]}]}`)
 	result, err := data.decode([]int{0, 1}, data.questions, raw, false)
-	if err != nil || len(result.Questions) != 1 || result.Questions[0].Key != "q2" || !reflect.DeepEqual(result.AcceptedRowKeys(), []string{"r2"}) {
-		t.Fatalf("shared r1 metadata acquired accepted question authority: %+v / %v", result, err)
+	if err != nil || len(result.Questions) != 2 || len(result.Rejections) != 1 || !reflect.DeepEqual(result.Rejections[0].Rows, []string{"r1"}) {
+		t.Fatalf("the unknown anchor refused more or less than its cell: %+v / %v", result, err)
+	}
+	if !reflect.DeepEqual(result.AcceptedRowKeys(), []string{"r2"}) {
+		t.Fatalf("the refused cell's row r1 acquired metadata authority: %v", result.AcceptedRowKeys())
 	}
 }

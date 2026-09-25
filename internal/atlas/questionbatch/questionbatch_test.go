@@ -242,22 +242,22 @@ func TestRunEachKeepsRefusedWindowUnavailableAndRecallsAcceptedSiblings(t *testi
 	}
 }
 
-func TestRunRejectsKnownPositiveWithNoAnchorsAndConflictingScalars(t *testing.T) {
+// A defective (question,row) cell stays uninspected, never a negative. The
+// question's other rows and the other questions keep their decisions.
+func TestRunRefusesOnlyTheDefectiveCell(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		edit func(*Response)
 	}{
 		{"unknown anchors", func(r *Response) { r.Questions[0].Selections[0].Anchors = []string{"not-advertised"} }},
 		{"empty anchors", func(r *Response) { r.Questions[0].Selections[0].Anchors = []string{} }},
-		{"missing selections", func(r *Response) { r.Questions[0].Selections = nil }},
-		{"bad relevance", func(r *Response) { r.Questions[0].Selections[0].Relevance = "none" }},
-		{"blank why", func(r *Response) { r.Questions[0].Selections[0].Why = " \n " }},
-		{"conflicting row", func(r *Response) {
+		{"unknown relevance", func(r *Response) { r.Questions[0].Selections[0].Relevance = "maybe" }},
+		{"conflicting relevance for one anchor", func(r *Response) {
 			s := r.Questions[0].Selections[0]
 			s.Relevance = "context"
 			r.Questions[0].Selections = append(r.Questions[0].Selections, s)
 		}},
-		{"conflicting question", func(r *Response) {
+		{"a positive against an explicit empty list", func(r *Response) {
 			r.Questions = append(r.Questions, Decision{Key: r.Questions[0].Key, Selections: []Selection{}})
 		}},
 	} {
@@ -267,15 +267,23 @@ func TestRunRejectsKnownPositiveWithNoAnchorsAndConflictingScalars(t *testing.T)
 				test.edit(&response)
 				return response, nil
 			}}
-			result, err := Run(t.Context(), llm.Executor{}, provider, testInput(1, 2), Options{})
+			result, err := Run(t.Context(), llm.Executor{}, provider, testInput(2, 2), Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(result.Exchanges) != 1 || result.Exchanges[0].Err != nil || result.Exchanges[0].Superseded || len(result.Exchanges[0].Outcome.Value.Rejections) != 1 {
-				t.Fatal("semantic refusal lost its reason, invalidated a neighbour or repartitioned")
+			exchange := result.Exchanges[0]
+			if len(result.Exchanges) != 1 || exchange.Err != nil || exchange.Superseded || len(exchange.Outcome.Value.Rejections) != 1 {
+				t.Fatalf("semantic refusal lost its reason, invalidated a neighbour or repartitioned: %+v", result.Exchanges)
 			}
-			if result.Questions[0].Chunks[0].Inspected || !result.Questions[1].Chunks[0].Inspected || len(result.Questions[1].Chunks[0].Selections) == 0 {
-				t.Fatal("bad question became inspected/none or its accepted neighbour was lost")
+			if rejection := exchange.Outcome.Value.Rejections[0]; rejection.Question != "q1" || !reflect.DeepEqual(rejection.Rows, []string{"r1"}) || rejection.Chunks != 1 || rejection.Omitted {
+				t.Fatalf("refusal did not name its one cell: %+v", rejection)
+			}
+			q1, q2 := result.Questions[0].Chunks, result.Questions[1].Chunks
+			if q1[0].Inspected || len(q1[0].Selections) != 0 {
+				t.Fatal("the defective cell became a decision")
+			}
+			if !q1[1].Inspected || len(q1[1].Selections) != 0 || !q2[0].Inspected || len(q2[0].Selections) != 1 || !q2[1].Inspected {
+				t.Fatalf("an independent neighbour was lost: %+v / %+v", q1, q2)
 			}
 		})
 	}
