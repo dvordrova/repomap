@@ -67,15 +67,25 @@ func TestSequencePreservesOrderAndFiltersOnlyExactKnownRefs(t *testing.T) {
 	row := Row{Fields: []Field{{Name: "options", Value: []string{"c1", "c2", "c3"}}, {Name: "limit", Value: 2}}}
 	// Unknown refs were never selectable and drop out; a selection of only
 	// unknown refs is an empty selection, not a refused row. Commas separate
-	// refs as whitespace does. Only exceeding the limit refuses the cell.
-	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": "", "": "", "c999": "", "c01": "", "c1,c2": "c1 c2"} {
+	// refs as whitespace does. The limit is guidance: a selection past it
+	// keeps every distinct advertised ref in the written order, never the
+	// first N.
+	for input, expected := range map[string]string{"c3 c1": "c3 c1", "c3 c999 c3 c1": "c3 c1", "none": "", "": "", "c999": "", "c01": "", "c1,c2": "c1 c2", "c2 c3 c1": "c2 c3 c1"} {
 		value, err := normalizeCell(column, nil, row, input)
 		if err != nil || value != expected {
 			t.Fatalf("%q -> %q, %v", input, value, err)
 		}
 	}
-	if _, err := normalizeCell(column, nil, row, "c1 c2 c3"); err == nil {
-		t.Fatal("accepted a selection over the limit")
+	// The limit the model is told is the owner's to supply: a row without a
+	// positive integer limit is a preparation error, not a refused answer.
+	def := Definition{Stage: "atlas_learn", Columns: []Column{column}}
+	for _, fields := range [][]Field{{row.Fields[0]}, {row.Fields[0], {Name: "limit", Value: "2"}}, {row.Fields[0], {Name: "limit", Value: 0}}} {
+		if _, err := Request(def, Window{Rows: []Row{{ID: "menu", Fields: fields}}}); err == nil || !strings.Contains(err.Error(), `"limit"`) {
+			t.Fatalf("a menu without a usable limit was prepared: %v / %v", fields, err)
+		}
+	}
+	if _, err := Request(def, Window{Rows: []Row{{ID: "menu", Fields: row.Fields}}}); err != nil {
+		t.Fatal(err)
 	}
 	// An options list without a limit is its own bound: a selection can never
 	// hold more refs than it offers, and a repeated ref counts once.
@@ -219,28 +229,6 @@ func TestDecodeAcceptsEveryKeyOnce(t *testing.T) {
 	}
 	if title, ok := IsFree(def.Columns[1], answers[0]["box"]); !ok || title == "" {
 		t.Fatalf("IsFree: %q %v", title, ok)
-	}
-}
-
-func TestDecodeRefusesBadWindows(t *testing.T) {
-	def := testDefinition()
-	windows, _ := Windows(def, 1, testRows())
-	cases := map[string]string{
-		"missing key":    `{"rows":[{"key":"f1","line":"a","box":"here"}]}`,
-		"duplicate key":  `{"rows":[{"key":"f1","line":"a","box":"here"},{"key":"f1","line":"b","box":"here"}]}`,
-		"unknown key":    `{"rows":[{"key":"f1","line":"a","box":"here"},{"key":"f9","line":"b","box":"here"}]}`,
-		"extra cell":     `{"rows":[{"key":"f1","line":"a","box":"here","why":"x"},{"key":"f2","line":"b","box":"here"}]}`,
-		"missing cell":   `{"rows":[{"key":"f1","line":"a"},{"key":"f2","line":"b","box":"here"}]}`,
-		"bad choice":     `{"rows":[{"key":"f1","line":"a","box":"pkg/z"},{"key":"f2","line":"b","box":"here"}]}`,
-		"empty text":     `{"rows":[{"key":"f1","line":"   ","box":"here"},{"key":"f2","line":"b","box":"here"}]}`,
-		"empty free":     `{"rows":[{"key":"f1","line":"a","box":"new: "},{"key":"f2","line":"b","box":"here"}]}`,
-		"extra envelope": `{"rows":[{"key":"f1","line":"a","box":"here"},{"key":"f2","line":"b","box":"here"}],"notes":"x"}`,
-		"not json":       `rows: f1 a here`,
-	}
-	for name, raw := range cases {
-		if _, err := Decode(def, windows[0], []byte(raw)); err == nil {
-			t.Errorf("%s was accepted", name)
-		}
 	}
 }
 
@@ -531,7 +519,7 @@ func TestSequenceEmptyOrNullIsAnEmptySelection(t *testing.T) {
 	if got, err := normalizeCell(column, nil, row, "c9 c2"); err != nil || got != "c2" {
 		t.Fatalf("a known ref beside an unknown one was lost: %q / %v", got, err)
 	}
-	def := Definition{Stage: "atlas_symbols", Independent: true, Columns: []Column{column}}
+	def := Definition{Stage: "atlas_symbols", Columns: []Column{column}}
 	result, err := DecodeResult(def, Window{Rows: []Row{row}}, []byte(`{"rows":[{"key":"s1","outbound":null}]}`))
 	if err != nil || result.Answers[0] == nil || result.Answers[0]["outbound"] != "" {
 		t.Fatalf("null selection refused the row: %+v / %v", result, err)
@@ -565,7 +553,7 @@ func TestOptionsFromReadsTheWindowContextWhenTheRowHasNoList(t *testing.T) {
 		t.Fatalf("the row's own list did not shadow the context: %q / %v", got, err)
 	}
 	address := Column{Name: "address", Kind: Choice, OptionsFrom: "address_options", WhenOptionsFrom: "address_options"}
-	def := Definition{Stage: "atlas_boundaries", Independent: true, Columns: []Column{column, address}}
+	def := Definition{Stage: "atlas_boundaries", Columns: []Column{column, address}}
 	window := Window{Context: context, Rows: []Row{bare, {ID: "b2", Fields: []Field{{Name: "address_options", Value: []string{"unknown", "a1"}}}}}}
 	result, err := DecodeResult(def, window, []byte(`{"rows":[{"key":"b1","destination":"d1"},{"key":"b2","destination":"d1","address":"a1"}]}`))
 	if err != nil || len(result.Rejections) != 0 {

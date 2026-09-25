@@ -171,9 +171,8 @@ func TestLearningDropsOneBadQuestionAndKeepsItsReview(t *testing.T) {
 
 // A review whose every proposal fails is refused as before, and its
 // rejections still name each proposal's rule; a review that wrote its own
-// reason keeps it with nothing recorded; a not_applicable or unknown review
-// has no content besides its reason and still needs one; a rejection quotes
-// only the beginning of a long question.
+// reason keeps it with nothing recorded; a rejection quotes only the
+// beginning of a long question.
 func TestLearningReviewRefusalsAfterPerQuestionValidation(t *testing.T) {
 	pool := learningRequest{Evidence: []learningEvidence{{Ref: "e1"}}, Intents: learningIntents()}
 	own := learningReply()
@@ -192,18 +191,14 @@ func TestLearningReviewRefusalsAfterPerQuestionValidation(t *testing.T) {
 		"every-question-bad": {change: func(reply *learningResponse) {
 			reply.Reviews[3].Reason = ""
 			reply.Reviews[3].Questions[0].Question = " "
-			reply.Reviews[3].Questions[1].Why = ""
+			reply.Reviews[3].Questions[1].Sources = []string{"e9"}
 		}, intent: "data", reason: "learn: questions review kept none of its 2 proposed questions", rows: []string{
 			`learn: data question 1 "" needs wording`,
-			`learn: data question 2 "What does a revision identify?" needs a reason`,
+			`learn: data question 2 "What does a revision identify?" names no advertised source in [e9]`,
 		}},
 		"no-sources": {change: func(reply *learningResponse) {
 			reply.Reviews[0].Questions[0].Sources = nil
 		}, intent: "purpose", reason: "learn: questions review kept none of its 1 proposed questions", rows: []string{`learn: purpose question 1 "What does a lease control?" needs original sources`}},
-		"unknown-blank-reason": {change: func(reply *learningResponse) { reply.Reviews[1].Reason = " " }, intent: "run", reason: "learn: a review needs a reason"},
-		"inapplicable-blank-reason": {change: func(reply *learningResponse) {
-			reply.Reviews[1] = learningReview{Intent: "run", State: "not_applicable", Sources: []string{"e1"}}
-		}, intent: "run", reason: "learn: a review needs a reason"},
 		"long-question-unknown-sources": {change: func(reply *learningResponse) {
 			reply.Reviews[3].Questions[1].Question = long
 			reply.Reviews[3].Questions[1].Sources = []string{"e9", "e8", "e7", "e6", "e5"}

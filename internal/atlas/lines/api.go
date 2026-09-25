@@ -23,7 +23,7 @@ var publishPrompt string
 // symbol is asked what it does with the values it gets. Every cell is
 // optional: a symbol that does none of it gets no cell.
 func API(handed bool) table.Definition {
-	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v3", System: apiPrompt, Independent: true}
+	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v3", System: apiPrompt}
 	if handed {
 		def.Contract += ".handed"
 		def.Columns = []table.Column{
@@ -50,7 +50,7 @@ func API(handed bool) table.Definition {
 // are the values that hold callables, with what they hold.
 func Publish() table.Definition {
 	return table.Definition{
-		Stage: StagePublish, Contract: "repomap.atlas.publish.v1", System: publishPrompt, Independent: true,
+		Stage: StagePublish, Contract: "repomap.atlas.publish.v1", System: publishPrompt,
 		Columns: []table.Column{
 			{Name: "holder", Kind: table.Choice, OptionsFrom: "holder_options", Optional: true, Note: "the h* holder this call publishes; leave out when none of them"},
 		},

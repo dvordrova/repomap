@@ -193,7 +193,7 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 		r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "window_rejected", Count: len(window.parts), Reason: reason, ResponseRef: responseRef, Samples: []string{fmt.Sprintf("shared window %d", window.table.Index)}})
 	}
 	if failure == nil && len(outcome.Value.Rejections) > 0 {
-		rejected := len(window.parts) - len(outcome.Value.AcceptedRowKeys())
+		rejected := len(window.parts) - outcome.Value.Accepted()
 		if rejected > 0 {
 			r.use(def.Stage).Rejected++
 			reason = fmt.Sprintf("%d answers rejected, %d accepted in this response", rejected, len(window.parts)-rejected)
@@ -201,7 +201,7 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 		}
 		responseRef := filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window.table, "response.ref.json")))
 		for _, rejection := range outcome.Value.Rejections {
-			r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "row_rejected", Count: 1, Reason: rejection.Reason, ResponseRef: responseRef, Samples: []string{rejection.Key}})
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: rejectionKind(rejection), Count: 1, Reason: rejection.Reason, ResponseRef: responseRef, Samples: []string{rejection.Key}})
 		}
 	}
 	if superseded {

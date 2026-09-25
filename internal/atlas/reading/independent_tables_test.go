@@ -36,6 +36,9 @@ func TestIndependentRelationsKeepNeighboursAndExactResponseCache(t *testing.T) {
 			}
 			column := def.Columns[0].Name
 			wireRows[1][column] = 42
+			// A caption that fails alone beside another cell leaves its row
+			// the other decisions; a row with nothing else is refused.
+			alone := def.Columns[0].Alone && len(def.Columns) > 1
 			response, err := json.Marshal(map[string]any{"rows": wireRows, "extra": true})
 			if err != nil {
 				t.Fatal(err)
@@ -47,29 +50,21 @@ func TestIndependentRelationsKeepNeighboursAndExactResponseCache(t *testing.T) {
 			// These rows have no knowledge entities. Their shared response is the
 			// cache unit even though validation accepts each row separately.
 			first, err := r.runTable(t.Context(), def, 1, rows)
-			if err != nil || base.calls != 1 || len(first) != 3 || first[0].answer == nil || first[1].answer != nil || first[2].answer == nil {
+			if err != nil || base.calls != 1 || len(first) != 3 || first[0].answer == nil || (first[1].answer != nil) != alone || first[2].answer == nil {
 				t.Fatalf("independent rows used knowledge routing or lost neighbours: %+v / %v", first, err)
 			}
-			if len(r.knowledge) != 0 || first[1].source != atlas.SourceGiven || len(r.rejected) != 1 || r.rejected[0].Samples[0] != "second" {
-				t.Fatalf("invalid row gained an answer or lost diagnostics: %+v", r.rejected)
+			if _, kept := first[1].answer[column]; kept || len(r.knowledge) != 0 || len(r.rejected) != 1 || r.rejected[0].Samples[0] != "second" {
+				t.Fatalf("invalid cell gained an answer or lost diagnostics: %+v", r.rejected)
+			}
+			if !alone && first[1].source != atlas.SourceGiven {
+				t.Fatalf("a refused row kept a model source: %+v", first[1])
 			}
 			exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, first[0].requestKey)
 			if err != nil || !found || !bytes.Equal(exchange.Response, response) || first[2].requestKey != first[0].requestKey {
 				t.Fatalf("partial response lost exact cache: %v", err)
 			}
-			windows, err := table.Windows(def, 1, rows)
-			if err != nil {
-				t.Fatal(err)
-			}
-			current, _ := table.State(def, windows[0])
-			old := def
-			old.Independent, old.Memoize = false, false
-			previous, _ := table.State(old, windows[0])
-			if !bytes.Equal(current, previous) {
-				t.Fatal("row isolation changed the existing request identity")
-			}
 			warm, err := r.runTable(t.Context(), def, 1, rows)
-			if err != nil || base.calls != 1 || warm[0].source != atlas.SourceCache || warm[1].answer != nil || warm[2].source != atlas.SourceCache {
+			if err != nil || base.calls != 1 || warm[0].source != atlas.SourceCache || (warm[1].answer != nil) != alone || warm[2].source != atlas.SourceCache {
 				t.Fatalf("same accepted neighbours requested again: %+v / %v", warm, err)
 			}
 			// The same exact request can repair its refused row through replay.

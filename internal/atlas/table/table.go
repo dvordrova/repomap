@@ -1,8 +1,7 @@
 // Package table is the one request shape the atlas asks the model with: a
 // keyed table. Rows go in with keys the code assigned; the same keys come
-// back with short cells. Independent rows are accepted or rejected separately;
-// coupled tables require a complete valid window. Nothing here knows what a
-// directory or a file is.
+// back with short cells. Every row is accepted or rejected separately from
+// its neighbours. Nothing here knows what a directory or a file is.
 package table
 
 import (
@@ -51,9 +50,10 @@ type Column struct {
 	// sent once, not once per row.
 	Options     []string `json:"options,omitempty"`
 	OptionsFrom string   `json:"options_from,omitempty"`
-	// LimitFrom names the row or context field bounding a Sequence's number
-	// of choices below the options it offers, such as a learning menu of
-	// five questions; an options list is already its own bound.
+	// LimitFrom names the row or context field that tells the model how many
+	// of a Sequence's options to choose, such as a learning menu of five
+	// questions. It is guidance: every distinct advertised ref the model
+	// chose is kept, and the owner journals a selection past it.
 	LimitFrom string `json:"limit_from,omitempty"`
 	// Free is a prefix after which the model may write its own short text,
 	// such as "new: " for a title the code has not seen. Empty means no.
@@ -63,33 +63,28 @@ type Column struct {
 	Note string `json:"note,omitempty"`
 	// EmptyValue is an owner-defined spelling for absent prose. It stays in
 	// the response contract but does not become text for the optional glossary.
+	// An empty, null or missing cell reads as it, and so does its spelling in
+	// another case or with a final period ("None.").
 	EmptyValue string `json:"empty_value,omitempty"`
-	// When limits this cell to a previously validated choice in the same row.
-	// Inactive cells have no authority and are not required or retained.
-	When map[string]string `json:"when,omitempty"`
-	// EmptyFrom names another text cell of the same row whose first sentence
-	// stands in when this required text cell comes back empty, null or
-	// missing; the answer records <name>_from with the source cell. It is a
-	// decoder rule, not part of the request or the memo state: an operation
-	// label taken from the model's own description keeps the row's accepted
-	// decision instead of refusing the whole row.
-	EmptyFrom string `json:"-"`
-	// Missing is the value a closed choice takes when the model omits the
-	// cell or sends null: a choice that already means "no decision", such as
-	// no. A decoder rule, not part of the request or the memo state;
-	// a written choice is still validated as before.
+	// Missing is the value a cell takes when the model omits it or sends
+	// null, and a text cell when it comes back empty: a value that already
+	// means "no decision", such as unassessed or a label's "-". A decoder
+	// rule, not part of the request or the memo state; a written choice is
+	// still validated as before.
 	Missing string `json:"-"`
-	// Unasked is the value a closed choice takes when the cell was never
-	// asked because its WhenOptionsFrom field advertises no choices, so a
-	// branch conditioned on it can still follow: an operation without
-	// registered names is a label operation and its name cell stays
-	// required. Empty leaves an unasked cell without a value, as a file's
-	// box that may not move. A decoder rule like Missing.
-	Unasked string `json:"-"`
 	// Optional lets the model leave the cell out or send null: the row then
-	// has no value for it, which is the answer "not this". A written choice
-	// is still validated. A decoder rule like Missing.
+	// has no value for it, which is the answer "not this". A written value
+	// is still validated; one that fails is discarded and recorded, and the
+	// row keeps its other cells. A decoder rule like Missing.
 	Optional bool `json:"-"`
+	// Alone lets this cell fail by itself: a missing, null, mistyped, empty
+	// or unlisted value, or repeated copies that differ, refuse only this
+	// cell, recorded as a rejection. The row keeps its other decisions unless
+	// a cell without Alone failed or no cell the model wrote survived: a
+	// Missing or EmptyValue filled in for an absent cell is no answer. A
+	// decoder rule like Missing; the owner reads an absent cell with its own
+	// fallback.
+	Alone bool `json:"-"`
 	// WhenOptionsFrom requires this cell only when the named input field, in
 	// the row or the window context, has advertised choices. A row without
 	// the field has no decision to request or validate: an address cell is
@@ -118,9 +113,6 @@ type Definition struct {
 	// encoding for isolated readings. Zero uses DefaultInputBytes as a packing
 	// target and keeps an oversized row whole in its own request.
 	MaxInputBytes int
-	// Independent validates each row separately from its neighbours.
-	// The prompt must restrict each answer to that row and its context.
-	Independent bool
 	// Memoize reuses independent description rows through entity knowledge.
 	Memoize bool
 	// ContextAfterRows keeps repeated evidence ahead of changing context in
@@ -281,6 +273,17 @@ func Request(def Definition, window Window) ([]byte, error) {
 			// "key" is every row's own identity in the request and the answer.
 			return nil, fmt.Errorf("table %s: column name %q is reserved for the row identity", def.Stage, column.Name)
 		}
+		if column.LimitFrom == "" {
+			continue
+		}
+		for _, row := range window.Rows {
+			// The limit the model is told is the owner's to supply: a row
+			// without it is a preparation error, never a refused answer.
+			field, found := fieldFrom(window.Context, row, column.LimitFrom)
+			if limit, isInt := field.Value.(int); !found || !isInt || limit < 1 {
+				return nil, fmt.Errorf("table %s: row %s has no positive integer %q for column %q", def.Stage, row.ID, column.LimitFrom, column.Name)
+			}
+		}
 	}
 	var out jsonBuffer
 	out.WriteString("{\n  \"table\": ")
@@ -311,9 +314,6 @@ func Request(def Definition, window Window) ([]byte, error) {
 		}
 		if column.EmptyValue != "" {
 			spec["empty_value"] = column.EmptyValue
-		}
-		if len(column.When) != 0 {
-			spec["when"] = column.When
 		}
 		if column.WhenOptionsFrom != "" {
 			spec["when_options_nonempty"] = column.WhenOptionsFrom
@@ -389,69 +389,6 @@ func Decode(def Definition, window Window, raw []byte) (Answers, error) {
 	return result.Answers, err
 }
 
-func decodeWindow(def Definition, window Window, raw []byte) (Answers, error) {
-	normalized, err := llm.NormalizeJSON(raw)
-	if err != nil {
-		return nil, err
-	}
-	var envelope struct {
-		Rows []map[string]json.RawMessage `json:"rows"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(normalized))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&envelope); err != nil {
-		return nil, fmt.Errorf("table %s: response is not {\"rows\": [...]}: %w", def.Stage, err)
-	}
-	if len(envelope.Rows) != len(window.Rows) {
-		return nil, fmt.Errorf("table %s: %d rows answered, %d asked", def.Stage, len(envelope.Rows), len(window.Rows))
-	}
-	answers := make(Answers, len(window.Rows))
-	byKey, err := rowIndexes(window.Rows)
-	if err != nil {
-		return nil, fmt.Errorf("table %s: %w", def.Stage, err)
-	}
-	seen := make(map[string]struct{}, len(window.Rows))
-	for _, cells := range envelope.Rows {
-		keyRaw, ok := cells["key"]
-		if !ok {
-			return nil, fmt.Errorf("table %s: a row has no key", def.Stage)
-		}
-		var key string
-		if err := json.Unmarshal(keyRaw, &key); err != nil {
-			return nil, fmt.Errorf("table %s: a row key is not a string", def.Stage)
-		}
-		index, ok := byKey[key]
-		if !ok {
-			return nil, fmt.Errorf("table %s: key %q was not asked", def.Stage, key)
-		}
-		if _, dup := seen[key]; dup {
-			return nil, fmt.Errorf("table %s: key %q answered twice", def.Stage, key)
-		}
-		seen[key] = struct{}{}
-		if len(cells) != len(def.Columns)+1 {
-			return nil, fmt.Errorf("table %s: row %s has %d cells, %d columns asked", def.Stage, key, len(cells)-1, len(def.Columns))
-		}
-		answer := make(Answer, len(def.Columns))
-		for _, column := range def.Columns {
-			cellRaw, ok := cells[column.Name]
-			if !ok {
-				return nil, fmt.Errorf("table %s: row %s has no %q cell", def.Stage, key, column.Name)
-			}
-			var cell string
-			if err := json.Unmarshal(cellRaw, &cell); err != nil {
-				return nil, fmt.Errorf("table %s: row %s cell %q is not a string", def.Stage, key, column.Name)
-			}
-			value, err := normalizeCell(column, window.Context, window.Rows[index], cell)
-			if err != nil {
-				return nil, fmt.Errorf("table %s: row %s: %w", def.Stage, key, err)
-			}
-			answer[column.Name] = value
-		}
-		answers[index] = answer
-	}
-	return answers, nil
-}
-
 func rowIndexes(rows []Row) (map[string]int, error) {
 	result := make(map[string]int, len(rows))
 	for i, row := range rows {
@@ -467,10 +404,23 @@ func rowIndexes(rows []Row) (map[string]int, error) {
 }
 
 func normalizeCell(column Column, context []Field, row Row, cell string) (string, error) {
-	if column.Kind == Prose {
+	if column.Kind == Prose || column.Kind == Text {
 		text := strings.TrimSpace(cell)
-		if text == "" {
+		if column.Kind == Text {
+			text = collapse(cell)
+		}
+		// The column's own spelling of absence, in any case or with a final
+		// period, and an empty cell read as that absence; without one, an
+		// empty cell has no answer.
+		switch {
+		case column.EmptyValue != "" && (text == "" || strings.EqualFold(strings.TrimSuffix(text, "."), column.EmptyValue)):
+			return column.EmptyValue, nil
+		case text == "" && column.Missing != "":
+			return column.Missing, nil
+		case text == "":
 			return "", fmt.Errorf("cell %q is empty", column.Name)
+		case column.Kind == Text && column.MaxRunes > 0:
+			return cutRunes(text, column.MaxRunes), nil
 		}
 		return text, nil
 	}
@@ -499,26 +449,10 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 		// Refs outside the row's options were never selectable: a row citing
 		// only such refs (calls listed as context beside call_options, or
 		// invented ones) selects nothing, and its other cells keep their
-		// decisions. The raw response keeps what was written.
-		if len(selected) == 0 {
-			return "", nil
-		}
-		limit := 0
-		if field, ok := fieldFrom(context, row, column.LimitFrom); ok {
-			limit, _ = field.Value.(int)
-		}
-		if column.LimitFrom != "" && (limit < 1 || len(selected) > limit) {
-			return "", fmt.Errorf("cell %q chooses %d items, limit %d", column.Name, len(selected), limit)
-		}
+		// decisions. The raw response keeps what was written. Every distinct
+		// advertised ref stays, in the written order, whatever LimitFrom
+		// asked: keeping the first N would be the code choosing.
 		return strings.Join(selected, " "), nil
-	case Text:
-		if text == "" {
-			return "", fmt.Errorf("cell %q is empty", column.Name)
-		}
-		if column.MaxRunes > 0 {
-			text = cutRunes(text, column.MaxRunes)
-		}
-		return text, nil
 	case Choice:
 		options := column.Options
 		if column.OptionsFrom != "" {
@@ -527,6 +461,17 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 		for _, option := range options {
 			if strings.EqualFold(text, option) {
 				return option, nil
+			}
+		}
+		// Surrounding quotes or backticks and one final . , ; or ! are
+		// formatting: "yes.", "\"p3\"" and "`d2`" are the listed choice. A ref
+		// followed by anything else, such as "p3: Storage", is not.
+		if bare := choiceText(text); bare != text {
+			text = bare
+			for _, option := range options {
+				if strings.EqualFold(text, option) {
+					return option, nil
+				}
 			}
 		}
 		// A closed choice whose only option is unknown has nothing else to
@@ -566,6 +511,23 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 		return "", fmt.Errorf("cell %q is %q, not one of the options", column.Name, text)
 	default:
 		return "", fmt.Errorf("column %q has kind %q", column.Name, column.Kind)
+	}
+}
+
+// choiceText strips the formatting a written choice may carry: surrounding
+// quotes or backticks, and one final . , ; or !.
+func choiceText(text string) string {
+	punctuated := false
+	for {
+		n := len(text)
+		switch {
+		case n >= 2 && strings.IndexByte("\"'`", text[0]) >= 0 && text[n-1] == text[0]:
+			text = strings.TrimSpace(text[1 : n-1])
+		case n >= 1 && !punctuated && strings.IndexByte(".,;!", text[n-1]) >= 0:
+			text, punctuated = strings.TrimSpace(text[:n-1]), true
+		default:
+			return text
+		}
 	}
 }
 
@@ -641,6 +603,10 @@ func collapse(text string) string {
 	fields := strings.FieldsFunc(text, func(r rune) bool { return unicode.IsSpace(r) || r < 0x20 || r == 0x7f })
 	return strings.Join(fields, " ")
 }
+
+// OneLine collapses whitespace and control characters to single spaces: a
+// prose cell shown where a line is required.
+func OneLine(text string) string { return collapse(text) }
 
 // LabelFromProse takes the first sentence of a prose cell as a short label,
 // or the prose cut to the limit when that sentence is still too long. A

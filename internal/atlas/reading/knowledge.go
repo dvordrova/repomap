@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/table"
@@ -64,7 +65,7 @@ type rememberedRow struct {
 type rememberedTable struct {
 	adapted                 llm.AdaptedResponse
 	observed                bool
-	rows                    map[string]map[string]json.RawMessage
+	rows                    map[string][]map[string]json.RawMessage
 	request, response       []byte
 	requestSHA, responseSHA string
 	err                     error
@@ -139,7 +140,7 @@ func (k Knowledge) identity(repository string) string {
 func (r *reader) recallRow(def table.Definition, window table.Window, ref rememberedRow) (rowAnswer, bool, error) {
 	answer, found, err := r.recallAnswer(def, window, ref)
 	if found && err == nil {
-		r.acceptRecall(def, ref)
+		r.acceptRecall(def, ref, answer.partial)
 	}
 	return answer, found, err
 }
@@ -168,34 +169,38 @@ func (r *reader) recallAnswer(def table.Definition, window table.Window, ref rem
 	if cached.err != nil {
 		return rowAnswer{}, false, cached.err
 	}
-	original, found := cached.rows[ref.RowKey]
-	if !found {
+	copies := cached.rows[ref.RowKey]
+	if len(copies) == 0 {
 		return rowAnswer{}, false, nil
 	}
-	if original == nil {
-		return rowAnswer{}, false, fmt.Errorf("knowledge: duplicate response row key %q", ref.RowKey)
+	// Every copy the response holds for the row is decoded as it was live:
+	// identical copies are one answer, differing ones none.
+	rows := make([]map[string]json.RawMessage, 0, len(copies))
+	for _, original := range copies {
+		cells := make(map[string]json.RawMessage, len(original))
+		for key, value := range original {
+			cells[key] = value
+		}
+		cells["key"], _ = json.Marshal(window.Rows[0].ID)
+		rows = append(rows, cells)
 	}
-	cells := make(map[string]json.RawMessage, len(original))
-	for key, value := range original {
-		cells[key] = value
-	}
-	cells["key"], _ = json.Marshal(window.Rows[0].ID)
-	raw, err := json.Marshal(map[string]any{"rows": []map[string]json.RawMessage{cells}})
+	raw, err := json.Marshal(map[string]any{"rows": rows})
 	if err != nil {
 		return rowAnswer{}, false, err
 	}
-	answers, err := table.Decode(def, window, raw)
+	result, err := table.DecodeResult(def, window, raw)
 	if err != nil {
 		return rowAnswer{}, false, err
 	}
-	return rowAnswer{answer: answers[0], source: atlas.SourceCache, requestSHA: cached.requestSHA,
-		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
+	return rowAnswer{answer: result.Answers[0], source: atlas.SourceCache, requestSHA: cached.requestSHA,
+		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey,
+		partial: len(result.AcceptedRowKeys()) == 0}, true, nil
 }
 
 // acceptRecall accepts one recalled row of a text-model response: its prose
-// reaches the glossary, and the first row recalled from a response with
-// rejected rows journals that response once.
-func (r *reader) acceptRecall(def table.Definition, ref rememberedRow) {
+// reaches the glossary unless the row lost a cell, and the first row
+// recalled from a response with rejected rows journals that response once.
+func (r *reader) acceptRecall(def table.Definition, ref rememberedRow, partial bool) {
 	if r.classifies(def) {
 		return
 	}
@@ -207,7 +212,9 @@ func (r *reader) acceptRecall(def table.Definition, ref rememberedRow) {
 		r.responseTables[ref.RequestKey] = cached
 	}
 	unlock()
-	cached.adapted.Accepted([]string{ref.RowKey})
+	if !partial {
+		cached.adapted.Accepted([]string{ref.RowKey})
+	}
 	if !observe {
 		return
 	}
@@ -244,9 +251,11 @@ func (r *reader) recallClassifierRow(def table.Definition, window table.Window, 
 	original := window
 	original.Rows = []table.Row{{ID: ref.RowKey, Fields: window.Rows[0].Fields}}
 	result, err := table.DecodeClassifierAnswers(def, original, cached.answers, table.MinProbabilityOf(def))
-	if err != nil || result.Answers[0] == nil {
+	if err != nil {
 		return rowAnswer{}, false, err
 	}
+	// A row the remembered response answered uncertainly is found with no
+	// answer: the same response would leave it so again.
 	return rowAnswer{answer: result.Answers[0], source: atlas.SourceCache, requestSHA: cached.requestSHA,
 		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
 }
@@ -261,30 +270,27 @@ type rememberedClassifier struct {
 
 // Index response rows without letting an invalid neighbour invalidate an
 // independently memoized answer. Required cells are checked when that row is
-// recalled against its current definition and exact input.
-func rememberedResponseRows(raw []byte) (map[string]map[string]json.RawMessage, error) {
+// recalled against its current definition and exact input. Every copy of a
+// key is kept, so a recall applies the live rule to repeats. The envelope
+// forms are the live decoder's.
+func rememberedResponseRows(raw []byte) (map[string][]map[string]json.RawMessage, error) {
 	normalized, err := llm.NormalizeJSON(raw)
 	if err != nil {
 		return nil, err
 	}
-	var envelope struct {
-		Rows []json.RawMessage `json:"rows"`
+	responseRows, err := table.ResponseRows(normalized)
+	if err != nil {
+		return nil, fmt.Errorf("knowledge: %w", err)
 	}
-	if err := json.Unmarshal(normalized, &envelope); err != nil || envelope.Rows == nil {
-		return nil, fmt.Errorf("knowledge: response is not {\"rows\": [...]}")
-	}
-	rows := make(map[string]map[string]json.RawMessage, len(envelope.Rows))
-	for _, rawRow := range envelope.Rows {
+	rows := make(map[string][]map[string]json.RawMessage, len(responseRows))
+	for _, rawRow := range responseRows {
 		var cells map[string]json.RawMessage
 		var key string
-		if json.Unmarshal(rawRow, &cells) != nil || json.Unmarshal(cells["key"], &key) != nil || key == "" {
+		if json.Unmarshal(rawRow, &cells) != nil || json.Unmarshal(cells["key"], &key) != nil || strings.TrimSpace(key) == "" {
 			continue
 		}
-		if _, duplicate := rows[key]; duplicate {
-			rows[key] = nil
-		} else {
-			rows[key] = cells
-		}
+		key = strings.TrimSpace(key)
+		rows[key] = append(rows[key], cells)
 	}
 	return rows, nil
 }
@@ -316,7 +322,7 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 			k, answer, found, err := prepared[i].input, prepared[i].answer, prepared[i].found, prepared[i].err
 			inputs[i] = k
 			if found {
-				r.acceptRecall(def, prepared[i].ref)
+				r.acceptRecall(def, prepared[i].ref, prepared[i].answer.partial)
 			}
 			if err != nil {
 				r.rejected = append(r.rejected, modeldiag.Row{Stage: def.Stage, Kind: "knowledge_rejected", Count: 1, Reason: err.Error(), Samples: []string{row.ID}})
@@ -326,6 +332,9 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 				answers[i] = answer
 				r.use(def.Stage).Reused++
 				r.use(def.Stage).Rows++
+				if answer.answer == nil {
+					r.use(def.Stage).Given++
+				}
 				fmt.Fprintf(&r.tables, "- Reused %s · %s\n", row.ID, answer.answer["line"])
 			} else if r.recallOnly {
 				answers[i] = rowAnswer{source: atlas.SourceGiven}

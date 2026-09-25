@@ -241,7 +241,6 @@ func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Resul
 	}
 	// Questions share source bytes, but each answer has its own allowed refs
 	// and completeness. A refused neighbour cannot invalidate its answer.
-	def.Independent = true
 	return llm.Call[table.Result]{State: call.State, Prompt: call.Prompt, Limits: call.Limits,
 		DecodeValidate: func(raw []byte) (table.Result, error) {
 			result, err := table.DecodeResult(def, window.table, raw)
@@ -252,12 +251,17 @@ func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Resul
 				if value == nil {
 					continue
 				}
-				if err := validateAnswerRow(value, window.table.Rows[i]); err != nil {
+				discard, err := validateAnswerRow(value, window.table.Rows[i])
+				if err != nil {
 					result.Answers[i] = nil
 					result.Rejections = append(result.Rejections, table.RowRejection{Key: window.table.Rows[i].ID, Reason: err.Error()})
+					continue
+				}
+				for _, column := range discard {
+					result.RefuseCell(i, column, "an unanswered question has no "+column)
 				}
 			}
-			if len(result.AcceptedRowKeys()) == 0 {
+			if result.Accepted() == 0 {
 				return result, fmt.Errorf("answer: no rows accepted: %s", result.Rejections[0].Reason)
 			}
 			return result, nil
@@ -265,29 +269,42 @@ func answerCall(def table.Definition, window answerWindow) (llm.Call[table.Resul
 	}, nil
 }
 
-func validateAnswerRow(value table.Answer, row table.Row) error {
+// validateAnswerRow checks one answer's cells against its closed state. The
+// state is the model's decision and is never promoted: an unanswered row
+// keeps its state and remaining gap, and the answer, basis and sources it
+// carries anyway have no authority and are returned to be discarded. A
+// substantive answer still needs its text and original sources; its basis
+// is one explanatory sentence and may be none. A partial or unanswered
+// answer may leave its gap unnamed; a settled one may not have one.
+func validateAnswerRow(value table.Answer, row table.Row) ([]string, error) {
 	state, text, refs, gap := value["state"], value["answer"], value["sources"], value["remaining"]
 	if state == "unanswered" {
-		if text != "none" || refs != "" || gap == "none" || value["basis"] != "none" {
-			return fmt.Errorf("unanswered needs no answer, basis or sources and must name the missing evidence")
+		var discard []string
+		if text != "none" {
+			discard = append(discard, "answer")
 		}
-	} else if text == "none" || refs == "" || value["basis"] == "none" {
-		return fmt.Errorf("a substantive answer needs text, its basis and original source refs")
+		if value["basis"] != "none" {
+			discard = append(discard, "basis")
+		}
+		if refs != "" {
+			discard = append(discard, "sources")
+		}
+		return discard, nil
+	}
+	if text == "none" || refs == "" {
+		return nil, fmt.Errorf("a substantive answer needs text and original source refs")
 	}
 	if (state == "answered" || state == "not_applicable") && gap != "none" {
-		return fmt.Errorf("a settled answer cannot have an unresolved part")
-	}
-	if state == "partial" && gap == "none" {
-		return fmt.Errorf("a partial answer must identify the unanswered part")
+		return nil, fmt.Errorf("a settled answer cannot have an unresolved part")
 	}
 	if state == "not_applicable" {
 		for _, field := range row.Fields {
 			if (field.Name == "retrieval_complete" || field.Name == "evidence_complete") && field.Value == false {
-				return fmt.Errorf("incomplete evidence cannot establish inapplicability")
+				return nil, fmt.Errorf("incomplete evidence cannot establish inapplicability")
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func answerProse(value string) string {

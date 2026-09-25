@@ -43,7 +43,7 @@ func Closed(def Definition) bool {
 		return false
 	}
 	for _, column := range def.Columns {
-		if column.Kind != Choice || column.Free != "" || len(column.When) > 0 || column.WhenOptionsFrom != "" {
+		if column.Kind != Choice || column.Free != "" || column.WhenOptionsFrom != "" {
 			return false
 		}
 	}
@@ -319,27 +319,41 @@ type ClassifierAnswer struct {
 }
 
 // ParseClassifierAnswers reads a decision-model response once, so rows
-// recalled from one remembered response need not parse it again each.
+// recalled from one remembered response need not parse it again each. Each
+// answer is read on its own: a malformed one leaves only its question not
+// answered. A response without answers decided nothing.
 func ParseClassifierAnswers(raw []byte) (map[string]ClassifierAnswer, error) {
 	var envelope struct {
-		Answers map[string]ClassifierAnswer `json:"answers"`
+		Answers map[string]json.RawMessage `json:"answers"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Answers == nil {
 		return nil, fmt.Errorf("response has no answers")
 	}
-	return envelope.Answers, nil
+	answers := make(map[string]ClassifierAnswer, len(envelope.Answers))
+	for key, rawAnswer := range envelope.Answers {
+		var answer ClassifierAnswer
+		if json.Unmarshal(rawAnswer, &answer) == nil {
+			answers[key] = answer
+		}
+	}
+	return answers, nil
 }
 
 // DecodeClassifierAnswers is DecodeClassifier over already parsed answers.
+// A window whose every row was answered, even uncertainly, is an explicit
+// answer: its uncertain rows stay unanswered and it is not asked again. A
+// window where no row was accepted and some row was not answered, or was
+// answered outside its options, is refused.
 func DecodeClassifierAnswers(def Definition, window Window, answers map[string]ClassifierAnswer, minProbability float64) (Result, error) {
 	envelope := struct{ Answers map[string]ClassifierAnswer }{answers}
 	yesAt := max(minProbability, 0.5+ClassifierNoulMargin)
-	result := Result{Answers: make(Answers, len(window.Rows)), independent: true, rowKeys: make([]string, len(window.Rows))}
-	accepted := 0
+	result := Result{Answers: make(Answers, len(window.Rows)), rowKeys: make([]string, len(window.Rows))}
+	accepted, uncertain := 0, 0
 	for i, row := range window.Rows {
 		result.rowKeys[i] = row.ID
 		answer := make(Answer, len(def.Columns))
 		reason := ""
+		unsure := false
 		for _, column := range def.Columns {
 			got, ok := envelope.Answers[questionKey(row, column)]
 			options := columnOptions(column, window.Context, row)
@@ -360,7 +374,7 @@ func DecodeClassifierAnswers(def Definition, window Window, answers map[string]C
 				case *got.Noul <= 1-yesAt:
 					continue
 				default:
-					reason = fmt.Sprintf("column %s is uncertain: yes at %.2f", column.Name, *got.Noul)
+					reason, unsure = fmt.Sprintf("column %s is uncertain: yes at %.2f", column.Name, *got.Noul), true
 				}
 				break
 			}
@@ -385,7 +399,7 @@ func DecodeClassifierAnswers(def Definition, window Window, answers map[string]C
 			case got.Choice != classifierAbsent && names.ref[got.Choice] == "":
 				reason = fmt.Sprintf("column %s chose %q, not one of the options", column.Name, got.Choice)
 			case probability <= minProbability:
-				reason = fmt.Sprintf("column %s is uncertain: %q at %.2f, not above %.2f", column.Name, got.Choice, probability, minProbability)
+				reason, unsure = fmt.Sprintf("column %s is uncertain: %q at %.2f, not above %.2f", column.Name, got.Choice, probability, minProbability), true
 			default:
 				answer[column.Name] = names.ref[got.Choice]
 				continue
@@ -394,12 +408,15 @@ func DecodeClassifierAnswers(def Definition, window Window, answers map[string]C
 		}
 		if reason != "" {
 			result.Rejections = append(result.Rejections, RowRejection{Key: row.ID, Reason: reason})
+			if unsure {
+				uncertain++
+			}
 			continue
 		}
 		result.Answers[i] = answer
 		accepted++
 	}
-	if accepted == 0 {
+	if accepted == 0 && uncertain < len(window.Rows) {
 		return Result{}, fmt.Errorf("table %s: no rows accepted; %s", def.Stage, result.Rejections[0].Reason)
 	}
 	return result, nil

@@ -232,9 +232,18 @@ func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) 
 				t.Fatalf("unrequested cells acquired authority: %+v / %v", result, err)
 			}
 			if outgoing {
+				// An unlisted address loses only the address: the line and the
+				// destination stand, and no address is taken.
 				bad, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"native","line":"Sends a request.","destination":"d1","address":"a999"}]}`))
-				if err == nil || len(bad.Rejections) != 1 || !strings.Contains(bad.Rejections[0].Reason, "address") {
-					t.Fatalf("fixed fact weakened closed address refs: %+v / %v", bad, err)
+				if err != nil || len(bad.Rejections) != 1 || bad.Rejections[0].Cell != "address" || !strings.Contains(bad.Rejections[0].Reason, "a999") {
+					t.Fatalf("an unlisted address was not refused alone: %+v / %v", bad, err)
+				}
+				if _, taken := bad.Answers[0]["address"]; taken || bad.Answers[0]["line"] != "Sends a request." || bad.Answers[0]["destination"] != "d1" || len(bad.AcceptedRowKeys()) != 0 {
+					t.Fatalf("fixed fact weakened closed address refs: %+v", bad)
+				}
+				// A row whose every cell fails is still refused.
+				if refused, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"native","line":"","destination":"d999","address":"a999"}]}`)); err == nil || refused.Answers[0] != nil {
+					t.Fatalf("a row without one valid cell was accepted: %+v / %v", refused, err)
 				}
 			}
 		})

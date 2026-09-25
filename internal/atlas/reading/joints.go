@@ -49,11 +49,13 @@ func (r *reader) readTargets(ctx context.Context) error {
 		return err
 	}
 	for i, target := range ordered {
-		if answer := answers[i]; answer.answer != nil {
-			r.targets[target.ID].line = answer.answer["line"]
-			if target.SelectedRole == "" {
-				r.targets[target.ID].role = answer.answer["role"]
-			}
+		// A cell refused alone keeps the fallback: no line, the native role.
+		answer := answers[i].answer
+		if line, ok := answer["line"]; ok {
+			r.targets[target.ID].line = line
+		}
+		if role, ok := answer["role"]; ok && target.SelectedRole == "" {
+			r.targets[target.ID].role = role
 		}
 	}
 	r.reportStage(def.Stage)

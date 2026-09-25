@@ -19,7 +19,7 @@ var keysPrompt string
 // file a declaration happens to stand in is only its address.
 func Keys() table.Definition {
 	return table.Definition{
-		Stage: StageKeys, Contract: "repomap.atlas.keys.v2", System: keysPrompt, Independent: true,
+		Stage: StageKeys, Contract: "repomap.atlas.keys.v2", System: keysPrompt,
 		// A decision model ranks a part's candidates; readKeys keeps the top.
 		Classifier: true, Ranked: true,
 		Columns: []table.Column{

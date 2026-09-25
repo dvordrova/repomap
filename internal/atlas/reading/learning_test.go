@@ -114,15 +114,19 @@ func TestLearningAllowsZeroOneManyWithOriginalReasons(t *testing.T) {
 	if refs := got.Reviews[0].Questions[0].Sources; len(refs) != 1 || refs[0] != "e1" {
 		t.Fatalf("refs: %v", refs)
 	}
-	for _, test := range []string{"missing-intent", "duplicate-intent", "no-source", "partial-inapplicable", "unsupported-inapplicable", "blank-reason", "blank-question", "blank-why"} {
+	for _, test := range []string{"missing-intent", "duplicate-intent-differently", "no-source", "partial-inapplicable", "unsupported-inapplicable", "blank-question"} {
 		t.Run(test, func(t *testing.T) {
 			bad := learningReply()
 			context := pool
 			switch test {
 			case "missing-intent":
 				bad.Reviews = bad.Reviews[1:]
-			case "duplicate-intent":
-				bad.Reviews = append(bad.Reviews, bad.Reviews[0])
+			case "duplicate-intent-differently":
+				// Two different reviews of one intent are no review: neither
+				// is chosen and they are not joined.
+				again := bad.Reviews[0]
+				again.Reason = "Another reason."
+				bad.Reviews = append(bad.Reviews, again)
 			case "no-source":
 				bad.Reviews[0].Questions[0].Sources = []string{"unknown"}
 			case "partial-inapplicable":
@@ -130,20 +134,13 @@ func TestLearningAllowsZeroOneManyWithOriginalReasons(t *testing.T) {
 				bad.Reviews[1] = learningReview{Intent: "run", State: "not_applicable", Reason: "Not a program.", Sources: []string{"e1"}}
 			case "unsupported-inapplicable":
 				bad.Reviews[1] = learningReview{Intent: "run", State: "not_applicable", Reason: "Not found."}
-			case "blank-reason":
-				// A questions review without a reason takes its first question's
-				// why (learning_validation_test.go); an unknown review has no
-				// other content, so a blank reason still refuses it.
-				bad.Reviews[1].Reason = " \n "
 			case "blank-question":
 				bad.Reviews[0].Questions[0].Question = " \n "
-			case "blank-why":
-				bad.Reviews[0].Questions[0].Why = " \n "
 			}
 			raw, _ := json.Marshal(bad)
 			got, err := decodeLearning(raw, context)
 			badIntent := "purpose"
-			if strings.Contains(test, "inapplicable") || test == "blank-reason" {
+			if strings.Contains(test, "inapplicable") {
 				badIntent = "run"
 			}
 			if err != nil || len(got.Reviews) != len(learningIntents())-1 || len(got.Rejections) != 1 || got.Rejections[0].Intent != badIntent || slices.Contains(got.AcceptedRowKeys(), badIntent) {
@@ -723,6 +720,8 @@ type learningProvider struct {
 	reply func() learningResponse
 	// mergeReply replaces the computed grouping as the merge response when set.
 	mergeReply []byte
+	// menuEdit, when set, changes each menu row after it is written.
+	menuEdit func(row map[string]string)
 }
 
 type learningMenuRequest struct {
@@ -779,6 +778,9 @@ func (p *learningProvider) Complete(_ context.Context, prepared llm.Prepared) (l
 				choice = "none"
 			}
 			rows = append(rows, map[string]string{"key": row.Key, "questions": choice, "reason": "These questions provide a complementary introduction to the topic."})
+			if p.menuEdit != nil {
+				p.menuEdit(rows[len(rows)-1])
+			}
 		}
 		if p.dropMenuLast && len(rows) > 0 {
 			rows = rows[:len(rows)-1]
@@ -925,13 +927,13 @@ func TestLearningMenuReducesCompletePoolsAndReusesTheirCache(t *testing.T) {
 // learningMenuLimit refs per intent: one over the ceiling is refused as a
 // malformed row, with the count in the journal and the intent's candidates
 // left inspectable; a smaller menu is read as before.
-func TestLearningMenuRefusesAnIntentOverItsCeiling(t *testing.T) {
+func TestLearningMenuKeepsEveryChosenQuestionPastItsLimit(t *testing.T) {
 	for _, refs := range []int{learningMenuLimit + 2, learningMenuLimit - 2} {
 		t.Run(fmt.Sprintf("refs=%d", refs), func(t *testing.T) {
 			provider := &learningProvider{menuRefs: refs}
 			r := isolatedLearningReader(t, t.TempDir(), provider)
 			// Seven purpose candidates, and one data candidate whose menu of one
-			// stays within the ceiling beside the refused purpose menu.
+			// stays within the limit beside the purpose menu.
 			var questions []atlas.LearningQuestion
 			for i := 0; i < learningMenuLimit+2; i++ {
 				q := fmt.Sprintf("How does part %d start?", i)
@@ -960,11 +962,13 @@ func TestLearningMenuRefusesAnIntentOverItsCeiling(t *testing.T) {
 				audiences[selection.Intent+"/"+selection.Audience]++
 			}
 			if refs > learningMenuLimit {
-				if r.learning.State != "partial" || !reflect.DeepEqual(r.learning.Questions, []atlas.LearningQuestion{data}) || audiences["purpose/unavailable"] != learningMenuLimit+2 || audiences["data/first_day"] != 1 {
-					t.Fatalf("a menu over the ceiling was read or refused its neighbour: state %q, audiences %v, questions %+v", r.learning.State, audiences, r.learning.Questions)
+				// Every advertised question the model chose stays chosen; the
+				// journal names the menu and its count.
+				if r.learning.State != "ready" || !reflect.DeepEqual(r.learning.Questions, questions) || audiences["purpose/first_day"] != refs || audiences["data/first_day"] != 1 {
+					t.Fatalf("a menu past its limit was cut or refused: state %q, audiences %v, questions %+v", r.learning.State, audiences, r.learning.Questions)
 				}
-				if len(r.rejected) != 1 || r.rejected[0].Kind != "row_rejected" || !reflect.DeepEqual(r.rejected[0].Samples, []string{"purpose", "purpose"}) || !strings.Contains(r.rejected[0].Reason, fmt.Sprintf("chooses %d items, limit %d", refs, learningMenuLimit)) {
-					t.Fatalf("journal does not name the refused menu and its count: %+v", r.rejected)
+				if len(r.rejected) != 1 || r.rejected[0].Kind != "menu_over_limit" || !reflect.DeepEqual(r.rejected[0].Samples, []string{"purpose"}) || !strings.Contains(r.rejected[0].Reason, fmt.Sprintf("chose %d questions, limit %d", refs, learningMenuLimit)) {
+					t.Fatalf("journal does not name the menu past its limit and its count: %+v", r.rejected)
 				}
 				return
 			}

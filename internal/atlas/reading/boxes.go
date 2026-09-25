@@ -423,7 +423,10 @@ func (r *reader) readSymbols(ctx context.Context) error {
 	answers = append(answers, typeAnswers...)
 	for i, place := range order {
 		if answers[i].answer != nil {
-			r.symbolLine[place.ID] = cell{value: answers[i].answer["line"], source: answers[i].source}
+			// A type's prose line keeps its paragraphs in the answer, but the
+			// atlas shows it as one line: a newline or tab there is form, and
+			// it would fail the atlas and group index validation.
+			r.symbolLine[place.ID] = cell{value: table.OneLine(answers[i].answer["line"]), source: answers[i].source}
 		}
 	}
 	r.reportStage(lines.StageSymbols)
@@ -600,7 +603,11 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				}
 				continue
 			}
-			state.line = answer["line"]
+			// A cell refused alone keeps the fact's given line and names no
+			// destination or address.
+			if line, ok := answer["line"]; ok {
+				state.line = line
+			}
 			if !fixed {
 				state.kind = answer["kind"]
 			}

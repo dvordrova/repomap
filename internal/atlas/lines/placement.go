@@ -24,7 +24,7 @@ var placementPrompt string
 // file left out, the two parts it was listed in for a conflict.
 func Placement() table.Definition {
 	return table.Definition{
-		Stage: StagePlacement, Contract: "repomap.atlas.placement.v1", System: placementPrompt, Independent: true,
+		Stage: StagePlacement, Contract: "repomap.atlas.placement.v1", System: placementPrompt,
 		Columns: []table.Column{
 			{Name: "part", Kind: table.Choice, OptionsFrom: "part_options", Note: "the p* ref of the one listed part this file belongs to"},
 		},
