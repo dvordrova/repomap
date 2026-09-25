@@ -695,11 +695,23 @@ func (r *reader) askParts(ctx context.Context, view *designView, round int) ([]p
 			} else {
 				use.Live++
 			}
-			if err := r.writeWindowExchange(window, []byte(calls[i].Prompt.System), []byte(calls[i].Prompt.User), result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
-				return nil, err
-			}
 			responseRef := path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))
 			fmt.Fprintf(&r.tables, "## %s · round %d · window %d · %s\n\n", lines.StageZones, round, window.Index, path.Join(atlas.TablesDir, r.windowFileName(window, "request.ref.json")))
+			// Validation records each annotation of an accepted answer as a
+			// rejected row that points at this window; an answer so annotated,
+			// like a refused one, keeps its payloads in the run.
+			recorded := len(r.rejected)
+			if result.Err == nil {
+				listed := make([]string, len(windows[i]))
+				for j, file := range windows[i] {
+					listed[j] = file.id
+				}
+				answer.partition = validatePartition(result.Outcome.Value, listed)
+				r.recordPartition(view.targetID, answer.partition, responseRef, len(windows[i]))
+			}
+			if err := r.writeWindowExchange(window, []byte(calls[i].Prompt.System), []byte(calls[i].Prompt.User), result.Outcome.Request, result.Outcome.Response, result.Err != nil || len(result.Outcome.ResponseRejections) > 0 || len(r.rejected) > recorded); err != nil {
+				return nil, err
+			}
 			if result.Err != nil {
 				use.Rejected++
 				r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Target: view.targetID, Kind: "window_rejected", Count: len(windows[i]), Reason: result.Err.Error(), ResponseRef: responseRef})
@@ -707,12 +719,6 @@ func (r *reader) askParts(ctx context.Context, view *designView, round int) ([]p
 				answered = append(answered, answer)
 				continue
 			}
-			listed := make([]string, len(windows[i]))
-			for j, file := range windows[i] {
-				listed[j] = file.id
-			}
-			answer.partition = validatePartition(result.Outcome.Value, listed)
-			r.recordPartition(view.targetID, answer.partition, responseRef, len(windows[i]))
 			raw, err := json.MarshalIndent(result.Outcome.Value, "", "  ")
 			if err != nil {
 				return nil, err
@@ -1384,7 +1390,7 @@ func (r *reader) describe(ctx context.Context, stage string, round int, calls []
 		} else {
 			use.Live++
 		}
-		if err := r.writeWindowExchange(window, nil, []byte(calls[i].Prompt.User), result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+		if err := r.writeWindowExchange(window, nil, []byte(calls[i].Prompt.User), result.Outcome.Request, result.Outcome.Response, result.Err != nil || len(result.Outcome.ResponseRejections) > 0); err != nil {
 			return nil, err
 		}
 		var input describeInput

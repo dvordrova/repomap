@@ -206,8 +206,12 @@ type SemanticExchange struct {
 	// its prefix cache (DeepSeek's prompt_cache_hit_tokens). Windows over the
 	// same evidence share a prefix and run lead-first for this reason; the
 	// journal shows whether the provider honoured it.
-	CachedInputTokens   int
-	ReasoningTokens     int
+	CachedInputTokens int
+	ReasoningTokens   int
+	// PartRefused marks an answer accepted with a refused or annotated part:
+	// a row, cell, member or term. Rejected rows point at its entry, so its
+	// bytes stay in the run as well as in the cache record.
+	PartRefused         bool
 	Request             []byte
 	Response            []byte
 	ResponseUnavailable *SemanticUnavailable
@@ -574,12 +578,14 @@ func (w *Writer) writeSemanticExchange(
 	if cacheRoot == "" {
 		cacheRoot = w.BaseDir
 	}
-	// An accepted answer's bytes are its cache record's payloads, shared by
-	// every run that reuses it. A refused or failed exchange's bytes belong to
-	// no record: they stay in this run for whoever fixes the decoder, and
-	// cache clear leaves them. Both are linked by the same relative file.
+	// A wholly accepted answer's bytes are its cache record's payloads, shared
+	// by every run that reuses it. A refused or failed exchange's bytes belong
+	// to no record, and an answer accepted with a refused part is what that
+	// run's rejected rows point at: both stay in this run for whoever fixes
+	// the decoder, and cache clear leaves them. The accepted record keeps its
+	// own copy. Both places are linked by the same relative file.
 	save := func(raw []byte) (string, error) { return llm.SaveRunPayload(w.runDir, raw) }
-	if exchange.State == SemanticStateAccepted || exchange.State == SemanticStateCacheHit {
+	if (exchange.State == SemanticStateAccepted || exchange.State == SemanticStateCacheHit) && !exchange.PartRefused {
 		save = func(raw []byte) (string, error) { return llm.SavePayload(cacheRoot, raw) }
 	}
 	for _, payload := range []struct {

@@ -232,6 +232,9 @@ func semanticExchangeForStageEventAt(
 		OutputTokens:      event.Metrics.OutputTokens,
 		CachedInputTokens: event.Metrics.PromptCacheHitTokens,
 		ReasoningTokens:   event.Metrics.ReasoningTokens,
+		// Every rejection becomes a rejected.jsonl row that points at this
+		// entry, so an accepted answer with one keeps its bytes in the run.
+		PartRefused: len(event.ResponseRejections) > 0,
 	}
 	if event.Source == llm.SourceLive {
 		exchange.RequestProvenance = SemanticRequestExactSent

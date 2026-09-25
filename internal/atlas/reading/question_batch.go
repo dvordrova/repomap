@@ -166,7 +166,7 @@ func (r *reader) writeQuestionExchange(index int, exchange questionbatch.Exchang
 	window := table.Window{Stage: lines.StageQuestion, Index: index}
 	r.questionKey = ""
 	writeFiles := func() error {
-		return r.writeWindowExchange(window, []byte(exchange.System), exchange.Input, exchange.Outcome.Request, exchange.Outcome.Response, exchange.Err != nil)
+		return r.writeWindowExchange(window, []byte(exchange.System), exchange.Input, exchange.Outcome.Request, exchange.Outcome.Response, exchange.Err != nil || len(exchange.Outcome.ResponseRejections) > 0)
 	}
 	if err := writeFiles(); err != nil {
 		return err

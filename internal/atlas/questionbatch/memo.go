@@ -195,11 +195,14 @@ func (data catalogue) recall(ctx context.Context, executor llm.Executor, provide
 			if err := ctx.Err(); err != nil {
 				return nil, nil, err
 			}
+			// Like a live outcome, a reused one carries the rejections its
+			// journal rows name, so its window keeps its payloads in the run.
 			outcome := llm.Outcome[Response]{
 				Value: response, CacheKey: ref.RequestKey, Cached: true,
 				Request: cached.exchange.Request, Response: cached.exchange.Response,
 				RequestSHA256: cached.exchange.RequestSHA256, ResponseSHA256: cached.exchange.ResponseSHA256,
 				RequestBytes: len(cached.exchange.Request), ResponseBytes: len(cached.exchange.Response),
+				ResponseRejections: append(slices.Clone(cached.adapted.Rejections), response.ResponseRejections()...),
 			}
 			if !data.apply(&result.Questions[q], rows, ref.QuestionRef, outcome) {
 				continue

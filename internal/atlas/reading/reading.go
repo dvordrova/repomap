@@ -810,9 +810,9 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	results := llm.ExecuteJSONEach(ctx, executor, provider, calls)
 	for i, window := range windows {
 		result := results[i]
-		// The prompt and input follow the exchange: a refused window's
-		// payloads are all the run's own.
-		if err := r.writeWindowExchange(window, []byte(def.System), window.Request, result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+		// The prompt and input follow the exchange: a window refused whole or
+		// in a row or cell keeps all its payloads in the run.
+		if err := r.writeWindowExchange(window, []byte(def.System), window.Request, result.Outcome.Request, result.Outcome.Response, result.Err != nil || len(result.Outcome.ResponseRejections) > 0); err != nil {
 			return nil, err
 		}
 		if result.Err == nil {
@@ -975,10 +975,13 @@ func (r *reader) writeWindowFile(window table.Window, suffix string, data []byte
 
 // writeWindowExchange references every payload of one window's model
 // exchange: its prompt, its table input, the exact request and the response;
-// an absent one is nil. An accepted answer's payloads are linked from the
-// shared store beside its cache record's. A refused answer's payloads belong
-// to no accepted record: they are saved in this run, beside its journal, where
-// cache clear leaves them and no later run reads them.
+// an absent one is nil. A wholly accepted answer's payloads are linked from
+// the shared store beside its cache record's. refused is an answer refused
+// whole or in any part: its call failed, its decoder refused a row, cell or
+// member, or the stage recorded a rejected row for it. Its payloads are what
+// those rows point at, so they are saved in this run, beside its journal,
+// where cache clear leaves them and no later run reads them; an accepted
+// record keeps its own copy in the store.
 func (r *reader) writeWindowExchange(window table.Window, prompt, input, request, response []byte, refused bool) error {
 	cacheRoot := r.opts.Executor.RootDir
 	if cacheRoot == "" {

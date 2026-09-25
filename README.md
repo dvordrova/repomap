@@ -162,8 +162,9 @@ Inspect `tables.md`, or compare `tables/*.result.json`: the latter holds
 normalized cells with source IDs, paths and lines, or an explicit rejection
 reason. The matching `.prompt.ref.json`, `.input.ref.json`, `.request.ref.json`
 and `.response.ref.json` link to the exact bytes in the shared
-`.llm-cache/payloads/` directory; every ref of a refused window links the run's
-own `payloads/` copy instead. `.input.ref.json` holds the table input before
+`.llm-cache/payloads/` directory; every ref of a window refused whole or in
+any part (a row, cell or annotation in `rejected.jsonl`) links the run's own
+`payloads/` copy instead. `.input.ref.json` holds the table input before
 the provider envelope is built. `reading-result.json` records completion,
 stage counts and wall time. Stopping early produces no partial `atlas.json`
 and no HTML. These artifacts are for development, not another reader UI.
@@ -424,11 +425,14 @@ run; the next reading uses the updated answer.
 Accepted requests and responses are stored once by content hash under
 `.llm-cache/payloads/`. A refused or failed exchange is kept for debugging in
 its run's own `payloads/` directory instead: it is no cache entry, the next run
-asks again, and cache clear leaves it. Run directories contain exchange
-metadata and relative references, along with their normalized results and
-report snapshot. Cache clear removes the shared payloads: existing HTML, result
-snapshots and refused exchanges remain, but links to accepted exchanges stop
-resolving. `--no-cache` still saves accepted answers' shared payloads for
+asks again, and cache clear leaves it. An answer accepted with a refused part
+(a row, cell, member, term or annotation) stays an accepted cache entry, and
+each run that reads it also keeps its own copy, which its `rejected.jsonl`
+rows point at. Run directories contain exchange metadata and relative
+references, along with their normalized results and report snapshot. Cache
+clear removes the shared payloads: existing HTML, result snapshots and refused
+or partly refused exchanges remain, but links to wholly accepted exchanges
+stop resolving. `--no-cache` still saves accepted answers' shared payloads for
 diagnostics, without updating reusable answer pointers.
 
 Repository input is trusted. repomap does not scan it for credentials, and it

@@ -1,12 +1,18 @@
 package reading
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/questionbatch"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/modeldiag"
 )
 
@@ -110,5 +116,99 @@ func TestOmittedQuestionIsRecoveredByReaskAndNotJournaledAsLoss(t *testing.T) {
 	rows, err := modeldiag.Read(opts.OwnerRunDir)
 	if err != nil || len(rows) != 1 || rows[0].Kind != "question_omitted" || rows[0].Count != 4 || rows[0].Samples[0] != "q2" {
 		t.Fatalf("shared journal counted the recovered omission as a loss: %+v / %v", rows, err)
+	}
+}
+
+// A shared question window whose accepted answer had a cell refused is what
+// the journal's row points at (owner, 2026-09-26). The run that asked and the
+// warm run that reuses the remembered answer each keep that exchange's
+// payloads, so after cache clear every row and every ref of the question
+// windows still lead to bytes. (The warm run asks the refused cell's row
+// again; that answer is refused whole.)
+func TestPartlyRefusedQuestionWindowStaysInItsRun(t *testing.T) {
+	opts, provider := questionFixture(t)
+	opts.WindowRows = 0
+	opts.Questions = []string{"Where is state stored?", "Where is it encrypted?"}
+	provider.questionBatchFor = func(request questionBatchRequest, response questionbatch.Response) questionbatch.Response {
+		for i, question := range request.Questions {
+			if question.Question == opts.Questions[1] {
+				response.Questions[i].Selections[0].Relevance = "invalid"
+			}
+		}
+		return response
+	}
+	base := t.TempDir()
+	read := func(name string) (string, int) {
+		t.Helper()
+		writer, err := debugdump.NewWriter(base, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer writer.Close()
+		run := opts
+		run.OwnerRunDir = filepath.Join(base, name)
+		run.Executor.Observer = debugdump.NewSemanticObserver(writer)
+		result, err := Read(t.Context(), run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := modeldiag.Append(run.OwnerRunDir, result.Rejected); err != nil {
+			t.Fatal(err)
+		}
+		reused := 0
+		for _, use := range result.Uses {
+			if use.Stage == lines.StageQuestion {
+				reused = use.Reused
+			}
+		}
+		return run.OwnerRunDir, reused
+	}
+	cold, _ := read("cold")
+	warm, reused := read("warm")
+	if reused == 0 {
+		t.Fatal("warm reading did not reuse the remembered answer")
+	}
+	if err := os.RemoveAll(filepath.Join(opts.Executor.RootDir, llm.CacheDirectoryName)); err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range []string{cold, warm} {
+		rows, err := modeldiag.Read(run)
+		if err != nil || !slices.ContainsFunc(rows, func(row modeldiag.Row) bool { return row.Kind == "question_rejected" }) {
+			t.Fatalf("%s: the refused cell was not journaled: %+v / %v", filepath.Base(run), rows, err)
+		}
+		for _, row := range rows {
+			if row.ResponseRef == "" {
+				continue
+			}
+			ref := filepath.Join(run, filepath.FromSlash(row.ResponseRef))
+			if strings.HasSuffix(ref, ".ref.json") {
+				if body, err := readWindowPayload(ref); err != nil || len(body) == 0 {
+					t.Errorf("%s: after cache clear %s leads nowhere: %v", filepath.Base(run), row.ResponseRef, err)
+				}
+				continue
+			}
+			raw, err := os.ReadFile(ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var record debugdump.SemanticExchangeRecord
+			if err := json.Unmarshal(raw, &record); err != nil {
+				t.Fatal(err)
+			}
+			for _, payload := range []debugdump.SemanticPayloadRecord{record.Request, record.Response} {
+				if body, err := os.ReadFile(filepath.Join(filepath.Dir(ref), payload.File)); err != nil || len(body) == 0 {
+					t.Errorf("%s: after cache clear the %s row's %s leads nowhere: %v", filepath.Base(run), row.Kind, row.ResponseRef, err)
+				}
+			}
+		}
+		refs, err := filepath.Glob(filepath.Join(run, atlas.TablesDir, lines.StageQuestion+"*.ref.json"))
+		if err != nil || len(refs) == 0 {
+			t.Fatalf("%s: no question window refs: %v", filepath.Base(run), err)
+		}
+		for _, ref := range refs {
+			if body, err := readWindowPayload(ref); err != nil || len(body) == 0 {
+				t.Errorf("%s: after cache clear %s leads nowhere: %v", filepath.Base(run), filepath.Base(ref), err)
+			}
+		}
 	}
 }

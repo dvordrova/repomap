@@ -150,15 +150,23 @@ func TestRefusedAnswerStaysInItsRunAndOutOfTheCache(t *testing.T) {
 		t.Fatalf("cache clear left the cache: %v", err)
 	}
 	for run, before := range map[string]map[string][]byte{cold: coldRefused, warm: warmRefused} {
-		refs := refusedResponseRefs(t, run)
-		if len(refs) == 0 {
-			t.Errorf("%s: rejected.jsonl names no refused response", filepath.Base(run))
-		}
-		for _, ref := range refs {
-			body, err := os.ReadFile(resolveResponseRef(t, run, ref))
-			if err != nil || !bytes.Equal(body, provider.answer) {
-				t.Errorf("%s: after cache clear %s does not lead to the refused answer: %q, %v", filepath.Base(run), ref, body, err)
+		refused := 0
+		for _, row := range rejectedResponseRefs(t, run) {
+			body, err := os.ReadFile(resolveResponseRef(t, run, row.ref))
+			if err != nil {
+				t.Errorf("%s: after cache clear %s row's %s leads nowhere: %v", filepath.Base(run), row.stage, row.ref, err)
+				continue
 			}
+			if row.stage != lines.StageFiles {
+				continue
+			}
+			refused++
+			if !bytes.Equal(body, provider.answer) {
+				t.Errorf("%s: after cache clear %s does not lead to the refused answer: %q", filepath.Base(run), row.ref, body)
+			}
+		}
+		if refused == 0 {
+			t.Errorf("%s: rejected.jsonl names no refused response", filepath.Base(run))
 		}
 		for _, link := range exchangeLinks(t, run) {
 			if !link.refused {
@@ -167,6 +175,172 @@ func TestRefusedAnswerStaysInItsRunAndOutOfTheCache(t *testing.T) {
 			body, err := os.ReadFile(link.path)
 			if err != nil || !bytes.Equal(body, before[link.from+" "+link.label]) {
 				t.Errorf("%s: after cache clear %s lost the refused %s: %v", filepath.Base(run), link.from, link.label, err)
+			}
+		}
+	}
+}
+
+// partlyRefusingTableProvider answers one atlas table like the ordinary test
+// provider plus a row nobody asked for: the decoder refuses that row and
+// accepts the rest of the answer.
+type partlyRefusingTableProvider struct {
+	*terminologyRuntimeProvider
+	table string
+
+	mu       sync.Mutex
+	requests [][]byte
+	answer   []byte
+	calls    int
+}
+
+func (p *partlyRefusingTableProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls++
+	completion, err := p.terminologyRuntimeProvider.Complete(ctx, prepared)
+	var message map[string]string
+	var input struct {
+		Table string `json:"table"`
+	}
+	if err != nil || json.Unmarshal(prepared.Bytes(), &message) != nil || json.Unmarshal([]byte(message["user"]), &input) != nil || input.Table != p.table {
+		return completion, err
+	}
+	var answer struct {
+		Rows []map[string]string `json:"rows"`
+	}
+	if err := json.Unmarshal(completion.Response, &answer); err != nil {
+		return completion, err
+	}
+	answer.Rows = append(answer.Rows, map[string]string{"key": "p999"})
+	if completion.Response, err = json.Marshal(answer); err != nil {
+		return completion, err
+	}
+	p.requests = append(p.requests, prepared.Bytes())
+	p.answer = completion.Response
+	return completion, nil
+}
+
+// An answer accepted with a refused row keeps both lives (owner,
+// 2026-09-26): its accepted record stays in the cache and answers the next
+// run, and each run that reads it keeps its own copy of what its rejected
+// rows point at. After cache clear every rejected row's response_ref still
+// leads to the answer, while a wholly accepted answer made no copy.
+func TestPartlyRefusedAnswerStaysInItsRunAndInTheCache(t *testing.T) {
+	input := readCommandInputFixture(t)
+	debugDir := t.TempDir()
+	provider := &partlyRefusingTableProvider{terminologyRuntimeProvider: &terminologyRuntimeProvider{}, table: lines.StageFiles}
+	factory := func() (llm.Provider, error) { return provider, nil }
+	read := func(name string) string {
+		t.Helper()
+		run := filepath.Join(debugDir, name)
+		args := []string{input, "--through", "files", "--output", run, "--debug-dir", debugDir}
+		if err := runReadConfigured(t.Context(), args, io.Discard, factory, false); err != nil {
+			t.Fatalf("%s reading: %v", name, err)
+		}
+		return run
+	}
+
+	cold := read("cold")
+	if len(provider.requests) != 1 {
+		t.Fatalf("fixture must answer the %s table once with a refused row: %d", lines.StageFiles, len(provider.requests))
+	}
+	request, answer := provider.requests[0], provider.answer
+	cache := filepath.Join(debugDir, llm.CacheDirectoryName)
+	// The accepted record is the cache's as before: it owns its request and
+	// response in the shared store.
+	owned := acceptedRecordPayloads(t, cache)
+	for _, raw := range [][]byte{request, answer} {
+		name := contentName(raw) + "json"
+		if _, err := os.Stat(filepath.Join(cache, "payloads", name)); !owned[name] || err != nil {
+			t.Fatalf("the partly refused answer's accepted record does not own %s in the store: %v", name, err)
+		}
+	}
+	calls := provider.calls
+	warm := read("warm")
+	if provider.calls != calls {
+		t.Fatalf("warm run asked the provider %d more times; want every answer, the partly refused one too, from the cache", provider.calls-calls)
+	}
+	// payloads reads every payload a run links for the partly refused
+	// exchange, all the run's own. Every other exchange was accepted whole
+	// and links only the shared store.
+	payloads := func(run string) map[string][]byte {
+		t.Helper()
+		bodies := make(map[string][]byte)
+		for _, link := range exchangeLinks(t, run) {
+			inRun := strings.HasPrefix(link.path, run+string(filepath.Separator))
+			if link.stage != lines.StageFiles {
+				if inRun || link.refused {
+					t.Errorf("%s links a wholly accepted %s in its run: %s", link.from, link.label, link.path)
+				}
+				continue
+			}
+			if !inRun {
+				t.Errorf("%s links the partly refused %s outside its run: %s", link.from, link.label, link.path)
+			}
+			body, err := os.ReadFile(link.path)
+			if err != nil {
+				t.Fatalf("%s: %s is unreadable: %v", link.from, link.label, err)
+			}
+			if want := map[string][]byte{"request": request, "response": answer}[link.label]; want != nil && !bytes.Equal(body, want) {
+				t.Errorf("%s links a %s other than the exchanged bytes", link.from, link.label)
+			}
+			bodies[link.from+" "+link.label] = body
+		}
+		return bodies
+	}
+	coldBodies := payloads(cold)
+	// The cold run exchanged it: its journal links the request and response,
+	// its table the prompt, input, request and response. The warm run recalls
+	// the accepted rows from the same record and exchanges nothing.
+	if len(coldBodies) != 6 {
+		t.Fatalf("the partly refused exchange must be linked by its journal (request, response) and its table (prompt, input, request, response): %d links", len(coldBodies))
+	}
+	// Those are the run's only copies: a wholly accepted answer made none.
+	copies, err := os.ReadDir(filepath.Join(cold, llm.RunPayloadDirectoryName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked := make(map[string]bool)
+	for _, link := range exchangeLinks(t, cold) {
+		if link.stage == lines.StageFiles {
+			linked[filepath.Base(link.path)] = true
+		}
+	}
+	for _, entry := range copies {
+		if !linked[entry.Name()] {
+			t.Errorf("the cold run copied %s, which no partly refused exchange links", entry.Name())
+		}
+	}
+	before := map[string]map[string][]byte{cold: coldBodies, warm: payloads(warm)}
+
+	if err := clearPersistentCaches(debugDir, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	for run, bodies := range before {
+		pointers := make(map[string]bool)
+		for _, row := range rejectedResponseRefs(t, run) {
+			body, err := os.ReadFile(resolveResponseRef(t, run, row.ref))
+			if err != nil {
+				t.Errorf("%s: after cache clear %s row's %s leads nowhere: %v", filepath.Base(run), row.stage, row.ref, err)
+				continue
+			}
+			if row.stage == lines.StageFiles {
+				pointers[strings.SplitN(row.ref, "/", 2)[0]] = true
+				if !bytes.Equal(body, answer) {
+					t.Errorf("%s: after cache clear %s does not lead to the partly refused answer: %q", filepath.Base(run), row.ref, body)
+				}
+			}
+		}
+		// Both the journal's row and the table's row name the refused row.
+		if run == cold && (!pointers[debugdump.SemanticExchangesDir] || !pointers[atlas.TablesDir]) {
+			t.Errorf("the refused row must be named from the journal and from the table: %v", pointers)
+		}
+		for _, link := range exchangeLinks(t, run) {
+			if link.stage != lines.StageFiles {
+				continue
+			}
+			if body, err := os.ReadFile(link.path); err != nil || !bytes.Equal(body, bodies[link.from+" "+link.label]) {
+				t.Errorf("%s: after cache clear %s lost the partly refused %s: %v", filepath.Base(run), link.from, link.label, err)
 			}
 		}
 	}
@@ -203,8 +377,8 @@ func acceptedRecordPayloads(t *testing.T, cache string) map[string]bool {
 }
 
 type exchangeLink struct {
-	kind, from, label, path string
-	refused                 bool
+	kind, from, stage, label, path string
+	refused                        bool
 }
 
 // exchangeLinks resolves every payload a run links: the semantic journal's
@@ -228,7 +402,7 @@ func exchangeLinks(t *testing.T, run string) []exchangeLink {
 		}
 		refused := record.State != debugdump.SemanticStateAccepted && record.State != debugdump.SemanticStateCacheHit
 		for label, payload := range map[string]debugdump.SemanticPayloadRecord{"request": record.Request, "response": record.Response} {
-			links = append(links, exchangeLink{kind: "journal", from: journal, label: label, refused: refused,
+			links = append(links, exchangeLink{kind: "journal", from: journal, stage: record.Stage, label: label, refused: refused,
 				path: filepath.Clean(filepath.Join(filepath.Dir(journal), filepath.FromSlash(payload.File)))})
 		}
 	}
@@ -249,7 +423,8 @@ func exchangeLinks(t *testing.T, run string) []exchangeLink {
 			if err := json.Unmarshal(raw, &window); err != nil {
 				t.Fatal(err)
 			}
-			links = append(links, exchangeLink{kind: "table", from: ref, label: label, refused: window.Source == atlas.SourceGiven,
+			stage, _, _ := strings.Cut(filepath.Base(ref), "-r")
+			links = append(links, exchangeLink{kind: "table", from: ref, stage: stage, label: label, refused: window.Source == atlas.SourceGiven,
 				path: resolveTableRef(t, ref)})
 		}
 	}
@@ -271,16 +446,22 @@ func resolveTableRef(t *testing.T, ref string) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(ref), filepath.FromSlash(link.File)))
 }
 
-// refusedResponseRefs lists the response_ref of every rejected.jsonl row of
-// the refused table.
-func refusedResponseRefs(t *testing.T, run string) []string {
+type rejectedRef struct{ stage, ref string }
+
+// rejectedResponseRefs lists the stage and response_ref of every
+// rejected.jsonl row that names a response; a run that rejected nothing has
+// no file.
+func rejectedResponseRefs(t *testing.T, run string) []rejectedRef {
 	t.Helper()
 	file, err := os.Open(filepath.Join(run, "rejected.jsonl"))
+	if os.IsNotExist(err) {
+		return nil
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer file.Close()
-	var refs []string
+	var refs []rejectedRef
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var row struct {
@@ -290,8 +471,8 @@ func refusedResponseRefs(t *testing.T, run string) []string {
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
 			t.Fatal(err)
 		}
-		if row.Stage == lines.StageFiles && row.ResponseRef != "" {
-			refs = append(refs, row.ResponseRef)
+		if row.ResponseRef != "" {
+			refs = append(refs, rejectedRef{row.Stage, row.ResponseRef})
 		}
 	}
 	if err := scanner.Err(); err != nil {

@@ -179,6 +179,7 @@ on successful provider-envelope and JSON validation. Owning stages revalidate
 their own schemas on reuse. Accepted request/response payloads are
 content-addressed in `.llm-cache/payloads`, and a refused replay stores none.
 Journal records reference those files, or the run's own `payloads/` copy of a
-refused exchange, which is also a valid replay file. Use the original
+refused exchange or of an accepted answer with a refused part, which is also a
+valid replay file. Use the original
 run's `--debug-dir` to update the same cache. Existing run snapshots are not
 rewritten. A failed replay keeps the previous accepted answer.

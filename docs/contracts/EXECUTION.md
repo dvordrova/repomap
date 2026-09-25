@@ -276,9 +276,9 @@ accepted request caching still applies to those batches.
 No-cache bypasses reusable answer reads and pointer/index writes. An accepted
 answer's diagnostic payloads still go to the shared payload store. Cache clear
 removes payloads, answer pointers and memo indexes; run snapshots and each
-run's own payloads remain, so an accepted exchange's raw-payload links stop
-resolving while a refused exchange stays readable. Recalled rows are
-revalidated and are not rewritten.
+run's own payloads remain, so a wholly accepted exchange's raw-payload links
+stop resolving while a refused or partly refused exchange stays readable.
+Recalled rows are revalidated and are not rewritten.
 An optional entity-memo write failure reports its stage and exact path without
 discarding accepted cells or their current provenance. Each identical basis
 gets one write attempt per reading; mandatory knowledge and window artifacts
@@ -312,6 +312,23 @@ accepted window also owns stay in the shared store for it. Replay prints the
 shared request and response paths of an accepted answer, with duration,
 attempts and usage. A refused replay stores nothing: its answer is on stdout
 and its request is the given file.
+
+Decoders refuse at the smallest scope, so most refusals are parts of an
+accepted answer: a row, cell, member or term, or an annotation the atlas
+reader records after validating it (a file in no part, a one-part area).
+Each such `rejected.jsonl` row points at its exchange, which therefore keeps
+its payloads both ways. Its accepted cache record, store payloads, key and
+hits are unchanged. The journal entry and window refs of every run that reads
+it, live, as a cache hit or through a memo, link that run's own
+content-hashed copy instead, as for a refused answer. Each is decided where it
+is written: a journal entry from its event's rejections, which become exactly
+the rows pointing at it; a window from its outcome's rejections and from the
+annotations its stage records before writing the refs. A wholly accepted
+answer makes no copy. After cache clear every `response_ref` of a run leads
+to bytes. One case stays uncovered: an answer its decoder accepted whole but
+the atlas reader annotated keeps its window refs in the run, while its journal
+entry, written before the annotation existed and named by no row, links the
+store.
 
 Cache reads distinguish proven corruption from operational failures. Invalid
 JSON, identity/accounting, unsafe entries and missing referenced payloads may

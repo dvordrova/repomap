@@ -314,7 +314,14 @@ func (r *reader) readAreas(ctx context.Context) error {
 		} else {
 			use.Live++
 		}
-		if err := r.writeWindowExchange(window, []byte(calls[i].Prompt.System), []byte(calls[i].Prompt.User), result.Outcome.Request, result.Outcome.Response, result.Err != nil); err != nil {
+		// An answer whose refs or areas the validation annotates is recorded
+		// below as rejected rows; like a refused one, it stays in the run.
+		var areas validAreas
+		if result.Err == nil {
+			areas = validateAreas(result.Outcome.Value, target.parts)
+		}
+		annotated := len(areas.unknown) > 0 || len(areas.notes) > 0
+		if err := r.writeWindowExchange(window, []byte(calls[i].Prompt.System), []byte(calls[i].Prompt.User), result.Outcome.Request, result.Outcome.Response, result.Err != nil || len(result.Outcome.ResponseRejections) > 0 || annotated); err != nil {
 			return err
 		}
 		responseRef := path.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))
@@ -325,7 +332,6 @@ func (r *reader) readAreas(ctx context.Context) error {
 			fmt.Fprintf(&r.tables, "areas answer refused, no areas drawn: %s\n\n", result.Err)
 			continue
 		}
-		areas := validateAreas(result.Outcome.Value, target.parts)
 		for i, name := range areas.names {
 			fmt.Fprintf(&r.tables, "- %s: %s\n", name, strings.Join(areas.parts[i], " "))
 		}

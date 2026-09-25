@@ -3,10 +3,13 @@ package debugdump
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 func TestSemanticExchangeRecordsLivePayloads(t *testing.T) {
@@ -121,6 +124,88 @@ func TestSemanticExchangeKeepsUnacceptedPayloadsInItsRun(t *testing.T) {
 				t.Fatalf("unavailable-response marker lost: %v", err)
 			}
 		})
+	}
+}
+
+// An answer accepted with a refused part is what its rejected rows point at
+// (owner, 2026-09-26): its entry links the run's own copy, so every row's
+// response_ref still leads to bytes after cache clear. A wholly accepted
+// answer links only the shared store, where its cache record keeps it.
+func TestPartlyRefusedAnswerKeepsItsPayloadsInItsRun(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writer, err := NewWriter(root, "run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	runDir := filepath.Join(root, writer.RunID)
+	observer := NewSemanticObserver(writer)
+	events := make(map[string]llm.Event)
+	for _, kind := range []llm.EventKind{llm.EventLive, llm.EventCacheHit} {
+		for _, partly := range []bool{false, true} {
+			event := llm.Event{Kind: kind, Source: llm.SourceLive, CacheRoot: root, Metrics: llm.Metrics{Attempts: 1},
+				Request:  fmt.Appendf(nil, `{"kind":%q,"partly":%t}`, kind, partly),
+				Response: fmt.Appendf(nil, `{"rows":[{"key":"p1"},{"key":"p9"}],"kind":%q,"partly":%t}`, kind, partly)}
+			if kind == llm.EventCacheHit {
+				event.Source, event.Cached = llm.SourceCache, true
+			}
+			if partly {
+				event.ResponseRejections = []llm.ResponseRejection{{Kind: "row_rejected", Count: 1, Reason: "response key was not asked", Samples: []string{"p9"}}}
+			}
+			if err := observer.ObserveStage(SemanticStageAtlasFiles, event); err != nil {
+				t.Fatal(err)
+			}
+			events[sha256Hex(event.Request)] = event
+		}
+	}
+	journals, err := filepath.Glob(filepath.Join(runDir, SemanticExchangesDir, "*", SemanticExchangeMetaFile))
+	if err != nil || len(journals) != 4 {
+		t.Fatalf("journal entries = %v / %v", journals, err)
+	}
+	for _, journal := range journals {
+		raw, err := os.ReadFile(journal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record SemanticExchangeRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			t.Fatal(err)
+		}
+		partly := len(events[record.RequestSHA256].ResponseRejections) > 0
+		for _, payload := range []SemanticPayloadRecord{record.Request, record.Response} {
+			path := filepath.Clean(filepath.Join(filepath.Dir(journal), payload.File))
+			if inRun := strings.HasPrefix(path, runDir+string(filepath.Separator)); inRun != partly {
+				t.Errorf("%s answer (refused part %t) links %s: in run = %t", record.State, partly, path, inRun)
+			}
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(root, llm.CacheDirectoryName)); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(runDir, "rejected.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(rows) != 2 {
+		t.Fatalf("rejected rows = %q, want one per partly refused answer", rows)
+	}
+	for _, line := range rows {
+		var row struct {
+			ResponseRef string `json:"response_ref"`
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil || row.ResponseRef == "" {
+			t.Fatalf("row %s: %v", line, err)
+		}
+		record := readOnlySemanticExchange(t, runDir, row.ResponseRef)
+		event := events[record.RequestSHA256]
+		if len(event.ResponseRejections) == 0 {
+			t.Fatalf("row %s points at an answer with no refused part", line)
+		}
+		assertSavedPayload(t, runDir, row.ResponseRef, record.Request, event.Request)
+		assertSavedPayload(t, runDir, row.ResponseRef, record.Response, event.Response)
 	}
 }
 

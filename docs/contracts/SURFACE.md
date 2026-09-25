@@ -18,8 +18,10 @@ supported user-facing surface is deliberately small:
   provider bytes through the configured client and refreshes its cached answer.
 - `repomap cache clear [--debug-dir DIR]` clears persistent model-response
   caches. Run directories remain, with each run's own `payloads/`: the exact
-  bytes of its refused or failed exchanges stay readable for debugging, while
-  links to accepted answers' shared payloads stop resolving.
+  bytes of its refused or failed exchanges, and of accepted answers with a
+  refused part, stay readable for debugging, so every `response_ref` in its
+  `rejected.jsonl` still resolves, while links to wholly accepted answers'
+  shared payloads stop resolving.
 - `repomap render RUN_DIR --output FILE.html` applies the current ordinary
   report templates to a saved common report, manifest and saved translations.
   It performs no analysis, reads no model configuration or response cache, and

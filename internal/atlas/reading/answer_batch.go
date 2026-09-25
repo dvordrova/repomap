@@ -173,7 +173,7 @@ func (r *reader) writeAnswerWindow(def table.Definition, window answerWindow, ou
 				return err
 			}
 		}
-		if err := r.writeWindowExchange(window.table, []byte(def.System), window.table.Request, outcome.Request, outcome.Response, failure != nil); err != nil {
+		if err := r.writeWindowExchange(window.table, []byte(def.System), window.table.Request, outcome.Request, outcome.Response, failure != nil || len(outcome.ResponseRejections) > 0); err != nil {
 			return err
 		}
 	}

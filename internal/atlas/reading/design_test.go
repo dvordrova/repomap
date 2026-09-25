@@ -259,6 +259,84 @@ func TestRepeatedGroupRecordedOnTheMap(t *testing.T) {
 	}
 }
 
+// A map's annotations are rejected rows the reading records after the answer
+// was accepted. Each points at its window, which keeps its prompt, input,
+// request and response in the run (owner, 2026-09-26): after cache clear
+// every such row still leads to the answer it annotates. The warm reading
+// takes the accepted answers from the cache and records the same rows.
+func TestAnnotatedMapAnswersStayInTheRun(t *testing.T) {
+	provider := &tableProvider{
+		partsResponse: func(files []map[string]any) string {
+			type group struct {
+				Name  string   `json:"name"`
+				Files []string `json:"files"`
+			}
+			var groups []group
+			at := map[string]int{}
+			for _, file := range files {
+				name := filepath.Dir(fmt.Sprint(file["path"]))
+				if _, seen := at[name]; !seen {
+					at[name] = len(groups)
+					groups = append(groups, group{Name: name})
+				}
+				groups[at[name]].Files = append(groups[at[name]].Files, fmt.Sprint(file["ref"]))
+			}
+			// A ref the request did not list is discarded and noted.
+			groups[0].Files = append(groups[0].Files, "f999")
+			raw, _ := json.Marshal(map[string]any{"groups": groups})
+			return string(raw)
+		},
+		// An area of one part is drawn as that part and noted.
+		areaFor: func(part map[string]any) string {
+			switch part["name"] {
+			case "svc/api", "svc/core":
+				return "Serving"
+			case "svc/db":
+				return "Storage"
+			}
+			return ""
+		},
+	}
+	cache := t.TempDir()
+	read := func() (string, Result) {
+		t.Helper()
+		opts := twoTargetOptions(t, twoTargetGraph(t), provider)
+		opts.Executor = llm.Executor{RootDir: cache, Enabled: true, BatchConcurrency: 2, BatchController: &llm.BatchController{}}
+		result, err := Read(t.Context(), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return opts.OwnerRunDir, result
+	}
+	coldRun, cold := read()
+	calls := provider.calls
+	warmRun, warm := read()
+	if provider.calls != calls {
+		t.Fatalf("warm reading asked the provider %d more times; want every accepted answer from the cache", provider.calls-calls)
+	}
+	if err := os.RemoveAll(filepath.Join(cache, llm.CacheDirectoryName)); err != nil {
+		t.Fatal(err)
+	}
+	for run, result := range map[string]Result{coldRun: cold, warmRun: warm} {
+		noted := map[string]bool{}
+		for _, row := range result.Rejected {
+			if row.ResponseRef == "" {
+				continue
+			}
+			noted[row.Stage+" "+row.Kind] = true
+			window := strings.TrimSuffix(filepath.Join(run, filepath.FromSlash(row.ResponseRef)), "response.ref.json")
+			for _, label := range []string{"prompt", "input", "request", "response"} {
+				if body, err := readWindowPayload(window + label + ".ref.json"); err != nil || len(body) == 0 {
+					t.Errorf("after cache clear the %s %s row's window lost its %s: %v", row.Stage, row.Kind, label, err)
+				}
+			}
+		}
+		if !noted[lines.StageZones+" part_unknown_ref"] || !noted[lines.StageAreas+" area_annotation"] {
+			t.Fatalf("the map's annotations were not recorded: %v", noted)
+		}
+	}
+}
+
 // A files string of refs separated by spaces or commas is that list, and
 // each ref is still checked; an object is not a list of files.
 func TestPartsFilesStringIsAListOfRefs(t *testing.T) {
