@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
@@ -448,26 +450,27 @@ func (refusal *learningRefusal) Error() string {
 // decodeLearning reads one response against the intents its request asked.
 // A review for an unasked intent is unmatched; an asked intent no review
 // named is missing, which the first rounds ask again (Omitted) and the last
-// one refuses.
+// one refuses. An intent is matched after trimming and case-folding. Two
+// copies of one intent's review are one review when they read the same, and
+// no review when they differ.
 func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) {
-	var envelope struct {
-		Reviews []json.RawMessage `json:"reviews"`
+	reviews, err := learningReviews(raw)
+	if err != nil {
+		return learningResponse{}, err
 	}
-	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Reviews == nil {
-		return learningResponse{}, fmt.Errorf("learn: response needs a reviews array")
-	}
-	known := make(map[string]bool)
+	known := make(map[string]string)
 	for _, intent := range pool.Intents {
-		known[intent.ID] = true
+		known[learningKey(intent.ID)] = intent.ID
 	}
 	byIntent := make(map[string][]json.RawMessage)
 	var unkeyed []json.RawMessage
-	for _, rawReview := range envelope.Reviews {
+	for _, rawReview := range reviews {
 		var key struct {
 			Intent string `json:"intent"`
 		}
-		if json.Unmarshal(rawReview, &key) == nil && known[key.Intent] {
-			byIntent[key.Intent] = append(byIntent[key.Intent], rawReview)
+		if json.Unmarshal(rawReview, &key) == nil && known[learningKey(key.Intent)] != "" {
+			id := known[learningKey(key.Intent)]
+			byIntent[id] = append(byIntent[id], rawReview)
 		} else {
 			unkeyed = append(unkeyed, rawReview)
 		}
@@ -479,26 +482,30 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 	var missing []string
 	for _, intent := range pool.Intents {
 		var review learningReview
+		var questions []learningQuestionRejection
 		var err error
 		omitted := false
-		switch values := byIntent[intent.ID]; len(values) {
-		case 0:
+		values := byIntent[intent.ID]
+		if len(values) == 0 {
 			missing = append(missing, intent.ID)
 			omitted = pool.Reask < learningReaskRounds
 			err = fmt.Errorf("learn: missing intent review")
 			if shape != "" {
 				err = fmt.Errorf("learn: missing intent review (%s)", shape)
 			}
-		case 1:
-			err = json.Unmarshal(values[0], &review)
-			if err == nil {
-				var questions []learningQuestionRejection
-				review, questions, err = validateLearningReview(review, pool)
-				result.QuestionRejections = append(result.QuestionRejections, questions...)
-			}
-		default:
-			err = fmt.Errorf("learn: duplicate intent review")
 		}
+		for i, value := range values {
+			copyReview, copyQuestions, copyErr := decodeLearningReview(value, intent.ID, pool)
+			if i == 0 {
+				review, questions, err = copyReview, copyQuestions, copyErr
+				continue
+			}
+			if err != nil || copyErr != nil || !reflect.DeepEqual(review, copyReview) {
+				questions, err = nil, fmt.Errorf("learn: duplicate intent review, answered differently")
+				break
+			}
+		}
+		result.QuestionRejections = append(result.QuestionRejections, questions...)
 		if err != nil {
 			result.Rejections = append(result.Rejections, learningRejection{Intent: intent.ID, Reason: err.Error(), Omitted: omitted})
 			continue
@@ -509,6 +516,91 @@ func decodeLearning(raw []byte, pool learningRequest) (learningResponse, error) 
 		return result, &learningRefusal{Missing: missing, Asked: len(pool.Intents), Shape: shape}
 	}
 	return result, nil
+}
+
+// learningReviews reads the reviews array of a response: {"reviews": [...]}
+// or the same array bare. No reviews array, or a null one, decided nothing.
+func learningReviews(raw []byte) ([]json.RawMessage, error) {
+	var reviews []json.RawMessage
+	if json.Unmarshal(raw, &reviews) == nil && reviews != nil {
+		return reviews, nil
+	}
+	var envelope struct {
+		Reviews []json.RawMessage `json:"reviews"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Reviews == nil {
+		return nil, fmt.Errorf("learn: response needs a reviews array")
+	}
+	return envelope.Reviews, nil
+}
+
+// learningKey is the form an intent id or a review state is compared in:
+// trimmed, lower-case, with spaces and hyphens as underscores.
+func learningKey(value string) string {
+	return strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToLower(strings.TrimSpace(value)))
+}
+
+// learningRefs reads a list of refs: an array of strings, or one string of
+// refs separated by whitespace or commas. Other array members are no refs.
+func learningRefs(raw json.RawMessage) []string {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return strings.FieldsFunc(text, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	}
+	var values []json.RawMessage
+	if json.Unmarshal(raw, &values) != nil {
+		return nil
+	}
+	var refs []string
+	for _, value := range values {
+		if json.Unmarshal(value, &text) == nil {
+			refs = append(refs, strings.TrimSpace(text))
+		}
+	}
+	return refs
+}
+
+// decodeLearningReview reads one review field by field, so a mistyped
+// reason, a string of refs or one malformed question costs only itself. A
+// review whose state cannot be read is refused.
+func decodeLearningReview(raw json.RawMessage, intent string, pool learningRequest) (learningReview, []learningQuestionRejection, error) {
+	var wire struct {
+		State     json.RawMessage `json:"state"`
+		Reason    json.RawMessage `json:"reason"`
+		Sources   json.RawMessage `json:"sources"`
+		Questions json.RawMessage `json:"questions"`
+	}
+	if json.Unmarshal(raw, &wire) != nil {
+		return learningReview{}, nil, fmt.Errorf("learn: a review is not an object")
+	}
+	review := learningReview{Intent: intent, Sources: learningRefs(wire.Sources)}
+	if json.Unmarshal(wire.State, &review.State) != nil {
+		return learningReview{}, nil, fmt.Errorf("learn: unknown review state")
+	}
+	review.State = learningKey(review.State)
+	// A reason that is not text is no reason, and questions that are not a
+	// list are no questions.
+	_ = json.Unmarshal(wire.Reason, &review.Reason)
+	var questions []json.RawMessage
+	_ = json.Unmarshal(wire.Questions, &questions)
+	var malformed []learningQuestionRejection
+	for i, rawQuestion := range questions {
+		var question struct {
+			Question string          `json:"question"`
+			Why      json.RawMessage `json:"why"`
+			Sources  json.RawMessage `json:"sources"`
+		}
+		if json.Unmarshal(rawQuestion, &question) != nil {
+			malformed = append(malformed, learningQuestionRejection{Intent: intent,
+				Reason: fmt.Sprintf("learn: %s question %d is malformed", intent, i+1)})
+			continue
+		}
+		proposal := learningProposal{Question: question.Question, Sources: learningRefs(question.Sources)}
+		_ = json.Unmarshal(question.Why, &proposal.Why)
+		review.Questions = append(review.Questions, proposal)
+	}
+	review, rejected, err := validateLearningReview(review, pool)
+	return review, append(malformed, rejected...), err
 }
 
 // learningReviewShape describes reviews that named no advertised intent:
@@ -557,11 +649,12 @@ const (
 // validateLearningReview reads one intent review down to its smallest unit.
 // A proposed question that fails a rule is dropped with its own rejection;
 // the review keeps the questions that passed and is refused only when none
-// did. A questions review without a reason takes the first sentence of its
+// did. A questions review without a reason takes the first sentence of the
 // first accepted question's why and records reason_from, the way an
 // operation label is taken from its own description: the two fields explain
-// the same choice. A not_applicable or unknown review has no other content
-// than its reason, so it still needs one.
+// the same choice. A not_applicable or unknown review is its closed state
+// with its reason and sources as given, even an empty reason; questions it
+// carries anyway are dropped, never promoting the state.
 func validateLearningReview(review learningReview, pool learningRequest) (learningReview, []learningQuestionRejection, error) {
 	refs := map[string]bool{}
 	for _, item := range pool.Evidence {
@@ -577,6 +670,7 @@ func validateLearningReview(review learningReview, pool learningRequest) (learni
 		return kept
 	}
 	review.Sources = filter(review.Sources)
+	review.Reason = strings.TrimSpace(review.Reason)
 	review.ReasonFrom = ""
 	switch review.State {
 	case "questions":
@@ -589,13 +683,14 @@ func validateLearningReview(review learningReview, pool learningRequest) (learni
 		}
 		fallthrough
 	case "unknown":
-		if len(review.Questions) != 0 {
-			return review, nil, fmt.Errorf("learn: non-question review contains questions")
+		var dropped []learningQuestionRejection
+		for i, q := range review.Questions {
+			start := table.LabelFromProse(q.Question, learningQuestionStartRunes)
+			dropped = append(dropped, learningQuestionRejection{Intent: review.Intent, Question: start,
+				Reason: fmt.Sprintf("learn: %s question %d %q belongs to a %s review, which proposes no questions", review.Intent, i+1, start, review.State)})
 		}
-		if strings.TrimSpace(review.Reason) == "" {
-			return review, nil, fmt.Errorf("learn: a review needs a reason")
-		}
-		return review, nil, nil
+		review.Questions = nil
+		return review, dropped, nil
 	default:
 		return review, nil, fmt.Errorf("learn: unknown review state")
 	}
@@ -609,8 +704,6 @@ func validateLearningReview(review learningReview, pool learningRequest) (learni
 		switch {
 		case q.Question == "":
 			rule = "needs wording"
-		case q.Why == "":
-			rule = "needs a reason"
 		case len(given) == 0:
 			rule = "needs original sources"
 		case len(q.Sources) == 0:
@@ -628,9 +721,14 @@ func validateLearningReview(review learningReview, pool learningRequest) (learni
 	if len(kept) == 0 {
 		return review, rejected, fmt.Errorf("learn: questions review kept none of its %d proposed questions", len(rejected))
 	}
-	if strings.TrimSpace(review.Reason) == "" {
-		review.Reason = table.LabelFromProse(kept[0].Why, learningReasonRunes)
-		review.ReasonFrom = "why"
+	if review.Reason == "" {
+		for _, q := range kept {
+			if q.Why != "" {
+				review.Reason = table.LabelFromProse(q.Why, learningReasonRunes)
+				review.ReasonFrom = "why"
+				break
+			}
+		}
 	}
 	return review, rejected, nil
 }
@@ -1140,7 +1238,8 @@ func (r *reader) selectLearning(ctx context.Context) error {
 	def := table.Definition{Stage: stageLearn, Contract: "repomap.atlas.learn.select.v4", System: learningSelectPrompt,
 		Window: len(intents), Columns: []table.Column{
 			{Name: "questions", Kind: table.Sequence, OptionsFrom: "candidate_options", LimitFrom: "limit"},
-			{Name: "reason", Kind: table.Text, MaxRunes: 600},
+			// A missing rationale leaves the selection its choices.
+			{Name: "reason", Kind: table.Text, MaxRunes: 600, Optional: true},
 		}}
 	if r.opts.Through == "" || r.opts.Through == stageLearn {
 		def.MaxInputBytes = r.opts.InputBytes
@@ -1352,15 +1451,24 @@ func learningMergeCall(refs, wordings []string) (llm.Call[learningGrouping], err
 // unadvertised ref is ignored; a ref in two groups stays in the first; a
 // representative outside its members gives way to the first member; a ref
 // no group named is its own group, as q5 was in the probe; a malformed
-// group is skipped and its refs stay their own groups. A response without a
-// groups array, or naming no advertised ref, decided nothing and is refused
-// rather than cached as "no repeats".
+// group is skipped and its refs stay their own groups. Members may be one
+// string of refs. An empty groups list is the explicit answer "no repeats":
+// every question is its own group. A response without a groups array, or
+// whose groups name no advertised ref, decided nothing and is refused rather
+// than cached as "no repeats".
 func decodeLearningGroups(raw []byte, refs []string) (learningGrouping, error) {
 	var envelope struct {
 		Groups []json.RawMessage `json:"groups"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Groups == nil {
 		return learningGrouping{}, fmt.Errorf("learn: response needs a groups array")
+	}
+	if len(envelope.Groups) == 0 {
+		result := learningGrouping{Notes: []string{"no repeats: every question is its own group"}}
+		for _, ref := range refs {
+			result.Groups = append(result.Groups, learningGroup{Representative: ref, Members: []string{ref}})
+		}
+		return result, nil
 	}
 	known := make(map[string]bool, len(refs))
 	for _, ref := range refs {
@@ -1370,11 +1478,15 @@ func decodeLearningGroups(raw []byte, refs []string) (learningGrouping, error) {
 	var result learningGrouping
 	for i, rawGroup := range envelope.Groups {
 		number := i + 1
-		var group learningGroup
-		if err := json.Unmarshal(rawGroup, &group); err != nil {
+		var wire struct {
+			Representative string          `json:"representative"`
+			Members        json.RawMessage `json:"members"`
+		}
+		if err := json.Unmarshal(rawGroup, &wire); err != nil {
 			result.Notes = append(result.Notes, fmt.Sprintf("group %d is malformed and was skipped", number))
 			continue
 		}
+		group := learningGroup{Representative: strings.TrimSpace(wire.Representative), Members: learningRefs(wire.Members)}
 		var members []string
 		for _, ref := range group.Members {
 			if !known[ref] {

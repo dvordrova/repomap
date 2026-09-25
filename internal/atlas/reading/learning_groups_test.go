@@ -16,8 +16,10 @@ import (
 // The merge decoder reads a grouping against the pool's refs: an
 // unadvertised ref is ignored, a ref in two groups stays in the first, a
 // representative outside its members gives way to the first member, a ref
-// no group named is its own group, a malformed group is skipped; a response
-// without a groups array or naming nothing advertised is refused.
+// no group named is its own group, a malformed group is skipped, members may
+// be one string of refs, and an empty list is "no repeats"; a response
+// without a groups array, or whose groups name nothing advertised, is
+// refused.
 func TestLearningGroupDecoderRules(t *testing.T) {
 	refs := []string{"q1", "q2", "q3", "q4", "q5"}
 	for name, test := range map[string]struct {
@@ -40,7 +42,7 @@ func TestLearningGroupDecoderRules(t *testing.T) {
 			},
 		},
 		"malformed-group": {
-			raw: `{"groups":[{"representative":"q1","members":"q1"},{"representative":"q2","members":["q2","q3"]}]}`,
+			raw: `{"groups":[{"representative":1,"members":["q1"]},{"representative":"q2","members":["q2","q3"]}]}`,
 			groups: []learningGroup{
 				{Representative: "q2", Members: []string{"q2", "q3"}}, {Representative: "q1", Members: []string{"q1"}},
 				{Representative: "q4", Members: []string{"q4"}}, {Representative: "q5", Members: []string{"q5"}},
@@ -51,10 +53,26 @@ func TestLearningGroupDecoderRules(t *testing.T) {
 			raw:    `{"groups":[{"representative":"q5","members":["q1","q5"]},{"representative":"q2","members":["q2"]},{"representative":"q3","members":["q3","q4"]}]}`,
 			groups: []learningGroup{{Representative: "q5", Members: []string{"q1", "q5"}}, {Representative: "q2", Members: []string{"q2"}}, {Representative: "q3", Members: []string{"q3", "q4"}}},
 		},
+		"string-members": {
+			raw: `{"groups":[{"representative":"q2","members":"q2, q4 q9"}]}`,
+			groups: []learningGroup{
+				{Representative: "q2", Members: []string{"q2", "q4"}}, {Representative: "q1", Members: []string{"q1"}},
+				{Representative: "q3", Members: []string{"q3"}}, {Representative: "q5", Members: []string{"q5"}},
+			},
+			notes: []string{`group 1 names the unadvertised ref "q9", ignored`, "q1 is in no group, its own", "q3 is in no group, its own", "q5 is in no group, its own"},
+		},
+		"empty": {
+			raw: `{"groups":[]}`,
+			groups: []learningGroup{
+				{Representative: "q1", Members: []string{"q1"}}, {Representative: "q2", Members: []string{"q2"}}, {Representative: "q3", Members: []string{"q3"}},
+				{Representative: "q4", Members: []string{"q4"}}, {Representative: "q5", Members: []string{"q5"}},
+			},
+			notes: []string{"no repeats: every question is its own group"},
+		},
 		"no-groups":     {raw: `{}`, refuse: "learn: response needs a groups array"},
+		"null-groups":   {raw: `{"groups":null}`, refuse: "learn: response needs a groups array"},
 		"not-json":      {raw: `groups`, refuse: "learn: response needs a groups array"},
-		"empty":         {raw: `{"groups":[]}`, refuse: "learn: response names no advertised ref"},
-		"nothing-known": {raw: `{"groups":[{"representative":"x","members":["x"]}]}`, refuse: "learn: response names no advertised ref"},
+		"nothing-known": {raw: `{"groups":[{"representative":"x","members":["x"]},{"representative":"q9","members":"q9"}]}`, refuse: "learn: response names no advertised ref"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := decodeLearningGroups([]byte(test.raw), refs)
