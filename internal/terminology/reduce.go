@@ -123,7 +123,7 @@ func Reduce(ctx context.Context, executor llm.Executor, provider llm.Provider, c
 			var pending [][]Entry
 			for i, outcome := range outcomes {
 				for _, issue := range outcome.Outcome.Issues {
-					if issue.Kind != llm.IssueCacheValidate {
+					if issue.Kind != llm.IssueCacheValidate && issue.Kind != llm.IssueMetrics {
 						return Catalog{}, fmt.Errorf("glossary: %w", issue)
 					}
 				}

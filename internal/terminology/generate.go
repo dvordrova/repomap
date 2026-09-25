@@ -337,7 +337,7 @@ func (c *Collector) Generate(ctx context.Context, executor llm.Executor, provide
 		var pending [][]proseSource
 		for i, outcome := range outcomes {
 			for _, issue := range outcome.Outcome.Issues {
-				if issue.Kind != llm.IssueCacheValidate {
+				if issue.Kind != llm.IssueCacheValidate && issue.Kind != llm.IssueMetrics {
 					return fmt.Errorf("glossary: %w", issue)
 				}
 			}

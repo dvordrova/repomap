@@ -24,7 +24,7 @@
 {{if or .Cards .MutedCards}}<div class="cards">
 {{range .Cards}}<div class="card"><h3><a href="#{{.SectionID}}">{{.ShortName}}</a></h3>
 <p class="meta">{{.Language}}{{if .Kind}} · {{t .Kind}}{{end}}</p>
-{{if .Role}}<p class="model"><strong data-display-ref="{{.RoleRef}}">{{.Role}}</strong> — <span data-display-ref="{{.PurposeRef}}">{{.Purpose}}</span><span class="model-sources">{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span></p>{{end}}
+{{if .Role}}<p class="model"><strong data-display-ref="{{.RoleRef}}">{{.Role}}</strong>{{if .Purpose}} — <span data-display-ref="{{.PurposeRef}}">{{.Purpose}}</span>{{end}}<span class="model-sources">{{range .RoleAnchors}} {{template "anchor" .}}{{end}}</span></p>{{end}}
 <details class="target-facts"><summary>{{t "Code and entrypoints"}}</summary><p><code>{{.Name}}</code></p><dl>{{if .Manifest}}<dt>{{t "Source"}}</dt><dd>{{template "anchor" .Manifest}}</dd>{{end}}{{if .Entrypoints}}<dt>{{t "Entrypoints"}}</dt><dd>{{range .Entrypoints}}{{template "anchor" .}} {{end}}</dd>{{end}}{{if .Counts}}<dt>{{t "Found"}}</dt><dd class="fact">{{.Counts}}</dd>{{end}}</dl></details></div>
 {{end}}</div>{{else}}<p class="empty">{{.CardsMissing}}</p>{{end}}
 {{if .MutedCards}}<h4>{{t "This run could not read {0} targets" (len .MutedCards)}}</h4>

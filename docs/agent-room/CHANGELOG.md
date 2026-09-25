@@ -1,5 +1,39 @@
 # Implementation and acceptance journal
 
+## 2026-09-26 — Decoders refuse only what is wrong; the resample is gone
+
+- Owner: "валидаторы и строгие декодеры нам уже 30 дней палки в колеса
+  вставляют". A read-only audit listed 200 refusal rules on model output and
+  the refusals in local run logs of the last 30 days; a skeptic checked each
+  against the code: 100 relaxed, 18 deleted, 77 kept (they stop an unknown
+  ref, an invented value or a missing decision), 5 left to the owner. Five
+  worktree chunks, each adversarially reviewed and fixed, then merged.
+- The one-time identical-bytes resample is deleted. It never fired (0 second
+  draws in 13,704 journals); the refusals it was built for came from rules
+  since removed. A parts or areas answer refused whole or cut at the output
+  cap is that run's map failure or no areas, asked again only by a new run.
+- Measured harm fixed, highest first: one extra field or bad default in the
+  target portfolio ended the whole run (now discarded; a refused
+  classification batch leaves its candidates standalone or unclassified); a
+  newline in a type caption failed atlas validation and ended the run; one bad
+  (question, row) threw away the whole question (8 questions, 471 slots),
+  now only that cell; 12 answers with a doubled `}` were refused, now the
+  closer is deleted when both readings agree; one bad translation entry
+  refused its whole window (17 windows); a Learn intent was lost to one
+  duplicate review or a missing reason; 128 documentation concepts were cut by
+  a 12-per-document cap.
+- Also: a table cell refuses only itself (a missing `open` reads as open, so
+  descendants are still asked); bare-array and wrapped rows, list and boolean
+  cells, choice punctuation and "None." read as the table's forms; an
+  identical repeated row, parts group or area is one answer; a string of refs
+  is a list; orientation keeps target-qualified subject refs (a two-target
+  summary no longer ends the run) and a role with an empty purpose; glossary
+  groups refuse alone; a cached answer the current decoder refuses is kept
+  for a later decoder, not evicted; invalid transport measurements are
+  clamped and the answer kept. The glossary reads table prose through the
+  same row reader.
+- `make test`, `make vet`, `make build` pass on the merged branch.
+
 ## 2026-09-25 — Ordinary acceptance of the map of parts
 
 - `.bin/repomap .` (b0cca08d) on a checkout named `repomap`, own cold cache:

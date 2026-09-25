@@ -1,7 +1,7 @@
 <section id="{{.ID}}" data-report-page data-component-name="{{.ShortLabel}}" data-input-count="{{.InputsCount}}" data-part-count="{{.PartsCount}}" data-integration-count="{{len (outboundGroups .Outbound)}}">
 <header class="component-intro"><h2>{{.ShortLabel}}</h2>
 <p class="target-facts meta">{{t "Component"}} · {{.Language}}{{if .Kind}} · {{t .Kind}}{{end}}{{if and .Root (ne .Root ".")}} · <code>{{.Root}}</code>{{end}}</p>
-{{if .Purpose}}<p class="component-purpose">{{if .Role}}<strong data-display-ref="{{.RoleRef}}">{{.Role}}</strong> — {{end}}<span data-display-ref="{{.PurposeRef}}">{{.Purpose}}</span></p>{{end}}
+{{if or .Role .Purpose}}<p class="component-purpose">{{if .Role}}<strong data-display-ref="{{.RoleRef}}">{{.Role}}</strong>{{if .Purpose}} — {{end}}{{end}}{{if .Purpose}}<span data-display-ref="{{.PurposeRef}}">{{.Purpose}}</span>{{end}}</p>{{end}}
 {{if .Entrypoints}}<p id="{{.ID}}-entrypoints" class="component-entrypoints">{{t "Entrypoints"}}: {{range $i, $entry := .Entrypoints}}{{if $i}} · {{end}}{{if .Symbol}}<code>{{.Symbol}}</code>{{end}}{{if .Kind}} <span class="meta">{{.Kind}}</span>{{end}}{{if .Anchor}} {{template "anchor" .Anchor}}{{end}}{{end}}</p>{{end}}
 </header>
 {{if not .FactsAvailable}}<p class="empty">{{t "This run did not read the repository, so this page shows only what the model grouped."}}</p>{{end}}

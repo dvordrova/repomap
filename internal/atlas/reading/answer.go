@@ -109,7 +109,7 @@ func (r *reader) readAnswers(ctx context.Context) error {
 			// Mandatory artifact and observer failures still stop the reading.
 			for _, issue := range outcome.Issues {
 				switch issue.Kind {
-				case llm.IssueCacheValidate:
+				case llm.IssueCacheValidate, llm.IssueMetrics:
 				case llm.IssueCacheRead:
 					r.opts.State(lines.StageAnswer, "cache read failed", issue.Error())
 				case llm.IssueCacheWrite:

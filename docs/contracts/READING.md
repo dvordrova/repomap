@@ -190,7 +190,8 @@ rows: an unknown ref is discarded and recorded, a file named twice in one
 part is kept once, a file listed in two parts loses both memberships (no
 first-wins) and a file left out stays unplaced; a group without a name or
 without a listed file is not drawn and its files are left out; two parts
-sharing a name are both kept. One part holding everything, or one part per
+sharing a name over different files are both kept, and a group repeated
+with the same name and files is drawn once. One part holding everything, or one part per
 file, is accepted as returned and recorded. Every annotation is recorded in
 `rejected.jsonl` without refusing the answer. When at least one part was
 drawn, one closed-choice `atlas_placement` table places the unplaced files:

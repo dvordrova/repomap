@@ -51,8 +51,12 @@ claiming behavior in documentation.
 - Every eligible selected target keeps its complete ordinary analysis, including
   tools, examples and shared code. A failed target is an explicit outcome, not
   a partial or invented page. Successful siblings survive within that contract.
-- Models choose closed request-local refs. Unknown members are discarded;
-  unresolved mandatory choices and malformed known rows are refused. Independent
+- Models choose closed request-local refs. Unknown members are discarded. A
+  known row whose required decision is missing, outside its closed choices or
+  answered twice differently is refused at the smallest scope (the cell or
+  the row); a harmless form difference (an identical repeat, an extra field,
+  a wrapper, case or whitespace, null for empty, a string for a list) is not
+  a refusal, and no identical-bytes retry stands in for a decoder. Independent
   accepted neighbours survive. Orchestration, projection and the browser do not
   repair, invent, promote or semantically complete a failed model result.
 - Request preparation owns complete evidence and provider-sized partitioning.

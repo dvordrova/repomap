@@ -616,3 +616,62 @@ func TestGeneratePromptDefinesEveryKindOnce(t *testing.T) {
 		t.Fatal("generate prompt does not exclude code names")
 	}
 }
+
+// A provider that reports impossible measurements still gave an answer; the
+// executor clamps them and keeps it, so the glossary must not end the run.
+func TestGlossaryKeepsAnAnswerWithInvalidMeasurements(t *testing.T) {
+	base := &testProvider{}
+	base.complete = func(prepared llm.Prepared) (llm.Completion, error) {
+		if strings.Contains(inputUser(t, prepared), `"rows":`) {
+			return completed(`{"rows":[{"key":"r1","line":"OHLCV gives market values."}]}`)
+		}
+		return llm.Completion{Response: []byte(`{"terms":[{"name":"OHLCV","kind":"acronym","explanation":"Open, high, low, close and volume market values.","rows":["p1"]}]}`),
+			FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 0, InputTokens: -1}}, nil
+	}
+	call := llm.Call[acceptedRows]{State: []byte(`{"contract":"test.rows.v1"}`), Limits: llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 16000}, Prompt: llm.Prompt{User: `{"rows":[{"key":"r1","path":"api.py"}]}`, ResponseExample: `{"rows":[{"key":"r1","line":"<computed>"}]}`}}
+	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
+	collector := NewCollector([]string{"api.py"})
+	wrapper := collector.Wrap(base)
+	if _, err := llm.ExecuteJSON(t.Context(), executor, wrapper, call); err != nil {
+		t.Fatal(err)
+	}
+	if err := collector.Generate(t.Context(), executor, wrapper); err != nil {
+		t.Fatalf("an answer with clamped measurements ended the glossary: %v", err)
+	}
+	if got := collector.Snapshot(); len(got) != 1 || got[0].Name != "OHLCV" {
+		t.Fatalf("the accepted term was lost: %+v", got)
+	}
+}
+
+// The table decoder reads a bare array of rows and one wrapping object as
+// the rows, and "None." or an empty cell as the column's empty value; the
+// glossary reads the same rows and leaves the same absence out.
+func TestTableProseReadsTheRowsTheDecoderReads(t *testing.T) {
+	prompt := llm.Prompt{User: `{"fill":[{"name":"line","kind":"prose","empty_value":"none"},{"name":"alias","kind":"text"}],"rows":[{"key":"r1","path":"a.py"},{"key":"r2","path":"a.py"}]}`}
+	for name, response := range map[string]string{
+		"bare array": `[{"key":"r1","line":"None.","alias":"KeptAlias"},{"key":"r2","line":"LedgerTerm is written once.","alias":""}]`,
+		"wrapped":    `{"result":{"rows":[{"key":"r1","line":"NONE","alias":"KeptAlias"},{"key":"r2","line":"LedgerTerm is written once."}]}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := NewCollector([]string{"a.py"})
+			wrapper := c.Wrap(&testProvider{})
+			prepared, err := llm.Prepare(wrapper, prompt, llm.Limits{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			adapted, err := llm.AdaptResponse(wrapper, prepared.ResponseContext(), prepared.Bytes(), []byte(response))
+			if err != nil {
+				t.Fatal(err)
+			}
+			adapted.Accept([]string{"r1", "r2"})
+			var texts []string
+			for _, item := range c.pending {
+				texts = append(texts, item.Texts...)
+			}
+			joined := strings.Join(texts, "|")
+			if !strings.Contains(joined, "KeptAlias") || !strings.Contains(joined, "LedgerTerm is written once.") || strings.Contains(strings.ToLower(joined), "none") {
+				t.Fatalf("glossary prose differs from the decoded rows: %q", texts)
+			}
+		})
+	}
+}

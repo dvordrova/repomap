@@ -119,8 +119,8 @@ never entered into or read from a repository-wide unqualified map.
   the canvas by the `TestSources` fact. The atlas and GroupsIndex carry an
   explicit off-map record and `map_failure`; the component card lists Tests
   and Not on the map. A parts or areas answer refused whole, including one
-  that decodes but draws nothing, is asked once more with the same bytes
-  through the llm layer's resample before the map fails.
+  that decodes but draws nothing or is cut at the output cap, fails that
+  target's map for the run; there is no second draw.
 - **Map reading on the canvas (2026-09-25):** a part's description stands
   on its box under its name, a closed area's line on the area's box in the
   whole lines it leaves; a loose part beside areas is drawn at a peer's size.
@@ -129,10 +129,24 @@ never entered into or read from a repository-wide unqualified map.
   (`DeepSeek · Client.Do`). Left for the owner after an owner-proxy review:
   the number chips on parts and frame borders (explain or remove), areas in
   the model's pipeline order (GroupsIndex containers carry no position; they
-  sort by value), a part's inside showing a dozen of hundreds of
-  declarations, and the proxy's view that the one-time resample pays to hide
-  over-strict decoders (the owner approved it; one such decoder, an identical
-  repeated row answer, is fixed).
+  sort by value), and a part's inside showing a dozen of hundreds of
+  declarations.
+- **Decoders (2026-09-26, owner: "валидаторы и строгие декодеры нам уже 30
+  дней палки в колеса вставляют"):** the one-time identical-bytes resample is
+  deleted; a decoder refuses only what is wrong, at the smallest scope, and an
+  identical repeat, an extra field, a wrapper, case or whitespace, null for
+  empty or a string for a list is not a refusal. A refused table cell loses
+  only itself; one bad (question, row) loses only that cell; one bad
+  translation entry, glossary group, Learn review, concept or portfolio batch
+  loses only itself; an unambiguous doubled closer, a prose tail and an
+  identical second root are syntax, not refusals. A cached answer the current
+  decoder refuses stays on disk for a later decoder. Refusals that keep the
+  report true stay: unknown refs, a missing or out-of-choice required
+  decision, two different answers for one row, unsourced substantive answers.
+  Still the owner's: caching refused answers, the classifier's absolute 0.5
+  floor, retrying empty provider answers, an unknown default-target answer
+  ending the run, glossary case/plural variants, README-backed recipe steps
+  and the MaxRunes cut of table text.
 - **Data ownership:** an extraction belongs to the programs holding one of its
   files. One no program holds in a code file (tests, fixtures, scripts) or
   under a tooling directory (`testdata`, `.github`, `.claude`, `.vscode`) is
@@ -181,9 +195,6 @@ never entered into or read from a repository-wide unqualified map.
   the provider ceiling. Output refusals partition independent questions first;
   input/context refusals preserve and repartition complete evidence. A new
   limit/packing policy is tested on one saved complete window before a full run.
-  A call may opt into one resample (spec 2026-09-25): a live answer refused whole
-  for what the model wrote is asked once more with the same bytes. Only the
-  parts and areas answers of the map of parts opt in.
 - **Glossary:** only accepted prose enters a separate p-ref generation/reduction
   pass with its own 32,768-token output allowance: legitimate windows need 1–16 thousand tokens, and two Watchtower windows looped to 128,000. Source/prose/fill context
   stays local in Prepared and the accepted cache record; no deferred g-ref

@@ -17,6 +17,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
@@ -420,22 +421,24 @@ func tableProse(result, input any) any {
 	if !ok {
 		return result
 	}
-	fill, table := request["fill"].([]any)
-	if !table {
+	fill, isTable := request["fill"].([]any)
+	if !isTable {
 		return result
 	}
-	object, ok := result.(map[string]any)
-	if !ok {
+	// The rows the table decoder read: the contract's {"rows": [...]}, a
+	// bare array of rows, or rows wrapped in one object.
+	raw, err := json.Marshal(result)
+	if err != nil {
 		return result
 	}
-	rows, ok := object["rows"].([]any)
-	if !ok {
+	rows, err := table.ResponseRows(raw)
+	if err != nil {
 		return result
 	}
 	var projected []any
 	for _, value := range rows {
-		row, ok := value.(map[string]any)
-		if !ok {
+		var row map[string]any
+		if json.Unmarshal(value, &row) != nil || row == nil {
 			continue
 		}
 		prose := map[string]any{"key": row["key"]}
@@ -451,7 +454,7 @@ func tableProse(result, input any) any {
 				}
 			}
 			if name, ok := column["name"].(string); ok && active {
-				if text, ok := row[name].(string); ok && text != column["empty_value"] {
+				if text, ok := row[name].(string); ok && !emptyProse(text, column["empty_value"]) {
 					prose[name] = text
 				}
 			}
@@ -459,6 +462,14 @@ func tableProse(result, input any) any {
 		projected = append(projected, prose)
 	}
 	return map[string]any{"rows": projected}
+}
+
+// emptyProse is the column's own spelling of absence as the table decoder
+// reads it: empty, or that spelling in any case or with a final period.
+func emptyProse(text string, emptyValue any) bool {
+	spelling, _ := emptyValue.(string)
+	trimmed := strings.TrimSpace(text)
+	return spelling != "" && (trimmed == "" || strings.EqualFold(strings.TrimSuffix(trimmed, "."), spelling))
 }
 
 // Field selection is supplied by the analytical owner. Values are never
