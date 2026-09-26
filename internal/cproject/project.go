@@ -317,7 +317,7 @@ func parse(ctx context.Context, root string, repository *corpus.Corpus, program 
 		return nil, err
 	}
 	if tool.Err != "" {
-		return nil, program.explain(fmt.Errorf("C native analysis (install clang): %s", tool.Err))
+		return nil, program.explain(fmt.Errorf("C native analysis (install clang): %s: %w", tool.Err, ErrClangUnavailable))
 	}
 	env := parseEnv{root: abs, roots: rootsOf(abs), repository: repository, corpus: store.corpusPaths(repository), tool: tool}
 	specs := slices.Clone(program.Units)

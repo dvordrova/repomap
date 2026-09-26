@@ -42,6 +42,10 @@ func overrides() []string { return slices.Concat(fortifyOff, legacyWarnings) }
 // clangProgram is the clang executable looked up on PATH.
 const clangProgram = "clang"
 
+// ErrClangUnavailable marks a program that failed because clang could not be
+// found or run: the required tool is missing, not the program's sources.
+var ErrClangUnavailable = errors.New("clang is unavailable")
+
 var toolchainCache sync.Map // clang path -> Toolchain
 
 // probeToolchain records the platform view: clang's version, target, sysroot
@@ -391,7 +395,7 @@ func (store *Store) parse(ctx context.Context, env parseEnv, spec UnitSpec) (*Un
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("C native analysis (install clang): %w", err)
+		return nil, fmt.Errorf("C native analysis (install clang): %w: %w", err, ErrClangUnavailable)
 	}
 	names := &fileNames{cwd: cwd, roots: env.roots, corpus: env.corpus, cache: map[string]fileName{}}
 	decls, external, size, decodeErr := decodeUnit(stdout, names)

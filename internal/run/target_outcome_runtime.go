@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dvordrova/repomap/internal/cproject"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
@@ -37,7 +38,7 @@ func classifyRepositoryTargetFailure(
 	if !stage.Valid() {
 		stage = targetoutcome.StageProgramAnalysis
 	}
-	if errors.Is(err, jstsproject.ErrTypeScriptCompilerUnavailable) {
+	if errors.Is(err, jstsproject.ErrTypeScriptCompilerUnavailable) || errors.Is(err, cproject.ErrClangUnavailable) {
 		return targetoutcome.StageTargetPreparation, targetoutcome.ReasonRequiredToolUnavailable
 	}
 	var resourceErr *llm.ResourceLimitError

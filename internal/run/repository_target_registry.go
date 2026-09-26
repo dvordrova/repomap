@@ -26,6 +26,7 @@ const (
 	repositoryTargetAdapterGo     repositoryTargetAdapter = "go"
 	repositoryTargetAdapterPython repositoryTargetAdapter = "python"
 	repositoryTargetAdapterJSTS   repositoryTargetAdapter = "jsts"
+	repositoryTargetAdapterC      repositoryTargetAdapter = "c"
 )
 
 // repositoryTargetKey is the collision-safe planning identity. Native refs
@@ -287,6 +288,7 @@ func ordinaryRepositoryTargetAdapterRegistry() (repositoryTargetAdapterRegistry,
 		pythonRepositoryTargetAdapterDescriptor(),
 		jstsRepositoryTargetAdapterDescriptor(),
 		clojureRepositoryTargetAdapterDescriptor(),
+		cRepositoryTargetAdapterDescriptor(),
 	)
 }
 

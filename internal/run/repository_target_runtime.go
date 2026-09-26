@@ -151,6 +151,9 @@ func (plan repositoryTargetPlan) validateWith(registry repositoryTargetAdapterRe
 type repositoryTargetRuntimeOptions struct {
 	RepoName   string
 	Repository *corpus.Corpus
+	// Root is the repository directory the corpus was read from. C discovery
+	// runs the build's dry run and clang there.
+	Root string
 
 	GoSnapshot     *snapshot.Snapshot
 	DiscoverPython bool
