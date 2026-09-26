@@ -184,19 +184,20 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		responseBytes   int
 		retryDelay      time.Duration
 		noAnswerRetried bool
+		usage           billedUsage
 	)
 	for attempt := 1; attempt <= maxRetries+1; attempt++ {
 		if attempt > 1 {
 			select {
 			case <-ctx.Done():
-				completion := llmCompletion(last, attempts, responseBytes, time.Since(started))
+				completion := llmCompletion(last, usage, attempts, responseBytes, time.Since(started))
 				return completion, closedLLMProviderError("complete", ctx.Err(), attempts, false)
 			case <-time.After(retryDelay):
 			}
 		}
 		releaseAttempt, acquireErr := llm.AcquireProviderAttempt(ctx)
 		if acquireErr != nil {
-			completion := llmCompletion(last, attempts, responseBytes, time.Since(started))
+			completion := llmCompletion(last, usage, attempts, responseBytes, time.Since(started))
 			return completion, closedLLMProviderError("complete", acquireErr, attempts, false)
 		}
 		if attempt > 1 && c.OnRetry != nil {
@@ -225,17 +226,18 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		releaseAttempt()
 		attempts = attempt
 		responseBytes += completion.ResponseBytes
+		usage.add(completion)
 		last = completion
 		if attemptExpired {
 			cause := llm.NewResourceLimitError(llm.ResourceLimitError{
 				Stage: llmProviderStage, Kind: llm.ResourceLimitAttemptTime,
 				Limit: int(attemptTimeout.Milliseconds()), Observed: int(time.Since(attemptStarted).Milliseconds()), ObservedKnown: true,
 			})
-			return llmCompletion(last, attempts, responseBytes, time.Since(started)), closedLLMProviderError("complete", cause, attempts, false)
+			return llmCompletion(last, usage, attempts, responseBytes, time.Since(started)), closedLLMProviderError("complete", cause, attempts, false)
 		}
 		if err == nil {
 			if err = requireSingleStoppedCompletion(llmProviderStage, completion); err == nil {
-				return llmCompletion(completion, attempts, responseBytes, time.Since(started)), nil
+				return llmCompletion(completion, usage, attempts, responseBytes, time.Since(started)), nil
 			}
 		}
 		if providerLeftNoAnswer(completion, err) {
@@ -248,7 +250,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		splitHTTP500 := llm.ProviderSplitsHTTP500(ctx) &&
 			failure.Kind == llm.ProviderFailureHTTPStatus && failure.HTTPStatus == http.StatusInternalServerError
 		if !retryable || splitHTTP500 {
-			result := llmCompletion(completion, attempts, responseBytes, time.Since(started))
+			result := llmCompletion(completion, usage, attempts, responseBytes, time.Since(started))
 			return result, closedLLMProviderError("complete", lastErr, attempts, false)
 		}
 		if attempt <= maxRetries && ctx.Err() == nil && c.OnRetry != nil {
@@ -257,7 +259,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		}
 	}
 
-	result := llmCompletion(last, attempts, responseBytes, time.Since(started))
+	result := llmCompletion(last, usage, attempts, responseBytes, time.Since(started))
 	exhausted := fmt.Errorf("transport retries exhausted after %d attempts: %w", attempts, lastErr)
 	return result, closedLLMProviderError("complete", exhausted, attempts, true)
 }
@@ -321,8 +323,26 @@ func validateLLMProviderConfig(c *Client) error {
 	return nil
 }
 
+// billedUsage sums the usage the provider reported over every attempt of one
+// call. An answer sent once more is paid for twice, so its first reply's
+// tokens stay in the call's measurements.
+type billedUsage struct {
+	reported                                      bool
+	input, output, reasoning, cacheHit, cacheMiss int
+}
+
+func (usage *billedUsage) add(completion chatCompletion) {
+	usage.reported = usage.reported || completion.UsageReported
+	usage.input += completion.InputTokens
+	usage.output += completion.OutputTokens
+	usage.reasoning += completion.ReasoningTokens
+	usage.cacheHit += completion.PromptCacheHitTokens
+	usage.cacheMiss += completion.PromptCacheMissTokens
+}
+
 func llmCompletion(
 	completion chatCompletion,
+	usage billedUsage,
 	attempts int,
 	providerResponseBytes int,
 	latency time.Duration,
@@ -333,12 +353,12 @@ func llmCompletion(
 		FinishReason: llmFinishReason(completion.finishReasonClass),
 		ChoiceCount:  completion.ChoiceCount,
 		Metrics: llm.Metrics{
-			InputTokens: completion.InputTokens, OutputTokens: completion.OutputTokens,
-			ReasoningTokens:       completion.ReasoningTokens,
-			PromptCacheHitTokens:  completion.PromptCacheHitTokens,
-			PromptCacheMissTokens: completion.PromptCacheMissTokens,
+			InputTokens: usage.input, OutputTokens: usage.output,
+			ReasoningTokens:       usage.reasoning,
+			PromptCacheHitTokens:  usage.cacheHit,
+			PromptCacheMissTokens: usage.cacheMiss,
 			ProviderResponseBytes: providerResponseBytes,
-			UsageReported:         completion.UsageReported,
+			UsageReported:         usage.reported,
 			Latency:               latency, Attempts: attempts,
 		},
 	}

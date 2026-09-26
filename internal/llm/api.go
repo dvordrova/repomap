@@ -92,7 +92,8 @@ func (prepared Prepared) Len() int {
 
 // Metrics are transport measurements for one live completion. Cache hits
 // preserve the measurements of the accepted call that populated the entry.
-// ProviderResponseBytes is cumulative across all transport Attempts.
+// ProviderResponseBytes and the token counts are cumulative across all
+// transport Attempts; the provider bills every answer it returns.
 type Metrics struct {
 	InputTokens           int           `json:"input_tokens"`
 	OutputTokens          int           `json:"output_tokens"`

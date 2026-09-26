@@ -93,6 +93,38 @@ func TestProviderNoAnswerIsSentOnceMore(t *testing.T) {
 	}
 }
 
+// The provider bills an empty answer too, so the call's usage is that of both
+// answers, whether the second one is accepted or refused.
+func TestProviderNoAnswerRetryKeepsTheUsageOfBothAnswers(t *testing.T) {
+	empty := okAnswer(llmProviderResponse("stop", "", map[string]any{
+		"prompt_tokens": 1000, "completion_tokens": 3, "prompt_cache_miss_tokens": 1000,
+		"completion_tokens_details": map[string]any{"reasoning_tokens": 2},
+	}))
+	answered := okAnswer(llmProviderResponse("stop", `{"ok":true}`, map[string]any{
+		"prompt_tokens": 1000, "completion_tokens": 20, "prompt_cache_hit_tokens": 1000,
+	}))
+	for name, answers := range map[string][]providerAnswer{
+		"second answer accepted": {empty, answered},
+		"second answer empty":    {empty},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, _ := serveAnswers(t, answers...)
+			completion, _ := client.Complete(t.Context(), mustPrepared(t))
+			got := completion.Metrics
+			second := 3
+			hit, miss := 0, 2000
+			if len(answers) == 2 {
+				second = 20
+				hit, miss = 1000, 1000
+			}
+			if got.Attempts != 2 || !got.UsageReported || got.InputTokens != 2000 ||
+				got.OutputTokens != 3+second || got.PromptCacheHitTokens != hit || got.PromptCacheMissTokens != miss {
+				t.Fatalf("the first answer's usage is missing from the call: %#v", got)
+			}
+		})
+	}
+}
+
 // The retry is the provider's missing answer only. A cut answer, another
 // provider refusal or a decoder's refusal is returned from its one attempt.
 func TestProviderRefusalsOtherThanNoAnswerAreNotSentAgain(t *testing.T) {

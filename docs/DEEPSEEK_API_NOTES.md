@@ -88,10 +88,12 @@ saved request bytes rather than applying new environment settings to them.
   `insufficient_system_resource`, with or without content. The retry is
   counted in the transport attempts, takes the ordinary short backoff and the
   shared attempt gate, stays within the same four-attempt limit and ends at
-  the caller's deadline or cancellation. A second such answer is refused as
-  before. This adds no retry to an output cut (`length`, whatever its
-  content), a context-limit refusal, content that ends with another finish
-  reason, a choice count other than one, or any decoder or validation refusal.
+  the caller's deadline or cancellation. The call's token usage and response
+  bytes are those of both answers, since the provider bills the first one
+  too. A second such answer is refused as before. This adds no retry to an
+  output cut (`length`, whatever its content), a context-limit refusal,
+  content that ends with another finish reason, a choice count other than
+  one, or any decoder or validation refusal.
 - An owning stage may set a local attempt deadline through the shared executor.
   Translation uses four minutes. The timer starts after acquiring the shared
   attempt gate; its expiry returns an `attempt_time_ms` resource refusal directly
