@@ -22,6 +22,7 @@ communication and data, then understand a scenario beside its original sources.
 | Python extraction, package views or import facades | [Python](docs/contracts/PYTHON.md) |
 | JavaScript/TypeScript extraction or compiler prerequisites | [JSTS](docs/contracts/JSTS.md) |
 | Clojure JVM extraction, native tooling or project manifests | [Clojure](docs/contracts/CLOJURE.md) |
+| C extraction, clang tooling or build descriptions | [C](docs/contracts/C.md) |
 | Selection/captions, operations/boundaries, Learn/questions or orientation | The relevant section of [Reading](docs/contracts/READING.md) |
 | Prompts, response validation, limits, cache/memo/replay or retries | [Execution](docs/contracts/EXECUTION.md); endpoint details in [DeepSeek notes](docs/DEEPSEEK_API_NOTES.md) |
 | Optional definitions or glossary provenance | [Terminology](docs/contracts/TERMINOLOGY.md) |
