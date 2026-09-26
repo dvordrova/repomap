@@ -50,6 +50,39 @@ Current language repositories:
   `Date`, `Promise`, and `Image` retain exact platform authority; a class
   construction retains its exact local constructor, while a repository-local
   value merely typed as a platform constructor remains an unresolved frontier.
+- `c/` is a small key-value server, `kvd`, and its client, `kvcli`, read
+  through clang with the flags `make -n -B` prints. Each link line of the
+  [Makefile](c/Makefile) is a program; both link `strbuf.c`, which is parsed
+  once. [tools/dump.c](c/tools/dump.c), which no link line builds, is a program
+  through its own `main` and links what the linker would take. `loop.c`
+  includes the poll backend the build asks for; the epoll backend is outside
+  this build on every host and is never parsed. Inside repomap's own
+  repository the Makefile is not at the root, so no flags reach clang:
+  each `main` is a program of its own, `loop.c` takes epoll on Linux and
+  poll elsewhere, and every program still parses.
+
+C function pointers and macros in [kvd.c](c/kvd.c) and [loop.c](c/loop.c):
+
+| Source | Expected result |
+| --- | --- |
+| `cmdTable` rows `{"get", getCommand, 2}` | each row hands its function over under its own name (`name = "get"`) |
+| `cmd->proc(c)` in `processCommand` | alternatives: the six functions the table stores |
+| `fe->rfileProc = proc` under `if (mask & LOOP_READABLE)` | the call through `rfileProc` is unresolved and names every handler passed to `loopCreateFileEvent`; a branch never makes alternatives |
+| `l->beforeSleep = proc`, stored once | the call through `beforeSleep` is exact |
+| [staticsyms.h](c/staticsyms.h) `(unsigned long)getCommand` | an address used as an integer: no call and no callback |
+| `act.sa_handler = onSignal` | `onSignal` is handed to `struct sigaction` under the field as written, not the platform's internal union |
+| `kvAssert(setNonBlocking(cfd) == 0)` | `setNonBlocking` is called at its own column; the `kvAssertFail` call the macro body writes is at `kvAssert` |
+| `static void oom` in both `loop.c` and `strbuf.c` | two functions, one per file |
+| `static inline size_t sbAvail` in [strbuf.h](c/strbuf.h) | one function, whichever units include it |
+
+Go, Python and JS/TS have no macros, so a call a macro writes has no
+equivalent there. Clojure has macros, but its adapter does not expand them
+([Clojure](../../docs/contracts/CLOJURE.md)), so a call a Clojure macro writes
+is not a call in its index. Only C turns a function into a number with a
+cast. Go, Python and Clojure get a function's identity only from a call that
+receives the function (`reflect.ValueOf(f).Pointer()`, `id(f)`,
+`System/identityHashCode`), which is a different construct, and TypeScript
+has none. Both cases are recorded as missing rather than imitated.
 
 Comparable response-field examples:
 
@@ -89,7 +122,9 @@ table. Go (`fmt.Sprintf("DROP TABLE IF EXISTS %s", table)`) and Clojure
 (`(format "DROP TABLE IF EXISTS %s" table)`) hand it to a call outside the
 repository, so it is also a `sql_query` fact. Python's `%` operator and a
 TypeScript template literal are not call arguments, so their equivalents in
-`sql_literals.py` and `sql-literals.ts` are partial source SQL only.
+`sql_literals.py` and `sql-literals.ts` are partial source SQL only. C has no
+equivalent: its standard library has no database call, and the C fixture
+links no database library.
 
 Calls chained or nested on one line keep their own positions. Each language
 writes different calls with the same value, and the same call twice, on one
@@ -102,9 +137,10 @@ boundary place, observed once by each of two targets sharing the file:
 | Python | [events.py](python/src/fixture_app/events.py) `subscribe_chained`, `chained_text_calls` | the attribute name |
 | Go | [http_registrations.go](go/internal/storefixture/http_registrations.go) `registerStrippedFiles` | the opening parenthesis |
 | Clojure | [core.clj](clojure/src/example/core.clj) `chained-paths`, `nested-paths` | the form's opening parenthesis |
+| C | [kvcli.c](c/kvcli.c) `withoutScheme` | the called function's name |
 
-Go's standard library has no fluent registration chain, so nesting stands in
-for it. A Clojure Java instance chain (`(.. s (replace "/" "-"))`) carries no
+Go's and C's standard libraries have no fluent registration chain, so nesting
+stands in for it. A Clojure Java instance chain (`(.. s (replace "/" "-"))`) carries no
 call pattern and becomes no fact. Python knows no type for an untyped
 parameter or for what `subscribe` returns, so those calls name no external
 symbol; they are still separate facts.
@@ -117,7 +153,9 @@ Test code comes from runner facts, never from a file name alone:
 | Python | pytest `python_files` matches and [tests/conftest.py](python/tests/conftest.py) | `tests/__init__.py` |
 | Go | build-selected `_test.go` files | [internal/testhelper/helper.go](go/internal/testhelper/helper.go) |
 | Clojure | namespaces that require `clojure.test` | none in the fixture |
+| C | none: C has no standard test runner, and the Makefile's `test` rule is a recipe | every unit, including [tools/dump.c](c/tools/dump.c) |
 
 Runner-configured test directories have no derived equivalent in Python
 (`testpaths` often names the production package) or Clojure (no manifest is
-read). The Python and Clojure contracts record both gaps.
+read). The Python and Clojure contracts record both gaps. C has no runner
+facts at all.
