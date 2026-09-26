@@ -63,9 +63,10 @@ type Options struct {
 	// every cell takes its fallback.
 	Executor llm.Executor
 	Provider llm.Provider
-	// Classifier optionally answers closed tables (every column a closed
-	// choice) with a decision model; nil keeps them with Provider.
-	Classifier llm.Provider
+	// Categorizer answers the closed tables (Definition.Classifier): keys,
+	// part roles and key declarations. A live reading requires it; they
+	// never fall back to Provider.
+	Categorizer llm.Categorizer
 	// OwnerRunDir receives tables.md and tables/.
 	OwnerRunDir string
 	// Stage and State report progress the way the run output does.
@@ -77,7 +78,10 @@ type Options struct {
 	// Through stops after this table stage; empty runs the complete reading.
 	Through string
 	// Table controls apply to Through, or to all stages when Through is empty.
-	// Prompt needs an explicit Through stage. Zero limits use the stage defaults.
+	// Prompt needs an explicit Through stage; for a closed table it is the
+	// categorizer's task. The row and byte budgets size text-model requests:
+	// the categorizer's own limits pack its tables. Zero limits use the stage
+	// defaults.
 	Prompt     string
 	WindowRows int
 	InputBytes int
@@ -246,6 +250,9 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 	}
 	if opts.OwnerRunDir == "" {
 		return Result{}, fmt.Errorf("atlas reading: owner run dir is required")
+	}
+	if opts.Provider != nil && opts.Categorizer == nil {
+		return Result{}, fmt.Errorf("atlas reading: a live reading needs a categorizer for its closed tables")
 	}
 	if opts.Stage == nil {
 		opts.Stage = func(string, ...string) {}
@@ -661,10 +668,10 @@ func (r *reader) runTableGroups(ctx context.Context, def table.Definition, round
 		if r.opts.Prompt != "" {
 			def.System = r.opts.Prompt
 		}
-		if r.opts.WindowRows > 0 {
+		if r.opts.WindowRows > 0 && !r.classifies(def) {
 			def.Window = r.opts.WindowRows
 		}
-		if r.opts.InputBytes > 0 {
+		if r.opts.InputBytes > 0 && !r.classifies(def) {
 			def.MaxInputBytes = r.opts.InputBytes
 		}
 	}
@@ -728,7 +735,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 			return nil, err
 		}
 		if classifier {
-			if packed, err = table.FitClassifierWindows(def, packed); err != nil {
+			if packed, err = table.FitClassifierWindows(r.opts.Categorizer, def, packed); err != nil {
 				return nil, err
 			}
 		}
@@ -765,7 +772,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	calls := make([]llm.Call[table.Result], len(windows))
 	for i, window := range windows {
 		if classifier {
-			call, err := table.ClassifierCall(def, window)
+			call, err := table.ClassifierCall(r.opts.Categorizer, def, window)
 			if err != nil {
 				return nil, err
 			}
@@ -804,7 +811,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	}
 	executor := debugdump.BindStage(r.opts.Executor, def.Stage)
 	if classifier {
-		// The decision model has its own rate limits and its own gate.
+		// The categorizer has its own rate limits and its own gate.
 		executor.BatchConcurrency, executor.BatchController = table.ClassifierConcurrency, r.classifierGate
 	}
 	results := llm.ExecuteJSONEach(ctx, executor, provider, calls)
@@ -914,16 +921,17 @@ func rejectionKind(rejection table.RowRejection) string {
 	return "row_rejected"
 }
 
-// classifies reports whether the decision model answers this table: it is
-// configured, the table opted in, and every column is a closed choice.
+// classifies reports whether the categorizer answers this table: the table
+// opted in and the reading is live. A dry reading has no categorizer and
+// packs the table as it prints it; ClassifierCall refuses one not closed.
 func (r *reader) classifies(def table.Definition) bool {
-	return r.opts.Classifier != nil && def.Classifier && table.Closed(def)
+	return r.opts.Categorizer != nil && def.Classifier
 }
 
 // providerFor is the provider that answers this table.
 func (r *reader) providerFor(def table.Definition) llm.Provider {
 	if r.classifies(def) {
-		return r.opts.Classifier
+		return r.opts.Categorizer
 	}
 	return r.opts.Provider
 }

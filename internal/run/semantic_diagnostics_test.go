@@ -16,6 +16,7 @@ import (
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 func TestRepositoryTargetDispatchPreflightFailureFlushesFirstLayerSemanticJournal(t *testing.T) {
@@ -98,6 +99,7 @@ func TestRepositoryTargetDispatchPreflightFailureFlushesFirstLayerSemanticJourna
 		sharedRepositoryCorpus: repository, capturedRepositoryState: &state,
 		newTargetPortfolioProvider: providerFactory, runIDOverride: runID,
 		newCubeProvider: func() (llm.Provider, error) { return documentationProvider, nil },
+		newCategorizer:  func() (llm.Categorizer, error) { return &typesafetest.Categorizer{}, nil },
 	})
 	if err == nil || !strings.Contains(err.Error(), "materialize selected JavaScript/TypeScript package project") {
 		t.Fatalf("selected JSTS preflight error = %v", err)

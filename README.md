@@ -270,8 +270,15 @@ For the default DeepSeek endpoint:
 
 ```bash
 export DEEPSEEK_API_KEY=...
+export JEV_KEY=...
 .bin/repomap /path/to/repository
 ```
+
+`JEV_KEY` is required with the model key: TypeSafe's Jev decides the key
+declarations, part roles and keys, with no fallback to the text model. A run
+without it stops before any analysis; `--no-model` needs neither key.
+`REPOMAP_JEV_MODEL` (default `jev-1.13.0`) and `REPOMAP_JEV_ENDPOINT` override
+Jev's model and endpoint.
 
 For another OpenAI-compatible `chat/completions` endpoint:
 
@@ -438,8 +445,8 @@ diagnostics, without updating reusable answer pointers.
 Repository input is trusted. repomap does not scan it for credentials, and it
 does not redact what it writes: whatever a prompt or a response contains is
 what lands in the run directory and the model cache under your user-cache
-directory. The provider key itself is read from the environment and is never
-part of a request body or a cache record, but a credential committed to the
+directory. The provider keys themselves are read from the environment and are
+never part of a request body or a cache record, but a credential committed to the
 repository can reach those files like any other repository text. Treat a run
 directory as being as sensitive as the repository it came from.
 

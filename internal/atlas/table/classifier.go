@@ -11,12 +11,13 @@ import (
 )
 
 // A closed table asks only closed choices: every column picks one listed
-// option. Such a table can be answered by a decision model instead of a
-// text model. The rows, context and options are the same; only the wire
-// form and the validation differ.
+// option. The run's categorizer (llm.Categorizer, Jev today) answers such a
+// table instead of a text model. The rows, context and options are the same;
+// the categorizer writes the request and reads the verdicts, and the
+// decision rule below turns them into answers.
 const (
-	// ClassifierQuestions packs a closed table's windows for a decision
-	// model: every row and column becomes its own question, and the shared
+	// ClassifierQuestions packs a closed table's windows for the
+	// categorizer: every row and column becomes its own question, and the shared
 	// context is sent once as state. A request of 150 rows of seven columns
 	// (1,050 questions) exceeded the model's 64k-token request. Bytes pack
 	// by the ordinary target, and an oversized row still goes whole in its
@@ -64,13 +65,13 @@ func Closed(def Definition) bool {
 // options; 150 questions naming 18 part titles each exceeded the budget.
 const ClassifierBodyBytes = 120_000
 
-// FitClassifierWindows halves any window whose decision-model body exceeds
+// FitClassifierWindows halves any window whose categorizer body exceeds
 // ClassifierBodyBytes until it fits or holds one row; nothing is dropped.
-func FitClassifierWindows(def Definition, windows []Window) ([]Window, error) {
+func FitClassifierWindows(c llm.Categorizer, def Definition, windows []Window) ([]Window, error) {
 	var fitted []Window
 	var fit func(Window) error
 	fit = func(window Window) error {
-		call, err := ClassifierCall(def, window)
+		call, err := ClassifierCall(c, def, window)
 		if err != nil {
 			return err
 		}
@@ -237,13 +238,13 @@ func columnQuestion(column Column, names optionNames) string {
 	return fmt.Sprintf("`%s` for `row`, as `task` defines it.", column.Name)
 }
 
-// ClassifierCall is Call for a decision model: the system prompt and the
-// window context become the state, each row and column one question.
-func ClassifierCall(def Definition, window Window) (llm.Call[Result], error) {
+// ClassifierCall is Call for the categorizer: the system prompt is the task,
+// the window context is shared, and each row and column is one question.
+func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[Result], error) {
 	if !Closed(def) {
 		return llm.Call[Result]{}, fmt.Errorf("table %s: not a closed table", def.Stage)
 	}
-	questions := make(map[string]any, len(window.Rows)*len(def.Columns))
+	questions := make(map[string]llm.Question, len(window.Rows)*len(def.Columns))
 	for _, row := range window.Rows {
 		for _, column := range def.Columns {
 			options := columnOptions(column, window.Context, row)
@@ -251,33 +252,23 @@ func ClassifierCall(def Definition, window Window) (llm.Call[Result], error) {
 				return llm.Call[Result]{}, fmt.Errorf("table %s: row %s column %s has no options", def.Stage, row.ID, column.Name)
 			}
 			names := namesFor(column, window.Context, row, options)
-			instructions := map[string]any{"row": fieldsMap(row.Fields), "question": columnQuestion(column, names)}
-			if yesOnly(column, options) {
-				questions[questionKey(row, column)] = map[string]any{"type": "noul", "instructions": instructions}
-				continue
+			question := llm.Question{Item: fieldsMap(row.Fields), Ask: columnQuestion(column, names)}
+			if !yesOnly(column, options) {
+				// A catalogue's purposes are already in the context; repeating
+				// them in every question multiplied a request past the budget.
+				for _, option := range options {
+					question.Options = append(question.Options, llm.Option{Name: names.label[option]})
+				}
+				if column.Optional {
+					question.Options = append(question.Options, llm.Option{Name: classifierAbsent, Meaning: "No listed option applies to this row."})
+				}
 			}
-			criteria := make(map[string]any, len(options)+1)
-			// A catalogue's purposes are already in the state; repeating them
-			// in every question multiplied a request past the model's budget.
-			for _, option := range options {
-				criteria[names.label[option]] = nil
-			}
-			if column.Optional {
-				criteria[classifierAbsent] = "No listed option applies to this row."
-			}
-			questions[questionKey(row, column)] = map[string]any{"type": "choice", "instructions": instructions, "criteria": criteria}
+			questions[questionKey(row, column)] = question
 		}
 	}
-	evaluated := map[string]any{"task": def.System, "context": fieldsMap(window.Context)}
-	if def.ClassifierOmitTask {
-		evaluated = map[string]any{"context": fieldsMap(window.Context)}
-	}
-	body, err := json.Marshal(map[string]any{
-		"state":     evaluated,
-		"questions": questions,
-	})
+	prompt, err := c.Prompt(def.System, fieldsMap(window.Context), questions)
 	if err != nil {
-		return llm.Call[Result]{}, err
+		return llm.Call[Result]{}, fmt.Errorf("table %s: %w", def.Stage, err)
 	}
 	state, err := json.Marshal(struct {
 		Contract string  `json:"contract"`
@@ -285,69 +276,34 @@ func ClassifierCall(def Definition, window Window) (llm.Call[Result], error) {
 		Request  string  `json:"request_sha256"`
 		Margin   float64 `json:"margin"`
 		YesAt    float64 `json:"yes_at,omitempty"`
-	}{def.Contract + ".classifier.v2", sha256Hex([]byte(def.System)), sha256Hex(body), ClassifierMargin, def.YesAt})
+	}{def.Contract + ".classifier.v2", sha256Hex([]byte(def.System)), sha256Hex([]byte(prompt.User)), ClassifierMargin, def.YesAt})
 	if err != nil {
 		return llm.Call[Result]{}, err
 	}
 	return llm.Call[Result]{
 		State:  state,
-		Prompt: llm.Prompt{User: string(body), NoResponseAdjunct: true},
+		Prompt: prompt,
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: 1},
 		DecodeValidate: func(raw []byte) (Result, error) {
-			return DecodeClassifier(def, window, raw)
+			verdicts, err := c.Verdicts(raw)
+			if err != nil {
+				return Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
+			}
+			return DecodeClassifierAnswers(def, window, verdicts)
 		},
 	}, nil
 }
 
-// DecodeClassifier accepts a row when every column is decided: a listed
-// option, or an optional column's explicit "none of these", leading every
-// other listed option by ClassifierMargin, or a yes/no clear of the
+// DecodeClassifierAnswers accepts a row when every column is decided: a
+// listed option, or an optional column's explicit "none of these", leading
+// every other listed option by ClassifierMargin, or a yes/no clear of the
 // uncertain band. Anything else leaves the row explicitly unanswered, never
-// silently absent; other rows stand alone.
-func DecodeClassifier(def Definition, window Window, raw []byte) (Result, error) {
-	answers, err := ParseClassifierAnswers(raw)
-	if err != nil {
-		return Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
-	}
-	return DecodeClassifierAnswers(def, window, answers)
-}
-
-// ClassifierAnswer is one decision-model answer as the response carries it.
-type ClassifierAnswer struct {
-	Type          string             `json:"type"`
-	Choice        string             `json:"choice"`
-	Probabilities map[string]float64 `json:"probabilities"`
-	Noul          *float64           `json:"noul"`
-}
-
-// ParseClassifierAnswers reads a decision-model response once, so rows
-// recalled from one remembered response need not parse it again each. Each
-// answer is read on its own: a malformed one leaves only its question not
-// answered. A response without answers decided nothing.
-func ParseClassifierAnswers(raw []byte) (map[string]ClassifierAnswer, error) {
-	var envelope struct {
-		Answers map[string]json.RawMessage `json:"answers"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Answers == nil {
-		return nil, fmt.Errorf("response has no answers")
-	}
-	answers := make(map[string]ClassifierAnswer, len(envelope.Answers))
-	for key, rawAnswer := range envelope.Answers {
-		var answer ClassifierAnswer
-		if json.Unmarshal(rawAnswer, &answer) == nil {
-			answers[key] = answer
-		}
-	}
-	return answers, nil
-}
-
-// DecodeClassifierAnswers is DecodeClassifier over already parsed answers.
-// A window whose every row was answered, even uncertainly, is an explicit
-// answer: its uncertain rows stay unanswered and it is not asked again. A
-// window where no row was accepted and some row was not answered, or was
-// answered outside its options, is refused.
-func DecodeClassifierAnswers(def Definition, window Window, answers map[string]ClassifierAnswer) (Result, error) {
-	envelope := struct{ Answers map[string]ClassifierAnswer }{answers}
+// silently absent; other rows stand alone. A window whose every row was
+// answered, even uncertainly, is an explicit answer: its uncertain rows stay
+// unanswered and it is not asked again. A window where no row was accepted
+// and some row was not answered, or was answered outside its options, is
+// refused.
+func DecodeClassifierAnswers(def Definition, window Window, verdicts map[string]llm.Verdict) (Result, error) {
 	yesAt := 0.5 + ClassifierNoulMargin
 	result := Result{Answers: make(Answers, len(window.Rows)), rowKeys: make([]string, len(window.Rows))}
 	accepted, uncertain := 0, 0
@@ -357,31 +313,31 @@ func DecodeClassifierAnswers(def Definition, window Window, answers map[string]C
 		reason := ""
 		unsure := false
 		for _, column := range def.Columns {
-			got, ok := envelope.Answers[questionKey(row, column)]
+			got, ok := verdicts[questionKey(row, column)]
 			options := columnOptions(column, window.Context, row)
 			if yesOnly(column, options) {
-				if def.Ranked && ok && got.Type == "noul" && got.Noul != nil {
-					answer[ProbabilityCell(column.Name)] = strconv.FormatFloat(*got.Noul, 'f', 4, 64)
-					if *got.Noul >= yesAt {
+				if def.Ranked && ok && got.Yes != nil {
+					answer[ProbabilityCell(column.Name)] = strconv.FormatFloat(*got.Yes, 'f', 4, 64)
+					if *got.Yes >= yesAt {
 						answer[column.Name] = "yes"
 					}
 					continue
 				}
 				switch {
-				case !ok || got.Type != "noul" || got.Noul == nil:
+				case !ok || got.Yes == nil:
 					reason = fmt.Sprintf("column %s was not answered", column.Name)
-				case *got.Noul >= yesAt:
+				case *got.Yes >= yesAt:
 					answer[column.Name] = "yes"
 					continue
-				case *got.Noul <= 1-yesAt:
+				case *got.Yes <= 1-yesAt:
 					continue
 				default:
-					reason, unsure = fmt.Sprintf("column %s is uncertain: yes at %.2f", column.Name, *got.Noul), true
+					reason, unsure = fmt.Sprintf("column %s is uncertain: yes at %.2f", column.Name, *got.Yes), true
 				}
 				break
 			}
 			if def.YesAt > 0 && len(options) == 2 && slices.Contains(options, "yes") && slices.Contains(options, "no") {
-				if !ok || got.Type != "choice" || got.Probabilities == nil {
+				if !ok || got.Probabilities == nil {
 					reason = fmt.Sprintf("column %s was not answered", column.Name)
 					break
 				}
@@ -402,7 +358,7 @@ func DecodeClassifierAnswers(def Definition, window Window, answers map[string]C
 			probability := got.Probabilities[got.Choice]
 			rival, rivalAt := runnerUp(got, labels)
 			switch {
-			case !ok || got.Type != "choice":
+			case !ok || got.Choice == "":
 				reason = fmt.Sprintf("column %s was not answered", column.Name)
 			case !slices.Contains(labels, got.Choice):
 				reason = fmt.Sprintf("column %s chose %q, not one of the options", column.Name, got.Choice)
@@ -437,7 +393,7 @@ func DecodeClassifierAnswers(def Definition, window Window, answers map[string]C
 // runnerUp is the listed option, other than the chosen one, that the answer
 // gives the highest probability; the first listed wins a tie. A choice that
 // is not the top option therefore has a negative lead.
-func runnerUp(got ClassifierAnswer, labels []string) (string, float64) {
+func runnerUp(got llm.Verdict, labels []string) (string, float64) {
 	rival, rivalAt := "", 0.0
 	for _, label := range labels {
 		if at := got.Probabilities[label]; label != got.Choice && (rival == "" || at > rivalAt) {

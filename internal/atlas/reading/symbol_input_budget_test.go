@@ -6,33 +6,28 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
-type symbolInputProvider struct {
-	tableProvider
-	symbolRequests [][]byte
+// symbolQuestions keeps every request the categorizer answers.
+type symbolQuestions struct {
+	*typesafetest.Categorizer
+	mu       sync.Mutex
+	requests [][]byte
 }
 
-func (p *symbolInputProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
-	var request struct {
-		Table string
-		Fill  []table.Column
-	}
-	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
-		return llm.Completion{}, err
-	}
-	if request.Table == lines.StageSymbols && len(request.Fill) > 0 && request.Fill[0].Name == "key_symbol" {
-		p.mu.Lock()
-		p.symbolRequests = append(p.symbolRequests, append([]byte(nil), prepared.Bytes()...))
-		p.mu.Unlock()
-	}
-	return p.tableProvider.Complete(ctx, prepared)
+func (c *symbolQuestions) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	c.mu.Lock()
+	c.requests = append(c.requests, append([]byte(nil), prepared.Bytes()...))
+	c.mu.Unlock()
+	return c.Categorizer.Complete(ctx, prepared)
 }
 
 func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T) {
@@ -63,86 +58,81 @@ func TestSymbolsKeepAnOversizedEvidenceRowThroughExecutionAndCache(t *testing.T)
 	if large.ID == "" {
 		t.Fatal("missing large symbol fixture")
 	}
-	def := lines.SymbolSelection(false)
-	input, err := table.Request(def, table.Window{Rows: []table.Row{lines.SymbolRow(large, "File svc/core/c.go does things.")}})
+	def := table.ForClassifier(lines.SymbolSelection(false))
+	alone, err := table.ClassifierCall(closedDecisions(), def, table.Window{Rows: []table.Row{lines.SymbolRow(large, "File svc/core/c.go does things.")}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if size := len(def.System) + len(input); size <= table.DefaultInputBytes || size >= llm.SemanticRecordByteLimit {
-		t.Fatalf("fixture must exceed the default packing budget and fit the real request envelope: %d", size)
+	if size := len(alone.Prompt.User); size <= table.ClassifierBodyBytes || size >= llm.SemanticRecordByteLimit {
+		t.Fatalf("fixture must exceed the categorizer's body budget and fit the real request envelope: %d", size)
 	}
-	t.Logf("complete symbol input: %d bytes; default packing target: %d", len(def.System)+len(input), table.DefaultInputBytes)
 	before, err := json.Marshal(graph)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cache := t.TempDir()
-	provider := &symbolInputProvider{}
-	opts := twoTargetOptions(t, graph, &provider.tableProvider)
-	opts.Provider, opts.Executor, opts.Through = provider, readOptions(t, graph, provider, cache).Executor, lines.StageSymbols
+	provider := &tableProvider{}
+	questions := &symbolQuestions{Categorizer: closedDecisions()}
+	opts := twoTargetOptions(t, graph, provider)
+	opts.Categorizer, opts.Executor, opts.Through = questions, readOptions(t, graph, provider, cache).Executor, lines.StageSymbols
 	cold := readKnowledge(t, opts)
-	if len(provider.symbolRequests) != 3 {
-		t.Fatalf("expected ordinary neighbours, one complete oversized symbol, then ordinary neighbours; got %d symbol requests", len(provider.symbolRequests))
+	if len(questions.requests) < 2 {
+		t.Fatalf("the oversized symbol did not get a request of its own: %d requests", len(questions.requests))
+	}
+	byID := make(map[string]atlas.Place)
+	for _, place := range graph.Places {
+		byID[place.ID] = place
 	}
 	seen := make(map[string]bool)
-	for _, raw := range provider.symbolRequests {
+	for _, raw := range questions.requests {
 		var request struct {
-			System string           `json:"_system"`
-			Rows   []map[string]any `json:"rows"`
+			Questions map[string]struct {
+				Instructions struct {
+					Row map[string]any `json:"row"`
+				} `json:"instructions"`
+			} `json:"questions"`
 		}
 		if err := json.Unmarshal(raw, &request); err != nil {
 			t.Fatal(err)
 		}
-		var originals []table.Row
-		for _, row := range request.Rows {
-			name, _ := row["name"].(string)
-			path, _ := row["path"].(string)
-			identity := path + "\x00" + name
-			if seen[identity] {
-				t.Fatalf("symbol %s in %s was repeated across windows", name, path)
+		for key, question := range request.Questions {
+			id := strings.TrimSuffix(key, "|key_symbol")
+			if seen[id] {
+				t.Fatalf("symbol %s was repeated across requests", id)
 			}
-			seen[identity] = true
-			var original atlas.Place
-			for _, place := range graph.Places {
-				if place.Symbol != nil && place.Path == path && place.Symbol.Decl.Name == name {
-					original = place
-					break
-				}
+			seen[id] = true
+			original, known := byID[id]
+			if !known || original.Symbol == nil {
+				t.Fatalf("question %s has no original declaration", key)
 			}
-			if original.ID == "" {
-				t.Fatalf("provider row has no original declaration: %s", name)
+			fields := map[string]any{}
+			for _, field := range lines.SymbolRow(original, cold[original.Parent].Cells["line"]).Fields {
+				fields[field.Name] = field.Value
 			}
-			originals = append(originals, lines.SymbolRow(original, cold[original.Parent].Cells["line"]))
-			if row["key"] != original.ID {
-				t.Fatalf("artifact ID changed before the provider: %v", row["key"])
+			encoded, _ := json.Marshal(fields)
+			var want map[string]any
+			if err := json.Unmarshal(encoded, &want); err != nil {
+				t.Fatal(err)
 			}
-			if original.ID == largeID && len(request.Rows) != 1 {
-				t.Fatal("oversized atomic symbol shares its window with a neighbour")
+			if !reflect.DeepEqual(question.Instructions.Row, want) {
+				t.Fatal("categorizer execution trimmed or changed a source observation, association, or field")
+			}
+			if id == largeID && len(request.Questions) != 1 {
+				t.Fatal("oversized atomic symbol shares its request with a neighbour")
 			}
 		}
-		want, err := table.Request(def, table.Window{Rows: originals})
-		if err != nil {
-			t.Fatal(err)
-		}
-		var expected struct{ Rows []map[string]any }
-		if err := json.Unmarshal(want, &expected); err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(request.Rows, expected.Rows) {
-			t.Fatal("provider execution trimmed or changed a source observation, association, or field")
-		}
-		if len(request.Rows) > 1 && len(request.System)+len(want) > table.DefaultInputBytes {
-			t.Fatal("ordinary neighbours stopped respecting the packing target")
+		if len(request.Questions) > 1 && len(raw) > table.ClassifierBodyBytes {
+			t.Fatal("ordinary neighbours stopped respecting the body budget")
 		}
 	}
 	if len(seen) != 8 || cold["selection:"+largeID].Cells["key_symbol"] == "" || cold["selection:"+largeID].Source != atlas.SourceModel {
 		t.Fatalf("not every declaration received an accepted interpretation: %d symbols, large source %q", len(seen), cold["selection:"+largeID].Source)
 	}
-	warmProvider := &symbolInputProvider{}
+	warmProvider := &tableProvider{}
 	warmOpts := readOptions(t, graph, warmProvider, cache)
 	warmOpts.Targets, warmOpts.Through = opts.Targets, lines.StageSymbols
 	warm := readKnowledge(t, warmOpts)
-	if warmProvider.calls != 0 || len(warm) != len(cold) {
+	if warmProvider.calls != 0 || warmOpts.Categorizer.(*typesafetest.Categorizer).Calls() != 0 || len(warm) != len(cold) {
 		t.Fatalf("warm reading repeated paid work or lost entities: calls=%d, records=%d/%d", warmProvider.calls, len(warm), len(cold))
 	}
 	for id, record := range cold {

@@ -50,7 +50,7 @@ func TestJevRequestBytesMatchTheGolden(t *testing.T) {
 	client := &typesafe.Client{Model: "jev-1.13.0"}
 	var got bytes.Buffer
 	for _, window := range windows {
-		call, err := ClassifierCall(def, window)
+		call, err := ClassifierCall(client, def, window)
 		if err != nil {
 			t.Fatal(err)
 		}

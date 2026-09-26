@@ -27,7 +27,7 @@ func runRead(args []string, stdout io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	output := newRunOutput(stdout)
-	err := runReadConfiguredWithOutput(ctx, args, stdout, defaultTargetPortfolioProviderFactory, true, output)
+	err := runReadConfiguredWithOutput(ctx, args, stdout, defaultTargetPortfolioProviderFactory, newJevCategorizer, true, output)
 	if err != nil {
 		writeRunOutputErrorTo(output, os.Stderr, err)
 	}
@@ -49,24 +49,24 @@ func appendQuestion(questions *[]string, text string) error {
 	return nil
 }
 
-func runReadWithProvider(ctx context.Context, args []string, stdout io.Writer, factory func() (llm.Provider, error)) error {
-	return runReadConfigured(ctx, args, stdout, factory, false)
+func runReadWithProvider(ctx context.Context, args []string, stdout io.Writer, factory func() (llm.Provider, error), categorizer func() (llm.Categorizer, error)) error {
+	return runReadConfigured(ctx, args, stdout, factory, categorizer, false)
 }
 
-func runReadConfigured(ctx context.Context, args []string, stdout io.Writer, factory func() (llm.Provider, error), collectTerms bool) error {
-	return runReadConfiguredWithOutput(ctx, args, stdout, factory, collectTerms, newRunOutput(stdout))
+func runReadConfigured(ctx context.Context, args []string, stdout io.Writer, factory func() (llm.Provider, error), categorizer func() (llm.Categorizer, error), collectTerms bool) error {
+	return runReadConfiguredWithOutput(ctx, args, stdout, factory, categorizer, collectTerms, newRunOutput(stdout))
 }
 
-func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.Writer, factory targetPortfolioProviderFactory, collectTerms bool, output *runOutput) error {
+func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.Writer, factory targetPortfolioProviderFactory, newCategorizer func() (llm.Categorizer, error), collectTerms bool, output *runOutput) error {
 	fs := flag.NewFlagSet("repomap read", flag.ContinueOnError)
 	fs.SetOutput(stdout)
 	through := fs.String("through", "", "stop after directories, files, symbols, operations, boundaries, zones, arrows, targets, joints, learn, question or answer")
 	var questions []string
 	fs.Func("question", "answer from code and documentation with a reading route; repeat for several questions", func(value string) error { return appendQuestion(&questions, value) })
 	outputDir := fs.String("output", "", "new directory for the reading; default: a new directory under debug-dir")
-	promptFile := fs.String("prompt", "", "system prompt for --through's stage; predecessors use bundled prompts")
-	windowRows := fs.Int("window-rows", 0, "row budget for --through's stage (all stages when omitted); 0 keeps defaults")
-	inputBytes := fs.Int("input-bytes", 0, "system + user UTF-8 byte budget for that stage; 0 keeps defaults")
+	promptFile := fs.String("prompt", "", "system prompt for --through's stage, and Jev's task for its closed tables; predecessors use bundled prompts")
+	windowRows := fs.Int("window-rows", 0, "row budget for --through's text-model tables (all stages when omitted); Jev's tables keep their own packing; 0 keeps defaults")
+	inputBytes := fs.Int("input-bytes", 0, "system + user UTF-8 byte budget for those text-model tables; 0 keeps defaults")
 	cacheRoot := fs.String("debug-dir", defaultDebugDir(), "shared run and model cache directory")
 	noCache := fs.Bool("no-cache", false, "bypass model response cache")
 	fs.Usage = func() { fmt.Fprintln(stdout, "Usage: repomap read READING_INPUT.json [flags]"); fs.PrintDefaults() }
@@ -130,6 +130,10 @@ func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.W
 	if err != nil {
 		return err
 	}
+	categorizer, err := newRunCategorizer(newCategorizer, output)
+	if err != nil {
+		return err
+	}
 	var termCollector *terminology.Collector
 	if collectTerms {
 		termCollector = terminology.NewCollector(readingTerminologyPaths(opts.Graph))
@@ -160,7 +164,7 @@ func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.W
 		return err
 	}
 	defer writer.Close()
-	opts.OwnerRunDir, opts.Provider = absolute, provider
+	opts.OwnerRunDir, opts.Provider, opts.Categorizer = absolute, provider, categorizer
 	opts.Executor = llm.Executor{RootDir: *cacheRoot, Enabled: !*noCache, BatchConcurrency: llm.DefaultBatchConcurrency, BatchController: &llm.BatchController{}, Observer: timed(output, debugdump.NewSemanticObserver(writer))}
 	opts.Stage, opts.State = output.Stage, output.State
 	started := time.Now()

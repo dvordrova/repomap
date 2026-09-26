@@ -160,6 +160,22 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   keys are recorded and ignored; unused extra fields do not invalidate answers.
   A response without a rows array, or with no accepted row, is refused and
   not cached, and each of its rows' reasons is journaled.
+- The closed tables (key declarations, part roles and keys:
+  `Definition.Classifier`) go only to the run's categorizer
+  (`llm.Categorizer`), never to the text model; there is no fallback
+  (owner decision 2026-09-26). Jev is the only categorizer, and `JEV_KEY` is
+  required like the model key: a model run or `read` without it stops before
+  any artifact, corpus or model call, and a live reading without a
+  categorizer is refused. `--no-model` needs neither key. The categorizer is
+  an `llm.Provider` with `Prompt` (the exact request for keyed questions over
+  one task and shared context) and `Verdicts` (the response read by question
+  key; an unreadable verdict is absent, a response without verdicts is an
+  error). The executor caches, journals and gates it like any provider, so
+  its exact-cache keys are its `State` and the prepared bytes; the decision
+  rule below, the question texts (which name Jev's `task`, `context.<field>`
+  and `row`), request packing, concurrency and the one-token output limit
+  stay with the table code and are sized for Jev. Another implementation
+  would take over those Jev-specific limits when it exists.
 - A decision model (Jev) answers a closed choice with a probability per
   option. Its choice is taken when the chosen option leads every other
   listed option, `none of these` included, by at least 0.10

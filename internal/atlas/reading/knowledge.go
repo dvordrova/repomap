@@ -114,7 +114,7 @@ func (r *reader) knowledgeInput(def table.Definition, shared []table.Field, row 
 	// Reuse depends on the evidence the model receives and the table contract.
 	// The artifact ID is an owner binding, not a second semantic input: equal
 	// evidence can share one accepted interpretation without renaming either row.
-	// The basis names the provider that answers: a decision model's answer
+	// The basis names the provider that answers: the categorizer's answer
 	// is never recalled for a text model's table, or the reverse.
 	k.BasisID, err = table.MemoIdentity(r.providerFor(def), def, window)
 	return k, window, err
@@ -241,7 +241,7 @@ func (r *reader) recallClassifierRow(def table.Definition, window table.Window, 
 		exchange, found, err := llm.CachedExchange(r.opts.Executor.RootDir, ref.RequestKey)
 		cached := rememberedClassifier{found: found, err: err, requestSHA: exchange.RequestSHA256, responseSHA: exchange.ResponseSHA256}
 		if err == nil && found {
-			cached.answers, cached.err = table.ParseClassifierAnswers(exchange.Response)
+			cached.answers, cached.err = r.opts.Categorizer.Verdicts(exchange.Response)
 		}
 		return cached
 	})
@@ -260,9 +260,9 @@ func (r *reader) recallClassifierRow(def table.Definition, window table.Window, 
 		responseSHA: cached.responseSHA, requestKey: ref.RequestKey, rowKey: ref.RowKey}, true, nil
 }
 
-// rememberedClassifier is one cached decision-model response, parsed once.
+// rememberedClassifier is one cached categorizer response, parsed once.
 type rememberedClassifier struct {
-	answers                 map[string]table.ClassifierAnswer
+	answers                 map[string]llm.Verdict
 	found                   bool
 	requestSHA, responseSHA string
 	err                     error

@@ -14,6 +14,7 @@ import (
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/jstsproject"
+	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
@@ -46,6 +47,8 @@ type repositoryTargetDispatchOptions struct {
 	// NoModel walks the atlas without a provider: every cell is its
 	// fallback line and no orientation is asked.
 	NoModel bool
+	// Categorizer answers the atlas's closed tables in a model run.
+	Categorizer llm.Categorizer
 	// Learn runs the question cascade after the atlas; off, no question is
 	// generated, retrieved or answered.
 	Learn bool

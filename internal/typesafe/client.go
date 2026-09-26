@@ -1,7 +1,7 @@
-// Package typesafe is the llm.Provider for TypeSafe's System One models
+// Package typesafe is the llm.Categorizer for TypeSafe's System One models
 // (Jev): typed closed decisions with probabilities instead of generated text.
-// The owner prepares the exact evaluation body; this client adds the model,
-// sends it, and returns the answers object for the owner to validate.
+// It writes the evaluation body for the owner's questions, adds the model,
+// sends it, and reads the answers back as verdicts for the owner to decide.
 package typesafe
 
 import (
@@ -33,8 +33,8 @@ const (
 	envEndpoint = "REPOMAP_JEV_ENDPOINT"
 )
 
-// Client sends System One evaluations. Its zero value is not usable; build
-// it with NewFromEnv.
+// Client sends System One evaluations. Its zero value writes and reads
+// them but cannot send; build it with NewFromEnv.
 type Client struct {
 	HTTPClient *http.Client
 	Endpoint   string
@@ -62,12 +62,13 @@ func transport() *http.Transport {
 	}
 }
 
-// NewFromEnv returns nil without error when no key is configured: closed
-// decisions then stay with the ordinary provider.
+var _ llm.Categorizer = (*Client)(nil)
+
+// NewFromEnv requires JEV_KEY: the closed decisions have no other model.
 func NewFromEnv() (*Client, error) {
 	key := strings.TrimSpace(os.Getenv(envAPIKey))
 	if key == "" {
-		return nil, nil
+		return nil, fmt.Errorf("%s is required: keys, part roles and key declarations are decided by Jev; run with --no-model --target … to skip models", envAPIKey)
 	}
 	client := &Client{HTTPClient: &http.Client{Timeout: defaultTimeout, Transport: transport()}, Endpoint: defaultEndpoint, Model: defaultModel, APIKey: key}
 	if value := strings.TrimSpace(os.Getenv(envModel)); value != "" {
@@ -84,9 +85,67 @@ func (c *Client) State() []byte {
 	return state
 }
 
-// Prepare takes the owner's evaluation body (state and questions) from the
-// prompt's user part; the system part is the owner's and is already inside
-// that body.
+// Prompt is the evaluation body: the task and the shared context are the
+// state, and each question is keyed by its owner's key. An option without a
+// meaning is null, since the state already defines it.
+func (c *Client) Prompt(task string, context map[string]any, questions map[string]llm.Question) (llm.Prompt, error) {
+	asked := make(map[string]any, len(questions))
+	for key, question := range questions {
+		instructions := map[string]any{"row": question.Item, "question": question.Ask}
+		if len(question.Options) == 0 {
+			asked[key] = map[string]any{"type": "noul", "instructions": instructions}
+			continue
+		}
+		criteria := make(map[string]any, len(question.Options))
+		for _, option := range question.Options {
+			criteria[option.Name] = nil
+			if option.Meaning != "" {
+				criteria[option.Name] = option.Meaning
+			}
+		}
+		asked[key] = map[string]any{"type": "choice", "instructions": instructions, "criteria": criteria}
+	}
+	body, err := json.Marshal(map[string]any{
+		"state":     map[string]any{"task": task, "context": context},
+		"questions": asked,
+	})
+	if err != nil {
+		return llm.Prompt{}, err
+	}
+	return llm.Prompt{User: string(body), NoResponseAdjunct: true}, nil
+}
+
+// Verdicts reads the answers once, each on its own: a malformed one leaves
+// only its question unanswered. A response without answers decided nothing.
+func (c *Client) Verdicts(response []byte) (map[string]llm.Verdict, error) {
+	var envelope struct {
+		Answers map[string]json.RawMessage `json:"answers"`
+	}
+	if err := json.Unmarshal(response, &envelope); err != nil || envelope.Answers == nil {
+		return nil, fmt.Errorf("response has no answers")
+	}
+	verdicts := make(map[string]llm.Verdict, len(envelope.Answers))
+	for key, raw := range envelope.Answers {
+		var answer struct {
+			Type          string             `json:"type"`
+			Choice        string             `json:"choice"`
+			Probabilities map[string]float64 `json:"probabilities"`
+			Noul          *float64           `json:"noul"`
+		}
+		if json.Unmarshal(raw, &answer) != nil {
+			continue
+		}
+		switch answer.Type {
+		case "choice":
+			verdicts[key] = llm.Verdict{Choice: answer.Choice, Probabilities: answer.Probabilities}
+		case "noul":
+			verdicts[key] = llm.Verdict{Yes: answer.Noul}
+		}
+	}
+	return verdicts, nil
+}
+
+// Prepare takes the evaluation body Prompt wrote and adds the model.
 func (c *Client) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
 	var body map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(prompt.User), &body); err != nil {

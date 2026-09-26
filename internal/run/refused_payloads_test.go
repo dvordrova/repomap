@@ -67,7 +67,7 @@ func TestRefusedAnswerStaysInItsRunAndOutOfTheCache(t *testing.T) {
 		t.Helper()
 		run := filepath.Join(debugDir, name)
 		args := []string{input, "--through", "files", "--output", run, "--debug-dir", debugDir}
-		if err := runReadConfigured(t.Context(), args, io.Discard, factory, false); err != nil {
+		if err := runReadConfigured(t.Context(), args, io.Discard, factory, noClosedQuestions, false); err != nil {
 			t.Fatalf("%s reading: %v", name, err)
 		}
 		return run
@@ -234,7 +234,7 @@ func TestPartlyRefusedAnswerStaysInItsRunAndInTheCache(t *testing.T) {
 		t.Helper()
 		run := filepath.Join(debugDir, name)
 		args := []string{input, "--through", "files", "--output", run, "--debug-dir", debugDir}
-		if err := runReadConfigured(t.Context(), args, io.Discard, factory, false); err != nil {
+		if err := runReadConfigured(t.Context(), args, io.Discard, factory, noClosedQuestions, false); err != nil {
 			t.Fatalf("%s reading: %v", name, err)
 		}
 		return run

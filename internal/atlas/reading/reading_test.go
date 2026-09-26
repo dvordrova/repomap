@@ -18,6 +18,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/questionbatch"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 func graphPlaceID(t *testing.T, graph atlas.Graph, kind atlas.PlaceKind, path string, line int, name string) string {
@@ -380,15 +381,33 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 	}, nil
 }
 
+// readOptions reads the graph with the provider; a live reading's closed
+// tables go to closedDecisions.
 func readOptions(t *testing.T, graph atlas.Graph, provider llm.Provider, cacheRoot string) Options {
 	t.Helper()
-	return Options{
+	opts := Options{
 		Graph: graph, Targets: []TargetMeta{{ID: "t1", Language: "go", Kind: "executable", Name: "example.com/x", Root: "pkg/a"}},
 		Repository: "x", Revision: "abc",
 		Executor: llm.Executor{RootDir: cacheRoot, Enabled: cacheRoot != "", BatchConcurrency: 2, BatchController: &llm.BatchController{}},
 		Provider: provider, OwnerRunDir: t.TempDir(),
 	}
+	if provider != nil {
+		opts.Categorizer = closedDecisions()
+	}
+	return opts
 }
+
+// closedDecisions answers the closed tables as the tests decide them: every
+// candidate explains its part, every part is the domain, every declaration
+// is a key. Any other question fails its request.
+func closedDecisions() *typesafetest.Categorizer {
+	return &typesafetest.Categorizer{Decide: typesafetest.ByColumn(map[string]llm.Verdict{
+		"explains": typesafetest.Yes(0.9), "role": typesafetest.Choose(lines.PartDomain), "key_symbol": typesafetest.Choose("yes"),
+	})}
+}
+
+// jevCalls is how many requests the reading's categorizer answered.
+func jevCalls(opts Options) int { return opts.Categorizer.(*typesafetest.Categorizer).Calls() }
 
 func TestCompactIDsUseNumericOrder(t *testing.T) {
 	ids := []string{"p10", "p2", "p1", "p11"}
@@ -485,7 +504,8 @@ func TestLiveReadingKeepsFileLinesWithoutDirectoryPlacement(t *testing.T) {
 		if err := json.Unmarshal(raw, &wire); err != nil {
 			t.Fatal(err)
 		}
-		if len(wire["_system"]) == 0 {
+		// The text model's preparation adds the system prompt, Jev's the model.
+		if len(wire["_system"]) == 0 && len(wire["model"]) == 0 {
 			t.Fatal("request reference points to table input without provider preparation")
 		}
 	}

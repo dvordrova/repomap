@@ -17,9 +17,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   files instead of creating per-bug repositories. Every tracked fixture file
   must have an exact file-inventory expectation; deterministic language
   adapter stages run for real, while provider-backed stages use exact
-  request-bound, fail-closed local presets with no network access. Fixture
-  success is focused test evidence only and never replaces ordinary online
-  product acceptance.
+  request-bound, fail-closed local presets with no network access. The
+  categorizer's preset is `typesafetest.Categorizer`: Jev's own request and
+  response code with the test's explicit decision per question, where an
+  unknown question fails its request. The prepared Jev request bytes, the key
+  of every cached closed decision, are pinned by a golden taken from main in
+  `internal/atlas/table/testdata`; a deliberate change rewrites it with
+  `-update`. Fixture success is focused test evidence only and never
+  replaces ordinary online product acceptance.
 - Every language-cube behavior change must be recorded in that language's
   cumulative `testdata/repositories` fixture and an executable expectation.
   Add or extend an understandable source example, run the actual extractor

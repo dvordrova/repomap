@@ -146,11 +146,11 @@ func (r *reader) keyFields(targetID string, part *boxState, id string, title map
 // distribution keeps the selection's own order.
 const keysSpread = 0.1
 
-// rankedByProbability orders a part's candidates by the decision model's
-// probability that each explains the part and keeps the top ones. A refused
-// row is no key under either path and is left out; the others' ranking does
-// not depend on it. It declines when an accepted answer carries no
-// probability or the ranking is flat.
+// rankedByProbability orders a part's candidates by the categorizer's
+// probability that each explains the part and keeps the top ones; every
+// accepted answer of the ranked table carries it. A refused row is no key
+// and is left out; the others' ranking does not depend on it. It declines
+// when no more rows than the keys shown were accepted or the ranking is flat.
 func rankedByProbability(ids []string, answers []rowAnswer) ([]string, bool) {
 	type scored struct {
 		id string
@@ -162,10 +162,7 @@ func rankedByProbability(ids []string, answers []rowAnswer) ([]string, bool) {
 		if answers[i].answer == nil {
 			continue
 		}
-		p, err := strconv.ParseFloat(answers[i].answer[cell], 64)
-		if err != nil {
-			return nil, false
-		}
+		p, _ := strconv.ParseFloat(answers[i].answer[cell], 64)
 		rows = append(rows, scored{id, p})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].p > rows[j].p })

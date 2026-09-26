@@ -1,0 +1,97 @@
+// Package typesafetest answers Jev's requests in tests. The real client
+// writes every request and reads every response; only the network is
+// replaced, by the test's own decision for each question.
+package typesafetest
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+
+	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe"
+)
+
+// Categorizer is Jev with a local answer.
+type Categorizer struct {
+	typesafe.Client
+	// Decide answers one question by its key. A question it does not know
+	// fails the whole request, so no test is answered by accident.
+	Decide func(key string, question llm.Question) (llm.Verdict, bool)
+
+	mu    sync.Mutex
+	calls int
+}
+
+var _ llm.Categorizer = (*Categorizer)(nil)
+
+// Calls is the number of requests answered.
+func (c *Categorizer) Calls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func (c *Categorizer) Complete(_ context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	var body struct {
+		Questions map[string]struct {
+			Instructions struct {
+				Row      map[string]any `json:"row"`
+				Question string         `json:"question"`
+			} `json:"instructions"`
+			Criteria map[string]*string `json:"criteria"`
+		} `json:"questions"`
+	}
+	if err := json.Unmarshal(prepared.Bytes(), &body); err != nil {
+		return llm.Completion{}, err
+	}
+	answers := make(map[string]any, len(body.Questions))
+	for key, asked := range body.Questions {
+		question := llm.Question{Item: asked.Instructions.Row, Ask: asked.Instructions.Question}
+		for name, meaning := range asked.Criteria {
+			option := llm.Option{Name: name}
+			if meaning != nil {
+				option.Meaning = *meaning
+			}
+			question.Options = append(question.Options, option)
+		}
+		sort.Slice(question.Options, func(i, j int) bool { return question.Options[i].Name < question.Options[j].Name })
+		verdict, known := llm.Verdict{}, false
+		if c.Decide != nil {
+			verdict, known = c.Decide(key, question)
+		}
+		if !known {
+			return llm.Completion{}, fmt.Errorf("typesafetest: no decision for question %s", key)
+		}
+		if verdict.Yes != nil {
+			answers[key] = map[string]any{"type": "noul", "noul": *verdict.Yes}
+			continue
+		}
+		answers[key] = map[string]any{"type": "choice", "choice": verdict.Choice, "probabilities": verdict.Probabilities}
+	}
+	c.mu.Lock()
+	c.calls++
+	c.mu.Unlock()
+	raw, err := json.Marshal(map[string]any{"answers": answers})
+	return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
+}
+
+// ByColumn decides by the column a question asks about, the end of its key
+// after the last "|"; a question about any other column is not known.
+func ByColumn(verdicts map[string]llm.Verdict) func(string, llm.Question) (llm.Verdict, bool) {
+	return func(key string, _ llm.Question) (llm.Verdict, bool) {
+		verdict, known := verdicts[key[strings.LastIndex(key, "|")+1:]]
+		return verdict, known
+	}
+}
+
+// Yes answers a yes/no question with this probability of yes.
+func Yes(p float64) llm.Verdict { return llm.Verdict{Yes: &p} }
+
+// Choose picks one option with certainty.
+func Choose(option string) llm.Verdict {
+	return llm.Verdict{Choice: option, Probabilities: map[string]float64{option: 1}}
+}

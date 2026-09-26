@@ -18,6 +18,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 const partsTask = "repomap.atlas.parts.v1"
@@ -47,10 +48,14 @@ func Check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 		t.Fatal(err)
 	}
 	provider := &preset{}
+	// Every candidate explains its part and is a key; every part is the domain.
+	categorizer := &typesafetest.Categorizer{Decide: typesafetest.ByColumn(map[string]llm.Verdict{
+		"explains": typesafetest.Yes(0.9), "role": typesafetest.Choose("domain"), "key_symbol": typesafetest.Choose("yes"),
+	})}
 	result, err := reading.Read(context.Background(), reading.Options{
 		Graph: graph, Targets: []reading.TargetMeta{target}, Repository: "fixture", Revision: "test",
 		Executor: llm.Executor{BatchConcurrency: 4, BatchController: &llm.BatchController{}},
-		Provider: provider, OwnerRunDir: t.TempDir(),
+		Provider: provider, Categorizer: categorizer, OwnerRunDir: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -266,9 +271,9 @@ func checkMembership(t testing.TB, graph atlas.Graph, targetID string, checked M
 	}
 }
 
-// preset answers every request of the reading: every listed file is its own
-// part, every description is a sentence, no areas are drawn, and a table
-// cell takes its first option or a short text.
+// preset answers every text-model request of the reading: every listed file
+// is its own part, every description is a sentence, no areas are drawn, and
+// a table cell takes its first option or a short text.
 type preset struct {
 	mu       sync.Mutex
 	requests [][]byte

@@ -8,6 +8,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe"
 )
 
 // cachedResponse stores one exact response in a fresh cache and returns its
@@ -60,7 +61,7 @@ func TestRecallReadsTheLiveEnvelopeAndKeepsARowWithoutItsRefusedCell(t *testing.
 func TestClassifierRecallFindsAnUncertainRowWithoutAnAnswer(t *testing.T) {
 	executor, key := cachedResponse(t, `{"answers":{"s1|part":{"type":"choice","choice":"c1","probabilities":{"c1":0.4,"none":0.35}},"s2|part":{"type":"choice","choice":"c1","probabilities":{"c1":0.9}}}}`)
 	def := table.Definition{Stage: "atlas_core", Classifier: true, Columns: []table.Column{{Name: "part", Kind: table.Choice, Options: []string{"c1", "none"}}}}
-	recall := &reader{opts: Options{Executor: executor, Classifier: &replacementProvider{}}, classifierResponses: make(map[string]rememberedClassifier)}
+	recall := &reader{opts: Options{Executor: executor, Categorizer: &typesafe.Client{}}, classifierResponses: make(map[string]rememberedClassifier)}
 	window := table.Window{Rows: []table.Row{{ID: "current"}}}
 	uncertain, found, err := recall.recallRow(def, window, rememberedRow{RequestKey: key, RowKey: "s1"})
 	if err != nil || !found || uncertain.answer != nil || uncertain.source != atlas.SourceCache {

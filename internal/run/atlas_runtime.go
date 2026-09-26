@@ -171,14 +171,8 @@ func readRepositoryAtlas(
 			return atlasOutcome{}, fmt.Errorf("atlas: configure provider: %w", err)
 		}
 	}
-	var classifier llm.Provider
-	if !options.NoModel && options.Deps.newClassifierProvider != nil {
-		if classifier, err = options.Deps.newClassifierProvider(); err != nil {
-			return atlasOutcome{}, fmt.Errorf("atlas: configure classifier: %w", err)
-		}
-		if classifier != nil {
-			options.Output.State("Classifier", "ready", "closed tables: "+string(classifier.State()))
-		}
+	if options.Categorizer != nil {
+		options.Output.State("Categorizer", "ready", "closed tables: "+string(options.Categorizer.State()))
 	}
 	writer, err := debugdump.OpenWriter(owner.RunDir)
 	if err != nil {
@@ -199,7 +193,7 @@ func readRepositoryAtlas(
 	result, err := reading.Read(ctx, reading.Options{
 		Graph: graph, SealedGraph: sealed, Targets: metas,
 		Repository: repoRunLabel(options.Repo), Revision: options.RepositoryState.Head,
-		Executor: executor, Provider: provider, Classifier: classifier, OwnerRunDir: owner.RunDir,
+		Executor: executor, Provider: provider, Categorizer: options.Categorizer, OwnerRunDir: owner.RunDir,
 		Questions: questions, Learn: options.Learn, NoCaptions: !options.Captions,
 		ReadSource: func(path string) ([]byte, error) {
 			id, ok := options.Corpus.ID(path)
