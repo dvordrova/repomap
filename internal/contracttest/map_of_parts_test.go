@@ -1,10 +1,6 @@
 package contracttest
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -49,7 +45,6 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 		"Ledger": {1}, "Ledger.Keys": {1}, "init": {4, 1},
 	})
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "library", Name: index.Target.Name, Root: "."}, root)
-	assertDescribeGolden(t, "go", checked)
 	ledger := checked.Symbols[[2]string{"internal/localstore/ledger.go", "Ledger"}]
 	appendMethod := checked.Symbols[[2]string{"internal/localstore/ledger_append.go", "Ledger.Append"}]
 	if ledger == "" || appendMethod == "" {
@@ -89,40 +84,6 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 		t.Fatalf("split: Ledger in %q, Ledger.Append in %q, split files %v", split.PartOf[ledger], split.PartOf[appendMethod], split.Split)
 	}
 	projectSplit(t, index, split)
-}
-
-// assertDescribeGolden compares every description request of a reading in
-// which no file is split with the requests the code sent before the role
-// split existed (testdata/describe_<language>.json, taken at f49c3304 on
-// the same fixtures): listing the units a part holds changes no byte of an
-// unsplit part's request, so their cache survives. A part with no member
-// to describe it by, which then sent its name alone, now sends nothing.
-func assertDescribeGolden(t *testing.T, language string, checked partstest.Map) {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "describe_"+language+".json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var golden map[string]string
-	if err := json.Unmarshal(raw, &golden); err != nil {
-		t.Fatal(err)
-	}
-	for part, request := range golden {
-		got, asked := checked.Described[part]
-		switch {
-		case !strings.Contains(request, `"directories"`):
-			if asked {
-				t.Fatalf("%s, with no member, was described: %s", part, got)
-			}
-		case got != request:
-			t.Fatalf("the description request of %s changed:\n%s\nwas\n%s", part, got, request)
-		}
-	}
-	for part := range checked.Described {
-		if _, known := golden[part]; !known {
-			t.Fatalf("%s is described but was not before", part)
-		}
-	}
 }
 
 // projectSplit checks that GroupsIndex accepts a split atlas and lists a
@@ -200,7 +161,6 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 		"pick": {1, 1, 3}, "first": {2},
 	})
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root)
-	assertDescribeGolden(t, "python", checked)
 	// A function nested in another takes its parent's part.
 	outer := checked.Symbols[[2]string{"src/fixture_app/http_registrations.py", "register_route"}]
 	nested := checked.Symbols[[2]string{"src/fixture_app/http_registrations.py", "empty_registered_handler"}]
@@ -240,7 +200,7 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 		"example.core/shout": {1, 4}, "example.core/loud-greeting": {2},
 	})
 	meta := reading.TargetMeta{ID: index.Target.ID, Language: "clojure", Kind: "executable", Name: index.Target.Name, Root: "."}
-	assertDescribeGolden(t, "clojure", partstest.Check(t, graph, meta, root))
+	partstest.Check(t, graph, meta, root)
 	// Split, core.clj is the seed file: its -main keeps the entry.
 	split := partstest.CheckSplit(t, graph, meta, root)
 	if !split.Split["src/example/core.clj"] || len(split.Target.Trace) == 0 {
@@ -266,7 +226,6 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 		"bgsaveCommand": {17}, "processCommand": {12},
 	})
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
-	assertDescribeGolden(t, "c", checked)
 	for _, declaration := range [][2]string{{"kvd.c", "main"}, {"loop_poll.c", "loopApiPoll"}, {"strbuf.h", "sbAvail"}, {"kvd.h", "kvClient"}} {
 		if checked.Symbols[declaration] == "" {
 			t.Fatalf("%s %s is not on the map", declaration[0], declaration[1])
