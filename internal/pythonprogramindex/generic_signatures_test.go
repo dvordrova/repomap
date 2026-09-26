@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/places"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 )
@@ -23,9 +24,29 @@ func TestCumulativePythonGenericDeclarationsKeepTypeParameters(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.AssertDeclarationSignatures(t, graph, path, map[string]string{
-		"Box":   "class Box(Generic[T])",
-		"Crate": "class Crate[T]",
-		"Keyed": "class Keyed[K: str, V: (int, str)](Box[V])",
-		"first": "first[T](items: list[T]) -> T",
+		"Box":           "class Box(Generic[T])",
+		"Crate":         "class Crate[T]",
+		"Keyed":         "class Keyed[K: str, V: (int, str)](Box[V])",
+		"first":         "first[T](items: list[T]) -> T",
+		"Checked":       "class Checked[T: Annotated[object, lambda value: value is not None]]",
+		"first_checked": "first_checked[T: Annotated[object, lambda value: value is not None]](items: list[T]) -> T",
 	})
+	// A lambda in a type parameter's bound belongs to the defining scope.
+	objects := make(map[string]programindex.Object)
+	for _, object := range index.Objects {
+		objects[object.ID] = object
+	}
+	bounds := 0
+	for _, object := range index.Objects {
+		if object.Kind != programindex.ObjectLambda || object.Location == nil || object.Location.Path != path {
+			continue
+		}
+		if container := objects[object.ContainerID]; container.Kind != programindex.ObjectModule || container.Name != "fixture_app.generic_types" {
+			t.Fatalf("type parameter lambda %s belongs to %#v", object.Name, container)
+		}
+		bounds++
+	}
+	if bounds != 2 {
+		t.Fatalf("type parameter lambdas = %d, want 2", bounds)
+	}
 }

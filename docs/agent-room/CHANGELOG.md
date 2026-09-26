@@ -1,5 +1,29 @@
 # Implementation and acceptance journal
 
+## 2026-09-26 — Lambdas in Python definition headers
+
+- Closes the gap below: a lambda in a parameter or return annotation
+  (`def endpoint(q: Annotated[int, Depends(lambda: 1)])`), in a `def`/`class`
+  type-parameter bound or default, or in a lambda's own default
+  (`lambda rows, key=lambda row: row: …`) failed the whole target with
+  `python program index: <id>`. The declaration pass now visits exactly the
+  header expressions the relation pass reads, in the defining scope. A
+  42-position probe finds no remaining asymmetry that fails a target.
+  Freqtrade `--no-model` is unchanged (exit 0, 39,468 objects, 57,452
+  relations); no local repository writes either form.
+- Fixtures: `level_limit` and `row_sorter` (models.py) and `Checked` /
+  `first_checked` (generic_types.py); removing any of the three declaration
+  visits fails an expectation with the target-wide error. Go has no
+  equivalent: headers and constraints hold only types and there are no
+  default parameters. JS/TS (parameter defaults; TS parameter decorators, so
+  the fixture's tsconfig enables `experimentalDecorators`) and Clojure
+  (parameter `:or` defaults, `:pre`, an fn's own default) already held and
+  gained examples. They evaluate those per call, so the function owns them;
+  a TS parameter decorator also stays with its method although it runs once.
+- Open: `first, *rest = items` declares no `rest`, and neither pass reads a
+  starred store target's index; Clojure metadata/attr-map calls run at load
+  time but belong to the var.
+
 ## 2026-09-26 — Lambdas inside Python store targets
 
 - `repomap ~/git/freqtrade --no-model --target python:.:script:freqtrade`

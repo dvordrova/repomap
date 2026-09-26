@@ -636,7 +636,16 @@ class Collector(ast.NodeVisitor):
             self.analyzer.suspended_callables.add(ref)
         if node.returns is not None:
             self.analyzer.return_annotations[ref] = (node.returns, parent)
-        for value in list(node.decorator_list) + list(node.args.defaults) + list(node.args.kw_defaults):
+        arguments = list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
+        if node.args.vararg is not None:
+            arguments.append(node.args.vararg)
+        if node.args.kwarg is not None:
+            arguments.append(node.args.kwarg)
+        # Decorators, defaults, annotations and type parameters are expressions
+        # of the defining scope; the relation pass reads each of them there.
+        header = list(node.decorator_list) + list(node.args.defaults) + list(node.args.kw_defaults)
+        header += [argument.annotation for argument in arguments] + [node.returns]
+        for value in header + list(getattr(node, "type_params", [])):
             if value is not None:
                 self.visit(value)
         child = Scope(
@@ -646,11 +655,6 @@ class Collector(ast.NodeVisitor):
         )
         self.analyzer.node_scopes[id(node)] = child
         previous, self.scope = self.scope, child
-        arguments = list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
-        if node.args.vararg is not None:
-            arguments.append(node.args.vararg)
-        if node.args.kwarg is not None:
-            arguments.append(node.args.kwarg)
         for argument in arguments:
             self.add_variable(argument.arg, argument, True)
             if argument.annotation is not None:
@@ -679,6 +683,8 @@ class Collector(ast.NodeVisitor):
         self.analyzer.node_refs[id(node)] = ref
         for value in list(node.decorator_list) + list(node.bases) + [keyword.value for keyword in node.keywords]:
             self.visit(value)
+        for parameter in getattr(node, "type_params", []):
+            self.visit(parameter)
         child = Scope(ref, qname, "type", parent, class_ref=ref, class_qname=qname)
         self.analyzer.node_scopes[id(node)] = child
         previous, self.scope = self.scope, child
@@ -701,6 +707,9 @@ class Collector(ast.NodeVisitor):
             "location": source_location(self.module["path"], node),
         }, qname)
         self.analyzer.node_refs[id(node)] = ref
+        for value in list(node.args.defaults) + list(node.args.kw_defaults):
+            if value is not None:
+                self.visit(value)
         child = Scope(ref, qname, "lambda", parent, class_ref=parent.class_ref, class_qname=parent.class_qname)
         self.analyzer.node_scopes[id(node)] = child
         previous, self.scope = self.scope, child

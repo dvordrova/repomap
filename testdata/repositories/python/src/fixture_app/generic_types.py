@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar
+from typing import Annotated, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -19,4 +19,13 @@ class Keyed[K: str, V: (int, str)](Box[V]):
 
 
 def first[T](items: list[T]) -> T:
+    return items[0]
+
+
+# A type parameter's bound is an expression of the defining scope too.
+class Checked[T: Annotated[object, lambda value: value is not None]]:
+    value: T
+
+
+def first_checked[T: Annotated[object, lambda value: value is not None]](items: list[T]) -> T:
     return items[0]

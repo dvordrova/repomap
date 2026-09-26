@@ -49,3 +49,16 @@
 (defn handled-or-default [row]
   (let [{:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}} row]
     handled))
+
+;; Mirrors Python's lambda in a function header: FastAPI Depends(lambda: ...) and a lambda default.
+(defn handled-param
+  [row & {:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}}]
+  handled)
+
+(defn checked-handled [row]
+  {:pre [(service/apply-handler (fn [value] (service/greet value)) row)]}
+  row)
+
+(def handled-by-default
+  (fn [row & {:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}}]
+    handled))

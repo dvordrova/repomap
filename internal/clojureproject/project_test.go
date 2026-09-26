@@ -124,11 +124,16 @@ func TestNativeCumulativeProject(t *testing.T) {
 	}
 	// Mirrors the pandas store-target idiom: an fn inside a set! target or a
 	// binding default is its function's code, like the fn in an ordinary read.
+	// So is Python's lambda in a function header: an fn in a parameter :or
+	// default, a :pre condition or an fn's own default runs when it is called.
 	wantStoreTarget := []string{
 		"calls example.service/apply-handler exact +1 [(fn [value] (service/greet value)) row]",
 		"calls example.service/greet exact +1 [value]",
 	}
-	for _, name := range []string{"example.core/handled", "example.core/mark-handled!", "example.core/handled-or-default"} {
+	for _, name := range []string{
+		"example.core/handled", "example.core/mark-handled!", "example.core/handled-or-default",
+		"example.core/handled-param", "example.core/checked-handled", "example.core/handled-by-default",
+	} {
 		var got []string
 		for _, relation := range index.Relations {
 			from := objects[relation.FromID]

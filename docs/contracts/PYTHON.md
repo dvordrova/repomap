@@ -58,6 +58,9 @@ unknown or overwritten aliases gain no callback. An inline lambda in a store
 target's receiver or index (the pandas `df.loc[reduce(lambda …), "exit"] = 1`
 idiom, also in annotated-assignment and `for` targets) is declared and passed
 like any other; Freqtrade's example strategy once failed its whole target on it.
+A lambda in a definition header (a parameter or return annotation such as
+FastAPI's `Depends(lambda: …)`, a type-parameter bound, or a lambda's default)
+belongs to the defining scope, which passes it where a call receives it.
 The Airflow Edge3, Azure and Vertica libraries exposed the earlier mismatch:
 the argument named the assignment variable while the transfer named its callable.
 Local native extraction does not establish ordinary full-repository acceptance. Cumulative Python,

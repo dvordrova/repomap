@@ -35,3 +35,8 @@ export function markMatchingRows(rows, conditions) {
   rows[conditions.reduce(joinCondition)] += 1
   rowFor(joinCondition).count = 1
 }
+
+// Mirrors Python's `key=lambda row: row`: arrows in parameter defaults (JavaScript has no parameter decorators).
+export function sortRows(rows, key = (row) => row.toLowerCase()) { return rows.map(key) }
+export const sortRowsBy = (rows, key = (row) => row.toUpperCase()) => rows.map(key)
+export function sortRowsJoined(rows, key = joinCondition) { return rows.map((row) => key(row, row)) }

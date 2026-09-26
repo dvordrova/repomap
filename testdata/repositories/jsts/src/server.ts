@@ -177,3 +177,15 @@ export function markMatchingRows(rows: Record<string, number>, conditions: strin
   rows[conditions.reduce(joinCondition)] += 1
   rowFor(joinCondition).count = 1
 }
+
+// Mirrors Python's FastAPI `Depends(lambda: ...)` and `key=lambda row: row`: arrows in parameter decorators and defaults.
+function Inject(_token: () => unknown): ParameterDecorator { return () => {} }
+function forwardRef<T>(factory: () => T): () => T { return factory }
+class LevelService {}
+export class LevelController {
+  constructor(@Inject(forwardRef(() => LevelService)) private levels: LevelService) {}
+  level(@Inject(() => joinCondition("level", "id")) _id: string): LevelService { return this.levels }
+}
+export function sortRows(rows: string[], key = (row: string): string => row.toLowerCase()): string[] { return rows.map(key) }
+export const sortRowsBy = (rows: string[], key = (row: string): string => row.toUpperCase()): string[] => rows.map(key)
+export function sortRowsJoined(rows: string[], key = joinCondition): string[] { return rows.map((row) => key(row, row)) }
