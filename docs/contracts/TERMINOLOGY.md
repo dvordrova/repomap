@@ -15,7 +15,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   provider request envelope; no ordinary prose byte cap creates extra windows.
   Resource refusals partition complete original prose records. A failed glossary
   request cannot invalidate an accepted analytical answer. Terms must occur in
-  accepted prose and select its advertised prose-row refs; they name
+  accepted prose, found by the same [term lookup](#term-lookup) as the report,
+  and select its advertised prose-row refs; they name
   [concepts, not code names](#concepts-not-code-names). Generation
   (`repomap.glossary.generate.v5`) has one `p*` catalogue and no separate
   source-ref namespace; Go restores the complete original source scope of every selected row, plus its analytical
@@ -57,10 +58,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   catalogue, bound to `ReportData` before translation. Reduction and translation
   use the base provider without recursively collecting terms. Existing display
   translation keeps glossary names literally unchanged, with definitions as
-  context, and translates definitions and surrounding prose. Code matches whole
-  original spellings in the final text, including English. The model supplies
+  context, and translates definitions and surrounding prose. Code finds whole
+  names in the final text, including English. The model supplies
   no occurrence markers, sense decisions or hint positions. Distinct meanings
-  remain dictionary alternatives. [Literal lookup](#literal-lookup) preserves that distinction.
+  remain dictionary alternatives. [Term lookup](#term-lookup) preserves that distinction.
 
 ## Local owning context
 
@@ -161,7 +162,8 @@ such as `Snapshot`, `Corpus`, `IStrategy` or `caplog` are left to the prompt,
 because code cannot tell them from a word.
 
 Lambdas and external symbols are not names this code owns. No package segment,
-affix or case variant is inferred. No existing artifact records command-line
+affix or case variant is inferred for this drop; it stays exact even though
+[term lookup](#term-lookup) ignores case. No existing artifact records command-line
 flag names, so flags rely on the prompt alone. Each drop is an accepted
 decision journaled in `rejected.jsonl` as `glossary_code_name_omitted`, with
 the name in its reason and a link to the exact exchange, on live and cached
@@ -191,14 +193,31 @@ record with an exact exchange link. Domain validation retains its actual reason;
 provider failures use the existing closed error description, never raw transport
 error text. Refused responses still cannot enter the accepted response cache.
 
-## Literal lookup
+## Term lookup
 
-Literal lookup never proves an occurrence's meaning. Matching is case-sensitive, respects identifier/script boundaries,
-  and keeps the longest overlapping name without nested highlights. Commands,
+Lookup never proves an occurrence's meaning. Owner decision 2026-09-26: a name
+  matches in any letter case, alone or followed by an English plural ending
+  (`s`, or `es` after a name ending in s, x, z, ch or sh), and only as a whole
+  word or phrase. Snapshot finds snapshot, Snapshots and SNAPSHOTS; Class finds
+  classes; Go finds neither good nor goes; Snap does not find snapshots. The
+  plural ending applies only after a Latin letter. The same rule
+  (`internal/terminology/lookup.go`) decides a generated term's source-backed
+  occurrence and the report's render-time lookup. Identifier/script boundaries
+  stay: a letter, digit, mark or underscore (and `$` in display prose)
+  continues a word, while a letter of another concrete script does not, so
+  Matchers를 names Matcher. The longest overlapping name wins, a name that needs
+  no plural ending wins an equal span (Matchers over Matcher), and highlights
+  never nest. Spellings equal but for case are one lookup name: they offer
+  their definitions together, and a question's or entry's own sense replaces
+  the others for all of them. The translation dictionary carries the names
+  found this way under their original spellings, so saved translations of an
+  earlier run whose texts now find another name need an ordinary run;
+  `repomap render` rejects them rather than adapting them. Commands,
   code, links and source placeholders remain independently protected. Exact
   display refs bind local spans to their prose slots, including dynamic map
-  descriptions; equal text alone never identifies a slot. No aliases, morphology,
-  semantic repair or classifier call is added when translation changes a name.
+  descriptions; equal text alone never identifies a slot. No aliases, other
+  morphology (`-ies`, irregular plurals, verb forms), semantic repair or
+  classifier call is added when translation changes a name.
   The glossary is static; browser hints reveal those same definitions beside
   bound prose. `repomap render` uses saved report and translation data with zero
   provider calls.
@@ -212,7 +231,7 @@ names, IDs, locations and source links are unchanged. The alias is display prose
 not a new observation or another graph. The renderer does not infer a name from
 its alphabet or shorten a description into one. Cards show the short alias with
 the native code name; the full translated explanation belongs to the selected
-detail. Both saved names can lead to one glossary definition by literal lookup.
+detail. Both saved names can lead to one glossary definition by term lookup.
 
 The 2026-09-10 correction extends the same alias binding to an operation that
 repeats its native declaration name: cards, map nodes and operation links show

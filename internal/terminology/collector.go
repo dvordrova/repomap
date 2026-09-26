@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
@@ -619,28 +618,11 @@ func resultTextByRow(result any, sourceRows map[string]bool) map[string][]string
 	return rows
 }
 
+// mentionsTerm applies the shared term lookup: a whole word or phrase in any
+// letter case, alone or with its English plural ending.
 func mentionsTerm(text, name string) bool {
-	if name == "" {
-		return false
-	}
 	word := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsMark(r) || r == '_' }
-	first, _ := utf8.DecodeRuneInString(name)
-	last, _ := utf8.DecodeLastRuneInString(name)
-	for offset := 0; offset <= len(text)-len(name); {
-		found := strings.Index(text[offset:], name)
-		if found < 0 {
-			return false
-		}
-		start, end := offset+found, offset+found+len(name)
-		before, _ := utf8.DecodeLastRuneInString(text[:start])
-		after, _ := utf8.DecodeRuneInString(text[end:])
-		if (start == 0 || !word(before) || ScriptBoundary(before, first)) && (end == len(text) || !word(after) || ScriptBoundary(last, after)) {
-			return true
-		}
-		_, size := utf8.DecodeRuneInString(text[start:])
-		offset = start + size
-	}
-	return false
+	return len(FoldText(text).Find(FoldTerm(name), word)) > 0
 }
 
 // ScriptBoundary recognizes adjacent letters from different concrete Unicode
