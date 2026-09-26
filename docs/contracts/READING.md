@@ -393,7 +393,13 @@ in each. It is recomputed on hydrate, never persisted.
 
 Without `--captions` the model is asked for decisions alone: every prose cell
 (titles, lines, aliases, sentences, operation descriptions) keeps its
-fallback, and a table of prose alone is not sent.
+fallback, and a table of prose alone is not sent. A prompt whose table keeps
+some of its cells there describes every cell and leaves which ones to write to
+`fill`: the types prompt asks for "the cells advertised by fill", so a
+caption-less types request asks `line` alone and the model writes no `alias`
+(it wrote one on 82 of 82 rows, all discarded, while the prompt demanded two
+cells). With `--captions` the English alias is asked, accepted and shown as
+before.
 
 A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell (27 Freqtrade rows were refused for it). Fixed native boundaries request explanation rather than pointless existence/kind choices. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the shared known-systems list (`internal/atlas/destinations`) annotated with the target's dependencies, with `other: ` for a system outside it; an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
 

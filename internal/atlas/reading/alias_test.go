@@ -6,10 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
@@ -46,6 +50,32 @@ func (provider *aliasProvider) Complete(ctx context.Context, prepared llm.Prepar
 	}
 	completion.Response, err = json.Marshal(map[string]any{"rows": response.Rows})
 	return completion, err
+}
+
+// Without --captions the types table asks line alone; with captions it also
+// asks alias. Its prompt describes both cells and leaves which ones to write
+// to fill: "fill exactly two cells, with line and alias in each result row"
+// had the model write an alias on 82 of 82 caption-less rows, every one
+// discarded (prof6 atlas_symbols-r4).
+func TestTypesPromptDemandsOnlyTheCellsFillAdvertises(t *testing.T) {
+	names := func(def table.Definition) []string {
+		var columns []string
+		for _, column := range def.Columns {
+			columns = append(columns, column.Name)
+		}
+		return columns
+	}
+	captions, decisions := lines.Types(), withoutCaptions(lines.Types())
+	if !slices.Equal(names(captions), []string{"line", "alias"}) || !slices.Equal(names(decisions), []string{"line"}) {
+		t.Fatalf("types asks %v with captions and %v without", names(captions), names(decisions))
+	}
+	prompt := decisions.System
+	if !strings.Contains(prompt, "advertised by fill") || !strings.Contains(prompt, "- alias:") {
+		t.Fatalf("the types prompt does not leave its cells to fill or lost the alias it asks with captions:\n%s", prompt)
+	}
+	if demand := regexp.MustCompile(`(?i)\b(one|two|three|\d+) cells|\b(line|alias)\b[^.]*\b(each|every) result row`).FindString(prompt); demand != "" {
+		t.Fatalf("the types prompt demands cells fill may not advertise: %q", demand)
+	}
 }
 
 func TestSymbolAndTypeAliasesFollowExistingKnowledgeWithoutRenamingDeclarations(t *testing.T) {
