@@ -15,6 +15,7 @@
 
 #include "kvd.h"
 
+/* Global state */
 struct kvServer server;
 
 /*================================ Commands ================================ */
@@ -272,6 +273,7 @@ static void beforeSleep(loop *l) {
     if (server.shutdown) loopStop(l);
 }
 
+/* Signal handler */
 static void onSignal(int sig) {
     (void)sig;
     server.shutdown = 1;

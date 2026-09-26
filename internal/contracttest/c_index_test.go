@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/places"
+	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/cproject"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -577,6 +578,48 @@ func TestCFixtureCommandRowsAreRegistrations(t *testing.T) {
 	for _, handed := range []string{"statsWorker", "compareKeys", "onSignal"} {
 		if len(registered[handed]) != 1 {
 			t.Fatalf("%s registrations: %+v", handed, registered[handed])
+		}
+	}
+}
+
+// The fixture's author comments reach the server's declarations through the
+// ordinary claims: a section title that names nothing of the declaration
+// below it (/* Global state */ above server) is layout and no docstring; one
+// that names it (/* Signal handler */ above onSignal) is one, beside the
+// full sentences above the other declarations.
+func TestCFixtureDocstrings(t *testing.T) {
+	fixture := loadCFixture(t)
+	index := buildCIndex(t, fixture, "c:kvd")
+	// Claims carry their commit's date.
+	runFixtureGit(t, fixture.root, "-c", "user.email=fixture@example.test", "-c", "user.name=fixture", "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture")
+	quoted, err := claims.Extract(t.Context(), claims.Input{Repository: fixture.repository, RepoPath: fixture.root, Revision: "HEAD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := places.Build(places.Input{Repository: fixture.repository, Targets: []places.TargetInput{{Index: index, Root: "."}}, Claims: quoted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := map[[2]string]string{}
+	for _, place := range graph.Places {
+		if place.Symbol != nil {
+			docs[[2]string{place.Path, place.Symbol.Decl.Name}] = place.Symbol.Decl.Doc
+		}
+	}
+	for declaration, want := range map[[2]string]string{
+		{"kvd.c", "server"}:             "",
+		{"kvd.c", "onSignal"}:           "Signal handler",
+		{"kvd.c", "processInputBuffer"}: "Runs every complete line of the query buffer as a command.",
+		{"kvd.c", "statsWorker"}:        "Reports the number of keys once a minute, on a thread of its own.",
+		{"kvd.h", "kvClient"}:           "A connected client: what it sent and what it has still to receive.",
+		{"strbuf.h", "sbAvail"}:         "Free bytes left before the buffer has to grow.",
+	} {
+		got, found := docs[declaration]
+		if !found {
+			t.Fatalf("%s %s is not on the map", declaration[0], declaration[1])
+		}
+		if got != want {
+			t.Errorf("%s %s: docstring %q, want %q", declaration[0], declaration[1], got, want)
 		}
 	}
 }

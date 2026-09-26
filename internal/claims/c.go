@@ -26,11 +26,32 @@ var (
 	cVersionStamp = regexp.MustCompile(`^\$[A-Z][A-Za-z]*(?::[^$]*)?\$$`)
 	// cDecoration is a run of one repeated decoration character.
 	cDecoration = regexp.MustCompile(`={4,}|-{4,}|\*{4,}|#{4,}|~{4,}|_{4,}|\+{4,}|/{4,}`)
+	// cTitleWord is a plain word; a sentence, code (db->expires) or a
+	// number is no title's.
+	cTitleWord = regexp.MustCompile(`^[A-Za-z]+(?:-[A-Za-z]+)*$`)
+	// cHeaderNoise are the comments and strings on a declaration's header
+	// lines: they name nothing of the declaration.
+	cHeaderNoise = regexp.MustCompile(`/\*.*?\*/|//.*$|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'`)
+	cIdentifier  = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
+	// cNamePart splits an identifier into its words: redisServer is redis
+	// and server, file_event is file and event.
+	cNamePart = regexp.MustCompile(`[A-Z]+[a-z0-9]*|[a-z0-9]+`)
+	// cKeywords name no part of a declaration.
+	cKeywords = map[string]bool{
+		"auto": true, "char": true, "const": true, "double": true, "enum": true, "extern": true, "float": true,
+		"inline": true, "int": true, "long": true, "register": true, "restrict": true, "short": true,
+		"signed": true, "static": true, "struct": true, "typedef": true, "union": true, "unsigned": true,
+		"void": true, "volatile": true, "_Bool": true,
+	}
 )
 
 const (
 	// cBannerWords is the most a section banner's title says.
 	cBannerWords = 8
+	// cTitleWords is the most an undecorated section title says
+	// ("Implementation", "Global vars"): a short docstring of three words
+	// ("Return the count") is too common to read as a title.
+	cTitleWords = 2
 	// cHeaderLines is how many lines below its first line a declaration's
 	// header may end: static / int / foo(void).
 	cHeaderLines = 2
@@ -77,7 +98,10 @@ func CDocstring(docs []Claim, line int, declarations []int) string {
 // copyright or version-control stamp there (D5). Section banners such
 // as /* ==== Lists ==== */ are the author's layout, not a claim about the code
 // (D4). Marker comments (NOTE:, WARNING:, ...) are quoted line by line from
-// every other comment. Comment markers inside strings and character
+// every other comment. An undecorated title of a word or two directly above
+// a declaration (/* Global vars */) is a section title, not its docstring,
+// unless it names a part of the declaration (/* Timer events */ above
+// struct timerEvent). Comment markers inside strings and character
 // constants open nothing.
 func cQuotes(lines []string) (docs, markers []quote) {
 	comments, code := cLex(lines)
@@ -112,7 +136,13 @@ func cQuotes(lines []string) (docs, markers []quote) {
 			// Where the declaration writes its name; none for the file's own
 			// description, which no declaration follows directly.
 			if above {
-				item.DeclarationLine = cHeaderEnd(lines, next) + 1
+				end := cHeaderEnd(lines, next)
+				// An undecorated section title (/* Implementation */) is
+				// layout too, unless it names the declaration below it.
+				if comment.title() && !cNamesDeclaration(comment.prose[0], lines[next:end+1]) {
+					continue
+				}
+				item.DeclarationLine = end + 1
 			}
 			docs = append(docs, item)
 		}
@@ -136,6 +166,50 @@ func (comment cComment) banner() bool {
 		return false
 	}
 	return len(strings.Fields(cDecoration.ReplaceAllString(text, " "))) <= cBannerWords
+}
+
+// title reports an undecorated section title: one line of at most
+// cTitleWords plain words.
+func (comment cComment) title() bool {
+	if comment.start != comment.end || len(comment.prose) != 1 {
+		return false
+	}
+	words := strings.Fields(comment.prose[0])
+	if len(words) == 0 || len(words) > cTitleWords {
+		return false
+	}
+	for _, word := range words {
+		if !cTitleWord.MatchString(word) {
+			return false
+		}
+	}
+	return true
+}
+
+// cNamesDeclaration reports a title that names a part of the declaration on
+// header, its lines up to where it writes its name: a word of the title is a
+// word of one of the declaration's names or types, ignoring case and a
+// plural s. C keywords, comments and strings name nothing.
+func cNamesDeclaration(title string, header []string) bool {
+	parts := map[string]bool{}
+	for _, line := range header {
+		for _, identifier := range cIdentifier.FindAllString(cHeaderNoise.ReplaceAllString(line, " "), -1) {
+			if cKeywords[identifier] {
+				continue
+			}
+			for _, part := range cNamePart.FindAllString(identifier, -1) {
+				parts[strings.ToLower(part)] = true
+			}
+		}
+	}
+	for _, word := range strings.Fields(strings.ToLower(title)) {
+		for _, part := range strings.Split(word, "-") {
+			if parts[part] || len(part) > 3 && strings.HasSuffix(part, "s") && parts[strings.TrimSuffix(part, "s")] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // cHeaderEnd is the line that ends a declaration's header, where it writes

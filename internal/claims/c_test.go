@@ -118,3 +118,56 @@ func TestCFilesAreQuoted(t *testing.T) {
 		}
 	}
 }
+
+// An undecorated section title directly above a declaration is the author's
+// layout: a word or two that name nothing of the declaration below it. A
+// short title that names the declaration, a longer comment, a sentence and a
+// comment written as code stay its docstring.
+func TestCSectionTitlesAreNoDocstrings(t *testing.T) {
+	const source = `#include "app.h"
+
+/* Prototypes */
+static void readHandler(int fd);
+
+/* Implementation */
+static long long nowMillis(void) {
+    return 0;
+}
+
+/* Global vars */
+static struct appServer server; /* the global server */
+
+// Private helpers
+static int
+countKeys(void)
+{
+    return 0;
+}
+
+/* Listen socket */
+static int listenSocket;
+
+/* Timer events */
+typedef struct timerEvent {
+    int id;
+} timerEvent;
+
+/* Release every bucket */
+void freeAll(void);
+
+/* Startup. */
+void boot(void);
+
+/* ring->tail */
+static int keyCursor;
+`
+	docs, _ := cQuotes(splitLines(source))
+	var got []string
+	for _, doc := range docs {
+		got = append(got, doc.Text)
+	}
+	want := []string{"Listen socket", "Timer events", "Release every bucket", "Startup.", "ring->tail"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("docstrings %q, want %q", got, want)
+	}
+}

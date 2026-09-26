@@ -170,7 +170,13 @@ A licence, copyright or version-control stamp before the first line of code
 is not a claim (owner decision D5), even when it also states the file's
 purpose. Section banners, a decoration run such as `====` with a title of at
 most eight words, are the author's layout and neither a claim nor structure
-(D4). `NOTE:`, `WARNING:`, `IMPORTANT:` and `DEPRECATED` comment lines are
+(D4). So is an undecorated title of one or two plain words on one line
+directly above a declaration (`/* Implementation */`, `/* Global vars */`),
+unless one of its words names a part of the declaration, ignoring case, C
+keywords, the header's own comments and a plural s (`/* Timer events */`
+above `struct timerEvent`); a longer comment, a sentence and a comment
+written as code (`/* db->expires */`) stay its docstring. A comment a blank
+line separates from the declaration below it was never its docstring. `NOTE:`, `WARNING:`, `IMPORTANT:` and `DEPRECATED` comment lines are
 quoted from every other comment; comment markers inside strings and character
 constants open nothing. C names follow the existing code-name glossary rule
 (D6).
@@ -211,6 +217,8 @@ another adapter's explicit target, the files that restore each program, one
 parse per plan for a shared unit and its release after the last projection
 that needs it, a backend outside this platform's build, a missing clang, and
 an ordinary offline run selecting a C program. Facts tests cover C config
-reads, SQL and dynamic execution; claims, places and report tests cover
-docstrings, licence blocks, banners and the file description at their
-consuming boundaries.
+reads, SQL, dynamic execution and command rows that state no HTTP method;
+claims, places and report tests cover docstrings, licence blocks, banners,
+section titles and the file description at their consuming boundaries, and
+the fixture's own docstrings reach its declarations. The fixture's map of
+parts is checked like every other language's (`TestCumulativeCMapOfParts`).
