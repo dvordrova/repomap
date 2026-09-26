@@ -479,6 +479,17 @@ remain model decisions with `self`/`none`, not local middleware classification.
   Native HTTP addresses survive missing or refused prose. Standard-library
   transports may establish communication; this does not promote their package
   objects into remote participants. No package blacklist or API handbook is added.
+- A boundary belongs to every program that holds its declaration's file: a
+  shared `anet.c` gives redis-cli and redis-benchmark the listener
+  `anetTcpServer` although neither calls it. Leaving it out of a program
+  needs proof that the program cannot reach the declaration, and no graph
+  proves that today (2026-09-27): a C function cast to an integer is an
+  address used as data and records no relation (`staticsyms.h`), and the
+  adapter keeps no record of other escaping uses; an unresolved Go interface
+  call, Python attribute call, JS/TS property call or Clojure looked-up
+  invocation can reach declarations it does not name. Until an adapter
+  records every use of a declaration's address, the boundary stays attached
+  everywhere its file is linked.
 
 ## External symbols: the `atlas_api` table
 
