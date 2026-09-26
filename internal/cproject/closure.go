@@ -77,11 +77,31 @@ func unitSymbols(unit *Unit) symbols {
 			}
 		}
 	}
+	// A function or extern variable declared inside a function body names an
+	// external definition as a file-scope declaration does.
+	var scoped func(node *Node, nested bool)
+	scoped = func(node *Node, nested bool) {
+		if nested && (node.Kind == "FunctionDecl" || node.Kind == "VarDecl" && node.StorageClass == "extern") {
+			declared[node.ID], own[node.ID] = node.Name, true
+		}
+		for _, child := range node.Inner {
+			scoped(child, true)
+		}
+	}
+	for _, node := range unit.Decls {
+		scoped(node, false)
+	}
 	refs := map[string]bool{}
 	var walk func(node *Node)
 	walk = func(node *Node) {
 		if node.Kind == "DeclRefExpr" && node.ReferencedDecl != nil {
-			if name, ok := declared[node.ReferencedDecl.ID]; ok && !internal[name] {
+			name, ok := declared[node.ReferencedDecl.ID]
+			if !ok && node.ReferencedDecl.Kind == "FunctionDecl" {
+				// An implicitly declared function (a call with no prototype
+				// in scope): clang does not dump its declaration.
+				name, ok = node.ReferencedDecl.Name, true
+			}
+			if ok && !internal[name] {
 				if _, defined := result.defs[name]; !defined {
 					refs[name] = true
 					if own[node.ReferencedDecl.ID] {

@@ -124,8 +124,15 @@ func TestPackageOfIsTheNearestHeaderTheCorpusNames(t *testing.T) {
 		{Path: "/sdk/usr/include/arpa/inet.h", Class: FilePlatform, Depth: 1, Parent: -1},
 		{Path: "/sdk/usr/include/sys/socket.h", Class: FilePlatform, Depth: 2, Parent: 5},
 	}}
+	// The repository's own stdio.h shadows the platform's for "stdio.h":
+	// the platform stdio.h below is reached through stdlib.h.
+	c.corpus["stdio.h"] = true
+	unit.Includes = append(unit.Includes,
+		Include{Path: "stdio.h", Class: FileCorpus, Depth: 1, Parent: -1},
+		Include{Path: "/sdk/usr/include/stdio.h", Class: FilePlatform, Depth: 3, Parent: 1},
+		Include{Path: "/sdk/usr/include/_stdio.h", Class: FilePlatform, Depth: 4, Parent: 8})
 	directives := map[string][]directive{
-		"a.c": {{line: 1, spelled: "a.h", quoted: true}, {line: 2, spelled: "arpa/inet.h"}, {line: 3, spelled: "sys/wait.h"}, {line: 4, spelled: "signal.h"}},
+		"a.c": {{line: 1, spelled: "a.h", quoted: true}, {line: 2, spelled: "arpa/inet.h"}, {line: 3, spelled: "sys/wait.h"}, {line: 4, spelled: "signal.h"}, {line: 5, spelled: "stdio.h", quoted: true}},
 		"a.h": {{line: 3, spelled: "stdlib.h"}},
 	}
 	store := NewStore()
@@ -136,6 +143,7 @@ func TestPackageOfIsTheNearestHeaderTheCorpusNames(t *testing.T) {
 		"/sdk/usr/include/sys/signal.h": "sys/wait.h", // <signal.h> is not sys/signal.h
 		"/sdk/usr/include/sys/socket.h": "arpa/inet.h",
 		"/sdk/usr/include/stdlib.h":     "stdlib.h",
+		"/sdk/usr/include/_stdio.h":     "stdlib.h",
 		"/elsewhere.h":                  "",
 	} {
 		if got := c.packageOf(unit, named, file); got != want {
@@ -153,6 +161,8 @@ func TestShellCommandsFollowRecipeSyntax(t *testing.T) {
 	if words := commandWords([]string{"@CC=x", "ccache", "gcc", "-c"}); !reflect.DeepEqual(words, []string{"gcc", "-c"}) {
 		t.Fatalf("compiler words: %q", words)
 	}
+	// A bare archiver word is not an archive command.
+	parseDryRun(parseEnv{roots: []string{"/repo"}}, "ar\nar -t\n")
 	if _, ok := shellCommands(`echo "unterminated`); ok {
 		t.Fatal("an unterminated quote split")
 	}
@@ -160,5 +170,28 @@ func TestShellCommandsFollowRecipeSyntax(t *testing.T) {
 		if compilerName.MatchString(name) != want {
 			t.Errorf("compiler %s: %v", name, !want)
 		}
+	}
+}
+
+func TestMatchDirectivesFollowsEachParentInOrder(t *testing.T) {
+	// An X-macro table entered twice by one parent: each entry is its own
+	// directive.
+	c := &classifier{root: "/repo", corpus: map[string]bool{"a.c": true, "ops.def": true, "a.h": true}, frameworks: map[string]bool{}}
+	unit := &Unit{UnitSpec: UnitSpec{Path: "a.c"}, Includes: []Include{
+		{Path: "ops.def", Class: FileCorpus, Depth: 1, Parent: -1},
+		{Path: "a.h", Class: FileCorpus, Depth: 1, Parent: -1},
+		{Path: "ops.def", Class: FileCorpus, Depth: 1, Parent: -1},
+	}}
+	store := NewStore()
+	store.directives = map[string][]directive{"a.c": {
+		{line: 2, spelled: "ops.def", quoted: true}, {line: 4, spelled: "a.h", quoted: true}, {line: 9, spelled: "ops.def", quoted: true},
+	}}
+	store.matchDirectives(nil, unit, c)
+	var lines []int
+	for _, include := range unit.Includes {
+		lines = append(lines, include.Line)
+	}
+	if !reflect.DeepEqual(lines, []int{2, 4, 9}) {
+		t.Fatalf("directive lines: %v", lines)
 	}
 }

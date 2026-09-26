@@ -19,6 +19,12 @@ func TestLocSiteKeepsMacroArgumentSpelling(t *testing.T) {
 	if got := nested.Site(); got != use {
 		t.Fatalf("an argument written in a header macro body left the reader's site: %+v", got)
 	}
+	// So is an argument spelled in the body of a macro defined above in
+	// the same file (#define RUN(x) kvAssert(work(x))).
+	local := Loc{Spelling: Position{File: "server.c", Line: 3, Col: 25, Offset: 60, TokLen: 4}, Expansion: use, MacroArg: true}
+	if got := local.Site(); got != use || !local.InMacroBody() {
+		t.Fatalf("an argument written in a macro body above in the file left the reader's site: %+v", got)
+	}
 	plain := Loc{Spelling: use, Expansion: use}
 	if plain.FromMacro() || plain.Site() != use {
 		t.Fatal("a plain location changed")

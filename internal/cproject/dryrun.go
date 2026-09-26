@@ -17,7 +17,7 @@ import (
 
 // dryRunTimeout bounds `make -n -B`. The dry run prints recipes without
 // running them, but GNU make still runs $(shell ...), recipes that call
-// $(MAKE), and rules that remake included makefiles.
+// $(MAKE) or start with +, and rules that remake included makefiles.
 var dryRunTimeout = 30 * time.Second
 
 // buildDescription is what a compile_commands.json or a dry run printed.
@@ -69,7 +69,12 @@ func readBuild(ctx context.Context, env parseEnv) (buildDescription, error) {
 	if makefile == "" {
 		return buildDescription{build: Build{Kind: BuildNone}}, nil
 	}
-	command := []string{"make", "-n", "-B", "-w"}
+	// make remakes the makefiles it reads for real even under -n, and -B
+	// makes every one of them out of date: a configured autotools tree would
+	// rerun config.status, automake and autoconf over the repository. -o
+	// keeps the root makefile as it is; makefiles it includes are still
+	// remade.
+	command := []string{"make", "-n", "-B", "-w", "-o", makefile}
 	output, err := dryRun(ctx, env.root, command)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return buildDescription{}, ctxErr
@@ -186,7 +191,10 @@ var (
 	compilerName  = regexp.MustCompile(`^(?:[\w.+]+-)*(?:cc|gcc|clang|c89|c99|tcc|icc|icx|xlc)(?:-[0-9][0-9.]*)?$`)
 	archiverName  = regexp.MustCompile(`^(?:[\w.+]+-)*(?:llvm-|gcc-)?ar$`)
 	variableWord  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
-	wrappers      = map[string]bool{"ccache": true, "distcc": true, "sccache": true, "icecc": true, "env": true, "exec": true, "time": true, "nice": true}
+	// Words that run the command after them: compiler caches, env, and the
+	// shell keywords of recipes such as `if $(COMPILE) -c x.c; then ...`.
+	wrappers = map[string]bool{"ccache": true, "distcc": true, "sccache": true, "icecc": true, "env": true, "exec": true, "time": true, "nice": true,
+		"if": true, "then": true, "else": true, "elif": true, "do": true, "!": true, "{": true}
 )
 
 // parseDryRun reads the compile, link and archive commands `make -n -B -w`
@@ -239,7 +247,11 @@ func parseDryRun(env parseEnv, output string) buildDescription {
 				}
 				cwd = filepath.Clean(target)
 			case archiverName.MatchString(program):
-				if len(words) >= 4 && !strings.HasPrefix(words[1], "-") && strings.ContainsAny(words[1], "rq") {
+				if len(words) < 4 {
+					break
+				}
+				// ar rcs and ar -rcs: the first word is the operation.
+				if operation := strings.TrimPrefix(words[1], "-"); operation != "" && !strings.HasPrefix(operation, "-") && strings.ContainsAny(operation, "rq") {
 					archive := absolute(cwd, words[2])
 					for _, member := range words[3:] {
 						if strings.HasSuffix(member, ".o") {

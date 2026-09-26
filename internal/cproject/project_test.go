@@ -2,9 +2,11 @@ package cproject
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -460,6 +462,130 @@ func TestDryRunThatHangsIsStopped(t *testing.T) {
 	if programBySelector(t, project, "c:main.c").BuildErr == "" {
 		t.Fatal("the default-flag program lost the dry run failure")
 	}
+	// The $(shell sleep) child is stopped with make: otherwise it holds the
+	// output pipe until cmd.WaitDelay gives up on it.
+	if runtime.GOOS == "windows" {
+		return
+	}
+	started = time.Now()
+	if _, err := dryRun(t.Context(), root, []string{"make", "-n", "-B", "-w"}); err == nil {
+		t.Fatal("a hanging dry run succeeded")
+	}
+	if elapsed := time.Since(started); elapsed > 1500*time.Millisecond {
+		t.Fatalf("the dry run's children outlived it: stopped after %s", elapsed)
+	}
+}
+
+func TestDryRunKeepsTheRootMakefile(t *testing.T) {
+	// make remakes a makefile it reads for real even under -n, and -B makes
+	// it out of date: a configured autotools tree would regenerate itself.
+	root, repository := writeRepository(t, map[string]string{
+		"Makefile":    "all: app\napp: main.o\n\tcc -o app main.o\nMakefile: Makefile.in\n\techo regenerated > regenerated.txt\n",
+		"Makefile.in": "",
+		"main.c":      "int main(void) { return 0; }\n",
+	})
+	project, err := Discover(t.Context(), root, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "regenerated.txt")); err == nil {
+		t.Fatal("the dry run remade the Makefile")
+	}
+	if project.Build.Kind != BuildMake || !reflect.DeepEqual(project.Build.Command, []string{"make", "-n", "-B", "-w", "-o", "Makefile"}) {
+		t.Fatalf("build: %+v", project.Build)
+	}
+	if app := programBySelector(t, project, "c:app"); !reflect.DeepEqual(unitPaths(app.Units), []string{"main.c"}) {
+		t.Fatalf("app: %+v", app)
+	}
+}
+
+func TestParseClosureFollowsImplicitAndBlockScopeDeclarations(t *testing.T) {
+	root, repository := writeRepository(t, map[string]string{
+		// Pre-C99 code: clang 16 and later make implicit int, implicit
+		// declarations and int/pointer conversions errors by default, -w
+		// alone does not silence them, and gcc before 14 builds them.
+		"old/main.c":   "main()\n{\n    return helper(2);\n}\n",
+		"old/helper.c": "int helper(x)\nint x;\n{\n    char *p = x;\n    return p != 0;\n}\nnothing() { return; }\n",
+		// Declarations inside a function body name external definitions; a
+		// tentative definition is one; same-named statics never clash.
+		"block/main.c":  "int main(void) {\n    int scoped(void);\n    extern int shared_count;\n    return scoped() + shared_count;\n}\n",
+		"block/impl.c":  "static int local(void) { return 1; }\nint scoped(void) { return local(); }\n",
+		"block/count.c": "static int local(void) { return 2; }\nint shared_count;\n",
+	})
+	project, err := Discover(t.Context(), root, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(project.Observations) != 0 {
+		t.Fatalf("observations: %+v", project.Observations)
+	}
+	store := NewStore()
+	old, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:old/main.c"), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// clang does not dump the implicit declaration of helper; the call
+	// still leads the closure to the unit defining it.
+	if !reflect.DeepEqual(unitPaths(old.Units), []string{"old/helper.c", "old/main.c"}) || old.Main == nil || old.Main.At.Line != 1 {
+		t.Fatalf("old: %v main %+v", unitPaths(old.Units), old.Main)
+	}
+	if !contains(old.Toolchain.Overrides, "-Wno-error=implicit-function-declaration") {
+		t.Fatalf("overrides: %q", old.Toolchain.Overrides)
+	}
+	block, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:block/main.c"), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(unitPaths(block.Units), []string{"block/count.c", "block/impl.c", "block/main.c"}) {
+		t.Fatalf("block: %v", unitPaths(block.Units))
+	}
+}
+
+func TestParseRefusesALinkWithTwoMains(t *testing.T) {
+	root, repository := writeRepository(t, map[string]string{
+		"Makefile": "app: a.o b.o\n\tcc -o app a.o b.o\n",
+		"a.c":      "int main(void) { return 0; }\n",
+		"b.c":      "int main(void) { return 1; }\n",
+	})
+	project, err := Discover(t.Context(), root, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:app"), nil); err == nil || !strings.Contains(err.Error(), "defines main twice: a.c:1 and b.c:1") {
+		t.Fatalf("two mains: %v", err)
+	}
+}
+
+func TestMacroSitesFollowWhereTheReaderWroteTheCall(t *testing.T) {
+	app := "#include \"check.h\"\n\nstatic int work(int x) { return x; }\n#define RUN(x) CHECK(work(x))\n\nint main(void) {\n    CHECK(work(1));\n    RUN(2);\n    return 0;\n}\n"
+	root, repository := writeRepository(t, map[string]string{
+		"check.h": "void check_fail(void);\n#define CHECK(e) ((e) ? (void)0 : check_fail())\n",
+		"app.c":   app,
+	})
+	project, err := Discover(t.Context(), root, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := Parse(t.Context(), root, repository, programBySelector(t, project, "c:app.c"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sites []string
+	walkNodes(parsed.Units[0].Decls, func(node *Node) {
+		if node.Kind == "DeclRefExpr" && node.ReferencedDecl != nil && node.ReferencedDecl.Name == "work" {
+			site := node.Begin.Site()
+			sites = append(sites, fmt.Sprintf("%s:%d %s macro_arg=%v", site.File, site.Line, TokenText([]byte(app), site), node.Begin.MacroArg))
+		}
+	})
+	// work written in CHECK's argument keeps its own place; work written in
+	// RUN's body, above in the same file, is found where RUN is used.
+	want := []string{
+		fmt.Sprintf("app.c:%d work macro_arg=true", lineOf(t, app, "CHECK(work(1))")),
+		fmt.Sprintf("app.c:%d RUN macro_arg=true", lineOf(t, app, "RUN(2)")),
+	}
+	if !reflect.DeepEqual(sites, want) {
+		t.Fatalf("work sites:\n got %q\nwant %q", sites, want)
+	}
 }
 
 func TestCompileCommandsGiveFlagsAndMainsGivePrograms(t *testing.T) {
@@ -508,8 +634,9 @@ func TestParseDryRunFollowsDirectoriesAndArchives(t *testing.T) {
 		"make: Entering directory `" + root + "'",
 		"make -C lib",
 		"make[1]: Entering directory '" + filepath.Join(root, "lib") + "'",
-		"cc -c -Iinc c.c -o c.o",
-		"ar rcs libc.a c.o",
+		// Older automake wraps the compile in if ...; then ...; fi.
+		"if cc -c -Iinc c.c -o c.o; then mv -f .deps/c.Tpo .deps/c.Po; else rm -f .deps/c.Tpo; exit 1; fi",
+		"ar -rcs libc.a c.o",
 		"ranlib libc.a",
 		"make[1]: Leaving directory '" + filepath.Join(root, "lib") + "'",
 		"cd src && ccache cc -c -DA \\",

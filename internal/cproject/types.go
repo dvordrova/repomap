@@ -9,8 +9,9 @@
 // nothing here decides a runtime role.
 //
 // The view is the host platform's build as the build description gives it,
-// with _FORTIFY_SOURCE turned off so libc calls keep their written names.
-// Toolchain records that view.
+// with _FORTIFY_SOURCE turned off so libc calls keep their written names, and
+// with the diagnostics newer clang makes errors for pre-C99 code left as
+// warnings. Toolchain records that view.
 package cproject
 
 import (
@@ -59,7 +60,7 @@ type BuildKind string
 
 const (
 	BuildCompileCommands BuildKind = "compile_commands" // root compile_commands.json
-	BuildMake            BuildKind = "make"             // make -n -B on the root Makefile's default goal
+	BuildMake            BuildKind = "make"             // make -n -B -w -o <makefile> on the root makefile's default goal
 	BuildNone            BuildKind = "none"             // clang's defaults for every .c file
 )
 

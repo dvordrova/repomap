@@ -23,6 +23,22 @@ import (
 // optimisation level.
 var fortifyOff = []string{"-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=0"}
 
+// legacyWarnings stay warnings, which -w silences. clang 16 and later make
+// them errors by default for C99 and later (implicit int, implicit function
+// declarations, integer/pointer and function pointer mismatches, a return
+// without a value), and -w does not reach a warning that is an error by
+// default. The compilers such code was built with accept it, and clang still
+// builds the complete AST. An older clang ignores a name it does not know.
+var legacyWarnings = []string{
+	"-Wno-error=implicit-function-declaration", "-Wno-error=implicit-int", "-Wno-error=int-conversion",
+	"-Wno-error=incompatible-function-pointer-types", "-Wno-error=incompatible-pointer-types",
+	"-Wno-error=return-type", "-Wno-error=return-mismatch",
+}
+
+// overrides are added after every unit's own flags; Toolchain.Overrides
+// records them.
+func overrides() []string { return slices.Concat(fortifyOff, legacyWarnings) }
+
 // clangProgram is the clang executable looked up on PATH.
 const clangProgram = "clang"
 
@@ -33,12 +49,12 @@ var toolchainCache sync.Map // clang path -> Toolchain
 func probeToolchain(ctx context.Context) Toolchain {
 	path, err := exec.LookPath(clangProgram)
 	if err != nil {
-		return Toolchain{Clang: clangProgram, Overrides: slices.Clone(fortifyOff), Err: "clang was not found on PATH (install clang)"}
+		return Toolchain{Clang: clangProgram, Overrides: overrides(), Err: "clang was not found on PATH (install clang)"}
 	}
 	if cached, ok := toolchainCache.Load(path); ok {
 		return cached.(Toolchain)
 	}
-	tool := Toolchain{Clang: path, Overrides: slices.Clone(fortifyOff)}
+	tool := Toolchain{Clang: path, Overrides: overrides()}
 	run := func(args ...string) (string, string, error) {
 		cmd := exec.CommandContext(ctx, path, args...)
 		cmd.Env = append(os.Environ(), "LC_ALL=C")
