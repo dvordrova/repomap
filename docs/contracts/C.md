@@ -59,7 +59,10 @@ make errors for pre-C99 code stay warnings that `-w` silences.
 
 Each unit runs `clang -fsyntax-only -w -H -Xclang -ast-dump=json` once per run
 store, at most four at a time; a unit several programs link is parsed once.
-The dump is decoded as it streams, one top-level declaration at a time.
+The plan's store keeps a decoded unit only while a planned program that has
+not been projected yet still links it: once a program's ProgramIndex is built,
+or its parse fails, the units no remaining program needs are released, so the
+decoded units do not stay alive through the pages' model work. The dump is decoded as it streams, one top-level declaration at a time.
 clang leaves out `file` and `line` when they have not changed, so that state
 is replayed through every location in document order, including inside
 dropped system declarations: spelling precedes expansion, and `includedFrom`

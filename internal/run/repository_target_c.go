@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -43,19 +45,21 @@ func cRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor {
 	return repositoryTargetAdapterDescriptor{
 		Key: repositoryTargetAdapterC, Rank: 4, Label: "C", AllowedLanguages: []string{"c"}, SelectorPrefixes: []string{"c:"},
 		Discover: discoverCRepositoryTargets,
-		// One store per plan: a unit several programs link is parsed once.
-		PrepareDispatchPlan: func(repositoryTargetPlan, []repositoryTypedTarget) (any, error) { return cproject.NewStore(), nil },
-		PrepareDispatchTarget: func(ctx context.Context, options repositoryTargetDispatchOptions, target repositoryTypedTarget, plan any) (repositoryTargetDispatchBinding, error) {
+		PrepareDispatchPlan: func(_ repositoryTargetPlan, ordered []repositoryTypedTarget) (any, error) {
+			return newCRepositoryDispatchPlan(ordered), nil
+		},
+		PrepareDispatchTarget: func(ctx context.Context, options repositoryTargetDispatchOptions, target repositoryTypedTarget, state any) (repositoryTargetDispatchBinding, error) {
 			native, ok := target.native.(cproject.Program)
-			store, storeOK := plan.(*cproject.Store)
-			if !ok || !storeOK {
+			plan, planOK := state.(*cRepositoryDispatchPlan)
+			if !ok || !planOK {
 				return repositoryTargetDispatchBinding{}, fmt.Errorf("invalid C target")
 			}
-			parsed, err := cproject.Parse(ctx, options.Repo, options.Corpus, native, store)
+			parsed, err := cproject.Parse(ctx, options.Repo, options.Corpus, native, plan.store)
 			if err != nil {
+				plan.done(native.Ref)
 				return repositoryTargetDispatchBinding{}, err
 			}
-			return repositoryTargetDispatchBinding{Target: target, ProgramFacts: &cRepositoryProgramFacts{Parsed: parsed}, ProgramFactsBound: true}, nil
+			return repositoryTargetDispatchBinding{Target: target, ProgramFacts: &cRepositoryProgramFacts{Parsed: parsed, plan: plan}, ProgramFactsBound: true}, nil
 		},
 		ValidateNative: func(target repositoryTypedTarget) error {
 			native, ok := target.native.(cproject.Program)
@@ -83,6 +87,10 @@ func cRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor {
 				return programindex.Input{}, err
 			}
 			result, err := cproject.Index(request.Corpus, facts.Parsed)
+			// The projection is the last reader of the program's units.
+			if facts.plan != nil {
+				facts.plan.done(facts.Parsed.Program.Ref)
+			}
 			if err != nil {
 				return programindex.Input{}, err
 			}
@@ -105,12 +113,44 @@ func cRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor {
 	}
 }
 
+// cRepositoryDispatchPlan is the C lane's state for one plan: one parse store,
+// so a unit several programs link is parsed once, and the planned programs
+// not yet projected. Once a program is projected (or fails to parse), the
+// store releases the units no remaining program needs, instead of holding
+// every decoded unit through the model work of every page.
+type cRepositoryDispatchPlan struct {
+	store *cproject.Store
+
+	mu      sync.Mutex
+	pending []cproject.Program
+}
+
+func newCRepositoryDispatchPlan(ordered []repositoryTypedTarget) *cRepositoryDispatchPlan {
+	plan := &cRepositoryDispatchPlan{store: cproject.NewStore()}
+	for _, target := range ordered {
+		if native, ok := target.native.(cproject.Program); ok && target.Key.Adapter == repositoryTargetAdapterC {
+			plan.pending = append(plan.pending, native)
+		}
+	}
+	return plan
+}
+
+// done records that the program no longer reads its units.
+func (plan *cRepositoryDispatchPlan) done(ref string) {
+	plan.mu.Lock()
+	plan.pending = slices.DeleteFunc(plan.pending, func(program cproject.Program) bool { return program.Ref == ref })
+	remaining := slices.Clone(plan.pending)
+	plan.mu.Unlock()
+	plan.store.Keep(remaining)
+}
+
 // cRepositoryProgramFacts is one C program's native handoff: the units target
 // preparation parsed, and the projection BuildProgramInput makes of them,
 // whose dependency catalog BuildDependencies returns.
 type cRepositoryProgramFacts struct {
 	Parsed *cproject.Parsed
 	result *cproject.Result
+	plan   *cRepositoryDispatchPlan
 }
 
 func cRepositoryFacts(target repositoryTypedTarget, value any) (*cRepositoryProgramFacts, error) {

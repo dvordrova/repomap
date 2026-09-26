@@ -317,6 +317,36 @@ func unitKey(spec UnitSpec) string {
 	return strings.Join(append([]string{spec.Path, spec.Dir, spec.Source}, spec.Args...), "\x00")
 }
 
+// Keep releases every parsed unit that none of programs compiles or, for a
+// closure program, may link, so a store shared by a run's programs holds only
+// what its remaining programs still need. A released unit is parsed again if
+// a later Parse asks for it. A unit still being parsed stays.
+func (store *Store) Keep(programs []Program) {
+	needed := map[string]bool{}
+	for _, program := range programs {
+		for _, spec := range program.Units {
+			needed[unitKey(spec)] = true
+		}
+		if program.Closure {
+			for _, spec := range program.Pool {
+				needed[unitKey(spec)] = true
+			}
+		}
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for key, entry := range store.units {
+		if needed[key] {
+			continue
+		}
+		select {
+		case <-entry.done:
+			delete(store.units, key)
+		default:
+		}
+	}
+}
+
 // unit parses spec once per store; concurrent callers wait for the first.
 func (store *Store) unit(ctx context.Context, env parseEnv, spec UnitSpec) (*Unit, error) {
 	key := unitKey(spec)

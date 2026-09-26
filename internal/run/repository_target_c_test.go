@@ -157,12 +157,17 @@ func TestCRepositoryTargetsFromLinkLines(t *testing.T) {
 	}
 
 	// Dispatch parses the program's units once per plan and finds its main.
+	cli, err := discovery.ResolveExplicit(repository, "c:kvcli")
+	if err != nil || len(cli) != 1 {
+		t.Fatalf("selection: %v %v", cli, err)
+	}
 	adapter := cRepositoryTargetAdapterDescriptor()
-	store, err := adapter.PrepareDispatchPlan(repositoryTargetPlan{}, targets)
+	options := repositoryTargetDispatchOptions{Repo: root, Corpus: repository}
+	store, err := adapter.PrepareDispatchPlan(repositoryTargetPlan{}, []repositoryTypedTarget{target, cli[0]})
 	if err != nil {
 		t.Fatal(err)
 	}
-	binding, err := adapter.PrepareDispatchTarget(t.Context(), repositoryTargetDispatchOptions{Repo: root, Corpus: repository}, target, store)
+	binding, err := adapter.PrepareDispatchTarget(t.Context(), options, target, store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,25 +184,36 @@ func TestCRepositoryTargetsFromLinkLines(t *testing.T) {
 	if _, err := adapter.BuildDependencies(repositoryDependencyBuildRequest{Target: target, Facts: facts}); err == nil {
 		t.Fatal("dependencies were returned before the program was projected")
 	}
-	cli, err := discovery.ResolveExplicit(repository, "c:kvcli")
-	if err != nil || len(cli) != 1 {
-		t.Fatalf("selection: %v %v", cli, err)
-	}
-	cliBinding, err := adapter.PrepareDispatchTarget(t.Context(), repositoryTargetDispatchOptions{Repo: root, Corpus: repository}, cli[0], store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	strbuf := func(parsed *cproject.Parsed) *cproject.Unit {
+	unit := func(parsed *cproject.Parsed, path string) *cproject.Unit {
 		for _, unit := range parsed.Units {
-			if unit.Path == "strbuf.c" {
+			if unit.Path == path {
 				return unit
 			}
 		}
-		t.Fatalf("%s does not link strbuf.c", parsed.Program.Selector)
+		t.Fatalf("%s does not link %s", parsed.Program.Selector, path)
 		return nil
 	}
-	if strbuf(facts.Parsed) != strbuf(cliBinding.ProgramFacts.(*cRepositoryProgramFacts).Parsed) {
+	// Projecting kvd is the last read of its units: kvd.c is released, and
+	// strbuf.c stays for kvcli, which still links it.
+	_, _ = adapter.BuildProgramInput(repositoryProgramBuildRequest{Context: t.Context(), Corpus: repository, Target: target, Facts: facts})
+	cliBinding, err := adapter.PrepareDispatchTarget(t.Context(), options, cli[0], store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cliFacts := cliBinding.ProgramFacts.(*cRepositoryProgramFacts)
+	if unit(facts.Parsed, "strbuf.c") != unit(cliFacts.Parsed, "strbuf.c") {
 		t.Fatal("strbuf.c was parsed once per program, not once per plan")
+	}
+	// Once no planned program needs a unit, the plan holds none of them: a
+	// later parse reads the sources again.
+	_, _ = adapter.BuildProgramInput(repositoryProgramBuildRequest{Context: t.Context(), Corpus: repository, Target: cli[0], Facts: cliFacts})
+	again, err := adapter.PrepareDispatchTarget(t.Context(), options, target, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reparsed := again.ProgramFacts.(*cRepositoryProgramFacts).Parsed
+	if unit(reparsed, "kvd.c") == unit(facts.Parsed, "kvd.c") || unit(reparsed, "strbuf.c") == unit(cliFacts.Parsed, "strbuf.c") {
+		t.Fatal("the plan kept the units of programs it already projected")
 	}
 	native := target.native.(cproject.Program)
 	program := programindex.Target{Language: "c", Selector: native.Selector, Name: native.Name, AnchorFileRef: native.AnchorFileRef}
@@ -286,7 +302,11 @@ func TestCRepositoryTargetWithoutClang(t *testing.T) {
 		t.Fatalf("selection: %v %v", targets, err)
 	}
 	adapter := cRepositoryTargetAdapterDescriptor()
-	_, err = adapter.PrepareDispatchTarget(t.Context(), repositoryTargetDispatchOptions{Repo: root, Corpus: repository}, targets[0], cproject.NewStore())
+	plan, err := adapter.PrepareDispatchPlan(repositoryTargetPlan{}, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = adapter.PrepareDispatchTarget(t.Context(), repositoryTargetDispatchOptions{Repo: root, Corpus: repository}, targets[0], plan)
 	if !errors.Is(err, cproject.ErrClangUnavailable) {
 		t.Fatalf("error %v", err)
 	}
