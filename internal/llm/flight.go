@@ -73,7 +73,8 @@ func (current *flight) wait(ctx context.Context) (*flightAnswer, error) {
 
 // followFlight gives a follower the leader's answer, validated by the
 // follower's own limits and decoder. It made no provider call, so its outcome
-// is Cached like a cache hit and its events carry the cache source.
+// is Cached like a cache hit, its events carry the cache source and, like a
+// cache record, it has no HTTP response of its own.
 func followFlight[T any](
 	executor Executor,
 	answer flightAnswer,
@@ -83,7 +84,6 @@ func followFlight[T any](
 	adapted *AdaptedResponse,
 ) (Outcome[T], error) {
 	completion := answer.completion
-	outcome.HTTPResponse = completion.HTTPResponse.Clone()
 	setOutcomeResponse(&outcome, completion.Response)
 	outcome.FinishReason = completion.FinishReason
 	outcome.ChoiceCount = completion.ChoiceCount

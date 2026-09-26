@@ -11,24 +11,26 @@ import (
 )
 
 // drawProvider answers like a model: each call is a new draw, "answer N".
-// Every call reports its arrival and then waits for release.
+// Every preparation and call reports itself; a call then waits for release.
 type drawProvider struct {
-	mu      sync.Mutex
-	calls   int
-	arrived chan int
-	release chan struct{}
-	respond func(n int) ([]byte, error)
+	mu       sync.Mutex
+	calls    int
+	prepared chan struct{}
+	arrived  chan int
+	release  chan struct{}
+	respond  func(n int) ([]byte, error)
 }
 
 func newDrawProvider(respond func(n int) ([]byte, error)) *drawProvider {
-	return &drawProvider{arrived: make(chan int, 8), release: make(chan struct{}), respond: respond}
+	return &drawProvider{prepared: make(chan struct{}, 8), arrived: make(chan int, 8), release: make(chan struct{}), respond: respond}
 }
 
 func (*drawProvider) State() []byte {
 	return []byte(`{"endpoint":"https://provider.test","model":"draws"}`)
 }
 
-func (*drawProvider) Prepare(prompt Prompt, _ Limits) (Prepared, error) {
+func (provider *drawProvider) Prepare(prompt Prompt, _ Limits) (Prepared, error) {
+	provider.prepared <- struct{}{}
 	raw, err := json.Marshal(map[string]string{"system": prompt.System, "user": prompt.User})
 	if err != nil {
 		return Prepared{}, err
@@ -48,7 +50,10 @@ func (provider *drawProvider) Complete(ctx context.Context, _ Prepared) (Complet
 		return Completion{}, ctx.Err()
 	}
 	response, err := provider.respond(n)
-	return Completion{Response: response, FinishReason: FinishStop, ChoiceCount: 1, Metrics: Metrics{Attempts: 1, Latency: time.Millisecond}}, err
+	return Completion{
+		Response: response, FinishReason: FinishStop, ChoiceCount: 1, Metrics: Metrics{Attempts: 1, Latency: time.Millisecond},
+		HTTPResponse: &HTTPResponse{StatusCode: 200, Headers: map[string][]string{"X-Trace": {fmt.Sprint(n)}}},
+	}, err
 }
 
 func (provider *drawProvider) count() int {
@@ -57,9 +62,12 @@ func (provider *drawProvider) count() int {
 	return provider.calls
 }
 
-// requireNoArrival fails when another call reaches the provider soon.
+// requireNoArrival waits until the identical request has been prepared,
+// which it is just before it joins the first one's flight, and then fails
+// when it reaches the provider soon after.
 func (provider *drawProvider) requireNoArrival(t *testing.T) {
 	t.Helper()
+	<-provider.prepared
 	select {
 	case n := <-provider.arrived:
 		t.Fatalf("call %d of an identical request reached the provider while the first was in the air", n)
@@ -104,6 +112,7 @@ func TestIdenticalRequestsInTheAirMakeOneCall(t *testing.T) {
 	executor := Executor{RootDir: t.TempDir(), Enabled: true, BatchController: &BatchController{}, Observer: events}
 	call := baseTestCall(`{"cube":"flight"}`, "same")
 	first := goExecute(t.Context(), executor, provider, call)
+	<-provider.prepared
 	<-provider.arrived
 	second := goExecute(t.Context(), executor, provider, call)
 	provider.requireNoArrival(t)
@@ -117,6 +126,10 @@ func TestIdenticalRequestsInTheAirMakeOneCall(t *testing.T) {
 	}
 	if leader.outcome.Cached || !follower.outcome.Cached || provider.count() != 1 {
 		t.Fatalf("leader cached %v, follower cached %v, provider calls %d", leader.outcome.Cached, follower.outcome.Cached, provider.count())
+	}
+	// The HTTP diagnostics belong to the one exchange that made the call.
+	if leader.outcome.HTTPResponse == nil || follower.outcome.HTTPResponse != nil {
+		t.Fatalf("HTTP responses: leader %+v, follower %+v", leader.outcome.HTTPResponse, follower.outcome.HTTPResponse)
 	}
 	if events.kinds[EventLive] != 1 || events.kinds[EventCacheHit] != 1 {
 		t.Fatalf("events %v, want one live call and one reuse", events.kinds)
@@ -136,6 +149,7 @@ func TestIdenticalRequestsShareARefusal(t *testing.T) {
 	executor := Executor{RootDir: t.TempDir(), Enabled: true, BatchController: &BatchController{}}
 	call := baseTestCall(`{"cube":"flight"}`, "same")
 	first := goExecute(t.Context(), executor, provider, call)
+	<-provider.prepared
 	<-provider.arrived
 	second := goExecute(t.Context(), executor, provider, call)
 	provider.requireNoArrival(t)
@@ -161,6 +175,7 @@ func TestIdenticalRequestsShareAProviderFailure(t *testing.T) {
 	executor := Executor{RootDir: t.TempDir(), Enabled: true, BatchController: &BatchController{}}
 	call := baseTestCall(`{"cube":"flight"}`, "same")
 	first := goExecute(t.Context(), executor, provider, call)
+	<-provider.prepared
 	<-provider.arrived
 	second := goExecute(t.Context(), executor, provider, call)
 	provider.requireNoArrival(t)
@@ -179,6 +194,7 @@ func TestFollowerOfACanceledLeaderAsksItself(t *testing.T) {
 	call := baseTestCall(`{"cube":"flight"}`, "same")
 	leaderCtx, cancel := context.WithCancel(t.Context())
 	first := goExecute(leaderCtx, executor, provider, call)
+	<-provider.prepared
 	<-provider.arrived
 	second := goExecute(t.Context(), executor, provider, call)
 	provider.requireNoArrival(t)

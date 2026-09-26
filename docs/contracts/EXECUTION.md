@@ -99,7 +99,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   one call per request the second run made none and wrote the same report
   apart from its timing. The follower reads the leader's raw answer through
   its own limits, response adapter and decoder, like a cache record: it makes
-  no provider call and counts and journals as cached. A provider failure is
+  no provider call, counts and journals as cached and, like a cache hit,
+  carries no HTTP status or response headers; those stay with the one
+  exchange that made the call. A provider failure is
   shared as the same error, so an adaptive owner splits every copy alike; a
   refused answer is each follower's own refusal, neither cached nor asked
   again for it. A leader stopped by its own context leaves no answer, and its

@@ -454,12 +454,14 @@ func executeLive[T any](
 	}
 	completion, err := provider.Complete(context.WithValue(ctx, attemptTimeoutKey{}, limits.AttemptTimeout), prepared)
 	// The leader of identical requests in the air publishes what the
-	// provider returned; each follower decides on it for itself.
+	// provider returned; each follower decides on it for itself. Like a
+	// cache record it carries no HTTP diagnostics: those belong to the one
+	// exchange that made the call.
 	var answer *flightAnswer
 	if lead != nil {
 		answer = &flightAnswer{completion: completion}
 		answer.completion.Response = cloneBytes(completion.Response)
-		answer.completion.HTTPResponse = completion.HTTPResponse.Clone()
+		answer.completion.HTTPResponse = nil
 		lead.answer = answer
 	}
 	outcome.HTTPResponse = completion.HTTPResponse.Clone()
