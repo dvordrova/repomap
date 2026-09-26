@@ -251,7 +251,11 @@ kept; an empty or undecodable one leaves the explicit no-description state,
 recorded, and nothing fills it in. The requests of a target run at once
 after its parts and placement. Core, keys, arrows and orientation read the
 part lines. Descriptions, like the parts names, are asked in every model
-run, with or without `--captions`.
+run, with or without `--captions`. Each `atlas_core` row and each
+`atlas_keys` context carries `declarations`: the names of every declaration
+the part holds, in ID order, never cut to a count (the first twelve were
+sent until 2026-09-26, while the keys prompt called the list everything the
+part holds).
 
 **Areas.** When a target has at least three drawn parts that are not test
 code, one `atlas_areas` request (`prompts/design_areas.md`) lists them with

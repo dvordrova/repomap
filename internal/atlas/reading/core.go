@@ -10,8 +10,6 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
-const maxCoreDeclarations = 12
-
 // readCore asks the model the one role each part plays. The program exists
 // for its domain parts.
 func (r *reader) readCore(ctx context.Context) error {
@@ -115,6 +113,10 @@ func (r *reader) startsProgram(part *boxState, targetID string) bool {
 	return false
 }
 
+// partDeclarations names every declaration a part holds, in ID order. The
+// keys prompt calls this list everything the part holds and each core row
+// carries it as the part's declarations, so nothing is cut to a count; names
+// alone keep it small.
 func (r *reader) partDeclarations(part *boxState) []string {
 	ids := make([]string, 0, len(part.symbols))
 	for id := range part.symbols {
@@ -123,7 +125,7 @@ func (r *reader) partDeclarations(part *boxState) []string {
 	sort.Slice(ids, func(i, j int) bool { return compactIDLess(ids[i], ids[j]) })
 	var names []string
 	for _, id := range ids {
-		if symbol := r.places[id].Symbol; symbol != nil && len(names) < maxCoreDeclarations {
+		if symbol := r.places[id].Symbol; symbol != nil {
 			names = append(names, symbol.Decl.Name)
 		}
 	}
