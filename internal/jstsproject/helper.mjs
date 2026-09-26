@@ -793,10 +793,42 @@ const declarations = []
 const declarationRefByNode = new Map()
 const declarationNodeByRef = new Map()
 
+// The lines of a source file that hold a token: the compiler's own tokens,
+// never its comment trivia (JSDoc included) or blank lines. A token spanning
+// lines, such as a template literal, holds each of them.
+const codeLineSets = new Map()
+function codeLineSet(sourceFile) {
+  let lines = codeLineSets.get(sourceFile)
+  if (lines) return lines
+  lines = new Set()
+  const lineOf = (position) => sourceFile.getLineAndCharacterOfPosition(position).line + 1
+  const visit = (node) => {
+    if (node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode) return
+    const children = node.getChildren(sourceFile)
+    if (children.length === 0) {
+      if (node.kind === ts.SyntaxKind.EndOfFileToken) return
+      const start = node.getStart(sourceFile)
+      if (node.end <= start) return
+      for (let line = lineOf(start), last = lineOf(node.end - 1); line <= last; line++) lines.add(line)
+      return
+    }
+    for (const child of children) visit(child)
+  }
+  visit(sourceFile)
+  codeLineSets.set(sourceFile, lines)
+  return lines
+}
+function codeLinesBetween(sourceFile, first, last) {
+  let count = 0
+  for (const line of codeLineSet(sourceFile)) if (line >= first && line <= last) count++
+  return count
+}
+
 for (const { sourceFile, path: filePath } of sourceFiles) {
   const loc = { path: filePath, file_ref: fileRefByPath.get(filePath), line: 1, column: 1 }
   const ref = moduleRef(filePath)
-  declarations.push({ ref, kind: "module", name: moduleName(filePath), qualified_name: moduleName(filePath), exported: false, location: loc })
+  const codeLines = codeLineSet(sourceFile).size
+  declarations.push({ ref, kind: "module", name: moduleName(filePath), qualified_name: moduleName(filePath), exported: false, location: loc, ...(codeLines ? { code_lines: codeLines } : {}) })
   declarationNodeByRef.set(ref, sourceFile)
 }
 
@@ -927,6 +959,15 @@ function signatureOf(node) {
   return ""
 }
 
+// A declaration's code lines lie between its located name and its end.
+function declarationCodeLines(node) {
+  const source = node.getSourceFile()
+  const first = locationOf(node.name || node).line
+  const last = source.getLineAndCharacterOfPosition(node.getEnd()).line + 1
+  const count = codeLinesBetween(source, first, last)
+  return count ? { code_lines: count } : {}
+}
+
 function collectDeclarationNodes(sourceFile) {
   const found = []
   const visit = (node) => {
@@ -965,6 +1006,7 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
         owner_ref: ownerRef,
         location: locationOf(node.name || node),
         end_line: node.getSourceFile().getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+        ...declarationCodeLines(node),
         ...(ts.isFunctionLike(node) ? typedSignature(node) : {}),
       })
     }

@@ -42,6 +42,18 @@ export function firstOf<T>(items: T[]): T {
   return items[0];
 }
 
+// Overload signatures repeat one name: the map of parts reads them and the
+// implementation as one unit, shown with the first signature.
+export function pick(items: string[]): string;
+export function pick(items: number[]): number;
+/** The implementation counts its own lines of code; this JSDoc, the comment
+ * inside and the blank line are none of them. */
+export function pick(items: Array<string | number>): string | number {
+  // The first item is the pick.
+
+  return items[0];
+}
+
 // TODO: document count validation.
 
 // NOTE: count describes a quantity, not a list of levels.

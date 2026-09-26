@@ -48,3 +48,19 @@
 
 (defn ensured-limit []
   (ensure! (read-limit)))
+
+;; A forward declaration and its definition repeat one name: the map of parts
+;; reads them as one unit.
+(declare shout)
+
+(defn loud-greeting [name]
+  (shout (service/greet name)))
+
+(defn shout
+  "Upper-cases a line. A docstring, like a comment or a blank line, is no
+  line of code."
+  [line]
+  ;; Only the text changes.
+  (let [upper (str/upper-case line)]
+
+    (str upper "!")))

@@ -370,6 +370,11 @@ type ObjectInput struct {
 	// EndLine is the last line of the declaration's source, when the adapter
 	// knows where it ends; zero otherwise.
 	EndLine int
+	// CodeLines counts the lines of the declaration's own source that hold
+	// code: not blank, not comment-only and not a docstring. The adapter's
+	// own lexer or parser counts them; zero means unknown. A module counts
+	// its whole file.
+	CodeLines int
 	// Directory is an adapter-observed repository directory for a package or
 	// module. It remains available when that boundary has no source file.
 	Directory string
@@ -483,6 +488,7 @@ type Object struct {
 	ContainerID string          `json:"container_id,omitempty"`
 	Location    *Location       `json:"location,omitempty"`
 	EndLine     int             `json:"end_line,omitempty"`
+	CodeLines   int             `json:"code_lines,omitempty"`
 	Directory   string          `json:"directory,omitempty"`
 	External    *ExternalSymbol `json:"external,omitempty"`
 	Aliases     []Alias         `json:"aliases,omitempty"`
@@ -1013,7 +1019,7 @@ func New(input Input) (Index, error) {
 		object := Object{
 			ID: id, SourceRef: value.SourceRef,
 			Kind: value.Kind, Name: value.Name, Visibility: value.Visibility,
-			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, Directory: value.Directory,
+			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Directory: value.Directory,
 			External: cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases),
 		}
 		index.Objects = append(index.Objects, object)
@@ -1729,7 +1735,7 @@ func validateObjectInput(value ObjectInput) error {
 	if !validText(value.SourceRef) || !value.Kind.Valid() || !validText(value.Name) ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerRef) ||
 		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
-		!validAliases(canonicalAliases(value.Aliases)) || !validEndLine(value.Location, value.EndLine) {
+		!validAliases(canonicalAliases(value.Aliases)) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) {
 		return fmt.Errorf("program index: invalid object input")
 	}
 	for _, typed := range append(append([]TypedNameInput(nil), value.Parameters...), value.Results...) {
@@ -1747,7 +1753,7 @@ func validateObject(value Object) error {
 	if !validCompactID(value.ID, "n") || !value.Kind.Valid() || !validText(value.Name) || !value.Visibility.Valid() ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerID) ||
 		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
-		!validAliases(value.Aliases) || !validEndLine(value.Location, value.EndLine) {
+		!validAliases(value.Aliases) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) {
 		return fmt.Errorf("program index: invalid object")
 	}
 	for _, typed := range append(append([]TypedName(nil), value.Parameters...), value.Results...) {
@@ -2688,6 +2694,21 @@ func locationKey(value *Location) string {
 // validEndLine accepts no end, or an end at or after the declaration's line.
 func validEndLine(location *Location, endLine int) bool {
 	return endLine == 0 || location != nil && endLine >= location.Line
+}
+
+// validCodeLines accepts no count, or a count of a located declaration that
+// fits in its source range when the range is known.
+func validCodeLines(location *Location, endLine, codeLines int) bool {
+	switch {
+	case codeLines == 0:
+		return true
+	case codeLines < 0 || location == nil:
+		return false
+	case endLine > 0:
+		return codeLines <= endLine-location.Line+1
+	default:
+		return true
+	}
 }
 
 func validOptionalLocation(value *Location) bool {

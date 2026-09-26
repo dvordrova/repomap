@@ -3,8 +3,11 @@ package surfacediscovery
 import (
 	"fmt"
 	"go/ast"
+	"go/scanner"
 	"go/token"
 	"go/types"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -248,6 +251,7 @@ func (a *analyzer) captureCoreObjectFile(
 					Kind: coreObjectTypeKind(object), Package: packagePath, Name: object.Name(),
 					Signature: typeHeader(object),
 					Exported:  object.Exported(), Location: location, EndLine: a.location(typeSpec.End()).Line,
+					CodeLines: a.codeLines(object.Pos(), typeSpec.End()),
 				})
 				if _, ok := typeSpec.Type.(*ast.StructType); ok {
 					structure, ok := types.Unalias(object.Type()).Underlying().(*types.Struct)
@@ -344,8 +348,9 @@ func (a *analyzer) captureCoreObjectFile(
 			input.Callables = append(input.Callables, gocoreobject.CallableDeclaration{
 				Kind: kind, Package: packagePath, Name: object.Name(), Receiver: receiver,
 				Signature: types.TypeString(signature, packageQualifier), Exported: object.Exported(),
-				Location: location, EndLine: a.location(value.End()).Line, DirectCallNodeID: directCallNodeID,
-				Parameters: typedNames(signature.Params()), Results: typedNames(signature.Results()),
+				Location: location, EndLine: a.location(value.End()).Line, CodeLines: a.codeLines(object.Pos(), value.End()),
+				DirectCallNodeID: directCallNodeID,
+				Parameters:       typedNames(signature.Params()), Results: typedNames(signature.Results()),
 			})
 		}
 	}
@@ -407,6 +412,72 @@ func coreObjectTypeKind(object *types.TypeName) gocoreobject.TypeKind {
 	default:
 		return gocoreobject.TypeNamed
 	}
+}
+
+// codeLines counts the lines from start's line to end's line that hold a
+// token outside comments, by go/scanner over the file's own source: blank and
+// comment-only lines, doc comments included, do not count. It is zero, unknown,
+// for a file the loader did not read from the repository as it is, such as
+// cgo's rewritten source.
+func (a *analyzer) codeLines(start, end token.Pos) int {
+	file := a.program.Fset.File(start)
+	if file == nil || !end.IsValid() || a.program.Fset.File(end) != file {
+		return 0
+	}
+	lines := a.sourceCodeLines(file)
+	if lines == nil {
+		return 0
+	}
+	count := 0
+	for line, last := file.Line(start), file.Line(end); line <= last; line++ {
+		if lines[line] {
+			count++
+		}
+	}
+	return count
+}
+
+// sourceCodeLines scans one repository file once.
+func (a *analyzer) sourceCodeLines(file *token.File) map[int]bool {
+	name := file.Name()
+	if lines, scanned := a.codeLineFiles[name]; scanned {
+		return lines
+	}
+	if a.codeLineFiles == nil {
+		a.codeLineFiles = make(map[string]map[int]bool)
+	}
+	a.codeLineFiles[name] = nil
+	relative, err := filepath.Rel(a.root, name)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return nil
+	}
+	source, err := os.ReadFile(name)
+	if err != nil || len(source) != file.Size() {
+		return nil
+	}
+	own := token.NewFileSet().AddFile(name, -1, len(source))
+	var reading scanner.Scanner
+	// Without ScanComments the scanner skips every comment.
+	reading.Init(own, source, nil, 0)
+	lines := make(map[int]bool)
+	for {
+		position, kind, literal := reading.Scan()
+		if kind == token.EOF {
+			break
+		}
+		if kind == token.SEMICOLON && literal == "\n" {
+			continue // an inserted semicolon is no token of the source
+		}
+		first, last := own.Line(position), own.Line(position)
+		if (kind == token.STRING || kind == token.CHAR) && len(literal) > 0 {
+			last = own.Line(position + token.Pos(len(literal)-1))
+		}
+		for line := first; line <= last; line++ {
+			lines[line] = true
+		}
+	}
+	a.codeLineFiles[name] = lines
+	return lines
 }
 
 func (a *analyzer) coreObjectLocation(position token.Pos) (gocoreobject.Location, error) {

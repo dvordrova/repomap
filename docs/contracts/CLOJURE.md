@@ -48,6 +48,14 @@ or protocol has no declaration of its own to move with its type; this
 equivalent of a Go method declared outside its type's file is recorded as
 missing, not fabricated.
 
+Each var carries `code_lines`: the lines of its form holding a character
+outside `;` comments and outside the docstring of an `ns`, `defn`, `defn-`,
+`defmacro`, `defmulti` or `defprotocol` form (the reader's own docstring
+spans); a namespace counts its whole file. Since `defmethod` is no
+declaration, the in-file repeat the fixture asserts is a `declare` and its
+`defn` (`example.core/shout` in `src/example/core.clj`, 1 and 4 code lines),
+which the map of parts reads as one unit.
+
 ## Handler tables and stored callbacks
 
 These are the Clojure equivalents of the C adapter's command table, its

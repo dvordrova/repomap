@@ -27,12 +27,14 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		Sources: []p.TargetSource{{FileRef: target.ManifestFileRef, Path: target.ManifestPath}},
 	}}
 	sources := map[string]source{}
+	codeLines := map[string]map[int]bool{}
 	for _, file := range target.Files {
 		data, err := repository.ReadFileAll(file.ID)
 		if err != nil {
 			return nil, err
 		}
 		sources[file.Path] = newSource(data.Bytes)
+		codeLines[file.Path] = sources[file.Path].codeLines()
 	}
 	valid := func(s site) bool { _, ok := sources[s.Filename]; return ok && s.Lang != "cljs" && s.Row > 0 }
 	location := func(s site) *p.Location { return &p.Location{Path: s.Filename, Line: s.Row, Column: s.Col} }
@@ -68,7 +70,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			continue
 		}
 		ref := fmt.Sprintf("namespace:%s:%d:%s", ns.Filename, ns.Row, ns.Name)
-		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: p.ObjectModule, Name: ns.Name, Visibility: p.VisibilityPublic, Directory: path.Dir(ns.Filename), Location: location(ns.site)}
+		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: p.ObjectModule, Name: ns.Name, Visibility: p.VisibilityPublic, Directory: path.Dir(ns.Filename), Location: location(ns.site), CodeLines: len(codeLines[ns.Filename])}
 		namespaces[ns.Name] = append(namespaces[ns.Name], ref)
 		fileModules[ns.Filename] = ref
 	}
@@ -77,7 +79,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			return
 		}
 		ref := "namespace:" + at.Filename + ":" + name
-		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: p.ObjectModule, Name: name, Visibility: p.VisibilityPublic, Directory: path.Dir(at.Filename), Location: location(at)}
+		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: p.ObjectModule, Name: name, Visibility: p.VisibilityPublic, Directory: path.Dir(at.Filename), Location: location(at), CodeLines: len(codeLines[at.Filename])}
 		fileModules[at.Filename] = ref
 		namespaces[name] = append(namespaces[name], ref)
 	}
@@ -119,7 +121,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if len(d.Arglists) > 0 {
 			signature += " " + strings.Join(d.Arglists, " ")
 		}
-		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: kind, Name: d.NS + "/" + d.Name, Visibility: visibility, Signature: signature, OwnerRef: owner, ContainerRef: owner, Location: location(d.site), EndLine: d.EndRow}
+		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: kind, Name: d.NS + "/" + d.Name, Visibility: visibility, Signature: signature, OwnerRef: owner, ContainerRef: owner, Location: location(d.site), EndLine: d.EndRow, CodeLines: countLines(codeLines[d.Filename], d.Row, d.EndRow)}
 		vars[d.NS+"/"+d.Name] = append(vars[d.NS+"/"+d.Name], ref)
 		definitions[d.Filename] = append(definitions[d.Filename], d)
 		if d.Name == "-main" && kind == p.ObjectFunction {

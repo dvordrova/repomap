@@ -9,6 +9,7 @@ import (
 	"github.com/dvordrova/repomap/internal/clojureproject"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
 	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
@@ -37,6 +38,11 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// go/scanner counts each init's own lines of code: not its doc comment,
+	// the comment inside or the blank line.
+	adaptertest.AssertDeclarationCodeLines(t, graph, "internal/localstore/ledger.go", map[string][]int{
+		"Ledger": {1}, "Ledger.Keys": {1}, "init": {4, 1},
+	})
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "library", Name: index.Target.Name, Root: "."}, root)
 	ledger := checked.Symbols[[2]string{"internal/localstore/ledger.go", "Ledger"}]
 	appendMethod := checked.Symbols[[2]string{"internal/localstore/ledger_append.go", "Ledger.Append"}]
@@ -114,6 +120,11 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 	if seen != 2 {
 		t.Fatalf("exports.py declarations seen: %d", seen)
 	}
+	// tokenize counts code lines outside the docstring, the comment and the
+	// blank line; an overload stub is its one line.
+	adaptertest.AssertDeclarationCodeLines(t, graph, "src/fixture_app/generic_types.py", map[string][]int{
+		"pick": {1, 1, 3}, "first": {2},
+	})
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root)
 	// A function nested in another takes its parent's part.
 	outer := checked.Symbols[[2]string{"src/fixture_app/http_registrations.py", "register_route"}]
@@ -141,6 +152,11 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The reader counts code lines outside the docstring, the ;; comment and
+	// the blank line.
+	adaptertest.AssertDeclarationCodeLines(t, graph, "src/example/core.clj", map[string][]int{
+		"example.core/shout": {1, 4}, "example.core/loud-greeting": {2},
+	})
 	partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "clojure", Kind: "executable", Name: index.Target.Name, Root: "."}, root)
 }
 
@@ -155,6 +171,11 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The lexer skips the comment inside bgsaveCommand; strings holding
+	// "//" or "/*" stay code.
+	adaptertest.AssertDeclarationCodeLines(t, graph, "kvd.c", map[string][]int{
+		"bgsaveCommand": {17}, "processCommand": {12},
+	})
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
 	for _, declaration := range [][2]string{{"kvd.c", "main"}, {"loop_poll.c", "loopApiPoll"}, {"strbuf.h", "sbAvail"}, {"kvd.h", "kvClient"}} {
 		if checked.Symbols[declaration] == "" {

@@ -297,7 +297,7 @@ func (projection *goProjection) projectObjects() error {
 			SourceRef: declaration.ID, Kind: programindex.ObjectType, Name: declaration.Name,
 			Signature:  declaration.Signature,
 			Visibility: visibility(declaration.Exported), OwnerRef: packageRef, ContainerRef: packageRef,
-			Location: location, EndLine: declaration.EndLine,
+			Location: location, EndLine: declaration.EndLine, CodeLines: declaration.CodeLines,
 		}); err != nil {
 			return err
 		}
@@ -350,7 +350,7 @@ func (projection *goProjection) projectObjects() error {
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: declaration.ID, Kind: kind, Name: declaration.Name,
 			Visibility: visibility(declaration.Exported), Signature: shortSignature(declaration.Signature),
-			OwnerRef: ownerRef, ContainerRef: containerRef, Location: location, EndLine: declaration.EndLine,
+			OwnerRef: ownerRef, ContainerRef: containerRef, Location: location, EndLine: declaration.EndLine, CodeLines: declaration.CodeLines,
 			Parameters: projection.typedNames(declaration.Parameters), Results: projection.typedNames(declaration.Results),
 		}); err != nil {
 			return err

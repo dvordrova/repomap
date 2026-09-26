@@ -59,6 +59,10 @@ type analyzer struct {
 
 	packageLoadCalls int
 	ssaBuilds        int
+
+	// codeLineFiles holds, per repository source file, the lines holding a
+	// token outside comments.
+	codeLineFiles map[string]map[int]bool
 }
 
 // AnalyzeContextWithInput loads one sealed target boundary and projects all

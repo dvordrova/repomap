@@ -10,6 +10,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/reading/partstest"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gitfiles"
+	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 )
 
 // The TypeScript parts request carries code structure only, and every
@@ -40,6 +41,11 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The compiler's tokens hold code lines; the JSDoc, the comment inside
+	// and the blank line do not. An overload signature is its one line.
+	adaptertest.AssertDeclarationCodeLines(t, graph, "src/type-members.ts", map[string][]int{
+		"pick": {1, 1, 3}, "firstOf": {3},
+	})
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "typescript", Kind: "application", Name: index.Target.Name, Root: "."}, root)
 	parent := checked.Symbols[[2]string{"src/platform.ts", "SimulationField"}]
 	var child string

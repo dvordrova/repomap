@@ -86,7 +86,9 @@ type builder struct {
 	repository *corpus.Corpus
 	parsed     *Parsed
 	sources    map[string][]byte
-	scopes     []*unitScope
+	// lines are, per source file, the lines holding code (codeLines).
+	lines  map[string]map[int]bool
+	scopes []*unitScope
 
 	objects   map[string]*p.ObjectInput
 	relations []p.RelationInput
@@ -181,8 +183,105 @@ func positionKey(position Position) string {
 
 func (b *builder) add(object p.ObjectInput) {
 	if _, exists := b.objects[object.SourceRef]; !exists {
+		object.CodeLines = b.codeLinesOf(object)
 		b.objects[object.SourceRef] = &object
 	}
+}
+
+// codeLinesOf counts the code lines of a declaration's source range, or of a
+// module's whole file; zero, unknown, without a located range.
+func (b *builder) codeLinesOf(object p.ObjectInput) int {
+	at := object.Location
+	if at == nil || isAbsolute(at.Path) {
+		return 0
+	}
+	lines, ok := b.lines[at.Path]
+	if !ok {
+		lines = codeLines(b.source(at.Path))
+		if b.lines == nil {
+			b.lines = map[string]map[int]bool{}
+		}
+		b.lines[at.Path] = lines
+	}
+	if object.Kind == p.ObjectModule {
+		return len(lines)
+	}
+	if object.EndLine == 0 {
+		return 0
+	}
+	count := 0
+	for line := at.Line; line <= object.EndLine; line++ {
+		if lines[line] {
+			count++
+		}
+	}
+	return count
+}
+
+// codeLines are the lines of a C source holding code: a character outside
+// comments that is not blank. String and character literals are code and
+// end at an unescaped newline; a backslash-newline continues a // comment
+// onto the next line; preprocessor lines are code.
+func codeLines(source []byte) map[int]bool {
+	lines := map[int]bool{}
+	line := 1
+	continued := func(at int) bool { // source[at] is '\n'
+		back := at - 1
+		if back >= 0 && source[back] == '\r' {
+			back--
+		}
+		return back >= 0 && source[back] == '\\'
+	}
+	for at := 0; at < len(source); at++ {
+		switch c := source[at]; {
+		case c == '\n':
+			line++
+		case c == '/' && at+1 < len(source) && source[at+1] == '/':
+			for at+1 < len(source) {
+				if source[at+1] == '\n' {
+					if !continued(at + 1) {
+						break
+					}
+					line++
+				}
+				at++
+			}
+		case c == '/' && at+1 < len(source) && source[at+1] == '*':
+			for at += 2; at < len(source); at++ {
+				if source[at] == '\n' {
+					line++
+				}
+				if source[at] == '*' && at+1 < len(source) && source[at+1] == '/' {
+					at++
+					break
+				}
+			}
+		case c == '"' || c == '\'':
+			lines[line] = true
+			for at+1 < len(source) {
+				at++
+				if source[at] == '\n' {
+					line++
+					break
+				}
+				lines[line] = true
+				if source[at] == '\\' && at+1 < len(source) {
+					at++
+					if source[at] == '\n' {
+						line++
+					}
+					continue
+				}
+				if source[at] == c {
+					break
+				}
+			}
+		case c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v':
+		default:
+			lines[line] = true
+		}
+	}
+	return lines
 }
 
 func visibility(internal bool) p.Visibility {

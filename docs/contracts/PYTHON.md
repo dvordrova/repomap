@@ -204,6 +204,14 @@ which have no type-parameter field. A PEP 695 `type Pair[T] = ...` statement is
 not indexed as a declaration yet; that gap remains open. See
 [Go](GO.md#owned-declarations) for the equivalents.
 
+Functions and classes carry `code_lines`: the lines of `lineno..end_lineno`
+holding a `tokenize` token that is not a comment, outside every docstring
+statement's span (decorator lines are outside the range). A module counts its
+whole file; a module or class variable counts its assignment statement. The
+same file's `pick` has two `@overload` stubs and an implementation, three
+declarations of one name the map of parts reads as one unit; the
+implementation's docstring, comment and blank line leave it 3 code lines.
+
 ## Framework-neutral registrations
 
 The original AST call site, result identity, positional/keyword arguments and callback targets remain separate. `Thread(target=...)`, async-task and supported schedule registrations preserve their written activation evidence. A later `start`, `join` or liveness check on that same result does not invent a callback call. Lifespan setup and finite retry loops remain negative controls; final scheduled/continuous roles belong to [operation review](READING.md#operation-ownership).

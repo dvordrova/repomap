@@ -1,13 +1,45 @@
 import ast
 import base64
 import hashlib
+import io
 import json
 import sys
+import tokenize
 
 
 def stable_ref(domain, *parts):
     wire = json.dumps([domain, *parts], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return "python-source-" + hashlib.sha256(wire).hexdigest()[:32]
+
+
+def code_line_set(content, tree):
+    """The lines of a module holding code: a token that is not a comment,
+    outside every docstring (the first statement string of a module, class or
+    function). Only line spans are read, never the text."""
+    documented = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                documented.update(range(first.lineno, first.end_lineno + 1))
+    skipped = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT,
+               tokenize.ENCODING, tokenize.ENDMARKER}
+    lines = set()
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(content).readline):
+            if token.type in skipped:
+                continue
+            for row in range(token.start[0], token.end[0] + 1):
+                if row not in documented:
+                    lines.add(row)
+    except (tokenize.TokenError, SyntaxError):
+        return frozenset()
+    return frozenset(lines)
+
+
+def code_lines_between(tree, first, last):
+    lines = getattr(tree, "repomap_code_lines", frozenset())
+    return sum(1 for row in lines if first <= row <= last)
 
 
 def source_location(path, node):
@@ -365,12 +397,14 @@ class Analyzer:
                 self.module_aliases[name] = module["name"]
             decoded.append(module)
             kind = "package" if module["package"] else "module"
+            module_lines = len(getattr(tree, "repomap_code_lines", ()))
             self.add_object({
                 "source_ref": module["source_ref"],
                 "kind": kind,
                 "name": module["name"],
                 "visibility": visibility(module["name"].split(".")[-1]),
                 "location": {"path": path, "line": 1, "column": 1},
+                **({"code_lines": module_lines} if module_lines else {}),
             }, module["name"])
             for alias in names:
                 self.objects_by_qname[alias] = module["source_ref"]
@@ -488,6 +522,28 @@ class Collector(ast.NodeVisitor):
         self.module = module
         self.scope = scope
         self.conditional_depth = 0
+        self.statement = None
+
+    def visit(self, node):
+        if not isinstance(node, ast.stmt):
+            return super().visit(node)
+        previous, self.statement = self.statement, node
+        try:
+            return super().visit(node)
+        finally:
+            self.statement = previous
+
+    def code_lines(self, first, last):
+        count = code_lines_between(self.module["tree"], first, last)
+        return {"code_lines": count} if count else {}
+
+    def variable_code_lines(self):
+        # A module or class variable counts the lines of the assignment that
+        # binds it; a local variable follows its callable.
+        statement = self.statement
+        if self.scope.kind not in ("module", "type") or not isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            return {}
+        return self.code_lines(statement.lineno, getattr(statement, "end_lineno", statement.lineno))
 
     def record_export(self, name, binding=None):
         if self.scope.kind != "module":
@@ -526,6 +582,7 @@ class Collector(ast.NodeVisitor):
             **({"signature": signature} if signature else {}),
             "container_ref": self.scope.ref,
             "location": source_location(self.module["path"], node),
+            **self.variable_code_lines(),
         }, qname)
         self.scope.bindings[name] = {"kind": "object", "ref": ref}
         self.analyzer.node_refs[id(node)] = ref
@@ -629,6 +686,7 @@ class Collector(ast.NodeVisitor):
             "container_ref": parent.ref,
             "location": source_location(self.module["path"], node),
             "end_line": getattr(node, "end_lineno", 0),
+            **self.code_lines(node.lineno, getattr(node, "end_lineno", node.lineno)),
         }, qname)
         parent.bindings[node.name] = {"kind": "object", "ref": ref}
         self.analyzer.node_refs[id(node)] = ref
@@ -674,6 +732,7 @@ class Collector(ast.NodeVisitor):
             "container_ref": parent.ref,
             "location": source_location(self.module["path"], node),
             "end_line": getattr(node, "end_lineno", 0),
+            **self.code_lines(node.lineno, getattr(node, "end_lineno", node.lineno)),
         }, qname)
         parent.bindings[node.name] = {"kind": "object", "ref": ref}
         self.analyzer.node_refs[id(node)] = ref
@@ -2132,6 +2191,7 @@ def parse_sources(rows):
             attach_control_context(parsed[path], path)
         except (SyntaxError, ValueError):
             raise ValueError("module %s has invalid Python syntax" % path)
+        parsed[path].repomap_code_lines = code_line_set(content, parsed[path])
     if not parsed:
         raise ValueError("source inventory is empty")
     return parsed

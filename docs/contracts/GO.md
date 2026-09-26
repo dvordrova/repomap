@@ -218,6 +218,13 @@ a file holding only such methods has no unit of its own
 closure (`f$1`) has no native parent in the index (its container is the
 package); the map of parts finds it as a lexical child by source range.
 
+Each type and callable carries `code_lines`: the lines from its name to its
+end that hold a `go/scanner` token, so its doc comment, comment-only lines and
+blank lines are not counted (a file the loader did not read as it is, such as
+cgo's rewritten source, gives zero, unknown). A package may declare `init`
+more than once; `internal/localstore/ledger.go` declares two, which the map of
+parts reads as one unit, and asserts their code lines (4 and 1).
+
 ## Source-aware diagnostics
 
 The etcd report exposed a shared-root ownership defect: the first target at a

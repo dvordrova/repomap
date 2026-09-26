@@ -98,6 +98,12 @@ boundary excludes member bodies while keeping braces inside generic types.
 This native kind reaches the same ProgramIndex and question evidence; Python
 already preserves its class header.
 
+Every declaration carries `code_lines`: the lines from its name to its end that
+hold a compiler token, so JSDoc and other comment trivia and blank lines are
+not counted; a module counts its whole file. `src/type-members.ts`'s `pick`
+has two overload signatures and an implementation (3 code lines), one name the
+map of parts reads as one unit.
+
 ## Declared value references
 
 Compiler-bound reads of local declarations enter ProgramIndex at each original

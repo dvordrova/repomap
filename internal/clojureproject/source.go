@@ -183,6 +183,98 @@ func clojureString(value string) (string, error) {
 	return strconv.Unquote(strings.ReplaceAll(strings.ReplaceAll(value, "\n", `\n`), "\r", `\r`))
 }
 
+// codeLines are the lines of the source that hold code: a character that is
+// not blank, not a comma and not in a `;` comment, outside the docstrings
+// Docstrings reads. A string spanning lines holds each of them; a `\;`
+// character literal and a `;` inside a string are code.
+func (s source) codeLines() map[int]bool {
+	documented := map[int]bool{}
+	for _, span := range s.docstringSpans() {
+		for at := span[0]; at < span[1]; at++ {
+			documented[at] = true
+		}
+	}
+	lines := map[int]bool{}
+	line := 1
+	mark := func(at int) {
+		if !documented[at] {
+			lines[line] = true
+		}
+	}
+	text := s.text
+	for at := 0; at < len(text); at++ {
+		switch c := text[at]; {
+		case c == '\n':
+			line++
+		case c == ';':
+			for at+1 < len(text) && text[at+1] != '\n' {
+				at++
+			}
+		case c == '"':
+			mark(at)
+			for at+1 < len(text) {
+				at++
+				if text[at] == '\n' {
+					line++
+				}
+				mark(at)
+				if text[at] == '\\' && at+1 < len(text) {
+					at++
+					if text[at] == '\n' {
+						line++
+					}
+					continue
+				}
+				if text[at] == '"' {
+					break
+				}
+			}
+		case c == '\\':
+			mark(at)
+			if at+1 < len(text) && text[at+1] != '\n' {
+				at++
+			}
+		case unicode.IsSpace(c) || c == ',':
+		default:
+			mark(at)
+		}
+	}
+	return lines
+}
+
+// docstringSpans are the rune spans of the docstrings of the top-level
+// definition forms Docstrings reads.
+func (s source) docstringSpans() [][2]int {
+	nodes, _ := forms(s.text, 0, 0)
+	var spans [][2]int
+	for _, node := range nodes {
+		if len(node.children) < 3 || s.text[node.start] != '(' {
+			continue
+		}
+		head := node.children[0]
+		switch string(s.text[head.start:head.end]) {
+		case "ns", "defn", "defn-", "defmacro", "defmulti", "defprotocol", "clojure.core/defn":
+		default:
+			continue
+		}
+		if quote := node.children[2]; s.text[quote.start] == '"' {
+			spans = append(spans, [2]int{quote.start, quote.end})
+		}
+	}
+	return spans
+}
+
+// countLines counts the lines from first to last that hold code.
+func countLines(lines map[int]bool, first, last int) int {
+	count := 0
+	for line := first; line <= last; line++ {
+		if lines[line] {
+			count++
+		}
+	}
+	return count
+}
+
 // Documentation is a literal author quote attached to its declaration line.
 type Documentation struct {
 	Line int

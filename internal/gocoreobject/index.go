@@ -87,14 +87,17 @@ type Location struct {
 }
 
 type TypeDeclaration struct {
-	ID        string             `json:"id"`
-	Kind      TypeKind           `json:"kind"`
-	Package   string             `json:"package"`
-	Name      string             `json:"name"`
-	Signature string             `json:"signature"`
-	Exported  bool               `json:"exported"`
-	Location  Location           `json:"location"`
-	EndLine   int                `json:"end_line,omitempty"`
+	ID        string   `json:"id"`
+	Kind      TypeKind `json:"kind"`
+	Package   string   `json:"package"`
+	Name      string   `json:"name"`
+	Signature string   `json:"signature"`
+	Exported  bool     `json:"exported"`
+	Location  Location `json:"location"`
+	EndLine   int      `json:"end_line,omitempty"`
+	// CodeLines counts the lines of the declaration's source range that hold
+	// a token outside comments, by go/scanner; zero is unknown.
+	CodeLines int                `json:"code_lines,omitempty"`
 	Fields    []FieldDeclaration `json:"fields,omitempty"`
 }
 
@@ -120,6 +123,7 @@ type CallableDeclaration struct {
 	Exported         bool         `json:"exported"`
 	Location         Location     `json:"location"`
 	EndLine          int          `json:"end_line,omitempty"`
+	CodeLines        int          `json:"code_lines,omitempty"`
 	DirectCallNodeID string       `json:"direct_call_node_id,omitempty"`
 	// Parameters and Results are the signature's values in order, each with
 	// the named type it carries when one does (through pointers and slices).
@@ -375,6 +379,9 @@ func (index Index) Validate() error {
 		}
 		if declaration.EndLine != 0 && declaration.EndLine < declaration.Location.Line {
 			return fmt.Errorf("go core object index: callable ends before it starts")
+		}
+		if declaration.CodeLines < 0 || declaration.EndLine != 0 && declaration.CodeLines > declaration.EndLine-declaration.Location.Line+1 {
+			return fmt.Errorf("go core object index: callable has more code lines than its range")
 		}
 		if _, duplicate := callableIDs[declaration.ID]; duplicate {
 			return fmt.Errorf("go core object index: duplicate callable declaration")

@@ -30,7 +30,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 16
+	GraphVersion = 17
 	Version      = 11
 
 	GraphFilename    = "places.json"
@@ -179,8 +179,12 @@ type Decl struct {
 	LineNo int    `json:"line_no"`
 	Column int    `json:"column,omitempty"`
 	// EndLine is the declaration's last line when the adapter knows it.
-	EndLine  int  `json:"end_line,omitempty"`
-	Exported bool `json:"exported"`
+	EndLine int `json:"end_line,omitempty"`
+	// CodeLines counts the lines of its source range that hold code, not
+	// blank, comment-only or docstring lines, as the adapter counts them; a
+	// module counts its whole file. Zero is unknown.
+	CodeLines int  `json:"code_lines,omitempty"`
+	Exported  bool `json:"exported"`
 	// FanIn counts distinct callers of this declaration in the graph.
 	FanIn int `json:"fan_in"`
 	// ObjectID keeps the program-index identity for the page's anchors. It is
@@ -392,8 +396,12 @@ type Graph struct {
 	Edges    []Edge  `json:"edges"`
 	// Seeds are the file place IDs where execution can begin, over every
 	// target of the run.
-	Seeds  []string `json:"seeds"`
-	SHA256 string   `json:"sha256"`
+	Seeds []string `json:"seeds"`
+	// SeedDecls are the symbol places of the declarations execution begins
+	// in, where the launch fact names one: a file's endpoint may be several
+	// parts when the file's code is split between them.
+	SeedDecls []string `json:"seed_decls"`
+	SHA256    string   `json:"sha256"`
 }
 
 // Atlas is atlas.json: the one artifact the page reads.
@@ -823,6 +831,7 @@ func compactGraphPlaceIDs(graph Graph) (Graph, error) {
 		owned.Edges[position].To = mapID(owned.Edges[position].To)
 	}
 	mapIDs(owned.Seeds)
+	mapIDs(owned.SeedDecls)
 	sort.Slice(owned.Places, func(i, j int) bool { return placeIDLess(owned.Places[i].ID, owned.Places[j].ID) })
 	// Equal endpoints and kinds keep the producer's deterministic evidence
 	// order. An unstable sort is allowed to reshuffle those otherwise equal
@@ -1167,6 +1176,11 @@ func validateGraph(graph Graph) error {
 	for _, seed := range graph.Seeds {
 		if kind, ok := seen[seed]; !ok || kind != PlaceFile {
 			return fmt.Errorf("atlas: seed %q is not a file place", seed)
+		}
+	}
+	for _, seed := range graph.SeedDecls {
+		if kind, ok := seen[seed]; !ok || kind != PlaceSymbol {
+			return fmt.Errorf("atlas: seed declaration %q is not a symbol place", seed)
 		}
 	}
 	return nil

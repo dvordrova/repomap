@@ -41,6 +41,17 @@ ProgramIndex retains:
   `{format, name}` pairs, such as a field's JSON key;
 - a declaration's `end_line`, the last line of its source, when the adapter
   knows it;
+- a declaration's `code_lines`: how many lines from its located line to its
+  `end_line` hold code, never a blank, comment-only or docstring line, counted
+  by the adapter's own lexer or parser (Go `go/scanner`, Python `tokenize`
+  with the docstring statements' spans, JS/TS the compiler's tokens without
+  comment trivia, Clojure the reader's `;` comments and definition
+  docstrings, C a lexer over comments, string and character literals and
+  backslash continuations with preprocessor lines as code). A module counts
+  its whole file; a Python module or class variable counts its assignment
+  statement. Zero is unknown and is never shown as a count; validation
+  refuses a negative count, a count without a location or one larger than the
+  located range;
 - a callable's `parameters` and `results` in order, each `{name, type,
   type_id}`: the type as short text and, when the value carries a repository
   type (through pointers, slices and arrays in Go; `list[X]`/`Optional[X]` in
@@ -137,7 +148,12 @@ external-call observations together. Each saved target decodes once. Shared
 native parsing is an in-memory producer optimization and never changes the
 persisted graph or introduces a reconstruction cache.
 Seed locations are resolved against the complete file inventory before depths
-are assigned. Performance changes must preserve sealed graph content independently of any concurrent semantic change.
+are assigned. The graph (v17) keeps both the seed files (`seeds`) and, where a
+launch fact names a declaration that is one of its symbol places, that
+declaration (`seed_decls`): a file whose code the map of parts splits between
+several parts has no one part, and the entry is then located by the part that
+holds its seed declaration. Each declaration carries its adapter's
+`code_lines`. Performance changes must preserve sealed graph content independently of any concurrent semantic change.
 
 ## Callable identity and observations
 

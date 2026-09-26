@@ -188,7 +188,7 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef: declaration.Ref, Kind: kind, Name: declarationDisplayName(declaration, declarationByRef), Visibility: visibility,
 			Signature: declaration.Signature, OwnerRef: declaration.OwnerRef, ContainerRef: container, Location: programLocation(declaration.Location),
-			EndLine:    declaration.EndLine,
+			EndLine: declaration.EndLine, CodeLines: declaration.CodeLines,
 			Parameters: typedInputs(declaration.Parameters, declarationByRef), Results: typedInputs(declaration.Results, declarationByRef),
 		})
 	}

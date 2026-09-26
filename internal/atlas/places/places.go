@@ -97,6 +97,7 @@ func Build(input Input) (atlas.Graph, error) {
 		readmes:           make(map[string]corpus.Entry),
 		entries:           make(map[string]corpus.Entry),
 		seeds:             make(map[string]struct{}),
+		seedDecls:         make(map[string]struct{}),
 		targetOf:          make(map[string]map[string]struct{}),
 		bounds:            make(map[boundaryKey]*boundaryState),
 		workspace:         make(map[string]struct{}),
@@ -223,6 +224,7 @@ type builder struct {
 	readmes           map[string]corpus.Entry
 	entries           map[string]corpus.Entry
 	seeds             map[string]struct{}
+	seedDecls         map[string]struct{} // symbol places of seed declarations
 	targetOf          map[string]map[string]struct{}
 	bounds            map[boundaryKey]*boundaryState
 	symbols           []atlas.Place
@@ -405,6 +407,7 @@ func (b *builder) collectObjects(target TargetInput) {
 			LineNo:    object.Location.Line,
 			Column:    object.Location.Column,
 			EndLine:   object.EndLine,
+			CodeLines: object.CodeLines,
 			Exported:  object.Visibility == programindex.VisibilityPublic,
 			ObjectID:  scopedID,
 		})
@@ -624,6 +627,11 @@ func (b *builder) collectImports(target TargetInput) {
 
 func (b *builder) collectSeeds(target TargetInput) {
 	for _, seed := range target.Index.Target.Seeds {
+		// The declaration execution begins in, when it is one of the
+		// graph's symbol places, locates the entry inside its file.
+		if symbol := b.symbolOf[seed.ObjectID]; symbol != "" {
+			b.seedDecls[symbol] = struct{}{}
+		}
 		if filePath, ok := b.fileOf[seed.ObjectID]; ok {
 			b.seeds[filePath] = struct{}{}
 			continue
@@ -1912,6 +1920,13 @@ func (b *builder) graph() (atlas.Graph, error) {
 		graph.Seeds = append(graph.Seeds, atlas.FileID(seed))
 	}
 	sort.Strings(graph.Seeds)
+	graph.SeedDecls = make([]string, 0, len(b.seedDecls))
+	for seed := range b.seedDecls {
+		if _, ok := known[seed]; ok {
+			graph.SeedDecls = append(graph.SeedDecls, seed)
+		}
+	}
+	sort.Strings(graph.SeedDecls)
 	return graph, nil
 }
 

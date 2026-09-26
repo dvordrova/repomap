@@ -154,6 +154,16 @@ seed.
 String-literal arguments are literal patterns (clang joins adjacent
 literals); loop context reuses the existing `control_context` words.
 
+Every object with a located range carries `code_lines`, counted by the
+adapter's own lexer: `//` and `/* */` comments are not code, a
+backslash-newline continues a `//` comment, string and character literals are
+code and end at an unescaped newline, and preprocessor lines are code; a
+module counts its whole file. C has no in-file repeated declaration name for
+the map of parts to merge: only a function's body is its declaration, a
+typedef merges with its record, a tentative definition is one variable and an
+`#if` alternative parses one branch. `kvd.c`'s `bgsaveCommand` (17 of its 18
+lines; one comment line) asserts the count.
+
 ## Facts and claims
 
 Config reads, SQL statements and registrations are the language-neutral facts

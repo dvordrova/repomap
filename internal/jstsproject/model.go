@@ -117,6 +117,9 @@ type Declaration struct {
 	OwnerRef          string   `json:"owner_ref,omitempty"`
 	Location          Location `json:"location"`
 	EndLine           int      `json:"end_line,omitempty"`
+	// CodeLines counts the lines of the declaration's range that hold a
+	// compiler token; a module counts its whole file. Zero is unknown.
+	CodeLines int `json:"code_lines,omitempty"`
 	// Parameters and Results carry the declaration each value's type names.
 	Parameters []TypedName `json:"parameters,omitempty"`
 	Results    []TypedName `json:"results,omitempty"`
