@@ -185,14 +185,21 @@ supports:
   `if replace_handler: handler = handle_delivery`; the argument keeps the
   variable and gains no callback of `handle_delivery`.
 
-A branch is an `if`, `try`, loop, `with`, `match`, conditional expression,
-boolean operator or comprehension of the name's own scope: a function declared
-under a branch keeps the exact calls of its own body, and an enclosed function
-reading the name sees the same unresolved value. A `def`, `class` or `import`
-of the same name in that scope is one more witness; on its own it does not make
-the name conditional. A module or class stored under a branch gives no
-attribute of either (`codec = json`, `if flag: codec = pickle`,
-`codec.dumps()` is unresolved).
+A branch is the body of an `if`, a loop, a `try` (not its `finally`), a `with`
+or a `match` case, an arm of a conditional expression, an operand of a boolean
+operator after the first, or a comprehension, in the name's own scope. The
+condition, the subject and the first operand always run, as the C adapter
+walks an if's condition and the left of `&&`: after
+`if (handler := accept_client) and ready:`, `handler()` stays exact. A function
+declared under a branch keeps the exact calls of its own body, and an enclosed
+function reading the name sees the same unresolved value. A `def`, `class` or
+`import` of the name in that scope is one more witness, and once the name is
+also assigned there, one under a branch makes it conditional too
+(`handler = flush_replies`, `if readable: def handler(): ...`). A call of an
+attribute of such a name is unresolved and names each module or class stored
+in it: after `codec = json` and `if flag: codec = pickle`, `codec.dumps()`
+names `json stored in codec` and `pickle stored in codec under a condition`,
+never `pickle.dumps`.
 
 Missing equivalents, recorded rather than fabricated:
 

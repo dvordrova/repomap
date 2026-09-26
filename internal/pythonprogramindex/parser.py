@@ -161,6 +161,7 @@ class Scope:
         # began separates a store under a branch of this scope from one that
         # merely sits in a function declared under a branch.
         self.stores = {}
+        self.branched = {}
         self.conditional_base = 0
 
     def binding(self, name):
@@ -512,15 +513,45 @@ class Collector(ast.NodeVisitor):
             self.scope.export_bindings[name] = binding or {"kind": "declaration"}
 
     def generic_visit(self, node):
-        # A conditional expression, a boolean operator and a comprehension
-        # decide whether an assignment expression inside them runs.
-        conditional = isinstance(node, (
-            ast.If, ast.Try, ast.While, ast.With, ast.AsyncWith, ast.Match,
-            ast.IfExp, ast.BoolOp, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp,
-        )) or type(node).__name__ == "TryStar"
+        # A comprehension decides whether an assignment expression inside it
+        # runs; the other branches below keep their condition unconditional.
+        conditional = isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp))
         self.conditional_depth += int(conditional)
         super().generic_visit(node)
         self.conditional_depth -= int(conditional)
+
+    def visit_branches(self, first, branches):
+        # The condition, the subject or the first operand always runs, as
+        # the C adapter walks an if's condition and the left of && and ||;
+        # what follows runs only when it decides so.
+        for value in first:
+            self.visit(value)
+        self.conditional_depth += 1
+        for value in branches:
+            self.visit(value)
+        self.conditional_depth -= 1
+
+    def visit_If(self, node):
+        self.visit_branches([node.test], node.body + node.orelse)
+
+    visit_While = visit_If
+
+    def visit_IfExp(self, node):
+        self.visit_branches([node.test], [node.body, node.orelse])
+
+    def visit_BoolOp(self, node):
+        self.visit_branches(node.values[:1], node.values[1:])
+
+    def visit_Match(self, node):
+        self.visit_branches([node.subject], node.cases)
+
+    def visit_Try(self, node):
+        # A finally body runs whenever the statement after the try does.
+        self.visit_branches([], node.body + node.handlers + node.orelse)
+        for statement in node.finalbody:
+            self.visit(statement)
+
+    visit_TryStar = visit_Try
 
     def object_ref(self, kind, qname, node):
         return stable_ref(
@@ -837,7 +868,9 @@ class Collector(ast.NodeVisitor):
                     if isinstance(target, ast.Name):
                         self.record_export(target.id)
                         self.scope.opaque_names.add(target.id)
-        self.generic_visit(node)
+        # A context manager may suppress an exception raised before a store
+        # in its body.
+        self.visit_branches(node.items, node.body)
 
     visit_AsyncWith = visit_With
 
@@ -1055,27 +1088,40 @@ class RelationVisitor(ast.NodeVisitor):
         return "unknown", ""
 
     def branch_stores(self, name):
-        """The assignments of a name in the scope that owns it, when one of
-        them is under a branch; otherwise none."""
+        """The stores of an assigned name in the scope that owns it, when one
+        of them is under a branch; otherwise none. A def, class or import
+        under a branch counts once the name is also assigned there."""
         owner = self.scope.owner(name)
-        stores = owner.stores.get(name, []) if owner is not None else []
-        return stores if any(store["conditional"] and not store.get("declaration") for store in stores) else []
+        if owner is None:
+            return []
+        if name not in owner.branched:
+            stores = owner.stores.get(name, [])
+            assigned = any(not store.get("declaration") for store in stores)
+            owner.branched[name] = stores if assigned and any(store["conditional"] for store in stores) else []
+        return owner.branched[name]
 
     def stored_function_witnesses(self, node):
         # A call through a name assigned under a branch names each function
         # those assignments store, as the C adapter names a pointer's stores.
-        if not isinstance(node, ast.Name):
+        # A call of an attribute of that name names each module or class
+        # stored in it.
+        root = node
+        while isinstance(root, ast.Attribute):
+            root = root.value
+        if not isinstance(root, ast.Name):
             return []
+        kinds = ("function", "method", "lambda", "type", "external_symbol")
+        if root is not node:
+            kinds += ("module", "package")
         witnesses = []
-        for store in self.branch_stores(node.id):
+        for store in self.branch_stores(root.id):
             if store["binding"] is None:
                 continue
             authority, ref = self.binding_target(store["binding"])
             candidate = self.object(ref) if ref else None
-            if authority == "unknown" or candidate is None or \
-                    candidate["kind"] not in ("function", "method", "lambda", "type", "external_symbol"):
+            if authority == "unknown" or candidate is None or candidate["kind"] not in kinds:
                 continue
-            detail = candidate["name"] + " stored in " + node.id
+            detail = candidate["name"] + " stored in " + root.id
             if store["conditional"]:
                 detail += " under a condition"
             witness = {"kind": "function_value_store", "detail": bounded_text(detail)}

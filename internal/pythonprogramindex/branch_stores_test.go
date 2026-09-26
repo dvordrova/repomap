@@ -96,6 +96,20 @@ def codec_alias(flag):
     if flag:
         codec = pickle
     codec.dumps({})
+
+
+def assigned_then_declared(flag):
+    handler = flush
+    if flag:
+        def handler():
+            pass
+    handler()
+
+
+def tested(flag):
+    if (handler := accept) and flag:
+        pass
+    handler()
 `,
 	})
 	index, err := buildOneForTest(context.Background(), repository, targetOfKind(t, repository, pythontarget.KindLibrary))
@@ -118,9 +132,12 @@ def codec_alias(flag):
 		"declared_then_assigned": "unresolved 51:5 handler stored in handler|54:19 accept stored in handler under a condition",
 		"inner":                  "unresolved 59:15 flush stored in handler|61:19 accept stored in handler under a condition",
 		"comprehension":          "unresolved 69:16 accept stored in picked under a condition",
-		// A module is no function: codec.dumps is simply unresolved, not
+		// A call of an attribute names each module stored in the name, not
 		// pickle.dumps.
-		"codec_alias": "unresolved",
+		"codec_alias":            "unresolved 74:13 json stored in codec|76:17 pickle stored in codec under a condition",
+		"assigned_then_declared": "unresolved 81:15 flush stored in handler|83:9 handler stored in handler under a condition",
+		// An if's condition and the first operand of `and` always run.
+		"tested": "exact accept",
 	}
 	seen := map[string]bool{}
 	for _, relation := range index.Relations {
