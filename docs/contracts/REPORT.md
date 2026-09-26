@@ -204,7 +204,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   order the model listed them, then their loose parts, so folding a wrapper
   never removes its responsibility from the overview. The component frame's
   children carry that order to its overview list and into ELK's input; ELK's
-  placement still follows the connections.
+  placement still follows the connections. The parts entrance below the map
+  lists each component's areas the same way, then its loose parts by name.
   That overview keeps the saved area caption; the single card and its source
   reading keep the part's own title. Direct parts use the same fixed first-reveal
   heading fit and column width as neighbouring groups, with their measured

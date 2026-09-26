@@ -509,8 +509,21 @@ func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
 	for _, id := range strings.Fields(component) {
 		listed = append(listed, titles[id])
 	}
-	if want := []string{"Serving requests", "Accessing storage", "Reporting", "Logging"}; !slices.Equal(listed, want) {
+	want := []string{"Serving requests", "Accessing storage", "Reporting", "Logging"}
+	if !slices.Equal(listed, want) {
 		t.Fatalf("the component lists %q, want the model's areas in its order and then the loose part: %q", listed, want)
+	}
+	// The parts entrance below the map lists the same areas the same way.
+	links := regexp.MustCompile(`(?s)<ul class="plain learn-area-links">(.*?)</ul>`).FindStringSubmatch(string(english))
+	if links == nil {
+		t.Fatal("the parts entrance lists no areas")
+	}
+	var entrance []string
+	for _, link := range regexp.MustCompile(`<a href="[^"]*">([^<]*) →</a>`).FindAllStringSubmatch(links[1], -1) {
+		entrance = append(entrance, html.UnescapeString(link[1]))
+	}
+	if !slices.Equal(entrance, want) {
+		t.Fatalf("the parts entrance lists %q, want %q", entrance, want)
 	}
 
 	line := "Numbers on an area's border match the numbered parts inside it that the arrow connects; they are not an execution order."

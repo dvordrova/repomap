@@ -79,6 +79,8 @@ func (builder *pageBuilder) learn(view *pageView) {
 		if index := builder.graphIndex(section.programTargetID); index != nil {
 			part.Summary = index.Summary
 		}
+		// Areas keep the order the model listed them; loose parts follow.
+		var loose []pageLearnLink
 		if section.Map != nil {
 			children := map[string]bool{}
 			for _, node := range section.Map.Nodes {
@@ -91,7 +93,12 @@ func (builder *pageBuilder) learn(view *pageView) {
 					continue
 				}
 				if !children[node.ID] {
-					part.Areas = append(part.Areas, pageLearnLink{Title: node.FullTitle, Href: "#" + node.ID})
+					link := pageLearnLink{Title: node.FullTitle, Href: "#" + node.ID}
+					if node.Branch == "area" {
+						part.Areas = append(part.Areas, link)
+					} else {
+						loose = append(loose, link)
+					}
 				}
 				// This is the same bounded type explanation already shipped to
 				// the inspector. Repeated memberships retain all destinations.
@@ -112,7 +119,8 @@ func (builder *pageBuilder) learn(view *pageView) {
 				}
 			}
 		}
-		sort.SliceStable(part.Areas, func(i, j int) bool { return part.Areas[i].Title < part.Areas[j].Title })
+		sort.SliceStable(loose, func(i, j int) bool { return loose[i].Title < loose[j].Title })
+		part.Areas = append(part.Areas, loose...)
 		band := builder.repoRole(section)
 		bands[band] = append(bands[band], part)
 	}
