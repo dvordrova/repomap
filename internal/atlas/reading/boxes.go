@@ -6,6 +6,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/destinations"
@@ -411,16 +412,13 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		}
 	}
 	r.opts.Stage(lines.StageSymbols, fmt.Sprintf("describing %d overview declarations (%d types); all original sources remain available to questions", len(rows)+len(typeRows), len(typeRows)))
-	answers, err = r.describeDeclarations(ctx, lines.Symbols(), 3, 5, order, rows)
-	if err != nil {
-		return err
-	}
-	typeAnswers, err = r.describeDeclarations(ctx, lines.Types(), 4, 6, typeOrder, typeRows)
+	answers, err = r.describeDeclarations(ctx,
+		declarationTable{def: lines.Symbols(), round: 3, aliasRound: 5, places: order, rows: rows},
+		declarationTable{def: lines.Types(), round: 4, aliasRound: 6, places: typeOrder, rows: typeRows})
 	if err != nil {
 		return err
 	}
 	order = append(order, typeOrder...)
-	answers = append(answers, typeAnswers...)
 	for i, place := range order {
 		// Without captions a symbol whose name needs an alias is asked the
 		// alias alone: it has no line to show.
@@ -435,39 +433,78 @@ func (r *reader) readSymbols(ctx context.Context) error {
 	return nil
 }
 
-// describeDeclarations asks one description table of overview declarations.
-// Only a name that lines.NeedsAlias is asked its English alias, with or
-// without captions (owner decision 2026-09-26). Columns belong to a request,
-// so those rows go to the complete table in aliasRound, and the others to the
-// table without the alias in round, in requests of their own. The others keep
-// their cells; without captions they also keep the request bytes and memos
-// they had before aliases were asked by name, and with captions they lose
-// only the alias cell. An English type is then asked alike in both modes.
-func (r *reader) describeDeclarations(ctx context.Context, def table.Definition, round, aliasRound int, places []atlas.Place, rows []table.Row) ([]rowAnswer, error) {
-	var plain, named []int
-	for i, place := range places {
-		if lines.NeedsAlias(place.Symbol.Decl.Name) {
-			named = append(named, i)
-		} else {
-			plain = append(plain, i)
-		}
-	}
-	answers := make([]rowAnswer, len(rows))
-	for _, part := range []struct {
+// declarationTable is one description table of overview declarations: its
+// rows beside their places, and the rounds of its two request shapes.
+type declarationTable struct {
+	def               table.Definition
+	round, aliasRound int
+	places            []atlas.Place
+	rows              []table.Row
+}
+
+// describeDeclarations asks the description tables of the overview
+// declarations and returns their answers in table and row order. Only a name
+// that lines.NeedsAlias is asked its English alias, with or without captions
+// (owner decision 2026-09-26). Columns belong to a request, so those rows go
+// to the complete table in its aliasRound, and the others to the table
+// without the alias in its round, in requests of their own. The others keep
+// their other cells and decisions: without captions an English function is
+// still asked nothing, and with captions a row loses only the alias cell. An
+// English type is then asked alike in both modes. No request reads another's
+// answer, so all are asked at once, each on its own view, and their tables
+// and counts join in step order. The first failure cancels the others and is
+// the error returned; the cancellations it causes are not.
+func (r *reader) describeDeclarations(ctx context.Context, tables ...declarationTable) ([]rowAnswer, error) {
+	type part struct {
 		def   table.Definition
 		round int
 		at    []int
-	}{{withoutAlias(def), round, plain}, {def, aliasRound, named}} {
-		asked := make([]table.Row, len(part.at))
-		for j, i := range part.at {
-			asked[j] = rows[i]
+		rows  []table.Row
+		view  *reader
+		got   []rowAnswer
+	}
+	var parts []*part
+	total := 0
+	for _, described := range tables {
+		plain := &part{def: withoutAlias(described.def), round: described.round}
+		named := &part{def: described.def, round: described.aliasRound}
+		for i, place := range described.places {
+			into := plain
+			if lines.NeedsAlias(place.Symbol.Decl.Name) {
+				into = named
+			}
+			into.at = append(into.at, total+i)
+			into.rows = append(into.rows, described.rows[i])
 		}
-		got, err := r.runTable(ctx, part.def, part.round, asked)
-		if err != nil {
-			return nil, err
-		}
-		for j, i := range part.at {
-			answers[i] = got[j]
+		total += len(described.rows)
+		parts = append(parts, plain, named)
+	}
+	asking, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var failed sync.Once
+	var failure error
+	var wg sync.WaitGroup
+	for _, p := range parts {
+		p.view = r.view(nil)
+		wg.Go(func() {
+			var err error
+			if p.got, err = p.view.runTable(asking, p.def, p.round, p.rows); err != nil {
+				failed.Do(func() {
+					failure = err
+					cancel()
+				})
+			}
+		})
+	}
+	wg.Wait()
+	if failure != nil {
+		return nil, failure
+	}
+	answers := make([]rowAnswer, total)
+	for _, p := range parts {
+		r.joinView(p.view)
+		for j, i := range p.at {
+			answers[i] = p.got[j]
 		}
 	}
 	return answers, nil

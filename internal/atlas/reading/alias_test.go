@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
@@ -26,25 +27,33 @@ import (
 
 // aliasProvider answers like tableProvider and writes the English alias of a
 // row whose request asks one. It records the cells every description request
-// asked of each declaration name.
+// asked of each declaration name. It holds each description request until
+// together of them are in flight, or two seconds have passed, and records how
+// many were in flight at once: requests asked side by side are all answered
+// at once, requests asked one after another each wait alone.
 type aliasProvider struct {
 	tableProvider
-	aliases map[string]string
-	askedMu sync.Mutex
-	asked   map[string][][]string
+	aliases  map[string]string
+	together int
+	askedMu  sync.Mutex
+	asked    map[string][][]string
+	arrived  int
+	inFlight int
+	peak     int
+	ready    chan struct{}
 }
 
 func (provider *aliasProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
-	completion, err := provider.tableProvider.Complete(ctx, prepared)
-	if err != nil {
-		return completion, err
-	}
 	var request struct {
 		Table string
 		Fill  []struct{ Name string }
 		Rows  []struct{ Key, Name string }
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil || request.Table != lines.StageSymbols {
+		completion, completeErr := provider.tableProvider.Complete(ctx, prepared)
+		if completeErr != nil {
+			return completion, completeErr
+		}
 		return completion, err
 	}
 	var cells []string
@@ -52,18 +61,34 @@ func (provider *aliasProvider) Complete(ctx context.Context, prepared llm.Prepar
 		cells = append(cells, column.Name)
 	}
 	if slices.Contains(cells, "key_symbol") {
-		return completion, nil
+		return provider.tableProvider.Complete(ctx, prepared)
 	}
 	provider.askedMu.Lock()
 	if provider.asked == nil {
 		provider.asked = make(map[string][][]string)
+		provider.ready = make(chan struct{})
 	}
 	for _, row := range request.Rows {
 		provider.asked[row.Name] = append(provider.asked[row.Name], cells)
 	}
+	provider.arrived++
+	provider.inFlight++
+	provider.peak = max(provider.peak, provider.inFlight)
+	if provider.arrived == provider.together {
+		close(provider.ready)
+	}
+	ready := provider.ready
 	provider.askedMu.Unlock()
-	if !slices.Contains(cells, lines.AliasColumn) {
-		return completion, nil
+	select {
+	case <-ready:
+	case <-time.After(2 * time.Second):
+	}
+	completion, err := provider.tableProvider.Complete(ctx, prepared)
+	provider.askedMu.Lock()
+	provider.inFlight--
+	provider.askedMu.Unlock()
+	if err != nil || !slices.Contains(cells, lines.AliasColumn) {
+		return completion, err
 	}
 	byKey := make(map[string]string)
 	for _, row := range request.Rows {
@@ -89,6 +114,14 @@ func columnNames(def table.Definition) []string {
 		columns = append(columns, column.Name)
 	}
 	return columns
+}
+
+func columnNotes(def table.Definition) []string {
+	var notes []string
+	for _, column := range def.Columns {
+		notes = append(notes, column.Note)
+	}
+	return notes
 }
 
 // A table narrowed for its request, by --captions or by the names it is
@@ -141,10 +174,19 @@ func TestPromptsDemandOnlyTheCellsFillAdvertises(t *testing.T) {
 		if demand := regexp.MustCompile(`(?i)\b(one|two|three|four|\d+) cells|every row and nothing else|\b(line|alias)\b[^.]*\b(each|every) result row`).FindString(prompt); demand != "" {
 			t.Errorf("the %s prompt demands cells fill may not advertise: %q", value.name, demand)
 		}
+		// Code decides which names are asked an alias (lines.NeedsAlias):
+		// neither the prompt nor the cell's note leaves the model to judge
+		// whether a name is English or clear enough already.
+		judged := regexp.MustCompile(`(?i)recogni[sz]able English|\bnot English\b|already (clear|English)|unclear to a newcomer`)
+		for _, text := range append([]string{prompt}, columnNotes(value.def)...) {
+			if judgement := judged.FindString(text); judgement != "" {
+				t.Errorf("the %s table asks the model to judge a name: %q", value.name, judgement)
+			}
+		}
 	}
 	// Narrowed by captions and by name, a table is marked once: an English
-	// type asks its line alone, with or without captions, in the request
-	// and memo it always had without captions.
+	// type asks its line alone, with or without captions, in one request
+	// shape and memo.
 	if english := withoutCaptions(withoutAlias(lines.Types())); english.Contract != lines.Types().Contract+".decisions" ||
 		!reflect.DeepEqual(english, withoutAlias(lines.Types())) {
 		t.Fatalf("an English type is asked another table with and without captions: %s %v", english.Contract, columnNames(english))
@@ -223,14 +265,6 @@ func testAliasesAskedByName(t *testing.T, captions bool) {
 	}
 	before, _ := json.Marshal(graph)
 	aliases := map[string]string{"시작": "program start", "주가정보": "stock quote"}
-	provider := &aliasProvider{aliases: aliases}
-	cache := t.TempDir()
-	opts := readOptions(t, graph, provider, cache)
-	opts.NoCaptions = !captions
-	first, err := Read(t.Context(), opts)
-	if err != nil {
-		t.Fatal(err)
-	}
 	// Each description request asks the alias of a Korean name and never of
 	// an English one. Without captions a symbol is asked its alias alone,
 	// and an English symbol nothing at all.
@@ -238,8 +272,21 @@ func testAliasesAskedByName(t *testing.T, captions bool) {
 	if captions {
 		asked = map[string][]string{"시작": {"line", "alias"}, "help": {"line"}, "주가정보": {"line", "alias"}, "Quote": {"line"}}
 	}
+	// Here every name is its own request: functions and types, with and
+	// without an alias. None reads another, so they are asked side by side.
+	provider := &aliasProvider{aliases: aliases, together: len(asked)}
+	cache := t.TempDir()
+	opts := readOptions(t, graph, provider, cache)
+	opts.NoCaptions = !captions
+	first, err := Read(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(provider.asked) != len(asked) {
 		t.Fatalf("described declarations %v, want %v", provider.asked, asked)
+	}
+	if provider.peak != len(asked) {
+		t.Fatalf("%d of %d description requests were in flight at once", provider.peak, len(asked))
 	}
 	for name, cells := range asked {
 		if requests := provider.asked[name]; len(requests) != 1 || !slices.Equal(requests[0], cells) {

@@ -701,8 +701,7 @@ func withoutCaptions(def table.Definition) table.Definition {
 
 // withoutAlias is a Symbols or Types table asked of names that need no alias
 // (lines.NeedsAlias): its other cells, without the alias. A type then asks
-// its line alone with or without captions, in the one request and memo it
-// had without them before aliases were asked by name.
+// its line alone with or without captions, in one request shape and memo.
 func withoutAlias(def table.Definition) table.Definition {
 	return narrowed(def, func(column table.Column) bool { return column.Name != lines.AliasColumn })
 }

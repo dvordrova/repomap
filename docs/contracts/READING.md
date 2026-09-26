@@ -466,21 +466,26 @@ the alias is asked only for a name that is not English, with or without
 `--captions`, and code decides which names those are: `lines.NeedsAlias` holds
 for a name with a letter outside the Latin script (`parse한국` does,
 `snake_case_ascii` does not; digits, underscores and punctuation are not
-letters). The model does not choose which names are asked. Columns belong to
-a request, so the overview rows are split by name: a name that needs an alias
-is asked the complete table (rounds 5 and 6), the others the table without the
-alias (rounds 3 and 4) in requests of their own. An English type asks its
-`line` alone in both modes, with the request and memo it had without captions;
-without captions a function that needs an alias is asked `alias` alone and has
-no line. A transliterated name in Latin letters (`juga_jeongbo`) gets no
-alias: a known limitation. Accepted aliases flow through symbol knowledge and
-the atlas into GroupsIndex interpretations. Native names, IDs and source
-anchors remain unchanged. The report keeps aliases English in every language,
-displays the original code name beside them, and localizes the description.
-Both literal spellings address the same glossary definition. Apart from that
-one request-side decision, no script detector, transliteration, per-name
-request or browser-generated label is added. Current format constants are
-linked from [CURRENT](../agent-room/CURRENT.md#formats).
+letters). The model does not choose which names are asked: the symbols and
+types prompts say the alias is asked only for a name not written in Latin
+letters and never ask the model to judge whether a name is English. Columns
+belong to a request, so the overview rows are split by name: a name that
+needs an alias is asked the complete table (rounds 5 and 6), the others the
+table without the alias (rounds 3 and 4) in requests of their own. No
+description request reads another, so the functions' and the types' requests
+of both shapes are asked side by side and join in step order. An English type
+asks its `line` alone, in one request shape and memo shared by both modes;
+without captions an English function is asked nothing, and a function that
+needs an alias is asked `alias` alone and has no line. A transliterated name
+in Latin letters (`juga_jeongbo`) gets no alias: a known limitation. Accepted
+aliases flow through symbol knowledge and the atlas into GroupsIndex
+interpretations. Native names, IDs and source anchors remain unchanged. The
+report keeps aliases English in every language, displays the original code
+name beside them, and localizes the description. Both literal spellings
+address the same glossary definition. Apart from that one request-side
+decision, no script detector, transliteration, per-name request or
+browser-generated label is added. Current format constants are linked from
+[CURRENT](../agent-room/CURRENT.md#formats).
 
 Names, signatures and argument names are useful clues for model hypotheses; absence of comments must not prevent orientation. Keep those hypotheses distinct from observed actions and effects established by native caller evidence. Earlier source-body/context experiments are development measurements, not authorization for implementation-body retrieval in ordinary requests.
 
