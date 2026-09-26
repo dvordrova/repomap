@@ -7,7 +7,8 @@ is asked.
 `joints`: each row is one candidate joint the code found by matching literal
 values: an outgoing boundary of target `a` (one line about it, the external
 symbol, the HTTP method and path or the literal value) and an incoming
-boundary of target `b` that carries the same value. Fill two cells:
+boundary of target `b` that carries the same value.
+Fill the cells advertised by fill:
 
 - `same`: `yes` when the two sides are the two ends of one integration, the
   call on one side reaching the route, topic or resource on the other; `no`
@@ -19,7 +20,7 @@ boundary of target `b` that carries the same value. Fill two cells:
 
 `peers`: each row is one outgoing boundary of a target that matched no
 incoming boundary by value. `context.peers` lists the incoming boundaries of
-other targets with short refs. Fill two cells:
+other targets with short refs. Fill the cells advertised by fill:
 
 - `peer`: the ref of the incoming boundary this call most plausibly reaches,
   or `none` when nothing listed is its counterpart. A shared name alone is

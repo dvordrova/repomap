@@ -411,26 +411,65 @@ func (r *reader) readSymbols(ctx context.Context) error {
 		}
 	}
 	r.opts.Stage(lines.StageSymbols, fmt.Sprintf("describing %d overview declarations (%d types); all original sources remain available to questions", len(rows)+len(typeRows), len(typeRows)))
-	answers, err = r.runTable(ctx, lines.Symbols(), 3, rows)
+	answers, err = r.describeDeclarations(ctx, lines.Symbols(), 3, 5, order, rows)
 	if err != nil {
 		return err
 	}
-	typeAnswers, err = r.runTable(ctx, lines.Types(), 4, typeRows)
+	typeAnswers, err = r.describeDeclarations(ctx, lines.Types(), 4, 6, typeOrder, typeRows)
 	if err != nil {
 		return err
 	}
 	order = append(order, typeOrder...)
 	answers = append(answers, typeAnswers...)
 	for i, place := range order {
-		if answers[i].answer != nil {
+		// Without captions a symbol whose name needs an alias is asked the
+		// alias alone: it has no line to show.
+		if line, asked := answers[i].answer["line"]; asked {
 			// A type's prose line keeps its paragraphs in the answer, but the
 			// atlas shows it as one line: a newline or tab there is form, and
 			// it would fail the atlas and group index validation.
-			r.symbolLine[place.ID] = cell{value: table.OneLine(answers[i].answer["line"]), source: answers[i].source}
+			r.symbolLine[place.ID] = cell{value: table.OneLine(line), source: answers[i].source}
 		}
 	}
 	r.reportStage(lines.StageSymbols)
 	return nil
+}
+
+// describeDeclarations asks one description table of overview declarations. Only a name
+// that lines.NeedsAlias is asked its English alias, with or without captions
+// (owner decision 2026-09-26). Columns belong to a request, so those rows go
+// to the complete table in aliasRound, and the others to the table without
+// the alias in round, in requests of their own: their cells, request bytes
+// and memos are the ones they had before aliases were asked by name, except
+// that with captions a symbol no longer asks an alias beside its line.
+func (r *reader) describeDeclarations(ctx context.Context, def table.Definition, round, aliasRound int, places []atlas.Place, rows []table.Row) ([]rowAnswer, error) {
+	var plain, named []int
+	for i, place := range places {
+		if lines.NeedsAlias(place.Symbol.Decl.Name) {
+			named = append(named, i)
+		} else {
+			plain = append(plain, i)
+		}
+	}
+	answers := make([]rowAnswer, len(rows))
+	for _, part := range []struct {
+		def   table.Definition
+		round int
+		at    []int
+	}{{withoutAlias(def), round, plain}, {def, aliasRound, named}} {
+		asked := make([]table.Row, len(part.at))
+		for j, i := range part.at {
+			asked[j] = rows[i]
+		}
+		got, err := r.runTable(ctx, part.def, part.round, asked)
+		if err != nil {
+			return nil, err
+		}
+		for j, i := range part.at {
+			answers[i] = got[j]
+		}
+	}
+	return answers, nil
 }
 
 // boundaryState is one accepted fact or candidate awaiting its own review.

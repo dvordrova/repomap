@@ -6,18 +6,17 @@ its name, kind and signature, the first sentence of the author's docstring
 when there is one, one line about the file it lives in, and how many
 callers it has in the program graph.
 
-Fill two cells for every row and nothing else:
+Fill the cells advertised by fill:
 
 - `line`: one sentence, at most 120 characters, saying what this
   declaration does or is. Use the docstring when present; otherwise read
   the name and the signature and say what they show, no more.
-- `alias`: a short English reader label, at most 40 characters, alongside the
-  original name. Give a descriptive English alias when the original name is
-  not English or is unclear to a newcomer. Base it on the supplied declaration
-  and documentation; do not invent behaviour or expand an unexplained acronym.
-  Translate the supported meaning, not just the sound of a foreign name.
-  Write `none` if the original name is already recognizable English or the
-  evidence does not establish a useful alias. This label does not rename code.
+- `alias`: asked only for a name that is not written in Latin letters: a
+  short English reader label, at most 40 characters, alongside the original
+  name. Base it on the supplied declaration and documentation; do not invent
+  behaviour or expand an unexplained acronym. Translate the supported meaning,
+  not just the sound of the name. Write `none` if the evidence does not
+  establish a useful alias. This label does not rename code.
 
 `calls`, when present, are neutral extracted observations: call names, literal
 values, callback argument names and source lines. `local_calls` names exact
