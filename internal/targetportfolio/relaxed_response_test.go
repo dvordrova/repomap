@@ -23,6 +23,7 @@ type scriptedPortfolioProvider struct {
 	classify        func(Request) string
 	chooseDefault   func(DefaultRequest) string
 	defaultFailure  error
+	defaultFinish   llm.FinishReason
 	comparisons     atomic.Int64
 }
 
@@ -63,6 +64,12 @@ func (provider *scriptedPortfolioProvider) Complete(_ context.Context, prepared 
 			return llm.Completion{}, err
 		}
 		response = provider.chooseDefault(request)
+		if provider.defaultFinish != "" {
+			return llm.Completion{
+				Response: []byte(response), FinishReason: provider.defaultFinish, ChoiceCount: 1,
+				Metrics: llm.Metrics{Attempts: 1, ProviderResponseBytes: len(response)},
+			}, nil
+		}
 	} else {
 		var request Request
 		if err := decodePromptRequest(text, classificationPromptPrefix, classificationPromptSuffix, &request); err != nil {
@@ -264,20 +271,27 @@ func TestDefaultComparisonAcceptsExtraFieldsButNotAnUnknownRef(t *testing.T) {
 // none, does not end the run. The targets stay, the default is unresolved and
 // nothing picks one in its place.
 func TestRefusedDefaultComparisonLeavesTheDefaultUnresolved(t *testing.T) {
-	for name, answer := range map[string]string{
-		"unknown ref":          `{"default_file_ref":"f3"}`,
-		"unadvertised ref":     `{"default_file_ref":"f99"}`,
-		"missing ref":          `{"reason":"both are products"}`,
-		"null ref":             `{"default_file_ref":null}`,
-		"non-text ref":         `{"default_file_ref":2}`,
-		"not an answer at all": `null`,
+	type refused struct {
+		answer    string
+		finish    llm.FinishReason
+		rejection string
+	}
+	for name, refusal := range map[string]refused{
+		"unknown ref":          {`{"default_file_ref":"f3"}`, "", "response_validation"},
+		"unadvertised ref":     {`{"default_file_ref":"f99"}`, "", "response_validation"},
+		"missing ref":          {`{"reason":"both are products"}`, "", "response_validation"},
+		"null ref":             {`{"default_file_ref":null}`, "", "response_validation"},
+		"non-text ref":         {`{"default_file_ref":2}`, "", "response_validation"},
+		"not an answer at all": {`null`, "", "response_validation"},
+		"cut off":              {`{"default_file_ref":"f1"}`, llm.FinishLength, "response_envelope"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			provider := &scriptedPortfolioProvider{
 				classify: func(Request) string {
 					return `{"target_file_refs":["f1","f2"],"native_decisions":[{"ref":"t1","decision":"standalone"},{"ref":"t2","decision":"tool"}]}`
 				},
-				chooseDefault: func(DefaultRequest) string { return answer },
+				chooseDefault: func(DefaultRequest) string { return refusal.answer },
+				defaultFinish: refusal.finish,
 			}
 			execution, err := Run(t.Context(), llm.Executor{Enabled: false}, provider, twoNativeCompilation(t))
 			if err != nil {
@@ -297,7 +311,7 @@ func TestRefusedDefaultComparisonLeavesTheDefaultUnresolved(t *testing.T) {
 			}
 			if provider.comparisons.Load() != 1 || len(execution.Outcomes) != 2 ||
 				len(execution.Outcomes[1].ResponseRejections) != 1 ||
-				execution.Outcomes[1].ResponseRejections[0].Kind != "response_validation" {
+				execution.Outcomes[1].ResponseRejections[0].Kind != refusal.rejection {
 				t.Fatalf("refused comparison not journaled: %d comparisons, outcomes %+v",
 					provider.comparisons.Load(), execution.Outcomes)
 			}

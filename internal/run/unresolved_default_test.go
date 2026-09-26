@@ -169,6 +169,9 @@ func TestUnresolvedDefaultPublishesTheFirstPageInPlanOrder(t *testing.T) {
 		len(data.ProgramPortfolio.Entries) != 2 {
 		t.Fatalf("saved report does not keep the unresolved default beside its owner page")
 	}
+	if _, err := report.RenderSavedHTML(ownerDir); err != nil {
+		t.Fatalf("saved report does not render again: %v", err)
+	}
 	const capability = "unresolved-default-test"
 	handler, err := reportserver.NewHandler(reportserver.Options{
 		RunsDir: debugDir, InitialRunID: runID, Capability: capability,

@@ -226,8 +226,9 @@ Regression comparisons preserve every materialized byte while checking that repe
   batch that retained targets when that batch chose one, or otherwise a
   separate closed-ref default comparison, which reads only its
   `default_file_ref`. The comparisons of one round are independent calls.
-  A comparison answer naming an unknown ref or none is refused and journaled,
-  and the default stays explicitly unresolved (owner decision 2026-09-26): no
+  A comparison answer the executor or decoder refuses, such as one naming an
+  unknown ref or none or one cut off before it stopped, is journaled, and the
+  default stays explicitly unresolved (owner decision 2026-09-26): no
   later round is asked, the run continues with every retained target, and
   nothing picks a fallback default: not the first target, not another
   comparison's winner and not one classification batch's own choice. A

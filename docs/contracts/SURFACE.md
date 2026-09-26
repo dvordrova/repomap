@@ -108,8 +108,10 @@ script entrypoints or sidecar tools.
   (see [Discovery](DISCOVERY.md#target-selection)) is not a failure: every
   selected target runs in plan order with none promoted, the first successful
   page owns the HTML, its manifest and the report the server consumes, and
-  TargetOutcomePortfolio keeps an empty `default_selected_target_id`. No
-  consumer picks a default in its place, and the page adds no mark for it.
+  TargetOutcomePortfolio keeps an empty `default_selected_target_id`. The
+  `ProgramPagePortfolio` `default_target_id` names that owner page, as it does
+  when a selected default fails; it is not a chosen default. No consumer
+  picks a default in its place, and the page adds no mark for it.
   Earlier saves, which always name a default, still read. If every selected target
   fails, retain diagnostics but do not invent a targetless or synthetic report.
 
