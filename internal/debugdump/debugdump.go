@@ -212,6 +212,10 @@ const (
 	maxPreservedMetadataBytes      = 0
 )
 
+// SemanticStageAtlasRoleNeighbours is the role split's second question about
+// a declaration the assignment left open.
+const SemanticStageAtlasRoleNeighbours = "atlas_role_neighbours"
+
 // SemanticUnavailable describes response bytes that the current stage seam
 // truthfully does not possess. It may carry an already-known original identity
 // but never reconstructed content.
@@ -805,7 +809,8 @@ func validSemanticStage(stage string) bool {
 		SemanticStageAtlasAreas,
 		SemanticStageAtlasRoleGate,
 		SemanticStageAtlasRoleBoxes,
-		SemanticStageAtlasRoleAssign:
+		SemanticStageAtlasRoleAssign,
+		SemanticStageAtlasRoleNeighbours:
 		return true
 	default:
 		return false

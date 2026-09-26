@@ -891,7 +891,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 		r.joinView(view)
 	}
 	r.reportStage(lines.StageZones)
-	for _, stage := range []string{lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign} {
+	for _, stage := range []string{lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign, lines.StageRoleNeighbours} {
 		if _, asked := r.uses[stage]; asked {
 			r.reportStage(stage)
 		}
@@ -1633,15 +1633,19 @@ func (r *reader) boxFor(targetID, placeID string) string {
 // its file's part. A boundary in a file off the map has none. In a split
 // file, which no part is the endpoint of, it takes the part of the
 // declaration whose source range holds its line, else of the module body.
+// An input that hands a declaration over stands only where that handler is:
+// when the handler is on no part, undecided or in a file off the map, the
+// input names none rather than the part of the code that registers it.
 func (r *reader) boundaryBox(targetID string, place atlas.Place) string {
 	if place.Boundary != nil {
-		if id := r.boxFor(targetID, place.Boundary.SubjectID); id != "" {
-			return id
-		}
-		if symbol := r.designSubjects[place.Boundary.ObjectID]; symbol != "" {
-			if id := r.boxFor(targetID, symbol); id != "" {
+		subjects := []string{place.Boundary.SubjectID, r.designSubjects[place.Boundary.ObjectID]}
+		for _, subject := range subjects {
+			if id := r.boxFor(targetID, subject); subject != "" && id != "" {
 				return id
 			}
+		}
+		if place.Boundary.Direction == atlas.DirectionIn && (subjects[0] != "" || subjects[1] != "") {
+			return ""
 		}
 	}
 	if r.splitFiles[targetID][place.Parent] {

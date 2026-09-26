@@ -4,8 +4,9 @@
 // declaration has exactly one part or an entry off the map. Language fixture
 // tests of every adapter share it. CheckSplit reads the same graph with the
 // role split of every candidate file: two boxes per file, the units put in
-// them alternately and every fifth left undecided, so the split's rules are
-// checked on each adapter's real facts.
+// them alternately and every fifth left undecided, then asked again with
+// the boxes of its calls and callers and put in the first such box, so the
+// split's rules are checked on each adapter's real facts.
 package partstest
 
 import (
@@ -44,6 +45,11 @@ type Map struct {
 	RoleParts map[string]bool
 	// Described are the description requests, by part title.
 	Described map[string]string
+	// Registered are, by file path, the words of the registrations the
+	// assignment showed with that file's declarations ("HandleFunc /x"),
+	// and Again the declarations asked again with their neighbours' boxes.
+	Registered map[string][]string
+	Again      map[string][]string
 }
 
 // Check reads the graph for one target with the gate answering "one box"
@@ -91,6 +97,16 @@ func check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 		if !strings.HasSuffix(key, "|box") {
 			return byColumn(key, question)
 		}
+		// Asked again, a declaration goes in the first box one of its
+		// calls or callers went in.
+		for _, field := range []string{"calls", "called_by"} {
+			entries, _ := question.Item[field].([]any)
+			for _, entry := range entries {
+				if neighbour, ok := entry.(map[string]any); ok && neighbour["box"] != nil {
+					return typesafetest.Choose(fmt.Sprint(neighbour["box"])), true
+				}
+			}
+		}
 		// dN goes in the first box when N is odd and in the second when it
 		// is even; every fifth declaration is a near-tie, left undecided.
 		var n int
@@ -127,6 +143,7 @@ func check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 	checkRequest(t, graph, target.ID, root, provider.requests)
 	checkMembership(t, graph, target.ID, checked)
 	checked.Split, checked.RoleParts, checked.Described = map[string]bool{}, map[string]bool{}, provider.described
+	checked.Registered, checked.Again = categorizer.registered, categorizer.again
 	if split {
 		checkSplit(t, graph, target.ID, checked, categorizer)
 	} else if categorizer.assigned > 0 {
@@ -142,8 +159,12 @@ type recording struct {
 	mu       sync.Mutex
 	gated    int
 	assigned int
-	// items are, by file path, the declarations the assignment asked about.
-	items map[string][]string
+	// items are, by file path, the declarations the assignment asked about;
+	// registered the words of their registrations; again the declarations
+	// asked again with the boxes of their calls and callers, each of which
+	// had at least one such box.
+	items, registered, again map[string][]string
+	neighbourless            []string
 }
 
 func (c *recording) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
@@ -158,18 +179,39 @@ func (c *recording) Complete(ctx context.Context, prepared llm.Prepared) (llm.Co
 	if err := json.Unmarshal(prepared.Bytes(), &body); err == nil {
 		c.mu.Lock()
 		if c.items == nil {
-			c.items = map[string][]string{}
+			c.items, c.registered, c.again = map[string][]string{}, map[string][]string{}, map[string][]string{}
 		}
 		for key, question := range body.Questions {
 			switch {
 			case strings.HasSuffix(key, "|boxes"):
 				c.gated++
 			case strings.HasSuffix(key, "|box"):
-				c.assigned++
 				file, _ := body.State.Context["file"].(string)
 				declaration, _ := question.Instructions["declaration"].(map[string]any)
-				if name, _ := declaration["declaration"].(string); name != "" {
+				name, _ := declaration["declaration"].(string)
+				asked, boxed := false, false
+				for _, field := range []string{"calls", "called_by"} {
+					entries, _ := declaration[field].([]any)
+					for _, entry := range entries {
+						if neighbour, ok := entry.(map[string]any); ok {
+							asked, boxed = true, boxed || neighbour["box"] != nil
+						}
+					}
+				}
+				if asked {
+					c.again[file] = append(c.again[file], name)
+					if !boxed {
+						c.neighbourless = append(c.neighbourless, file+" "+name)
+					}
+					continue
+				}
+				c.assigned++
+				if name != "" {
 					c.items[file] = append(c.items[file], name)
+				}
+				words, _ := declaration["registered"].([]any)
+				for _, word := range words {
+					c.registered[file] = append(c.registered[file], fmt.Sprint(word))
 				}
 			}
 		}
@@ -183,6 +225,26 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 	t.Helper()
 	if categorizer.gated == 0 || categorizer.assigned == 0 {
 		t.Fatalf("no split happened: %d gate questions, %d assignments", categorizer.gated, categorizer.assigned)
+	}
+	// Every fifth declaration is left open, and one with a call or caller
+	// in a box is asked again with it; none is asked again without one.
+	if len(categorizer.again) == 0 || len(categorizer.neighbourless) > 0 {
+		t.Fatalf("asked again: %v; without a call or caller in a box: %v", categorizer.again, categorizer.neighbourless)
+	}
+	// Every registration handing over a declaration of an assigned file
+	// shows its words with that file's declarations.
+	for _, place := range graph.Places {
+		boundary := place.Boundary
+		if boundary == nil || boundary.Direction != atlas.DirectionIn || len(boundary.Words) == 0 || !slices.Contains(place.TargetIDs, targetID) {
+			continue
+		}
+		subject := placeByID(graph, boundary.SubjectID)
+		if len(categorizer.items[subject.Path]) == 0 {
+			continue
+		}
+		if words := strings.Join(boundary.Words, " "); !slices.Contains(categorizer.registered[subject.Path], words) {
+			t.Fatalf("the registration %q of %s is not shown with the declarations of %s: %v", words, subject.Given, subject.Path, categorizer.registered[subject.Path])
+		}
 	}
 	// The preset names each file's boxes after its path.
 	for _, box := range checked.Target.Boxes {
@@ -235,6 +297,17 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 			}
 			if decl.Kind == "module" && id != "" && !slices.Contains(categorizer.items[place.Path], decl.Name) {
 				t.Fatalf("the module body of %s is no row of the assignment: %v", place.Path, categorizer.items[place.Path])
+			}
+		}
+	}
+	// An input whose handler is undecided names no part.
+	for _, boundary := range checked.Target.Boundaries {
+		for _, place := range graph.Places {
+			if place.Boundary == nil || place.Path != boundary.Path || place.LineNo != boundary.LineNo || place.Column != boundary.Column {
+				continue
+			}
+			if place.Boundary.Direction == atlas.DirectionIn && undecided[place.Boundary.SubjectID] && boundary.BoxID != "" {
+				t.Fatalf("the input at %s:%d of an undecided handler stands in part %s", boundary.Path, boundary.LineNo, boundary.BoxID)
 			}
 		}
 	}
