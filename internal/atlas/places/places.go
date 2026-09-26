@@ -1558,7 +1558,7 @@ func (b *builder) collectBoundaries() {
 			continue
 		}
 		var direction, kind, method, external, holder string
-		var values []string
+		var values, words []string
 		switch fact.Kind {
 		case facts.KindRegistration:
 			// The shape is the fact; its kind is the model's to decide. A
@@ -1569,6 +1569,7 @@ func (b *builder) collectBoundaries() {
 				direction = atlas.DirectionIn
 			}
 			values = registrationValues(fact)
+			words = registrationWords(fact)
 			if fact.Holder != nil {
 				holder = fmt.Sprintf("%s:%d:%d", fact.Holder.Path, fact.Holder.Line, fact.Holder.Column)
 			}
@@ -1614,7 +1615,7 @@ func (b *builder) collectBoundaries() {
 			Parent: atlas.FileID(filePath),
 			Boundary: &atlas.BoundaryFacts{
 				Source: "fact", Origins: []atlas.BoundaryOrigin{origin}, ObjectID: objectID, SubjectID: b.factSubjects[objectID],
-				Caller: caller, CallerDoc: callerDoc, External: external, Method: method, Values: values,
+				Caller: caller, CallerDoc: callerDoc, External: external, Method: method, Values: values, Words: words,
 				Holder: holder, Handed: fact.Kind == facts.KindRegistration && fact.Handed, Direction: direction, GivenKind: kind,
 			},
 		}}
@@ -2111,4 +2112,21 @@ func registrationValues(fact facts.Fact) []string {
 		return []string{fact.Path}
 	}
 	return appendUnique(nil, fact.Values...)
+}
+
+// registrationWords are what the code wrote at a registration, each once and
+// as written: the call word (GET, HandleFunc, the record type of a table
+// row), every literal in order, and the address with its mount prefixes
+// composed when that is not one of the literals. The model names an entry
+// from them; a verb, a path, a command name or a topic is not told apart here.
+func registrationWords(fact facts.Fact) []string {
+	var words []string
+	if fact.Key != "" {
+		words = append(words, fact.Key)
+	}
+	words = appendUnique(words, fact.Values...)
+	if fact.Path != "" {
+		words = appendUnique(words, fact.Path)
+	}
+	return words
 }

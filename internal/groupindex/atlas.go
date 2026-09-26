@@ -540,10 +540,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if boundary.Source == "model" && boundary.Direction == atlas.DirectionIn {
 			continue
 		}
-		name := strings.TrimSpace(boundary.Method + " " + strings.Join(boundary.Values, ", "))
-		if name == "" {
-			name = boundary.Caller
-		}
 		source := "model"
 		if boundary.FactID != "" {
 			source = "fact"
@@ -557,6 +553,16 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 					break
 				}
 			}
+		}
+		// The entry is named by the words the model chose among those its
+		// registration wrote, as written; without a choice, by its handler's
+		// own name. A method and a path are two such words, never a shape.
+		name := boundary.Name
+		if name == "" {
+			name = boundary.Caller
+		}
+		if subject := byID[subjectID]; name == "" && subject != nil && subject.Object != nil {
+			name = subject.Object.Name
 		}
 		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)}})
 		if subjectID != "" {
@@ -730,8 +736,10 @@ func validOperationKind(kind string) bool {
 // entry kinds the reading stage chooses map one to one onto operations.
 func OperationKind(boundaryKind string) string {
 	switch boundaryKind {
-	case atlas.BoundaryHTTPServer:
+	case atlas.BoundaryRequest:
 		return "request"
+	case atlas.BoundaryContinuous:
+		return "continuous"
 	case atlas.BoundaryQueueConsumer:
 		return "consumer"
 	case atlas.BoundaryScheduled:

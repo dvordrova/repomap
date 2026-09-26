@@ -65,12 +65,14 @@ func TestFixedConfigurationAndIncomingFactsNeedOnlyTheirExplanation(t *testing.T
 			GivenKind: atlas.BoundaryConfig, Values: []string{"SOURCE_CONFIG"}}}
 	route := atlas.Place{ID: "route", Kind: atlas.PlaceBoundary, Path: "routes.ts", LineNo: 21, Parent: "file:routes",
 		Given: "GET /metrics", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "source:route"}}, Direction: atlas.DirectionIn,
-			GivenKind: atlas.BoundaryHTTPServer, Method: "GET", Values: []string{"/metrics"}}}
+			GivenKind: atlas.BoundaryRequest, Method: "GET", Values: []string{"/metrics"}}}
 	provider := &mutatedTableProvider{}
 	inspected := 0
 	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		// An incoming entry may also be named from its words; nothing asks
+		// whether a native fact exists or what kind it is.
 		fill := input["fill"].([]any)
-		if len(fill) != 1 || fill[0].(map[string]any)["name"] != "line" {
+		if len(fill) != 2 || fill[0].(map[string]any)["name"] != "line" || fill[1].(map[string]any)["name"] != "name" {
 			t.Fatalf("fixed native facts asked to establish an external exchange: %+v", fill)
 		}
 		for i, source := range input["rows"].([]any) {
@@ -327,7 +329,7 @@ func TestSymbolRolesTurnRegistrationsIntoBoundariesAndHoldersCarryAddresses(t *t
 		r.places[place.ID] = place
 	}
 	r.api = map[string]apiRole{
-		"echo.Echo.GET":     {binds: atlas.BoundaryHTTPServer},
+		"echo.Echo.GET":     {binds: atlas.BoundaryRequest},
 		"echo.Echo.Start":   {publishes: true},
 		"database/sql.Open": {talks: atlas.BoundaryDB},
 	}
@@ -337,7 +339,7 @@ func TestSymbolRolesTurnRegistrationsIntoBoundariesAndHoldersCarryAddresses(t *t
 	if len(r.boundaries) != 3 || r.boundaries["b3"] != nil {
 		t.Fatalf("a callback handed to a symbol that binds nothing survived: %+v", r.boundaries)
 	}
-	if got := r.boundaries["b1"]; got.kind != atlas.BoundaryHTTPServer || got.address != ":8080" {
+	if got := r.boundaries["b1"]; got.kind != atlas.BoundaryRequest || got.address != ":8080" {
 		t.Fatalf("route did not take its symbol's kind and its holder's address: %+v", got)
 	}
 	if got := r.boundaries["b2"]; got.kind != atlas.BoundaryListenAddress || got.place.Boundary.Direction != atlas.DirectionIn || got.address != ":8080" {
@@ -346,7 +348,7 @@ func TestSymbolRolesTurnRegistrationsIntoBoundariesAndHoldersCarryAddresses(t *t
 	if got := r.boundaries["b4"]; got.kind != atlas.BoundaryDB || got.place.Boundary.Direction != atlas.DirectionOut {
 		t.Fatalf("driver open is not the database boundary: %+v", got)
 	}
-	if !reflect.DeepEqual(r.apiRoles(), []atlas.APIRole{{Symbol: "database/sql.Open", Talks: "db"}, {Symbol: "echo.Echo.GET", Binds: "http_server"}, {Symbol: "echo.Echo.Start", Publishes: true}}) {
+	if !reflect.DeepEqual(r.apiRoles(), []atlas.APIRole{{Symbol: "database/sql.Open", Talks: "db"}, {Symbol: "echo.Echo.GET", Binds: "request"}, {Symbol: "echo.Echo.Start", Publishes: true}}) {
 		t.Fatalf("roles recorded differently: %+v", r.apiRoles())
 	}
 }
@@ -384,7 +386,7 @@ func TestEveryAskedAPICellChangesTheBoundaries(t *testing.T) {
 	for _, def := range []table.Definition{lines.API(true), lines.API(false)} {
 		for _, column := range def.Columns {
 			read := false
-			for _, base := range []table.Answer{{}, {"binds": atlas.BoundaryHTTPServer}} {
+			for _, base := range []table.Answer{{}, {"binds": atlas.BoundaryRequest}} {
 				with := maps.Clone(base)
 				with[column.Name] = column.Options[0]
 				read = read || outcome(with) != outcome(base)
@@ -419,7 +421,7 @@ func TestTwoPublishesOnOneHolderGiveTheFirstAddress(t *testing.T) {
 			r.places[place.ID] = place
 		}
 		r.api = map[string]apiRole{
-			"echo.Echo.GET": {binds: atlas.BoundaryHTTPServer}, "echo.Echo.POST": {binds: atlas.BoundaryHTTPServer},
+			"echo.Echo.GET": {binds: atlas.BoundaryRequest}, "echo.Echo.POST": {binds: atlas.BoundaryRequest},
 			"echo.Echo.Start": {publishes: true}, "echo.Echo.StartTLS": {publishes: true},
 		}
 		if err := r.readBoundaries(t.Context()); err != nil {
@@ -457,11 +459,35 @@ func TestPublishWithoutFollowedHolderAsksWhichHolderItServes(t *testing.T) {
 	r.places = map[string]atlas.Place{route.ID: route, start.ID: start}
 	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
 	r.responseTables = map[string]rememberedTable{}
-	r.api = map[string]apiRole{"echo.Echo.GET": {binds: atlas.BoundaryHTTPServer}, "echo.Echo.Start": {publishes: true}}
+	r.api = map[string]apiRole{"echo.Echo.GET": {binds: atlas.BoundaryRequest}, "echo.Echo.Start": {publishes: true}}
 	if err := r.readBoundaries(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if asked != 1 || r.boundaries["b1"].address != ":8080" {
 		t.Fatalf("asked %d times, route address %q", asked, r.boundaries["b1"].address)
+	}
+}
+
+// A symbol is asked what a handed callable becomes only when a registration
+// handed it one. A registration's ObjectID is the declaration making the
+// call when nothing is handed: fopen("/dev/null", "w") inside a function was
+// asked, and a model answered that fopen binds a request handler.
+func TestOnlyAHandedCallableAsksWhatItBecomes(t *testing.T) {
+	registration := func(id, external, direction string, values ...string) atlas.Place {
+		return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: "server.c", LineNo: 20, Column: len(id), Parent: "file:server", TargetIDs: []string{"server"},
+			Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "server", FactID: "fact:" + id}},
+				ObjectID: "t1.n7", Caller: "startServer", External: external, Values: values, Direction: direction}}
+	}
+	r := answerTestReader(t, nil, nil)
+	r.opts.Graph.Places = []atlas.Place{
+		registration("b1", "pthread.h.pthread_create", atlas.DirectionIn),
+		registration("b2", "stdio.h.fopen", atlas.DirectionOut, "/dev/null", "w"),
+	}
+	handed := map[string]bool{}
+	for _, symbol := range r.apiSymbols() {
+		handed[symbol.name] = symbol.handsCallable
+	}
+	if !handed["pthread.h.pthread_create"] || handed["stdio.h.fopen"] || len(handed) != 2 {
+		t.Fatalf("hands_callable = %v", handed)
 	}
 }

@@ -129,7 +129,7 @@ func TestBoundaryRowAsksAddressOnlyWithCandidatesAndNamesItsOwner(t *testing.T) 
 		"known address": BoundaryRow(place, "o1", addresses, false),
 		"no candidates": BoundaryRow(place, "o1", nil, true),
 		"fixed incoming": BoundaryRow(atlas.Place{ID: "route", Path: "routes.go", LineNo: 3, Boundary: &atlas.BoundaryFacts{
-			Source: "fact", GivenKind: atlas.BoundaryHTTPServer, Direction: atlas.DirectionIn, Method: "GET", Values: []string{"/levels"}}}, "", addresses, false),
+			Source: "fact", GivenKind: atlas.BoundaryRequest, Direction: atlas.DirectionIn, Method: "GET", Values: []string{"/levels"}}}, "", addresses, false),
 	} {
 		got := fields(row)
 		if got["address_catalog"] != nil || got["address_options"] != nil {
@@ -190,7 +190,7 @@ func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *
 }
 
 func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) {
-	for _, kind := range []string{atlas.BoundaryConfig, atlas.BoundaryHTTPServer, atlas.BoundaryHTTPClient, atlas.BoundaryListenAddress} {
+	for _, kind := range []string{atlas.BoundaryConfig, atlas.BoundaryRequest, atlas.BoundaryHTTPClient, atlas.BoundaryListenAddress} {
 		t.Run(kind, func(t *testing.T) {
 			outgoing := kind == atlas.BoundaryHTTPClient
 			place := atlas.Place{ID: "native", Path: "service.py", LineNo: 12, Boundary: &atlas.BoundaryFacts{
@@ -220,6 +220,10 @@ func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) 
 			want := []string{"line"}
 			if outgoing {
 				want = append(want, "destination", "address")
+			} else {
+				// An incoming entry is named from its words; this row wrote
+				// none, so its name is not asked.
+				want = append(want, "name")
 			}
 			if !reflect.DeepEqual(columns, want) || request.Rows[0]["kind_given"] != kind || request.Rows[0]["decision_options"] != nil || request.Rows[0]["kind_options"] != nil {
 				t.Fatalf("native property became a model decision: %s", windows[0].Request)
@@ -228,7 +232,11 @@ func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) 
 				t.Fatalf("address catalogue presence does not follow the asked cells: %s", windows[0].Request)
 			}
 			result, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"native","line":"Reads the configured value.","decision":"none","kind":"invented","basis":"configuration","destination":"d1","address":"unknown"}]}`))
-			if err != nil || len(result.Rejections) != 0 || len(result.Answers[0]) != len(want) || result.Answers[0]["decision"] != "" || result.Answers[0]["kind"] != "" {
+			answered := len(want)
+			if !outgoing {
+				answered--
+			}
+			if err != nil || len(result.Rejections) != 0 || len(result.Answers[0]) != answered || result.Answers[0]["decision"] != "" || result.Answers[0]["kind"] != "" {
 				t.Fatalf("unrequested cells acquired authority: %+v / %v", result, err)
 			}
 			if outgoing {
@@ -247,5 +255,50 @@ func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) 
 				}
 			}
 		})
+	}
+}
+
+// An entry is named by the words its registration wrote, as the model
+// chooses them: restored as written, in the order it wrote them, whatever
+// protocol they belong to. A listener names no entry.
+func TestEntryNamesAreChosenWordsRestoredAsWritten(t *testing.T) {
+	entry := func(kind string, words ...string) atlas.Place {
+		return atlas.Place{ID: "b1", Path: "server.go", LineNo: 3, Boundary: &atlas.BoundaryFacts{
+			Source: "fact", Direction: atlas.DirectionIn, GivenKind: kind, Words: words}}
+	}
+	for _, tc := range []struct {
+		place atlas.Place
+		cell  string
+		want  string
+	}{
+		{entry(atlas.BoundaryRequest, "GET", "/users/:id"), "w1 w2", "GET /users/:id"},
+		{entry(atlas.BoundaryRequest, "get", "/items"), "w1 w2", "get /items"},
+		{entry(atlas.BoundaryRequest, "redisCommand", "get"), "w2", "get"},
+		{entry(atlas.BoundaryRequest, "Handle", "POST", "/items"), "w2 w3", "POST /items"},
+		{entry(atlas.BoundaryQueueConsumer, "subscribe", "orders.created"), "w2", "orders.created"},
+		{entry(atlas.BoundaryRequest, "RegisterService", "billing.Invoices", "Create"), "w2 w3", "billing.Invoices Create"},
+		{entry(atlas.BoundaryRequest, "on", "chat message"), "w2", "chat message"},
+		// A word that cannot stand in a one-line name as written is not
+		// offered, and never trimmed into one: w2 is the next word.
+		{entry(atlas.BoundaryRequest, "on", " padded ", "line\nbreak", "join"), "w2", "join"},
+		{entry(atlas.BoundaryRequest, "GET", "/users/:id"), "w2 w1", "/users/:id GET"},
+		{entry(atlas.BoundaryContinuous, "pthread_create"), "", ""},
+		{entry(atlas.BoundaryRequest, "GET", "/users/:id"), "w3 w1", "GET"},
+	} {
+		if got := EntryName(EntryWords(tc.place), tc.cell); got != tc.want {
+			t.Fatalf("%v chose %q: %q, want %q", tc.place.Boundary.Words, tc.cell, got, tc.want)
+		}
+	}
+	listener := entry(atlas.BoundaryListenAddress, "Start", ":8080")
+	if words := EntryWords(listener); len(words) != 0 {
+		t.Fatalf("a listener was offered a name: %+v", words)
+	}
+	row := BoundaryRow(entry(atlas.BoundaryRequest, "GET", "/users/:id"), "", nil, false)
+	fields := map[string]any{}
+	for _, field := range row.Fields {
+		fields[field.Name] = field.Value
+	}
+	if fields["method"] != nil || fields["values"] != nil || !reflect.DeepEqual(fields["word_options"], []string{"w1", "w2"}) {
+		t.Fatalf("an entry row shows a method or values beside its words: %+v", fields)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/destinations"
@@ -23,7 +24,7 @@ const (
 	StageJoints     = "atlas_joints"
 
 	symbolsContract    = "repomap.atlas.symbols.v8"
-	boundariesContract = "repomap.atlas.boundaries.v7"
+	boundariesContract = "repomap.atlas.boundaries.v8"
 	arrowsContract     = "repomap.atlas.arrows.v1"
 	targetsContract    = "repomap.atlas.targets.v3"
 	jointsContract     = "repomap.atlas.joints.v3"
@@ -227,29 +228,84 @@ func localCall(call atlas.SymbolCall) string {
 	return line
 }
 
-// Boundaries interprets candidate relationships whose role is not a native
-// fact. Outgoing mode adds the runtime-system cells. The decision and kind
-// lists are column options: every row chooses from the same list, so no row
-// repeats it, and an outgoing candidate is offered only the kinds the group
-// index keeps as communication.
 // FixedBoundaries explains a boundary whose existence and kind the facts and
-// the symbol roles already gave; the short prompt asks for the line alone. An outgoing HTTP fact whose address
-// the code does not know may still need a destination and an address choice.
+// the symbol roles already gave. An incoming entry also chooses its name among
+// the words its registration wrote; an outgoing fact whose address the code
+// does not know may still need a destination and an address choice. Each cell
+// fails alone: a refused line keeps the fact's given line, a refused name
+// leaves the handler's own name, a refused destination or address names none.
 func FixedBoundaries(outgoing bool) table.Definition {
 	def := table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract + ".fixed",
 		System: fixedBoundariesPrompt, Memoize: true,
-		Columns: []table.Column{{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes,
+		Columns: []table.Column{{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Alone: true,
 			Note: "at most ten words, no subject: what this native observation reads, receives or sends; a configuration read is not itself a remote exchange"}},
 	}
 	if outgoing {
-		// Each outbound cell fails alone: a refused line keeps the fact's
-		// given line, a refused destination or address names none.
 		def.Contract += ".outbound"
-		def.Columns[0].Alone = true
 		def.Columns = append(def.Columns, destinationColumn(), addressColumn())
+		return def
 	}
+	def.Columns = append(def.Columns, table.Column{Name: "name", Kind: table.Sequence, OptionsFrom: "word_options", WhenOptionsFrom: "word_options", Alone: true,
+		Note: "the w* refs of the words that name this entry as its sender names it, in the order they are read; none when no word names it"})
 	return def
+}
+
+// EntryWord is one word an incoming registration wrote, offered to name its
+// entry: a verb, a path, a command name, a topic, an event, an RPC method.
+// Which one it is, the model reads; the code keeps the value as written.
+type EntryWord struct {
+	Ref   string `json:"ref"`
+	Value string `json:"value"`
+}
+
+// EntryWords are the words an incoming entry may be named by, as w1, w2, ...
+// in the order the registration wrote them. A listener names no entry. A word
+// that cannot stand in a one-line name as written (a control character such
+// as a newline, or space around it) is not offered: it is never trimmed into
+// one.
+func EntryWords(place atlas.Place) []EntryWord {
+	facts := place.Boundary
+	if facts == nil || facts.Direction != atlas.DirectionIn || facts.GivenKind == atlas.BoundaryListenAddress {
+		return nil
+	}
+	words := make([]EntryWord, 0, len(facts.Words))
+	for _, value := range facts.Words {
+		if !nameable(value) {
+			continue
+		}
+		words = append(words, EntryWord{Ref: fmt.Sprintf("w%d", len(words)+1), Value: value})
+	}
+	return words
+}
+
+func nameable(value string) bool {
+	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// EntryName restores a name cell: the chosen words as written, joined by one
+// space in the order the model wrote them. No word is translated, recased,
+// trimmed or composed any other way.
+func EntryName(words []EntryWord, cell string) string {
+	values := make(map[string]string, len(words))
+	for _, word := range words {
+		values[word.Ref] = word.Value
+	}
+	var chosen []string
+	for _, ref := range strings.Fields(cell) {
+		if value, ok := values[ref]; ok {
+			chosen = append(chosen, value)
+		}
+	}
+	return strings.Join(chosen, " ")
 }
 
 // DestinationOther prefixes a destination the catalogue does not list.
@@ -413,10 +469,21 @@ func BoundaryRow(place atlas.Place, ownerRef string, addresses []BoundaryAddress
 		fields = append(fields, table.Field{Name: "caller_doc", Value: facts.CallerDoc})
 	}
 	fields = append(fields, table.Field{Name: "external", Value: facts.External})
-	if facts.Method != "" {
-		fields = append(fields, table.Field{Name: "method", Value: facts.Method})
+	// An entry shows the words its registration wrote, to be named by; which
+	// of them is a verb or a path is the model's reading, not a field.
+	if words := EntryWords(place); len(words) > 0 {
+		options := make([]string, 0, len(words))
+		for _, word := range words {
+			options = append(options, word.Ref)
+		}
+		fields = append(fields, table.Field{Name: "words", Value: words}, table.Field{Name: "word_options", Value: options})
+	} else {
+		if facts.Method != "" {
+			fields = append(fields, table.Field{Name: "method", Value: facts.Method})
+		}
+		fields = append(fields, table.Field{Name: "values", Value: facts.Values})
 	}
-	fields = append(fields, table.Field{Name: "values", Value: facts.Values}, table.Field{Name: "direction", Value: facts.Direction})
+	fields = append(fields, table.Field{Name: "direction", Value: facts.Direction})
 	if facts.GivenKind != "" {
 		fields = append(fields, table.Field{Name: "kind_given", Value: facts.GivenKind})
 	}

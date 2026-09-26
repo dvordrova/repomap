@@ -28,8 +28,8 @@ func TestAtlasOutboundSurvivesIncomingLaneAndRebindsAcrossTargets(t *testing.T) 
 					Path: "api/proxy.go", LineNo: 12, Column: 48, Values: []string{}, Line: "Configures trace export."},
 				{ID: "config", BoxID: "api", Direction: atlas.DirectionOut, Kind: atlas.BoundaryConfig,
 					Path: "api/proxy.go", LineNo: 8, Column: 1, Values: []string{"PRICE_URL"}, Line: "Reads configuration."},
-				{ID: "receive", BoxID: "api", Direction: atlas.DirectionIn, Kind: atlas.BoundaryHTTPServer,
-					Path: "api/proxy.go", LineNo: 10, Column: 1, Method: "GET", Values: []string{"/proxy"}, Line: "Receives requests.", FactID: "route"},
+				{ID: "receive", BoxID: "api", Direction: atlas.DirectionIn, Kind: atlas.BoundaryRequest,
+					Path: "api/proxy.go", LineNo: 10, Column: 1, Method: "GET", Values: []string{"/proxy"}, Name: "GET /proxy", Line: "Receives requests.", FactID: "route"},
 			},
 		}
 	}

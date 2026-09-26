@@ -72,6 +72,7 @@ func TestCumulativeJSTSHTTPConstructorPathsAndEmptyCallbacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.AssertMethodArgumentPositions(t, graph, source, "passMethodArguments", "receiveMethodArguments")
+	adaptertest.AssertEntryWords(t, graph, source, 12, "get", "/health")
 	for _, place := range graph.Places {
 		// Places scope native objects by target: t*.n*.
 		if place.Symbol != nil && place.Symbol.Decl.ObjectID == index.Target.ID+"."+emptyID {

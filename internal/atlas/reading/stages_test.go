@@ -89,7 +89,7 @@ func twoTargetGraph(t *testing.T) atlas.Graph {
 		file("svc/util/u.go", 2, svc, []string{atlas.FileID("svc/core/c.go")}, nil),
 		file("web/src/app.ts", 0, web, nil, []string{atlas.FileID("web/src/client.ts")}),
 		file("web/src/client.ts", 1, web, []string{atlas.FileID("web/src/app.ts")}, nil),
-		boundary("svc/api/h.go", 10, svc, atlas.DirectionIn, atlas.BoundaryHTTPServer, "GET", []string{"/api/levels/{id}"}),
+		boundary("svc/api/h.go", 10, svc, atlas.DirectionIn, atlas.BoundaryRequest, "GET", []string{"/api/levels/{id}"}),
 		boundary("svc/db/d.go", 20, svc, atlas.DirectionOut, atlas.BoundaryConfig, "", []string{"DATABASE_URL"}),
 		boundary("web/src/client.ts", 5, web, atlas.DirectionOut, atlas.BoundaryHTTPClient, "GET", []string{"/api/levels/{param}"}),
 		boundary("web/src/client.ts", 9, web, atlas.DirectionOut, atlas.BoundaryHTTPClient, "POST", []string{"/api/nothing"}),
@@ -399,7 +399,7 @@ func TestPeerWindowWinnersCompeteBeforePublication(t *testing.T) {
 		graph.Places = append(graph.Places, atlas.Place{
 			ID: fmt.Sprintf("bnd:svc/extra:%03d", i), Kind: atlas.PlaceBoundary,
 			Path: "svc/api/h.go", LineNo: 100 + i, Parent: atlas.FileID("svc/api/h.go"), TargetIDs: []string{"svc"},
-			Boundary: &atlas.BoundaryFacts{Source: "fact", Caller: "Extra", Direction: atlas.DirectionIn, GivenKind: atlas.BoundaryHTTPServer, Method: "GET", Values: []string{fmt.Sprintf("/extra/%d", i)}},
+			Boundary: &atlas.BoundaryFacts{Source: "fact", Caller: "Extra", Direction: atlas.DirectionIn, GivenKind: atlas.BoundaryRequest, Method: "GET", Values: []string{fmt.Sprintf("/extra/%d", i)}},
 		})
 	}
 	atlas.SortPlaces(graph.Places)

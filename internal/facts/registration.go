@@ -178,6 +178,9 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 			}
 		}
 	}
+	if !shape.originKnown && target.tableRow(relation) {
+		shape.origin, shape.originKnown = target.tableRowRegistrar(relation, pattern, shape.handlerID)
+	}
 	shape.holder, shape.holderPrefixes = target.holderRoot(pattern)
 	// A value set on a parameter no repository caller supplies
 	// (c.Set("user", model) on the request's context) is state of one call
@@ -536,6 +539,31 @@ func (target *targetContext) tableRow(relation programindex.Relation) bool {
 		}
 	}
 	return false
+}
+
+// tableRowRegistrar names what a table row registers its callable with: the
+// row's record type, as the file that declares it and its name, and the field
+// the callable is stored in, as a row writes it (redis.c.redisCommand.proc).
+// Every row of one record type shares it, as every call of one outside
+// symbol shares that symbol; which kind of entry it makes, the reading asks.
+func (target *targetContext) tableRowRegistrar(relation programindex.Relation, pattern programindex.RelationPattern, handlerID string) (string, bool) {
+	if len(relation.ToIDs) != 1 {
+		return "", false
+	}
+	record, ok := target.object(relation.ToIDs[0])
+	if !ok || record.Kind != programindex.ObjectType || record.Location == nil {
+		return "", false
+	}
+	name := record.Location.Path + "." + record.Name
+	for _, argument := range pattern.Arguments {
+		if argument.Keyword == "" || handlerID == "" {
+			continue
+		}
+		if target.callbacks[argument.ID] == handlerID || len(argument.ObjectIDs) == 1 && argument.ObjectIDs[0] == handlerID {
+			return name + "." + argument.Keyword, true
+		}
+	}
+	return name, true
 }
 
 // ownsCallee reports a call whose target is a declaration of this
