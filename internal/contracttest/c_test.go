@@ -374,13 +374,15 @@ func TestCFixtureParsesEachProgramInTheBuildsView(t *testing.T) {
 	}
 }
 
-// Inside repomap's own repository the fixture's Makefile is not at the root,
+// Nested in a bigger repository, the fixture's Makefile is not at the root,
 // so nothing gives its flags: each main is a program whose files the linker
 // closure decides, parsed with clang's defaults. loop.c then takes the host's
-// own backend, and every program still parses on every host.
+// own backend, and every program still parses on every host. (Under a
+// testdata directory, as in repomap's own repository, its files are no units
+// at all.)
 func TestCFixtureParsesWithoutItsMakefile(t *testing.T) {
 	isolateFixtureGitEnvironment(t)
-	const prefix = "testdata/repositories/c/"
+	const prefix = "services/kv/"
 	root := filepath.Join(t.TempDir(), "repository")
 	copyFixtureTree(t, filepath.Join(repositoryRoot(t), "testdata", "repositories", "c"), filepath.Join(root, filepath.FromSlash(prefix)))
 	runFixtureGit(t, root, "init", "--quiet")
