@@ -38,11 +38,8 @@ func (c *Categorizer) Calls() int {
 func (c *Categorizer) Complete(_ context.Context, prepared llm.Prepared) (llm.Completion, error) {
 	var body struct {
 		Questions map[string]struct {
-			Instructions struct {
-				Row      map[string]any `json:"row"`
-				Question string         `json:"question"`
-			} `json:"instructions"`
-			Criteria map[string]*string `json:"criteria"`
+			Instructions map[string]json.RawMessage `json:"instructions"`
+			Criteria     map[string]json.RawMessage `json:"criteria"`
 		} `json:"questions"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &body); err != nil {
@@ -50,11 +47,37 @@ func (c *Categorizer) Complete(_ context.Context, prepared llm.Prepared) (llm.Co
 	}
 	answers := make(map[string]any, len(body.Questions))
 	for key, asked := range body.Questions {
-		question := llm.Question{Item: asked.Instructions.Row, Ask: asked.Instructions.Question}
-		for name, meaning := range asked.Criteria {
+		// The instructions hold the question and one item under its name.
+		var question llm.Question
+		for name, raw := range asked.Instructions {
+			if name == "question" {
+				if err := json.Unmarshal(raw, &question.Ask); err != nil {
+					return llm.Completion{}, fmt.Errorf("typesafetest: question %s: %w", key, err)
+				}
+				continue
+			}
+			if question.Item != nil {
+				return llm.Completion{}, fmt.Errorf("typesafetest: question %s has two items", key)
+			}
+			if err := json.Unmarshal(raw, &question.Item); err != nil {
+				return llm.Completion{}, fmt.Errorf("typesafetest: question %s item: %w", key, err)
+			}
+			if name != "row" {
+				question.Name = name
+			}
+		}
+		for name, raw := range asked.Criteria {
 			option := llm.Option{Name: name}
-			if meaning != nil {
-				option.Meaning = *meaning
+			var meaning string
+			var criteria llm.Criteria
+			switch {
+			case string(raw) == "null":
+			case json.Unmarshal(raw, &meaning) == nil:
+				option.Meaning = meaning
+			case json.Unmarshal(raw, &criteria) == nil:
+				option.Criteria = &criteria
+			default:
+				return llm.Completion{}, fmt.Errorf("typesafetest: question %s option %s has unreadable criteria", key, name)
 			}
 			question.Options = append(question.Options, option)
 		}

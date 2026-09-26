@@ -86,21 +86,34 @@ func (c *Client) State() []byte {
 }
 
 // Prompt is the evaluation body: the task and the shared context are the
-// state, and each question is keyed by its owner's key. An option without a
-// meaning is null, since the state already defines it.
+// state, and each question is keyed by its owner's key and names its item
+// as the question does ("row" unless it says otherwise). An option carries
+// its structured criteria, else its meaning, else null, since the state
+// already defines it.
 func (c *Client) Prompt(task string, context map[string]any, questions map[string]llm.Question) (llm.Prompt, error) {
 	asked := make(map[string]any, len(questions))
 	for key, question := range questions {
-		instructions := map[string]any{"row": question.Item, "question": question.Ask}
+		name := question.Name
+		if name == "" {
+			name = "row"
+		}
+		if name == "question" {
+			return llm.Prompt{}, fmt.Errorf("typesafe: question %s names its item \"question\"", key)
+		}
+		instructions := map[string]any{name: question.Item, "question": question.Ask}
 		if len(question.Options) == 0 {
 			asked[key] = map[string]any{"type": "noul", "instructions": instructions}
 			continue
 		}
 		criteria := make(map[string]any, len(question.Options))
 		for _, option := range question.Options {
-			criteria[option.Name] = nil
-			if option.Meaning != "" {
+			switch {
+			case option.Criteria != nil:
+				criteria[option.Name] = option.Criteria
+			case option.Meaning != "":
 				criteria[option.Name] = option.Meaning
+			default:
+				criteria[option.Name] = nil
 			}
 		}
 		asked[key] = map[string]any{"type": "choice", "instructions": instructions, "criteria": criteria}

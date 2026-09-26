@@ -84,3 +84,29 @@ func TestVerdictsReadEachAnswerAlone(t *testing.T) {
 		}
 	}
 }
+
+// A question names its item as its owner asks about it, and each option
+// carries its structured criteria, else its meaning, else null: the owner's
+// request shape (state = what we want, question = the item, criteria per
+// option). The criteria's keys are written in sorted order.
+func TestPromptNamesTheItemAndWritesEachOptionsCriteria(t *testing.T) {
+	client := &Client{Model: "jev-test"}
+	prompt, err := client.Prompt("task", map[string]any{}, map[string]llm.Question{
+		"f1|boxes": {Name: "file", Item: map[string]any{"path": "a.c"}, Ask: "One box or several?", Options: []llm.Option{
+			{Name: "one box", Criteria: &llm.Criteria{What: "one job", Includes: "its helpers", NotFor: "two jobs", Examples: []string{"a queue"}}},
+			{Name: "several boxes", Meaning: "two or more jobs"},
+			{Name: "none of these"},
+		}},
+		"s1|role": {Item: map[string]any{"part": "p1"}, Ask: "Which role?", Options: []llm.Option{{Name: "domain"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"questions":{"f1|boxes":{"criteria":{"none of these":null,"one box":{"examples":["a queue"],"includes":"its helpers","not_for":"two jobs","what":"one job"},"several boxes":"two or more jobs"},"instructions":{"file":{"path":"a.c"},"question":"One box or several?"},"type":"choice"},"s1|role":{"criteria":{"domain":null},"instructions":{"question":"Which role?","row":{"part":"p1"}},"type":"choice"}},"state":{"context":{},"task":"task"}}`
+	if prompt.User != want {
+		t.Fatalf("prompt:\n%s\nwant:\n%s", prompt.User, want)
+	}
+	if _, err := client.Prompt("task", nil, map[string]llm.Question{"q": {Name: "question", Ask: "?"}}); err == nil {
+		t.Fatal("an item named like the question was accepted")
+	}
+}

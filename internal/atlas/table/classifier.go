@@ -130,8 +130,22 @@ func columnOptions(column Column, context []Field, row Row) []string {
 			switch list := field.Value.(type) {
 			case []string:
 				return append(options, list...)
+			case []map[string]any:
+				// A catalogue of objects offers its entries' refs.
+				for _, entry := range list {
+					if ref, _ := entry["ref"].(string); ref != "" {
+						options = append(options, ref)
+					}
+				}
+				return options
 			case []any:
 				for _, item := range list {
+					if entry, ok := item.(map[string]any); ok {
+						if ref, _ := entry["ref"].(string); ref != "" {
+							options = append(options, ref)
+						}
+						continue
+					}
 					options = append(options, fmt.Sprint(item))
 				}
 				return options
@@ -139,6 +153,19 @@ func columnOptions(column Column, context []Field, row Row) []string {
 		}
 	}
 	return options
+}
+
+// classifierContext is the window context a decision model shares across
+// its questions: every field but a catalogue a column reads its options and
+// their criteria from, which each question already carries.
+func classifierContext(def Definition, context []Field) map[string]any {
+	values := fieldsMap(context)
+	for _, column := range def.Columns {
+		if column.CriteriaFrom != "" && column.OptionsFrom != "" {
+			delete(values, column.OptionsFrom)
+		}
+	}
+	return values
 }
 
 func questionKey(row Row, column Column) string {
@@ -167,10 +194,13 @@ type optionNames struct {
 	label map[string]string // ref -> shown name
 	ref   map[string]string // shown name -> ref
 	list  string            // the catalogue's field name
+	// criteria is, by ref, the text of the catalogue entry's CriteriaFrom
+	// field.
+	criteria map[string]string
 }
 
 func namesFor(column Column, context []Field, row Row, options []string) optionNames {
-	names := optionNames{label: map[string]string{}, ref: map[string]string{}}
+	names := optionNames{label: map[string]string{}, ref: map[string]string{}, criteria: map[string]string{}}
 	catalogue := func(value any) []map[string]any {
 		switch list := value.(type) {
 		case []map[string]any:
@@ -201,6 +231,9 @@ func namesFor(column Column, context []Field, row Row, options []string) optionN
 					if ref != "" && title != "" {
 						titles[ref] = title
 						seen[strings.ToLower(title)]++
+					}
+					if text, _ := entry[column.CriteriaFrom].(string); ref != "" && column.CriteriaFrom != "" && text != "" {
+						names.criteria[ref] = text
 					}
 				}
 				for ref, title := range titles {
@@ -252,12 +285,18 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 				return llm.Call[Result]{}, fmt.Errorf("table %s: row %s column %s has no options", def.Stage, row.ID, column.Name)
 			}
 			names := namesFor(column, window.Context, row, options)
-			question := llm.Question{Item: fieldsMap(row.Fields), Ask: columnQuestion(column, names)}
+			question := llm.Question{Name: column.Item, Item: fieldsMap(row.Fields), Ask: columnQuestion(column, names)}
 			if !yesOnly(column, options) {
 				// A catalogue's purposes are already in the context; repeating
 				// them in every question multiplied a request past the budget.
+				// Only a column that takes its criteria from the catalogue
+				// sends them, and then not the catalogue itself.
 				for _, option := range options {
-					question.Options = append(question.Options, llm.Option{Name: names.label[option]})
+					choice := llm.Option{Name: names.label[option], Meaning: names.criteria[option]}
+					if criteria, ok := column.Criteria[option]; ok {
+						choice.Criteria = &criteria
+					}
+					question.Options = append(question.Options, choice)
 				}
 				if column.Optional {
 					question.Options = append(question.Options, llm.Option{Name: classifierAbsent, Meaning: "No listed option applies to this row."})
@@ -266,7 +305,7 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 			questions[questionKey(row, column)] = question
 		}
 	}
-	prompt, err := c.Prompt(def.System, fieldsMap(window.Context), questions)
+	prompt, err := c.Prompt(def.System, classifierContext(def, window.Context), questions)
 	if err != nil {
 		return llm.Call[Result]{}, fmt.Errorf("table %s: %w", def.Stage, err)
 	}

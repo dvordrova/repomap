@@ -209,3 +209,55 @@ func TestFitClassifierWindowsHalvesOversizedBodiesAndKeepsRows(t *testing.T) {
 		t.Fatalf("rows %d, want 150", rows)
 	}
 }
+
+// A column that reads its options and their criteria from a catalogue of
+// objects sends each option under its title with that entry's text as its
+// criteria, and the catalogue itself only that way: the shared context
+// keeps the other fields. Two entries sharing a title stay two options,
+// each shown by its ref with its own criteria, and a choice of either is
+// read back as its ref.
+func TestCriteriaFromACatalogueAreTheOptionsOwnTerms(t *testing.T) {
+	def := Definition{
+		Stage: "atlas_catalogue", Contract: "repomap.atlas.catalogue.v1", System: "choose a box", Classifier: true,
+		Columns: []Column{{Name: "box", Kind: Choice, OptionsFrom: "boxes", CriteriaFrom: "holds", Item: "declaration", Ask: "Which box does `declaration` go in?"}},
+	}
+	window := Window{
+		Context: []Field{{Name: "file", Value: "a.c"}, {Name: "boxes", Value: []map[string]any{
+			{"ref": "b1", "title": "Replies", "holds": "The reply buffers."},
+			{"ref": "b2", "title": "Keys", "holds": "The key lookups."},
+			{"ref": "b3", "title": "keys", "holds": "The key commands."},
+		}}},
+		Rows: []Row{{ID: "d1", Fields: []Field{{Name: "declaration", Value: "addReply"}}}},
+	}
+	client := &typesafe.Client{Model: "jev-test"}
+	call, err := ClassifierCall(client, def, window)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"questions":{"d1|box":{"criteria":{"Replies":"The reply buffers.","b2":"The key lookups.","b3":"The key commands."},"instructions":{"declaration":{"declaration":"addReply"},"question":"Which box does ` + "`declaration`" + ` go in?"},"type":"choice"}},"state":{"context":{"file":"a.c"},"task":"choose a box"}}`
+	if call.Prompt.User != want {
+		t.Fatalf("request:\n%s\nwant:\n%s", call.Prompt.User, want)
+	}
+	result, err := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{"d1|box": chose("b3", map[string]float64{"b3": 0.7, "b2": 0.2, "Replies": 0.1})})
+	if err != nil || result.Answers[0]["box"] != "b3" {
+		t.Fatalf("answer %v, %v", result.Answers, err)
+	}
+}
+
+// Static options carry their own criteria object.
+func TestStaticOptionsCarryTheirCriteria(t *testing.T) {
+	def := Definition{
+		Stage: "atlas_gate", Contract: "repomap.atlas.gate.v1", System: "gate", Classifier: true,
+		Columns: []Column{{Name: "boxes", Kind: Choice, Options: []string{"one box", "several boxes"}, Item: "file", Ask: "One or several?",
+			Criteria: map[string]llm.Criteria{"one box": {What: "one job"}, "several boxes": {What: "several jobs", Examples: []string{"a web file"}}}}},
+	}
+	window := Window{Rows: []Row{{ID: "f1", Fields: []Field{{Name: "path", Value: "a.c"}}}}}
+	call, err := ClassifierCall(&typesafe.Client{Model: "jev-test"}, def, window)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"questions":{"f1|boxes":{"criteria":{"one box":{"what":"one job"},"several boxes":{"examples":["a web file"],"what":"several jobs"}},"instructions":{"file":{"path":"a.c"},"question":"One or several?"},"type":"choice"}},"state":{"context":{},"task":"gate"}}`
+	if call.Prompt.User != want {
+		t.Fatalf("request:\n%s\nwant:\n%s", call.Prompt.User, want)
+	}
+}

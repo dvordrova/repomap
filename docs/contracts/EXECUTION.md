@@ -176,6 +176,18 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   and `row`), request packing, concurrency and the one-token output limit
   stay with the table code and are sized for Jev. Another implementation
   would take over those Jev-specific limits when it exists.
+- A Jev request follows the owner's shape (2026-09-26: a flaky decision
+  means it was explained poorly): `state.task` says what we want, each
+  question holds its item under the name the question uses (`row` unless a
+  column's `Item` names it, such as `file` or `declaration`), and each
+  option carries its criteria. A column's static `Criteria` are an object
+  `{examples, includes, not_for, what}` (keys in sorted order); a column's
+  `CriteriaFrom` takes an option's criteria from the text of that field of
+  its catalogue entry, and the catalogue then reaches Jev only as the
+  options and their criteria, never again in `state.context`. Two entries
+  sharing a title are both offered, each by its ref with its own criteria.
+  Any other option's criteria are its meaning or null, so the tables that
+  existed before keep their exact request bytes (the Jev request golden).
 - A decision model (Jev) answers a closed choice with a probability per
   option. Its choice is taken when the chosen option leads every other
   listed option, `none of these` included, by at least 0.10

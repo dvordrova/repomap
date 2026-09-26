@@ -22,15 +22,32 @@ type Categorizer interface {
 
 // Question is one closed question about one item.
 type Question struct {
+	// Name is what the request calls the item, such as "file" or
+	// "declaration", so the question can name it; empty is "row".
+	Name string
 	Item map[string]any
 	Ask  string
 	// Options are the choices in order; none makes a yes/no question.
 	Options []Option
 }
 
-// Option is one choice. Meaning is given only where the task and context do
-// not already define it, such as "none of these".
-type Option struct{ Name, Meaning string }
+// Option is one choice. Criteria says what choosing it means on the owner's
+// terms; else Meaning says it in one text, given only where the task and
+// context do not already define the option, such as "none of these".
+type Option struct {
+	Name, Meaning string
+	Criteria      *Criteria
+}
+
+// Criteria are an option's explicit terms: what it is, what it includes,
+// what it is not for, and examples. The fields are in the order their JSON
+// keys sort, the order a request writes them in.
+type Criteria struct {
+	Examples []string `json:"examples,omitempty"`
+	Includes string   `json:"includes,omitempty"`
+	NotFor   string   `json:"not_for,omitempty"`
+	What     string   `json:"what"`
+}
 
 // Verdict answers one question: the choice with every option's probability,
 // or a yes/no question's probability of yes.

@@ -93,6 +93,16 @@ type Column struct {
 	// Ask is the question a decision model is asked for this column, stated
 	// directly; empty derives one from the column's name and note.
 	Ask string `json:"-"`
+	// Item is what a decision model's question calls the row, such as
+	// "file"; empty is "row". Ask names it.
+	Item string `json:"-"`
+	// Criteria are a decision model's explicit terms for each of Options.
+	Criteria map[string]llm.Criteria `json:"-"`
+	// CriteriaFrom names the field of each entry of the OptionsFrom
+	// catalogue whose text is that option's criteria for a decision model.
+	// The catalogue then reaches the model only as the options and their
+	// criteria, never again in the shared context.
+	CriteriaFrom string `json:"-"`
 }
 
 // Definition is one table: its stage name, window size, prompt and columns.
