@@ -158,6 +158,14 @@ func TestSymbolRowWritesIdenticalCallsOnceWithEveryLine(t *testing.T) {
 	if after, _ := json.Marshal(place); string(before) != string(after) {
 		t.Fatal("rendering changed the native calls")
 	}
+	// Both prompts that receive these rows say what an entry's lines are,
+	// including a line listed twice: the evidence vocabulary contract test
+	// checks enumerated values, not field names.
+	for _, def := range []table.Definition{SymbolSelection(false), Symbols()} {
+		if !strings.Contains(def.System, "`lines` of a call") || !strings.Contains(def.System, "line listed twice") {
+			t.Fatalf("%s receives call entries with lines, and its prompt does not define them", def.Contract)
+		}
+	}
 }
 
 // A rendered call leaves out the default invocation and resolution, which the
