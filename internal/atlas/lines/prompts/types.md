@@ -16,13 +16,12 @@ Fill the cells advertised by fill:
   workspace contract may support: "Owns temporary build outputs. Closing it
   deletes those outputs." An inventory of methods or "manages the lifecycle"
   is not an explanation of a concept.
-- alias: a short English reader label, at most 40 characters, alongside the
-  original name. Give a descriptive English alias when the original name is
-  not English or is unclear to a newcomer, grounded in this declaration and
-  its documented meaning. Translate the meaning, not just the sound of a
-  foreign name. Do not invent a concept or expand an unexplained acronym.
-  Use none when the original name is already recognizable English or the
-  evidence does not establish a useful alias. The native code name stays intact.
+- alias: asked only for a name that is not written in Latin letters: a short
+  English reader label, at most 40 characters, alongside the original name,
+  grounded in this declaration and its documented meaning. Translate the
+  meaning, not just the sound of the name. Do not invent a concept or expand
+  an unexplained acronym. Use none when the evidence does not establish a
+  useful alias. The native code name stays intact.
 
 Ground every detail in the row. Preserve the native declaration kind and member
 kinds: a struct with a function-valued field is not an interface with a method.

@@ -399,14 +399,14 @@ for an operation's subject and its chains, `both` when a declaration serves
 in each. It is recomputed on hydrate, never persisted.
 
 Without `--captions` the model is asked for decisions alone: every prose cell
-(titles, lines, aliases, sentences, operation descriptions) keeps its
-fallback, and a table of prose alone is not sent. A prompt whose table keeps
-some of its cells there describes every cell and leaves which ones to write to
-`fill`: the types prompt asks for "the cells advertised by fill", so a
-caption-less types request asks `line` alone and the model writes no `alias`
-(it wrote one on 82 of 82 rows, all discarded, while the prompt demanded two
-cells). With `--captions` the English alias is asked, accepted and shown as
-before.
+(titles, lines, sentences, operation descriptions) keeps its fallback, and a
+table of prose alone is not sent. The alias is not a caption: it is asked by
+name, with or without `--captions` (below). A prompt whose table keeps some of
+its cells in a request describes every cell and leaves which ones to write to
+`fill`: the symbols, types, targets and joints prompts ask for "the cells
+advertised by fill", so a caption-less types request of an English name asks
+`line` alone and the model writes no `alias` (it wrote one on 82 of 82 rows,
+all discarded, while the prompt demanded two cells).
 
 A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell (27 Freqtrade rows were refused for it). Fixed native boundaries request explanation rather than pointless existence/kind choices. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the shared known-systems list (`internal/atlas/destinations`) annotated with the target's dependencies, with `other: ` for a system outside it; an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
 
@@ -441,7 +441,7 @@ not choose a destination or infer a positive decision.
   direct-call node. Type context retains the existing bounded author quotes,
   including later sentences; ordinary file/callable rows still use first
   sentences. The type table asks for a short explanation,
-  optional English alias and key flag; it cannot classify activations. Its explanation is prose, so
+  an English alias only for a name outside the Latin script, and key flag; it cannot classify activations. Its explanation is prose, so
   normalization preserves complete sentences and qualifications rather than
   cutting them at 240 characters. Undocumented lifecycle topics are omitted
   instead of appending irrelevant absence claims. Bare names without owned
@@ -463,15 +463,32 @@ not choose a destination or infer a positive decision.
   interpretation contract, not a renderer name/path heuristic.
 
 Symbols and Types may also return one short English `alias` beside their
-explanation, through the same existing table request. It is an optional
-reader-facing label for a name that needs explaining, especially a non-English
-identifier; `none` records no alias. Accepted aliases flow through symbol
-knowledge and the atlas into GroupsIndex interpretations. Native names, IDs and
-source anchors remain unchanged. The report keeps aliases English in every
-language, displays the original code name beside them, and localizes the
-description. Both literal spellings address the same glossary definition;
-no script detector, transliteration, per-name request or browser-generated label
-is added. Current format constants are linked from [CURRENT](../agent-room/CURRENT.md#formats).
+explanation, through the same existing tables. It is a reader-facing label for
+a non-English identifier; `none` records no alias. Owner decision 2026-09-26:
+the alias is asked only for a name that is not English, with or without
+`--captions`, and code decides which names those are: `lines.NeedsAlias` holds
+for a name with a letter outside the Latin script (`parse한국` does,
+`snake_case_ascii` does not; digits, underscores and punctuation are not
+letters). The model does not choose which names are asked: the symbols and
+types prompts say the alias is asked only for a name not written in Latin
+letters and never ask the model to judge whether a name is English. Columns
+belong to a request, so the overview rows are split by name: a name that
+needs an alias is asked the complete table (rounds 5 and 6), the others the
+table without the alias (rounds 3 and 4) in requests of their own. No
+description request reads another, so the functions' and the types' requests
+of both shapes are asked side by side and join in step order. An English type
+asks its `line` alone, in one request shape and memo shared by both modes;
+without captions an English function is asked nothing, and a function that
+needs an alias is asked `alias` alone and has no line. A transliterated name
+in Latin letters (`juga_jeongbo`) gets no alias: a known limitation. Accepted
+aliases flow through symbol knowledge and the atlas into GroupsIndex
+interpretations. Native names, IDs and source anchors remain unchanged. The
+report keeps aliases English in every language, displays the original code
+name beside them, and localizes the description. Both literal spellings
+address the same glossary definition. Apart from that one request-side
+decision, no script detector, transliteration, per-name request or
+browser-generated label is added. Current format constants are linked from
+[CURRENT](../agent-room/CURRENT.md#formats).
 
 Names, signatures and argument names are useful clues for model hypotheses; absence of comments must not prevent orientation. Keep those hypotheses distinct from observed actions and effects established by native caller evidence. Earlier source-body/context experiments are development measurements, not authorization for implementation-body retrieval in ordinary requests.
 

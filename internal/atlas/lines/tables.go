@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/destinations"
@@ -65,6 +66,31 @@ var jointsPrompt string
 // file; the code keeps the first by rank.
 const MaxKeysPerFile = 5
 
+// AliasColumn is the Symbols and Types cell holding a declaration's short
+// English reader label. It is asked only of a name that NeedsAlias; the other
+// rows are asked the same table without it.
+const AliasColumn = "alias"
+
+// NeedsAlias reports whether a declaration's name is asked an English alias:
+// it holds a letter outside the Latin script, as parse한국 does. Digits,
+// underscores and punctuation are not letters, so snake_case_ascii needs
+// none, and neither does any other Latin-script name, a transliterated one
+// included (owner decision 2026-09-26). Code decides this; the model is
+// never asked which names are English.
+func NeedsAlias(name string) bool {
+	for _, r := range name {
+		if unicode.IsLetter(r) && !unicode.Is(unicode.Latin, r) {
+			return true
+		}
+	}
+	return false
+}
+
+func aliasColumn() table.Column {
+	return table.Column{Name: AliasColumn, Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Alone: true,
+		Note: "asked only for a name not written in Latin letters: a short English reader label grounded in this declaration; none when the evidence does not establish one"}
+}
+
 // Symbols explains the selected declarations displayed in the overview.
 func Symbols() table.Definition {
 	return table.Definition{
@@ -72,7 +98,7 @@ func Symbols() table.Definition {
 		System: withVocabulary(symbolsPrompt), Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Text, MaxRunes: ShortLineRunes, Note: "one sentence, what this declaration does or is"},
-			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Alone: true, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
+			aliasColumn(),
 		},
 	}
 }
@@ -85,7 +111,7 @@ func Types() table.Definition {
 		System: typesPrompt, Memoize: true,
 		Columns: []table.Column{
 			{Name: "line", Kind: table.Prose, Note: "briefly explain what this represents or controls and any consequential documented rule, preserving its conditions; no method inventory or invented effects"},
-			{Name: "alias", Kind: table.Text, MaxRunes: LabelRunes, EmptyValue: "none", Alone: true, Note: "short English reader label grounded in this declaration; none when its original name is already clear"},
+			aliasColumn(),
 		},
 	}
 }

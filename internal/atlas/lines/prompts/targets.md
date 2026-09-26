@@ -17,7 +17,7 @@ integration points by kind and direction.
   read), `http_server`, `listen_address`, `other`. Direction `out` is a call
   this target makes, `in` an interface it exposes.
 
-Fill two cells for every row and nothing else:
+Fill the cells advertised by fill:
 
 - `line`: one sentence, at most 160 characters, saying what this target is
   and does. Explain its purpose using the README, named operations and the

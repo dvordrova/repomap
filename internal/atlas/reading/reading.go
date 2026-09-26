@@ -95,8 +95,9 @@ type Options struct {
 	// ReadSource returns a repository file's bytes for the tables that read
 	// code; nil leaves those rows without source.
 	ReadSource func(path string) ([]byte, error)
-	// NoCaptions leaves every prose cell (titles, lines, aliases, sentences)
-	// on its fallback and asks the model for decisions alone.
+	// NoCaptions leaves every prose cell (titles, lines, sentences) on its
+	// fallback and asks the model for decisions alone. A declaration's alias
+	// is asked by its name either way (lines.NeedsAlias).
 	NoCaptions bool
 }
 
@@ -696,11 +697,31 @@ func (r *reader) runTableGroups(ctx context.Context, def table.Definition, round
 }
 
 // withoutCaptions keeps the decisions of a table and drops its prose cells;
-// a table of prose alone asks nothing.
+// a table of prose alone asks nothing. An alias is not a caption: a table
+// asked of names that need one keeps it with or without captions (owner
+// decision 2026-09-26), and the other names never take it (withoutAlias).
 func withoutCaptions(def table.Definition) table.Definition {
+	return narrowed(def, func(column table.Column) bool {
+		return column.Kind != table.Text || column.Name == lines.AliasColumn
+	})
+}
+
+// withoutAlias is a Symbols or Types table asked of names that need no alias
+// (lines.NeedsAlias): its other cells, without the alias. A type then asks
+// its line alone with or without captions, in one request shape and memo.
+func withoutAlias(def table.Definition) table.Definition {
+	return narrowed(def, func(column table.Column) bool { return column.Name != lines.AliasColumn })
+}
+
+// narrowedContract marks a table asked with fewer cells than it defines.
+const narrowedContract = ".decisions"
+
+// narrowed keeps the columns keep accepts. A table that lost any is marked
+// once, however many narrowings took them.
+func narrowed(def table.Definition, keep func(table.Column) bool) table.Definition {
 	columns := make([]table.Column, 0, len(def.Columns))
 	for _, column := range def.Columns {
-		if column.Kind != table.Text {
+		if keep(column) {
 			columns = append(columns, column)
 		}
 	}
@@ -708,7 +729,9 @@ func withoutCaptions(def table.Definition) table.Definition {
 		return def
 	}
 	def.Columns = columns
-	def.Contract += ".decisions"
+	if !strings.HasSuffix(def.Contract, narrowedContract) {
+		def.Contract += narrowedContract
+	}
 	return def
 }
 
