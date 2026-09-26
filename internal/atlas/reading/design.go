@@ -57,8 +57,8 @@ func designOutputTokens(rows int) int {
 // designFile is one row of a target's parts request: a file of the target
 // that holds at least one unit of its own.
 type designFile struct {
-	id, path, dir string
-	test          bool
+	id, path, dir   string
+	test, generated bool
 	// units are the symbol places of the file's units: a function, a
 	// variable, a type together with its methods, or a module body. Their
 	// part is the file's part.
@@ -136,8 +136,13 @@ func (r *reader) designView(targetID string) *designView {
 	}
 	for _, file := range files {
 		view.all = append(view.all, file.ID)
-		row := &designFile{id: file.ID, path: file.Path, dir: path.Dir(file.Path), test: file.File.Test}
+		row := &designFile{id: file.ID, path: file.Path, dir: path.Dir(file.Path), test: file.File.Test, generated: file.File.Generated}
 		decls := file.File.Decls
+		// named is the first unit of the file under each name: a declaration
+		// that repeats it (a second Go init, Python @overload stubs and their
+		// implementation, TS overload signatures, a Clojure declare and its
+		// defn) follows it, one unit shown with the first one's signature.
+		named := map[string]string{}
 		for position, decl := range decls {
 			id := r.symbolID(file.Path, decl.LineNo, decl.Name)
 			if id == "" {
@@ -158,6 +163,11 @@ func (r *reader) designView(targetID string) *designView {
 					continue
 				}
 			}
+			if first := named[decl.Name]; first != "" {
+				view.follows[id] = first
+				continue
+			}
+			named[decl.Name] = id
 			row.units = append(row.units, id)
 			view.unitFile[id] = file.ID
 			text := decl.Name

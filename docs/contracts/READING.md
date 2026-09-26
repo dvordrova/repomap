@@ -173,7 +173,11 @@ through the native owner the type's members name, even from another file; a
 lexical child (a declaration inside the source range of a function or method
 of its file, by the adapter's own positions and end lines, such as Go `f$1`
 closures and nested JS or Python functions) takes its parent's part and is
-neither a row, a name nor a unit. `calls` counts exact call sites between
+neither a row, a name nor a unit. A declaration that repeats the name of an
+earlier unit of its file follows that unit the same way: a second Go
+`init`, Python `@overload` stubs and their implementation, TypeScript overload
+signatures, a Clojure `declare` and its `defn` are one unit and one name, shown
+with the first declaration's signature (C has no such repeat). `calls` counts exact call sites between
 listed files once per distinct pair (`"f3 -> f7 (12)"`); calls resolved only
 to alternatives are left out. `imports` lists imports the adapter resolves to
 one listed file (`"f3 -> f7"`); Go package imports resolve to a directory and

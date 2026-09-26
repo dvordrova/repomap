@@ -173,6 +173,23 @@ func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, reques
 				t.Fatalf("%s lists the closure %s", place.Path, name)
 			}
 		}
+		// A name the file declares twice (a second Go init, overload stubs,
+		// a Clojure declare) is one unit: listed once and counted once, with
+		// the module body the only unit no list names.
+		modules := 0
+		for i, decl := range place.File.Decls {
+			if decl.Kind == "module" && !children[i] {
+				modules++
+			}
+		}
+		unique := slices.Clone(names)
+		slices.Sort(unique)
+		if len(slices.Compact(unique)) != len(names) {
+			t.Fatalf("%s lists a repeated name more than once: %v", place.Path, names)
+		}
+		if units, _ := file["units"].(float64); int(units) != len(names)+modules {
+			t.Fatalf("%s counts %v units for %d names and %d module bodies", place.Path, file["units"], len(names), modules)
+		}
 	}
 	// Every file with a declaration of its own (not a lexical child, not a
 	// method that goes with its type) is listed once.
