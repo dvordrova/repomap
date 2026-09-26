@@ -435,13 +435,14 @@ func (r *reader) readSymbols(ctx context.Context) error {
 	return nil
 }
 
-// describeDeclarations asks one description table of overview declarations. Only a name
-// that lines.NeedsAlias is asked its English alias, with or without captions
-// (owner decision 2026-09-26). Columns belong to a request, so those rows go
-// to the complete table in aliasRound, and the others to the table without
-// the alias in round, in requests of their own: their cells, request bytes
-// and memos are the ones they had before aliases were asked by name, except
-// that with captions a symbol no longer asks an alias beside its line.
+// describeDeclarations asks one description table of overview declarations.
+// Only a name that lines.NeedsAlias is asked its English alias, with or
+// without captions (owner decision 2026-09-26). Columns belong to a request,
+// so those rows go to the complete table in aliasRound, and the others to the
+// table without the alias in round, in requests of their own. The others keep
+// their cells; without captions they also keep the request bytes and memos
+// they had before aliases were asked by name, and with captions they lose
+// only the alias cell. An English type is then asked alike in both modes.
 func (r *reader) describeDeclarations(ctx context.Context, def table.Definition, round, aliasRound int, places []atlas.Place, rows []table.Row) ([]rowAnswer, error) {
 	var plain, named []int
 	for i, place := range places {

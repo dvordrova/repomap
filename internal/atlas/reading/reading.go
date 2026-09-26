@@ -91,8 +91,9 @@ type Options struct {
 	// ReadSource returns a repository file's bytes for the tables that read
 	// code; nil leaves those rows without source.
 	ReadSource func(path string) ([]byte, error)
-	// NoCaptions leaves every prose cell (titles, lines, aliases, sentences)
-	// on its fallback and asks the model for decisions alone.
+	// NoCaptions leaves every prose cell (titles, lines, sentences) on its
+	// fallback and asks the model for decisions alone. A declaration's alias
+	// is asked by its name either way (lines.NeedsAlias).
 	NoCaptions bool
 }
 

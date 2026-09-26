@@ -147,7 +147,7 @@ func TestPromptsDemandOnlyTheCellsFillAdvertises(t *testing.T) {
 	// and memo it always had without captions.
 	if english := withoutCaptions(withoutAlias(lines.Types())); english.Contract != lines.Types().Contract+".decisions" ||
 		!reflect.DeepEqual(english, withoutAlias(lines.Types())) {
-		t.Fatalf("an English type is asked another table with and without captions: %+v", english)
+		t.Fatalf("an English type is asked another table with and without captions: %s %v", english.Contract, columnNames(english))
 	}
 }
 

@@ -232,7 +232,9 @@ Lookup never proves an occurrence's meaning. Owner decision 2026-09-26: a name
 The owner's clarified 2026-09-08 design keeps every glossary name in its original
 spelling. A later clarification adds an optional English Alias beside a native
 declaration name, including in Russian reports. Symbols and Types request
-that short label together with the existing explanation. The accepted cell flows
+that short label in their existing tables, only for a name with a letter
+outside the Latin script (owner decision 2026-09-26; see
+[Reading](READING.md#type-and-concept-descriptions)). The accepted cell flows
 through Knowledge, atlas and GroupsIndex into the ordinary report. Native
 names, IDs, locations and source links are unchanged. The alias is display prose,
 not a new observation or another graph. The renderer does not infer a name from
