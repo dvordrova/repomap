@@ -1,10 +1,3 @@
-//go:build cindex
-
-// These expectations need the C ProgramIndex projection, which is not on
-// this branch yet: cproject.Index(repository, parsed), whose Result carries
-// the ProgramIndex input. They compile and run with -tags cindex. When the
-// projection is integrated, remove the build constraint above.
-
 package contracttest
 
 import (
