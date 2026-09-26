@@ -668,10 +668,10 @@ func (r *reader) runTableGroups(ctx context.Context, def table.Definition, round
 		if r.opts.Prompt != "" {
 			def.System = r.opts.Prompt
 		}
-		if r.opts.WindowRows > 0 && !r.classifies(def) {
+		if r.opts.WindowRows > 0 {
 			def.Window = r.opts.WindowRows
 		}
-		if r.opts.InputBytes > 0 && !r.classifies(def) {
+		if r.opts.InputBytes > 0 {
 			def.MaxInputBytes = r.opts.InputBytes
 		}
 	}
