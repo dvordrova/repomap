@@ -160,6 +160,38 @@ JS/TS and Clojure adapters do not emit comparable target-bound field-write
 relations; their mutation-tracing equivalent remains unavailable rather than
 being inferred from call or field-initializer evidence.
 
+## Handler tables and stored callbacks
+
+These are the Python equivalents of the C adapter's command table, its
+callbacks stored under a branch and its calls through function-pointer fields.
+The cumulative `src/fixture_app/stored_callbacks.py` checks what the adapter
+supports:
+
+- A handler stored into one of two attributes under a branch keeps each store
+  as an exact write of its attribute at its own line. The calls through
+  `self.on_read` and `self.on_write` stay unresolved and gain no handler. Each
+  handler keeps its exact callback at its `register` call.
+- A local name bound once to a function (`handler = accept_client`) makes
+  `handler()` an exact call of that function.
+
+Missing equivalents, recorded rather than fabricated:
+
+- A dict or list of handlers (`{"get": get_command}`,
+  `[("del", del_command, 2)]`), at module level or in a function, keeps no
+  binding, key or other relation to its handlers. A call through a looked-up
+  entry (`COMMANDS[name](args)`) is unresolved.
+- A call through an attribute is never resolved from its stores, even from a
+  single store in `__init__`. The C adapter makes one store exact and several
+  stores alternatives. The adapter sets no dispatch word, so no call says that
+  it runs a function value.
+- A name reassigned under a branch resolves to its last assignment in source
+  order. After `handler = flush_replies` and `if readable: handler =
+  accept_client`, `handler()` is an exact call of `accept_client`, and
+  `flush_replies` is lost. `register_callback_aliases` in `models.py` checks
+  the same rule for a callback argument. Go keeps both values as alternatives
+  (`SharedCallbackFlow`), and the C adapter leaves a store under a branch
+  unresolved with its candidates as witnesses.
+
 ## Generic declarations
 
 Class and function signatures keep PEP 695 type parameters as written after

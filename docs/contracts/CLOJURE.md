@@ -48,6 +48,27 @@ or protocol has no declaration of its own to move with its type; this
 equivalent of a Go method declared outside its type's file is recorded as
 missing, not fabricated.
 
+## Handler tables and stored callbacks
+
+These are the Clojure equivalents of the C adapter's command table, its
+callbacks stored under a branch and its calls through function-pointer fields.
+A call through a local, whether a parameter or a `let` binding, is an
+unresolved `function_value` call. `with-shadow` in `src/example/core.clj`
+checks this for a parameter that shares a var's name. A `let` binding of a
+known var (`(let [handler accept-client] (handler))`) stays unresolved too;
+the var is a read at the binding.
+
+Missing equivalents, recorded rather than fabricated:
+
+- A map of handlers (`(def commands {"get" get-command})`) makes each handler
+  a native var read of the var that holds the map, without its key. No
+  binding names the handler.
+- Clojure has no fields. Handlers kept in an atom
+  (`(swap! handlers assoc :on-read handler)`) leave no binding. Invoking a
+  looked-up value (`((:on-read @handlers))`, `((commands name) args)`) records
+  no call of its own, because the head of that form is a form rather than a
+  symbol. The inner `(commands name)` is still an exact call of the map var.
+
 ## Test sources
 
 A namespace that requires `clojure.test` or `speclj.core` is a test source.

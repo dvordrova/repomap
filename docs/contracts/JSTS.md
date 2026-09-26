@@ -180,6 +180,31 @@ with TypeScript 7.0.2 while preparing the ordinary Webernetes acceptance run.
 
 Compiler-observed `setInterval`, worker construction, callbacks and native source expressions enter existing observations. Constructor/helper names do not prove a persistent responsibility. A periodic callback and a supported one-shot scheduled task remain distinct legitimate operation candidates; the initializer is not automatically that work. Explicit imports and compiler-resolved barrels retain original native identities; no export or target is inferred by name alone.
 
+## Handler tables and stored callbacks
+
+These are the JS/TS equivalents of the C adapter's command table, its
+callbacks stored under a branch and its calls through function-pointer fields.
+The cumulative `src/stored-callbacks.ts` checks that a handler stored into one
+of two properties under a branch gives the calls through `this.onRead` and
+`this.onWrite` no handler: they stay unresolved, and each handler keeps its
+exact callback at its `register` call.
+
+Missing equivalents, recorded rather than fabricated:
+
+- An object literal or array of handlers (`{get: getCommand}`,
+  `[{name: "del", run: delCommand}]`) makes each handler a value read where
+  the table is written, without its key or its row's literals. No binding
+  names the handler.
+- A property store (`this.onRead = handler`) records no relation, and a call
+  through a property is never resolved from its stores. The C adapter makes
+  one store exact and several stores alternatives.
+- A call through a local constant holding a function
+  (`const handler = acceptClient; handler()`) is an exact call of the constant
+  itself. The function is only read at the constant's initializer. A `let`
+  reassigned under a branch behaves the same way and reads each assigned
+  function. The adapter sets no dispatch word, so no call says that it runs a
+  function value.
+
 ## Test sources
 
 `Target.TestSources` lists the package sources that a test runner owns. Only

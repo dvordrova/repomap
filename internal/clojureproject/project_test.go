@@ -108,8 +108,10 @@ func TestNativeCumulativeProject(t *testing.T) {
 			}
 		}
 		if from.Name == "example.core/with-shadow" {
+			// A call through a local is a call through a function value; it
+			// stays unresolved even where the local shadows a var.
 			foundShadow = true
-			if relation.Resolution != p.ResolutionUnresolved {
+			if relation.Resolution != p.ResolutionUnresolved || len(relation.ToIDs) != 0 || relation.Dispatch != p.DispatchFunctionValue {
 				t.Fatalf("invented shadow target: %+v", relation)
 			}
 		}
