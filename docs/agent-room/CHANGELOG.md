@@ -1,5 +1,63 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — C adapter, entries named by their written words, one request in the air
+
+- **C adapter:** repomap reads C (`internal/cproject`, contract
+  [C](../contracts/C.md)).
+  - clang's JSON AST is streamed.
+  - The programs come from a `make -n -B -w` dry run and its linker closure.
+  - A function-pointer store is a witness: a call through it is unresolved and
+    names the stored candidates.
+  - A command-table row `{"get", getCommand, …}` is a registration (owner
+    decision D1).
+  - Redis 1.3.6 gives four programs: redis-server, redis-benchmark,
+    redis-check-dump and redis-cli.
+- **Entries:** the owner said an entry must not be HTTP-shaped ("там есть
+  GRPC, UDP, TCP, WEBSOCKET … из одного на поверхности должно лепиться при
+  помощи моделей").
+  - A registration carries the words its call wrote, as written. The model
+    names the entry by choosing among them, and code restores the choice
+    verbatim.
+  - `http_server` became `request` (any protocol), and `continuous` joined
+    `binds`.
+  - A command row's registrar is its record field (`redis.c.redisCommand.proc`).
+  - The "hands a callable" flag had been true for every registration inside a
+    declaration since f4878514, so fopen/open were asked what they bind. It is
+    now true only when a callable or a repository value is handed. The
+    handed-value case keeps xk6-dns's `Register("k6/x/dns", new(DNS))`.
+  - redis-server inputs went from 2, both wrong (segvHandler as an
+    interaction, IOThreadEntryPoint as a request), to 98: 97 command requests
+    named `get`, `set`, … and IOThreadEntryPoint as continuous.
+  - Still open for the owner: aeCreateFileEvent(acceptHandler) and
+    aeCreateTimeEvent(serverCron) hand callables to Redis's own event loop, and
+    a call inside the repository is not a registration.
+  - The model classes `vm_preload_proc` as a request too, so zunion and zinter
+    appear twice.
+- **Stored callbacks in Go and Python follow the C rule:** a store under a
+  branch leaves the call unresolved, with the stored candidates as witnesses.
+  - Go interface fields: real no-model comparisons found 32 relations in caddy
+    and 5 in etcd moving from exact or alternatives to unresolved-with-witnesses,
+    including the nil-default `if h.Transport == nil`.
+  - Go review fix: 27 caddy calls through a field of an outside interface had
+    lost every candidate; they are witnesses again.
+  - Python: a branched name, or an attribute of one, names what it may hold, and
+    an `if` condition or the first operand of `and`/`or` counts as
+    unconditional.
+- **Determinism:**
+  - Before: redis-server and redis-benchmark both draw zmalloc.c, ae.c, sds.c,
+    anet.c and adlist.c, so five byte-identical describe requests went live
+    2–3 times at once. Four came back with different sentences, and the cache
+    kept whichever landed last.
+    - A warm rerun then built different core, keys, areas, orientation and
+      glossary requests: 815 changed report.json values.
+  - The fix: the executor now asks an exact request that is already in the air
+    once, and its twins read that answer.
+  - Redis: cold 27–38 s; the warm rerun takes 3 s with 0 live calls in every
+    stage, and its report.json differs only in `timing`.
+    - Checked over 8 warm reruns at GOMAXPROCS 1, 2, 16 and the default.
+  - `cache clear` exits 0.
+- `make test` (53 packages) and `make vet` pass.
+
 ## 2026-09-26 — Table consilium fixes and the alias for non-English names
 
 - A consilium on the table protocol with a 66-call DeepSeek probe (about

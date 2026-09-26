@@ -1,6 +1,6 @@
 # Current product decision
 
-Status: active living ADR. Updated: 2026-09-25.
+Status: active living ADR. Updated: 2026-09-27.
 
 [CONSTITUTION](../CONSTITUTION.md) takes precedence. This page records the
 current decision and acceptance state; [AGENTS](../../AGENTS.md) routes work to
@@ -93,12 +93,16 @@ never entered into or read from a repository-wide unqualified map.
   short package names, types show only their form, and struct tags become object
   `aliases`. Go resolves interface values it observed, including external types
   such as `*sql.DB`.
-- **Registrations (2026-09-17):** the fact layer names no framework. A
-  `registration` is the shape of a non-owned call handing over a callable,
-  address or named value; the reading stage classifies it (`http_server`,
-  `queue_consumer`, `scheduled`, `interaction`, `extension`, `http_client`,
-  `db`…) and operations, routes, client calls and portals follow from accepted
-  decisions. `sql_query` is a fixed `db` boundary, recorded only for a literal
+- **Registrations (2026-09-17; entries 2026-09-27):** the fact layer names no
+  framework. A `registration` is the shape of a non-owned call handing over a
+  callable, address or named value, or a C command-table row (D1), with the
+  words its call wrote. The reading stage classifies it (`request` for any
+  protocol, `command`, `interaction`, `scheduled`, `continuous`,
+  `queue_consumer`, `extension`, `http_client`, `db`…) and names an entry by
+  choosing among its written words, which code restores verbatim. There is no
+  HTTP branch (owner: "там есть GRPC, UDP, TCP, WEBSOCKET … из одного на
+  поверхности должно лепиться при помощи моделей"). Operations, routes,
+  client calls and portals follow from accepted decisions. `sql_query` is a fixed `db` boundary, recorded only for a literal
   with SQL statement structure (the shared `internal/sqltext` admission, not a
   leading verb; a table filled in by `%s` or a template hole still counts). Without a model there are
   candidates, not routes; the Echo preset test is the offline acceptance.
@@ -213,6 +217,9 @@ never entered into or read from a repository-wide unqualified map.
   the provider ceiling. Output refusals partition independent questions first;
   input/context refusals preserve and repartition complete evidence. A new
   limit/packing policy is tested on one saved complete window before a full run.
+  An exact request already in the air is asked once and its twins read that
+  answer, so targets sharing a part get one description and a warm rerun
+  makes no live call.
 - **Glossary:** only accepted prose enters a separate p-ref generation/reduction
   pass with its own 32,768-token output allowance: legitimate windows need 1–16 thousand tokens, and two Watchtower windows looped to 128,000. Source/prose/fill context
   stays local in Prepared and the accepted cache record; no deferred g-ref
@@ -282,6 +289,7 @@ There are no old-format readers or manually rewritten seals.
 | Syn / issue-bot / Watchtower ordinary reports | Third series completed in 225 / 575 / 307 seconds, with 30 / 20 / 27 questions and no unavailable answers. Native routes, operation activation, remote client/option distinctions and glossary provenance were checked. Watchtower's worker answer and required launch argument, issue-bot's per-call argument exception, and a mixed route counter still needed correction; current follow-up checks remain pending. The issue-bot glossary exhausted 128k output before lossless splitting. |
 | repomap self-run, no `--target` (2026-09-25) | `.bin/repomap .` cold, report server ready: 58.2 / 57.2 / 66.2 s over three consecutive runs (two targets), each reaching the glossary at 46–47 s; `make test`, `make vet` pass; one browser walkthrough (map, glossary page, part card connections). The remaining spread is model output: glossary draws of 37–90 terms took 7–17 s, enumerating draws (165–618 terms) 23–60 s plus a reduce pass; a design proposal that loops to its 8,192-token allowance is refused and leaves that target's map as file inventory. |
 | Decoders relaxed, ordinary self-run (2026-09-26) | `.bin/repomap .` at f819f4be on a checkout named `repomap`, own cold cache: exit 0 in 108.0 s (an enumerating glossary draw took 48 s; the previous run's took 15 s). CLI 53 parts in 8 areas, UI 5 drawn parts and 1 test-only part, no map failure, 0 data rows; the refusals left are rules that keep the report true (invented guidance refs, unsourced glossary terms, Jev core roles under the floor, the oversized symbols window). Warm rerun exit 0 in 25.1 s; `cache clear` removed 47 MB; `make test`, `make vet`, `make build` pass; Playwright walk without page errors. The 2026-09-25 map-of-parts run (36 and 61 parts in two draws) is in the journal. |
+| Redis 1.3.6, C (2026-09-27) | `c/integrate` binary: four programs from `make -n`; cold ordinary run exit 0 in 27–38 s, warm rerun 3 s with 0 live calls and a report.json identical but for `timing`; `cache clear` exit 0; `make test`, `make vet` pass. redis-server lists 97 command requests and one continuous thread. Open: the accept handler and serverCron (handed to Redis's own event loop), redis.c drawn as one "Core server" part until the role split lands, outside boxes repeated per component on the system map. |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 
