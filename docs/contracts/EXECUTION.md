@@ -86,6 +86,27 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   The last attempt's HTTP status and diagnostic response IDs/retry/rate-limit
   headers accompany those diagnostics. Request authorization and cookies never
   enter that metadata, which has no role in semantic or cache identity.
+- One exact request in the air is asked once. With the cache enabled, a call
+  whose exact cache key (provider state and prepared bytes) another call on
+  the same `BatchController` is already answering waits for that answer
+  instead of calling the provider (`internal/llm/flight.go`). Targets of one
+  repository send byte-identical requests at once: Redis 1.3.6 builds
+  zmalloc.c and ae.c into the server and each tool, so their part descriptions
+  were asked twice concurrently, drew different sentences, and the cache kept
+  whichever landed last. The next run then read another description than the
+  first had shown, and every areas, core, keys, orientation and glossary
+  request quoting it missed (10 live calls on an otherwise warm rerun); with
+  one call per request the second run made none and wrote the same report
+  apart from its timing. The follower reads the leader's raw answer through
+  its own limits, response adapter and decoder, like a cache record: it makes
+  no provider call and counts and journals as cached. A provider failure is
+  shared as the same error, so an adaptive owner splits every copy alike; a
+  refused answer is each follower's own refusal, neither cached nor asked
+  again for it. A leader stopped by its own context leaves no answer, and its
+  followers ask again. A recall-only call waits for a flight and then reads
+  the cache. After the flight lands an identical call reads the accepted
+  record as before, and a refused one is asked again, as in the next run.
+  `--no-cache` keeps every call live and unshared.
 
 ## Results and prompt ownership
 

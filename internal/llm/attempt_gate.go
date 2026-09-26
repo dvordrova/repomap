@@ -27,10 +27,13 @@ func ProviderAttemptTimeout(ctx context.Context) time.Duration {
 // that use the same Provider. Its zero value is ready for use. The gate starts
 // at the concurrency of the first bound batch and collapses to one lease after
 // a rate limit. Four successful completions from the current cooldown epoch
-// double capacity, up to that original limit.
+// double capacity, up to that original limit. With the cache enabled it also
+// holds the exact requests in the air, so an identical request asked at the
+// same time from any batch waits for that one answer (flight.go).
 type BatchController struct {
-	mu   sync.Mutex
-	gate *attemptGate
+	mu      sync.Mutex
+	gate    *attemptGate
+	flights map[string]*flight
 }
 
 func (controller *BatchController) bind(configured int) *attemptGate {
