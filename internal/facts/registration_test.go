@@ -57,6 +57,33 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 			want: []want{{key: "Command", symbol: "runServe", values: []string{"Run the server", "serve"}, resolution: ResolutionExact}},
 		},
 		{
+			name: "a row of a table the repository owns registers its callable under the literal beside it",
+			build: func(s *synthetic) {
+				s.object("m", programindex.ObjectModule, "server.c", "server.c", 1, "")
+				s.object("command", programindex.ObjectType, "command", "server.c", 3, "m")
+				s.object("table", programindex.ObjectVariable, "cmdTable", "server.c", 10, "m")
+				s.object("h", programindex.ObjectFunction, "pingCommand", "server.c", 30, "m")
+				s.relate("row", programindex.RelationCalls, "table", []string{"command"}, loc("server.c", 11),
+					pattern("p", programindex.PatternCall, "command", loc("server.c", 11), nil, keyword("name", "ping"), dynamicKeyword("proc", "h")))
+				s.relations[len(s.relations)-1].Invocation = programindex.InvocationConstruct
+				s.callbackKeyword("cb", "table", "h", "row", "p", "proc")
+			},
+			want: []want{{key: "command", symbol: "pingCommand", values: []string{"ping"}, resolution: ResolutionPossible}},
+		},
+		{
+			name: "the same row a function builds for itself is delegation",
+			build: func(s *synthetic) {
+				s.object("m", programindex.ObjectModule, "server.c", "server.c", 1, "")
+				s.object("command", programindex.ObjectType, "command", "server.c", 3, "m")
+				s.object("fn", programindex.ObjectFunction, "once", "server.c", 20, "m")
+				s.object("h", programindex.ObjectFunction, "pingCommand", "server.c", 30, "m")
+				s.relate("row", programindex.RelationCalls, "fn", []string{"command"}, loc("server.c", 21),
+					pattern("p", programindex.PatternCall, "command", loc("server.c", 21), nil, keyword("name", "ping"), dynamicKeyword("proc", "h")))
+				s.relations[len(s.relations)-1].Invocation = programindex.InvocationConstruct
+				s.callbackKeyword("cb", "fn", "h", "row", "p", "proc")
+			},
+		},
+		{
 			name: "a request with only a path is a registration without a handler",
 			build: func(s *synthetic) {
 				s.object("fn", programindex.ObjectFunction, "loadItems", "client.ts", 3, "")
@@ -157,7 +184,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := newSynthetic(t, "go", "shape", "api.py", "main.go", "client.ts", "dns.go", "server.js", "server.go")
+			s := newSynthetic(t, "go", "shape", "api.py", "main.go", "client.ts", "dns.go", "server.js", "server.go", "server.c")
 			tc.build(s)
 			result := mustBuild(t, Input{Targets: []TargetInput{{Index: s.index(), Root: "."}}})
 			var got []want

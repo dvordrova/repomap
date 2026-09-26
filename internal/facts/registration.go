@@ -27,7 +27,7 @@ func (b *builder) addRegistrations(target *targetContext) {
 	prefixes := target.prefixesByObject()
 	var shapes []registrationShape
 	for _, relation := range target.input.Index.Relations {
-		if target.ownsCallee(relation) {
+		if target.ownsCallee(relation) && !target.tableRow(relation) {
 			continue
 		}
 		for _, pattern := range relation.Patterns {
@@ -481,6 +481,30 @@ func addressLiterals(values *routeValueReader, argument programindex.PatternArgu
 		result = append(result, byText[text])
 	}
 	return result
+}
+
+// tableRow reports a row of a table the repository owns: a record that a
+// module-level variable's initializer builds, handing over a callable beside a
+// string literal ({"get", getCommand} in a command table). The owner decided
+// on 2026-09-26 that the literal names the callable as a registration does,
+// although the repository owns the record; which kind of input it is, the
+// reading stage decides.
+func (target *targetContext) tableRow(relation programindex.Relation) bool {
+	if relation.Invocation != programindex.InvocationConstruct {
+		return false
+	}
+	table, ok := target.object(relation.FromID)
+	if !ok || table.Kind != programindex.ObjectVariable || !target.moduleLevel(table) {
+		return false
+	}
+	for _, pattern := range relation.Patterns {
+		for _, argument := range pattern.Arguments {
+			if value, _, literal := literalValue(argument); literal && value != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ownsCallee reports a call whose target is a declaration of this
