@@ -29,15 +29,17 @@ Each link line is one program (`c:<output>`, anchored on its makefile rule)
 whose files are the units it links; a `-shared`/`-dynamiclib` line is a shared
 library. Compile lines without `-o` map `x.o` to `x.c` through make's working
 directory. Main is located when the program is parsed, not during discovery.
-Without a build description, a unit with an exact, non-static `main` that has
-a body (a filtered clang parse, since `-ast-dump-filter` matches substrings)
-is a program `c:<path>` whose files the linker closure decides: each
-unresolved external name goes to the one unit that defines it. Units no
-program links and that define no main are their directory's library
-(`c:<dir>/`). A `.c` file another file `#include`s belongs to its includer; one
-no parsed unit enters on this platform (an `#ifdef` chose another backend) is
-reported as outside this platform's build. Shared units stay complete in every
-program that links them.
+A unit no link line links (every unit without a build description, and with
+a `compile_commands.json`, which has no link lines) that has an exact,
+non-static `main` with a body (a filtered clang parse, since
+`-ast-dump-filter` matches substrings) is a program `c:<path>` whose files the
+linker closure decides: each unresolved external name goes to the one unit
+that defines it. Units no program links and that define no main are their
+directory's library (`c:<dir>/`). A `.c` file another file `#include`s belongs
+to its includer; one no parsed unit enters on this platform (an `#ifdef` chose
+another backend) is outside this platform's build, and the run prints it
+beside its program when the program is parsed. Shared units stay complete in
+every program that links them.
 
 Discovery offers the target portfolio the files only one program compiles
 (a program whose every file is shared offers its link line's file); every
@@ -194,7 +196,8 @@ Install clang on the normal PATH: on macOS the Command Line Tools
 `testdata/repositories/c` is the cumulative executable repository and
 `testdata/contracts/c.files.json` binds its exact inventory. The run tests
 cover discovery from link lines, the files that restore each program, one
-parse per plan for a shared unit, a missing clang, and an ordinary offline
-run selecting a C program. Facts tests cover C config reads, SQL and dynamic
+parse per plan for a shared unit and its release after the last projection
+that needs it, a backend outside this platform's build, a missing clang, and
+an ordinary offline run selecting a C program. Facts tests cover C config reads, SQL and dynamic
 execution; claims and places tests cover docstrings, licence blocks, banners
 and the file description at their consuming boundary.

@@ -360,3 +360,39 @@ func TestCRepositoryOrdinaryRun(t *testing.T) {
 		t.Fatalf("the program's sources did not parse: %+v", failure)
 	}
 }
+
+// A backend an #ifdef keeps out on this host is outside this platform's
+// build, and the run says so beside the program it belongs to.
+func TestCRepositoryReportsSourcesOutsideThisPlatform(t *testing.T) {
+	root, repository := writeCTestRepository(t, map[string]string{
+		"Makefile": "loop: loop.o\n\t$(CC) -o loop loop.o\n\n%.o: %.c\n\t$(CC) -c $<\n",
+		"loop.c": "#ifdef LOOP_FAST\n#include \"loop_fast.c\"\n#else\n#include \"loop_plain.c\"\n#endif\n" +
+			"int main(void) { return backend(); }\n",
+		"loop_fast.c":  "static int backend(void) { return 1; }\n",
+		"loop_plain.c": "static int backend(void) { return 0; }\n",
+	})
+	discovery, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root})
+	if err != nil || !enabled {
+		t.Fatalf("discovery: %v %v", enabled, err)
+	}
+	targets, err := discovery.ResolveExplicit(repository, "c:loop")
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("selection: %v %v", targets, err)
+	}
+	adapter := cRepositoryTargetAdapterDescriptor()
+	plan, err := adapter.PrepareDispatchPlan(repositoryTargetPlan{}, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var console strings.Builder
+	binding, err := adapter.PrepareDispatchTarget(t.Context(), repositoryTargetDispatchOptions{Repo: root, Corpus: repository, Output: newRunOutput(&console)}, targets[0], plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outside := binding.ProgramFacts.(*cRepositoryProgramFacts).Parsed.Outside; !slices.Equal(outside, []string{"loop_fast.c"}) {
+		t.Fatalf("outside %v", outside)
+	}
+	if !strings.Contains(console.String(), "program: c:loop") || !strings.Contains(console.String(), "outside this platform's build: loop_fast.c") {
+		t.Fatalf("console:\n%s", console.String())
+	}
+}

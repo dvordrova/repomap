@@ -59,6 +59,12 @@ func cRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor {
 				plan.done(native.Ref)
 				return repositoryTargetDispatchBinding{}, err
 			}
+			if len(parsed.Outside) > 0 && options.Output != nil {
+				// The platform view: included sources an #if kept out on this
+				// host (another platform's backend).
+				options.Output.State("C program", "parsed", "program: "+native.Selector,
+					"outside this platform's build: "+strings.Join(parsed.Outside, ", "))
+			}
 			return repositoryTargetDispatchBinding{Target: target, ProgramFacts: &cRepositoryProgramFacts{Parsed: parsed, plan: plan}, ProgramFactsBound: true}, nil
 		},
 		ValidateNative: func(target repositoryTypedTarget) error {

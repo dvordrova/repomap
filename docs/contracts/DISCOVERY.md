@@ -89,9 +89,10 @@ from inventory while their persistent on-disk caches remain intact.
 ## C projects
 
 A corpus with a `.c` file runs C discovery in the repository root: the
-programs a root `compile_commands.json` or makefile dry run links, or each
-`main` file with clang's defaults, and each directory's remaining files as a
-library. Discovery asks no model and never stops the run for a C reason: a
+programs the link lines of a root makefile's dry run describe, each other file
+with an exact `main` as a program of its own (with a root
+`compile_commands.json`'s flags or clang's defaults), and each directory's
+remaining files as a library. Discovery asks no model and never stops the run for a C reason: a
 failed dry run falls back to clang's defaults, and a missing clang leaves the
 C programs not analyzed when they are dispatched. See [C](C.md).
 
