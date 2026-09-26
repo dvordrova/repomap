@@ -255,18 +255,18 @@ its target (a one-file target included; never without a model):
   boxes" leading by `ClassifierMargin` goes on; a file nearer the cut stays
   whole. Measured over every candidate of redis-1.3.6, pykrx, litestream
   and repomap (377 files, 2 draws, then 5 draws of the 13 nearest the cut):
-  redis.c 0.97, pykrx's stock_api.py 0.75–0.79, litestream's main.go
-  0.75; redis-cli.c 0.15–0.21, redis-check-dump.c 0.22–0.30, redis-benchmark.c
-  0.38–0.47. 13 files split in every draw; two pykrx query files
-  (`etx/wrap.py`, `bond/core.py`, 0.49–0.60) still land either side of the
-  cut. The first criteria, which counted groups "with their own vocabulary
+  redis.c 0.97–0.98, pykrx's stock_api.py 0.74–0.79, litestream's main.go
+  0.69–0.76; redis-cli.c 0.15–0.21, redis-check-dump.c 0.22–0.30,
+  redis-benchmark.c 0.38–0.48. 13 files split in every draw; two pykrx
+  query files (`etx/wrap.py`, `bond/core.py`, 0.49–0.60) and repomap's
+  `llm/api.go` (0.46–0.55) still land either side of the cut. The first criteria, which counted groups "with their own vocabulary
   of names" as several boxes, had shown no flip on the 11 files first
   measured, but on the whole set split redis-cli.c, redis-benchmark.c and
   repomap's render.go, table.go and api.go in every draw (redis-cli.c's
   `main` then became a box of its own) and flipped redis-check-dump.c.
   Known limit: a Go file's methods on a type declared in another file
   follow that type and are not in the item, so repomap's design.go shows
-  only its types and helpers and still goes in several boxes (0.88).
+  only its types and helpers and still goes in several boxes (0.86–0.90).
 - *The naming* (`atlas_role_boxes`, DeepSeek, `prompts/design_boxes.md`
   after `role_map.md`) names the boxes the file's code goes in:
   `{"boxes":[{"name","holds"}]}` over every unit, whole, with its name, kind,

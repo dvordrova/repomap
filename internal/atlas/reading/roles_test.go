@@ -502,6 +502,54 @@ func TestNamingFormsAndRefusals(t *testing.T) {
 	}
 }
 
+// A file is split only into two or more boxes. When the naming gives one box,
+// nothing is assigned; when the assignment puts every decided unit in one
+// box, the file stays whole in the answer's part with every unit, the
+// undecided one included, and nothing of it goes off the map.
+func TestAFileInFewerThanTwoBoxesStaysWhole(t *testing.T) {
+	graph := roleGraph(t, nil)
+	whole := func(t *testing.T, result Result, kind string) {
+		t.Helper()
+		svc := targetOf(t, result, "svc")
+		parts := partsByTitle(svc)
+		if got := membersOf(parts["Server"]); !slices.Equal(got, []string{"Route", "Serve", "Store", "Store.Get", "Store.Put", "helper", "main"}) {
+			t.Fatalf("Server holds %v; the whole file stays in its part", got)
+		}
+		if parts["Entry"].ID != "" {
+			t.Fatalf("a box was drawn for a file that stays whole: %v", parts)
+		}
+		for _, entry := range svc.OffMap {
+			if entry.File.Path == "svc/server.go" {
+				t.Fatalf("a unit of a whole file went off the map: %+v", entry)
+			}
+		}
+		if !slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool {
+			return row.Kind == kind && slices.Contains(row.Samples, "svc/server.go") || row.Kind == kind && strings.HasPrefix(row.Reason, "svc/server.go")
+		}) {
+			t.Fatalf("no %s record for server.go", kind)
+		}
+	}
+
+	provider, jev := defaultRoleProvider(), defaultRoleJev()
+	provider.boxesFor = func(path string) string { return `{"boxes":[{"name":"Entry","holds":"All of it."}]}` }
+	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(jev.assigned, "main") {
+		t.Fatalf("one named box was assigned: %v", jev.assigned)
+	}
+	whole(t, result, "role_one_box")
+
+	provider, jev = defaultRoleProvider(), defaultRoleJev()
+	jev.boxOf = map[string]string{"main": "Entry", "Serve": "Entry", "Route": "Entry", "Store": "Entry", "helper": "", "Run": "Running", "Check": "Checking"}
+	result, err = Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	whole(t, result, "role_not_split")
+}
+
 // Without a model nothing is asked, though the same reading with one splits.
 func TestWithoutAModelNothingIsSplit(t *testing.T) {
 	graph := roleGraph(t, nil)
