@@ -3,6 +3,8 @@ package run
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,32 @@ import (
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 )
+
+// The closed decisions have no model but Jev: a model run without JEV_KEY,
+// or without any categorizer, stops before any artifact, corpus or model
+// call instead of degrading.
+func TestAModelRunWithoutJevKeyStopsBeforeAnalysis(t *testing.T) {
+	t.Setenv("JEV_KEY", "")
+	repositoryRoot := t.TempDir()
+	for want, factory := range map[string]func() (llm.Categorizer, error){
+		"JEV_KEY is required":                         newJevCategorizer,
+		"no categorizer answers the closed decisions": nil,
+	} {
+		debugDir := filepath.Join(t.TempDir(), "runs")
+		calls := 0
+		provider := func() (llm.Provider, error) { calls++; return nil, fmt.Errorf("a model was configured") }
+		err := runDefaultWithDeps(repositoryRoot, []string{"--no-open", "--debug-dir", debugDir}, defaultRunDeps{
+			ctx: t.Context(), stdout: io.Discard, stderr: io.Discard,
+			newTargetPortfolioProvider: provider, newCubeProvider: provider, newCategorizer: factory,
+		})
+		if err == nil || !strings.Contains(err.Error(), want) || calls != 0 {
+			t.Fatalf("%s: error %v after %d model factories", want, err, calls)
+		}
+		if _, err := os.Stat(debugDir); !os.IsNotExist(err) {
+			t.Fatalf("%s: the run created %s: %v", want, debugDir, err)
+		}
+	}
+}
 
 // runtimeProgramIndex is a one-object program index for tests that need a
 // target and nothing more.
@@ -43,8 +71,9 @@ func runtimeProgramIndex(t *testing.T, targetID, name, selector, path, fileRef s
 // TestAtlasPathPublishesAReportWithoutTheModel drives the whole ordinary
 // path in process: target selection by exact selector, the Go index, facts
 // and claims, the atlas tables on their fallback lines, the projected
-// groups, and the report, with no provider anywhere.
+// groups, and the report, with no provider anywhere and no JEV_KEY.
 func TestAtlasPathPublishesAReportWithoutTheModel(t *testing.T) {
+	t.Setenv("JEV_KEY", "")
 	repositoryRoot := ordinaryGraphGoRepository(t)
 	debugDir := t.TempDir()
 	served := 0
@@ -53,6 +82,10 @@ func TestAtlasPathPublishesAReportWithoutTheModel(t *testing.T) {
 		llmBatchConcurrency: 1, llmBatchController: &llm.BatchController{},
 		serveReport: func(context.Context, reportserver.Options) error { served++; return nil },
 		openReport:  func(string) error { return nil },
+		newCategorizer: func() (llm.Categorizer, error) {
+			t.Error("a --no-model run built the categorizer")
+			return newJevCategorizer()
+		},
 	}
 	err := runDefaultWithDeps(repositoryRoot, []string{
 		"--no-model", "--target", "example.com/common-page@.::example.com/common-page/cmd/app",

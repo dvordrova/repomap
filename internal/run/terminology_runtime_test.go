@@ -152,7 +152,7 @@ func TestReadEnabledTerminologyUsesOrdinaryFactoryAndSeparateAcceptedProsePass(t
 	output := filepath.Join(t.TempDir(), "reading")
 	args := []string{filepath.Join(source, reading.InputFilename), "--through", "files", "--output", output, "--debug-dir", cache}
 	var stdout bytes.Buffer
-	if err := runReadConfigured(context.Background(), args, &stdout, factory, true); err != nil {
+	if err := runReadConfigured(context.Background(), args, &stdout, factory, noClosedQuestions, true); err != nil {
 		t.Fatal(err)
 	}
 	if factoryCalls != 1 || provider.calls == 0 || provider.stages["atlas_directories"] == 0 || provider.stages["atlas_files"] == 0 || provider.stages["glossary"] == 0 {
@@ -183,7 +183,7 @@ func TestReadEnabledTerminologyUsesOrdinaryFactoryAndSeparateAcceptedProsePass(t
 	}
 	calls := provider.calls
 	args[4] = filepath.Join(t.TempDir(), "warm-reading")
-	if err := runReadConfigured(context.Background(), args, &stdout, factory, true); err != nil {
+	if err := runReadConfigured(context.Background(), args, &stdout, factory, noClosedQuestions, true); err != nil {
 		t.Fatal(err)
 	}
 	if provider.calls != calls {
@@ -233,7 +233,7 @@ func TestReadGlossaryJournalsATermThatSpellsADeclaration(t *testing.T) {
 	factory := func() (llm.Provider, error) { return provider, nil }
 	output := filepath.Join(t.TempDir(), "reading")
 	args := []string{filepath.Join(source, reading.InputFilename), "--through", "files", "--output", output, "--debug-dir", t.TempDir()}
-	if err := runReadConfigured(context.Background(), args, &bytes.Buffer{}, factory, true); err != nil {
+	if err := runReadConfigured(context.Background(), args, &bytes.Buffer{}, factory, noClosedQuestions, true); err != nil {
 		t.Fatal(err)
 	}
 	if provider.stages["glossary"] == 0 {

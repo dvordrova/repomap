@@ -151,7 +151,7 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 		captureRepo:                freshness.CaptureRepository,
 		newTargetPortfolioProvider: defaultTargetPortfolioProviderFactory,
 		newCubeProvider:            defaultTargetPortfolioProviderFactory,
-		newClassifierProvider:      defaultClassifierProviderFactory,
+		newCategorizer:             newJevCategorizer,
 		llmBatchConcurrency:        llm.DefaultBatchConcurrency,
 		llmBatchController:         &llm.BatchController{},
 		collectTerminology:         true,
@@ -181,9 +181,9 @@ type defaultRunDeps struct {
 	captureRepo                func(context.Context, string, *corpus.Corpus) (freshness.RepositoryState, error)
 	newTargetPortfolioProvider targetPortfolioProviderFactory
 	newCubeProvider            targetPortfolioProviderFactory
-	// newClassifierProvider answers closed tables when it returns a provider;
-	// nil or a nil provider keeps them with the cube provider.
-	newClassifierProvider  targetPortfolioProviderFactory
+	// newCategorizer builds the categorizer of the closed decisions. Only the
+	// entry sets it: a model run without one fails before analysis.
+	newCategorizer         func() (llm.Categorizer, error)
 	collectTerminology     bool
 	terminology            *terminology.Collector
 	newDisplayProvider     targetPortfolioProviderFactory
@@ -317,7 +317,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	}
 	newTargetPortfolioProvider = providerFactoryWithOutput(newTargetPortfolioProvider, humanOutput)
 	deps.newCubeProvider = providerFactoryWithOutput(deps.newCubeProvider, humanOutput)
-	deps.newClassifierProvider = classifierWithOutput(deps.newClassifierProvider, humanOutput)
 
 	publicationStateEmitted := false
 	defer func() {
@@ -444,6 +443,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	dDir := *debugDir
 	if dDir == "" {
 		return fmt.Errorf("repomap runs require a nonempty --debug-dir for report authority")
+	}
+	// The closed decisions have no model but the categorizer: a model run
+	// without one stops here, before any artifact, corpus or model call.
+	var categorizer llm.Categorizer
+	if !*noModel && deps.preselectedTarget == nil && !deps.siblingTargetRun {
+		if categorizer, err = newRunCategorizer(deps.newCategorizer, humanOutput); err != nil {
+			return err
+		}
 	}
 	// Target selection is the first model cube and runs before the per-run
 	// artifact writer. Create only the shared root here so its accepted response
@@ -645,7 +652,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				RunID: runID, DebugDir: dDir, NoCache: *noCache, NoOpen: *noOpen,
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
 				NoModel: *noModel, Learn: *learn || len(questions) > 0, Captions: *captions, Questions: questions, DisplayLanguage: displayLanguage,
-				Output: humanOutput, FirstLayer: firstLayer,
+				Categorizer: categorizer, Output: humanOutput, FirstLayer: firstLayer,
 				DiscoverJSTSFn: jstsproject.DiscoverSelected,
 				VerifiedRunsSink: func(receipts []report.RunReceipt) {
 					verifiedRuns = append([]report.RunReceipt(nil), receipts...)
@@ -1173,6 +1180,9 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  REPOMAP_LLM_TIMEOUT (default 10m; an attempt that hits it is retried)\n")
 	fmt.Fprintf(writer, "  DEEPSEEK_API_KEY    quick setup; defaults to deepseek-v4-flash\n")
 	fmt.Fprintf(writer, "  DEEPSEEK_*          compatibility configuration aliases\n")
+	fmt.Fprintf(writer, "  JEV_KEY             required with the model key: Jev decides keys, part roles and key declarations\n")
+	fmt.Fprintf(writer, "  REPOMAP_JEV_MODEL   (default jev-1.13.0)\n")
+	fmt.Fprintf(writer, "  REPOMAP_JEV_ENDPOINT\n")
 	fmt.Fprintf(writer, "\nExamples:\n")
 	fmt.Fprintf(writer, "  repomap\n")
 	fmt.Fprintf(writer, "  repomap ../etcd\n")

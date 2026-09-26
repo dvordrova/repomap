@@ -6,21 +6,17 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe"
 )
 
-// One malformed answer leaves only its question unanswered; every other
-// row keeps its decision. A response without answers decided nothing.
-func TestDecodeClassifierReadsEachAnswerAlone(t *testing.T) {
-	window := closedWindow()
-	raw := []byte(`{"answers":{"s1|part":{"type":"choice","choice":"Serving","probabilities":{"Serving":0.9}},"s2|part":"Serving"}}`)
-	result, err := DecodeClassifier(closedDefinition(), window, raw)
+// A question without a verdict leaves only its row unanswered; every other
+// row keeps its decision.
+func TestAMissingVerdictRefusesOnlyItsRow(t *testing.T) {
+	result, err := DecodeClassifierAnswers(closedDefinition(), closedWindow(), map[string]llm.Verdict{
+		"s1|part": chose("Serving", map[string]float64{"Serving": 0.9}),
+	})
 	if err != nil || result.Answers[0]["part"] != "c1" || result.Answers[1] != nil || len(result.Rejections) != 1 || !strings.Contains(result.Rejections[0].Reason, "not answered") {
-		t.Fatalf("one malformed answer refused its neighbours: %+v / %v", result, err)
-	}
-	for _, raw := range []string{`{}`, `{"answers":null}`, `{"answers":[]}`, `not json`} {
-		if _, err := DecodeClassifier(closedDefinition(), window, []byte(raw)); err == nil {
-			t.Fatalf("a response without answers was accepted: %s", raw)
-		}
+		t.Fatalf("one missing verdict refused its neighbours: %+v / %v", result, err)
 	}
 }
 
@@ -30,22 +26,27 @@ func TestDecodeClassifierReadsEachAnswerAlone(t *testing.T) {
 // answered outside their options, and nothing accepted is still refused.
 func TestAnUncertainWindowIsAnExplicitAnswer(t *testing.T) {
 	def, window := closedDefinition(), closedWindow()
-	uncertain := []byte(`{"answers":{"s1|part":{"type":"choice","choice":"Serving","probabilities":{"Serving":0.4,"none":0.35}},"s2|part":{"type":"choice","choice":"none","probabilities":{"Serving":0.45,"none":0.5}}}}`)
-	result, err := DecodeClassifier(def, window, uncertain)
+	result, err := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{
+		"s1|part": chose("Serving", map[string]float64{"Serving": 0.4, "none": 0.35}),
+		"s2|part": chose("none", map[string]float64{"Serving": 0.45, "none": 0.5}),
+	})
 	if err != nil || result.Answers[0] != nil || result.Answers[1] != nil || len(result.Rejections) != 2 || len(result.AcceptedRowKeys()) != 0 {
 		t.Fatalf("an all-uncertain window was refused or decided: %+v / %v", result, err)
 	}
-	for name, raw := range map[string]string{
-		"every row missing":        `{"answers":{}}`,
-		"one row missing":          `{"answers":{"s1|part":{"type":"choice","choice":"Serving","probabilities":{"Serving":0.4,"none":0.35}}}}`,
-		"one unlisted, one unsure": `{"answers":{"s1|part":{"type":"choice","choice":"c9","probabilities":{"c9":1}},"s2|part":{"type":"choice","choice":"none","probabilities":{"none":0.3,"Serving":0.28}}}}`,
+	for name, verdicts := range map[string]map[string]llm.Verdict{
+		"every row missing": {},
+		"one row missing":   {"s1|part": chose("Serving", map[string]float64{"Serving": 0.4, "none": 0.35})},
+		"one unlisted, one unsure": {
+			"s1|part": chose("c9", map[string]float64{"c9": 1}),
+			"s2|part": chose("none", map[string]float64{"none": 0.3, "Serving": 0.28}),
+		},
 	} {
-		if _, err := DecodeClassifier(def, window, []byte(raw)); err == nil || !strings.Contains(err.Error(), "no rows accepted") {
+		if _, err := DecodeClassifierAnswers(def, window, verdicts); err == nil || !strings.Contains(err.Error(), "no rows accepted") {
 			t.Fatalf("%s: a window without an explicit answer was accepted: %v", name, err)
 		}
 	}
-	provider := &fixedClassifierProvider{response: uncertain}
-	call, err := ClassifierCall(def, window)
+	provider := &fixedClassifierProvider{response: []byte(`{"answers":{"s1|part":{"type":"choice","choice":"Serving","probabilities":{"Serving":0.4,"none":0.35}},"s2|part":{"type":"choice","choice":"none","probabilities":{"Serving":0.45,"none":0.5}}}}`)}
+	call, err := ClassifierCall(&typesafe.Client{}, def, window)
 	if err != nil {
 		t.Fatal(err)
 	}

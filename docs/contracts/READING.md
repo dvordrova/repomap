@@ -98,7 +98,10 @@ new description or selection requests.
   matched values, counts and identities. Rejected independent rows fall back on
   their own deterministic lines and are written to `rejected.jsonl`; valid
   neighbours survive in the original exact-response cache. An entirely refused
-  window is never cached, and each of its rows' reasons is journaled. A
+  window is never cached, and each of its rows' reasons is journaled. The
+  key declarations, part roles and keys are closed tables answered only by
+  the categorizer (Jev, `JEV_KEY` required; EXECUTION), never by the text
+  model; a live reading without it is refused. A
   decision model's (Jev's) choice is taken when the chosen option leads
   every other listed option, `none of these` included, by at least 0.10;
   a closer answer, or a choice that is not the top option, leaves the row

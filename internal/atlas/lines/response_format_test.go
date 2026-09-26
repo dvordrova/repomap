@@ -19,7 +19,7 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 	client := &deepseek.Client{HTTPClient: &http.Client{}, Endpoint: "https://api.deepseek.com/chat/completions", Model: "response-contract-test", Auth: "none", MaxTokens: llm.DefaultMaxOutputTokens}
 	for _, def := range []table.Definition{
 		Directories(), WithOpen(Directories()), Files(), WithOpen(Files()),
-		Symbols(), Types(), SymbolSelection(false), SymbolSelection(true),
+		Symbols(), Types(),
 		FixedBoundaries(true), API(true), API(false), Publish(), Layers(), Targets(), Targets(true), Arrows(),
 		Joints(), Peers(), Answer(),
 	} {

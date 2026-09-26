@@ -79,8 +79,7 @@ func TestKeysAndCoreListEveryDeclarationOfAPart(t *testing.T) {
 }
 
 // A refused candidate is no key, and the others are still ranked by their
-// probability. An accepted answer without a probability, or a flat ranking,
-// still keeps the selection's own order.
+// probability. A flat ranking still keeps the selection's own order.
 func TestKeyRankingSkipsARefusedCandidate(t *testing.T) {
 	cell := table.ProbabilityCell("explains")
 	var ids []string
@@ -93,11 +92,6 @@ func TestKeyRankingSkipsARefusedCandidate(t *testing.T) {
 	ranked, ok := rankedByProbability(ids, answers)
 	if !ok || !slices.Equal(ranked, []string{"s2", "s4", "s5", "s6", "s7"}) || len(ranked) != lines.MaxKeysPerPart {
 		t.Fatalf("one refused candidate declined the ranking or became a key: %v / %t", ranked, ok)
-	}
-	withoutProbability := slices.Clone(answers)
-	withoutProbability[0] = rowAnswer{answer: table.Answer{"explains": "yes"}}
-	if _, ok := rankedByProbability(ids, withoutProbability); ok {
-		t.Fatal("an answer without a probability was ranked")
 	}
 	flat := slices.Clone(answers)
 	for i := range flat {

@@ -14,6 +14,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 type replacementProvider struct {
@@ -83,7 +84,7 @@ func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) 
 	warmOpts := readOptions(t, graph, warmProvider, cache)
 	warmOpts.Through, warmOpts.WindowRows = lines.StageSymbols, 3
 	warm := readKnowledge(t, warmOpts)
-	if warmProvider.calls != 0 || warmProvider.symbolRows != 0 {
+	if warmProvider.calls != 0 || warmProvider.symbolRows != 0 || jevCalls(warmOpts) != 0 {
 		t.Fatal("unchanged warm reading repeated an exact description input")
 	}
 	for id, record := range first {
@@ -121,7 +122,7 @@ func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) 
 	updatedOpts := readOptions(t, graph, updatedProvider, cache)
 	updatedOpts.Through = lines.StageSymbols
 	updated := readKnowledge(t, updatedOpts)
-	if updatedProvider.calls != 0 {
+	if updatedProvider.calls != 0 || jevCalls(updatedOpts) != 0 {
 		t.Fatal("replay required a new description request")
 	}
 	for _, id := range []string{firstID, secondID} {
@@ -137,8 +138,8 @@ func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) 
 	changedOpts := readOptions(t, graph, changedProvider, cache)
 	changedOpts.Through = lines.StageSymbols
 	changed := readKnowledge(t, changedOpts)
-	if changedProvider.calls != 2 || changedProvider.symbolRows != 1 {
-		t.Fatalf("changed parent input requires one selection and one shared caption: calls=%d rows=%d", changedProvider.calls, changedProvider.symbolRows)
+	if jevCalls(changedOpts) != 1 || changedProvider.calls != 1 || changedProvider.symbolRows != 1 {
+		t.Fatalf("changed parent input requires one selection and one shared caption: selections=%d calls=%d rows=%d", jevCalls(changedOpts), changedProvider.calls, changedProvider.symbolRows)
 	}
 	for _, id := range []string{firstID, secondID} {
 		if changed[id].BasisID == updated[id].BasisID || !strings.Contains(string(changed[id].Input), "A different parent-file purpose.") {
@@ -161,7 +162,9 @@ func TestKnowledgeCoalescesExactInputsWithoutLosingSourceBindings(t *testing.T) 
 			symbols = use
 		}
 	}
-	if symbols.Rows != 6 || symbols.Given != 2 || symbols.Windows != 5 || symbols.Rejected != 1 {
+	// Four selections in two categorizer requests (functions, types), then
+	// four captions in three requests; the refused one held both helpers.
+	if symbols.Rows != 8 || symbols.Given != 2 || symbols.Windows != 5 || symbols.Rejected != 1 {
 		t.Fatalf("refused shared row lost original source accounting: %+v", symbols)
 	}
 }
@@ -212,8 +215,10 @@ func TestKnowledgeReadsReplayedRowsWithoutRepeatingAnalysis(t *testing.T) {
 			t.Fatalf("replay changed an unrelated entity: %s", id)
 		}
 	}
-	// Invalid row choices are checked by the owning table when resolving the
-	// memo, even though replay itself only knows the provider/JSON contract.
+	// A remembered categorizer answer is checked by the owning table when its
+	// memo is resolved, even though replay itself only knows the provider/JSON
+	// contract: a verdict without the probabilities the cutoff reads is
+	// refused, and only that row is asked again.
 	selectionID := "selection:" + symbolID
 	ref, found, err = llm.LoadMemo(opts.Executor, first[selectionID].BasisID, llm.DecodeJSON[rememberedRow](nil))
 	if err != nil || !found {
@@ -223,25 +228,23 @@ func TestKnowledgeReadsReplayedRowsWithoutRepeatingAnalysis(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("selection exchange: %v", err)
 	}
-	if err := json.Unmarshal(exchange.Response, &envelope); err != nil {
-		t.Fatal(err)
-	}
 	prepared, _ = llm.NewPrepared(exchange.Request)
-	for _, row := range envelope.Rows {
-		if row["key"] == ref.RowKey {
-			row["key_symbol"] = "invented-choice"
+	decided := closedDecisions().Decide
+	unreadable := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		if key == ref.RowKey+"|key_symbol" {
+			return llm.Verdict{Choice: "yes"}, true
 		}
-	}
-	raw, _ = json.Marshal(envelope)
-	if _, err := llm.ReplayJSON(t.Context(), opts.Executor, &replacementProvider{response: raw}, prepared); err != nil {
+		return decided(key, question)
+	}}
+	if _, err := llm.ReplayJSON(t.Context(), opts.Executor, unreadable, prepared); err != nil {
 		t.Fatal(err)
 	}
 	provider = &tableProvider{}
 	opts = readOptions(t, graph, provider, cache)
 	opts.Through, opts.WindowRows = lines.StageSymbols, 1
 	corrected := readKnowledge(t, opts)
-	if provider.calls != 1 || corrected[selectionID].Cells["key_symbol"] == "invented-choice" {
-		t.Fatal("invalid replay row bypassed table validation")
+	if jevCalls(opts) != 1 || provider.calls != 0 || corrected[selectionID].Cells["key_symbol"] != "yes" || corrected[selectionID].OriginRequest == first[selectionID].OriginRequest {
+		t.Fatalf("a replayed verdict without probabilities bypassed table validation: selections=%d calls=%d %+v", jevCalls(opts), provider.calls, corrected[selectionID])
 	}
 }
 
@@ -305,7 +308,7 @@ func TestTypeMemberDocumentationInvalidatesOnlyItsSelectionAndCaption(t *testing
 	opts = readOptions(t, graph, provider, cache)
 	opts.Through = lines.StageSymbols
 	second := readKnowledge(t, opts)
-	if provider.calls != 2 || first[id].BasisID == second[id].BasisID {
+	if jevCalls(opts) != 1 || provider.calls != 1 || first[id].BasisID == second[id].BasisID {
 		t.Fatal("changed member documentation did not invalidate exactly the type row")
 	}
 	for key, record := range first {
@@ -319,7 +322,7 @@ func TestTypeMemberDocumentationInvalidatesOnlyItsSelectionAndCaption(t *testing
 	opts = readOptions(t, graph, provider, cache)
 	opts.Through = lines.StageSymbols
 	third := readKnowledge(t, opts)
-	if _, exists := third[id]; exists || provider.calls != 0 {
+	if _, exists := third[id]; exists || provider.calls != 0 || jevCalls(opts) != 0 {
 		t.Fatal("a bare type name reused or requested an unsupported explanation")
 	}
 }
@@ -378,7 +381,7 @@ func TestKnowledgeSurvivesBatchChangesAndInvalidatesOnlyChangedBasis(t *testing.
 	opts = readOptions(t, graph, again, cache)
 	opts.Through, opts.WindowRows, opts.InputBytes = lines.StageSymbols, 1, 4000
 	warm := readKnowledge(t, opts)
-	if again.calls != 0 {
+	if again.calls != 0 || jevCalls(opts) != 0 {
 		t.Fatalf("rebatching reanalysed known entities: %d calls", again.calls)
 	}
 	for id, record := range first {
@@ -427,7 +430,7 @@ func TestKnowledgeSurvivesBatchChangesAndInvalidatesOnlyChangedBasis(t *testing.
 	opts = readOptions(t, graph, newWording, cache)
 	opts.Through = lines.StageSymbols
 	reworded := readKnowledge(t, opts)
-	if newWording.answers["pkg/a/y.go"] != 3 || reworded[changedSymbol].BasisID == symbol.BasisID || reworded[changedSymbol].Source != atlas.SourceModel {
+	if newWording.answers["pkg/a/y.go"] != 2 || jevCalls(opts) != 1 || reworded[changedSymbol].BasisID == symbol.BasisID || reworded[changedSymbol].Source != atlas.SourceModel {
 		t.Fatal("changed parent text did not invalidate its dependent symbol answer")
 	}
 }

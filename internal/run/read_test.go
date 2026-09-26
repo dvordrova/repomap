@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,28 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
+
+// noClosedQuestions is the categorizer of readings that stop before any
+// closed table: a closed question reaching it fails its request.
+func noClosedQuestions() (llm.Categorizer, error) { return &typesafetest.Categorizer{}, nil }
+
+// read makes model calls, so it needs JEV_KEY as it needs the model key,
+// and says so before it writes anything.
+func TestReadCommandRequiresJevKey(t *testing.T) {
+	t.Setenv("JEV_KEY", "")
+	input := readCommandInputFixture(t)
+	output := filepath.Join(t.TempDir(), "reading")
+	provider := func() (llm.Provider, error) { return &terminologyRuntimeProvider{}, nil }
+	args := []string{input, "--through", "files", "--output", output, "--debug-dir", t.TempDir()}
+	if err := runReadWithProvider(t.Context(), args, io.Discard, provider, newJevCategorizer); err == nil || !strings.Contains(err.Error(), "JEV_KEY is required") {
+		t.Fatalf("a reading without JEV_KEY: %v", err)
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("a reading without JEV_KEY created its output: %v", err)
+	}
+}
 
 func readCommandInputFixture(t *testing.T) string {
 	t.Helper()
@@ -37,7 +59,7 @@ func TestReadCommandStartsFromSavedInputAndStopsBeforeReport(t *testing.T) {
 	factoryCalls := 0
 	factory := func() (llm.Provider, error) { factoryCalls++; return nil, nil }
 	args := []string{input, "--through", "files", "--output", output}
-	if err := runReadWithProvider(context.Background(), args, &stdout, factory); err != nil {
+	if err := runReadWithProvider(context.Background(), args, &stdout, factory, noClosedQuestions); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(filepath.Join(output, "reading-result.json"))
@@ -49,23 +71,23 @@ func TestReadCommandStartsFromSavedInputAndStopsBeforeReport(t *testing.T) {
 			t.Fatalf("partial reading produced %s", name)
 		}
 	}
-	if err := runReadWithProvider(context.Background(), args, &stdout, factory); err == nil {
+	if err := runReadWithProvider(context.Background(), args, &stdout, factory, noClosedQuestions); err == nil {
 		t.Fatal("existing experiment overwritten")
 	}
 	factoryCalls = 0
-	if err := runReadWithProvider(context.Background(), []string{args[0], "--through", "route", "--question", "Where is state?"}, &stdout, factory); err == nil || !strings.Contains(err.Error(), "use --through answer") || factoryCalls != 0 {
+	if err := runReadWithProvider(context.Background(), []string{args[0], "--through", "route", "--question", "Where is state?"}, &stdout, factory, noClosedQuestions); err == nil || !strings.Contains(err.Error(), "use --through answer") || factoryCalls != 0 {
 		t.Fatalf("removed selector needs an explicit migration diagnostic before provider setup: %v", err)
 	}
-	if err := runReadWithProvider(context.Background(), []string{args[0], "--through", "typo"}, &stdout, factory); err == nil || factoryCalls != 0 {
+	if err := runReadWithProvider(context.Background(), []string{args[0], "--through", "typo"}, &stdout, factory, noClosedQuestions); err == nil || factoryCalls != 0 {
 		t.Fatal("bad controls reached provider")
 	}
 	for _, flags := range [][]string{{"--through", "question"}, {"--through", "files", "--question", "Where is state?"}} {
-		if err := runReadWithProvider(context.Background(), append([]string{args[0]}, flags...), &stdout, factory); err == nil || factoryCalls != 0 {
+		if err := runReadWithProvider(context.Background(), append([]string{args[0]}, flags...), &stdout, factory, noClosedQuestions); err == nil || factoryCalls != 0 {
 			t.Fatal("invalid question controls reached provider")
 		}
 	}
 	questionOutput := filepath.Join(t.TempDir(), "question")
-	if err := runReadWithProvider(context.Background(), []string{args[0], "--question", "Where is state?", "--output", questionOutput}, &stdout, factory); err != nil {
+	if err := runReadWithProvider(context.Background(), []string{args[0], "--question", "Where is state?", "--output", questionOutput}, &stdout, factory, noClosedQuestions); err != nil {
 		t.Fatal(err)
 	}
 	raw, err = os.ReadFile(filepath.Join(questionOutput, atlas.QuestionFilename))
@@ -100,7 +122,7 @@ func TestReadCommandExplicitOutputPreparesFreshSharedRoot(t *testing.T) {
 					args = append(args, "--no-cache")
 				}
 				var stdout bytes.Buffer
-				if err := runReadConfigured(context.Background(), args, &stdout, factory, true); err != nil {
+				if err := runReadConfigured(context.Background(), args, &stdout, factory, noClosedQuestions, true); err != nil {
 					t.Fatalf("fresh shared root with explicit output: %v", err)
 				}
 				for _, artifact := range []string{"reading-result.json", "tables.md"} {

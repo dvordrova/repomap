@@ -118,20 +118,16 @@ type Definition struct {
 	// ContextAfterRows keeps repeated evidence ahead of changing context in
 	// the request prefix. The default preserves context before rows.
 	ContextAfterRows bool
-	// Classifier lets a decision model answer this closed table when one is
-	// configured. It is an explicit, measured opt-in, not a consequence of
-	// the table's shape.
+	// Classifier sends this closed table to the run's categorizer
+	// (llm.Categorizer), never to the text model. It is an explicit,
+	// measured opt-in, not a consequence of the table's shape.
 	Classifier bool
-	// YesAt turns a yes/no column into a cutoff for a decision model: yes at
+	// YesAt turns a yes/no column into a cutoff for the categorizer: yes at
 	// this probability of yes or above, no below it. Zero keeps the ordinary
 	// choice rule: a side that does not lead the other by ClassifierMargin
 	// leaves the row unanswered.
 	YesAt float64
-	// ClassifierOmitTask leaves the table prompt, written for a text model,
-	// out of a decision model's state; each column's Ask then carries the
-	// whole question. A long prompt there reads as irrelevant state.
-	ClassifierOmitTask bool
-	// Ranked makes a decision model's yes/no answers a ranking: every row
+	// Ranked makes the categorizer's yes/no answers a ranking: every row
 	// keeps the probability of yes (ProbabilityCell) and none is refused as
 	// uncertain, because the owner orders rows instead of thresholding them.
 	Ranked bool

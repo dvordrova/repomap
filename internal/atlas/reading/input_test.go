@@ -29,7 +29,7 @@ func TestSavedInputRunsThroughFilesWithoutLaterStages(t *testing.T) {
 	}
 	provider := &tableProvider{}
 	opts := input.Options()
-	opts.Executor, opts.Provider = first.Executor, provider
+	opts.Executor, opts.Provider, opts.Categorizer = first.Executor, provider, first.Categorizer
 	opts.OwnerRunDir, opts.Through = t.TempDir(), lines.StageFiles
 	again, err := Read(context.Background(), opts)
 	if err != nil {

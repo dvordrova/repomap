@@ -1,5 +1,26 @@
 # Implementation and acceptance journal
 
+## 2026-09-26 — Closed decisions through one categorizer, JEV_KEY required
+
+- Owner: "давай пока с JEV_KEY обязательным, но это должен быть типа такой
+  интерфейс, что категоризирует". The key declarations, part roles and keys
+  (`Definition.Classifier`) go only to `llm.Categorizer`: a Provider with
+  `Prompt` (the request for keyed closed questions) and `Verdicts` (the
+  answers by key), so the executor still caches, journals and gates it. Jev
+  is its only implementation. The DeepSeek fallback is gone; on keys it had
+  answered "yes" to 13 of 13.
+- `JEV_KEY` is required by a model run (checked after the flags, before any
+  artifact, corpus or model call) and by `read`; `--no-model`, `replay`,
+  `conf`, `render` and `cache clear` need none. The binary without the key
+  exits 1 within 30 ms and creates no runs directory.
+- The Jev request bytes and cache keys are unchanged: a full-bytes golden
+  taken from main passes on the branch; on the two-target reading fixture
+  main and the branch send byte-identical symbol-selection, keys and core
+  requests, and the branch reading over main's cache made no Jev or text
+  call; saved real `atlas_core` (47,251 bytes) and `atlas_symbols` (84,524
+  bytes) requests rebuild byte-identical. Ordinary online acceptance (a warm
+  run with no live Jev call, then `cache clear`) is still to be run.
+
 ## 2026-09-26 — The owner's short answers, implemented
 
 - Jev choices: the absolute 0.50 floor became a 0.10 lead over the runner-up

@@ -59,28 +59,33 @@ func defaultTargetPortfolioProviderFactory() (llm.Provider, error) {
 	return deepseek.NewFromEnv()
 }
 
-func defaultClassifierProviderFactory() (llm.Provider, error) {
+// newJevCategorizer is the categorizer of the closed decisions: Jev, which
+// requires JEV_KEY.
+func newJevCategorizer() (llm.Categorizer, error) {
 	client, err := typesafe.NewFromEnv()
-	if client == nil || err != nil {
+	if err != nil {
 		return nil, err
 	}
 	return client, nil
 }
 
-// classifierWithOutput reports the decision model's retries on the console.
-func classifierWithOutput(factory targetPortfolioProviderFactory, output *runOutput) targetPortfolioProviderFactory {
+// newRunCategorizer builds a model run's categorizer before any analysis and
+// reports Jev's retries on the console. A run without one stops here: its
+// closed decisions never fall back to another model.
+func newRunCategorizer(factory func() (llm.Categorizer, error), output *runOutput) (llm.Categorizer, error) {
 	if factory == nil {
-		return nil
+		return nil, fmt.Errorf("no categorizer answers the closed decisions of a model run; run with --no-model --target … to skip models")
 	}
-	return func() (llm.Provider, error) {
-		provider, err := factory()
-		if client, ok := provider.(*typesafe.Client); ok && client != nil {
-			client.OnRetry = func(attempt, status int, reason string, wait time.Duration) {
-				output.Stage("", fmt.Sprintf("classifier request: attempt %d failed (HTTP %d: %s); retry after %s", attempt, status, reason, wait))
-			}
+	categorizer, err := factory()
+	if err != nil {
+		return nil, err
+	}
+	if client, ok := categorizer.(*typesafe.Client); ok {
+		client.OnRetry = func(attempt, status int, reason string, wait time.Duration) {
+			output.Stage("", fmt.Sprintf("categorizer request: attempt %d failed (HTTP %d: %s); retry after %s", attempt, status, reason, wait))
 		}
-		return provider, err
 	}
+	return categorizer, nil
 }
 
 // Bind the existing transport heartbeat before any terminology decoration.

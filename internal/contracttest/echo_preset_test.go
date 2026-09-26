@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/places"
@@ -18,6 +19,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 // The Echo service is read end to end with a preset in place of the model:
@@ -66,7 +68,7 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 		Graph: graph, Repository: "echo", Revision: "test",
 		Targets:  []reading.TargetMeta{{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}},
 		Executor: llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}},
-		Provider: provider, OwnerRunDir: t.TempDir(),
+		Provider: provider, Categorizer: provider.categorizer(), OwnerRunDir: t.TempDir(),
 		ReadSource: func(path string) ([]byte, error) {
 			id, ok := repository.ID(path)
 			if !ok {
@@ -255,8 +257,8 @@ func materializeRepository(t *testing.T, relative string) (string, *corpus.Corpu
 	return destination, repository
 }
 
-// echoPreset answers every table the reading asks the way a careful reader
-// would, from the row alone. Text cells get a placeholder; choices get the
+// echoPreset answers every text-model table the reading asks the way a
+// careful reader would, from the row alone. Text cells get a placeholder; choices get the
 // reader's decision, or the first option where any answer is fine.
 type echoPreset struct {
 	sawRegistration, sawSQL, sawQuerySource, sawRepositorySource, sawDomainPart bool
@@ -365,14 +367,6 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 			default:
 				answer["role"] = "passthrough"
 			}
-		case table == "atlas_core":
-			// The part that holds the stored users is this program's domain.
-			if row["reaches"] != nil {
-				preset.sawDomainPart = true
-				answer["role"] = "domain"
-			} else {
-				answer["role"] = "interface"
-			}
 		case table == "atlas_boundaries" && name == "destination":
 			answer["destination"] = "other: PostgreSQL"
 		case table == "atlas_boundaries" && name == "address":
@@ -387,6 +381,26 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 		}
 	}
 	return answer
+}
+
+// categorizer decides the closed tables as a reader would: the part that
+// holds the stored users is this program's domain and the others serve it;
+// every candidate explains its part and is a key.
+func (preset *echoPreset) categorizer() *typesafetest.Categorizer {
+	decide := typesafetest.ByColumn(map[string]llm.Verdict{"explains": typesafetest.Yes(0.9), "key_symbol": typesafetest.Choose("yes")})
+	var mu sync.Mutex
+	return &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		if !strings.HasSuffix(key, "|role") {
+			return decide(key, question)
+		}
+		if question.Item["reaches"] == nil {
+			return typesafetest.Choose("interface"), true
+		}
+		mu.Lock()
+		preset.sawDomainPart = true
+		mu.Unlock()
+		return typesafetest.Choose("domain"), true
+	}}
 }
 
 // conditionHolds reads a column's when clauses: other cells already

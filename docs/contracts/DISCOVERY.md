@@ -30,8 +30,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Nothing is scanned or redacted, the run directory is as sensitive as the
   repository, the run manifest is a record and is never verified against the
   artifacts, and the report server opens the files a page names under the
-  analysed root. The provider key is read from the environment and never
-  enters a request body or a cache record.
+  analysed root. The provider keys (the model's and `JEV_KEY`) are read from
+  the environment and never enter a request body or a cache record.
 
 - Repository changes during a run do not fail publication. Do not reintroduce a
   freshness gate or strict-snapshot mode.

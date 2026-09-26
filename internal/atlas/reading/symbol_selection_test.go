@@ -11,6 +11,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 type selectionProvider struct{ tableProvider }
@@ -22,7 +23,6 @@ func (p *selectionProvider) Complete(ctx context.Context, prepared llm.Prepared)
 	}
 	var request struct {
 		Table string
-		Fill  []table.Column
 		Rows  []map[string]any
 	}
 	var output struct{ Rows []map[string]string }
@@ -33,15 +33,8 @@ func (p *selectionProvider) Complete(ctx context.Context, prepared llm.Prepared)
 		return response, err
 	}
 	for i, row := range output.Rows {
-		name, _ := request.Rows[i]["name"].(string)
-		if request.Table == lines.StageSymbols {
-			if request.Fill[0].Name == "key_symbol" {
-				if name == "Op08" {
-					row["key_symbol"] = "no"
-				}
-			} else if name == "Op01" {
-				delete(row, "line")
-			}
+		if name, _ := request.Rows[i]["name"].(string); request.Table == lines.StageSymbols && name == "Op01" {
+			delete(row, "line")
 		}
 	}
 	response.Response, err = json.Marshal(output)
@@ -63,6 +56,13 @@ func TestClosedScopeAndRefusedCaptionKeepIndependentRoles(t *testing.T) {
 	provider := &selectionProvider{tableProvider: tableProvider{openFor: map[string]string{"svc/core": "no"}}}
 	opts := twoTargetOptions(t, graph, &provider.tableProvider)
 	opts.Provider, opts.Budget = provider, true
+	decide := closedDecisions().Decide
+	opts.Categorizer = &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		if question.Item["name"] == "Op08" {
+			return typesafetest.Choose("no"), true
+		}
+		return decide(key, question)
+	}}
 	result, err := Read(t.Context(), opts)
 	if err != nil {
 		t.Fatal(err)

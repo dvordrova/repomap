@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -51,10 +52,35 @@ func TestClientSendsTheBodyWithItsModelAndRetriesRateLimits(t *testing.T) {
 	}
 }
 
-func TestNoKeyMeansNoClassifier(t *testing.T) {
-	t.Setenv(envAPIKey, "")
+// The closed decisions have no other model: a missing key is an error that
+// names it, never a client that quietly is not there.
+func TestJevKeyIsRequired(t *testing.T) {
+	t.Setenv(envAPIKey, " ")
 	client, err := NewFromEnv()
-	if client != nil || err != nil {
+	if client != nil || err == nil || !strings.Contains(err.Error(), "JEV_KEY is required") {
 		t.Fatalf("client %+v err %v", client, err)
+	}
+	t.Setenv(envAPIKey, "secret")
+	t.Setenv(envModel, "")
+	if client, err := NewFromEnv(); err != nil || client.APIKey != "secret" || client.Model != defaultModel {
+		t.Fatalf("client %+v err %v", client, err)
+	}
+}
+
+// Each answer is read on its own: a malformed or unknown one leaves only its
+// question without a verdict. A response without answers decided nothing.
+func TestVerdictsReadEachAnswerAlone(t *testing.T) {
+	verdicts, err := (&Client{}).Verdicts([]byte(`{"answers":{
+		"a":{"type":"choice","choice":"x","probabilities":{"x":0.9,"y":0.1}},
+		"b":"x",
+		"c":{"type":"noul","noul":0.7},
+		"d":{"type":"score","score":3}}}`))
+	if err != nil || len(verdicts) != 2 || verdicts["a"].Choice != "x" || verdicts["a"].Probabilities["y"] != 0.1 || verdicts["c"].Yes == nil || *verdicts["c"].Yes != 0.7 {
+		t.Fatalf("verdicts %+v err %v", verdicts, err)
+	}
+	for _, raw := range []string{`{}`, `{"answers":null}`, `{"answers":[]}`, `not json`} {
+		if _, err := (&Client{}).Verdicts([]byte(raw)); err == nil {
+			t.Fatalf("a response without answers was read: %s", raw)
+		}
 	}
 }

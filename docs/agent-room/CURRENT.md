@@ -147,7 +147,10 @@ never entered into or read from a repository-wide unqualified map.
   report true stay: unknown refs, a missing or out-of-choice required
   decision, two different answers for one row, unsourced substantive answers.
   Owner decisions of 2026-09-26: a Jev choice is taken by a lead of 0.10
-  over its runner-up (near-ties stay uncertain); an HTTP-200 answer without
+  over its runner-up (near-ties stay uncertain); the key declarations, part
+  roles and keys are decided only through one categorizer interface
+  (`llm.Categorizer`, Jev its only implementation), `JEV_KEY` is required
+  for a model run and `read`, and there is no DeepSeek fallback; an HTTP-200 answer without
   content or with insufficient_system_resource gets one transport retry; an
   unknown default-target answer leaves the default unresolved and the report
   is published; glossary terms match in any case and with a plural -s/-es

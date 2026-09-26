@@ -9,9 +9,8 @@ import (
 
 // One unlisted value on an optional API decision loses that decision only:
 // the symbol's other decisions stand, and a cell the table no longer asks
-// is no decision. A part's required role is still one of its listed roles
-// or nothing.
-func TestAPIDecisionsFailAloneWhileTheCoreRoleIsRequired(t *testing.T) {
+// is no decision.
+func TestAPIDecisionsFailAlone(t *testing.T) {
 	window := table.Window{Rows: []table.Row{{ID: "x1"}, {ID: "x2"}}}
 	result, err := table.DecodeResult(API(false), window, []byte(`{"rows":[
 		{"key":"x1","publishes":"yes","talks":"grpc","reads_input":"body","validates":true},
@@ -24,10 +23,6 @@ func TestAPIDecisionsFailAloneWhileTheCoreRoleIsRequired(t *testing.T) {
 	}
 	if len(result.Rejections) != 1 || result.Rejections[0].Key != "x1" || result.Rejections[0].Cell != "talks" || result.Answers[1]["talks"] != "db" {
 		t.Fatalf("the unlisted decision was not recorded alone: %+v", result.Rejections)
-	}
-	core, err := table.DecodeResult(Core(), table.Window{Rows: []table.Row{{ID: "p1"}, {ID: "p2"}}}, []byte(`{"rows":[{"key":"p1","role":"storage"},{"key":"p2","role":"domain."}]}`))
-	if err != nil || core.Answers[0] != nil || core.Answers[1]["role"] != PartDomain {
-		t.Fatalf("an unlisted core role was accepted or a punctuated one refused: %+v / %v", core, err)
 	}
 }
 

@@ -33,14 +33,19 @@ supported user-facing surface is deliberately small:
 
 `repomap read READING_INPUT.json [--through STAGE] [flags]` runs the same
 atlas reading stages from the current saved input format for development.
-It can override one stage's prompt and context budgets, saves inputs and
-normalized results, and never renders HTML. No old-format adapters or
-parallel analysis implementations are supported. There is no separate
-`serve` subcommand. Report serving remains part of the ordinary run and is
-controlled by `--no-serve` and `--port`. `--no-model` walks the atlas without
-a provider, every cell on its fallback line and no orientation, and needs
-`--target` because no target is selected without the model. Do not add
-script entrypoints or sidecar tools.
+It can override one stage's prompt (for a closed table, Jev's task) and the
+row and byte budgets of its text-model tables; Jev's tables keep their own
+packing. It saves inputs and normalized results, and never renders HTML. No
+old-format adapters or parallel analysis implementations are supported.
+There is no separate `serve` subcommand. Report serving remains part of the
+ordinary run and is controlled by `--no-serve` and `--port`. `--no-model`
+walks the atlas without a provider, every cell on its fallback line and no
+orientation, and needs `--target` because no target is selected without the
+model. A model run and `read` need the model key and `JEV_KEY` (Jev decides
+the key declarations, part roles and keys); without `JEV_KEY` they stop
+before any artifact, corpus or model call. `replay` needs only the model
+key, and `--no-model`, `conf`, `render` and `cache clear` need neither. Do
+not add script entrypoints or sidecar tools.
 
 ## One computation and publication path
 
