@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
+import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
 
 test('approaching a target reveals its diagram before its smallest descendant text is readable',()=>{
   const nodes=[{id:'target',frame:true,absolute:{x:0,y:0},width:900,height:600}];
@@ -434,4 +434,15 @@ test('detail switches every frame at the same depth together, led by its first r
   assert.deepEqual([...state(1.7,second)].sort(),['external','inputs','large','small'],'retreat closes all groups together');
   assert.equal(state(.44,second).size,0,'All closes every layer');
   assert.deepEqual(nodes,original,'layer changes never modify native geometry');
+});
+
+// "In Command dispatch" put the part 700 pixels below the canvas centre, under
+// its edge: a 24-pixel margin was taken as 24 world units at a zoom of 29.
+test('a part is entered centred in the canvas at any zoom, and a tall part shows its head',()=>{
+  const part={absolute:{x:2216.7,y:836},width:9,height:4.3},zoom=29,width=1214,height=680;
+  const v=partViewport(part,zoom,width,height);
+  const centre={x:(part.absolute.x+part.width/2)*zoom+v.x,y:(part.absolute.y+part.height/2)*zoom+v.y};
+  assert.ok(Math.abs(centre.x-width/2)<1e-6&&Math.abs(centre.y-height/2)<1e-6,`centre lands at ${JSON.stringify(centre)}`);
+  const tall={absolute:{x:0,y:100},width:200,height:900},top=partViewport(tall,1,width,height);
+  assert.ok(Math.abs(tall.absolute.y*1+top.y-24)<1e-6,'a part taller than the canvas starts a screen margin below the top');
 });

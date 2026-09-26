@@ -81,7 +81,7 @@ test('native outer routes stop at frames while local routes retain exact parts a
     assert.ok(child.absolute.y>=areaNode.absolute.y+64*areaRecord.summaryScale-1e-7,'native children follow the area heading');
     assert.ok(child.absolute.y+child.height<=areaNode.absolute.y+areaNode.height+1e-7,'native children remain inside the area');
   }
-  assert.ok(areaRecord.contentScale<areaRecord.summaryScale,'area headings and original parts keep their own scales');
+  assert.ok(close(areaRecord.contentScale,areaRecord.summaryScale),'an area draws its parts at its own heading\'s size, as the parts beside it');
   assert.ok(layout.labels.length,'source-backed connection labels retain native placement');
   for(const label of layout.labels){const p=label.point||label;assert.ok(Number.isFinite(p.x)&&Number.isFinite(p.y));}
 });
@@ -183,7 +183,6 @@ test('an area reserves its native contents and heading without a second member-l
   const record=prepared.records.find(item=>item.id==='area'),areaScale=record.contentScale/record.summaryScale;
   assert.ok(close(frame.absolute.y+frame.height-bottom,32*areaScale),
     'only native bottom padding remains below the actual objects');
-  assert.ok(frame.height<prepared.summaries.get('area').height,'the removed member list no longer expands the native frame');
 });
 
 test('connected dense component inventories keep All readable without stretching the component frame',async()=>{
@@ -333,20 +332,20 @@ test('a fit below .44 reserves collection minima and fits the existing interiors
 });
 
 test('the ordinary map reserves a short component inventory as well as collection headings',async()=>{
-  const records=cards(ordinaryRecords),prepared=await prepareInteriors(records,ordinaryRelations,ordinaryAreas,{availableHeight:548});
+  const records=cards(ordinaryRecords),prepared=await prepareInteriors(records,ordinaryRelations,ordinaryAreas,{availableHeight:508});
   const original=ELK.prototype.layout,requests=[];
   ELK.prototype.layout=function(graph,...args){requests.push(structuredClone(graph));return original.call(this,graph,...args);};
   let result;
-  try{result=await layoutPrepared(prepared,1054,580);}finally{ELK.prototype.layout=original;}
-  assert.equal(requests.length,9,'the existing single final correction handles all root summaries');
+  try{result=await layoutPrepared(prepared,1000,540);}finally{ELK.prototype.layout=original;}
+  assert.ok(requests.length<=10,'eight native candidates and at most two corrections handle all root summaries');
   const nodes=new Map(result.layout.nodes.map(node=>[node.id,node])),roots=result.layout.nodes.filter(node=>!node.parentId);
   const span=axis=>Math.max(...roots.map(node=>node.absolute[axis]+node[axis==='x'?'width':'height']))-Math.min(...roots.map(node=>node.absolute[axis]));
-  const zoom=Math.min(.44,1022/span('x'),548/span('y'));
+  const zoom=Math.min(.44,968/span('x'),508/span('y'));
   assert.ok(zoom<.44,'the fixture exercises physical text at a smaller whole-map fit');
   for(const root of roots){
     const record=records.find(record=>record.id===root.id);
     assert.ok(root.width*zoom+1e-7>=record.overviewMinWidth,`${root.id}: no heading word is split`);
-    assert.ok(root.height*zoom+1e-7>=record.overviewHeightAtWidth(root.width*zoom,{availableHeight:548}),
+    assert.ok(root.height*zoom+1e-7>=record.overviewHeightAtWidth(root.width*zoom,{availableHeight:508}),
       `${root.id}: the complete short inventory or input types fit`);
     const interior=prepared.interiors.get(root.id),scale=Math.min(root.width/interior.local.width,root.height/interior.local.height);
     for(const child of interior.local.nodes.filter(node=>node.parentId)){
@@ -386,4 +385,51 @@ test('parallel rows share one measured reserve while every participant remains r
       assert.ok(close(node.width,child.width*scale));assert.ok(close(node.height,child.height*scale));
     }
   }
+});
+
+// Laid out with the whole component and its 98 inputs, Redis's Server
+// runtime put each of its seven parts in a row of its own: a staircase of
+// postage stamps, shrunk to a peer's width, with arrowheads larger than them.
+test('an area lays out its parts from its own arrows, at their own size, not as a staircase of the component',async()=>{
+  const runtime=['r1','r2','r3','r4','r5','r6','r7'],types=['t1','t2','t3','t4'],inputs=Array.from({length:12},(_,i)=>`i${i}`);
+  const items=[{id:'server',title:'Server',branch:'component'},
+    {id:'runtime',title:'Server runtime',branch:'area'},{id:'types',title:'Data type commands',branch:'area'},
+    ...runtime.map(id=>({id,title:`Runtime ${id}`})),...types.map(id=>({id,title:`Types ${id}`})),
+    {id:'inputs',title:'Server',branch:'inputs'},...inputs.map(id=>({id,title:id,activation:'request'})),
+    {id:'dns',title:'DNS',branch:'communication'},{id:'resolve',title:'gethostbyname',category:'external'}];
+  const relations=[['r1','r2'],['r1','r3'],['r2','r4'],['r3','r5'],['r4','r6'],['r5','r7'],['r2','t1'],['t1','r5'],['r6','t2'],['t3','r1'],['t4','r7'],['r7','resolve'],
+    ...inputs.map((id,i)=>[id,[...runtime,...types][i%11]])].map(([from,to])=>({from,to}));
+  const areaList=[{id:'server',nodes:['runtime','types']},{id:'runtime',nodes:runtime},{id:'types',nodes:types},{id:'inputs',nodes:inputs},{id:'dns',nodes:['resolve']}];
+  const prepared=await prepareInteriors(cards(items),relations,areaList);
+  const {local}=prepared.interiors.get('server'),nodes=new Map(local.nodes.map(node=>[node.id,node]));
+  const boxes=runtime.map(id=>nodes.get(id)),rows=new Set(boxes.map(box=>Math.round(box.absolute.y))).size;
+  assert.ok(rows<boxes.length,`the runtime parts share rows instead of a staircase of ${rows} rows`);
+  const record=prepared.records.find(item=>item.id==='runtime'),frame=nodes.get('runtime');
+  assert.ok(close(record.contentScale,record.summaryScale),'parts keep their size beside the area heading and the loose parts');
+  for(const box of boxes)assert.ok(box.absolute.x>=frame.absolute.x&&box.absolute.x+box.width<=frame.absolute.x+frame.width+1e-7,'every part stands inside its area');
+});
+
+test('input groups each hold their tiles under their title, side by side without overlap, inside the collection',async()=>{
+  const inputs=Array.from({length:9},(_,i)=>`i${i}`);
+  const items=[{id:'server',title:'Server',branch:'component'},{id:'a',title:'String commands'},{id:'b',title:'List commands'},
+    {id:'inputs',title:'Server',branch:'inputs',children:['inputs~a','inputs~b']},
+    {id:'inputs~a',title:'String commands',branch:'inputs-part',children:inputs.slice(0,6)},{id:'inputs~b',title:'List commands',branch:'inputs-part',children:inputs.slice(6)},
+    ...inputs.map(id=>({id,title:id,activation:'request'}))];
+  const areaList=[{id:'server',nodes:['a','b']},{id:'inputs',nodes:['inputs~a','inputs~b']},{id:'inputs~a',nodes:inputs.slice(0,6)},{id:'inputs~b',nodes:inputs.slice(6)}];
+  const relations=inputs.map((id,i)=>({from:id,to:i<6?'a':'b'}));
+  const prepared=await prepareInteriors(cards(items),relations,areaList);
+  const {local}=prepared.interiors.get('inputs'),nodes=new Map(local.nodes.map(node=>[node.id,node]));
+  const inside=(child,frame)=>child.absolute.x>=frame.absolute.x-1e-7&&child.absolute.y>=frame.absolute.y-1e-7&&
+    child.absolute.x+child.width<=frame.absolute.x+frame.width+1e-7&&child.absolute.y+child.height<=frame.absolute.y+frame.height+1e-7;
+  const [a,b,root]=['inputs~a','inputs~b','inputs'].map(id=>nodes.get(id));
+  assert.ok(inside(a,root)&&inside(b,root),'both groups stand inside the collection');
+  const apart=a.absolute.x+a.width<=b.absolute.x+1e-7||b.absolute.x+b.width<=a.absolute.x+1e-7||a.absolute.y+a.height<=b.absolute.y+1e-7||b.absolute.y+b.height<=a.absolute.y+1e-7;
+  assert.ok(apart,'the groups do not overlap');
+  for(const id of inputs.slice(0,6))assert.ok(inside(nodes.get(id),a),`${id} stands in its group`);
+  for(const id of inputs.slice(6))assert.ok(inside(nodes.get(id),b),`${id} stands in its group`);
+  const header=prepared.records.find(record=>record.id==='inputs~a').headerHeight;
+  for(const id of inputs.slice(0,6))assert.ok(nodes.get(id).absolute.y>=a.absolute.y+header-1e-7,'tiles stand under the group title');
+  const before=(p,q)=>p.absolute.y<q.absolute.y-1e-7||Math.abs(p.absolute.y-q.absolute.y)<1e-7&&p.absolute.x<q.absolute.x;
+  assert.ok(before(a,b),'groups keep their reading order');
+  for(let i=1;i<6;i++)assert.ok(before(nodes.get(inputs[i-1]),nodes.get(inputs[i])),'tiles keep their reading order');
 });

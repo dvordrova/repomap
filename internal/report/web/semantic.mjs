@@ -86,7 +86,8 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
   if(viewport.zoom<=systemViewport(nodes,width,height).zoom)return open;
   const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
   const layers=new Map();
-  for(const node of nodes.filter(node=>node.frame)){
+  // An input collection's part groups open with the collection itself.
+  for(const node of nodes.filter(node=>node.frame&&byID.get(node.id)?.branch!=='inputs-part')){
     let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;
     if(!layers.has(depth))layers.set(depth,[]);
     layers.get(depth).push(node);
@@ -115,6 +116,16 @@ export function systemViewport(nodes,width,height) {
   const right=Math.max(...roots.map(n=>n.absolute.x+n.width)),bottom=Math.max(...roots.map(n=>n.absolute.y+n.height));
   const zoom=Math.min(.44,Math.max(1,width-2*overviewInset)/(right-left),Math.max(1,height-2*overviewInset)/(bottom-top));
   return {x:Math.max(overviewInset,(width-(right-left)*zoom)/2)-left*zoom,y:Math.max(overviewInset,(height-(bottom-top)*zoom)/2)-top*zoom,zoom};
+}
+
+// A part is entered at its reading scale and centred in the canvas. A part
+// taller than the canvas shows its head a margin below the top. The margin
+// is screen pixels: taken as world units at a close-up zoom of 29 it put
+// Command dispatch 700 pixels below the centre, under the canvas edge.
+export function partViewport(node,zoom,width,height,margin=24) {
+  const x=width/2-(node.absolute.x+node.width/2)*zoom;
+  const y=node.height*zoom<=height-2*margin?height/2-(node.absolute.y+node.height/2)*zoom:margin-node.absolute.y*zoom;
+  return {x,y,zoom};
 }
 
 // Entering a frame, whatever the frame is: an area, an inputs or external

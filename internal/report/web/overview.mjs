@@ -40,3 +40,35 @@ export function overviewRecords(items, areas) {
   }
   return {records:[...cards.values()]};
 }
+
+// Inside a component's input collection the inputs stand together by the
+// part their handler is in, each group framed and named by that part: GET
+// was one of 98 tiles in no order. This is display containment over the
+// saved implementation owner, not another architectural group; an input
+// with no owner stays loose after the groups, and a collection whose inputs
+// all share one part keeps them loose.
+export function inputGroupsByPart(records, areas, inputOwner={}) {
+  const byID=new Map(records.map(n=>[n.id,n]));
+  const added=[],replaced=new Map();
+  for(const collection of records.filter(n=>n.branch==='inputs')){
+    const inputs=(collection.children||[]).filter(id=>byID.get(id)?.activation);
+    const groups=new Map(),loose=[];
+    for(const id of inputs){
+      const owner=inputOwner[id];
+      if(!owner||!byID.has(owner)){loose.push(id);continue;}
+      if(!groups.has(owner))groups.set(owner,[]);
+      groups.get(owner).push(id);
+    }
+    if(groups.size<2)continue;
+    const frames=[...groups].map(([owner,children])=>({id:`${collection.id}~${owner}`,title:byID.get(owner).title,branch:'inputs-part',
+      owner,componentOwner:collection.componentOwner,componentName:collection.componentName,children,category:'input'}))
+      .sort((a,b)=>String(a.title).localeCompare(String(b.title))||a.id.localeCompare(b.id));
+    added.push(...frames);
+    replaced.set(collection.id,[...frames.map(frame=>frame.id),...loose]);
+  }
+  if(!added.length)return {records,areas};
+  return {
+    records:[...records.map(n=>replaced.has(n.id)?{...n,children:replaced.get(n.id)}:n),...added],
+    areas:[...areas.map(a=>replaced.has(a.id)?{...a,nodes:replaced.get(a.id)}:a),...added.map(frame=>({id:frame.id,nodes:frame.children}))],
+  };
+}

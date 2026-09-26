@@ -56,6 +56,19 @@ export function prepareCards(records, _inputOwner, measure, translate) {
   const wrap=(text,width,font)=>wrapText(text,width,font,measure);
   const communicationChildren=new Set(records.filter(n=>n.branch==='communication').flatMap(n=>n.children||[]));
   const byID=new Map(records.map(n=>[n.id,n]));
+  // An input collection's inputs, through the part groups inside it.
+  const leavesOf=id=>{const n=byID.get(id);return n?.children?.length?n.children.flatMap(leavesOf):[id];};
+  // The collection says what kinds of input it holds. A tile names its kind
+  // only when that kind is not the collection's most common one: "Request"
+  // on 97 of Redis's 98 tiles repeated the frame's own summary.
+  const kinds=['request','command','scheduled','continuous','interaction'];
+  const commonKind=new Map();
+  for(const collection of records.filter(n=>n.branch==='inputs')){
+    const inputs=leavesOf(collection.id).map(id=>byID.get(id)).filter(n=>n?.activation),counts=new Map();
+    for(const input of inputs)counts.set(input.activation,(counts.get(input.activation)||0)+1);
+    const common=[...counts].sort((a,b)=>b[1]-a[1]||(kinds.indexOf(a[0])+1||99)-(kinds.indexOf(b[0])+1||99))[0]?.[0];
+    for(const input of inputs)commonKind.set(input.id,common);
+  }
   const childNames=id=>(byID.get(id)?.children||[]).map(child=>byID.get(child)?.overviewTitle||byID.get(child)?.title).filter(Boolean);
   return records.map(n=>{
     const frame=!!n.children?.length;
@@ -75,7 +88,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     // External headings may use the full width below the zoom mark. Its extra
     // row is reserved by overviewHeading, not by forcing a wider frame.
     const input=!!n.activation,collection=['communication','inputs'].includes(n.branch);
-    const inputGroups=n.branch==='inputs'?groupInputs((n.children||[]).map(id=>byID.get(id)).filter(Boolean),translate):[];
+    const inputGroups=n.branch==='inputs'?groupInputs(leavesOf(n.id).map(id=>byID.get(id)).filter(n=>n?.activation),translate):[];
     const widestWord=(text,font)=>Math.max(0,...String(text||'').split(/\s+/).map(word=>measure(word,font)));
     // Reserve complete physical pixels. A fractional fit round-off at the
     // longest-word boundary must not unexpectedly add a row below the zoom mark.
@@ -106,12 +119,14 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       const controlHeight=28+(n.branch==='communication'?16:32);
       return Math.max(controlHeight,base+(base+list>availableHeight&&rows.length?17+rows[0]:list));
     }:undefined;
+    const kindLabel=input&&!communicationChildren.has(n.id)&&n.activation!==commonKind.get(n.id)?kind(n):'';
     return {...n,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
-      kindLabel:input&&!communicationChildren.has(n.id)?kind(n):'',description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
+      kindLabel,description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,
       headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines.length?12+descriptionLines.length*18:0)),
-      width:260,height:frame?undefined:66+title.length*22+descriptionLines.length*18+
+      // A tile without its kind row is that row shorter.
+      width:260,height:frame?undefined:66-(input&&!kindLabel?24:0)+title.length*22+descriptionLines.length*18+
         (subtitleLines.length?8+subtitleLines.length*18:0)};
   });
 }

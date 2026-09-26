@@ -53,6 +53,48 @@ function gridInterior(frame,ratio,top){
   frame.width=width;frame.height=height;frame.edges=[];
 }
 
+// An input collection whose inputs stand in part groups: each group is a
+// grid of its tiles under its title, and the groups fill the collection's
+// rows in their reading order toward the collection's summary proportion.
+// Arrows that cross the collection are drawn by the outer routes alone.
+function groupedInterior(frame,ratio,top,order,headers){
+  const gap=24,side=32,rank=id=>{const at=order.indexOf(id);return at<0?order.length:at;};
+  const groups=[...frame.children].sort((a,b)=>rank(a.id)-rank(b.id));
+  for(const group of groups){
+    if(!group.children?.length)continue;
+    const tiles=[...group.children].sort((a,b)=>rank(a.id)-rank(b.id)),head=headers.get(group.id)||40;
+    let best=null;
+    for(let columns=1;columns<=tiles.length;columns++){
+      const widths=Array(columns).fill(0),rows=[];
+      tiles.forEach((tile,i)=>{widths[i%columns]=Math.max(widths[i%columns],tile.width);rows[Math.floor(i/columns)]=Math.max(rows[Math.floor(i/columns)]||0,tile.height);});
+      const width=2*side+widths.reduce((a,b)=>a+b,0)+gap*(columns-1),height=head+side+rows.reduce((a,b)=>a+b,0)+gap*(rows.length-1);
+      const distance=Math.abs(Math.log(width/height/ratio));
+      if(!best||distance<best.distance)best={columns,widths,rows,width,height,distance};
+    }
+    tiles.forEach((tile,i)=>{
+      const column=i%best.columns,row=Math.floor(i/best.columns);
+      tile.x=side+best.widths.slice(0,column).reduce((a,b)=>a+b,0)+gap*column;
+      tile.y=head+best.rows.slice(0,row).reduce((a,b)=>a+b,0)+gap*row;
+    });
+    group.width=best.width;group.height=best.height;group.edges=[];
+  }
+  // Rows of groups: as wide as the collection's proportion asks of their area.
+  const area=groups.reduce((sum,group)=>sum+(group.width+gap)*(group.height+gap),0);
+  const target=Math.max(...groups.map(group=>group.width),Math.sqrt(area*ratio));
+  let x=side,y=top,row=0,right=0;
+  for(const group of groups){
+    if(x>side&&x+group.width>side+target){x=side;y+=row+gap;row=0;}
+    group.x=x;group.y=y;x+=group.width+gap;row=Math.max(row,group.height);right=Math.max(right,group.x+group.width);
+  }
+  const width=right+side,height=y+row+side;
+  for(const port of frame.ports||[]){
+    const at=port.layoutOptions?.['elk.port.side'];
+    if(at==='EAST'||at==='WEST'){port.x=at==='EAST'?width:0;port.y*=height/frame.height;}
+    else{port.y=at==='SOUTH'?height:0;port.x*=width/frame.width;}
+  }
+  frame.width=width;frame.height=height;frame.edges=[];
+}
+
 function localGeometry(root){
   const nodes=[],edges=new Map(),labels=[],offsets=new Map([[root.id,{x:0,y:0}]]);
   function walk(node,parentId){
@@ -117,6 +159,13 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     const members=items.filter(item=>rootOf(item.id)===root.id);
     const ownEdges=edges.filter(edge=>rootOf(edge.from)===root.id||rootOf(edge.to)===root.id);
     let localRecords=new Map(members.map(item=>[item.id,{...item,width:item.width||260,height:item.height||90}]));
+    const childOfRoot=id=>{while(parent.has(id)&&parent.get(id)!==root.id)id=parent.get(id);return id;};
+    // A component's areas are laid out each on its own, from the arrows
+    // between its own parts: the component places them as ready rectangles
+    // and draws every other arrow between those rectangles. Laid out with the
+    // whole component, Server runtime's seven parts took seven global layers
+    // and stood as a staircase in a frame twenty times their height.
+    const ownInteriors=root.branch==='component';
     function graph(minimum){
       function tree(id){
         const record=localRecords.get(id),scale=record.contentScale||1;
@@ -129,6 +178,10 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         const min={width:Math.max(record.minimumWidth||0,derived?.width||0,peer?400:0),
           height:Math.max(record.minimumHeight||0,derived?.height||0,peer&&!children.has(id)?Math.max(record.height,200):0)};
         if(min.width||min.height){local['elk.nodeSize.constraints']='MINIMUM_SIZE';local['elk.nodeSize.minimum']=`(${min.width},${min.height})`;}
+        if(ownInteriors&&children.has(id))local['elk.hierarchyHandling']='SEPARATE_CHILDREN';
+        // A chain of parts wraps into rows at ELK's own proportion instead of
+        // one row as long as the chain.
+        if(ownInteriors&&children.has(id)&&id!==root.id)local['elk.layered.wrapping.strategy']='MULTI_EDGE';
         const result=children.has(id)?{id,children:children.get(id).map(tree),layoutOptions:local}
           :{id,width:Math.max(record.width,min.width),height:Math.max(record.height,min.height),layoutOptions:local};
         if(id===root.id){
@@ -141,6 +194,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       const actual=tree(root.id);
       actual.edges=ownEdges.flatMap(edge=>{
         const from=rootOf(edge.from),to=rootOf(edge.to),cross=from!==to;
+        if(ownInteriors&&(cross||childOfRoot(edge.from)!==childOfRoot(edge.to)))return [];
         if(cross&&(!children.has(root.id)||(from===root.id&&edge.from===root.id)||(to===root.id&&edge.to===root.id)))return [];
         const aggregate=cross?aggregates.get(edge.aggregate):null;
         const source=cross&&from!==root.id?aggregate.targetPort:edge.from;
@@ -150,7 +204,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       return {id:`interior:${root.id}`,layoutOptions:inputUnzip?{...options,'elk.layered.layerUnzipping.strategy':'ALTERNATING'}:options,children:[actual]};
     }
     let placed=(await native(graph())).children[0];
-    if(root.branch==='inputs'){
+    if(root.branch==='inputs'&&!(children.get(root.id)||[]).some(id=>children.has(id))){
       const width=root.overviewMinWidth||160;
       const height=root.overviewHeightAtWidth?.(width,{availableHeight})||Math.min(180,placed.height),ratio=width/height;
       const filled=node=>Math.min((node.width/node.height)/ratio,ratio/(node.width/node.height));
@@ -163,8 +217,12 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     }
     const ownAreas=members.filter(item=>item.branch==='area');
     if(ownAreas.length){
-      const naturalByID=new Map(localGeometry(placed).nodes.map(node=>[node.id,node]));
-      for(const area of ownAreas)areaScales.set(area.id,Math.min(1,400/naturalByID.get(area.id).width));
+      // Every area draws its parts at their own size, the size of the loose
+      // parts beside it: an area is as large as what it holds. Shrunk to a
+      // peer's width, Server runtime's parts became postage stamps under a
+      // full-size title, with arrowheads larger than the boxes, and opened
+      // unreadable beside the areas whose text had opened the layer.
+      for(const area of ownAreas)areaScales.set(area.id,1);
       localRecords=new Map(members.map(item=>{
         const scale=areaScales.get(owner(item.id))||1;
         return [item.id,item.branch==='area'?{...item,contentScale:areaScales.get(item.id),headerHeight:64}
@@ -177,10 +235,14 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     const ratio=preferredWidth/preferredHeight;
     // Cross-frame arrows are drawn by the outer routes alone, so a frame whose
     // tiles no arrow joins needs no interior legs.
-    const loose=root.branch!=='component'&&(children.get(root.id)||[]).length>2&&!ownAreas.length
+    const grouped=root.branch==='inputs'&&(children.get(root.id)||[]).some(id=>children.has(id));
+    const loose=!grouped&&root.branch!=='component'&&(children.get(root.id)||[]).length>2&&!ownAreas.length
       &&(children.get(root.id)||[]).every(id=>!children.has(id))
       &&!ownEdges.some(edge=>rootOf(edge.from)===root.id&&rootOf(edge.to)===root.id&&edge.from!==root.id&&edge.to!==root.id);
-    if(loose)gridInterior(placed,ratio,localRecords.get(root.id).headerHeight||64);
+    if(grouped){
+      const order=[...children.get(root.id),...children.get(root.id).flatMap(id=>children.get(id)||[])];
+      groupedInterior(placed,ratio,localRecords.get(root.id).headerHeight||64,order,new Map([...localRecords].map(([id,record])=>[id,record.headerHeight||40])));
+    }else if(loose)gridInterior(placed,ratio,localRecords.get(root.id).headerHeight||64);
     else if(root.branch!=='component'){
       const minimum={width:Math.max(placed.width,placed.height*ratio),height:Math.max(placed.height,placed.width/ratio)};
       placed=(await native(graph(minimum))).children[0];
