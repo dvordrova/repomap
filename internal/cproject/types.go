@@ -17,7 +17,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -31,7 +30,7 @@ import (
 // unit that does not parse is recorded in Project.Observations, and the
 // affected program fails later in Parse with that explanation.
 func Discover(ctx context.Context, root string, repository *corpus.Corpus) (*Project, error) {
-	return nil, errNotBuilt
+	return discover(ctx, root, repository)
 }
 
 // Parse decodes every translation unit of one program. Units already parsed by
@@ -40,10 +39,8 @@ func Discover(ctx context.Context, root string, repository *corpus.Corpus) (*Pro
 // per store. Any unit that fails to parse fails the whole program: there is no
 // partial result.
 func Parse(ctx context.Context, root string, repository *corpus.Corpus, program Program, store *Store) (*Parsed, error) {
-	return nil, errNotBuilt
+	return parse(ctx, root, repository, program, store)
 }
-
-var errNotBuilt = errors.New("cproject: not built yet")
 
 // Project is the result of discovery.
 type Project struct {
@@ -440,12 +437,3 @@ func TokenText(source []byte, position Position) string {
 	}
 	return string(source[position.Offset : position.Offset+position.TokLen])
 }
-
-// Store shares parsed units between the programs of one run.
-type Store struct {
-	parses chan struct{}
-}
-
-// NewStore returns an empty store that runs at most four clang processes at a
-// time.
-func NewStore() *Store { return &Store{parses: make(chan struct{}, 4)} }
