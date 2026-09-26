@@ -1,11 +1,20 @@
 package surfacediscovery
 
 import (
+	"go/ast"
 	"go/token"
 	"go/types"
 
 	"golang.org/x/tools/go/ssa"
 )
+
+// interfaceFieldStore is one write to an interface field. underBranch marks a
+// store inside an if, switch or select of its function: the field holds that
+// value only on the paths the branch takes.
+type interfaceFieldStore struct {
+	store       *ssa.Store
+	underBranch bool
+}
 
 // These are writes to the exact compiler-owned field, not a search for types
 // with compatible methods. Different instances can hold different values, so
@@ -14,7 +23,7 @@ func (capture *dynamicHandoffCapture) collectInterfaceFieldStores(a *analyzer, f
 	if capture == nil || !capture.enabled {
 		return
 	}
-	capture.interfaceFields = make(map[*types.Var][]*ssa.Store)
+	capture.interfaceFields = make(map[*types.Var][]interfaceFieldStore)
 	for _, function := range functions {
 		if a.ctx.Err() != nil {
 			return
@@ -36,10 +45,49 @@ func (capture *dynamicHandoffCapture) collectInterfaceFieldStores(a *analyzer, f
 				if field == nil || !validRepositoryDirectCallLocation(a.location(store.Pos())) {
 					continue
 				}
-				capture.interfaceFields[field] = append(capture.interfaceFields[field], store)
+				capture.interfaceFields[field] = append(capture.interfaceFields[field],
+					interfaceFieldStore{store: store, underBranch: storeUnderBranch(function, store.Pos())})
 			}
 		}
 	}
+}
+
+// storeUnderBranch reports whether position lies in a branch of an if, a case
+// of a switch or type switch, or a clause of a select in function's own body.
+// A loop body is no branch, and a function literal is a function of its own,
+// as in the C adapter.
+func storeUnderBranch(function *ssa.Function, position token.Pos) bool {
+	var body ast.Node
+	switch syntax := function.Syntax().(type) {
+	case *ast.FuncDecl:
+		body = syntax.Body
+	case *ast.FuncLit:
+		body = syntax.Body
+	case *ast.RangeStmt:
+		body = syntax.Body
+	}
+	if body == nil || !position.IsValid() {
+		return false
+	}
+	within := func(node ast.Node) bool {
+		return node != nil && node.Pos() <= position && position < node.End()
+	}
+	under := false
+	ast.Inspect(body, func(node ast.Node) bool {
+		if under || node == nil || !within(node) {
+			return false
+		}
+		switch node := node.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.IfStmt:
+			under = within(node.Body) || within(node.Else)
+		case *ast.CaseClause, *ast.CommClause:
+			under = true
+		}
+		return !under
+	})
+	return under
 }
 
 func interfaceField(address *ssa.FieldAddr) (*types.Var, types.Type) {

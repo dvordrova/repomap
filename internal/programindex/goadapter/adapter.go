@@ -965,6 +965,19 @@ func (projection *goProjection) projectDynamicHandoffs() (
 				witnesses = append(witnesses, programindex.Witness{Kind: "interface_field_assignment", Detail: "observed receiver assignment for " + functionNames[candidate.FunctionID], Location: at})
 			}
 		}
+		// A field a branch left open keeps what its stores put there as
+		// witnesses of the open call, in the C adapter's words.
+		for _, witness := range handoff.Witnesses {
+			at, err := projection.dynamicLocation(witness.Assignment)
+			if err != nil {
+				return nil, err
+			}
+			detail := functionNames[witness.FunctionID] + " stored in " + witness.Field
+			if witness.UnderBranch {
+				detail += " under a condition"
+			}
+			witnesses = append(witnesses, programindex.Witness{Kind: "interface_field_assignment", Detail: detail, Location: at})
+		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef:         handoff.ID,
 			Kind:              kind,

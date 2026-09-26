@@ -83,3 +83,48 @@ func RunChosenHandler(readable bool) {
 	}
 	loop.onRead()
 }
+
+// The same event loop with interface-typed fields. A handler stored in one of
+// two fields under a branch leaves the calls through both fields unresolved;
+// each stored handler is a witness of those calls, never their alternative.
+type readyHandler interface{ Handle() }
+
+type acceptReady struct{}
+type flushReady struct{}
+
+func (acceptReady) Handle() {}
+func (flushReady) Handle()  {}
+
+type readyLoop struct {
+	read  readyHandler
+	write readyHandler
+}
+
+func (loop *readyLoop) register(readable bool, handler readyHandler) {
+	if readable {
+		loop.read = handler
+	} else {
+		loop.write = handler
+	}
+}
+
+func (loop *readyLoop) fire() {
+	loop.read.Handle()
+	loop.write.Handle()
+}
+
+func RunReadyLoop() {
+	loop := &readyLoop{}
+	loop.register(true, acceptReady{})
+	loop.register(false, flushReady{})
+	loop.fire()
+}
+
+// A store under a branch leaves the call through the field unresolved.
+func RunChosenReady(readable bool) {
+	loop := &readyLoop{}
+	if readable {
+		loop.read = acceptReady{}
+	}
+	loop.read.Handle()
+}

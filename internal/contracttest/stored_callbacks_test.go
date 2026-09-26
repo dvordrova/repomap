@@ -1,7 +1,9 @@
 package contracttest
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -207,6 +209,13 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 		75: {calls, "RunSingleHandler", "acceptClient", exact},
 		82: {callbacks, "RunChosenHandler", "acceptClient", exact},
 		84: {calls, "RunChosenHandler", "", unresolved},
+		// The same loop with interface-typed fields: readyLoop.register
+		// stores its handler into read or write under a branch, and
+		// RunChosenReady stores one under a branch. No call through a field
+		// gains a handler, not even the one registered for the other field.
+		112: {calls, "fire", "", unresolved},
+		113: {calls, "fire", "", unresolved},
+		129: {calls, "RunChosenReady", "", unresolved},
 	})
 	throughFields := map[int]bool{38: true, 58: true, 59: true, 75: true, 84: true}
 	for _, view := range relations {
@@ -217,5 +226,52 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 		if view.relation.Kind == callbacks && (view.line == 67 || view.line == 68) && view.relation.SourceArgumentID == "" {
 			t.Fatalf("registration lost its source argument: %+v", view)
 		}
+	}
+
+	// What the stores put into an open interface field stays with the call as
+	// its witnesses, each at its store, as the C adapter names them.
+	const fixturePackage = "example.com/repomap/cumulative-go-fixture/internal/storefixture."
+	stored := func(handler, field string, line int) string {
+		return fmt.Sprintf("(%s).Handle stored in readyLoop.%s under a condition@%d", handler, field, line)
+	}
+	read := []string{stored("acceptReady", "read", 105), stored("acceptReady", "read", 127), stored("flushReady", "read", 105)}
+	openCalls := map[int][]string{
+		112: read,
+		113: {stored("acceptReady", "write", 107), stored("flushReady", "write", 107)},
+		129: read,
+	}
+	// Each handler keeps its exact registration at its own call: call line
+	// to the line of the Handle method it binds.
+	registrations := map[int]int{118: 95, 119: 96}
+	objects := make(map[string]programindex.Object, len(index.Objects))
+	for _, object := range index.Objects {
+		objects[object.ID] = object
+	}
+	seenOpen, seenRegistrations := 0, 0
+	for _, view := range relations {
+		relation := view.relation
+		if want, ok := openCalls[view.line]; ok && relation.Kind == calls {
+			var witnesses []string
+			for _, witness := range relation.Witnesses {
+				if witness.Kind == "interface_field_assignment" && witness.Location != nil && witness.Location.Path == path {
+					witnesses = append(witnesses, strings.ReplaceAll(witness.Detail, fixturePackage, "")+"@"+strconv.Itoa(witness.Location.Line))
+				}
+			}
+			sort.Strings(witnesses)
+			if relation.Dispatch != programindex.DispatchInterface || strings.Join(witnesses, "|") != strings.Join(want, "|") {
+				t.Fatalf("line %d: open field call witnesses = %v dispatch %s, want %v", view.line, witnesses, relation.Dispatch, want)
+			}
+			seenOpen++
+		}
+		if handler, ok := registrations[view.line]; ok && relation.Kind == programindex.RelationBindsImplementation {
+			if view.from != "RunReadyLoop" || relation.Resolution != exact || len(relation.ToIDs) != 1 ||
+				objects[relation.ToIDs[0]].Location == nil || objects[relation.ToIDs[0]].Location.Line != handler {
+				t.Fatalf("line %d: handler lost its exact registration: %+v", view.line, view)
+			}
+			seenRegistrations++
+		}
+	}
+	if seenOpen != len(openCalls) || seenRegistrations != len(registrations) {
+		t.Fatalf("open field calls = %d, registrations = %d, want %d and %d", seenOpen, seenRegistrations, len(openCalls), len(registrations))
 	}
 }

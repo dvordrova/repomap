@@ -18,7 +18,7 @@ type dynamicHandoffCapture struct {
 	callableBindings  []callableBindingFact
 	callbackTraversal map[string][]*ssa.Function
 	bindingsFrozen    bool
-	interfaceFields   map[*types.Var][]*ssa.Store
+	interfaceFields   map[*types.Var][]interfaceFieldStore
 	invokeSummaries   map[ssa.CallInstruction]dynamicValueSummary
 	coverage          godynamichandoff.CoverageInput
 	err               error
@@ -377,6 +377,11 @@ func (capture *dynamicHandoffCapture) observeInterfaceInvoke(
 	if field, container := interfaceReceiverField(common.Value); field != nil {
 		containerType, fieldName = types.TypeString(container, packageQualifier), field.Name()
 	}
+	witnesses := dynamicInterfaceWitnesses(a, summary)
+	if candidatesConsidered == len(candidates) {
+		// Witnesses are evidence of an open frontier and never stand alone.
+		witnesses = nil
+	}
 	capture.append(godynamichandoff.Handoff{
 		Kind:       godynamichandoff.InterfaceInvoke,
 		CallerID:   callerID,
@@ -392,6 +397,7 @@ func (capture *dynamicHandoffCapture) observeInterfaceInvoke(
 		Resolution:           resolution,
 		Candidates:           candidates,
 		CandidatesConsidered: candidatesConsidered,
+		Witnesses:            witnesses,
 	})
 }
 
@@ -735,6 +741,29 @@ func dynamicInterfaceSummaryCandidates(
 		return nil, 0, err
 	}
 	return candidates, unresolved, nil
+}
+
+// dynamicInterfaceWitnesses are the repository callables that stores of an
+// open interface field put there, each with its store. Other callables have
+// no function identity and stay only in the unknown count.
+func dynamicInterfaceWitnesses(a *analyzer, summary dynamicValueSummary) []godynamichandoff.FieldWitness {
+	var result []godynamichandoff.FieldWitness
+	for function, stores := range summary.witnesses {
+		function = externalCallCanonicalFunction(function)
+		if function == nil || !a.isRepositoryFunction(function) {
+			continue
+		}
+		functionID, ok := a.directCallIndex.recordFunction(a, function)
+		if !ok {
+			continue
+		}
+		for store := range stores {
+			result = append(result, godynamichandoff.FieldWitness{
+				FunctionID: functionID, Field: store.field, Assignment: store.location, UnderBranch: store.underBranch,
+			})
+		}
+	}
+	return result
 }
 
 func dynamicFunctionCandidates(

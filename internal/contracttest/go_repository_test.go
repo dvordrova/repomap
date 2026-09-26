@@ -676,6 +676,12 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 			if witness.Kind != "interface_field_assignment" {
 				continue
 			}
+			if relation.Resolution == programindex.ResolutionUnresolved && witness.Location != nil &&
+				witness.Location.Path == "internal/storefixture/command_table.go" && strings.HasSuffix(witness.Detail, " under a condition") {
+				// A field stored under a branch keeps its stores as witnesses
+				// of the open call (assertGoCommandTableAndStoredCallbacks).
+				continue
+			}
 			projected++
 			if relation.Kind != programindex.RelationCalls || relation.Resolution == programindex.ResolutionUnresolved || witness.Location == nil ||
 				(witness.Location.Path != "internal/storefixture/fixtures.go" && witness.Location.Path != "internal/storefixture/handoff_flow.go") {

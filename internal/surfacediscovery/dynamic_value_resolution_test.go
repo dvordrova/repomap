@@ -197,13 +197,40 @@ func Run(h *H){h.V.M()}`)
 		}
 	}
 	for _, stores := range a.dynamicHandoffCapture.interfaceFields {
-		if len(stores) != 2 || stores[0].Val != stores[1].Val {
+		if len(stores) != 2 || stores[0].store.Val != stores[1].store.Val {
 			t.Fatal("fixture no longer stores the same SSA value twice")
 		}
-		child := r.interfaceValue(stores[0].Val)
+		child := r.interfaceValue(stores[0].store.Val)
 		if len(child.assignments) != 0 || child.unresolved != 0 || len(child.functions) != 1 {
 			t.Fatal("parent store locations contaminated the cached value")
 		}
+	}
+}
+
+// A store is under a branch inside an if, a case or a select clause of its own
+// function, as the C adapter reads it; a loop body, a store after an early
+// return and a function literal's own body are not.
+func TestInterfaceFieldStoresUnderABranch(t *testing.T) {
+	a, _ := resolutionTestAnalyzer(t, `package fixture
+type I interface{M()};type W struct{};func(W)M(){};type H struct{V I}
+func Plain(h *H){h.V=W{}}
+func Then(h *H,c bool){if c{h.V=W{}}}
+func Else(h *H,c bool){if c{return}else{h.V=W{}}}
+func After(h *H,c bool){if c{return};h.V=W{}}
+func Case(h *H,n int){switch n{case 1:h.V=W{}}}
+func Kind(h *H,x any){switch x.(type){case int:h.V=W{}}}
+func Select(h *H,c chan int){select{case <-c:h.V=W{}}}
+func Loop(h *H,n int){for i:=0;i<n;i++{h.V=W{}}}
+func Later(h *H,c bool){if c{go func(){h.V=W{}}()}}`)
+	want := map[int]bool{3: false, 4: true, 5: true, 6: false, 7: true, 8: true, 9: true, 10: false, 11: false}
+	got := map[int]bool{}
+	for _, stores := range a.dynamicHandoffCapture.interfaceFields {
+		for _, store := range stores {
+			got[a.location(store.store.Pos()).Line] = store.underBranch
+		}
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("stores under a branch by line = %v, want %v", got, want)
 	}
 }
 

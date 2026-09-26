@@ -19,7 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-const Version = 8
+const Version = 9
 
 type Scenario struct {
 	ID     string   `json:"id"`
@@ -167,6 +167,19 @@ type ReceiverField struct {
 	Location Location `json:"location"`
 }
 
+// FieldWitness is a repository callable stored into an interface field
+// (Field, as ContainerType.field) at Assignment, when a store of that field
+// under a branch leaves the value of the field open. The call through the
+// field is then no exact or alternative call of the callable: the witness is
+// evidence of an open frontier, never a candidate. UnderBranch marks the
+// stores that a branch decides.
+type FieldWitness struct {
+	FunctionID  string   `json:"function_id"`
+	Field       string   `json:"field"`
+	Assignment  Location `json:"assignment"`
+	UnderBranch bool     `json:"under_branch,omitempty"`
+}
+
 type Handoff struct {
 	ID                   string          `json:"id"`
 	Kind                 Kind            `json:"kind"`
@@ -180,6 +193,7 @@ type Handoff struct {
 	CandidatesConsidered int             `json:"candidates_considered"`
 	CandidatesOmitted    int             `json:"candidates_omitted"`
 	ReceiverFields       []ReceiverField `json:"receiver_fields,omitempty"`
+	Witnesses            []FieldWitness  `json:"witnesses,omitempty"`
 }
 
 // Coverage separates missing relation rows from unresolved candidate
@@ -274,9 +288,15 @@ func New(input Input) (Index, error) {
 		}
 		handoff.Candidates = canonicalCandidates(handoff.Candidates)
 		handoff.ReceiverFields = canonicalReceiverFields(handoff.ReceiverFields)
+		handoff.Witnesses = canonicalFieldWitnesses(handoff.Witnesses)
 		for _, candidate := range handoff.Candidates {
 			if _, exists := functionByID[candidate.FunctionID]; !exists {
 				return Index{}, fmt.Errorf("Go dynamic handoff index: handoff cites unknown candidate %q", candidate.FunctionID)
+			}
+		}
+		for _, witness := range handoff.Witnesses {
+			if _, exists := functionByID[witness.FunctionID]; !exists {
+				return Index{}, fmt.Errorf("Go dynamic handoff index: handoff cites unknown witness %q", witness.FunctionID)
 			}
 		}
 		if handoff.CandidatesConsidered == 0 {
@@ -324,6 +344,7 @@ func (index Index) Snapshot() Index {
 	result.Handoffs = append([]Handoff(nil), index.Handoffs...)
 	for position := range result.Handoffs {
 		result.Handoffs[position].ReceiverFields = append([]ReceiverField(nil), index.Handoffs[position].ReceiverFields...)
+		result.Handoffs[position].Witnesses = append([]FieldWitness(nil), index.Handoffs[position].Witnesses...)
 		result.Handoffs[position].Candidates = append([]Candidate(nil), index.Handoffs[position].Candidates...)
 		for i := range result.Handoffs[position].Candidates {
 			result.Handoffs[position].Candidates[i].Assignments = append([]Location(nil), index.Handoffs[position].Candidates[i].Assignments...)
@@ -411,6 +432,15 @@ func validateHandoff(handoff Handoff, functions map[string]struct{}) error {
 			if !validLocation(location) || i > 0 && locationKey(candidate.Assignments[i-1]) >= locationKey(location) {
 				return fmt.Errorf("Go dynamic handoff index: invalid field assignment location")
 			}
+		}
+	}
+	if len(handoff.Witnesses) > 0 && (handoff.Kind != InterfaceInvoke || handoff.CandidatesOmitted == 0) {
+		return fmt.Errorf("Go dynamic handoff index: field witnesses belong to an open interface invoke")
+	}
+	for i, witness := range handoff.Witnesses {
+		if _, exists := functions[witness.FunctionID]; !exists || !validText(witness.Field) || !validLocation(witness.Assignment) ||
+			i > 0 && fieldWitnessKey(handoff.Witnesses[i-1]) >= fieldWitnessKey(witness) {
+			return fmt.Errorf("Go dynamic handoff index: invalid field witness")
 		}
 	}
 	switch handoff.Resolution {
@@ -503,6 +533,26 @@ func canonicalReceiverFields(values []ReceiverField) []ReceiverField {
 		result = append(result, value)
 	}
 	sort.Slice(result, func(i, j int) bool { return receiverFieldKey(result[i]) < receiverFieldKey(result[j]) })
+	return result
+}
+
+func fieldWitnessKey(value FieldWitness) string {
+	return locationKey(value.Assignment) + "\x00" + value.Field + "\x00" + value.FunctionID + "\x00" + strconv.FormatBool(value.UnderBranch)
+}
+
+func canonicalFieldWitnesses(values []FieldWitness) []FieldWitness {
+	if len(values) == 0 {
+		return nil
+	}
+	byKey := make(map[string]FieldWitness, len(values))
+	for _, value := range values {
+		byKey[fieldWitnessKey(value)] = value
+	}
+	result := make([]FieldWitness, 0, len(byKey))
+	for _, value := range byKey {
+		result = append(result, value)
+	}
+	sort.Slice(result, func(i, j int) bool { return fieldWitnessKey(result[i]) < fieldWitnessKey(result[j]) })
 	return result
 }
 
