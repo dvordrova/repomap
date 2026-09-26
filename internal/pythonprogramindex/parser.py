@@ -156,12 +156,22 @@ class Scope:
         self.global_names = set()
         self.nonlocal_names = set()
         self.opaque_names = set()
+        # Every assignment, def, class and import binding a name in this
+        # scope, in source order. The collector's branch depth when the scope
+        # began separates a store under a branch of this scope from one that
+        # merely sits in a function declared under a branch.
+        self.stores = {}
+        self.conditional_base = 0
 
     def binding(self, name):
+        owner = self.owner(name)
+        return owner.bindings[name] if owner is not None else None
+
+    def owner(self, name):
         current = self
         while current is not None:
             if name in current.bindings:
-                return current.bindings[name]
+                return current
             current = current.parent
         return None
 
@@ -256,7 +266,7 @@ class Analyzer:
     def add_relation(self, kind, from_ref, to_refs, resolution, node, witness_kind,
                      detail="", invocation="", targets_observed=None,
                      source_expression="", witness_callee=None, patterns=None,
-                     patterns_observed=0, source_argument=None):
+                     patterns_observed=0, source_argument=None, extra_witnesses=()):
         path = self.current_path
         location = source_location(path, node)
         witness_location = callee_location(path, witness_callee) \
@@ -279,14 +289,16 @@ class Analyzer:
         existing = self.relations_by_key.get(key)
         if existing is not None:
             existing["patterns_observed"] += patterns_observed
-            candidate = json.dumps(witness, sort_keys=True, separators=(",", ":"))
             known = {
                 json.dumps(value, sort_keys=True, separators=(",", ":"))
                 for value in existing["witnesses"]
             }
-            if candidate not in known:
-                existing["witnesses"].append(witness)
-                existing["witnesses_observed"] += 1
+            for value in [witness] + list(extra_witnesses):
+                candidate = json.dumps(value, sort_keys=True, separators=(",", ":"))
+                if candidate not in known:
+                    known.add(candidate)
+                    existing["witnesses"].append(value)
+                    existing["witnesses_observed"] += 1
             known_patterns = {
                 value.get("source_ref", "") for value in existing.get("patterns", [])
             }
@@ -311,8 +323,8 @@ class Analyzer:
             "to_refs": to_refs,
             "resolution": resolution,
             "targets_observed": targets_observed,
-            "witnesses": [witness],
-            "witnesses_observed": 1,
+            "witnesses": [witness] + list(extra_witnesses),
+            "witnesses_observed": 1 + len(extra_witnesses),
             "patterns": list(patterns or []),
             "patterns_observed": patterns_observed,
         }
@@ -500,7 +512,12 @@ class Collector(ast.NodeVisitor):
             self.scope.export_bindings[name] = binding or {"kind": "declaration"}
 
     def generic_visit(self, node):
-        conditional = isinstance(node, (ast.If, ast.Try, ast.While, ast.With, ast.AsyncWith, ast.Match)) or type(node).__name__ == "TryStar"
+        # A conditional expression, a boolean operator and a comprehension
+        # decide whether an assignment expression inside them runs.
+        conditional = isinstance(node, (
+            ast.If, ast.Try, ast.While, ast.With, ast.AsyncWith, ast.Match,
+            ast.IfExp, ast.BoolOp, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp,
+        )) or type(node).__name__ == "TryStar"
         self.conditional_depth += int(conditional)
         super().generic_visit(node)
         self.conditional_depth -= int(conditional)
@@ -575,6 +592,28 @@ class Collector(ast.NodeVisitor):
         if binding is not None and isinstance(target, ast.Name):
             self.scope.bindings[target.id] = dict(binding)
 
+    def record_store(self, target, binding=None, value=None):
+        # One assignment of a name, with the callable its value names. Under a
+        # branch, the name afterwards holds whatever the branch left there.
+        if isinstance(target, ast.Name):
+            self.scope.stores.setdefault(target.id, []).append({
+                "binding": dict(binding) if binding is not None else None,
+                "conditional": self.conditional_depth > self.scope.conditional_base,
+                "node": value if binding is not None and value is not None else target,
+            })
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                self.record_store(element)
+
+    def record_declaration(self, name, binding, node):
+        # A def, class or import binds the name too. It is one more value the
+        # name may hold, never what makes an assigned name conditional.
+        self.scope.stores.setdefault(name, []).append({
+            "binding": dict(binding),
+            "conditional": self.conditional_depth > self.scope.conditional_base,
+            "node": node, "declaration": True,
+        })
+
     def ensure_call_result(self, node):
         existing = self.analyzer.call_result_refs.get(id(node), "")
         if existing:
@@ -631,6 +670,7 @@ class Collector(ast.NodeVisitor):
             "end_line": getattr(node, "end_lineno", 0),
         }, qname)
         parent.bindings[node.name] = {"kind": "object", "ref": ref}
+        self.record_declaration(node.name, parent.bindings[node.name], node)
         self.analyzer.node_refs[id(node)] = ref
         if isinstance(node, ast.AsyncFunctionDef):
             self.analyzer.suspended_callables.add(ref)
@@ -644,6 +684,7 @@ class Collector(ast.NodeVisitor):
             class_ref=parent.ref if kind == "method" else parent.class_ref,
             class_qname=parent.qname if kind == "method" else parent.class_qname,
         )
+        child.conditional_base = self.conditional_depth
         self.analyzer.node_scopes[id(node)] = child
         previous, self.scope = self.scope, child
         arguments = list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
@@ -676,10 +717,12 @@ class Collector(ast.NodeVisitor):
             "end_line": getattr(node, "end_lineno", 0),
         }, qname)
         parent.bindings[node.name] = {"kind": "object", "ref": ref}
+        self.record_declaration(node.name, parent.bindings[node.name], node)
         self.analyzer.node_refs[id(node)] = ref
         for value in list(node.decorator_list) + list(node.bases) + [keyword.value for keyword in node.keywords]:
             self.visit(value)
         child = Scope(ref, qname, "type", parent, class_ref=ref, class_qname=qname)
+        child.conditional_base = self.conditional_depth
         self.analyzer.node_scopes[id(node)] = child
         previous, self.scope = self.scope, child
         for statement in node.body:
@@ -702,6 +745,7 @@ class Collector(ast.NodeVisitor):
         }, qname)
         self.analyzer.node_refs[id(node)] = ref
         child = Scope(ref, qname, "lambda", parent, class_ref=parent.class_ref, class_qname=parent.class_qname)
+        child.conditional_base = self.conditional_depth
         self.analyzer.node_scopes[id(node)] = child
         previous, self.scope = self.scope, child
         for argument in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
@@ -722,12 +766,16 @@ class Collector(ast.NodeVisitor):
             ref = self.analyzer.node_refs.get(id(node.targets[0]), "")
             if ref:
                 self.analyzer.call_result_refs[id(node.value)] = ref
+        stored = alias_binding
         if isinstance(node.value, ast.Lambda):
             lambda_ref = self.analyzer.node_refs.get(id(node.value), "")
             if lambda_ref:
+                stored = {"kind": "object", "ref": lambda_ref}
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         self.scope.bindings[target.id] = {"kind": "object", "ref": lambda_ref}
+        for target in node.targets:
+            self.record_store(target, stored, node.value)
 
     def visit_AnnAssign(self, node):
         alias_binding = self.callable_alias_binding(node.value) if node.value is not None else None
@@ -747,6 +795,8 @@ class Collector(ast.NodeVisitor):
                 if ref:
                     self.analyzer.call_result_refs[id(node.value)] = ref
         self.bind_callable_alias(node.target, alias_binding)
+        if node.value is not None:
+            self.record_store(node.target, alias_binding, node.value)
         ref = self.analyzer.node_refs.get(id(node.target))
         if ref:
             self.analyzer.variable_annotations[ref] = (node.annotation, self.scope)
@@ -756,6 +806,7 @@ class Collector(ast.NodeVisitor):
         self.visit(node.value)
         self.bind_targets(node.target, True)
         self.bind_callable_alias(node.target, alias_binding)
+        self.record_store(node.target, alias_binding, node.value)
 
     def visit_For(self, node):
         self.visit(node.iter)
@@ -828,6 +879,7 @@ class Collector(ast.NodeVisitor):
             }
             self.record_export(bound, binding)
             self.scope.bindings[bound] = binding
+            self.record_declaration(bound, binding, alias if getattr(alias, "lineno", 0) else node)
 
     def visit_ImportFrom(self, node):
         base = relative_module(self.module["name"], self.module["package"], node.level, node.module)
@@ -843,6 +895,7 @@ class Collector(ast.NodeVisitor):
             }
             self.record_export(name, binding)
             self.scope.bindings[name] = binding
+            self.record_declaration(name, binding, alias if getattr(alias, "lineno", 0) else node)
 
 
 class RelationVisitor(ast.NodeVisitor):
@@ -987,6 +1040,51 @@ class RelationVisitor(ast.NodeVisitor):
                 value["type_ref"] = ref
         return value
 
+    def binding_target(self, binding):
+        if binding["kind"] == "object":
+            ref = binding["ref"]
+            value = self.object(ref)
+            return ("external" if value and value["kind"] == "external_symbol" else "local", ref)
+        if binding["kind"] == "module":
+            return self.import_target(binding["module"])
+        if binding["kind"] == "from":
+            return self.import_target(
+                binding["module"], binding["name"],
+                allow_external=not binding.get("relative", False),
+            )
+        return "unknown", ""
+
+    def branch_stores(self, name):
+        """The assignments of a name in the scope that owns it, when one of
+        them is under a branch; otherwise none."""
+        owner = self.scope.owner(name)
+        stores = owner.stores.get(name, []) if owner is not None else []
+        return stores if any(store["conditional"] and not store.get("declaration") for store in stores) else []
+
+    def stored_function_witnesses(self, node):
+        # A call through a name assigned under a branch names each function
+        # those assignments store, as the C adapter names a pointer's stores.
+        if not isinstance(node, ast.Name):
+            return []
+        witnesses = []
+        for store in self.branch_stores(node.id):
+            if store["binding"] is None:
+                continue
+            authority, ref = self.binding_target(store["binding"])
+            candidate = self.object(ref) if ref else None
+            if authority == "unknown" or candidate is None or \
+                    candidate["kind"] not in ("function", "method", "lambda", "type", "external_symbol"):
+                continue
+            detail = candidate["name"] + " stored in " + node.id
+            if store["conditional"]:
+                detail += " under a condition"
+            witness = {"kind": "function_value_store", "detail": bounded_text(detail)}
+            location = source_location(self.module["path"], store["node"])
+            if location is not None:
+                witness["location"] = location
+            witnesses.append(witness)
+        return witnesses
+
     def resolve(self, node):
         if isinstance(node, ast.Lambda):
             ref = self.analyzer.node_refs.get(id(node), "")
@@ -999,18 +1097,13 @@ class RelationVisitor(ast.NodeVisitor):
                 qname = self.module["name"] + "." + node.id
                 ref = self.analyzer.objects_by_qname.get(qname, "")
                 return ("local", ref) if ref else ("unknown", "")
-            if binding["kind"] == "object":
-                ref = binding["ref"]
-                value = self.object(ref)
-                return ("external" if value and value["kind"] == "external_symbol" else "local", ref)
-            if binding["kind"] == "module":
-                return self.import_target(binding["module"])
-            if binding["kind"] == "from":
-                return self.import_target(
-                    binding["module"], binding["name"],
-                    allow_external=not binding.get("relative", False),
-                )
-            return "unknown", ""
+            resolved = self.binding_target(binding)
+            value = self.object(resolved[1]) if resolved[1] else None
+            if value and value["kind"] != "variable" and self.branch_stores(node.id):
+                # The last assignment is only one of the values a branch
+                # leaves in the name; its declared slot stays a variable.
+                return "unknown", ""
+            return resolved
         if isinstance(node, ast.Attribute):
             parts = []
             current = node
@@ -1031,6 +1124,8 @@ class RelationVisitor(ast.NodeVisitor):
             if isinstance(current, ast.Name):
                 binding = self.scope.binding(current.id)
                 if binding and binding["kind"] == "module":
+                    if self.branch_stores(current.id):
+                        return "unknown", ""
                     return self.imported_attribute(binding["module"], parts, binding.get("external", False))
                 value_binding = self.pattern_binding(current.id)
                 typed_parameter = value_binding and value_binding.get("annotation_origin") and len(parts) == 1
@@ -1059,6 +1154,8 @@ class RelationVisitor(ast.NodeVisitor):
     def expression_name(self, node):
         if isinstance(node, ast.Name):
             binding = self.scope.binding(node.id)
+            if self.branch_stores(node.id):
+                return node.id
             if binding and binding["kind"] == "module":
                 return binding["module"]
             if binding and binding["kind"] == "from":
@@ -1554,7 +1651,7 @@ class RelationVisitor(ast.NodeVisitor):
 
     def emit_resolved(self, kind, from_ref, resolved, node, witness_kind, detail="", invocation="",
                       exact_authorities=(), source_expression="", witness_callee=None,
-                      pattern=None, patterns_observed=0, source_argument=None):
+                      pattern=None, patterns_observed=0, source_argument=None, extra_witnesses=()):
         authority, ref = resolved
         if authority in exact_authorities and ref:
             return self.analyzer.add_relation(
@@ -1562,6 +1659,7 @@ class RelationVisitor(ast.NodeVisitor):
                 invocation=invocation, targets_observed=1, source_expression=source_expression,
                 witness_callee=witness_callee, patterns=[pattern] if pattern else [],
                 patterns_observed=patterns_observed, source_argument=source_argument,
+                extra_witnesses=extra_witnesses,
             )
         if authority in ("local", "external", "literal") and ref:
             # The one binding this name resolves to is the target. Rebinding the
@@ -1573,13 +1671,14 @@ class RelationVisitor(ast.NodeVisitor):
                 candidate_detail, invocation=invocation, targets_observed=1,
                 source_expression=source_expression, witness_callee=witness_callee,
                 patterns=[pattern] if pattern else [], patterns_observed=patterns_observed,
-                source_argument=source_argument,
+                source_argument=source_argument, extra_witnesses=extra_witnesses,
             )
         return self.analyzer.add_relation(
             kind, from_ref, [], "unresolved", node, witness_kind, detail,
             invocation=invocation, targets_observed=1, source_expression=source_expression,
             witness_callee=witness_callee, patterns=[pattern] if pattern else [],
             patterns_observed=patterns_observed, source_argument=source_argument,
+            extra_witnesses=extra_witnesses,
         )
 
     def emit_decorator(self, resolved, decorated_ref, node, witness_kind, detail="",
@@ -1920,6 +2019,7 @@ class RelationVisitor(ast.NodeVisitor):
                 kind, self.scope.ref, resolved, node, "callsite", name, invocation,
                 exact_authorities=("literal",), source_expression=source_expression,
                 witness_callee=node.func, pattern=pattern, patterns_observed=patterns_observed,
+                extra_witnesses=self.stored_function_witnesses(node.func) if not resolved[1] else (),
             )
 
         arguments = [(argument, position, "") for position, argument in enumerate(node.args, 1)]

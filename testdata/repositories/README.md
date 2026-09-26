@@ -128,15 +128,15 @@ function-pointer field have these equivalents:
 | Language | Table of named handlers | Callback stored under a branch | Call through a stored function value |
 | --- | --- | --- | --- |
 | Go | [command_table.go](go/internal/storefixture/command_table.go) `commandTable`: one exact binding per row, with that row's `Name` and `Arity` | `eventLoop.register`, `RunChosenHandler`: the calls through the fields stay unresolved | `RunSingleHandler` is exact; a looked-up row (`DispatchCommand`) is unresolved, where C gives the table's handlers as alternatives |
-| Python | missing | [stored_callbacks.py](python/src/fixture_app/stored_callbacks.py) `EventLoop.register`: the calls through the attributes stay unresolved | `run_single_handler` (a local name) is exact; through an attribute, missing |
+| Python | missing | [stored_callbacks.py](python/src/fixture_app/stored_callbacks.py) `EventLoop.register`: the calls through the attributes stay unresolved; `run_chosen_handler`: the call through a name reassigned under a branch stays unresolved and names both stored functions | `run_single_handler` (a local name) is exact; through an attribute, missing |
 | TypeScript | missing | [stored-callbacks.ts](jsts/src/stored-callbacks.ts) `EventLoop.register`: the calls through the properties stay unresolved | missing |
 | Clojure | missing | missing | [core.clj](clojure/src/example/core.clj) `with-shadow` is unresolved |
 
 Each handler keeps its exact callback at the call that registers it. The
-language contracts record every missing equivalent, including two that give a
+language contracts record every missing equivalent, including one that gives a
 store under a branch a wrong answer: Go's interface-typed fields (false
-alternatives) and Python's names reassigned under a branch (a false exact
-call).
+alternatives). A Python name reassigned under a branch leaves its call
+unresolved and names each function stored in it, as the C adapter does.
 
 A C call written through a macro and a C function address cast to an integer
 have no equivalent in Go, Python or TypeScript, which have neither macros nor
