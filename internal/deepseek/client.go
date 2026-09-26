@@ -328,7 +328,8 @@ var (
 	// ErrResponseContentEmpty distinguishes an HTTP-successful, parsed
 	// provider envelope with no usable assistant content from transport or
 	// provider-call failures. Stage owners use it for closed response-decode
-	// diagnostics without matching provider error text.
+	// diagnostics without matching provider error text. Complete sends the
+	// same request once more before it returns this refusal.
 	ErrResponseContentEmpty = errors.New("llm response content is empty")
 )
 
