@@ -157,8 +157,14 @@ never entered into or read from a repository-wide unqualified map.
   (a code declaration's name only as written, an acronym's plural in lower
   case); README-backed recipe steps stay refused, with no labels ("пометки
   меня бесят"); the map legend explains the number chips; areas keep the
-  order the model gave, carried by code with no rule for the model. The
-  table protocol itself (including the MaxRunes cut) is under a consilium.
+  order the model gave, carried by code with no rule for the model. A table
+  consilium (66-call DeepSeek probe) found the row format sound: 0 invented
+  keys in 79,363 rows. It found empty-means-no optional cells unreliable. So
+  the api table no longer asks its five unread columns; prompts demand only
+  the cells fill advertises; keys and core get a part's whole declaration
+  list; a symbol row writes identical calls once with their lines. The
+  English alias is asked, by code, only of a name with a letter outside the
+  Latin script, with or without captions.
 - **Data ownership:** an extraction belongs to the programs holding one of its
   files. One no program holds in a code file (tests, fixtures, scripts) or
   under a tooling directory (`testdata`, `.github`, `.claude`, `.vscode`) is

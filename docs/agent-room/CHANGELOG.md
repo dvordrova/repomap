@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-09-26 — Table consilium fixes and the alias for non-English names
+
+- A consilium on the table protocol with a 66-call DeepSeek probe (about
+  $0.10): the row format is sound (5,099 answers, 79,363 rows, 0 invented
+  keys, 0 output-cap hits), while "leave the cell empty" lets the model flip
+  a whole window (atlas_api round 2: 228 of 228 rows filled in one run, 0 of
+  192 in the next; 227 of those cells were in columns no code read).
+- Owner's answers: the api table asks only what boundaries read (binds,
+  middleware, publishes, talks; contract v4); the types, symbols, targets and
+  joints prompts fill only the cells `fill` advertises (types had the model
+  write an unasked alias in 82 of 82 rows); keys and core get the whole
+  declaration list (it was cut to 12); a symbol row writes identical calls
+  once with their lines (canvas.spec.mjs: 84 KB request → 41 KB; all 5,103
+  function rows −14.5%).
+- The English alias (for non-English identifiers, e.g. Korean) is asked,
+  by code, only of a name with a letter outside the Latin script, with or
+  without `--captions`; English names never get the cell. Before, a default
+  run asked no alias at all and a captions run asked it of every name.
+
 ## 2026-09-26 — Closed decisions through one categorizer, JEV_KEY required
 
 - Owner: "давай пока с JEV_KEY обязательным, но это должен быть типа такой
