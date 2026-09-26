@@ -103,6 +103,10 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 		shape.handlerName, shape.handlerID = target.routeHandler(relation, pattern)
 	}
 	produced := false
+	// addressed reports an address among the call's literals, a field's
+	// included ({Method: "GET", Path: "/users"}): a verb literal beside it
+	// states the method it is asked with.
+	addressed := false
 	for position := range pattern.Arguments {
 		argument := &pattern.Arguments[position]
 		if value, _, literal := literalValue(*argument); literal {
@@ -110,6 +114,7 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 				continue
 			}
 			shape.literals = append(shape.literals, value)
+			addressed = addressed || isAddressLiteral(value)
 			// The first positional literal names what is handed over. Keyword
 			// literals (Command{Use: "serve", Short: "…"}) have no order the
 			// index keeps, so they stay values without one being the address.
@@ -181,7 +186,7 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 		produced, shape.handedValue, shape.constructed = false, false, false
 	}
 	shape.handed = shape.handlerID != "" || relation.Kind == programindex.RelationDecorates || produced || shape.handedValue
-	shape.method = statedMethod(pattern, shape.address != nil)
+	shape.method = statedMethod(pattern, addressed || shape.address != nil)
 	return shape
 }
 
@@ -378,9 +383,10 @@ func resolvesToAddress(values *routeValueReader, argument programindex.PatternAr
 // statedMethod is the HTTP verb the call states itself: as its word (get,
 // post), inside a pattern literal ("GET /health"), or as a literal of its
 // own beside the address it qualifies (NewRequest("GET", url),
-// Handle("POST", "/items", h)). A verb-shaped literal with no address beside
-// it names what is handed over, as a command table's {"get", getCommand}
-// row does, and states no verb.
+// Handle("POST", "/items", h), a route record's {Method: "GET", Path:
+// "/users"} or C table row {"GET", "/health", health}). A verb-shaped
+// literal with no address beside it names what is handed over, as a command
+// table's {"get", getCommand} row does, and states no verb.
 func statedMethod(pattern programindex.RelationPattern, hasAddress bool) string {
 	if isHTTPVerb(pattern.Selector) {
 		return strings.ToUpper(pattern.Selector)

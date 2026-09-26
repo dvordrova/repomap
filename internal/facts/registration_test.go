@@ -110,6 +110,37 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 			want: []want{{key: "NewRequest", method: "POST", path: "https://api.example/items", values: []string{"POST", "https://api.example/items"}, resolution: ResolutionExact}},
 		},
 		{
+			// rest.Route{Method: http.MethodGet, Path: "/users", Handler: h}:
+			// the fields are keyword literals, and the path beside the verb
+			// is the address it qualifies.
+			name: "a route record's verb field beside its path field states the method",
+			build: func(s *synthetic) {
+				s.object("main", programindex.ObjectFunction, "main", "main.go", 5, "")
+				s.object("h", programindex.ObjectFunction, "listUsers", "main.go", 30, "")
+				s.external("route", "github.com/some/rest", "Route", programindex.ExternalAuthorityPackage)
+				s.relate("new", programindex.RelationInvokesExternal, "main", []string{"route"}, loc("main.go", 8),
+					pattern("p", programindex.PatternCall, "Route", loc("main.go", 8), nil, keyword("Method", "GET"), keyword("Path", "/users"), dynamicKeyword("Handler", "h")))
+				s.callbackKeyword("cb", "main", "h", "new", "p", "Handler")
+			},
+			want: []want{{key: "Route", method: "GET", symbol: "listUsers", values: []string{"GET", "/users"}, resolution: ResolutionExact}},
+		},
+		{
+			// {"GET", "/health", health} in a C route table: the row's verb
+			// qualifies the path beside it, unlike a command row's name.
+			name: "a table row with a verb beside a path states the method",
+			build: func(s *synthetic) {
+				s.object("m", programindex.ObjectModule, "server.c", "server.c", 1, "")
+				s.object("route", programindex.ObjectType, "route", "server.c", 3, "m")
+				s.object("table", programindex.ObjectVariable, "routes", "server.c", 10, "m")
+				s.object("h", programindex.ObjectFunction, "health", "server.c", 30, "m")
+				s.relate("row", programindex.RelationCalls, "table", []string{"route"}, loc("server.c", 11),
+					pattern("p", programindex.PatternCall, "route", loc("server.c", 11), nil, keyword("method", "GET"), keyword("path", "/health"), dynamicKeyword("handler", "h")))
+				s.relations[len(s.relations)-1].Invocation = programindex.InvocationConstruct
+				s.callbackKeyword("cb", "table", "h", "row", "p", "handler")
+			},
+			want: []want{{key: "route", method: "GET", symbol: "health", values: []string{"GET", "/health"}, resolution: ResolutionPossible}},
+		},
+		{
 			// net/http writes a pattern's method in capitals; a sentence with
 			// a word, a space and a slash in it is a message.
 			name: "prose with a slash in it is no address",

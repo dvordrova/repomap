@@ -138,7 +138,8 @@ seed.
   the function by a string literal is a registration fact the model classifies
   (owner decision D1). The literal is the row's name: `{"get", getCommand}`
   states no HTTP method, since nothing in the row is an address for a verb
-  to qualify. A store into a platform record (`act.sa_sigaction`) is
+  to qualify; a route row `{"GET", "/health", health}` states GET beside its
+  path. A store into a platform record (`act.sa_sigaction`) is
   keyed on the root value's type and the field as written, not on the union a
   platform macro expands it to.
 - A call through a field, parameter or variable has the stored functions as
@@ -210,6 +211,13 @@ for this first adapter:
 - parts smaller than one file (D2), protocol commands as their own entry kind
   and joints inside one target (D7, D8).
 
+The fixture has no HTTP route table: a row whose verb qualifies the path beside
+it is covered by the facts tests alone, beside the Go-shaped record
+`{Method: "GET", Path: "/users", Handler: h}` of an outside type, which the Go
+fixture cannot build without a module dependency. Python's `methods=["GET"]`
+and JavaScript's `{method: "GET"}` are no literals in the index and state no
+method.
+
 ## Environment
 
 Install clang on the normal PATH: on macOS the Command Line Tools
@@ -220,15 +228,15 @@ Install clang on the normal PATH: on macOS the Command Line Tools
 
 `testdata/repositories/c` is the cumulative executable repository and
 `testdata/contracts/c.files.json` binds its exact inventory. The run tests
-cover discovery from link lines, repomap's own repository offering no C
-target and running no tool for its fixture, tooling sources beside a program,
-another adapter's explicit target, the files that restore each program, one
-parse per plan for a shared unit and its release after the last projection
-that needs it, a backend outside this platform's build, a missing clang, and
-an ordinary offline run selecting a C program, whose metadata records the
-platform view and whose page shows none of it. Facts tests cover C config
-reads, SQL, dynamic execution and command rows that state no HTTP method;
-claims, places and report tests cover docstrings, licence blocks, banners,
-section titles and the file description at their consuming boundaries, and
-the fixture's own docstrings reach its declarations. The fixture's map of
-parts is checked like every other language's (`TestCumulativeCMapOfParts`).
+cover discovery from link lines, repomap's own repository offering no C target
+and running no tool for its fixture, tooling sources beside a program, another
+adapter's explicit target, the files that restore each program, one parse per
+plan for a shared unit and its release after the last projection that needs it,
+a backend outside this platform's build, a missing clang, and an ordinary
+offline run selecting a C program, whose metadata records the platform view and
+whose page shows none of it. Facts tests cover C config reads, SQL, dynamic
+execution, command rows that state no HTTP method and route rows that state
+one; claims, places and report tests cover docstrings, licence blocks, banners,
+section titles and the file description at their consuming boundaries, and the
+fixture's own docstrings reach its declarations. The fixture's map of parts is
+checked like every other language's (`TestCumulativeCMapOfParts`).
