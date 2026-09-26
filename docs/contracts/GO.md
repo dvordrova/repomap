@@ -201,6 +201,9 @@ Missing equivalents, recorded rather than fabricated:
   so neither gives the registration the C adapter makes of a table row that
   names its function by a string literal (the owner's decision of
   2026-09-26).
+- A row storing two callables (`{Name: "get", Run: getCommand, Preload:
+  preloadGet}`) keeps two bindings. No Go row is a registration, so the C
+  rule that such a row is one input has nothing to apply to.
 - An open interface field is decided at its stores, not at the calls that
   reach them. A helper that stores its parameter unconditionally
   (`func (l *L) setRead(h H) { l.read = h }`), called under a branch with a

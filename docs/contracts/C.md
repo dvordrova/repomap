@@ -140,7 +140,11 @@ seed.
   the function is stored in (`kvd.h.kvCommand.proc`), which the registrar
   table asks once what its callables become: a command a client sends is a
   `request`. The entry is named by the word the model chooses among the row's
-  own (`get`), like any entry of any protocol. The literal is the row's name:
+  own (`get`), like any entry of any protocol. A row that stores a second
+  callable (`kvd.c`'s `{"get", getCommand, 2, preloadKey}`, Redis's
+  `vm_preload_proc`) is still one registration, of the callable it writes
+  first; `preloadKey` stays a callback the row stores and is no input named
+  `get` (PROGRAM_INDEX). The literal is the row's name:
   `{"get", getCommand}` states no HTTP method, since nothing in the row is an
   address for a verb to qualify; a route row `{"GET", "/health", health}`
   states GET beside its path. A store into a platform record (`act.sa_sigaction`) is

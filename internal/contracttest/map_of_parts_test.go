@@ -223,7 +223,7 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	// The lexer skips the comment inside bgsaveCommand; strings holding
 	// "//" or "/*" stay code.
 	adaptertest.AssertDeclarationCodeLines(t, graph, "kvd.c", map[string][]int{
-		"bgsaveCommand": {17}, "processCommand": {12},
+		"bgsaveCommand": {17}, "processCommand": {13},
 	})
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
 	for _, declaration := range [][2]string{{"kvd.c", "main"}, {"loop_poll.c", "loopApiPoll"}, {"strbuf.h", "sbAvail"}, {"kvd.h", "kvClient"}} {

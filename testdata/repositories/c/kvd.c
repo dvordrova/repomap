@@ -21,6 +21,7 @@ struct kvServer server;
 /*================================ Commands ================================ */
 
 static void getCommand(kvClient *c);
+static void preloadKey(kvClient *c);
 static void setCommand(kvClient *c);
 static void delCommand(kvClient *c);
 static void keysCommand(kvClient *c);
@@ -28,7 +29,7 @@ static void pingCommand(kvClient *c);
 static void bgsaveCommand(kvClient *c);
 
 static kvCommand cmdTable[] = {
-    {"get", getCommand, 2},
+    {"get", getCommand, 2, preloadKey},
     {"set", setCommand, 3},
     {"del", delCommand, -2},
     {"keys", keysCommand, 1},
@@ -71,6 +72,11 @@ static void getCommand(kvClient *c) {
     struct kvEntry *e = dbFind(c->argv[1]);
     if (e == NULL) addReply(c, "$-1\r\n");
     else addReplyBulk(c, e->value);
+}
+
+/* Runs before get: a key the database does not hold is logged. */
+static void preloadKey(kvClient *c) {
+    if (dbFind(c->argv[1]) == NULL) fprintf(stderr, "kvd: %s is not loaded\n", c->argv[1]);
 }
 
 static void setCommand(kvClient *c) {
@@ -166,6 +172,7 @@ static void processCommand(kvClient *c) {
         addReply(c, "-ERR wrong number of arguments\r\n");
         return;
     }
+    if (cmd->preload) cmd->preload(c);
     cmd->proc(c);
 }
 

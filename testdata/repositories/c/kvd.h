@@ -25,11 +25,13 @@ typedef struct kvClient {
 typedef void kvCommandProc(kvClient *c);
 
 /* One row of the command table: the name a client sends, the function that
- * runs it, and how many words it takes (negative: at least that many). */
+ * runs it, how many words it takes (negative: at least that many), and the
+ * function that prepares its key before it runs, when it has one. */
 typedef struct kvCommand {
     const char *name;
     kvCommandProc *proc;
     int arity;
+    kvCommandProc *preload;
 } kvCommand;
 
 struct kvEntry {

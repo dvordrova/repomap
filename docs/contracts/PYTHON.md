@@ -208,6 +208,8 @@ Missing equivalents, recorded rather than fabricated:
   `[("del", del_command, 2)]`), at module level or in a function, keeps no
   binding, key or other relation to its handlers. A call through a looked-up
   entry (`COMMANDS[name](args)`) is unresolved.
+- With no table-row registration, the C rule that a row storing two
+  callables is one input has nothing to apply to.
 - A call through an attribute is never resolved from its stores, even from a
   single store in `__init__`. The C adapter makes one store exact and several
   stores alternatives. The adapter sets no dispatch word, so no call says that

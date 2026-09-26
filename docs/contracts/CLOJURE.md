@@ -71,6 +71,8 @@ Missing equivalents, recorded rather than fabricated:
 - An unresolved `function_value` call names no function a binding could hold,
   so it draws none of the possible arrows the C, Go and Python store
   witnesses draw.
+- A table row that stores two callables is one registration in C; Clojure
+  has no table-row registration, so the rule has nothing to apply to here.
 - A map of handlers (`(def commands {"get" get-command})`) makes each handler
   a native var read of the var that holds the map, without its key. No
   binding names the handler.

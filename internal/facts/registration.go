@@ -37,6 +37,7 @@ func (b *builder) addRegistrations(target *targetContext) {
 			shapes = append(shapes, target.registrationShape(relation, pattern, originsByValue, values))
 		}
 	}
+	shapes = oneShapePerTableRow(target, shapes)
 	// A value that received a callable holds work; a literal handed to that
 	// value afterwards (Start(":8080") on the router holding the routes) is
 	// a registration too, and the reading stage says what it does.
@@ -55,6 +56,78 @@ func (b *builder) addRegistrations(target *targetContext) {
 			owner = shape.relation.FromID
 		}
 		b.addRegistration(target, shape, prefixes[owner], values)
+	}
+}
+
+// oneShapePerTableRow keeps one registration per row of a table the
+// repository owns. A row that stores two callables ({"zunion", zunionCommand,
+// ..., zunionInterBlockClientOnSwappedKeys}) reaches the index as one
+// construction per stored callable, each with the row's literals. Those
+// literals, written once at their own source positions, are the row's
+// identity: the row is one registration, handing over the callable it writes
+// first, and the others stay callbacks the row stores, never inputs of their
+// own. This is identity the code carries, not a decision about what a field
+// means.
+func oneShapePerTableRow(target *targetContext, shapes []registrationShape) []registrationShape {
+	first := make(map[string]int)
+	var keys []string
+	for position, shape := range shapes {
+		key := tableRowKey(target, shape)
+		keys = append(keys, key)
+		if key == "" {
+			continue
+		}
+		if kept, seen := first[key]; !seen || locationBefore(shape.pattern.Location, shapes[kept].pattern.Location) {
+			first[key] = position
+		}
+	}
+	result := shapes[:0:0]
+	for position, shape := range shapes {
+		if keys[position] == "" || first[keys[position]] == position {
+			result = append(result, shape)
+		}
+	}
+	return result
+}
+
+// tableRowKey is a table row's identity: the table, the record type and each
+// literal of the row where it is written. Empty for any other shape, and for
+// a row whose literals carry no source position.
+func tableRowKey(target *targetContext, shape registrationShape) string {
+	if shape.handlerID == "" || !target.tableRow(shape.relation) {
+		return ""
+	}
+	parts := []string{shape.relation.FromID, strings.Join(shape.relation.ToIDs, ",")}
+	for _, argument := range shape.pattern.Arguments {
+		value, _, literal := literalValue(argument)
+		if !literal {
+			continue
+		}
+		if argument.Origin == nil || argument.Origin.Anchor == nil {
+			return ""
+		}
+		at := argument.Origin.Anchor
+		parts = append(parts, argument.Keyword+"="+value+"@"+at.Path+":"+strconv.Itoa(at.Line)+":"+strconv.Itoa(at.Column))
+	}
+	if len(parts) == 2 {
+		return ""
+	}
+	sort.Strings(parts[2:])
+	return strings.Join(parts, "\x00")
+}
+
+func locationBefore(a, b *programindex.Location) bool {
+	switch {
+	case a == nil:
+		return false
+	case b == nil:
+		return true
+	case a.Path != b.Path:
+		return a.Path < b.Path
+	case a.Line != b.Line:
+		return a.Line < b.Line
+	default:
+		return a.Column < b.Column
 	}
 }
 

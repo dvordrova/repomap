@@ -254,7 +254,7 @@ func TestCFixtureParsesEachProgramInTheBuildsView(t *testing.T) {
 	if len(tables) != 1 || tables[0].StorageClass != "static" {
 		t.Fatalf("command table: %+v", tables)
 	}
-	getRow, getColumn := fixture.at(t, "kvd.c", `{"get", getCommand, 2}`, "getCommand")
+	getRow, getColumn := fixture.at(t, "kvd.c", `{"get", getCommand, 2, preloadKey}`, "getCommand")
 	var rowReference *cproject.Node
 	for node, top := range cReferences(daemon, "getCommand") {
 		if top == tables[0] {

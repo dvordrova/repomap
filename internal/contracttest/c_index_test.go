@@ -589,6 +589,20 @@ func TestCFixtureCommandRowsAreRegistrations(t *testing.T) {
 			t.Fatalf("%s row states an HTTP request: %+v", row.function, rows[0])
 		}
 	}
+	// The get row also stores preloadKey in its preload field: one row is one
+	// registration, of the function it writes first, and preloadKey stays a
+	// callback the row stores rather than a second input named get.
+	if len(registered["preloadKey"]) != 0 {
+		t.Fatalf("the get row's second callable became a registration of its own: %+v", registered["preloadKey"])
+	}
+	preload := cObject(t, index, programindex.ObjectFunction, "preloadKey", "kvd.c")
+	stored := false
+	for _, relation := range index.Relations {
+		stored = stored || relation.Kind == programindex.RelationPassesCallback && slices.Equal(relation.ToIDs, []string{preload.ID})
+	}
+	if !stored {
+		t.Fatal("the get row no longer stores preloadKey")
+	}
 	// The platform receives the thread body, the comparator and the signal
 	// handler.
 	for _, handed := range []string{"statsWorker", "compareKeys", "onSignal"} {

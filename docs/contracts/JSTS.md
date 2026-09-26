@@ -201,6 +201,8 @@ Missing equivalents, recorded rather than fabricated:
   `[{name: "del", run: delCommand}]`) makes each handler a value read where
   the table is written, without its key or its row's literals. No binding
   names the handler.
+- With no table-row registration, the C rule that a row storing two
+  callables is one input has nothing to apply to.
 - A property store records no relation of its own. Storing a parameter
   (`this.onRead = handler`) leaves nothing, and storing a named function
   (`this.onRead = getCommand`) is only a value read of that function. A call
