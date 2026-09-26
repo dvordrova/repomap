@@ -32,6 +32,15 @@ var dynamicRules = map[string]dynamicRule{
 	"spawnSync":    {origins: []string{"child_process"}},
 }
 
+// cDynamicRules are the libc functions that hand a command line to the shell,
+// with the headers that declare them. C has no builtin that runs code, so in
+// a C file nothing else counts: a repository function named eval or exec is
+// the repository's own code.
+var cDynamicRules = map[string][]string{
+	"system": {"stdlib.h"},
+	"popen":  {"stdio.h"},
+}
+
 func (b *builder) addDynamicExecution(target *targetContext) {
 	for _, relation := range target.input.Index.Relations {
 		for _, pattern := range relation.Patterns {
@@ -68,11 +77,21 @@ func (b *builder) addDynamicExecutionFact(target *targetContext, anchor Anchor, 
 // JavaScript is a RegExp method, so there it needs a child_process origin;
 // "Function" counts only as the constructor form.
 func dynamicLabel(target *targetContext, relation programindex.Relation, pattern programindex.RelationPattern, anchor Anchor, line string) (string, bool) {
+	origins := target.externalOrigins(relation, pattern)
+	if isCFile(anchor.Path) {
+		headers, ok := cDynamicRules[pattern.Selector]
+		if !ok {
+			return "", false
+		}
+		if _, found := originPackage(origins, headers...); !found {
+			return "", false
+		}
+		return pattern.Selector, true
+	}
 	rule, ok := dynamicRules[pattern.Selector]
 	if !ok {
 		return "", false
 	}
-	origins := target.externalOrigins(relation, pattern)
 	javascript := isJavaScriptFile(anchor.Path)
 	switch pattern.Selector {
 	case "Function":
