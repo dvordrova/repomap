@@ -62,14 +62,15 @@ make errors for pre-C99 code stay warnings that `-w` silences.
 Each unit runs `clang -fsyntax-only -w -H -Xclang -ast-dump=json` once per run
 store, at most four at a time; a unit several programs link is parsed once.
 The plan's store keeps a decoded unit only while a planned program that has
-not been projected yet still links it: once a program's ProgramIndex is built,
-or its parse fails, the units no remaining program needs are released, so the
-decoded units do not stay alive through the pages' model work. The dump is decoded as it streams, one top-level declaration at a time.
-clang leaves out `file` and `line` when they have not changed, so that state
-is replayed through every location in document order, including inside
-dropped system declarations: spelling precedes expansion, and `includedFrom`
-and presumed locations never move it. Only declarations whose expansion
-location is a corpus file are kept. `-H` gives the active include tree.
+not been projected yet still links it: once a program is projected, or its
+parse fails, the units no remaining program needs are released, so decoded
+units do not stay alive through the pages' model work. The dump is decoded as
+it streams, one top-level declaration at a time. clang leaves out `file` and
+`line` when they have not changed, so that state is replayed through every
+location in document order, including inside dropped system declarations:
+spelling precedes expansion, and `includedFrom` and presumed locations never
+move it. Only declarations whose expansion location is a corpus file are kept.
+`-H` gives the active include tree.
 
 The view is the host platform's build as the build description gives it
 (owner decision D3): on macOS a Makefile that picks kqueue under
@@ -198,6 +199,7 @@ Install clang on the normal PATH: on macOS the Command Line Tools
 cover discovery from link lines, the files that restore each program, one
 parse per plan for a shared unit and its release after the last projection
 that needs it, a backend outside this platform's build, a missing clang, and
-an ordinary offline run selecting a C program. Facts tests cover C config reads, SQL and dynamic
-execution; claims and places tests cover docstrings, licence blocks, banners
-and the file description at their consuming boundary.
+an ordinary offline run selecting a C program. Facts tests cover C config
+reads, SQL and dynamic execution; claims, places and report tests cover
+docstrings, licence blocks, banners and the file description at their
+consuming boundaries.
