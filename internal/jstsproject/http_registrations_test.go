@@ -39,9 +39,14 @@ func TestCumulativeJSTSHTTPConstructorPathsAndEmptyCallbacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{"/health": true, "/returned": true, "/v1/update": true, "/v1/metrics": true}
+	// installRouteTree: the leaf's app is the express() passed on through two
+	// parameters; the branch hands its own app to itself, a cycle with no
+	// holder.
+	holders := map[string]int{"/tree/leaf": 56, "/tree/branch": 0, "/tree/branch/nested": 0}
+	adaptertest.AssertParameterHolders(t, result, source, holders)
 	var emptyID string
 	for _, fact := range result.OfKind(facts.KindRegistration) {
-		if fact.Anchor == nil || fact.Anchor.Path != source {
+		if _, tree := holders[fact.Path]; fact.Anchor == nil || fact.Anchor.Path != source || tree {
 			continue
 		}
 		if !want[fact.Path] || fact.Method != "GET" || fact.Anchor.Column <= 0 {

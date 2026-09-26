@@ -260,7 +260,7 @@ func (target *targetContext) holderRoot(pattern programindex.RelationPattern) (*
 		}
 	}
 	if start == nil {
-		start = target.parameterValue(pattern.ReceiverValue)
+		start = target.parameterValue(pattern.ReceiverValue, make(map[parameterSlot]bool))
 	}
 	if start == nil {
 		return nil, nil
@@ -296,11 +296,20 @@ func (target *targetContext) holderRoot(pattern programindex.RelationPattern) (*
 // parameterValue follows a receiver that is a parameter of its function to
 // the value the one repository caller passes in that position:
 // ArticlesRegister(v1.Group("/articles")) mounts every route the function
-// registers on its router parameter.
-func (target *targetContext) parameterValue(value *sourcevalue.Value) *sourcevalue.Anchor {
+// registers on its router parameter. A caller that passes on a parameter
+// still being followed (a function handing its own parameter to itself, or
+// functions handing it round) closes a cycle and supplies no value, so the
+// parameter has none.
+func (target *targetContext) parameterValue(value *sourcevalue.Value, following map[parameterSlot]bool) *sourcevalue.Anchor {
 	if value == nil || value.Kind != "parameter" || value.Owner == nil || value.Position == 0 {
 		return nil
 	}
+	slot := parameterSlot{owner: *value.Owner, position: value.Position}
+	if following[slot] {
+		return nil
+	}
+	following[slot] = true
+	defer delete(following, slot)
 	var owner string
 	for _, object := range target.input.Index.Objects {
 		if isCallable(object) && object.Location != nil && object.Location.Path == value.Owner.Path && object.Location.Line == value.Owner.Line {
@@ -323,7 +332,7 @@ func (target *targetContext) parameterValue(value *sourcevalue.Value) *sourceval
 				}
 				anchor := producedAt(argument.Origin)
 				if anchor == nil {
-					anchor = target.parameterValue(argument.Origin)
+					anchor = target.parameterValue(argument.Origin, following)
 				}
 				if anchor == nil || passed != nil && *passed != *anchor {
 					return nil
@@ -333,6 +342,12 @@ func (target *targetContext) parameterValue(value *sourcevalue.Value) *sourceval
 		}
 	}
 	return passed
+}
+
+// parameterSlot is one parameter position of the callable declared at owner.
+type parameterSlot struct {
+	owner    sourcevalue.Anchor
+	position int
 }
 
 func producedAt(value *sourcevalue.Value) *sourcevalue.Anchor {

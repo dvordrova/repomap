@@ -1,5 +1,26 @@
 # Implementation and acceptance journal
 
+## 2026-09-26 — A parameter handed to itself no longer overflows the stack
+
+- A provider-free run on etcd (`go.etcd.io/etcd/server/v3@server::module_library`)
+  died in the facts stage with `fatal error: stack overflow` after about
+  2 minutes: `parameterValue` (`internal/facts/registration.go`) followed a
+  receiver parameter into each caller's argument, and `executeTxn(ctx, lg,
+  txnWrite, ...)` and `node.Repr(recursive, sorted, clock)` pass their own
+  parameters to themselves (12 such self-passed parameters in that index).
+  Any outside call on such a parameter reached it, registration or not.
+- The parameters being followed on the current path are now a set, like the
+  route value reader's `active` set: re-entering one is a cycle that passes
+  no value, so the registration has no holder. A diamond is no cycle and still
+  resolves. The Go, Python and TypeScript fixtures each hand one router
+  through two parameters to a leaf (held by its construction call, so a fix
+  that stopped following parameters fails) and to a branch helper that
+  passes it to itself (no holder); on the old code each of the three checks
+  dies with the same overflow. Clojure records no parameter values.
+- The same etcd run now completes (exit 0, 11.5 s wall clock with a warm
+  program index); its facts stage takes 0.59 s for 641 facts, 212 of them
+  registrations, 48 with a holder.
+
 ## 2026-09-26 — Table consilium fixes and the alias for non-English names
 
 - A consilium on the table protocol with a 66-call DeepSeek probe (about

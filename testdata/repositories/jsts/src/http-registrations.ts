@@ -1,4 +1,4 @@
-import express, {type Request, type Response} from "express"
+import express, {type Application, type Request, type Response} from "express"
 
 const application = express()
 
@@ -45,4 +45,32 @@ function receiveMethodArguments(...values: Array<(next: unknown) => unknown>): v
 // JS method values are passed functions; no bound receiver execution is implied.
 export function passMethodArguments(app: MethodArgumentApplication): void {
   receiveMethodArguments(app.first, app.second, app.first, (app.second))
+}
+
+// installRouteTree hands one application to two helpers. The leaves' app
+// reaches the leaf through one more parameter, so its route is held by the
+// express() call. The branch also hands its app to itself: following that
+// parameter back through its callers comes around to the same parameter, so
+// its routes have no holder.
+export function installRouteTree(): void {
+  const app = express()
+  registerRouteLeaves(app)
+  registerRouteBranch(app, false)
+}
+
+function registerRouteLeaves(app: Application): void {
+  registerRouteLeaf(app)
+}
+
+function registerRouteLeaf(app: Application): void {
+  app.get("/tree/leaf", emptyHealthHandler)
+}
+
+function registerRouteBranch(app: Application, nested: boolean): void {
+  if (nested) {
+    app.get("/tree/branch/nested", emptyHealthHandler)
+    return
+  }
+  app.get("/tree/branch", emptyHealthHandler)
+  registerRouteBranch(app, true)
 }
