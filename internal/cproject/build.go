@@ -777,7 +777,9 @@ func (b *builder) emitCalls() {
 					if !slices.Contains(targets, candidate.fn) {
 						targets = append(targets, candidate.fn)
 					}
-					r.Witnesses = append(r.Witnesses, p.Witness{Kind: "c_function_pointer_store", Detail: candidate.detail, Location: location(candidate.site)})
+					// The witness names what its store put there, so a call left
+					// open keeps its candidates as identities, never targets.
+					r.Witnesses = append(r.Witnesses, p.Witness{Kind: "c_function_pointer_store", Detail: candidate.detail, Location: location(candidate.site), ObjectRef: candidate.fn})
 				}
 				if !uncertain && !conditional {
 					r.ToRefs = targets

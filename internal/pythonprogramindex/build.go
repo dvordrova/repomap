@@ -118,11 +118,21 @@ type parsedRelation struct {
 	Invocation        string                    `json:"invocation,omitempty"`
 	Location          *programindex.Location    `json:"location,omitempty"`
 	TargetsObserved   int                       `json:"targets_observed"`
-	Witnesses         []programindex.Witness    `json:"witnesses"`
+	Witnesses         []parsedWitness           `json:"witnesses"`
 	WitnessesObserved int                       `json:"witnesses_observed"`
 	Patterns          []parsedRelationPattern   `json:"patterns"`
 	PatternsObserved  int                       `json:"patterns_observed"`
 	SourceArgument    *parsedPatternArgumentRef `json:"source_argument,omitempty"`
+}
+
+// parsedWitness is a relation witness as the parser writes it; object_ref
+// names the declaration a store put into a name an unresolved call reads.
+type parsedWitness struct {
+	Kind             string                 `json:"kind"`
+	Detail           string                 `json:"detail,omitempty"`
+	SourceExpression string                 `json:"source_expression,omitempty"`
+	Location         *programindex.Location `json:"location,omitempty"`
+	ObjectRef        string                 `json:"object_ref,omitempty"`
 }
 
 type parsedPatternArgumentRef struct {
@@ -709,7 +719,7 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 			}
 			witnesses[position] = programindex.Witness{
 				Kind: witness.Kind, Detail: witness.Detail, SourceExpression: witness.SourceExpression,
-				Location: cloneLocation(witness.Location),
+				Location: cloneLocation(witness.Location), ObjectRef: witness.ObjectRef,
 			}
 		}
 		patterns := make([]programindex.RelationPatternInput, len(value.Patterns))

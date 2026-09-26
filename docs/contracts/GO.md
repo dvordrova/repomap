@@ -64,7 +64,9 @@ opens nothing, as the C adapter keeps no null store. Every call through an open
 field is unresolved. Each repository implementation its stores can put there
 becomes an `interface_field_assignment` witness of that call at its store (`X
 stored in T.field under a condition`, without the last three words for a store
-no branch decides), never a target; an implementation outside the repository
+no branch decides), never a target. The witness names the implementation by
+identity too (`object_id`), so the map draws the call's possible arrows as the
+C adapter's stores do; an implementation outside the repository
 gives no `invokes_external` fact there. When another package declares the
 field's interface, the call keeps its `invokes_external` fact of that method,
 and the unresolved `calls` relation with the witnesses is projected beside it.

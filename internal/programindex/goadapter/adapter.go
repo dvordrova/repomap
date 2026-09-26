@@ -977,7 +977,9 @@ func (projection *goProjection) projectDynamicHandoffs() (
 			if witness.UnderBranch {
 				detail += " under a condition"
 			}
-			witnesses = append(witnesses, programindex.Witness{Kind: "interface_field_assignment", Detail: detail, Location: at})
+			// The witness names the implementation its store put there; the
+			// call stays open and the implementation is never its target.
+			witnesses = append(witnesses, programindex.Witness{Kind: "interface_field_assignment", Detail: detail, Location: at, ObjectRef: projection.directNodeObjectRefs[witness.FunctionID]})
 		}
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef:         handoff.ID,

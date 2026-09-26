@@ -22,7 +22,13 @@ ProgramIndex retains:
   passes-callback, binds-implementation, sources, executes, reads, writes, and
   invokes-external. Containment is the object's `container_id` (and `owner_id`)
   only; there is no parallel `contains` relation;
-- complete witnesses and omission counts;
+- complete witnesses and omission counts. A witness that names a
+  declaration also carries its identity (`object_id`): the function a store
+  put into the field or name an unresolved call reads (C
+  `c_function_pointer_store`, Go `interface_field_assignment`, Python
+  `function_value_store`). It is identity only: the call stays unresolved,
+  the witness is never its target, and validation refuses an `object_id` that
+  names no object of the index or a control-context witness that names one;
 - every source-distinct neutral relation pattern;
 - call/decorator form, selector, invocation, dispatch and exact source location.
   Every adapter uses the same closed words. `invocation` is how a call runs:

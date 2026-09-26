@@ -180,7 +180,8 @@ supports:
   (`run_chosen_handler`), `handler()` names each function stored in the name
   as a `function_value_store` witness at the stored value:
   `flush_replies stored in handler` and
-  `accept_client stored in handler under a condition`. In `models.py`,
+  `accept_client stored in handler under a condition`, each naming its
+  function by identity too, so the map draws the call's possible arrows. In `models.py`,
   `register_callback_aliases` passes its parameter `handler` after
   `if replace_handler: handler = handle_delivery`; the argument keeps the
   variable and gains no callback of `handle_delivery`.

@@ -264,7 +264,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Between-group arrows stop at group boundaries whether the groups are open or
   closed. Connections wholly inside one group reveal with that group's objects.
   Multiple relations sharing a directed visible pair use one existing native
-  route; it is dashed only when every original relation is possible. All original endpoint IDs and sources remain on it;
+  route; it is dashed only when every original relation is possible. A call
+  left unresolved whose store witnesses name its candidates is possible
+  toward each of them (READING, Operation ownership), the same dashed arrow
+  alternatives draw, and its rows read "possible" in the source details
+  like theirs. All original endpoint IDs and sources remain on it;
   the drawing does not invent another relation. Number badges sit inside the
   frame, centred at the native connection point, and match the associated
   inner part badge in appearance and scale. They preserve every matching number. They do

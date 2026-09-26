@@ -230,6 +230,23 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 	return result, nil
 }
 
+// drawnEnds are the declarations a relation's arrow may reach: its targets,
+// or, for a call left unresolved, what the witnesses of its stores name. The
+// relation keeps its resolution, so such an arrow is possible like one of
+// several alternatives; nothing here makes a witness a target.
+func drawnEnds(relation programindex.Relation) []string {
+	if relation.Resolution != programindex.ResolutionUnresolved {
+		return relation.ToIDs
+	}
+	var ends []string
+	for _, witness := range relation.Witnesses {
+		if witness.ObjectID != "" && !slices.Contains(ends, witness.ObjectID) {
+			ends = append(ends, witness.ObjectID)
+		}
+	}
+	return ends
+}
+
 type projectedTarget struct {
 	index      Index
 	groupOfBox map[string]string
@@ -470,7 +487,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				continue
 			}
 			from := groupOfBox[fromBox.ID]
-			for _, id := range relation.ToIDs {
+			for _, id := range drawnEnds(relation) {
 				toBox := memberBoxes[id]
 				if toBox == nil {
 					continue

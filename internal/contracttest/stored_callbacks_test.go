@@ -84,6 +84,10 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 	t.Helper()
 	const path = "src/fixture_app/stored_callbacks.py"
 	relations := storedCallbackRelations(index, path)
+	names := make(map[string]string, len(index.Objects))
+	for _, object := range index.Objects {
+		names[object.ID] = object.Name
+	}
 	kinds := map[programindex.RelationKind]bool{
 		programindex.RelationCalls: true, programindex.RelationWrites: true, programindex.RelationPassesCallback: true,
 	}
@@ -123,11 +127,13 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 			if witness.Location == nil || witness.Location.Path != path {
 				t.Fatalf("store witness lost its place: %+v", witness)
 			}
-			stores = append(stores, fmt.Sprintf("%d:%d %s", witness.Location.Line, witness.Location.Column, witness.Detail))
+			stores = append(stores, fmt.Sprintf("%d:%d %s=%s", witness.Location.Line, witness.Location.Column, witness.Detail, names[witness.ObjectID]))
 		}
+		// Each store names the function it put there by identity, so the
+		// map can draw the call's possible arrows without reading the words.
 		want := ""
 		if view.line == 47 {
-			want = "44:15 flush_replies stored in handler|46:19 accept_client stored in handler under a condition"
+			want = "44:15 flush_replies stored in handler=flush_replies|46:19 accept_client stored in handler under a condition=accept_client"
 		}
 		if strings.Join(stores, "|") != want || view.relation.WitnessesObserved != len(view.relation.Witnesses) {
 			t.Fatalf("line %d store witnesses = %q, want %q: %+v", view.line, stores, want, view.relation)
@@ -262,8 +268,10 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 	// What the stores put into an open interface field stays with the call as
 	// its witnesses, each at its store, as the C adapter names them.
 	const fixturePackage = "example.com/repomap/cumulative-go-fixture/internal/storefixture."
+	// Each witness names the implementation it stored by identity, so the
+	// map can draw the call's possible arrows without reading the words.
 	stored := func(handler, field string, line int) string {
-		return fmt.Sprintf("(%s).Handle stored in readyLoop.%s under a condition@%d", handler, field, line)
+		return fmt.Sprintf("(%s).Handle stored in readyLoop.%s under a condition@%d=%s.Handle", handler, field, line, handler)
 	}
 	read := []string{stored("acceptReady", "read", 107), stored("acceptReady", "read", 129), stored("flushReady", "read", 107)}
 	openCalls := map[int][]string{
@@ -271,7 +279,7 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 		115: {stored("acceptReady", "write", 109), stored("flushReady", "write", 109)},
 		131: read,
 		// A call of fmt.Stringer.String keeps these witnesses beside that fact.
-		156: {"(acceptName).String stored in namedLoop.chosen under a condition@151"},
+		156: {"(acceptName).String stored in namedLoop.chosen under a condition@151=acceptName.String"},
 	}
 	// Each handler keeps its exact registration at its own call: call line
 	// to the line of the Handle method it binds.
@@ -298,7 +306,9 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 			var witnesses []string
 			for _, witness := range relation.Witnesses {
 				if witness.Kind == "interface_field_assignment" && witness.Location != nil && witness.Location.Path == path {
-					witnesses = append(witnesses, strings.ReplaceAll(witness.Detail, fixturePackage, "")+"@"+strconv.Itoa(witness.Location.Line))
+					named := objects[witness.ObjectID]
+					owner := objects[named.OwnerID].Name
+					witnesses = append(witnesses, strings.ReplaceAll(witness.Detail, fixturePackage, "")+"@"+strconv.Itoa(witness.Location.Line)+"="+owner+"."+named.Name)
 				}
 			}
 			sort.Strings(witnesses)

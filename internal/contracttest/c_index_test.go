@@ -1,6 +1,7 @@
 package contracttest
 
 import (
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -204,13 +205,28 @@ func TestCFixtureIndexesTheServer(t *testing.T) {
 			t.Fatalf("fe->%s: %+v", field, calls)
 		}
 		var details []string
+		named := map[string]bool{}
 		for _, witness := range calls[0].Witnesses {
 			details = append(details, witness.Detail)
+			if witness.ObjectID != "" {
+				if witness.Kind != "c_function_pointer_store" {
+					t.Fatalf("fe->%s: a %s witness names an object: %+v", field, witness.Kind, witness)
+				}
+				named[witness.ObjectID] = true
+			}
 		}
+		// Each store names its function by identity as well as by words, so
+		// the map can draw the call's possible arrows; none is a target.
+		var candidates []string
 		for _, candidate := range []string{"acceptHandler", "readQueryFromClient", "sendReplyToClient"} {
 			if !strings.Contains(strings.Join(details, "\n"), candidate) {
 				t.Fatalf("fe->%s does not name the candidate %s: %q", field, candidate, details)
 			}
+			candidates = append(candidates, cObject(t, index, programindex.ObjectFunction, candidate, "kvd.c").ID)
+		}
+		sort.Strings(candidates)
+		if identities := sortedIDs(slices.Collect(maps.Keys(named))); !slices.Equal(identities, candidates) {
+			t.Fatalf("fe->%s witnesses name %v, want the handlers %v", field, identities, candidates)
 		}
 	}
 	// l->beforeSleep has one unconditional store: the call is exact.

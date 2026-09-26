@@ -501,11 +501,19 @@ type Object struct {
 // SourceExpression is an optional exact, adapter-observed expression from the
 // repository source. Consumers may interpret it according to the relation and
 // witness kinds without parsing human-oriented Detail text.
+//
+// ObjectID names the declaration a witness is about when the adapter knows
+// it: the function a store put into the field or name an unresolved call reads
+// (`readQueryFromClient stored in aeFileEvent.rfileProc under a condition`).
+// It is identity only; the call stays unresolved and the witness never becomes
+// its target. Adapters hand the object over as ObjectRef, which New resolves.
 type Witness struct {
 	Kind             string    `json:"kind"`
 	Detail           string    `json:"detail,omitempty"`
 	SourceExpression string    `json:"source_expression,omitempty"`
 	Location         *Location `json:"location,omitempty"`
+	ObjectID         string    `json:"object_id,omitempty"`
+	ObjectRef        string    `json:"-"`
 }
 
 // PatternForm is the closed syntactic shape retained for adapter-neutral
@@ -1118,7 +1126,20 @@ func New(input Input) (Index, error) {
 		sort.Strings(toIDs)
 		toIDs = compactStrings(toIDs)
 
-		witnesses, err := canonicalWitnesses(value.Witnesses)
+		named := cloneWitnesses(value.Witnesses)
+		for position := range named {
+			if named[position].ObjectID != "" {
+				return Index{}, fmt.Errorf("program index: relation %q witness names an object without a ref", value.SourceRef)
+			}
+			if ref := named[position].ObjectRef; ref != "" {
+				id, resolveErr := resolveObjectRef(bindings, ref)
+				if resolveErr != nil {
+					return Index{}, fmt.Errorf("program index: relation %q witness: %w", value.SourceRef, resolveErr)
+				}
+				named[position].ObjectID, named[position].ObjectRef = id, ""
+			}
+		}
+		witnesses, err := canonicalWitnesses(named)
 		if err != nil {
 			return Index{}, fmt.Errorf("program index: relation %q: %w", value.SourceRef, err)
 		}
@@ -1295,7 +1316,17 @@ func (index Index) Validate() error {
 				return fmt.Errorf("program index: relation %q has unknown target", relation.ID)
 			}
 		}
+		for _, witness := range relation.Witnesses {
+			if witness.ObjectID != "" && !hasObjectID(index.Objects, witness.ObjectID) {
+				return fmt.Errorf("program index: relation %q witness names an unknown object", relation.ID)
+			}
+		}
 		for _, pattern := range relation.Patterns {
+			for _, witness := range pattern.Context {
+				if witness.ObjectID != "" {
+					return fmt.Errorf("program index: pattern %q control context names an object", pattern.ID)
+				}
+			}
 			if pattern.ResultID != "" && !hasObjectID(index.Objects, pattern.ResultID) {
 				return fmt.Errorf("program index: pattern %q has unknown result", pattern.ID)
 			}
@@ -1847,7 +1878,8 @@ func validateRelationShape(value Relation) error {
 
 func validateWitness(value Witness) error {
 	if !validText(value.Kind) || !validOptionalText(value.Detail) ||
-		!validOptionalText(value.SourceExpression) || !validOptionalLocation(value.Location) {
+		!validOptionalText(value.SourceExpression) || !validOptionalLocation(value.Location) ||
+		value.ObjectRef != "" || value.ObjectID != "" && !validCompactID(value.ObjectID, "n") {
 		return fmt.Errorf("program index: invalid witness")
 	}
 	return nil
@@ -2680,7 +2712,7 @@ func stableID(prefix string, fields ...string) string {
 
 func witnessKey(value Witness) string {
 	return strings.Join([]string{
-		locationKey(value.Location), value.Kind, value.Detail, value.SourceExpression,
+		locationKey(value.Location), value.Kind, value.Detail, value.SourceExpression, value.ObjectID,
 	}, "\x00")
 }
 

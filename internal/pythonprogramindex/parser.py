@@ -1183,7 +1183,9 @@ class RelationVisitor(ast.NodeVisitor):
             detail = candidate["name"] + " stored in " + root.id
             if store["conditional"]:
                 detail += " under a condition"
-            witness = {"kind": "function_value_store", "detail": bounded_text(detail)}
+            # The witness names what the store put there; the call stays
+            # unresolved and the stored value is never its target.
+            witness = {"kind": "function_value_store", "detail": bounded_text(detail), "object_ref": ref}
             location = source_location(self.module["path"], store["node"])
             if location is not None:
                 witness["location"] = location

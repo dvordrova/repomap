@@ -97,6 +97,27 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	// Each command's entry was offered the words its row wrote and chose the
 	// command's own. The thread's registration wrote only its call word: no
 	// word named it, and it keeps its handler's name.
+	// The event loop's calls through fe->rfileProc and fe->wfileProc stay
+	// unresolved, and the handlers their stores name reach the map as the
+	// possible arrows of the loop's part, as several alternatives would.
+	processEvents := cObject(t, index, programindex.ObjectFunction, "loopProcessEvents", "loop.c")
+	possible := map[string]bool{}
+	for _, connection := range indexes[0].Connections {
+		if connection.FromSubjectID != processEvents.ID || connection.SupportResolution != programindex.PatternValuePossible {
+			continue
+		}
+		for _, relation := range index.Relations {
+			if relation.ID == connection.SourceID && (relation.Resolution != programindex.ResolutionUnresolved || len(relation.ToIDs) != 0) {
+				t.Fatalf("a witnessed call became resolved: %+v", relation)
+			}
+		}
+		possible[handlers[connection.ToSubjectID]] = true
+	}
+	for _, handler := range []string{"acceptHandler", "readQueryFromClient", "sendReplyToClient"} {
+		if !possible[handler] {
+			t.Fatalf("the event loop draws no possible arrow to %s: %v", handler, possible)
+		}
+	}
 	sort.Strings(named)
 	wantNamed := []string{"pthread_create"}
 	for _, row := range cCommandRows {

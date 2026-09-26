@@ -149,7 +149,11 @@ seed.
 - A call through a field, parameter or variable has the stored functions as
   its targets. A store under a branch, or of a value the index cannot name,
   leaves the call unresolved with the candidates as witnesses; it never
-  produces alternatives the program cannot reach.
+  produces alternatives the program cannot reach. Each candidate witness
+  names its function by identity as well as by words, so `loop.c`'s
+  `fe->rfileProc(...)` reaches the map as possible arrows to `acceptHandler`,
+  `readQueryFromClient` and `sendReplyToClient` (READING), and stays
+  unresolved.
 - A function cast to an integer is an address used as data, never a callable.
 - Every active `#include` is one `imports` relation and one dependency: a
   repository header is a workspace dependency, a platform header the standard

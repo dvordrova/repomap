@@ -206,6 +206,8 @@ Missing equivalents, recorded rather than fabricated:
   (`this.onRead = getCommand`) is only a value read of that function. A call
   through a property is never resolved from its stores. The C adapter makes
   one store exact and several stores alternatives.
+- No unresolved call names the functions its stores could put there, so no
+  such call draws the possible arrows the C, Go and Python witnesses draw.
 - A call through a local constant holding a function
   (`const handler = acceptClient; handler()`) is an exact call of the constant
   itself. The function is only read at the constant's initializer. A `let`
