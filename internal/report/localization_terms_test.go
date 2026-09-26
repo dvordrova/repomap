@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf16"
+
+	"github.com/dvordrova/repomap/internal/terminology"
 )
 
 func glossaryFixture(id, name, explanation, question string) pageGlossaryTerm {
@@ -135,6 +137,28 @@ func TestCaseVariantsShareScopeAndExactNamesWinPlurals(t *testing.T) {
 	_, spans, err := entry.finishDisplayText(entry.Text)
 	if err != nil || len(spans) != 2 || !reflect.DeepEqual(spans[0].IDs, []string{"matchers"}) || !reflect.DeepEqual(spans[1].IDs, []string{"matcher"}) {
 		t.Fatalf("a plural reading displaced an exact name: %+v %v", spans, err)
+	}
+}
+
+// A reduced entry can join spellings equal but for case, as saved runs joined
+// Zipkin and zipkin. Lookup cannot tell them apart, so a mention offers that
+// one definition once, not as two definitions of the name.
+func TestJoinedCaseSpellingsOfferTheirOneDefinitionOnce(t *testing.T) {
+	source := []terminology.Source{{Path: "trace.go", Line: 3}}
+	catalog := pageGlossaryCatalog(t, []terminology.Candidate{
+		{Name: "Zipkin", Explanation: "A distributed tracing system.", Sources: source},
+		{Name: "zipkin", Explanation: "A distributed tracing system.", Sources: source},
+	})
+	builder := &pageBuilder{data: &ReportData{Glossary: catalog}, links: pageLinks{sourceIDs: map[string]string{"trace.go": "source-id"}}}
+	view := &pageView{}
+	if err := builder.reducedGlossary(view); err != nil || len(view.Glossary) != 2 {
+		t.Fatalf("the reduced entry lost a spelling: %+v %v", view.Glossary, err)
+	}
+	page := &PreparedPage{view: view}
+	entry := page.prepareTerminology("answer", "Zipkin receives spans; zipkin stores them.", "", nil, nil)
+	_, spans, err := entry.finishDisplayText(entry.Text)
+	if err != nil || len(entry.Terms) != 1 || len(spans) != 2 || len(spans[0].IDs) != 1 || !reflect.DeepEqual(spans[0].IDs, spans[1].IDs) {
+		t.Fatalf("one definition was offered twice: %+v %+v %v", entry.Terms, spans, err)
 	}
 }
 

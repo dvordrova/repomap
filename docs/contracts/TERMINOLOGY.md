@@ -209,7 +209,9 @@ Lookup never proves an occurrence's meaning. Owner decision 2026-09-26: a name
   no plural ending wins an equal span (Matchers over Matcher), and highlights
   never nest. Spellings equal but for case are one lookup name: they offer
   their definitions together, and a question's or entry's own sense replaces
-  the others for all of them. The translation dictionary carries the names
+  the others for all of them. A reduced entry that joined such spellings
+  (Zipkin, zipkin) has one identical definition per spelling; the name offers
+  it once. The translation dictionary carries the names
   found this way under their original spellings, so saved translations of an
   earlier run whose texts now find another name need an ordinary run;
   `repomap render` rejects them rather than adapting them. Commands,

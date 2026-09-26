@@ -180,6 +180,13 @@ func glossarySpellings(term pageGlossaryTerm) []string {
 	return names
 }
 
+// sameGlossaryDefinition reports whether two glossary terms would show the
+// same definition: equal explanation, sources, questions and places.
+func sameGlossaryDefinition(a, b pageGlossaryTerm) bool {
+	return a.Explanation == b.Explanation && a.Code == b.Code && slices.Equal(a.Sources, b.Sources) &&
+		slices.Equal(a.Questions, b.Questions) && slices.Equal(a.Places, b.Places)
+}
+
 // A letter, digit, mark, underscore or dollar sign continues a name, so a
 // glossary word never lights up inside HMMish, _HMM or $HMM.
 func glossaryWordRune(r rune) bool {
@@ -282,6 +289,25 @@ func (page *PreparedPage) terminologyFor(scope string, own *pageGlossaryTerm) pa
 			name := terminology.FoldTerm(spelling)
 			byName[name] = append(byName[name], spelled{spelling, *own})
 		}
+	}
+	// A reduced entry keeps one glossary term per spelling, so Zipkin and
+	// zipkin carry one identical definition. Lookup cannot tell them apart:
+	// the name offers that definition once, under its first ID.
+	for name, values := range byName {
+		slices.SortStableFunc(values, func(a, b spelled) int { return strings.Compare(a.term.ID, b.term.ID) })
+		var kept []pageGlossaryTerm
+		byName[name] = slices.DeleteFunc(values, func(value spelled) bool {
+			for _, other := range kept {
+				if other.ID == value.term.ID {
+					return false
+				}
+				if sameGlossaryDefinition(other, value.term) {
+					return true
+				}
+			}
+			kept = append(kept, value.term)
+			return false
+		})
 	}
 	var all []DisplayTextTerm
 	for _, values := range byName {
