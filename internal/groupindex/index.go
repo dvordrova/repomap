@@ -302,6 +302,7 @@ type Index struct {
 	// each holding several groups. chi's router package really does hold
 	// thirty groups — one per middleware file — and thirty is the truth and
 	// also unreadable. A container says which of them are one part.
+	// ProjectAtlas keeps them in the order the model listed its areas.
 	Containers      []Container      `json:"containers"`
 	StructuralEdges []StructuralEdge `json:"structural_edges"`
 	Connections     []Connection     `json:"connections"`

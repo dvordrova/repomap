@@ -131,12 +131,14 @@ type tableProvider struct {
 	// set, answers a parts request verbatim. placeFor chooses a follow-up
 	// row's part; nil takes its first option. areaFor names the area of one
 	// part row of an areas request, "" for none; nil answers no areas.
+	// areasResponse, when set, answers an areas request verbatim.
 	// describe writes a description; nil writes "About <name>.", and a
 	// description it returns empty is refused.
 	partFor       func(file map[string]any) string
 	partsResponse func(files []map[string]any) string
 	placeFor      func(row map[string]any) string
 	areaFor       func(part map[string]any) string
+	areasResponse func(parts []map[string]any) string
 	describe      func(name string) string
 	// designRequests counts the parts, description and areas requests.
 	designRequests map[string]int
@@ -652,6 +654,9 @@ func (provider *tableProvider) design(task string, body []byte) ([]byte, bool, e
 		raw, err := json.Marshal(map[string]string{"description": text})
 		return raw, true, err
 	default:
+		if provider.areasResponse != nil {
+			return []byte(provider.areasResponse(request.Parts)), true, nil
+		}
 		type area struct {
 			Name  string   `json:"name"`
 			Parts []string `json:"parts"`

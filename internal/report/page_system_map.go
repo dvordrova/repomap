@@ -331,14 +331,19 @@ func (view *pageView) SystemMap() *pageMap {
 			contained[id] = true
 		}
 	}
+	// Areas come first, in the order the model listed them; loose parts follow.
 	for _, section := range view.Sections {
-		var members []string
+		var areas, loose []string
 		for _, n := range result.Nodes {
 			if n.Owner == section.ID && n.Branch != "component" && n.Branch != "inputs" && !contained[n.ID] && n.ItemKind != "External communication" {
-				members = append(members, n.ID)
+				if n.Branch == "area" {
+					areas = append(areas, n.ID)
+				} else {
+					loose = append(loose, n.ID)
+				}
 			}
 		}
-		result.Nodes[positions["system-component-"+section.ID]].Children = strings.Join(members, " ")
+		result.Nodes[positions["system-component-"+section.ID]].Children = strings.Join(append(areas, loose...), " ")
 	}
 	if view.RepoMap != nil {
 		components := map[string]string{}

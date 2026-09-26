@@ -3,11 +3,16 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"html"
 	"html/template"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -407,5 +412,126 @@ func TestSystemOutboundWithoutOneExactPeerRemainsExternal(t *testing.T) {
 				t.Fatalf("%s incorrectly removed the independent communication record", mismatch)
 			}
 		})
+	}
+}
+
+// The areas answer lists areas in its own order, usually along the pipeline.
+// Nothing asks the model for an order and nothing checks one; code only keeps
+// it. The atlas zones arrive in that order and the page lists them in it
+// inside their component, with the part that is in no area after them. The
+// legend says what the numbers on an area's border are.
+func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
+	type part struct{ id, title, path string }
+	parts := []part{
+		{"p1", "Routing", "api/routes.go"}, {"p2", "Handlers", "api/handlers.go"},
+		{"p3", "Database", "store/db.go"}, {"p4", "Cache", "store/cache.go"},
+		{"p5", "Rendering", "report/render.go"}, {"p6", "Export", "report/export.go"},
+		{"p7", "Logging", "logging/log.go"},
+	}
+	objects := make([]programindex.ObjectInput, 0, len(parts))
+	sources := make([]programindex.TargetSource, 0, len(parts))
+	for i, p := range parts {
+		objects = append(objects, programindex.ObjectInput{SourceRef: p.id, Kind: programindex.ObjectFunction, Name: p.title,
+			Visibility: programindex.VisibilityPublic, Location: &programindex.Location{Path: p.path, Line: 3, Column: 1}})
+		sources = append(sources, programindex.TargetSource{FileRef: fmt.Sprintf("f%d", i+1), Path: p.path})
+	}
+	program, err := programindex.New(programindex.Input{
+		ScenarioSHA256: strings.Repeat("a", 64), SourceSHA256: strings.Repeat("b", 64),
+		Target:  programindex.TargetInput{ID: "t1", Language: "go", Kind: "executable", Name: "pipeline", Selector: "pipeline", Sources: sources, AnchorFileRef: "f1"},
+		Objects: objects, Relations: []programindex.RelationInput{},
+		Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: len(objects)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Neither alphabetical (Accessing, Reporting, Serving) nor its reverse.
+	zones := []atlas.Zone{
+		{ID: "z1", Title: "Serving requests", Line: "Answers requests.", BoxIDs: []string{"p1", "p2"}},
+		{ID: "z2", Title: "Accessing storage", Line: "Keeps data.", BoxIDs: []string{"p3", "p4"}},
+		{ID: "z3", Title: "Reporting", Line: "Writes reports.", BoxIDs: []string{"p5", "p6"}},
+	}
+	zoneOf := map[string]string{}
+	for _, zone := range zones {
+		for _, id := range zone.BoxIDs {
+			zoneOf[id] = zone.ID
+		}
+	}
+	target := atlas.Target{ID: program.Target.ID, Language: "go", Kind: "executable", Name: "pipeline", Root: ".",
+		Zones: zones, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}}
+	for i, p := range parts {
+		target.Boxes = append(target.Boxes, atlas.Box{ID: p.id, Dir: filepath.Dir(p.path), Title: p.title, Line: "Does " + p.title + ".",
+			ZoneID: zoneOf[p.id], Side: atlas.SideMid, Open: true, MemberIDs: []string{program.Objects[i].ID}, Keys: []atlas.Key{},
+			Files: []atlas.File{{Path: p.path, Line: p.title + ".", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{}}}})
+	}
+	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{program.Target.ID: program},
+		atlas.Atlas{Version: atlas.Version, Repository: "pipeline", Revision: "abc", Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	portfolio, err := NewProgramPortfolio(program.Target.ID, []programindex.Index{program})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := NewGroupGraphView(indexes, program.Target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := ReportData{FormatVersion: CurrentFormatVersion, RepoName: "pipeline", CapturedRevision: strings.Repeat("a", 40),
+		ProgramPortfolio: portfolio, GroupGraph: graph,
+		TargetOutcomePortfolio: reportTargetOutcomeViewFixture(t, []TargetNavigationPage{{
+			RunID: "20260926-120000-page-a1b2c3", ProgramTarget: program.Target.Snapshot(), ArtifactFilename: programindex.ArtifactFilename,
+		}}, program.Target.ID)}
+	if err := collectOpenablePaths(&data); err != nil {
+		t.Fatal(err)
+	}
+	options := reportSingleTargetRenderOptionsFixture(t, &data)
+	english, err := RenderHTMLWithOptions(&data, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	node := regexp.MustCompile(`<a [^>]*\bdata-node="[^"]*"[^>]*>`)
+	attribute := func(tag, name string) string {
+		match := regexp.MustCompile(`\s` + name + `="([^"]*)"`).FindStringSubmatch(tag)
+		if match == nil {
+			return ""
+		}
+		return html.UnescapeString(match[1])
+	}
+	titles, component := map[string]string{}, ""
+	for _, tag := range node.FindAllString(string(english), -1) {
+		titles[attribute(tag, "data-node")] = attribute(tag, "data-title")
+		if attribute(tag, "data-branch") == "component" {
+			component = attribute(tag, "data-children")
+		}
+	}
+	var listed []string
+	for _, id := range strings.Fields(component) {
+		listed = append(listed, titles[id])
+	}
+	if want := []string{"Serving requests", "Accessing storage", "Reporting", "Logging"}; !slices.Equal(listed, want) {
+		t.Fatalf("the component lists %q, want the model's areas in its order and then the loose part: %q", listed, want)
+	}
+
+	line := "Numbers on an area's border match the numbered parts inside it that the arrow connects; they are not an execution order."
+	if !strings.Contains(string(english), template.HTMLEscapeString(line)) {
+		t.Fatal("the legend does not explain the numbers on an area's border")
+	}
+	options.Language, options.NoModel = Russian, true
+	russian, err := RenderHTMLWithOptions(&data, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(russian), "Номера на границе области совпадают с номерами частей внутри неё, которые соединяет стрелка; это не порядок выполнения.") {
+		t.Fatal("the Russian legend does not explain the numbers on an area's border")
+	}
+	// A map without areas has no area numbers to explain.
+	plain := reportProgramShellDataFixture(t, "fixture")
+	without, err := RenderHTMLWithOptions(&plain, reportSingleTargetRenderOptionsFixture(t, &plain))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(without), template.HTMLEscapeString(line)) {
+		t.Fatal("a map without areas explains area numbers")
 	}
 }

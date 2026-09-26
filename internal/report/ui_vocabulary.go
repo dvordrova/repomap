@@ -468,6 +468,7 @@ var russianUI = map[string]string{
 	"Blue cards are inputs. Open one to follow its reachable code path.": "Синие карточки — входы. Откройте вход, чтобы проследить достижимый путь в коде.",
 	"Amber cards are external communications. Open one to see its sources and the inputs that reach it.":                                            "Янтарные карточки — внешние обращения. Откройте карточку, чтобы увидеть исходники и входы, из которых она достигается.",
 	"The outlined card is open on the right. Dark arrows highlight the focused connections. Lines show static relations, not a recorded execution.": "Карточка с обводкой открыта справа. Тёмные стрелки выделяют рассматриваемые связи. Линии обозначают статические связи, а не запись выполнения.",
+	"Numbers on an area's border match the numbered parts inside it that the arrow connects; they are not an execution order.":                      "Номера на границе области совпадают с номерами частей внутри неё, которые соединяет стрелка; это не порядок выполнения.",
 	"Repository search results": "Результаты поиска по репозиторию",
 	"Route":                     "Маршрут",
 	"Runs code":                 "Запуск кода",
