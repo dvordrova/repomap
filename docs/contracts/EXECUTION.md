@@ -52,7 +52,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   concurrency from one, up to the configured twelve. A new 429 resets recovery, and older
   in-flight successes cannot shorten that new cooldown or restore concurrency.
   Cancellation interrupts the wait; other retryable failures retain their
-  short backoff. `ExecuteJSONBatch` fails closed: a terminal item
+  short backoff. An HTTP 200 answer with empty content, or with finish reason
+  `insufficient_system_resource`, is the provider's fault and gets one
+  transport retry of the same bytes (owner decision 2026-09-26). It counts as
+  a transport attempt, keeps the short backoff and the caller's deadline, and
+  a second such answer is refused as before. This adds no retry to an output
+  cut, a context refusal, another finish reason or choice count, or any
+  decoder or validation refusal
+  ([DeepSeek notes](../DEEPSEEK_API_NOTES.md#wire-and-failure-contract)).
+  `ExecuteJSONBatch` fails closed: a terminal item
   error cancels the batch child context, prevents queued items from starting,
   and the owning stage rejects the complete batch. `ExecuteJSONEach` is the
   table form: the same pool, gate and observer, but one window's failure

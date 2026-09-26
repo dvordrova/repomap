@@ -147,8 +147,10 @@ func estimatedPromptTokens(prompt llm.Prompt) int {
 
 // Complete sends exactly the immutable bytes returned by Prepare. Only
 // retryable transport failures are replayed, and every retry reuses those same
-// bytes. Provider envelope decoding remains transport-owned; domain JSON
-// normalization and validation remain llm.Executor and cube responsibilities.
+// bytes. An HTTP 200 response that carries no answer (see
+// providerLeftNoAnswer) is one of them, once per call. Provider envelope
+// decoding remains transport-owned; domain JSON normalization and validation
+// remain llm.Executor and cube responsibilities.
 func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
 	if err := validateLLMProviderConfig(c); err != nil {
 		return llm.Completion{}, err
@@ -176,11 +178,12 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 	started := time.Now()
 	requestDigest := fmt.Sprintf("%x", sha256.Sum256(body))
 	var (
-		last          chatCompletion
-		lastErr       error
-		attempts      int
-		responseBytes int
-		retryDelay    time.Duration
+		last            chatCompletion
+		lastErr         error
+		attempts        int
+		responseBytes   int
+		retryDelay      time.Duration
+		noAnswerRetried bool
 	)
 	for attempt := 1; attempt <= maxRetries+1; attempt++ {
 		if attempt > 1 {
@@ -231,11 +234,13 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			return llmCompletion(last, attempts, responseBytes, time.Since(started)), closedLLMProviderError("complete", cause, attempts, false)
 		}
 		if err == nil {
-			if completionErr := requireSingleStoppedCompletion(llmProviderStage, completion); completionErr != nil {
-				result := llmCompletion(completion, attempts, responseBytes, time.Since(started))
-				return result, closedLLMProviderError("complete", completionErr, attempts, false)
+			if err = requireSingleStoppedCompletion(llmProviderStage, completion); err == nil {
+				return llmCompletion(completion, attempts, responseBytes, time.Since(started)), nil
 			}
-			return llmCompletion(completion, attempts, responseBytes, time.Since(started)), nil
+		}
+		if providerLeftNoAnswer(completion, err) {
+			retryable = !noAnswerRetried
+			noAnswerRetried = true
 		}
 		lastErr = annotateIncompleteCompletion(err, llmProviderStage)
 		lastErr = annotateResourceLimit(lastErr, llmProviderStage, c.MaxTokens)
@@ -255,6 +260,18 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 	result := llmCompletion(last, attempts, responseBytes, time.Since(started))
 	exhausted := fmt.Errorf("transport retries exhausted after %d attempts: %w", attempts, lastErr)
 	return result, closedLLMProviderError("complete", exhausted, attempts, true)
+}
+
+// providerLeftNoAnswer reports an HTTP 200 response whose one choice has
+// empty content, or which the provider stopped with
+// insufficient_system_resource. That is the provider's fault, not a verdict
+// on the request, so Complete sends the same bytes once more. An output cut
+// (finish=length) is the output-token refusal whatever its content and is
+// never this. No retry is added to a context limit, another finish reason, a
+// choice count other than one, or a decoder's refusal.
+func providerLeftNoAnswer(completion chatCompletion, err error) bool {
+	return errors.Is(err, ErrResponseContentEmpty) ||
+		completion.finishReasonClass == "insufficient_system_resource"
 }
 
 func providerRateLimited(err error) bool {
