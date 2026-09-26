@@ -268,6 +268,11 @@ that is not JSON, has no list, or lists areas none of which holds a listed
 part (parts named instead of referenced, every area without a name) is
 refused whole, draws no areas and is recorded. Each area's line comes from the same
 description prompt with its parts' names and lines as members. Jev assigns nothing in this stage.
+Accepted areas keep the order the answer lists them, which usually follows
+the pipeline, and take their `z*` IDs in it. The request asks for no order and
+nothing validates or repairs one: code only carries it. GroupsIndex numbers
+its containers `k*` in that order, and the page lists areas and hands them to
+the canvas layout in it, with the parts in no area after them.
 
 The browser does not choose, validate or repair architectural membership.
 

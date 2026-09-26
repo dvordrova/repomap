@@ -762,6 +762,35 @@ func TestAreasAreAClosedSplitOfTheParts(t *testing.T) {
 	}
 }
 
+// Areas keep the order the answer lists them, whatever the order of the parts
+// it was shown: z1 is the first area named. The request asks for no order and
+// nothing checks one; GroupsIndex and the page keep this one.
+func TestAreasKeepTheAnswersOrder(t *testing.T) {
+	provider := &tableProvider{areasResponse: func(parts []map[string]any) string {
+		ref := map[string]string{}
+		for _, part := range parts {
+			ref[fmt.Sprint(part["name"])] = fmt.Sprint(part["ref"])
+		}
+		raw, _ := json.Marshal(map[string]any{"areas": []map[string]any{
+			{"name": "Storage", "parts": []string{ref["svc/db"], ref["svc/jobs"]}},
+			{"name": "Serving", "parts": []string{ref["svc/api"], ref["svc/core"]}},
+		}})
+		return string(raw)
+	}}
+	result, err := Read(t.Context(), twoTargetOptions(t, twoTargetGraph(t), provider))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := targetOf(t, result, "svc")
+	var titles []string
+	for _, zone := range svc.Zones {
+		titles = append(titles, zone.Title)
+	}
+	if !slices.Equal(titles, []string{"Storage", "Serving"}) || !compactIDLess(svc.Zones[0].ID, svc.Zones[1].ID) {
+		t.Fatalf("zones %+v, want the answer's order", svc.Zones)
+	}
+}
+
 // An area stated twice, with the same name ignoring case and the same set of
 // listed parts, is drawn once and noted; two different areas that list one
 // part still leave that part alone. A parts string of refs is that list.

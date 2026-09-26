@@ -24,13 +24,14 @@
 </svg>
 </div>
 <figcaption class="map-note">
-{{$inputs := false}}{{$external := false}}{{$core := false}}{{range .Nodes}}{{if .Activation}}{{$inputs = true}}{{end}}{{if eq .ItemKind "External communication"}}{{$external = true}}{{end}}{{if and (eq .Lane "core") (not .Activation) (not .Branch)}}{{$core = true}}{{end}}{{end}}
+{{$inputs := false}}{{$external := false}}{{$core := false}}{{$numbered := false}}{{range .Nodes}}{{if .Activation}}{{$inputs = true}}{{end}}{{if and (or (eq .Branch "area") (eq .Branch "component")) .Children}}{{$numbered = true}}{{end}}{{if eq .ItemKind "External communication"}}{{$external = true}}{{end}}{{if and (eq .Lane "core") (not .Activation) (not .Branch)}}{{$core = true}}{{end}}{{end}}
 <details class="map-legend"><summary>{{t "legend"}}</summary><ul class="plain">
 <li>{{t "Areas contain the saved architectural parts. Selecting a part keeps the drawing and opens its description and code beside it."}}</li>
 {{if $core}}<li>{{t "Purple cards are what the program exists for."}}</li>{{end}}
 {{if $inputs}}<li>{{t "Blue cards are inputs. Open one to follow its reachable code path."}}</li>{{end}}
 {{if $external}}<li>{{t "Amber cards are external communications. Open one to see its sources and the inputs that reach it."}}</li>{{end}}
 <li>{{t "The outlined card is open on the right. Dark arrows highlight the focused connections. Lines show static relations, not a recorded execution."}}</li>
+{{if $numbered}}<li>{{t "Numbers on an area's or component's border are the numbered parts inside that the arrow connects, not an execution order."}}</li>{{end}}
 {{if .Subjects}}<li>{{t "These groups name {0} of this target's {1} symbols and connections." .Grouped .Subjects}}</li>{{end}}
 </ul></details></figcaption>
 {{range .Nodes}}{{if .Writes}}<noscript><section class="system-entity-writes"><h3>{{.FullTitle}} · {{t "State changes"}}</h3>

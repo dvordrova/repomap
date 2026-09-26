@@ -11,7 +11,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the orientation and the publication read: a box is a group whose members
   are explicitly selected declarations and their native lexical children, a
   zone is a container, and original native relations provide cross-part
-  connections with exact endpoints and source locations. A joint is a connection
+  connections with exact endpoints and source locations. Containers keep the
+  atlas's zone order, the order the areas answer listed them; no key sort
+  replaces it. A joint is a connection
   into another target. Lanes follow a box's side: `triggers` where the
   outside calls in or execution starts, `dependencies` where it only calls
   out, `core` otherwise. No request sends repository source text: paths,
@@ -167,6 +169,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Lines have no click target or native tooltip. These numbers
   identify parts, never execution order. The toolbar has no connection-style
   selector; the same real endpoints remain connected across zoom levels.
+  An open area numbers its parts and an open component its areas and loose
+  parts, with those numbers on the frame's border. When an area or component
+  in the map holds anything, one legend line says that the numbers on an
+  area's or component's border are the numbered parts inside that the arrow
+  connects, not an execution order.
 
 - ELK prepares native area interiors, then places each component's ready
   immediate child rectangles in a flat graph. These children retain their
@@ -195,8 +202,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   additional description remains in the reading panel. This display folding
   leaves native endpoints, operation paths and sources unchanged. Participant,
   input and external destination frames keep their distinct boundary even with
-  one child. Component summaries list their actual immediate areas and loose
-  parts, so folding a wrapper never removes its responsibility from the overview.
+  one child. Component summaries list their actual immediate areas, in the
+  order the model listed them, then their loose parts, so folding a wrapper
+  never removes its responsibility from the overview. The component frame's
+  children carry that order to its overview list and into ELK's input; ELK's
+  placement still follows the connections. The parts entrance below the map
+  lists each component's areas the same way, then its loose parts by name.
   That overview keeps the saved area caption; the single card and its source
   reading keep the part's own title. Direct parts use the same fixed first-reveal
   heading fit and column width as neighbouring groups, with their measured

@@ -428,7 +428,8 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		container := Container{Title: strings.TrimSpace(zone.Title), Summary: summary, Lane: lane, Core: core, GroupIDs: ids}
 		containers = append(containers, container)
 	}
-	sort.Slice(containers, func(i, j int) bool { return containerKey(containers[i]) < containerKey(containers[j]) })
+	// Containers keep the atlas's zone order, which is the order the areas
+	// answer listed them; k1 is the first area the model named.
 	for position := range containers {
 		containers[position].ID = compactOrdinal("k", position)
 	}
