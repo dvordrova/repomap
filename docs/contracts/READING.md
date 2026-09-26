@@ -349,9 +349,11 @@ symbol outside the repository, or, for the rows of a repository table (owner
 decision D1), the field those rows store a callable in, named by the file
 declaring the row's record type, the type and the field
 (`redis.c.redisCommand.proc`); its usage is its first row. `hands_callable`
-holds only when a registration handed a callable over: a registration that
-hands nothing names the declaration making the call, and `fopen("/dev/null")`
-was once asked what a callable becomes and answered a request handler. The
+holds only when a registration handed a callable over, or a value the
+repository built (`Register("k6/x/dns", new(DNS))`, whose extension entry
+exists only through `binds`): a registration that hands nothing names the
+declaration making the call, and `fopen("/dev/null")` was once asked what a
+callable becomes and answered a request handler. The
 symbols handed a callable and the others are two tables asked at once. Every
 cell is optional and absent when the symbol does not do that. A handed symbol
 is asked `binds`, what the callable becomes, in the activation vocabulary:

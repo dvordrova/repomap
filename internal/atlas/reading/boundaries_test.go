@@ -469,25 +469,29 @@ func TestPublishWithoutFollowedHolderAsksWhichHolderItServes(t *testing.T) {
 }
 
 // A symbol is asked what a handed callable becomes only when a registration
-// handed it one. A registration's ObjectID is the declaration making the
-// call when nothing is handed: fopen("/dev/null", "w") inside a function was
-// asked, and a model answered that fopen binds a request handler.
+// handed it one, or handed it a value the repository built. A registration's
+// ObjectID is the declaration making the call when nothing is handed:
+// fopen("/dev/null", "w") inside a function was asked, and a model answered
+// that fopen binds a request handler. k6's Register("k6/x/dns", new(DNS))
+// hands no callable but the module it registers: its extension entry exists
+// only when the symbol is asked what it binds.
 func TestOnlyAHandedCallableAsksWhatItBecomes(t *testing.T) {
-	registration := func(id, external, direction string, values ...string) atlas.Place {
+	registration := func(id, external, direction string, handed bool, values ...string) atlas.Place {
 		return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: "server.c", LineNo: 20, Column: len(id), Parent: "file:server", TargetIDs: []string{"server"},
 			Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "server", FactID: "fact:" + id}},
-				ObjectID: "t1.n7", Caller: "startServer", External: external, Values: values, Direction: direction}}
+				ObjectID: "t1.n7", Caller: "startServer", External: external, Values: values, Direction: direction, Handed: handed}}
 	}
 	r := answerTestReader(t, nil, nil)
 	r.opts.Graph.Places = []atlas.Place{
-		registration("b1", "pthread.h.pthread_create", atlas.DirectionIn),
-		registration("b2", "stdio.h.fopen", atlas.DirectionOut, "/dev/null", "w"),
+		registration("b1", "pthread.h.pthread_create", atlas.DirectionIn, false),
+		registration("b2", "stdio.h.fopen", atlas.DirectionOut, false, "/dev/null", "w"),
+		registration("b3", "go.k6.io/k6/js/modules.Register", atlas.DirectionOut, true, "k6/x/dns"),
 	}
 	handed := map[string]bool{}
 	for _, symbol := range r.apiSymbols() {
 		handed[symbol.name] = symbol.handsCallable
 	}
-	if !handed["pthread.h.pthread_create"] || handed["stdio.h.fopen"] || len(handed) != 2 {
+	if !handed["pthread.h.pthread_create"] || handed["stdio.h.fopen"] || !handed["go.k6.io/k6/js/modules.Register"] || len(handed) != 3 {
 		t.Fatalf("hands_callable = %v", handed)
 	}
 }

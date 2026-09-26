@@ -64,10 +64,12 @@ func (r *reader) apiSymbols() []*apiSymbol {
 		}
 		if b := place.Boundary; b != nil && b.Source == "fact" && b.External != "" && b.GivenKind == "" {
 			s := symbol(b.External)
-			// A registration hands a callable over when it brings work in;
-			// its ObjectID is otherwise the declaration making the call, and
-			// fopen("/dev/null") hands nothing.
-			s.handsCallable = s.handsCallable || b.Direction == atlas.DirectionIn
+			// A registration hands a callable over when it brings work in,
+			// and a value the repository built when it is Handed
+			// (Register("k6/x/dns", new(DNS)), whose entry applyAPIRoles
+			// makes from binds); its ObjectID is otherwise the declaration
+			// making the call, and fopen("/dev/null") hands nothing.
+			s.handsCallable = s.handsCallable || b.Direction == atlas.DirectionIn || b.Handed
 			s.literals = appendUnique(s.literals, b.Values...)
 			if b.Holder != "" {
 				s.holders[b.Holder] = true
