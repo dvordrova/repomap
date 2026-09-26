@@ -54,7 +54,10 @@ dependency coverage.
 The Python adapter also keeps an existing callable candidate consistent
 between an argument and the callback transfer that cites that exact argument.
 Aliases assigned to a function or lambda and inline lambdas are exact, while
-unknown or overwritten aliases gain no callback.
+unknown or overwritten aliases gain no callback. An inline lambda in a store
+target's receiver or index (the pandas `df.loc[reduce(lambda …), "exit"] = 1`
+idiom, also in annotated-assignment and `for` targets) is declared and passed
+like any other; Freqtrade's example strategy once failed its whole target on it.
 The Airflow Edge3, Azure and Vertica libraries exposed the earlier mismatch:
 the argument named the assignment variable while the transfer named its callable.
 Local native extraction does not establish ordinary full-repository acceptance. Cumulative Python,

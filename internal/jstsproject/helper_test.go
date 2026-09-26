@@ -354,6 +354,8 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	assertCumulativeJSTSValueReads(t, result, index)
 	assertCumulativeJSTSCallbackAliases(t, index, "src/server.ts", programindex.ResolutionExact)
 	assertCumulativeJSTSChainedCallbacks(t, index, "src/server.ts", programindex.ResolutionExact)
+	assertCumulativeJSTSStoreTargetCallbacks(t, index, "src/server.ts")
+	assertCumulativeJSTSStoreTargetCallbacks(t, index, "src/market-worker.js")
 	adaptertest.AssertCallControls(t, index, graph, "src/server.ts", "processPendingJobs", map[int][]adaptertest.Control{
 		137: nil,
 		139: {{Line: 138, Kind: "while body with constant true condition"}},
@@ -1149,6 +1151,75 @@ func assertCumulativeJSTSCallbackAliases(t *testing.T, index programindex.Index,
 	}
 	if named != 1 || literal != 1 {
 		t.Fatalf("%s callback aliases: named=%d literal=%d", source, named, literal)
+	}
+}
+
+// Python once declared no lambda inside a store target while relating it.
+// In markMatchingRows the element index, compound index and property receiver
+// of assignment targets keep their calls, callbacks and reads like any
+// expression: the inline arrow stays an unresolved argument whose body call
+// belongs to the enclosing function; the named callable is passed and read.
+func assertCumulativeJSTSStoreTargetCallbacks(t *testing.T, index programindex.Index, source string) {
+	t.Helper()
+	var caller, join string
+	callerLine := 0
+	for _, object := range index.Objects {
+		if object.Location == nil || object.Location.Path != source {
+			continue
+		}
+		switch object.Name {
+		case "markMatchingRows":
+			caller, callerLine = object.ID, object.Location.Line
+		case "joinCondition":
+			join = object.ID
+		}
+	}
+	if caller == "" || join == "" {
+		t.Fatalf("%s store-target callers missing: caller=%q joinCondition=%q", source, caller, join)
+	}
+	arguments := make(map[string]programindex.PatternArgument)
+	var inlineArgument *programindex.PatternArgument
+	bodyCall := false
+	for _, relation := range index.Relations {
+		if relation.FromID != caller || relation.Location == nil {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			for i, argument := range pattern.Arguments {
+				arguments[argument.ID] = argument
+				if relation.Location.Line == callerLine+1 && pattern.Selector == "reduce" {
+					inlineArgument = &pattern.Arguments[i]
+				}
+			}
+		}
+		for _, witness := range relation.Witnesses {
+			bodyCall = bodyCall || relation.Location.Line == callerLine+1 && witness.SourceExpression == "right.trim"
+		}
+	}
+	if inlineArgument == nil || inlineArgument.Resolution != programindex.ResolutionUnresolved ||
+		len(inlineArgument.ObjectIDs) != 0 || inlineArgument.ObjectsObserved != 1 || !bodyCall {
+		t.Fatalf("%s inline store-target arrow: argument=%#v body call=%v", source, inlineArgument, bodyCall)
+	}
+	passed, read := make(map[int]bool), make(map[int]bool)
+	for _, relation := range index.Relations {
+		if relation.FromID != caller || relation.Location == nil || len(relation.ToIDs) != 1 || relation.ToIDs[0] != join {
+			continue
+		}
+		switch relation.Kind {
+		case programindex.RelationPassesCallback:
+			argument, found := arguments[relation.SourceArgumentID]
+			if !found || relation.Resolution != programindex.ResolutionExact || argument.Resolution != relation.Resolution ||
+				len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != join {
+				t.Fatalf("%s store-target callback lost its argument: relation=%#v argument=%#v", source, relation, argument)
+			}
+			passed[relation.Location.Line-callerLine] = true
+		case programindex.RelationReads:
+			read[relation.Location.Line-callerLine] = true
+		}
+	}
+	want := map[int]bool{2: true, 3: true}
+	if !reflect.DeepEqual(passed, want) || !reflect.DeepEqual(read, want) {
+		t.Fatalf("%s store-target joinCondition passed on lines %v and read on %v, want +2 and +3", source, passed, read)
 	}
 }
 

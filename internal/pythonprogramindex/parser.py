@@ -709,10 +709,24 @@ class Collector(ast.NodeVisitor):
         self.visit(node.body)
         self.scope = previous
 
+    def _target_reads(self, target):
+        # A store target's receiver and index are expressions of this scope,
+        # so a lambda or call there is declared like any other; the relation
+        # pass reads the same parts.
+        if isinstance(target, ast.Attribute):
+            self.visit(target.value)
+        elif isinstance(target, ast.Subscript):
+            self.visit(target.value)
+            self.visit(target.slice)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for value in target.elts:
+                self._target_reads(value)
+
     def visit_Assign(self, node):
         alias_binding = self.callable_alias_binding(node.value)
         self.visit(node.value)
         for target in node.targets:
+            self._target_reads(target)
             if self.scope.kind == "type" and isinstance(target, ast.Name):
                 self.add_variable(target.id, target, signature=target.id + " = " + ast.unparse(node.value))
             else:
@@ -733,6 +747,7 @@ class Collector(ast.NodeVisitor):
         alias_binding = self.callable_alias_binding(node.value) if node.value is not None else None
         if node.value is not None:
             self.visit(node.value)
+        self._target_reads(node.target)
         if isinstance(node.target, ast.Name):
             signature = node.target.id + ": " + ast.unparse(node.annotation)
             if node.value is not None and self.scope.kind in ("module", "type"):
@@ -760,6 +775,7 @@ class Collector(ast.NodeVisitor):
     def visit_For(self, node):
         self.visit(node.iter)
         self.conditional_depth += 1
+        self._target_reads(node.target)
         self.bind_targets(node.target, True)
         for statement in node.body + node.orelse:
             self.visit(statement)

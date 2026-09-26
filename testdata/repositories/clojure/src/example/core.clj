@@ -38,3 +38,14 @@
 
 (defn nested-paths [path]
   (str/replace (str/replace path "/" "-") "/" "-"))
+
+;; Mirrors the pandas store-target idiom: an fn inside a set! target or a binding default.
+(defn handled [row]
+  (.-handled (service/apply-handler (fn [value] (service/greet value)) row)))
+
+(defn mark-handled! [row]
+  (set! (.-handled (service/apply-handler (fn [value] (service/greet value)) row)) true))
+
+(defn handled-or-default [row]
+  (let [{:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}} row]
+    handled))

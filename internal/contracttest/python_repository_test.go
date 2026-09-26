@@ -206,6 +206,34 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 			t.Fatalf("%s lost its call argument", name)
 		}
 	}
+	// Lambdas inside store targets (assignment, annotated assignment and for
+	// targets) belong to the function and are passed like any other lambda.
+	marker := programIndexObjectNamed(t, index, programindex.ObjectFunction, "mark_exit_rows", sourcePath)
+	storeLambdas := make(map[string]programindex.Object)
+	for _, object := range index.Objects {
+		if object.Kind == programindex.ObjectLambda && object.ContainerID == marker.ID {
+			storeLambdas[object.ID] = object
+		}
+	}
+	callbackLines := make(map[int]bool)
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationPassesCallback || relation.FromID != marker.ID {
+			continue
+		}
+		if len(relation.ToIDs) != 1 {
+			t.Fatalf("store-target callback has %d targets: %#v", len(relation.ToIDs), relation)
+		}
+		target, ok := storeLambdas[relation.ToIDs[0]]
+		if !ok || relation.Resolution != programindex.ResolutionExact ||
+			relation.SourceArgumentID == "" || relation.Location == nil ||
+			target.Location == nil || relation.Location.Line != target.Location.Line {
+			t.Fatalf("store-target lambda lost its callback: %#v", relation)
+		}
+		callbackLines[relation.Location.Line] = true
+	}
+	if len(storeLambdas) != 3 || len(callbackLines) != 3 {
+		t.Fatalf("store-target lambdas: declared=%d callbacks=%v", len(storeLambdas), callbackLines)
+	}
 }
 
 func assertChainedCallbackArguments(t *testing.T, index programindex.Index, callerID, selector string, resolution programindex.Resolution) {

@@ -167,3 +167,13 @@ export async function consumeJobs(jobs: AsyncIterable<string>): Promise<void> {
 export function registerChainedOrderConsumers(): void {
   createConsumer().on("orders.chained", handleOrder).on("orders.chained", recordOrder)
 }
+
+const joinCondition = (left: string, right: string): string => left + right
+const rowFor = (_join: typeof joinCondition): { count: number } => ({ count: 0 })
+
+// Mirrors pandas `df.loc[reduce(lambda x, y: x & y, conditions), "exit_long"] = 1`: callbacks inside assignment targets.
+export function markMatchingRows(rows: Record<string, number>, conditions: string[]): void {
+  rows[conditions.reduce((left, right) => left + right.trim())] = 1
+  rows[conditions.reduce(joinCondition)] += 1
+  rowFor(joinCondition).count = 1
+}
