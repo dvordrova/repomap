@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/pythondependencies"
@@ -19,6 +20,9 @@ type repositoryTargetDispatchBinding struct {
 	Target            repositoryTypedTarget
 	ProgramFacts      any
 	ProgramFactsBound bool
+	// CPlatform is the platform view a C program was parsed in. It outlives
+	// the native facts and is recorded in the target run's metadata.
+	CPlatform *debugdump.CPlatform
 }
 
 // pythonRepositoryProgramFacts is the one immutable Python adapter handoff.

@@ -37,6 +37,9 @@ type Options struct {
 
 	Progress         func(ProgressEvent)
 	EffectiveOptions debugdump.EffectiveOptions
+	// CPlatform is the platform view of the run's C program, recorded in
+	// its metadata; nil for another language.
+	CPlatform *debugdump.CPlatform
 }
 
 // Run extracts one deterministic repository snapshot, discovers exact program
@@ -137,6 +140,7 @@ func persistArtifacts(
 		RepoPath:         opts.RepoPath,
 		Command:          "repomap",
 		EffectiveOptions: opts.EffectiveOptions,
+		CPlatform:        opts.CPlatform,
 	}
 
 	var writer *debugdump.Writer

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -89,6 +90,9 @@ type repositoryProgramPageAuthority struct {
 	ProgramInput *programindex.Input
 	Dependencies dependencies.Catalog
 	Label        string
+	// CPlatform is the platform view of a C program, for the target run's
+	// metadata (owner decision D3); nil for other languages.
+	CPlatform *debugdump.CPlatform
 }
 
 func persistProgramPageIndex(runDir string, page repositoryProgramPageAuthority, store *programindex.ArtifactStore) error {
@@ -528,6 +532,7 @@ func ownRepositoryProgramPageAuthority(
 		ProgramInput: page.ProgramInput,
 		Dependencies: ownedDependencies,
 		Label:        page.Label,
+		CPlatform:    page.CPlatform,
 	}, nil
 }
 

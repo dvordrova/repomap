@@ -85,7 +85,16 @@ The view is the host platform's build as the build description gives it
 outside this platform's build. `Toolchain` records clang's version, target
 triple, sysroot, resource directory, system include directories and the
 overrides, and the run prints clang's version and target beside the build
-description. The page carries no label for it.
+description and each program's sources outside this platform's build beside
+the program. Each C target's run records its view in that run's
+`metadata.json` as `c_platform`, where a reader of the saved run finds it:
+clang's version line, target triple and sysroot, the overrides every unit
+gets after its own flags (the fortify override and the pre-C99 diagnostics),
+the build description's failure when the units fell back to clang's
+defaults, each unit's kept and dropped flags and whether the build or clang's
+defaults gave them, and the included sources outside this platform's build
+(an epoll backend beside a kqueue build on macOS). The page and
+the report JSON carry no label for it.
 
 The clang resource directory and the sysroot's headers and frameworks are the
 platform; any other include directory (`/usr/local/include`,
@@ -216,7 +225,8 @@ target and running no tool for its fixture, tooling sources beside a program,
 another adapter's explicit target, the files that restore each program, one
 parse per plan for a shared unit and its release after the last projection
 that needs it, a backend outside this platform's build, a missing clang, and
-an ordinary offline run selecting a C program. Facts tests cover C config
+an ordinary offline run selecting a C program, whose metadata records the
+platform view and whose page shows none of it. Facts tests cover C config
 reads, SQL, dynamic execution and command rows that state no HTTP method;
 claims, places and report tests cover docstrings, licence blocks, banners,
 section titles and the file description at their consuming boundaries, and

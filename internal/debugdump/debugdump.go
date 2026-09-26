@@ -37,6 +37,41 @@ type RunMeta struct {
 	// the page can say it: the wall clock, and per model stage the calls and
 	// the provider time.
 	Timing *RunTiming `json:"timing,omitempty"`
+	// CPlatform is the platform view the run's C program was read in; a run
+	// of another language has none.
+	CPlatform *CPlatform `json:"c_platform,omitempty"`
+}
+
+// CPlatform is the platform view a C program was read in (owner decision
+// D3): the host's build, as the build description gives it, parsed by the
+// host's clang. A reader of the saved run finds it here; the page carries no
+// label for it.
+type CPlatform struct {
+	// Clang is clang's version line and Target the triple it parses for.
+	Clang   string `json:"clang"`
+	Target  string `json:"target"`
+	Sysroot string `json:"sysroot,omitempty"`
+	// Overrides are the flags every unit gets after its own: the fortify
+	// override that keeps libc calls under their written names, and the
+	// diagnostics newer clang makes errors for pre-C99 code left warnings.
+	Overrides []string `json:"overrides"`
+	// BuildError is why the build description could not be read, when the
+	// units fell back to clang's defaults.
+	BuildError string          `json:"build_error,omitempty"`
+	Units      []CPlatformUnit `json:"units"`
+	// Outside are the included sources no unit enters on this platform: an
+	// #if chose another backend.
+	Outside []string `json:"outside,omitempty"`
+}
+
+// CPlatformUnit is one translation unit's flags: those the allowlist kept
+// from the build description and those it dropped. Built is false for a
+// unit parsed with clang's defaults.
+type CPlatformUnit struct {
+	Path    string   `json:"path"`
+	Built   bool     `json:"built"`
+	Kept    []string `json:"kept,omitempty"`
+	Dropped []string `json:"dropped,omitempty"`
 }
 
 // RunTiming is the Time stage of a run as data.

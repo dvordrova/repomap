@@ -709,6 +709,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		DebugDir:         dDir,
 		RequireArtifacts: true,
 		SkipGoFacts:      true,
+		CPlatform:        genericProgramPage.CPlatform,
 		EffectiveOptions: debugdump.EffectiveOptions{
 			NoCache:                *noCache,
 			Learn:                  *learn || len(questions) > 0,

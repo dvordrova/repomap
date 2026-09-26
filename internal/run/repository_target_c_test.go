@@ -2,11 +2,13 @@ package run
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/cproject"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
@@ -22,10 +25,11 @@ import (
 // cTestRepository is a small C repository: two programs the Makefile links
 // share strbuf.c, and tools/dump.c has a main the Makefile never builds.
 var cTestRepository = map[string]string{
-	"Makefile": "all: kvd kvcli\n\n" +
+	"Makefile": "CFLAGS = -std=c99 -O2 -g -Wall -DKV_TEST\n\n" +
+		"all: kvd kvcli\n\n" +
 		"kvd: kvd.o strbuf.o\n\t$(CC) -o kvd kvd.o strbuf.o\n\n" +
 		"kvcli: kvcli.o strbuf.o\n\t$(CC) -o kvcli kvcli.o strbuf.o\n\n" +
-		"%.o: %.c\n\t$(CC) -c $<\n",
+		"%.o: %.c\n\t$(CC) $(CFLAGS) -c $<\n",
 	"strbuf.h":     "int sb_len(const char *s);\n",
 	"strbuf.c":     "#include \"strbuf.h\"\nint sb_len(const char *s) { int n = 0; while (s[n]) n++; return n; }\n",
 	"kvd.c":        "#include \"strbuf.h\"\nint main(void) { return sb_len(\"kvd\"); }\n",
@@ -363,6 +367,41 @@ func TestCRepositoryOrdinaryRun(t *testing.T) {
 	if failure := portfolio.Outcomes[0].Failure; failure != nil && failure.Stage == targetoutcome.StageTargetPreparation {
 		t.Fatalf("the program's sources did not parse: %+v", failure)
 	}
+
+	// The platform view the program was read in is in the run's metadata
+	// (owner decision D3): clang and its target, the fortify override, and
+	// each unit's kept and dropped build flags. The page carries none of it.
+	runDir := filepath.Dir(portfolios[0])
+	raw, err = os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata debugdump.RunMeta
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	view := metadata.CPlatform
+	if view == nil || !strings.Contains(view.Clang, "clang") || view.Target == "" ||
+		!slices.Contains(view.Overrides, "-U_FORTIFY_SOURCE") || !slices.Contains(view.Overrides, "-D_FORTIFY_SOURCE=0") {
+		t.Fatalf("metadata platform view %+v", view)
+	}
+	flags := debugdump.CPlatformUnit{Built: true, Kept: []string{"-std=c99", "-DKV_TEST"}, Dropped: []string{"-O2", "-g", "-Wall"}}
+	kvd, strbuf := flags, flags
+	kvd.Path, strbuf.Path = "kvd.c", "strbuf.c"
+	if !reflect.DeepEqual(view.Units, []debugdump.CPlatformUnit{kvd, strbuf}) || len(view.Outside) != 0 {
+		t.Fatalf("metadata units %+v outside %v", view.Units, view.Outside)
+	}
+	for _, name := range []string{"report.html", "report.json"} {
+		page, err := os.ReadFile(filepath.Join(runDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, label := range []string{view.Clang, view.Target, "_FORTIFY_SOURCE"} {
+			if strings.Contains(string(page), label) {
+				t.Fatalf("%s shows the platform view: %q", name, label)
+			}
+		}
+	}
 }
 
 // A backend an #ifdef keeps out on this host is outside this platform's
@@ -395,6 +434,11 @@ func TestCRepositoryReportsSourcesOutsideThisPlatform(t *testing.T) {
 	}
 	if outside := binding.ProgramFacts.(*cRepositoryProgramFacts).Parsed.Outside; !slices.Equal(outside, []string{"loop_fast.c"}) {
 		t.Fatalf("outside %v", outside)
+	}
+	// The platform view the run records names it too.
+	if view := binding.CPlatform; view == nil || !slices.Equal(view.Outside, []string{"loop_fast.c"}) ||
+		!reflect.DeepEqual(view.Units, []debugdump.CPlatformUnit{{Path: "loop.c", Built: true}}) {
+		t.Fatalf("platform view %+v", binding.CPlatform)
 	}
 	if !strings.Contains(console.String(), "program: c:loop") || !strings.Contains(console.String(), "outside this platform's build: loop_fast.c") {
 		t.Fatalf("console:\n%s", console.String())

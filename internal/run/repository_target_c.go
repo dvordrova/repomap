@@ -12,6 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/cproject"
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
@@ -65,7 +66,10 @@ func cRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor {
 				options.Output.State("C program", "parsed", "program: "+native.Selector,
 					"outside this platform's build: "+strings.Join(parsed.Outside, ", "))
 			}
-			return repositoryTargetDispatchBinding{Target: target, ProgramFacts: &cRepositoryProgramFacts{Parsed: parsed, plan: plan}, ProgramFactsBound: true}, nil
+			return repositoryTargetDispatchBinding{
+				Target: target, ProgramFacts: &cRepositoryProgramFacts{Parsed: parsed, plan: plan}, ProgramFactsBound: true,
+				CPlatform: cPlatformView(parsed),
+			}, nil
 		},
 		ValidateNative: func(target repositoryTypedTarget) error {
 			native, ok := target.native.(cproject.Program)
@@ -117,6 +121,27 @@ func cRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor {
 			return facts.result.Dependencies, nil
 		},
 	}
+}
+
+// cPlatformView is the platform view a program was parsed in (owner decision
+// D3): clang's version and target, the flags every unit gets after its own,
+// each unit's kept and dropped build flags, and the included sources this
+// platform's build leaves out. The run records it in the target's metadata
+// and prints clang and the outside sources; the page shows none of it.
+func cPlatformView(parsed *cproject.Parsed) *debugdump.CPlatform {
+	tool := parsed.Toolchain
+	view := &debugdump.CPlatform{
+		Clang: tool.Version, Target: tool.Target, Sysroot: tool.Sysroot,
+		Overrides:  slices.Clone(tool.Overrides),
+		BuildError: parsed.Program.BuildErr,
+		Outside:    slices.Clone(parsed.Outside),
+	}
+	for _, unit := range parsed.Units {
+		view.Units = append(view.Units, debugdump.CPlatformUnit{
+			Path: unit.Path, Built: unit.Built, Kept: slices.Clone(unit.Args), Dropped: slices.Clone(unit.Dropped),
+		})
+	}
+	return view
 }
 
 // cRepositoryDispatchPlan is the C lane's state for one plan: one parse store,

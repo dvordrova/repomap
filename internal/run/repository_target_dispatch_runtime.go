@@ -473,8 +473,10 @@ func (pages targetPageDispatcher) page(ctx context.Context, slot *targetPageSlot
 	}
 	// Adapter-native compiler/parser facts are live only across the atomic
 	// ProgramIndex + dependency projection. Release them before any semantic
-	// or report work begins, including when the projection fails.
+	// or report work begins, including when the projection fails. The
+	// platform view they were read in stays, for the run's metadata.
 	dispatchBinding.ProgramFacts = nil
+	programPage.CPlatform = dispatchBinding.CPlatform
 	options.Output.Wall("target program projection", time.Since(projectionStarted))
 	if prepareErr != nil {
 		stage, reason := classifyRepositoryTargetFailure(currentStage, prepareErr)
