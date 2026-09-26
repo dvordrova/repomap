@@ -309,6 +309,8 @@ func (outcome Outcome) Validate() error {
 
 // Portfolio is the complete result set for all selected targets. The selected
 // default is explicit and remains authoritative even when its outcome failed.
+// An empty default is the explicitly unresolved one: the target portfolio's
+// default comparison was refused, and no outcome stands in for it.
 type Portfolio struct {
 	Version                 int       `json:"version"`
 	DefaultSelectedTargetID string    `json:"default_selected_target_id"`
@@ -317,7 +319,8 @@ type Portfolio struct {
 }
 
 // Build canonicalizes and seals every selected-target outcome. At least one
-// selected target is required, but zero analyzed targets is legitimate.
+// selected target is required, but zero analyzed targets is legitimate. An
+// empty defaultSelectedTargetID records an unresolved default.
 func Build(defaultSelectedTargetID string, outcomes []Outcome) (Portfolio, error) {
 	if len(outcomes) == 0 {
 		return Portfolio{}, fmt.Errorf("target outcome portfolio: outcome bound exceeded")
@@ -354,8 +357,9 @@ func (portfolio Portfolio) Snapshot() Portfolio {
 	return result
 }
 
-// Validate checks canonical order, the exact selected default, unique page
-// bindings, the bounded envelope, and the artifact self-seal.
+// Validate checks canonical order, the exact selected default when one was
+// selected, unique page bindings, the bounded envelope, and the artifact
+// self-seal.
 func (portfolio Portfolio) Validate() error {
 	if err := portfolio.validateShape(); err != nil {
 		return err
@@ -416,7 +420,9 @@ func Decode(encoded []byte) (Portfolio, error) {
 }
 
 func (portfolio Portfolio) validateShape() error {
-	if portfolio.Version != Version || !validSelectedTargetID(portfolio.DefaultSelectedTargetID) {
+	unresolvedDefault := portfolio.DefaultSelectedTargetID == ""
+	if portfolio.Version != Version ||
+		!unresolvedDefault && !validSelectedTargetID(portfolio.DefaultSelectedTargetID) {
 		return fmt.Errorf("target outcome portfolio: invalid identity")
 	}
 	if portfolio.Outcomes == nil || len(portfolio.Outcomes) == 0 {
@@ -449,7 +455,7 @@ func (portfolio Portfolio) validateShape() error {
 		}
 		runIDs[outcome.Analysis.RunID] = struct{}{}
 	}
-	if defaultMatches != 1 {
+	if !unresolvedDefault && defaultMatches != 1 {
 		return fmt.Errorf("target outcome portfolio: default selected target must match exactly one outcome")
 	}
 	return nil

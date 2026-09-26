@@ -96,14 +96,21 @@ script entrypoints or sidecar tools.
   fallback workspace as sibling authority. Context cancellation and shared
   portfolio, persistence, manifest, repository-overview, or bundle failures
   remain publication-terminal. A refused model answer for one portfolio
-  classification batch is not a shared portfolio failure: it leaves that
-  batch's candidates standalone or unclassified with a recorded reason (see
-  [Discovery](DISCOVERY.md#target-selection)). When at least one target
+  classification batch or default comparison is not a shared portfolio
+  failure: a classification refusal leaves that batch's candidates standalone
+  or unclassified with a recorded reason, and a comparison refusal leaves the
+  default unresolved (see [Discovery](DISCOVERY.md#target-selection)). When at least one target
   succeeds, the analyzed-page
   portfolio and its neutral bundle remain valid even if that is the only
   successful page; the first successful page owns the one physical HTML while
   the originally selected default remains the logical default in
-  TargetOutcomePortfolio. If every selected target
+  TargetOutcomePortfolio. A default the target portfolio left unresolved
+  (see [Discovery](DISCOVERY.md#target-selection)) is not a failure: every
+  selected target runs in plan order with none promoted, the first successful
+  page owns the HTML, its manifest and the report the server consumes, and
+  TargetOutcomePortfolio keeps an empty `default_selected_target_id`. No
+  consumer picks a default in its place, and the page adds no mark for it.
+  Earlier saves, which always name a default, still read. If every selected target
   fails, retain diagnostics but do not invent a targetless or synthetic report.
 
 ## Concurrent target pages

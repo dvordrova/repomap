@@ -20,6 +20,8 @@ import (
 // target decision. GoSource is the one unscoped snapshot from which a caller
 // may derive a target-local snapshot with snapshot.ScopeAnalysisTarget.
 // PythonCatalog retains ownership of native and resolver-derived Python views.
+// Default is the zero key when the target portfolio left the default
+// unresolved; no target is promoted in its place.
 type repositoryTargetPlan struct {
 	Targets     []repositoryTypedTarget
 	Default     repositoryTargetKey
@@ -27,6 +29,14 @@ type repositoryTargetPlan struct {
 	Authorities map[repositoryTargetAdapter]any
 	Outcome     targetPortfolioRunOutcome
 	guidance    readmetargetscout.GuidanceSnapshot
+}
+
+// defaultRef is the default's key, or empty for an unresolved default.
+func defaultRef(key repositoryTargetKey) string {
+	if key == (repositoryTargetKey{}) {
+		return ""
+	}
+	return key.String()
 }
 
 // withoutGuidance drops the guidance documents so the documentation
@@ -122,10 +132,10 @@ func (plan repositoryTargetPlan) validateWith(registry repositoryTargetAdapterRe
 			}
 		}
 	}
-	if defaultCount != 1 {
+	if defaultRef(plan.Default) != "" && defaultCount != 1 {
 		return fmt.Errorf("repository target plan: expected one typed default, got %d", defaultCount)
 	}
-	if plan.Outcome.SelectedRef != plan.Default.String() || plan.Outcome.SelectedTargets != len(plan.Targets) {
+	if plan.Outcome.SelectedRef != defaultRef(plan.Default) || plan.Outcome.SelectedTargets != len(plan.Targets) {
 		return fmt.Errorf("repository target plan: outcome identity does not match typed targets")
 	}
 	wantRefs := repositoryTargetRefs(plan.Targets)
@@ -349,7 +359,7 @@ func selectRepositoryTargetPlanForRun(
 		for _, row := range plan.Outcome.Placements {
 			options.Output.Stage("Target placement", row.Selector+": "+row.Decision, row.Reason)
 		}
-		defaultTarget := plan.Default.String()
+		defaultTarget := "unresolved"
 		if target, found := plan.DefaultTarget(); found {
 			defaultTarget = repositoryTypedTargetDisplay(target)
 		}
@@ -674,9 +684,6 @@ func restoreRepositoryTargetPortfolio(
 	portfolio targetportfolio.Selection,
 	outcome targetPortfolioRunOutcome,
 ) (repositoryTargetPlan, error) {
-	if portfolio.Default == nil {
-		return repositoryTargetPlan{}, fmt.Errorf("repository target portfolio accepted targets without a default")
-	}
 	selectedFiles := make(map[repositoryTargetAdapter][]corpus.FileID, len(discovery.adapters))
 	for _, candidate := range portfolio.Targets {
 		adapter, matched, err := discovery.adapterForFile(candidate.FileRef)
@@ -689,15 +696,6 @@ func restoreRepositoryTargetPortfolio(
 			)
 		}
 		selectedFiles[adapter] = append(selectedFiles[adapter], candidate.FileRef)
-	}
-	defaultAdapter, matched, err := discovery.adapterForFile(portfolio.Default.FileRef)
-	if err != nil {
-		return repositoryTargetPlan{}, fmt.Errorf("restore default file %q: %w", portfolio.Default.Path, err)
-	}
-	if !matched {
-		return repositoryTargetPlan{}, fmt.Errorf(
-			"restore default file %q: file is outside every enabled exact adapter", portfolio.Default.Path,
-		)
 	}
 
 	builders := make(map[repositoryTargetKey]*repositoryTargetBuilder)
@@ -753,31 +751,16 @@ func restoreRepositoryTargetPortfolio(
 		}
 	}
 
-	// TargetPortfolio chooses a default file, not one semantic view of that
-	// file. A shared exact representative may legitimately restore several
-	// targets; all of them remain in the plan. The landing-page default is the
-	// first owner in the same canonical target order used by the plan itself,
-	// so this presentation choice needs no second model gate or adapter-specific
-	// ResolveOne restriction.
-	defaultOwners := make([]repositoryTypedTarget, 0)
-	for _, builder := range builders {
-		if builder.target.Key.Adapter != defaultAdapter {
-			continue
+	// An unresolved portfolio default stays the zero key: no target is
+	// promoted in its place.
+	var defaultKey repositoryTargetKey
+	if portfolio.Default != nil {
+		key, err := restoredDefaultKey(discovery, builders, *portfolio.Default)
+		if err != nil {
+			return repositoryTargetPlan{}, err
 		}
-		if _, ownsDefaultFile := builder.files[portfolio.Default.FileRef]; ownsDefaultFile {
-			defaultOwners = append(defaultOwners, builder.target)
-		}
+		defaultKey = key
 	}
-	if len(defaultOwners) == 0 {
-		return repositoryTargetPlan{}, fmt.Errorf(
-			"repository target portfolio default file %q is outside restored selected targets",
-			portfolio.Default.Path,
-		)
-	}
-	sort.Slice(defaultOwners, func(i, j int) bool {
-		return repositoryTypedTargetLess(defaultOwners[i], defaultOwners[j])
-	})
-	defaultKey := defaultOwners[0].Key
 
 	targets := make([]repositoryTypedTarget, 0, len(builders))
 	for _, builder := range builders {
@@ -791,12 +774,54 @@ func restoreRepositoryTargetPortfolio(
 		targets = append(targets, builder.target)
 	}
 	sort.Slice(targets, func(i, j int) bool { return repositoryTypedTargetLess(targets[i], targets[j]) })
-	outcome.SelectedRef = defaultKey.String()
+	outcome.SelectedRef = defaultRef(defaultKey)
 	outcome.SelectedTargets = len(targets)
 	outcome.SelectedTargetRefs = repositoryTargetRefs(targets)
 	outcome.SelectedFileRefs = len(portfolio.Targets)
 	outcome.UnclassifiedFiles = len(portfolio.Unclassified)
 	return repositoryTargetPlanFromDiscovery(discovery, targets, defaultKey, false, outcome)
+}
+
+// restoredDefaultKey restores the portfolio's default file to a typed target.
+// TargetPortfolio chooses a default file, not one semantic view of that file.
+// A shared exact representative may legitimately restore several targets; all
+// of them remain in the plan. The landing-page default is the first owner in
+// the same canonical target order used by the plan itself, so this
+// presentation choice needs no second model gate or adapter-specific
+// ResolveOne restriction.
+func restoredDefaultKey(
+	discovery repositoryTargetDiscovery,
+	builders map[repositoryTargetKey]*repositoryTargetBuilder,
+	defaultFile targetportfolio.VisibleCandidate,
+) (repositoryTargetKey, error) {
+	defaultAdapter, matched, err := discovery.adapterForFile(defaultFile.FileRef)
+	if err != nil {
+		return repositoryTargetKey{}, fmt.Errorf("restore default file %q: %w", defaultFile.Path, err)
+	}
+	if !matched {
+		return repositoryTargetKey{}, fmt.Errorf(
+			"restore default file %q: file is outside every enabled exact adapter", defaultFile.Path,
+		)
+	}
+	defaultOwners := make([]repositoryTypedTarget, 0)
+	for _, builder := range builders {
+		if builder.target.Key.Adapter != defaultAdapter {
+			continue
+		}
+		if _, ownsDefaultFile := builder.files[defaultFile.FileRef]; ownsDefaultFile {
+			defaultOwners = append(defaultOwners, builder.target)
+		}
+	}
+	if len(defaultOwners) == 0 {
+		return repositoryTargetKey{}, fmt.Errorf(
+			"repository target portfolio default file %q is outside restored selected targets",
+			defaultFile.Path,
+		)
+	}
+	sort.Slice(defaultOwners, func(i, j int) bool {
+		return repositoryTypedTargetLess(defaultOwners[i], defaultOwners[j])
+	})
+	return defaultOwners[0].Key, nil
 }
 
 func repositoryTargetPlanFromDiscovery(

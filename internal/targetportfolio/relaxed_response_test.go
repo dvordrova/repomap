@@ -2,6 +2,7 @@ package targetportfolio
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -12,15 +13,17 @@ import (
 )
 
 // scriptedPortfolioProvider answers each classification batch and default
-// comparison from the exact request it received. A classification request is
-// refused at preparation when separate says its candidates must not share a
-// window, so Run forms independent batches.
+// comparison from the exact request it received. A classification or default
+// request is refused at preparation when separate or separateDefault says its
+// candidates must not share a window, so Run forms independent batches.
 type scriptedPortfolioProvider struct {
 	exhaustivePortfolioProvider
-	separate      func(Request) bool
-	classify      func(Request) string
-	chooseDefault func(DefaultRequest) string
-	comparisons   atomic.Int64
+	separate        func(Request) bool
+	separateDefault func(DefaultRequest) bool
+	classify        func(Request) string
+	chooseDefault   func(DefaultRequest) string
+	defaultFailure  error
+	comparisons     atomic.Int64
 }
 
 const (
@@ -37,6 +40,12 @@ func (provider *scriptedPortfolioProvider) Prepare(prompt llm.Prompt, limits llm
 		provider.separate(request) {
 		return llm.Prepared{}, &llm.ResourceLimitError{Kind: llm.ResourceLimitRequestBytes, Limit: 1}
 	}
+	var comparison DefaultRequest
+	if provider.separateDefault != nil && strings.Contains(prompt.User, defaultPromptPrefix) &&
+		decodePromptRequest(prompt.User, defaultPromptPrefix, defaultPromptSuffix, &comparison) == nil &&
+		provider.separateDefault(comparison) {
+		return llm.Prepared{}, &llm.ResourceLimitError{Kind: llm.ResourceLimitRequestBytes, Limit: 1}
+	}
 	return provider.exhaustivePortfolioProvider.Prepare(prompt, limits)
 }
 
@@ -46,6 +55,9 @@ func (provider *scriptedPortfolioProvider) Complete(_ context.Context, prepared 
 	var response string
 	if strings.Contains(text, defaultPromptPrefix) {
 		provider.comparisons.Add(1)
+		if provider.defaultFailure != nil {
+			return llm.Completion{}, provider.defaultFailure
+		}
 		var request DefaultRequest
 		if err := decodePromptRequest(text, defaultPromptPrefix, defaultPromptSuffix, &request); err != nil {
 			return llm.Completion{}, err
@@ -246,14 +258,99 @@ func TestDefaultComparisonAcceptsExtraFieldsButNotAnUnknownRef(t *testing.T) {
 			t.Fatalf("comparison accepted %s", raw)
 		}
 	}
+}
 
-	// An unknown comparison answer still ends the stage (owner question 5).
-	provider := &scriptedPortfolioProvider{
-		classify:      func(Request) string { return `{"target_file_refs":["f1","f2"]}` },
-		chooseDefault: func(DefaultRequest) string { return `{"default_file_ref":"f3"}` },
+// Owner decision 2026-09-26: a comparison answer naming an unknown ref, or
+// none, does not end the run. The targets stay, the default is unresolved and
+// nothing picks one in its place.
+func TestRefusedDefaultComparisonLeavesTheDefaultUnresolved(t *testing.T) {
+	for name, answer := range map[string]string{
+		"unknown ref":          `{"default_file_ref":"f3"}`,
+		"unadvertised ref":     `{"default_file_ref":"f99"}`,
+		"missing ref":          `{"reason":"both are products"}`,
+		"null ref":             `{"default_file_ref":null}`,
+		"non-text ref":         `{"default_file_ref":2}`,
+		"not an answer at all": `null`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			provider := &scriptedPortfolioProvider{
+				classify: func(Request) string {
+					return `{"target_file_refs":["f1","f2"],"native_decisions":[{"ref":"t1","decision":"standalone"},{"ref":"t2","decision":"tool"}]}`
+				},
+				chooseDefault: func(DefaultRequest) string { return answer },
+			}
+			execution, err := Run(t.Context(), llm.Executor{Enabled: false}, provider, twoNativeCompilation(t))
+			if err != nil {
+				t.Fatalf("a refused default comparison ended the stage: %v", err)
+			}
+			selection := execution.Selection
+			if selection.Default != nil {
+				t.Fatalf("default = %#v, want it unresolved", selection.Default)
+			}
+			if !slices.Equal(candidateRefs(selection.Targets), []corpus.FileID{"f1", "f2"}) ||
+				!slices.Equal(candidateRefs(selection.Unclassified), []corpus.FileID{"f3"}) {
+				t.Fatalf("targets or unclassified changed: %#v", selection)
+			}
+			if len(selection.Placements) != 2 || selection.Placements[0].Decision != "standalone" ||
+				selection.Placements[1].Decision != "tool" {
+				t.Fatalf("placements = %+v", selection.Placements)
+			}
+			if provider.comparisons.Load() != 1 || len(execution.Outcomes) != 2 ||
+				len(execution.Outcomes[1].ResponseRejections) != 1 ||
+				execution.Outcomes[1].ResponseRejections[0].Kind != "response_validation" {
+				t.Fatalf("refused comparison not journaled: %d comparisons, outcomes %+v",
+					provider.comparisons.Load(), execution.Outcomes)
+			}
+		})
 	}
-	if _, err := Run(t.Context(), llm.Executor{Enabled: false}, provider, compilation); err == nil {
-		t.Fatal("an unknown default comparison answer was accepted")
+}
+
+// A refused comparison in a round with several leaves the default unresolved
+// even though a sibling comparison chose: that winner was never weighed
+// against the refused comparison's candidates. No later round is asked.
+func TestOneRefusedComparisonOfARoundLeavesTheDefaultUnresolved(t *testing.T) {
+	snapshot := testSnapshot(t, []string{"a.py", "b.py", "c.py", "d.py"})
+	compilation, err := CompileWithRequiredTargetAuthority(snapshot, []Candidate{
+		{FileRef: "f1", Hypotheses: []string{"native a"}},
+		{FileRef: "f2", Hypotheses: []string{"native b"}},
+		{FileRef: "f3", Hypotheses: []string{"native c"}},
+		{FileRef: "f4", Hypotheses: []string{"native d"}},
+	}, []corpus.FileID{"f1", "f2", "f3", "f4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &scriptedPortfolioProvider{
+		separateDefault: func(request DefaultRequest) bool { return len(request.Candidates) > 2 },
+		classify:        func(Request) string { return `{"target_file_refs":[]}` },
+		chooseDefault: func(request DefaultRequest) string {
+			if request.Candidates[0].FileRef == "f1" {
+				return `{"default_file_ref":"f99"}`
+			}
+			return `{"default_file_ref":"` + string(request.Candidates[0].FileRef) + `"}`
+		},
+	}
+	execution, err := Run(t.Context(), llm.Executor{Enabled: false, BatchConcurrency: 2}, provider, compilation)
+	if err != nil {
+		t.Fatalf("one refused comparison ended the stage: %v", err)
+	}
+	if execution.Selection.Default != nil || len(execution.Selection.Targets) != 4 {
+		t.Fatalf("selection = %#v, want four targets and an unresolved default", execution.Selection)
+	}
+	if provider.comparisons.Load() != 2 || len(execution.Outcomes) != 3 {
+		t.Fatalf("comparisons = %d, outcomes = %d; want both first-round comparisons and no second round",
+			provider.comparisons.Load(), len(execution.Outcomes))
+	}
+}
+
+// Only a refused answer leaves the default unresolved; a provider failure is
+// not an answer and still ends the stage.
+func TestDefaultComparisonProviderFailureStillEndsTheStage(t *testing.T) {
+	provider := &scriptedPortfolioProvider{
+		classify:       func(Request) string { return `{"target_file_refs":["f1","f2"]}` },
+		defaultFailure: errors.New("provider unavailable"),
+	}
+	if _, err := Run(t.Context(), llm.Executor{Enabled: false}, provider, twoNativeCompilation(t)); err == nil {
+		t.Fatal("a failed default comparison call left the default unresolved instead of ending the stage")
 	}
 }
 

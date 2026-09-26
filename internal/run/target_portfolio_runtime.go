@@ -260,21 +260,22 @@ func selectTargetPortfolioForRun(
 			"target portfolio found no positively supported target entry; choose one exact target with --target TARGET",
 		)
 	}
-	if selection.Default == nil {
-		return targetportfolio.Selection{}, outcome, fmt.Errorf("target portfolio accepted targets without a default")
-	}
 	source := "live provider"
 	if outcome.Cached {
 		source = "validated cache"
 	}
-	output.State(
-		"Analysis target", "selected",
-		"source: "+source,
+	details := []string{
+		"source: " + source,
 		fmt.Sprintf("selected file hypotheses: %d", len(selection.Targets)),
 		fmt.Sprintf("unclassified file hypotheses: %d", len(selection.Unclassified)),
 		fmt.Sprintf("complete model operations: %d", len(execution.Outcomes)),
-		formatRunOutputWallDuration(time.Since(started)),
-	)
+	}
+	if selection.Default == nil {
+		// A refused default comparison ends nothing: the targets are analyzed
+		// and published without a default.
+		details = append(details, "default: unresolved; the default comparison answer was refused")
+	}
+	output.State("Analysis target", "selected", append(details, formatRunOutputWallDuration(time.Since(started)))...)
 	return selection, outcome, nil
 }
 

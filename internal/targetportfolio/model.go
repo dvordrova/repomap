@@ -119,8 +119,10 @@ type DefaultResponse struct {
 
 // Selection is a disjoint canonical-order partition. Targets contains only
 // positive model selections. Omitted input candidates are restored locally as
-// Unclassified and dropped from target execution. Default is non-nil exactly
-// when Targets is non-empty, and then always points to a Target.
+// Unclassified and dropped from target execution. Default is nil when Targets
+// is empty, and otherwise points to a Target unless the default comparison was
+// refused: then it stays nil, the explicitly unresolved default, and no target
+// stands in for it.
 type Selection struct {
 	Default      *VisibleCandidate
 	Placements   []Placement

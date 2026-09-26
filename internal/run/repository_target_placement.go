@@ -112,7 +112,7 @@ func applyRepositoryPlacements(plan repositoryTargetPlan, native []repositoryNat
 			}
 		}
 	}
-	plan.Outcome.SelectedRef = plan.Default.String()
+	plan.Outcome.SelectedRef = defaultRef(plan.Default)
 	plan.Outcome.SelectedTargets = len(plan.Targets)
 	plan.Outcome.SelectedTargetRefs = repositoryTargetRefs(plan.Targets)
 	return plan, plan.Validate()
