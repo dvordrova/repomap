@@ -98,7 +98,7 @@ func TestInputCatalogueJoinsExactFactsAndRetainsUngroupedRoutes(t *testing.T) {
 		for _, counted := range []struct {
 			label string
 			count string
-		}{{"Incoming request records", "2"}, {"HTTP registrations in source", "1"}, {"Handlers without a matched route", "1"}} {
+		}{{"Incoming request records", "2"}, {"Registrations in source", "1"}, {"Handlers without a matched route", "1"}} {
 			label, err := uiText(language, counted.label)
 			if err != nil || !strings.Contains(rendered.String(), label+" · "+counted.count) {
 				t.Fatalf("%s catalogue lost the distinction %s/%s: %s", language, counted.label, counted.count, rendered.String())
@@ -141,5 +141,27 @@ func TestInputActivityGroupsRetainOriginalKindsAndDisplayBindings(t *testing.T) 
 func TestRecipeNeverPromotesAnEntrypointToDocumentedCommand(t *testing.T) {
 	if got := recipeBasis([]string{"entry"}, map[string]facts.Fact{"entry": {Kind: facts.KindEntrypoint}}); got != "Inferred from an entrypoint" {
 		t.Fatalf("recipe basis = %q", got)
+	}
+}
+
+// A registration that states no method, such as a command a client sends by
+// name, is listed by its name alone: an empty method badge would read as a
+// method the code never wrote. A route keeps its method beside its path.
+func TestRegistrationCatalogueShowsOnlyAStatedMethod(t *testing.T) {
+	section := &pageSection{ID: "section", InboundCount: 2, InputsCount: 2, RouteGroups: []pageRouteGroup{
+		{Method: "", Paths: 1, Rows: []pageRouteRow{{Symbol: "getCommand", Paths: []pageRoutePath{{Path: "get", Anchor: &pageAnchor{Path: "server.c", Line: 12, Href: "#get", Text: "server.c:12"}}}}}},
+		{Method: "GET", Paths: 1, Rows: []pageRouteRow{{Symbol: "listUsers", Paths: []pageRoutePath{{Path: "/users", Anchor: &pageAnchor{Path: "api.go", Line: 7, Href: "#users", Text: "api.go:7"}}}}}},
+	}}
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered bytes.Buffer
+	if err := parsed.ExecuteTemplate(&rendered, "input-catalog", section); err != nil {
+		t.Fatal(err)
+	}
+	html := rendered.String()
+	if strings.Contains(html, `<span class="method"></span>`) || strings.Count(html, `<span class="method">GET</span>`) != 1 || !strings.Contains(html, "get") || !strings.Contains(html, "/users") {
+		t.Fatalf("registration catalogue: %s", html)
 	}
 }

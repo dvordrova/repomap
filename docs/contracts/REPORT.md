@@ -55,6 +55,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Route summaries count only original displayed HTTP registrations. The combined
   incoming catalogue counts records, showing native registrations and unmatched
   interpreted handlers separately; those records can describe the same endpoint.
+  Its registrations are labelled "Registrations in source", not HTTP ones: a
+  command a client sends by name is listed there too. A registration's method
+  badge appears only when the registration states a method; a command has none.
 
 - The report is one static page rendered in Go. Its reader is a newcomer, so
   pipeline vocabulary never reaches the screen: retained, source-bound,
