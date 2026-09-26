@@ -195,7 +195,9 @@ Missing equivalents, recorded rather than fabricated:
   `[{name: "del", run: delCommand}]`) makes each handler a value read where
   the table is written, without its key or its row's literals. No binding
   names the handler.
-- A property store (`this.onRead = handler`) records no relation, and a call
+- A property store records no relation of its own. Storing a parameter
+  (`this.onRead = handler`) leaves nothing, and storing a named function
+  (`this.onRead = getCommand`) is only a value read of that function. A call
   through a property is never resolved from its stores. The C adapter makes
   one store exact and several stores alternatives.
 - A call through a local constant holding a function

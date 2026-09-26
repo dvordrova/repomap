@@ -127,7 +127,7 @@ function-pointer field have these equivalents:
 
 | Language | Table of named handlers | Callback stored under a branch | Call through a stored function value |
 | --- | --- | --- | --- |
-| Go | [command_table.go](go/internal/storefixture/command_table.go) `commandTable`: one exact binding per row, with that row's `Name` and `Arity` | `eventLoop.register`, `RunChosenHandler`: the calls through the fields stay unresolved | `RunSingleHandler` is exact; `DispatchCommand` (a looked-up row) is unresolved |
+| Go | [command_table.go](go/internal/storefixture/command_table.go) `commandTable`: one exact binding per row, with that row's `Name` and `Arity` | `eventLoop.register`, `RunChosenHandler`: the calls through the fields stay unresolved | `RunSingleHandler` is exact; a looked-up row (`DispatchCommand`) is unresolved, where C gives the table's handlers as alternatives |
 | Python | missing | [stored_callbacks.py](python/src/fixture_app/stored_callbacks.py) `EventLoop.register`: the calls through the attributes stay unresolved | `run_single_handler` (a local name) is exact; through an attribute, missing |
 | TypeScript | missing | [stored-callbacks.ts](jsts/src/stored-callbacks.ts) `EventLoop.register`: the calls through the properties stay unresolved | missing |
 | Clojure | missing | missing | [core.clj](clojure/src/example/core.clj) `with-shadow` is unresolved |
@@ -137,3 +137,10 @@ language contracts record every missing equivalent, including two that give a
 store under a branch a wrong answer: Go's interface-typed fields (false
 alternatives) and Python's names reassigned under a branch (a false exact
 call).
+
+A C call written through a macro and a C function address cast to an integer
+have no equivalent in Go, Python or TypeScript, which have neither macros nor
+such casts. Clojure has macros: a call written in a macro's argument keeps its
+own place and caller (`ensured-limit` in
+[core.clj](clojure/src/example/core.clj)), while the use of the macro itself
+leaves no call, which the Clojure contract records.
