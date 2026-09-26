@@ -98,18 +98,24 @@ func TestAClassifierChoiceMustLeadItsRunnerUp(t *testing.T) {
 }
 
 // An optional column's "none of these" is one more option: it leaves the
-// cell empty when it leads by the margin and is uncertain when it does not.
+// cell empty when it leads by the margin and is uncertain when it does not,
+// and a listed option close behind it is no more decided than one close
+// behind another listed option.
 func TestNoneOfTheseMustLeadLikeAnyOption(t *testing.T) {
 	def := Definition{Stage: "atlas_optional", Contract: "c", System: "s", Columns: []Column{
 		{Name: "talks", Kind: Choice, Options: []string{"db", "sdk"}, Optional: true},
 	}}
-	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
+	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}, {ID: "s3"}}}
 	raw := []byte(`{"answers":{
 		"s1|talks":{"type":"choice","choice":"none of these","probabilities":{"none of these":0.45,"db":0.3,"sdk":0.25}},
-		"s2|talks":{"type":"choice","choice":"none of these","probabilities":{"none of these":0.4,"db":0.35,"sdk":0.25}}}}`)
+		"s2|talks":{"type":"choice","choice":"none of these","probabilities":{"none of these":0.4,"db":0.35,"sdk":0.25}},
+		"s3|talks":{"type":"choice","choice":"db","probabilities":{"db":0.45,"none of these":0.4,"sdk":0.15}}}}`)
 	result, err := DecodeClassifier(def, window, raw)
-	if err != nil || result.Answers[0] == nil || len(result.Answers[0]) != 0 || result.Answers[1] != nil {
+	if err != nil || result.Answers[0] == nil || len(result.Answers[0]) != 0 || result.Answers[1] != nil || result.Answers[2] != nil {
 		t.Fatalf("result %+v %v", result, err)
+	}
+	if len(result.Rejections) != 2 || !strings.Contains(result.Rejections[1].Reason, `against "none of these" at 0.40`) {
+		t.Fatalf("a listed option close behind none of these was decided: %+v", result.Rejections)
 	}
 }
 
