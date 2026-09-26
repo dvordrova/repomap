@@ -143,3 +143,22 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	}
 	partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "clojure", Kind: "executable", Name: index.Target.Name, Root: "."}, root)
 }
+
+// The C server's parts request carries code structure only, and every
+// declaration of its files takes one part or an entry off the map: the
+// backend loop.c includes (loop_poll.c) with its includer's declarations,
+// and the headers' types, prototypes and static inline functions.
+func TestCumulativeCMapOfParts(t *testing.T) {
+	fixture := loadCFixture(t)
+	index := buildCIndex(t, fixture, "c:kvd")
+	graph, err := places.Build(places.Input{Repository: fixture.repository, Targets: []places.TargetInput{{Index: index, Root: "."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
+	for _, declaration := range [][2]string{{"kvd.c", "main"}, {"loop_poll.c", "loopApiPoll"}, {"strbuf.h", "sbAvail"}, {"kvd.h", "kvClient"}} {
+		if checked.Symbols[declaration] == "" {
+			t.Fatalf("%s %s is not on the map", declaration[0], declaration[1])
+		}
+	}
+}
