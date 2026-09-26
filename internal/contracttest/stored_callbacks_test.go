@@ -99,6 +99,9 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 		30: {programindex.RelationPassesCallback, "run_event_loop", "accept_client", exact},
 		31: {programindex.RelationPassesCallback, "run_event_loop", "flush_replies", exact},
 		38: {programindex.RelationCalls, "run_single_handler", "accept_client", exact},
+		// A name reassigned under a branch is neither its last function
+		// nor both as alternatives.
+		47: {programindex.RelationCalls, "run_chosen_handler", "", unresolved},
 	})
 	for _, view := range relations {
 		if view.from == "fire" && view.relation.Kind == programindex.RelationCalls && len(view.to) != 0 {
@@ -106,6 +109,28 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 		}
 		if view.relation.Kind == programindex.RelationPassesCallback && view.relation.SourceArgumentID == "" {
 			t.Fatalf("registration lost its source argument: %+v", view)
+		}
+		if view.relation.Kind != programindex.RelationCalls || (view.line != 38 && view.line != 47) {
+			continue
+		}
+		// The call through the reassigned name names each store where it is
+		// written, as the C adapter does; the name bound once needs none.
+		var stores []string
+		for _, witness := range view.relation.Witnesses {
+			if witness.Kind != "function_value_store" {
+				continue
+			}
+			if witness.Location == nil || witness.Location.Path != path {
+				t.Fatalf("store witness lost its place: %+v", witness)
+			}
+			stores = append(stores, fmt.Sprintf("%d:%d %s", witness.Location.Line, witness.Location.Column, witness.Detail))
+		}
+		want := ""
+		if view.line == 47 {
+			want = "44:15 flush_replies stored in handler|46:19 accept_client stored in handler under a condition"
+		}
+		if strings.Join(stores, "|") != want || view.relation.WitnessesObserved != len(view.relation.Witnesses) {
+			t.Fatalf("line %d store witnesses = %q, want %q: %+v", view.line, stores, want, view.relation)
 		}
 	}
 }

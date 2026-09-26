@@ -54,7 +54,8 @@ dependency coverage.
 The Python adapter also keeps an existing callable candidate consistent
 between an argument and the callback transfer that cites that exact argument.
 Aliases assigned to a function or lambda and inline lambdas are exact, while
-unknown or overwritten aliases gain no callback.
+unknown or overwritten aliases, and aliases assigned under a branch, gain no
+callback.
 The Airflow Edge3, Azure and Vertica libraries exposed the earlier mismatch:
 the argument named the assignment variable while the transfer named its callable.
 Local native extraction does not establish ordinary full-repository acceptance. Cumulative Python,
@@ -173,6 +174,32 @@ supports:
   handler keeps its exact callback at its `register` call.
 - A local name bound once to a function (`handler = accept_client`) makes
   `handler()` an exact call of that function.
+- A name reassigned under a branch leaves the call through it unresolved,
+  never its last assignment and never alternatives, as the C adapter does.
+  After `handler = flush_replies` and `if readable: handler = accept_client`
+  (`run_chosen_handler`), `handler()` names each function stored in the name
+  as a `function_value_store` witness at the stored value:
+  `flush_replies stored in handler` and
+  `accept_client stored in handler under a condition`. In `models.py`,
+  `register_callback_aliases` passes its parameter `handler` after
+  `if replace_handler: handler = handle_delivery`; the argument keeps the
+  variable and gains no callback of `handle_delivery`.
+
+A branch is the body of an `if`, a loop, a `try` (not its `finally`), a `with`
+or a `match` case, an arm of a conditional expression, an operand of a boolean
+operator after the first, or a comprehension, in the name's own scope. The
+condition, the subject and the first operand always run, as the C adapter
+walks an if's condition and the left of `&&`: after
+`if (handler := accept_client) and ready:`, `handler()` stays exact. A function
+declared under a branch keeps the exact calls of its own body, and an enclosed
+function reading the name sees the same unresolved value. A `def`, `class` or
+`import` of the name in that scope is one more witness, and once the name is
+also assigned there, one under a branch makes it conditional too
+(`handler = flush_replies`, `if readable: def handler(): ...`). A call of an
+attribute of such a name is unresolved and names each module or class stored
+in it: after `codec = json` and `if flag: codec = pickle`, `codec.dumps()`
+names `json stored in codec` and `pickle stored in codec under a condition`,
+never `pickle.dumps`.
 
 Missing equivalents, recorded rather than fabricated:
 
@@ -184,13 +211,13 @@ Missing equivalents, recorded rather than fabricated:
   single store in `__init__`. The C adapter makes one store exact and several
   stores alternatives. The adapter sets no dispatch word, so no call says that
   it runs a function value.
-- A name reassigned under a branch resolves to its last assignment in source
-  order. After `handler = flush_replies` and `if readable: handler =
-  accept_client`, `handler()` is an exact call of `accept_client`, and
-  `flush_replies` is lost. `register_callback_aliases` in `models.py` checks
-  the same rule for a callback argument. Go keeps both values as alternatives
-  (`SharedCallbackFlow`), and the C adapter leaves a store under a branch
-  unresolved with its candidates as witnesses.
+- Assignments without a branch still resolve to the last one in the scope,
+  even at a call written before it: after `handler = accept_client`,
+  `handler()`, `handler = flush_replies`, the call is an exact call of
+  `flush_replies`. The C adapter gives unconditional stores alternatives.
+- A function, class or import bound under a branch with no assignment of that
+  name (`try: from fast import loads`, `except ImportError: def loads(...)`)
+  still resolves to its last binding.
 
 ## Generic declarations
 

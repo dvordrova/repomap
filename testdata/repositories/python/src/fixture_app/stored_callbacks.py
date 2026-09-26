@@ -36,3 +36,12 @@ def run_event_loop():
 def run_single_handler():
     handler = accept_client
     handler()
+
+
+# A name reassigned under a branch may hold either function when it is
+# called: the call stays unresolved and names each function stored in it.
+def run_chosen_handler(readable):
+    handler = flush_replies
+    if readable:
+        handler = accept_client
+    handler()
