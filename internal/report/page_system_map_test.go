@@ -419,7 +419,8 @@ func TestSystemOutboundWithoutOneExactPeerRemainsExternal(t *testing.T) {
 // Nothing asks the model for an order and nothing checks one; code only keeps
 // it. The atlas zones arrive in that order and the page lists them in it
 // inside their component, with the part that is in no area after them. The
-// legend says what the numbers on an area's border are.
+// legend says what the numbers on a frame's border are wherever a frame holds
+// numbered parts.
 func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
 	type part struct{ id, title, path string }
 	parts := []part{
@@ -526,25 +527,42 @@ func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
 		t.Fatalf("the parts entrance lists %q, want %q", entrance, want)
 	}
 
-	line := "Numbers on an area's border match the numbered parts inside it that the arrow connects; they are not an execution order."
-	if !strings.Contains(string(english), template.HTMLEscapeString(line)) {
-		t.Fatal("the legend does not explain the numbers on an area's border")
+	line := template.HTMLEscapeString("Numbers on an area's or component's border are the numbered parts inside that the arrow connects, not an execution order.")
+	if !strings.Contains(string(english), line) {
+		t.Fatal("the legend does not explain the numbers on a frame's border")
 	}
 	options.Language, options.NoModel = Russian, true
 	russian, err := RenderHTMLWithOptions(&data, options)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(russian), "Номера на границе области совпадают с номерами частей внутри неё, которые соединяет стрелка; это не порядок выполнения.") {
-		t.Fatal("the Russian legend does not explain the numbers on an area's border")
+	if !strings.Contains(string(russian), "Номера на границе области или компонента — это пронумерованные части внутри, которые соединяет стрелка, а не порядок выполнения.") {
+		t.Fatal("the Russian legend does not explain the numbers on a frame's border")
 	}
-	// A map without areas has no area numbers to explain.
+	// With no areas an open component still numbers its loose parts on its
+	// own border, so the line stays.
 	plain := reportProgramShellDataFixture(t, "fixture")
-	without, err := RenderHTMLWithOptions(&plain, reportSingleTargetRenderOptionsFixture(t, &plain))
+	loose, err := RenderHTMLWithOptions(&plain, reportSingleTargetRenderOptionsFixture(t, &plain))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(without), template.HTMLEscapeString(line)) {
-		t.Fatal("a map without areas explains area numbers")
+	if !strings.Contains(string(loose), line) {
+		t.Fatal("a component of loose parts does not explain their numbers")
+	}
+	// A component with no parts numbers nothing.
+	empty, err := groupindex.Empty(program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.GroupGraph, err = NewGroupGraphView([]groupindex.Index{empty}, program.Target.ID); err != nil {
+		t.Fatal(err)
+	}
+	options.Language, options.NoModel = English, false
+	without, err := RenderHTMLWithOptions(&data, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(without), `class="map-legend"`) || strings.Contains(string(without), line) {
+		t.Fatal("a map with nothing numbered explains numbers")
 	}
 }

@@ -169,9 +169,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Lines have no click target or native tooltip. These numbers
   identify parts, never execution order. The toolbar has no connection-style
   selector; the same real endpoints remain connected across zoom levels.
-  When the map has areas, one legend line says that the numbers on an area's
-  border match the numbered parts inside it that the arrow connects and are
-  not an execution order.
+  An open area numbers its parts and an open component its areas and loose
+  parts, with those numbers on the frame's border. When an area or component
+  in the map holds anything, one legend line says that the numbers on an
+  area's or component's border are the numbered parts inside that the arrow
+  connects, not an execution order.
 
 - ELK prepares native area interiors, then places each component's ready
   immediate child rectangles in a flat graph. These children retain their
