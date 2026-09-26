@@ -478,7 +478,8 @@ func TestIndexResolvesCallsThroughStoredFunctions(t *testing.T) {
 			stored = witnessKinds(relation)
 		}
 	}
-	if !reflect.DeepEqual(stored, []string{"c_function_pointer_store: readClient stored in fileEvent.readProc and fileEvent.writeProc by loopWatch"}) {
+	// A branch decides which field: readClient goes into one of them.
+	if !reflect.DeepEqual(stored, []string{"c_function_pointer_store: readClient stored in fileEvent.readProc or fileEvent.writeProc by loopWatch under a condition"}) {
 		t.Fatalf("readClient callback: %v", stored)
 	}
 	// Loop context on calls: the body of while and for.

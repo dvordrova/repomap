@@ -1,6 +1,7 @@
 package cproject
 
 import (
+	"bytes"
 	"fmt"
 	"path"
 	"slices"
@@ -123,11 +124,18 @@ func newUnitScope(unit *Unit) *unitScope {
 			s.typedefs = append(s.typedefs, node)
 		}
 	}
+	// A static variable's tentative definitions (static T x;) and its
+	// initialized definition are one variable: the initialized one, else the
+	// first.
 	for _, node := range unit.Decls {
-		if !s.internal[node.Name] || s.statics[node.Name] != nil {
+		if !s.internal[node.Name] {
 			continue
 		}
-		if node.Kind == "FunctionDecl" && hasBody(node) || node.Kind == "VarDecl" && node.StorageClass != "extern" {
+		previous := s.statics[node.Name]
+		switch {
+		case node.Kind == "FunctionDecl" && hasBody(node) && previous == nil:
+			s.statics[node.Name] = node
+		case node.Kind == "VarDecl" && node.StorageClass != "extern" && (previous == nil || previous.Kind == "VarDecl" && previous.Init == "" && node.Init != ""):
 			s.statics[node.Name] = node
 		}
 	}
@@ -414,7 +422,7 @@ func hexValue(c byte) int {
 // function, or a variable.
 type slot struct {
 	key  string
-	name string // redisCommand.proc, parameter cmp of _pqsort, variable handlers
+	name string // command.proc, parameter cmp of sort, variable handlers
 	// function and position are set for a parameter slot.
 	function string
 	position int
@@ -548,6 +556,12 @@ func (w walker) walk(n *Node) {
 			}
 		}
 		return
+	case "UnaryOperator":
+		// &fp hands the slot itself over: whoever receives the address may
+		// write any function into it.
+		if n.Opcode == "&" && len(n.Inner) == 1 {
+			w.b.escapeSlot(w, n.Inner[0], n.Begin.Site())
+		}
 	case "InitListExpr":
 		if !w.inList {
 			w.b.initList(w, n, "")
@@ -734,6 +748,26 @@ func (b *builder) store(w walker, into *slot, value *Node, site Position) *store
 	return st
 }
 
+// escapeSlot records that the address of a slot leaves the code the index
+// reads (&fp, or an array handed to a call): whatever is written through it
+// is a value the index cannot name. clang prints a pointer to a function
+// typedef (handler *) without its function type, so any slot counts; one
+// never called through changes nothing.
+func (b *builder) escapeSlot(w walker, value *Node, site Position) {
+	value = unwrapValue(value)
+	if value == nil {
+		return
+	}
+	for _, text := range []string{value.Type.QualType, value.Type.Desugared} {
+		if arrayType(text) && (strings.Contains(text, "*const") || strings.Contains(text, "* const")) {
+			return // an array of constant pointers cannot be written through
+		}
+	}
+	if into := b.slotOf(w, value); into != nil {
+		b.stores[into.key] = append(b.stores[into.key], &store{slot: into, unknown: true, in: w.owner, site: site})
+	}
+}
+
 // assign handles lhs = rhs: a function stored into a field or a variable.
 func (b *builder) assign(w walker, lhs, rhs *Node) {
 	into := b.slotOf(w, lhs)
@@ -786,7 +820,10 @@ func (b *builder) initList(w walker, list *Node, table string) {
 			if inner := unwrapValue(child); inner != nil && inner.Kind == "InitListExpr" {
 				b.initList(w, inner, table)
 			} else if d := designator(child); d != nil && table != "" {
-				b.store(w, b.slot("var:"+table, "variable "+b.objects[table].Name, "", 0), child, d.Begin.Site())
+				into := b.slot("var:"+table, "variable "+b.objects[table].Name, "", 0)
+				if st := b.store(w, into, child, d.Begin.Site()); st != nil && b.functionByRef[st.fn] != nil {
+					b.bindings = append(b.bindings, binding{from: table, fn: st.fn, site: st.site, detail: fmt.Sprintf("%s stored in %s", b.objects[st.fn].Name, into.name)})
+				}
 			}
 		}
 		return
@@ -796,11 +833,19 @@ func (b *builder) initList(w walker, list *Node, table string) {
 		return
 	}
 	row := tableRow{table: table, owner: w.owner, record: record, begin: list.Begin.Site()}
+	// clang's initializer list has one element per member; an unnamed
+	// bit-field (int :3) is padding, not a member.
+	var members []*fieldInfo
+	for _, field := range record.fields {
+		if field.name != "" || !field.node.IsBitfield {
+			members = append(members, field)
+		}
+	}
 	for i, child := range list.Inner {
-		if i >= len(record.fields) {
+		if i >= len(members) {
 			break
 		}
-		field := record.fields[i]
+		field := members[i]
 		if inner := unwrapValue(child); inner != nil && inner.Kind == "InitListExpr" {
 			b.initList(w, inner, table)
 			continue
@@ -884,7 +929,7 @@ func (b *builder) externalStore(w walker, lhs, rhs *Node) {
 		container = baseType(unwrapValue(base).Type.Desugared)
 		declaration = w.scope.outside[container]
 	}
-	field := TokenText(b.source(written.File), written)
+	field := b.writtenField(member)
 	if declaration == nil || field == "" || location(written) == nil {
 		return
 	}
@@ -892,6 +937,25 @@ func (b *builder) externalStore(w walker, lhs, rhs *Node) {
 		from: w.owner, container: container, declaration: declaration, field: field, fn: resolved.ref,
 		site: written, fnSite: d.Begin.Site(),
 	})
+}
+
+// writtenField is a member's field as the source spells it after its . or
+// ->: at the expansion (act.sa_sigaction, where sa_sigaction is the platform's
+// macro for a union member), else in the body of the repository macro that
+// wrote the store. When neither place shows it, it is clang's member name.
+func (b *builder) writtenField(member *Node) string {
+	for _, at := range []Position{member.End.Expansion, member.End.Spelling} {
+		if isAbsolute(at.File) {
+			continue
+		}
+		data := b.source(at.File)
+		token := TokenText(data, at)
+		before := bytes.TrimRight(data[:min(at.Offset, len(data))], " \t\r\n\\")
+		if token != "" && (bytes.HasSuffix(before, []byte(".")) || bytes.HasSuffix(before, []byte("->"))) {
+			return token
+		}
+	}
+	return member.Name
 }
 
 type construct struct {
@@ -995,6 +1059,10 @@ func (b *builder) call(w walker, n *Node) {
 			}
 		}
 		c.arguments = append(c.arguments, value)
+		// An array handed to a call is its address.
+		if array := unwrapValue(argument); array != nil && (arrayType(array.Type.QualType) || arrayType(array.Type.Desugared)) {
+			b.escapeSlot(w, array, argument.Begin.Site())
+		}
 		if c.direct.ref != "" && !c.direct.external {
 			b.passedTo[c.direct.ref] = append(b.passedTo[c.direct.ref], passedAt{position: position, value: b.passedValue(w, argument)})
 		}
@@ -1073,6 +1141,83 @@ func (b *builder) origin(w walker, argument *Node) *sourcevalue.Value {
 	return &sourcevalue.Value{Kind: "unknown", Text: text, Anchor: anchor}
 }
 
+// findEscapes records the repository functions used as values anywhere in the
+// program: stored, passed, returned or put in a table. Such a function may be
+// called through a pointer with arguments the index does not see, so what
+// its direct callers pass is not all its parameters can hold. Calling a
+// function, comparing it with a pointer or keeping its address as a number
+// hands nothing callable over.
+func (b *builder) findEscapes() {
+	var visit func(scope *unitScope, n *Node)
+	visit = func(scope *unitScope, n *Node) {
+		if n == nil {
+			return
+		}
+		skipDesignators := func(children []*Node) {
+			for _, child := range children {
+				if designator(child) == nil {
+					visit(scope, child)
+				}
+			}
+		}
+		switch n.Kind {
+		case "CallExpr":
+			if len(n.Inner) > 0 {
+				skipDesignators(n.Inner[:1])
+				for _, argument := range n.Inner[1:] {
+					visit(scope, argument)
+				}
+			}
+			return
+		case "BinaryOperator":
+			switch n.Opcode {
+			case "==", "!=", "<", ">", "<=", ">=":
+				skipDesignators(n.Inner)
+				return
+			}
+		case "ImplicitCastExpr", "CStyleCastExpr":
+			if n.CastKind == "PointerToIntegral" {
+				skipDesignators(n.Inner)
+				return
+			}
+		case "DeclRefExpr":
+			if ref := n.ReferencedDecl; ref != nil && ref.Kind == "FunctionDecl" {
+				if fn := b.repositoryFunction(scope, ref); fn != "" {
+					b.escaped[fn] = true
+				}
+			}
+			return
+		case "FunctionDecl", "RecordDecl", "TypedefDecl", "EnumDecl":
+			return
+		}
+		for _, child := range n.Inner {
+			visit(scope, child)
+		}
+	}
+	for _, fn := range b.functions {
+		for _, child := range fn.node.Inner {
+			if child.Kind == "CompoundStmt" {
+				visit(fn.scope, child)
+			}
+		}
+	}
+	for _, t := range b.tables {
+		visit(t.scope, initializer(t.node))
+	}
+}
+
+// repositoryFunction is the repository function a reference names, or "",
+// without creating an object for a platform one.
+func (b *builder) repositoryFunction(s *unitScope, ref *DeclRef) string {
+	if s.internal[ref.Name] {
+		if node := s.statics[ref.Name]; node != nil && node.Kind == "FunctionDecl" {
+			return b.functionRef(s, node)
+		}
+		return ""
+	}
+	return b.externalFunctions[ref.Name]
+}
+
 // candidate is one function a slot may hold, with where it enters the slot.
 type candidate struct {
 	fn          string
@@ -1097,6 +1242,11 @@ func (b *builder) candidates(s *slot) (result []candidate, uncertain, conditiona
 		conditional = conditional || c.conditional
 	}
 	join := func(function string, position int, via string, isConditional bool) {
+		// A function used as a value is also called through pointers, with
+		// arguments no direct call shows.
+		if b.escaped[function] {
+			uncertain = true
+		}
 		for _, at := range b.passedTo[function] {
 			if at.position != position || at.value.null {
 				continue

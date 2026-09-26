@@ -43,7 +43,9 @@ type Result struct {
 // with the literal beside the function, the owner's registration shape. A
 // call through a field, parameter or variable has the stored functions as its
 // targets, unless a store depends on a branch or on a value the index cannot
-// name: then it is unresolved and the candidates are its witnesses.
+// name (another pointer, a call's result, a slot whose address is handed on,
+// a parameter of a function that is itself used as a value): then it is
+// unresolved and the candidates are its witnesses.
 func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 	if repository == nil || parsed == nil {
 		return nil, fmt.Errorf("C: repository and parsed program are required")
@@ -55,7 +57,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 		repository: repository, parsed: parsed, sources: map[string][]byte{}, objects: map[string]*p.ObjectInput{},
 		externalFunctions: map[string]string{}, externalVariables: map[string]string{}, functionByRef: map[string]*function{},
 		definedAt: map[string]Position{}, slots: map[string]*slot{}, stores: map[string][]*store{}, passedTo: map[string][]passedAt{},
-		imported: map[string]bool{}, importers: map[string]dependencies.Importer{},
+		imported: map[string]bool{}, importers: map[string]dependencies.Importer{}, escaped: map[string]bool{},
 	}
 	for _, unit := range parsed.Units {
 		b.scopes = append(b.scopes, newUnitScope(unit))
@@ -65,6 +67,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 		return nil, fmt.Errorf("C program %s: %w", parsed.Program.Selector, err)
 	}
 	b.walkAll()
+	b.findEscapes()
 	b.emitCalls()
 	b.emitStores()
 	b.emitImports()
@@ -100,6 +103,7 @@ type builder struct {
 	slotKeys []string
 	stores   map[string][]*store
 	passedTo map[string][]passedAt // repository function ref -> arguments its direct callers pass
+	escaped  map[string]bool       // repository functions used as values, see findEscapes
 
 	calls      []*call
 	rows       []tableRow
@@ -391,6 +395,9 @@ func (b *builder) defineFunctionsAndVariables() error {
 				if !scope.internal[node.Name] && node.Init == "" && b.definedAt["variable "+node.Name].File != "" && b.definedAt["variable "+node.Name] != site {
 					continue // a tentative definition of a variable another unit initializes
 				}
+				if scope.internal[node.Name] && scope.statics[node.Name] != node {
+					continue // a tentative definition of a static the unit defines again
+				}
 				if _, exists := b.objects[ref]; exists {
 					continue
 				}
@@ -616,18 +623,30 @@ func resolution(targets []string) p.Resolution {
 // emitCalls turns every recorded call into its relation, and every function
 // an argument names into a callback bound to that argument.
 func (b *builder) emitCalls() {
-	stored := map[string]map[int][]*slot{}
+	// The slots a function stores each parameter into; conditional when a
+	// branch decides whether, or into which of them, it is stored.
+	type storedIn struct {
+		slots       []*slot
+		conditional bool
+	}
+	stored := map[string]map[int]*storedIn{}
 	for _, key := range b.slotOrder() {
 		for _, st := range b.stores[key] {
 			if st.param == 0 {
 				continue
 			}
 			if stored[st.in] == nil {
-				stored[st.in] = map[int][]*slot{}
+				stored[st.in] = map[int]*storedIn{}
 			}
-			if !slices.Contains(stored[st.in][st.param], st.slot) {
-				stored[st.in][st.param] = append(stored[st.in][st.param], st.slot)
+			into := stored[st.in][st.param]
+			if into == nil {
+				into = &storedIn{}
+				stored[st.in][st.param] = into
 			}
+			if !slices.Contains(into.slots, st.slot) {
+				into.slots = append(into.slots, st.slot)
+			}
+			into.conditional = into.conditional || st.conditional
 		}
 	}
 	for _, c := range b.calls {
@@ -683,12 +702,16 @@ func (b *builder) emitCalls() {
 			d := c.designators[position]
 			witness := p.Witness{Kind: "c_callback_argument", Detail: fmt.Sprintf("%s passed to %s as argument %d", b.objects[d.fn].Name, c.selector, position), Location: location(d.site)}
 			if c.direct.ref != "" && !c.direct.external {
-				if slots := stored[c.direct.ref][position]; len(slots) > 0 {
+				if into := stored[c.direct.ref][position]; into != nil {
 					var names []string
-					for _, s := range slots {
+					for _, s := range into.slots {
 						names = append(names, s.name)
 					}
-					witness = p.Witness{Kind: "c_function_pointer_store", Detail: fmt.Sprintf("%s stored in %s by %s", b.objects[d.fn].Name, strings.Join(names, " and "), b.objects[c.direct.ref].Name), Location: location(d.site)}
+					detail := fmt.Sprintf("%s stored in %s by %s", b.objects[d.fn].Name, strings.Join(names, " and "), b.objects[c.direct.ref].Name)
+					if into.conditional {
+						detail = fmt.Sprintf("%s stored in %s by %s under a condition", b.objects[d.fn].Name, strings.Join(names, " or "), b.objects[c.direct.ref].Name)
+					}
+					witness = p.Witness{Kind: "c_function_pointer_store", Detail: detail, Location: location(d.site)}
 				}
 			}
 			b.sequence++

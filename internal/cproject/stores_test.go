@@ -125,12 +125,13 @@ func TestIndexNamesPackageHeaders(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(packages, "pkg"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(packages, "pkg", "pkg.h"), []byte("int pkg_run(const char *name, void (*job)(void));\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(packages, "pkg", "pkg.h"), []byte("int pkg_run(const char *name, void (*job)(void));\nstruct pkg_hook { void (*run)(void); };\nvoid pkg_hook_add(struct pkg_hook *hook);\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	files := map[string]string{
 		"Makefile": "CFLAGS = -I" + packages + "\napp: app.o\n\t$(CC) -o app app.o -lpkg\n.c.o:\n\t$(CC) -c $(CFLAGS) $<\n",
-		"app.c":    "#include <stdio.h>\n#include <pkg/pkg.h>\n\nstatic void job(void) { puts(\"job\"); }\n\nint main(void) { return pkg_run(\"nightly\", job); }\n",
+		"app.c": "#include <stdio.h>\n#include <pkg/pkg.h>\n\n#define ON_RUN(h, f) ((h).run = (f))\n\nstatic void job(void) { puts(\"job\"); }\n\n" +
+			"int main(void) {\n    struct pkg_hook hook;\n    ON_RUN(hook, job);\n    pkg_hook_add(&hook);\n    return pkg_run(\"nightly\", job);\n}\n",
 	}
 	x := indexProgram(t, files, "c:app")
 	main := x.object(t, "main", "app.c")
@@ -145,12 +146,19 @@ func TestIndexNamesPackageHeaders(t *testing.T) {
 	if !reflect.DeepEqual(kinds, map[string]dependencies.Kind{"pkg/pkg.h": dependencies.KindExternal, "stdio.h": dependencies.KindStdlib}) {
 		t.Fatalf("dependencies: %v", kinds)
 	}
+	// A store a repository macro writes into a package record's field is
+	// keyed on the field as the macro spells it, not on the macro's name.
+	hook := x.one(t, programindex.RelationInvokesExternal, main.ID, "struct pkg_hook")
+	if arguments := hook.Patterns[0].Arguments; hook.Invocation != programindex.InvocationConstruct || len(arguments) != 1 || arguments[0].Keyword != "run" {
+		t.Fatalf("struct pkg_hook: %+v", hook)
+	}
 	layer, _ := buildPlaces(t, x.repository, x.index)
 	var registrations []string
 	for _, fact := range layer.OfKind(facts.KindRegistration) {
 		registrations = append(registrations, fact.Key+" "+fact.Symbol+" "+fact.Text)
 	}
-	if !slices.Equal(registrations, []string{"pkg_run job pkg/pkg.h.pkg_run"}) {
+	slices.Sort(registrations)
+	if !slices.Equal(registrations, []string{"pkg_run job pkg/pkg.h.pkg_run", "struct pkg_hook job pkg/pkg.h.struct pkg_hook"}) {
 		t.Fatalf("registrations: %q", registrations)
 	}
 }
@@ -170,5 +178,90 @@ func TestCStringDecodesClangLiterals(t *testing.T) {
 	// Bytes that are not text are no literal value.
 	if _, ok := cString(`"\xff"`); ok {
 		t.Error("an invalid UTF-8 literal decoded")
+	}
+}
+
+const slotsSource = `static void first(void) {}
+static void second(void) {}
+
+/* Elements of a module-level array of functions are bound to the array. */
+static void (*steps[])(void) = { first, second };
+
+/* An unnamed bit-field is padding: the row's elements skip it. */
+struct step { int order; unsigned :4; void (*run)(void); const char *name; };
+static struct step plan[] = { {1, first, "first"} };
+
+/* A tentative definition and the definition are one variable. */
+static void (*hook)(void);
+static void (*hook)(void) = first;
+
+/* runWith is also kept in a pointer, so its direct callers are not all
+   that reaches job. */
+static void runWith(void (*job)(void)) { job(); }
+static void (*runner)(void (*)(void)) = runWith;
+
+/* choose writes through the address it is given. */
+static void (*chosen)(void) = first;
+static void choose(void (**slot)(void)) { *slot = second; }
+
+/* fill writes into the array it is handed. */
+static void (*later[])(void) = { first };
+static void fill(void (**into)(void)) { into[0] = second; }
+
+int main(int argc, char **argv) {
+    (void)argv;
+    steps[argc]();
+    plan[0].run();
+    hook();
+    runWith(first);
+    runner(second);
+    choose(&chosen);
+    chosen();
+    fill(later);
+    later[0]();
+    return 0;
+}
+`
+
+// Only what the index sees decides a call through a slot: a function also
+// used as a value, or a slot whose address or array is handed over, may hold
+// what no store shows, so those calls stay unresolved with the stores as
+// witnesses.
+func TestIndexKeepsSlotsTheIndexCannotSeeUnresolved(t *testing.T) {
+	x := indexProgram(t, map[string]string{"slots.c": slotsSource}, "c:slots.c")
+	main := x.object(t, "main", "slots.c")
+	steps := x.object(t, "steps", "slots.c")
+	var bound []string
+	for _, relation := range x.relations(programindex.RelationPassesCallback, steps.ID, "") {
+		bound = append(bound, witnessKinds(relation)...)
+	}
+	if !reflect.DeepEqual(bound, []string{"c_function_pointer_store: first stored in variable steps", "c_function_pointer_store: second stored in variable steps"}) {
+		t.Fatalf("steps bindings: %v", bound)
+	}
+	if run := x.one(t, programindex.RelationCalls, main.ID, "run"); run.Resolution != programindex.ResolutionExact || x.names(run.ToIDs)[0] != "first" {
+		t.Fatalf("plan[0].run(): %+v", run)
+	}
+	row := x.one(t, programindex.RelationCalls, x.object(t, "plan", "slots.c").ID, "step")
+	if arguments := row.Patterns[0].Arguments; len(arguments) != 2 || arguments[0].Keyword != "name" || arguments[0].Value != "first" || arguments[1].Keyword != "run" {
+		t.Fatalf("plan row: %+v", arguments)
+	}
+	hooks := x.objects(t, "hook")
+	if len(hooks) != 1 || hooks[0].Location.Line != lineOf(t, slotsSource, "static void (*hook)(void) = first;") {
+		t.Fatalf("hook objects: %+v", hooks)
+	}
+	if hook := x.one(t, programindex.RelationCalls, main.ID, "hook"); hook.Resolution != programindex.ResolutionExact || x.names(hook.ToIDs)[0] != "first" {
+		t.Fatalf("hook(): %+v", hook)
+	}
+	for _, check := range []struct {
+		from, selector, witness string
+	}{
+		{"runWith", "job", "c_function_pointer_store: first passed to runWith"},
+		{"main", "chosen", "c_function_pointer_store: first stored in variable chosen"},
+		{"main", "later", "c_function_pointer_store: first stored in variable later"},
+	} {
+		call := x.one(t, programindex.RelationCalls, x.object(t, check.from, "slots.c").ID, check.selector)
+		if call.Resolution != programindex.ResolutionUnresolved || len(call.ToIDs) != 0 || !slices.Contains(witnessKinds(call), check.witness) {
+			t.Fatalf("%s(): %s %v %v", check.selector, call.Resolution, x.names(call.ToIDs), witnessKinds(call))
+		}
 	}
 }

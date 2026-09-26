@@ -71,6 +71,18 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 			want: []want{{key: "command", symbol: "pingCommand", values: []string{"ping"}, resolution: ResolutionPossible}},
 		},
 		{
+			name: "a row of a table the repository owns that stores no callable is data",
+			build: func(s *synthetic) {
+				s.object("m", programindex.ObjectModule, "server.c", "server.c", 1, "")
+				s.object("setting", programindex.ObjectType, "setting", "server.c", 3, "m")
+				s.object("limits", programindex.ObjectVariable, "limits", "server.c", 5, "m")
+				s.object("table", programindex.ObjectVariable, "settings", "server.c", 10, "m")
+				s.relate("row", programindex.RelationCalls, "table", []string{"setting"}, loc("server.c", 11),
+					pattern("p", programindex.PatternCall, "setting", loc("server.c", 11), nil, literal(1, "maxclients"), dynamicRef(2, "limits")))
+				s.relations[len(s.relations)-1].Invocation = programindex.InvocationConstruct
+			},
+		},
+		{
 			name: "the same row a function builds for itself is delegation",
 			build: func(s *synthetic) {
 				s.object("m", programindex.ObjectModule, "server.c", "server.c", 1, "")

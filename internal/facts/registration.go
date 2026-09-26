@@ -498,10 +498,19 @@ func (target *targetContext) tableRow(relation programindex.Relation) bool {
 		return false
 	}
 	for _, pattern := range relation.Patterns {
+		named, callable := false, false
 		for _, argument := range pattern.Arguments {
 			if value, _, literal := literalValue(argument); literal && value != "" {
-				return true
+				named = true
 			}
+			for _, id := range argument.ObjectIDs {
+				if object, ok := target.object(id); ok && argument.Kind == programindex.PatternDynamic && isCallable(object) {
+					callable = true
+				}
+			}
+		}
+		if named && callable {
+			return true
 		}
 	}
 	return false
