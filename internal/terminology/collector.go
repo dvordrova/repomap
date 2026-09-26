@@ -622,7 +622,7 @@ func resultTextByRow(result any, sourceRows map[string]bool) map[string][]string
 // letter case, alone or with its English plural ending.
 func mentionsTerm(text, name string) bool {
 	word := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsMark(r) || r == '_' }
-	return len(FoldText(text).Find(FoldTerm(name), word)) > 0
+	return len(FoldText(text).Find(FoldTerm(name), IsAcronym(name), word)) > 0
 }
 
 // ScriptBoundary recognizes adjacent letters from different concrete Unicode

@@ -564,6 +564,9 @@ func TestTermOccursInAnyCaseAndEnglishPlural(t *testing.T) {
 		{"snapshots_dir", "Snapshot", false},
 		{"Nodes exchange snapshots.", "Snap", false},
 		{"One subclass.", "Class", false},
+		{"Only HTTPS is served.", "HTTP", false},
+		{"The IOS build.", "IO", false},
+		{"Plain HTTP and two HTTPs.", "HTTP", true},
 	} {
 		if got := mentionsTerm(test.text, test.name); got != test.want {
 			t.Errorf("%q in %q: %v", test.name, test.text, got)

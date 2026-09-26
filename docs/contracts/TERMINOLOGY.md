@@ -200,7 +200,12 @@ Lookup never proves an occurrence's meaning. Owner decision 2026-09-26: a name
   (`s`, or `es` after a name ending in s, x, z, ch or sh), and only as a whole
   word or phrase. Snapshot finds snapshot, Snapshots and SNAPSHOTS; Class finds
   classes; Go finds neither good nor goes; Snap does not find snapshots. The
-  plural ending applies only after a Latin letter. The same rule
+  plural ending applies only after a Latin letter, and after an acronym (a
+  name written in capitals only) it must be written in lower case: API finds
+  APIs, HTTP does not find HTTPS. A native code declaration's name is code and
+  matches only as written, with no plural: Result opens on Result, never on
+  "result" or "Results" (a self-run otherwise went from 132 to 404 code-name
+  underlines, 240 of them offering several definitions). The same rule
   (`internal/terminology/lookup.go`) decides a generated term's source-backed
   occurrence and the report's render-time lookup. Identifier/script boundaries
   stay: a letter, digit, mark or underscore (and `$` in display prose)

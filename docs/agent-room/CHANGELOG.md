@@ -1,5 +1,27 @@
 # Implementation and acceptance journal
 
+## 2026-09-26 — The owner's short answers, implemented
+
+- Jev choices: the absolute 0.50 floor became a 0.10 lead over the runner-up
+  ("none of these" counts as a rival). Chosen from 60 saved role answers
+  (leads 0.00, 0.02, then 0.17 and up) and 1,072 eleven-option answers: it
+  decides 101 answers the floor refused (0.50 vs 0.34) and leaves uncertain 9
+  it took (0.51 vs 0.49). "support" 0.49 vs 0.32 is now taken.
+- DeepSeek: an HTTP-200 answer without content, or with finish
+  insufficient_system_resource, gets one transport retry; its first answer's
+  usage is summed. The console names it "empty answer".
+- An unknown or missing default-target answer no longer ends the run: the
+  default is recorded unresolved and the report is published; no code picks
+  one.
+- Glossary lookup: any letter case and a plural -s/-es, whole words, in both
+  the occurrence check and the underlines; a native code declaration's name
+  matches only as written and an acronym's plural only in lower case (an
+  all-folded lookup took a self-run from 132 to 404 code-name underlines, 240
+  of them offering several definitions, and let HTTP open inside HTTPS).
+- The map legend says what the number chips on parts and frames are; areas
+  and a component's area list follow the order of the areas answer (the
+  GroupsIndex no longer re-sorts containers by value).
+
 ## 2026-09-26 — Refused answers stay in their run, out of the cache
 
 - Owner: refused answers are for the developer to debug, "сохранять, но не

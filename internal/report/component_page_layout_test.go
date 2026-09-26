@@ -76,7 +76,7 @@ func TestComponentPageShowsARoleWithoutAPurpose(t *testing.T) {
 	if start < 0 {
 		t.Fatal("a role without a purpose is not shown")
 	}
-	line := html[start:strings.Index(html[start:], "</p>")+start]
+	line := html[start : strings.Index(html[start:], "</p>")+start]
 	if !strings.Contains(line, "Go web server") || strings.Contains(line, "—") {
 		t.Fatalf("role line: %s", line)
 	}

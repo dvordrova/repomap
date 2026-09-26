@@ -151,7 +151,7 @@ separate stage outputs.
   Translation keeps glossary names and accepted English aliases in their original spelling and translates
   their definitions and surrounding prose. Code looks up complete names in the
   final display text, in any letter case and with an English plural -s or -es
-  (owner decision 2026-09-26); the model does not annotate occurrences or choose
+  (owner decision 2026-09-26; a code declaration's name matches as written); the model does not annotate occurrences or choose
   tooltip positions. Equal spellings may offer separate dictionary definitions;
   a lookup does not establish the meaning of a particular use. Optional
   terminology errors do not invalidate an accepted main answer or translation;

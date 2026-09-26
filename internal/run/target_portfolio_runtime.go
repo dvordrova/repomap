@@ -115,8 +115,11 @@ func retryingTheModel(output *runOutput) func(deepseek.RetryProgress) {
 			reason = "timeout"
 		case llm.ProviderFailureNetwork:
 			reason = "network failure"
+		case llm.ProviderFailureResponse:
+			// An HTTP 200 that carried no answer; its status says nothing.
+			reason = "empty answer"
 		}
-		if progress.HTTPStatus >= 100 && progress.HTTPStatus <= 599 {
+		if progress.Failure != llm.ProviderFailureResponse && progress.HTTPStatus >= 100 && progress.HTTPStatus <= 599 {
 			reason = fmt.Sprintf("HTTP %d", progress.HTTPStatus)
 		}
 		output.Stage("", fmt.Sprintf("model request %s: attempt %d/%d failed (%s); retry %d/%d after at least %s",

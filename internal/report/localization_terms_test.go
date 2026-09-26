@@ -347,3 +347,23 @@ func TestLiteralDisplaySlotsHaveStableLocalLookupRefs(t *testing.T) {
 		t.Fatalf("literal slot lost its lookup: %+v", plans)
 	}
 }
+
+// A code declaration's name is code and case-sensitive: Result opens only
+// where the prose writes Result, never on every "result". An acronym's
+// plural is written in lower case, so HTTP does not open inside HTTPS.
+func TestCodeNamesMatchAsWrittenAndAcronymPluralsStayLowerCase(t *testing.T) {
+	result := glossaryFixture("result", "Result", "The run's outcome record.", "")
+	result.Code = true
+	page := &PreparedPage{view: &pageView{Glossary: []pageGlossaryTerm{
+		result,
+		glossaryFixture("http", "HTTP", "The web protocol.", ""),
+		glossaryFixture("api", "API", "A program interface.", ""),
+	}}}
+	original := "The result and results feed a Result; Results differ. HTTPS is not HTTP, and APIs are APIs."
+	entry := page.prepareTerminology("answer", original, "", nil, nil)
+	plain, spans, err := entry.finishDisplayText(entry.Text)
+	want := []string{"Result", "HTTP", "APIs", "APIs"}
+	if err != nil || plain != original || !reflect.DeepEqual(matchedWords(plain, spans), want) {
+		t.Fatalf("code and acronym lookup: %v %v", matchedWords(plain, spans), err)
+	}
+}

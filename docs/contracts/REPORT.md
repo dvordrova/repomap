@@ -452,7 +452,8 @@ collapsed apparatus; existing source IDs and excerpts survive. Terms receive
 one underline per answer, and source-unavailable labels remain inspectable.
 An underline finds a glossary name as a whole word in any letter case, alone
 or with an English plural `s`/`es` (snapshots for Snapshot, classes for
-Class, never good or goes for Go), by the shared
+Class, never good or goes for Go; a code declaration's name only as
+written, an acronym's plural only in lower case), by the shared
 [term lookup](TERMINOLOGY.md#term-lookup) (owner decision 2026-09-26).
 Header revision noise, redundant answer actions and root Path:. are removed;
 run information remains linked from the footer.

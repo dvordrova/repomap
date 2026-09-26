@@ -17,6 +17,26 @@ type DisplayTextTerm struct {
 	ID          string `json:"id"`
 	Spelling    string `json:"spelling"`
 	Explanation string `json:"explanation"`
+	// Code marks a code declaration's name, matched exactly as written.
+	Code bool `json:"code,omitempty"`
+}
+
+// exactSpelling keys a code declaration's spelling apart from every folded
+// spelling, so the display lookup finds it only as written; acronymSpelling
+// keys an acronym, whose plural ending must be written in lower case.
+const (
+	exactSpelling   = "\x00"
+	acronymSpelling = "\x01"
+)
+
+func spellingKey(spelling string, code bool) string {
+	switch {
+	case code:
+		return exactSpelling + spelling
+	case terminology.IsAcronym(spelling):
+		return acronymSpelling + terminology.FoldTerm(spelling)
+	}
+	return terminology.FoldTerm(spelling)
 }
 
 type displayTermSpan struct {
@@ -98,8 +118,8 @@ func glossaryMatches(text string, terms []DisplayTextTerm) []glossaryMatch {
 func glossarySpellingIDs(terms []DisplayTextTerm) map[string][]string {
 	byName := make(map[string][]string)
 	for _, term := range terms {
-		name := terminology.FoldTerm(term.Spelling)
-		if name != "" && !slices.Contains(byName[name], term.ID) {
+		name := spellingKey(term.Spelling, term.Code)
+		if term.Spelling != "" && !slices.Contains(byName[name], term.ID) {
 			byName[name] = append(byName[name], term.ID)
 		}
 	}
@@ -127,7 +147,15 @@ func glossaryMatchesWith(text string, syntax displaySyntax, byName map[string][]
 	folded := terminology.FoldText(text)
 	var matches []glossaryMatch
 	for name, ids := range byName {
-		for _, found := range folded.Find(name, glossaryWordRune) {
+		var occurrences []terminology.Occurrence
+		if exact, ok := strings.CutPrefix(name, exactSpelling); ok {
+			occurrences = folded.FindExact(exact, glossaryWordRune)
+		} else if acronym, ok := strings.CutPrefix(name, acronymSpelling); ok {
+			occurrences = folded.Find(acronym, true, glossaryWordRune)
+		} else {
+			occurrences = folded.Find(name, false, glossaryWordRune)
+		}
+		for _, found := range occurrences {
 			insideSource := false
 			for _, source := range blocked {
 				if found.Start < source[1] && found.End > source[0] {
@@ -270,7 +298,7 @@ func (page *PreparedPage) terminologyFor(scope string, own *pageGlossaryTerm) pa
 	scoped := make(map[string][]spelled)
 	for _, term := range page.view.Glossary {
 		for _, spelling := range glossarySpellings(term) {
-			name := terminology.FoldTerm(spelling)
+			name := spellingKey(spelling, term.Code)
 			byName[name] = append(byName[name], spelled{spelling, term})
 			if scope != "" && glossaryInQuestion(term, scope) {
 				scoped[name] = append(scoped[name], spelled{spelling, term})
@@ -283,10 +311,10 @@ func (page *PreparedPage) terminologyFor(scope string, own *pageGlossaryTerm) pa
 	if own != nil {
 		spellings := glossarySpellings(*own)
 		for _, spelling := range spellings {
-			delete(byName, terminology.FoldTerm(spelling))
+			delete(byName, spellingKey(spelling, own.Code))
 		}
 		for _, spelling := range spellings {
-			name := terminology.FoldTerm(spelling)
+			name := spellingKey(spelling, own.Code)
 			byName[name] = append(byName[name], spelled{spelling, *own})
 		}
 	}
@@ -312,7 +340,7 @@ func (page *PreparedPage) terminologyFor(scope string, own *pageGlossaryTerm) pa
 	var all []DisplayTextTerm
 	for _, values := range byName {
 		for _, value := range values {
-			all = append(all, DisplayTextTerm{ID: value.term.ID, Spelling: value.spelling, Explanation: value.term.Explanation})
+			all = append(all, DisplayTextTerm{ID: value.term.ID, Spelling: value.spelling, Explanation: value.term.Explanation, Code: value.term.Code})
 		}
 	}
 	sort.Slice(all, func(i, j int) bool {

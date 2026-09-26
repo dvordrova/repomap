@@ -285,3 +285,12 @@ func TestRunOutputTerminalErrorKeepsStreamAndClock(t *testing.T) {
 		t.Fatalf("error changed streams or reset clock: %q / %q", progress.String(), diagnostics.String())
 	}
 }
+
+func TestRetryProgressNamesAnEmptyAnswer(t *testing.T) {
+	var buffer bytes.Buffer
+	output := newRunOutput(&buffer)
+	retryingTheModel(output)(deepseek.RetryProgress{RequestSHA256: strings.Repeat("b", 64), Attempt: 1, MaxAttempts: 4, Failure: llm.ProviderFailureResponse, HTTPStatus: 200, Delay: time.Second})
+	if !strings.Contains(buffer.String(), "attempt 1/4 failed (empty answer); retry 2/4") {
+		t.Fatalf("an HTTP 200 without an answer is not named as one:\n%s", buffer.String())
+	}
+}

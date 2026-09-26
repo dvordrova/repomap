@@ -9,9 +9,13 @@ import (
 // Term lookup (owner decision 2026-09-26) finds a name as a whole word or
 // phrase whatever its letter case, alone or with an English plural ending:
 // "s", or "es" after a name ending in s, x, z, ch or sh. Snapshot finds
-// snapshot and snapshots, Class finds classes; Go finds neither good nor goes.
-// No other morphology is inferred. Generation's source-backed occurrence
-// check and the report's display lookup share this rule.
+// snapshot, snapshots and SNAPSHOTS, Class finds classes; Go finds neither
+// good nor goes. An acronym's plural ending is written in lower case, so API
+// finds APIs while HTTP does not find HTTPS. No other
+// morphology is inferred. Generation's source-backed occurrence check and the
+// report's display lookup share this rule. A code declaration's name is
+// matched as written (FindExact): code is case-sensitive, and Result must not
+// open on every "result" of the prose.
 
 // FoldTerm folds letter case rune by rune, so a folded name can be found in a
 // FoldedText byte for byte.
@@ -63,10 +67,26 @@ type Occurrence struct {
 	Start, End, Ending int
 }
 
+// IsAcronym says whether a spelling is written in capitals only, with at
+// least two letters: HTTP, API, IO.
+func IsAcronym(spelling string) bool {
+	letters := 0
+	for _, r := range spelling {
+		if unicode.IsLetter(r) {
+			if !unicode.IsUpper(r) {
+				return false
+			}
+			letters++
+		}
+	}
+	return letters >= 2
+}
+
 // Find returns the whole occurrences of a FoldTerm name. word tells the runes
 // that continue a word; a letter of another concrete script does not, so
-// Matcher를 still names Matcher.
-func (text FoldedText) Find(name string, word func(rune) bool) []Occurrence {
+// Matcher를 still names Matcher. acronym asks for a plural ending written in
+// lower case.
+func (text FoldedText) Find(name string, acronym bool, word func(rune) bool) []Occurrence {
 	if name == "" {
 		return nil
 	}
@@ -97,6 +117,10 @@ func (text FoldedText) Find(name string, word func(rune) bool) []Occurrence {
 			if !strings.HasPrefix(text.folded[end:], ending) || !wordEnd(text.text, text.original(end+len(ending)), word) {
 				continue
 			}
+			// An acronym's plural ending is written in lower case: APIs, not HTTPS.
+			if acronym && ending != "" && text.text[text.original(end):text.original(end+len(ending))] != ending {
+				continue
+			}
 			result = append(result, Occurrence{Start: text.original(start), End: text.original(end + len(ending)), Ending: len(ending)})
 			from = end + len(ending)
 			break
@@ -121,4 +145,28 @@ func wordEnd(text string, end int, word func(rune) bool) bool {
 	last, _ := utf8.DecodeLastRuneInString(text[:end])
 	after, _ := utf8.DecodeRuneInString(text[end:])
 	return !word(after) || ScriptBoundary(last, after)
+}
+
+// FindExact returns the whole occurrences of a name written exactly as given,
+// with no plural ending: the lookup of a code declaration's name.
+func (text FoldedText) FindExact(name string, word func(rune) bool) []Occurrence {
+	if name == "" {
+		return nil
+	}
+	var result []Occurrence
+	for from := 0; from < len(text.text); {
+		at := strings.Index(text.text[from:], name)
+		if at < 0 {
+			break
+		}
+		start := from + at
+		_, size := utf8.DecodeRuneInString(text.text[start:])
+		from = start + size
+		end := start + len(name)
+		if wordStart(text.text, start, word) && wordEnd(text.text, end, word) {
+			result = append(result, Occurrence{Start: start, End: end})
+			from = end
+		}
+	}
+	return result
 }
