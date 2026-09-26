@@ -8,8 +8,9 @@ import (
 )
 
 // One unlisted value on an optional API decision loses that decision only:
-// the symbol's other decisions stand. A part's required role is still one of
-// its listed roles or nothing.
+// the symbol's other decisions stand, and a cell the table no longer asks
+// is no decision. A part's required role is still one of its listed roles
+// or nothing.
 func TestAPIDecisionsFailAloneWhileTheCoreRoleIsRequired(t *testing.T) {
 	window := table.Window{Rows: []table.Row{{ID: "x1"}, {ID: "x2"}}}
 	result, err := table.DecodeResult(API(false), window, []byte(`{"rows":[
@@ -18,7 +19,7 @@ func TestAPIDecisionsFailAloneWhileTheCoreRoleIsRequired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (table.Answer{"publishes": "yes", "reads_input": "body", "validates": "yes"}); !reflect.DeepEqual(result.Answers[0], want) {
+	if want := (table.Answer{"publishes": "yes"}); !reflect.DeepEqual(result.Answers[0], want) {
 		t.Fatalf("one unlisted decision cost the symbol its others: %+v", result.Answers[0])
 	}
 	if len(result.Rejections) != 1 || result.Rejections[0].Key != "x1" || result.Rejections[0].Cell != "talks" || result.Answers[1]["talks"] != "db" {

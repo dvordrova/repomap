@@ -328,16 +328,27 @@ remain model decisions with `self`/`none`, not local middleware classification.
 ## External symbols: the `atlas_api` table
 
 The model reads the symbols outside the repository that the code calls, one
-row per symbol, once per repository: `symbol`, `word`, `hands_callable` when a
-repository callable is passed to it, its `literals`, its `sites` and the
-symbols called `beside` it on the same holders. Three optional cells, each
-absent when the symbol does not do that: `binds` (what a callable handed to
-it becomes: `http_server`, `queue_consumer`, `scheduled`, `interaction`,
-`extension`, `other`), `publishes` (`yes` when the call makes what its holder
-holds reachable: a server started, an app run, a consumer connected) and
-`talks` (the kind of other running system it sends to, reads from or creates
-a client of). A symbol may hold several cells. The roles are recorded on the
-atlas as `api`.
+row per symbol, once per repository: `symbol`, `declared` (its type as its
+package declares it), `usage` (the first line that calls it), its `literals`
+and `hands_callable` when a repository callable is passed to it. The symbols
+handed a callable and the others are two tables asked at once. Every cell is
+optional and absent when the symbol does not do that. A handed symbol is asked
+`binds` (what the callable becomes: `http_server`, `queue_consumer`,
+`scheduled`, `interaction`, `extension`, `command`), `middleware` (`yes` when
+the callable runs around or before the handlers; such a symbol binds and
+publishes nothing) and `publishes`. Every other symbol is asked `publishes`
+(`yes` when the call makes what its holder holds reachable: a server started,
+an app run, a consumer connected) and `talks` (the kind of other running
+system it sends to, reads from or opens a connection to). A symbol may hold
+several cells. The roles are recorded on the atlas as `api`.
+
+The table asks only the decisions the boundaries read (`repomap.atlas.api.v4`,
+owner decision 2026-09-26). `reads_input`, `writes_output`, `auth`, `config`
+and `validates` were asked of every symbol, stored in `atlas.json` and read by
+nothing; a window of them flipped between runs. A decision without a reader
+is not asked and keeps no dormant field. When a reader for one arrives, it
+returns as its own table with an explicit `none` option rather than an
+optional cell.
 
 The roles make the boundaries; no call site is asked whether it is one. A
 registration handing a callable to a `binds` symbol is that entry, with the

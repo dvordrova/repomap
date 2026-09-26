@@ -414,20 +414,16 @@ type Atlas struct {
 }
 
 // APIRole is the model's reading of one external symbol: what a callable
-// handed to it becomes, whether it publishes what its holder holds, what
-// other running system it talks to. Each cell is empty when the symbol does
-// not do that.
+// handed to it becomes, whether it runs around the handlers, whether it
+// publishes what its holder holds, what other running system it talks to.
+// Each cell is empty when the symbol does not do that. It holds only the
+// decisions the boundaries read.
 type APIRole struct {
-	Symbol       string `json:"symbol"`
-	Binds        string `json:"binds,omitempty"`
-	Publishes    bool   `json:"publishes,omitempty"`
-	Talks        string `json:"talks,omitempty"`
-	Middleware   bool   `json:"middleware,omitempty"`
-	ReadsInput   string `json:"reads_input,omitempty"`
-	WritesOutput bool   `json:"writes_output,omitempty"`
-	Auth         string `json:"auth,omitempty"`
-	Config       string `json:"config,omitempty"`
-	Validates    bool   `json:"validates,omitempty"`
+	Symbol     string `json:"symbol"`
+	Binds      string `json:"binds,omitempty"`
+	Publishes  bool   `json:"publishes,omitempty"`
+	Talks      string `json:"talks,omitempty"`
+	Middleware bool   `json:"middleware,omitempty"`
 }
 
 // EntryKinds are what a handed callable can become; an entry has a named
@@ -435,15 +431,6 @@ type APIRole struct {
 func EntryKinds() []string {
 	return []string{BoundaryHTTPServer, BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension, BoundaryCommand}
 }
-
-// InputKinds are the parts of a received request a symbol may read.
-func InputKinds() []string { return []string{"body", "path", "query", "header"} }
-
-// AuthKinds are what a symbol may do with credentials.
-func AuthKinds() []string { return []string{"verifies", "issues", "hashes"} }
-
-// ConfigKinds are how a symbol touches configuration.
-func ConfigKinds() []string { return []string{"reads", "loads"} }
 
 // Target is one analyzed program target with its boxes.
 type Target struct {

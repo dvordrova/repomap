@@ -20,10 +20,13 @@ var publishPrompt string
 
 // API reads the external symbols the repository calls. A symbol handed a
 // repository callable is asked what the callable becomes; every other
-// symbol is asked what it does with the values it gets. Every cell is
-// optional: a symbol that does none of it gets no cell.
+// symbol is asked whether it starts serving and what other running system
+// it talks to. Every cell is optional: a symbol that does none of it gets no
+// cell. Only cells the boundaries read are asked: a decision without a
+// reader comes back as its own table, with an explicit none, when a reader
+// for it lands.
 func API(handed bool) table.Definition {
-	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v3", System: apiPrompt}
+	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v4", System: apiPrompt}
 	if handed {
 		def.Contract += ".handed"
 		def.Columns = []table.Column{
@@ -36,11 +39,6 @@ func API(handed bool) table.Definition {
 	def.Columns = []table.Column{
 		{Name: "publishes", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this call starts serving: listens on an address, runs the application, connects the consumer"},
 		{Name: "talks", Kind: table.Choice, Options: talksOptions(), Optional: true, Note: "the kind of other running system this call itself sends to, reads from or opens a connection to: http_client, db, queue_producer, queue_consumer, sdk. A call that builds or configures — returning the same type it was called on, setting a header, tuning a pool — and a call that reads a result already received talk to nothing"},
-		{Name: "reads_input", Kind: table.Choice, Options: atlas.InputKinds(), Optional: true, Note: "the part of a received request this symbol reads: body, path, query or header"},
-		{Name: "writes_output", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this symbol writes the response a received request gets"},
-		{Name: "auth", Kind: table.Choice, Options: atlas.AuthKinds(), Optional: true, Note: "with credentials: verifies a token or a password, issues a token, hashes a secret"},
-		{Name: "config", Kind: table.Choice, Options: atlas.ConfigKinds(), Optional: true, Note: "reads one configuration value, or loads configuration from a source"},
-		{Name: "validates", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this symbol checks input against rules"},
 	}
 	return def
 }

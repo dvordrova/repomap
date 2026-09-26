@@ -2,12 +2,14 @@ package reading
 
 import (
 	"encoding/json"
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
 func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *testing.T) {
@@ -346,6 +348,51 @@ func TestSymbolRolesTurnRegistrationsIntoBoundariesAndHoldersCarryAddresses(t *t
 	}
 	if !reflect.DeepEqual(r.apiRoles(), []atlas.APIRole{{Symbol: "database/sql.Open", Talks: "db"}, {Symbol: "echo.Echo.GET", Binds: "http_server"}, {Symbol: "echo.Echo.Start", Publishes: true}}) {
 		t.Fatalf("roles recorded differently: %+v", r.apiRoles())
+	}
+}
+
+// The api table asks only what the boundaries read: every cell it asks,
+// written on a row alone or beside a binding, changes what the symbol's
+// registrations become. reads_input, writes_output, auth, config and
+// validates were asked on every run, stored in atlas.json and read by
+// nothing, and a whole window of them flipped between runs (owner,
+// 2026-09-26). A decision comes back with its reader, as its own question.
+func TestEveryAskedAPICellChangesTheBoundaries(t *testing.T) {
+	const symbol = "vendor/sdk.Server.Handle"
+	outcome := func(answer table.Answer) string {
+		registration := func(id, direction, handler string, column int, values ...string) atlas.Place {
+			return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 20, Column: column, Parent: "file:main", TargetIDs: []string{"api"}, Given: symbol,
+				Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "api", FactID: "fact:" + id}}, ObjectID: handler, Caller: "main", External: symbol, Holder: "main.go:19:2", Values: values, Direction: direction}}
+		}
+		handed := registration("b1", atlas.DirectionIn, "handler", 4, "/users")
+		given := registration("b2", atlas.DirectionOut, "", 9, ":8080")
+		r := answerTestReader(t, nil, nil)
+		r.dry, r.opts.Through = true, ""
+		r.opts.Graph.Places = []atlas.Place{handed, given}
+		r.places = map[string]atlas.Place{handed.ID: handed, given.ID: given}
+		r.api = map[string]apiRole{symbol: apiRoleOf(answer)}
+		if err := r.readBoundaries(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		var made []string
+		for _, id := range sortedKeys(r.boundaries) {
+			state := r.boundaries[id]
+			made = append(made, strings.Join([]string{id, state.place.Boundary.Direction, state.kind, state.address}, " "))
+		}
+		return strings.Join(made, "; ")
+	}
+	for _, def := range []table.Definition{lines.API(true), lines.API(false)} {
+		for _, column := range def.Columns {
+			read := false
+			for _, base := range []table.Answer{{}, {"binds": atlas.BoundaryHTTPServer}} {
+				with := maps.Clone(base)
+				with[column.Name] = column.Options[0]
+				read = read || outcome(with) != outcome(base)
+			}
+			if !read {
+				t.Errorf("%s asks %s, and no boundary reads it", def.Contract, column.Name)
+			}
+		}
 	}
 }
 

@@ -14,8 +14,8 @@ import (
 
 // apiRole is the model's reading of one external symbol; see atlas.APIRole.
 type apiRole struct {
-	binds, talks, readsInput, auth, config         string
-	publishes, middleware, writesOutput, validates bool
+	binds, talks          string
+	publishes, middleware bool
 }
 
 // apiSymbol is what the code observed about one external symbol across the
@@ -170,22 +170,26 @@ func (r *reader) readAPI(ctx context.Context) error {
 			if answer == nil {
 				continue
 			}
-			role := apiRole{
-				binds: answer["binds"], talks: answer["talks"], publishes: answer["publishes"] == "yes",
-				middleware: answer["middleware"] == "yes", readsInput: answer["reads_input"], writesOutput: answer["writes_output"] == "yes",
-				auth: answer["auth"], config: answer["config"], validates: answer["validates"] == "yes",
-			}
-			// A middleware binds no entry and starts nothing the program serves.
-			if role.middleware {
-				role.binds, role.publishes = "", false
-			}
-			if role != (apiRole{}) {
+			if role := apiRoleOf(answer); role != (apiRole{}) {
 				r.api[s.name] = role
 			}
 		}
 	}
 	r.reportStage(lines.StageAPI)
 	return nil
+}
+
+// apiRoleOf reads one accepted api row into the role the boundaries use.
+func apiRoleOf(answer table.Answer) apiRole {
+	role := apiRole{
+		binds: answer["binds"], talks: answer["talks"], publishes: answer["publishes"] == "yes",
+		middleware: answer["middleware"] == "yes",
+	}
+	// A middleware binds no entry and starts nothing the program serves.
+	if role.middleware {
+		role.binds, role.publishes = "", false
+	}
+	return role
 }
 
 // apiRoles is the atlas record of the roles the model gave.
@@ -198,8 +202,7 @@ func (r *reader) apiRoles() []atlas.APIRole {
 	result := make([]atlas.APIRole, 0, len(names))
 	for _, name := range names {
 		role := r.api[name]
-		result = append(result, atlas.APIRole{Symbol: name, Binds: role.binds, Publishes: role.publishes, Talks: role.talks,
-			Middleware: role.middleware, ReadsInput: role.readsInput, WritesOutput: role.writesOutput, Auth: role.auth, Config: role.config, Validates: role.validates})
+		result = append(result, atlas.APIRole{Symbol: name, Binds: role.binds, Publishes: role.publishes, Talks: role.talks, Middleware: role.middleware})
 	}
 	return result
 }
