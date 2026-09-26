@@ -566,6 +566,11 @@ func TestCFixtureCommandRowsAreRegistrations(t *testing.T) {
 		if len(rows) != 1 || rows[0].Anchor == nil || rows[0].Anchor.Path != "kvd.c" || rows[0].Anchor.Line != line || !slices.Contains(rows[0].Values, row.name) {
 			t.Fatalf("%s registrations: %+v", row.function, rows)
 		}
+		// A command named get or del is no HTTP method: the row has no
+		// address for a verb to qualify.
+		if rows[0].Method != "" || rows[0].Path != "" {
+			t.Fatalf("%s row states an HTTP request: %+v", row.function, rows[0])
+		}
 	}
 	// The platform receives the thread body, the comparator and the signal
 	// handler.

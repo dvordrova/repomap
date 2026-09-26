@@ -1,6 +1,7 @@
 package contracttest
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -82,6 +83,19 @@ func assertGoHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index pr
 	}
 	if len(sameColumns) != 2 || sameColumns[0] == sameColumns[1] {
 		t.Fatalf("same-line registrations collapsed: %v", sameColumns)
+	}
+	// http.NewRequest(http.MethodGet, url, nil): a verb literal beside the
+	// address it qualifies states the request's method, whether the address
+	// is written there or reaches the call through a field; http.Get states
+	// it as its word.
+	requests := map[int]string{}
+	for _, fact := range result.OfKind(facts.KindRegistration) {
+		if fact.Anchor != nil && fact.Anchor.Path == "internal/storefixture/destinations.go" && fact.Method != "" {
+			requests[fact.Anchor.Line] = fact.Method + " " + fact.Path
+		}
+	}
+	if want := map[int]string{34: "GET https://unused.example", 45: "GET https://client.example/account", 50: "POST https://factory.example/events", 79: "GET https://after-only.example"}; !reflect.DeepEqual(requests, want) {
+		t.Fatalf("request methods = %v, want %v", requests, want)
 	}
 	interfaceArguments := 0
 	for _, relation := range index.Relations {

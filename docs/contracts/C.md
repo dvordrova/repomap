@@ -120,7 +120,9 @@ seed.
   pass) is `passes_callback` with a primary `c_function_pointer_store` witness,
   so each store is a binding row. A row of a repository-owned table that names
   the function by a string literal is a registration fact the model classifies
-  (owner decision D1). A store into a platform record (`act.sa_sigaction`) is
+  (owner decision D1). The literal is the row's name: `{"get", getCommand}`
+  states no HTTP method, since nothing in the row is an address for a verb
+  to qualify. A store into a platform record (`act.sa_sigaction`) is
   keyed on the root value's type and the field as written, not on the union a
   platform macro expands it to.
 - A call through a field, parameter or variable has the stored functions as

@@ -1,6 +1,7 @@
 package facts
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -69,6 +70,57 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 				s.callbackKeyword("cb", "table", "h", "row", "p", "proc")
 			},
 			want: []want{{key: "command", symbol: "pingCommand", values: []string{"ping"}, resolution: ResolutionPossible}},
+		},
+		{
+			// A command called get is a name, not an HTTP method: nothing in
+			// the row is an address the verb could qualify.
+			name: "a row named by a verb-shaped literal states no method",
+			build: func(s *synthetic) {
+				s.object("m", programindex.ObjectModule, "server.c", "server.c", 1, "")
+				s.object("command", programindex.ObjectType, "command", "server.c", 3, "m")
+				s.object("table", programindex.ObjectVariable, "cmdTable", "server.c", 10, "m")
+				s.object("h", programindex.ObjectFunction, "getCommand", "server.c", 30, "m")
+				s.relate("row", programindex.RelationCalls, "table", []string{"command"}, loc("server.c", 11),
+					pattern("p", programindex.PatternCall, "command", loc("server.c", 11), nil, keyword("name", "get"), dynamicKeyword("proc", "h")))
+				s.relations[len(s.relations)-1].Invocation = programindex.InvocationConstruct
+				s.callbackKeyword("cb", "table", "h", "row", "p", "proc")
+			},
+			want: []want{{key: "command", symbol: "getCommand", values: []string{"get"}, resolution: ResolutionPossible}},
+		},
+		{
+			name: "a verb-shaped first literal with no address names the handler and states no method",
+			build: func(s *synthetic) {
+				s.object("main", programindex.ObjectFunction, "main", "main.go", 5, "")
+				s.object("h", programindex.ObjectFunction, "removeItem", "main.go", 20, "")
+				s.external("bus", "github.com/some/bus", "On", programindex.ExternalAuthorityPackage)
+				s.relate("on", programindex.RelationInvokesExternal, "main", []string{"bus"}, loc("main.go", 7),
+					pattern("p", programindex.PatternCall, "On", loc("main.go", 7), nil, literal(1, "delete"), dynamicRef(2, "h")))
+				s.callback("cb", "main", "h", "on", "p", 2)
+			},
+			want: []want{{key: "On", symbol: "removeItem", values: []string{"delete"}, resolution: ResolutionExact}},
+		},
+		{
+			name: "a verb literal beside an address states the method",
+			build: func(s *synthetic) {
+				s.object("fn", programindex.ObjectFunction, "loadItems", "main.go", 3, "")
+				s.external("request", "net/http", "NewRequest", programindex.ExternalAuthorityPlatform)
+				s.relate("call", programindex.RelationInvokesExternal, "fn", []string{"request"}, loc("main.go", 4),
+					pattern("p", programindex.PatternCall, "NewRequest", loc("main.go", 4), nil, literal(1, "POST"), literal(2, "https://api.example/items"), dynamic(3)))
+			},
+			want: []want{{key: "NewRequest", method: "POST", path: "https://api.example/items", values: []string{"POST", "https://api.example/items"}, resolution: ResolutionExact}},
+		},
+		{
+			// net/http writes a pattern's method in capitals; a sentence with
+			// a word, a space and a slash in it is a message.
+			name: "prose with a slash in it is no address",
+			build: func(s *synthetic) {
+				s.object("fn", programindex.ObjectFunction, "openLog", "server.c", 3, "")
+				s.external("log", "stdio.h", "fprintf", programindex.ExternalAuthorityPlatform)
+				for line, text := range []string{"open /dev/null: %s", "failed to read the a/b pair", "get key/value"} {
+					s.relate(fmt.Sprintf("log%d", line), programindex.RelationInvokesExternal, "fn", []string{"log"}, loc("server.c", 4+line),
+						pattern("p", programindex.PatternCall, "fprintf", loc("server.c", 4+line), nil, dynamic(1), literal(2, text)))
+				}
+			},
 		},
 		{
 			name: "a row of a table the repository owns that stores no callable is data",

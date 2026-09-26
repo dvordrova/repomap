@@ -181,7 +181,7 @@ func (target *targetContext) registrationShape(relation programindex.Relation, p
 		produced, shape.handedValue, shape.constructed = false, false, false
 	}
 	shape.handed = shape.handlerID != "" || relation.Kind == programindex.RelationDecorates || produced || shape.handedValue
-	shape.method = statedMethod(pattern)
+	shape.method = statedMethod(pattern, shape.address != nil)
 	return shape
 }
 
@@ -348,8 +348,21 @@ func isAddressLiteral(value string) bool {
 	if strings.HasPrefix(value, "/") || strings.Contains(value, "://") {
 		return true
 	}
-	method, _, ok := goServeMuxMethodAndPath(value)
-	return ok && method != "ANY"
+	_, _, ok := methodPattern(value)
+	return ok
+}
+
+// methodPattern splits a "VERB host/path" pattern (net/http's ServeMux
+// syntax) whose method is an HTTP verb as the syntax writes it, in capitals:
+// "GET /health", "HEAD status.example/{$}". Other text with a word, a space
+// and a slash is prose ("open /dev/null: %s", "failed to read a/b"), not an
+// address.
+func methodPattern(value string) (method, path string, ok bool) {
+	method, path, ok = goServeMuxMethodAndPath(value)
+	if !ok || method != strings.ToUpper(method) || !isHTTPVerb(method) {
+		return "", "", false
+	}
+	return method, path, true
 }
 
 // resolvesToAddress follows a dynamic argument to the literals it can carry.
@@ -363,9 +376,12 @@ func resolvesToAddress(values *routeValueReader, argument programindex.PatternAr
 }
 
 // statedMethod is the HTTP verb the call states itself: as its word (get,
-// post), as its first literal (Method("GET", …)), or inside a pattern
-// literal ("GET /health"). Any other word states no verb.
-func statedMethod(pattern programindex.RelationPattern) string {
+// post), inside a pattern literal ("GET /health"), or as a literal of its
+// own beside the address it qualifies (NewRequest("GET", url),
+// Handle("POST", "/items", h)). A verb-shaped literal with no address beside
+// it names what is handed over, as a command table's {"get", getCommand}
+// row does, and states no verb.
+func statedMethod(pattern programindex.RelationPattern, hasAddress bool) string {
 	if isHTTPVerb(pattern.Selector) {
 		return strings.ToUpper(pattern.Selector)
 	}
@@ -374,11 +390,11 @@ func statedMethod(pattern programindex.RelationPattern) string {
 		if !literal {
 			continue
 		}
-		if isHTTPVerb(value) {
+		if hasAddress && isHTTPVerb(value) {
 			return strings.ToUpper(value)
 		}
-		if method, _, ok := goServeMuxMethodAndPath(value); ok && method != "ANY" && isHTTPVerb(method) {
-			return strings.ToUpper(method)
+		if method, _, ok := methodPattern(value); ok {
+			return method
 		}
 	}
 	return ""
@@ -419,7 +435,7 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 			if path == "" {
 				continue
 			}
-			if method, rest, ok := goServeMuxMethodAndPath(path); ok && method != "ANY" {
+			if _, rest, ok := methodPattern(path); ok {
 				path = rest
 			}
 			if len(prefixes) == 0 {
