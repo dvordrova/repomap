@@ -710,6 +710,14 @@ func (b *builder) docstringFor(filePath string, line int, decls []atlas.Decl) st
 // need later sentences as well: these often state effects or lifecycle rules.
 func (b *builder) quotedDocstringFor(filePath string, line int, decls []atlas.Decl) string {
 	docs := b.docs[filePath]
+	if claims.CPath(filePath) {
+		// A C docstring describes only the declaration whose header it names.
+		declared := make([]int, len(decls))
+		for i, decl := range decls {
+			declared[i] = decl.LineNo
+		}
+		return claims.CDocstring(docs, line, declared)
+	}
 	best := ""
 	for _, doc := range docs {
 		if strings.EqualFold(path.Ext(filePath), ".py") {
@@ -738,7 +746,8 @@ func (b *builder) quotedDocstringFor(filePath string, line int, decls []atlas.De
 }
 
 // moduleDoc is the file's own documentation: a Python module docstring, a
-// leading JSDoc, or a Go package comment when this file carries it.
+// leading JSDoc, a Go package comment when this file carries it, or a C
+// file's opening comment that no declaration follows directly.
 func (b *builder) moduleDoc(filePath string, state *fileState) string {
 	docs := b.docs[filePath]
 	if len(docs) == 0 {
@@ -756,6 +765,10 @@ func (b *builder) moduleDoc(filePath string, state *fileState) string {
 		}
 	case ".go":
 		if strings.HasPrefix(first.Text, "Package ") {
+			return firstSentence(first.Text)
+		}
+	case ".c", ".h":
+		if first.DeclarationLine == 0 {
 			return firstSentence(first.Text)
 		}
 	default:

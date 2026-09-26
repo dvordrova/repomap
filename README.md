@@ -521,3 +521,8 @@ on your normal PATH. On macOS, install the tools with
 `brew install clojure/tools/clojure borkdude/brew/clj-kondo`. The adapter reads
 `.clj` and the JVM branch of `.cljc` through the same report pipeline.
 See [the Clojure contract](docs/contracts/CLOJURE.md) for native prerequisites.
+
+C programs are read through clang on your normal PATH (on macOS the Command
+Line Tools). The adapter takes the programs and their compile flags from a
+root `compile_commands.json` or a dry run of the root makefile, and reads the
+host platform's build. See [the C contract](docs/contracts/C.md).

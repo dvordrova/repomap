@@ -616,7 +616,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			return fmt.Errorf("repository target planning: Go snapshot names the repository %q, the guidance scout %q", goSource.RepoName, repositoryName)
 		}
 		plan, selectionErr := selectRepositoryTargetPlanForRun(ctx, repositoryTargetRuntimeOptions{
-			RepoName: repositoryName, Repository: repositoryCorpus,
+			RepoName: repositoryName, Repository: repositoryCorpus, Root: repo,
 			GoSnapshot: goSource, DiscoverPython: languageEvidence.Python,
 			DiscoverJSTS:   languageEvidence.JavaScriptTypeScript,
 			TargetOverride: targetOverride, NoModel: *noModel,

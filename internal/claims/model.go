@@ -58,7 +58,9 @@ type Claim struct {
 	Path   string `json:"path,omitempty"`
 	Line   int    `json:"line,omitempty"`
 	// DeclarationLine is the exact Python def/class header owning a body
-	// docstring. Line still locates the original quote; zero leaves it unbound.
+	// docstring, or the line where the header of the C declaration directly
+	// below a C docstring ends (CDocstring). Line still locates the original
+	// quote; zero leaves it unbound.
 	DeclarationLine int    `json:"declaration_line,omitempty"`
 	Commit          string `json:"commit,omitempty"`
 	Text            string `json:"text"`

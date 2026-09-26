@@ -1069,8 +1069,13 @@ func laneShare(index groupindex.Index, group groupindex.Group) int {
 const docstringReach = 12
 
 // docstringFor is the docstring written above the symbol declared at this
-// line of this file, if one was quoted into the claims.
+// line of this file, if one was quoted into the claims. A C docstring names
+// the declaration it sits on, the same rule places reads it with, so a C
+// file's description or a comment above a prototype is no symbol's.
 func (builder *pageBuilder) docstringFor(path string, line int) string {
+	if claims.CPath(path) {
+		return claims.CDocstring(builder.docstrings[path], line, builder.declarations[path])
+	}
 	return nearestDocstring(builder.docstrings[path], builder.declarations[path], line)
 }
 

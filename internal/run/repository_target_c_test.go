@@ -1,0 +1,398 @@
+package run
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/cproject"
+	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/reportserver"
+	"github.com/dvordrova/repomap/internal/targetoutcome"
+)
+
+// cTestRepository is a small C repository: two programs the Makefile links
+// share strbuf.c, and tools/dump.c has a main the Makefile never builds.
+var cTestRepository = map[string]string{
+	"Makefile": "all: kvd kvcli\n\n" +
+		"kvd: kvd.o strbuf.o\n\t$(CC) -o kvd kvd.o strbuf.o\n\n" +
+		"kvcli: kvcli.o strbuf.o\n\t$(CC) -o kvcli kvcli.o strbuf.o\n\n" +
+		"%.o: %.c\n\t$(CC) -c $<\n",
+	"strbuf.h":     "int sb_len(const char *s);\n",
+	"strbuf.c":     "#include \"strbuf.h\"\nint sb_len(const char *s) { int n = 0; while (s[n]) n++; return n; }\n",
+	"kvd.c":        "#include \"strbuf.h\"\nint main(void) { return sb_len(\"kvd\"); }\n",
+	"kvcli.c":      "#include \"strbuf.h\"\nint main(int argc, char **argv) { return sb_len(argv[argc - 1]); }\n",
+	"tools/dump.c": "#include <stdio.h>\nint main(void) { puts(\"dump\"); return 0; }\n",
+}
+
+func writeCTestRepository(t *testing.T, files map[string]string) (string, *corpus.Corpus) {
+	t.Helper()
+	root := t.TempDir()
+	for name, content := range files {
+		file := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repository, err := corpus.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { repository.Close() })
+	return root, repository
+}
+
+func cTestFileRef(t *testing.T, repository *corpus.Corpus, path string) corpus.FileID {
+	t.Helper()
+	ref, ok := repository.ID(path)
+	if !ok {
+		t.Fatalf("%s is not in the corpus", path)
+	}
+	return ref
+}
+
+func TestCRepositoryTargetsFromLinkLines(t *testing.T) {
+	root, repository := writeCTestRepository(t, cTestRepository)
+	discovery, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root, NoModel: true})
+	if err != nil || !enabled {
+		t.Fatalf("discovery: %v %v", enabled, err)
+	}
+	registry, err := ordinaryRepositoryTargetAdapterRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := discovery.validate(registry); err != nil {
+		t.Fatal(err)
+	}
+	ref := func(path string) corpus.FileID { return cTestFileRef(t, repository, path) }
+
+	// Each program offers the files only it compiles; the shared strbuf.c and
+	// the Makefile name several programs and are no candidate of their own.
+	var offered []corpus.FileID
+	for _, candidate := range discovery.Candidates {
+		offered = append(offered, candidate.FileRef)
+	}
+	slices.Sort(offered)
+	want := []corpus.FileID{ref("kvcli.c"), ref("kvd.c"), ref("tools/dump.c")}
+	slices.Sort(want)
+	if !slices.Equal(offered, want) || !slices.Equal(discovery.RequiredFileRefs, want) {
+		t.Fatalf("candidates %v, required %v, want %v", offered, discovery.RequiredFileRefs, want)
+	}
+	for _, path := range []string{"strbuf.c", "Makefile", "kvd.c", "tools/dump.c"} {
+		if !discovery.ResolvesFile(ref(path)) {
+			t.Fatalf("%s restores no C program", path)
+		}
+	}
+	if discovery.ResolvesFile(ref("strbuf.h")) {
+		t.Fatal("a header no build line names restored a program")
+	}
+	restored, err := discovery.RestoreFiles([]corpus.FileID{ref("strbuf.c")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shared []string
+	for _, row := range restored {
+		shared = append(shared, row.Target.Selector)
+		if !slices.Equal(row.FileRefs, []corpus.FileID{ref("strbuf.c")}) {
+			t.Fatalf("%s restored from %v", row.Target.Selector, row.FileRefs)
+		}
+	}
+	if !slices.Equal(shared, []string{"c:kvcli", "c:kvd"}) {
+		t.Fatalf("strbuf.c restores %v", shared)
+	}
+	if group, err := discovery.ChoiceGroup(); err != nil || group.Language != "C" || group.Choices != "c:kvcli, c:kvd, c:tools/dump.c" {
+		t.Fatalf("choices %+v %v", group, err)
+	}
+
+	targets, err := discovery.ResolveExplicit(repository, "c:kvd")
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("selection: %v %v", targets, err)
+	}
+	target := targets[0]
+	if target.Scope != targetoutcome.ScopeExecutable || target.Display != "kvd" || !slices.Equal(target.AllowedLanguages, []string{"c"}) {
+		t.Fatalf("target %+v", target)
+	}
+	if missing, err := discovery.ResolveExplicit(repository, "c:kvd.c"); err != nil || len(missing) != 0 {
+		t.Fatalf("a unit path selected a linked program: %v %v", missing, err)
+	}
+
+	// The link line is the program's evidence, and the portfolio prompt
+	// defines every kind a C program brings.
+	evidence, err := discovery.NativeEvidence(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	makefile := cTestRepository["Makefile"]
+	linkLine := strings.Count(makefile[:strings.Index(makefile, "kvd:")], "\n") + 1
+	if evidence.Root != "." || len(evidence.Observations) != 1 || evidence.Observations[0].Kind != "c_link" ||
+		evidence.Observations[0].Path != "Makefile" || evidence.Observations[0].Line != linkLine ||
+		evidence.Observations[0].Fields["output"] != "kvd" || !slices.Equal(evidence.Observations[0].Values, []string{"kvd.c", "strbuf.c"}) {
+		t.Fatalf("evidence %+v", evidence)
+	}
+	dump, err := discovery.ResolveExplicit(repository, "c:tools/dump.c")
+	if err != nil || len(dump) != 1 {
+		t.Fatalf("closure program: %v %v", dump, err)
+	}
+	dumpEvidence, err := discovery.NativeEvidence(dump[0])
+	if err != nil || dumpEvidence.Root != "tools" {
+		t.Fatalf("closure evidence %+v %v", dumpEvidence, err)
+	}
+	prompt, err := os.ReadFile(filepath.Join("..", "targetportfolio", "prompts", "system.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{evidence.Observations[0].Kind, dumpEvidence.Observations[0].Kind, "c_library"} {
+		if !regexp.MustCompile(`(?m)^- (?:[a-z_]+, )*` + kind + `[,:]`).Match(prompt) {
+			t.Fatalf("the target portfolio prompt does not define %s", kind)
+		}
+	}
+
+	// Dispatch parses the program's units once per plan and finds its main.
+	cli, err := discovery.ResolveExplicit(repository, "c:kvcli")
+	if err != nil || len(cli) != 1 {
+		t.Fatalf("selection: %v %v", cli, err)
+	}
+	adapter := cRepositoryTargetAdapterDescriptor()
+	options := repositoryTargetDispatchOptions{Repo: root, Corpus: repository}
+	store, err := adapter.PrepareDispatchPlan(repositoryTargetPlan{}, []repositoryTypedTarget{target, cli[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := adapter.PrepareDispatchTarget(t.Context(), options, target, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts, ok := binding.ProgramFacts.(*cRepositoryProgramFacts)
+	if !ok || !binding.ProgramFactsBound || facts.Parsed.Main == nil || facts.Parsed.Main.Unit != "kvd.c" || len(facts.Parsed.Units) != 2 {
+		t.Fatalf("parsed %+v", binding.ProgramFacts)
+	}
+	if err := binding.Target.validateWith(registry); err != nil || !sameRepositoryPlannedTarget(target, binding.Target) {
+		t.Fatalf("prepared target changed: %v", err)
+	}
+	if _, err := cRepositoryFacts(dump[0], facts); err == nil {
+		t.Fatal("another program's parse bound to tools/dump.c")
+	}
+	if _, err := adapter.BuildDependencies(repositoryDependencyBuildRequest{Target: target, Facts: facts}); err == nil {
+		t.Fatal("dependencies were returned before the program was projected")
+	}
+	unit := func(parsed *cproject.Parsed, path string) *cproject.Unit {
+		for _, unit := range parsed.Units {
+			if unit.Path == path {
+				return unit
+			}
+		}
+		t.Fatalf("%s does not link %s", parsed.Program.Selector, path)
+		return nil
+	}
+	// Projecting kvd is the last read of its units: kvd.c is released, and
+	// strbuf.c stays for kvcli, which still links it.
+	_, _ = adapter.BuildProgramInput(repositoryProgramBuildRequest{Context: t.Context(), Corpus: repository, Target: target, Facts: facts})
+	cliBinding, err := adapter.PrepareDispatchTarget(t.Context(), options, cli[0], store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cliFacts := cliBinding.ProgramFacts.(*cRepositoryProgramFacts)
+	if unit(facts.Parsed, "strbuf.c") != unit(cliFacts.Parsed, "strbuf.c") {
+		t.Fatal("strbuf.c was parsed once per program, not once per plan")
+	}
+	// Once no planned program needs a unit, the plan holds none of them: a
+	// later parse reads the sources again.
+	_, _ = adapter.BuildProgramInput(repositoryProgramBuildRequest{Context: t.Context(), Corpus: repository, Target: cli[0], Facts: cliFacts})
+	again, err := adapter.PrepareDispatchTarget(t.Context(), options, target, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reparsed := again.ProgramFacts.(*cRepositoryProgramFacts).Parsed
+	if unit(reparsed, "kvd.c") == unit(facts.Parsed, "kvd.c") || unit(reparsed, "strbuf.c") == unit(cliFacts.Parsed, "strbuf.c") {
+		t.Fatal("the plan kept the units of programs it already projected")
+	}
+	native := target.native.(cproject.Program)
+	program := programindex.Target{Language: "c", Selector: native.Selector, Name: native.Name, AnchorFileRef: native.AnchorFileRef}
+	if !adapter.MatchProgramTarget(target, program) {
+		t.Fatal("the program's own ProgramTarget does not match")
+	}
+	program.AnchorFileRef = string(ref("kvd.c"))
+	if adapter.MatchProgramTarget(target, program) {
+		t.Fatal("a ProgramTarget with another anchor matched")
+	}
+}
+
+func TestCRepositoryDiscoveryIsOrdinary(t *testing.T) {
+	registry, err := ordinaryRepositoryTargetAdapterRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor, ok := registry.descriptor(repositoryTargetAdapterC)
+	if !ok || descriptor.Rank != 4 || descriptor.Label != "C" || !explicitNonGoRepositoryTargetSelector("c:kvd") {
+		t.Fatalf("C adapter %+v registered %v", descriptor, ok)
+	}
+
+	root, repository := writeCTestRepository(t, cTestRepository)
+	result, err := discoverRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root, NoModel: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found := result.byKey[repositoryTargetAdapterC]; !found || len(result.adapters) != 1 {
+		t.Fatalf("adapters %+v", result.adapters)
+	}
+	plan, err := resolveExplicitRepositoryTarget(repository, result, "c:kvcli", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Targets) != 1 || plan.Targets[0].Selector != "c:kvcli" || plan.Default != plan.Targets[0].Key {
+		t.Fatalf("plan %+v", plan.Targets)
+	}
+
+	// Without the root, a corpus with C sources cannot be discovered; one
+	// without them never asks for it.
+	if _, _, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository}); err == nil {
+		t.Fatal("C discovery ran without the repository root")
+	}
+	_, python := writeCTestRepository(t, map[string]string{"app.py": "print('hi')\n", "native.h": "int f(void);\n"})
+	if _, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: python}); err != nil || enabled {
+		t.Fatalf("a corpus without .c files enabled C: %v %v", enabled, err)
+	}
+}
+
+// Two programs linked from the same files have no file of their own: the
+// makefile that links them represents both.
+func TestCRepositoryProgramsSharingEveryFile(t *testing.T) {
+	root, repository := writeCTestRepository(t, map[string]string{
+		"Makefile": "all: fast slow\n\n" +
+			"fast: main.o\n\t$(CC) -o fast main.o\n\n" +
+			"slow: main.o\n\t$(CC) -o slow main.o\n\n" +
+			"%.o: %.c\n\t$(CC) -c $<\n",
+		"main.c": "int main(void) { return 0; }\n",
+	})
+	discovery, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root})
+	if err != nil || !enabled {
+		t.Fatalf("discovery: %v %v", enabled, err)
+	}
+	makefile := cTestFileRef(t, repository, "Makefile")
+	if len(discovery.Candidates) != 1 || discovery.Candidates[0].FileRef != makefile || discovery.Candidates[0].Hypotheses[0] != cLinkFileHypothesis ||
+		!slices.Equal(discovery.RequiredFileRefs, []corpus.FileID{makefile}) {
+		t.Fatalf("candidates %+v required %v", discovery.Candidates, discovery.RequiredFileRefs)
+	}
+	restored, err := discovery.RestoreFiles([]corpus.FileID{makefile})
+	if err != nil || len(restored) != 2 || restored[0].Target.Selector != "c:fast" || restored[1].Target.Selector != "c:slow" {
+		t.Fatalf("restored %+v %v", restored, err)
+	}
+}
+
+// TestCRepositoryTargetWithoutClang leaves the program not analyzed because
+// the required tool is missing, not because its sources are wrong.
+func TestCRepositoryTargetWithoutClang(t *testing.T) {
+	root, repository := writeCTestRepository(t, map[string]string{"main.c": "int main(void) { return 0; }\n"})
+	t.Setenv("PATH", t.TempDir())
+	discovery, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root})
+	if err != nil || !enabled {
+		t.Fatalf("discovery: %v %v", enabled, err)
+	}
+	targets, err := discovery.ResolveExplicit(repository, "c:./")
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("selection: %v %v", targets, err)
+	}
+	adapter := cRepositoryTargetAdapterDescriptor()
+	plan, err := adapter.PrepareDispatchPlan(repositoryTargetPlan{}, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = adapter.PrepareDispatchTarget(t.Context(), repositoryTargetDispatchOptions{Repo: root, Corpus: repository}, targets[0], plan)
+	if !errors.Is(err, cproject.ErrClangUnavailable) {
+		t.Fatalf("error %v", err)
+	}
+	stage, reason := classifyRepositoryTargetFailure(targetoutcome.StageTargetPreparation, err)
+	if stage != targetoutcome.StageTargetPreparation || reason != targetoutcome.ReasonRequiredToolUnavailable {
+		t.Fatalf("classified %s %s", stage, reason)
+	}
+}
+
+// TestCRepositoryOrdinaryRun selects a C program through the ordinary command:
+// the run hands discovery the repository root, and the selected program
+// reaches its own target page with its C identity.
+func TestCRepositoryOrdinaryRun(t *testing.T) {
+	root, _ := writeCTestRepository(t, cTestRepository)
+	ordinaryGraphGit(t, root, "init", "--quiet")
+	ordinaryGraphGit(t, root, "config", "user.email", "repomap@example.test")
+	ordinaryGraphGit(t, root, "config", "user.name", "repomap fixture")
+	ordinaryGraphGit(t, root, "add", ".")
+	ordinaryGraphGit(t, root, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "C programs")
+	debugDir := t.TempDir()
+	var console strings.Builder
+	runErr := runDefaultWithDeps(root, []string{"--no-model", "--target", "c:kvd", "--no-open", "--debug-dir", debugDir}, defaultRunDeps{
+		ctx: t.Context(), stdout: &console, stderr: &console,
+		serveReport: func(context.Context, reportserver.Options) error { return nil },
+		openReport:  func(string) error { return nil },
+	})
+	if !strings.Contains(console.String(), "build: make -n -B -w -o Makefile") {
+		t.Fatalf("the run did not read the C build (%v):\n%s", runErr, console.String())
+	}
+	portfolios, err := filepath.Glob(filepath.Join(debugDir, "*", targetoutcome.ArtifactFilename))
+	if err != nil || len(portfolios) != 1 {
+		t.Fatalf("outcome portfolios %v %v (run: %v)", portfolios, err, runErr)
+	}
+	raw, err := os.ReadFile(portfolios[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	portfolio, err := targetoutcome.Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(portfolio.Outcomes) != 1 {
+		t.Fatalf("outcomes %+v", portfolio.Outcomes)
+	}
+	selected := portfolio.Outcomes[0].SelectedTarget
+	if selected.Selector != "c:kvd" || selected.LanguageGroup != "c" || selected.ScopeKind != targetoutcome.ScopeExecutable ||
+		!slices.Equal(selected.AllowedProgramLanguages, []string{"c"}) {
+		t.Fatalf("selected %+v", selected)
+	}
+	if failure := portfolio.Outcomes[0].Failure; failure != nil && failure.Stage == targetoutcome.StageTargetPreparation {
+		t.Fatalf("the program's sources did not parse: %+v", failure)
+	}
+}
+
+// A backend an #ifdef keeps out on this host is outside this platform's
+// build, and the run says so beside the program it belongs to.
+func TestCRepositoryReportsSourcesOutsideThisPlatform(t *testing.T) {
+	root, repository := writeCTestRepository(t, map[string]string{
+		"Makefile": "loop: loop.o\n\t$(CC) -o loop loop.o\n\n%.o: %.c\n\t$(CC) -c $<\n",
+		"loop.c": "#ifdef LOOP_FAST\n#include \"loop_fast.c\"\n#else\n#include \"loop_plain.c\"\n#endif\n" +
+			"int main(void) { return backend(); }\n",
+		"loop_fast.c":  "static int backend(void) { return 1; }\n",
+		"loop_plain.c": "static int backend(void) { return 0; }\n",
+	})
+	discovery, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root})
+	if err != nil || !enabled {
+		t.Fatalf("discovery: %v %v", enabled, err)
+	}
+	targets, err := discovery.ResolveExplicit(repository, "c:loop")
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("selection: %v %v", targets, err)
+	}
+	adapter := cRepositoryTargetAdapterDescriptor()
+	plan, err := adapter.PrepareDispatchPlan(repositoryTargetPlan{}, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var console strings.Builder
+	binding, err := adapter.PrepareDispatchTarget(t.Context(), repositoryTargetDispatchOptions{Repo: root, Corpus: repository, Output: newRunOutput(&console)}, targets[0], plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outside := binding.ProgramFacts.(*cRepositoryProgramFacts).Parsed.Outside; !slices.Equal(outside, []string{"loop_fast.c"}) {
+		t.Fatalf("outside %v", outside)
+	}
+	if !strings.Contains(console.String(), "program: c:loop") || !strings.Contains(console.String(), "outside this platform's build: loop_fast.c") {
+		t.Fatalf("console:\n%s", console.String())
+	}
+}

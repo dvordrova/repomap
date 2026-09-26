@@ -157,6 +157,11 @@ func isPythonFile(filePath string) bool {
 	return extension == ".py" || extension == ".pyi"
 }
 
+func isCFile(filePath string) bool {
+	extension := sourceExtension(filePath)
+	return extension == ".c" || extension == ".h"
+}
+
 func isJavaScriptFile(filePath string) bool {
 	switch sourceExtension(filePath) {
 	case ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs":

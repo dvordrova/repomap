@@ -123,6 +123,7 @@ const (
 	kindGo
 	kindJSTS
 	kindClojure
+	kindC
 )
 
 func classifyPath(filePath string) fileKind {
@@ -132,6 +133,8 @@ func classifyPath(filePath string) fileKind {
 	switch strings.ToLower(path.Ext(filePath)) {
 	case ".clj", ".cljc", ".cljs":
 		return kindClojure
+	case ".c", ".h":
+		return kindC
 	case ".py":
 		return kindPython
 	case ".go":
@@ -169,6 +172,9 @@ func fileQuotes(repository *corpus.Corpus, entry corpus.Entry) ([]fileQuote, err
 			}
 		}
 		return append(tagged(SourceDocstring, docs), tagged(SourceComment, markerComments(lines, ";"))...), nil
+	case kindC:
+		docs, markers := cQuotes(lines)
+		return append(tagged(SourceDocstring, docs), tagged(SourceComment, markers)...), nil
 	case kindPython:
 		return append(
 			tagged(SourceDocstring, pythonDocstrings(lines)),

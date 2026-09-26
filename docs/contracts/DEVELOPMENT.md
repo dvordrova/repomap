@@ -80,6 +80,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - Debug artifacts must never include API keys or Authorization headers and must
   never be committed.
 
+## Native prerequisites
+
+Language adapters run their native tools from the normal PATH, and `make test`
+runs them for real: Git, Go, Python 3, Node for the JS/TS helper
+([JSTS](JSTS.md)), Clojure CLI with clj-kondo ([Clojure](CLOJURE.md)), and
+clang for C, with make for a repository that has a makefile ([C](C.md)).
+Without clang, C targets are not analyzed with the required-tool reason;
+other adapters' targets are unaffected.
+
 ## Before full expensive runs
 
 An output-limit or request-packing change must first pass one saved complete-window probe; it does not replace ordinary acceptance. Preserve the exact compared inputs, accepted rows, rejected rows, timings and token accounting. Do not repeat Airflow while the prerequisite fixes and Freqtrade acceptance remain outstanding. See [CURRENT](../agent-room/CURRENT.md#acceptance-and-open-work).

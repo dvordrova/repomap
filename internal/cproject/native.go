@@ -42,6 +42,10 @@ func overrides() []string { return slices.Concat(fortifyOff, legacyWarnings) }
 // clangProgram is the clang executable looked up on PATH.
 const clangProgram = "clang"
 
+// ErrClangUnavailable marks a program that failed because clang could not be
+// found or run: the required tool is missing, not the program's sources.
+var ErrClangUnavailable = errors.New("clang is unavailable")
+
 var toolchainCache sync.Map // clang path -> Toolchain
 
 // probeToolchain records the platform view: clang's version, target, sysroot
@@ -313,6 +317,36 @@ func unitKey(spec UnitSpec) string {
 	return strings.Join(append([]string{spec.Path, spec.Dir, spec.Source}, spec.Args...), "\x00")
 }
 
+// Keep releases every parsed unit that none of programs compiles or, for a
+// closure program, may link, so a store shared by a run's programs holds only
+// what its remaining programs still need. A released unit is parsed again if
+// a later Parse asks for it. A unit still being parsed stays.
+func (store *Store) Keep(programs []Program) {
+	needed := map[string]bool{}
+	for _, program := range programs {
+		for _, spec := range program.Units {
+			needed[unitKey(spec)] = true
+		}
+		if program.Closure {
+			for _, spec := range program.Pool {
+				needed[unitKey(spec)] = true
+			}
+		}
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for key, entry := range store.units {
+		if needed[key] {
+			continue
+		}
+		select {
+		case <-entry.done:
+			delete(store.units, key)
+		default:
+		}
+	}
+}
+
 // unit parses spec once per store; concurrent callers wait for the first.
 func (store *Store) unit(ctx context.Context, env parseEnv, spec UnitSpec) (*Unit, error) {
 	key := unitKey(spec)
@@ -391,7 +425,7 @@ func (store *Store) parse(ctx context.Context, env parseEnv, spec UnitSpec) (*Un
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("C native analysis (install clang): %w", err)
+		return nil, fmt.Errorf("C native analysis (install clang): %w: %w", err, ErrClangUnavailable)
 	}
 	names := &fileNames{cwd: cwd, roots: env.roots, corpus: env.corpus, cache: map[string]fileName{}}
 	decls, external, size, decodeErr := decodeUnit(stdout, names)
