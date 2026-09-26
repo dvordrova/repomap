@@ -1,10 +1,11 @@
 # C adapter
 
 The ordinary C adapter reads the C programs the repository's own build
-describes, through `clang` run as a subprocess. It runs whenever the corpus has
-a `.c` file outside the tooling directories; `internal/run/repository_target_c.go` registers it with the
-selector prefix `c:` and rank 4 after Go, Python, JS/TS and Clojure. Nothing in
-it knows a particular project, framework or protocol.
+describes, through `clang` run as a subprocess. It runs whenever the corpus
+has a `.c` file outside the tooling directories;
+`internal/run/repository_target_c.go` registers it with the selector prefix
+`c:` and rank 4 after Go, Python, JS/TS and Clojure. Nothing in it knows a
+particular project, framework or protocol.
 
 ## Build description and targets
 
@@ -79,22 +80,21 @@ spelling precedes expansion, and `includedFrom` and presumed locations never
 move it. Only declarations whose expansion location is a corpus file are kept.
 `-H` gives the active include tree.
 
-The view is the host platform's build as the build description gives it
-(owner decision D3): on macOS a Makefile that picks kqueue under
-`HAVE_KQUEUE` is read with kqueue, and the epoll and select backends are
-outside this platform's build. `Toolchain` records clang's version, target
-triple, sysroot, resource directory, system include directories and the
-overrides, and the run prints clang's version and target beside the build
-description and each program's sources outside this platform's build beside
-the program. Each C target's run records its view in that run's
-`metadata.json` as `c_platform`, where a reader of the saved run finds it:
-clang's version line, target triple and sysroot, the overrides every unit
-gets after its own flags (the fortify override and the pre-C99 diagnostics),
-the build description's failure when the units fell back to clang's
-defaults, each unit's kept and dropped flags and whether the build or clang's
-defaults gave them, and the included sources outside this platform's build
-(an epoll backend beside a kqueue build on macOS). The page and
-the report JSON carry no label for it.
+The view is the host platform's build as the build description gives it (owner
+decision D3): on macOS a Makefile that picks kqueue under `HAVE_KQUEUE` is
+read with kqueue, and the epoll and select backends are outside this
+platform's build. `Toolchain` records clang's version, target triple, sysroot,
+resource directory, system include directories and the overrides, and the run
+prints clang's version and target beside the build description and each
+program's sources outside this platform's build beside the program. Each C
+target's run records its view in that run's `metadata.json` as `c_platform`,
+where a reader of the saved run finds it: clang's version line, target triple
+and sysroot, the overrides every unit gets after its own flags (the fortify
+override and the pre-C99 diagnostics), the build description's failure when
+the units fell back to clang's defaults, each unit's kept and dropped flags
+and whether the build or clang's defaults gave them, and the included sources
+outside this platform's build (an epoll backend beside a kqueue build on
+macOS). The page and the report JSON carry no label for it.
 
 The clang resource directory and the sysroot's headers and frameworks are the
 platform; any other include directory (`/usr/local/include`,
@@ -175,20 +175,20 @@ describes no neighbouring declaration. A comment before the file's first line
 of code that no declaration follows directly is the file's description, which
 describes no declaration; places shows it as the file's own documentation.
 
-A licence, copyright or version-control stamp before the first line of code
-is not a claim (owner decision D5), even when it also states the file's
-purpose. Section banners, a decoration run such as `====` with a title of at
-most eight words, are the author's layout and neither a claim nor structure
-(D4). So is an undecorated title of one or two plain words on one line
-directly above a declaration (`/* Implementation */`, `/* Global vars */`),
-unless one of its words names a part of the declaration, ignoring case, C
-keywords, the header's own comments and a plural s (`/* Timer events */`
-above `struct timerEvent`); a longer comment, a sentence and a comment
-written as code (`/* db->expires */`) stay its docstring. A comment a blank
-line separates from the declaration below it was never its docstring. `NOTE:`, `WARNING:`, `IMPORTANT:` and `DEPRECATED` comment lines are
-quoted from every other comment; comment markers inside strings and character
-constants open nothing. C names follow the existing code-name glossary rule
-(D6).
+A licence, copyright or version-control stamp before the first line of code is
+not a claim (owner decision D5), even when it also states the file's purpose.
+Section banners, a decoration run such as `====` with a title of at most eight
+words, are the author's layout and neither a claim nor structure (D4). So is
+an undecorated title of one or two plain words on one line directly above a
+declaration (`Implementation`, `Global vars`), unless one of its words names a
+part of the declaration, ignoring case, C keywords, the header's own comments
+and a plural s (`Timer events` above `struct timerEvent`); a longer comment, a
+sentence and a comment written as code (`db->expires`) stay its docstring. A
+comment a blank line separates from the declaration below it was never its
+docstring. `NOTE:`, `WARNING:`, `IMPORTANT:` and `DEPRECATED` comment lines
+are quoted from every other comment; comment markers inside strings and
+character constants open nothing. C names follow the existing code-name
+glossary rule (D6).
 
 ## Test sources and missing equivalents
 
