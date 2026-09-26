@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -336,7 +338,9 @@ func TestCRepositoryOrdinaryRun(t *testing.T) {
 	if !strings.Contains(console.String(), "build: make -n -B -w -o Makefile") {
 		t.Fatalf("the run did not read the C build (%v):\n%s", runErr, console.String())
 	}
+	// The run's own directory; "latest" links to it.
 	portfolios, err := filepath.Glob(filepath.Join(debugDir, "*", targetoutcome.ArtifactFilename))
+	portfolios = slices.DeleteFunc(portfolios, func(found string) bool { return filepath.Base(filepath.Dir(found)) == "latest" })
 	if err != nil || len(portfolios) != 1 {
 		t.Fatalf("outcome portfolios %v %v (run: %v)", portfolios, err, runErr)
 	}
@@ -394,5 +398,136 @@ func TestCRepositoryReportsSourcesOutsideThisPlatform(t *testing.T) {
 	}
 	if !strings.Contains(console.String(), "program: c:loop") || !strings.Contains(console.String(), "outside this platform's build: loop_fast.c") {
 		t.Fatalf("console:\n%s", console.String())
+	}
+}
+
+// cToolLog puts logging clang and make first on PATH: each records its
+// arguments in the returned log file and runs the real tool.
+func cToolLog(t *testing.T) string {
+	t.Helper()
+	bin := t.TempDir()
+	log := filepath.Join(t.TempDir(), "tools.log")
+	for _, tool := range []string{"clang", "make"} {
+		real, err := exec.LookPath(tool)
+		if err != nil {
+			t.Skipf("%s is not installed: %v", tool, err)
+		}
+		script := "#!/bin/sh\necho \"" + tool + " $*\" >> '" + log + "'\nexec '" + real + "' \"$@\"\n"
+		if err := os.WriteFile(filepath.Join(bin, tool), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return log
+}
+
+func cToolCalls(t *testing.T, log string) string {
+	t.Helper()
+	raw, err := os.ReadFile(log)
+	if errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+// repomap's own repository has C files only in testdata/repositories/c, the
+// C fixture: they are inputs of the tests around them, never a target, and C
+// discovery neither dry-runs repomap's Makefile nor probes clang for them.
+func TestCDiscoveryLeavesRepomapsOwnFixtureAlone(t *testing.T) {
+	log := cToolLog(t)
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := corpus.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	fixture := 0
+	for _, entry := range repository.Entries() {
+		if path.Ext(entry.Path) != ".c" {
+			continue
+		}
+		if !corpus.ToolingPath(entry.Path) {
+			t.Fatalf("repomap has a C file outside its tooling directories: %s", entry.Path)
+		}
+		if strings.HasPrefix(entry.Path, "testdata/repositories/c/") {
+			fixture++
+		}
+	}
+	if fixture == 0 {
+		t.Fatal("the C fixture is not in repomap's corpus")
+	}
+	if _, ok := repository.ID("Makefile"); !ok {
+		t.Fatal("repomap's own Makefile is not in its corpus")
+	}
+	discovery, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root, NoModel: true})
+	if err != nil || enabled || len(discovery.Candidates) != 0 {
+		t.Fatalf("C discovery offered repomap's fixture: enabled=%v candidates=%v err=%v", enabled, discovery.Candidates, err)
+	}
+	project, err := cproject.Discover(t.Context(), root, repository)
+	if err != nil || project != nil {
+		t.Fatalf("cproject found programs in repomap: %+v %v", project, err)
+	}
+	if calls := cToolCalls(t, log); calls != "" {
+		t.Fatalf("C discovery ran tools for repomap's fixture:\n%s", calls)
+	}
+}
+
+// Beside a program of its own, a repository's tooling C files are never
+// units: no clang probe reads them and no target is theirs.
+func TestCDiscoveryProbesNoToolingSources(t *testing.T) {
+	root, repository := writeCTestRepository(t, map[string]string{
+		"src/main.c":                  "int main(void) { return 0; }\n",
+		"testdata/fixture/main.c":     "int main(void) { return 1; }\n",
+		".github/actions/check/run.c": "int main(void) { return 2; }\n",
+	})
+	log := cToolLog(t)
+	discovery, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root, NoModel: true})
+	if err != nil || !enabled {
+		t.Fatalf("discovery: %v %v", enabled, err)
+	}
+	group, err := discovery.ChoiceGroup()
+	if err != nil || group.Choices != "c:src/main.c" {
+		t.Fatalf("choices %+v %v", group, err)
+	}
+	calls := cToolCalls(t, log)
+	if !strings.Contains(calls, "src/main.c") || strings.Contains(calls, "testdata/") || strings.Contains(calls, ".github/") {
+		t.Fatalf("tool calls:\n%s", calls)
+	}
+}
+
+// An explicit --target another adapter owns names no C program: C discovery
+// does not run make or clang for it. A C selector among them still does.
+func TestCDiscoveryWaitsForItsOwnExplicitTarget(t *testing.T) {
+	root, repository := writeCTestRepository(t, cTestRepository)
+	log := cToolLog(t)
+	for _, override := range []string{
+		"jsts:package.json",
+		"python:.:guard:src/app",
+		"clojure:deps.edn",
+		"example.com/m@.::example.com/m/cmd/api",
+		"jsts:package.json, example.com/m@.::example.com/m/cmd/api",
+	} {
+		_, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root, NoModel: true, TargetOverride: override})
+		if err != nil || enabled {
+			t.Fatalf("--target %q enabled C discovery: %v %v", override, enabled, err)
+		}
+	}
+	if calls := cToolCalls(t, log); calls != "" {
+		t.Fatalf("C discovery ran tools for another adapter's target:\n%s", calls)
+	}
+	for _, override := range []string{"c:kvd", "jsts:package.json,c:kvd", "kvd"} {
+		_, enabled, err := discoverCRepositoryTargets(t.Context(), repositoryTargetRuntimeOptions{Repository: repository, Root: root, NoModel: true, TargetOverride: override})
+		if err != nil || !enabled {
+			t.Fatalf("--target %q disabled C discovery: %v %v", override, enabled, err)
+		}
+	}
+	if calls := cToolCalls(t, log); !strings.Contains(calls, "make ") || !strings.Contains(calls, "clang ") {
+		t.Fatalf("C discovery for its own target ran no tools:\n%s", calls)
 	}
 }

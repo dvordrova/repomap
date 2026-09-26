@@ -570,6 +570,40 @@ func repositoryTypedTargetLess(left, right repositoryTypedTarget) bool {
 	return left.Key.Ref < right.Key.Ref
 }
 
+// explicitTargetsOwnedElsewhere reports an explicit --target whose every
+// selector belongs to an adapter other than key: it carries that adapter's
+// selector prefix, or it is a Go exact target key. Only that adapter can
+// resolve it, so key's discovery has nothing to give the plan.
+func explicitTargetsOwnedElsewhere(override string, key repositoryTargetAdapter) bool {
+	registry, err := ordinaryRepositoryTargetAdapterRegistry()
+	if err != nil {
+		return false
+	}
+	selectors := 0
+	for _, selector := range strings.Split(override, ",") {
+		selector = strings.TrimSpace(selector)
+		if selector == "" {
+			continue
+		}
+		owner := repositoryTargetAdapter("")
+		if _, ok := analysistarget.ExactCandidateKeyModuleDir(selector); ok {
+			owner = repositoryTargetAdapterGo
+		}
+		for _, descriptor := range registry.ordered {
+			for _, prefix := range descriptor.SelectorPrefixes {
+				if strings.HasPrefix(selector, prefix) {
+					owner = descriptor.Key
+				}
+			}
+		}
+		if owner == "" || owner == key {
+			return false
+		}
+		selectors++
+	}
+	return selectors > 0
+}
+
 func explicitNonGoRepositoryTargetSelector(value string) bool {
 	value = strings.TrimSpace(value)
 	registry, err := ordinaryRepositoryTargetAdapterRegistry()

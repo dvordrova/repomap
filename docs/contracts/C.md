@@ -2,11 +2,18 @@
 
 The ordinary C adapter reads the C programs the repository's own build
 describes, through `clang` run as a subprocess. It runs whenever the corpus has
-a `.c` file; `internal/run/repository_target_c.go` registers it with the
+a `.c` file outside the tooling directories; `internal/run/repository_target_c.go` registers it with the
 selector prefix `c:` and rank 4 after Go, Python, JS/TS and Clojure. Nothing in
 it knows a particular project, framework or protocol.
 
 ## Build description and targets
+
+A `.c` file under a tooling directory (`.claude`, `.github`, `.vscode`,
+`testdata`: `corpus.ToolingPath`) is an input of the tests or tools around it
+and never a unit: a corpus whose only `.c` files are there runs no C
+discovery, no dry run and no clang probe, and beside other sources no clang
+default unit is made of one. An explicit `--target` whose every selector
+another adapter owns runs no C discovery either.
 
 `internal/cproject` takes compile and link lines from the first of:
 
@@ -198,7 +205,9 @@ Install clang on the normal PATH: on macOS the Command Line Tools
 
 `testdata/repositories/c` is the cumulative executable repository and
 `testdata/contracts/c.files.json` binds its exact inventory. The run tests
-cover discovery from link lines, the files that restore each program, one
+cover discovery from link lines, repomap's own repository offering no C
+target and running no tool for its fixture, tooling sources beside a program,
+another adapter's explicit target, the files that restore each program, one
 parse per plan for a shared unit and its release after the last projection
 that needs it, a backend outside this platform's build, a missing clang, and
 an ordinary offline run selecting a C program. Facts tests cover C config

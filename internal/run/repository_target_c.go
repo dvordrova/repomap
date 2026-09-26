@@ -167,11 +167,13 @@ func cRepositoryFacts(target repositoryTypedTarget, value any) (*cRepositoryProg
 	return facts, nil
 }
 
-// cRepositoryHasSource reports a corpus with a .c file: only then does C
-// discovery read the build and probe clang.
+// cRepositoryHasSource reports a corpus with a .c file outside the tooling
+// directories: only then does C discovery read the build and probe clang. A
+// testdata fixture's C files are inputs of the tests around them, not a
+// program of the repository.
 func cRepositoryHasSource(repository *corpus.Corpus) bool {
 	for _, entry := range repository.Entries() {
-		if path.Ext(entry.Path) == ".c" {
+		if path.Ext(entry.Path) == ".c" && !corpus.ToolingPath(entry.Path) {
 			return true
 		}
 	}
@@ -188,7 +190,10 @@ func cProgramRoot(program cproject.Program) string {
 }
 
 func discoverCRepositoryTargets(ctx context.Context, options repositoryTargetRuntimeOptions) (repositoryTargetAdapterDiscovery, bool, error) {
-	if options.Repository == nil || !cRepositoryHasSource(options.Repository) {
+	// An explicit --target another adapter owns names no C program: the dry
+	// run and the clang probes would be work for nothing.
+	if options.Repository == nil || !cRepositoryHasSource(options.Repository) ||
+		explicitTargetsOwnedElsewhere(options.TargetOverride, repositoryTargetAdapterC) {
 		return repositoryTargetAdapterDiscovery{}, false, nil
 	}
 	if strings.TrimSpace(options.Root) == "" {

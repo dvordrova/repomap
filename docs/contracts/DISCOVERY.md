@@ -88,13 +88,18 @@ from inventory while their persistent on-disk caches remain intact.
 
 ## C projects
 
-A corpus with a `.c` file runs C discovery in the repository root: the
-programs the link lines of a root makefile's dry run describe, each other file
-with an exact `main` as a program of its own (with a root
-`compile_commands.json`'s flags or clang's defaults), and each directory's
-remaining files as a library. Discovery asks no model and never stops the run for a C reason: a
-failed dry run falls back to clang's defaults, and a missing clang leaves the
-C programs not analyzed when they are dispatched. See [C](C.md).
+A corpus with a `.c` file outside the tooling directories runs C discovery in
+the repository root: the programs the link lines of a root makefile's dry run
+describe, each other file with an exact `main` as a program of its own (with a
+root `compile_commands.json`'s flags or clang's defaults), and each directory's
+remaining files as a library. A `.c` file under `.claude`, `.github`, `.vscode`
+or `testdata` is never a unit: no dry run or clang probe reads it, so
+repomap's own C fixture is never a target of repomap's run. An explicit
+`--target` whose every selector another adapter owns (its prefix, or a Go exact
+target key) runs no C discovery. Discovery asks no model and never stops the
+run for a C reason: a failed dry run falls back to clang's defaults, and a
+missing clang leaves the C programs not analyzed when they are dispatched. See
+[C](C.md).
 
 ## Repository guidance
 

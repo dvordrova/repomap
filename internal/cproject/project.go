@@ -20,9 +20,12 @@ func discover(ctx context.Context, root string, repository *corpus.Corpus) (*Pro
 	if repository == nil {
 		return nil, fmt.Errorf("C: repository is required")
 	}
+	// A .c file in a tooling directory (testdata/, .github/) is an input of
+	// the tests or tools around it, never a unit: no dry run or clang probe
+	// reads it.
 	hasC := false
 	for _, entry := range repository.Entries() {
-		if path.Ext(entry.Path) == ".c" {
+		if path.Ext(entry.Path) == ".c" && !corpus.ToolingPath(entry.Path) {
 			hasC = true
 			break
 		}
@@ -71,7 +74,7 @@ func discover(ctx context.Context, root string, repository *corpus.Corpus) (*Pro
 		compiled[record.spec.Path] = true
 	}
 	for _, entry := range repository.Entries() {
-		if path.Ext(entry.Path) != ".c" || compiled[entry.Path] || included[entry.Path] {
+		if path.Ext(entry.Path) != ".c" || compiled[entry.Path] || included[entry.Path] || corpus.ToolingPath(entry.Path) {
 			continue
 		}
 		units = append(units, UnitSpec{Path: entry.Path, FileRef: string(entry.ID), Dir: ".", Source: entry.Path})
