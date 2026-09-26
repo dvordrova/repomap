@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "f1",
+      "path": "Makefile"
+    },
+    {
+      "id": "f2",
+      "path": "README.md"
+    },
+    {
+      "id": "f3",
+      "path": "kvcli.c"
+    },
+    {
+      "id": "f4",
+      "path": "kvd.c"
+    },
+    {
+      "id": "f5",
+      "path": "kvd.h"
+    },
+    {
+      "id": "f6",
+      "path": "loop.c"
+    },
+    {
+      "id": "f7",
+      "path": "loop.h"
+    },
+    {
+      "id": "f8",
+      "path": "loop_epoll.c"
+    },
+    {
+      "id": "f9",
+      "path": "loop_poll.c"
+    },
+    {
+      "id": "f10",
+      "path": "staticsyms.h"
+    },
+    {
+      "id": "f11",
+      "path": "strbuf.c"
+    },
+    {
+      "id": "f12",
+      "path": "strbuf.h"
+    },
+    {
+      "id": "f13",
+      "path": "tools/dump.c"
+    }
+  ]
+}

@@ -42,7 +42,7 @@ func repositoryRoot(t *testing.T) string {
 func materializeFixtureRepository(t *testing.T, language string) (string, *corpus.Corpus) {
 	t.Helper()
 	isolateFixtureGitEnvironment(t)
-	if language != "go" && language != "python" && language != "jsts" && language != "clojure" {
+	if language != "go" && language != "python" && language != "jsts" && language != "clojure" && language != "c" {
 		t.Fatalf("unsupported fixture language %q", language)
 	}
 	root := repositoryRoot(t)
