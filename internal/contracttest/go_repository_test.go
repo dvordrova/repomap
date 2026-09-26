@@ -108,6 +108,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoInterfaceImplementationMatches(t, index)
 	assertGoSharedHandoffFlows(t, index)
 	assertGoCallableReceiverFields(t, authorities, index)
+	assertGoCommandTableAndStoredCallbacks(t, repository, index)
 	assertGoInterfaceObjectTransfer(t, authorities, index)
 	assertGoInterfaceDeclarations(t, authorities, index)
 	assertGoResponseFieldDeclarations(t, repository, authorities, index)

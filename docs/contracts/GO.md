@@ -137,6 +137,47 @@ unchanged. A real cumulative Python extraction across four target views and
 generic contrasting cases cover this correction. It changes affected graph
 and exact-request hashes, independently of the byte-preserving loading change.
 
+## Handler tables and stored callbacks
+
+These are the Go equivalents of the C adapter's command table, its callbacks
+stored under a branch and its calls through function-pointer fields. The
+cumulative fixture's `internal/storefixture/command_table.go` checks them:
+
+- A table of named handlers built inside a function
+  (`[]commandRow{{Name: "get", Arity: 2, Run: getCommand}, ...}`) gives each
+  row its own exact `passes_callback` binding. Its `go_ssa_dynamic_handoff`
+  witness makes the binding row, and its `callable_receiver_field` witnesses
+  carry that row's literals and no other row's (`Name = "get"`, `Arity = 2`).
+  A value of a repository type is no construction, so a row stays a binding.
+- A call through a function-typed field is exact when the value it reads was
+  allocated in that function (or returned by a repository factory) with one
+  store to the field, in the allocating block, before the call
+  (`RunSingleHandler`). A field filled through a parameter under a branch
+  (`eventLoop.fire`) and a store under a branch (`RunChosenHandler`) leave the
+  call unresolved, as the C adapter does. The Go call lists no candidates,
+  where the C adapter names each stored function as a witness. Each handler
+  keeps its exact callback at its `register` call.
+
+Missing equivalents, recorded rather than fabricated:
+
+- A call through the field of a row found by a lookup (`DispatchCommand`)
+  stays unresolved: a function-typed field is followed only on one allocated
+  value. The C adapter gives such a call every function stored into that field
+  as its alternatives, so it reaches each handler of the table.
+- A package-level table (`var commands = []commandRow{...}`) is filled by the
+  synthetic package initializer, which the binding capture skips. A map of
+  handlers (`map[string]func(){"ping": ping}`) is filled by map updates, not
+  field stores. Neither keeps a binding or any other relation to its handlers,
+  so neither gives the registration the C adapter makes of a table row that
+  names its function by a string literal (the owner's decision of
+  2026-09-26).
+- An interface-typed field takes every store of that field in the program as
+  its values. A registration function that stores its parameter into one of
+  two fields under a branch (`if readable { l.read = h } else { l.write = h }`)
+  therefore gives the call through `l.read` every handler passed to it,
+  including those registered for `l.write`. These are false alternatives; the
+  C adapter leaves such a call unresolved.
+
 ## Owned declarations
 
 Direct TypeScript interface property declarations retain their written type,

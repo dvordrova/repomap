@@ -283,6 +283,7 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	adaptertest.AssertSQLQueryFacts(t, index, "src/fixture_app/data_sources.py", map[string]string{"SELECT id FROM direct_rows": "direct_rows"})
 	adaptertest.AssertSQLQueryFacts(t, index, "src/fixture_app/sql_literals.py", nil, "create %s dir")
 	assertPythonRepeatedImportAliases(t, index)
+	assertPythonStoredCallbacks(t, index)
 	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index}}})
 	if err != nil {
 		t.Fatalf("build Python atlas: %v", err)

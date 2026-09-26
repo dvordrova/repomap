@@ -155,34 +155,38 @@
     },
     {
       "id": "f39",
-      "path": "src/fixture_app/test_market.py"
+      "path": "src/fixture_app/stored_callbacks.py"
     },
     {
       "id": "f40",
-      "path": "src/requests.py"
+      "path": "src/fixture_app/test_market.py"
     },
     {
       "id": "f41",
-      "path": "tests/__init__.py"
+      "path": "src/requests.py"
     },
     {
       "id": "f42",
-      "path": "tests/conftest.py"
+      "path": "tests/__init__.py"
     },
     {
       "id": "f43",
-      "path": "tests/test_facade.py"
+      "path": "tests/conftest.py"
     },
     {
       "id": "f44",
-      "path": "workspace/pyproject.toml"
+      "path": "tests/test_facade.py"
     },
     {
       "id": "f45",
-      "path": "workspace/src/fixture_shared/local/__init__.py"
+      "path": "workspace/pyproject.toml"
     },
     {
       "id": "f46",
+      "path": "workspace/src/fixture_shared/local/__init__.py"
+    },
+    {
+      "id": "f47",
       "path": "workspace/src/fixture_shared/local/consumer.py"
     }
   ]

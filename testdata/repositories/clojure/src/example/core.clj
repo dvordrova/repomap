@@ -38,3 +38,13 @@
 
 (defn nested-paths [path]
   (str/replace (str/replace path "/" "-") "/" "-"))
+
+(defn fail! [reason]
+  (throw (ex-info reason {})))
+
+;; A call written in a macro's argument keeps its own place and caller.
+(defmacro ensure! [condition]
+  `(when-not ~condition (fail! "no limit")))
+
+(defn ensured-limit []
+  (ensure! (read-limit)))

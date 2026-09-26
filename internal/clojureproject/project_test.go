@@ -61,9 +61,18 @@ func TestNativeCumulativeProject(t *testing.T) {
 	}
 	foundCall, foundLiteral, foundShadow := false, false, false
 	foundCallback, foundJava, foundReader := false, false, false
-	foundUnderscore := false
+	foundUnderscore, foundMacroArgument := false, false
 	for _, relation := range index.Relations {
 		from := objects[relation.FromID]
+		if relation.Kind == p.RelationCalls && len(relation.ToIDs) == 1 && objects[relation.ToIDs[0]].Name == "example.core/read-limit" {
+			// (ensure! (read-limit)) in ensured-limit: a call written in a
+			// macro's argument keeps its own place and caller.
+			if foundMacroArgument || from.Name != "example.core/ensured-limit" || relation.Resolution != p.ResolutionExact ||
+				relation.Location == nil || relation.Location.Path != "src/example/core.clj" || relation.Location.Line != 50 || relation.Location.Column != 12 {
+				t.Fatalf("call in a macro argument lost its place or caller: %+v", relation)
+			}
+			foundMacroArgument = true
+		}
 		if relation.Kind == p.RelationPassesCallback && from.Name == "example.core/greet-many" {
 			if len(relation.ToIDs) != 1 || objects[relation.ToIDs[0]].Name != "example.service/greet" || relation.SourceArgumentID == "" {
 				t.Fatalf("callback lost source argument: %+v", relation)
@@ -108,8 +117,10 @@ func TestNativeCumulativeProject(t *testing.T) {
 			}
 		}
 		if from.Name == "example.core/with-shadow" {
+			// A call through a local is a call through a function value; it
+			// stays unresolved even where the local shadows a var.
 			foundShadow = true
-			if relation.Resolution != p.ResolutionUnresolved {
+			if relation.Resolution != p.ResolutionUnresolved || len(relation.ToIDs) != 0 || relation.Dispatch != p.DispatchFunctionValue {
 				t.Fatalf("invented shadow target: %+v", relation)
 			}
 		}
@@ -117,8 +128,8 @@ func TestNativeCumulativeProject(t *testing.T) {
 	if !foundCallback || !foundJava || !foundReader || !foundUnderscore {
 		t.Fatalf("callback=%v Java=%v reader=%v underscore=%v", foundCallback, foundJava, foundReader, foundUnderscore)
 	}
-	if !foundCall || !foundLiteral || !foundShadow {
-		t.Fatalf("call=%v literal=%v shadow=%v", foundCall, foundLiteral, foundShadow)
+	if !foundCall || !foundLiteral || !foundShadow || !foundMacroArgument {
+		t.Fatalf("call=%v literal=%v shadow=%v macro argument=%v", foundCall, foundLiteral, foundShadow, foundMacroArgument)
 	}
 	if err := result.Dependencies.Validate(); err != nil {
 		t.Fatal(err)
