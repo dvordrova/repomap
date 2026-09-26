@@ -84,8 +84,10 @@ type pageOffMapRow struct {
 	Part   string
 	Reason string
 	// Declarations are the names of a split file's declarations no box of
-	// it took.
+	// it took, and Code the same declarations as links into the code, so a
+	// declaration off the map is still found and opened by its name.
 	Declarations string
+	Code         []pageChip
 }
 
 // offMapReasons are the reader's words for why a file is off the map.
@@ -111,8 +113,15 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 		return
 	}
 	section.MapFailure = mapFailureReasons[index.MapFailure]
+	declared := builder.declarationsByPathName(section.programTargetID)
 	for _, file := range index.OffMap {
 		row := pageOffMapRow{Anchor: builder.links.anchor(file.Path, 0, 0), Part: file.Part, Declarations: strings.Join(file.Declarations, ", ")}
+		for _, name := range file.Declarations {
+			for _, location := range declared[file.Path+"\x00"+name] {
+				anchor := builder.links.anchor(location.Path, location.Line, location.Column)
+				row.Code = append(row.Code, pageChip{Name: name, Line: location.Line, Anchor: anchor})
+			}
+		}
 		if file.Reason == groupindex.OffMapTests {
 			section.TestFiles = append(section.TestFiles, row)
 			continue
@@ -120,6 +129,41 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 		row.Reason = offMapReasons[file.Reason]
 		section.OffMap = append(section.OffMap, row)
 	}
+}
+
+// declarationsByPathName finds a target's declarations by file and name:
+// the off-map record names a split file's undecided declarations, and each
+// is the same-named declaration of that file in the target's own index. A
+// local or a parameter is not one of them.
+func (builder *pageBuilder) declarationsByPathName(targetID string) map[string][]programindex.Location {
+	result := make(map[string][]programindex.Location)
+	if builder.data == nil || builder.data.ProgramPortfolio == nil {
+		return result
+	}
+	for _, entry := range builder.data.ProgramPortfolio.Entries {
+		if entry.Target.ID != targetID {
+			continue
+		}
+		kinds := make(map[string]programindex.ObjectKind, len(entry.Objects))
+		for _, object := range entry.Objects {
+			kinds[object.ID] = object.Kind
+		}
+		for _, object := range entry.Objects {
+			if object.Location == nil || object.External != nil {
+				continue
+			}
+			switch kinds[object.OwnerID] {
+			case programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectLambda:
+				continue
+			}
+			key := object.Location.Path + "\x00" + object.Name
+			result[key] = append(result[key], *object.Location)
+		}
+	}
+	for key := range result {
+		sort.SliceStable(result[key], func(i, j int) bool { return result[key][i].Line < result[key][j].Line })
+	}
+	return result
 }
 
 type pageFileFolder struct {
@@ -259,6 +303,18 @@ type pageChip struct {
 	// can show the sentence that explains it.
 	Doc     string
 	Summary string
+	// Fields are a type's own fields, listed inside the type's row as the
+	// deep view of a part draws them, never as peers of its functions.
+	Fields []pageChip
+}
+
+// SymbolCount counts a file's declarations, a type's fields with them.
+func (row pageChipRow) SymbolCount() int {
+	count := len(row.Members)
+	for _, member := range row.Members {
+		count += len(member.Fields)
+	}
+	return count
 }
 
 type pageGroupOperation struct {
@@ -800,7 +856,7 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 			continue
 		}
 		card.Operations = append(card.Operations, pageGroupOperation{
-			Name: builder.operationDisplayName(index.Target.ID, operation), Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
+			Name: builder.operationDisplayName(index.Target.ID, operation), Kind: operation.Kind, Summary: builder.operationSummary(operation), Source: operation.Source,
 			Href:   "#" + operationNodeID(sectionID, operation.ID),
 			Anchor: builder.links.anchor(operation.Location.Path, operation.Location.Line, operation.Location.Column),
 		})
@@ -823,7 +879,11 @@ type pageExternal struct {
 }
 
 func (builder *pageBuilder) memberChips(targetID string, memberIDs []string) ([]pageChipRow, []pageExternal) {
-	byPath := make(map[string][]pageChip)
+	type listed struct {
+		id, owner string
+		chip      pageChip
+	}
+	byPath := make(map[string][]listed)
 	seen := make(map[string]struct{}, len(memberIDs))
 	var externals []pageExternal
 	for _, id := range memberIDs {
@@ -862,7 +922,14 @@ func (builder *pageBuilder) memberChips(targetID string, memberIDs []string) ([]
 			chip.Summary = ref.subject.Interpretation.Line
 			chip.Alias = ref.subject.Interpretation.Alias
 		}
-		byPath[anchor.Path] = append(byPath[anchor.Path], chip)
+		// A variable its type owns is a field of that type.
+		owner := ""
+		if object := ref.subject.Object; object != nil && object.Kind == programindex.ObjectVariable && object.OwnerID != "" {
+			if typed, known := builder.subject(targetID, object.OwnerID); known && typed.subject.Object != nil && typed.subject.Object.Kind == programindex.ObjectType {
+				owner = object.OwnerID
+			}
+		}
+		byPath[anchor.Path] = append(byPath[anchor.Path], listed{id: id, owner: owner, chip: chip})
 	}
 	paths := make([]string, 0, len(byPath))
 	for path := range byPath {
@@ -871,13 +938,32 @@ func (builder *pageBuilder) memberChips(targetID string, memberIDs []string) ([]
 	sort.Strings(paths)
 	rows := make([]pageChipRow, 0, len(paths))
 	for _, path := range paths {
-		chips := byPath[path]
-		sort.SliceStable(chips, func(i, j int) bool {
-			if chips[i].Line != chips[j].Line {
-				return chips[i].Line < chips[j].Line
+		items := byPath[path]
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].chip.Line != items[j].chip.Line {
+				return items[i].chip.Line < items[j].chip.Line
 			}
-			return chips[i].Name < chips[j].Name
+			return items[i].chip.Name < items[j].chip.Name
 		})
+		types := make(map[string]int)
+		for i, item := range items {
+			types[item.id] = i
+		}
+		var fields = make(map[int][]pageChip)
+		var top []int
+		for i, item := range items {
+			if at, inside := types[item.owner]; inside && item.owner != "" {
+				fields[at] = append(fields[at], item.chip)
+				continue
+			}
+			top = append(top, i)
+		}
+		chips := make([]pageChip, 0, len(top))
+		for _, i := range top {
+			chip := items[i].chip
+			chip.Fields = fields[i]
+			chips = append(chips, chip)
+		}
 		rows = append(rows, pageChipRow{Path: path, Members: chips})
 	}
 	// A sibling target first: a name a reader can follow is worth more than

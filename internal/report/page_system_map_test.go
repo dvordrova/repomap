@@ -308,12 +308,14 @@ func TestSystemOutboundGroupingRetainsRecordsAndTheirExactPeerInputs(t *testing.
 	for _, n := range got.Nodes {
 		nodes[n.ID] = n
 	}
+	// One box per destination across the system; each record keeps its own
+	// tile and component unless it calls the same outside symbol.
 	group := nodes["system-get-destination"]
-	if group.Branch != "communication" || group.FullTitle != "backend API" || group.Children != "system-get system-unmatched" {
+	if group.Branch != "communication" || group.FullTitle != "backend API" || group.Children != "system-get system-unmatched system-other-get" || group.Owner != "" {
 		t.Fatalf("external catalogue grouping lost: %+v", group)
 	}
-	if nodes["system-other-get-destination"].Owner != "other" {
-		t.Fatal("equal destination in another component lost its scope")
+	if _, repeated := nodes["system-other-get-destination"]; repeated || nodes["system-other-get"].Owner != "other" {
+		t.Fatal("a destination was drawn again for another component, or a record lost its component")
 	}
 	if _, exists := nodes["system-post"]; exists {
 		t.Fatal("known backend input was drawn as another external participant")

@@ -28,12 +28,19 @@ var repomapMembers = (function () {
     // A part without interpreted highlights still has its original source
     // index. Showing those declarations is useful; inventing an explanation
     // or another intermediate group would not be.
+    // A type's fields stay inside its row: they are read with the type, not
+    // listed as peers of the part's functions.
     if(group&&!result.length)group.querySelectorAll('.symbol-index > li').forEach(function(row){
-      var chip=row.querySelector('.chip');if(!chip)return;
-      var name=chip.cloneNode(true);name.querySelectorAll('.ln').forEach(function(n){n.remove();});
-      add({name:name.textContent.trim(),alias:row.dataset.alias||'',explanation:'',source:{Href:chip.dataset.open?'':chip.getAttribute('href'),Open:chip.dataset.open||'',NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, function(){return row.closest('.inventory-file')?.querySelector('summary')?.textContent.split(' · ')[0];}), Line:Number(chip.dataset.sourceLine)||0,Text:chip.dataset.sourceText||chip.getAttribute('title')||name.textContent.trim()}});
+      var chip=row.querySelector(':scope>.chip');if(!chip)return;
+      var item=inventoryItem(row,chip,function(){return row.closest('.inventory-file')?.querySelector('summary')?.textContent.split(' · ')[0];});
+      item.fields=Array.from(row.querySelectorAll(':scope>.symbol-fields>li')).map(function(field){var fieldChip=field.querySelector('.chip');return fieldChip&&inventoryItem(field,fieldChip,function(){return item.source.Path;});}).filter(Boolean);
+      add(item);
     });
     inventories.set(node, result); return result;
+  }
+  function inventoryItem(row,chip,heading){
+    var name=chip.cloneNode(true);name.querySelectorAll('.ln').forEach(function(n){n.remove();});
+    return {name:name.textContent.trim(),alias:row.dataset.alias||'',explanation:'',source:{Href:chip.dataset.open?'':chip.getAttribute('href'),Open:chip.dataset.open||'',NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, heading), Line:Number(chip.dataset.sourceLine)||0,Text:chip.dataset.sourceText||chip.getAttribute('title')||name.textContent.trim()}};
   }
   function size(node) {
     return {w:360,h:112 + Math.min(items(node).length,5)*66 + (items(node).length>5?32:0)};
@@ -68,7 +75,13 @@ var repomapMembers = (function () {
       name.title=(item.explanation||rmT('No explanation saved. Open the source to inspect this element.'))+'\n'+item.source.Text+(item.source.NoSource?'\n'+rmT('No source'):'');
       name.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();map.showMember(node,item);});
       if(item.source.NoSource){name.setAttribute('tabindex','0');name.setAttribute('role','button');name.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();map.showMember(node,item);}});}
-      row.appendChild(name);grid.appendChild(row);
+      row.appendChild(name);
+      if(item.fields?.length){
+        var fields=document.createElement('div');fields.className='map-member-fields';
+        item.fields.forEach(function(field,index){if(index)fields.appendChild(document.createTextNode(' · '));var link=sourceLink(field.source);link.textContent=field.name;fields.appendChild(link);});
+        row.appendChild(fields);
+      }
+      grid.appendChild(row);
     });
     return grid;
   }

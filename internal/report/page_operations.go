@@ -3,12 +3,28 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
+
+// operationSummary is what an entry's reading says about it. A registration
+// the model did not explain keeps its own call words as its line, such as
+// "redis.c.redisCommand.proc get in getCommand": the fact said again in the
+// pipeline's form. The reading names the entry's handler instead, so such a
+// line is not shown; a model's explanation of the entry is.
+func (builder *pageBuilder) operationSummary(operation groupindex.Operation) string {
+	fact, ok := builder.factsByID[operation.FactID]
+	if ok && fact.Kind == facts.KindRegistration && fact.Text != "" &&
+		(operation.Summary == fact.Text || strings.HasPrefix(operation.Summary, fact.Text+" ")) {
+		return ""
+	}
+	return operation.Summary
+}
 
 // Reuse a declaration's accepted alias only when an operation repeats its
 // native name. A distinct action label or command/path has its own meaning.
@@ -31,7 +47,8 @@ func (builder *pageBuilder) operationDisplayName(targetID string, operation grou
 // Operations are interpretations on existing subjects. Paths follow native calls
 // and show reached data reads as terminal dependencies; imports do not imply execution.
 func (builder *pageBuilder) buildOperationMap(section *pageSection, index *groupindex.Index) *pageMap {
-	result := &pageMap{MarkerID: "map-arrow-" + section.ID, Subjects: len(index.Subjects), Operations: len(index.Operations) > 0}
+	result := &pageMap{MarkerID: "map-arrow-" + section.ID, Subjects: len(index.Subjects), Operations: len(index.Operations) > 0, served: map[[2]string]bool{}}
+	served := result.served
 	groupOf := make(map[string]string)
 	groups := make(map[string]groupindex.Group)
 	for _, group := range index.Groups {
@@ -145,6 +162,10 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		parents := make(map[string]groupindex.StructuralEdge)
 		discovered := map[string]bool{operation.SubjectID: true}
 		firstInGroup := make(map[string]string)
+		// reached lists the parts in the order the walk from the handler met
+		// them; each is entered by the one call (or read) of its shortest
+		// witness.
+		var reached []string
 		var readers []string
 		queue := []string{operation.SubjectID}
 		for len(queue) > 0 {
@@ -159,6 +180,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 				near[nodeOfGroup(group)] = true
 				if firstInGroup[nodeOfGroup(group)] == "" {
 					firstInGroup[nodeOfGroup(group)] = current
+					reached = append(reached, nodeOfGroup(group))
 				}
 				if _, foreign := foreignNodes[group]; foreign {
 					usedForeign[group] = true
@@ -170,10 +192,8 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 					parents[edge.ToSubjectID] = edge
 					queue = append(queue, edge.ToSubjectID)
 				}
-				from, to := groupOf[current], groupOf[edge.ToSubjectID]
-				if from != "" && to != "" && from != to {
-					label := string(edge.RelationKind)
-					path[pathEdge{nodeOfGroup(from), nodeOfGroup(to), edge.Resolution != programindex.ResolutionExact, label, ""}] = true
+				if from, to := groupOf[current], groupOf[edge.ToSubjectID]; from != "" && to != "" && from != to {
+					served[[2]string{nodeOfGroup(from), nodeOfGroup(to)}] = true
 				}
 			}
 		}
@@ -181,21 +201,59 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		// neighbours or borrowing effects from other methods in its part.
 		for _, reader := range readers {
 			for _, edge := range reads[reader] {
-				from, to := groupOf[reader], groupOf[edge.ToSubjectID]
+				to := groupOf[edge.ToSubjectID]
 				if to == "" {
 					continue
+				}
+				if from := groupOf[reader]; from != "" && from != to {
+					served[[2]string{nodeOfGroup(from), nodeOfGroup(to)}] = true
 				}
 				near[nodeOfGroup(to)] = true
 				if firstInGroup[nodeOfGroup(to)] == "" {
 					firstInGroup[nodeOfGroup(to)] = edge.ToSubjectID
 					parents[edge.ToSubjectID] = edge
+					reached = append(reached, nodeOfGroup(to))
 				}
 				if _, foreign := foreignNodes[to]; foreign {
 					usedForeign[to] = true
 				}
-				if from != "" && from != to {
-					path[pathEdge{nodeOfGroup(from), nodeOfGroup(to), edge.Resolution != programindex.ResolutionExact, string(edge.RelationKind), ""}] = true
+			}
+		}
+		// The path is a trace, not a neighbourhood: each reached part is
+		// joined only from the part its shortest witness comes through, by
+		// that witness's own call or read. Other calls among the same parts
+		// stay ordinary relations of the map.
+		depth := func(subject string) int {
+			steps := 0
+			for at := subject; at != operation.SubjectID; steps++ {
+				edge, ok := parents[at]
+				if !ok {
+					break
 				}
+				at = edge.FromSubjectID
+			}
+			return steps
+		}
+		for _, part := range reached {
+			first := firstInGroup[part]
+			edge, ok := parents[first]
+			if !ok {
+				continue
+			}
+			possible := edge.Resolution != programindex.ResolutionExact
+			from := edge.FromSubjectID
+			// A caller off the map stands for nothing on it; its own caller
+			// joins the part instead.
+			for groupOf[from] == "" {
+				up, ok := parents[from]
+				if !ok {
+					break
+				}
+				possible = possible || up.Resolution != programindex.ResolutionExact
+				from = up.FromSubjectID
+			}
+			if group := groupOf[from]; group != "" && nodeOfGroup(group) != part {
+				path[pathEdge{nodeOfGroup(group), part, possible, string(edge.RelationKind), ""}] = true
 			}
 		}
 		// A matched boundary is an integration hypothesis with exact endpoints,
@@ -208,7 +266,15 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			near[edge.to] = true
 			path[edge] = true
 			firstInGroup[edge.to] = connection.FromSubjectID
+			if !slices.Contains(reached, edge.to) {
+				reached = append(reached, edge.to)
+			}
 		}
+		// The reading lists the parts by call depth from the handler, the
+		// order the walk met them within one depth.
+		sort.SliceStable(reached, func(i, j int) bool {
+			return depth(firstInGroup[reached[i]]) < depth(firstInGroup[reached[j]])
+		})
 		for _, call := range index.Outbound {
 			if seen[call.SubjectID] {
 				firstInGroup["system-"+section.ID+"-out-"+call.ID] = call.SubjectID
@@ -226,16 +292,28 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			subtitle = string(runes[:27]) + "…"
 		}
 		name := builder.operationDisplayName(index.Target.ID, operation)
+		var handler string
+		var handlerSource pageAnchor
+		if ref, known := builder.subject(index.Target.ID, operation.SubjectID); known {
+			if display, anchor := builder.subjectDisplay(ref.subject); display != "" {
+				handler = display
+				if anchor != nil {
+					handlerSource = *anchor
+				}
+			}
+		}
 		result.Nodes = append(result.Nodes, pageMapNode{
 			ID: id, Href: source.Href, Title: mapTitle(name), FullTitle: name,
 			InputOwner: owner,
-			Summary:    operation.Summary, Activation: operation.Kind, Source: source, SourceKind: operation.Source,
+			Summary:    builder.operationSummary(operation), Activation: operation.Kind, Source: source, SourceKind: operation.Source,
 			OperationGroup: groups[operation.GroupID].Title,
 			CallPaths:      builder.operationCallPaths(index.Target.ID, operation.SubjectID, firstInGroup, parents),
 			Writes:         builder.operationWrites(index, operation.SubjectID, seen, parents),
 			Subtitle:       subtitle,
 			Lane:           "triggers", X: mapPadding, Y: 40 + float64(i)*84, Width: mapNodeWidth, Height: 68,
 			Neighbours: strings.Join(nearIDs, " "), Degree: len(near), Members: 1,
+			Trace:   strings.Join(reached, " "),
+			Handler: handler, HandlerSource: handlerSource,
 		})
 	}
 	ordered := append([]groupindex.Group(nil), index.Groups...)
@@ -405,7 +483,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		if _, exists := byID[to]; !exists {
 			continue
 		}
-		edge := pageMapEdge{ConnectionID: connection.ID, From: from, To: to, Label: connection.Label, Summary: connection.Summary, Scope: "structure", Possible: !strings.HasPrefix(connection.SourceKind, "native_") || connection.SupportResolution != programindex.PatternValueExact, Init: connection.Phase == groupindex.PhaseInit}
+		edge := pageMapEdge{ConnectionID: connection.ID, From: from, To: to, Label: connection.Label, Summary: connection.Summary, Scope: "structure", Possible: !strings.HasPrefix(connection.SourceKind, "native_") || connection.SupportResolution != programindex.PatternValueExact, Init: connection.Phase == groupindex.PhaseInit && drawsInit(builder.graphIndex(connection.From.TargetID)) && !result.served[[2]string{from, to}]}
 		if connection.FromLocation != nil {
 			l := connection.FromLocation
 			edge.FromSource = builder.links.anchor(l.Path, l.Line, l.Column)
@@ -437,7 +515,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 			if len(children) == 1 {
 				unit = "group"
 			}
-			add(pageMapNode{ID: id, Branch: "area", Children: strings.Join(children, " "), Remote: remote, Component: owner.Target.ID, Href: "#" + id, FullTitle: container.Title, Title: mapTitle(container.Title), Summary: container.Summary, Subtitle: fmt.Sprintf("%d %s · explore →", len(children), unit), Lane: pageLane(container.Lane, container.Core)})
+			add(pageMapNode{ID: id, Branch: "area", Children: strings.Join(children, " "), Remote: remote, Component: owner.Target.ID, Href: "#" + id, FullTitle: container.Title, Title: mapTitle(container.Title), Summary: container.Summary, Subtitle: fmt.Sprintf("%d %s · explore →", len(children), unit), Lane: areaLane(owner, container)})
 			areaIDs = append(areaIDs, id)
 		}
 		return areaIDs

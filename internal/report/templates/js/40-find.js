@@ -7,13 +7,36 @@
   box.placeholder=rmT('Find');box.setAttribute('aria-label',rmT('Find in repository'));
   var panel=document.createElement('section');panel.className='find-panel';panel.hidden=true;panel.id='repository-find';
   panel.setAttribute('aria-label',rmT('Repository search results'));box.setAttribute('aria-controls',panel.id);
-  panel.innerHTML=("<div class=\"find-tools\"><label>"+rmT.html("Show")+" <select data-find-kind aria-label=\""+rmT.html("Search result type")+"\"><option value=\"all\">"+rmT.html("Everything")+"</option><option value=\"question\">"+rmT.html("Questions and answers")+"</option><option value=\"term\">"+rmT.html("Terms")+"</option><option value=\"part\">"+rmT.html("Parts")+"</option><option value=\"operation\">"+rmT.html("Operations")+"</option><option value=\"code\">"+rmT.html("Code")+"</option></select></label><label>"+rmT.html("In")+" <select data-find-component aria-label=\""+rmT.html("Search component")+"\"><option value=\"\">"+rmT.html("All components")+"</option></select></label><button type=\"button\" data-close>"+rmT.html("Close")+"</button></div><p class=\"find-status\" role=\"status\"></p><ol class=\"find-results\"></ol><div class=\"find-pages\"><button type=\"button\" data-prev>"+rmT.html("← Previous")+"</button><span></span><button type=\"button\" data-next>"+rmT.html("Next →")+"</button></div>");
+  panel.innerHTML=("<div class=\"find-tools\"><label>"+rmT.html("Show")+" <select data-find-kind aria-label=\""+rmT.html("Search result type")+"\"><option value=\"all\">"+rmT.html("Everything")+"</option><option value=\"question\">"+rmT.html("Questions and answers")+"</option><option value=\"term\">"+rmT.html("Terms")+"</option><option value=\"part\">"+rmT.html("Parts")+"</option><option value=\"operation\">"+rmT.html("Operations")+"</option><option value=\"code\">"+rmT.html("Code")+"</option><option value=\"external\">"+rmT.html("External communication")+"</option></select></label><label>"+rmT.html("In")+" <select data-find-component aria-label=\""+rmT.html("Search component")+"\"><option value=\"\">"+rmT.html("All components")+"</option></select></label><button type=\"button\" data-close>"+rmT.html("Close")+"</button></div><p class=\"find-status\" role=\"status\"></p><ol class=\"find-results\"></ol><div class=\"find-pages\"><button type=\"button\" data-prev>"+rmT.html("← Previous")+"</button><span></span><button type=\"button\" data-next>"+rmT.html("Next →")+"</button></div>");
   nav.insertBefore(box,nav.querySelector('.repomap-link'));nav.appendChild(panel);
   box.focusSearch=function(){box.focus({preventScroll:true});return box;};
   var kind=panel.querySelector('[data-find-kind]'),component=panel.querySelector('[data-find-component]'),status=panel.querySelector('.find-status'),results=panel.querySelector('ol'),pages=panel.querySelector('.find-pages'),page=0,pageSize=12;
   var entries=[],components={},groupNodes={},codeEntries=new Map(),lastQuery='';
   function modelText(node){if(!node)return '';var copy=node.cloneNode(true);copy.querySelectorAll('.source-hint,.model-sources').forEach(function(n){n.remove();});return copy.textContent;}
   function add(entry){entry.title=entry.title||'';entry.summary=entry.summary||'';entry.path=entry.path||'';entry.haystack=(entry.title+' '+entry.summary+' '+entry.path+' '+entry.component+' '+(entry.additionalText||'')).toLowerCase();entries.push(entry);}
+  // What a map node is to a reader looking for it: its search kind and the
+  // word its result shows. A component is listed once, below. An outside
+  // call or its destination is not a part of the program (gethostbyname was
+  // listed as a Part three times), and an input collection is its inputs.
+  function nodeKind(d){
+    if(d.branch==='component')return null;
+    if(d.activation)return {kind:'operation',type:rmT(d.activation)};
+    if(d.itemKind==='External communication')return {kind:'external',type:rmT('External communication')};
+    if(d.branch==='inputs')return {kind:'operation',type:rmT('Inputs')};
+    return {kind:'part',type:rmT(d.branch?'Area':'Part')};
+  }
+  // An input the model did not explain is read by its handler, never by its
+  // registration's raw call words.
+  function nodeSummary(d){return d.summary||(d.handler&&d.handler!==d.title?rmT('handled by')+' '+d.handler:'');}
+  // A declaration off the map stays findable by its name: it opens its code
+  // and the component's list of what is not on the map.
+  function offMapEntry(item,components){
+    var chip=item.querySelector('.chip'),row=item.closest('[data-off-map-file]');
+    if(!chip||!row)return null;
+    var owner=Object.keys(components).find(function(id){var target=document.getElementById(id);return target&&target.contains(row);})||'';
+    var path=(row.querySelector('.anchor')||row.querySelector('a,span'))?.textContent||'';
+    return {key:owner+'|'+path+'|'+chip.textContent,title:chip.textContent,summary:rmT('Not on the map'),path:path,component:components[owner]||'',section:owner,kind:'code',type:rmT('Code'),source:chip,memberships:[],destination:row};
+  }
   document.querySelectorAll('[data-system-map] [data-branch="component"]').forEach(function(n){
     var id=(n.getAttribute('href')||'').slice(1);if(!id)return;
     components[id]=n.dataset.title;
@@ -26,7 +49,9 @@
     if(map.displayedNode(n)!==n)return;
     var section=document.getElementById(n.dataset.owner)||n.closest('section'),id=section.id,href=n.getAttribute('href');
     if(href&&href[0]==='#'&&!n.dataset.activation&&!n.dataset.branch)groupNodes[href.slice(1)]=n;
-    add({title:n.dataset.title,summary:n.dataset.summary,additionalText:map.areaDescriptions(n).join(' '),component:components[id]||(section.querySelector('h2')||section.querySelector('h3')||n).textContent||n.dataset.title,section:id,kind:n.dataset.activation?'operation':'part',type:n.dataset.activation?rmT(n.dataset.activation):(n.dataset.branch?rmT('Area'):rmT('Part')),node:n,map:map});
+    var found=nodeKind(n.dataset);if(!found)return;
+    add({title:n.dataset.title,summary:nodeSummary(n.dataset),additionalText:map.areaDescriptions(n).join(' '),component:components[id]||(section.querySelector('h2')||section.querySelector('h3')||n).textContent||n.dataset.title,section:id,
+      kind:found.kind,type:found.type,node:n,map:map});
   });
   // Retain every displayed membership; overlapping executable/library views
   // stay separate and explicitly labelled.
@@ -35,9 +60,13 @@
     file.querySelectorAll('.symbol-index li').forEach(function(row){
       var chip=row.querySelector('.chip');if(!chip)return;
       var key=section.id+'|'+path+'|'+chip.textContent,entry=codeEntries.get(key);
-      if(!entry){entry={title:chip.textContent,summary:modelText(row.querySelector('.model')),path:path,component:components[section.id]||'',section:section.id,kind:'code',type:rmT('Code'),source:chip,memberships:[],destination:row};codeEntries.set(key,entry);add(entry);}
+      if(!entry){entry={title:chip.textContent,summary:modelText(row.querySelector(':scope>.model')),path:path,component:components[section.id]||'',section:section.id,kind:'code',type:rmT('Code'),source:chip,memberships:[],destination:row};codeEntries.set(key,entry);add(entry);}
       if(node&&!entry.memberships.some(function(m){return m.node===node;}))entry.memberships.push({node:node,map:node.closest('[data-map-explorer]'),title:node.dataset.title});
     });
+  });
+  document.querySelectorAll('[data-off-map-declaration]').forEach(function(item){
+    var entry=offMapEntry(item,components);if(!entry||codeEntries.has(entry.key))return;
+    codeEntries.set(entry.key,entry);add(entry);
   });
   function sectionsFor(node,selector){
     return Array.from(new Set(Array.from(node.querySelectorAll(selector)).map(function(a){

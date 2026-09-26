@@ -23,6 +23,15 @@ function rmSystemProjection(nodes, edges) {
   }
   return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection};
 }
+// A part's reading goes description, the code to open, then its
+// connections: Command dispatch listed some 5,000 characters of connections
+// before "Code in this part". The input's witness, when one is pinned, stays
+// right under the description it explains.
+function rmReadingOrder(card){
+  var at=card.querySelector(':scope>.map-card-intro');if(!at)return;
+  [':scope>.call-path',':scope>.map-concepts',':scope>.map-all-members'].map(function(selector){return card.querySelector(selector);}).filter(Boolean)
+    .forEach(function(section){at.after(section);at=section;});
+}
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
   var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
@@ -77,7 +86,9 @@ function rmSystemProjection(nodes, edges) {
     if(controls){controls.replaceChildren();controls.hidden=!operation;}
     if(operation){
       var context=rmEl('span','system-reading-context',rmT('Input')+': '+operation.dataset.title);
-      var start=rmEl('button','system-input-start',rmT('Show input'));start.type='button';start.addEventListener('click',function(){surface?.clearHover();select(operation,true,null,true);});context.appendChild(start);
+      // Back to the input from a part read on its path; on the input itself
+      // there is nowhere to go back to.
+      if(scope){var start=rmEl('button','system-input-start',rmT('Show input'));start.type='button';start.addEventListener('click',function(){surface?.clearHover();select(operation,true,null,true);});context.appendChild(start);}
       clear.textContent=rmT('Leave input path');controls?.append(context,clear);
     }
     map.querySelector('.map-reading-outside')?.remove();
@@ -185,6 +196,7 @@ function rmSystemProjection(nodes, edges) {
           if(peer)link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(peer,true,null,true);});
         });if(copy.classList.contains('group-connections'))card.querySelector('.map-card-intro').after(copy);else card.appendChild(copy);
       });
+      rmReadingOrder(card);
       return;
     }
     if(n.dataset.branch==='communication'){
@@ -205,7 +217,11 @@ function rmSystemProjection(nodes, edges) {
       var pathState=projection.selection('',n.id),pathParts=rmEl('section','system-input-parts');
       pathParts.appendChild(rmEl('h5','',rmT('Parts on this input path')));
       var pathLinks=rmEl('div','system-neighbours');
-      pathState.active.forEach(function(id){
+      // Nearest the handler first: the saved trace orders the parts by call
+      // depth; a part reached only through a matched input follows it.
+      var ordered=(n.dataset.inputTrace||'').split(/\s+/).filter(function(id){return pathState.active.has(id);});
+      pathState.active.forEach(function(id){if(!ordered.includes(id))ordered.push(id);});
+      ordered.forEach(function(id){
         var part=byID[id];if(!part||part.dataset.activation)return;
         var link=rmEl('button','',part.dataset.title);link.type='button';
         link.addEventListener('click',function(){select(part,true,null,true);});pathLinks.appendChild(link);
