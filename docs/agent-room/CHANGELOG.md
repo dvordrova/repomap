@@ -1,5 +1,46 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — A file in several boxes (the role split)
+
+- Owner, option "в": "what's in one file can have different roles, and one
+  role can span different files." Beside the parts request, each placed file
+  goes through three steps:
+  - a Jev gate: one box or several;
+  - DeepSeek naming of the boxes. It sends lines of code, same-file
+    `called_by` and `callers_elsewhere`, and the helper rule; the helper probe
+    measured judge 2.8 → 3.5, and W+F without the rule was worse;
+  - a Jev assignment of each declaration.
+  - No size threshold and no box cap. Jev questions name their item (`file`,
+    `declaration`) and carry criteria per option. Request-local refs keep each
+    file's cache its own.
+- New facts and rules:
+  - `code_lines` comes from every adapter (graph v17).
+  - A name declared twice in one file is one unit.
+  - A split file has no endpoint: the entry comes from the part holding the
+    seed declaration, and undecided declarations go off the map as
+    `undecided` (atlas v12, GroupsIndex v14).
+- The gate was measured on 377 files. The review replaced criteria that split
+  redis-cli.c, redis-benchmark.c and repomap's render.go; these now stay
+  whole. Near the cut stay pykrx etx/wrap.py and bond/core.py and repomap
+  llm/api.go.
+- redis-server: 9 parts → 28–32 in 5–6 areas, with redis.c split into about
+  24 boxes (commands per data type, persistence, replication, virtual memory,
+  clients, the command table). 7–9 of its 339 declarations stay undecided.
+  - Redis cold run 38.8 s; warm 3.9 s with 0 live calls.
+  - The new requests cost about $0.024 per cold run: 34 gate, 3 naming and
+    11 assignment calls.
+- pykrx: 10 → 46–48 parts.
+- The one-time describe goldens (fixture bytes at f49c3304) were deleted
+  after merging main: every fixture addition broke them.
+- Open for the owner:
+  - one-declaration helper boxes (redis "Logging" = redisLog, "Pattern
+    matching" = stringmatchlen);
+  - the same domain once per code layer in pykrx, with two identical titles;
+  - a parts-answer part keeps its title after losing a split file;
+  - repomap's design.go still splits, since its methods live on a type
+    declared in reading.go;
+  - redis-server draws about 200 arrows among about 30 parts.
+
 ## 2026-09-27 — C adapter, entries named by their written words, one request in the air
 
 - **C adapter:** repomap reads C (`internal/cproject`, contract

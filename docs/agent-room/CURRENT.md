@@ -125,6 +125,10 @@ never entered into or read from a repository-wide unqualified map.
   and Not on the map. A parts or areas answer refused whole, including one
   that decodes but draws nothing or is cut at the output cap, fails that
   target's map for the run; there is no second draw.
+  Since 2026-09-27 a placed file can go in several boxes: a Jev gate, a
+  DeepSeek naming of its boxes and a Jev assignment of its declarations
+  (READING, "A file in several boxes"); a file nearer the cut stays whole and
+  undecided declarations stay off the map as `undecided`.
 - **Map reading on the canvas (2026-09-25):** a part's description stands
   on its box under its name, a closed area's line on the area's box in the
   whole lines it leaves; a loose part beside areas is drawn at a peer's size.
