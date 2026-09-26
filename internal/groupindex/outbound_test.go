@@ -20,7 +20,7 @@ func TestAtlasOutboundSurvivesIncomingLaneAndRebindsAcrossTargets(t *testing.T) 
 			Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "Proxy", Line: "Receives and forwards requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{p.Objects[0].ID},
 				Files: []atlas.File{{Path: "api/proxy.go", Source: atlas.SourceModel, Line: "Proxy implementation.", Symbols: []atlas.Symbol{}}}}},
 			Boundaries: []atlas.Boundary{
-				{ID: "send-a", ObjectID: library.Objects[0].ID, BoxID: "api", Direction: atlas.DirectionOut, Kind: atlas.BoundaryHTTPClient,
+				{ID: "send-a", ObjectID: library.Objects[0].ID, BoxID: "api", Direction: atlas.DirectionOut, Kind: atlas.BoundaryClientRequest,
 					Destination: "Price service", Address: address, Basis: "dispatch", External: "http.Client.Do", Source: "model",
 					Path: "api/proxy.go", LineNo: 12, Column: 20, Values: []string{address}, Line: "Forwards the price request."},
 				{ID: "send-b", ObjectID: library.Objects[0].ID, BoxID: "api", Direction: atlas.DirectionOut, Kind: atlas.BoundarySDK,

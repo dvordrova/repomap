@@ -26,7 +26,7 @@ func (builder *pageBuilder) portalLinks() []portalLink {
 			continue
 		}
 		for _, call := range index.Outbound {
-			if fact, ok := builder.registrationFact(call.FactID); ok && call.Kind == "http_client" {
+			if fact, ok := builder.registrationFact(call.FactID); ok && call.Kind == "client_request" {
 				requests = append(requests, registrationRole{fact: fact, method: firstNonEmpty(call.Method, fact.Method, "GET")})
 			}
 		}
@@ -89,7 +89,7 @@ func (builder *pageBuilder) outboundRequests(programTargetID, _ string) []pageHT
 			continue
 		}
 		for _, call := range index.Outbound {
-			if call.Kind != "http_client" {
+			if call.Kind != "client_request" {
 				continue
 			}
 			fact, ok := builder.registrationFact(call.FactID)

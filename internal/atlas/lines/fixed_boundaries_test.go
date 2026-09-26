@@ -190,9 +190,9 @@ func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *
 }
 
 func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) {
-	for _, kind := range []string{atlas.BoundaryConfig, atlas.BoundaryRequest, atlas.BoundaryHTTPClient, atlas.BoundaryListenAddress} {
+	for _, kind := range []string{atlas.BoundaryConfig, atlas.BoundaryRequest, atlas.BoundaryClientRequest, atlas.BoundaryListenAddress} {
 		t.Run(kind, func(t *testing.T) {
-			outgoing := kind == atlas.BoundaryHTTPClient
+			outgoing := kind == atlas.BoundaryClientRequest
 			place := atlas.Place{ID: "native", Path: "service.py", LineNo: 12, Boundary: &atlas.BoundaryFacts{
 				Source: "fact", GivenKind: kind, Direction: atlas.DirectionOut, Values: []string{"SOURCE_VALUE", "OTHER_VALUE"}}}
 			addresses := BoundaryAddresses(place)

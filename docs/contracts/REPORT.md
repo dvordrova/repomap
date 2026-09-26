@@ -498,6 +498,10 @@ available without scripting.
 
 Selecting a component on the common map opens its existing purpose, entrypoints and complete input catalogue in the panel. Its original full-reference section remains available with the main flow, configuration, group cards, dependencies, coverage and TODO lists. A component without a flow or start list shows no flow section.
 
+An outbound kind is shown by the protocol-neutral label its kind has:
+`client_request` is "Request", never "HTTP", and the counts and headings of
+accepted client requests read "requests sent", whatever the protocol.
+
 The entrance reads accepted outbound communication directly from GroupsIndex, independently of dependency lanes and key captions. Each observation shows the other participant's role, purpose, known literal address or explicit unknown, and its original call/source chain. Dispatch and explicit remote-client configuration stay distinguishable. Native addresses and code names remain original; role/purpose use the existing display bindings. For display the observations are grouped by destination text (case-insensitive; native label or kind when the model named none): one row per destination carries the record count, the shared kind, basis and address (or the number of distinct addresses); its records are compact nested lines (the native method and address, else the callable, else the first sentence of the purpose, with the source location), all lines visible, and each line opens its full purpose, address, basis and call/source chain. The section count and the first screen count destination groups; a destination text is still not proof of one remote system. Dependency/import groups stay in collapsed code reference and do not supply the integration count. Empty observations do not prove that the service contacts nothing.
 
 The existing Data shelf lists source-scoped models/tables, written columns and keys, queries and original sources. Query-to-table references are reversible, so a table exposes its referring queries. Equal table names never merge source scopes; SQL mentions and JOINs do not prove schema ownership or foreign keys.

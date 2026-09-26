@@ -1446,7 +1446,11 @@ const (
 	DirectionIn  = "in"
 	DirectionOut = "out"
 
-	BoundaryHTTPClient = "http_client"
+	// BoundaryClientRequest is what a program sends to another running
+	// program over a connection, whatever the protocol: an HTTP request, an
+	// RPC, a command on a raw socket, a message on a WebSocket. It is the
+	// outgoing side of BoundaryRequest and, like it, claims no protocol.
+	BoundaryClientRequest = "client_request"
 	// BoundaryRequest is what a client sends over a connection, whatever the
 	// protocol: an HTTP route, an RPC method, a protocol command, an event a
 	// socket receives. The entry's name is the words the model chooses among
@@ -1487,7 +1491,7 @@ func Roles() []string {
 // BoundaryKinds lists the boundary kinds in the order the model sees them.
 func BoundaryKinds() []string {
 	return []string{
-		BoundaryHTTPClient, BoundaryRequest, BoundaryDB, BoundaryQueueProducer,
+		BoundaryClientRequest, BoundaryRequest, BoundaryDB, BoundaryQueueProducer,
 		BoundaryQueueConsumer, BoundaryScheduled, BoundaryContinuous, BoundaryInteraction, BoundaryExtension,
 		BoundaryCommand, BoundarySDK, BoundaryConfig, BoundaryOther,
 	}
@@ -1503,7 +1507,7 @@ func IncomingBoundaryKinds() []string {
 // communication kinds the group index keeps. A route or a configuration
 // read is never the kind of a call this component makes.
 func OutgoingBoundaryKinds() []string {
-	return []string{BoundaryHTTPClient, BoundaryDB, BoundaryQueueProducer, BoundaryQueueConsumer, BoundarySDK, BoundaryOther}
+	return []string{BoundaryClientRequest, BoundaryDB, BoundaryQueueProducer, BoundaryQueueConsumer, BoundarySDK, BoundaryOther}
 }
 
 func ValidRole(role string) bool {

@@ -156,7 +156,7 @@ func TestSystemInputCataloguesKeepEveryKindOutsideItsActualComponent(t *testing.
 		}, Edges: []pageMapEdge{{From: "command", To: "part", Label: "implemented in", Operations: "command", Scope: "operation", FromSource: command.Source}}},
 		RouteGroups: []pageRouteGroup{{Method: "GET", Rows: []pageRouteRow{{Paths: []pageRoutePath{{Path: "/unmatched", Anchor: &pageAnchor{Href: "server.py#L3", Text: "server.py:3"}}}}}}},
 		Activities:  []pageGroupOperation{{Href: "#command", Name: "Run", Kind: "command"}},
-		Outbound:    []pageOutbound{{ID: "send", Destination: "Queue", KindLabel: "HTTP"}},
+		Outbound:    []pageOutbound{{ID: "send", Destination: "Queue", KindLabel: "Request"}},
 	}
 	view := pageView{Sections: []*pageSection{section,
 		{ID: "second", ShortLabel: "Same name", Map: &pageMap{Nodes: []pageMapNode{{ID: "other-command", Activation: "command", FullTitle: "Run"}}}},
@@ -334,7 +334,7 @@ func TestSystemMatchedOutboundKeepsReadingWithoutAnotherParticipant(t *testing.T
 			if endpoint == "target" {
 				peerHref, peerID = "#backend", "system-component-backend"
 			}
-			row := pageOutbound{ID: "send", Destination: "Run service", Summary: "Submits a run to the backend.", KindLabel: outboundKindLabel("http_client"),
+			row := pageOutbound{ID: "send", Destination: "Run service", Summary: "Submits a run to the backend.", KindLabel: outboundKindLabel("client_request"),
 				Connections: []string{"run-match"}, Method: "POST", Address: "/run", Source: "fact",
 				Anchor: pageAnchor{Text: "http.ts:20", Href: "http.ts#L20"}, MapGroup: "http"}
 			view := pageView{Sections: []*pageSection{

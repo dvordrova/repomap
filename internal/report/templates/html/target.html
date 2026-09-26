@@ -19,7 +19,7 @@
 {{if .Core}}<h3 id="{{.ID}}-core">{{t "Core"}}</h3>{{range .Core}}{{template "group" .}}{{end}}{{end}}
 {{if .SharedCode}}<h3 id="{{.ID}}-shared-code">{{t "Shared code"}}</h3><ul class="plain">{{range .SharedCode}}<li><a href="{{.Href}}">{{.Name}}</a></li>{{end}}</ul>{{end}}
 {{if or .Calls .DependencyGroups .Dependencies}}<h3 id="{{.ID}}-dependencies">{{t "Code dependencies"}}</h3>
-{{if .Calls}}<h4>{{t "HTTP calls"}}</h4><ul class="plain fact">{{range .Calls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
+{{if .Calls}}<h4>{{t "Requests sent"}}</h4><ul class="plain fact">{{range .Calls}}<li><span class="method">{{.Method}}</span> <code>{{.Path}}</code>{{if .Symbol}} · {{.Symbol}}{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul>{{end}}
 {{range .DependencyGroups}}{{template "group" .}}{{end}}
 {{if .Dependencies}}<details class="evidence-list"><summary>{{t "{0} imported packages" (len .Dependencies)}}</summary><ul class="plain fact dependency-inventory">{{range .Dependencies}}<li><code>{{.Name}}</code>{{if .Version}} <span class="version">{{.Version}}</span>{{end}}{{if .Anchor}} <span class="dependency-source">{{template "anchor" .Anchor}}</span>{{end}}</li>{{end}}</ul></details>{{end}}{{end}}
 {{if .Dynamic}}<h3 id="{{.ID}}-dynamic">{{t "Runs code it is given"}}</h3><ul class="plain fact dynamic">{{range .Dynamic}}<li><code class="dynamic-pattern">{{.Pattern}}</code>{{if .Symbol}} {{t "in"}} <code>{{.Symbol}}</code>{{end}}{{if .Anchor}} · {{template "anchor" .Anchor}}{{end}}{{if .Witness}}<br><code class="meta">{{.Witness}}</code>{{end}}</li>{{end}}</ul>{{end}}

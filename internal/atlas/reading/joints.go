@@ -249,7 +249,7 @@ func (r *reader) readJoints(ctx context.Context) error {
 			continue
 		}
 		switch out.kind {
-		case atlas.BoundaryHTTPClient, atlas.BoundaryQueueProducer, atlas.BoundarySDK:
+		case atlas.BoundaryClientRequest, atlas.BoundaryQueueProducer, atlas.BoundarySDK:
 			blind = append(blind, out)
 		}
 	}

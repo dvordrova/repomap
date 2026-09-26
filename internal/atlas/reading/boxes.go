@@ -543,7 +543,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			continue
 		}
 		state := &boundaryState{place: place, line: place.Given, kind: place.Boundary.GivenKind}
-		if place.Boundary.GivenKind == atlas.BoundaryHTTPClient {
+		if place.Boundary.GivenKind == atlas.BoundaryClientRequest {
 			state.basis = "dispatch"
 			if len(place.Boundary.Values) == 1 {
 				state.address = place.Boundary.Values[0]

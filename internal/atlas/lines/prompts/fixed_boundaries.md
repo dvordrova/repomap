@@ -4,7 +4,9 @@ Each independent row is one fact the code already established; `kind_given`
 says what it is: `config` a configuration read, `listen_address` a listening
 address, an entry kind (`request`, `command`, `interaction`, `scheduled`,
 `continuous`, `queue_consumer`, `extension`) for work a registration brings
-in, and for work sent out `http_client`, `db`, `queue_producer` or `sdk`. Its
+in, and for work sent out `client_request` (a request sent, or a connection
+opened, to another running service, whatever the protocol), `db`,
+`queue_producer` or `sdk`. Its
 existence and kind are not decisions. `path`, `line`, `caller`, `external`
 and `values` are the fact's source site, enclosing declaration or handler,
 called symbol and observed literals; an outgoing row may carry the `method`

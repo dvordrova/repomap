@@ -152,7 +152,7 @@ func TestOverviewPortalCountsUseExactTestSites(t *testing.T) {
 	builder := pageBuilder{data: data, testPaths: map[string]bool{"checks.ts": true}, factsByID: map[string]facts.Fact{"call": call, "route": route},
 		sections: []*pageSection{{programTargetID: "caller"}, {programTargetID: "server"}},
 		indexes: []groupindex.Index{
-			{Target: programindex.Target{ID: "caller"}, Outbound: []groupindex.OutboundCall{{ID: "x", FactID: "call", Kind: "http_client", Method: "GET"}}},
+			{Target: programindex.Target{ID: "caller"}, Outbound: []groupindex.OutboundCall{{ID: "x", FactID: "call", Kind: "client_request", Method: "GET"}}},
 			{Target: programindex.Target{ID: "server"}, Operations: []groupindex.Operation{{ID: "o1", FactID: "route", Kind: "request"}}},
 		}}
 	nodes := map[string]*pageRepoNode{"caller": {ID: "caller", Width: 100, Height: 100}, "server": {ID: "server", X: 200, Width: 100, Height: 100}}

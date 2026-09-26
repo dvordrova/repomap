@@ -413,7 +413,7 @@ func (builder *pageBuilder) figures(view *pageView) {
 	optional := []pageFigure{
 		{Value: thousands(symbols), Label: "symbols read"},
 		{Value: thousands(routes), Label: pluralWord(routes, "route served", "routes served")},
-		{Value: thousands(calls), Label: pluralWord(calls, "HTTP call out", "HTTP calls out")},
+		{Value: thousands(calls), Label: pluralWord(calls, "request sent", "requests sent")},
 		{Value: thousands(len(view.Portals)), Label: pluralWord(len(view.Portals), "target crossing", "target crossings")},
 		{Value: thousands(dynamic), Label: pluralWord(dynamic, "place running handed-in code", "places running handed-in code")},
 		{Value: thousands(dead), Label: pluralWord(dead, "file nothing reaches", "files nothing reaches"), Warn: dead > 0},
@@ -674,7 +674,7 @@ func cardCounts(card pageTargetCard) string {
 		one, many string
 	}{
 		{card.Routes, "route", "routes"},
-		{card.Calls, "HTTP call out", "HTTP calls out"},
+		{card.Calls, "request sent", "requests sent"},
 		{card.Dynamic, "place running handed-in code", "places running handed-in code"},
 		{card.Dead, "file nothing reaches", "files nothing reaches"},
 	} {

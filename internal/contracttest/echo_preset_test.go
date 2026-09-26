@@ -119,7 +119,7 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 		}
 	}
 	// The driver opened and the statement sent: two database boundaries.
-	if kinds["db"] != 2 || kinds["http_client"] != 0 {
+	if kinds["db"] != 2 || kinds["client_request"] != 0 {
 		t.Fatalf("outbound kinds = %v (%+v)", kinds, overlay.Outbound)
 	}
 	if !provider.sawRegistration || !provider.sawSQL {

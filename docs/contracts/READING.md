@@ -504,7 +504,11 @@ only when the process is signalled or fails, binds nothing. It is also asked
 a symbol binds and publishes nothing) and `publishes`. Every other symbol is
 asked `publishes` (`yes` when the call makes what its holder holds reachable:
 a server started, an app run, a consumer connected) and `talks` (the kind of
-other running system it sends to, reads from or opens a connection to). A
+other running system it sends to, reads from or opens a connection to:
+`client_request`, `db`, `queue_producer`, `queue_consumer`, `sdk`).
+`client_request` is the outgoing side of `request` and, like it, names no
+protocol (owner, 2026-09-27): an HTTP request, an RPC and a raw socket
+`connect` are one kind, and a report never calls a TCP connection HTTP. A
 symbol may hold several cells. The roles are recorded on the atlas as `api`.
 A request, like every entry, is named from its registration's words
 (Operation ownership above).

@@ -91,8 +91,8 @@ func twoTargetGraph(t *testing.T) atlas.Graph {
 		file("web/src/client.ts", 1, web, []string{atlas.FileID("web/src/app.ts")}, nil),
 		boundary("svc/api/h.go", 10, svc, atlas.DirectionIn, atlas.BoundaryRequest, "GET", []string{"/api/levels/{id}"}),
 		boundary("svc/db/d.go", 20, svc, atlas.DirectionOut, atlas.BoundaryConfig, "", []string{"DATABASE_URL"}),
-		boundary("web/src/client.ts", 5, web, atlas.DirectionOut, atlas.BoundaryHTTPClient, "GET", []string{"/api/levels/{param}"}),
-		boundary("web/src/client.ts", 9, web, atlas.DirectionOut, atlas.BoundaryHTTPClient, "POST", []string{"/api/nothing"}),
+		boundary("web/src/client.ts", 5, web, atlas.DirectionOut, atlas.BoundaryClientRequest, "GET", []string{"/api/levels/{param}"}),
+		boundary("web/src/client.ts", 9, web, atlas.DirectionOut, atlas.BoundaryClientRequest, "POST", []string{"/api/nothing"}),
 		boundary("web/src/app.ts", 2, web, atlas.DirectionOut, atlas.BoundaryConfig, "", []string{"DATABASE_URL"}),
 	}
 	edge := func(from, to string, count int) atlas.Edge {

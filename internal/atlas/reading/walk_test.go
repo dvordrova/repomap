@@ -211,7 +211,7 @@ func TestConcurrentStagesKeepStepOrder(t *testing.T) {
 			}
 		}
 		for _, boundary := range target.Boundaries {
-			if boundary.Kind == atlas.BoundaryHTTPClient && boundary.Path == "svc/core/c.go" {
+			if boundary.Kind == atlas.BoundaryClientRequest && boundary.Path == "svc/core/c.go" {
 				outgoing++
 			}
 		}

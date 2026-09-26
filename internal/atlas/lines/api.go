@@ -38,7 +38,7 @@ func API(handed bool) table.Definition {
 	}
 	def.Columns = []table.Column{
 		{Name: "publishes", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this call starts serving: listens on an address, runs the application, connects the consumer"},
-		{Name: "talks", Kind: table.Choice, Options: talksOptions(), Optional: true, Note: "the kind of other running system this call itself sends to, reads from or opens a connection to: http_client, db, queue_producer, queue_consumer, sdk. A call that builds or configures — returning the same type it was called on, setting a header, tuning a pool — and a call that reads a result already received talk to nothing"},
+		{Name: "talks", Kind: table.Choice, Options: talksOptions(), Optional: true, Note: "the kind of other running system this call itself sends to, reads from or opens a connection to: client_request, db, queue_producer, queue_consumer, sdk. A call that builds or configures — returning the same type it was called on, setting a header, tuning a pool — and a call that reads a result already received talk to nothing"},
 	}
 	return def
 }
@@ -58,5 +58,5 @@ func Publish() table.Definition {
 // talksOptions are the outgoing kinds a symbol can talk to. A symbol that
 // talks to nothing named leaves the cell out; there is no "other" to fall into.
 func talksOptions() []string {
-	return []string{atlas.BoundaryHTTPClient, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK}
+	return []string{atlas.BoundaryClientRequest, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK}
 }

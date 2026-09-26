@@ -56,7 +56,7 @@ func TestOutboundInputsFollowCallerSubjectsNotTheirSharedPart(t *testing.T) {
 
 func TestOutboundSourceUsesDoNotHideBehindOneSelectedAddress(t *testing.T) {
 	index := groupindex.Index{Target: programindex.Target{ID: "service"}, Outbound: []groupindex.OutboundCall{{
-		ID: "shared-send", Kind: "http_client", Source: "model", Address: "https://prices.example",
+		ID: "shared-send", Kind: "client_request", Source: "model", Address: "https://prices.example",
 		Uses: []atlas.DestinationUse{
 			{Address: "https://prices.example", Steps: []atlas.DestinationStep{{Name: "GetPrices", Path: "prices.go", Line: 12, Column: 3}}},
 			{Address: "https://audit.example", Steps: []atlas.DestinationStep{{Name: "WriteAudit", Path: "audit.go", Line: 22, Column: 3}}},
@@ -92,7 +92,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 	}
 	for i := 0; i < 7; i++ {
 		index.Outbound = append(index.Outbound, groupindex.OutboundCall{
-			ID: fmt.Sprintf("out-%d", i), GroupID: "handler", Kind: "http_client",
+			ID: fmt.Sprintf("out-%d", i), GroupID: "handler", Kind: "client_request",
 			Destination: "Pricing service", Summary: "Reads the latest market prices.",
 			Address: address, External: "가격조회.Get", Basis: "dispatch", Source: "model",
 			Location: programindex.Location{Path: "client.go", Line: 21 + i, Column: 17},
@@ -184,7 +184,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 
 func TestOutboundSourcePathsAndFoldKeepOriginalEvidence(t *testing.T) {
 	index := reportGroupIndexFixture(t, "api", "fixture:api", "main.go")
-	index, err := groupindex.WithOutbound(index, []groupindex.OutboundCall{{ID: "out", Kind: "http_client", External: "http.Client.Do", Method: "GET", Address: "https://가격.example/시장", Source: "fact", Basis: "dispatch", Location: programindex.Location{Path: "clients/가격.go", Line: 31, Column: 19}}})
+	index, err := groupindex.WithOutbound(index, []groupindex.OutboundCall{{ID: "out", Kind: "client_request", External: "http.Client.Do", Method: "GET", Address: "https://가격.example/시장", Source: "fact", Basis: "dispatch", Location: programindex.Location{Path: "clients/가격.go", Line: 31, Column: 19}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestOutboundGroupsByDestinationWithSharedAddressAndPreview(t *testing.T) {
 		{ID: "c", Destination: "kubernetes api server", Summary: "Watches deployments.", KindLabel: "SDK", Basis: "configuration", Source: "model", Address: "{env:KUBECONFIG}"},
 		{ID: "d", Destination: "Postgres", Summary: "Reads events.", KindLabel: "Database", Basis: "dispatch", Source: "model", Address: "{env:REPLICA_URL}"},
 		{ID: "e", Destination: "Postgres", Summary: "Deletes events.", KindLabel: "Database", Basis: "dispatch", Source: "model"},
-		{ID: "f", NativeLabel: "GET https://metrics.example/push", KindLabel: "HTTP", Source: "fact"},
+		{ID: "f", NativeLabel: "GET https://metrics.example/push", KindLabel: "Request", Source: "fact"},
 	}
 	groups := groupOutbound(rows)
 	if len(groups) != 3 || groups[0].Destination != "PostgreSQL" || len(groups[0].Rows) != 3 || groups[1].Destination != "Kubernetes API server" || len(groups[1].Rows) != 2 || groups[2].NativeLabel != "GET https://metrics.example/push" {

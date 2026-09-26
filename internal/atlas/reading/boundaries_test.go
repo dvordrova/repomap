@@ -13,7 +13,7 @@ import (
 )
 
 func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *testing.T) {
-	native := atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 20, Column: 9, Parent: "file:main", TargetIDs: []string{"service"}, Given: "GET https://native.example", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "fact"}}, ObjectID: "caller", Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryHTTPClient, Method: "GET", Values: []string{"https://native.example"}}}
+	native := atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 20, Column: 9, Parent: "file:main", TargetIDs: []string{"service"}, Given: "GET https://native.example", Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "fact"}}, ObjectID: "caller", Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryClientRequest, Method: "GET", Values: []string{"https://native.example"}}}
 	first := atlas.SymbolCall{Name: "http.Get", Kind: "invokes_external", Line: 20, Column: 9, API: &atlas.CallAPI{Package: "net/http", Name: "Get"}}
 	second := atlas.SymbolCall{Name: "http.Get", Kind: "invokes_external", Line: 20, Column: 42, API: &atlas.CallAPI{Package: "net/http", Name: "Get"}}
 	symbol := atlas.Place{ID: "owner", Kind: atlas.PlaceSymbol, Path: "main.go", LineNo: 10, Parent: "file:main", TargetIDs: []string{"service"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "caller", Name: "send"}, Calls: []atlas.SymbolCall{first, second}}}
@@ -34,21 +34,21 @@ func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *te
 	r.knowledge = map[string]*Knowledge{}
 	r.knowledgeSubjects = map[string]*Knowledge{}
 	r.responseTables = map[string]rememberedTable{}
-	r.api = map[string]apiRole{"net/http.Get": {talks: atlas.BoundaryHTTPClient}}
-	r.boundaries = map[string]*boundaryState{native.ID: {place: native, kind: atlas.BoundaryHTTPClient}}
+	r.api = map[string]apiRole{"net/http.Get": {talks: atlas.BoundaryClientRequest}}
+	r.boundaries = map[string]*boundaryState{native.ID: {place: native, kind: atlas.BoundaryClientRequest}}
 	r.bindInterpretedBoundaries()
 	if len(r.boundaries) != 2 {
 		t.Fatalf("same-line call collapsed or exact native call duplicated: %+v", r.boundaries)
 	}
 	for id, b := range r.boundaries {
-		if id != native.ID && (b.place.Column != 42 || b.kind != atlas.BoundaryHTTPClient) {
+		if id != native.ID && (b.place.Column != 42 || b.kind != atlas.BoundaryClientRequest) {
 			t.Fatalf("call column or its symbol's kind lost: %+v", b.place)
 		}
 	}
 	if err := r.readBoundaries(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.boundaries) != 2 || !reflect.DeepEqual(r.boundaries[native.ID].place, native) || r.boundaries[native.ID].kind != atlas.BoundaryHTTPClient || r.boundaries[native.ID].line != native.Given || r.boundaries[native.ID].address != native.Boundary.Values[0] || r.boundaries[native.ID].basis != "dispatch" {
+	if len(r.boundaries) != 2 || !reflect.DeepEqual(r.boundaries[native.ID].place, native) || r.boundaries[native.ID].kind != atlas.BoundaryClientRequest || r.boundaries[native.ID].line != native.Given || r.boundaries[native.ID].address != native.Boundary.Values[0] || r.boundaries[native.ID].basis != "dispatch" {
 		t.Fatalf("refused prose deleted source fact: %+v", r.boundaries)
 	}
 	// Each outbound row loses only its refused line; its destination and
@@ -111,11 +111,11 @@ func TestBoundaryKnownHTTPAddressSurvivesAcceptedUnknownAndPreservesSourceAnchor
 	native := atlas.Place{ID: "native", Kind: atlas.PlaceBoundary, Path: "client.go", LineNo: 27, Column: 19,
 		Parent: "file:client", TargetIDs: []string{"service"}, Given: "GET " + address,
 		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "original-http"}}, Direction: atlas.DirectionOut,
-			GivenKind: atlas.BoundaryHTTPClient, Method: "GET", Values: []string{address}}}
+			GivenKind: atlas.BoundaryClientRequest, Method: "GET", Values: []string{address}}}
 	provider := &mutatedTableProvider{}
 	provider.mutate = func(_ map[string]any, rows []map[string]any) {
 		for _, row := range rows {
-			row["decision"], row["kind"], row["line"] = "boundary", "http_client", "Requests the configured peer."
+			row["decision"], row["kind"], row["line"] = "boundary", "client_request", "Requests the configured peer."
 			row["destination"], row["basis"], row["address"] = "other: Peer service", "remote_client_instance", "unknown"
 		}
 	}
@@ -215,7 +215,7 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 		if strings.Contains(string(mustJSON(context["immediate_callers"])), "result_value") {
 			t.Fatal("caller call sites carried result value trees")
 		}
-		rows[0]["decision"], rows[0]["kind"], rows[0]["line"] = "boundary", "http_client", "forwards requests and refreshes snapshots · not established: destination"
+		rows[0]["decision"], rows[0]["kind"], rows[0]["line"] = "boundary", "client_request", "forwards requests and refreshes snapshots · not established: destination"
 		rows[0]["destination"], rows[0]["basis"], rows[0]["address"] = "other: Remote endpoints", "dispatch", "unknown"
 	}
 	r := answerTestReader(t, nil, provider)
@@ -226,7 +226,7 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 	}
 	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
 	r.responseTables = map[string]rememberedTable{}
-	r.api = map[string]apiRole{"net/http.Client.Do": {talks: atlas.BoundaryHTTPClient}}
+	r.api = map[string]apiRole{"net/http.Client.Do": {talks: atlas.BoundaryClientRequest}}
 	r.boxOf = map[string]string{file.ID: "requests"}
 	if err := r.readBoundaries(t.Context()); err != nil {
 		t.Fatal(err)

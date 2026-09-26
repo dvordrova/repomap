@@ -449,8 +449,8 @@ func canonicalDestination(text string) string {
 
 func outboundKindLabel(kind string) string {
 	switch kind {
-	case "http_client":
-		return "HTTP"
+	case "client_request":
+		return "Request"
 	case "db":
 		return "Database"
 	case "queue_producer", "queue_consumer":

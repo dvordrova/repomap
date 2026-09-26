@@ -241,7 +241,7 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 				Boxes: []atlas.Box{{ID: "web/src", Dir: "web/src", Title: "Client", Line: "Calls the API.", Side: atlas.SideOut, Open: true, MemberIDs: objectIn(web, "web/src/app.ts"),
 					Files: []atlas.File{{Path: "web/src/app.ts", Line: "App.", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{}}}, Keys: []atlas.Key{}}},
 				Arrows:     []atlas.Arrow{},
-				Boundaries: []atlas.Boundary{{ID: "b-out", BoxID: "web/src", Path: "web/src/app.ts", LineNo: 5, Caller: "FA", Direction: atlas.DirectionOut, Kind: atlas.BoundaryHTTPClient, Values: []string{"/api/levels"}, Line: "Fetches levels."}},
+				Boundaries: []atlas.Boundary{{ID: "b-out", BoxID: "web/src", Path: "web/src/app.ts", LineNo: 5, Caller: "FA", Direction: atlas.DirectionOut, Kind: atlas.BoundaryClientRequest, Values: []string{"/api/levels"}, Line: "Fetches levels."}},
 				Trace:      []string{},
 			},
 		},
