@@ -1,6 +1,7 @@
 package terminology
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -60,5 +61,31 @@ func TestGlossaryTermNeedsNameExplanationAndRowsOnly(t *testing.T) {
 	}
 	if reasons["invalid optional term shape"] != 1 || reasons["invalid optional term fields"] != 2 || reasons["term declares itself an identifier, not a concept"] != 1 {
 		t.Fatalf("refused terms were not journaled: %+v", got.Rejections)
+	}
+}
+
+// Owner decision 2026-09-26: prose that says "snapshots" or "classes" backs a
+// term named Snapshot or class. Go still has no occurrence in "good" or
+// "goes", nor Snap in "snapshots".
+func TestGlossaryTermOccursInAnyCaseAndPluralForm(t *testing.T) {
+	call, err := generationCall([]proseSource{{Texts: []string{"Replicas exchange snapshots of classes. A good cache goes stale."}, Sources: []Source{{Path: "raft.go", Line: 7}}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := call.DecodeValidate([]byte(`{"terms":[
+		{"name":"Snapshot","kind":"domain","explanation":"A saved copy of the state.","rows":["p1"]},
+		{"name":"class","kind":"domain","explanation":"A group of entries.","rows":["p1"]},
+		{"name":"Replica","kind":"domain","explanation":"One copy of the data.","rows":["p1"]},
+		{"name":"Go","kind":"domain","explanation":"A programming language.","rows":["p1"]},
+		{"name":"Snap","kind":"domain","explanation":"A part of a word.","rows":["p1"]}]}`))
+	var published []string
+	for _, term := range got.Terms {
+		published = append(published, term.candidate.Name)
+	}
+	if err != nil || strings.Join(published, ",") != "Snapshot,class,Replica" {
+		t.Fatalf("case and plural forms did not back their terms: %v %+v %v", published, got.Rejections, err)
+	}
+	if len(got.Rejections) != 1 || got.Rejections[0].Reason != "term has no source-backed occurrence in the computed result" || got.Rejections[0].Count != 2 {
+		t.Fatalf("a partial word backed a term: %+v", got.Rejections)
 	}
 }

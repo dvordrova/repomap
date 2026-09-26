@@ -149,8 +149,9 @@ separate stage outputs.
   spellings, definitions, sources and analytical request provenance
   survive that reduction; equal names alone never establish equal meanings.
   Translation keeps glossary names and accepted English aliases in their original spelling and translates
-  their definitions and surrounding prose. Code looks up complete literal names
-  in the final display text; the model does not annotate occurrences or choose
+  their definitions and surrounding prose. Code looks up complete names in the
+  final display text, in any letter case and with an English plural -s or -es
+  (owner decision 2026-09-26); the model does not annotate occurrences or choose
   tooltip positions. Equal spellings may offer separate dictionary definitions;
   a lookup does not establish the meaning of a particular use. Optional
   terminology errors do not invalidate an accepted main answer or translation;

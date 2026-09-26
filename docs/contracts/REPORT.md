@@ -439,6 +439,10 @@ same saved analysis and translations, with no provider calls.
 Answer provenance, checks, supporting readings and question origins share one
 collapsed apparatus; existing source IDs and excerpts survive. Terms receive
 one underline per answer, and source-unavailable labels remain inspectable.
+An underline finds a glossary name as a whole word in any letter case, alone
+or with an English plural `s`/`es` (snapshots for Snapshot, classes for
+Class, never good or goes for Go), by the shared
+[term lookup](TERMINOLOGY.md#term-lookup) (owner decision 2026-09-26).
 Header revision noise, redundant answer actions and root Path:. are removed;
 run information remains linked from the footer.
 
@@ -488,7 +492,10 @@ An operation or native route exposes Data links only when the existing accepted 
   frontend structure, with an ordinary UI dictionary and a separate LLM cube
   for generated display prose, then renders `report.<repo>.ru.html`. Translation
   requests carry one local dictionary of exact spelling/definition pairs and
-  each text's applicable refs. Equal spellings with different definitions stay
+  each text's applicable refs, found by the
+  [term lookup](TERMINOLOGY.md#term-lookup); a saved translation
+  whose texts now find another name is rejected by `render`, not adapted.
+  Equal spellings with different definitions stay
   separate; each partition rebuilds its complete dictionary. Source
   excerpts, names, IDs and topology remain original. Operation names stay
   English in every display language; exact command/path labels remain verbatim,

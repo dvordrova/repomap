@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf16"
+
+	"github.com/dvordrova/repomap/internal/terminology"
 )
 
 func glossaryFixture(id, name, explanation, question string) pageGlossaryTerm {
@@ -79,6 +81,84 @@ func TestLiteralTermBoundariesOverlapsAndSourceSyntax(t *testing.T) {
 		if len(span.IDs) != 1 {
 			t.Fatal("overlapping dictionary created nested definitions")
 		}
+	}
+}
+
+// Owner decision 2026-09-26: a glossary name is found in any letter case and
+// with an English plural ending, as a whole word outside source syntax. The
+// translator's dictionary carries the name whose plural the text uses.
+func TestTermLookupFindsAnyCaseAndEnglishPlural(t *testing.T) {
+	page := &PreparedPage{view: &pageView{Glossary: []pageGlossaryTerm{
+		glossaryFixture("snapshot", "Snapshot", "A saved copy of the state.", ""),
+		glossaryFixture("class", "Class", "A group of entries.", ""),
+		glossaryFixture("go", "Go", "A programming language.", ""),
+		glossaryFixture("hmm", "HMM", "Hidden Markov model.", ""),
+	}}}
+	original := "İstanbul snapshots hold classes; a SNAPSHOT is good. Go goes past HMMs, HMMish and Gopher. `snapshots` /api/snapshots snapshots_dir."
+	entry := page.prepareTerminology("answer", original, "", nil, nil)
+	var ids []string
+	for _, term := range entry.Terms {
+		ids = append(ids, term.ID)
+	}
+	if !reflect.DeepEqual(ids, []string{"class", "go", "hmm", "snapshot"}) {
+		t.Fatalf("translation dictionary: %+v", entry.Terms)
+	}
+	plain, spans, err := entry.finishDisplayText(entry.Text)
+	want := []string{"snapshots", "classes", "SNAPSHOT", "Go", "HMMs"}
+	if err != nil || plain != original || !reflect.DeepEqual(matchedWords(plain, spans), want) {
+		t.Fatalf("case and plural lookup: %q %v %v", plain, matchedWords(plain, spans), err)
+	}
+	translated := "Снимки snapshots в İstanbul."
+	if _, spans, _ := entry.finishDisplayText(translated); !reflect.DeepEqual(matchedWords(translated, spans), []string{"snapshots"}) {
+		t.Fatalf("translated lookup: %v", matchedWords(translated, spans))
+	}
+}
+
+// Spellings equal but for case are one lookup name: a question's own sense
+// still replaces the others, and the exact name wins over a plural reading.
+func TestCaseVariantsShareScopeAndExactNamesWinPlurals(t *testing.T) {
+	page := &PreparedPage{view: &pageView{Glossary: []pageGlossaryTerm{
+		glossaryFixture("finance", "bank", "A financial institution.", "q-finance"),
+		glossaryFixture("river", "Bank", "The land beside a river.", ""),
+		glossaryFixture("matcher", "Matcher", "Matches one pattern.", ""),
+		glossaryFixture("matchers", "Matchers", "The registry of every matcher.", ""),
+	}}}
+	for _, test := range []struct {
+		scope string
+		ids   []string
+	}{{"q-finance", []string{"finance"}}, {"", []string{"finance", "river"}}} {
+		entry := page.prepareTerminology("answer", "Banks hold a bank.", test.scope, nil, nil)
+		_, spans, err := entry.finishDisplayText(entry.Text)
+		if err != nil || len(spans) != 2 || !reflect.DeepEqual(spans[0].IDs, test.ids) || !reflect.DeepEqual(spans[1].IDs, test.ids) {
+			t.Fatalf("scope %q: %+v %v", test.scope, spans, err)
+		}
+	}
+	entry := page.prepareTerminology("answer", "Matchers keep each matcher.", "", nil, nil)
+	_, spans, err := entry.finishDisplayText(entry.Text)
+	if err != nil || len(spans) != 2 || !reflect.DeepEqual(spans[0].IDs, []string{"matchers"}) || !reflect.DeepEqual(spans[1].IDs, []string{"matcher"}) {
+		t.Fatalf("a plural reading displaced an exact name: %+v %v", spans, err)
+	}
+}
+
+// A reduced entry can join spellings equal but for case, as saved runs joined
+// Zipkin and zipkin. Lookup cannot tell them apart, so a mention offers that
+// one definition once, not as two definitions of the name.
+func TestJoinedCaseSpellingsOfferTheirOneDefinitionOnce(t *testing.T) {
+	source := []terminology.Source{{Path: "trace.go", Line: 3}}
+	catalog := pageGlossaryCatalog(t, []terminology.Candidate{
+		{Name: "Zipkin", Explanation: "A distributed tracing system.", Sources: source},
+		{Name: "zipkin", Explanation: "A distributed tracing system.", Sources: source},
+	})
+	builder := &pageBuilder{data: &ReportData{Glossary: catalog}, links: pageLinks{sourceIDs: map[string]string{"trace.go": "source-id"}}}
+	view := &pageView{}
+	if err := builder.reducedGlossary(view); err != nil || len(view.Glossary) != 2 {
+		t.Fatalf("the reduced entry lost a spelling: %+v %v", view.Glossary, err)
+	}
+	page := &PreparedPage{view: view}
+	entry := page.prepareTerminology("answer", "Zipkin receives spans; zipkin stores them.", "", nil, nil)
+	_, spans, err := entry.finishDisplayText(entry.Text)
+	if err != nil || len(entry.Terms) != 1 || len(spans) != 2 || len(spans[0].IDs) != 1 || !reflect.DeepEqual(spans[0].IDs, spans[1].IDs) {
+		t.Fatalf("one definition was offered twice: %+v %+v %v", entry.Terms, spans, err)
 	}
 }
 

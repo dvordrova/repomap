@@ -7,7 +7,6 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf16"
-	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/terminology"
 )
@@ -56,8 +55,8 @@ func (entry DisplayTextEntry) validateTermBindings() error {
 	return nil
 }
 
-// finishDisplayText restores literal source bytes once, then looks up complete
-// glossary spellings in the final prose. The model never assigns a hint or its
+// finishDisplayText restores literal source bytes once, then looks up whole
+// glossary names in the final prose. The model never assigns a hint or its
 // position. Equal spellings offer separate definitions, not an inferred sense.
 func (entry DisplayTextEntry) finishDisplayText(text string) (string, []displayTermSpan, error) {
 	protected := make(map[string]string, len(entry.Protected))
@@ -82,22 +81,30 @@ func (entry DisplayTextEntry) finishDisplayText(text string) (string, []displayT
 }
 
 type glossaryMatch struct {
-	start, end int
-	ids        []string
+	start, end, ending int
+	ids                []string
 }
 
-// Matches are literal and case-sensitive. Source syntax remains untouched;
-// longest complete names win at a shared start, without nested highlights.
+// Matches follow the shared term lookup (owner decision 2026-09-26): whole
+// words in any letter case, alone or with an English plural ending. Spellings
+// equal but for case offer their definitions together. Source syntax remains
+// untouched; the longest complete name wins at a shared start, a name that
+// needs no plural ending wins an equal span, and highlights never nest.
 func glossaryMatches(text string, terms []DisplayTextTerm) []glossaryMatch {
 	return glossaryMatchesBySpelling(text, glossarySpellingIDs(terms))
 }
 
+// glossarySpellingIDs keys each spelling's sorted term IDs by its folded case.
 func glossarySpellingIDs(terms []DisplayTextTerm) map[string][]string {
 	byName := make(map[string][]string)
 	for _, term := range terms {
-		if term.Spelling != "" && !slices.Contains(byName[term.Spelling], term.ID) {
-			byName[term.Spelling] = append(byName[term.Spelling], term.ID)
+		name := terminology.FoldTerm(term.Spelling)
+		if name != "" && !slices.Contains(byName[name], term.ID) {
+			byName[name] = append(byName[name], term.ID)
 		}
+	}
+	for _, ids := range byName {
+		slices.Sort(ids)
 	}
 	return byName
 }
@@ -117,27 +124,19 @@ func glossaryMatchesWith(text string, syntax displaySyntax, byName map[string][]
 	for _, bounds := range syntax.paths {
 		blocked = append(blocked, []int{bounds[0], bounds[1]})
 	}
+	folded := terminology.FoldText(text)
 	var matches []glossaryMatch
-	for spelling, ids := range byName {
-		for from := 0; from < len(text); {
-			at := strings.Index(text[from:], spelling)
-			if at < 0 {
-				break
-			}
-			start, end := from+at, from+at+len(spelling)
-			from = end
-			if !wholeGlossaryName(text, start, end) {
-				continue
-			}
+	for name, ids := range byName {
+		for _, found := range folded.Find(name, glossaryWordRune) {
 			insideSource := false
 			for _, source := range blocked {
-				if start < source[1] && end > source[0] {
+				if found.Start < source[1] && found.End > source[0] {
 					insideSource = true
 					break
 				}
 			}
 			if !insideSource {
-				matches = append(matches, glossaryMatch{start: start, end: end, ids: ids})
+				matches = append(matches, glossaryMatch{start: found.Start, end: found.End, ending: found.Ending, ids: ids})
 			}
 		}
 	}
@@ -145,7 +144,10 @@ func glossaryMatchesWith(text string, syntax displaySyntax, byName map[string][]
 		if matches[i].start != matches[j].start {
 			return matches[i].start < matches[j].start
 		}
-		return matches[i].end > matches[j].end
+		if matches[i].end != matches[j].end {
+			return matches[i].end > matches[j].end
+		}
+		return matches[i].ending < matches[j].ending
 	})
 	var result []glossaryMatch
 	end := 0
@@ -168,7 +170,8 @@ func glossaryInQuestion(term pageGlossaryTerm, scope string) bool {
 }
 
 // A model-supplied English alias and the native code name address the same
-// definition. No translated spelling or morphological variant is inferred.
+// definition. No translated spelling is inferred; lookup adds only letter case
+// and the English plural ending.
 func glossarySpellings(term pageGlossaryTerm) []string {
 	names := []string{term.OriginalName}
 	if term.Name != "" && term.Name != term.OriginalName {
@@ -177,26 +180,17 @@ func glossarySpellings(term pageGlossaryTerm) []string {
 	return names
 }
 
-func glossaryWordRune(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) || r == '_' || r == '$'
+// sameGlossaryDefinition reports whether two glossary terms would show the
+// same definition: equal explanation, sources, questions and places.
+func sameGlossaryDefinition(a, b pageGlossaryTerm) bool {
+	return a.Explanation == b.Explanation && a.Code == b.Code && slices.Equal(a.Sources, b.Sources) &&
+		slices.Equal(a.Questions, b.Questions) && slices.Equal(a.Places, b.Places)
 }
 
-func wholeGlossaryName(text string, start, end int) bool {
-	first, _ := utf8.DecodeRuneInString(text[start:end])
-	last, _ := utf8.DecodeLastRuneInString(text[start:end])
-	if start > 0 {
-		r, _ := utf8.DecodeLastRuneInString(text[:start])
-		if glossaryWordRune(r) && !terminology.ScriptBoundary(r, first) {
-			return false
-		}
-	}
-	if end < len(text) {
-		r, _ := utf8.DecodeRuneInString(text[end:])
-		if glossaryWordRune(r) && !terminology.ScriptBoundary(last, r) {
-			return false
-		}
-	}
-	return true
+// A letter, digit, mark, underscore or dollar sign continues a name, so a
+// glossary word never lights up inside HMMish, _HMM or $HMM.
+func glossaryWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) || r == '_' || r == '$'
 }
 
 // prepareTerminology uses the same source-owned glossary context for translation
@@ -266,28 +260,59 @@ func (page *PreparedPage) terminologyFor(scope string, own *pageGlossaryTerm) pa
 	if cached, ok := page.terms[key]; ok {
 		return cached
 	}
-	byName := make(map[string][]pageGlossaryTerm)
-	scoped := make(map[string][]pageGlossaryTerm)
+	// A question's own sense, or a glossary entry's own definition, replaces
+	// the other definitions of every spelling that lookup cannot tell apart.
+	type spelled struct {
+		spelling string
+		term     pageGlossaryTerm
+	}
+	byName := make(map[string][]spelled)
+	scoped := make(map[string][]spelled)
 	for _, term := range page.view.Glossary {
 		for _, spelling := range glossarySpellings(term) {
-			byName[spelling] = append(byName[spelling], term)
+			name := terminology.FoldTerm(spelling)
+			byName[name] = append(byName[name], spelled{spelling, term})
 			if scope != "" && glossaryInQuestion(term, scope) {
-				scoped[spelling] = append(scoped[spelling], term)
+				scoped[name] = append(scoped[name], spelled{spelling, term})
 			}
 		}
 	}
-	for spelling, terms := range scoped {
-		byName[spelling] = terms
+	for name, terms := range scoped {
+		byName[name] = terms
 	}
 	if own != nil {
-		for _, spelling := range glossarySpellings(*own) {
-			byName[spelling] = []pageGlossaryTerm{*own}
+		spellings := glossarySpellings(*own)
+		for _, spelling := range spellings {
+			delete(byName, terminology.FoldTerm(spelling))
+		}
+		for _, spelling := range spellings {
+			name := terminology.FoldTerm(spelling)
+			byName[name] = append(byName[name], spelled{spelling, *own})
 		}
 	}
+	// A reduced entry keeps one glossary term per spelling, so Zipkin and
+	// zipkin carry one identical definition. Lookup cannot tell them apart:
+	// the name offers that definition once, under its first ID.
+	for name, values := range byName {
+		slices.SortStableFunc(values, func(a, b spelled) int { return strings.Compare(a.term.ID, b.term.ID) })
+		var kept []pageGlossaryTerm
+		byName[name] = slices.DeleteFunc(values, func(value spelled) bool {
+			for _, other := range kept {
+				if other.ID == value.term.ID {
+					return false
+				}
+				if sameGlossaryDefinition(other, value.term) {
+					return true
+				}
+			}
+			kept = append(kept, value.term)
+			return false
+		})
+	}
 	var all []DisplayTextTerm
-	for spelling, values := range byName {
+	for _, values := range byName {
 		for _, value := range values {
-			all = append(all, DisplayTextTerm{ID: value.ID, Spelling: spelling, Explanation: value.Explanation})
+			all = append(all, DisplayTextTerm{ID: value.term.ID, Spelling: value.spelling, Explanation: value.term.Explanation})
 		}
 	}
 	sort.Slice(all, func(i, j int) bool {

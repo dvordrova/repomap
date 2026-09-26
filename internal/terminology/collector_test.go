@@ -520,7 +520,7 @@ func TestUnicodePhrasesAndScriptBoundaries(t *testing.T) {
 		{"Use e\u0301.", "e", false},
 		{"커스텀 Matcher를 사용합니다.", "Matcher", true},
 		{"사용자Matcher를 사용합니다.", "Matcher", true},
-		{"Custom Matchers", "Matcher", false},
+		{"커스텀 Matchers를", "Matcher", true},
 		{"HMMish", "HMM", false},
 		{"preHMM", "HMM", false},
 		{"API文档", "API", true},
@@ -534,6 +534,36 @@ func TestUnicodePhrasesAndScriptBoundaries(t *testing.T) {
 		{"API\u0301", "API", false},
 		{"\u0301API", "API", false},
 		{"API_한글", "API", false},
+	} {
+		if got := mentionsTerm(test.text, test.name); got != test.want {
+			t.Errorf("%q in %q: %v", test.name, test.text, got)
+		}
+	}
+}
+
+// Owner decision 2026-09-26: a term occurs in any letter case and with an
+// English plural ending, still only as a whole word.
+func TestTermOccursInAnyCaseAndEnglishPlural(t *testing.T) {
+	for _, test := range []struct {
+		text, name string
+		want       bool
+	}{
+		{"Nodes exchange snapshots.", "Snapshot", true},
+		{"Take one snapshot.", "Snapshot", true},
+		{"SNAPSHOTS are kept.", "snapshot", true},
+		{"Two classes load.", "Class", true},
+		{"Boxes, matches and hashes.", "box", true},
+		{"Boxes, matches and hashes.", "match", true},
+		{"Boxes, matches and hashes.", "Hash", true},
+		{"Several APIs answer.", "API", true},
+		{"İstanbul keeps snapshots.", "snapshot", true},
+		{"A good cache.", "Go", false},
+		{"The request goes out.", "Go", false},
+		{"Snapshotting starts.", "Snapshot", false},
+		{"Snapshotss", "Snapshot", false},
+		{"snapshots_dir", "Snapshot", false},
+		{"Nodes exchange snapshots.", "Snap", false},
+		{"One subclass.", "Class", false},
 	} {
 		if got := mentionsTerm(test.text, test.name); got != test.want {
 			t.Errorf("%q in %q: %v", test.name, test.text, got)
