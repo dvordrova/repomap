@@ -277,8 +277,8 @@ credentials. Run directories and the model cache contain exactly what the
 prompts and responses contained, so a credential committed to the analyzed
 repository can reach them like any other repository text. Treat a run
 directory as being as sensitive as the repository it came from. The provider
-key is read from the environment and is never part of a request body or a
-cache record. (Owner's decision, 2026-09-03: the scanner that used to refuse
+keys (DeepSeek and Jev) are read from the environment and are never part of a
+request body or a cache record. (Owner's decision, 2026-09-03: the scanner that used to refuse
 such content was removed rather than kept and optimised.)
 
 ## Working rules for agents

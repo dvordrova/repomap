@@ -55,7 +55,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   acceptance runs as well. Do not create a separate model cache per repository
   or UI investigation with `--debug-dir`. Temporary rendered HTML and browser
   servers may stay under the task's temporary directory. System Go caches and
-  the configured official DeepSeek endpoint are authorized for these runs.
+  the configured official DeepSeek and Jev (TypeSafe) endpoints are
+  authorized for these runs; both keys are required (owner decision
+  2026-09-26).
 - Product acceptance means running that binary on a real repository through
   the normal online provider path. Offline runs, fixtures, replay commands, and
   helper tools are not acceptance evidence.
