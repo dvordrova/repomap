@@ -15,7 +15,10 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 	type want struct {
 		key, method, path, symbol string
 		values                    []string
-		resolution                Resolution
+		// registrar is what the registration hands its callable or value
+		// to: the outside symbol, or a repository table row's record field.
+		registrar  string
+		resolution Resolution
 	}
 	cases := []struct {
 		name  string
@@ -31,7 +34,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 				s.relate("dec", programindex.RelationDecorates, "h", nil, loc("api.py", 9),
 					pattern("p", programindex.PatternDecoratorCall, "get", loc("api.py", 9), []string{"fastapi"}, literal(1, "/items")))
 			},
-			want: []want{{key: "get", method: "GET", path: "/items", symbol: "list_items", values: []string{"/items"}, resolution: ResolutionExact}},
+			want: []want{{key: "get", method: "GET", path: "/items", symbol: "list_items", values: []string{"/items"}, registrar: "fastapi.FastAPI.get", resolution: ResolutionExact}},
 		},
 		{
 			name: "call with a path and a repository callable",
@@ -43,7 +46,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 					pattern("p", programindex.PatternCall, "Handle", loc("main.go", 7), nil, literal(1, "GET /items"), dynamicRef(2, "h")))
 				s.callback("cb", "main", "h", "reg", "p", 2)
 			},
-			want: []want{{key: "Handle", method: "GET", path: "/items", symbol: "serveItems", values: []string{"GET /items"}, resolution: ResolutionExact}},
+			want: []want{{key: "Handle", method: "GET", path: "/items", symbol: "serveItems", values: []string{"GET /items"}, registrar: "github.com/some/router.Handle", resolution: ResolutionExact}},
 		},
 		{
 			name: "a value of an outside type constructed with a callable in a field registers it under the literal beside it",
@@ -55,9 +58,11 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 					pattern("p", programindex.PatternCall, "Command", loc("main.go", 8), nil, keyword("Use", "serve"), keyword("Short", "Run the server"), dynamicKeyword("RunE", "h")))
 				s.callbackKeyword("cb", "main", "h", "new", "p", "RunE")
 			},
-			want: []want{{key: "Command", symbol: "runServe", values: []string{"Run the server", "serve"}, resolution: ResolutionExact}},
+			want: []want{{key: "Command", symbol: "runServe", values: []string{"Run the server", "serve"}, registrar: "github.com/spf13/cobra.Command", resolution: ResolutionExact}},
 		},
 		{
+			// The row's registrar is its record type's field, known exactly:
+			// the reading asks what that field's callables become.
 			name: "a row of a table the repository owns registers its callable under the literal beside it",
 			build: func(s *synthetic) {
 				s.object("m", programindex.ObjectModule, "server.c", "server.c", 1, "")
@@ -69,7 +74,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 				s.relations[len(s.relations)-1].Invocation = programindex.InvocationConstruct
 				s.callbackKeyword("cb", "table", "h", "row", "p", "proc")
 			},
-			want: []want{{key: "command", symbol: "pingCommand", values: []string{"ping"}, resolution: ResolutionPossible}},
+			want: []want{{key: "command", symbol: "pingCommand", values: []string{"ping"}, registrar: "server.c.command.proc", resolution: ResolutionExact}},
 		},
 		{
 			// A command called get is a name, not an HTTP method: nothing in
@@ -85,7 +90,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 				s.relations[len(s.relations)-1].Invocation = programindex.InvocationConstruct
 				s.callbackKeyword("cb", "table", "h", "row", "p", "proc")
 			},
-			want: []want{{key: "command", symbol: "getCommand", values: []string{"get"}, resolution: ResolutionPossible}},
+			want: []want{{key: "command", symbol: "getCommand", values: []string{"get"}, registrar: "server.c.command.proc", resolution: ResolutionExact}},
 		},
 		{
 			name: "a verb-shaped first literal with no address names the handler and states no method",
@@ -97,7 +102,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 					pattern("p", programindex.PatternCall, "On", loc("main.go", 7), nil, literal(1, "delete"), dynamicRef(2, "h")))
 				s.callback("cb", "main", "h", "on", "p", 2)
 			},
-			want: []want{{key: "On", symbol: "removeItem", values: []string{"delete"}, resolution: ResolutionExact}},
+			want: []want{{key: "On", symbol: "removeItem", values: []string{"delete"}, registrar: "github.com/some/bus.On", resolution: ResolutionExact}},
 		},
 		{
 			name: "a verb literal beside an address states the method",
@@ -107,7 +112,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 				s.relate("call", programindex.RelationInvokesExternal, "fn", []string{"request"}, loc("main.go", 4),
 					pattern("p", programindex.PatternCall, "NewRequest", loc("main.go", 4), nil, literal(1, "POST"), literal(2, "https://api.example/items"), dynamic(3)))
 			},
-			want: []want{{key: "NewRequest", method: "POST", path: "https://api.example/items", values: []string{"POST", "https://api.example/items"}, resolution: ResolutionExact}},
+			want: []want{{key: "NewRequest", method: "POST", path: "https://api.example/items", values: []string{"POST", "https://api.example/items"}, registrar: "net/http.NewRequest", resolution: ResolutionExact}},
 		},
 		{
 			// rest.Route{Method: http.MethodGet, Path: "/users", Handler: h}:
@@ -122,7 +127,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 					pattern("p", programindex.PatternCall, "Route", loc("main.go", 8), nil, keyword("Method", "GET"), keyword("Path", "/users"), dynamicKeyword("Handler", "h")))
 				s.callbackKeyword("cb", "main", "h", "new", "p", "Handler")
 			},
-			want: []want{{key: "Route", method: "GET", symbol: "listUsers", values: []string{"GET", "/users"}, resolution: ResolutionExact}},
+			want: []want{{key: "Route", method: "GET", symbol: "listUsers", values: []string{"GET", "/users"}, registrar: "github.com/some/rest.Route", resolution: ResolutionExact}},
 		},
 		{
 			// {"GET", "/health", health} in a C route table: the row's verb
@@ -138,7 +143,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 				s.relations[len(s.relations)-1].Invocation = programindex.InvocationConstruct
 				s.callbackKeyword("cb", "table", "h", "row", "p", "handler")
 			},
-			want: []want{{key: "route", method: "GET", symbol: "health", values: []string{"GET", "/health"}, resolution: ResolutionPossible}},
+			want: []want{{key: "route", method: "GET", symbol: "health", values: []string{"GET", "/health"}, registrar: "server.c.route.handler", resolution: ResolutionExact}},
 		},
 		{
 			// net/http writes a pattern's method in capitals; a sentence with
@@ -186,7 +191,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 				s.relate("call", programindex.RelationInvokesExternal, "fn", []string{"axios"}, loc("client.ts", 4),
 					pattern("p", programindex.PatternCall, "get", loc("client.ts", 4), nil, literal(1, "https://api.example/items")))
 			},
-			want: []want{{key: "get", method: "GET", path: "https://api.example/items", values: []string{"https://api.example/items"}, resolution: ResolutionExact}},
+			want: []want{{key: "get", method: "GET", path: "https://api.example/items", values: []string{"https://api.example/items"}, registrar: "axios.get", resolution: ResolutionExact}},
 		},
 		{
 			name: "a templated path is possible",
@@ -196,7 +201,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 				s.relate("call", programindex.RelationInvokesExternal, "fn", []string{"axios"}, loc("client.ts", 4),
 					pattern("p", programindex.PatternCall, "get", loc("client.ts", 4), nil, template(1, "/items/", "")))
 			},
-			want: []want{{key: "get", method: "GET", path: "/items/{param}", values: []string{"/items/{param}"}, resolution: ResolutionPossible}},
+			want: []want{{key: "get", method: "GET", path: "/items/{param}", values: []string{"/items/{param}"}, registrar: "axios.get", resolution: ResolutionPossible}},
 		},
 		{
 			name: "a value the repository built, named for a host, is a registration too",
@@ -209,7 +214,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 				s.relate("reg", programindex.RelationInvokesExternal, "init", []string{"k6"}, loc("dns.go", 6),
 					pattern("p", programindex.PatternCall, "Register", loc("dns.go", 6), nil, literal(1, "k6/x/dns"), produced))
 			},
-			want: []want{{key: "Register", path: "k6/x/dns", values: []string{"k6/x/dns"}, resolution: ResolutionExact}},
+			want: []want{{key: "Register", path: "k6/x/dns", values: []string{"k6/x/dns"}, registrar: "go.k6.io/k6/js/modules.Register", resolution: ResolutionExact}},
 		},
 		{
 			name: "a value set on the request's own context is no registration",
@@ -274,7 +279,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 					callback.Resolution, callback.TargetsObserved = programindex.ResolutionAlternatives, 2
 				}
 			},
-			want: []want{{key: "HandleFunc", path: "/ambiguous", values: []string{"/ambiguous"}, resolution: ResolutionExact}},
+			want: []want{{key: "HandleFunc", path: "/ambiguous", values: []string{"/ambiguous"}, registrar: "net/http.HandleFunc", resolution: ResolutionExact}},
 		},
 	}
 	for _, tc := range cases {
@@ -284,7 +289,7 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 			result := mustBuild(t, Input{Targets: []TargetInput{{Index: s.index(), Root: "."}}})
 			var got []want
 			for _, fact := range result.OfKind(KindRegistration) {
-				got = append(got, want{key: fact.Key, method: fact.Method, path: fact.Path, symbol: fact.Symbol, values: fact.Values, resolution: fact.Resolution})
+				got = append(got, want{key: fact.Key, method: fact.Method, path: fact.Path, symbol: fact.Symbol, values: fact.Values, registrar: fact.Text, resolution: fact.Resolution})
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("registrations = %+v\nwant %+v", got, tc.want)

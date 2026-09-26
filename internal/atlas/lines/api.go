@@ -26,11 +26,11 @@ var publishPrompt string
 // reader comes back as its own table, with an explicit none, when a reader
 // for it lands.
 func API(handed bool) table.Definition {
-	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v4", System: apiPrompt}
+	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v5", System: apiPrompt}
 	if handed {
 		def.Contract += ".handed"
 		def.Columns = []table.Column{
-			{Name: "binds", Kind: table.Choice, Options: atlas.EntryKinds(), Optional: true, Note: "what the handed callable becomes: http_server a handler of requests on the given path; queue_consumer a handler of messages; scheduled work a timer runs; interaction a handler of a user's action; extension a hook registered with a host; command a command a runner activates. A symbol that runs the callable in place, wraps it, or only marks or transforms it binds nothing"},
+			{Name: "binds", Kind: table.Choice, Options: atlas.EntryKinds(), Optional: true, Note: "what the handed callable becomes: request a handler of what a client sends over a connection, whatever the protocol (a route, an RPC method, a command a client sends); command a command a person runs from a command line or task runner; interaction a handler of a person's action in a user interface; scheduled work a timer runs; continuous work that runs for as long as the program does, on a thread, task or loop of its own; queue_consumer a handler of messages taken from a queue; extension a hook a host program calls at its own points. A symbol that runs the callable in place, wraps it, or only marks or transforms it binds nothing, and neither does one that runs it only when the process is signalled or fails"},
 			{Name: "middleware", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when the callable runs around or before the handlers rather than being an entry of its own"},
 			{Name: "publishes", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this call starts serving: listens on an address, runs the application, connects the consumer"},
 		}

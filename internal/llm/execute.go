@@ -102,7 +102,7 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 		if cacheOnly {
 			return outcome, nil
 		}
-		return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome, &adapted)
+		return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome, &adapted, nil)
 	}
 	providerState, err := canonicalProviderState(provider.State())
 	if err != nil {
@@ -117,6 +117,35 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 	// input. The owning stage still validates every cached response below.
 	cacheKey := executionCacheKey(providerState, nil, request)
 	outcome.CacheKey = cacheKey
+
+	// Identical request bytes in the air are asked once: a follower takes
+	// the leader's answer, so no goroutine order decides which of several
+	// answers this run shows and which one the cache keeps for the next.
+	var lead *flight
+	for {
+		current, leading := executor.BatchController.joinFlight(cacheKey, !cacheOnly)
+		if current == nil {
+			break
+		}
+		if leading {
+			lead = current
+			break
+		}
+		answer, err := current.wait(ctx)
+		if err != nil {
+			return outcome, err
+		}
+		if answer == nil {
+			continue // its leader stopped without an answer
+		}
+		if cacheOnly {
+			break // a recall reads the cache the leader wrote
+		}
+		return followFlight(executor, *answer, decodeValidate, call.Limits, outcome, &adapted)
+	}
+	if lead != nil {
+		defer func() { executor.BatchController.land(cacheKey, lead, ctx, resultErr) }()
+	}
 
 	record, found, loadErr := loadAcceptedCache(executor.RootDir, cacheKey, request, call.Limits)
 	if loadErr != nil {
@@ -142,6 +171,12 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 			outcome.Issues = observe(executor.Observer, eventForOutcome(
 				EventCacheHit, SourceCache, FailureNone, outcome,
 			), outcome.Issues)
+			if lead != nil {
+				lead.answer = &flightAnswer{completion: Completion{
+					Response: cloneBytes(record.Response), FinishReason: record.FinishReason,
+					ChoiceCount: record.ChoiceCount, Metrics: record.Metrics,
+				}}
+			}
 			return outcome, nil
 		}
 		// The current decoder refusing a saved answer is a miss, not proof of
@@ -163,7 +198,7 @@ func executeJSON[T any](ctx context.Context, executor Executor, provider Provide
 	if cacheOnly {
 		return outcome, nil
 	}
-	return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome, &adapted)
+	return executeLive(ctx, executor, provider, prepared, decodeValidate, call.Limits, outcome, &adapted, lead)
 }
 
 // ExecuteJSONBatch returns outcomes in caller-provided order and fails closed
@@ -410,6 +445,7 @@ func executeLive[T any](
 	limits Limits,
 	outcome Outcome[T],
 	adapted *AdaptedResponse,
+	lead *flight,
 ) (Outcome[T], error) {
 	gate := attemptGateForContext(ctx)
 	var epoch uint64
@@ -417,6 +453,17 @@ func executeLive[T any](
 		epoch = gate.recoveryEpoch()
 	}
 	completion, err := provider.Complete(context.WithValue(ctx, attemptTimeoutKey{}, limits.AttemptTimeout), prepared)
+	// The leader of identical requests in the air publishes what the
+	// provider returned; each follower decides on it for itself. Like a
+	// cache record it carries no HTTP diagnostics: those belong to the one
+	// exchange that made the call.
+	var answer *flightAnswer
+	if lead != nil {
+		answer = &flightAnswer{completion: completion}
+		answer.completion.Response = cloneBytes(completion.Response)
+		answer.completion.HTTPResponse = nil
+		lead.answer = answer
+	}
 	outcome.HTTPResponse = completion.HTTPResponse.Clone()
 	setOutcomeResponse(&outcome, completion.Response)
 	outcome.FinishReason = completion.FinishReason
@@ -427,6 +474,9 @@ func executeLive[T any](
 			CollapseProviderAttempts(ctx)
 		}
 		providerErr := newProviderError("complete", err, completion.Metrics.Attempts)
+		if answer != nil {
+			answer.err = providerErr
+		}
 		outcome.ResponseRejections = []ResponseRejection{{Kind: "provider_failed", Count: 1, Reason: providerErr.Error()}}
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureProvider, outcome.Issues)
 		return outcome, providerErr
@@ -438,6 +488,9 @@ func executeLive[T any](
 	}
 	if metrics, err := clampMetrics(completion.Metrics); err != nil {
 		outcome.Metrics = metrics
+		if answer != nil {
+			answer.completion.Metrics = metrics
+		}
 		outcome.Issues = append(outcome.Issues, Issue{Kind: IssueMetrics, Err: err})
 	}
 	if gate != nil {

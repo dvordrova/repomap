@@ -413,17 +413,24 @@ The browser does not choose, validate or repair architectural membership.
 
 ## Operation ownership
 
-The operation review sends immediate caller declarations once with
-their distinct call sites; it does not join names or recursively expand callers.
-It also retains literal arguments of the exact registration that receives each
-callback, through the native argument identity. The operation table uses a
-closed registration ref plus a method choice for an HTTP name; Go restores the
-original path verbatim. Other work uses a descriptive label. Generated HTTP
-path text is not a name cell in the HTTP branch. A declaration whose native
-route already is its operation is not sent to the operation table: the route
-fact carries the method and path, and the group index dropped the model's
-duplicate anyway. An arrow without witnesses (an import-only edge) takes its
-fallback sentence "A uses B." without a model row.
+An entry is named the same way whatever its protocol (owner, 2026-09-27:
+gRPC, UDP, TCP and WebSocket are assembled at the surface from one thing).
+Its registration's `words` are what the code wrote there, as written: the call
+word, every literal in order and the address its mount prefixes compose
+(`GET` and `/users/:id` of `e.GET("/users/:id", h)`; `redisCommand` and `get`
+of a command table's `{"get", getCommand, ...}` row). The incoming boundaries
+table asks each entry `name`, a sequence of closed `w*` refs over those words;
+code restores the chosen words verbatim, joined by one space in the order the
+model wrote them, as the atlas boundary's `name`. A word that cannot stand in
+a one-line name as written (a control character, space around it) is not
+offered and never trimmed into one. GroupsIndex names the operation by that
+name, or, with no accepted choice, by its handler's native name; it never
+composes a name from a fact's method and values, and no code tells a verb, a
+path, a command or a topic apart. Nothing is asked when the registration wrote
+no word. A declaration whose native route already is its operation is not an
+operation of its own: the entry carries it. An arrow without witnesses (an
+import-only edge) takes its fallback sentence "A uses B." without a model
+row.
 
 The current operation table asks only `self` or `none` for this declaration. Immediate caller declarations and distinct sites are evidence, never an assignment destination. `none` transfers nothing. Only a complete `self` decision publishes the declaration’s activation, name and description. A real independently launched notification/metrics consumer may be `self` while its AddLogHook/PreRun/constructor/lifespan launcher is `none`. Synchronous helpers within the same responsibility are not separate work. Listener blocking alone is not a worker. Cron, persistent consumers and source-supported one-shot delayed work remain legitimate. Registration, callback and control evidence are interpreted by the model; projection never invents a semantic promotion. Native HTTP registration refs restore their original path and method verbatim; free text does not replace a known route. A `label` row whose `name` comes back empty, null or missing keeps the model's own `description` as its label (first sentence, at most 60 runes) and records `name_from: description`; an empty description still refuses the row.
 
@@ -462,22 +469,39 @@ remain model decisions with `self`/`none`, not local middleware classification.
 
 ## External symbols: the `atlas_api` table
 
-The model reads the symbols outside the repository that the code calls, one
-row per symbol, once per repository: `symbol`, `declared` (its type as its
-package declares it), `usage` (the first line that calls it), its `literals`
-and `hands_callable` when a repository callable is passed to it. The symbols
-handed a callable and the others are two tables asked at once. Every cell is
-optional and absent when the symbol does not do that. A handed symbol is asked
-`binds` (what the callable becomes: `http_server`, `queue_consumer`,
-`scheduled`, `interaction`, `extension`, `command`), `middleware` (`yes` when
-the callable runs around or before the handlers; such a symbol binds and
-publishes nothing) and `publishes`. Every other symbol is asked `publishes`
-(`yes` when the call makes what its holder holds reachable: a server started,
-an app run, a consumer connected) and `talks` (the kind of other running
-system it sends to, reads from or opens a connection to). A symbol may hold
-several cells. The roles are recorded on the atlas as `api`.
+The model reads the symbols the code calls or hands something to, one row per
+symbol, once per repository: `symbol`, `declared` (its type as its package
+declares it), `usage` (the first line that calls it), its `literals` and
+`hands_callable` when a repository callable is passed to it. A symbol is a
+symbol outside the repository, or, for the rows of a repository table (owner
+decision D1), the field those rows store a callable in, named by the file
+declaring the row's record type, the type and the field
+(`redis.c.redisCommand.proc`); its usage is its first row. `hands_callable`
+holds only when a registration handed a callable over, or a value the
+repository built (`Register("k6/x/dns", new(DNS))`, whose extension entry
+exists only through `binds`): a registration that hands nothing names the
+declaration making the call, and `fopen("/dev/null")` was once asked what a
+callable becomes and answered a request handler. The
+symbols handed a callable and the others are two tables asked at once. Every
+cell is optional and absent when the symbol does not do that. A handed symbol
+is asked `binds`, what the callable becomes, in the activation vocabulary:
+`request` (what a client sends over a connection, whatever the protocol: a
+route, an RPC method, a command a client sends), `command` (a person runs it
+from a command line or task runner), `interaction` (a person's action in a
+user interface), `scheduled` (a timer runs it), `continuous` (it runs for as
+long as the program does, on a thread, task or loop of its own),
+`queue_consumer` and `extension`; a symbol that runs the callable in place, or
+only when the process is signalled or fails, binds nothing. It is also asked
+`middleware` (`yes` when the callable runs around or before the handlers; such
+a symbol binds and publishes nothing) and `publishes`. Every other symbol is
+asked `publishes` (`yes` when the call makes what its holder holds reachable:
+a server started, an app run, a consumer connected) and `talks` (the kind of
+other running system it sends to, reads from or opens a connection to). A
+symbol may hold several cells. The roles are recorded on the atlas as `api`.
+A request, like every entry, is named from its registration's words
+(Operation ownership above).
 
-The table asks only the decisions the boundaries read (`repomap.atlas.api.v4`,
+The table asks only the decisions the boundaries read (`repomap.atlas.api.v5`,
 owner decision 2026-09-26). `reads_input`, `writes_output`, `auth`, `config`
 and `validates` were asked of every symbol, stored in `atlas.json` and read by
 nothing; a window of them flipped between runs. A decision without a reader
@@ -536,7 +560,7 @@ advertised by fill", so a caption-less types request of an English name asks
 `line` alone and the model writes no `alias` (it wrote one on 82 of 82 rows,
 all discarded, while the prompt demanded two cells).
 
-A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell (27 Freqtrade rows were refused for it). Fixed native boundaries request explanation rather than pointless existence/kind choices. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the shared known-systems list (`internal/atlas/destinations`) annotated with the target's dependencies, with `other: ` for a system outside it; an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
+A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell (27 Freqtrade rows were refused for it). Fixed native boundaries request explanation rather than pointless existence/kind choices. A fixed incoming entry additionally requests its `name` among its `words` (Operation ownership), with or without `--captions`, and shows no `method` field; its rows share windows without an owner, since its handler's calls near a registration elsewhere say nothing about its name (one window per handler cost Redis 98 requests for 97 names). Without captions a fixed row with no decision to make is not sent and keeps its given line. Each fixed cell fails alone: a refused line keeps the given line and a refused name leaves the handler's name. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the shared known-systems list (`internal/atlas/destinations`) annotated with the target's dependencies, with `other: ` for a system outside it; an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
 
 Boundary v5 names the candidate basis `dispatch` or `remote_client_instance`.
 The latter requires this call itself to create or configure the actual remote

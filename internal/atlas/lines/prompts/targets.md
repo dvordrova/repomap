@@ -12,10 +12,12 @@ integration points by kind and direction.
   `application` is a JS/TS package with a browser, server or CLI surface.
 - `boundaries`: one entry per kind and direction, `<kind> <direction> <count>`,
   such as `http_client out 3` (three HTTP requests this target sends) or
-  `http_server in 2` (two routes it serves). Kinds: `http_client`, `db`,
-  `queue_producer`, `queue_consumer`, `sdk`, `config` (a configuration
-  read), `http_server`, `listen_address`, `other`. Direction `out` is a call
-  this target makes, `in` an interface it exposes.
+  `request in 2` (two requests it answers: routes, RPC methods or commands a
+  client sends). Kinds out: `http_client`, `db`, `queue_producer`, `sdk`,
+  `config` (a configuration read), `other`; kinds in: `request`, `command`,
+  `interaction`, `scheduled`, `continuous`, `queue_consumer`, `extension`,
+  `listen_address`, `other`. Direction `out` is a call this target makes,
+  `in` an interface it exposes.
 
 Fill the cells advertised by fill:
 

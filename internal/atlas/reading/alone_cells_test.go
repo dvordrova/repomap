@@ -165,7 +165,7 @@ func TestJointLabelMayBeEmptyButSameIsRequired(t *testing.T) {
 	for _, id := range []string{"out1", "out2", "in"} {
 		target, direction, kind := "client", atlas.DirectionOut, atlas.BoundaryHTTPClient
 		if id == "in" {
-			target, direction, kind = "service", atlas.DirectionIn, atlas.BoundaryHTTPServer
+			target, direction, kind = "service", atlas.DirectionIn, atlas.BoundaryRequest
 		}
 		r.boundaries[id] = &boundaryState{line: id + " behavior", kind: kind, place: atlas.Place{ID: id, TargetIDs: []string{target}, Boundary: &atlas.BoundaryFacts{Direction: direction, Values: []string{"shared-value"}}}}
 	}

@@ -139,7 +139,7 @@ func TestRefusedJointAndPeerRowsDoNotCreateConnections(t *testing.T) {
 			for i, id := range []string{"out1", "out2", "in"} {
 				target, direction, kind := "client", atlas.DirectionOut, atlas.BoundaryHTTPClient
 				if id == "in" {
-					target, direction, kind = "service", atlas.DirectionIn, atlas.BoundaryHTTPServer
+					target, direction, kind = "service", atlas.DirectionIn, atlas.BoundaryRequest
 				}
 				value := "shared-value"
 				if mode == "peers" {

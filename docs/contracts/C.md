@@ -136,10 +136,14 @@ seed.
   pass) is `passes_callback` with a primary `c_function_pointer_store` witness,
   so each store is a binding row. A row of a repository-owned table that names
   the function by a string literal is a registration fact the model classifies
-  (owner decision D1). The literal is the row's name: `{"get", getCommand}`
-  states no HTTP method, since nothing in the row is an address for a verb
-  to qualify; a route row `{"GET", "/health", health}` states GET beside its
-  path. A store into a platform record (`act.sa_sigaction`) is
+  (owner decision D1). Its registrar is the row's record type and the field
+  the function is stored in (`kvd.h.kvCommand.proc`), which the registrar
+  table asks once what its callables become: a command a client sends is a
+  `request`. The entry is named by the word the model chooses among the row's
+  own (`get`), like any entry of any protocol. The literal is the row's name:
+  `{"get", getCommand}` states no HTTP method, since nothing in the row is an
+  address for a verb to qualify; a route row `{"GET", "/health", health}`
+  states GET beside its path. A store into a platform record (`act.sa_sigaction`) is
   keyed on the root value's type and the field as written, not on the union a
   platform macro expands it to.
 - A call through a field, parameter or variable has the stored functions as
@@ -219,7 +223,13 @@ for this first adapter:
 - Makefile rules as run recipes, test scripts in other languages, and
   configuration files the corpus does not admit;
 - parts smaller than one file (D2), protocol commands as their own entry kind
-  and joints inside one target (D7, D8).
+  and joints inside one target (D7, D8);
+- a callable handed to a repository function that keeps it for its own loop
+  (`loopCreateFileEvent(..., acceptHandler, ...)`, Redis's
+  `aeCreateTimeEvent(..., serverCron, ...)`): the constitution defines a
+  registration as a call outside the repository, and D1 excepts only table
+  rows, so an accept handler or a timer registered with the repository's own
+  event loop is no input until the owner decides otherwise.
 
 The fixture has no HTTP route table: a row whose verb qualifies the path beside
 it is covered by the facts tests alone, beside the Go-shaped record
@@ -246,7 +256,12 @@ a backend outside this platform's build, a missing clang, and an ordinary
 offline run selecting a C program, whose metadata records the platform view and
 whose page shows none of it. Facts tests cover C config reads, SQL, dynamic
 execution, command rows that state no HTTP method and route rows that state
-one; claims, places and report tests cover docstrings, licence blocks, banners,
+one, each with its record field as registrar. The kvd preset reading
+(`TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests`) answers each
+registrar and each entry from its row alone, without captions, and checks the
+inputs: six requests named `get`, `set`, `del`, `keys`, `ping` and `bgsave`,
+the stats thread as continuous work, and neither the signal handler nor the
+`qsort` comparator; claims, places and report tests cover docstrings, licence blocks, banners,
 section titles and the file description at their consuming boundaries, and the
 fixture's own docstrings reach its declarations. The fixture's map of parts is
 checked like every other language's (`TestCumulativeCMapOfParts`).

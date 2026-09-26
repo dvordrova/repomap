@@ -130,7 +130,7 @@ var russianUI = map[string]string{
 	"Code dependencies":                 "Зависимости кода",
 	"Incoming requests":                 "Входящие обращения",
 	"Incoming request records":          "Входящие запросы",
-	"HTTP registrations in source":      "HTTP-регистрации в коде",
+	"Registrations in source":           "Регистрации в коде",
 	"Handlers without a matched route":  "Обработчики, для которых маршрут не найден в коде",
 	"Request records can describe the same endpoint.": "Несколько записей могут описывать один и тот же обработчик запросов.",
 	"Other operations":       "Другие операции",

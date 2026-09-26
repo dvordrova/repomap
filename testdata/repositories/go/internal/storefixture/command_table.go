@@ -1,5 +1,7 @@
 package storefixture
 
+import "fmt"
+
 // A command table names each handler by a string literal. Every row is its
 // own callable binding that keeps its own name and arity.
 type commandRow struct {
@@ -82,4 +84,76 @@ func RunChosenHandler(readable bool) {
 		loop.onRead = acceptClient
 	}
 	loop.onRead()
+}
+
+// The same event loop with interface-typed fields. A handler stored in one of
+// two fields under a branch leaves the calls through both fields unresolved;
+// each stored handler is a witness of those calls, never their alternative.
+type readyHandler interface{ Handle() }
+
+type acceptReady struct{}
+type flushReady struct{}
+
+func (acceptReady) Handle() {}
+func (flushReady) Handle()  {}
+
+type readyLoop struct {
+	read  readyHandler
+	write readyHandler
+}
+
+func (loop *readyLoop) register(readable bool, handler readyHandler) {
+	if readable {
+		loop.read = handler
+	} else {
+		loop.write = handler
+	}
+}
+
+func (loop *readyLoop) fire() {
+	loop.read.Handle()
+	loop.write.Handle()
+}
+
+func RunReadyLoop() {
+	loop := &readyLoop{}
+	loop.register(true, acceptReady{})
+	loop.register(false, flushReady{})
+	loop.fire()
+}
+
+// A store under a branch leaves the call through the field unresolved.
+func RunChosenReady(readable bool) {
+	loop := &readyLoop{}
+	if readable {
+		loop.read = acceptReady{}
+	}
+	loop.read.Handle()
+}
+
+// The same choice for a field whose interface another package declares. A
+// call through it is a call of fmt.Stringer.String, and the name a branch
+// stored there is still its witness. Clearing a field stores nothing
+// callable, so the branch that clears one leaves the name stored before it a
+// possible value.
+type namedLoop struct {
+	chosen  fmt.Stringer
+	cleared fmt.Stringer
+}
+
+type acceptName struct{}
+
+func (acceptName) String() string { return "accept" }
+
+func RunNamedLoop(readable bool) []string {
+	loop := &namedLoop{cleared: acceptName{}}
+	if readable {
+		loop.chosen = acceptName{}
+	} else {
+		loop.cleared = nil
+	}
+	return []string{
+		loop.chosen.String(),
+		loop.cleared.String(),
+	}
 }

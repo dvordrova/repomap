@@ -3,6 +3,8 @@ package groupindex
 import (
 	"fmt"
 	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -49,7 +51,7 @@ func TestObservedRoutesReplaceTheDeclarationOperationAndKeepAliases(t *testing.T
 	p := atlasTestProgram(t, "server", "api/handler.go")
 	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{p.Objects[0].ID}, Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "handler", ObjectID: p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Returns status.", Activation: "request", Operation: "get status"}}}}}}}
 	for i, route := range []string{"/status", "/health"} {
-		target.Boundaries = append(target.Boundaries, atlas.Boundary{ID: fmt.Sprintf("route%d", i), ObjectID: p.Objects[0].ID, BoxID: "api", Path: "api/handler.go", LineNo: 2 + i, Column: 1, Direction: atlas.DirectionIn, Kind: atlas.BoundaryHTTPServer, Method: "GET", Values: []string{route}, Line: "Returns status.", FactID: "fact"})
+		target.Boundaries = append(target.Boundaries, atlas.Boundary{ID: fmt.Sprintf("route%d", i), ObjectID: p.Objects[0].ID, BoxID: "api", Path: "api/handler.go", LineNo: 2 + i, Column: 1, Direction: atlas.DirectionIn, Kind: atlas.BoundaryRequest, Method: "GET", Values: []string{route}, Name: "GET " + route, Line: "Returns status.", FactID: "fact"})
 	}
 	target.Boundaries = append(target.Boundaries, atlas.Boundary{ID: "listener", ObjectID: p.Objects[0].ID, BoxID: "api", Path: "api/handler.go", LineNo: 9, Column: 1,
 		Direction: atlas.DirectionIn, Kind: atlas.BoundaryListenAddress, Values: []string{":8080"}, Line: "Listens for HTTP connections.", FactID: "listen-fact"})
@@ -230,7 +232,7 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 						Files: []atlas.File{{Path: "svc/core/c.go", Line: "Core file.", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{}}}, Keys: []atlas.Key{}},
 				},
 				Arrows:     []atlas.Arrow{{ID: "x1", From: "svc/api", To: "svc/core", Calls: 3, Witnesses: []atlas.Witness{}, Sentence: "The handlers hand requests to the domain."}},
-				Boundaries: []atlas.Boundary{{ID: "b-in", BoxID: "svc/api", Path: "svc/api/h.go", LineNo: 10, Caller: "FA", Direction: atlas.DirectionIn, Kind: atlas.BoundaryHTTPServer, Values: []string{"/api/levels"}, Line: "Serves levels."}},
+				Boundaries: []atlas.Boundary{{ID: "b-in", BoxID: "svc/api", Path: "svc/api/h.go", LineNo: 10, Caller: "FA", Direction: atlas.DirectionIn, Kind: atlas.BoundaryRequest, Values: []string{"/api/levels"}, Line: "Serves levels."}},
 				Trace:      []string{"svc/api", "svc/core"},
 			},
 			{
@@ -324,5 +326,36 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 		if len(index.Connections) != 2 || index.Connections[0].SourceID == index.Connections[1].SourceID {
 			t.Fatalf("distinct inferred calls collapsed: %+v", index.Connections)
 		}
+	}
+}
+
+// An entry's operation is named by the words the model chose, as the atlas
+// restored them, or by its handler: never by composing the fact's method and
+// values, which would give every protocol HTTP's shape.
+func TestEntryOperationsTakeTheChosenNameOrTheHandler(t *testing.T) {
+	p := atlasTestProgram(t, "server", "api/handler.go")
+	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Trace: []string{},
+		Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{p.Objects[0].ID},
+			Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}}}}}
+	entry := func(id string, line int, name string, kind string, values ...string) atlas.Boundary {
+		return atlas.Boundary{ID: id, ObjectID: p.Objects[0].ID, BoxID: "api", Path: "api/handler.go", LineNo: line, Column: 1, Caller: "FA",
+			Direction: atlas.DirectionIn, Kind: kind, Method: "GET", Values: values, Name: name, Line: "Answers.", FactID: "fact-" + id}
+	}
+	target.Boundaries = []atlas.Boundary{
+		entry("chosen", 4, "get", atlas.BoundaryRequest, "get", "kvCommand"),
+		entry("unchosen", 5, "", atlas.BoundaryRequest, "/users"),
+		entry("worker", 6, "", atlas.BoundaryContinuous, []string{}...),
+	}
+	indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, atlas.Atlas{Version: atlas.Version, Repository: "test", Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, operation := range indexes[0].Operations {
+		got = append(got, operation.Kind+" "+operation.Name+" @"+strconv.Itoa(operation.Location.Line))
+	}
+	sort.Strings(got)
+	if want := []string{"continuous FA @6", "request FA @5", "request get @4"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("operations = %v, want %v", got, want)
 	}
 }

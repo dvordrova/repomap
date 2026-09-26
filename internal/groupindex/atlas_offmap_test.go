@@ -49,7 +49,7 @@ func TestOffMapFilesKeepTheirBoundariesAndInterpretations(t *testing.T) {
 				File: file("loose/b.go", "Handles a loose route.", atlas.Symbol{ID: "s2", ObjectID: objectIn("loose/b.go"), Name: "FB", Kind: "function", LineNo: 3, Line: "Answers the loose route.", Key: true})},
 		},
 		Boundaries: []atlas.Boundary{{ID: "b1", ObjectID: objectIn("loose/b.go"), Path: "loose/b.go", LineNo: 3, Column: 1,
-			Direction: atlas.DirectionIn, Kind: atlas.BoundaryHTTPServer, Method: "GET", Values: []string{"/loose"}, Line: "Answers the loose route.", FactID: "route"}},
+			Direction: atlas.DirectionIn, Kind: atlas.BoundaryRequest, Method: "GET", Values: []string{"/loose"}, Name: "GET /loose", Line: "Answers the loose route.", FactID: "route"}},
 	}
 	value := atlas.Atlas{Version: atlas.Version, Repository: "test", Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}
 	if err := atlas.Validate(value); err != nil {

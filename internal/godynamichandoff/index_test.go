@@ -141,6 +141,50 @@ func TestInterfaceFieldAssignmentsRemainPossibleAndKeepSources(t *testing.T) {
 	}
 }
 
+// A field a branch left open keeps its stored callables as witnesses of an
+// unresolved call; they never count as candidates of a closed one.
+func TestFieldWitnessesStayWithAnOpenInterfaceCall(t *testing.T) {
+	store := Location{Path: "loop.go", Line: 9, Column: 8}
+	input := Input{
+		Scenario:               Scenario{ID: "go:linux/amd64", GOOS: "linux", GOARCH: "amd64"},
+		SourceDirectCallSHA256: strings.Repeat("c", 64),
+		Functions: []Function{
+			{ID: "fire", Package: "example.com/app", Symbol: "(*Loop).fire", Location: Location{Path: "loop.go", Line: 14, Column: 1}},
+			{ID: "accept", Package: "example.com/app", Symbol: "(accept).Handle", Location: Location{Path: "loop.go", Line: 3, Column: 1}},
+			{ID: "flush", Package: "example.com/app", Symbol: "(flush).Handle", Location: Location{Path: "loop.go", Line: 4, Column: 1}},
+		},
+		Handoffs: []Handoff{{
+			Kind: InterfaceInvoke, CallerID: "fire", Invocation: InvocationSynchronous,
+			Callsite:   Location{Path: "loop.go", Line: 15, Column: 12},
+			Slot:       Slot{ContainerType: "example.com/app.Loop", Field: "read", DeclaredType: "example.com/app.Handler", Method: "Handle", Signature: "func()"},
+			Resolution: ResolutionUnresolved, Candidates: []Candidate{}, CandidatesConsidered: 1,
+			Witnesses: []FieldWitness{
+				{FunctionID: "flush", Field: "example.com/app.Loop.read", Assignment: store, UnderBranch: true},
+				{FunctionID: "accept", Field: "example.com/app.Loop.read", Assignment: store, UnderBranch: true},
+				{FunctionID: "accept", Field: "example.com/app.Loop.read", Assignment: store, UnderBranch: true},
+			},
+		}},
+	}
+	index, err := New(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if witnesses := index.Handoffs[0].Witnesses; len(witnesses) != 2 || witnesses[0].FunctionID != "accept" || len(index.Handoffs[0].Candidates) != 0 {
+		t.Fatalf("witnesses = %+v", index.Handoffs[0])
+	}
+	input.Handoffs[0].Resolution = ResolutionExact
+	input.Handoffs[0].Candidates = []Candidate{{FunctionID: "accept", Evidence: EvidenceConcreteInterfaceValue}}
+	if _, err := New(input); err == nil {
+		t.Fatal("a closed call kept the witnesses of an open field")
+	}
+	input.Handoffs[0].Resolution = ResolutionUnresolved
+	input.Handoffs[0].Candidates = []Candidate{}
+	input.Handoffs[0].Witnesses[0].FunctionID = "unknown"
+	if _, err := New(input); err == nil {
+		t.Fatal("a witness named an unknown function")
+	}
+}
+
 func TestNewRejectsInterfaceRuntimeCandidateWithoutValueFlowAuthority(t *testing.T) {
 	_, err := New(Input{
 		Scenario:               Scenario{ID: "go:linux/amd64", GOOS: "linux", GOARCH: "amd64"},

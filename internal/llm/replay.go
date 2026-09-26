@@ -33,7 +33,7 @@ func ReplayJSON(ctx context.Context, executor Executor, provider Provider, prepa
 	outcome.ResponseContext = prepared.ResponseContext()
 	// Only an accepted answer's record stores payloads. A refused replay
 	// leaves nothing in the cache; its answer is the caller's to show.
-	outcome, callErr := executeLive(bindExecutorAttemptGate(ctx, executor), executor, provider, prepared, DecodeJSON[json.RawMessage](nil), limits, outcome, &AdaptedResponse{})
+	outcome, callErr := executeLive(bindExecutorAttemptGate(ctx, executor), executor, provider, prepared, DecodeJSON[json.RawMessage](nil), limits, outcome, &AdaptedResponse{}, nil)
 	for _, issue := range outcome.Issues {
 		if issue.Kind == IssueCacheWrite {
 			return outcome, fmt.Errorf("llm: replay could not refresh cache: %w", issue.Err)

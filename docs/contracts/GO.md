@@ -56,6 +56,22 @@ support for the call, not a second call at the constructor line. This recovers
 `quotaKVServer.Put -> kvServer.Put -> EtcdServer.Put` in etcd without any
 framework-specific rule.
 
+A store under a branch leaves its field open, as in the C adapter. A branch is
+an if, a case of a switch or type switch, or a select clause of the storing
+function; a loop body, a store after an early return and the body of a function
+literal are not. A nil store puts nothing callable there, so a branch around it
+opens nothing, as the C adapter keeps no null store. Every call through an open
+field is unresolved. Each repository implementation its stores can put there
+becomes an `interface_field_assignment` witness of that call at its store (`X
+stored in T.field under a condition`, without the last three words for a store
+no branch decides), never a target; an implementation outside the repository
+gives no `invokes_external` fact there. When another package declares the
+field's interface, the call keeps its `invokes_external` fact of that method,
+and the unresolved `calls` relation with the witnesses is projected beside it.
+A store of a parameter joins every caller's argument whichever field the branch
+chose, so without this rule a `register(readable, h)` that stores `h` into
+`read` or `write` gave each field both handlers as alternatives.
+
 Dynamic value traversal reuses immutable summaries within one root and exact
 interface method. The function key also retains `throughFlow`; factory result
 indices remain attached to their own SSA values. Only subtrees that completed
@@ -157,6 +173,18 @@ cumulative fixture's `internal/storefixture/command_table.go` checks them:
   call unresolved, as the C adapter does. The Go call lists no candidates,
   where the C adapter names each stored function as a witness. Each handler
   keeps its exact callback at its `register` call.
+- The same loop with interface-typed fields (`readyLoop`): `register` stores
+  its handler into `read` or `write` under a branch, and `RunChosenReady`
+  stores one into `read` under a branch. Every call through either field is
+  unresolved, and no handler is its target. Its witnesses are the handlers
+  that field's stores can put there, each at its store (`(acceptReady).Handle
+  stored in readyLoop.read under a condition`); `register`'s store joins the
+  handlers of both of its calls, as the C adapter joins what callers pass.
+  Each handler keeps its exact `binds_implementation` at its `register` call.
+- The same choice for fields whose interface `fmt` declares (`namedLoop`): the
+  call through the field a branch stored is unresolved with its witness beside
+  its `invokes_external` fact of `fmt.Stringer.String`, and a field cleared to
+  nil under a branch keeps the name stored before it as an alternative.
 
 Missing equivalents, recorded rather than fabricated:
 
@@ -171,12 +199,17 @@ Missing equivalents, recorded rather than fabricated:
   so neither gives the registration the C adapter makes of a table row that
   names its function by a string literal (the owner's decision of
   2026-09-26).
-- An interface-typed field takes every store of that field in the program as
-  its values. A registration function that stores its parameter into one of
-  two fields under a branch (`if readable { l.read = h } else { l.write = h }`)
-  therefore gives the call through `l.read` every handler passed to it,
-  including those registered for `l.write`. These are false alternatives; the
-  C adapter leaves such a call unresolved.
+- An open interface field is decided at its stores, not at the calls that
+  reach them. A helper that stores its parameter unconditionally
+  (`func (l *L) setRead(h H) { l.read = h }`), called under a branch with a
+  parameter its caller was given (`if readable { l.setRead(h) } else {
+  l.setWrite(h) }`), still joins every argument of that caller's callers: the
+  call through `l.read` keeps both handlers as false alternatives. The C
+  adapter leaves a parameter passed on unresolved; Go follows it through its
+  callers, as it does for the values a constructor chain hands to a field.
+- A handler that a parameter store joins is a witness at that store
+  (`readyLoop.register`), where the C adapter places it at the argument of each
+  call that passes it (`X stored in S by F under a condition`).
 
 ## Owned declarations
 

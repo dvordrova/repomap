@@ -10,12 +10,12 @@ import (
 
 func TestTargetRowRendersTheLabelsThePromptDefines(t *testing.T) {
 	row := TargetRow(TargetSummary{ID: "svc", Name: "svc", Root: "cmd/svc", Language: "go", Kind: "executable", Readme: "A service.", Entrypoint: "cmd/svc/main.go",
-		Files: 12, Dirs: 3, Boundaries: map[string]int{"http_client out": 3, "http_server in": 2, "config out": 1}, Operations: []string{"request: submit job"}})
+		Files: 12, Dirs: 3, Boundaries: map[string]int{"http_client out": 3, "request in": 2, "config out": 1}, Operations: []string{"request: submit job"}})
 	fields := make(map[string]any)
 	for _, field := range row.Fields {
 		fields[field.Name] = field.Value
 	}
-	if fields["kind"] != "executable" || !reflect.DeepEqual(fields["boundaries"], []string{"config out 1", "http_client out 3", "http_server in 2"}) {
+	if fields["kind"] != "executable" || !reflect.DeepEqual(fields["boundaries"], []string{"config out 1", "http_client out 3", "request in 2"}) {
 		t.Fatalf("target row labels: %+v", fields)
 	}
 	prompt := Targets().System

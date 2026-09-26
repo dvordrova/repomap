@@ -12,11 +12,21 @@ import (
 
 // A summary is immutable after return. Unknown frontiers count paths, while
 // functions and assignment locations are the same sets sealed by the index.
+// witnesses are callables an interface field was given when a store under a
+// branch left that field open: evidence of the frontier, never candidates.
 type dynamicValueSummary struct {
 	functions   map[*ssa.Function]godynamichandoff.CandidateEvidence
 	assignments map[*ssa.Function]map[godynamichandoff.Location]struct{}
+	witnesses   map[*ssa.Function]map[dynamicFieldWitness]struct{}
 	unresolved  int
 	cyclic      bool
+}
+
+// dynamicFieldWitness is one store that put a witness callable into a field.
+type dynamicFieldWitness struct {
+	field       string
+	location    godynamichandoff.Location
+	underBranch bool
 }
 
 type dynamicValueKey struct {
@@ -96,6 +106,11 @@ func (r *dynamicValueResolver) merge(result *dynamicValueSummary, child dynamicV
 			result.assign(function, location)
 		}
 	}
+	for function, stores := range child.witnesses {
+		for store := range stores {
+			result.witness(function, store)
+		}
+	}
 }
 
 func (result *dynamicValueSummary) assign(function *ssa.Function, location godynamichandoff.Location) {
@@ -106,6 +121,16 @@ func (result *dynamicValueSummary) assign(function *ssa.Function, location godyn
 		result.assignments[function] = make(map[godynamichandoff.Location]struct{})
 	}
 	result.assignments[function][location] = struct{}{}
+}
+
+func (result *dynamicValueSummary) witness(function *ssa.Function, store dynamicFieldWitness) {
+	if result.witnesses == nil {
+		result.witnesses = make(map[*ssa.Function]map[dynamicFieldWitness]struct{})
+	}
+	if result.witnesses[function] == nil {
+		result.witnesses[function] = make(map[dynamicFieldWitness]struct{})
+	}
+	result.witnesses[function][store] = struct{}{}
 }
 
 // wrapperTarget returns the method a synthetic bound method wrapper or thunk
@@ -379,7 +404,7 @@ func (r *dynamicValueResolver) interfaceParameter(parameter *ssa.Parameter) dyna
 
 func (r *dynamicValueResolver) interfaceField(value *ssa.UnOp) dynamicValueSummary {
 	result := dynamicValueSummary{unresolved: 1}
-	field, _ := interfaceReceiverField(value)
+	field, container := interfaceReceiverField(value)
 	if field == nil || r.analyzer.dynamicHandoffCapture == nil {
 		return result
 	}
@@ -390,14 +415,35 @@ func (r *dynamicValueResolver) interfaceField(value *ssa.UnOp) dynamicValueSumma
 	// Every store of this field in the analyzed program is observed. Their
 	// values are the field's values; a store whose value cannot be followed
 	// keeps its own unknown path.
+	open := false
+	for _, store := range stores {
+		open = open || store.underBranch
+	}
 	result = dynamicValueSummary{}
 	for _, store := range stores {
-		child := r.interfaceValue(store.Val)
-		r.merge(&result, child)
-		for function := range child.functions {
-			// Attach the store to this parent, never to the cached value.
-			result.assign(function, dynamicLocation(r.analyzer.location(store.Pos())))
+		child := r.interfaceValue(store.store.Val)
+		location := dynamicLocation(r.analyzer.location(store.store.Pos()))
+		if !open {
+			r.merge(&result, child)
+			for function := range child.functions {
+				// Attach the store to this parent, never to the cached value.
+				result.assign(function, location)
+			}
+			continue
 		}
+		// A store under a branch gives the field its value on some paths
+		// only, and a parameter stored there joins every caller's argument,
+		// whichever field the branch chose for it. The field's value is then
+		// unknown: each stored callable is a witness, as in the C adapter.
+		r.merge(&result, dynamicValueSummary{witnesses: child.witnesses, cyclic: child.cyclic})
+		stored := dynamicFieldWitness{field: types.TypeString(container, packageQualifier) + "." + field.Name(),
+			location: location, underBranch: store.underBranch}
+		for function := range child.functions {
+			result.witness(function, stored)
+		}
+	}
+	if open {
+		result.unresolved = 1
 	}
 	return result
 }

@@ -610,10 +610,11 @@ func TestTableRowsReachPlacesAsRegistrations(t *testing.T) {
 	adaptertest.AssertCallControls(t, x.index, graph, "loop.c", "timer", map[int][]adaptertest.Control{
 		lineOf(t, indexLoop, "timer();"): {{Line: lineOf(t, indexLoop, "while (!stop)"), Kind: "while body"}},
 	})
-	// Each row is its own registration at the function it stores.
+	// Each row is its own registration at the function it stores, with the
+	// record type's field it is stored in as its registrar.
 	adaptertest.AssertCallSiteBoundaries(t, x.repository, x.result.Input, "kvd.c", []adaptertest.CallSite{
-		{Line: lineOf(t, indexServer, `{"get", getCommand, 2}`), Column: len(`    {"get", `) + 1, Key: "kvCommand", Symbol: "getCommand"},
-		{Line: lineOf(t, indexServer, `{"set", setCommand, 3}`), Column: len(`    {"set", `) + 1, Key: "kvCommand", Symbol: "setCommand"},
-		{Line: lineOf(t, indexServer, `{"ping", pingCommand, 1}`), Column: len(`    {"ping", `) + 1, Key: "kvCommand", Symbol: "pingCommand"},
+		{Line: lineOf(t, indexServer, `{"get", getCommand, 2}`), Column: len(`    {"get", `) + 1, Key: "kvCommand", Text: "kv.h.kvCommand.proc", Symbol: "getCommand"},
+		{Line: lineOf(t, indexServer, `{"set", setCommand, 3}`), Column: len(`    {"set", `) + 1, Key: "kvCommand", Text: "kv.h.kvCommand.proc", Symbol: "setCommand"},
+		{Line: lineOf(t, indexServer, `{"ping", pingCommand, 1}`), Column: len(`    {"ping", `) + 1, Key: "kvCommand", Text: "kv.h.kvCommand.proc", Symbol: "pingCommand"},
 	})
 }

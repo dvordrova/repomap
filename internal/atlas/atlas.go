@@ -330,6 +330,11 @@ type BoundaryFacts struct {
 	External string   `json:"external,omitempty"`
 	Method   string   `json:"method,omitempty"`
 	Values   []string `json:"values"`
+	// Words are what the code wrote at a registration, as written: its call
+	// word, its literals in order and the address its mount prefixes compose.
+	// The model names an entry by choosing among them; nothing here says
+	// which is a verb, a path, a command or a topic.
+	Words []string `json:"words,omitempty"`
 	// Holder is the value the call acts on, as path:line:column of the call
 	// that produced it; registrations on one holder belong together.
 	Holder string `json:"holder,omitempty"`
@@ -437,7 +442,7 @@ type APIRole struct {
 // EntryKinds are what a handed callable can become; an entry has a named
 // kind or is none.
 func EntryKinds() []string {
-	return []string{BoundaryHTTPServer, BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension, BoundaryCommand}
+	return []string{BoundaryRequest, BoundaryCommand, BoundaryInteraction, BoundaryScheduled, BoundaryContinuous, BoundaryQueueConsumer, BoundaryExtension}
 }
 
 // Target is one analyzed program target with its boxes.
@@ -647,6 +652,10 @@ type Boundary struct {
 	Basis       string   `json:"basis,omitempty"`
 	Method      string   `json:"method,omitempty"`
 	Values      []string `json:"values"`
+	// Name is an entry's name: the words of its registration the model
+	// chose, restored as written and joined by one space in the order it
+	// wrote them. Empty when no choice was accepted.
+	Name string `json:"name,omitempty"`
 	// Line is MODEL.
 	Line   string `json:"line"`
 	FactID string `json:"fact_id,omitempty"`
@@ -1438,7 +1447,11 @@ const (
 	DirectionOut = "out"
 
 	BoundaryHTTPClient = "http_client"
-	BoundaryHTTPServer = "http_server"
+	// BoundaryRequest is what a client sends over a connection, whatever the
+	// protocol: an HTTP route, an RPC method, a protocol command, an event a
+	// socket receives. The entry's name is the words the model chooses among
+	// those its registration wrote, never a protocol's own shape.
+	BoundaryRequest = "request"
 	// BoundaryListenAddress is a fixed source fact, never a model kind choice.
 	BoundaryListenAddress = "listen_address"
 	BoundaryDB            = "db"
@@ -1452,6 +1465,9 @@ const (
 	BoundaryScheduled   = "scheduled"
 	BoundaryInteraction = "interaction"
 	BoundaryExtension   = "extension"
+	// BoundaryContinuous is work that runs for as long as the program does,
+	// on a thread, task or loop of its own.
+	BoundaryContinuous = "continuous"
 	// BoundaryCommand is a command a runner activates: a CLI subcommand, a
 	// task a task runner names.
 	BoundaryCommand = "command"
@@ -1471,8 +1487,8 @@ func Roles() []string {
 // BoundaryKinds lists the boundary kinds in the order the model sees them.
 func BoundaryKinds() []string {
 	return []string{
-		BoundaryHTTPClient, BoundaryHTTPServer, BoundaryDB, BoundaryQueueProducer,
-		BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension,
+		BoundaryHTTPClient, BoundaryRequest, BoundaryDB, BoundaryQueueProducer,
+		BoundaryQueueConsumer, BoundaryScheduled, BoundaryContinuous, BoundaryInteraction, BoundaryExtension,
 		BoundaryCommand, BoundarySDK, BoundaryConfig, BoundaryOther,
 	}
 }
@@ -1480,7 +1496,7 @@ func BoundaryKinds() []string {
 // IncomingBoundaryKinds lists what a registration handing over a repository
 // callable can be: the ways work enters the component.
 func IncomingBoundaryKinds() []string {
-	return []string{BoundaryHTTPServer, BoundaryQueueConsumer, BoundaryScheduled, BoundaryInteraction, BoundaryExtension, BoundaryCommand, BoundaryOther}
+	return append(EntryKinds(), BoundaryOther)
 }
 
 // OutgoingBoundaryKinds lists the kinds an outgoing candidate may take: the

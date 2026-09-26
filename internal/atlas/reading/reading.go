@@ -1246,7 +1246,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			ObjectID: objectID,
 			ID:       state.place.ID, BoxID: boxID, Path: state.place.Path, LineNo: state.place.LineNo, Column: state.place.Column,
 			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External, Method: facts.Method,
-			Values: append([]string{}, facts.Values...), Line: state.line, FactID: factID,
+			Values: append([]string{}, facts.Values...), Name: state.name, Line: state.line, FactID: factID,
 			Source: facts.Source, Destination: state.destination, Address: state.address, Basis: state.basis,
 		})
 	}

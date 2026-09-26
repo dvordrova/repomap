@@ -516,9 +516,11 @@ func (r *reader) describeDeclarations(ctx context.Context, tables ...declaration
 
 // boundaryState is one accepted fact or candidate awaiting its own review.
 type boundaryState struct {
-	uses        []atlas.DestinationUse
-	place       atlas.Place
-	line        string
+	uses  []atlas.DestinationUse
+	place atlas.Place
+	line  string
+	// name is an entry's chosen words, restored as written.
+	name        string
 	kind        string
 	destination string
 	address     string
@@ -605,7 +607,21 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			if isOutgoing != outgoing || (facts.GivenKind != "") != fixed {
 				continue
 			}
+			r.places[id] = state.place
+			// Without captions an incoming row asks only its entry's name:
+			// a row with no words to name it by asks nothing and keeps its
+			// given line.
+			if !outgoing && r.opts.NoCaptions && len(lines.EntryWords(state.place)) == 0 {
+				continue
+			}
 			owner := boundaryOwner(facts, owners)
+			// An entry is named from its own words, and its handler's calls
+			// near a registration elsewhere say nothing about them: entries
+			// pack into shared windows without an owner, one window per
+			// handler cost Redis 98 requests for 97 names.
+			if len(lines.EntryWords(state.place)) > 0 {
+				owner = atlas.Place{}
+			}
 			key := ""
 			if owner.Symbol != nil {
 				key = owner.ID
@@ -617,7 +633,6 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				keys = append(keys, key)
 			}
 			group.states = append(group.states, state)
-			r.places[id] = state.place
 		}
 		sort.Strings(keys)
 		var groups rowGroups
@@ -684,10 +699,13 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				}
 				continue
 			}
-			// A cell refused alone keeps the fact's given line and names no
-			// destination or address.
+			// A cell refused alone keeps the fact's given line, the handler's
+			// own name and no destination or address.
 			if line, ok := answer["line"]; ok {
 				state.line = line
+			}
+			if cell, ok := answer["name"]; ok {
+				state.name = lines.EntryName(lines.EntryWords(state.place), cell)
 			}
 			if !fixed {
 				state.kind = answer["kind"]

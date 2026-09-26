@@ -174,6 +174,7 @@ func assertGoHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index pr
 		t.Fatal("empty callback returned through interface lost its native graph ownership")
 	}
 	assertGoMethodArgumentExpressions(t, index, graph)
+	adaptertest.AssertEntryWords(t, graph, source, 42, "Handle", "GET /health", "/health")
 }
 
 func assertPythonHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index programindex.Index) {
@@ -215,6 +216,7 @@ func assertPythonHTTPRegistrations(t *testing.T, repository *corpus.Corpus, inde
 		t.Fatalf("Python empty registered handlers omitted from graph: %v", owners)
 	}
 	adaptertest.AssertMethodArgumentPositions(t, graph, source, "pass_method_arguments", "receive_method_arguments")
+	adaptertest.AssertEntryWords(t, graph, source, 6, "get", "/health")
 }
 
 func firstNonEmptyString(values ...string) string {

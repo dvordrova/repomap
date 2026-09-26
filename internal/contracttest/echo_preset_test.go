@@ -347,7 +347,7 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 			switch {
 			case name == "binds" && strings.HasSuffix(symbol, "echo/v4.Echo.GET"):
 				preset.sawRegistration = true
-				answer["binds"] = "http_server"
+				answer["binds"] = "request"
 			case name == "publishes" && strings.HasSuffix(symbol, "echo/v4.Echo.Start"):
 				answer["publishes"] = "yes"
 			case name == "talks" && symbol == "database/sql.Open":
@@ -367,6 +367,10 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 			default:
 				answer["role"] = "passthrough"
 			}
+		case table == "atlas_boundaries" && name == "name":
+			// The route is named by the verb and the path its registration
+			// wrote, in the order a client reads them.
+			answer["name"] = wordRefs(row, "GET", "/users/:id")
 		case table == "atlas_boundaries" && name == "destination":
 			answer["destination"] = "other: PostgreSQL"
 		case table == "atlas_boundaries" && name == "address":
@@ -419,6 +423,22 @@ func conditionHolds(column map[string]any, answer, row map[string]any) bool {
 		}
 	}
 	return true
+}
+
+// wordRefs are the refs of an entry row's words with these values, in this
+// order; a value the row did not write has no ref.
+func wordRefs(row map[string]any, values ...string) []string {
+	words, _ := row["words"].([]any)
+	var refs []string
+	for _, value := range values {
+		for _, item := range words {
+			word, _ := item.(map[string]any)
+			if word["value"] == value {
+				refs = append(refs, word["ref"].(string))
+			}
+		}
+	}
+	return refs
 }
 
 func stringsOf(value any) []string {

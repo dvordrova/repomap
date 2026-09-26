@@ -10,7 +10,7 @@ func TestSealCanonicalizesCompleteBoundaryOriginsWithoutMutatingTheInput(t *test
 	first := BoundaryOrigin{TargetID: "a", FactID: "fact", ObjectID: "a-handler"}
 	second := BoundaryOrigin{TargetID: "b", FactID: "fact-2", ObjectID: "b-handler"}
 	graph := Graph{Version: GraphVersion, Places: []Place{{ID: "bnd:route", Kind: PlaceBoundary, Path: "api.go", LineNo: 10, Column: 4, TargetIDs: []string{"a", "b"},
-		Boundary: &BoundaryFacts{Source: "fact", Origins: []BoundaryOrigin{second, first, second}, Direction: DirectionIn, GivenKind: BoundaryHTTPServer, Method: "ANY", Values: []string{"/v1/update"}}}}, Edges: []Edge{}, Seeds: []string{}}
+		Boundary: &BoundaryFacts{Source: "fact", Origins: []BoundaryOrigin{second, first, second}, Direction: DirectionIn, GivenKind: BoundaryRequest, Method: "ANY", Values: []string{"/v1/update"}}}}, Edges: []Edge{}, Seeds: []string{}}
 	got, err := EncodeGraph(graph)
 	if err != nil {
 		t.Fatal(err)

@@ -141,7 +141,6 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 	chain := programIndexObjectNamed(t, index, programindex.ObjectFunction, "register_chained_callbacks", sourcePath)
 	assertChainedCallbackArguments(t, index, chain.ID, "map", programindex.ResolutionExact)
 	caller := programIndexObjectNamed(t, index, programindex.ObjectFunction, "register_callback_aliases", sourcePath)
-	named := programIndexObjectNamed(t, index, programindex.ObjectFunction, "handle_delivery", sourcePath)
 	arguments := make(map[string]programindex.PatternArgument)
 	for _, relation := range index.Relations {
 		if relation.FromID != caller.ID {
@@ -153,7 +152,7 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 			}
 		}
 	}
-	var namedCount, lambdaCount, keywordCount int
+	var lambdaCount, keywordCount int
 	for _, relation := range index.Relations {
 		if relation.Kind != programindex.RelationPassesCallback || relation.FromID != caller.ID {
 			continue
@@ -164,21 +163,39 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 			relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 {
 			t.Fatalf("callback alias lost its argument authority: relation=%#v argument=%#v", relation, argument)
 		}
+		// handler = handle_delivery runs only under `if replace_handler`, so
+		// deliver_callback(handler) may pass the caller's value instead: the
+		// last assignment gives no callback.
 		target := programIndexObjectByID(index, relation.ToIDs[0])
-		switch {
-		case target.ID == named.ID && relation.Resolution == programindex.ResolutionExact:
-			namedCount++
-		case target.Kind == programindex.ObjectLambda && relation.Resolution == programindex.ResolutionExact:
-			lambdaCount++
-		default:
+		if target.Kind != programindex.ObjectLambda || relation.Resolution != programindex.ResolutionExact {
 			t.Fatalf("callback acquired unsupported authority: target=%#v relation=%#v", target, relation)
 		}
+		lambdaCount++
 		if argument.Keyword == "callback" {
 			keywordCount++
 		}
 	}
-	if namedCount != 1 || lambdaCount != 3 || keywordCount != 1 {
-		t.Fatalf("callback aliases: named=%d lambda=%d keyword=%d", namedCount, lambdaCount, keywordCount)
+	if lambdaCount != 3 || keywordCount != 1 {
+		t.Fatalf("callback aliases: lambda=%d keyword=%d", lambdaCount, keywordCount)
+	}
+	// The argument keeps the name's own variable, not the function the
+	// branch may have stored in it.
+	reassigned := false
+	for _, relation := range index.Relations {
+		if relation.FromID != caller.ID || relation.Location == nil || relation.Location.Line != 41 {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			argument := pythonPatternArgument(t, pattern, 1)
+			if pattern.Selector != "deliver_callback" || len(argument.ObjectIDs) != 1 ||
+				programIndexObjectByID(index, argument.ObjectIDs[0]).Kind != programindex.ObjectVariable {
+				t.Fatalf("a name reassigned under a branch passed its last function: %#v", argument)
+			}
+			reassigned = true
+		}
+	}
+	if !reassigned {
+		t.Fatal("register_callback_aliases lost its deliver_callback(handler) call")
 	}
 	for _, name := range []string{"register_unknown_callback", "register_overwritten_callback"} {
 		owner := programIndexObjectNamed(t, index, programindex.ObjectFunction, name, sourcePath)

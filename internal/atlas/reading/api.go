@@ -30,9 +30,12 @@ type apiSymbol struct {
 	// belongs to testing and is not asked about.
 	sites   int
 	holders map[string]bool
-	// usage is the first site: the line a reader would look at.
-	usagePath string
-	usageLine int
+	// usage is the first site: the line a reader would look at. A symbol
+	// only registrations name uses its first registration's line.
+	usagePath        string
+	usageLine        int
+	registrationPath string
+	registrationLine int
 }
 
 func apiName(api atlas.CallAPI) string {
@@ -61,13 +64,23 @@ func (r *reader) apiSymbols() []*apiSymbol {
 		}
 		if b := place.Boundary; b != nil && b.Source == "fact" && b.External != "" && b.GivenKind == "" {
 			s := symbol(b.External)
-			s.handsCallable = s.handsCallable || b.ObjectID != ""
+			// A registration hands a callable over when it brings work in,
+			// and a value the repository built when it is Handed
+			// (Register("k6/x/dns", new(DNS)), whose entry applyAPIRoles
+			// makes from binds); its ObjectID is otherwise the declaration
+			// making the call, and fopen("/dev/null") hands nothing.
+			s.handsCallable = s.handsCallable || b.Direction == atlas.DirectionIn || b.Handed
 			s.literals = appendUnique(s.literals, b.Values...)
 			if b.Holder != "" {
 				s.holders[b.Holder] = true
 			}
 			if !inTest {
 				s.sites++
+			}
+			// A registrar only rows of a table name (a record's field) is
+			// called nowhere: its usage is the first registration.
+			if s.registrationPath == "" {
+				s.registrationPath, s.registrationLine = place.Path, place.LineNo
 			}
 		}
 		if place.Symbol == nil {
@@ -92,6 +105,9 @@ func (r *reader) apiSymbols() []*apiSymbol {
 	}
 	result := make([]*apiSymbol, 0, len(byName))
 	for _, s := range byName {
+		if s.usagePath == "" {
+			s.usagePath, s.usageLine = s.registrationPath, s.registrationLine
+		}
 		if s.sites > 0 {
 			result = append(result, s)
 		}
