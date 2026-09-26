@@ -1,7 +1,9 @@
 package reading
 
 import (
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -13,15 +15,12 @@ import (
 // The keys prompt says declarations "lists everything the part holds", and
 // the core rows carry the declarations a part holds. A part of thirteen
 // declarations was sent twelve of them: the list is names only and goes
-// whole to both tables.
+// whole to both tables. The tables are prepared without a model, so the
+// saved inputs are what any provider would be sent.
 func TestKeysAndCoreListEveryDeclarationOfAPart(t *testing.T) {
 	var declarations []any
-	var asked []map[string]any
-	provider := &mutatedTableProvider{mutate: func(input map[string]any, _ []map[string]any) {
-		asked = append(asked, input)
-	}}
-	r := answerTestReader(t, nil, provider)
-	r.opts.Through = ""
+	r := answerTestReader(t, nil, nil)
+	r.dry, r.opts.Through = true, ""
 	r.opts.Targets = []TargetMeta{{ID: "t", Name: "service"}}
 	r.opts.Graph = atlas.Graph{}
 	r.places = map[string]atlas.Place{}
@@ -54,17 +53,24 @@ func TestKeysAndCoreListEveryDeclarationOfAPart(t *testing.T) {
 	if err := r.readCore(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	var keys, core []any
-	for _, input := range asked {
-		switch input["table"] {
-		case lines.StageKeys:
-			keys = input["context"].(map[string]any)["declarations"].([]any)
-		case lines.StageCore:
-			for _, row := range input["rows"].([]any) {
-				if row.(map[string]any)["key"] == "p1" {
-					core = row.(map[string]any)["declarations"].([]any)
-				}
-			}
+	input := func(stage string) (request struct {
+		Context map[string]any   `json:"context"`
+		Rows    []map[string]any `json:"rows"`
+	}) {
+		raw, err := readWindowPayload(filepath.Join(r.opts.OwnerRunDir, atlas.TablesDir, stage+"-r1-w0.input.ref.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(raw, &request); err != nil {
+			t.Fatal(err)
+		}
+		return request
+	}
+	keys, _ := input(lines.StageKeys).Context["declarations"].([]any)
+	var core []any
+	for _, row := range input(lines.StageCore).Rows {
+		if row["key"] == "p1" {
+			core, _ = row["declarations"].([]any)
 		}
 	}
 	if !slices.Equal(keys, declarations) || !slices.Equal(core, declarations) {
