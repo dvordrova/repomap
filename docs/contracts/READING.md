@@ -90,8 +90,8 @@ new description or selection requests.
   `operation:<id>` pseudo-places. Drawn arrows receive persisted compact `x*`
   IDs before their sentence request instead of using a joined box-pair key.
   Request-local `c*` values remain
-  only for choices which have no artifact identity, such as one row's calls or
-  answer-source catalogue.
+  only for choices which have no artifact identity, such as the answer-source
+  catalogue. A symbol row's calls are context, not choices, and carry none.
   The model writes one line or one closed choice per
   cell; the architecture stage selects membership, while code validates exact
   references and owns native arrows and their direction, joints by
@@ -321,7 +321,7 @@ remain model decisions with `self`/`none`, not local middleware classification.
   with complete exact resolution to one repository callee and no external API
   is internal delegation at that site: it stays in source context, but is not
   advertised as an outgoing choice. Possible/unresolved and external API calls
-  remain eligible. Original c-ref positions and native boundary facts survive.
+  remain eligible. Every original call site and native boundary fact survives.
   Accepted communication retains its exact call site and reaches GroupsIndex
   independently of the containing group's lane or key descriptions. The entrance
   shows those observations and source links, not a count of unique remote systems.
@@ -671,13 +671,18 @@ Replay is revalidated against that complete original window before reuse.
 Adding or reordering questions reuses existing decisions; canonical ownership
 is restored from the current graph. This implementation is under ordinary
 quality acceptance; its measured drafts and limitations are in CURRENT.md.
-Symbol selection asks `key_symbol` and `operation_candidate` (yes/no; the
-operation table decides the kind) plus `outbound` call refs; rendered calls
-leave out the default `invocation`/`resolution`, collapse exact local callees
-into `local_calls`, and render origin trees two levels deep without anchors.
-Every rendered evidence value is defined in the evidence vocabulary attached
-to the symbols, operations and boundaries prompts; a contract test fails on a
-value the prompt does not name.
+Symbol selection asks `key_symbol` (yes/no). No column selects a call, so a
+symbol row's calls carry no `c*` refs and the row no `call_options`. Rendered
+calls leave out the default `invocation`/`resolution`, the column and the
+callee IDs, and collapse exact local callees into `local_calls`. Calls whose
+rendered evidence is identical apart from their line are one entry whose
+`lines` list every site in call order, a line twice when it holds two such
+calls; expanding each entry over its lines gives back every call with its own
+evidence. The `canvas.spec.mjs` selection row, refused for its size on every
+run, falls from 550 entries and 70,906 B of calls to 245 entries and 31,046 B.
+Boundary rows render origin trees two levels deep without anchors. Every
+rendered evidence value is defined in the evidence vocabulary attached to the
+symbol prompts; a contract test fails on a value the prompt does not name.
 A retrieval row states each fact once: a unit's `heading_path` lists only its
 parent section titles, `anchor_path` appears only when it differs from the
 row's path, and a type member that is itself a unit of the same chunk is

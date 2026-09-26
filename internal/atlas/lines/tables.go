@@ -2,6 +2,7 @@ package lines
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -110,9 +111,21 @@ func ownedDeclarations(declarations []atlas.TypeMember) []map[string]any {
 	return members
 }
 
-// SymbolRow builds the row of one candidate symbol. Calls the model may
-// select carry their c* ref and evidence; an exact repository callee is
-// internal delegation, one line of context under local_calls.
+// siteCall is one call of a symbol row with every line it occurs on. Calls
+// whose rendered evidence is identical apart from their line (the column is
+// never rendered) are one entry: nothing that tells them apart is dropped.
+// The Line field hides the embedded call's own line, so an entry names its
+// sites once, as lines, in call order.
+type siteCall struct {
+	callEvidence
+	Line  int   `json:"line,omitempty"`
+	Lines []int `json:"lines"`
+}
+
+// SymbolRow builds the row of one candidate symbol. Each call carries its
+// evidence, written once with the lines of all its identical sites; an exact
+// repository callee is internal delegation, one line of context under
+// local_calls. No column selects a call, so calls carry no refs.
 func SymbolRow(place atlas.Place, fileLine string) table.Row {
 	evidence := EvidenceCatalog{OmitDefaults: true}
 	decl := place.Symbol.Decl
@@ -134,23 +147,32 @@ func SymbolRow(place atlas.Place, fileLine string) table.Row {
 	if len(place.Symbol.Bindings) > 0 {
 		fields = append(fields, table.Field{Name: "callable_bindings", Value: evidence.Bindings(place.Symbol.Bindings)})
 	}
-	calls := make([]map[string]any, 0, len(place.Symbol.Calls))
-	refs := make([]string, 0, len(place.Symbol.Calls))
+	calls := make([]*siteCall, 0, len(place.Symbol.Calls))
+	sites := make(map[string]*siteCall)
 	var local []string
-	for i, call := range place.Symbol.Calls {
+	for _, call := range place.Symbol.Calls {
 		// A complete exact repository callee is internal delegation at this
-		// site: one context line without a ref. Refs keep their original c*
-		// positions, so a selected ref still names the call by its index;
-		// possible or unresolved dispatch is still eligible for review.
+		// site: one context line. Possible or unresolved dispatch keeps its
+		// full evidence.
 		if call.Kind == "calls" && call.Resolution == DefaultResolution && len(call.CalleeIDs) == 1 && call.API == nil {
 			local = append(local, localCall(call))
 			continue
 		}
-		ref := fmt.Sprintf("c%d", i+1)
-		refs = append(refs, ref)
-		calls = append(calls, map[string]any{"ref": ref, "evidence": evidence.Call(call)})
+		rendered := evidence.call(call)
+		line := rendered.Line
+		rendered.Line = 0
+		identity, err := json.Marshal(rendered)
+		if site := sites[string(identity)]; err == nil && site != nil {
+			site.Lines = append(site.Lines, line)
+			continue
+		}
+		site := &siteCall{callEvidence: rendered, Lines: []int{line}}
+		if err == nil {
+			sites[string(identity)] = site
+		}
+		calls = append(calls, site)
 	}
-	fields = append(fields, table.Field{Name: "calls", Value: calls}, table.Field{Name: "call_options", Value: refs})
+	fields = append(fields, table.Field{Name: "calls", Value: calls})
 	if len(local) > 0 {
 		fields = append(fields, table.Field{Name: "local_calls", Value: local})
 	}

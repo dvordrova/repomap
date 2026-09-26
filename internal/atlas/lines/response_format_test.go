@@ -31,7 +31,6 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 					{Name: "entry_options", Value: []string{"self", "none"}},
 					{Name: "peer_options", Value: []string{"p1", "none"}},
 					{Name: "candidate_options", Value: []string{"c1"}},
-					{Name: "call_options", Value: []string{"c1"}},
 				}}}
 				windows, err := table.Windows(def, 1, rows)
 				if err != nil || len(windows) != 1 {

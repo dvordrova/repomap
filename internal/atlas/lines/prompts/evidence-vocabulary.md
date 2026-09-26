@@ -35,3 +35,5 @@ Evidence vocabulary. Every value below comes from an extractor, never from a mod
   statements holding the call; context, never selectable. A `$N` suffix, as in `serve$1`, marks the N-th function literal
   (closure) inside that declaration: its code, not a declaration of its own. `values` are literal arguments observed at a
   call, `arguments` repository declarations passed to it, `api` the exact external symbol, `detail` the extractor's note.
+- `lines` of a call are its source lines: one entry stands for the same call with the same evidence at each listed line,
+  and a line listed twice holds two such calls.
