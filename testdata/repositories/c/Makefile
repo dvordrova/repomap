@@ -1,6 +1,6 @@
 # kvd: a small key-value server and its command-line client.
-# Both programs link strbuf.o. LOOP_POLL picks the portable poll(2) backend
-# of the event loop; without it loop.c would use the Linux-only epoll one.
+# Both programs link strbuf.o. LOOP_POLL asks for the portable poll(2)
+# backend of the event loop on every host; without it Linux uses epoll.
 CFLAGS = -std=c99 -O2 -g -Wall -D_DEFAULT_SOURCE -DLOOP_POLL
 
 all: kvd kvcli

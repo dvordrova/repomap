@@ -3,12 +3,13 @@
 
 #include "loop.h"
 
-/* The backend waits for ready descriptors. The build chooses one, and only
- * that file is compiled, as a part of this one. */
-#ifdef LOOP_POLL
-#include "loop_poll.c"
-#else
+/* The backend waits for ready descriptors. Only one file is compiled, as a
+ * part of this one: epoll on Linux unless the build asks for poll, and poll
+ * everywhere else. */
+#if defined(__linux__) && !defined(LOOP_POLL)
 #include "loop_epoll.c"
+#else
+#include "loop_poll.c"
 #endif
 
 /* strbuf.c has its own oom: each is static to its file. */

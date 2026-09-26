@@ -1,11 +1,9 @@
 //go:build cindex
 
 // These expectations need the C ProgramIndex projection, which is not on
-// this branch yet. It is called cproject.BuildInput(parsed, corpus) here, the
-// shape the C target descriptor's cProgramInput placeholder takes
-// (cproject.Build is already the build-description type). They compile and
-// run with -tags cindex. When the projection is integrated, remove the build
-// constraint above and give buildCInput the projection's final name.
+// this branch yet: cproject.Index(repository, parsed), whose Result carries
+// the ProgramIndex input. They compile and run with -tags cindex. When the
+// projection is integrated, remove the build constraint above.
 
 package contracttest
 
@@ -32,10 +30,11 @@ func buildCIndex(t *testing.T, fixture cFixture, selector string) programindex.I
 
 func buildCInput(t *testing.T, fixture cFixture, selector string) (programindex.Input, programindex.Index) {
 	t.Helper()
-	input, err := cproject.BuildInput(fixture.parsed[selector], fixture.repository)
+	result, err := cproject.Index(fixture.repository, fixture.parsed[selector])
 	if err != nil {
 		t.Fatalf("project %s: %v", selector, err)
 	}
+	input := result.Input
 	index, err := programindex.New(input)
 	if err != nil {
 		t.Fatalf("seal %s: %v", selector, err)
@@ -340,6 +339,7 @@ func TestCFixtureIndexesTheServer(t *testing.T) {
 		eventsCall: {{Line: mainLoop, Kind: "while body"}},
 	})
 	assertCTableBindings(t, fixture, graph)
+	assertCHandedBindings(t, fixture, graph)
 	assertCDispatchCalls(t, fixture, graph)
 }
 
@@ -448,6 +448,37 @@ func assertCTableBindings(t *testing.T, fixture cFixture, graph atlas.Graph) {
 	}
 }
 
+// Every function handed over at a call or a store keeps that binding in its
+// own reading, at the place it is handed over: a store's own witness makes
+// the row, so no handler depends on a field-name witness to appear.
+func assertCHandedBindings(t *testing.T, fixture cFixture, graph atlas.Graph) {
+	t.Helper()
+	for _, handed := range []struct{ from, callback, needle string }{
+		{"main", "acceptHandler", "LOOP_READABLE, acceptHandler, NULL)"},
+		{"acceptHandler", "readQueryFromClient", "LOOP_READABLE, readQueryFromClient, c)"},
+		{"addReply", "sendReplyToClient", "LOOP_WRITABLE, sendReplyToClient, c)"},
+		{"main", "beforeSleep", "loopSetBeforeSleep(server.el, beforeSleep)"},
+		{"main", "statsWorker", "pthread_create(&stats, NULL, statsWorker, NULL)"},
+		{"keysCommand", "compareKeys", "qsort(keys,"},
+		{"setupSignals", "onSignal", "act.sa_handler = onSignal;"},
+	} {
+		line, _ := fixture.at(t, "kvd.c", handed.needle, "")
+		found := false
+		for _, binding := range cSymbolPlace(t, graph, "kvd.c", handed.callback).Symbol.Bindings {
+			if binding.From != handed.from || binding.To != handed.callback || binding.Kind != string(programindex.RelationPassesCallback) ||
+				binding.Path != "kvd.c" || binding.Line != line {
+				continue
+			}
+			for _, evidence := range binding.Evidence {
+				found = found || evidence.Extractor == "callback_registration" && evidence.Path == "kvd.c" && evidence.LineNo == line
+			}
+		}
+		if !found {
+			t.Fatalf("%s's reading does not show %s handing it over at kvd.c:%d", handed.callback, handed.from, line)
+		}
+	}
+}
+
 // The readings of the two dispatching functions keep what the index knows:
 // alternatives for the table, nothing chosen for the branch stores.
 func assertCDispatchCalls(t *testing.T, fixture cFixture, graph atlas.Graph) {
@@ -462,15 +493,17 @@ func assertCDispatchCalls(t *testing.T, fixture cFixture, graph atlas.Graph) {
 	if len(proc) != 1 || proc[0].Dispatch != programindex.DispatchFunctionValue || proc[0].Resolution != string(programindex.ResolutionAlternatives) || len(proc[0].CalleeIDs) != len(cCommandRows) {
 		t.Fatalf("processCommand's dispatch: %+v", proc)
 	}
-	readLine, _ := fixture.at(t, "loop.c", "fe->rfileProc(l, fd, fe->data, mask)", "")
-	var read []atlas.SymbolCall
-	for _, call := range cSymbolPlace(t, graph, "loop.c", "loopProcessEvents").Symbol.Calls {
-		if call.Line == readLine {
-			read = append(read, call)
+	for _, field := range []string{"rfileProc", "wfileProc"} {
+		line, _ := fixture.at(t, "loop.c", "fe->"+field+"(l, fd, fe->data, mask)", "")
+		var calls []atlas.SymbolCall
+		for _, call := range cSymbolPlace(t, graph, "loop.c", "loopProcessEvents").Symbol.Calls {
+			if call.Line == line {
+				calls = append(calls, call)
+			}
 		}
-	}
-	if len(read) != 1 || read[0].Dispatch != programindex.DispatchFunctionValue || read[0].Resolution != string(programindex.ResolutionUnresolved) || len(read[0].CalleeIDs) != 0 {
-		t.Fatalf("loopProcessEvents' read dispatch: %+v", read)
+		if len(calls) != 1 || calls[0].Dispatch != programindex.DispatchFunctionValue || calls[0].Resolution != string(programindex.ResolutionUnresolved) || len(calls[0].CalleeIDs) != 0 {
+			t.Fatalf("loopProcessEvents' %s dispatch: %+v", field, calls)
+		}
 	}
 }
 

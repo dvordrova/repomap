@@ -1,5 +1,5 @@
-/* epoll(7) backend: Linux only. loop.c includes it when the build does not
- * ask for poll; it is not compiled on its own. */
+/* epoll(7) backend: Linux only. loop.c includes it on Linux when the build
+ * does not ask for poll; it is not compiled on its own. */
 #include <sys/epoll.h>
 
 static int loopApiCreate(loop *l) {

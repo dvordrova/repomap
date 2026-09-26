@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -30,8 +31,6 @@ type cFixture struct {
 
 func loadCFixture(t *testing.T) cFixture {
 	t.Helper()
-	// A caller's make (make test) must not reach the dry run.
-	t.Setenv("MAKEFLAGS", "")
 	root, repository := materializeFixtureRepository(t, "c")
 	project, err := cproject.Discover(t.Context(), root, repository)
 	if err != nil {
@@ -142,17 +141,18 @@ func cDeclarations(unit *cproject.Unit, kind, name string) []*cproject.Node {
 	return found
 }
 
-func cProgramUnitPaths[T interface{ ~[]cproject.UnitSpec | ~[]*cproject.Unit }](units T) []string {
+func cSpecPaths(units []cproject.UnitSpec) []string {
 	var paths []string
-	switch values := any(units).(type) {
-	case []cproject.UnitSpec:
-		for _, unit := range values {
-			paths = append(paths, unit.Path)
-		}
-	case []*cproject.Unit:
-		for _, unit := range values {
-			paths = append(paths, unit.Path)
-		}
+	for _, unit := range units {
+		paths = append(paths, unit.Path)
+	}
+	return paths
+}
+
+func cUnitPaths(units []*cproject.Unit) []string {
+	var paths []string
+	for _, unit := range units {
+		paths = append(paths, unit.Path)
 	}
 	return paths
 }
@@ -180,7 +180,7 @@ func TestCFixtureProgramsComeFromTheMakefile(t *testing.T) {
 	server := fixture.program(t, "c:kvd")
 	serverRule, _ := fixture.at(t, "Makefile", "kvd: kvd.o", "")
 	if server.Kind != cproject.ProgramExecutable || server.Closure || server.Anchor != (cproject.Site{Path: "Makefile", Line: serverRule}) ||
-		!reflect.DeepEqual(cProgramUnitPaths(server.Units), []string{"kvd.c", "loop.c", "strbuf.c"}) || !reflect.DeepEqual(server.LinkArgs, []string{"-pthread"}) {
+		!reflect.DeepEqual(cSpecPaths(server.Units), []string{"kvd.c", "loop.c", "strbuf.c"}) || !reflect.DeepEqual(server.LinkArgs, []string{"-pthread"}) {
 		t.Fatalf("kvd: %+v", server)
 	}
 	if len(server.Evidence) != 1 || server.Evidence[0].Kind != "c_link" || server.Evidence[0].Fields["output"] != "kvd" {
@@ -188,7 +188,7 @@ func TestCFixtureProgramsComeFromTheMakefile(t *testing.T) {
 	}
 	client := fixture.program(t, "c:kvcli")
 	clientRule, _ := fixture.at(t, "Makefile", "kvcli: kvcli.o", "")
-	if client.Anchor != (cproject.Site{Path: "Makefile", Line: clientRule}) || !reflect.DeepEqual(cProgramUnitPaths(client.Units), []string{"kvcli.c", "strbuf.c"}) {
+	if client.Anchor != (cproject.Site{Path: "Makefile", Line: clientRule}) || !reflect.DeepEqual(cSpecPaths(client.Units), []string{"kvcli.c", "strbuf.c"}) {
 		t.Fatalf("kvcli: %+v", client)
 	}
 	// Every unit keeps the flags that change what clang reads and drops
@@ -244,8 +244,8 @@ func TestCFixtureParsesEachProgramInTheBuildsView(t *testing.T) {
 		t.Fatalf("the active backend: %+v", polls)
 	}
 	// The linker's closure gives the dump tool strbuf.c and nothing else.
-	if !reflect.DeepEqual(cProgramUnitPaths(dump.Units), []string{"strbuf.c", "tools/dump.c"}) || dump.Main == nil || dump.Main.Unit != "tools/dump.c" {
-		t.Fatalf("dump: %v main %+v", cProgramUnitPaths(dump.Units), dump.Main)
+	if !reflect.DeepEqual(cUnitPaths(dump.Units), []string{"strbuf.c", "tools/dump.c"}) || dump.Main == nil || dump.Main.Unit != "tools/dump.c" {
+		t.Fatalf("dump: %v main %+v", cUnitPaths(dump.Units), dump.Main)
 	}
 
 	// The command table keeps each row's name beside the function it names.
@@ -371,5 +371,67 @@ func TestCFixtureParsesEachProgramInTheBuildsView(t *testing.T) {
 	}
 	if anonymous != 1 || len(cDeclarations(fixture.unit(t, "c:kvd", "strbuf.c"), "TypedefDecl", "strbuf")) != 1 {
 		t.Fatalf("anonymous strbuf records: %d", anonymous)
+	}
+}
+
+// Inside repomap's own repository the fixture's Makefile is not at the root,
+// so nothing gives its flags: each main is a program whose files the linker
+// closure decides, parsed with clang's defaults. loop.c then takes the host's
+// own backend, and every program still parses on every host.
+func TestCFixtureParsesWithoutItsMakefile(t *testing.T) {
+	isolateFixtureGitEnvironment(t)
+	const prefix = "testdata/repositories/c/"
+	root := filepath.Join(t.TempDir(), "repository")
+	copyFixtureTree(t, filepath.Join(repositoryRoot(t), "testdata", "repositories", "c"), filepath.Join(root, filepath.FromSlash(prefix)))
+	runFixtureGit(t, root, "init", "--quiet")
+	runFixtureGit(t, root, "add", "--all", "--")
+	repository, err := corpus.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	project, err := cproject.Discover(t.Context(), root, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project == nil || project.Toolchain.Err != "" {
+		t.Fatalf("the C fixture needs clang on PATH: %+v", project)
+	}
+	if project.Build.Kind != cproject.BuildNone {
+		t.Fatalf("build description: %+v", project.Build)
+	}
+	for _, observation := range project.Observations {
+		if observation.Kind == "c_unit_error" {
+			t.Fatalf("a unit does not parse with clang's defaults: %+v", observation)
+		}
+	}
+	mains := map[string]bool{}
+	store := cproject.NewStore()
+	for _, program := range project.Programs {
+		parsed, err := cproject.Parse(t.Context(), root, repository, program, store)
+		if err != nil {
+			t.Fatalf("parse %s: %v", program.Selector, err)
+		}
+		if parsed.Main == nil {
+			continue
+		}
+		mains[program.Selector] = true
+		if program.Selector != "c:"+prefix+"kvd.c" {
+			continue
+		}
+		// The host decides the backend when the build does not.
+		outside := prefix + "loop_epoll.c"
+		if runtime.GOOS == "linux" {
+			outside = prefix + "loop_poll.c"
+		}
+		if units := cUnitPaths(parsed.Units); !reflect.DeepEqual(units, []string{prefix + "kvd.c", prefix + "loop.c", prefix + "strbuf.c"}) ||
+			!reflect.DeepEqual(parsed.Outside, []string{outside}) {
+			t.Fatalf("kvd.c without its Makefile: units %v, outside %v", units, parsed.Outside)
+		}
+	}
+	for _, main := range []string{"kvcli.c", "kvd.c", "tools/dump.c"} {
+		if !mains["c:"+prefix+main] {
+			t.Fatalf("no program for %s%s: %v", prefix, main, mains)
+		}
 	}
 }

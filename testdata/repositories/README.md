@@ -56,7 +56,10 @@ Current language repositories:
   once. [tools/dump.c](c/tools/dump.c), which no link line builds, is a program
   through its own `main` and links what the linker would take. `loop.c`
   includes the poll backend the build asks for; the epoll backend is outside
-  this build on every host and is never parsed.
+  this build on every host and is never parsed. Inside repomap's own
+  repository the Makefile is not at the root, so no flags reach clang:
+  each `main` is a program of its own, `loop.c` takes epoll on Linux and
+  poll elsewhere, and every program still parses.
 
 C function pointers and macros in [kvd.c](c/kvd.c) and [loop.c](c/loop.c):
 
@@ -75,8 +78,11 @@ C function pointers and macros in [kvd.c](c/kvd.c) and [loop.c](c/loop.c):
 Go, Python and JS/TS have no macros, so a call a macro writes has no
 equivalent there. Clojure has macros, but its adapter does not expand them
 ([Clojure](../../docs/contracts/CLOJURE.md)), so a call a Clojure macro writes
-is not a call in its index. None of the other fixtures uses a function's
-address as a number. Both cases are recorded as missing rather than imitated.
+is not a call in its index. Only C turns a function into a number with a
+cast. Go, Python and Clojure get a function's identity only from a call that
+receives the function (`reflect.ValueOf(f).Pointer()`, `id(f)`,
+`System/identityHashCode`), which is a different construct, and TypeScript
+has none. Both cases are recorded as missing rather than imitated.
 
 Comparable response-field examples:
 
