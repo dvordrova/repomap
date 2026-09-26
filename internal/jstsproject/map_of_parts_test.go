@@ -62,4 +62,11 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	if drawer == "" || draw == "" || checked.PartOf[draw] != checked.PartOf[drawer] {
 		t.Fatalf("a class method left its class: %q %q", draw, drawer)
 	}
+	// Split, the method still follows its class, and every file's module
+	// body is a row of the assignment.
+	split := partstest.CheckSplit(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "typescript", Kind: "application", Name: index.Target.Name, Root: "."}, root)
+	drawer, draw = split.Symbols[[2]string{"src/platform.ts", "LevelDrawer"}], split.Symbols[[2]string{"src/platform.ts", "LevelDrawer.draw"}]
+	if !split.Split["src/platform.ts"] || split.PartOf[draw] != split.PartOf[drawer] {
+		t.Fatalf("split: a class method in %q, its class in %q", split.PartOf[draw], split.PartOf[drawer])
+	}
 }

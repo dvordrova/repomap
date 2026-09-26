@@ -188,7 +188,8 @@ declarations. The prompt sets no count of parts.
 
 **Small targets.** A target without a unit-bearing file sends no request and
 has a legitimate empty map. A target of one such file sends no parts request:
-its one part takes the target's name. Without a model a target of several
+its one part takes the target's name, unless the role split below splits
+the file. Without a model a target of several
 files has no map: an explicit map failure, never an invented grouping.
 
 **Too large.** A parts request is split into windows only when its prepared
@@ -230,10 +231,113 @@ the atlas target's `map_failure` word `refused` (`no_model` when no model was
 asked); the refusal texts stay in `rejected.jsonl`. Its other analysis
 survives.
 
-**Membership and the off-map record.** Atlas v11 saves explicit `member_ids`
+**A file in several boxes (the role split).** Owner, choosing option "в"
+(2026-09-26): "what's in one file can have different roles, and one role can
+span different files. We build our own map, we group and abstract." A file
+the parts answer placed whole can hold the code of several boxes of our map.
+Three requests decide it, each file on its own, beside the parts request of
+its target (a one-file target included; never without a model):
+
+- *Candidates* are the unit-bearing files of the target that are neither
+  test nor generated code and hold at least two units (one unit cannot go in
+  two boxes). No size, count or threshold decides it.
+- *The gate* (`atlas_role_gate`, Jev, `lines.RoleGate`) asks, in one request
+  per file, "Does the code of `file` go in one box of our map, or in several
+  boxes?". `state.task` is what we want (`lines/prompts/role_map.md`: our own
+  map for a newcomer, a box is a responsibility a newcomer names, a helper
+  goes in the box it serves, a file is the author's unit, not ours) plus
+  `role_gate.md`; the item `file` is the path and every unit's name, kind,
+  signature, methods and same-file calls; each option carries its criteria
+  from `role_gate_options.md` (what, includes, not for, examples). Only
+  "several boxes" leading by `ClassifierMargin` goes on. Measured under
+  this state (5 draws of 11 files, 0 flips): redis.c 0.96–0.98, pykrx's
+  stock_api.py 0.73–0.79, litestream's main.go 0.72–0.77, repomap's own
+  files at most 0.30, sds.c, dict.c and the Jev client 0.00–0.01.
+- *The naming* (`atlas_role_boxes`, DeepSeek, `prompts/design_boxes.md`
+  after `role_map.md`) names the boxes the file's code goes in:
+  `{"boxes":[{"name","holds"}]}` over every unit, whole, with its name, kind,
+  signature, `lines` (its code lines with those of followers outside its
+  range; a module body counts its file's code lines less its other top-level
+  declarations; zero is unknown and not sent), methods, same-file `calls` and
+  `called_by` (decorations included) and `callers_elsewhere` (the distinct
+  units of the target's other non-test files that call it). No count is set.
+  A wrapper object, keys in another case, whitespace and an identical repeat
+  are forms; `null` is no boxes. Two boxes sharing a name are both kept
+  (`role_repeated_name`), and the assignment offers each by its ref with its
+  own `holds`. A box without a name or `holds` keeps the file whole
+  (`role_boxes_incomplete`): the list is one partition decision, and the
+  smallest scope that keeps the closed choice complete is the file. Fewer
+  than two boxes (`role_one_box`), an answer that is not JSON or has no list,
+  or one the provider refuses keep the file whole.
+- *The assignment* (`atlas_role_assign`, Jev, `lines.RoleAssign`) asks for
+  each unit, the module body included, "Which box of our map does
+  `declaration` go in?": `state.task` is `role_map.md` plus
+  `role_assign.md`, `state.context` holds only the file's path, the item
+  `declaration` is its name, kind, signature, methods, same-file calls and
+  callers and `calls_elsewhere` ("path:name"), and each box is an option
+  whose criteria are its `holds`. A unit whose choice does not lead by the
+  margin, is not answered or is in a refused window is undecided.
+
+A file is split only when at least two boxes hold a unit; otherwise it stays
+whole (`role_not_split`). Each box that holds a unit becomes a part, titled
+with the box's name, holding those units with their followers (methods,
+lexical children, repeated names); a box holding none is not drawn
+(`role_box_empty`). An undecided unit, with its followers, goes to the
+off-map record under the closed reason `undecided` (`role_undecided`): the
+file-level decision was superseded by the gate, so reusing it would promote
+a failed result. The part the answer gave the file loses it, and is drawn
+only while it still holds a whole file, described by those files' units
+alone. The split applies only to a file the parts answer itself placed in a
+drawn part: a file it left out or listed twice is placed whole and never
+split (`role_not_applied`), and nothing is split under a map failure. IDs:
+the answer's parts in answer order, skipping one left without a file, then
+each split file's boxes in f* order and naming order. **A role part's
+membership is final when it gets its ID; placement may only add whole
+left-out or conflicting files to it.** A file shared by two targets is
+split per target, since `callers_elsewhere` is per target; it may split
+differently in each and costs a naming in each. Every outcome is recorded in
+`rejected.jsonl` and `tables.md`, with no label on the page, and a split
+failure never fails the target.
+
+The three requests carry request-local refs (the gate's row `f1`, the
+assignment's `d1…dn` in the file's unit order, boxes `b1…bn`), so a warm
+cache survives a file added or edited earlier in path order: only an edited
+file's own requests change, and a call into a file from elsewhere changes
+only that file's naming (and so, when the boxes change, its assignment).
+Measured on the saved V0WFR boxes (3 identical draws, 118 Jev calls in all
+with the gate, $0.067): redis.c 8–11 of 342 units undecided, 1 decided
+choice flipped; pykrx 2–4 of 87, litestream 1–2 of 46, none flipped. The
+map's rule that a helper goes in the box it serves most is inert in the
+assignment: a helper-only box's `holds` names its helper and Jev puts it
+there (redis "Logging" = redisLog, litestream's value-parsing and flag
+boxes); no code rule empties such a box.
+
+**A split file has no endpoint.** Every lookup that takes a file's part
+follows one written rule:
+
+- A split file is in no part's endpoint rows; its role parts name it only
+  as a *source* (their directory, test fact, description and area dirs).
+- Arrows: a file edge (an import or an aggregated call) into or out of a
+  split file draws nothing; the declarations' own calls draw the arrows, so
+  no part gets an arrow its declarations do not make.
+- Placement evidence counts a left-out file's calls into and out of a split
+  file per unit, in the part that holds the unit (an undecided unit in
+  none); a split file's imports are no evidence.
+- The entry: a seed file's parts are its endpoint, else the parts holding
+  its seed declarations (places `seed_decls`), so the trace, the "in" column
+  and "starts the program" (core) survive a split seed file.
+- A boundary with no subject declaration in a split file takes the part of
+  the declaration whose source range holds its line, else of the module
+  body.
+- Learn's evidence of a split file's own chunk names no area; its
+  declarations name their parts. A cross-target joint of a file edge into or
+  out of a split file names no part and is not drawn; its declarations'
+  calls still join their parts inside the target.
+
+**Membership and the off-map record.** Atlas v12 saves explicit `member_ids`
 per part, and an explicit per-target `off_map` record: every file, or stray
 declaration, no drawn part holds, with its reason (`left_out`, `conflict`,
-`no_units`, `map_failure`), its file line, captions and keys. `no_units` is a
+`no_units`, `map_failure`, `undecided`), its file line, captions and keys. `no_units` is a
 file that declares nothing. A type's methods declared elsewhere follow it off
 the map; a method whose file is off the map stays with its placed type. A
 file endpoint is its partitioned part directly; a method that follows its
@@ -252,8 +356,13 @@ IDs.
 
 **Descriptions.** Each drawn part that is not test code gets one
 `atlas_describe` request (`prompts/design_describe.md`): the part's name and
-every member unit grouped dir → file with its name and signature, never
-documentation; the answer is `{"description":"…"}`. A long description is
+every unit it holds grouped dir → file with its name and signature, never
+documentation: all units of a file it holds whole, only its own of a split
+file, so an unsplit part's request keeps its bytes (a golden per language
+fixture checks it against the requests before the role split). A part whose
+only units are module bodies has no member to describe it by and sends no
+request; its name alone would invite an invented description. The answer is
+`{"description":"…"}`. A long description is
 kept; an empty or undecodable one leaves the explicit no-description state,
 recorded, and nothing fills it in. The requests of a target run at once
 after its parts and placement. Core, keys, arrows and orientation read the
@@ -266,7 +375,8 @@ part holds).
 
 **Areas.** When a target has at least three drawn parts that are not test
 code, one `atlas_areas` request (`prompts/design_areas.md`) lists them with
-`ref`, `name`, `description`, `dirs` and `units`, and the exact call sites
+`ref`, `name`, `description`, `dirs` (of its source files, a split file's
+included) and `units` (the units it holds), and the exact call sites
 between them (`"p3 -> p7 (12)"`), and answers a closed split
 `{"areas":[{"name","parts"}]}`. It sets no count; a part may stay outside
 every area. A part in two areas or in none stands alone, an area of fewer

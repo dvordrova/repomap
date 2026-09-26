@@ -2,7 +2,10 @@
 // fixture's graph with a preset provider that draws every listed file as its
 // own part, then checks what the parts request carries and that every
 // declaration has exactly one part or an entry off the map. Language fixture
-// tests of every adapter share it.
+// tests of every adapter share it. CheckSplit reads the same graph with the
+// role split of every candidate file: two boxes per file, the units put in
+// them alternately and every fifth left undecided, so the split's rules are
+// checked on each adapter's real facts.
 package partstest
 
 import (
@@ -21,7 +24,10 @@ import (
 	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
-const partsTask = "repomap.atlas.parts.v1"
+const (
+	partsTask = "repomap.atlas.parts.v1"
+	boxesTask = "repomap.atlas.file_boxes.v1"
+)
 
 // Map is one target's checked map of parts: its atlas target and, by symbol
 // place ID, the part each declaration takes ("" off the map).
@@ -32,12 +38,36 @@ type Map struct {
 	PartOf map[string]string
 	// Symbols finds a declaration's symbol place by its file and name.
 	Symbols map[[2]string]string
+	// Split are the paths of the files the role split split, and RoleParts
+	// the IDs of the parts their boxes became.
+	Split     map[string]bool
+	RoleParts map[string]bool
+	// Described are the description requests, by part title.
+	Described map[string]string
 }
 
-// Check reads the graph for one target and checks the parts request and
-// the membership of every declaration. root is the fixture's directory on
-// disk, which must not reach the request.
+// Check reads the graph for one target with the gate answering "one box"
+// for every candidate file, and checks the parts request and the
+// membership of every declaration. root is the fixture's directory on disk,
+// which must not reach the request.
 func Check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root string) Map {
+	t.Helper()
+	return check(t, graph, target, root, false)
+}
+
+// CheckSplit reads the graph with every candidate file split in two boxes
+// and checks, besides what Check does, that a split happened, that every
+// declaration of a split file is in a role part or off the map as
+// undecided, that a repeated name stays one unit, that a module body is a
+// row of the assignment, that no import-only arrow touches a role part, and
+// that a seed declaration in a split file keeps the entry: the trace starts
+// at a part holding a seed and that part stands in the "in" column.
+func CheckSplit(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root string) Map {
+	t.Helper()
+	return check(t, graph, target, root, true)
+}
+
+func check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root string, split bool) Map {
 	t.Helper()
 	// The reading works on the sealed graph and its compact place IDs.
 	encoded, err := atlas.EncodeGraph(graph)
@@ -48,10 +78,32 @@ func Check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 		t.Fatal(err)
 	}
 	provider := &preset{}
-	// Every candidate explains its part and is a key; every part is the domain.
-	categorizer := &typesafetest.Categorizer{Decide: typesafetest.ByColumn(map[string]llm.Verdict{
-		"explains": typesafetest.Yes(0.9), "role": typesafetest.Choose("domain"), "key_symbol": typesafetest.Choose("yes"),
-	})}
+	// Every candidate explains its part and is a key; every part is the
+	// domain; the gate keeps every file whole unless the check splits.
+	gate := typesafetest.Choose("one box")
+	if split {
+		gate = typesafetest.Choose("several boxes")
+	}
+	byColumn := typesafetest.ByColumn(map[string]llm.Verdict{
+		"explains": typesafetest.Yes(0.9), "role": typesafetest.Choose("domain"), "key_symbol": typesafetest.Choose("yes"), "boxes": gate,
+	})
+	categorizer := &recording{Categorizer: typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		if !strings.HasSuffix(key, "|box") {
+			return byColumn(key, question)
+		}
+		// dN goes in the first box when N is odd and in the second when it
+		// is even; every fifth declaration is a near-tie, left undecided.
+		var n int
+		fmt.Sscanf(key, "d%d|box", &n)
+		first, second := question.Options[0].Name, question.Options[1].Name
+		if n%5 == 0 {
+			return llm.Verdict{Choice: first, Probabilities: map[string]float64{first: 0.5, second: 0.5}}, true
+		}
+		if n%2 == 0 {
+			first = second
+		}
+		return typesafetest.Choose(first), true
+	}}}
 	result, err := reading.Read(context.Background(), reading.Options{
 		Graph: graph, Targets: []reading.TargetMeta{target}, Repository: "fixture", Revision: "test",
 		Executor: llm.Executor{BatchConcurrency: 4, BatchController: &llm.BatchController{}},
@@ -74,7 +126,167 @@ func Check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 	}
 	checkRequest(t, graph, target.ID, root, provider.requests)
 	checkMembership(t, graph, target.ID, checked)
+	checked.Split, checked.RoleParts, checked.Described = map[string]bool{}, map[string]bool{}, provider.described
+	if split {
+		checkSplit(t, graph, target.ID, checked, categorizer)
+	} else if categorizer.assigned > 0 {
+		t.Fatalf("the gate answered one box, yet %d declarations were assigned", categorizer.assigned)
+	}
 	return checked
+}
+
+// recording is the categorizer of a check: it keeps what the gate and the
+// assignment were asked.
+type recording struct {
+	typesafetest.Categorizer
+	mu       sync.Mutex
+	gated    int
+	assigned int
+	// items are, by file path, the declarations the assignment asked about.
+	items map[string][]string
+}
+
+func (c *recording) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
+	var body struct {
+		State struct {
+			Context map[string]any `json:"context"`
+		} `json:"state"`
+		Questions map[string]struct {
+			Instructions map[string]any `json:"instructions"`
+		} `json:"questions"`
+	}
+	if err := json.Unmarshal(prepared.Bytes(), &body); err == nil {
+		c.mu.Lock()
+		if c.items == nil {
+			c.items = map[string][]string{}
+		}
+		for key, question := range body.Questions {
+			switch {
+			case strings.HasSuffix(key, "|boxes"):
+				c.gated++
+			case strings.HasSuffix(key, "|box"):
+				c.assigned++
+				file, _ := body.State.Context["file"].(string)
+				declaration, _ := question.Instructions["declaration"].(map[string]any)
+				if name, _ := declaration["declaration"].(string); name != "" {
+					c.items[file] = append(c.items[file], name)
+				}
+			}
+		}
+		c.mu.Unlock()
+	}
+	return c.Categorizer.Complete(ctx, prepared)
+}
+
+// checkSplit checks what the role split must keep on real facts.
+func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, categorizer *recording) {
+	t.Helper()
+	if categorizer.gated == 0 || categorizer.assigned == 0 {
+		t.Fatalf("no split happened: %d gate questions, %d assignments", categorizer.gated, categorizer.assigned)
+	}
+	// The preset names each file's boxes after its path.
+	for _, box := range checked.Target.Boxes {
+		if path, ok := strings.CutSuffix(box.Title, ": first"); ok {
+			checked.Split[path], checked.RoleParts[box.ID] = true, true
+		} else if path, ok := strings.CutSuffix(box.Title, ": second"); ok {
+			checked.Split[path], checked.RoleParts[box.ID] = true, true
+		}
+	}
+	if len(checked.RoleParts) < 2 {
+		t.Fatalf("the split drew %d role parts", len(checked.RoleParts))
+	}
+	undecided := map[string]bool{}
+	for _, entry := range checked.Target.OffMap {
+		if entry.Reason != atlas.OffMapUndecided {
+			continue
+		}
+		if !checked.Split[entry.File.Path] || entry.BoxID != "" {
+			t.Fatalf("undecided declarations of %s, which is not split or names part %q", entry.File.Path, entry.BoxID)
+		}
+		for _, symbol := range entry.File.Symbols {
+			undecided[symbol.ID] = true
+		}
+	}
+	for _, place := range graph.Places {
+		if place.File == nil || !checked.Split[place.Path] || !slices.Contains(place.TargetIDs, targetID) {
+			continue
+		}
+		byName := map[string]string{}
+		for _, decl := range place.File.Decls {
+			id := checked.Symbols[[2]string{place.Path, decl.Name}]
+			for _, candidate := range graph.Places {
+				if candidate.Symbol != nil && candidate.Path == place.Path && candidate.LineNo == decl.LineNo && candidate.Symbol.Decl.Name == decl.Name {
+					id = candidate.ID
+				}
+			}
+			part := checked.PartOf[id]
+			if part != "" && !checked.RoleParts[part] && !methodElsewhere(graph, id) {
+				t.Fatalf("%s %s of a split file is in part %s, not a role part", place.Path, decl.Name, part)
+			}
+			if part == "" && !undecided[id] && !methodElsewhere(graph, id) {
+				t.Fatalf("%s %s of a split file is off the map but not undecided", place.Path, decl.Name)
+			}
+			// A repeated name is one unit: every declaration of it is where
+			// the first one is.
+			if first, repeated := byName[decl.Name]; repeated && checked.PartOf[first] != part {
+				t.Fatalf("%s repeats %s in parts %q and %q", place.Path, decl.Name, checked.PartOf[first], part)
+			} else if !repeated {
+				byName[decl.Name] = id
+			}
+			if decl.Kind == "module" && id != "" && !slices.Contains(categorizer.items[place.Path], decl.Name) {
+				t.Fatalf("the module body of %s is no row of the assignment: %v", place.Path, categorizer.items[place.Path])
+			}
+		}
+	}
+	for _, arrow := range checked.Target.Arrows {
+		if len(arrow.Witnesses) == 0 && (checked.RoleParts[arrow.From] || checked.RoleParts[arrow.To]) {
+			t.Fatalf("an import-only arrow %s -> %s touches a role part: a split file has no endpoint", arrow.From, arrow.To)
+		}
+	}
+	for _, seed := range graph.SeedDecls {
+		place := placeByID(graph, seed)
+		if !slices.Contains(place.TargetIDs, targetID) || !checked.Split[place.Path] {
+			continue
+		}
+		part := checked.PartOf[seed]
+		if part == "" {
+			continue // an undecided seed declaration enters through no part
+		}
+		if len(checked.Target.Trace) == 0 {
+			t.Fatalf("the split seed file %s lost the trace", place.Path)
+		}
+		for _, box := range checked.Target.Boxes {
+			if box.ID == part && box.Side != atlas.SideIn {
+				t.Fatalf("the part %s holding the seed %s stands %q, not in", part, place.Symbol.Decl.Name, box.Side)
+			}
+		}
+	}
+}
+
+// methodElsewhere says whether a declaration follows a type declared in
+// another file: its part is its type's, whatever its own file.
+func methodElsewhere(graph atlas.Graph, id string) bool {
+	place := placeByID(graph, id)
+	for _, candidate := range graph.Places {
+		if candidate.Symbol == nil || candidate.Path == place.Path {
+			continue
+		}
+		for _, member := range candidate.Symbol.Members {
+			if member.Path == place.Path && place.Symbol != nil && member.Decl.Name == place.Symbol.Decl.Name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func placeByID(graph atlas.Graph, id string) atlas.Place {
+	for _, place := range graph.Places {
+		if place.ID == id {
+			return place
+		}
+	}
+	return atlas.Place{}
 }
 
 // lexicalChildren are the declarations of a file inside the source range of
@@ -292,8 +504,9 @@ func checkMembership(t testing.TB, graph atlas.Graph, targetID string, checked M
 // is its own part, every description is a sentence, no areas are drawn, and
 // a table cell takes its first option or a short text.
 type preset struct {
-	mu       sync.Mutex
-	requests [][]byte
+	mu        sync.Mutex
+	requests  [][]byte
+	described map[string]string
 }
 
 func (*preset) State() []byte { return []byte(`{"provider":"parts-preset"}`) }
@@ -329,7 +542,32 @@ func (p *preset) Complete(_ context.Context, prepared llm.Prepared) (llm.Complet
 		}
 		response = map[string]any{"groups": groups}
 	case "repomap.atlas.describe.v1":
+		var part struct {
+			Part string `json:"part"`
+		}
+		if err := json.Unmarshal(prepared.Bytes(), &part); err != nil {
+			return llm.Completion{}, err
+		}
+		p.mu.Lock()
+		if p.described == nil {
+			p.described = map[string]string{}
+		}
+		p.described[part.Part] = string(prepared.Bytes())
+		p.mu.Unlock()
 		response = map[string]string{"description": "Preset description."}
+	case boxesTask:
+		var named struct {
+			File struct {
+				Path string `json:"path"`
+			} `json:"file"`
+		}
+		if err := json.Unmarshal(prepared.Bytes(), &named); err != nil {
+			return llm.Completion{}, err
+		}
+		response = map[string]any{"boxes": []map[string]string{
+			{"name": named.File.Path + ": first", "holds": "The odd declarations."},
+			{"name": named.File.Path + ": second", "holds": "The even declarations."},
+		}}
 	case "repomap.atlas.areas.v1":
 		response = map[string]any{"areas": []any{}}
 	default:

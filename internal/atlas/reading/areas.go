@@ -211,7 +211,7 @@ func (r *reader) areasInput(targetID string, parts []*boxState) areasInput {
 	for _, box := range parts {
 		listed[box.id] = true
 		var dirs []string
-		for _, ref := range box.rows {
+		for _, ref := range box.sources {
 			dirs = appendUnique(dirs, path.Dir(r.places[ref].Path))
 		}
 		sort.Strings(dirs)

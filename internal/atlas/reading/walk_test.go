@@ -165,7 +165,7 @@ func TestConcurrentStagesKeepStepOrder(t *testing.T) {
 		switch stage {
 		case lines.StagePublish:
 			stage = lines.StageBoundaries
-		case lines.StagePlacement, lines.StageDescribe:
+		case lines.StagePlacement, lines.StageDescribe, lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign:
 			stage = lines.StageZones
 		}
 		return slices.Index(order, stage)

@@ -1,6 +1,7 @@
 package groupindex
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
@@ -66,7 +67,7 @@ func TestOffMapFilesKeepTheirBoundariesAndInterpretations(t *testing.T) {
 		t.Fatalf("the route off the map was lost or given a group: %+v", index.Operations)
 	}
 	want := []OffMapFile{{Path: "api/a_test.go", Reason: OffMapTests, Part: "API checks"}, {Path: "loose/b.go", Reason: atlas.OffMapLeftOut}}
-	if len(index.OffMap) != 2 || index.OffMap[0] != want[0] || index.OffMap[1] != want[1] {
+	if !reflect.DeepEqual(index.OffMap, want) {
 		t.Fatalf("off the map: %+v", index.OffMap)
 	}
 	for _, subject := range index.Subjects {

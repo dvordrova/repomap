@@ -618,18 +618,29 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 // off-map record with its reasons, and the files of parts made only of test
 // code under the reason tests with their part's name. A file a part holds is
 // not listed for the few declarations of it that are off the map; their
-// interpretations are still read.
+// interpretations are still read. A file whose code several parts hold is
+// on the map: only the declarations no box of it took are listed, by name,
+// under the reason undecided.
 func projectOffMap(target atlas.Target) []OffMapFile {
 	var files []OffMapFile
-	seen := map[OffMapFile]bool{}
+	seen := map[string]bool{}
 	add := func(file OffMapFile) {
-		if !seen[file] {
-			seen[file] = true
+		if key := offMapKey(file); !seen[key] {
+			seen[key] = true
 			files = append(files, file)
 		}
 	}
 	for _, entry := range target.OffMap {
-		if entry.BoxID == "" {
+		switch {
+		case entry.Reason == atlas.OffMapUndecided:
+			var names []string
+			for _, symbol := range entry.File.Symbols {
+				names = append(names, symbol.Name)
+			}
+			if len(names) > 0 {
+				add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: OffMapUndecided, Declarations: names})
+			}
+		case entry.BoxID == "":
 			add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: entry.Reason})
 		}
 	}

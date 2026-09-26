@@ -141,8 +141,15 @@ type tableProvider struct {
 	areaFor       func(part map[string]any) string
 	areasResponse func(parts []map[string]any) string
 	describe      func(name string) string
-	// designRequests counts the parts, description and areas requests.
+	// boxesFor answers the naming of one file's boxes verbatim; nil names
+	// none, which keeps the file whole.
+	boxesFor func(path string) string
+	// designRequests counts the parts, description, areas and naming
+	// requests; described keeps each description request by part name and
+	// named each naming request by path.
 	designRequests map[string]int
+	described      map[string][]byte
+	named          map[string][]byte
 }
 
 type questionBatchRequest struct {
@@ -403,6 +410,7 @@ func readOptions(t *testing.T, graph atlas.Graph, provider llm.Provider, cacheRo
 func closedDecisions() *typesafetest.Categorizer {
 	return &typesafetest.Categorizer{Decide: typesafetest.ByColumn(map[string]llm.Verdict{
 		"explains": typesafetest.Yes(0.9), "role": typesafetest.Choose(lines.PartDomain), "key_symbol": typesafetest.Choose("yes"),
+		"boxes": typesafetest.Choose(lines.RoleOneBox),
 	})}
 }
 
@@ -627,9 +635,12 @@ func (provider *tableProvider) design(task string, body []byte) ([]byte, bool, e
 		Files []map[string]any `json:"files"`
 		Parts []map[string]any `json:"parts"`
 		Part  string           `json:"part"`
+		File  struct {
+			Path string `json:"path"`
+		} `json:"file"`
 	}
 	switch task {
-	case designPartsTask, designDescribeTask, designAreasTask:
+	case designPartsTask, designDescribeTask, designAreasTask, designBoxesTask:
 	default:
 		return nil, false, nil
 	}
@@ -638,11 +649,22 @@ func (provider *tableProvider) design(task string, body []byte) ([]byte, bool, e
 	}
 	provider.mu.Lock()
 	if provider.designRequests == nil {
-		provider.designRequests = map[string]int{}
+		provider.designRequests, provider.described, provider.named = map[string]int{}, map[string][]byte{}, map[string][]byte{}
 	}
 	provider.designRequests[task]++
+	switch task {
+	case designDescribeTask:
+		provider.described[request.Part] = append([]byte(nil), body...)
+	case designBoxesTask:
+		provider.named[request.File.Path] = append([]byte(nil), body...)
+	}
 	provider.mu.Unlock()
 	switch task {
+	case designBoxesTask:
+		if provider.boxesFor == nil {
+			return []byte(`{"boxes":[]}`), true, nil
+		}
+		return []byte(provider.boxesFor(request.File.Path)), true, nil
 	case designPartsTask:
 		if provider.partsResponse != nil {
 			return []byte(provider.partsResponse(request.Files)), true, nil

@@ -160,8 +160,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   keys are recorded and ignored; unused extra fields do not invalidate answers.
   A response without a rows array, or with no accepted row, is refused and
   not cached, and each of its rows' reasons is journaled.
-- The closed tables (key declarations, part roles and keys:
-  `Definition.Classifier`) go only to the run's categorizer
+- The closed tables (key declarations, part roles, keys, and the role
+  split's gate and assignment: `Definition.Classifier`) go only to the run's
+  categorizer
   (`llm.Categorizer`), never to the text model; there is no fallback
   (owner decision 2026-09-26). Jev is the only categorizer, and `JEV_KEY` is
   required like the model key: a model run or `read` without it stops before

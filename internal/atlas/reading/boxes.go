@@ -25,10 +25,14 @@ type boxState struct {
 	// line is the part's description; empty is the no-description state.
 	line  string
 	files []string // file place IDs holding its declarations
-	// rows are the files the parts answer placed in it: its file endpoints.
-	rows  []string
-	units int
-	open  bool
+	// rows are the files placed in it whole: its file endpoints. sources
+	// are those and the split files whose units it holds: its directory,
+	// its test fact, its description and its area dirs come from them.
+	rows, sources []string
+	// unitIDs are the units it holds; units counts them.
+	unitIDs []string
+	units   int
+	open    bool
 	// core is the model's: the program exists for this part. forTests is a
 	// fact: every file placed in the part is test code.
 	core, forTests bool
@@ -852,7 +856,7 @@ func operationIdentifier(name string) string {
 func (r *reader) side(owner *boxState, targetID string) string {
 	in, out := false, false
 	for _, fileID := range owner.files {
-		if contains(r.places[fileID].TargetIDs, targetID) && contains(r.opts.Graph.Seeds, fileID) && r.boxFor(targetID, fileID) == owner.id {
+		if contains(r.places[fileID].TargetIDs, targetID) && contains(r.opts.Graph.Seeds, fileID) && contains(r.seedBoxes(targetID, fileID), owner.id) {
 			in = true
 		}
 	}
@@ -889,8 +893,10 @@ func (r *reader) trace(targetID string) []string {
 		if !contains(r.places[seed].TargetIDs, targetID) {
 			continue
 		}
-		if boxID := r.boxFor(targetID, seed); boxID != "" && !contains(start, boxID) {
-			start = append(start, boxID)
+		for _, boxID := range r.seedBoxes(targetID, seed) {
+			if !contains(start, boxID) {
+				start = append(start, boxID)
+			}
 		}
 	}
 	if len(start) == 0 {

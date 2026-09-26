@@ -83,6 +83,9 @@ type pageOffMapRow struct {
 	Anchor pageAnchor
 	Part   string
 	Reason string
+	// Declarations are the names of a split file's declarations no box of
+	// it took.
+	Declarations string
 }
 
 // offMapReasons are the reader's words for why a file is off the map.
@@ -91,6 +94,7 @@ var offMapReasons = map[string]string{
 	"conflict":    "Listed in two parts",
 	"no_units":    "No declarations of its own",
 	"map_failure": "No map of parts",
+	"undecided":   "In no part of its file",
 }
 
 // mapFailureReasons are the reader's words for why there is no map at all.
@@ -108,7 +112,7 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 	}
 	section.MapFailure = mapFailureReasons[index.MapFailure]
 	for _, file := range index.OffMap {
-		row := pageOffMapRow{Anchor: builder.links.anchor(file.Path, 0, 0), Part: file.Part}
+		row := pageOffMapRow{Anchor: builder.links.anchor(file.Path, 0, 0), Part: file.Part, Declarations: strings.Join(file.Declarations, ", ")}
 		if file.Reason == groupindex.OffMapTests {
 			section.TestFiles = append(section.TestFiles, row)
 			continue

@@ -144,6 +144,7 @@ type reader struct {
 	// request key, parsed once for all the rows they answer.
 	classifierResponses map[string]rememberedClassifier
 	designBoxOf         map[string]map[string]string // target -> declaration/file -> accepted part
+	splitFiles          map[string]map[string]bool   // target -> files whose code several parts hold
 	designFiles         map[string]string            // declaration -> its source file
 	designSubjects      map[string]string            // native declaration -> place
 	nextPart            int
@@ -1075,7 +1076,7 @@ func (r *reader) printWindow(def table.Definition, window table.Window, answers 
 			encoded, _ := json.Marshal(field.Value)
 			fmt.Fprintf(&r.tables, "  - %s: %s\n", field.Name, string(encoded))
 		}
-		if place, ok := r.places[row.ID]; ok {
+		if place, ok := r.places[row.ID]; ok && !localRows(def) {
 			fmt.Fprintf(&r.tables, "  - given: %s\n", place.Given)
 		}
 		if answers != nil && answers[i] != nil {

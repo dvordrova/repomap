@@ -25,10 +25,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - No file or inventory box is drawn: every box is a part of the map of
   parts. The atlas's explicit off-map record lists, per target, every file (or
   stray declaration) no drawn part holds with its reason (`left_out`,
-  `conflict`, `no_units` for a file that declares nothing, `map_failure`),
-  keeping its file line, captions and keys. Stray declarations in a file a
-  part holds name that part (`box_id`); their file stays on the map and is
-  not listed. GroupsIndex carries that record as `off_map`, adds the files of
+  `conflict`, `no_units` for a file that declares nothing, `map_failure`,
+  `undecided` for a split file's declarations no box of it took), keeping
+  its file line, captions and keys. Stray declarations in a file a part
+  holds name that part (`box_id`); their file stays on the map and is not
+  listed. A file whose code several parts hold (READING, the role split) is
+  on the map through them: GroupsIndex (v14) lists it only for its
+  undecided declarations, by name (`declarations`), never as a file off the
+  map. GroupsIndex carries that record as `off_map`, adds the files of
   parts made only of test code under the reason `tests` with their part's
   name, and carries `map_failure`. Subjects off the map keep their interpretations
   outside every group; a boundary in a file off the map names no box and its
@@ -39,7 +43,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - The component card lists, after its link to its parts on the system map
   and before its main flow, the compact inventories **Tests** (test-only
   parts' files, with their part) and **Not on the map** (every other off-map
-  file, with its reason), five rows each and `All N` for the rest. A target
+  file, with its reason; a split file's row names its undecided
+  declarations and reads "In no part of its file"), five rows each and
+  `All N` for the rest. A target
   with a map failure says "The map of parts is unavailable:" with the reader's
   words for its closed reason (`refused`: the model's answer was refused;
   `no_model`: no model was asked; the refusals themselves are rejected

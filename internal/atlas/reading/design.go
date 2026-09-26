@@ -87,6 +87,11 @@ type designView struct {
 	// pair of files; imports are the imports between listed files.
 	calls   map[[2]string]int
 	imports map[[2]string]bool
+	// fileUnitCalls and unitFileCalls count the same call sites between a
+	// listed file and a unit of another listed file, once per distinct
+	// reached unit or file: a file whose code several parts hold is reached
+	// through its units.
+	fileUnitCalls, unitFileCalls map[[2]string]int
 }
 
 // designView reads one target's files and declarations. Every declaration
@@ -96,6 +101,7 @@ func (r *reader) designView(targetID string) *designView {
 	view := &designView{
 		targetID: targetID, byID: map[string]*designFile{}, decls: map[string][]string{},
 		follows: map[string]string{}, unitFile: map[string]string{}, calls: map[[2]string]int{}, imports: map[[2]string]bool{},
+		fileUnitCalls: map[[2]string]int{}, unitFileCalls: map[[2]string]int{},
 	}
 	var files []atlas.Place
 	for _, place := range r.opts.Graph.Places {
@@ -212,17 +218,30 @@ func (r *reader) designView(targetID string) *designView {
 				if call.Kind != "calls" || call.Resolution != "exact" {
 					continue
 				}
-				var reached []string
+				var reached, units []string
 				for _, callee := range call.CalleeIDs {
 					if !inTarget[callee] {
 						continue
 					}
-					if to := listedFile(callee); to != "" && to != from && !slices.Contains(reached, to) {
+					to := listedFile(callee)
+					if to == "" || to == from {
+						continue
+					}
+					if !slices.Contains(reached, to) {
 						reached = append(reached, to)
+					}
+					if unit := view.root(callee); view.unitFile[unit] != "" && !slices.Contains(units, unit) {
+						units = append(units, unit)
 					}
 				}
 				for _, to := range reached {
 					view.calls[[2]string{from, to}]++
+					if unit := view.root(id); view.unitFile[unit] != "" {
+						view.unitFileCalls[[2]string{unit, to}]++
+					}
+				}
+				for _, unit := range units {
+					view.fileUnitCalls[[2]string{from, unit}]++
 				}
 			}
 		}
@@ -789,18 +808,34 @@ func (r *reader) recordPartition(targetID string, result partition, responseRef 
 type designPart struct {
 	id    string
 	name  string
-	files []string // row files placed in it
+	files []string // row files placed in it whole: its endpoint rows
+	// sources are the files of the role split whose units it holds, and
+	// units those units; its membership is final when it gets its ID.
+	sources, units []string
 }
 
 // designOutcome is a target's map of parts once the answer, the follow-up
 // and the membership rules have been applied.
 type designOutcome struct {
-	parts      []*designPart
-	partOf     map[string]string // row file → part ID
-	offReason  map[string]string // file → why it is off the map
-	failure    string
-	boxes      []*boxState
-	membership map[string]string // declaration or file place → part ID
+	parts     []*designPart
+	partOf    map[string]string // row file placed whole → part ID
+	unitPart  map[string]string // unit of a split file → part ID
+	offReason map[string]string // file → why it is off the map
+	// undecided are the units of split files no box took; split are the
+	// files whose code several parts hold, which have no endpoint.
+	undecided, split map[string]bool
+	failure          string
+	boxes            []*boxState
+	membership       map[string]string // declaration or file place → part ID
+}
+
+// partOfUnit is the part a unit takes: its file's, or its box's when the
+// file is split.
+func (outcome *designOutcome) partOfUnit(view *designView, unit string) string {
+	if part := outcome.partOf[view.unitFile[unit]]; part != "" {
+		return part
+	}
+	return outcome.unitPart[unit]
 }
 
 func (r *reader) readDesign(ctx context.Context) error {
@@ -808,6 +843,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 	r.opts.Stage(lines.StageZones, "grouping each target's files into parts, placing what the answer left out, then describing the parts")
 	r.boxes = map[string]*boxState{}
 	r.designBoxOf = map[string]map[string]string{}
+	r.splitFiles = map[string]map[string]bool{}
 	r.offMap = map[string][]offMapEntry{}
 	r.mapFailure = map[string]string{}
 	if r.designFiles == nil {
@@ -821,6 +857,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 	for position, target := range targets {
 		views[position] = r.designView(target.ID)
 		r.designBoxOf[target.ID] = map[string]string{}
+		r.splitFiles[target.ID] = map[string]bool{}
 	}
 	// Every target is read on its own view at once. Its parts take their
 	// compact IDs in target order, the one place a target waits for the ones
@@ -854,6 +891,11 @@ func (r *reader) readDesign(ctx context.Context) error {
 		r.joinView(view)
 	}
 	r.reportStage(lines.StageZones)
+	for _, stage := range []string{lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign} {
+		if _, asked := r.uses[stage]; asked {
+			r.reportStage(stage)
+		}
+	}
 	r.reportStage(lines.StagePlacement)
 	r.reportStage(lines.StageDescribe)
 	return nil
@@ -906,12 +948,30 @@ type offMapEntry struct {
 }
 
 // designTarget is one target's map of parts, read on the view r and drawn on
-// owner, the reader the views share.
+// owner, the reader the views share. The role split of its files runs at
+// once beside the parts request, on its own view, and joins before the
+// parts take their IDs; its records follow the parts record.
 func (r *reader) designTarget(ctx context.Context, owner *reader, order *designOrder, position int, view *designView) error {
 	defer order.parts.pass(position)
 	target := r.opts.Targets[position]
 	round := position + 1
-	outcome := &designOutcome{partOf: map[string]string{}, offReason: map[string]string{}, membership: map[string]string{}}
+	outcome := &designOutcome{partOf: map[string]string{}, unitPart: map[string]string{}, offReason: map[string]string{},
+		undecided: map[string]bool{}, split: map[string]bool{}, membership: map[string]string{}}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var splits map[string]*roleSplit
+	var rolesErr error
+	var roles *reader
+	rolesDone := make(chan struct{})
+	if r.dry {
+		close(rolesDone)
+	} else {
+		roles = r.view(nil)
+		go func() {
+			defer close(rolesDone)
+			splits, rolesErr = roles.readRoles(ctx, view, round)
+		}()
+	}
 	var drafts []designPart
 	conflicts := map[string][]int{}
 	var leftOut []string
@@ -919,14 +979,16 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 	case len(view.files) == 0:
 		// A target without code has a legitimate empty map.
 	case len(view.files) == 1:
-		// Splitting one file is not a decision: the one part takes the
-		// target's name.
+		// Splitting one file among parts is not a decision: the one part
+		// takes the target's name, unless the role split splits the file.
 		drafts = []designPart{{name: target.Name, files: []string{view.files[0].id}}}
 	case r.dry:
 		outcome.failure = atlas.MapFailureNoModel
 	default:
 		windows, err := r.askParts(ctx, view, round)
 		if err != nil {
+			cancel()
+			<-rolesDone
 			return err
 		}
 		refused := 0
@@ -966,24 +1028,63 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 			drafts, leftOut, conflicts = nil, nil, map[string][]int{}
 		}
 	}
-	// The parts take their compact IDs in target order.
+	<-rolesDone
+	if rolesErr != nil {
+		return rolesErr
+	}
+	if roles != nil {
+		r.joinView(roles)
+	}
+	roleDrafts, dropped := r.applyRoles(view, outcome, drafts, splits)
+	// The parts take their compact IDs in target order: the answer's parts
+	// in answer order, then each split file's boxes in f* order and naming
+	// order. A role part's membership is final when it gets its ID.
 	if err := order.parts.wait(ctx, position); err != nil {
 		return err
 	}
 	order.drawing.Lock()
 	for i := range drafts {
-		drafts[i].id = owner.compactID("p", &owner.nextPart)
+		if !dropped[i] {
+			drafts[i].id = owner.compactID("p", &owner.nextPart)
+		}
+	}
+	for i := range roleDrafts {
+		roleDrafts[i].id = owner.compactID("p", &owner.nextPart)
 	}
 	order.drawing.Unlock()
 	order.parts.pass(position)
 	for i := range drafts {
+		if dropped[i] {
+			continue
+		}
 		part := &drafts[i]
 		outcome.parts = append(outcome.parts, part)
 		for _, file := range part.files {
 			outcome.partOf[file] = part.id
 		}
 	}
-	if err := r.placeFiles(ctx, view, round, outcome, leftOut, conflicts); err != nil {
+	for i := range roleDrafts {
+		part := &roleDrafts[i]
+		outcome.parts = append(outcome.parts, part)
+		for _, unit := range part.units {
+			outcome.unitPart[unit] = part.id
+		}
+	}
+	// A conflict is offered only the drawn parts that listed it; one whose
+	// every such part lost its only file to the role split is left out.
+	offered := map[string][]string{}
+	for ref, holders := range conflicts {
+		for _, holder := range holders {
+			if !dropped[holder] {
+				offered[ref] = append(offered[ref], drafts[holder].id)
+			}
+		}
+		if len(offered[ref]) == 0 {
+			delete(offered, ref)
+			leftOut = append(leftOut, ref)
+		}
+	}
+	if err := r.placeFiles(ctx, view, round, outcome, leftOut, offered); err != nil {
 		return err
 	}
 	r.drawParts(view, outcome)
@@ -999,6 +1100,9 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 	for place, part := range outcome.membership {
 		membership[place] = part
 	}
+	for file := range outcome.split {
+		owner.splitFiles[target.ID][file] = true
+	}
 	owner.offMap[target.ID] = r.offMapEntries(view, outcome)
 	if outcome.failure != "" {
 		owner.mapFailure[target.ID] = outcome.failure
@@ -1006,10 +1110,61 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 	return nil
 }
 
+// applyRoles splits the files the parts answer itself placed in a drawn
+// part (never a file it left out or listed twice, and nothing under a map
+// failure): the file leaves its part, each of its boxes that holds a unit
+// becomes a role part, and its undecided units go off the map. A part left
+// without a file is not drawn. It returns the role parts in f* order and
+// naming order, and the drafts no longer drawn.
+func (r *reader) applyRoles(view *designView, outcome *designOutcome, drafts []designPart, splits map[string]*roleSplit) ([]designPart, map[int]bool) {
+	dropped := map[int]bool{}
+	if len(splits) == 0 {
+		return nil, dropped
+	}
+	placed := map[string]int{}
+	for i, draft := range drafts {
+		for _, file := range draft.files {
+			placed[file] = i
+		}
+	}
+	var roleDrafts []designPart
+	var unplaced []string
+	for _, file := range view.files {
+		split := splits[file.id]
+		if split == nil {
+			continue
+		}
+		at, ok := placed[file.id]
+		if !ok || outcome.failure != "" {
+			unplaced = append(unplaced, file.path)
+			continue
+		}
+		drafts[at].files = slices.DeleteFunc(drafts[at].files, func(ref string) bool { return ref == file.id })
+		if len(drafts[at].files) == 0 {
+			dropped[at] = true
+		}
+		for i, box := range split.boxes {
+			if len(split.holds[i]) > 0 {
+				roleDrafts = append(roleDrafts, designPart{name: box.Name, sources: []string{file.id}, units: split.holds[i]})
+			}
+		}
+		for _, unit := range split.undecided {
+			outcome.undecided[unit] = true
+		}
+		outcome.split[file.id] = true
+	}
+	if len(unplaced) > 0 {
+		r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageRoleAssign, Target: view.targetID, Kind: "role_not_applied", Count: len(unplaced), Samples: unplaced,
+			Reason: "the parts answer did not place these files in a drawn part; their split is not applied"})
+		fmt.Fprintf(&r.tables, "role split not applied, the parts answer placed no part for: %s\n\n", strings.Join(unplaced, " "))
+	}
+	return roleDrafts, dropped
+}
+
 // placeFiles asks one closed-choice follow-up for the files the answer left
 // out or listed in two parts, when at least one part was drawn. An unknown,
 // missing or refused choice leaves the file off the map with its reason.
-func (r *reader) placeFiles(ctx context.Context, view *designView, round int, outcome *designOutcome, leftOut []string, conflicts map[string][]int) error {
+func (r *reader) placeFiles(ctx context.Context, view *designView, round int, outcome *designOutcome, leftOut []string, conflicts map[string][]string) error {
 	reason := map[string]string{}
 	for _, ref := range leftOut {
 		reason[ref] = atlas.OffMapLeftOut
@@ -1041,7 +1196,7 @@ func (r *reader) placeFiles(ctx context.Context, view *designView, round int, ou
 	var all []string
 	for _, part := range outcome.parts {
 		var dirs []string
-		for _, file := range part.files {
+		for _, file := range append(slices.Clone(part.files), part.sources...) {
 			dirs = appendUnique(dirs, view.byID[file].dir)
 		}
 		sort.Strings(dirs)
@@ -1055,10 +1210,7 @@ func (r *reader) placeFiles(ctx context.Context, view *designView, round int, ou
 		file := view.byID[ref]
 		options := all
 		if holders, ok := conflicts[ref]; ok {
-			options = nil
-			for _, holder := range holders {
-				options = append(options, outcome.parts[holder].id)
-			}
+			options = holders
 		}
 		fields := []table.Field{{Name: "path", Value: file.path}, {Name: "units", Value: len(file.units)}}
 		if len(file.types) > 0 {
@@ -1077,6 +1229,18 @@ func (r *reader) placeFiles(ctx context.Context, view *designView, round int, ou
 			}
 			if pair[1] == ref && outcome.partOf[pair[0]] != "" {
 				in[outcome.partOf[pair[0]]] += count
+			}
+		}
+		// A split file is reached through its units, each in its own part;
+		// an undecided unit is in none.
+		for pair, count := range view.fileUnitCalls {
+			if pair[0] == ref && outcome.split[view.unitFile[pair[1]]] && outcome.unitPart[pair[1]] != "" {
+				out[outcome.unitPart[pair[1]]] += count
+			}
+		}
+		for pair, count := range view.unitFileCalls {
+			if pair[1] == ref && outcome.split[view.unitFile[pair[0]]] && outcome.unitPart[pair[0]] != "" {
+				in[outcome.unitPart[pair[0]]] += count
 			}
 		}
 		var calls []string
@@ -1154,17 +1318,27 @@ func (r *reader) drawParts(view *designView, outcome *designOutcome) {
 	boxes := map[string]*boxState{}
 	for _, part := range outcome.parts {
 		box := &boxState{id: part.id, targetID: view.targetID, title: part.name, open: true, dir: ".", symbols: map[string]bool{}, test: true}
+		// A file placed whole is an endpoint row of its part; a split file
+		// is only a source of the role parts holding its units, and no
+		// part's endpoint.
 		for _, ref := range part.files {
-			box.units += len(view.byID[ref].units)
+			box.unitIDs = append(box.unitIDs, view.byID[ref].units...)
 			box.rows = append(box.rows, ref)
+			box.sources = append(box.sources, ref)
 			box.test = box.test && view.byID[ref].test
 			outcome.membership[ref] = part.id
 		}
+		for _, ref := range part.sources {
+			box.sources = append(box.sources, ref)
+			box.test = box.test && view.byID[ref].test
+		}
+		box.unitIDs = append(box.unitIDs, part.units...)
+		box.units = len(box.unitIDs)
 		boxes[part.id] = box
 	}
 	for _, ref := range view.all {
 		for _, id := range view.decls[ref] {
-			part := outcome.partOf[view.unitFile[view.root(id)]]
+			part := outcome.partOfUnit(view, view.root(id))
 			if part == "" {
 				continue
 			}
@@ -1208,10 +1382,11 @@ func (r *reader) drawParts(view *designView, outcome *designOutcome) {
 			}
 		}
 		sort.Slice(box.files, func(i, j int) bool { return compactIDLess(box.files[i], box.files[j]) })
-		if len(box.rows) > 0 {
-			box.dir = path.Dir(r.places[box.rows[0]].Path)
+		sort.Slice(box.sources, func(i, j int) bool { return compactIDLess(box.sources[i], box.sources[j]) })
+		if len(box.sources) > 0 {
+			box.dir = path.Dir(r.places[box.sources[0]].Path)
 		}
-		box.forTests = box.test && len(box.rows) > 0
+		box.forTests = box.test && len(box.sources) > 0
 		outcome.boxes = append(outcome.boxes, box)
 	}
 }
@@ -1231,6 +1406,9 @@ func (r *reader) offMapEntries(view *designView, outcome *designOutcome) []offMa
 				continue
 			}
 			why := reason
+			if why == "" && outcome.undecided[view.root(id)] {
+				why = atlas.OffMapUndecided
+			}
 			if why == "" {
 				why = outcome.offReason[view.unitFile[view.root(id)]]
 			}
@@ -1311,19 +1489,26 @@ func describeCall(input describeInput) (llm.Call[description], error) {
 	}, nil
 }
 
-// partDescribeInput lists every unit of a part's files by directory and
-// file, with its name and its signature when it has one. No documentation
-// is sent.
+// partDescribeInput lists every unit a part holds by directory and file,
+// with its name and its signature when it has one: all units of a file it
+// holds whole, only its own of a split file. No documentation is sent.
 func (r *reader) partDescribeInput(view *designView, box *boxState) describeInput {
 	input := describeInput{Task: designDescribeTask, Part: box.title}
 	byDir := map[string]*describeDirectory{}
 	var dirs []string
-	rows := slices.Clone(box.rows)
+	held := make(map[string]bool, len(box.unitIDs))
+	for _, id := range box.unitIDs {
+		held[id] = true
+	}
+	rows := slices.Clone(box.sources)
 	sort.Slice(rows, func(i, j int) bool { return view.byID[rows[i]].path < view.byID[rows[j]].path })
 	for _, ref := range rows {
 		file := view.byID[ref]
 		var members []describeMember
 		for _, id := range file.units {
+			if !held[id] {
+				continue
+			}
 			decl := r.places[id].Symbol.Decl
 			if decl.Kind == "module" {
 				continue
@@ -1362,7 +1547,14 @@ func (r *reader) describeParts(ctx context.Context, view *designView, round int,
 		if box.forTests {
 			continue
 		}
-		call, err := describeCall(r.partDescribeInput(view, box))
+		input := r.partDescribeInput(view, box)
+		if len(input.Directories) == 0 {
+			// A part whose only units are module bodies has no member to
+			// describe it by; a request of its name alone would invent one.
+			fmt.Fprintf(&r.tables, "%s: no member to describe it by; no description\n\n", box.title)
+			continue
+		}
+		call, err := describeCall(input)
 		if err != nil {
 			return err
 		}
@@ -1438,7 +1630,9 @@ func (r *reader) boxFor(targetID, placeID string) string {
 }
 
 // boundaryBox is the part a boundary stands in: its declaration's part, else
-// its file's part. A boundary in a file off the map has none.
+// its file's part. A boundary in a file off the map has none. In a split
+// file, which no part is the endpoint of, it takes the part of the
+// declaration whose source range holds its line, else of the module body.
 func (r *reader) boundaryBox(targetID string, place atlas.Place) string {
 	if place.Boundary != nil {
 		if id := r.boxFor(targetID, place.Boundary.SubjectID); id != "" {
@@ -1450,5 +1644,54 @@ func (r *reader) boundaryBox(targetID string, place atlas.Place) string {
 			}
 		}
 	}
+	if r.splitFiles[targetID][place.Parent] {
+		return r.boxFor(targetID, r.enclosingDecl(place.Parent, place.LineNo))
+	}
 	return r.boxFor(targetID, place.Parent)
+}
+
+// enclosingDecl is the symbol place of the innermost declaration of a file
+// whose source range holds a line, else of the file's module body.
+func (r *reader) enclosingDecl(fileID string, line int) string {
+	file := r.places[fileID]
+	if file.File == nil {
+		return ""
+	}
+	best, module := -1, ""
+	for i, decl := range file.File.Decls {
+		if decl.Kind == "module" {
+			module = r.symbolID(file.Path, decl.LineNo, decl.Name)
+			continue
+		}
+		if decl.EndLine <= 0 || decl.LineNo > line || line > decl.EndLine {
+			continue
+		}
+		if best < 0 || decl.LineNo >= file.File.Decls[best].LineNo {
+			best = i
+		}
+	}
+	if best < 0 {
+		return module
+	}
+	decl := file.File.Decls[best]
+	return r.symbolID(file.Path, decl.LineNo, decl.Name)
+}
+
+// seedBoxes are the parts a seed file enters its target through: its
+// endpoint, else, when several parts hold its code, the parts holding its
+// seed declarations.
+func (r *reader) seedBoxes(targetID, seed string) []string {
+	if box := r.boxFor(targetID, seed); box != "" {
+		return []string{box}
+	}
+	var boxes []string
+	for _, decl := range r.opts.Graph.SeedDecls {
+		if r.places[decl].Parent != seed {
+			continue
+		}
+		if box := r.boxFor(targetID, decl); box != "" {
+			boxes = appendUnique(boxes, box)
+		}
+	}
+	return boxes
 }

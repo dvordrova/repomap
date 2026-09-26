@@ -31,7 +31,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 17
-	Version      = 11
+	Version      = 12
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -526,6 +526,10 @@ const (
 	OffMapNoUnits = "no_units"
 	// OffMapFailure: the target has no map of parts at all.
 	OffMapFailure = "map_failure"
+	// OffMapUndecided: the declarations of a file whose code several parts
+	// hold that no box of that file took. The file itself is on the map
+	// through its other declarations; no part is its endpoint.
+	OffMapUndecided = "undecided"
 
 	// MapFailureRefused: every window of the parts answer was refused.
 	MapFailureRefused = "refused"
@@ -536,7 +540,7 @@ const (
 // ValidOffMapReason reports one of the closed off-map reasons.
 func ValidOffMapReason(reason string) bool {
 	switch reason {
-	case OffMapLeftOut, OffMapConflict, OffMapNoUnits, OffMapFailure:
+	case OffMapLeftOut, OffMapConflict, OffMapNoUnits, OffMapFailure, OffMapUndecided:
 		return true
 	default:
 		return false

@@ -106,7 +106,7 @@ func (r *reader) readCore(ctx context.Context) error {
 
 func (r *reader) startsProgram(part *boxState, targetID string) bool {
 	for _, fileID := range part.files {
-		if contains(r.opts.Graph.Seeds, fileID) && r.boxFor(targetID, fileID) == part.id {
+		if contains(r.opts.Graph.Seeds, fileID) && contains(r.seedBoxes(targetID, fileID), part.id) {
 			return true
 		}
 	}

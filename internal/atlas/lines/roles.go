@@ -1,0 +1,140 @@
+package lines
+
+import (
+	_ "embed"
+	"fmt"
+	"strings"
+
+	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/llm"
+)
+
+// The stages of the role split of a file on the map of parts: the gate
+// asks whether a file's code goes in one box of our map or in several, the
+// naming names the boxes a file's code goes in, and the assignment puts
+// each of its declarations in one of them. Each is its own stage, so the
+// journal and the timings say which one a request belonged to.
+const (
+	StageRoleGate   = "atlas_role_gate"
+	StageRoleBoxes  = "atlas_role_boxes"
+	StageRoleAssign = "atlas_role_assign"
+)
+
+// RoleMap is what we want, the state every request of the role split
+// shares: our own architecture map of a program for a newcomer, whose box is
+// a responsibility and whose unit is not the author's file.
+//
+//go:embed prompts/role_map.md
+var RoleMap string
+
+//go:embed prompts/role_gate.md
+var roleGatePrompt string
+
+//go:embed prompts/role_gate_options.md
+var roleGateOptionsText string
+
+//go:embed prompts/role_assign.md
+var roleAssignPrompt string
+
+// The gate's options.
+const (
+	RoleOneBox       = "one box"
+	RoleSeveralBoxes = "several boxes"
+)
+
+// roleGateOptions are the gate's options with their criteria, read once
+// from their embedded Markdown.
+var roleGateOptions = mustRoleGateOptions(roleGateOptionsText)
+
+// RoleGate asks, for one file per request, whether its code goes in one box
+// of our map or in several. The file and its declarations are the question's
+// item; each option carries its criteria in the map's own terms.
+func RoleGate() table.Definition {
+	criteria := make(map[string]llm.Criteria, len(roleGateOptions))
+	for name, value := range roleGateOptions {
+		criteria[name] = value
+	}
+	return table.Definition{
+		Stage: StageRoleGate, Contract: "repomap.atlas.role_gate.v1", System: RoleMap + roleGatePrompt,
+		// Measured: 55 draws over 11 files under this state flipped none;
+		// redis.c scored 0.96-0.98 for several boxes, pykrx's stock_api.py
+		// 0.73-0.79, repomap's own files at most 0.30, sds.c and dict.c 0.00.
+		Classifier: true,
+		Columns: []table.Column{{
+			Name: "boxes", Kind: table.Choice, Options: []string{RoleOneBox, RoleSeveralBoxes},
+			Criteria: criteria, Item: "file",
+			Ask: "Does the code of `file` go in one box of our map, or in several boxes?",
+		}},
+	}
+}
+
+// RoleAssign asks, for each declaration of one file whose code goes in
+// several boxes, which of the boxes named for that file it goes in. The
+// boxes are a catalogue of refs; each option is a box with what it holds as
+// its criteria, and the catalogue reaches the model only that way.
+func RoleAssign() table.Definition {
+	return table.Definition{
+		Stage: StageRoleAssign, Contract: "repomap.atlas.role_assign.v1", System: RoleMap + roleAssignPrompt,
+		Classifier: true,
+		Columns: []table.Column{{
+			Name: "box", Kind: table.Choice, OptionsFrom: "boxes", CriteriaFrom: "holds", Item: "declaration",
+			Ask: "Which box of our map does `declaration` go in?",
+		}},
+	}
+}
+
+// mustRoleGateOptions reads "## option" sections, each with What, Includes,
+// Not for and a list of Examples. The text is embedded, so a malformed file
+// is a defect every test of this package meets.
+func mustRoleGateOptions(text string) map[string]llm.Criteria {
+	options, err := parseOptionCriteria(text)
+	if err != nil {
+		panic(fmt.Sprintf("lines: prompts/role_gate_options.md: %v", err))
+	}
+	for _, name := range []string{RoleOneBox, RoleSeveralBoxes} {
+		if _, ok := options[name]; !ok {
+			panic(fmt.Sprintf("lines: prompts/role_gate_options.md has no option %q", name))
+		}
+	}
+	if len(options) != 2 {
+		panic("lines: prompts/role_gate_options.md lists options the gate does not ask")
+	}
+	return options
+}
+
+func parseOptionCriteria(text string) (map[string]llm.Criteria, error) {
+	options := map[string]llm.Criteria{}
+	sections := strings.Split(text, "\n## ")
+	for _, section := range sections[1:] {
+		lines := strings.Split(section, "\n")
+		name := strings.TrimSpace(lines[0])
+		var criteria llm.Criteria
+		examples := false
+		for _, line := range lines[1:] {
+			line = strings.TrimSpace(line)
+			switch {
+			case line == "":
+			case strings.HasPrefix(line, "What: "):
+				criteria.What, examples = strings.TrimPrefix(line, "What: "), false
+			case strings.HasPrefix(line, "Includes: "):
+				criteria.Includes, examples = strings.TrimPrefix(line, "Includes: "), false
+			case strings.HasPrefix(line, "Not for: "):
+				criteria.NotFor, examples = strings.TrimPrefix(line, "Not for: "), false
+			case line == "Examples:":
+				examples = true
+			case examples && strings.HasPrefix(line, "- "):
+				criteria.Examples = append(criteria.Examples, strings.TrimPrefix(line, "- "))
+			default:
+				return nil, fmt.Errorf("option %q: unreadable line %q", name, line)
+			}
+		}
+		if name == "" || criteria.What == "" || criteria.Includes == "" || criteria.NotFor == "" || len(criteria.Examples) == 0 {
+			return nil, fmt.Errorf("option %q lacks what, includes, not for or examples", name)
+		}
+		if _, repeated := options[name]; repeated {
+			return nil, fmt.Errorf("option %q is given twice", name)
+		}
+		options[name] = criteria
+	}
+	return options, nil
+}

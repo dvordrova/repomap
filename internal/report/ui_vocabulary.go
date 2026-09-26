@@ -427,6 +427,7 @@ var russianUI = map[string]string{
 	"Left out of the parts":                "Не отнесён ни к одной части",
 	"Listed in two parts":                  "Отнесён сразу к двум частям",
 	"No declarations of its own":           "Нет собственных объявлений",
+	"In no part of its file":               "Ни в одной из частей своего файла",
 	"No map of parts":                      "Карты частей нет",
 	"No description":                       "Нет описания",
 	"The map of parts is unavailable: {0}": "Карта частей недоступна: {0}",
