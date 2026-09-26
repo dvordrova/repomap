@@ -56,9 +56,14 @@ func RoleGate() table.Definition {
 	}
 	return table.Definition{
 		Stage: StageRoleGate, Contract: "repomap.atlas.role_gate.v1", System: RoleMap + roleGatePrompt,
-		// Measured: 55 draws over 11 files under this state flipped none;
-		// redis.c scored 0.96-0.98 for several boxes, pykrx's stock_api.py
-		// 0.73-0.79, repomap's own files at most 0.30, sds.c and dict.c 0.00.
+		// Measured over every candidate of redis, pykrx, litestream and
+		// repomap (377 files, 2 draws, then 5 draws of the 13 nearest the
+		// cut): redis.c scores 0.97 for several boxes, pykrx's stock_api.py
+		// 0.75-0.79, litestream's main.go 0.75; redis-cli.c 0.15,
+		// redis-check-dump.c 0.22-0.30. Criteria that let "their own
+		// vocabulary of names" mean several boxes split redis-cli.c,
+		// redis-benchmark.c and repomap's render.go and table.go every draw
+		// and flipped redis-check-dump.c.
 		Classifier: true,
 		Columns: []table.Column{{
 			Name: "boxes", Kind: table.Choice, Options: []string{RoleOneBox, RoleSeveralBoxes},
