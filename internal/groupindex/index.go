@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 14
+	Version          = 15
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -319,15 +319,15 @@ type Index struct {
 const OffMapTests = "tests"
 
 // OffMapFile is one file the map of parts does not draw, and why. Part names
-// the test-only part a file of reason tests belongs to. Declarations names,
-// for reason undecided, the declarations of a file whose code several parts
-// hold that no box of the file took; that file is on the map through the
-// others.
+// the test-only part a file of reason tests belongs to. SubjectIDs are, for
+// reason undecided, the subjects of a file whose code several parts hold
+// that no box of the file took, in the atlas's order; that file is on the
+// map through the others.
 type OffMapFile struct {
-	Path         string   `json:"path"`
-	Reason       string   `json:"reason"`
-	Part         string   `json:"part,omitempty"`
-	Declarations []string `json:"declarations,omitempty"`
+	Path       string   `json:"path"`
+	Reason     string   `json:"reason"`
+	Part       string   `json:"part,omitempty"`
+	SubjectIDs []string `json:"subject_ids,omitempty"`
 }
 
 // OffMapUndecided is the reason of a split file's declarations no box took.
@@ -763,7 +763,7 @@ func (index Index) Validate() error {
 		}
 		groupsByID[group.ID] = struct{}{}
 	}
-	if err := validateOffMap(index.OffMap, index.MapFailure); err != nil {
+	if err := validateOffMap(index.OffMap, index.MapFailure, subjectsByID); err != nil {
 		return err
 	}
 	seenContainerGroups := make(map[string]struct{})
@@ -2110,7 +2110,7 @@ type Overlay struct {
 
 // validateOffMap checks the off-map record: known reasons, repository paths,
 // canonical order, and a map failure only with every file off for it.
-func validateOffMap(files []OffMapFile, failure string) error {
+func validateOffMap(files []OffMapFile, failure string, subjects map[string]Subject) error {
 	if !validOptionalText(failure) {
 		return fmt.Errorf("group index: invalid map failure")
 	}
@@ -2121,12 +2121,12 @@ func validateOffMap(files []OffMapFile, failure string) error {
 			return fmt.Errorf("group index: invalid off-map reason %q", file.Reason)
 		}
 		if !validText(file.Path) || strings.HasPrefix(file.Path, "/") || !validOptionalText(file.Part) || (file.Part != "") != (file.Reason == OffMapTests) ||
-			(len(file.Declarations) > 0) != (file.Reason == OffMapUndecided) {
+			(len(file.SubjectIDs) > 0) != (file.Reason == OffMapUndecided) {
 			return fmt.Errorf("group index: invalid off-map file %q", file.Path)
 		}
-		for _, name := range file.Declarations {
-			if !validText(name) {
-				return fmt.Errorf("group index: invalid off-map declaration of %q", file.Path)
+		for _, id := range file.SubjectIDs {
+			if _, known := subjects[id]; !known {
+				return fmt.Errorf("group index: off-map file %q names an unknown subject %q", file.Path, id)
 			}
 		}
 		if failure != "" && file.Reason != "map_failure" && file.Reason != OffMapTests || failure == "" && file.Reason == "map_failure" {
@@ -2140,7 +2140,7 @@ func validateOffMap(files []OffMapFile, failure string) error {
 }
 
 func offMapKey(file OffMapFile) string {
-	return file.Path + "\x00" + file.Reason + "\x00" + file.Part + "\x00" + strings.Join(file.Declarations, "\x00")
+	return file.Path + "\x00" + file.Reason + "\x00" + file.Part + "\x00" + strings.Join(file.SubjectIDs, "\x00")
 }
 
 func OverlayFromIndex(index Index) Overlay {

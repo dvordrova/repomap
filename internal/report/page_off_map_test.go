@@ -1,6 +1,8 @@
 package report
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -59,5 +61,38 @@ func TestOffMapFilesAndTheirRoutesReachTheCard(t *testing.T) {
 		if edge.To == mapNodeID("") {
 			t.Fatalf("an edge leads to no part: %+v", edge)
 		}
+	}
+}
+
+// A split file's declarations no box took are listed with their source
+// links, by their subjects, so Find can list them as code.
+func TestUndecidedDeclarationsKeepTheirSourceLinks(t *testing.T) {
+	const target = "server"
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "redis.c", Line: line, Column: 6}
+	}
+	index := groupindex.Index{Target: programindex.Target{ID: target},
+		Subjects: []groupindex.Subject{
+			{ID: "n1", Object: &groupindex.ObjectFacts{Name: "setCommand", Location: at(3753)}},
+			{ID: "n2", Object: &groupindex.ObjectFacts{Name: "saveparam", Location: at(332)}},
+			{ID: "n3", Object: &groupindex.ObjectFacts{Name: "getCommand", Location: at(3776)}},
+		},
+		OffMap: []groupindex.OffMapFile{{Path: "redis.c", Reason: groupindex.OffMapUndecided, SubjectIDs: []string{"n2", "n1"}}},
+	}
+	section := &pageSection{ID: "server", programTargetID: target, ShortLabel: "Server"}
+	builder := &pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, byProgram: map[string]*pageSection{target: section}, subjects: map[string]subjectRef{}}
+	for _, subject := range index.Subjects {
+		builder.subjects[subjectKey(target, subject.ID)] = subjectRef{subject: subject, programTargetID: target}
+	}
+	builder.fillSectionOffMap(section)
+	if len(section.OffMap) != 1 {
+		t.Fatalf("not on the map: %+v", section.OffMap)
+	}
+	var got []string
+	for _, chip := range section.OffMap[0].Members {
+		got = append(got, fmt.Sprintf("%s:%d %s", chip.Name, chip.Line, chip.Anchor.Path))
+	}
+	if want := []string{"saveparam:332 redis.c", "setCommand:3753 redis.c"}; !slices.Equal(got, want) {
+		t.Fatalf("undecided declarations %v, want %v", got, want)
 	}
 }

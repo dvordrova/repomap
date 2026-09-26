@@ -83,9 +83,9 @@ type pageOffMapRow struct {
 	Anchor pageAnchor
 	Part   string
 	Reason string
-	// Declarations are the names of a split file's declarations no box of
-	// it took.
-	Declarations string
+	// Members are a split file's declarations no box of it took, with their
+	// source links; Find lists them as code.
+	Members []pageChip
 }
 
 // offMapReasons are the reader's words for why a file is off the map.
@@ -112,7 +112,11 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 	}
 	section.MapFailure = mapFailureReasons[index.MapFailure]
 	for _, file := range index.OffMap {
-		row := pageOffMapRow{Anchor: builder.links.anchor(file.Path, 0, 0), Part: file.Part, Declarations: strings.Join(file.Declarations, ", ")}
+		row := pageOffMapRow{Anchor: builder.links.anchor(file.Path, 0, 0), Part: file.Part}
+		chips, _ := builder.memberChips(index.Target.ID, file.SubjectIDs)
+		for _, chip := range chips {
+			row.Members = append(row.Members, chip.Members...)
+		}
 		if file.Reason == groupindex.OffMapTests {
 			section.TestFiles = append(section.TestFiles, row)
 			continue

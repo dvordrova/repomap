@@ -120,12 +120,33 @@ func projectSplit(t *testing.T, index programindex.Index, split partstest.Map) {
 		t.Fatal(err)
 	}
 	undecided := 0
+	subjects := map[string]groupindex.Subject{}
+	for _, subject := range indexes[0].Subjects {
+		subjects[subject.ID] = subject
+	}
 	for _, file := range indexes[0].OffMap {
-		if split.Split[file.Path] && (file.Reason != groupindex.OffMapUndecided || len(file.Declarations) == 0) {
+		if split.Split[file.Path] && (file.Reason != groupindex.OffMapUndecided || len(file.SubjectIDs) == 0) {
 			t.Fatalf("the split file %s is listed off the map: %+v", file.Path, file)
 		}
-		if file.Reason == groupindex.OffMapUndecided {
-			undecided++
+		if file.Reason != groupindex.OffMapUndecided {
+			continue
+		}
+		undecided++
+		// Each undecided declaration is named by its subject in that file,
+		// so the card can link it to its source.
+		var want int
+		for _, entry := range split.Target.OffMap {
+			if entry.Reason == atlas.OffMapUndecided && entry.File.Path == file.Path {
+				want += len(entry.File.Symbols)
+			}
+		}
+		if len(file.SubjectIDs) != want {
+			t.Fatalf("%s lists %d undecided subjects for %d declarations", file.Path, len(file.SubjectIDs), want)
+		}
+		for _, id := range file.SubjectIDs {
+			if object := subjects[id].Object; object == nil || object.Location == nil || object.Location.Path != file.Path {
+				t.Fatalf("the undecided subject %s of %s is not a declaration of that file", id, file.Path)
+			}
 		}
 	}
 	for _, entry := range split.Target.OffMap {
