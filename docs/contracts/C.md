@@ -144,10 +144,12 @@ C comments enter the ordinary claims layer. A `/* */` block or a run of `//`
 lines that ends directly above a top-level declaration (a line starting at
 column 0 with a name) is that declaration's docstring. Its declaration line is
 where the declaration ends its header (`static int` / `foo(void)` ends on
-`foo`'s line), and places gives it to the declaration located on that line or
+`foo`'s line). Places and the page's symbol cards read it through one rule,
+`claims.CDocstring`: it describes only the declaration located on that line or
 up to two lines above it (an Allman brace), so a comment above a prototype
 describes no neighbouring declaration. A comment before the file's first line
-of code that no declaration follows directly is the file's description.
+of code that no declaration follows directly is the file's description, which
+describes no declaration; places shows it as the file's own documentation.
 
 A licence, copyright or version-control stamp before the first line of code
 is not a claim (owner decision D5), even when it also states the file's

@@ -36,6 +36,38 @@ const (
 	cHeaderLines = 2
 )
 
+// CPath reports a C source or header file, whose comments cQuotes reads.
+func CPath(filePath string) bool {
+	return classifyPath(filePath) == kindC
+}
+
+// CDocstring is the text of the C docstring in docs that describes the
+// declaration located at line, or "" when none does; declarations are the
+// lines the file's other declarations are located at. A C docstring names the
+// line where the declaration directly below it ends its header, and a
+// declaration is located at its name, on that line or on the few above it
+// (static int / foo(void), struct foo / {). So the file's own description,
+// which names no line, describes no declaration, and neither does a comment
+// above a prototype or a macro, on whose line no declaration is located.
+func CDocstring(docs []Claim, line int, declarations []int) string {
+	for _, doc := range docs {
+		if doc.DeclarationLine == 0 || line <= doc.Line || line > doc.DeclarationLine || doc.DeclarationLine-line > cHeaderLines {
+			continue
+		}
+		between := false
+		for _, declared := range declarations {
+			if declared > doc.Line && declared < line {
+				between = true
+				break
+			}
+		}
+		if !between {
+			return doc.Text
+		}
+	}
+	return ""
+}
+
 // cQuotes returns a C file's author quotes. A comment block that ends directly
 // above a top-level declaration (a line that starts at column 0 with a name)
 // is a docstring whose DeclarationLine is the line where that declaration's

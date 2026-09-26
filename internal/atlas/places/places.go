@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"path"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,9 +30,6 @@ const (
 	// docstringReach is how many lines above a declaration its docstring may
 	// start; the same rule the page uses to put authors' words on cards.
 	docstringReach = 12
-	// cDeclarationHeaderLines is how many lines above the end of its header
-	// a C declaration may be located: struct foo / {.
-	cDeclarationHeaderLines = 2
 	// generatedMarkerLines is how deep the generated-code marker is looked
 	// for. kubernetes puts it after the license header.
 	generatedMarkerLines = 30
@@ -714,27 +710,19 @@ func (b *builder) docstringFor(filePath string, line int, decls []atlas.Decl) st
 // need later sentences as well: these often state effects or lifecycle rules.
 func (b *builder) quotedDocstringFor(filePath string, line int, decls []atlas.Decl) string {
 	docs := b.docs[filePath]
+	if claims.CPath(filePath) {
+		// A C docstring describes only the declaration whose header it names.
+		declared := make([]int, len(decls))
+		for i, decl := range decls {
+			declared[i] = decl.LineNo
+		}
+		return claims.CDocstring(docs, line, declared)
+	}
 	best := ""
 	for _, doc := range docs {
 		if strings.EqualFold(path.Ext(filePath), ".py") {
 			if doc.DeclarationLine == line {
 				return doc.Text
-			}
-			continue
-		}
-		if cSourcePath(filePath) {
-			// A C docstring names the line where the declaration directly
-			// below it ends its header; the declaration is located at its
-			// name, on that line or on the few above it (an Allman brace). A
-			// file's opening comment names no line, and a comment above a
-			// prototype ends before the next declaration begins.
-			if doc.DeclarationLine == 0 || line <= doc.Line || line > doc.DeclarationLine || doc.DeclarationLine-line > cDeclarationHeaderLines {
-				continue
-			}
-			if !slices.ContainsFunc(decls, func(decl atlas.Decl) bool {
-				return decl.LineNo > doc.Line && decl.LineNo < line
-			}) {
-				best = doc.Text
 			}
 			continue
 		}
@@ -755,11 +743,6 @@ func (b *builder) quotedDocstringFor(filePath string, line int, decls []atlas.De
 		best = doc.Text
 	}
 	return best
-}
-
-func cSourcePath(filePath string) bool {
-	extension := strings.ToLower(path.Ext(filePath))
-	return extension == ".c" || extension == ".h"
 }
 
 // moduleDoc is the file's own documentation: a Python module docstring, a
