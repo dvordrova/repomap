@@ -57,3 +57,55 @@ func TestArrowsWithoutWitnessesTakeTheFallbackWithoutAModelRow(t *testing.T) {
 		t.Fatalf("unwitnessed arrow sentence = %q, want the fallback", sentences["a->c"])
 	}
 }
+
+// A call through a function value writes a field, not a declaration: the
+// arrow between parts names the functions the fact found stored there
+// (getCommand, setCommand), not the field (proc). A sentence the code writes
+// names each callee once, whatever number of callers call it.
+func TestPartArrowsNameStoredHandlersOnceEach(t *testing.T) {
+	provider := &mutatedTableProvider{}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through = ""
+	r.opts.Targets = []TargetMeta{{ID: "t"}}
+	symbol := func(id, name string, calls ...atlas.SymbolCall) atlas.Place {
+		return atlas.Place{ID: id, Kind: atlas.PlaceSymbol, Path: "x.c", TargetIDs: []string{"t"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: name}, Calls: calls}}
+	}
+	call := func(name string, callees ...string) atlas.SymbolCall {
+		return atlas.SymbolCall{Kind: "calls", Name: name, Line: 1, CalleeIDs: callees}
+	}
+	through := call("proc", "s:get", "s:set")
+	through.Dispatch = "function_value"
+	places := []atlas.Place{
+		symbol("s:call", "call", through),
+		symbol("s:reply", "addReplyBulk", call("addReply", "s:addReply"), call("zmalloc", "s:zmalloc")),
+		symbol("s:error", "addReplyError", call("addReply", "s:addReply")),
+		symbol("s:get", "getCommand"), symbol("s:set", "setCommand"),
+		symbol("s:addReply", "addReply"), symbol("s:zmalloc", "zmalloc"),
+	}
+	r.opts.Graph = atlas.Graph{Places: places}
+	r.places, r.boxes, r.boxOf = map[string]atlas.Place{}, map[string]*boxState{}, map[string]string{}
+	for _, place := range places {
+		r.places[place.ID] = place
+	}
+	parts := map[string]string{"s:call": "dispatch", "s:reply": "replies", "s:error": "replies", "s:get": "strings", "s:set": "strings", "s:addReply": "output", "s:zmalloc": "output"}
+	r.designBoxOf = map[string]map[string]string{"t": parts}
+	for _, box := range []struct{ id, title string }{{"dispatch", "Command dispatch"}, {"replies", "Replies"}, {"strings", "String commands"}, {"output", "Output"}} {
+		r.boxes[box.id] = &boxState{id: box.id, title: box.title, line: box.title + " does things."}
+	}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	if err := r.readArrows(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	sentences := map[string]string{}
+	for _, arrow := range r.arrows["t"] {
+		sentences[arrow.from+"->"+arrow.to] = arrow.sentence
+	}
+	want := map[string]string{
+		"dispatch->strings": "Command dispatch calls String commands: getCommand, setCommand.",
+		"replies->output":   "Replies calls Output: addReply, zmalloc.",
+	}
+	if !reflect.DeepEqual(sentences, want) {
+		t.Fatalf("sentences = %q, want %q", sentences, want)
+	}
+}

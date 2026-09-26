@@ -676,10 +676,15 @@ func ArrowRow(id string, from, to BoxSummary, witnesses []atlas.Witness, calls i
 	}}
 }
 
-// FallbackSentence is the arrow's sentence when the model has not spoken.
+// FallbackSentence is the arrow's sentence when the model has not spoken. It
+// names the callees of the witnesses, most observed first, each once: three
+// callers of addReply make one addReply, and the next name takes the place.
 func FallbackSentence(from, to BoxSummary, witnesses []atlas.Witness) string {
 	names := make([]string, 0, maxWitnesses)
 	for _, witness := range witnesses {
+		if slices.Contains(names, witness.Callee) {
+			continue
+		}
 		names = append(names, witness.Callee)
 		if len(names) == maxWitnesses {
 			break

@@ -179,7 +179,7 @@ func (r *reader) foldArrows() {
 							byPair[key] = arrow
 						}
 						arrow.calls++
-						arrow.witnesses[place.Symbol.Decl.Name+"\x00"+call.Name+"\x00"+call.Kind]++
+						arrow.witnesses[place.Symbol.Decl.Name+"\x00"+r.calleeName(call, callee)+"\x00"+call.Kind]++
 					}
 				}
 			}
@@ -201,6 +201,20 @@ func (r *reader) foldArrows() {
 	}
 }
 
+// calleeName is what an arrow's witness names at the far end of a call. A
+// call through a function value writes a field or a variable (proc); the
+// function the fact found stored there is what the arrow reaches, so the
+// witness names it (getCommand), one per stored function.
+func (r *reader) calleeName(call atlas.SymbolCall, callee string) string {
+	if call.Dispatch != programindex.DispatchFunctionValue {
+		return call.Name
+	}
+	if place, ok := r.places[callee]; ok && place.Symbol != nil && place.Symbol.Decl.Name != "" {
+		return place.Symbol.Decl.Name
+	}
+	return call.Name
+}
+
 func (r *reader) boxOfPlace(placeID string) string {
 	if boxID, ok := r.boxOf[placeID]; ok {
 		return boxID
@@ -214,6 +228,12 @@ func (r *reader) boxOfPlace(placeID string) string {
 }
 
 func (arrow *arrowState) topWitnesses() []atlas.Witness {
+	ranked := arrow.rankedWitnesses()
+	return ranked[:min(len(ranked), 3)]
+}
+
+// rankedWitnesses are every witness of the arrow, most observed first.
+func (arrow *arrowState) rankedWitnesses() []atlas.Witness {
 	type pair struct {
 		key   string
 		count int
@@ -228,7 +248,7 @@ func (arrow *arrowState) topWitnesses() []atlas.Witness {
 		}
 		return pairs[i].key < pairs[j].key
 	})
-	result := make([]atlas.Witness, 0, 3)
+	result := make([]atlas.Witness, 0, len(pairs))
 	for _, p := range pairs {
 		parts := strings.SplitN(p.key, "\x00", 3)
 		witness := atlas.Witness{Caller: parts[0], Callee: parts[1]}
@@ -236,9 +256,6 @@ func (arrow *arrowState) topWitnesses() []atlas.Witness {
 			witness.Kind = parts[2]
 		}
 		result = append(result, witness)
-		if len(result) == 3 {
-			break
-		}
 	}
 	return result
 }
@@ -301,7 +318,7 @@ func (r *reader) readArrows(ctx context.Context) error {
 				arrow.sentence = sentence
 				continue
 			}
-			arrow.sentence = lines.FallbackSentence(r.summary(r.boxes[arrow.from], target.ID), r.summary(r.boxes[arrow.to], target.ID), arrow.topWitnesses())
+			arrow.sentence = lines.FallbackSentence(r.summary(r.boxes[arrow.from], target.ID), r.summary(r.boxes[arrow.to], target.ID), arrow.rankedWitnesses())
 		}
 	}
 	r.reportStage(def.Stage)

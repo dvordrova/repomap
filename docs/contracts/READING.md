@@ -430,7 +430,12 @@ path, a command or a topic apart. Nothing is asked when the registration wrote
 no word. A declaration whose native route already is its operation is not an
 operation of its own: the entry carries it. An arrow without witnesses (an
 import-only edge) takes its fallback sentence "A uses B." without a model
-row.
+row. The fallback of an arrow with witnesses, "A calls B: x, y, z.", names
+the most observed callees, each once: three callers of `addReply` make one
+`addReply`, and the next callee takes the place. A call through a function
+value writes a field or a variable (`proc`); its witness names the function
+the fact found stored there (`getCommand`), one per stored function, never
+the field.
 
 A part's arrows are its declarations' own relations (GroupsIndex
 `native_*` connections). One target is exact; several alternatives are
