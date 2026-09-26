@@ -1,5 +1,7 @@
 package storefixture
 
+import "fmt"
+
 // A command table names each handler by a string literal. Every row is its
 // own callable binding that keeps its own name and arity.
 type commandRow struct {
@@ -127,4 +129,31 @@ func RunChosenReady(readable bool) {
 		loop.read = acceptReady{}
 	}
 	loop.read.Handle()
+}
+
+// The same choice for a field whose interface another package declares. A
+// call through it is a call of fmt.Stringer.String, and the name a branch
+// stored there is still its witness. Clearing a field stores nothing
+// callable, so the branch that clears one leaves the name stored before it a
+// possible value.
+type namedLoop struct {
+	chosen  fmt.Stringer
+	cleared fmt.Stringer
+}
+
+type acceptName struct{}
+
+func (acceptName) String() string { return "accept" }
+
+func RunNamedLoop(readable bool) []string {
+	loop := &namedLoop{cleared: acceptName{}}
+	if readable {
+		loop.chosen = acceptName{}
+	} else {
+		loop.cleared = nil
+	}
+	return []string{
+		loop.chosen.String(),
+		loop.cleared.String(),
+	}
 }

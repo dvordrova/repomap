@@ -59,15 +59,18 @@ framework-specific rule.
 A store under a branch leaves its field open, as in the C adapter. A branch is
 an if, a case of a switch or type switch, or a select clause of the storing
 function; a loop body, a store after an early return and the body of a function
-literal are not. Every call through an open field is unresolved. Each
-repository implementation its stores put there becomes an
-`interface_field_assignment` witness of that call at its store (`X stored in
-T.field under a condition`, without the last three words for a store no branch
-decides), never a target; an implementation outside the repository gives no
-`invokes_external` fact there. A store of a parameter joins every caller's
-argument whichever field the branch chose, so without this rule a
-`register(readable, h)` that stores `h` into `read` or `write` gave each field
-both handlers as alternatives.
+literal are not. A nil store puts nothing callable there, so a branch around it
+opens nothing, as the C adapter keeps no null store. Every call through an open
+field is unresolved. Each repository implementation its stores can put there
+becomes an `interface_field_assignment` witness of that call at its store (`X
+stored in T.field under a condition`, without the last three words for a store
+no branch decides), never a target; an implementation outside the repository
+gives no `invokes_external` fact there. When another package declares the
+field's interface, the call keeps its `invokes_external` fact of that method,
+and the unresolved `calls` relation with the witnesses is projected beside it.
+A store of a parameter joins every caller's argument whichever field the branch
+chose, so without this rule a `register(readable, h)` that stores `h` into
+`read` or `write` gave each field both handlers as alternatives.
 
 Dynamic value traversal reuses immutable summaries within one root and exact
 interface method. The function key also retains `throughFlow`; factory result
@@ -173,10 +176,15 @@ cumulative fixture's `internal/storefixture/command_table.go` checks them:
 - The same loop with interface-typed fields (`readyLoop`): `register` stores
   its handler into `read` or `write` under a branch, and `RunChosenReady`
   stores one into `read` under a branch. Every call through either field is
-  unresolved, with the C adapter's witnesses: each handler a store put into
-  that field, at the store (`(acceptReady).Handle stored in readyLoop.read
-  under a condition`), never the handler registered for the other field. Each
-  handler keeps its exact `binds_implementation` at its `register` call.
+  unresolved, and no handler is its target. Its witnesses are the handlers
+  that field's stores can put there, each at its store (`(acceptReady).Handle
+  stored in readyLoop.read under a condition`); `register`'s store joins the
+  handlers of both of its calls, as the C adapter joins what callers pass.
+  Each handler keeps its exact `binds_implementation` at its `register` call.
+- The same choice for fields whose interface `fmt` declares (`namedLoop`): the
+  call through the field a branch stored is unresolved with its witness beside
+  its `invokes_external` fact of `fmt.Stringer.String`, and a field cleared to
+  nil under a branch keeps the name stored before it as an alternative.
 
 Missing equivalents, recorded rather than fabricated:
 
@@ -199,9 +207,9 @@ Missing equivalents, recorded rather than fabricated:
   call through `l.read` keeps both handlers as false alternatives. The C
   adapter leaves a parameter passed on unresolved; Go follows it through its
   callers, as it does for the values a constructor chain hands to a field.
-  A method of an interface declared outside the repository keeps only its
-  `invokes_external` fact at a call through an open field, without the
-  witnesses.
+- A handler that a parameter store joins is a witness at that store
+  (`readyLoop.register`), where the C adapter places it at the argument of each
+  call that passes it (`X stored in S by F under a condition`).
 
 ## Owned declarations
 

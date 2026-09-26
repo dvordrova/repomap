@@ -209,7 +209,8 @@ func Run(h *H){h.V.M()}`)
 
 // A store is under a branch inside an if, a case or a select clause of its own
 // function, as the C adapter reads it; a loop body, a store after an early
-// return and a function literal's own body are not.
+// return and a function literal's own body are not. A nil store puts nothing
+// callable there, so no branch around it opens the field.
 func TestInterfaceFieldStoresUnderABranch(t *testing.T) {
 	a, _ := resolutionTestAnalyzer(t, `package fixture
 type I interface{M()};type W struct{};func(W)M(){};type H struct{V I}
@@ -221,8 +222,9 @@ func Case(h *H,n int){switch n{case 1:h.V=W{}}}
 func Kind(h *H,x any){switch x.(type){case int:h.V=W{}}}
 func Select(h *H,c chan int){select{case <-c:h.V=W{}}}
 func Loop(h *H,n int){for i:=0;i<n;i++{h.V=W{}}}
-func Later(h *H,c bool){if c{go func(){h.V=W{}}()}}`)
-	want := map[int]bool{3: false, 4: true, 5: true, 6: false, 7: true, 8: true, 9: true, 10: false, 11: false}
+func Later(h *H,c bool){if c{go func(){h.V=W{}}()}}
+func Clear(h *H,c bool){if c{h.V=nil}}`)
+	want := map[int]bool{3: false, 4: true, 5: true, 6: false, 7: true, 8: true, 9: true, 10: false, 11: false, 12: false}
 	got := map[int]bool{}
 	for _, stores := range a.dynamicHandoffCapture.interfaceFields {
 		for _, store := range stores {

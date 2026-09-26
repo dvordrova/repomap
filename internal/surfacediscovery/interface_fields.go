@@ -9,8 +9,8 @@ import (
 )
 
 // interfaceFieldStore is one write to an interface field. underBranch marks a
-// store inside an if, switch or select of its function: the field holds that
-// value only on the paths the branch takes.
+// non-nil store inside an if, switch or select of its function: the field
+// holds that value only on the paths the branch takes.
 type interfaceFieldStore struct {
 	store       *ssa.Store
 	underBranch bool
@@ -45,8 +45,13 @@ func (capture *dynamicHandoffCapture) collectInterfaceFieldStores(a *analyzer, f
 				if field == nil || !validRepositoryDirectCallLocation(a.location(store.Pos())) {
 					continue
 				}
+				// A nil store puts nothing callable into the field, so a branch
+				// around it decides nothing a call through the field can reach,
+				// as the C adapter ignores a null store.
+				stored, isConst := store.Val.(*ssa.Const)
+				nilStore := isConst && stored.IsNil()
 				capture.interfaceFields[field] = append(capture.interfaceFields[field],
-					interfaceFieldStore{store: store, underBranch: storeUnderBranch(function, store.Pos())})
+					interfaceFieldStore{store: store, underBranch: !nilStore && storeUnderBranch(function, store.Pos())})
 			}
 		}
 	}

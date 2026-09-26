@@ -852,6 +852,7 @@ func (projection *goProjection) projectDynamicHandoffs() (
 	// invokes_external fact naming that method, and an external implementation
 	// of a repository interface is one naming the implementation. An SSA view
 	// of the same site that found nothing more adds nothing and is not projected.
+	// The witnesses of a field a branch left open are something more.
 	declaredDispatch := make(map[string]bool)
 	externalImplementation := make(map[string]bool)
 	for _, family := range projection.external.Families {
@@ -867,7 +868,7 @@ func (projection *goProjection) projectDynamicHandoffs() (
 	}
 	for _, handoff := range projection.dynamic.Handoffs {
 		key := declaredDispatchKey(handoff.CallerID, handoff.Callsite.Path, handoff.Callsite.Line, handoff.Callsite.Column)
-		if handoff.Kind == godynamichandoff.InterfaceInvoke && len(handoff.Candidates) == 0 &&
+		if handoff.Kind == godynamichandoff.InterfaceInvoke && len(handoff.Candidates) == 0 && len(handoff.Witnesses) == 0 &&
 			(declaredDispatch[key] || externalImplementation[key]) {
 			if externalImplementation[key] {
 				if projection.implementationFrontiers == nil {

@@ -684,7 +684,8 @@ func assertGoInterfaceFieldEvidence(t *testing.T, authorities goFixtureAuthoriti
 			}
 			projected++
 			if relation.Kind != programindex.RelationCalls || relation.Resolution == programindex.ResolutionUnresolved || witness.Location == nil ||
-				(witness.Location.Path != "internal/storefixture/fixtures.go" && witness.Location.Path != "internal/storefixture/handoff_flow.go") {
+				(witness.Location.Path != "internal/storefixture/fixtures.go" && witness.Location.Path != "internal/storefixture/handoff_flow.go" &&
+					witness.Location.Path != "internal/storefixture/command_table.go") {
 				t.Fatalf("ProgramIndex lost possible field assignment evidence: %+v", relation)
 			}
 		}
