@@ -12,7 +12,9 @@ import (
 
 // TargetOutcomePortfolioView is the compact browser-facing projection of the
 // sealed result inventory for every selected repository target. Full
-// ProgramTarget values and child run IDs stay in the canonical artifacts.
+// ProgramTarget values and child run IDs stay in the canonical artifacts. An
+// empty DefaultSelectedTargetID is an unresolved default: no outcome is the
+// default and the page promotes none.
 type TargetOutcomePortfolioView struct {
 	Version                 int                 `json:"version"`
 	DefaultSelectedTargetID string              `json:"default_selected_target_id"`
@@ -149,7 +151,7 @@ func (view TargetOutcomePortfolioView) Validate() error {
 			}
 		}
 	}
-	if defaultMatches != 1 {
+	if view.DefaultSelectedTargetID != "" && defaultMatches != 1 {
 		return fmt.Errorf("target outcome portfolio view: selected default must match exactly one outcome")
 	}
 	return nil

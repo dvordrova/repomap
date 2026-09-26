@@ -225,8 +225,19 @@ Regression comparisons preserve every materialized byte while checking that repe
   repository default: the single eligible target, the default of the only
   batch that retained targets when that batch chose one, or otherwise a
   separate closed-ref default comparison, which reads only its
-  `default_file_ref`. An unknown comparison answer still ends the run. An
-  exact `--target` bypasses the model portfolio but must still
+  `default_file_ref`. The comparisons of one round are independent calls.
+  A comparison answer the executor or decoder refuses, such as one naming an
+  unknown ref or none or one cut off before it stopped, is journaled, and the
+  default stays explicitly unresolved (owner decision 2026-09-26): no
+  later round is asked, the run continues with every retained target, and
+  nothing picks a fallback default: not the first target, not another
+  comparison's winner and not one classification batch's own choice. A
+  provider, request or resource failure of a comparison still ends the run.
+  An unresolved default makes no target the default: pages run in plan
+  order, the first published page owns the report, and
+  `target-outcome-portfolio.json` records an empty
+  `default_selected_target_id` ([Surface](SURFACE.md#target-failure-isolation)).
+  An exact `--target` bypasses the model portfolio but must still
   resolve unambiguously through that same typed adapter boundary. Target scouts
   may not execute an adapter's page-local ProgramIndex, dependency, or semantic
   path. A compiler projection used to build that page, including the JSTS

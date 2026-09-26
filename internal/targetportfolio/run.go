@@ -17,8 +17,11 @@ import (
 // fallback, its guidance stays unclassified) and never cancels a sibling.
 // Unless exactly one target is eligible, or exactly one batch retains targets
 // and chose one of them, a separate closed-ref tournament chooses the global
-// default without changing any retained membership. A provider, request or
-// resource failure and a failed default comparison still end the stage.
+// default without changing any retained membership. A refused comparison
+// answer, such as one naming an unknown ref or none, leaves the default
+// unresolved: Selection.Default stays nil beside the retained targets and
+// nothing picks one in its place. A provider, request or resource failure
+// still ends the stage.
 func Run(
 	ctx context.Context,
 	executor llm.Executor,
@@ -77,7 +80,7 @@ func Run(
 		if err := ctx.Err(); err != nil {
 			return execution, err
 		}
-		if !refusedAnswer(response.Outcome) {
+		if !refusedAnswer(response.Outcome.ResponseRejections) {
 			return execution, fmt.Errorf("target portfolio: classification batch %d: %w", index+1, response.Err)
 		}
 		selections[index] = refusedBatchSelection(batches[index].compilation, response.Err)
@@ -107,12 +110,12 @@ func Run(
 	}
 
 	eligibleDefaults := eligibleDefaultRefs(compilation, targetSet)
-	var defaultRef corpus.FileID
+	var defaultRef *corpus.FileID
 	switch {
 	case len(eligibleDefaults) == 1:
-		defaultRef = eligibleDefaults[0]
+		defaultRef = &eligibleDefaults[0]
 	case positiveBatches == 1 && soleBatchDefault != nil && containsFileRef(eligibleDefaults, *soleBatchDefault):
-		defaultRef = *soleBatchDefault
+		defaultRef = soleBatchDefault
 	default:
 		defaultRef, execution.Outcomes, err = runDefaultTournament(
 			ctx, executor, provider, compilation, eligibleDefaults, execution.Outcomes,
@@ -121,7 +124,7 @@ func Run(
 			return execution, err
 		}
 	}
-	selection, err := restoreCompleteSelection(compilation, &defaultRef, targetSet)
+	selection, err := restoreCompleteSelection(compilation, defaultRef, targetSet)
 	if err != nil {
 		return execution, err
 	}
@@ -150,6 +153,11 @@ func Run(
 	return execution, nil
 }
 
+// runDefaultTournament narrows the eligible refs round by round until one
+// remains. The comparisons of a round are independent calls. When any of them
+// is refused, the default is unresolved: it returns nil and asks no later
+// round, since no remaining winner was weighed against the refused
+// comparison's candidates.
 func runDefaultTournament(
 	ctx context.Context,
 	executor llm.Executor,
@@ -157,7 +165,7 @@ func runDefaultTournament(
 	compilation Compilation,
 	refs []corpus.FileID,
 	outcomes []llm.Outcome[Selection],
-) (corpus.FileID, []llm.Outcome[Selection], error) {
+) (*corpus.FileID, []llm.Outcome[Selection], error) {
 	remaining := append([]corpus.FileID(nil), refs...)
 	for round := 1; len(remaining) > 1; round++ {
 		batches, err := defaultBatchesWithFit(compilation, remaining, func(wire []byte) (bool, error) {
@@ -168,7 +176,7 @@ func runDefaultTournament(
 			return requestFitResult(prepareErr)
 		})
 		if err != nil {
-			return "", outcomes, err
+			return nil, outcomes, err
 		}
 		calls := make([]llm.Call[Selection], 0, len(batches))
 		for batchIndex, batch := range batches {
@@ -177,13 +185,13 @@ func runDefaultTournament(
 			}
 			prompt, err := batch.buildPrompt()
 			if err != nil {
-				return "", outcomes, err
+				return nil, outcomes, err
 			}
 			state, err := portfolioCallState(
 				compilation, batch.wire, "default", round, batchIndex+1, len(batches),
 			)
 			if err != nil {
-				return "", outcomes, err
+				return nil, outcomes, err
 			}
 			batch := batch
 			calls = append(calls, llm.Call[Selection]{
@@ -192,37 +200,51 @@ func runDefaultTournament(
 			})
 		}
 		if len(calls) == 0 {
-			return "", outcomes, fmt.Errorf(
+			return nil, outcomes, fmt.Errorf(
 				"target portfolio: provider comparison window cannot compare any two retained defaults",
 			)
 		}
-		roundOutcomes, err := llm.ExecuteJSONBatch(ctx, executor, provider, calls)
-		outcomes = append(outcomes, roundOutcomes...)
-		if err != nil {
-			return "", outcomes, fmt.Errorf("target portfolio: default round %d: %w", round, err)
+		results := llm.ExecuteJSONEach(ctx, executor, provider, calls)
+		for _, result := range results {
+			outcomes = append(outcomes, result.Outcome)
+		}
+		unresolved := false
+		for index, result := range results {
+			if result.Err == nil {
+				continue
+			}
+			if err := ctx.Err(); err != nil {
+				return nil, outcomes, err
+			}
+			if !refusedAnswer(result.Outcome.ResponseRejections) {
+				return nil, outcomes, fmt.Errorf(
+					"target portfolio: default round %d comparison %d: %w", round, index+1, result.Err,
+				)
+			}
+			unresolved = true
+		}
+		if unresolved {
+			return nil, outcomes, nil
 		}
 		next := make([]corpus.FileID, 0, len(batches))
-		outcomeIndex := 0
+		resultIndex := 0
 		for _, batch := range batches {
 			if len(batch.request.Candidates) == 1 {
 				next = append(next, batch.request.Candidates[0].FileRef)
 				continue
 			}
-			if outcomeIndex >= len(roundOutcomes) || roundOutcomes[outcomeIndex].Value.Default == nil {
-				return "", outcomes, fmt.Errorf("target portfolio: incomplete default comparison round")
-			}
-			next = append(next, roundOutcomes[outcomeIndex].Value.Default.FileRef)
-			outcomeIndex++
+			next = append(next, results[resultIndex].Outcome.Value.Default.FileRef)
+			resultIndex++
 		}
-		if outcomeIndex != len(roundOutcomes) || len(next) >= len(remaining) {
-			return "", outcomes, fmt.Errorf("target portfolio: default comparison made no complete progress")
+		if len(next) >= len(remaining) {
+			return nil, outcomes, fmt.Errorf("target portfolio: default comparison made no complete progress")
 		}
 		remaining = next
 	}
 	if len(remaining) != 1 {
-		return "", outcomes, fmt.Errorf("target portfolio: default comparison produced no winner")
+		return nil, outcomes, fmt.Errorf("target portfolio: default comparison produced no winner")
 	}
-	return remaining[0], outcomes, nil
+	return &remaining[0], outcomes, nil
 }
 
 func requestFitResult(err error) (bool, error) {
@@ -236,11 +258,11 @@ func requestFitResult(err error) (bool, error) {
 	return false, err
 }
 
-// refusedAnswer reports a classification answer the model gave but the
-// executor or decoder refused. Such a refusal is local to its batch; every
-// other failure keeps its own error.
-func refusedAnswer(outcome llm.Outcome[batchSelection]) bool {
-	for _, rejected := range outcome.ResponseRejections {
+// refusedAnswer reports an answer the model gave but the executor or decoder
+// refused. Such a refusal is local to its classification batch or default
+// comparison; every other failure keeps its own error.
+func refusedAnswer(rejections []llm.ResponseRejection) bool {
+	for _, rejected := range rejections {
 		if rejected.Kind == "response_validation" || rejected.Kind == "response_envelope" {
 			return true
 		}
@@ -336,22 +358,23 @@ func restoreCompleteSelection(
 		}
 		return Selection{Targets: []VisibleCandidate{}, Unclassified: unclassified}, nil
 	}
-	if defaultRef == nil {
-		return Selection{}, fmt.Errorf("target portfolio: non-empty selection has no default")
+	// A nil default beside targets is the unresolved default: it stays nil.
+	result := Selection{Targets: make([]VisibleCandidate, 0, len(targetSet))}
+	if defaultRef != nil {
+		if _, selected := targetSet[*defaultRef]; !selected {
+			return Selection{}, fmt.Errorf("target portfolio: default is outside selected targets")
+		}
+		authority := make(map[corpus.FileID]VisibleCandidate, len(compilation.Request.Candidates))
+		for _, candidate := range compilation.Request.Candidates {
+			authority[candidate.FileRef] = candidate
+		}
+		defaultCandidate, known := authority[*defaultRef]
+		if !known {
+			return Selection{}, fmt.Errorf("target portfolio: default is outside candidate authority")
+		}
+		defaultCopy := cloneVisibleCandidate(defaultCandidate)
+		result.Default = &defaultCopy
 	}
-	if _, selected := targetSet[*defaultRef]; !selected {
-		return Selection{}, fmt.Errorf("target portfolio: default is outside selected targets")
-	}
-	authority := make(map[corpus.FileID]VisibleCandidate, len(compilation.Request.Candidates))
-	for _, candidate := range compilation.Request.Candidates {
-		authority[candidate.FileRef] = candidate
-	}
-	defaultCandidate, known := authority[*defaultRef]
-	if !known {
-		return Selection{}, fmt.Errorf("target portfolio: default is outside candidate authority")
-	}
-	defaultCopy := cloneVisibleCandidate(defaultCandidate)
-	result := Selection{Default: &defaultCopy, Targets: make([]VisibleCandidate, 0, len(targetSet))}
 	for _, candidate := range compilation.Request.Candidates {
 		if _, selected := targetSet[candidate.FileRef]; selected {
 			result.Targets = append(result.Targets, cloneVisibleCandidate(candidate))

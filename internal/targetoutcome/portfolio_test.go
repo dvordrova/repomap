@@ -112,6 +112,43 @@ func TestPortfolioAllowsFailedDefaultAndZeroAnalyzedTargets(t *testing.T) {
 	}
 }
 
+// Owner decision 2026-09-26: a refused default comparison leaves the default
+// unresolved. The artifact says so with an empty default, a default naming no
+// outcome is still refused, and a save written before the decision still reads.
+func TestPortfolioRecordsAnUnresolvedDefaultAndReadsOlderSaves(t *testing.T) {
+	first := testSelectedTarget(t, "t1", LanguageGroupGo, ScopeExecutable, "cmd/api", "go-api")
+	second := testSelectedTarget(t, "t2", LanguageGroupPython, ScopeExecutable, "worker", "python-worker")
+	firstOutcome, err := NewAnalyzed(first, testProgramTarget(t, "t1", "go", "executable", "api", "go-api", "cmd/api/main.go", "f-go"), "run-go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondOutcome, err := NewNotAnalyzed(second, StageTargetPreparation, ReasonRequiredToolUnavailable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portfolio, err := Build("", []Outcome{secondOutcome, firstOutcome})
+	if err != nil {
+		t.Fatalf("Build with an unresolved default: %v", err)
+	}
+	encoded := mustCanonicalJSON(t, portfolio)
+	if !bytes.Contains(encoded, []byte(`"default_selected_target_id":""`)) {
+		t.Fatalf("unresolved default is not stated in the artifact: %s", encoded)
+	}
+	decoded, err := Decode(encoded)
+	if err != nil || !reflect.DeepEqual(decoded, portfolio) {
+		t.Fatalf("unresolved default round trip = %v", err)
+	}
+	if _, err := Build("t9", []Outcome{secondOutcome, firstOutcome}); err == nil {
+		t.Fatal("a default naming no outcome was accepted")
+	}
+
+	const older = `{"version":3,"default_selected_target_id":"t1","outcomes":[{"selected_target":{"id":"t1","language_group":"go","allowed_program_languages":["go"],"scope_kind":"executable","display_name":"cmd/api","selector":"go-api"},"state":"not_analyzed","failure":{"stage":"program_analysis","reason":"source_not_analyzable"}},{"selected_target":{"id":"t2","language_group":"python","allowed_program_languages":["python"],"scope_kind":"executable","display_name":"worker","selector":"python-worker"},"state":"not_analyzed","failure":{"stage":"target_preparation","reason":"required_tool_unavailable"}}],"sha256":"11bbd0951e5c5bd2f7495a03b7f2ebc5cef7ccaa3671243d060117fbcff30a38"}`
+	saved, err := Decode([]byte(older))
+	if err != nil || saved.DefaultSelectedTargetID != "t1" {
+		t.Fatalf("older save = %+v, %v", saved, err)
+	}
+}
+
 func TestSelectedTargetUsesPlanOwnedCompactIdentity(t *testing.T) {
 	base := testSelectedTarget(t, "t1", LanguageGroupGo, ScopeExecutable, "cmd/api", "go-api")
 	if base.ID != "t1" {

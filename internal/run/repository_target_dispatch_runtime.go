@@ -109,11 +109,11 @@ func dispatchRepositoryTargetPlan(
 		selectedTargets[target.Key] = selected
 		selectedTargetRows = append(selectedTargetRows, selected)
 	}
-	defaultSelected, found := selectedTargets[options.Plan.Default]
-	if !found {
-		return "", fmt.Errorf(
-			"repository target dispatcher: selected default identity is absent",
-		)
+	// An unresolved default names no selected target in the outcome
+	// portfolio; the first published page still owns the one physical HTML.
+	defaultSelectedID := ""
+	if defaultSelected, found := selectedTargets[options.Plan.Default]; found {
+		defaultSelectedID = defaultSelected.ID
 	}
 	// The documentation reduction reads only the planned guidance, and native
 	// analysis never reads the reduction, so the model call runs beside the
@@ -167,12 +167,14 @@ func dispatchRepositoryTargetPlan(
 	slots := make([]targetPageSlot, len(ordered))
 	for position, target := range ordered {
 		runID := options.RunID
-		role := "default"
 		if position > 0 {
 			runID = debugdump.GenerateRunID(
 				repoRunLabel(options.Repo) + "-" + repositoryTypedTargetDisplay(target),
 			)
-			role = "sibling"
+		}
+		role := "sibling"
+		if target.Key == options.Plan.Default {
+			role = "default"
 		}
 		selected := selectedTargets[target.Key]
 		slots[position] = targetPageSlot{
@@ -212,7 +214,7 @@ func dispatchRepositoryTargetPlan(
 	if _, reduceErr := documentation.wait(); reduceErr != nil {
 		return "", reduceErr
 	}
-	targetOutcomePortfolio, err := targetoutcome.Build(defaultSelected.ID, outcomes)
+	targetOutcomePortfolio, err := targetoutcome.Build(defaultSelectedID, outcomes)
 	if err != nil {
 		return failPublication(err)
 	}
@@ -642,7 +644,8 @@ func repositoryTargetExecutionOrder(
 	}
 	defaultTarget, found := plan.DefaultTarget()
 	if !found {
-		return nil, fmt.Errorf("repository target dispatcher: default target is absent")
+		// An unresolved default promotes no target: pages keep plan order.
+		return append([]repositoryTypedTarget(nil), plan.Targets...), nil
 	}
 	ordered := make([]repositoryTypedTarget, 0, len(plan.Targets))
 	ordered = append(ordered, defaultTarget)
