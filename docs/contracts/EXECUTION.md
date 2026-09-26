@@ -151,6 +151,29 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   keys are recorded and ignored; unused extra fields do not invalidate answers.
   A response without a rows array, or with no accepted row, is refused and
   not cached, and each of its rows' reasons is journaled.
+- A decision model (Jev) answers a closed choice with a probability per
+  option. Its choice is taken when the chosen option leads every other
+  listed option, `none of these` included, by at least 0.10
+  (`table.ClassifierMargin`; owner decision 2026-09-26, replacing an
+  absolute 0.50 floor that refused `support` at 0.49 against 0.32 yet took
+  0.51 against 0.49). A closer answer, or a choice that is not the top
+  option, leaves its row explicitly uncertain, journaled with the runner-up;
+  no code picks the runner-up or any other option instead. Probabilities
+  are hundredths carried as floats, so a lead of exactly 0.10 counts. The
+  margin comes from saved answers: the 60 saved role distributions and
+  that 0.49 lead their runners-up by 0.00, 0.02, then 0.17, 0.21 and up,
+  and 0.10 sits in the middle of that gap; on 1,072 saved eleven-option
+  choices it decides 101 the floor refused and leaves uncertain the 9 the
+  floor took with leads of 0.02 to 0.09. TypeSafe's guidance
+  gates on its `confidence` (floors of 0.5 and 0.6 in its examples, set by
+  the stakes and tested on one's own data); in the saved answers that
+  confidence equals this lead for two options but is (n·top−1)/(n−1) for
+  more, blind to the runner-up, so it is not used. A yes/no asked as a noul
+  is one probability and keeps its band (yes at 0.6 or above, no at 0.4 or
+  below); a yes/no choice with a cutoff (`YesAt`) decides every row at it;
+  ranked nouls keep their probability; a yes/no choice without a cutoff
+  follows the margin. A window whose every row was answered, even
+  uncertainly, is an explicit answer and is cached.
 
 Unknown set members are removed; an unresolved mandatory scalar or conflicting known assignment is refused, without first-wins repair or a manufactured semantic complement.
 

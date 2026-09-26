@@ -250,7 +250,7 @@ func (r *reader) recallClassifierRow(def table.Definition, window table.Window, 
 	}
 	original := window
 	original.Rows = []table.Row{{ID: ref.RowKey, Fields: window.Rows[0].Fields}}
-	result, err := table.DecodeClassifierAnswers(def, original, cached.answers, table.MinProbabilityOf(def))
+	result, err := table.DecodeClassifierAnswers(def, original, cached.answers)
 	if err != nil {
 		return rowAnswer{}, false, err
 	}

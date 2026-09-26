@@ -98,11 +98,19 @@ new description or selection requests.
   matched values, counts and identities. Rejected independent rows fall back on
   their own deterministic lines and are written to `rejected.jsonl`; valid
   neighbours survive in the original exact-response cache. An entirely refused
-  window is never cached, and each of its rows' reasons is journaled; a
-  decision-model window whose every row was answered, even below its
-  probability floor, is an explicit answer that decides none of them and is
-  cached, and one malformed decision-model answer leaves only its question
-  unanswered. A response may carry its rows as `{"rows": [...]}`, as a bare array, or in one
+  window is never cached, and each of its rows' reasons is journaled. A
+  decision model's (Jev's) choice is taken when the chosen option leads
+  every other listed option, `none of these` included, by at least 0.10;
+  a closer answer, or a choice that is not the top option, leaves the row
+  explicitly uncertain, journaled with its runner-up, and nothing picks
+  another option for it. So `support` at 0.49 against 0.32 is a
+  role and 0.51 against 0.49 is not (EXECUTION gives the evidence for
+  0.10). A yes/no asked as a noul keeps its own band (yes from 0.6, no to
+  0.4), a yes/no with a cutoff (`YesAt`, symbol selection at 0.8) decides
+  every row, and ranked keys keep their probability. A decision-model
+  window whose every row was answered, even uncertainly, is an explicit
+  answer that decides none of them and is cached, and one malformed
+  decision-model answer leaves only its question unanswered. A response may carry its rows as `{"rows": [...]}`, as a bare array, or in one
   wrapping object; rows match by key alone, trimmed of surrounding whitespace.
   A cell is a JSON string, a list of refs for a sequence, or `true`/`false` on
   a yes/no choice (`false` on an optional choice is no value). A choice may

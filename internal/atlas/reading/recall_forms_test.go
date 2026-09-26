@@ -58,7 +58,7 @@ func TestRecallReadsTheLiveEnvelopeAndKeepsARowWithoutItsRefusedCell(t *testing.
 // with no answer, not a recall error: the same response would leave it so. A
 // row the response never answered is still an error.
 func TestClassifierRecallFindsAnUncertainRowWithoutAnAnswer(t *testing.T) {
-	executor, key := cachedResponse(t, `{"answers":{"s1|part":{"type":"choice","choice":"c1","probabilities":{"c1":0.4,"none":0.3}},"s2|part":{"type":"choice","choice":"c1","probabilities":{"c1":0.9}}}}`)
+	executor, key := cachedResponse(t, `{"answers":{"s1|part":{"type":"choice","choice":"c1","probabilities":{"c1":0.4,"none":0.35}},"s2|part":{"type":"choice","choice":"c1","probabilities":{"c1":0.9}}}}`)
 	def := table.Definition{Stage: "atlas_core", Classifier: true, Columns: []table.Column{{Name: "part", Kind: table.Choice, Options: []string{"c1", "none"}}}}
 	recall := &reader{opts: Options{Executor: executor, Classifier: &replacementProvider{}}, classifierResponses: make(map[string]rememberedClassifier)}
 	window := table.Window{Rows: []table.Row{{ID: "current"}}}

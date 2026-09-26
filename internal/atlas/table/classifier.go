@@ -29,12 +29,20 @@ const (
 	// 20.8 s 24 at a time and 12 s all at once, with no refusal. 64 stays far
 	// inside 1,200 requests a minute; a 429 still backs off.
 	ClassifierConcurrency = 64
-	// ClassifierMinProbability is the probability of the chosen option
-	// below which a choice is not taken: the cell is left unanswered instead
-	// of guessed. It is not the model's confidence, which measures how
-	// concentrated the whole distribution is: a yes at 0.69 has confidence
-	// 0.39.
-	ClassifierMinProbability = 0.5
+	// ClassifierMargin is how far the chosen option's probability must lead
+	// every other listed option's for a choice to be taken; a closer answer
+	// is left explicitly uncertain instead of guessed. It replaced an
+	// absolute 0.50 floor (owner, 2026-09-26), which refused "support" at
+	// 0.49 against 0.32 yet took 0.51 against 0.49. In the saved Jev role
+	// answers (60 over five roles, plus that 0.49) the leads run 0.00,
+	// 0.02, then 0.17, 0.21 and up: 0.10 sits in the middle of that gap,
+	// clear of both the near-ties and the owner's example. On 1,072 saved
+	// eleven-option part choices it takes 101 the floor refused and leaves
+	// uncertain the 9 the floor took with leads of 0.02 to 0.09.
+	// Jev's confidence, which TypeSafe's guidance gates on, cannot serve:
+	// for two options it is this lead, for more (n*top-1)/(n-1), blind to
+	// the runner-up.
+	ClassifierMargin = 0.1
 )
 
 // Closed reports whether every column is an unconditional closed choice.
@@ -50,14 +58,6 @@ func Closed(def Definition) bool {
 	return true
 }
 
-// MinProbabilityOf is the table's acceptance floor for a decision model.
-func MinProbabilityOf(def Definition) float64 {
-	if def.MinProbability > 0 {
-		return def.MinProbability
-	}
-	return ClassifierMinProbability
-}
-
 // ClassifierBodyBytes bounds one decision-model request body: at about 0.38
 // tokens a byte it stays well inside the model's 64k-token request. Byte
 // packing measures the text-model request, which lacks each question's
@@ -70,7 +70,7 @@ func FitClassifierWindows(def Definition, windows []Window) ([]Window, error) {
 	var fitted []Window
 	var fit func(Window) error
 	fit = func(window Window) error {
-		call, err := ClassifierCall(def, window, MinProbabilityOf(def))
+		call, err := ClassifierCall(def, window)
 		if err != nil {
 			return err
 		}
@@ -149,7 +149,8 @@ func questionKey(row Row, column Column) string {
 const classifierAbsent = "none of these"
 
 // ClassifierNoulMargin is how far from 0.5 a yes/no probability must be to
-// be taken either way; in between the row stays explicitly unanswered.
+// be taken either way; in between the row stays explicitly unanswered. A
+// noul is one probability, not a choice, so ClassifierMargin does not apply.
 const ClassifierNoulMargin = 0.1
 
 // yesOnly is an optional column whose only value is yes: a yes/no question.
@@ -238,7 +239,7 @@ func columnQuestion(column Column, names optionNames) string {
 
 // ClassifierCall is Call for a decision model: the system prompt and the
 // window context become the state, each row and column one question.
-func ClassifierCall(def Definition, window Window, minProbability float64) (llm.Call[Result], error) {
+func ClassifierCall(def Definition, window Window) (llm.Call[Result], error) {
 	if !Closed(def) {
 		return llm.Call[Result]{}, fmt.Errorf("table %s: not a closed table", def.Stage)
 	}
@@ -279,12 +280,12 @@ func ClassifierCall(def Definition, window Window, minProbability float64) (llm.
 		return llm.Call[Result]{}, err
 	}
 	state, err := json.Marshal(struct {
-		Contract       string  `json:"contract"`
-		Prompt         string  `json:"prompt_sha256"`
-		Request        string  `json:"request_sha256"`
-		MinProbability float64 `json:"min_probability"`
-		YesAt          float64 `json:"yes_at,omitempty"`
-	}{def.Contract + ".classifier.v2", sha256Hex([]byte(def.System)), sha256Hex(body), minProbability, def.YesAt})
+		Contract string  `json:"contract"`
+		Prompt   string  `json:"prompt_sha256"`
+		Request  string  `json:"request_sha256"`
+		Margin   float64 `json:"margin"`
+		YesAt    float64 `json:"yes_at,omitempty"`
+	}{def.Contract + ".classifier.v2", sha256Hex([]byte(def.System)), sha256Hex(body), ClassifierMargin, def.YesAt})
 	if err != nil {
 		return llm.Call[Result]{}, err
 	}
@@ -293,21 +294,22 @@ func ClassifierCall(def Definition, window Window, minProbability float64) (llm.
 		Prompt: llm.Prompt{User: string(body), NoResponseAdjunct: true},
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: 1},
 		DecodeValidate: func(raw []byte) (Result, error) {
-			return DecodeClassifier(def, window, raw, minProbability)
+			return DecodeClassifier(def, window, raw)
 		},
 	}, nil
 }
 
 // DecodeClassifier accepts a row when every column is decided: a listed
-// option above minProbability, an explicit "none of these" for an optional
-// column, or a yes/no clear of the uncertain band. Anything else leaves the
-// row explicitly unanswered, never silently absent; other rows stand alone.
-func DecodeClassifier(def Definition, window Window, raw []byte, minProbability float64) (Result, error) {
+// option, or an optional column's explicit "none of these", leading every
+// other listed option by ClassifierMargin, or a yes/no clear of the
+// uncertain band. Anything else leaves the row explicitly unanswered, never
+// silently absent; other rows stand alone.
+func DecodeClassifier(def Definition, window Window, raw []byte) (Result, error) {
 	answers, err := ParseClassifierAnswers(raw)
 	if err != nil {
 		return Result{}, fmt.Errorf("table %s: %w", def.Stage, err)
 	}
-	return DecodeClassifierAnswers(def, window, answers, minProbability)
+	return DecodeClassifierAnswers(def, window, answers)
 }
 
 // ClassifierAnswer is one decision-model answer as the response carries it.
@@ -344,9 +346,9 @@ func ParseClassifierAnswers(raw []byte) (map[string]ClassifierAnswer, error) {
 // answer: its uncertain rows stay unanswered and it is not asked again. A
 // window where no row was accepted and some row was not answered, or was
 // answered outside its options, is refused.
-func DecodeClassifierAnswers(def Definition, window Window, answers map[string]ClassifierAnswer, minProbability float64) (Result, error) {
+func DecodeClassifierAnswers(def Definition, window Window, answers map[string]ClassifierAnswer) (Result, error) {
 	envelope := struct{ Answers map[string]ClassifierAnswer }{answers}
-	yesAt := max(minProbability, 0.5+ClassifierNoulMargin)
+	yesAt := 0.5 + ClassifierNoulMargin
 	result := Result{Answers: make(Answers, len(window.Rows)), rowKeys: make([]string, len(window.Rows))}
 	accepted, uncertain := 0, 0
 	for i, row := range window.Rows {
@@ -390,16 +392,26 @@ func DecodeClassifierAnswers(def Definition, window Window, answers map[string]C
 				continue
 			}
 			names := namesFor(column, window.Context, row, options)
+			labels := make([]string, 0, len(options)+1)
+			for _, option := range options {
+				labels = append(labels, names.label[option])
+			}
+			if column.Optional {
+				labels = append(labels, classifierAbsent)
+			}
 			probability := got.Probabilities[got.Choice]
+			rival, rivalAt := runnerUp(got, labels)
 			switch {
 			case !ok || got.Type != "choice":
 				reason = fmt.Sprintf("column %s was not answered", column.Name)
-			case column.Optional && got.Choice == classifierAbsent && probability > minProbability:
-				continue
-			case got.Choice != classifierAbsent && names.ref[got.Choice] == "":
+			case !slices.Contains(labels, got.Choice):
 				reason = fmt.Sprintf("column %s chose %q, not one of the options", column.Name, got.Choice)
-			case probability <= minProbability:
-				reason, unsure = fmt.Sprintf("column %s is uncertain: %q at %.2f, not above %.2f", column.Name, got.Choice, probability, minProbability), true
+			// Jev's probabilities are hundredths carried as floats: 0.30
+			// against 0.20 leads by 0.0999…, which is the margin.
+			case probability-rivalAt < ClassifierMargin-1e-9:
+				reason, unsure = fmt.Sprintf("column %s is uncertain: %q at %.2f against %q at %.2f, a lead under %.2f", column.Name, got.Choice, probability, rival, rivalAt, ClassifierMargin), true
+			case got.Choice == classifierAbsent:
+				continue
 			default:
 				answer[column.Name] = names.ref[got.Choice]
 				continue
@@ -420,4 +432,17 @@ func DecodeClassifierAnswers(def Definition, window Window, answers map[string]C
 		return Result{}, fmt.Errorf("table %s: no rows accepted; %s", def.Stage, result.Rejections[0].Reason)
 	}
 	return result, nil
+}
+
+// runnerUp is the listed option, other than the chosen one, that the answer
+// gives the highest probability; the first listed wins a tie. A choice that
+// is not the top option therefore has a negative lead.
+func runnerUp(got ClassifierAnswer, labels []string) (string, float64) {
+	rival, rivalAt := "", 0.0
+	for _, label := range labels {
+		if at := got.Probabilities[label]; label != got.Choice && (rival == "" || at > rivalAt) {
+			rival, rivalAt = label, at
+		}
+	}
+	return rival, rivalAt
 }

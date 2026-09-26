@@ -765,7 +765,7 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	calls := make([]llm.Call[table.Result], len(windows))
 	for i, window := range windows {
 		if classifier {
-			call, err := table.ClassifierCall(def, window, table.MinProbabilityOf(def))
+			call, err := table.ClassifierCall(def, window)
 			if err != nil {
 				return nil, err
 			}

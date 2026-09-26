@@ -24,7 +24,7 @@ func closedWindow() Window {
 // The context is sent once as state; each row is its own question over the
 // listed options, keyed by the row's own identity.
 func TestClassifierCallAsksOneChoicePerRow(t *testing.T) {
-	call, err := ClassifierCall(closedDefinition(), closedWindow(), 0.5)
+	call, err := ClassifierCall(closedDefinition(), closedWindow())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,20 +47,90 @@ func TestClassifierCallAsksOneChoicePerRow(t *testing.T) {
 	}
 }
 
-// A chosen option at or below the probability floor refuses its own row,
-// whatever the distribution's confidence says, not its neighbour;
-// an unlisted choice is never taken.
+// A chosen option that does not lead its runner-up by the margin refuses
+// its own row, whatever the distribution's confidence says, not its
+// neighbour; an unlisted choice is never taken.
 func TestDecodeClassifierRefusesUncertainRowsAlone(t *testing.T) {
 	window := closedWindow()
 	raw := []byte(`{"answers":{"s1|part":{"type":"choice","choice":"Serving","confidence":0.3,"probabilities":{"Serving":0.9,"none":0.1}},"s2|part":{"type":"choice","choice":"Serving","confidence":0.9,"probabilities":{"Serving":0.4,"none":0.35}}}}`)
-	result, err := DecodeClassifier(closedDefinition(), window, raw, 0.5)
+	result, err := DecodeClassifier(closedDefinition(), window, raw)
 	if err != nil || result.Answers[0]["part"] != "c1" || result.Answers[1] != nil || len(result.Rejections) != 1 || result.Rejections[0].Key != "s2" || strings.Join(result.AcceptedRowKeys(), " ") != "s1" {
 		t.Fatalf("result %+v %v", result, err)
 	}
 	unlisted := []byte(`{"answers":{"s1|part":{"type":"choice","choice":"c9","confidence":1,"probabilities":{"c9":1}},"s2|part":{"type":"choice","choice":"none","confidence":1,"probabilities":{"none":1}}}}`)
-	result, err = DecodeClassifier(closedDefinition(), window, unlisted, 0.5)
+	result, err = DecodeClassifier(closedDefinition(), window, unlisted)
 	if err != nil || result.Answers[0] != nil || result.Answers[1]["part"] != "none" {
 		t.Fatalf("unlisted choice: %+v %v", result, err)
+	}
+}
+
+// A choice is taken when it leads its runner-up by the margin, whatever its
+// own probability: "support" at 0.49 against 0.32 is decided, and 0.51
+// against 0.49, which the old 0.50 floor took, is the explicit unknown. A
+// lead of exactly the margin counts; a choice below its rival never does.
+func TestAClassifierChoiceMustLeadItsRunnerUp(t *testing.T) {
+	def := Definition{Stage: "atlas_core", Contract: "c", System: "s", Columns: []Column{
+		{Name: "role", Kind: Choice, Options: []string{"domain", "interface", "wiring", "support"}},
+	}}
+	for name, tc := range map[string]struct{ answer, want string }{
+		"clear lead under one half":  {`{"type":"choice","choice":"support","probabilities":{"support":0.49,"domain":0.32,"interface":0.12,"wiring":0.07}}`, "support"},
+		"near-tie over one half":     {`{"type":"choice","choice":"domain","probabilities":{"domain":0.51,"interface":0.49,"wiring":0,"support":0}}`, ""},
+		"lead of exactly the margin": {`{"type":"choice","choice":"wiring","probabilities":{"wiring":0.3,"domain":0.2,"interface":0.2,"support":0.2}}`, "wiring"},
+		"choice below its rival":     {`{"type":"choice","choice":"domain","probabilities":{"domain":0.33,"interface":0.34,"wiring":0.2,"support":0.13}}`, ""},
+	} {
+		window := Window{Rows: []Row{{ID: "p1"}}}
+		result, err := DecodeClassifier(def, window, []byte(`{"answers":{"p1|role":`+tc.answer+`}}`))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if tc.want != "" && result.Answers[0]["role"] != tc.want {
+			t.Fatalf("%s: not decided: %+v", name, result)
+		}
+		if tc.want == "" && (result.Answers[0] != nil || len(result.Rejections) != 1 || !strings.Contains(result.Rejections[0].Reason, "is uncertain")) {
+			t.Fatalf("%s: decided without a lead: %+v", name, result)
+		}
+	}
+	window := Window{Rows: []Row{{ID: "p1"}}}
+	result, _ := DecodeClassifier(def, window, []byte(`{"answers":{"p1|role":{"type":"choice","choice":"domain","probabilities":{"domain":0.51,"interface":0.49}}}}`))
+	if len(result.Rejections) != 1 || !strings.Contains(result.Rejections[0].Reason, `against "interface" at 0.49`) {
+		t.Fatalf("the journal does not name the runner-up: %+v", result.Rejections)
+	}
+}
+
+// An optional column's "none of these" is one more option: it leaves the
+// cell empty when it leads by the margin and is uncertain when it does not.
+func TestNoneOfTheseMustLeadLikeAnyOption(t *testing.T) {
+	def := Definition{Stage: "atlas_optional", Contract: "c", System: "s", Columns: []Column{
+		{Name: "talks", Kind: Choice, Options: []string{"db", "sdk"}, Optional: true},
+	}}
+	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
+	raw := []byte(`{"answers":{
+		"s1|talks":{"type":"choice","choice":"none of these","probabilities":{"none of these":0.45,"db":0.3,"sdk":0.25}},
+		"s2|talks":{"type":"choice","choice":"none of these","probabilities":{"none of these":0.4,"db":0.35,"sdk":0.25}}}}`)
+	result, err := DecodeClassifier(def, window, raw)
+	if err != nil || result.Answers[0] == nil || len(result.Answers[0]) != 0 || result.Answers[1] != nil {
+		t.Fatalf("result %+v %v", result, err)
+	}
+}
+
+// A yes/no asked as a choice without a cutoff follows the same margin: yes
+// at 0.54 against 0.46 is uncertain, not the yes the old floor took. A yes/no
+// asked as a noul is one probability and keeps its band around one half.
+func TestYesNoChoicesFollowTheMarginAndNoulsTheirBand(t *testing.T) {
+	def := Definition{Stage: "atlas_yes_no", Contract: "c", System: "s", Columns: []Column{
+		{Name: "entry", Kind: Choice, Options: []string{"yes", "no"}},
+	}}
+	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
+	raw := []byte(`{"answers":{"s1|entry":{"type":"choice","choice":"yes","probabilities":{"yes":0.54,"no":0.46}},"s2|entry":{"type":"choice","choice":"no","probabilities":{"yes":0.44,"no":0.56}}}}`)
+	result, err := DecodeClassifier(def, window, raw)
+	if err != nil || result.Answers[0] != nil || result.Answers[1]["entry"] != "no" {
+		t.Fatalf("yes/no choice: %+v %v", result, err)
+	}
+	def.Columns = []Column{{Name: "entry", Kind: Choice, Options: []string{"yes"}, Optional: true}}
+	raw = []byte(`{"answers":{"s1|entry":{"type":"noul","noul":0.58},"s2|entry":{"type":"noul","noul":0.62}}}`)
+	result, err = DecodeClassifier(def, window, raw)
+	if err != nil || result.Answers[0] != nil || result.Answers[1]["entry"] != "yes" {
+		t.Fatalf("noul: %+v %v", result, err)
 	}
 }
 
@@ -88,7 +158,7 @@ func TestOptionalColumnsCanBeLeftEmpty(t *testing.T) {
 		{Name: "talks", Kind: Choice, Options: []string{"db", "sdk"}, Optional: true},
 	}}
 	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
-	call, err := ClassifierCall(def, window, 0.5)
+	call, err := ClassifierCall(def, window)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +168,7 @@ func TestOptionalColumnsCanBeLeftEmpty(t *testing.T) {
 	raw := []byte(`{"answers":{
 		"s1|explains":{"type":"noul","noul":0.8},"s1|talks":{"type":"choice","choice":"db","probabilities":{"db":0.9}},
 		"s2|explains":{"type":"noul","noul":0.2},"s2|talks":{"type":"choice","choice":"none of these","probabilities":{"none of these":0.9}}}}`)
-	result, err := DecodeClassifier(def, window, raw, 0.5)
+	result, err := DecodeClassifier(def, window, raw)
 	if err != nil || result.Answers[0]["explains"] != "yes" || result.Answers[0]["talks"] != "db" || len(result.Answers[1]) != 0 || result.Answers[1] == nil {
 		t.Fatalf("result %+v %v", result, err)
 	}
@@ -110,7 +180,7 @@ func TestYesAtIsACutoffNotAnUncertainBand(t *testing.T) {
 		Columns: []Column{{Name: "key_symbol", Kind: Choice, Options: []string{"yes", "no"}}}}
 	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
 	raw := []byte(`{"answers":{"s1|key_symbol":{"type":"choice","choice":"yes","probabilities":{"yes":0.85,"no":0.15}},"s2|key_symbol":{"type":"choice","choice":"yes","probabilities":{"yes":0.7,"no":0.3}}}}`)
-	result, err := DecodeClassifier(def, window, raw, 0.5)
+	result, err := DecodeClassifier(def, window, raw)
 	if err != nil || result.Answers[0]["key_symbol"] != "yes" || result.Answers[1]["key_symbol"] != "no" {
 		t.Fatalf("result %+v %v", result, err)
 	}
@@ -137,7 +207,7 @@ func TestFitClassifierWindowsHalvesOversizedBodiesAndKeepsRows(t *testing.T) {
 	}
 	rows := 0
 	for _, piece := range fitted {
-		call, _ := ClassifierCall(def, piece, 0.5)
+		call, _ := ClassifierCall(def, piece)
 		if len(call.Prompt.User) > ClassifierBodyBytes {
 			t.Fatalf("piece body %d bytes", len(call.Prompt.User))
 		}
