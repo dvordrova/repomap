@@ -46,10 +46,9 @@
 <div class="glossary-entry-content"><p class="model glossary-explanation">{{.Explanation}}</p>
 {{if .Questions}}<details class="glossary-questions"><summary>{{t "Questions"}} <span class="meta">· {{len .Questions}}</span></summary><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ul></details>{{end}}
 {{if .Places}}<div class="glossary-places"><h3>{{t "On the map"}}</h3><ul class="plain">{{range .Places}}<li><a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a></li>{{end}}</ul></div>{{end}}
-{{if .Sources}}{{if .Code}}<div class="glossary-sources"><h3>{{t "Sources"}}</h3>{{range .Sources}} {{template "anchor" .}}{{end}}</div>{{else}}{{with .SourceFiles}}<details class="glossary-sources"><summary>{{t "Analysis context"}} <span class="meta">· {{t "{0} files" (len .)}}</span></summary>
-<p class="meta">{{t "Files from the analysis in which this term appears."}}</p>
+{{if .Code}}{{with .Sources}}<div class="glossary-sources"><h3>{{t "Sources"}}</h3>{{range .}} {{template "anchor" .}}{{end}}</div>{{end}}{{else}}{{with .SourceFiles}}<details class="glossary-sources"><summary>{{t "Files in which this term appears"}} <span class="meta">· {{t "{0} files" (len .)}}</span></summary>
 {{range .}}<details class="glossary-source-file"><summary><code>{{.Path}}</code> <span class="meta">· {{t "{0} locations" (len .Locations)}}</span></summary><div class="glossary-source-locations">{{range .Locations}}{{template "glossary-location" .}}{{end}}</div></details>{{end}}
-</details>{{end}}{{end}}{{end}}</div></details>{{end}}
+</details>{{end}}{{end}}</div></details>{{end}}
 </div><div class="concept-pages" hidden><button type="button" data-prev>{{t "← Previous"}}</button><span></span><button type="button" data-next>{{t "Next →"}}</button></div>
 </section>{{end}}
 {{end}}

@@ -177,12 +177,18 @@ Term previews put the `(via model)` badge beside `Term explanation`, outside
 the definition sentence. The static glossary puts the same provenance in the
 term heading. Questions, collapsed separately, and map destinations precede source context. Native
 concepts retain their direct declaration anchors. Generated domain definitions
-inherit the complete context of their selected analytical prose; the UI labels
-that collection `Analysis context`, not direct evidence for the definition.
-It starts collapsed, groups references by file, and reveals original locations
-only when that file is expanded. Every distinct saved destination remains in
-the static HTML, including editor and unavailable-source behavior. Presentation
-does not select supposedly relevant lines or change glossary generation.
+inherit the complete context of their selected analytical prose; that context
+stays in `terminology.json`/`glossary.json` and in the linked questions, and
+it is not the list of files a term appears in: the glossary once listed
+eighteen files "in which" event loop appeared, lzf.h and solarisfixes.h among
+them. The page lists `Files in which this term appears`: every line of the
+corpus's readable text files that writes the spelling, found by the shared
+[term lookup](#term-lookup) after reduction in the ordinary run and saved as
+`glossary_occurrences` in `report.json` (a code fact, not evidence for the
+definition). It starts collapsed, groups lines by file and reveals them when
+that file is expanded, with editor and unavailable-source behavior. A spelling
+no read file writes lists no files, and a saved report without that record
+lists none. Presentation does not change glossary generation.
 
 The ordinary run output and static glossary now expose the saved partial
 comparison state. The glossary uses one quiet localized explanation before its
