@@ -365,6 +365,28 @@ in Set commands in 5 of 5 draws. A helper decided in the first question is
 not asked again: getGenericCommand, called only by string commands, stayed
 in Command dispatch (0.66–0.67 against String commands at 0.16–0.17).
 
+Where pingCommand goes depends on the boxes the naming gives redis.c
+(measured 2026-09-27, 3 draws per task on each saved naming). With a box for
+server administration commands (the owner-proxy's naming) it goes there.
+Three fresh namings had no box for connection or server commands, and on
+each this task puts pingCommand in String commands. On one of them, whose
+Client connection handling box also holds command dispatch, the task
+without the sentence put it in Client connection handling in 2 of 3 draws
+(0.42–0.46, the third a near-tie); the sentence moves it to String commands
+(0.46–0.58, 6 of 6 draws). On another, the task without the sentence put it
+in String commands too (0.45–0.56). A wording that keeps a command whose work
+is the connection with the box that runs commands put pingCommand back in
+Client connection handling there, but left it undecided on the owner-proxy's
+naming, so it was not adopted: PING's box is the naming's to give. On the
+naming whose two boxes both claim command dispatch, processCommand is a
+near-tie between them in 5 of 6 draws (the task without the sentence chose
+Client connection handling at 0.69–0.76), and the neighbours' question puts
+it in Command table and dispatch (0.58–0.61). Asked with its callers' boxes,
+getGenericCommand goes in String commands (0.89–0.91, 3 of 3 draws); asking a
+decided unit again is the owner's decision. On litestream's two split files
+(54 units, no registration in them), undecided went from 2, 3 and 3 to 1, 0
+and 1, and no decided unit landed differently.
+
 Each language's map-of-parts fixture test builds its graph with the fact
 layer, as an ordinary run does, and its split check (`partstest.CheckSplit`)
 requires that every registration handing over a unit of an assigned file
