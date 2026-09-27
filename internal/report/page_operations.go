@@ -134,7 +134,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		}
 		node.Title = mapTitle(node.FullTitle)
 		foreignNodes[key], usedForeign[key] = node, true
-		matched[connection.ID] = pathEdge{mapNodeID(connection.From.GroupID), node.ID, true, connection.Label, connection.ID}
+		matched[connection.ID] = pathEdge{mapNodeID(connection.From.GroupID), node.ID, true, connection.Label, connectionKey(index.Target.ID, connection.ID)}
 	}
 	ops := append([]groupindex.Operation(nil), index.Operations...)
 	sort.SliceStable(ops, func(i, j int) bool {
@@ -483,7 +483,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		if _, exists := byID[to]; !exists {
 			continue
 		}
-		edge := pageMapEdge{ConnectionID: connection.ID, From: from, To: to, Label: connection.Label, Summary: connection.Summary, Scope: "structure", Possible: !strings.HasPrefix(connection.SourceKind, "native_") || connection.SupportResolution != programindex.PatternValueExact, Init: connection.Phase == groupindex.PhaseInit && drawsInit(builder.graphIndex(connection.From.TargetID)) && !result.served[[2]string{from, to}]}
+		edge := pageMapEdge{ConnectionID: connectionKey(connection.From.TargetID, connection.ID), From: from, To: to, Label: connection.Label, Summary: connection.Summary, Scope: "structure", Possible: !strings.HasPrefix(connection.SourceKind, "native_") || connection.SupportResolution != programindex.PatternValueExact, Init: connection.Phase == groupindex.PhaseInit && drawsInit(builder.graphIndex(connection.From.TargetID)) && !result.served[[2]string{from, to}]}
 		if connection.FromLocation != nil {
 			l := connection.FromLocation
 			edge.FromSource = builder.links.anchor(l.Path, l.Line, l.Column)
@@ -640,4 +640,12 @@ func (builder *pageBuilder) callWitness(targetID, root, destination string, pare
 // list calls Memory allocation" drawn into redis-server's Networking).
 func foreignNodeID(sectionID, targetID, groupID string) string {
 	return mapNodeID(sectionID + "-foreign-" + safeIDFragment(targetID) + "-" + groupID)
+}
+
+// connectionKey names a connection across the page. A connection's x* ID is
+// its source target's ordinal, so redis-benchmark's x17 (listRelease calls
+// zfree) and another program's x17 are different connections; keyed by the
+// bare ID, the system map moved one's arrow onto the other's peer.
+func connectionKey(targetID, id string) string {
+	return targetID + "/" + id
 }

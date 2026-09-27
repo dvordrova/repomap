@@ -573,3 +573,41 @@ func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
 		t.Fatal("a map with nothing numbered explains numbers")
 	}
 }
+
+// A connection's x* ID is its source target's ordinal. redis-benchmark's own
+// x17 (listRelease calls zfree) shared its ID with the cli's link into
+// redis-server, and the system map drew it solid into redis-server's
+// Networking as if the benchmark's linked list were the client link.
+func TestSystemMapKeepsEqualConnectionIDsOfDifferentTargetsApart(t *testing.T) {
+	server := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{{ID: "g15", Title: "Networking", Lane: groupindex.LaneCore}}}
+	bench := groupindex.Index{Target: programindex.Target{ID: "t2"}, Groups: []groupindex.Group{
+		{ID: "g2", Title: "Linked list", Lane: groupindex.LaneCore}, {ID: "g3", Title: "Memory allocation", Lane: groupindex.LaneCore},
+	}, Connections: []groupindex.Connection{{ID: "x17", SourceKind: "native_calls", SupportResolution: programindex.PatternValueExact,
+		From: groupindex.Endpoint{TargetID: "t2", GroupID: "g2"}, To: groupindex.Endpoint{TargetID: "t2", GroupID: "g3"}, Label: "listRelease calls zfree"}}}
+	cli := groupindex.Index{Target: programindex.Target{ID: "t4"}, Groups: []groupindex.Group{{ID: "g4", Title: "Network sockets", Lane: groupindex.LaneCore}},
+		Connections: []groupindex.Connection{{ID: "x17", SourceKind: "integration", SupportResolution: programindex.PatternValuePossible,
+			From: groupindex.Endpoint{TargetID: "t4", GroupID: "g4"}, To: groupindex.Endpoint{TargetID: "t1", GroupID: "g15"}, Label: "integrates with"}}}
+	sections := map[string]*pageSection{
+		"t1": {ID: "t1", programTargetID: "t1", ShortLabel: "redis-server"},
+		"t2": {ID: "t2", programTargetID: "t2", ShortLabel: "redis-benchmark"},
+		"t4": {ID: "t4", programTargetID: "t4", ShortLabel: "redis-cli"},
+	}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{server, bench, cli}, byProgram: sections}
+	view := pageView{}
+	for _, id := range []string{"t1", "t2", "t4"} {
+		sections[id].Map = builder.buildMap(sections[id])
+		view.Sections = append(view.Sections, sections[id])
+	}
+	got := view.SystemMap()
+	ends := map[string][2]string{}
+	for _, edge := range got.Edges {
+		ends[edge.Label] = [2]string{edge.From, edge.To}
+	}
+	memory, networking := targetMapNodeID("t2", mapNodeID("g3")), targetMapNodeID("t1", mapNodeID("g15"))
+	if ends["listRelease calls zfree"][1] != memory {
+		t.Fatalf("the benchmark's own call left its memory part: %v", ends)
+	}
+	if ends["integrates with"] != [2]string{targetMapNodeID("t4", mapNodeID("g4")), networking} {
+		t.Fatalf("the cli's link lost its ends: %v", ends)
+	}
+}

@@ -358,7 +358,7 @@ func TestOutboundPeerBindingRequiresExactCallerAndCallLocation(t *testing.T) {
 	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
 	section := &pageSection{ID: "front", programTargetID: "front"}
 	builder.fillSectionOutbound(section)
-	if !slices.Equal(section.Outbound[0].Connections, []string{"match"}) {
+	if !slices.Equal(section.Outbound[0].Connections, []string{connectionKey("front", "match")}) {
 		t.Fatalf("incorrect peer bindings: %+v", section.Outbound)
 	}
 }

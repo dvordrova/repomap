@@ -330,7 +330,7 @@ func TestCallsOnAnInputsPathAreWorkNotWiring(t *testing.T) {
 	_, edges := structureEdges(t, index)
 	init := map[string]bool{}
 	for _, edge := range edges {
-		init[edge.ConnectionID] = edge.Init
+		init[edge.ConnectionID[strings.LastIndex(edge.ConnectionID, "/")+1:]] = edge.Init
 	}
 	if init["x1"] || !init["x2"] {
 		t.Fatalf("work on an input's path hidden as wiring, or wiring shown as work: %v", init)

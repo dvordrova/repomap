@@ -123,7 +123,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 			if connection.SourceKind == "integration" && connection.From.TargetID == index.Target.ID &&
 				connection.FromSubjectID == call.SubjectID && call.SubjectID != "" &&
 				connection.FromLocation != nil && *connection.FromLocation == call.Location {
-				row.Connections = append(row.Connections, connection.ID)
+				row.Connections = append(row.Connections, connectionKey(index.Target.ID, connection.ID))
 			}
 		}
 		for id, reached := range reachable {
