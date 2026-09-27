@@ -55,8 +55,9 @@ for(const matchedPeer of [false,true])test(`short component names keep complete 
     expect(frame.y).toBeGreaterThanOrEqual(canvas.y-.5);
     expect(frame.x+frame.width).toBeLessThanOrEqual(canvas.x+canvas.width+.5);
     expect(frame.y+frame.height).toBeLessThanOrEqual(canvas.y+canvas.height+.5);
-    const title=summary.locator('.flow-component-overview-heading>strong');
-    await expect(title).toHaveText(item.title);await readableText(title,frame,item.title);
+    // An input collection is headed by the colour key's word, Inputs.
+    const title=summary.locator('.flow-component-overview-heading>strong'),heading=item.branch==='inputs'?'Inputs':item.title;
+    await expect(title).toHaveText(heading);await readableText(title,frame,heading);
     const list=summary.locator('.flow-component-areas,.flow-input-types');
     if(await list.count()){
       expect(await list.evaluate(el=>el.scrollHeight<=el.clientHeight+1),`${item.title}'s complete inventory is visible initially`).toBe(true);
