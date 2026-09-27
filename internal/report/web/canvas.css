@@ -84,7 +84,11 @@
 .flow-part.flow-entry{background:#e1f3ec;border-color:#267267}
 .flow-role-symbol{display:block;width:16px;height:16px;flex:none;background:currentColor;color:#52647d}
 .flow-role-core{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);color:#755299}
-.flow-role-triggers{clip-path:polygon(0 35%,55% 35%,55% 0,100% 50%,55% 100%,55% 65%,0 65%);color:#267267}
+/* The entry mark is an arrow wider than the border it stands on, with a halo in
+   the card's colour: the border stops at it and its shaft reads as a shaft.
+   Cut from a 14px square, the arrow's shaft ran along the border in the same
+   colour and only a small head read. The legend draws the same arrow. */
+.flow-role-triggers,.flow-color-key .entry i{background:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='26'%20height='18'%20viewBox='0%200%2026%2018'%3E%3Cpath%20d='M1.5%205.5H13V1.5L24.5%209L13%2016.5V12.5H1.5Z'%20fill='%23267267'%20stroke='%23e1f3ec'%20stroke-width='3'%20stroke-linejoin='round'%20paint-order='stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat;color:#267267}
 .flow-node-reading .flow-part.flow-core{border-color:#243044}
 .flow-description{font-size:13px;line-height:18px;font-weight:400;white-space:pre-line;overflow-wrap:anywhere;color:#536176;margin:0}
 .flow-area-title>strong{font-size:17px;line-height:22px;white-space:pre-line}
@@ -98,7 +102,7 @@
 .flow-color-key i{display:inline-block;width:12px;height:12px;border-radius:2px;background:#718096}
 .flow-color-key .input i{background:#356faa}.flow-color-key .external i{background:#906014}
 .flow-color-key .core i{background:#755299;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
-.flow-color-key .entry i{background:#267267;clip-path:polygon(0 35%,55% 35%,55% 0,100% 50%,55% 100%,55% 65%,0 65%)}
+.flow-color-key .entry i{width:auto;aspect-ratio:26/18;border-radius:0}
 .flow-enabled .map-inspector a,.flow-enabled .map-inspector button{color:#63429d}
 .flow-enabled .system-neighbours button{background:#f5f3f9;border-color:#dcd6e7;color:#63429d}
 .flow-enabled .system-neighbours button:hover{background:#eee7f7}
@@ -250,6 +254,8 @@
 
 /* The marks stand in the same places on every card: the zoom mark top right, the number bottom right, the role mark on the top border, in the middle. */
 .flow-role-symbol{position:absolute;left:50%;top:0;width:14px;height:14px;transform:translate(-50%,-50%);z-index:1}
+.flow-role-triggers{width:26px;height:18px}
+.flow-area-summary>.flow-role-triggers{background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='26'%20height='18'%20viewBox='0%200%2026%2018'%3E%3Cpath%20d='M1.5%205.5H13V1.5L24.5%209L13%2016.5V12.5H1.5Z'%20fill='%23267267'%20stroke='%23eef8f4'%20stroke-width='3'%20stroke-linejoin='round'%20paint-order='stroke'/%3E%3C/svg%3E")}
 .flow-standalone-part>strong{padding-right:38px}
 .flow-area-summary>.flow-overview-compact>footer{justify-content:flex-end}.flow-area-summary .flow-number{position:static}.flow-standalone-part>.flow-part-zoom{top:3px}.flow-standalone-part>.flow-number{right:6px;bottom:4px}
 

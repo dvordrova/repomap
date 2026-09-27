@@ -177,6 +177,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   blue and external communications amber; saved lanes supply those identities.
   Core/entry cards use distinct diamond/arrow glyphs with the shared legend and
   accessible names, instead of repeating Core/Entrypoints above every title.
+  The entry arrow is wider than the border it stands on and has a thin halo
+  in its card's colour, so the border stops at it and its shaft reads as a
+  shaft; cut from a 14px square, its shaft ran along the border in the
+  border's colour and only a small head read. The legend draws the same
+  arrow.
   Only an area holding the program's entry (a declaration its execution
   starts from, a target seed) carries the entry mark, even when a core part
   stands in it. Parts that only take requests or listen do not make their
