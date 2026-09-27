@@ -10,7 +10,8 @@ import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {singlePartAreas, inputGroupsByPart} from './overview.mjs';
-import {prepareCards,wrapText,overviewHeading,groupHeading} from './cards.mjs';
+import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading} from './cards.mjs';
+import {overviewInset} from './split-layout.mjs';
 import {HoverGate} from './hover.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
 import '@xyflow/react/dist/style.css';
@@ -131,10 +132,12 @@ function AreaSummary({node,item,number,badge,heading,enter,select}){
     {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
   </div>;
 }
-function ZoomMark({node,item,enter,select,compactScale}) {
+function ZoomMark({node,item,enter,select,compactScale,fitScale=Infinity}) {
   const viewport=useViewport(),{zoom}=viewport;
   const area=item.branch==='area',size=34,tall=24,inset=area||['communication','inputs'].includes(item.branch)?8:12;
-  const scale=area?compactScale:1/zoom;
+  // A summary scaled down whole to fit its box takes its mark down with it
+  // until zoom gives the mark its ordinary screen size.
+  const scale=area?compactScale:Math.min(fitScale,1/zoom);
   // A frame reserved exactly this room is fitted to within float round-off.
   if(node.width<(size+2*inset-.5)*scale||node.height<(tall+2*inset-.5)*scale)return null;
   const point={x:node.absolute.x+node.width-(size+inset)*scale,y:node.absolute.y+inset*scale};
@@ -438,10 +441,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   // Lay out text once for the whole-map camera. Pan clips that fixed card;
   // zoom scales it with the map instead of rewrapping it at every wheel tick.
-  function ComponentOverview({node:n}){
-    const zoom=systemViewport(layout.nodes,layoutSize.width,layoutSize.height).zoom;
-    const item=byID.get(n.id),inventory=inventories.get(n.id),screenWidth=n.width*zoom,screenHeight=n.height*zoom;
-    const visible=screenWidth>32,width=Math.min(320,screenWidth-16),contentWidth=Math.max(1,width-16);
+  // The whole-map scale at which a summary fits its box whole (see overviewScale).
+  function useOverviewFit(n){
+    const zoom=systemViewport(layout.nodes,layoutSize.width,layoutSize.height).zoom,item=byID.get(n.id);
+    const fit=useMemo(()=>overviewScale(item,n.width*zoom,n.height*zoom,layoutSize.height-2*overviewInset),[n.width,n.height,zoom]);
+    return {fit,zoom};
+  }
+  function ComponentOverview({node:n,fit,zoom}){
+    // Short of its reserved room, the summary is laid out at that room and
+    // scaled down whole instead of being cut at the frame's edge.
+    const item=byID.get(n.id),inventory=inventories.get(n.id),screenWidth=n.width*zoom/fit,screenHeight=n.height*zoom/fit;
+    // Scaled whole, even a frame too narrow for its text at full size keeps
+    // its complete smaller summary instead of standing blank.
+    const visible=n.width*zoom>0,width=Math.min(320,screenWidth-16),contentWidth=Math.max(1,width-16);
     const heading=useMemo(()=>visible?overviewHeading(item,screenWidth,measure):null,[screenWidth]);
     const text=useMemo(()=>{
       if(!visible)return null;
@@ -456,7 +468,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       return {communication,inputs,areaIDs,listHeight,counts,roleHeight,countsHeight,inputHeight:inputs?item.overviewHeightAtWidth(screenWidth):0};
     },[visible,contentWidth]);
     if(!heading)return null;
-    const {communication,inputs,areaIDs,listHeight,counts,roleHeight,countsHeight}=text,scale=1/zoom;
+    const {communication,inputs,areaIDs,listHeight,counts,roleHeight,countsHeight}=text,scale=fit/zoom;
     let remaining=screenHeight-32-heading.height-listHeight-(areaIDs.length?10:0);
     const listOverflow=remaining<0;
     const showRole=!communication&&!inputs&&roleHeight>0&&remaining>=roleHeight;
@@ -466,7 +478,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const descriptionLines=Math.floor((remaining-10)/18);
     const x=n.absolute.x+8*scale,y=n.absolute.y+8*scale;
     return <div key={'component-'+n.id} className={`flow-component-overview nopan ${item.branch==='communication'?'flow-communication-overview':item.branch==='inputs'?'flow-input-collection':''}`}
-      data-component-overview={n.id} style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width,maxHeight:(n.absolute.y+n.height-y)*zoom-8}}
+      data-component-overview={n.id} style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width,maxHeight:screenHeight-16}}
       onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,true);}}>
       {heading.lines.length>0&&<div className="flow-component-overview-heading" style={{maxWidth:heading.width,minHeight:inputs?32:undefined,paddingTop:heading.clearZoom?32:undefined}}>
         <strong style={heading.scale<1?{fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}:undefined}>{heading.lines.join('\n')}</strong></div>}
@@ -499,10 +511,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   function ComponentPresentation({node,focused}){
     const item=byID.get(node.id),open=item.branch==='component'?openComponents.has(node.id):communicationsOpen.has(node.id);
+    const {fit,zoom}=useOverviewFit(node);
     // Open, a plain tile shows its calls under its group's heading alone.
     if(open&&item.displayGroupTitle)return null;
     return open?<FrameTitle node={node} item={item} focused={focused} enter={enter} select={select}/>:<>
-      <ComponentOverview node={node}/><ZoomMark node={node} item={item} enter={enter} select={select}/>
+      <ComponentOverview node={node} fit={fit} zoom={zoom}/><ZoomMark node={node} item={item} fitScale={fit<1?fit/zoom:undefined} enter={enter} select={select}/>
     </>;
   }
   function App(){

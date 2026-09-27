@@ -441,6 +441,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   never breaks a word of them again. A heading whose room is still short of
   its longest word shrinks its type until that word fits instead of breaking
   it; a part's title leaves room for its zoom button.
+  When the whole-map fit still cannot give a summary its reserved width or
+  height, in a short window or on a crowded map, the summary is laid out at
+  that reserve and drawn scaled down whole, its zoom mark with it until zoom
+  gives the mark its ordinary size, as a small group keeps a smaller complete
+  label; a frame too narrow for its text at full size keeps that smaller
+  summary instead of standing blank beside a display group's plain tiles.
+  Drawn into the short box, Redis's 1280×720 first screen cut "TCP
+  endpoint" below its frame and "Background" out of its input list.
   External width minima allow that arrangement; height reserves the actual
   wrapped heading and nested-content hint with their insets, without an unrelated floor.
   Orientation comparison uses those measured minima before world size.

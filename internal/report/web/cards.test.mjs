@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareCards,overviewHeading,groupInputs,wrapText} from './cards.mjs';
+import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText} from './cards.mjs';
 import {semanticLayout} from './semantic.mjs';
 
 test('input card labels keep every character across long literals and translated names',()=>{
@@ -66,6 +66,32 @@ test('a frame whose display group carries its destination text draws no heading 
   assert.equal(overviewHeading(titled,titled.overviewMinWidth,measure).lines.join(' '),'DNS resolver','a frame alone keeps its heading');
   assert.equal(tile.displayGroupHeadingAt(3*tile.overviewMinWidth).lines.join(' '),'DNS resolver','the group says it once');
   assert.equal(titled.displayGroupHeadingAt,undefined);
+});
+
+// In a 1280×720 window Redis's map could not give its summaries their reserved
+// room: "TCP endpoint" was cut below its frame and "Background" out of the
+// input list. A summary short of its room is scaled down whole instead.
+test('a summary the whole-map fit cannot give its reserve is scaled down whole, never cut',()=>{
+  const measure=(text,font='13px')=>Array.from(String(text)).length*Number(/(\d+)px/.exec(font)?.[1]||13)*.58;
+  const cards=prepareCards([
+    {id:'tcp',title:'TCP endpoint',branch:'communication',children:['connect']},{id:'connect',title:'connect'},
+    {id:'inputs',title:'redis-server (executable)',branch:'inputs',children:['get','cron']},
+    {id:'get',title:'GET',activation:'request'},{id:'cron',title:'serverCron',activation:'background'},
+    {id:'server',title:'redis-server (executable)',branch:'component',children:['net','commands']},
+    {id:'net',title:'Networking',branch:'area',children:['n1']},{id:'commands',title:'Data type commands',branch:'area',children:['c1']},
+    {id:'n1',title:'n1'},{id:'c1',title:'c1'},
+  ],{get:'n1',cron:'c1'},measure,text=>text);
+  for(const card of cards.filter(card=>card.overviewHeightAtWidth)){
+    const width=card.overviewMinWidth,height=card.overviewHeightAtWidth(width);
+    assert.equal(overviewScale(card,width,height),1,`${card.id} at its reserve keeps its size`);
+    for(const [screenWidth,screenHeight] of [[width*.8,height],[width,height*.7],[width*.5,height*.6]]){
+      const fit=overviewScale(card,screenWidth,screenHeight);
+      assert.ok(fit<1,`${card.id} in ${screenWidth}×${screenHeight} shrinks`);
+      assert.ok(screenWidth/fit>=card.overviewMinWidth-1e-6,`${card.id}: every whole word has its width`);
+      assert.ok(screenHeight/fit>=card.overviewHeightAtWidth(screenWidth/fit)-1e-6,`${card.id}: the complete summary has its height`);
+      assert.ok(fit>.95*Math.min(screenWidth/width,screenHeight/height),`${card.id} shrinks no more than it must`);
+    }
+  }
 });
 
 test('an external heading fits whole words below its zoom control or beside it',()=>{

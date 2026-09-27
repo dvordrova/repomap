@@ -82,6 +82,21 @@ export function overviewHeading(item,screenWidth,measure){
   return {width,clearZoom,lines,scale,fontSize:size*scale,lineHeight:lineHeight*scale,height:lines.length*lineHeight*scale+(clearZoom?32:0)};
 }
 
+// A whole-map fit that cannot give a summary its reserved room (a short window,
+// a crowded map) draws the summary at that room and scales it down whole, the
+// way a small group keeps a smaller complete label. Drawn into the short box,
+// Redis's 1280×720 first screen cut "TCP endpoint" below its frame and
+// "Background" out of its input list. The result is the largest scale at
+// which the summary's minimum width and measured height fit its screen box.
+export function overviewScale(item,screenWidth,screenHeight,availableHeight=Infinity){
+  const fits=scale=>screenWidth/scale+1e-6>=(item.overviewMinWidth||0)&&
+    screenHeight/scale+1e-6>=(item.overviewHeightAtWidth?.(screenWidth/scale,{availableHeight:availableHeight/scale})||0);
+  if(fits(1))return 1;
+  let low=0,high=1;
+  for(let i=0;i<24;i++){const middle=(low+high)/2;if(fits(middle))low=middle;else high=middle;}
+  return Math.max(low,1e-3);
+}
+
 // A display group's frame carries the destination text its frames all name,
 // once, at their headings' size. The room is the group's own screen width at
 // the whole-map camera, less its insets; `height` is its band under a row of
