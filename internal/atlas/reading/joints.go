@@ -84,7 +84,7 @@ func (r *reader) targetSummary(target TargetMeta) lines.TargetSummary {
 	}
 	summary.Dirs = len(dirs)
 	for _, box := range r.boxesOfTarget(target.ID) {
-		if box.forTests {
+		if box.offCanvas() {
 			continue
 		}
 		if box.line == "" {

@@ -31,7 +31,7 @@ func (r *reader) readKeys(ctx context.Context) error {
 			title[part.id] = part.title
 		}
 		for _, part := range parts {
-			if part.forTests || r.keysDecided[part.id] {
+			if part.offCanvas() || r.keysDecided[part.id] {
 				continue
 			}
 			var candidates []string

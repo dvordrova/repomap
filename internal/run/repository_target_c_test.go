@@ -436,7 +436,11 @@ func TestCRepositoryPageListsWhatAProgramNeverRuns(t *testing.T) {
 			listed = append(listed, match[1]+":"+chip[1])
 		}
 	}
-	if want := []string{"net.c:netListen", "strbuf.c:sbConsume"}; !reflect.DeepEqual(listed, want) {
+	// The client links the server's event loop and runs none of it.
+	want := []string{"loop.c:oom", "loop.c:loopCreate", "loop.c:loopCreateFileEvent", "loop.c:loopDeleteFileEvent", "loop.c:loopSetBeforeSleep",
+		"loop.c:loopProcessEvents", "loop.c:loopMain", "loop.c:loopStop", "loop_poll.c:loopApiCreate", "loop_poll.c:loopApiAddEvent", "loop_poll.c:loopApiPoll",
+		"net.c:netListen", "strbuf.c:sbConsume"}
+	if !reflect.DeepEqual(listed, want) {
 		t.Fatalf("the client lists %v as never run, want %v:\n%s", listed, want, section)
 	}
 }

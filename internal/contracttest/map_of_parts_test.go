@@ -1,6 +1,7 @@
 package contracttest
 
 import (
+	"maps"
 	"slices"
 	"testing"
 
@@ -113,7 +114,7 @@ func graphWithFacts(t *testing.T, repository *corpus.Corpus, target places.Targe
 // projectSplit checks that GroupsIndex accepts a split atlas and lists a
 // split file's undecided declarations by name without calling the file off
 // the map.
-func projectSplit(t *testing.T, index programindex.Index, split partstest.Map) {
+func projectSplit(t *testing.T, index programindex.Index, split partstest.Map) groupindex.Index {
 	t.Helper()
 	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{index.Target.ID: index}, split.Atlas)
 	if err != nil {
@@ -124,8 +125,12 @@ func projectSplit(t *testing.T, index programindex.Index, split partstest.Map) {
 	for _, subject := range indexes[0].Subjects {
 		subjects[subject.ID] = subject
 	}
+	checkUnreachedParts(t, index, indexes[0])
 	for _, file := range indexes[0].OffMap {
-		if split.Split[file.Path] && (file.Reason != groupindex.OffMapUndecided || len(file.SubjectIDs) == 0) {
+		// A split file is on the map through its role parts; only its
+		// undecided declarations, or those of a role part the program never
+		// runs, are listed off it.
+		if split.Split[file.Path] && (file.Reason != groupindex.OffMapUndecided && file.Reason != groupindex.OffMapUnreachable || len(file.SubjectIDs) == 0) {
 			t.Fatalf("the split file %s is listed off the map: %+v", file.Path, file)
 		}
 		if file.Reason != groupindex.OffMapUndecided {
@@ -152,6 +157,44 @@ func projectSplit(t *testing.T, index programindex.Index, split partstest.Map) {
 	for _, entry := range split.Target.OffMap {
 		if entry.Reason == atlas.OffMapUndecided && undecided == 0 {
 			t.Fatalf("undecided declarations of %s are not listed", entry.File.Path)
+		}
+	}
+	return indexes[0]
+}
+
+// checkUnreachedParts holds a program's parts to its adapter's reachability:
+// a part listed off its map as unreachable lists declarations of that file
+// that no group holds, and every one of them that runs is one the program's
+// index proves unreachable; a group holds at least one declaration that may
+// run, or none that runs at all.
+func checkUnreachedParts(t *testing.T, program programindex.Index, index groupindex.Index) {
+	t.Helper()
+	objects := map[string]programindex.Object{}
+	for _, object := range program.Objects {
+		objects[object.ID] = object
+	}
+	grouped := map[string]bool{}
+	for _, group := range index.Groups {
+		runs, reached := false, false
+		for _, id := range group.MemberSubjectIDs {
+			grouped[id] = true
+			if object := objects[id]; object.Kind.Callable() {
+				runs, reached = true, reached || !object.Unreachable
+			}
+		}
+		if runs && !reached {
+			t.Fatalf("the part %q, which its program never runs, is on its map", group.Title)
+		}
+	}
+	for _, file := range index.OffMap {
+		if file.Reason != groupindex.OffMapUnreachable {
+			continue
+		}
+		for _, id := range file.SubjectIDs {
+			object := objects[id]
+			if object.Location == nil || object.Location.Path != file.Path || grouped[id] || object.Kind.Callable() && !object.Unreachable {
+				t.Fatalf("%s lists %s (%s) as a part its program never runs", file.Path, object.Name, id)
+			}
 		}
 	}
 }
@@ -287,5 +330,64 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	if registered := split.Registered["kvd.c"]; !slices.Contains(registered, "kvCommand get") {
 		t.Fatalf("kvd.c's handlers are asked with registrations %v", registered)
 	}
-	projectSplit(t, index, split)
+	// The split puts netConnect, which the server never runs, alone in a
+	// role part of net.c: that part leaves the server's map and is listed
+	// by its declaration.
+	netConnect := cObject(t, index, programindex.ObjectFunction, "netConnect", "net.c")
+	listed := false
+	for _, file := range projectSplit(t, index, split).OffMap {
+		listed = listed || file.Path == "net.c" && file.Reason == groupindex.OffMapUnreachable && slices.Equal(file.SubjectIDs, []string{netConnect.ID})
+	}
+	if !listed {
+		t.Fatal("the role part of net.c the server never runs is not listed off its map")
+	}
+}
+
+// kvcli links the server's event loop, as redis-cli links adlist.o, and
+// never runs it. Drawn one part per file, loop.c and the poll backend it
+// includes hold nothing the client runs: those parts leave its map and are
+// listed off it by their declarations, as a part made only of test code is.
+// loop.h's types run nothing of their own and keep their part; net.c, whose
+// netListen the client never runs, keeps its part for netConnect.
+func TestCFixtureClientMapLeavesTheLoopItNeverRuns(t *testing.T) {
+	fixture := loadCFixture(t)
+	index := buildCIndex(t, fixture, "c:kvcli")
+	graph := graphWithFacts(t, fixture.repository, places.TargetInput{Index: index, Root: "."})
+	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
+	var unreached, drawn []string
+	for _, box := range checked.Target.Boxes {
+		if box.Unreached {
+			unreached = append(unreached, box.Title)
+		} else {
+			drawn = append(drawn, box.Title)
+		}
+		if box.Unreached && box.Line != "" {
+			t.Fatalf("the part %q the client never runs was described: %q", box.Title, box.Line)
+		}
+	}
+	if want := []string{"loop.c", "loop_poll.c"}; !slices.Equal(unreached, want) {
+		t.Fatalf("parts the client never runs = %v, want %v (drawn: %v)", unreached, want, drawn)
+	}
+	for _, title := range []string{"kvcli.c", "loop.h", "net.c", "strbuf.c"} {
+		if !slices.Contains(drawn, title) {
+			t.Fatalf("%s is not drawn on the client's map: %v", title, drawn)
+		}
+	}
+	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{index.Target.ID: index}, checked.Atlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkUnreachedParts(t, index, indexes[0])
+	listed := map[string]string{}
+	for _, file := range indexes[0].OffMap {
+		if file.Reason == groupindex.OffMapUnreachable {
+			listed[file.Path] = file.Part
+			if file.Path == "loop.c" && !slices.Contains(file.SubjectIDs, cObject(t, index, programindex.ObjectFunction, "loopMain", "loop.c").ID) {
+				t.Fatalf("loop.c's row does not list loopMain: %+v", file)
+			}
+		}
+	}
+	if want := map[string]string{"loop.c": "loop.c", "loop_poll.c": "loop_poll.c"}; !maps.Equal(listed, want) {
+		t.Fatalf("listed as never run = %v, want %v", listed, want)
+	}
 }

@@ -57,9 +57,10 @@
       if(node&&!entry.memberships.some(function(m){return m.node===node;}))entry.memberships.push({node:node,map:node.closest('[data-map-explorer]'),title:node.dataset.title});
     });
   });
-  // A declaration no part holds, such as one no box of its split file took,
-  // is still code to find: it opens its row and its source, and no part.
-  document.querySelectorAll('.off-map-catalog [data-off-map-file] .chip').forEach(function(chip){
+  // A declaration no part holds, such as one no box of its split file took
+  // or one of a part its program never runs, is still code to find: it
+  // opens its row and its source, and no part.
+  document.querySelectorAll('.off-map-catalog [data-off-map-file] .chip, .unreached-parts [data-off-map-file] .chip').forEach(function(chip){
     var row=chip.closest('[data-off-map-file]'),section=chip.closest('[data-report-page]');if(!section)return;
     var key=section.id+'|'+row.dataset.path+'|'+chip.textContent;if(codeEntries.has(key))return;
     var entry={title:chip.textContent,summary:'',path:row.dataset.path,component:components[section.id]||'',section:section.id,kind:'code',type:rmT('Code'),source:chip,memberships:[],destination:row};

@@ -546,8 +546,9 @@ func TestCFixtureKeepsTheClientApart(t *testing.T) {
 	// server's; its rows name no function, so nothing is handed over.
 	cObject(t, index, programindex.ObjectFunction, "lookupCommand", "kvcli.c")
 	cObject(t, index, programindex.ObjectVariable, "cmdTable", "kvcli.c")
+	// It links the server's event loop, never the server itself.
 	for _, object := range index.Objects {
-		if object.Location != nil && (object.Location.Path == "kvd.c" || object.Location.Path == "loop.c") {
+		if object.Location != nil && object.Location.Path == "kvd.c" {
 			t.Fatalf("the client indexed the server's %s", object.Name)
 		}
 	}

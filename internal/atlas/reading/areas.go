@@ -266,7 +266,7 @@ func (r *reader) readAreas(ctx context.Context) error {
 	for position, target := range r.opts.Targets {
 		var parts []*boxState
 		for _, box := range r.boxesOfTarget(target.ID) {
-			if !box.forTests && box.targetID == target.ID {
+			if !box.offCanvas() && box.targetID == target.ID {
 				parts = append(parts, box)
 			}
 		}

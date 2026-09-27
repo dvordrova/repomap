@@ -208,7 +208,8 @@ Missing equivalents, recorded rather than fabricated:
   fact, PROGRAM_INDEX): `getattr`, `importlib`, entry points, decorators that
   register, special methods the interpreter calls and `eval` reach functions
   no call names. A boundary in a module several targets import stays with
-  every target.
+  every target, and a part leaves no target's map as code that target never
+  runs (READING).
 - A dict or list of handlers (`{"get": get_command}`,
   `[("del", del_command, 2)]`), at module level or in a function, keeps no
   binding, key or other relation to its handlers. A call through a looked-up

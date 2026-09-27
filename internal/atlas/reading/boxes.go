@@ -35,10 +35,18 @@ type boxState struct {
 	units   int
 	open    bool
 	// core is the model's: the program exists for this part. forTests is a
-	// fact: every file placed in the part is test code.
-	core, forTests bool
-	test           bool
-	role           string
+	// fact: every file placed in the part is test code. unreached is a fact
+	// too: its program never runs any of it (runsNothing).
+	core, forTests, unreached bool
+	test                      bool
+	role                      string
+}
+
+// offCanvas is a part kept in the atlas and not drawn: one made only of test
+// code, or one its program never runs. It is not described, not grouped
+// into an area, not asked for a core role or keys, and draws no arrow.
+func (box *boxState) offCanvas() bool {
+	return box.forTests || box.unreached
 }
 
 // overviewKeys chooses the declarations the overview describes, before any

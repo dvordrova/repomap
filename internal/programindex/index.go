@@ -83,6 +83,12 @@ func (kind ObjectKind) Valid() bool {
 	}
 }
 
+// Callable reports a declaration that runs: only a callable can be proven
+// `unreachable`, and a type, variable or module runs nothing of its own.
+func (kind ObjectKind) Callable() bool {
+	return kind == ObjectFunction || kind == ObjectMethod || kind == ObjectLambda
+}
+
 // Visibility is the language-neutral reachability fact needed to distinguish
 // public target APIs from implementation objects. Unknown is explicit when an
 // adapter cannot establish that boundary.
@@ -2739,7 +2745,7 @@ func validEndLine(location *Location, endLine int) bool {
 // callableKind is a declaration that runs: only a callable can be proven
 // unreachable.
 func callableKind(kind ObjectKind) bool {
-	return kind == ObjectFunction || kind == ObjectMethod || kind == ObjectLambda
+	return kind.Callable()
 }
 
 // validCodeLines accepts no count, or a count of a located declaration that

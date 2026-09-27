@@ -70,8 +70,11 @@ type pageSection struct {
 	Dead        []pageAnchor
 	// Unreached are the declarations the adapter proved this program never
 	// runs, by file: what they call out to or register is not its own.
+	// UnreachedParts are the parts it never runs, which leave its map: their
+	// declarations by file, with the part's name, not repeated in Unreached.
 	Unreached      []pageChipRow
 	UnreachedCount int
+	UnreachedParts []pageOffMapRow
 	Todos          []pageTodo
 	DeadFolders    []pageFileFolder
 	TodoFiles      []pageTodoFile
@@ -125,6 +128,12 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 		}
 		if file.Reason == groupindex.OffMapTests {
 			section.TestFiles = append(section.TestFiles, row)
+			continue
+		}
+		// A part the program never runs is listed where its unreachable
+		// code is, under "Not reachable from the entrypoints".
+		if file.Reason == groupindex.OffMapUnreachable {
+			section.UnreachedParts = append(section.UnreachedParts, row)
 			continue
 		}
 		row.Reason = offMapReasons[file.Reason]
@@ -549,9 +558,20 @@ func (builder *pageBuilder) unreachedRows(programTargetID string) []pageChipRow 
 		if index.Target.ID != programTargetID {
 			continue
 		}
+		// A part the program never runs lists its own declarations.
+		listed := map[string]bool{}
+		if graph := builder.graphIndex(programTargetID); graph != nil {
+			for _, file := range graph.OffMap {
+				if file.Reason == groupindex.OffMapUnreachable {
+					for _, id := range file.SubjectIDs {
+						listed[id] = true
+					}
+				}
+			}
+		}
 		var ids []string
 		for _, object := range index.Objects {
-			if object.Unreachable {
+			if object.Unreachable && !listed[object.ID] {
 				ids = append(ids, object.ID)
 			}
 		}

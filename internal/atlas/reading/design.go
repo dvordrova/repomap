@@ -20,6 +20,7 @@ import (
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/modeldiag"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 //go:embed prompts/design_parts.md
@@ -1387,8 +1388,31 @@ func (r *reader) drawParts(view *designView, outcome *designOutcome) {
 			box.dir = path.Dir(r.places[box.sources[0]].Path)
 		}
 		box.forTests = box.test && len(box.sources) > 0
+		box.unreached = !box.forTests && r.runsNothing(box)
 		outcome.boxes = append(outcome.boxes, box)
 	}
+}
+
+// runsNothing reports a part its program never runs: it holds declarations
+// that run, and the program's adapter proved every one of them unreachable
+// there (ProgramIndex `unreachable`, which only the C adapter proves). Its
+// types, fields and variables run nothing of their own and follow it. Like a
+// part made only of test code, it leaves the canvas: redis-cli links
+// adlist.c and never calls one of its thirteen functions, and "Linked list"
+// stood on its map with an arrow to Memory allocation.
+func (r *reader) runsNothing(box *boxState) bool {
+	runs := false
+	for id := range box.symbols {
+		place := r.places[id]
+		if place.Symbol == nil || !programindex.ObjectKind(place.Symbol.Decl.Kind).Callable() {
+			continue
+		}
+		if !slices.Contains(place.Symbol.Unreached, box.targetID) {
+			return false
+		}
+		runs = true
+	}
+	return runs
 }
 
 // offMapEntries lists every declaration of the target no part holds, under
@@ -1544,7 +1568,7 @@ func (r *reader) describeParts(ctx context.Context, view *designView, round int,
 	var boxes []*boxState
 	var calls []llm.Call[description]
 	for _, box := range outcome.boxes {
-		if box.forTests {
+		if box.offCanvas() {
 			continue
 		}
 		input := r.partDescribeInput(view, box)

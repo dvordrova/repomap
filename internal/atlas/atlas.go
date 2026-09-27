@@ -31,7 +31,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 18
-	Version      = 12
+	Version      = 13
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -542,10 +542,21 @@ type Box struct {
 	Open bool `json:"open"`
 	// Core is MODEL: the program exists for this part. ForTests is a fact:
 	// every file of the part is test code, so it stays off the canvas.
-	Core     bool   `json:"core,omitempty"`
-	ForTests bool   `json:"for_tests,omitempty"`
-	Files    []File `json:"files"`
-	Keys     []Key  `json:"keys"`
+	// Unreached is a fact too: the part holds code that runs and its
+	// program's adapter proved every such declaration `unreachable`, so it
+	// stays off that program's canvas (redis-cli's linked list, which it
+	// links and never calls).
+	Core      bool   `json:"core,omitempty"`
+	ForTests  bool   `json:"for_tests,omitempty"`
+	Unreached bool   `json:"unreached,omitempty"`
+	Files     []File `json:"files"`
+	Keys      []Key  `json:"keys"`
+}
+
+// OffCanvas reports a part that is kept in the atlas but not drawn: one made
+// only of test code, or one its program never runs.
+func (box Box) OffCanvas() bool {
+	return box.ForTests || box.Unreached
 }
 
 // Why a file stays off a target's map of parts.

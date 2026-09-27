@@ -1165,7 +1165,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		box := atlas.Box{
 			ID: owner.id, Dir: owner.dir, Title: owner.title, Line: owner.line,
 			ZoneID: zoneOf[owner.id], Side: r.side(owner, meta.ID), Open: owner.open,
-			Core: owner.core, ForTests: owner.forTests,
+			Core: owner.core, ForTests: owner.forTests, Unreached: owner.unreached,
 			MemberIDs: []string{}, Files: []atlas.File{}, Keys: []atlas.Key{},
 		}
 		for _, fileID := range owner.files {

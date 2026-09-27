@@ -423,9 +423,16 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	for i := range subjects {
 		byID[subjects[i].ID] = &subjects[i]
 	}
+	// A part its program never runs is listed off the map by its
+	// declarations, file by file.
+	unreached := make(map[string][]programindex.Object)
 	for _, object := range program.Objects {
 		categories := []programindex.Category{}
-		if box := locate(object.ID, map[string]bool{}); box != nil && !box.ForTests {
+		box := locate(object.ID, map[string]bool{})
+		if box != nil && box.Unreached && object.Location != nil {
+			unreached[box.ID] = append(unreached[box.ID], object)
+		}
+		if box != nil && !box.OffCanvas() {
 			categories = []programindex.Category{categoryOfLane(laneOfSide(box.Side))}
 			membersOfBox[box.ID] = append(membersOfBox[box.ID], object.ID)
 		}
@@ -445,8 +452,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	for _, box := range target.Boxes {
 		members := membersOfBox[box.ID]
 		// A part made only of test code is not a part of the program's map;
-		// its files are listed off the map as tests.
-		if len(members) == 0 || box.ForTests {
+		// its files are listed off the map as tests. Nor is a part the
+		// program never runs; its declarations are listed as unreachable.
+		if len(members) == 0 || box.OffCanvas() {
 			continue
 		}
 		sort.Slice(members, func(i, j int) bool { return subjectIDLess(members[i], members[j]) })
@@ -631,7 +639,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		groupID := ""
 		if box := memberBoxes[subject.ID]; box != nil {
-			if box.ForTests {
+			if box.OffCanvas() {
 				continue
 			}
 			groupID = groupOfBox[box.ID]
@@ -719,7 +727,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			}
 		}
 	}
-	offMap, err := projectOffMap(target, func(symbol atlas.Symbol) (string, bool) {
+	offMap, err := projectOffMap(target, unreached, func(symbol atlas.Symbol) (string, bool) {
 		key := sourceRefs[symbol.ObjectID]
 		if key == "" {
 			if object, ok := objects[symbol.ObjectID]; ok {
@@ -765,8 +773,10 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 // not listed for the few declarations of it that are off the map; their
 // interpretations are still read. A file whose code several parts hold is
 // on the map: only the declarations no box of it took are listed, by their
-// subjects, under the reason undecided.
-func projectOffMap(target atlas.Target, subjectOf func(atlas.Symbol) (string, bool)) ([]OffMapFile, error) {
+// subjects, under the reason undecided. A part its program never runs is
+// listed by its declarations, by file and with its name, under the reason
+// unreachable: its file may be another part's too.
+func projectOffMap(target atlas.Target, unreached map[string][]programindex.Object, subjectOf func(atlas.Symbol) (string, bool)) ([]OffMapFile, error) {
 	var files []OffMapFile
 	seen := map[string]bool{}
 	add := func(file OffMapFile) {
@@ -794,11 +804,22 @@ func projectOffMap(target atlas.Target, subjectOf func(atlas.Symbol) (string, bo
 		}
 	}
 	for _, box := range target.Boxes {
-		if !box.ForTests {
+		if box.ForTests {
+			for _, file := range box.Files {
+				add(OffMapFile{Path: atlasPath(file.Path), Reason: OffMapTests, Part: strings.TrimSpace(box.Title)})
+			}
+		}
+		if !box.Unreached {
 			continue
 		}
-		for _, file := range box.Files {
-			add(OffMapFile{Path: atlasPath(file.Path), Reason: OffMapTests, Part: strings.TrimSpace(box.Title)})
+		byFile := map[string][]string{}
+		for _, object := range unreached[box.ID] {
+			path := atlasPath(object.Location.Path)
+			byFile[path] = append(byFile[path], object.ID)
+		}
+		for path, ids := range byFile {
+			sort.Slice(ids, func(i, j int) bool { return subjectIDLess(ids[i], ids[j]) })
+			add(OffMapFile{Path: path, Reason: OffMapUnreachable, Part: strings.TrimSpace(box.Title), SubjectIDs: ids})
 		}
 	}
 	sort.Slice(files, func(i, j int) bool { return offMapKey(files[i]) < offMapKey(files[j]) })

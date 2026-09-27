@@ -20,7 +20,7 @@ func (r *reader) readCore(ctx context.Context) error {
 		// the rest.
 		var parts []*boxState
 		for _, part := range r.boxesOfTarget(target.ID) {
-			if !part.forTests && !r.startsProgram(part, target.ID) {
+			if !part.offCanvas() && !r.startsProgram(part, target.ID) {
 				parts = append(parts, part)
 			}
 		}

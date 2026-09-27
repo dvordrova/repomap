@@ -442,8 +442,20 @@ part; one in a file off the map names no box and is still read. A part whose eve
 file is test code (the adapter's `TestSources` fact) keeps its membership,
 file lines, captions and keys in the atlas, is not described, not grouped
 into areas and not asked for a core role, and leaves the canvas. The model
-has no `tests` role. Accepted parts and areas are born as short `p*` and `z*`
-IDs.
+has no `tests` role. A part its program never runs is the same kind of fact
+(atlas `unreached`): it holds declarations that run (functions, methods,
+lambdas) and the program's adapter proved every one of them `unreachable`
+there (PROGRAM_INDEX); its types, fields and variables run nothing of their
+own and follow it. It keeps its membership in the atlas, is not described,
+not grouped into areas, not asked for a core role or keys, and leaves that
+program's canvas with its arrows; GroupsIndex lists its declarations off the
+map by file with its name (reason `unreachable`, REPORT). redis-cli links
+`adlist.c` and never calls one of its thirteen functions, so its "Linked
+list" left its map. A part holding one declaration the program may run
+stays; a part of types alone proves nothing and stays. Only the C adapter
+proves `unreachable`, so no other language's part leaves a map this way (GO,
+PYTHON, JSTS, CLOJURE). Accepted parts and areas are born as short `p*` and
+`z*` IDs.
 
 **Descriptions.** Each drawn part that is not test code gets one
 `atlas_describe` request (`prompts/design_describe.md`): the part's name and
@@ -579,7 +591,8 @@ remain model decisions with `self`/`none`, not local middleware classification.
   may run the declaration. A program whose index proves the declaration
   `unreachable` (PROGRAM_INDEX; the C adapter records every direct call and
   every use of a function's address, casts to integers included) does not
-  make its calls: the declaration stays in that program's parts, but its
+  make its calls: the declaration stays in that program's parts (unless its
+  part holds nothing the program runs, which leaves the map), but its
   outgoing boundaries, its listener, its registrations, the configuration it
   reads and the code it runs are not that program's communication or inputs,
   and a destination chain through it is not that program's either. The

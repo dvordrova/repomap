@@ -45,9 +45,10 @@ func buildCSet(t *testing.T, fixture cFixture, selectors ...string) map[string]p
 }
 
 // net.c is linked into both programs, like Redis's anet.c: the server only
-// listens and the client only connects. Each program's index proves which of
-// its shared functions it never runs, and what that code reads or calls out
-// to stays with the program that runs it.
+// listens and the client only connects. loop.c is too, like Redis's adlist.c,
+// and only the server runs it. Each program's index proves which of its
+// shared functions it never runs, and what that code reads or calls out to
+// stays with the program that runs it.
 func TestCFixtureProvesWhatEachProgramNeverRuns(t *testing.T) {
 	fixture := loadCFixture(t)
 	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
@@ -60,7 +61,9 @@ func TestCFixtureProvesWhatEachProgramNeverRuns(t *testing.T) {
 		// The command functions only the table and staticsyms.h's integer
 		// casts name still run: the table exists before main.
 		{server, []string{"net.c:netConnect"}},
-		{client, []string{"net.c:netListen", "strbuf.c:sbConsume"}},
+		{client, []string{"loop.c:loopCreate", "loop.c:loopCreateFileEvent", "loop.c:loopDeleteFileEvent", "loop.c:loopMain", "loop.c:loopProcessEvents",
+			"loop.c:loopSetBeforeSleep", "loop.c:loopStop", "loop.c:oom", "loop_poll.c:loopApiAddEvent", "loop_poll.c:loopApiCreate", "loop_poll.c:loopApiPoll",
+			"net.c:netListen", "strbuf.c:sbConsume"}},
 		{dump, []string{"strbuf.c:sbConsume"}},
 	} {
 		if got := cUnreachable(want.index); !reflect.DeepEqual(got, want.names) {

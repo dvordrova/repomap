@@ -30,11 +30,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   its file line, captions and keys. Stray declarations in a file a part
   holds name that part (`box_id`); their file stays on the map and is not
   listed. A file whose code several parts hold (READING, the role split) is
-  on the map through them: GroupsIndex (v15) lists it only for its
+  on the map through them: GroupsIndex (v16) lists it only for its
   undecided declarations, by their subjects (`subject_ids`), never as a
   file off the map. GroupsIndex carries that record as `off_map`, adds the files of
   parts made only of test code under the reason `tests` with their part's
-  name, and carries `map_failure`. Subjects off the map keep their interpretations
+  name, adds the declarations of a part its program never runs (atlas
+  `unreached`, READING) by file under the reason `unreachable` with their
+  part's name and subjects, and carries `map_failure`. Subjects off the map keep their interpretations
   outside every group; a boundary in a file off the map names no box and its
   operation belongs to no group, yet it stays in the component's inputs. An
   input whose handler is off the map, undecided included, names no box
@@ -42,7 +44,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   request whose handler is undecided is never shown as handled in the part
   that holds the table. A part
   made only of test code is a fact (every file is a `TestSources` file): it is
-  not a group and leaves the canvas.
+  not a group and leaves the canvas. So is a part its program never runs: it
+  is not a group, draws no arrow and leaves that program's canvas; redis-cli's
+  "Linked list", whose thirteen adlist functions redis-cli links and never
+  calls, is not drawn.
 
 - The component card lists, after its link to its parts on the system map
   and before its main flow, the compact inventories **Tests** (test-only
@@ -657,7 +662,7 @@ available without scripting.
 
 ## External communication and data
 
-Selecting a component on the common map opens its existing purpose, entrypoints and complete input catalogue in the panel. Its original full-reference section remains available with the main flow, configuration, group cards, dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches and then, under "{0} symbols" and by file in line order, the declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: redis-cli lists `anet.c`'s `anetTcpServer` and `anetAccept`, and neither listens nor accepts on its map. The list reuses the existing heading and "{0} symbols" summary; no label, badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. In the connections' stored order, grouped by the part they reach, redis-benchmark's start read "main calls aeMain" before the `aeCreateEventLoop` main calls thirty lines earlier; three call sites of `main` calling `aeMain` are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
+Selecting a component on the common map opens its existing purpose, entrypoints and complete input catalogue in the panel. Its original full-reference section remains available with the main flow, configuration, group cards, dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches, then the parts its program never runs, one row per file with the file, the part's name and its declarations there as source chips (GroupsIndex `unreachable`), and then, under "{0} symbols" and by file in line order, the other declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: redis-cli lists `anet.c`'s `anetTcpServer` and `anetAccept`, and neither listens nor accepts on its map, and it lists "adlist.c · Linked list" with its thirteen functions and "adlist.h · Linked list" with its types, a part it no longer draws. A declaration is listed once: a part's row does not repeat among the symbols. Find lists each declaration of such a row as Code with no "In part" link and opens its row. The list reuses the existing heading, the off-map row and the "{0} symbols" summary; no label, badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. In the connections' stored order, grouped by the part they reach, redis-benchmark's start read "main calls aeMain" before the `aeCreateEventLoop` main calls thirty lines earlier; three call sites of `main` calling `aeMain` are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
 
 An outbound kind is shown by the protocol-neutral label its kind has:
 `client_request` is "Request", never "HTTP", and the counts and headings of

@@ -188,7 +188,9 @@ func TestCFixtureProgramsComeFromTheMakefile(t *testing.T) {
 	}
 	client := fixture.program(t, "c:kvcli")
 	clientRule, _ := fixture.at(t, "Makefile", "kvcli: kvcli.o", "")
-	if client.Anchor != (cproject.Site{Path: "Makefile", Line: clientRule}) || !reflect.DeepEqual(cSpecPaths(client.Units), []string{"kvcli.c", "net.c", "strbuf.c"}) {
+	// The client links the server's event loop too, as redis-cli links
+	// adlist.o, and never runs it.
+	if client.Anchor != (cproject.Site{Path: "Makefile", Line: clientRule}) || !reflect.DeepEqual(cSpecPaths(client.Units), []string{"kvcli.c", "loop.c", "net.c", "strbuf.c"}) {
 		t.Fatalf("kvcli: %+v", client)
 	}
 	// Every unit keeps the flags that change what clang reads and drops
@@ -235,8 +237,8 @@ func TestCFixtureParsesEachProgramInTheBuildsView(t *testing.T) {
 		t.Fatal("a unit linked into two programs was parsed twice")
 	}
 	// The build asks for poll: the epoll backend is outside this build on
-	// every host, and only kvd, which links loop.c, reports it.
-	if !reflect.DeepEqual(server.Outside, []string{"loop_epoll.c"}) || len(client.Outside) != 0 || len(dump.Outside) != 0 {
+	// every host, and the two programs that link loop.c report it.
+	if !reflect.DeepEqual(server.Outside, []string{"loop_epoll.c"}) || !reflect.DeepEqual(client.Outside, []string{"loop_epoll.c"}) || len(dump.Outside) != 0 {
 		t.Fatalf("outside the build: %v / %v / %v", server.Outside, client.Outside, dump.Outside)
 	}
 	loop := fixture.unit(t, "c:kvd", "loop.c")

@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 15
+	Version          = 16
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -318,11 +318,17 @@ type Index struct {
 // code; the atlas's own reasons name the other files off the map.
 const OffMapTests = "tests"
 
+// OffMapUnreachable is the off-map reason of the declarations, in one file,
+// of a part its program never runs (atlas Box.Unreached).
+const OffMapUnreachable = "unreachable"
+
 // OffMapFile is one file the map of parts does not draw, and why. Part names
-// the test-only part a file of reason tests belongs to. SubjectIDs are, for
-// reason undecided, the subjects of a file whose code several parts hold
-// that no box of the file took, in the atlas's order; that file is on the
-// map through the others.
+// the test-only part a file of reason tests belongs to, or the part a file's
+// declarations of reason unreachable belong to. SubjectIDs are, for reason
+// undecided, the subjects of a file whose code several parts hold that no
+// box of the file took, in the atlas's order; that file is on the map
+// through the others. For reason unreachable they are the part's
+// declarations in that file, in subject order.
 type OffMapFile struct {
 	Path       string   `json:"path"`
 	Reason     string   `json:"reason"`
@@ -2116,12 +2122,14 @@ func validateOffMap(files []OffMapFile, failure string, subjects map[string]Subj
 	}
 	for position, file := range files {
 		switch file.Reason {
-		case "left_out", "conflict", "no_units", "map_failure", OffMapTests, OffMapUndecided:
+		case "left_out", "conflict", "no_units", "map_failure", OffMapTests, OffMapUndecided, OffMapUnreachable:
 		default:
 			return fmt.Errorf("group index: invalid off-map reason %q", file.Reason)
 		}
-		if !validText(file.Path) || strings.HasPrefix(file.Path, "/") || !validOptionalText(file.Part) || (file.Part != "") != (file.Reason == OffMapTests) ||
-			(len(file.SubjectIDs) > 0) != (file.Reason == OffMapUndecided) {
+		named := file.Reason == OffMapTests || file.Reason == OffMapUnreachable
+		listed := file.Reason == OffMapUndecided || file.Reason == OffMapUnreachable
+		if !validText(file.Path) || strings.HasPrefix(file.Path, "/") || !validOptionalText(file.Part) || (file.Part != "") != named ||
+			(len(file.SubjectIDs) > 0) != listed {
 			return fmt.Errorf("group index: invalid off-map file %q", file.Path)
 		}
 		for _, id := range file.SubjectIDs {
@@ -2129,7 +2137,7 @@ func validateOffMap(files []OffMapFile, failure string, subjects map[string]Subj
 				return fmt.Errorf("group index: off-map file %q names an unknown subject %q", file.Path, id)
 			}
 		}
-		if failure != "" && file.Reason != "map_failure" && file.Reason != OffMapTests || failure == "" && file.Reason == "map_failure" {
+		if failure != "" && file.Reason != "map_failure" && !named || failure == "" && file.Reason == "map_failure" {
 			return fmt.Errorf("group index: off-map file %q disagrees with the map failure", file.Path)
 		}
 		if position > 0 && offMapKey(files[position-1]) >= offMapKey(file) {

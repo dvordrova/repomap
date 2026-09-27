@@ -201,7 +201,8 @@ Missing equivalents, recorded rather than fabricated:
   fact, PROGRAM_INDEX): computed property access (`handlers[name]()`),
   dynamic `import()`, callbacks a framework or the DOM calls by the name
   they were registered under, and `eval` reach functions no call names. A
-  boundary in a module several packages import stays with every package.
+  boundary in a module several packages import stays with every package, and
+  a part leaves no package's map as code that package never runs (READING).
 - An object literal or array of handlers (`{get: getCommand}`,
   `[{name: "del", run: delCommand}]`) makes each handler a value read where
   the table is written, without its key or its row's literals. No binding

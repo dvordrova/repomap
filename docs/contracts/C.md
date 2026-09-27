@@ -202,7 +202,10 @@ fact about that program as its link line (or, without one, the linker
 closure) gives it, not about the file, so `anet.c`'s `anetTcpServer` and
 `anetAccept` are unreachable in redis-cli and redis-benchmark and reached in
 redis-server. An address taken only inside code that never runs is never
-taken.
+taken. A part of a program's map whose every function is unreachable there
+leaves that program's map (READING): redis-cli links `adlist.c` and calls
+none of its thirteen functions, so its "Linked list" is listed under "Not
+reachable from the entrypoints" and not drawn.
 
 Code the adapter does not read can call any function with external linkage
 by its name: a link input no compile line produced (`Missing`: a prebuilt
@@ -224,7 +227,10 @@ is called from outside and marks nothing.
 The fixture's `net.c` is linked into kvd and kvcli like `anet.c`: kvd never
 runs `netConnect`, kvcli never runs `netListen` (nor `strbuf.c`'s
 `sbConsume`), and the backlog `netListen` reads (`KVD_BACKLOG`) is kvd's
-setting alone (PROGRAM_INDEX, READING).
+setting alone (PROGRAM_INDEX, READING). kvcli also links `loop.o`, the
+server's event loop, as redis-cli links `adlist.o`, and runs none of it: its
+`loop.c` and `loop_poll.c` parts leave kvcli's map, while `loop.h`'s types,
+which run nothing of their own, keep theirs.
 
 ## Facts and claims
 
@@ -312,8 +318,9 @@ adapter's explicit target, the files that restore each program, one parse per
 plan for a shared unit and its release after the last projection that needs it,
 a backend outside this platform's build, a missing clang, an ordinary
 offline run selecting a C program, whose metadata records the platform view and
-whose page shows none of it, and kvcli's page listing `netListen` and
-`sbConsume` under "Not reachable from the entrypoints". Facts tests cover C
+whose page shows none of it, and kvcli's page listing the event loop's
+functions, `netListen` and `sbConsume` under "Not reachable from the
+entrypoints". Facts tests cover C
 config reads, SQL, dynamic execution, command rows that state no HTTP method
 and route rows that state one, each with its record field as registrar.
 `TestIndexProvesWhatAProgramNeverRuns` checks each way a function is named
@@ -333,7 +340,11 @@ the stats thread as continuous work, and neither the signal handler nor the
 `qsort` comparator; claims, places and report tests cover docstrings, licence blocks, banners,
 section titles and the file description at their consuming boundaries, and the
 fixture's own docstrings reach its declarations. The fixture's map of parts is
-checked like every other language's (`TestCumulativeCMapOfParts`).
-`TestCFixtureOrientationReadsMainsCallsInWrittenOrder` checks that the
+checked like every other language's (`TestCumulativeCMapOfParts`), and its
+split puts `netConnect`, which kvd never runs, alone in a role part that
+leaves kvd's map; `TestCFixtureClientMapLeavesTheLoopItNeverRuns` checks that
+kvcli's `loop.c` and `loop_poll.c` parts leave its map, undescribed, and are
+listed off it by their declarations, while `loop.h`, `net.c` and `strbuf.c`
+stay. `TestCFixtureOrientationReadsMainsCallsInWrittenOrder` checks that the
 orientation request carries kvd's `main` with its calls in the order `main`
 writes them.
