@@ -196,19 +196,19 @@ func (preset *kvdPreset) Complete(_ context.Context, prepared llm.Prepared) (llm
 		answer = map[string]any{"description": "Preset description."}
 	case request.Task == "repomap.atlas.areas.v1":
 		answer = map[string]any{"areas": []any{}}
-	case request.Table == "atlas_boundaries" || request.Table == "atlas_layers":
+	case request.Table == "atlas_boundaries":
 		outgoing := false
 		for _, column := range request.Fill {
 			outgoing = outgoing || column["name"] == "destination"
 		}
-		if request.Table == "atlas_boundaries" && !outgoing {
+		if !outgoing {
 			preset.mu.Lock()
 			preset.entryWindows++
 			preset.mu.Unlock()
 		}
 		rows := make([]map[string]any, 0, len(request.Rows))
 		for _, row := range request.Rows {
-			if request.Table == "atlas_boundaries" && !outgoing && row["word_options"] == nil {
+			if !outgoing && row["word_options"] == nil {
 				preset.mu.Lock()
 				preset.unnamed++
 				preset.mu.Unlock()
@@ -255,8 +255,6 @@ func (preset *kvdPreset) answer(table string, fill []map[string]any, row map[str
 				refs = append(refs, wordRefs(row, command.name)...)
 			}
 			answer["name"] = refs
-		case table == "atlas_layers" && name == "role":
-			answer["role"] = "logic"
 		default:
 			return nil, fmt.Errorf("kvd preset: no answer for %s.%s", table, name)
 		}

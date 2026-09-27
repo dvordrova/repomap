@@ -92,8 +92,8 @@ type Options struct {
 	Questions []string
 	// Learn adapts the base learning intents after the ordinary atlas.
 	Learn bool
-	// ReadSource returns a repository file's bytes for the tables that read
-	// code; nil leaves those rows without source.
+	// ReadSource returns a repository file's bytes for the outside symbols'
+	// usage line; nil leaves their rows without it.
 	ReadSource func(path string) ([]byte, error)
 	// NoCaptions leaves every prose cell (titles, lines, sentences) on its
 	// fallback and asks the model for decisions alone. A declaration's alias
@@ -132,7 +132,6 @@ type reader struct {
 
 	symbolLine map[string]cell     // symbol place ID -> model line
 	api        map[string]apiRole  // external symbol -> what it binds, publishes, talks to
-	roles      map[string]string   // symbol place ID -> what it does on a chain
 	keys       map[string][]string // file place ID -> key symbol IDs, by rank
 	// selectedKeys is every declaration the selection found worth a reader's
 	// attention; partKeys is what explains the part it stands in.
@@ -1255,7 +1254,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 }
 
 // projectFile is one file as a part or the off-map record shows it: its line
-// and the listed declarations with their captions, roles and keys. Inside a
+// and the listed declarations with their captions, aliases and keys. Inside a
 // part whose keys were chosen, that choice stands; elsewhere a file keeps the
 // selection by file.
 func (r *reader) projectFile(fileID string, listed map[string]bool, boxID string) atlas.File {
@@ -1289,7 +1288,6 @@ func (r *reader) projectFile(fileID string, listed map[string]bool, boxID string
 		} else {
 			symbol.Key = contains(r.keys[fileID], symbol.ID)
 		}
-		symbol.Role = r.roles[symbol.ID]
 		file.Symbols = append(file.Symbols, symbol)
 	}
 	return file

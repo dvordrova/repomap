@@ -201,9 +201,6 @@ type Interpretation struct {
 	Activation       string `json:"activation,omitempty"`
 	Operation        string `json:"operation,omitempty"`
 	OperationSummary string `json:"operation_summary,omitempty"`
-	// Role is what the declaration does on a chain from an entry to an
-	// outgoing call: access, adapter, logic or passthrough.
-	Role string `json:"role,omitempty"`
 }
 
 // SubjectAnnotation is the only subject material owned by GroupsIndex. Native

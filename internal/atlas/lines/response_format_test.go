@@ -20,7 +20,7 @@ func TestPreparedTablesHaveOneResponseShapeWithCurrentColumns(t *testing.T) {
 	for _, def := range []table.Definition{
 		Directories(), WithOpen(Directories()), Files(), WithOpen(Files()),
 		Symbols(), Types(),
-		FixedBoundaries(true), API(true), API(false), Publish(), Layers(), Targets(), Targets(true), Arrows(),
+		FixedBoundaries(true), API(true), API(false), Publish(), Targets(), Targets(true), Arrows(),
 		Joints(), Peers(), Answer(),
 	} {
 		for _, withTerms := range []bool{false, true} {

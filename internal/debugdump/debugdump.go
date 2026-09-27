@@ -164,7 +164,6 @@ const (
 	SemanticStageAtlasLearn       = "atlas_learn"
 	SemanticStageAtlasAPI         = "atlas_api"
 	SemanticStageAtlasPublish     = "atlas_publish"
-	SemanticStageAtlasLayers      = "atlas_layers"
 	SemanticStageAtlasCore        = "atlas_core"
 	SemanticStageAtlasKeys        = "atlas_keys"
 	SemanticStageAtlasPlacement   = "atlas_placement"
@@ -801,7 +800,6 @@ func validSemanticStage(stage string) bool {
 		SemanticStageAtlasLearn,
 		SemanticStageAtlasAPI,
 		SemanticStageAtlasPublish,
-		SemanticStageAtlasLayers,
 		SemanticStageAtlasCore,
 		SemanticStageAtlasKeys,
 		SemanticStageAtlasPlacement,

@@ -19,7 +19,6 @@ var readingStages = map[string]func(*reader, context.Context) error{
 	lines.StageSymbols:     (*reader).readSymbols,
 	lines.StageAPI:         (*reader).readAPI,
 	lines.StageBoundaries:  (*reader).readBoundaries,
-	lines.StageLayers:      (*reader).readLayers,
 	lines.StageZones:       (*reader).readDesign,
 	lines.StageAreas:       (*reader).readAreas,
 	lines.StageArrows:      (*reader).readArrows,
@@ -32,8 +31,8 @@ var readingStages = map[string]func(*reader, context.Context) error{
 // readingPhases orders the walk. A phase is one or more chains of stages;
 // the chains of one phase read nothing another writes, so they run at once
 // and join before the next phase. After the files, the symbols; the outside
-// symbols, the boundaries their roles make and the layers between them; and
-// the parts with their placement and descriptions are such chains. The
+// symbols with the boundaries their roles make; and the parts with their
+// placement and descriptions are such chains. The
 // arrows read all three. After the core, the areas over the described
 // parts, the keys of each part and the targets with their joints are three
 // more. Flattened, the phases are the step order: tables.md, rejected rows,
@@ -41,7 +40,7 @@ var readingStages = map[string]func(*reader, context.Context) error{
 var readingPhases = [][][]string{
 	{{lines.StageDirectories}},
 	{{lines.StageFiles}},
-	{{lines.StageSymbols}, {lines.StageAPI, lines.StageBoundaries, lines.StageLayers}, {lines.StageZones}},
+	{{lines.StageSymbols}, {lines.StageAPI, lines.StageBoundaries}, {lines.StageZones}},
 	{{lines.StageArrows}},
 	{{lines.StageCore}},
 	{{lines.StageAreas}, {lines.StageKeys}, {lines.StageTargets, lines.StageJoints}},
@@ -49,7 +48,7 @@ var readingPhases = [][][]string{
 
 // recallStages restore remembered descriptions before question-only reading,
 // one after another and without a model.
-var recallStages = []string{lines.StageDirectories, lines.StageFiles, lines.StageSymbols, lines.StageAPI, lines.StageBoundaries, lines.StageLayers}
+var recallStages = []string{lines.StageDirectories, lines.StageFiles, lines.StageSymbols, lines.StageAPI, lines.StageBoundaries}
 
 // walk runs the stages up to Through, or all of them, and returns the last
 // one it ran. tables.md and knowledge.json are saved after every serial
@@ -188,8 +187,6 @@ func (r *reader) join(view *reader, chain []string) {
 		case lines.StageBoundaries:
 			r.places, r.boundaries = view.places, view.boundaries
 			r.nextBoundary, r.boundaryIDs = view.nextBoundary, view.boundaryIDs
-		case lines.StageLayers:
-			r.roles = view.roles
 		case lines.StageZones:
 			r.boxes, r.designBoxOf, r.offMap, r.mapFailure = view.boxes, view.designBoxOf, view.offMap, view.mapFailure
 			r.splitFiles = view.splitFiles

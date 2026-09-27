@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
-	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/llm"
 )
@@ -26,9 +25,18 @@ func (p *independentResponseProvider) Complete(context.Context, llm.Prepared) (l
 	return llm.Completion{Response: p.response, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, nil
 }
 
+// choiceTable is a text-model table of independent rows with one closed
+// choice per row: the shape whose refused rows these tests follow.
+func choiceTable() table.Definition {
+	return table.Definition{
+		Stage: "atlas_choice", Contract: "repomap.test.choice.v1", System: "Choose each row's role.",
+		Columns: []table.Column{{Name: "role", Kind: table.Choice, Options: []string{"adapter", "logic", "passthrough"}, Note: "the row's role"}},
+	}
+}
+
 func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testing.T) {
 	cache := t.TempDir()
-	def := lines.Layers()
+	def := choiceTable()
 	rows := []table.Row{
 		{ID: "first", Fields: []table.Field{{Name: "path", Value: "first.go"}}},
 		{ID: "second", Fields: []table.Field{{Name: "path", Value: "second.go"}}},
@@ -106,7 +114,7 @@ func TestIndependentOperationRejectionPreservesNeighboursCacheAndReplay(t *testi
 	}
 }
 
-// refusingRoleProvider answers every layer row, but with an unknown role for
+// refusingRoleProvider answers every choice row, but with an unknown role for
 // keys ending in 7, so those rows are refused and never remembered.
 type refusingRoleProvider struct {
 	tableProvider
@@ -142,7 +150,7 @@ func (p *refusingRoleProvider) Complete(_ context.Context, prepared llm.Prepared
 // asks only the rows that were refused before.
 func TestRecalledRowsAreTakenInRowOrder(t *testing.T) {
 	cache := t.TempDir()
-	def := lines.Layers()
+	def := choiceTable()
 	var rows []table.Row
 	var remembered, refused []string
 	for i := 1; i <= 60; i++ {

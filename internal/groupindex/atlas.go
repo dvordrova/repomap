@@ -349,7 +349,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	interpretations := make(map[string]Interpretation)
 	interpret := func(file atlas.File) {
 		for _, symbol := range file.Symbols {
-			interpretation := Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary, Role: symbol.Role}
+			interpretation := Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary}
 			if interpretation != (Interpretation{}) {
 				interpretations[sourceRefs[symbol.ObjectID]] = interpretation
 			}

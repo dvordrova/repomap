@@ -46,7 +46,7 @@ func (p slowProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.
 
 // withEntryCallingOutside binds the route of svc/api/h.go to its F, which
 // calls Op01 of svc/core/c.go, which calls net/http.Get: an outside symbol
-// for the api table, an outgoing boundary and a way for the layers table.
+// for the api table and an outgoing boundary.
 func withEntryCallingOutside(t *testing.T, graph atlas.Graph) atlas.Graph {
 	t.Helper()
 	symbol := func(path, name string) int {
@@ -171,7 +171,7 @@ func TestConcurrentStagesKeepStepOrder(t *testing.T) {
 			last = at
 		}
 	}
-	for _, stage := range []string{lines.StageSymbols, lines.StageAPI, lines.StageBoundaries, lines.StageLayers, lines.StageZones, lines.StageDescribe, lines.StageAreas, lines.StageCore} {
+	for _, stage := range []string{lines.StageSymbols, lines.StageAPI, lines.StageBoundaries, lines.StageZones, lines.StageDescribe, lines.StageAreas, lines.StageCore} {
 		if !seen[stage] {
 			t.Fatalf("the reading printed no %s window; seen %v", stage, seen)
 		}
@@ -186,26 +186,17 @@ func TestConcurrentStagesKeepStepOrder(t *testing.T) {
 	if err := json.Unmarshal([]byte(symbolsLast.atlas), &folded); err != nil {
 		t.Fatal(err)
 	}
-	roles, outgoing, zones := 0, 0, 0
+	outgoing, zones := 0, 0
 	for _, target := range folded.Targets {
 		zones += len(target.Zones)
-		for _, box := range target.Boxes {
-			for _, file := range box.Files {
-				for _, symbol := range file.Symbols {
-					if symbol.Role != "" {
-						roles++
-					}
-				}
-			}
-		}
 		for _, boundary := range target.Boundaries {
 			if boundary.Kind == atlas.BoundaryClientRequest && boundary.Path == "svc/core/c.go" {
 				outgoing++
 			}
 		}
 	}
-	if len(folded.API) == 0 || roles == 0 || outgoing == 0 || zones == 0 {
-		t.Fatalf("a concurrent stage's decisions are missing: api %d, layer roles %d, interpreted outgoing %d, zones %d", len(folded.API), roles, outgoing, zones)
+	if len(folded.API) == 0 || outgoing == 0 || zones == 0 {
+		t.Fatalf("a concurrent stage's decisions are missing: api %d, interpreted outgoing %d, zones %d", len(folded.API), outgoing, zones)
 	}
 }
 
@@ -271,7 +262,7 @@ func TestThroughStopsInsideConcurrentStages(t *testing.T) {
 	for through, want := range map[string][]string{
 		lines.StageSymbols:    {lines.StageSymbols},
 		lines.StageBoundaries: {lines.StageSymbols, lines.StageAPI, lines.StageBoundaries},
-		lines.StageZones:      {lines.StageSymbols, lines.StageAPI, lines.StageBoundaries, lines.StageLayers, lines.StageZones},
+		lines.StageZones:      {lines.StageSymbols, lines.StageAPI, lines.StageBoundaries, lines.StageZones},
 	} {
 		opts, _ := forkedReading(t, nil, 0)
 		opts.Through = through
@@ -286,7 +277,7 @@ func TestThroughStopsInsideConcurrentStages(t *testing.T) {
 		for _, use := range result.Uses {
 			ran[use.Stage] = true
 		}
-		for _, stage := range []string{lines.StageSymbols, lines.StageAPI, lines.StageBoundaries, lines.StageLayers, lines.StageZones, lines.StageArrows} {
+		for _, stage := range []string{lines.StageSymbols, lines.StageAPI, lines.StageBoundaries, lines.StageZones, lines.StageArrows} {
 			if ran[stage] != slices.Contains(want, stage) {
 				t.Fatalf("through %s: ran %v", through, ran)
 			}

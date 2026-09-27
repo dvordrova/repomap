@@ -643,10 +643,6 @@ type Symbol struct {
 	Activation       string `json:"activation,omitempty"`
 	Operation        string `json:"operation,omitempty"`
 	OperationSummary string `json:"operation_summary,omitempty"`
-	// Role is MODEL: what a declaration on a chain from an entry to an
-	// outgoing call does with what passes through (access, adapter, logic,
-	// passthrough), read from its source.
-	Role string `json:"role,omitempty"`
 }
 
 // Key is one key symbol shown on a box.

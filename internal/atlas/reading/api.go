@@ -116,6 +116,22 @@ func (r *reader) apiSymbols() []*apiSymbol {
 	return result
 }
 
+// sourceLine is one line of a repository file as written, after its number.
+func (r *reader) sourceLine(path string, line int) string {
+	if r.opts.ReadSource == nil || line < 1 {
+		return ""
+	}
+	content, err := r.opts.ReadSource(path)
+	if err != nil {
+		return ""
+	}
+	text := strings.Split(string(content), "\n")
+	if line > len(text) {
+		return ""
+	}
+	return fmt.Sprintf("%d  %s", line, text[line-1])
+}
+
 // readAPI asks the model what the external symbols do with what the
 // repository gives them, one row per symbol.
 func (r *reader) readAPI(ctx context.Context) error {
@@ -139,7 +155,7 @@ func (r *reader) readAPI(ctx context.Context) error {
 			if s.signature != "" {
 				fields = append(fields, table.Field{Name: "declared", Value: s.signature})
 			}
-			if usage := strings.TrimSpace(r.source(s.usagePath, s.usageLine, s.usageLine)); usage != "" {
+			if usage := strings.TrimSpace(r.sourceLine(s.usagePath, s.usageLine)); usage != "" {
 				fields = append(fields, table.Field{Name: "usage", Value: usage})
 			}
 			if len(s.literals) > 0 {

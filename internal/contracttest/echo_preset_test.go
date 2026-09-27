@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -84,6 +85,7 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertNoSourceBodies(t, repository, provider.requests)
 	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{index.Target.ID: index}, result.Atlas)
 	if err != nil {
 		t.Fatal(err)
@@ -180,21 +182,6 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 			t.Fatalf("types carried by the route chain = %v", typeNames(chain.TypeIDs))
 		}
 	}
-	// The layers table read each declaration on the chain from its source and
-	// the preset answered from what it saw.
-	roles := map[string]string{}
-	for _, subject := range overlay.Subjects {
-		if subject.Interpretation != nil && subject.Interpretation.Role != "" {
-			roles[names[subject.ID]+"@"+subject.Object.Location.Path] = subject.Interpretation.Role
-		}
-	}
-	wantRoles := map[string]string{
-		"GetUser@internal/users/handler/handler.go": "logic", "GetUser@internal/users/service/service.go": "passthrough",
-		"GetByID@internal/users/repository/postgres.go": "adapter", "GetUser@internal/database/sqlc/users.sql.go": "access",
-	}
-	if !reflect.DeepEqual(roles, wantRoles) || provider.sawQuerySource || !provider.sawRepositorySource {
-		t.Fatalf("roles = %v (query asked: %v, repository read: %v)", roles, provider.sawQuerySource, provider.sawRepositorySource)
-	}
 	// Initialization is what main reaches by calls; runtime is the route's chain.
 	phases := map[string]string{}
 	for _, subject := range overlay.Subjects {
@@ -261,7 +248,9 @@ func materializeRepository(t *testing.T, relative string) (string, *corpus.Corpu
 // careful reader would, from the row alone. Text cells get a placeholder; choices get the
 // reader's decision, or the first option where any answer is fine.
 type echoPreset struct {
-	sawRegistration, sawSQL, sawQuerySource, sawRepositorySource, sawDomainPart bool
+	sawRegistration, sawSQL, sawDomainPart bool
+	mu                                     sync.Mutex
+	requests                               [][]byte
 }
 
 func (*echoPreset) State() []byte { return []byte(`{"provider":"echo-preset"}`) }
@@ -284,6 +273,9 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
 	}
+	preset.mu.Lock()
+	preset.requests = append(preset.requests, append([]byte(nil), prepared.Bytes()...))
+	preset.mu.Unlock()
 	var response []byte
 	switch {
 	case request.Task == "repomap.atlas.parts.v1":
@@ -340,20 +332,6 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 			continue
 		}
 		switch {
-		case table == "atlas_layers" && name == "role":
-			// The query itself is never asked: the code names the access.
-			source, _ := row["source"].(string)
-			switch {
-			case strings.Contains(source, "QueryRowContext"):
-				preset.sawQuerySource = true
-			case strings.Contains(source, ".JSON("):
-				answer["role"] = "logic"
-			case strings.Contains(source, "model.User{"):
-				preset.sawRepositorySource = true
-				answer["role"] = "adapter"
-			default:
-				answer["role"] = "passthrough"
-			}
 		case table == "atlas_boundaries" && name == "name":
 			// The route is named by the verb and the path its registration
 			// wrote, in the order a client reads them.
@@ -471,4 +449,61 @@ func hasPrefix(values []string, prefix string) bool {
 		}
 	}
 	return false
+}
+
+// assertNoSourceBodies fails when a request carries a function's source as
+// written, its declaration line and the line after it, numbered or not:
+// source bodies do not enter provider requests (PROGRAM_INDEX). A call
+// site's one line, a literal and a signature are not bodies.
+func assertNoSourceBodies(t *testing.T, repository *corpus.Corpus, requests [][]byte) {
+	t.Helper()
+	numbered := regexp.MustCompile(`^\s*\d+\s+`)
+	bodies := map[[2]string]string{}
+	for _, path := range repository.VisiblePaths() {
+		if !strings.HasSuffix(path, ".go") {
+			continue
+		}
+		id, _ := repository.ID(path)
+		content, err := repository.ReadFileAll(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(content.Bytes), "\n")
+		for i := 0; i+1 < len(lines); i++ {
+			if first, next := strings.TrimSpace(lines[i]), strings.TrimSpace(lines[i+1]); strings.HasPrefix(first, "func ") && next != "" {
+				bodies[[2]string{first, next}] = fmt.Sprintf("%s:%d", path, i+1)
+			}
+		}
+	}
+	var visit func(value any)
+	visit = func(value any) {
+		switch value := value.(type) {
+		case string:
+			lines := strings.Split(value, "\n")
+			for i := 0; i+1 < len(lines); i++ {
+				pair := [2]string{strings.TrimSpace(numbered.ReplaceAllString(lines[i], "")), strings.TrimSpace(numbered.ReplaceAllString(lines[i+1], ""))}
+				if at, ok := bodies[pair]; ok {
+					t.Fatalf("a request carries the source body of %s: %q", at, pair[0])
+				}
+			}
+		case []any:
+			for _, item := range value {
+				visit(item)
+			}
+		case map[string]any:
+			for _, item := range value {
+				visit(item)
+			}
+		}
+	}
+	if len(requests) == 0 {
+		t.Fatal("the reading sent no request")
+	}
+	for _, request := range requests {
+		var decoded any
+		if err := json.Unmarshal(request, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		visit(decoded)
+	}
 }

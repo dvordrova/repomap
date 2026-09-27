@@ -49,9 +49,8 @@ new description or selection requests.
   follow-up and descriptions, the drawn arrows, the core, the areas over the
   described parts, the keys, the portfolio, the joints. Stages with no data
   dependency run concurrently: after the files, the symbols; the outside
-  symbols with the boundaries their roles make and the layers between them;
-  and the parts read nothing of one another and join before the arrows, which
-  read them all. After the core, the areas (`atlas_areas`), the keys of each
+  symbols with the boundaries their roles make; and the parts read nothing of
+  one another and join before the arrows, which read them all. After the core, the areas (`atlas_areas`), the keys of each
   part and the targets with their joints likewise run at once. Each
   prints, counts and rejects into its own record, added at the join in step
   order, so `tables.md` keeps step order and the requests, compact IDs,
@@ -721,17 +720,10 @@ takes and the ones it hands to calls outside the repository (the value
 written into a response, found through the call that produced it). None of
 this is persisted; all of it is recomputed when an overlay is hydrated.
 
-## Layers: the table that reads code
-
-`atlas_layers` walks, from every bound entry, the graph's calls to every
-declaration that makes an outgoing call, and asks about each declaration on
-the way. Its row is the declaration's source as written — numbered lines
-from its first line to its `end_line`, the middle elided beyond sixty — with
-the declarations `before` and `after` it on those ways. One decision:
-`access` (makes the outgoing call itself), `adapter` (changes the shape of
-what passes through), `logic` (decides), `passthrough` (only forwards). The
-answer is the symbol's `role` and the subject's interpretation role. Source
-is read through `Options.ReadSource`; without it the rows carry no source.
+No table asks what a declaration on a chain does with what passes through
+it: `atlas_layers` (access, adapter, logic, passthrough, read from source
+bodies) had no reader and was deleted on 2026-09-27; a decision without a
+reader is not asked.
 
 Every subject and connection of the overlay carries a derived phase: `init`
 for what the seeds reach by ordinary calls before anything serves, `runtime`
