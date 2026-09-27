@@ -21,6 +21,15 @@ if(options.has('loose-part')){
   relations.push({from:'worker',to:'audit'});
 }
 
+// A part's declarations: the worker's handler calls two functions and takes
+// the job type they return.
+if(options.has('symbols')){
+  const worker=records.find(n=>n.id==='worker');
+  worker.symbols=[{name:'processJob',kind:'function',key:true,text:'(job: Job)'},{name:'Job',kind:'type'},{name:'id',kind:'field',owner:2,text:': string'},
+    {name:'claim',kind:'function',text:'(): Job'},{name:'save',kind:'function',text:'(job: Job)'}];
+  worker.symbolCalls=[[0,3,'calls'],[0,4,'calls'],[3,1,'returns'],[0,1,'takes']];
+}
+
 // Each system calls its own "DNS resolver": two frames the page groups for
 // display and gives their shared text once.
 if(options.has('shared-destination')){

@@ -26,6 +26,12 @@ const t = (...args) => window.rmT(...args);
 // the card's own rectangle at a quarter of its size, so nothing on the map
 // moves when they appear.
 const deepDivisor=4,deepHeader=20,deepTile={width:190,height:28,columnGap:36,rowGap:8,inset:8};
+// A marker is drawn in its line's stroke widths, seven of them. Emphasis
+// draws a line 2.5px thick instead of 1.5px (canvas.css), so its marker is
+// 1.5/2.5 of that and every head stands 10.5px. At seven emphasised strokes
+// a head stood 17.5px, nearly three times the area, and covered the number
+// at the frame.
+const arrowHead=7,emphasisedHead=arrowHead*1.5/2.5;
 function PartSymbols({symbols,calls,width,height}){
   const [hot,setHot]=useState(-1);
   const inner={width:width*deepDivisor,height:(height-deepHeader)*deepDivisor},inset=deepTile.inset,gap=deepTile.columnGap;
@@ -54,15 +60,17 @@ function PartSymbols({symbols,calls,width,height}){
   return <div className="flow-part-symbols nopan" style={{top:deepHeader,width,height:height-deepHeader}}>
     <div style={{width:inner.width,height:inner.height,transform:`scale(${1/deepDivisor})`,transformOrigin:'top left'}} onMouseLeave={()=>setHot(-1)}>
       <svg width={inner.width} height={inner.height}>
-        <defs><marker id="flow-symbol-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z"/></marker></defs>
+        <defs>{[['flow-symbol-arrow',arrowHead],['flow-symbol-arrow-hot',emphasisedHead]].map(([id,size])=>
+          <marker key={id} id={id} viewBox="0 0 8 8" refX="7" refY="4" markerWidth={size} markerHeight={size} orient="auto"><path d="M0 0L8 4L0 8z"/></marker>)}</defs>
         {drawn.map(([from,to,kind],i)=>{
           const a=rows[from],b=rows[to],forward=b.column>a.column,ay=inset+a.y+a.height/2,by=inset+b.y+b.height/2;
           // Across columns a link leaves the right edge and enters the left;
           // within a column it bows out to the right of both rows.
           const start={x:x(a.column)+tileWidth,y:ay},end=forward?{x:x(b.column),y:by}:{x:x(b.column)+tileWidth,y:by};
           const bend=forward?Math.max(16,(end.x-start.x)/2):26;
-          return <path key={i} className={`flow-symbol-${kind||'calls'} ${hot<0?'':from===hot||to===hot?'flow-symbol-call-hot':'flow-symbol-call-dim'}`}
-            d={`M${start.x} ${start.y}C${start.x+bend} ${start.y},${forward?end.x-bend:end.x+bend} ${end.y},${end.x} ${end.y}`} markerEnd="url(#flow-symbol-arrow)">
+          const on=hot>=0&&(from===hot||to===hot);
+          return <path key={i} className={`flow-symbol-${kind||'calls'} ${hot<0?'':on?'flow-symbol-call-hot':'flow-symbol-call-dim'}`}
+            d={`M${start.x} ${start.y}C${start.x+bend} ${start.y},${forward?end.x-bend:end.x+bend} ${end.y},${end.x} ${end.y}`} markerEnd={`url(#flow-symbol-arrow${on?'-hot':''})`}>
             <title>{`${symbols[from].name} ${kind||'calls'} ${symbols[to].name}`}</title></path>;
         })}
       </svg>
@@ -698,8 +706,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       onMoveStart={event=>{if(event){overviewFit=false;locationSubject='';arriving=new Set();}panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
       onMoveEnd={event=>{panning=false;hover.pause();if(instance)updateDetail(instance.getViewport());updateLocation(event);map.dispatchEvent(new Event('repomap:viewport'));}}>
       <svg className="flow-defs"><defs>
-        <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker>
-        <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
+        <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={arrowHead} markerHeight={arrowHead} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker>
+        <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={emphasisedHead} markerHeight={emphasisedHead} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
       <ViewportPortal>
         {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}

@@ -523,6 +523,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Orientation candidates receive independent graph
   objects: ELK mutates its input, so reusing a computed candidate can retain stale
   bends. React Flow owns pan/zoom and camera restoration.
+  Emphasis darkens and thickens a line, never its head: every arrowhead is
+  an ordinary one's size, as is every head of a link between a part's
+  declarations. Drawn in the thicker line's stroke widths, an emphasised
+  head stood 17.5px beside 10.5px and covered the number at the frame.
   Connections retain their screen stroke, casing, dash and arrowhead sizes
   through React Flow’s ancestor transform. Frame outlines use inset paint so
   browser minimum-border rounding cannot turn a fractional world stroke into
