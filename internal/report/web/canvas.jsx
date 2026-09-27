@@ -407,8 +407,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // The pointer on the card itself keeps it; leaving it lingers.
   function lookAt(key){if(look.enter(key))update?.();pump();}
   function lookAway(key){look.leave(key,performance.now());pump();}
-  // A card is open, looked at or pinned: the frame being read stays.
-  const cardOpen=()=>!!look.key||!!pinnedPart||pinnedLabels.size>0;
+  // A card stands on the map, looked at or kept open: the frame being read
+  // stays. A kept card whose frame has closed is not on the map and holds
+  // nothing; it stands again when its frame opens.
+  const shownCards=new Set();
+  const cardOpen=()=>shownCards.size>0;
   function pin(key){
     if(key.startsWith('badge:'))pinnedPart=key.slice(6);
     else if(key.startsWith('label:')&&!pinnedLabels.has(key.slice(6)))pinnedLabels.set(key.slice(6),labelAreas.get(key.slice(6))||'');
@@ -428,7 +431,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(had)update?.();
     return had;
   }
-  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&cardOpen()&&closeCards())event.preventDefault();});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&closeCards())event.preventDefault();});
   function enter(id){
     // While a card is open or pinned the frame being read stays: the way to
     // the card crosses other parts, frames and empty canvas.
@@ -965,6 +968,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // keeps it open; kept open, it has a ✕.
   function FloatingCard({cardKey,handle,frame,side,scale,content,className='',children}){
     const ref=useRef(null),[at,setAt]=useState(null),pinned=cardKey.startsWith('badge:')?pinnedPart===cardKey.slice(6):pinnedLabels.has(cardKey.slice(6));
+    useEffect(()=>{shownCards.add(cardKey);return()=>shownCards.delete(cardKey);},[cardKey]);
     useLayoutEffect(()=>{
       const el=ref.current,from=handle();if(!el||!instance||!from)return;
       const v=instance.getViewport(),box=host.getBoundingClientRect(),size=el.getBoundingClientRect();

@@ -277,3 +277,21 @@ test('the input collection is headed Inputs and opens to its groups before its i
   await expect(page.locator('[data-frame-title="backend-inputs~routes"]')).toBeVisible();
   await testInfo.attach('journey-02 — A group opened to its inputs',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });
+
+// A card kept open whose frame has closed is not on the map: it holds the
+// frame being read no longer, and the pointer looks where it is again.
+test('a kept card whose frame closed does not freeze the map',async({page})=>{
+  const map=page.locator('[data-map]');
+  await page.goto('/');await expect(map).toHaveAttribute('data-fixture-ready','true');
+  await map.evaluate(map=>map.focusNode('auth'));
+  await settle(map);
+  await page.mouse.move(1430,890);
+  await pointAt(page,page.locator('[data-frame-title="requests"]>strong'));
+  await page.locator('[data-badge="routes"]').click();
+  await expect(page.locator('.flow-part-summary')).toBeVisible();
+  // Zoomed out until the area closes: the kept card goes with its frame.
+  for(let step=0;step<12&&await page.locator('.flow-part-summary').count();step++){await page.locator('[data-map-zoom="0.8"]').click();await settle(map);}
+  await expect(page.locator('.flow-part-summary')).toHaveCount(0);
+  await pointAt(page,page.locator('[data-summary-area="execution"] strong'));
+  await expect(map).toHaveAttribute('data-subject','execution');
+});
