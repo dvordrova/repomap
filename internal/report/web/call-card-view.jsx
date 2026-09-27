@@ -57,3 +57,17 @@ export function CallRows({card,sticky=true}){
     </section>)}
   </div>;
 }
+
+// A frame's connections in the reading column: one line per frame or
+// participant at the other end and direction, its calls' count and the
+// parts they are made from, opening to the same rows as its card.
+export function FrameConnections({groups,open}){
+  return <section className="map-frame-connections">
+    <h5>{t('Connections')}</h5>
+    {groups.map(group=><details key={group.key} data-connection-key={group.key} open={group.key===open} data-reading-anchor={group.key===open?'':undefined}>
+      <summary><span className="map-connection-peer">{group.incoming?'←':'→'} {group.title}</span><b>{group.card.total}</b>
+        {group.card.from.length>0&&<small>{group.card.from.map(part=>`${part.name} ${part.count}`).join(' · ')}</small>}</summary>
+      <CallRows card={group.card} sticky={false}/>
+    </details>)}
+  </section>;
+}

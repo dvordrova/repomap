@@ -305,3 +305,27 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-area-members{display:flex;flex-wrap:wrap;gap:0 10px;font:13px/1.5 var(--mono)}
 .map-card .map-area-members a{text-decoration:none}.map-card .map-area-members a:hover{text-decoration:underline}
 .map-area-members .map-member-key{font-weight:750;color:#4f2f86}
+/* A frame's Connections (owner's 3b): one line per participant at the other
+   end and direction, with its count and the parts its calls are made from,
+   opening to the same rows as the arrow's card. The open one is marked as
+   the canvas marks what is read: a pale ground and a dark bar. */
+.map-frame-connections{margin:14px 0}.map-frame-connections>h5{margin:12px 0 4px}
+.map-frame-connections>details{border-top:1px solid var(--line);padding:6px 0}
+.map-frame-connections>details>summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 8px;cursor:pointer;list-style:none;font-weight:600;font-size:14px;line-height:1.4;color:#63429d}
+.map-frame-connections>details>summary::-webkit-details-marker{display:none}
+.map-frame-connections>details>summary>b{font-weight:400;color:var(--muted);font-size:13px}
+.map-frame-connections>details>summary>small{grid-column:1/-1;font-weight:400;font-size:12px;line-height:1.4;color:var(--muted);margin:1px 0 0 1.2em}
+.map-frame-connections>details[open]{background:#f1f4f8;border-radius:6px;box-shadow:inset 3px 0 #243044;padding:6px 8px 8px 11px;margin:0 -8px;border-top-color:transparent}
+.map-frame-connections>details[open]>summary{color:var(--ink)}
+.map-frame-connections .flow-card-groups h4,.map-frame-connections .flow-card-groups h5{background:transparent}
+.map-frame-connections .flow-card-group{padding:6px 0 2px;font-size:13px}
+.map-frame-connections .flow-card-pair{padding:2px 0 1px 8px;font-size:12px}
+.map-frame-connections .flow-card-rows{grid-template-columns:fit-content(120px) auto minmax(0,1fr);padding:0 0 2px 6px}
+.map-frame-connections .flow-card-row{font-size:12px;line-height:20px}
+.map-frame-connections .flow-card-row>i{padding:0 5px}
+.map-frame-connections .flow-card-fold{padding:2px 0 4px 6px}
+.map-frame-connections .flow-card-fold-parts{grid-template-columns:minmax(0,1fr);padding-left:8px}
+.map-frame-connections .flow-card-fold-parts details{margin:0;padding:0;border:0}
+.map-frame-connections .flow-card-fold-parts summary{padding:0;margin:0;font-size:12px;line-height:20px}
+.map-frame-connections .flow-card-fold-parts p{font-size:12px;line-height:18px;word-spacing:4px}
+.map-card .map-frame-connections a{text-decoration:none}.map-card .map-frame-connections a:hover{text-decoration:underline}

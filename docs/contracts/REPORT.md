@@ -365,8 +365,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the triangle between where it left and the card: the card lasts and no
   other handle on the way takes it. Re-targeting on every pointer move had
   closed the card on the way to it, and with the pointer on it, as soon as
-  it stood outside the frame. A click on a handle or on its card keeps the
-  card open; a kept card has a ✕, and ✕, Escape or a click on empty canvas
+  it stood outside the frame. A click on a part's number or on a card keeps
+  the card open; a click on an arrow end reads, in the column, the frame it
+  stands on, scrolled to that frame's Connections with that connection
+  open, and leaves the camera where it is (owner's choice 3b, 2026-09-27).
+  A kept card has a ✕, and ✕, Escape or a click on empty canvas
   closes it. That click closes the card and nothing else: it neither
   selects nor moves the camera. The card's list scrolls under its sticky
   heading and ✕. The dwell, the linger after leaving and the triangle are
@@ -754,7 +757,13 @@ replicationFeedSlaves and not syncWithMaster. An area's reading starts
 the same way under its description: "Made of 9 parts", then each part, a
 link to its reading, with its counts and files and its declarations as
 links, keys first and bold, the rest by name; a declaration is read in
-its part without moving the camera. Each declaration is one line, as a tile is, a type's fields
+its part without moving the camera. An area's or a component's reading
+then lists its Connections as its arrow ends group them: one line per
+frame or participant at the other end and direction, incoming first, with
+the count of its calls and the parts they are made from, each opening to
+the same rows as the arrow's card; they replace the list of neighbours by
+name. An input collection is named Inputs there, as its canvas heading
+is. Each declaration is one line, as a tile is, a type's fields
 on a line under it, and a key type the model explained keeps its mark and
 its fields: a bordered box each had put Client connections' callers some
 1,700 px further down the reading. The reading column does not repeat the source index, which

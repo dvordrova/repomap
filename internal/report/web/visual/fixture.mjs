@@ -102,6 +102,15 @@ const flow=await window.rmCreateFlow(map,stage,records,relations,areas,inputOwne
   },
   connection(){},
   emphasis(state){map.dataset.emphasis=state.mode;map.dataset.subject=state.subject;},
+  // An arrow end clicked: the reading is on its frame, with the frame's
+  // connections under it and that one open, as the report's column does.
+  openConnection(id,key){
+    flow.update({scope:id,selected:selected(id)});showReading(id);
+    map.dataset.openedConnection=`${id} ${key}`;
+    const holder=document.createElement('div');holder.dataset.readingConnections='';
+    map.querySelector('[data-reading-connections]')?.remove();map.querySelector('.map-inspector-content').appendChild(holder);
+    flow.mountConnections(holder,id,key);
+  },
 });
 map.showWholeMap=()=>{operation='';flow.update({});showReading('');return flow.overview();};
 map.captureViewport=()=>flow.capture();

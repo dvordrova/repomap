@@ -40,3 +40,35 @@ test('an end joining every part of its frame is one all mark that outlines them 
   await testInfo.attach('journey-02 — The parts behind the end outlined in place',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   expect(errors).toEqual([]);
 });
+
+// A click on an arrow end reads its frame's connections in the column,
+// that connection open with the calls its card lists; the card's own
+// click keeps the card (owner's 3b).
+test('a click on an arrow end opens its frame\'s connection in the reading',async({page},testInfo)=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/?both-parts&symbols');
+  const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
+  await map.evaluate(map=>map.focusNode('queue'));
+  await settle(map);
+  await page.locator('[data-map-zoom="0.8"]').click();await settle(map);
+  await page.mouse.move(1430,890);
+  await pointAt(page,page.locator('[data-frame-title="execution"]>strong'));
+  const all=end(page,'boundary:execution:in:requests');
+  await pointAt(page,all);
+  const card=page.locator('.flow-arrow-card');
+  await expect(card).toBeVisible();
+  await expect(card.locator('.flow-card-title')).toHaveText('Request handling→Job execution');
+  const camera=await map.evaluate(map=>map.captureViewport());
+  await all.locator('button').click();
+  await expect(map).toHaveAttribute('data-opened-connection','execution in:requests');
+  await expect(card,'the click reads the connection instead of keeping the card').toHaveCount(0);
+  expect(await map.evaluate(map=>map.captureViewport()),'the camera stays').toEqual(camera);
+  const open=page.locator('[data-reading-connections] details[open]');
+  await expect(open).toHaveCount(1);
+  await expect(open).toHaveAttribute('data-connection-key','in:requests');
+  await expect(open.locator('summary')).toContainText('Request handling');
+  await expect(open.locator('.flow-card-pair')).toHaveText(['→ Job scheduling1','→ Processing worker1']);
+  await expect(page.locator('[data-reading-connections] details:not([open])').first(),'the frame\'s other connections stay closed under it').toBeAttached();
+  await testInfo.attach('journey-01 — The arrow end opens its connection in the reading',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  expect(errors).toEqual([]);
+});

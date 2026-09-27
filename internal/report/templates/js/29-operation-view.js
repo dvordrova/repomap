@@ -157,6 +157,15 @@ function rmReachingInputs(n,reaching,owner,choose){
     else if(focus||path)focusNode(n,!!n.dataset.activation||focus==='center');
     emit();return true;
   }
+  // A click on an arrow end reads the frame it stands on, scrolled to its
+  // Connections with that connection open; the camera stays (owner's 3b).
+  var pendingConnection=null;
+  function openConnection(id,key){
+    var frame=byID[id];if(!frame)return Promise.resolve(false);
+    pendingConnection={id:id,key:key};
+    return select(frame,true,null,false).finally(function(){pendingConnection=null;});
+  }
+  map.openConnection=openConnection;
   function reset(){selectionRevision++;scope='';operation=null;inputAway=false;surface?.clearHover();emphasize();map.clearInspection?.();emit();}
   map.showWholeMap=async function(){
     search.value=searchValue='';filter.value=filterValue='';updateResults();reset();
@@ -246,6 +255,16 @@ function rmReachingInputs(n,reaching,owner,choose){
     entityWrites(n,card);
     // What an area is made of comes first, under its description (owner's 3a).
     if(n.dataset.branch==='area'){var composition=areaComposition(n),intro=card.querySelector('.map-card-intro');var actions=intro?.querySelector(':scope>.map-card-actions');if(composition&&actions)actions.before(composition);else if(composition&&intro)intro.appendChild(composition);}
+    // A frame's Connections are its arrow ends as the canvas groups them,
+    // each opening to the calls its card lists; they replace the list of
+    // neighbours by name.
+    var frameConnections=null;
+    if(n.dataset.branch==='area'||n.dataset.branch==='component'){
+      frameConnections=rmEl('div','map-frame-connections-holder');
+      if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'')){
+        (card.querySelector('.map-area-composition')||card.querySelector('.map-card-intro'))?.after(frameConnections);
+      }else frameConnections=null;
+    }
     writeReading={node:n,card:card,key:map.explorerMember?.key||''};
     var group=document.getElementById((n.getAttribute('href')||'').slice(1));
     if(!n.dataset.activation){
@@ -318,7 +337,7 @@ function rmReachingInputs(n,reaching,owner,choose){
       var peerName=(byID[id].dataset.owner!==n.dataset.owner&&owner(byID[id])?owner(byID[id])+' / ':'')+(destination&&destination.dataset.title!==byID[id].dataset.title?destination.dataset.title+' · ':'')+byID[id].dataset.title;
       var b=rmEl('button','',(outgoing?'→ ':'← ')+peerName);b.type='button';b.addEventListener('click',function(){select(byID[id],true,null,true);});relations.appendChild(b);
     });
-    if(relations.childElementCount)card.querySelector('.map-card-intro').appendChild(relations);
+    if(relations.childElementCount&&!frameConnections)card.querySelector('.map-card-intro').appendChild(relations);
     var details=document.getElementById(n.dataset.detailsId);
     if(details){
       var content=n.dataset.branch==='component'?details.querySelector('.input-catalog'):details;
@@ -367,6 +386,7 @@ function rmReachingInputs(n,reaching,owner,choose){
       surface=await rmCreateFlow(map,stage,items,relations,projection.areas,projection.inputOwner,{
         select:function(id,center){select(byID[id],true,null,center?'center':false);},
         emphasis:function(state){visual=state;renderCaption();},
+        openConnection:function(id,key){openConnection(id,key);},
         connection:function(group){map.previewConnection?.({from:group.incoming?group.outside:group.area,to:group.incoming?group.area:group.outside,possible:group.relations.some(function(r){return r.possible;}),relations:group.relations});}
       });
       map.visibleEdges=surface.layout.edges;

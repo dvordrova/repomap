@@ -565,12 +565,17 @@ function rmDeclarationRelations(map,node,key,nodes){
       else actions.appendChild(evidence);
       if(!actions.childElementCount)actions.remove();
       requestAnimationFrame(function(){if(inspectionRevision===ticket&&!card.hidden){
+        // A reading opened at one of its sections (an arrow end's connection,
+        // an input's path) starts there, that section open.
+        var anchor=card.querySelector('[data-reading-anchor]');
         if(saved)card.querySelectorAll('details').forEach(function(detail,index){detail.open=saved.expanded.includes(index);});
+        if(anchor?.matches('details'))anchor.open=true;
         content.scrollTop=saved?.scroll||0;
         // A declaration newly chosen with its part is read from its own
         // reading; one the reader returns to keeps the place they left.
         var chosen=card.querySelector('.map-concepts:not([hidden])');
         if(chosen&&(!saved||!restoring&&map.explorerMember?.key!==saved.concept))content.scrollTop+=chosen.getBoundingClientRect().top-content.getBoundingClientRect().top;
+        if(anchor&&!restoring){content.scrollTop+=anchor.getBoundingClientRect().top-content.getBoundingClientRect().top-8;anchor.removeAttribute('data-reading-anchor');}
         inspectionPending=false;
       }});
     }

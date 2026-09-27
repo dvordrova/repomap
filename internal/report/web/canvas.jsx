@@ -16,7 +16,7 @@ import {HoverGate} from './hover.mjs';
 import {placeCard} from './card-place.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
 import {callCard} from './call-card.mjs';
-import {CallRows, cardCount} from './call-card-view.jsx';
+import {CallRows, cardCount, FrameConnections} from './call-card-view.jsx';
 import '@xyflow/react/dist/style.css';
 import './canvas.css';
 
@@ -948,7 +948,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // What an arrow end stands for: every call behind it, grouped by the part
   // it is made from, then the part it goes into (call-card.mjs). The calls
   // behind one label, optionally of one number only.
-  const nameOf=id=>byID.get(id)?.name||byID.get(id)?.title||'';
+  const nameOf=id=>byID.get(id)?.branch==='inputs'?t('Inputs'):byID.get(id)?.name||byID.get(id)?.title||'';
   const partsOf=id=>leaves(id).filter(leaf=>!byID.get(leaf)?.activation).length;
   function labelCard(label,only){
     const ids=only===undefined?null:new Set(label.byNumber.get(only)?.ids||[]);
@@ -1058,7 +1058,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
           >
           {!label.boundary&&<span>{label.incoming?'← ':'→ '}{label.labelTitle}</span>}
           <button type="button" aria-label={label.title} className={pinnedLabels.has(label.id)?'flow-label-pinned':''}
-            onClick={event=>{event.stopPropagation();if(pinnedLabels.has(label.id))closeCard(key);else{look.enter(key);pin(key);}}}>
+            onClick={event=>{event.stopPropagation();
+              // A click on an arrow end reads its frame's connections in the
+              // column, that connection open (owner's 3b); its card is kept
+              // by a click on the card itself.
+              if(callbacks.openConnection){closeCards();hover.remember(event.clientX,event.clientY);hover.pause();callbacks.openConnection(label.area,label.key);return;}
+              if(pinnedLabels.has(label.id))closeCard(key);else{look.enter(key);pin(key);}}}>
             {label.all?<b className={`flow-number-all ${hovered?'flow-number-open':''}`}>{t('all')}</b>:label.numbers.map((k,i)=><React.Fragment key={k}>{i>0&&!upright&&<i> · </i>}
               <b className={`${label.bold?.has(k)?'flow-number-active':''} ${hovered&&(lookOnly===k||lookOnly===undefined)?'flow-number-open':''}`} onMouseEnter={()=>{lookOnly=label.numbers.length>1?k:undefined;if(look.key===key)update?.();}}>{k}</b></React.Fragment>)}
           </button>
@@ -1083,7 +1088,28 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(button.hasAttribute('data-map-fit')){closeCards();hover.pause();fitOverview(420);}
     else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
   });
-  return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
+  // A frame's connections as its arrow ends group them: by the frame or
+  // participant at the other end and the direction, incoming first, each
+  // with the calls its card lists.
+  function frameConnections(id){
+    const record=byID.get(id);if(!record||!placed.has(id))return [];
+    const members=record.branch==='component'?layout.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&rootOf(n.id)===id).map(n=>n.id):leaves(id).filter(leaf=>!byID.get(leaf)?.activation);
+    return connections(id,members,layout.edges,other=>rootOf(other)!==rootOf(id)?rootOf(other):boundaryBetween(other,id)?.id||other)
+      .map(group=>({...group,title:nameOf(group.outside),card:callCard(group.relations,{nameOf,incoming:group.incoming,groupable:other=>!byID.get(other)?.activation})}))
+      .filter(group=>group.card.total).sort((a,b)=>(a.incoming?0:1)-(b.incoming?0:1)||b.card.total-a.card.total||a.title.localeCompare(b.title));
+  }
+  // The reading column's Connections of a frame, drawn by the same rows as
+  // the cards into a container the column owns; `open` names the one to open.
+  const mounted=new Map();
+  function mountConnections(container,id,open=''){
+    const groups=frameConnections(id);
+    if(!groups.length)return false;
+    for(const [element,root] of mounted)if(!element.isConnected){root.unmount();mounted.delete(element);}
+    const root=mounted.get(container)||createRoot(container);mounted.set(container,root);
+    flushSync(()=>root.render(<FrameConnections groups={groups} open={open}/>));
+    return true;
+  }
+  return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,mountConnections,frameConnections,overview:()=>fitOverview(420),update(next){
     if(memberChoice&&(next.scope||'')!==memberChoice.part)memberChoice=null;
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
     view={...initial,...next,scope:next.scope||'',

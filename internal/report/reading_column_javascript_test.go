@@ -236,3 +236,22 @@ assert.deepEqual(chosen,[['a',undefined,false],['a','h/u8',false]]);
 assert.equal(areaComposition({dataset:{children:'c'}}),null,'an area of no parts has no composition');
 `)
 }
+
+// A click on an arrow end reads the frame it stands on without moving the
+// camera, and the reading knows which of its connections to open while it
+// is drawn; afterwards a plain choice of the frame opens none.
+func TestAnArrowEndOpensItsFramesConnectionInTheReading(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "  var pendingConnection=null;", "  function reset(){")
+	runSystemJS(t, `
+const byID={'t1-area-k3':{id:'t1-area-k3'}},map={},seen=[];
+function select(n,navigate,source,focus){seen.push([n.id,navigate,source,focus,pendingConnection&&pendingConnection.key]);return Promise.resolve(true);}
+`+code+`
+(async()=>{
+  assert.equal(map.openConnection,openConnection);
+  await openConnection('t1-area-k3','in:t1-area-k2');
+  assert.deepEqual(seen,[['t1-area-k3',true,null,false,'in:t1-area-k2']],'the frame is read in place with that connection pending');
+  assert.equal(pendingConnection,null,'once drawn, nothing is pending');
+  assert.equal(await openConnection('gone','in:x'),false);
+})().catch(error=>{console.error(error);process.exit(1);});
+`)
+}
