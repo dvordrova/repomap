@@ -101,7 +101,13 @@ test('an emphasised link between declarations keeps an ordinary head',async({pag
   await page.locator('.react-flow__node[data-id="worker"] .flow-part-zoom').click();
   const part=page.locator('.react-flow__node[data-id="worker"]');
   await expect(part.locator('.flow-part-deep')).toBeVisible();
-  await part.locator('.flow-symbol-head',{hasText:'processJob'}).hover();
+  // Hover sleeps while the camera moves: point at the tile once it has
+  // stopped, with a real movement, as a reader does.
+  let previous='',stable=0;
+  await expect.poll(async()=>{const v=JSON.stringify(await map.evaluate(map=>map.captureViewport()));stable=v===previous?stable+1:0;previous=v;return stable;},{intervals:[100]}).toBeGreaterThanOrEqual(2);
+  const tile=await part.locator('.flow-symbol-head',{hasText:'processJob'}).boundingBox();
+  await page.mouse.move(tile.x+tile.width/2,tile.y+tile.height/2+40);
+  await page.mouse.move(tile.x+tile.width/2,tile.y+tile.height/2,{steps:8});
   await expect(part.locator('path.flow-symbol-call-hot').first()).toBeAttached();
   const links=await part.evaluate(part=>[...part.querySelectorAll('.flow-part-symbols svg path[marker-end]')].map(path=>{
     const marker=document.getElementById(path.getAttribute('marker-end').match(/#([^)]+)/)[1]),stroke=parseFloat(getComputedStyle(path).strokeWidth);

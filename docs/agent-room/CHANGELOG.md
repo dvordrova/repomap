@@ -1,5 +1,60 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — The owner's mockup picks: arrow card, "all", composition, connections, input path
+
+- The owner chose from the designer's Redis mockups: 1b, 2a "but less
+  ugly", 3a without line numbers and sorted, 3b, and 3c without line
+  numbers and in the Inputs blue. Checked on the saved Redis run with
+  `repomap render` (no provider call) and headless Chromium with real
+  pointer moves at 1440×900 and 1280×800.
+- **1b, arrow card:** headed from-frame → into-frame with one count line
+  ("291 calls, 29 reads, from all 8 parts into 8 of 9 · 24 go the other
+  way", the last a link to that card), calls under the part they come
+  from, then the part they go into, both headings sticky, caller → callee
+  in call-site order; kept open, a from → into index of parts with counts
+  stands on top. Go marks the calls of a dispatch site with several
+  retained alternatives and of a declaration handing a whole such set over
+  (page_dispatch.go), so the card says "call → one of 94 · 77 here" and
+  "cmdTable passes callback the same 94 as call · 77 here" in one line each
+  with the callees by part under it. Cards are drawn at the screen's type
+  size (291 calls had read at 10 px), take 300–500 px of the room beside
+  their frame, and open on the whole end (crossing the number stack had
+  narrowed the card to the last number crossed).
+- **2a:** an end joining every numbered part of its frame is one "all" in
+  the same chip; numbers stay otherwise. With its card open the parts
+  behind the end are outlined in place and the rest recedes. A label now
+  stands where its arrow meets its own frame: Data type commands' incoming
+  labels had stood on Server runtime's border, unreachable by the pointer.
+- **3a:** a part's reading starts "Made of 18 functions · redis.c", then
+  every declaration, keys first and bold, the rest by name, no line
+  numbers; an area's starts with its parts, each with its counts, files and
+  declarations.
+- **3b:** a click on an arrow end reads its frame in the column, scrolled
+  to its Connections with that connection open, the camera still; a
+  frame's Connections list its arrow ends with the card's own rows and
+  replace the neighbour buttons.
+- **3c:** an input's reading opens at its path: the chain from the entry
+  to each dispatch site holding its handler, shared by the inputs it
+  handles, folded into a box ("Shared by 95 inputs, through call"; one
+  shortest static chain that avoids the handlers the site chooses between,
+  or Redis's ran main → loadAppendOnlyFile → execCommand → call), then the
+  handler's witness tree, a callee under its caller. Computed in Go
+  (page_input_path.go). The reading's heading bar, kind and links take the
+  Inputs blue.
+- Tests: Go dispatch folds and input path, JS harness tests for the
+  composition, the area composition, the arrow-end opening and the path
+  section, node tests for the card arrangement and the end emphasis, and
+  a Playwright spec for "all" and the arrow-end click; each fails without
+  its change. Dumb tests updated: the unavailable-source list by position,
+  the Russian legend line. edge-size's declaration-link test hovered during
+  the camera move and failed alone on main too; it now waits for the camera.
+- `make test`, `make vet`, npm test (120) and `build --check` pass;
+  `make ui-visual-test` fails the same 18 tests as main.
+- Left open: when no room outside the frame is ≥ 300 px the card still
+  covers the parts it outlines; the shared chain is the shortest static
+  one, which for Redis's call runs through beforeSleep, not the accept →
+  read → processCommand path the designer drew.
+
 ## 2026-09-27 — Fixes from the naive-user test (canvas and reading column)
 
 - Five goal-driven naive agents and a designer used the Redis report on a
