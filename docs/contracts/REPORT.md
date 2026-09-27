@@ -192,9 +192,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   titles retain a light background and readable role/purpose text. The duplicate
   `Reading` line and close action do not occupy space above the canvas. That
   space has a static type legend, not changing hover prose. The input context
-  and leave-path action live in the reading card. "Show input" stands there
-  only while a part is read on the pinned path and returns to the input;
-  reading the input itself offers nothing to return to. An input's reading
+  and leave-path action live in the reading card. An input chosen from Find
+  or a link is entered where its path starts: the camera stands on the
+  first part of its trace, its handler's part, with the trace dark from
+  there, while the reading column reads the input. Framing its tile had
+  shown GET as one of 98 tiles with no arrow in sight: the collection stands
+  outside its component, and no one camera shows the tile and the parts it
+  reaches readably. An input without a trace is entered as its tile, and a
+  tile clicked on the canvas keeps the camera. "Show input" stands in the
+  reading card while the camera may be away from the input's tile (at its
+  path's start, or on a part read since) and frames that tile; once the
+  tile is framed there is nothing to return to. An input's reading
   names its handler ("handled by getCommand") as a link into the code. A
   registration the model did not explain keeps its own call words as its
   line ("redis.c.redisCommand.proc get in getCommand"); that line is the fact

@@ -96,7 +96,7 @@ map.inspectConcept=index=>{map.selected=items[index];};
 ` + explain + `
 map.explainSource({key:repomapMembers.sourceKey(second.source)});
 assert.equal(map.selected.source.Text,second.source.Text);
-const scope='part',operation=null,searchValue='',filterValue='',numbered=true;
+const scope='part',operation=null,inputAway=false,searchValue='',filterValue='',numbered=true;
 const byID={part:node},window={scrollY:50};
 function readingDisclosures(){return null;}
 map.explorerMember={owner:scope,name:'Same',key:repomapMembers.sourceKey(second.source),href:'',open:''};

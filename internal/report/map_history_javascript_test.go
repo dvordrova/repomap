@@ -40,8 +40,9 @@ func TestMapRevealRecordsDestinationBeforeLayout(t *testing.T) {
 	selectCode := systemJSPiece(t, "29-operation-view.js", "async function select(", "  function reset(")
 	stateCode := systemJSPiece(t, "29-operation-view.js", "map.readingState=function(){", "  map.revealNode=")
 	resumeCode := systemJSPiece(t, "29-operation-view.js", "map.resumeExploration=function(){", "  map.readingState=")
-	runSystemJS(t, `
-let surface=null,scope='a',operation=null,selectionRevision=0,searchValue='',filterValue='',numbered=true,savedAddress;
+	entranceCode := systemJSPiece(t, "29-operation-view.js", "function rmInputEntrance(", "(function(){")
+	runSystemJS(t, entranceCode+`
+let surface=null,scope='a',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',numbered=true,savedAddress;
 const a={id:'a',dataset:{}},b={id:'b',dataset:{}},op={id:'op',dataset:{activation:'command'}},byID={a,b,op};
 let finish;const ready=new Promise(resolve=>finish=resolve),search={},filter={};
 const map={explorerMember:{owner:'a',key:'source-a'},captureViewport(){return {scale:1,left:20,top:40};},
