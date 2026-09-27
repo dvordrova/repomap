@@ -198,7 +198,9 @@ Missing equivalents, recorded rather than fabricated:
   `MarshalJSON`), `//go:linkname`, cgo `//export` and `plugin.Lookup`. A
   boundary in a Go package several commands link stays with every command,
   and a part leaves no command's map as code that command never runs
-  (READING).
+  (READING). Two commands sharing a package therefore list nothing either
+  never runs, and no declaration is shown "run by" the other (REPORT); files
+  are judged dead repository-wide, against every command's seeds.
 - A call through the field of a row found by a lookup (`DispatchCommand`)
   stays unresolved: a function-typed field is followed only on one allocated
   value. The C adapter gives such a call every function stored into that field

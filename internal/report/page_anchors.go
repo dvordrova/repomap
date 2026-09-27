@@ -150,13 +150,24 @@ func factLabel(fact facts.Fact) string {
 }
 
 var negativeSentences = map[string]string{
-	facts.NegativeNoTests:      "No test files found",
 	facts.NegativeNoDockerfile: "No Dockerfile or docker-compose file found",
 	facts.NegativeNoCI:         "No CI configuration found",
 }
 
+// negativeStatements are sentences that say everything their negative
+// knows, qualifier included, so the fact's own words do not follow them.
+// "No test files found" read as "this repository has no tests": a newcomer
+// writing from the Redis report told readers to skip the 204 tests of
+// test-redis.tcl, a file no adapter recognizes as a test.
+var negativeStatements = map[string]string{
+	facts.NegativeNoTests: "No recognized test files found in the inspected paths",
+}
+
 // negativeSentence phrases a closed negative as one plain sentence.
 func negativeSentence(fact facts.Fact) string {
+	if statement, known := negativeStatements[fact.Key]; known {
+		return statement + "."
+	}
 	base, known := negativeSentences[fact.Key]
 	if !known {
 		base = strings.ReplaceAll(fact.Key, "_", " ")

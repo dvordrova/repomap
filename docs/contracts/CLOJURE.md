@@ -90,7 +90,9 @@ Missing equivalents, recorded rather than fabricated:
   symbol or var invoked as a value, multimethods and protocol dispatch reach
   functions no call names. A boundary in a namespace several targets load
   stays with every target, and a part leaves no target's map as code that
-  target never runs (READING).
+  target never runs (READING). Two targets loading one namespace therefore
+  list nothing either never runs, and no declaration is shown "run by" the
+  other (REPORT).
 - An unresolved `function_value` call names no function a binding could hold,
   so it draws none of the possible arrows the C, Go and Python store
   witnesses draw.

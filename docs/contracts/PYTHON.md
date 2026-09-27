@@ -229,7 +229,9 @@ Missing equivalents, recorded rather than fabricated:
   register, special methods the interpreter calls and `eval` reach functions
   no call names. A boundary in a module several targets import stays with
   every target, and a part leaves no target's map as code that target never
-  runs (READING).
+  runs (READING). Two targets importing one module therefore list nothing
+  either never runs, and no declaration is shown "run by" the other
+  (REPORT).
 - A dict or list of handlers (`{"get": get_command}`,
   `[("del", del_command, 2)]`), at module level or in a function, keeps no
   binding, key or other relation to its handlers. A call through a looked-up

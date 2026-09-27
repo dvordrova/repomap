@@ -133,6 +133,7 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 		// A part the program never runs is listed where its unreachable
 		// code is, under "Not reachable from the entrypoints".
 		if file.Reason == groupindex.OffMapUnreachable {
+			builder.markRunBy(index.Target.ID, row.Members)
 			section.UnreachedParts = append(section.UnreachedParts, row)
 			continue
 		}
@@ -284,6 +285,12 @@ type pageChip struct {
 	// Key marks a declaration the model chose as one of its part's keys,
 	// the ones the part's tiles draw first and in bold.
 	Key bool
+	// RunBy are the other programs of this report that run a declaration
+	// this program never runs (runByOthers), set only where the page lists
+	// what the program never runs.
+	RunBy []pageExternal
+	// objectID is the listed subject, the target's own object.
+	objectID string
 }
 
 // keysFirst is a part's complete code list read the way its tiles are: the
@@ -609,9 +616,79 @@ func (builder *pageBuilder) unreachedRows(programTargetID string) []pageChipRow 
 			}
 		}
 		rows, _ := builder.memberChips(programTargetID, ids)
+		for _, row := range rows {
+			builder.markRunBy(programTargetID, row.Members)
+		}
 		return rows
 	}
 	return nil
+}
+
+// runByOthers joins the programs' saved `unreachable` facts (ProgramIndex;
+// only the C adapter proves them) across the targets of this report, by the
+// declaration identity GroupsIndex already uses across programs
+// (groupindex.DeclarationKey: path, line, column, kind and name). It walks no
+// graph: each program's adapter already decided what that program runs.
+// A program runs a declaration when its index holds it, does not mark it
+// unreachable, and marks something else unreachable: an adapter marks a
+// program's callables all or not at all, and an index that marks nothing
+// (a library, a program other code can enter by any name, every other
+// adapter) proves nothing here. redis-server never runs aeStop, and
+// redis-benchmark does.
+type runByOthers struct {
+	// programs are, by declaration key, the targets that run it.
+	programs map[string][]string
+	// keys are the unreachable callables' declaration keys, by
+	// target-qualified object ID.
+	keys map[string]string
+}
+
+func (builder *pageBuilder) runByJoin() *runByOthers {
+	if builder.runBy != nil {
+		return builder.runBy
+	}
+	join := &runByOthers{programs: make(map[string][]string), keys: make(map[string]string)}
+	builder.runBy = join
+	if builder.data.ProgramPortfolio == nil {
+		return join
+	}
+	for _, index := range builder.data.ProgramPortfolio.Entries {
+		if !slices.ContainsFunc(index.Objects, func(object programindex.Object) bool { return object.Unreachable }) {
+			continue
+		}
+		for _, object := range index.Objects {
+			key := groupindex.DeclarationKey(object)
+			if key == "" || !object.Kind.Callable() {
+				continue
+			}
+			if object.Unreachable {
+				join.keys[subjectKey(index.Target.ID, object.ID)] = key
+				continue
+			}
+			if !slices.Contains(join.programs[key], index.Target.ID) {
+				join.programs[key] = append(join.programs[key], index.Target.ID)
+			}
+		}
+	}
+	return join
+}
+
+// markRunBy names, beside each declaration its program never runs, the
+// other programs of this report that run it, in the page's order, each
+// linking to its component.
+func (builder *pageBuilder) markRunBy(targetID string, chips []pageChip) {
+	join := builder.runByJoin()
+	for i := range chips {
+		programs := join.programs[join.keys[subjectKey(targetID, chips[i].objectID)]]
+		if len(programs) == 0 {
+			continue
+		}
+		for _, section := range builder.sections {
+			if section.programTargetID != targetID && slices.Contains(programs, section.programTargetID) {
+				chips[i].RunBy = append(chips[i].RunBy, pageExternal{Name: section.Label, Href: "#" + section.ID})
+			}
+		}
+	}
 }
 
 // vendoredPath reports a path inside a vendored or generated dependency
@@ -960,7 +1037,7 @@ func (builder *pageBuilder) memberChips(targetID string, memberIDs []string) ([]
 		seen[key] = struct{}{}
 		chip := pageChip{
 			Name: name, Line: anchor.Line, Anchor: *anchor,
-			Doc: builder.docstringFor(anchor.Path, anchor.Line),
+			Doc: builder.docstringFor(anchor.Path, anchor.Line), objectID: id,
 		}
 		if ref.subject.Interpretation != nil {
 			chip.Summary = ref.subject.Interpretation.Line

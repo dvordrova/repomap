@@ -176,3 +176,65 @@ func TestAPartTheProgramNeverRunsIsListedWithItsUnreachableCode(t *testing.T) {
 		t.Fatalf("the part is not listed under what is not reachable (heading %d, part %d, symbols %d):\n%s", heading, part, symbolsAt, html)
 	}
 }
+
+// A declaration one program never runs names the other programs of the
+// report that run it: the same file, line, column, kind and name in an
+// index that proves what its program runs and does not prove this one
+// unreachable. A same-named function elsewhere is another declaration, and
+// an index that proves nothing (a library, any adapter but C) runs nothing
+// here. redis-server's list told a newcomer to skip aeStop, which
+// redis-benchmark runs.
+func TestAnUnreachedDeclarationNamesTheProgramsThatRunIt(t *testing.T) {
+	at := func(path string, line int) *programindex.Location {
+		return &programindex.Location{Path: path, Line: line, Column: 6}
+	}
+	program := func(id string, objects ...programindex.Object) programindex.Index {
+		return programindex.Index{Target: programindex.Target{ID: id}, Objects: objects}
+	}
+	portfolio := &ProgramPortfolio{Entries: []programindex.Index{
+		program("t1",
+			programindex.Object{ID: "n1", Kind: programindex.ObjectFunction, Name: "main", Location: at("redis.c", 9124)},
+			programindex.Object{ID: "n2", Kind: programindex.ObjectFunction, Name: "aeStop", Location: at("ae.c", 82), Unreachable: true},
+			programindex.Object{ID: "n3", Kind: programindex.ObjectFunction, Name: "anetRead", Location: at("anet.c", 182), Unreachable: true},
+			programindex.Object{ID: "n4", Kind: programindex.ObjectFunction, Name: "zipmapRepr", Location: at("zipmap.c", 400), Unreachable: true}),
+		// redis-benchmark runs aeStop and proves anetRead unreachable.
+		program("t2",
+			programindex.Object{ID: "n1", Kind: programindex.ObjectFunction, Name: "main", Location: at("redis-benchmark.c", 483)},
+			programindex.Object{ID: "n7", Kind: programindex.ObjectFunction, Name: "aeStop", Location: at("ae.c", 82)},
+			programindex.Object{ID: "n8", Kind: programindex.ObjectFunction, Name: "anetRead", Location: at("anet.c", 182), Unreachable: true}),
+		// redis-cli runs anetRead, and its own zipmapRepr is another function.
+		program("t3",
+			programindex.Object{ID: "n1", Kind: programindex.ObjectFunction, Name: "main", Location: at("redis-cli.c", 501)},
+			programindex.Object{ID: "n2", Kind: programindex.ObjectFunction, Name: "anetRead", Location: at("anet.c", 182)},
+			programindex.Object{ID: "n3", Kind: programindex.ObjectFunction, Name: "zipmapRepr", Location: at("redis-cli.c", 90)},
+			programindex.Object{ID: "n4", Kind: programindex.ObjectFunction, Name: "cliUnused", Location: at("redis-cli.c", 120), Unreachable: true}),
+		// A library proves nothing: holding zipmap.c does not run it.
+		program("t4",
+			programindex.Object{ID: "n1", Kind: programindex.ObjectFunction, Name: "zipmapRepr", Location: at("zipmap.c", 400)}),
+	}}
+	builder := &pageBuilder{data: &ReportData{ProgramPortfolio: portfolio}, subjects: map[string]subjectRef{}, byProgram: map[string]*pageSection{}}
+	for i, name := range []string{"redis-server", "redis-benchmark", "redis-cli", "libzipmap"} {
+		section := &pageSection{ID: fmt.Sprintf("t%d", i+1), programTargetID: fmt.Sprintf("t%d", i+1), Label: name}
+		builder.sections = append(builder.sections, section)
+		builder.byProgram[section.programTargetID] = section
+	}
+	for _, index := range portfolio.Entries {
+		for _, object := range index.Objects {
+			builder.subjects[subjectKey(index.Target.ID, object.ID)] = subjectRef{programTargetID: index.Target.ID,
+				subject: groupindex.Subject{ID: object.ID, Object: &groupindex.ObjectFacts{Name: object.Name, Kind: object.Kind, Location: object.Location}}}
+		}
+	}
+	var listed []string
+	for _, row := range builder.unreachedRows("t1") {
+		for _, chip := range row.Members {
+			line := chip.Name
+			for _, program := range chip.RunBy {
+				line += " · " + program.Name + " " + program.Href
+			}
+			listed = append(listed, line)
+		}
+	}
+	if want := []string{"aeStop · redis-benchmark #t2", "anetRead · redis-cli #t3", "zipmapRepr"}; !slices.Equal(listed, want) {
+		t.Fatalf("redis-server's unreached declarations = %q, want %q", listed, want)
+	}
+}

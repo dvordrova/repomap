@@ -406,12 +406,16 @@ func TestCRepositoryOrdinaryRun(t *testing.T) {
 
 // The client links the fixture's net.c but never listens: the page says
 // where the listener went, in the client's own list of what its entrypoints
-// never reach, as it lists what the traversal never reached before.
+// never reach, as it lists what the traversal never reached before. Read
+// together, each program's list names the other program that runs a
+// declaration it never runs: the server's event loop, listener and
+// sbConsume are the server's, and the server never connects. Neither list
+// claims the code is unused.
 func TestCRepositoryPageListsWhatAProgramNeverRuns(t *testing.T) {
 	root, _ := cumulativeEvidenceRepository(t, "c")
 	debugDir := t.TempDir()
 	var console strings.Builder
-	runErr := runDefaultWithDeps(root, []string{"--no-model", "--target", "c:kvcli", "--no-open", "--debug-dir", debugDir}, defaultRunDeps{
+	runErr := runDefaultWithDeps(root, []string{"--no-model", "--target", "c:kvd,c:kvcli", "--no-open", "--debug-dir", debugDir}, defaultRunDeps{
 		ctx: t.Context(), stdout: &console, stderr: &console,
 		serveReport: func(context.Context, reportserver.Options) error { return nil },
 		openReport:  func(string) error { return nil },
@@ -423,25 +427,51 @@ func TestCRepositoryPageListsWhatAProgramNeverRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	section := string(page)
-	start := strings.Index(section, `-dead">Not reachable from the entrypoints</h3>`)
-	if start < 0 {
-		t.Fatal("the page has no list of what the entrypoints never reach")
-	}
-	section = section[start:]
-	section = section[:strings.Index(section, "</details>\n</details>")]
-	var listed []string
-	for _, match := range regexp.MustCompile(`<li><code>([^<]+)</code> · (.*?)</li>`).FindAllStringSubmatch(section, -1) {
-		for _, chip := range regexp.MustCompile(`>([A-Za-z_]\w*)<span class="ln">`).FindAllStringSubmatch(match[2], -1) {
-			listed = append(listed, match[1]+":"+chip[1])
+	neverRuns := func(program string) []string {
+		t.Helper()
+		section := string(page)
+		at := strings.Index(section, `data-component-name="`+program+` (executable)"`)
+		if at < 0 {
+			t.Fatalf("the page has no component %s", program)
 		}
+		section = section[at:]
+		start := strings.Index(section, `-dead">Not reachable from the entrypoints</h3>`)
+		if start < 0 {
+			t.Fatalf("%s has no list of what its entrypoints never reach", program)
+		}
+		section = section[start:]
+		section = section[:strings.Index(section, "</details>\n</details>")]
+		if !strings.Contains(section, "Nothing this program runs reaches the declarations below. This does not establish that the code is unused.") {
+			t.Fatalf("%s's list does not say that it does not establish unused code:\n%s", program, section)
+		}
+		var listed []string
+		for _, match := range regexp.MustCompile(`<li><code>([^<]+)</code> · (.*?)</li>`).FindAllStringSubmatch(section, -1) {
+			for _, chip := range regexp.MustCompile(`>([A-Za-z_]\w*)<span class="ln">:\d+</span></(?:a|span)>( <span class="meta run-by">.*?</span>)?`).FindAllStringSubmatch(match[2], -1) {
+				entry := match[1] + ":" + chip[1]
+				if runBy := regexp.MustCompile(`<a href="#t\d+">([^<]+)</a>`).FindAllStringSubmatch(chip[2], -1); len(runBy) > 0 {
+					var programs []string
+					for _, name := range runBy {
+						programs = append(programs, name[1])
+					}
+					entry += " run by " + strings.Join(programs, ", ")
+				}
+				listed = append(listed, entry)
+			}
+		}
+		return listed
 	}
-	// The client links the server's event loop and runs none of it.
-	want := []string{"loop.c:oom", "loop.c:loopCreate", "loop.c:loopCreateFileEvent", "loop.c:loopDeleteFileEvent", "loop.c:loopSetBeforeSleep",
-		"loop.c:loopProcessEvents", "loop.c:loopMain", "loop.c:loopStop", "loop_poll.c:loopApiCreate", "loop_poll.c:loopApiAddEvent", "loop_poll.c:loopApiPoll",
-		"net.c:netListen", "strbuf.c:sbConsume"}
-	if !reflect.DeepEqual(listed, want) {
-		t.Fatalf("the client lists %v as never run, want %v:\n%s", listed, want, section)
+	// The client links the server's event loop and runs none of it; the
+	// server runs all of it.
+	want := []string{"loop.c:oom run by kvd", "loop.c:loopCreate run by kvd", "loop.c:loopCreateFileEvent run by kvd", "loop.c:loopDeleteFileEvent run by kvd",
+		"loop.c:loopSetBeforeSleep run by kvd", "loop.c:loopProcessEvents run by kvd", "loop.c:loopMain run by kvd", "loop.c:loopStop run by kvd",
+		"loop_poll.c:loopApiCreate run by kvd", "loop_poll.c:loopApiAddEvent run by kvd", "loop_poll.c:loopApiPoll run by kvd",
+		"net.c:netListen run by kvd", "strbuf.c:sbConsume run by kvd"}
+	if listed := neverRuns("kvcli"); !reflect.DeepEqual(listed, want) {
+		t.Fatalf("the client lists %v as never run, want %v", listed, want)
+	}
+	// The server never connects; the client does.
+	if listed, want := neverRuns("kvd"), []string{"net.c:netConnect run by kvcli"}; !reflect.DeepEqual(listed, want) {
+		t.Fatalf("the server lists %v as never run, want %v", listed, want)
 	}
 }
 

@@ -1,5 +1,61 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — "No tests" and "unused" said only what the report knows
+
+- Scope: two of the three wrong claims a blind judge found in a newcomer's
+  Redis 1.3.6 onboarding document written only from the report (benchmark
+  R01, claims B7 and B85). Checked on the saved Redis run (20260927-205506)
+  with `repomap render` (0 provider requests) and on the C fixture's two
+  programs read together; logs and revert checks in the session scratchpad,
+  `negatives/`.
+- **Tests.** The fact said "no recognized test files found in inspected
+  paths"; the page led with "No test files found", and the newcomer wrote
+  "no test files" over test-redis.tcl's 204 tests and the Makefile's `test:`.
+  The page now says "No recognized test files found in the inspected paths."
+  (Russian: "В просмотренных путях не распознаны тестовые файлы."), without
+  repeating the fact after it. `isTestPath` is unchanged (lead's decision:
+  there is no Tcl adapter, and one Redis file is no reason to widen it); its
+  only consumer is `addNegatives`, whose negative reaches the orientation
+  request and the page. No fact records a Makefile `test` target: the C
+  adapter's dry run reads only the default goal (`make -n -B -w -o
+  Makefile`), and Makefile rules as run recipes are out of scope (C).
+- **Unused.** redis-server's "Not reachable from the entrypoints" listed
+  `aeStop`, `anetRead` and `anetWrite` with no note, and the newcomer told
+  readers to skip them as unused; redis-benchmark runs `aeStop` and redis-cli
+  does all its network I/O through the other two. The list now says, as the
+  files' list did, that this does not establish unused code, and names the
+  other programs that run each declaration: "aeStop:82 (run by
+  redis-benchmark)", "anetResolve:107 (run by redis-benchmark, redis-cli)",
+  "anetRead:182 (run by redis-cli)". On the saved run redis-cli's "Linked
+  list" part reads "listCreate:41 (run by redis-server, redis-benchmark)",
+  and `listRewindTail`, `sdstoupper` and `zipmapRepr`, which no program runs,
+  name none.
+- **Layer.** Page data joined from the saved ProgramIndex set, not
+  ProgramIndex (one target's index must not carry another's facts) and not
+  GroupsIndex (a thin per-target overlay; a copied cross-target fact would
+  store the fact graph twice and change its format for what the saved marks
+  already say). No graph is walked: a program runs a declaration when its
+  index holds the same declaration, by the identity GroupsIndex already uses
+  across programs (`groupindex.DeclarationKey`, now exported: path, line,
+  column, kind and name), does not mark it `unreachable`, and marks some
+  other callable `unreachable`. That last condition is the C adapter's
+  all-or-nothing proof (a library or an unprovable program marks nothing),
+  now written in PROGRAM_INDEX. A program reaching all its callables names
+  nothing; a missed name is safe, an invented one is not.
+- **Equivalents.** Only C proves `unreachable`; Go, Python, JS/TS and
+  Clojure record in their contracts that two programs sharing code list
+  nothing either never runs, so nothing is named. Files are already judged
+  dead repository-wide.
+- **Tests.** `TestNoTestsNegativeSaysOnlyWhatIsRecognized` (English and
+  Russian page sentences; fails on revert with "No test files found (…)").
+  `TestCRepositoryPageListsWhatAProgramNeverRuns` now reads kvd and kvcli
+  together: kvcli's thirteen loop/net/strbuf declarations each "run by kvd",
+  kvd's `netConnect` "run by kvcli", both under the note (fails on revert;
+  with `markRunBy` a no-op it fails on the missing names).
+  `TestAnUnreachedDeclarationNamesTheProgramsThatRunIt` keeps the contrasts:
+  a same-named function in another file and a library index that marks
+  nothing name no program (fails when an unmarking index counts).
+
 ## 2026-09-28 — Navigation bugs from the Redis benchmark: levels, breadcrumb, input path
 
 - Scope (lead): bugs only; the canvas look and camera policy stay frozen.

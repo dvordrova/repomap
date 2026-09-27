@@ -75,6 +75,12 @@ ProgramIndex retains:
   them). Absent claims nothing, which is every other adapter's case:
   reflection, dynamic attribute lookup, computed property names, `resolve`
   and interface calls the platform makes can reach what no relation names.
+  Within one index the proof is whole: an adapter that marks any callable
+  of a program has decided every one of them (C marks nothing for a library
+  or a program it cannot prove), so there an unmarked callable is one that
+  program can reach. The report joins these saved marks across programs by
+  declaration identity to name the programs that run what another never
+  runs (REPORT); no graph is walked for it.
   Validation refuses it on a declaration that does not run (a type, a
   variable, a module, an external symbol);
 - a callable's `parameters` and `results` in order, each `{name, type,

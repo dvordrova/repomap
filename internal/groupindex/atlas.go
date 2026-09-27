@@ -75,7 +75,7 @@ func ReadDeclarationKeys(ids []string, read func(string) (programindex.Index, er
 			return DeclarationKeys{}, err
 		}
 		for _, object := range program.Objects {
-			key := declarationKey(object)
+			key := DeclarationKey(object)
 			keys.byRef[program.Target.ID+"."+object.ID] = key
 			keys.byRef[object.ID] = key
 		}
@@ -139,7 +139,7 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 			localRefs[sourceRefs[boundary.ObjectID]] = ""
 		}
 		for _, object := range program.Objects {
-			key := declarationKey(object)
+			key := DeclarationKey(object)
 			if _, needed := localRefs[key]; needed {
 				localRefs[key] = object.ID
 			}
@@ -344,7 +344,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	declarations := make(map[string]bool, len(program.Objects))
 	for _, object := range program.Objects {
 		objects[object.ID] = object
-		declarations[declarationKey(object)] = true
+		declarations[DeclarationKey(object)] = true
 	}
 	interpretations := make(map[string]Interpretation)
 	interpret := func(file atlas.File) {
@@ -361,7 +361,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			key := sourceRefs[id]
 			if key == "" {
 				if object, ok := objects[id]; ok {
-					key = declarationKey(object)
+					key = DeclarationKey(object)
 				}
 			}
 			if key == "" || !declarations[key] {
@@ -398,7 +398,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if !exists {
 			return nil
 		}
-		box := boxOfDeclaration[declarationKey(object)]
+		box := boxOfDeclaration[DeclarationKey(object)]
 		// A selected module body owns its observed top-level activity, not
 		// every declaration in the file. Those declarations still require
 		// their own accepted membership, including after a refused model row.
@@ -439,7 +439,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		subject := byID[object.ID]
 		subject.Categories = categories
 		if object.Location != nil {
-			if interpretation, ok := interpretations[declarationKey(object)]; ok {
+			if interpretation, ok := interpretations[DeclarationKey(object)]; ok {
 				subject.Interpretation = &interpretation
 			}
 		}
@@ -672,7 +672,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if byID[subjectID] == nil {
 			subjectID = ""
 			for _, object := range program.Objects {
-				if declarationKey(object) == sourceRefs[boundary.ObjectID] {
+				if DeclarationKey(object) == sourceRefs[boundary.ObjectID] {
 					subjectID = object.ID
 					break
 				}
@@ -721,7 +721,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	// at the declaration's source key.
 	objectOfKey := make(map[string]string, len(program.Objects))
 	for _, object := range program.Objects {
-		if key := declarationKey(object); key != "" {
+		if key := DeclarationKey(object); key != "" {
 			if _, seen := objectOfKey[key]; !seen {
 				objectOfKey[key] = object.ID
 			}
@@ -731,7 +731,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		key := sourceRefs[symbol.ObjectID]
 		if key == "" {
 			if object, ok := objects[symbol.ObjectID]; ok {
-				key = declarationKey(object)
+				key = DeclarationKey(object)
 			}
 		}
 		id, ok := objectOfKey[key]
@@ -834,7 +834,11 @@ func operationKey(operation Operation) string {
 	}, "\x00")
 }
 
-func declarationKey(object programindex.Object) string {
+// DeclarationKey is a declaration's identity across the programs that index
+// it: its source anchor (path, line, column), kind and name. Object IDs
+// repeat across targets and a name alone is no identity; one located
+// declaration compiled into two programs has this one key in both.
+func DeclarationKey(object programindex.Object) string {
 	if object.Location == nil {
 		return ""
 	}

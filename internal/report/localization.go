@@ -933,6 +933,21 @@ func (page *PreparedPage) rebuildDisplayLabels(language DisplayLanguage) {
 				section.SharedCode[i].Name = owner.Label
 			}
 		}
+		runBy := func(chips []pageChip) {
+			for i := range chips {
+				for j := range chips[i].RunBy {
+					if owner := bySection[strings.TrimPrefix(chips[i].RunBy[j].Href, "#")]; owner != nil {
+						chips[i].RunBy[j].Name = owner.Label
+					}
+				}
+			}
+		}
+		for _, row := range section.Unreached {
+			runBy(row.Members)
+		}
+		for _, row := range section.UnreachedParts {
+			runBy(row.Members)
+		}
 		for _, groups := range [][]pageGroup{section.Triggers, section.Core, section.DependencyGroups} {
 			for i := range groups {
 				byDestination["#"+groups[i].ID] = section
@@ -1115,7 +1130,7 @@ func localizedUIValue(language DisplayLanguage, text string) string {
 			return value
 		}
 	}
-	for _, prefix := range []string{"No test files found", "No Dockerfile or docker-compose file found", "No CI configuration found", "no license", "no contributing", "no changelog", "no linter config"} {
+	for _, prefix := range []string{"No Dockerfile or docker-compose file found", "No CI configuration found", "no license", "no contributing", "no changelog", "no linter config"} {
 		if strings.HasPrefix(text, prefix+" (") && strings.HasSuffix(text, ").") {
 			argument := englishUI(language, strings.TrimSuffix(strings.TrimPrefix(text, prefix+" ("), ")."))
 			if value, err := uiText(language, prefix+" ({0}).", argument); err == nil {

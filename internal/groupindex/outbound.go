@@ -36,7 +36,7 @@ type OutboundCall struct {
 func projectOutbound(program programindex.Index, target atlas.Target, groups map[string]string, sourceRefs map[string]string) []OutboundCall {
 	local := make(map[string]string, len(program.Objects))
 	for _, object := range program.Objects {
-		if key := declarationKey(object); key != "" {
+		if key := DeclarationKey(object); key != "" {
 			local[key] = object.ID
 		}
 	}

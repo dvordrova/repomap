@@ -258,6 +258,8 @@ type pageBuilder struct {
 	connectionEnds *connectionEnds
 	// dispatchByTarget is each target's dispatch folds, built once.
 	dispatchByTarget map[string]*dispatchFacts
+	// runBy is which programs run each declaration, built once.
+	runBy *runByOthers
 }
 
 // subjectKey is the only identity used by the report projection. Subject IDs

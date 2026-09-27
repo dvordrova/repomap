@@ -221,6 +221,8 @@ Missing equivalents, recorded rather than fabricated:
   they were registered under, and `eval` reach functions no call names. A
   boundary in a module several packages import stays with every package, and
   a part leaves no package's map as code that package never runs (READING).
+  Two packages importing one module therefore list nothing either never
+  runs, and no declaration is shown "run by" the other (REPORT).
 - An object literal or array of handlers (`{get: getCommand}`,
   `[{name: "del", run: delCommand}]`) makes each handler a value read where
   the table is written, without its key or its row's literals. No binding

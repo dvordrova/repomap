@@ -231,7 +231,8 @@ nothing reached is `unreachable` in that program's index: a deterministic
 fact about that program as its link line (or, without one, the linker
 closure) gives it, not about the file, so `anet.c`'s `anetTcpServer` and
 `anetAccept` are unreachable in redis-cli and redis-benchmark and reached in
-redis-server. An address taken only inside code that never runs is never
+redis-server, and redis-cli's list names redis-server beside them ("run by",
+REPORT). An address taken only inside code that never runs is never
 taken. A part of a program's map whose every function is unreachable there
 leaves that program's map (READING): redis-cli links `adlist.c` and calls
 none of its thirteen functions, so its "Linked list" is listed under "Not
@@ -348,9 +349,11 @@ adapter's explicit target, the files that restore each program, one parse per
 plan for a shared unit and its release after the last projection that needs it,
 a backend outside this platform's build, a missing clang, an ordinary
 offline run selecting a C program, whose metadata records the platform view and
-whose page shows none of it, and kvcli's page listing the event loop's
-functions, `netListen` and `sbConsume` under "Not reachable from the
-entrypoints". Facts tests cover C
+whose page shows none of it, and kvd and kvcli read together: kvcli's page
+lists the event loop's functions, `netListen` and `sbConsume` under "Not
+reachable from the entrypoints", each run by kvd, and kvd's lists
+`netConnect`, run by kvcli, both under the note that this does not establish
+unused code. Facts tests cover C
 config reads, SQL, dynamic execution, command rows that state no HTTP method
 and route rows that state one, each with its record field as registrar.
 `TestIndexProvesWhatAProgramNeverRuns` checks each way a function is named
