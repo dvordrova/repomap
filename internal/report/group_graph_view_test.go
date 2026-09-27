@@ -465,28 +465,49 @@ func TestStartReachesKeepsOutgoingHopsOnly(t *testing.T) {
 		{Arrow: "←", Title: "caller"}, {Arrow: "→", Title: "a"}, {Arrow: "→", Title: "b"},
 		{Arrow: "→", Title: "c"}, {Arrow: "→", Title: "d"},
 	}
-	got := startReaches(rows, 3)
+	got := startReaches(rows, "", 3)
 	if len(got) != 3 || got[0].Title != "a" || got[2].Title != "c" {
 		t.Fatalf("startReaches = %#v", got)
 	}
 }
 
-// redis-benchmark's main calls aeMain at three sites: read forward, that is
-// one step, not "main calls aeMain" three times, and the next distinct
-// connection of the entry's group is shown in the freed place.
-func TestStartReachesNameEachStepOnce(t *testing.T) {
-	loop := pageConnection{Arrow: "→", Label: "main calls aeMain", Title: "Event loop", Href: "#loop"}
-	rows := []pageConnection{loop, loop, loop,
-		{Arrow: "→", Label: "main calls sdscat", Title: "String library", Href: "#sds"},
-		{Arrow: "→", Label: "main calls aeCreateEventLoop", Title: "Event loop", Href: "#loop"},
+// redis-benchmark's main, read forward: its own calls in the order they are
+// written, before the calls its part's other functions make, whatever part
+// each reaches. main calls aeMain at three sites, which is one step, and the
+// next distinct connection takes the freed place. In the stored order,
+// grouped by the part reached, the start read "main calls aeMain" before the
+// aeCreateEventLoop main calls first, and createClient's call before either.
+func TestStartReachesReadTheEntryForwardNamingEachStepOnce(t *testing.T) {
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "redis-benchmark.c", Line: line, Column: 9}
+	}
+	call := func(from string, line int, label, title string) pageConnection {
+		return pageConnection{Arrow: "→", Label: label, Title: title, Href: "#" + title, fromSubject: from, at: at(line)}
+	}
+	rows := []pageConnection{
+		call("n5", 250, "createClient calls aeCreateFileEvent", "Event loop"),
+		call("n1", 523, "main calls aeMain", "Event loop"),
+		call("n1", 534, "main calls aeMain", "Event loop"),
+		call("n1", 545, "main calls aeMain", "Event loop"),
+		call("n1", 531, "main calls sdscat", "String library"),
+		call("n1", 493, "main calls aeCreateEventLoop", "Event loop"),
 	}
 	var got []string
-	for _, row := range startReaches(rows, 3) {
+	for _, row := range startReaches(rows, "n1", 3) {
 		got = append(got, row.Label+" "+row.Title)
 	}
-	want := []string{"main calls aeMain Event loop", "main calls sdscat String library", "main calls aeCreateEventLoop Event loop"}
+	want := []string{"main calls aeCreateEventLoop Event loop", "main calls aeMain Event loop", "main calls sdscat String library"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("read forward = %q, want %q", got, want)
+	}
+	// An entry with no outgoing call of its own reads its part's calls in
+	// the order they are written.
+	got = nil
+	for _, row := range startReaches(rows, "n9", 2) {
+		got = append(got, row.Label)
+	}
+	if want := []string{"createClient calls aeCreateFileEvent", "main calls aeCreateEventLoop"}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("read forward without own calls = %q, want %q", got, want)
 	}
 }
 

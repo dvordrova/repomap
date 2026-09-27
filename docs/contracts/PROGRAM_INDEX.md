@@ -165,7 +165,10 @@ Seed locations are resolved against the complete file inventory before depths
 are assigned. A declaration place shared by several targets lists, as
 `unreached`, the targets whose index proved it `unreachable` (graph v18): it
 stays in their map of parts, but what it calls out to, reads or registers is
-not theirs (READING). The graph keeps both the seed files (`seeds`) and, where a
+not theirs (READING). A declaration's `object_id` is its
+object qualified by the target that indexed it (`t1.n4`), since object IDs
+repeat across targets: a GroupsIndex subject `n4` of `t1` finds its place by
+that qualified identity. The graph keeps both the seed files (`seeds`) and, where a
 launch fact names a declaration that is one of its symbol places, that
 declaration (`seed_decls`): a file whose code the map of parts splits between
 several parts has no one part, and the entry is then located by the part that

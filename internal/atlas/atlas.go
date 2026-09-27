@@ -187,9 +187,21 @@ type Decl struct {
 	Exported  bool `json:"exported"`
 	// FanIn counts distinct callers of this declaration in the graph.
 	FanIn int `json:"fan_in"`
-	// ObjectID keeps the program-index identity for the page's anchors. It is
-	// never sent to the model.
+	// ObjectID keeps the program-index identity for the page's anchors,
+	// qualified by its program (ScopedObjectID). It is never sent to the
+	// model.
 	ObjectID string `json:"object_id,omitempty"`
+}
+
+// ScopedObjectID is a declaration's Decl.ObjectID: its program-index object
+// ID qualified by the program that indexed it ("t1.n4"), because object IDs
+// repeat across programs. A GroupsIndex subject of target t1 whose ID is n4
+// is the declaration whose ObjectID is ScopedObjectID("t1", "n4").
+func ScopedObjectID(targetID, objectID string) string {
+	if targetID == "" || objectID == "" {
+		return ""
+	}
+	return targetID + "." + objectID
 }
 
 // FileFacts is what the code knows about a code file.

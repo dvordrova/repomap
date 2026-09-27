@@ -39,7 +39,8 @@ func (builder *pageBuilder) nativeGroupConnections(index groupindex.Index, group
 		}
 		rows = append(rows, pageConnection{Native: true, EvidenceID: edge.RelationID + "\x00" + edge.ToSubjectID, Arrow: arrow, Title: peer.Title, Href: "#" + groupAnchorID(section.ID, peer.ID),
 			Label:    fromName + " " + strings.ReplaceAll(string(edge.RelationKind), "_", " ") + " " + toName,
-			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: fromAnchor, ToSource: toAnchor})
+			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: fromAnchor, ToSource: toAnchor,
+			fromSubject: edge.FromSubjectID, at: edge.Location})
 	}
 	return rows
 }

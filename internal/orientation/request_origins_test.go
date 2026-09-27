@@ -30,7 +30,7 @@ func TestOrientationMemberEvidenceCarriesCompactOrigins(t *testing.T) {
 		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: origin}},
 		ResultValue:     &sourcevalue.Value{Kind: "call_result", Anchor: anchor(5)}}
 	main := atlas.Place{ID: "local-place-main", Kind: atlas.PlaceSymbol, Path: "alpha/main.go", LineNo: 1, TargetIDs: []string{fixture.input.Groups[0].Target.ID},
-		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.subjectID("alpha", "inbound"), Name: "Serve", Signature: "func Serve()"}, Calls: []atlas.SymbolCall{call}}}
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.objectID("alpha", "inbound"), Name: "Serve", Signature: "func Serve()"}, Calls: []atlas.SymbolCall{call}}}
 	fixture.input.Graph = atlas.Graph{Places: []atlas.Place{main}}
 	full, err := json.Marshal(main.Symbol.Calls)
 	if err != nil {

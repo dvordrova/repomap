@@ -247,10 +247,7 @@ type typeField struct {
 }
 
 func scopedObjectID(targetID, objectID string) string {
-	if targetID == "" || objectID == "" {
-		return ""
-	}
-	return targetID + "." + objectID
+	return atlas.ScopedObjectID(targetID, objectID)
 }
 
 func (b *builder) indexClaims() {

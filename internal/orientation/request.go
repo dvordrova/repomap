@@ -228,12 +228,18 @@ func buildRequestWith(input Input, bounds packing) (request, catalog, error) {
 		wire.Connections = append(wire.Connections, connections...)
 	}
 	if bounds.Evidence {
+		// A declaration place names its program-index object qualified by
+		// its program: a member n4 of t1 is the place whose ObjectID is
+		// t1.n4. Looked up by the bare n4, no member found its place, and
+		// every orientation request went without member evidence: the
+		// model ordered redis-server's main flow loadServerConfig before
+		// initServerConfig without seeing main's calls.
 		subjectsByTarget := make(map[string]map[string]bool)
 		for subject := range builder.subjectRefs {
 			if subjectsByTarget[subject.targetID] == nil {
 				subjectsByTarget[subject.targetID] = make(map[string]bool)
 			}
-			subjectsByTarget[subject.targetID][subject.subjectID] = true
+			subjectsByTarget[subject.targetID][atlas.ScopedObjectID(subject.targetID, subject.subjectID)] = true
 		}
 		for targetID, subjects := range subjectsByTarget {
 			graph := input.Graph
@@ -245,7 +251,7 @@ func buildRequestWith(input Input, bounds packing) (request, catalog, error) {
 				if subject.targetID != targetID {
 					continue
 				}
-				if facts := evidence[subject.subjectID]; facts != nil {
+				if facts := evidence[atlas.ScopedObjectID(subject.targetID, subject.subjectID)]; facts != nil {
 					wire.MemberEvidence = append(wire.MemberEvidence, memberEvidenceWire{Ref: ref, Evidence: facts})
 				}
 			}

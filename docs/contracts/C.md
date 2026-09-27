@@ -334,3 +334,6 @@ the stats thread as continuous work, and neither the signal handler nor the
 section titles and the file description at their consuming boundaries, and the
 fixture's own docstrings reach its declarations. The fixture's map of parts is
 checked like every other language's (`TestCumulativeCMapOfParts`).
+`TestCFixtureOrientationReadsMainsCallsInWrittenOrder` checks that the
+orientation request carries kvd's `main` with its calls in the order `main`
+writes them.

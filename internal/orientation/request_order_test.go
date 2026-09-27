@@ -25,7 +25,7 @@ func TestQualifiedCompactRefsUseNaturalOrder(t *testing.T) {
 // listed indexes, groups, members or connections.
 func TestRequestBytesDoNotDependOnGroupMemberOrConnectionOrder(t *testing.T) {
 	fixture := newFixture(t)
-	subject := fixture.subjectID("alpha", "inbound")
+	subject := fixture.objectID("alpha", "inbound")
 	fixture.input.Graph = atlas.Graph{Places: []atlas.Place{{ID: "local-place-main", Kind: atlas.PlaceSymbol, Path: "alpha/main.go", LineNo: 1,
 		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: subject, Name: "Serve"}, Calls: []atlas.SymbolCall{{Name: "Apply", Kind: "calls", Line: 2, Column: 2}}}}}}
 	canonical, _, err := encodeRequest(fixture.input, packingLadder[0])

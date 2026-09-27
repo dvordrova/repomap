@@ -27,7 +27,7 @@ func TestOrientationListsAtMostTheAdvertisedMembersPerGroup(t *testing.T) {
 		index.Subjects = append(index.Subjects, groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: fmt.Sprintf("Handler%d", i)}})
 		group.MemberSubjectIDs = append(group.MemberSubjectIDs, id)
 		fixture.input.Graph.Places = append(fixture.input.Graph.Places, atlas.Place{ID: "place-" + id, Kind: atlas.PlaceSymbol, Path: "alpha/handlers.go", LineNo: i + 1,
-			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: id, Name: fmt.Sprintf("Handler%d", i)}, Calls: []atlas.SymbolCall{{Name: "Work", Line: i + 1, Column: 2}}}})
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: atlas.ScopedObjectID(index.Target.ID, id), Name: fmt.Sprintf("Handler%d", i)}, Calls: []atlas.SymbolCall{{Name: "Work", Line: i + 1, Column: 2}}}})
 	}
 	wire, cat, err := buildRequest(fixture.input)
 	if err != nil {
@@ -55,7 +55,7 @@ func TestOrientationListsAtMostTheAdvertisedMembersPerGroup(t *testing.T) {
 
 func TestOrientationBoundsOneMemberObservationLists(t *testing.T) {
 	fixture := newFixture(t)
-	subject := fixture.subjectID("alpha", "inbound")
+	subject := fixture.objectID("alpha", "inbound")
 	var calls []atlas.SymbolCall
 	for i := 0; i < MaxEvidenceCalls+3; i++ {
 		calls = append(calls, atlas.SymbolCall{Name: fmt.Sprintf("Step%d", i), Kind: "calls", Line: i + 1, Column: 2})
@@ -101,7 +101,7 @@ func TestRunWalksThePackingLadderAfterASizeRefusal(t *testing.T) {
 					calls = append(calls, atlas.SymbolCall{Name: fmt.Sprintf("Step%d", c), Kind: "calls", Line: c + 1, Column: 2, Resolution: "exact"})
 				}
 				fixture.input.Graph.Places = append(fixture.input.Graph.Places, atlas.Place{ID: "place-" + id, Kind: atlas.PlaceSymbol, Path: "alpha/members.go", LineNo: len(fixture.input.Graph.Places) + 1,
-					Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: id, Name: "Member"}, Calls: calls}})
+					Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: atlas.ScopedObjectID(index.Target.ID, id), Name: "Member"}, Calls: calls}})
 			}
 		}
 	}

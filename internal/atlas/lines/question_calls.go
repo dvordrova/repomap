@@ -53,6 +53,29 @@ type EvidenceLimits struct {
 	Callers int
 }
 
+// writtenOrder lists a declaration's calls in the order they are written in
+// its body. The graph keeps them in a stable order of their contents, which
+// put redis-server main's fprintf, exit and time calls before
+// initServerConfig: read in that order, or cut after the first few, the
+// calls said nothing of what main does first. Calls at one site keep their
+// stored order; a call without a known line follows the located ones.
+func writtenOrder(calls []atlas.SymbolCall) []atlas.SymbolCall {
+	ordered := slices.Clone(calls)
+	slices.SortStableFunc(ordered, func(a, b atlas.SymbolCall) int {
+		if (a.Line < 1) != (b.Line < 1) {
+			if a.Line < 1 {
+				return 1
+			}
+			return -1
+		}
+		if a.Line != b.Line {
+			return a.Line - b.Line
+		}
+		return a.Column - b.Column
+	})
+	return ordered
+}
+
 // CallableEvidenceWithin is CallableEvidence with bounded lists.
 func CallableEvidenceWithin(graph atlas.Graph, subjects map[string]bool, limits EvidenceLimits) map[string]map[string]any {
 	result := make(map[string]map[string]any)
@@ -86,7 +109,7 @@ func CallableEvidenceWithin(graph atlas.Graph, subjects map[string]bool, limits 
 func questionCallableEvidence(facts map[string]any, place atlas.Place, places, symbols map[string]atlas.Place, limits EvidenceLimits) {
 	var evidence EvidenceCatalog
 	var calls []questionCall
-	for i, call := range place.Symbol.Calls {
+	for i, call := range writtenOrder(place.Symbol.Calls) {
 		if limits.Calls > 0 && i >= limits.Calls {
 			facts["calls_omitted"] = len(place.Symbol.Calls) - i
 			break

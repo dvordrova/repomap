@@ -36,7 +36,7 @@ func TestOrientationKeepsLateGroupMemberAndItsWorkerEvidence(t *testing.T) {
 		group.MemberSubjectIDs = append(group.MemberSubjectIDs, id)
 		fixture.input.Graph.Places = append(fixture.input.Graph.Places, atlas.Place{ID: "place-" + id, Kind: atlas.PlaceSymbol,
 			Path: "alpha/workers.go", LineNo: i + 1,
-			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: id, Name: name}, Calls: []atlas.SymbolCall{{Name: "ReadQueue", Kind: "invokes_external", Line: i + 1, Column: 2}}}})
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: atlas.ScopedObjectID(index.Target.ID, id), Name: name}, Calls: []atlas.SymbolCall{{Name: "ReadQueue", Kind: "invokes_external", Line: i + 1, Column: 2}}}})
 	}
 	wire, cat, err := buildRequest(fixture.input)
 	if err != nil {
@@ -71,13 +71,13 @@ func TestOrientationUsesOriginalMemberCallsWithoutImportingNeighbourBehavior(t *
 	fixture := newFixture(t)
 	programTargetID := fixture.input.Groups[0].Target.ID
 	main := atlas.Place{ID: "local-place-main", Kind: atlas.PlaceSymbol, Path: "alpha/main.go", LineNo: 1, TargetIDs: []string{programTargetID},
-		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.subjectID("alpha", "inbound"), Name: "Serve", Signature: "func Serve()"}, Calls: []atlas.SymbolCall{
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.objectID("alpha", "inbound"), Name: "Serve", Signature: "func Serve()"}, Calls: []atlas.SymbolCall{
 			{Name: "Apply", Kind: "calls", Line: 5, Column: 9, Resolution: "alternatives", CalleeIDs: []string{"local-place-core"},
 				SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "field", Text: "issueTrackerClient", Anchor: &sourcevalue.Anchor{Path: "alpha/main.go", Line: 5, Column: 15}}}}},
 			{Name: "Apply", Kind: "calls", Line: 5, Column: 35, Invocation: "goroutine", Resolution: "exact", CalleeIDs: []string{"local-place-core"}},
 		}}}
 	core := atlas.Place{ID: "local-place-core", Kind: atlas.PlaceSymbol, Path: "alpha/core.go", LineNo: 8, TargetIDs: []string{programTargetID},
-		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.subjectID("alpha", "core"), Name: "Apply", Signature: "func Apply()"}}}
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.objectID("alpha", "core"), Name: "Apply", Signature: "func Apply()"}}}
 	unselected := atlas.Place{ID: "local-place-unselected", Kind: atlas.PlaceSymbol, Path: "alpha/other.go", LineNo: 2, TargetIDs: []string{programTargetID},
 		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "local-object-unselected", Name: "Unrelated"}, Calls: []atlas.SymbolCall{{Name: "unselected-neighbour-exchange"}}}}
 	fixture.input.Graph = atlas.Graph{Places: []atlas.Place{main, core, unselected}}

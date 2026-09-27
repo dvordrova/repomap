@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -484,6 +485,12 @@ func (fixture *fixture) factID(label string) string   { return fixture.factIDs[l
 func (fixture *fixture) claimID(label string) string  { return fixture.claimIDs[label] }
 func (fixture *fixture) subjectID(target, label string) string {
 	return fixture.subjectIDs[target][label]
+}
+
+// objectID is the subject's declaration place's ObjectID, qualified by its
+// program as the atlas places give it.
+func (fixture *fixture) objectID(target, label string) string {
+	return atlas.ScopedObjectID(fixture.targetID(target), fixture.subjectID(target, label))
 }
 
 func (fixture *fixture) canonicalIDs() []string {

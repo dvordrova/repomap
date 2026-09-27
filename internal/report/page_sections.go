@@ -1,7 +1,9 @@
 package report
 
 import (
+	"cmp"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -313,6 +315,11 @@ type pageConnection struct {
 	// Count is how many times this same line was said. Three exact calls
 	// from one group to another were three identical rows on the card.
 	Count int
+	// fromSubject and at are the declaration a call is written in and where,
+	// when the connection is a native call: the order an entrypoint is read
+	// forward in. They are never shown.
+	fromSubject string
+	at          *programindex.Location
 }
 
 // buildSections creates one section per analyzed target and fills it from the
@@ -990,13 +997,15 @@ func (builder *pageBuilder) groupConnections(
 			continue
 		}
 		row := pageConnection{
-			EvidenceID: connection.SourceID + "\x00" + connection.ToSubjectID,
-			Native:     strings.HasPrefix(connection.SourceKind, "native_"),
-			Arrow:      arrow,
-			Title:      builder.groupTitles[other],
-			Label:      connection.Label,
-			Summary:    connection.Summary,
-			Possible:   connection.SupportResolution == programindex.PatternValuePossible,
+			EvidenceID:  connection.SourceID + "\x00" + connection.ToSubjectID,
+			Native:      strings.HasPrefix(connection.SourceKind, "native_"),
+			Arrow:       arrow,
+			Title:       builder.groupTitles[other],
+			Label:       connection.Label,
+			Summary:     connection.Summary,
+			Possible:    connection.SupportResolution == programindex.PatternValuePossible,
+			fromSubject: connection.FromSubjectID,
+			at:          connection.FromLocation,
 		}
 		if row.Title == "" {
 			row.Title = strings.ReplaceAll(connection.SemanticKind, "_", " ")
@@ -1209,7 +1218,7 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 				if group, inGroup := groupOf[subjectID]; inGroup {
 					step.Group = group.Title
 					step.Href = "#" + groupAnchorID(section.ID, group.ID)
-					step.Reaches = startReaches(builder.groupConnections(index, group), maxStartReaches)
+					step.Reaches = startReaches(builder.groupConnections(index, group), subjectID, maxStartReaches)
 				}
 			}
 		}
@@ -1218,10 +1227,33 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 	return steps
 }
 
-// startReaches keeps the outgoing connections of a group, the first few,
-// each line once: three call sites of main calling aeMain are one step read
-// forward, and the next distinct connection takes the freed place.
-func startReaches(rows []pageConnection, most int) []pageConnection {
+// startReaches reads an entrypoint forward: the outgoing connections of its
+// group, the entrypoint's own calls first and then the group's others, each
+// in the order they are written, the first few, each line once. Three call
+// sites of main calling aeMain are one step, and the next distinct
+// connection takes the freed place. In the connections' stored order,
+// grouped by the part they reach, redis-benchmark's start read "main calls
+// aeMain" before the aeCreateEventLoop main calls thirty lines earlier.
+func startReaches(rows []pageConnection, entry string, most int) []pageConnection {
+	own := func(row pageConnection) bool { return entry != "" && row.fromSubject == entry }
+	rows = slices.Clone(rows)
+	slices.SortStableFunc(rows, func(a, b pageConnection) int {
+		switch {
+		case own(a) != own(b) && own(a):
+			return -1
+		case own(a) != own(b):
+			return 1
+		}
+		switch {
+		case a.at == nil && b.at == nil:
+			return 0
+		case a.at == nil:
+			return 1
+		case b.at == nil:
+			return -1
+		}
+		return cmp.Or(strings.Compare(a.at.Path, b.at.Path), cmp.Compare(a.at.Line, b.at.Line), cmp.Compare(a.at.Column, b.at.Column))
+	})
 	var out []pageConnection
 	shown := map[[3]string]bool{}
 	for _, row := range rows {
