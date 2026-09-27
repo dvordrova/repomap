@@ -16,28 +16,33 @@ import (
 // name in the code (constructor and destructor attributes); at the program's
 // file-scope initializers, which exist before main; at an external function
 // whose name a platform or package header also declares, which that library
-// may call instead of its own; and at a name the implementation reserves
-// (__x, _X), which only the implementation calls. A cleanup attribute names
-// its function where the variable is declared. Assembly and alias attributes
-// name functions by text, and every repository function their text names is
-// named there.
+// may call instead of its own; and at a name the C standard reserves for the
+// implementation (any file-scope name that begins with an underscore). A
+// cleanup attribute names its function where the variable is declared.
+// Assembly and alias attributes name functions by text, and every repository
+// function their text names is named there.
 //
-// A program that looks symbols up by name (dlsym) can reach any function,
-// and one whose assembly text cannot be read proves nothing: neither marks
-// anything. A library (no main) is called from outside and marks nothing.
+// Code the adapter does not read can call any function with external linkage
+// by its name: an input of the link line no compile line produced, a library
+// other than the C runtime's own, and code the program loads or looks up at
+// run time (dlopen, dlsym). Then every external function is a root and only
+// static functions can be proven. A link line that names another entry
+// (-e, --entry, -init, -fini) or drops the runtime's start files, and
+// assembly text the adapter cannot read, prove nothing. A library (no main)
+// is called from outside and marks nothing.
 func (b *builder) markUnreachable() {
 	main := b.mainFunction()
 	if main == nil {
 		return
 	}
+	outside, provable := linkedOutside(b.parsed.Program)
 	byName := map[string][]string{} // function name -> repository function refs
 	for _, fn := range b.functions {
 		byName[fn.node.Name] = append(byName[fn.node.Name], fn.ref)
 	}
 	edges := map[string][]string{}
 	roots := []string{main.ref}
-	provable := true
-	// name visits n and hands every repository function it names to named.
+	// visit hands every repository function n names to named.
 	var visit func(scope *unitScope, n *Node, named func(string))
 	visit = func(scope *unitScope, n *Node, named func(string)) {
 		if n == nil || !provable {
@@ -48,8 +53,8 @@ func (b *builder) markUnreachable() {
 			if ref := n.ReferencedDecl; ref != nil && ref.Kind == "FunctionDecl" {
 				if fn := b.repositoryFunction(scope, ref); fn != "" {
 					named(fn)
-				} else if lookupByName[ref.Name] {
-					provable = false
+				} else if loadsCode[ref.Name] {
+					outside = true
 				}
 			}
 		case "CleanupAttr":
@@ -78,6 +83,7 @@ func (b *builder) markUnreachable() {
 		visit(scope, n.ArrayFiller, named)
 	}
 	root := func(fn string) { roots = append(roots, fn) }
+	var external []string
 	for _, scope := range b.scopes {
 		for _, node := range scope.unit.Decls {
 			if node.Kind != "FunctionDecl" {
@@ -85,8 +91,11 @@ func (b *builder) markUnreachable() {
 				continue
 			}
 			fn := b.repositoryFunction(scope, &DeclRef{ID: node.ID, Kind: node.Kind, Name: node.Name})
-			if fn != "" && !scope.internal[node.Name] && (scope.platform[node.Name] != nil || reservedName(node.Name)) {
-				root(fn)
+			if fn != "" && !scope.internal[node.Name] {
+				external = append(external, fn)
+				if scope.platform[node.Name] != nil || strings.HasPrefix(node.Name, "_") {
+					root(fn)
+				}
 			}
 			for _, child := range node.Inner {
 				switch child.Kind {
@@ -107,6 +116,9 @@ func (b *builder) markUnreachable() {
 	if !provable {
 		return
 	}
+	if outside {
+		roots = append(roots, external...)
+	}
 	reached := map[string]bool{}
 	for len(roots) > 0 {
 		fn := roots[len(roots)-1]
@@ -124,6 +136,48 @@ func (b *builder) markUnreachable() {
 	}
 }
 
+// loadsCode are the platform functions that bring in code at run time, or
+// find a function by its name.
+var loadsCode = map[string]bool{"dlopen": true, "dlmopen": true, "dlsym": true, "dlvsym": true, "dlfunc": true}
+
+// runtimeLibraries are the C runtime's own libraries. They call a program's
+// function only through a pointer it hands them, a name their headers declare
+// (malloc) or a name the standard reserves.
+var runtimeLibraries = map[string]bool{"c": true, "m": true, "pthread": true, "dl": true, "rt": true}
+
+// linkedOutside reads a program's link line: whether it links code the
+// adapter does not read, and whether main is where running starts.
+func linkedOutside(program Program) (outside, provable bool) {
+	outside, provable = len(program.Missing) > 0, true
+	args := program.LinkArgs
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-e", arg == "-nostartfiles", arg == "-nostdlib":
+			provable = false
+		case arg == "-framework":
+			outside = true
+			i++
+		case arg == "-l" && i+1 < len(args):
+			outside = outside || !runtimeLibraries[args[i+1]]
+			i++
+		case strings.HasPrefix(arg, "-l"):
+			outside = outside || !runtimeLibraries[strings.TrimPrefix(arg, "-l")]
+		case strings.HasPrefix(arg, "-Wl,"):
+			for _, word := range strings.Split(strings.TrimPrefix(arg, "-Wl,"), ",") {
+				switch {
+				case word == "-e", word == "--entry", strings.HasPrefix(word, "--entry="), word == "-init", word == "-fini",
+					strings.HasPrefix(word, "-init="), strings.HasPrefix(word, "-fini="):
+					provable = false
+				case strings.HasPrefix(word, "-l"):
+					outside = outside || !runtimeLibraries[strings.TrimPrefix(word, "-l")]
+				}
+			}
+		}
+	}
+	return outside, provable
+}
+
 // writtenTexts are the source a node spans where it is spelled and where the
 // reader sees it: for an asm statement a macro writes, the macro's body and
 // the arguments its use passes.
@@ -139,15 +193,6 @@ func (b *builder) writtenTexts(n *Node) []string {
 		}
 	}
 	return texts
-}
-
-// lookupByName are the platform functions that find a function by its name
-// at run time.
-var lookupByName = map[string]bool{"dlsym": true, "dlvsym": true, "dlfunc": true}
-
-// reservedName is a name the C standard reserves for the implementation.
-func reservedName(name string) bool {
-	return strings.HasPrefix(name, "__") || len(name) > 1 && name[0] == '_' && unicode.IsUpper(rune(name[1]))
 }
 
 // identifiers are the C identifiers text spells.

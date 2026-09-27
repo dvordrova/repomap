@@ -179,7 +179,7 @@ var (
 		// Dropped, but their value is not an input.
 		"-o": true, "-x": true, "-MF": true, "-MT": true, "-MQ": true, "-Xclang": true, "-Xpreprocessor": true, "-Xlinker": true,
 		"-Xassembler": true, "-L": true, "-l": true, "-framework": true, "-install_name": true, "-aux-info": true, "-include-pch": true,
-		"-segalign": true, "-seg1addr": true, "-exported_symbols_list": true, "-unexported_symbols_list": true,
+		"-segalign": true, "-seg1addr": true, "-exported_symbols_list": true, "-unexported_symbols_list": true, "-e": true,
 	}
 	keptWithValue = map[string]bool{
 		"-D": true, "-U": true, "-I": true, "-include": true, "-imacros": true, "-isystem": true, "-iquote": true, "-idirafter": true,

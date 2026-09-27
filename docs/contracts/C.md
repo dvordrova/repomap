@@ -186,23 +186,35 @@ code (a `constructor` or `destructor` attribute); from every function a
 file-scope initializer names, since those tables exist before `main` (Redis's
 command table and `staticsymbols.h`'s integer casts); from an external
 function whose name a platform or package header also declares, which that
-library may call instead of its own; and from a name the implementation
-reserves (`__x`, `_X`). It follows what each definition's body names, in every
-unit's copy of it (a header's `static inline` function reaches each unit's own
-statics), including a `cleanup` attribute's function. Assembly statements,
-file-scope assembly and `alias`/`ifunc` attributes name functions by text:
-every repository function their written text, or its macro's, names is named
-there, and text the adapter cannot read proves nothing for the program. Each
-function nothing reached is `unreachable` in that program's index: a
-deterministic fact about that program, not about the file, so `anet.c`'s
-`anetTcpServer` and `anetAccept` are unreachable in redis-cli and
-redis-benchmark and reached in redis-server. An address taken only inside
-code that never runs is never taken.
+library may call instead of its own; and from a name the C standard reserves
+for the implementation (a file-scope name beginning with `_`). It follows
+what each definition's body names, in every unit's copy of it (a header's
+`static inline` function reaches each unit's own statics), including a
+`cleanup` attribute's function. Assembly statements, file-scope assembly and
+`alias`/`ifunc` attributes name functions by text: every repository function
+their written text, or its macro's, names is named there. Each function
+nothing reached is `unreachable` in that program's index: a deterministic
+fact about that program as its link line (or, without one, the linker
+closure) gives it, not about the file, so `anet.c`'s `anetTcpServer` and
+`anetAccept` are unreachable in redis-cli and redis-benchmark and reached in
+redis-server. An address taken only inside code that never runs is never
+taken.
 
-A program that calls `dlsym`, `dlvsym` or `dlfunc` can reach any function by
-its name, and a library (no `main`) is called from outside: neither marks
-anything. The fixture's `net.c` is linked into kvd and kvcli like `anet.c`:
-kvd never runs `netConnect`, kvcli never runs `netListen` (nor `strbuf.c`'s
+Code the adapter does not read can call any function with external linkage
+by its name: a link input no compile line produced (`Missing`: a prebuilt
+object or archive, an assembly or C++ source, a `.c` file outside the
+corpus), a library other than the C runtime's own (`-lc`, `-lm`,
+`-lpthread`, `-ldl`, `-lrt`; `-pthread` is a flag), a framework, and code
+the program loads or looks up at run time (`dlopen`, `dlmopen`, `dlsym`,
+`dlvsym`, `dlfunc`). Then every external function is where running may
+start, and only static functions are proven. A link line that names another
+entry (`-e`, `--entry`, `-init`, `-fini`, through `-Wl,` or `-Xlinker` too)
+or drops the runtime's start files (`-nostartfiles`, `-nostdlib`), and
+assembly text the adapter cannot read, prove nothing; a library (no `main`)
+is called from outside and marks nothing.
+
+The fixture's `net.c` is linked into kvd and kvcli like `anet.c`: kvd never
+runs `netConnect`, kvcli never runs `netListen` (nor `strbuf.c`'s
 `sbConsume`), and the backlog `netListen` reads (`KVD_BACKLOG`) is kvd's
 setting alone (PROGRAM_INDEX, READING).
 
@@ -296,8 +308,10 @@ whose page shows none of it, and kvcli's page listing `netListen` and
 `sbConsume` under "Not reachable from the entrypoints". Facts tests cover C
 config reads, SQL, dynamic execution, command rows that state no HTTP method
 and route rows that state one, each with its record field as registrar.
-`TestIndexProvesWhatAProgramNeverRuns` checks each way a function is named,
-every unit's copy of a shared static and the programs that prove nothing;
+`TestIndexProvesWhatAProgramNeverRuns` checks each way a function is named
+and every unit's copy of a shared static;
+`TestIndexProvesOnlyStaticsWhereOtherCodeCanCallByName` checks run-time
+loading, link lines and libraries;
 `TestCFixtureProvesWhatEachProgramNeverRuns` checks the fixture's programs,
 their facts and places, and
 `TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem` reads

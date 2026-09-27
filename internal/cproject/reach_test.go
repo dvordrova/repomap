@@ -3,6 +3,7 @@ package cproject
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -41,8 +42,9 @@ static void (*handlers[])(void) = { inTable };
 
 /* The platform declares abs; its library may call this one instead. */
 int abs(int x) { return x < 0 ? -x : x; }
-/* A name reserved for the implementation, which alone calls it. */
+/* Names reserved for the implementation, which alone calls them. */
 int __kv_hook(void) { return 0; }
+int _kv_start(void) { return 0; }
 
 int main(void) {
     int x __attribute__((cleanup(cleanup))) = 0;
@@ -65,7 +67,7 @@ func TestIndexProvesWhatAProgramNeverRuns(t *testing.T) {
 	if got := x.unreachable(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("unreachable = %v, want %v", got, want)
 	}
-	for _, name := range []string{"main", "castToInteger", "inTable", "compared", "cleanup", "stored", "beforeMain", "inAssembly", "abs", "__kv_hook"} {
+	for _, name := range []string{"main", "castToInteger", "inTable", "compared", "cleanup", "stored", "beforeMain", "inAssembly", "abs", "__kv_hook", "_kv_start"} {
 		if x.object(t, name, "reach.c").Unreachable {
 			t.Errorf("%s runs, yet the index says nothing reaches it", name)
 		}
@@ -91,12 +93,43 @@ func TestIndexReadsEveryUnitsCopyOfASharedStatic(t *testing.T) {
 	}
 }
 
-// A program that looks functions up by name can reach any of them, and a
-// library is called from outside: neither proves anything unreachable.
-func TestIndexProvesNothingWhereNamesAreLookedUpOrThereIsNoMain(t *testing.T) {
-	lookup := indexProgram(t, map[string]string{"lookup.c": "#include <dlfcn.h>\nvoid orphan(void) {}\nint main(void) { return dlsym(RTLD_DEFAULT, \"orphan\") != 0; }\n"}, "c:lookup.c")
-	if got := lookup.unreachable(); len(got) != 0 {
-		t.Fatalf("a program calling dlsym marks %v unreachable", got)
+// Code the adapter does not read can call any function with external
+// linkage by its name: code loaded or looked up at run time, a library other
+// than the C runtime's own, and a link input no compile line built. Then only
+// static functions are proven. A link line that names another entry proves
+// nothing, and a library, called from outside, marks nothing.
+func TestIndexProvesOnlyStaticsWhereOtherCodeCanCallByName(t *testing.T) {
+	const source = "#include <dlfcn.h>\n" +
+		"void orphan(void) {}\n" +
+		"static void hidden(void) {}\n" +
+		"int main(void) { return 0; }\n"
+	lookup := indexProgram(t, map[string]string{"lookup.c": strings.Replace(source, "return 0;", "return dlsym(RTLD_DEFAULT, \"orphan\") != 0;", 1)}, "c:lookup.c")
+	if got := lookup.unreachable(); !reflect.DeepEqual(got, []string{"hidden"}) {
+		t.Fatalf("a program calling dlsym marks %v unreachable, want only the static hidden", got)
+	}
+	makefile := func(link string) map[string]string {
+		return map[string]string{
+			"Makefile": "all: prog\nprog: prog.o\n\t$(CC) -o prog prog.o " + link + "\n",
+			"prog.c":   source,
+		}
+	}
+	for _, test := range []struct {
+		link string
+		want []string
+	}{
+		{"-lm -pthread", []string{"hidden", "orphan"}},
+		{"-lfoo", []string{"hidden"}},
+		{"vendor/prebuilt.o", []string{"hidden"}},
+		{"start.S", []string{"hidden"}},
+		{"gen/generated.c", []string{"hidden"}},
+		{"-e orphan", nil},
+		{"-Wl,-e,orphan", nil},
+		{"-Xlinker --entry=orphan", nil},
+		{"-nostartfiles", nil},
+	} {
+		if got := indexProgram(t, makefile(test.link), "c:prog").unreachable(); !reflect.DeepEqual(got, test.want) {
+			t.Errorf("linked with %s: unreachable = %v, want %v", test.link, got, test.want)
+		}
 	}
 	library := indexProgram(t, map[string]string{"lib/util.c": "static int twice(int x) { return 2 * x; }\nint unused(void) { return 0; }\n"}, "c:lib/")
 	if library.result.Program.Kind != ProgramLibrary {
@@ -104,8 +137,5 @@ func TestIndexProvesNothingWhereNamesAreLookedUpOrThereIsNoMain(t *testing.T) {
 	}
 	if got := library.unreachable(); len(got) != 0 {
 		t.Fatalf("a library marks %v unreachable", got)
-	}
-	if kinds := library.index.Target.Seeds; len(kinds) != 0 {
-		t.Fatalf("library seeds: %+v", kinds)
 	}
 }

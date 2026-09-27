@@ -294,11 +294,15 @@ func parseDryRun(env parseEnv, output string) buildDescription {
 						if spec, ok := unitSpec(env, cwd, input, kept, dropped); ok {
 							description.compiles = append(description.compiles, compileRecord{spec: spec, object: key})
 							link.inputs = append(link.inputs, key)
+						} else {
+							// Code the program links that no unit reads is a
+							// missing input, never silently dropped.
+							link.inputs = append(link.inputs, absolute(cwd, input))
 						}
 						continue
 					}
 					switch path.Ext(input) {
-					case ".o", ".a", ".so", ".dylib", ".lo":
+					case ".o", ".a", ".so", ".dylib", ".lo", ".s", ".S", ".cc", ".cpp", ".cxx", ".m", ".mm":
 						link.inputs = append(link.inputs, absolute(cwd, input))
 					}
 				}
@@ -342,13 +346,21 @@ func commandWords(words []string) []string {
 	return nil
 }
 
-// linkArgs keeps the libraries and link flags of a link line.
+// linkArgs keeps the libraries and link flags of a link line, and the flags
+// that name its entry or drop the C runtime's start files.
 func linkArgs(args []string) []string {
 	var out []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
-		case arg == "-l" || arg == "-L" || arg == "-framework":
+		case arg == "-nostartfiles", arg == "-nostdlib":
+			out = append(out, arg)
+		case arg == "-Xlinker":
+			if i+1 < len(args) {
+				out = append(out, "-Wl,"+args[i+1])
+				i++
+			}
+		case arg == "-l" || arg == "-L" || arg == "-framework" || arg == "-e":
 			if i+1 < len(args) {
 				out = append(out, arg, args[i+1])
 				i++
