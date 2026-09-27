@@ -27,3 +27,20 @@ test('frames naming one destination read it once beside plain tiles, and no head
   expect(split,'every heading keeps its words whole').toEqual([]);
   expect(errors).toEqual([]);
 });
+
+// Entered, a plain tile opened under no title of its own read only
+// "gethostbyname"; its group's heading stood below the camera.
+test('an entered tile of a display group names its destination on the canvas',async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/?shared-destination');
+  await expect(page.locator('[data-map]')).toHaveAttribute('data-fixture-ready','true');
+  const mark=page.locator('[data-zoom-into="dns-backend"]');
+  await mark.click();
+  await expect(page.locator('[data-component-overview="dns-backend"]')).toHaveCount(0);
+  const title=page.locator('[data-frame-title="dns-backend"]');
+  await expect(title).toHaveText('DNS resolver');
+  const [text,stage]=await Promise.all([title.evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);return range.getBoundingClientRect().toJSON();}),
+    page.locator('.flow-root').boundingBox()]);
+  expect(text.left>=stage.x&&text.right<=stage.x+stage.width&&text.top>=stage.y&&text.bottom<=stage.y+stage.height,'the entered tile\'s name is in view').toBe(true);
+  expect(errors).toEqual([]);
+});

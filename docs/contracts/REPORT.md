@@ -154,9 +154,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   stands in a band on the side of the group no arrow enters, under the
   tiles when arrows run down and after them when they run right; above the
   tiles, Redis's three arrows ran through it. Like closed summaries it is
-  laid out at the whole-map camera and zooms with the map; once the tiles
-  open it reads at their open frames' title size, and an open tile draws
-  its calls under no title of its own.
+  laid out at the whole-map camera and zooms with the map. An open tile is
+  an ordinary open frame under its own title, and the group's heading steps
+  aside once every tile is open: entered, a nameless open tile had read
+  only "gethostbyname", with the heading below the camera, and the outside
+  participant stays named.
   Every record stays in its own component's catalogue, and records of
   different symbols stay separate tiles.
   When a saved connection identifies one already displayed peer in another

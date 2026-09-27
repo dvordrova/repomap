@@ -493,16 +493,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   // A display group's frame carries the text its frames all name, once, in
   // its band under the tiles or after them, where no arrow runs. It is laid
-  // out at the whole-map camera like their summaries and zooms with the map;
-  // once the tiles open it reads at their open frames' title size. It is no
-  // participant: nothing to hover, choose or enter.
+  // out at the whole-map camera like their summaries and zooms with the map.
+  // Once the tiles open, each is an ordinary open frame under its own title:
+  // entered, a nameless tile had read only "gethostbyname", its group's
+  // heading below the camera. It is no participant: nothing to hover, choose
+  // or enter.
   function GroupHeading({node:n}){
     const item=byID.get(n.id),zoom=systemViewport(layout.nodes,layoutSize.width,layoutSize.height).zoom,beside=item.side==='right';
     const heading=useMemo(()=>item.headingAt(beside?Infinity:n.width*zoom),[n.width,zoom,beside]);
-    const open=item.tiles.some(id=>communicationsOpen.has(id));
+    // While any tile stays closed and plain, the heading still names it.
+    if(item.tiles.every(id=>communicationsOpen.has(id)))return null;
     // A band left short of the heading takes it smaller, never over the tiles.
-    const scale=Math.min(1,item.band*zoom/(beside?heading.extent:heading.height))/zoom*
-      (open?Math.min(1,(byID.get(item.tiles[0])?.summaryScale||1)*17/13*zoom):1);
+    const scale=Math.min(1,item.band*zoom/(beside?heading.extent:heading.height))/zoom;
     const x=beside?n.absolute.x+n.width-item.band+8*scale:n.absolute.x+8*scale;
     const y=beside?n.absolute.y+16:n.absolute.y+n.height-item.band+4*scale;
     return <div className="flow-group-heading" data-group-heading={n.id}
@@ -512,8 +514,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   function ComponentPresentation({node,focused}){
     const item=byID.get(node.id),open=item.branch==='component'?openComponents.has(node.id):communicationsOpen.has(node.id);
     const {fit,zoom}=useOverviewFit(node);
-    // Open, a plain tile shows its calls under its group's heading alone.
-    if(open&&item.displayGroupTitle)return null;
     return open?<FrameTitle node={node} item={item} focused={focused} enter={enter} select={select}/>:<>
       <ComponentOverview node={node} fit={fit} zoom={zoom}/><ZoomMark node={node} item={item} fitScale={fit<1?fit/zoom:undefined} enter={enter} select={select}/>
     </>;
