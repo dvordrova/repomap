@@ -42,6 +42,15 @@
     whole map.
 - `make test` (53 packages) and `make vet` pass; web unit tests 89/89. Redis
   cold 29.6 s, warm 4.1 s with 0 live calls.
+- A third proxy walk found the cli → server and benchmark → server arrows
+  drawn solid with an unrelated call as evidence ("Command line client calls
+  Dynamic strings"). Two page identities omitted the owning target:
+  - another target's group node was `<section>-foreign-<gN>`, so two peers'
+    g15 shared one node;
+  - a connection was keyed by its target-local `x*` ID, so the benchmark's own
+    x17 took the cli link's peer.
+  Both now carry the target, and the first screen draws exactly the two
+  dashed connect → accept links.
 
 ## 2026-09-27 — The Redis reading journey, after an owner-proxy walk
 
