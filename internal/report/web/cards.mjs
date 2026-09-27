@@ -214,7 +214,9 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
       kindLabel,description,descriptionMost,subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,
-      headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines?12+descriptionLines*18:0)),
+      // An open plain tile shows its calls with no title above them: its
+      // group's heading names it.
+      headerHeight:n.displayGroupTitle?32:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines?12+descriptionLines*18:0)),
       // A tile without its kind row is that row shorter.
       width:card.width,height:frame?undefined:66-(input&&!kindLabel?24:0)+title.length*22+descriptionLines*18+
         (subtitleLines.length?8+subtitleLines.length*18:0)};

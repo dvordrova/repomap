@@ -21,6 +21,9 @@ const key=(...parts)=>JSON.stringify(parts);
 // area: Server runtime's 21 arrows among six parts had 68 bends.
 const pairKey=(a,b)=>a<b?key(a,b):key(b,a);
 const reversed=segments=>segments.slice().reverse().map(points=>points.slice().reverse());
+// A destination frame whose display group says its text for it: a plain
+// tile, titled by the group's heading (cards.mjs).
+const plainTile=record=>record?.branch==='communication'&&!!record.displayGroupTitle;
 // The scale, relative to its reading scale, at which an open area's 17px
 // part headings reach the 12px its layer stays open at (semantic.mjs).
 export const readableScale=12/17;
@@ -36,8 +39,9 @@ const transform=(point,scale,offset)=>({x:offset.x+point.x*scale,y:offset.y+poin
 // Tiles no arrow joins are one layer to a layered drawing: a column in a
 // frame stretched to its summary's proportion. Rows of the column count
 // nearest that proportion fill the frame instead. Arrows that cross the frame
-// are drawn by the outer routes, so no interior leg is lost.
-function gridInterior(frame,ratio,top){
+// are drawn by the outer routes, so no interior leg is lost. A frame that
+// keeps its content's own box (`fitted`) is not stretched to the proportion.
+function gridInterior(frame,ratio,top,fitted=false){
   const gap=24,side=32,tiles=[...frame.children].sort((a,b)=>a.y-b.y||a.x-b.x);
   const arrange=columns=>{
     const widths=Array(columns).fill(0),rows=[];
@@ -51,7 +55,7 @@ function gridInterior(frame,ratio,top){
     const candidate=arrange(columns),distance=Math.abs(Math.log(candidate.width/candidate.height/ratio));
     if(!best||distance<best.distance)best={...candidate,distance};
   }
-  const width=Math.max(best.width,best.height*ratio),height=Math.max(best.height,best.width/ratio);
+  const width=fitted?best.width:Math.max(best.width,best.height*ratio),height=fitted?best.height:Math.max(best.height,best.width/ratio);
   const left=side+(width-best.width)/2,down=top+(height-best.height)/2;
   tiles.forEach((tile,i)=>{
     const column=i%best.columns,row=Math.floor(i/best.columns);
@@ -286,14 +290,19 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     // Cross-frame arrows are drawn by the outer routes alone, so a frame whose
     // tiles no arrow joins needs no interior legs.
     const grouped=root.branch==='inputs'&&(children.get(root.id)||[]).some(id=>children.has(id));
+    // A plain tile's closed summary is its zoom mark alone, under its display
+    // group's heading: the mark's proportion asks nothing of the open calls,
+    // so the tile keeps their own box. Stretched to the mark's 50 by 44, each
+    // of Redis's DNS tiles opened 47% empty below its one call.
+    const plain=plainTile(root);
     const loose=!grouped&&root.branch!=='component'&&(children.get(root.id)||[]).length>2&&!ownAreas.length
       &&(children.get(root.id)||[]).every(id=>!children.has(id))
       &&!ownEdges.some(edge=>rootOf(edge.from)===root.id&&rootOf(edge.to)===root.id&&edge.from!==root.id&&edge.to!==root.id);
     if(grouped){
       const order=[...children.get(root.id),...children.get(root.id).flatMap(id=>children.get(id)||[])];
       groupedInterior(placed,ratio,localRecords.get(root.id).headerHeight||64,order,new Map([...localRecords].map(([id,record])=>[id,record.headerHeight||40])));
-    }else if(loose)gridInterior(placed,ratio,localRecords.get(root.id).headerHeight||64);
-    else if(root.branch!=='component'){
+    }else if(loose)gridInterior(placed,ratio,localRecords.get(root.id).headerHeight||64,plain);
+    else if(root.branch!=='component'&&!plain){
       const minimum={width:Math.max(placed.width,placed.height*ratio),height:Math.max(placed.height,placed.width/ratio)};
       placed=(await native(graph(minimum))).children[0];
     }
@@ -399,6 +408,14 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   for(const [group,ids] of [...members])if(ids.length<2)members.delete(group);
   const groupID=group=>`display-group:${group}`,grouped=new Set([...members.values()].flat());
   const groupPad=16,headingOf=new Map();
+  // A plain tile keeps its calls' proportion at the fit: it grows whole,
+  // until its zoom mark has its room, and its calls grow with it. Grown to
+  // the mark's 50 by 44 pixels alone at Redis's whole-map camera, each DNS
+  // tile stood 156 world units tall around an 84-unit open call and opened
+  // half empty; not grown at all, its mark was drawn at 0.64 of the size of
+  // the TCP endpoint's beside it on a 1440x900 first screen, 0.41 at
+  // 1280x720.
+  const plainGrouped=id=>grouped.has(id)&&plainTile(byID.get(id));
   for(const [group,ids] of members){const at=byID.get(ids[0])?.displayGroupHeadingAt;if(at)headingOf.set(groupID(group),at);}
   // The heading stands in a band on the side of its group no arrow enters:
   // under the tiles when arrows run down, after them when arrows run right.
@@ -482,6 +499,14 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     const growing=flat(graph).flatMap(node=>{
       const record=byID.get(node.id);
       if(!record.overviewHeightAtWidth)return [];
+      if(plainGrouped(node.id)){
+        // Both sides grow by one factor, so the prepared drawing fills the
+        // grown tile with one uniform transform (interiorScales below).
+        const grow=Math.max(1,(record.overviewMinWidth||0)/(node.width*best.zoom),
+          record.overviewHeightAtWidth(node.width*best.zoom,{availableHeight:available.height})/(node.height*best.zoom));
+        const height=Math.ceil(node.height*best.zoom*grow);
+        return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,needed:{width:height*node.width/node.height,height}}];
+      }
       const physicalWidth=Math.max(node.width*best.zoom,record.overviewMinWidth||0);
       const physicalHeight=record.overviewHeightAtWidth?.(physicalWidth,{availableHeight:available.height})||0;
       return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,

@@ -159,11 +159,24 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   stands in a band on the side of the group no arrow enters, under the
   tiles when arrows run down and after them when they run right; above the
   tiles, Redis's three arrows ran through it. Like closed summaries it is
-  laid out at the whole-map camera and zooms with the map. An open tile is
-  an ordinary open frame under its own title, and the group's heading steps
-  aside once every tile is open: entered, a nameless open tile had read
-  only "gethostbyname", with the heading below the camera, and the outside
-  participant stays named.
+  laid out at the whole-map camera and zooms with the map; once the tiles
+  open it reads at their open frames' title size and the open tiles stay
+  plain under it, so the destination is named once in every state. Titled
+  one by one, Redis's three open DNS tiles said "DNS resolver" three times.
+  The band is the heading's room and shrinks with it: an open group's frame
+  wraps its tiles and their heading, and the room its closed heading takes
+  at the whole-map camera stays outside the frame. Entering any tile of the
+  group opens every tile of it and frames the group, heading included, at
+  the scale its calls are drawn at: framed alone, an entered tile had read
+  only "gethostbyname" with the heading below the camera. The tiles stay
+  separate records, each hit by its own program's arrow; the group still
+  ends no arrow and is not read or chosen. A plain tile keeps its open calls' proportion: at the whole-map
+  fit it grows whole until its zoom mark has its room, and its calls grow
+  with it, so it opens with no room of its own below them. Stretched to the
+  mark's proportion and grown to its 50 by 44 pixels, each of Redis's DNS
+  tiles opened half empty below its one call; kept at its calls' own box
+  without growing, its mark was drawn at 0.64 of the size of the TCP
+  endpoint's beside it on a 1440×900 first screen and at 0.41 on 1280×720.
   Every record stays in its own component's catalogue, and records of
   different symbols stay separate tiles.
   When a saved connection identifies one already displayed peer in another
@@ -312,6 +325,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   a pair of ends share one drawn route, so ELK lays out one edge per pair:
   laid out twice, each such pair made ELK reverse one arrow into a
   wrap-around, and Server runtime's 21 arrows among six parts had 68 bends.
+  That edge is the pair's first. Laid out instead from the program's entry
+  side (a `triggers` part) toward the other, Redis's Server runtime was
+  measured at 14 window sizes and refused: 84 bends became 70 at four sizes,
+  54 became 70 or the routes ran 9% longer at eight, and at 1440×900 the
+  area took a one-row layout that entered cut in half. Which of ELK's layouts
+  the area takes, and how it wraps, moved more than the pair's direction.
   Each area takes, of ELK's directions (rightward, downward) with and without
   wrapping a long chain into rows toward the canvas proportion, the layout
   that fits the initial canvas while its 17px part headings stay at the 12px

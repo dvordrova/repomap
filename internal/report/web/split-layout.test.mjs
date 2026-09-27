@@ -566,6 +566,28 @@ test('a display group carries its frames\' shared text once, where no arrow runs
   }
 });
 
+// Grown at Redis's whole-map camera to the 50 by 44 pixels of its closed
+// zoom mark and stretched to that proportion, each DNS tile stood 156 world
+// units tall around its one 84-unit call and opened half empty.
+test('a plain tile of a display group is as large as its open calls, not its closed zoom mark',async()=>{
+  const owners=['server','cli','bench'];
+  const items=[...owners.flatMap(owner=>[{id:owner,title:`redis-${owner}`,branch:'component'},{id:`net-${owner}`,title:'Networking',category:'part'},
+    {id:`dns-${owner}`,title:'DNS resolver',branch:'communication',category:'external',displayGroup:'dns',displayGroupTitle:'DNS resolver'},
+    {id:`resolve-${owner}`,title:'gethostbyname',category:'external'}])];
+  const areaList=owners.flatMap(owner=>[{id:owner,nodes:[`net-${owner}`]},{id:`dns-${owner}`,nodes:[`resolve-${owner}`]}]);
+  const width=400,height=300;
+  const prepared=await prepareInteriors(cards(items),owners.map(owner=>({from:`net-${owner}`,to:`resolve-${owner}`})),areaList,{availableHeight:height-2*overviewInset});
+  const {layout}=await layoutPrepared(prepared,width,height),at=new Map(layout.nodes.map(node=>[node.id,node]));
+  assert.ok(systemViewport(layout.nodes,width,height).zoom<.44,'the whole-map camera stands below the preferred scale, where frames grew for their summaries');
+  for(const owner of owners){
+    const tile=at.get(`dns-${owner}`),call=at.get(`resolve-${owner}`);
+    const inset={left:call.absolute.x-tile.absolute.x,right:tile.absolute.x+tile.width-call.absolute.x-call.width,
+      bottom:tile.absolute.y+tile.height-call.absolute.y-call.height};
+    assert.ok(inset.bottom<=inset.left+1e-6&&inset.right<=inset.left+1e-6,
+      `dns-${owner} holds its call with its insets alone: ${JSON.stringify(Object.fromEntries(Object.entries(inset).map(([k,v])=>[k,Math.round(v)])))}`);
+  }
+});
+
 // A loose part beside areas is drawn filling its box once the areas open,
 // at their parts' scale. Its box is its own card's, whatever the areas
 // beside it hold: grown to fit its closed heading at its smallest area's
