@@ -72,3 +72,98 @@ test('a click on an arrow end opens its frame\'s connection in the reading',asyn
   await testInfo.attach('journey-01 — The arrow end opens its connection in the reading',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   expect(errors).toEqual([]);
 });
+
+// Where an arrow meets the box it points into, 5px back from the tip along
+// the arrow: a point on the drawn head.
+const head=(page,edge,end='end')=>page.evaluate(({edge,end})=>{
+  const path=document.querySelector(`.flow-edge[data-edge-ids~="${edge}"] path:not(.flow-edge-casing)`);
+  const ctm=path.getScreenCTM(),length=path.getTotalLength(),scale=Math.hypot(ctm.a,ctm.b);
+  const at=l=>{const p=path.getPointAtLength(l);return {x:p.x*ctm.a+p.y*ctm.c+ctm.e,y:p.x*ctm.b+p.y*ctm.d+ctm.f};};
+  const tip=end==='end'?at(length):at(0),back=end==='end'?at(length-8/scale):at(8/scale),d=Math.hypot(back.x-tip.x,back.y-tip.y);
+  return {x:tip.x+(back.x-tip.x)/d*5,y:tip.y+(back.y-tip.y)/d*5};
+},{edge,end});
+// A real pointer walks there and rests past the card's intent.
+async function restAt(page,point){await page.mouse.move(point.x,point.y,{steps:18});await page.waitForTimeout(400);}
+// Onto the card, resting past its linger: the card stays.
+async function ontoCard(page){
+  const card=page.locator('.flow-arrow-card .flow-connection-calls');
+  const box=await card.boundingBox();
+  await page.mouse.move(box.x+Math.min(80,box.width/2),box.y+Math.min(30,box.height/2),{steps:15});await page.waitForTimeout(700);
+  await expect(card,'the pointer reached the card and it stayed').toBeVisible();
+}
+
+// Redis's geometry: entering one component opens its neighbour too, and
+// the component's numbers stand on its own border. Chosen, it numbers its
+// areas; the pointer crosses its space from an area to a number and the
+// number is still there, its card opens and the pointer reaches the card.
+// Read by its areas alone, the component's own space was in no frame: its
+// numbers vanished on the way, and with two components open none stood at
+// all (the tester's 44–47).
+test('a component beside another keeps its numbers while the pointer crosses it to them',async({page},testInfo)=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/?symbols');
+  const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
+  const overview=await page.locator('[data-component-overview="backend"] strong').boundingBox();
+  await page.mouse.click(overview.x+overview.width/2,overview.y+overview.height/2);await settle(map);
+  expect((await map.evaluate(map=>map.captureViewport())).openComponents,'entering the backend opens the front too').toEqual(['front','backend']);
+  await page.mouse.move(1430,890);
+  const chip=end(page,'boundary:backend:in:api');
+  await expect(chip,'the chosen component numbers its areas on its border').toHaveText('1');
+  const at=await chip.boundingBox().then(box=>({x:box.x+box.width/2,y:box.y+box.height/2}));
+  // Pointed at, an open area numbers its own parts instead; on the way out
+  // of it the component's numbers stand again.
+  await pointAt(page,page.locator('[data-frame-title="requests"]>strong'));
+  await expect(map).toHaveAttribute('data-subject','requests');
+  await restAt(page,at);
+  const card=page.locator('.flow-arrow-card');
+  await expect(card).toBeVisible();
+  await expect(card.locator('.flow-card-title')).toHaveText('Backend API→Job processing service');
+  await testInfo.attach('journey-01 — The component\'s number reached across its space',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  await ontoCard(page);
+  const camera=await map.evaluate(map=>map.captureViewport());
+  await chip.locator('button').click();
+  await expect(map).toHaveAttribute('data-opened-connection','backend in:api');
+  expect(await map.evaluate(map=>map.captureViewport()),'the camera stays').toEqual(camera);
+  expect(errors).toEqual([]);
+});
+
+// An arrow's head where it meets a frame is its connection's handle, at the
+// whole map and inside a component: resting on it opens the card, the
+// pointer reaches the card, and a click reads that connection in the column
+// with the camera still. The head had no target: the tester's rest opened
+// nothing and a click fell through to the frame underneath.
+test('an arrowhead at a frame opens its connection\'s card and a click reads it',async({page},testInfo)=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/?symbols');
+  const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
+  const edge=(from,to)=>map.evaluate((map,[from,to])=>map.visibleEdges.find(e=>e.from===from&&e.to===to).id,[from,to]);
+  const card=page.locator('.flow-arrow-card');
+  // The whole map: the API's arrow ends at the closed backend.
+  await page.mouse.move(1430,890);
+  const atBackend=await head(page,await edge('get','routes'));
+  expect(await page.evaluate(({x,y})=>document.elementFromPoint(x,y).classList.contains('react-flow__pane'),atBackend),'the head stands on empty canvas').toBe(true);
+  await restAt(page,atBackend);
+  await expect(card).toBeVisible();
+  await expect(card.locator('.flow-card-title')).toHaveText('Backend API→Job processing service');
+  await testInfo.attach('journey-01 — The arrowhead at the closed backend opens its card',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  await ontoCard(page);
+  // Inside the backend: the head where the worker's arrow meets the database.
+  const overview=await page.locator('[data-component-overview="backend"] strong').boundingBox();
+  await page.mouse.click(overview.x+overview.width/2,overview.y+overview.height/2);await settle(map);
+  await page.locator('[data-map-zoom="0.8"]').click();await settle(map);
+  await page.mouse.move(1430,890);await page.keyboard.press('Escape');
+  await pointAt(page,page.locator('[data-frame-title="execution"]>strong'));
+  const atDatabase=await head(page,await edge('worker','save-jobs'));
+  await restAt(page,atDatabase);
+  await expect(card).toBeVisible();
+  await expect(card.locator('.flow-card-title')).toHaveText('Job processing service→PostgreSQL');
+  await ontoCard(page);
+  await page.mouse.move(atDatabase.x,atDatabase.y,{steps:12});
+  const camera=await map.evaluate(map=>map.captureViewport());
+  await page.mouse.click(atDatabase.x,atDatabase.y);
+  await expect(map,'the click reads the connection, not the frame under the head').toHaveAttribute('data-opened-connection','backend out:postgres');
+  expect(await map.evaluate(map=>map.captureViewport()),'the camera stays').toEqual(camera);
+  await expect(page.locator('[data-reading-connections] details[open]')).toHaveAttribute('data-connection-key','out:postgres');
+  await testInfo.attach('journey-02 — The click on the head reads its connection',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  expect(errors).toEqual([]);
+});

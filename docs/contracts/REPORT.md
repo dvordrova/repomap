@@ -338,21 +338,30 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   input path; leaving that path remains a separate action.
 
 - Hovering an area or a part inside it labels its inner parts with local
-  numbers. One outside participant and direction form one label with every
+  numbers. Pointing anywhere in an open component, its own space, border or
+  title included, numbers it with its areas and loose parts, as choosing it
+  does: read by its areas alone, the component's own space was in no frame,
+  and on Redis, where entering redis-server opens four components, its
+  numbers stood only while an area was pointed at and vanished as the
+  pointer crossed that space to reach them. A closed component numbers
+  nothing and does not take the numbers from an open one beside it.
+  One outside participant and direction form one label with every
   exact inner endpoint number (for example `2 · 3`). Different outside
   identities and opposite directions remain separate. Resting on that label
   opens its card: all original relations, sources and possible-call marks
   behind it; selected details and their links stay present. Clicking its
   number pans to the named outside participant. Connection endpoints use compact number badges; their outside names remain
   available to assistive navigation and the reading column.
-  Lines have no click target or native tooltip. These numbers
+  A line has no click target or native tooltip; its arrowhead does (below).
+  These numbers
   identify parts, never execution order. The toolbar has no connection-style
   selector; the same real endpoints remain connected across zoom levels.
   An end that joins every numbered part of the frame says so once, "all",
   in the same chip, instead of listing every number (owner's choice 2a,
   2026-09-27); the numbers stay wherever an end joins some of the parts.
   While an end's card is open or kept open, the parts behind that end, or
-  behind its one number pointed at, take the dark outline in place, the
+  behind its one number pointed at, take the dark outline in place (a
+  closed frame hiding them takes it for them), the
   end's own arrows are dark and whatever the end does not involve recedes;
   the parts at the arrow's other end stay as they are. A label stands where
   its arrow meets the frame it numbers: both directions of a pair of frames
@@ -372,9 +381,24 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - A card (a label's calls, or everything a numbered part is joined to outside
   its frame) opens on intent: the pointer rests on its handle for about a
   tenth of a second, so a handle crossed on the way elsewhere opens nothing.
+  A connection has two handles, its chip and its arrowhead. Every drawn
+  arrowhead of an arrow meeting an area's or a component's border is one,
+  at every level and whether or not that frame is the numbered one: the
+  head's own few pixels on empty canvas, found from the drawn route, with
+  nothing drawn for them and no competition with a title, number or
+  summary under the pointer. A head stands for the incoming connection of
+  the area or component it points into; a head on a destination, the
+  inputs or a loose part stands for the outgoing connection of the frame at
+  the arrow's other end; a head beside a chip of the numbered frame opens
+  that chip's card. A head of an arrow between two parts of one frame has
+  no card. On Redis the tester's rests on arrowheads opened nothing, and a
+  click there fell through to the frame underneath and moved the camera.
   It stands flush with its handle, outside the frame being read so it covers
-  none of that frame's parts, on the side with room, and wholly inside the
-  canvas; a label's card goes out through the border its label stands on.
+  none of that frame's parts, and clear of the handle itself, on the side
+  with room, and wholly inside the canvas; a label's card goes out through
+  the border its label stands on. An arrowhead stands outside its frame's
+  border: placed outside the frame alone, the card opened over the head the
+  pointer rested on.
   With no room outside the frame it stands beside its handle toward the
   roomier side. It stands in the map's coordinates and moves with it, but
   at the screen's own type size, and is placed again when the zoom
@@ -385,12 +409,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the card crosses other parts, frames and empty canvas without changing
   the emphasis or the labels. Leaving the handle, the pointer is safe inside
   the triangle between where it left and the card: the card lasts and no
-  other handle on the way takes it. Re-targeting on every pointer move had
+  other handle on the way takes it; from an arrowhead onto its own card or
+  chip the pointer has not left at all. Re-targeting on every pointer move had
   closed the card on the way to it, and with the pointer on it, as soon as
   it stood outside the frame. A click on a part's number or on a card keeps
-  the card open; a click on an arrow end reads, in the column, the frame it
-  stands on, scrolled to that frame's Connections with that connection
-  open, and leaves the camera where it is (owner's choice 3b, 2026-09-27).
+  the card open; a click on an arrow end, its chip or its arrowhead, reads,
+  in the column, the frame whose connection it is, scrolled to that frame's
+  Connections with that connection open, and leaves the camera where it is
+  (owner's choice 3b, 2026-09-27).
   A kept card has a ✕, and ✕, Escape or a click on empty canvas
   closes it. That click closes the card and nothing else: it neither
   selects nor moves the camera. The card's list scrolls under its sticky

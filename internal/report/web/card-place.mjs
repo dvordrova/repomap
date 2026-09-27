@@ -4,13 +4,16 @@
 // frame's parts; on the side with room; and wholly inside the canvas. Placed
 // by the canvas halves alone, Redis's cards covered the parts they were
 // about and ran off the canvas edge.
-//   handle, frame, canvas: {left,top,right,bottom}; frame may be null.
+//   handle, frame, canvas: {left,top,right,bottom}; frame may be null. A
+//   handle may stand outside its frame, as an arrowhead does.
 //   size: {width,height} of the card on screen.
 //   side: the frame side a label stands on ('left', 'right', 'top',
 //   'bottom'); its card goes out through that side. A part's number has none.
 export function placeCard({handle,frame,canvas,size,side='',gap=8,margin=8}){
   const {width,height}=size,room={left:canvas.left+margin,top:canvas.top+margin,right:canvas.right-margin,bottom:canvas.bottom-margin};
-  const outer=frame||handle;
+  // An arrowhead stands outside its frame's border: the card clears it too,
+  // or it opened over the head the pointer rested on.
+  const outer=frame?{left:Math.min(frame.left,handle.left),top:Math.min(frame.top,handle.top),right:Math.max(frame.right,handle.right),bottom:Math.max(frame.bottom,handle.bottom)}:handle;
   const clamp=(value,low,high)=>high<low?low:Math.min(Math.max(value,low),high);
   const vertical=side==='top'||side==='bottom';
   if(vertical){

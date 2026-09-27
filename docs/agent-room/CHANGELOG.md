@@ -1,5 +1,46 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Arrow ends open their cards for a real pointer on Redis
+
+- A usability tester on the saved Redis run (1440×900, real pointer, 1.1 s
+  rests) never opened an arrow card at any level; the fixture spec passed.
+  Measured on that run rendered with `repomap render`, headless Chromium:
+  - the numbered frame came from `parentArea` alone (canvas.jsx, `chosen`),
+    which is empty for a component, with a fallback to the one open
+    component; entering redis-server opens four, so choosing it numbered
+    nothing, and its border numbers stood only while one of its areas was
+    pointed at and vanished as the pointer crossed the component's own
+    space to them (0 of 5 chips reached);
+  - an arrowhead had no target (`.flow-edge` is `pointer-events:none`), so a
+    rest opened nothing and a click fell through to the frame underneath
+    (0 of 13 heads at the component level, 0 of 7 on the whole map).
+- An open component is now the frame of anything pointed at or chosen in
+  its own space; a closed one numbers nothing. Every drawn arrowhead where
+  an arrow meets an area's or a component's border is its connection's
+  handle, hit-tested on empty canvas from the drawn route (routes now name
+  the boxes at their ends), nothing drawn: the incoming connection of the
+  frame it points into, or the other end's outgoing one at a destination,
+  the inputs or a loose part, or the numbered frame's chip standing there.
+  Rest, safe triangle, card and click behave as the chip's; the card clears
+  its handle (it had opened over the head), and a move from a head onto its
+  own card or chip is not a leave. A closed frame takes the outline for the
+  parts behind an end. A skeptic agent refuted the first design (invisible
+  hit boxes on every border: overlapping, stealing titles and badges, a
+  closed component taking the numbers); the pane-level head test replaced it.
+- After: all 7 whole-map heads, 5 chips and 13 component heads open their
+  card and keep it with the pointer on it, at 1440×900 and 1280×800; Core
+  infrastructure's 3 chips and 2 crossing heads too; a click on a head or a
+  chip opens that connection in the column with the camera still.
+- Tests: two fixture specs (the component's chips across its space; heads at
+  the whole map and inside a component, with the click) and
+  `visual/real-report.spec.mjs`, which renders `REPOMAP_REAL_RUN` with the
+  built binary and walks every head and chip (skipped without it); a
+  placement test and a route-ends test. Each fails with the fix reverted
+  (the real-report spec at the first whole-map head). No dumb test needed
+  deleting.
+- `make test`, `make vet`, npm test (122), `build --check` pass;
+  `make ui-visual-test` fails the same 18 tests as main, 41 pass.
+
 ## 2026-09-27 — The owner's mockup picks: arrow card, "all", composition, connections, input path
 
 - The owner chose from the designer's Redis mockups: 1b, 2a "but less

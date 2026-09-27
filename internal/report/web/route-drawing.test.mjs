@@ -105,6 +105,18 @@ test('opened and closed area pairs share one bidirectional native route',()=>{
   }
 });
 
+// An arrowhead is its connection's handle, so a drawn route names the boxes
+// it runs between: the frames an area pair is clipped to, and the outer
+// participants of a cross-system arrow.
+test('a drawn route names the boxes at its two ends',()=>{
+  const source={id:'requests',absolute:{x:0,y:0},width:100,height:100};
+  const target={id:'execution',absolute:{x:200,y:0},width:100,height:100};
+  const boundary=id=>id.startsWith('input')?source:target;
+  assert.deepEqual(routeDrawing(edges(),()=>null,new Set(),false,boundary)[0].boxes,['requests','execution']);
+  const outer=edges().map(edge=>({...edge,outerSegments:[shared],outerFrom:'inputs',outerTo:'component'}));
+  assert.deepEqual(routeDrawing(outer,()=>null,new Set())[0].boxes,['inputs','component']);
+});
+
 test('an empty first clipped route cannot hide a later nonempty route for the same pair',()=>{
   const source={id:'requests',absolute:{x:0,y:0},width:100,height:100};
   const target={id:'execution',absolute:{x:200,y:0},width:100,height:100};

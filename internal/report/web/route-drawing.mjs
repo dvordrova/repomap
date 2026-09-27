@@ -22,18 +22,18 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
     const visibleFrom=edge.outerFrom||from?.id||edge.from,visibleTo=edge.outerTo||to?.id||edge.to;
     const key=JSON.stringify([visibleFrom,visibleTo].sort());
     let group=groups.get(key);
-    if(!group){group={edge,paths,segments,edgeIDs:[],directions:new Set(),on:false,near:false,own:false,possible:true,init:true};groups.set(key,group);}
+    if(!group){group={edge,paths,segments,ends:[visibleFrom,visibleTo],edgeIDs:[],directions:new Set(),on:false,near:false,own:false,possible:true,init:true};groups.set(key,group);}
     // Prefer an exact native route, then its stable edge ID. Never choose an
     // empty clipped route or invent a replacement line between the endpoints.
     if((group.edge.possible&&!edge.possible)||!!group.edge.possible===!!edge.possible&&edge.id<group.edge.id){
-      group.edge=edge;group.paths=paths;group.segments=segments;
+      group.edge=edge;group.paths=paths;group.segments=segments;group.ends=[visibleFrom,visibleTo];
     }
     group.edgeIDs.push(edge.id);group.directions.add(`${visibleFrom}\0${visibleTo}`);
     group.near ||= !!lookedAt&&(lookedAt.has(edge.from)||lookedAt.has(edge.to));
     group.on ||= activeEdges.has(edge.id);group.possible &&= !!edge.possible;group.init &&= !!edge.init;
     group.own ||= !!inside&&inside.has(edge.from)&&inside.has(edge.to);
   }
-  for(const {edge,paths,segments,edgeIDs,directions,on,near,own,possible,init} of groups.values()){
+  for(const {edge,paths,segments,ends,edgeIDs,directions,on,near,own,possible,init} of groups.values()){
     const bidirectional=directions.size>1;
     paths.forEach((path,index)=>{
       const key=path;
@@ -52,6 +52,9 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
       route.init &&= init;
       route.arrow ||= index===paths.length-1;
       route.reverseArrow ||= bidirectional&&index===0;
+      // The drawn boxes at its two ends: an arrowhead touches the one it
+      // points into, and is the handle of that connection.
+      route.boxes ||= ends;
     });
   }
   // Initialization wiring is drawn only while one of its ends is the box or

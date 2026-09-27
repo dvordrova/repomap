@@ -34,3 +34,13 @@ test('with no room outside the frame the card stands beside its handle, inside t
   const wide=placeCard({handle:{left:10,top:10,right:30,bottom:30},frame:null,canvas,size:{width:2000,height:100}});
   assert.equal(wide.x,8,'a card wider than the canvas starts at its left edge');
 });
+
+// Redis's redis-cli → redis-server arrowhead stands above the server's top
+// border: placed above the frame alone, its card opened over the head the
+// pointer rested on, and the pointer was on the card before it moved.
+test('an arrowhead outside its frame is not covered by its card',()=>{
+  const size={width:500,height:180},head={left:532,top:559,right:556,bottom:583},frame={left:400,top:571,right:1060,bottom:760};
+  const at=placeCard({handle:head,frame,canvas:{left:30,top:290,right:1090,bottom:870},size,side:'top'});
+  assert.ok(at.y+size.height<=head.top,'the card stands above the head');
+  assert.equal(at.x,head.left,'flush with the head');
+});

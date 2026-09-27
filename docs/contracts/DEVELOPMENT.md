@@ -154,6 +154,15 @@ request or saved layout is involved. This fixture supplements ordinary report
 acceptance; it does not check analysis quality or replace source/Back journeys
 in a complete generated report.
 
+A saved run is too large for the repository's test data, so one spec reaches a
+real report only on request: with `REPOMAP_REAL_RUN` naming a saved run
+directory, the test server renders it once with the built `.bin/repomap render`
+(no provider request) and `visual/real-report.spec.mjs` walks every arrowhead
+and chip of its whole map and of its largest component with a real pointer at
+1440×900 and 1280×800. Without it that spec is skipped. The fixture itself
+reproduces Redis's failing geometry: entering one component opens the other,
+and the component's numbers stand on its own border.
+
 Each system has one compact input collection outside its component frame on
 the initial map. Its existing input types remain readable; opening the collection
 reveals the original named inputs. Selecting an input retains its exact saved
