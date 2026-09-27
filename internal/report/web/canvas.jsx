@@ -208,7 +208,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const initial={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false,numbered:true};
   let cameraRevision=0;
   let update, instance, view=initial, hoverArea='', pinnedPart='', pinnedLabels=new Map(), lookOnly, preview='', restorePending, pendingFocus, panning=false, initializing=true;
-  let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
+  let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),arriving=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
   const closed=id=>closedContainer(id,placed,byID,detailed,componentsOpen,communicationsOpen,openComponents);
   new ResizeObserver(()=>{if(instance&&!initializing&&overviewFit)fitOverview();}).observe(host);
   function updateLocation(event,subject=locationSubject){
@@ -257,7 +257,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     };
   }
   function updateDetail(viewport){
-    const next=detailState(viewport,new Set([...openComponents,...detailed,...communicationsOpen]));
+    const next=detailState(viewport,new Set([...openComponents,...detailed,...communicationsOpen,...arriving]));
     const same=(a,b)=>a.size===b.size&&[...a].every(id=>b.has(id));
     if(same(next.components,openComponents)&&same(next.areas,detailed)&&same(next.communications,communicationsOpen))return;
     openComponents=next.components;componentsOpen=!!openComponents.size;detailed=next.areas;communicationsOpen=next.communications;
@@ -277,7 +277,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // React Flow's imperative camera methods need not emit onMoveEnd. Save
     // only after they finish, or Back restores the previous display's camera.
     const revision=++cameraRevision;
-    return Promise.resolve(movement).then(()=>{if(revision===cameraRevision&&!initializing){updateLocation(undefined,subject);map.dispatchEvent(new Event('repomap:viewport'));}});
+    return Promise.resolve(movement).then(()=>{if(revision===cameraRevision&&!initializing){
+      if(arriving.size){updateDetail(instance.getViewport());arriving=new Set();}
+      updateLocation(undefined,subject);map.dispatchEvent(new Event('repomap:viewport'));}});
+  }
+  // Entering a frame opens it, so the camera may stand as small as an open
+  // frame stays open. The move's own intermediate zooms must not close it on
+  // the way: from a closed layer they did, and at the end it needed the larger
+  // zoom that opens a closed layer, so microblog's /explore stood on the closed
+  // Web routes summary with its title at 45 px. The frames a camera move
+  // enters, and their ancestors, stay open through that move; a gesture ends it.
+  function arrive(ids){
+    arriving=new Set();
+    for(const id of ids)for(let at=id;at;at=placed.get(at)?.parentId)if(placed.get(at)?.frame)arriving.add(at);
   }
   // One look for the whole map: a badge, a label, whatever a layer adds.
   const look=createLook();
@@ -316,6 +328,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const least=layerFloor(layout.nodes,semantic.records,parentArea(nodes[0].id)||rootOf(nodes[0].id),rect.width,rect.height);
     const {taken,...viewport}=pathViewport(nodes,steps,rect.width,rect.height,byID.get(nodes[0].id)?.contentScale||1,{least});
     detailed=new Set([...detailed,...taken.map(n=>parentArea(n.id)).filter(Boolean)]);
+    arrive(taken.map(n=>n.id));
     locationSubject=nodes[0].id;
     commitCamera(instance.setViewport(viewport,{duration:smooth?420:0}),nodes[0].id);
     return true;
@@ -329,6 +342,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
     const rect=host.getBoundingClientRect(),group=placed.get(tile.parentId);
     communicationsOpen=new Set([...communicationsOpen,rootOf(id)]);
+    arrive([id]);
     locationSubject=id;
     const least=layerFloor(layout.nodes,semantic.records,rootOf(id),rect.width,rect.height);
     commitCamera(instance.setViewport(tileViewport(tile,byID.get(group?.id)?.branch==='inputs-part'?group:null,rect.width,rect.height,byID.get(id)?.contentScale||1,{least}),{duration:smooth?420:0}),id);
@@ -356,6 +370,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // closed one needs to open by itself.
       if(['communication','inputs'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id]);
       else if(!component)detailed=new Set([...detailed,n.id]);
+      if(!component)arrive([n.id]);
       const least=scales.has(n.id)?layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height):Infinity;
       commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least}),{duration:smooth?420:0}),id);return;
     }
@@ -644,7 +659,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         updateDetail(viewport);
         map.querySelectorAll('[data-map-zoom]').forEach(button=>{button.disabled=Number(button.dataset.mapZoom)<1&&viewport.zoom<=minZoom();});
       }}
-      onMoveStart={event=>{if(event){overviewFit=false;locationSubject='';}panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
+      onMoveStart={event=>{if(event){overviewFit=false;locationSubject='';arriving=new Set();}panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
       onMoveEnd={event=>{panning=false;hover.pause();if(instance)updateDetail(instance.getViewport());updateLocation(event);map.dispatchEvent(new Event('repomap:viewport'));}}>
       <svg className="flow-defs"><defs>
         <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker>

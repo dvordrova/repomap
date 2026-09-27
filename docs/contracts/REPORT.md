@@ -388,7 +388,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   a group or a call then uses its actual content scale for reading. A
   focused area that fits the canvas at a zoom where its layer stays open is
   fitted whole, never wider than the visible canvas; only an area too large
-  even so is entered at its first part.
+  even so is entered at its first part. Entering a frame or an input's path
+  opens what it enters: those frames stay open through the camera move's own
+  zooms, so they arrive open although the camera stands smaller than a
+  closed layer needs to open by itself. Closed on the way, microblog's
+  /explore stood on the closed Web routes summary with its title at 45 px.
   The minimum camera scale permits the complete root bounds even in a short
   window. The initial world choice accounts for readable root-header widths and heights,
   not only its bounding rectangle. After placing the native area interiors,
