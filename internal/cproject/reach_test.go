@@ -45,6 +45,12 @@ int abs(int x) { return x < 0 ? -x : x; }
 /* Names reserved for the implementation, which alone calls them. */
 int __kv_hook(void) { return 0; }
 int _kv_start(void) { return 0; }
+/* An asm label calls labelTarget by its symbol; code outside the
+   repository calls renamedDef by the symbol its own label writes. */
+void labelTarget(void) {}
+extern void viaLabel(void) __asm__("labelTarget");
+void renamedDef(void) __asm__("kv_exported");
+void renamedDef(void) {}
 
 int main(void) {
     int x __attribute__((cleanup(cleanup))) = 0;
@@ -53,21 +59,22 @@ int main(void) {
     __asm__ volatile("" : : "r"(&x));
     __asm__ volatile("# _inAssembly");
     s();
+    viaLabel();
     return x + (int)symbols[0] + (handlers[0] != 0);
 }
 `
 
 // A C function runs only when code that runs names it, by a call or by its
 // address. What main, a constructor, a file-scope initializer, the
-// platform's library, the implementation or assembly can name runs; what
-// only dead code names does not.
+// platform's library, the implementation, assembly or an asm label can name
+// runs; what only dead code names does not.
 func TestIndexProvesWhatAProgramNeverRuns(t *testing.T) {
 	x := indexProgram(t, map[string]string{"reach.c": reachSource}, "c:reach.c")
 	want := []string{"calledOnlyByNeverCalled", "deadStorer", "neverCalled", "storedOnlyByDeadCode"}
 	if got := x.unreachable(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("unreachable = %v, want %v", got, want)
 	}
-	for _, name := range []string{"main", "castToInteger", "inTable", "compared", "cleanup", "stored", "beforeMain", "inAssembly", "abs", "__kv_hook", "_kv_start"} {
+	for _, name := range []string{"main", "castToInteger", "inTable", "compared", "cleanup", "stored", "beforeMain", "inAssembly", "abs", "__kv_hook", "_kv_start", "labelTarget", "renamedDef"} {
 		if x.object(t, name, "reach.c").Unreachable {
 			t.Errorf("%s runs, yet the index says nothing reaches it", name)
 		}
@@ -95,9 +102,11 @@ func TestIndexReadsEveryUnitsCopyOfASharedStatic(t *testing.T) {
 
 // Code the adapter does not read can call any function with external
 // linkage by its name: code loaded or looked up at run time, a library other
-// than the C runtime's own, and a link input no compile line built. Then only
-// static functions are proven. A link line that names another entry proves
-// nothing, and a library, called from outside, marks nothing.
+// than the C runtime's own, a link input no compile line built (a response
+// file's too) and other programs calling a shared object. Then only static
+// functions are proven. A link line that names another entry (a linker
+// script's too) or defines one symbol as another proves nothing, and a
+// library, called from outside, marks nothing.
 func TestIndexProvesOnlyStaticsWhereOtherCodeCanCallByName(t *testing.T) {
 	const source = "#include <dlfcn.h>\n" +
 		"void orphan(void) {}\n" +
@@ -122,10 +131,17 @@ func TestIndexProvesOnlyStaticsWhereOtherCodeCanCallByName(t *testing.T) {
 		{"vendor/prebuilt.o", []string{"hidden"}},
 		{"start.S", []string{"hidden"}},
 		{"gen/generated.c", []string{"hidden"}},
+		{"@objects.rsp", []string{"hidden"}},
+		{"-shared", []string{"hidden"}},
 		{"-e orphan", nil},
 		{"-Wl,-e,orphan", nil},
 		{"-Xlinker --entry=orphan", nil},
 		{"-nostartfiles", nil},
+		{"-T prog.ld", nil},
+		{"-Wl,-T,prog.ld", nil},
+		{"-Wl,--defsym,hook=orphan", nil},
+		{"-Wl,--wrap=orphan", nil},
+		{"-Wl,@link.opts", nil},
 	} {
 		if got := indexProgram(t, makefile(test.link), "c:prog").unreachable(); !reflect.DeepEqual(got, test.want) {
 			t.Errorf("linked with %s: unreachable = %v, want %v", test.link, got, test.want)

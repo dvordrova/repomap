@@ -190,9 +190,13 @@ library may call instead of its own; and from a name the C standard reserves
 for the implementation (a file-scope name beginning with `_`). It follows
 what each definition's body names, in every unit's copy of it (a header's
 `static inline` function reaches each unit's own statics), including a
-`cleanup` attribute's function. Assembly statements, file-scope assembly and
-`alias`/`ifunc` attributes name functions by text: every repository function
-their written text, or its macro's, names is named there. Each function
+`cleanup` attribute's function. Assembly statements, file-scope assembly,
+asm labels and `alias`/`ifunc` attributes name functions by text: every
+repository function their written text, or its macro's, names is named there
+(a call of `extern void f(void) __asm__("impl")` runs `impl`), and a function whose
+own symbol an asm label renames is called by that symbol from outside, so it
+is where running may start. A label a platform header writes names a
+platform symbol and is not read. Each function
 nothing reached is `unreachable` in that program's index: a deterministic
 fact about that program as its link line (or, without one, the linker
 closure) gives it, not about the file, so `anet.c`'s `anetTcpServer` and
@@ -203,12 +207,16 @@ taken.
 Code the adapter does not read can call any function with external linkage
 by its name: a link input no compile line produced (`Missing`: a prebuilt
 object or archive, an assembly or C++ source, a `.c` file outside the
-corpus), a library other than the C runtime's own (`-lc`, `-lm`,
-`-lpthread`, `-ldl`, `-lrt`; `-pthread` is a flag), a framework, and code
-the program loads or looks up at run time (`dlopen`, `dlmopen`, `dlsym`,
-`dlvsym`, `dlfunc`). Then every external function is where running may
-start, and only static functions are proven. A link line that names another
-entry (`-e`, `--entry`, `-init`, `-fini`, through `-Wl,` or `-Xlinker` too)
+corpus, a response file `@file`), a library other than the C runtime's own
+(`-lc`, `-lm`, `-lpthread`, `-ldl`, `-lrt`; `-pthread` is a flag), a
+framework, other programs calling a shared object (`-shared`) that also
+defines `main`, and code the program loads or looks up at run time
+(`dlopen`, `dlmopen`, `dlsym`, `dlvsym`, `dlfunc`). Then every external
+function is where running may start, and only static functions are proven.
+A link line that names another entry (`-e`, `--entry`, `-init`, `-fini`, a
+linker script `-T`/`--script` with its `ENTRY`), defines one symbol as
+another (`--defsym`, `--wrap`, Apple's `-alias`/`-alias_list`) or reads
+linker options from a file (`-Wl,@file`), through `-Wl,` or `-Xlinker` too,
 or drops the runtime's start files (`-nostartfiles`, `-nostdlib`), and
 assembly text the adapter cannot read, prove nothing; a library (no `main`)
 is called from outside and marks nothing.
@@ -311,7 +319,8 @@ and route rows that state one, each with its record field as registrar.
 `TestIndexProvesWhatAProgramNeverRuns` checks each way a function is named
 and every unit's copy of a shared static;
 `TestIndexProvesOnlyStaticsWhereOtherCodeCanCallByName` checks run-time
-loading, link lines and libraries;
+loading, link lines (entries, linker scripts, symbol definitions, response
+files, shared objects) and libraries;
 `TestCFixtureProvesWhatEachProgramNeverRuns` checks the fixture's programs,
 their facts and places, and
 `TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem` reads

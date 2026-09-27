@@ -19,17 +19,20 @@ import (
 // may call instead of its own; and at a name the C standard reserves for the
 // implementation (any file-scope name that begins with an underscore). A
 // cleanup attribute names its function where the variable is declared.
-// Assembly and alias attributes name functions by text, and every repository
-// function their text names is named there.
+// Assembly, asm labels and alias attributes name functions by text, and every
+// repository function their text names is named there; a function whose own
+// symbol an asm label renames is called by that name, so it is a root.
 //
 // Code the adapter does not read can call any function with external linkage
-// by its name: an input of the link line no compile line produced, a library
-// other than the C runtime's own, and code the program loads or looks up at
-// run time (dlopen, dlsym). Then every external function is a root and only
-// static functions can be proven. A link line that names another entry
-// (-e, --entry, -init, -fini) or drops the runtime's start files, and
-// assembly text the adapter cannot read, prove nothing. A library (no main)
-// is called from outside and marks nothing.
+// by its name: an input of the link line no compile line produced (a
+// response file too), a library other than the C runtime's own, other
+// programs calling a shared object, and code the program loads or looks up
+// at run time (dlopen, dlsym). Then every external function is a root and
+// only static functions can be proven. A link line that names another entry
+// (-e, --entry, -init, -fini, a linker script) or rewrites symbols (--defsym,
+// --wrap, -alias), or drops the runtime's start files, and assembly text the
+// adapter cannot read, prove nothing. A library (no main) is called from
+// outside and marks nothing.
 func (b *builder) markUnreachable() {
 	main := b.mainFunction()
 	if main == nil {
@@ -63,10 +66,15 @@ func (b *builder) markUnreachable() {
 					named(fn)
 				}
 			}
-		case "GCCAsmStmt", "MSAsmStmt", "FileScopeAsmDecl", "AliasAttr", "IFuncAttr":
+		case "GCCAsmStmt", "MSAsmStmt", "FileScopeAsmDecl", "AliasAttr", "IFuncAttr", "AsmLabelAttr":
 			texts := b.writtenTexts(n)
 			if len(texts) == 0 {
-				provable = false
+				// A label a platform header writes (and a redeclaration
+				// inherits) names a platform symbol, never a repository
+				// function; any other unread text proves nothing.
+				if n.Kind != "AsmLabelAttr" {
+					provable = false
+				}
 				return
 			}
 			for _, word := range identifiers(strings.Join(texts, " ")) {
@@ -107,6 +115,13 @@ func (b *builder) markUnreachable() {
 					if fn != "" {
 						visit(scope, child, func(to string) { edges[fn] = append(edges[fn], to) })
 					}
+				case "AsmLabelAttr":
+					// Code outside the repository calls this function by
+					// the symbol its label writes, which no call here names.
+					if fn != "" && len(b.writtenTexts(child)) > 0 {
+						root(fn)
+					}
+					visit(scope, child, root)
 				default:
 					visit(scope, child, root)
 				}
@@ -146,14 +161,15 @@ var loadsCode = map[string]bool{"dlopen": true, "dlmopen": true, "dlsym": true, 
 var runtimeLibraries = map[string]bool{"c": true, "m": true, "pthread": true, "dl": true, "rt": true}
 
 // linkedOutside reads a program's link line: whether it links code the
-// adapter does not read, and whether main is where running starts.
+// adapter does not read, and whether main is where running starts. Other
+// programs call a shared object's external functions by name.
 func linkedOutside(program Program) (outside, provable bool) {
-	outside, provable = len(program.Missing) > 0, true
+	outside, provable = len(program.Missing) > 0 || program.Kind == ProgramShared, true
 	args := program.LinkArgs
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
-		case arg == "-e", arg == "-nostartfiles", arg == "-nostdlib":
+		case arg == "-e", arg == "-nostartfiles", arg == "-nostdlib", strings.HasPrefix(arg, "-T"):
 			provable = false
 		case arg == "-framework":
 			outside = true
@@ -166,8 +182,7 @@ func linkedOutside(program Program) (outside, provable bool) {
 		case strings.HasPrefix(arg, "-Wl,"):
 			for _, word := range strings.Split(strings.TrimPrefix(arg, "-Wl,"), ",") {
 				switch {
-				case word == "-e", word == "--entry", strings.HasPrefix(word, "--entry="), word == "-init", word == "-fini",
-					strings.HasPrefix(word, "-init="), strings.HasPrefix(word, "-fini="):
+				case linkerRedirects(word):
 					provable = false
 				case strings.HasPrefix(word, "-l"):
 					outside = outside || !runtimeLibraries[strings.TrimPrefix(word, "-l")]
@@ -176,6 +191,19 @@ func linkedOutside(program Program) (outside, provable bool) {
 		}
 	}
 	return outside, provable
+}
+
+// linkerRedirects reports a linker option that makes a function run without
+// a name in the code: another entry or initializer (-e, --entry, -init,
+// -fini, a linker script's ENTRY), a symbol defined as another (--defsym,
+// --wrap, Apple's -alias), or options read from a file.
+func linkerRedirects(word string) bool {
+	for _, option := range []string{"-e", "--entry", "-init", "-fini", "--defsym", "--wrap", "-alias", "-alias_list", "--script", "--default-script", "-dT"} {
+		if word == option || strings.HasPrefix(word, option+"=") {
+			return true
+		}
+	}
+	return strings.HasPrefix(word, "-T") || strings.HasPrefix(word, "@")
 }
 
 // writtenTexts are the source a node spans where it is spelled and where the

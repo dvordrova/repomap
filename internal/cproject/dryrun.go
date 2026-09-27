@@ -301,8 +301,12 @@ func parseDryRun(env parseEnv, output string) buildDescription {
 						}
 						continue
 					}
-					switch path.Ext(input) {
-					case ".o", ".a", ".so", ".dylib", ".lo", ".s", ".S", ".cc", ".cpp", ".cxx", ".m", ".mm":
+					switch {
+					case strings.HasPrefix(input, "@"):
+						// A response file holds more of the line: inputs no
+						// compile line here names.
+						link.inputs = append(link.inputs, absolute(cwd, input))
+					case slices.Contains([]string{".o", ".a", ".so", ".dylib", ".lo", ".s", ".S", ".cc", ".cpp", ".cxx", ".m", ".mm"}, path.Ext(input)):
 						link.inputs = append(link.inputs, absolute(cwd, input))
 					}
 				}
@@ -347,7 +351,8 @@ func commandWords(words []string) []string {
 }
 
 // linkArgs keeps the libraries and link flags of a link line, and the flags
-// that name its entry or drop the C runtime's start files.
+// that name its entry (a linker script too) or drop the C runtime's start
+// files.
 func linkArgs(args []string) []string {
 	var out []string
 	for i := 0; i < len(args); i++ {
@@ -360,12 +365,12 @@ func linkArgs(args []string) []string {
 				out = append(out, "-Wl,"+args[i+1])
 				i++
 			}
-		case arg == "-l" || arg == "-L" || arg == "-framework" || arg == "-e":
+		case arg == "-l" || arg == "-L" || arg == "-framework" || arg == "-e" || arg == "-T":
 			if i+1 < len(args) {
 				out = append(out, arg, args[i+1])
 				i++
 			}
-		case strings.HasPrefix(arg, "-l"), strings.HasPrefix(arg, "-L"), strings.HasPrefix(arg, "-Wl,"),
+		case strings.HasPrefix(arg, "-l"), strings.HasPrefix(arg, "-L"), strings.HasPrefix(arg, "-Wl,"), strings.HasPrefix(arg, "-T"),
 			arg == "-pthread", arg == "-shared", arg == "-dynamiclib", arg == "-static", arg == "-rdynamic":
 			out = append(out, arg)
 		}
