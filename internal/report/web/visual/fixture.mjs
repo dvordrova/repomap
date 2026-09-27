@@ -13,6 +13,14 @@ if(options.has('single-part-area')){
   areas.find(a=>a.id===group.id).nodes=group.children;
 }
 
+// A part in no area stands beside the backend's areas.
+if(options.has('loose-part')){
+  records.find(n=>n.id==='backend').children.push('audit');
+  areas.find(a=>a.id==='backend').nodes.push('audit');
+  records.push({id:'audit',title:'Audit log',kind:'Part',summary:'Records every job decision for later review.'});
+  relations.push({from:'worker',to:'audit'});
+}
+
 // A chosen input carries its saved trace, the parts its code reaches in
 // call-depth order, and its arrows name it.
 if(options.has('input-path')){
@@ -55,6 +63,7 @@ map.showWholeMap=()=>{operation='';flow.update({});showReading('');return flow.o
 map.captureViewport=()=>flow.capture();
 // Choosing an input as the report does: the reading is on the input and the
 // canvas is asked to show it.
+map.focusNode=id=>flow.focus(id);
 map.chooseInput=id=>{operation=id;flow.update({operation:id,entry:id,selected:selected(id)});showReading(id);flow.focus(id);};
 map.visibleEdges=flow.layout.edges;
 map.restoreReadingState=saved=>{

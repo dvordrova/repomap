@@ -309,9 +309,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   placement still follows the connections. The parts entrance below the map
   lists each component's areas the same way, then its loose parts by name.
   That overview keeps the saved area caption; the single card and its source
-  reading keep the part's own title. Direct parts use the same fixed first-reveal
-  heading fit and column width as neighbouring groups, with their measured
-  card height, without promising hidden children.
+  reading keep the part's own title. A direct (loose) part beside areas is
+  their closed summaries' peer while they are closed: it uses the same fixed
+  first-reveal heading fit and column width as neighbouring groups, without
+  promising hidden children. Once the areas open it is their parts' peer:
+  the same card at the same scale, filling its box, so its title reads at
+  their parts' size. Kept at the summary scale, Redis's Debug symbols read
+  41 px beside 17 px parts. A component without areas keeps its direct
+  parts' fitted headings.
   Input collections remain outside the component at every scale.
 
   Detail is synchronized by hierarchy depth. The whole-map layer shows targets,

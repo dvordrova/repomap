@@ -76,7 +76,7 @@ function PartSymbols({symbols,calls,width,height}){
 }
 function Part({data}) {
   const heading=data.standaloneHeading,scale=heading?.scale||data.contentScale;
-  const box=heading?{width:heading.width,height:heading.height}:{width:data.originalWidth||data.width||260,height:data.originalHeight||data.height||88};
+  const box=heading?{width:heading.width,height:heading.height}:data.fill||{width:data.originalWidth||data.width||260,height:data.originalHeight||data.height||88};
   // Only the flip between the two drawings re-renders the card, not every
   // step of a zoom.
   const far=useStore(state=>box.width*(scale||1)*state.transform[2]>=860);
@@ -92,7 +92,7 @@ function Part({data}) {
     <PartSymbols symbols={data.symbols} calls={data.symbolCalls} width={box.width} height={box.height}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
-  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
+  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
@@ -488,6 +488,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       }));
     },[layoutKey]);
     const overview=isOverview();
+    // A loose part beside areas is a peer of their closed summaries while
+    // they are closed: its heading fitted to its box at their scale. Once the
+    // areas open it is a peer of their parts: the same card at the same
+    // scale, filling its box. Kept at the summary scale, Redis's Debug
+    // symbols read 41 px beside 17 px parts.
+    const looseLook=n=>{
+      const heading=standaloneHeadings.get(n.id);
+      if(!heading)return {};
+      const holdsAreas=(children.get(placed.get(n.id)?.parentId)||[]).some(id=>byID.get(id)?.branch==='area');
+      if(!holdsAreas||!detailed.size)return {standaloneHeading:heading};
+      const scale=byID.get(n.id)?.contentScale||1;
+      return {fill:{width:n.width/scale,height:n.height/scale}};
+    };
     // Zoomed into one area with nothing hovered or chosen, that area is what
     // the reader is looking at: its parts keep their numbers.
     const zoomedArea=state.mode==='all'&&detailed.size===1?[...detailed][0]:'';
@@ -567,7 +580,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         selectable:false,draggable:false,connectable:false,
         style:{width:n.width,height:n.height,visibility:visible(n.id)?'visible':'hidden'},
         className:`${on||contains||!dim?'':'flow-node-muted'} ${focused?'flow-node-focus':on?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
-        data:{...item,standaloneHeading:standaloneHeadings.get(n.id),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true)}};
+        data:{...item,...looseLook(n),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true)}};
     });
     const edges=routes.map(route=>{
       return {id:route.id,source:route.from,target:route.to,type:'routed',selectable:false,focusable:false,
