@@ -255,3 +255,35 @@ function select(n,navigate,source,focus){seen.push([n.id,navigate,source,focus,p
 })().catch(error=>{console.error(error);process.exit(1);});
 `)
 }
+
+// A chosen input's reading lists its path (owner's 3c): the chain it
+// shares with the other inputs its dispatch chooses between, folded into
+// one box, then its own steps, a callee under its caller, each a link to its
+// code with no line number and the part heading it where the part changes.
+func TestAnInputsPathIsTheSharedChainThenItsOwnSteps(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')")
+	runSystemJS(t, fakeElements+`
+const plain=document.createElement;document.createElement=tag=>{const element=plain(tag);element.style={};return element;};
+const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
+const step=(name,part,title,depth,extra)=>({name,href:'h/'+name,source:'redis.c:1',part,part_title:title,depth,...extra});
+const path={shared:[{inputs:95,all:false,through:'call',of:94,steps:[step('main','n-config','Server configuration',0),step('aeMain','n-loop','Event loop',0),step('call','n-clients','Client connections',0)]},
+  {inputs:95,through:'loadAppendOnlyFile',of:94,steps:[step('main','n-config','Server configuration',0),step('loadAppendOnlyFile','n-persist','Persistence',0)]}],
+  own:[step('getCommand','n-strings','String commands',0),step('getGenericCommand','n-strings','String commands',1),step('lookupKeyRead','n-keys','Keyspace',2,{possible:true}),step('addReply','n-clients','Client connections',2)]};
+const parts={'n-strings':{id:'n-strings'},'n-clients':{id:'n-clients'}},chosen=[];
+`+code+`
+const section=rmInputPathSection(path,id=>parts[id]||null,part=>chosen.push(part.id));
+assert.equal(section.children[0].textContent,'Path');
+const boxes=section.all(e=>e.className==='system-shared-path');
+assert.deepEqual(boxes.map(b=>[b.tagName,!!b.open,b.children[0].textContent]),[['DETAILS',true,'Shared by {0} inputs, through {1}'.replace('{0}',95).replace('{1}','call')],['DETAILS',false,'Shared by 95 inputs, through loadAppendOnlyFile']]);
+const lines=list=>list.children.map(c=>c.className==='system-path-part'?'['+c.textContent+']':c.textContent);
+assert.deepEqual(lines(boxes[0].find(e=>e.className==='system-path-steps')),['[Server configuration]','main','[Event loop]','aeMain','[Client connections]','call']);
+assert.equal(boxes[0].children.at(-1).textContent,'call → one of 94');
+const own=section.children.at(-1);
+assert.deepEqual(lines(own),['[String commands]','getCommand','getGenericCommand','[Keyspace]','lookupKeyRead · possible','[Client connections]','addReply']);
+assert.deepEqual(own.all(e=>e.className==='system-path-step').map(e=>e.style.marginLeft),['0px','10px','20px','20px'],'a callee stands under its caller');
+assert.ok(!JSON.stringify(lines(own)).includes('redis.c'),'no line number is shown');
+own.find(e=>e.tagName==='BUTTON'&&e.textContent==='String commands').listeners.click();
+assert.deepEqual(chosen,['n-strings'],'a part on the path leads to its reading');
+assert.equal(own.find(e=>e.textContent==='Keyspace').tagName,'DIV','a part the map does not draw is only named');
+`)
+}

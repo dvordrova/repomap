@@ -32,6 +32,8 @@ type dispatchFold struct {
 type dispatchFacts struct {
 	site   map[string]*dispatchFold
 	handed map[[3]string]*dispatchFold
+	// sites are the dispatch relations themselves, in source order.
+	sites []dispatchRelation
 }
 
 type dispatchRelation struct {
@@ -122,6 +124,7 @@ func (builder *pageBuilder) dispatch(targetID string) *dispatchFacts {
 		}
 		fold.kinds[relation.kind] = true
 		facts.site[relation.id] = fold
+		facts.sites = append(facts.sites, relation)
 	}
 	if len(folds) == 0 {
 		return facts

@@ -96,6 +96,7 @@ func (view *pageView) SystemMap() *pageMap {
 		n := &result.Nodes[i]
 		n.Children, n.Neighbours, n.Trace = remap(n.Children), remap(n.Neighbours), remap(n.Trace)
 		n.InputOwner = remap(n.InputOwner)
+		n.InputPath = remapInputPath(n.InputPath, canonical)
 		if n.CallPaths != "" {
 			var paths map[string]json.RawMessage
 			if json.Unmarshal([]byte(n.CallPaths), &paths) == nil {

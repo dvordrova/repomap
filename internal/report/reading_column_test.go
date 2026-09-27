@@ -257,3 +257,35 @@ func TestReadingColumnHeightComesOnlyFromTheCanvas(t *testing.T) {
 		}
 	}
 }
+
+// An input's reading carries the Inputs blue its tile and collection are
+// drawn in: the owner saw an input opened in purple, which reads as core.
+// Its heading bar, its kind and its links take the blue; no rule of it
+// takes a purple.
+func TestAnInputsReadingIsInTheInputsBlue(t *testing.T) {
+	raw, err := reportTemplateFS.ReadFile("templates/css/43-map-reading.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(raw)
+	for _, want := range []string{`.map-reading-input .map-object-heading{box-shadow:inset 3px 0 #356faa`, `.map-reading-input .map-object-heading .map-card-kind{color:#356faa}`,
+		`.flow-enabled .map-reading-input .map-card a,.flow-enabled .map-reading-input .system-path-part{color:#204a7b}`} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("the input's reading lost its blue: %s", want)
+		}
+	}
+	for _, rule := range regexp.MustCompile(`[^}]*\.map-reading-input[^{]*\{[^}]*\}`).FindAllString(css, -1) {
+		for _, purple := range []string{"#63429d", "#4f3aa3", "#4f2f86", "#755299", "#7252b3"} {
+			if strings.Contains(rule, purple) {
+				t.Fatalf("an input's reading is drawn in core's purple: %s", rule)
+			}
+		}
+	}
+	script, err := reportTemplateFS.ReadFile("templates/js/29-operation-view.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(script), `classList.toggle('map-reading-input',!!n.dataset.activation)`) {
+		t.Fatal("the reading of an input is not marked as one")
+	}
+}

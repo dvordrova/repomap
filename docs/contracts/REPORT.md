@@ -313,7 +313,27 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   names its handler ("handled by getCommand") as a link into the code. A
   registration the model did not explain keeps its own call words as its
   line ("redis.c.redisCommand.proc get in getCommand"); that line is the fact
-  said again and is not shown, in the reading or in Find. An up-chevron in
+  said again and is not shown, in the reading or in Find. A chosen input's
+  reading opens at its path (owner's choice 3c, 2026-09-27), drawn in the
+  Inputs blue of its tile and collection, never core's purple: its
+  heading's bar and kind and its links. The path is, first, for each
+  dispatch site whose retained alternatives hold the handler and handle
+  another input too, the chain from the program's entry to the site,
+  folded into one box headed by how many inputs share it and through
+  which declaration ("Shared by 95 inputs, through call"), the first box
+  open; the chain is one shortest static chain, and it passes through none
+  of the declarations the site chooses between, or Redis's would have run
+  main → loadAppendOnlyFile → execCommand → call; Redis's get shares two,
+  through call and through loadAppendOnlyFile. Then the handler's own
+  steps: every reached part's witness merged into one tree, a callee
+  indented under its caller, the branches in the order their parts were
+  reached, so nothing claims an order between branches. A step is its
+  declaration's name as a link into its code, with no line number, a read
+  or a possible call marked as elsewhere, and the part it stands in heads
+  it where the part changes, a link to that part's reading when the map
+  draws it. Go computes both in the page data; the browser draws them. The
+  list of the parts on the path is left for an input without one. An
+  up-chevron in
   the reading card's own header closes details, preserving camera and any pinned
   input path; leaving that path remains a separate action.
 

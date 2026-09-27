@@ -240,6 +240,9 @@ type pageMapNode struct {
 	Trace         string
 	Handler       string
 	HandlerSource pageAnchor
+	// InputPath is an input's path for its reading (page_input_path.go):
+	// the chains it shares with other inputs, then its own steps.
+	InputPath string
 	// Outside counts connections this group has to another target. They are
 	// not drawn: a cross-target arrow on this map would claim a geometry that
 	// belongs to the other target's page.
@@ -331,6 +334,7 @@ func scopeTargetMapIDs(view *pageMap, targetID string) {
 		node.Children = mapIDs(node.Children)
 		node.Neighbours = mapIDs(node.Neighbours)
 		node.Trace = mapIDs(node.Trace)
+		node.InputPath = remapInputPath(node.InputPath, mapID)
 		for alias := range node.Aliases {
 			node.Aliases[alias] = mapID(node.Aliases[alias])
 		}

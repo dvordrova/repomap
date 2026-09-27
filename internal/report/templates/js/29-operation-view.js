@@ -73,6 +73,47 @@ function rmReachingInputs(n,reaching,owner,choose){
   }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
   return inputs;
 }
+// An input's path in its reading (owner's 3c): the chains it shares with
+// the other inputs a dispatch site chooses between, each folded into one
+// box, then its own steps from its handler, a callee under its caller. A
+// step is its declaration's name, a link into its code with no line
+// number; the part it stands in heads it where the part changes. The page
+// data computes both (page_input_path.go); this only draws them.
+function rmInputPathSection(path,partNode,choose){
+  var section=rmEl('section','system-input-path');
+  var own=path.own||[],shared=path.shared||[];
+  section.appendChild(rmEl('h5','',rmT('Path')));
+  function steps(list,indented){
+    var box=rmEl('div','system-path-steps'),part='';
+    list.forEach(function(step){
+      var depth=indented?Math.min(step.depth||0,8):0;
+      if(step.part_title&&step.part_title!==part){
+        var node=partNode(step.part),head=rmEl(node?'button':'div','system-path-part',step.part_title);
+        if(node){head.type='button';head.addEventListener('click',function(){choose(node);});}
+        head.style.marginLeft=depth*10+'px';box.appendChild(head);
+      }
+      part=step.part_title||part;
+      var line=rmEl('div','system-path-step');line.style.marginLeft=depth*10+'px';
+      var link=repomapMembers.sourceLink({Href:step.href,Open:step.open,Text:step.name,NoSource:step.no_source});
+      if(step.source)link.title=step.source;
+      line.appendChild(link);
+      if(step.read)line.appendChild(rmEl('span','possible',' · '+rmT('read')));
+      else if(step.possible)line.appendChild(rmEl('span','possible',' · '+rmT('possible')));
+      box.appendChild(line);
+    });
+    return box;
+  }
+  shared.forEach(function(chain,index){
+    var box=rmEl('details','system-shared-path');box.open=index===0;
+    box.appendChild(rmEl('summary','',rmT(chain.all?'Shared by all {0} inputs, through {1}':'Shared by {0} inputs, through {1}',chain.inputs,chain.through)));
+    box.appendChild(rmEl('p','meta',rmT('One shortest static path:')));
+    box.appendChild(steps(chain.steps,false));
+    box.appendChild(rmEl('p','meta',chain.through+' → '+rmT('one of {0}',chain.of)));
+    section.appendChild(box);
+  });
+  if(own.length)section.appendChild(steps(own,true));
+  return section;
+}
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
   var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
@@ -307,7 +348,16 @@ function rmReachingInputs(n,reaching,owner,choose){
       var proof=card.querySelector('.call-path');if(proof){card.querySelector('.map-card-intro').after(proof);proof.open=true;}
       card.querySelector('.map-card-evidence')?.remove();
     }
-    if(n.dataset.activation){
+    // An input's reading carries the Inputs blue, never core's purple.
+    map.querySelector('.map-inspector')?.classList.toggle('map-reading-input',!!n.dataset.activation);
+    var inputPath=null;try{inputPath=n.dataset.inputPath?JSON.parse(n.dataset.inputPath):null;}catch(_){inputPath=null;}
+    if(n.dataset.activation&&inputPath){
+      // A chosen input's reading opens at its path.
+      var pathSection=rmInputPathSection(inputPath,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},function(part){select(part,true,null,true);});
+      pathSection.dataset.readingAnchor='';
+      card.querySelector('.map-card-intro').after(pathSection);
+    }
+    if(n.dataset.activation&&!inputPath){
       var pathState=projection.selection('',n.id),pathParts=rmEl('section','system-input-parts');
       pathParts.appendChild(rmEl('h5','',rmT('Parts on this input path')));
       var pathLinks=rmEl('div','system-neighbours');
@@ -321,7 +371,10 @@ function rmReachingInputs(n,reaching,owner,choose){
         link.addEventListener('click',function(){select(part,true,null,true);});pathLinks.appendChild(link);
       });
       if(pathLinks.childElementCount){pathParts.appendChild(pathLinks);card.appendChild(pathParts);}
-      var linkedInputs=new Set();pathState.path.forEach(function(edge){[edge.from,edge.to].forEach(function(id){if(id!==n.id&&byID[id]?.dataset.activation)linkedInputs.add(id);});});
+    }
+    if(n.dataset.activation){
+      var linkState=projection.selection('',n.id);
+      var linkedInputs=new Set();linkState.path.forEach(function(edge){[edge.from,edge.to].forEach(function(id){if(id!==n.id&&byID[id]?.dataset.activation)linkedInputs.add(id);});});
       if(linkedInputs.size){
         var connected=rmEl('section','system-linked-inputs');connected.appendChild(rmEl('h5','',rmT('Connected inputs')));
         linkedInputs.forEach(function(id){var link=rmEl('button','',byID[id].dataset.title);link.type='button';link.addEventListener('click',function(){select(byID[id],true,null,true);});connected.appendChild(link);});card.appendChild(connected);

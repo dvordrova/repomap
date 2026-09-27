@@ -297,12 +297,12 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
    model's keys first and bold, the rest by name, none with a line number.
    An area lists its parts the same way, each with its own declarations. */
 .map-made-of{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px}
-.map-made-of>small,.map-area-part>small{font:400 12px/1.4 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.map-made-of>small,.map-area-part>small{font:400 12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
 .map-area-composition{margin:12px 0}.map-area-composition>h5{margin:12px 0 4px}
 .map-area-part{margin:10px 0 0}
 .map-card .map-area-part>button{font:inherit;font-size:14px;font-weight:650;color:var(--ink);margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;text-align:left}
-.map-area-part>small{display:block;font-family:var(--sans);margin:1px 0 2px}
-.map-area-members{display:flex;flex-wrap:wrap;gap:0 10px;font:13px/1.5 var(--mono)}
+.map-area-part>small{display:block;font-family:inherit;margin:1px 0 2px}
+.map-area-members{display:flex;flex-wrap:wrap;gap:0 10px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .map-card .map-area-members a{text-decoration:none}.map-card .map-area-members a:hover{text-decoration:underline}
 .map-area-members .map-member-key{font-weight:750;color:#4f2f86}
 /* A frame's Connections (owner's 3b): one line per participant at the other
@@ -329,3 +329,21 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-frame-connections .flow-card-fold-parts summary{padding:0;margin:0;font-size:12px;line-height:20px}
 .map-frame-connections .flow-card-fold-parts p{font-size:12px;line-height:18px;word-spacing:4px}
 .map-card .map-frame-connections a{text-decoration:none}.map-card .map-frame-connections a:hover{text-decoration:underline}
+/* An input's reading (owner's 3c) carries the Inputs blue of its tile and
+   collection, never core's purple: its heading's bar and kind, its links.
+   Its path: the chain it shares with other inputs in one pale blue box,
+   then its own steps, a callee under its caller, the part heading a step
+   where it changes, no line numbers. */
+.map-reading-input .map-object-heading{box-shadow:inset 3px 0 #356faa;padding-left:11px}
+.map-reading-input .map-object-heading .map-card-kind{color:#356faa}
+.flow-enabled .map-reading-input .map-card a,.flow-enabled .map-reading-input .system-path-part{color:#204a7b}
+.system-input-path{margin:14px 0}.system-input-path>h5{margin:12px 0 6px}
+.system-shared-path{margin:6px 0 10px;padding:4px 10px 6px;background:#edf5ff;border-radius:6px}
+.system-shared-path>summary{font-size:13px;font-weight:600;color:#204a7b}
+.system-shared-path>p.meta{margin:4px 0;font-size:12px}
+.system-path-steps{font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.system-path-step{overflow-wrap:anywhere}
+.system-path-step>.possible{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:12px}
+.map-card .system-path-part{display:block;margin-top:6px;padding:0;border:0;border-radius:0;background:none;font:600 12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;color:#204a7b}
+.map-card button.system-path-part{cursor:pointer}.map-card button.system-path-part:hover{text-decoration:underline}
+.system-path-steps a,.map-area-members a{text-decoration:none}.system-path-steps a:hover,.map-area-members a:hover{text-decoration:underline}

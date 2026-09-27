@@ -37,6 +37,8 @@ var russianUI = map[string]string{
 	"{0} here":                              "здесь {0}",
 	"all":                                   "все",
 	"Made of {0}":                           "Состав — {0}",
+	"Shared by all {0} inputs, through {1}": "Общий для всех входов ({0}), через {1}",
+	"Shared by {0} inputs, through {1}":     "Общий для входов ({0}), через {1}",
 	"Made of {0} parts":                     "Частей в составе: {0}",
 	"{0} functions":                         "функций: {0}",
 	"{0} types":                             "типов: {0}",
