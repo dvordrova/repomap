@@ -1289,8 +1289,10 @@ func assertCumulativeJSTSHeaderArrows(t *testing.T, index programindex.Index, so
 // decorated declaration's; a call in a decorator's arguments, and a parameter
 // decorator, which decorates nothing, belong to the scope that defines the
 // decorated declaration: the module for a class decorator, the class for a
-// method or parameter decorator. A bare decorator's name (`@Traced`) is its
-// decoration and read by the member. The call in a decorator's inline arrow
+// method or parameter decorator. A bare decorator's name (`@Traced`), down to
+// a qualified name's namespace (`@Marks.Traced`), is its decoration and read by
+// the member; a curried factory's inner call (`@tracedBy()()`) is not. The
+// call in a decorator's inline arrow
 // belongs to that same scope, which creates the arrow, as the call in
 // markMatchingRows' inline arrow belongs to markMatchingRows. JavaScript has
 // no decorators.
@@ -1323,7 +1325,7 @@ func assertCumulativeJSTSDecoratorOwners(t *testing.T, index programindex.Index,
 			continue
 		}
 		switch target := names[relation.ToIDs[0]]; target {
-		case "Route", "routePath", "levelRoute", "Traced", "Inject", "forwardRef", "joinCondition":
+		case "Route", "routePath", "levelRoute", "Traced", "Marks", "tracedBy", "Inject", "forwardRef", "joinCondition":
 			if relation.Resolution != programindex.ResolutionExact {
 				t.Fatalf("%s decorator use of %s = %#v", source, target, relation)
 			}
@@ -1364,6 +1366,11 @@ func assertCumulativeJSTSDecoratorOwners(t *testing.T, index programindex.Index,
 		"+4 reads Traced from LevelController.level",
 		"+5 calls Inject from LevelController",
 		"+5 calls joinCondition from LevelController",
+		"+6 calls routePath from LevelController",
+		"+6 reads Marks from LevelController.all",
+		"+7 reads Marks from LevelController.all",
+		"+8 calls tracedBy from LevelController",
+		"+8 decorates tracedBy from LevelController.all",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%s decorator owners:\n have %q\n want %q", source, got, want)

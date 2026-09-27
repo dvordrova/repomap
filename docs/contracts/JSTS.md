@@ -102,16 +102,18 @@ A call belongs to the scope in which it runs. A TypeScript decorator runs once,
 when its class is defined, as a Python decorator's arguments and defaults run
 where the function is defined. The decoration itself, the decorator's call
 (`@Route(...)`, a `decorates` relation) or its bare name (`@Traced`, a read),
-stays the decorated class's or member's. What the decorator evaluates inside
-it, its arguments' calls and reads and the calls in an inline arrow it
-creates, belongs to the scope that defines the decorated declaration: the
-class for a member's decorator, the enclosing scope (usually the module) for
-a class decorator. A parameter decorator (`@Inject(...)`) decorates nothing
-the method is handed over by; its call runs when the class is defined and
-belongs to the class, not to the method. A parameter default runs on each
-call and stays the function's. `LevelController` in `src/server.ts` checks
-each case. A JavaScript file follows the same walk; `src/market-worker.js`
-holds no decorator, since Node runs no decorator syntax.
+down to a qualified decorator's namespace (`@Marks.Traced`), stays the
+decorated class's or member's. What the decorator evaluates inside it, its
+arguments' calls and reads, a decorator factory's inner call (`tracedBy()` in
+`@tracedBy()()`) and the calls in an inline arrow it creates, belongs to the
+scope that defines the decorated declaration: the class for a member's
+decorator, the enclosing scope (usually the module) for a class decorator. A
+parameter decorator (`@Inject(...)`) decorates nothing the method is handed
+over by; its call runs when the class is defined and belongs to the class, not
+to the method. A parameter default runs on each call and stays the function's.
+`LevelController` in `src/server.ts` checks each case. A JavaScript file
+follows the same walk; `src/market-worker.js` holds no decorator, since Node
+runs no decorator syntax.
 
 Every declaration carries `code_lines`: the lines from its name to its end that
 hold a compiler token, so JSDoc and other comment trivia and blank lines are

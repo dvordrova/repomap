@@ -1017,15 +1017,20 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
 
 // A decorator runs once, when its class is defined, as a Python decorator's
 // arguments run where the function is defined. The decoration itself (the
-// decorator's call, or its bare name) stays the decorated class's or member's.
-// What the decorator evaluates inside it, and a parameter decorator, which
-// decorates nothing, belong to the scope that defines the decorated
-// declaration: the class for a member or a parameter, the enclosing scope for
-// a class. The owner walk from `node` goes on from the node this returns.
+// decorator's call, or its bare name, down to a qualified name's namespace:
+// `@Marks.Traced`) stays the decorated class's or member's. What the decorator
+// evaluates inside it, and a parameter decorator, which decorates nothing,
+// belong to the scope that defines the decorated declaration: the class for a
+// member or a parameter, the enclosing scope for a class. The owner walk from
+// `node` goes on from the node this returns.
 function decoratorScope(decorator, node) {
-  if (node === decorator.expression && !ts.isParameter(decorator.parent)) return decorator.parent
-  const decorated = ts.isParameter(decorator.parent) ? decorator.parent.parent : decorator.parent
-  return decorated.parent
+  if (ts.isParameter(decorator.parent)) return decorator.parent.parent.parent
+  let head = decorator.expression
+  if (head === node) return decorator.parent
+  if (ts.isCallExpression(head)) head = head.expression
+  while (ts.isPropertyAccessExpression(head) && head !== node) head = head.expression
+  if (head === node && (ts.isIdentifier(head) || ts.isPropertyAccessExpression(head))) return decorator.parent
+  return decorator.parent.parent
 }
 
 const refForDeclarationNode = (node) => {
