@@ -50,10 +50,13 @@ func Occurrences(catalog Catalog, paths []string, read func(string) (string, boo
 			continue
 		}
 		folded := FoldText(text)
+		// Occurrences come in text order: each line is counted once per
+		// spelling, never again from the start of the file for every hit.
 		for _, key := range order {
-			last := 0
+			last, at, line := 0, 0, 1
 			for _, occurrence := range folded.Find(FoldTerm(key.name), IsAcronym(key.name), word) {
-				line := strings.Count(text[:occurrence.Start], "\n") + 1
+				line += strings.Count(text[at:occurrence.Start], "\n")
+				at = occurrence.Start
 				if line != last {
 					found[key] = append(found[key], Source{Path: path, Line: line})
 					last = line

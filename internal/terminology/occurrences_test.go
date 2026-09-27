@@ -1,6 +1,10 @@
 package terminology
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 // The glossary said event loop appeared in lzf.h and solarisfixes.h, which
 // never write it: the list was the analysis context, not the term's places.
@@ -30,5 +34,25 @@ func TestOccurrencesListOnlyTheLinesThatWriteTheTerm(t *testing.T) {
 				t.Fatalf("occurrence %d: got %+v want %+v", i, got[i], want[i])
 			}
 		}
+	}
+}
+
+// Every hit counted the lines from the start of its file again: a large
+// generated file writing a term on every line took quadratic time in the
+// ordinary run.
+func TestOccurrencesCountEachLineOnceInALargeFile(t *testing.T) {
+	var text strings.Builder
+	for i := 0; i < 250_000; i++ {
+		text.WriteString("the request is here\n")
+	}
+	body := text.String()
+	catalog := Catalog{Entries: []Entry{{ID: "d1", Names: []string{"request"}}}}
+	started := time.Now()
+	got := Occurrences(catalog, []string{"generated.go"}, func(string) (string, bool) { return body, true })
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("one 5 MB file took %s", elapsed)
+	}
+	if len(got) != 1 || len(got[0].Sources) != 250_000 || got[0].Sources[249_999].Line != 250_000 || got[0].Sources[1].Line != 2 {
+		t.Fatalf("lines: %d", len(got[0].Sources))
 	}
 }
