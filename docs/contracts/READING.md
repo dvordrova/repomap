@@ -546,7 +546,10 @@ the field.
 
 A part's arrows are its declarations' own relations (GroupsIndex
 `native_*` connections). One target is exact; several alternatives are
-possible, drawn dashed. A call left unresolved because its field or name was
+possible, drawn dashed. A declaration's read of a variable or table is one
+of them (`native_reads`): Redis's Introspection and debugging part reads
+Debug symbols through `findFuncName reads symsTable`, and each command part
+reads the parts holding `server` and `shared`. A call left unresolved because its field or name was
 stored under a branch draws the same possible arrow to each declaration its
 store witnesses name by identity (C `fe->rfileProc`, Go `readyLoop.read`,
 Python `handler`); the relation stays unresolved and its witnesses stay

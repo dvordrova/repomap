@@ -5,13 +5,18 @@
 
 #include "../strbuf.h"
 
+/* The name the tool was run by, for its error messages. */
+static const char *progname = "dump";
+
 int main(int argc, char **argv) {
     const char *filename = argc > 1 ? argv[1] : "dump.kv";
     FILE *fp = fopen(filename, "r");
     char line[1024];
     strbuf keys;
 
+    progname = argv[0];
     if (fp == NULL) {
+        fprintf(stderr, "%s: ", progname);
         perror(filename);
         return 1;
     }

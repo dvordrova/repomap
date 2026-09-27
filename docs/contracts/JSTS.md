@@ -131,9 +131,10 @@ duplicating the old declaration-site summary beside actual use sites.
 The same structural read survives GroupsIndex and the ordinary source reading.
 Input paths may show a reached callable's variable/type reads as terminal data
 dependencies; they do not execute the read value or its neighbours. Cumulative
-Python and Clojure imported-variable/shadowing equivalents exist. General Go
-variable reads have no current producer equivalent; JSX has no syntax equivalent
-in the other language cubes. Neither absence is repaired in the renderer.
+Python and Clojure imported-variable/shadowing equivalents exist, and C reads
+of file-scope variables and tables (C). General Go variable reads have no
+current producer equivalent; JSX has no syntax equivalent in the other
+language cubes. Neither absence is repaired in the renderer.
 
 ## Call positions
 

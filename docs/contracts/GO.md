@@ -210,6 +210,12 @@ Missing equivalents, recorded rather than fabricated:
   so neither gives the registration the C adapter makes of a table row that
   names its function by a string literal (the owner's decision of
   2026-09-26).
+- Go emits no `reads` relation for a package-level variable or table: a
+  function that indexes `var commands = []commandRow{...}` or reads a
+  package-level `var symbols = map[string]uintptr{...}` has no relation to it.
+  Python, JS/TS, Clojure and C emit one per read site (C's `printSymbols`
+  reads `symsTable`, as Redis's `findFuncName` does), so a Go table or global
+  has no users in the fact graph and the map places it by its file alone.
 - A row storing two callables (`{Name: "get", Run: getCommand, Preload:
   preloadGet}`) keeps two bindings. No Go row is a registration, so the C
   rule that such a row is one input has nothing to apply to.

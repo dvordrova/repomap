@@ -21,7 +21,10 @@ ProgramIndex retains:
 - structural relation kinds such as calls, imports, implements, decorates,
   passes-callback, binds-implementation, sources, executes, reads, writes, and
   invokes-external. Containment is the object's `container_id` (and `owner_id`)
-  only; there is no parallel `contains` relation;
+  only; there is no parallel `contains` relation. A `reads` relation names the
+  declared variable a callable uses, one per source site, never a runtime
+  value: Python, JS/TS, Clojure and C emit it (a C function body's file-scope
+  variables and tables, C), Go does not (GO);
 - complete witnesses and omission counts. A witness that names a
   declaration also carries its identity (`object_id`): the function a store
   put into the field or name an unresolved call reads (C
@@ -98,7 +101,8 @@ ProgramIndex is the identity namespace for repository facts. A language adapter'
 The sealed target graph assigns deterministic compact IDs: `n*` objects, `e*`
 relations and scoped `e*p*`, `e*p*a*`, `e*p*a*v*` descendants. IDs follow
 reading order: the launch seeds first (`main` is `n1`), then breadth-first along
-calls, callbacks, bindings and external invocations in source order, each
+every relation but imports (calls, callbacks, bindings, external invocations,
+reads) in source order, each
 declaration followed by its owner; what no entry reaches follows by file and
 line, unlocated objects and external symbols last. Relations are numbered by
 their source object, then by site, so `e1` is the first thing `n1` does. The

@@ -462,6 +462,9 @@ type walker struct {
 	conditional bool
 	// inList is set inside an initializer list initList already read.
 	inList bool
+	// unevaluated is set inside an operand the program never evaluates
+	// (sizeof, _Alignof): naming a variable there reads nothing.
+	unevaluated bool
 }
 
 func (w walker) with(conditional bool) walker {
@@ -499,7 +502,11 @@ func (w walker) walk(n *Node) {
 		switch n.Opcode {
 		case "=":
 			w.b.assign(w, n.Inner[0], n.Inner[1])
-			w.walk(n.Inner[0])
+			// A variable that is itself the destination is written, not
+			// read; a member or an element of it is reached through it.
+			if !isVariable(n.Inner[0]) {
+				w.walk(n.Inner[0])
+			}
 			if designator(n.Inner[1]) == nil {
 				w.walk(n.Inner[1])
 			}
@@ -574,12 +581,54 @@ func (w walker) walk(n *Node) {
 			}
 		}
 		return
+	case "UnaryExprOrTypeTraitExpr":
+		w.unevaluated = true
+	case "DeclRefExpr":
+		if w.function != nil && !w.unevaluated {
+			w.b.read(w, n)
+		}
+		return
 	case "FunctionDecl", "RecordDecl", "TypedefDecl", "EnumDecl":
 		return
 	}
 	for _, child := range n.Inner {
 		w.walk(child)
 	}
+}
+
+// isVariable reports an expression that names a variable itself: x or (x),
+// not x.field, x[i] or *x.
+func isVariable(n *Node) bool {
+	n = unwrapValue(n)
+	return n != nil && n.Kind == "DeclRefExpr" && n.ReferencedDecl != nil && n.ReferencedDecl.Kind == "VarDecl"
+}
+
+// A read is a function body naming a file-scope variable of the program:
+// its value, a member or an element of it, or its address.
+type read struct {
+	from, variable string
+	site           Position
+	macro          *programindex.Witness
+}
+
+// read records a function's use of a file-scope variable. A parameter, a
+// local (static or not) and a platform variable are no program variable.
+func (b *builder) read(w walker, n *Node) {
+	ref := n.ReferencedDecl
+	if ref == nil || ref.Kind != "VarDecl" {
+		return
+	}
+	variable := b.variableRef(w.scope, ref)
+	if variable == "" || b.objects[variable] == nil {
+		return
+	}
+	r := read{from: w.owner, variable: variable, site: n.Begin.Site()}
+	if n.Begin.InMacroBody() {
+		if macro := TokenText(b.source(n.Begin.Expansion.File), n.Begin.Expansion); macro != "" {
+			r.macro = &programindex.Witness{Kind: "macro_expansion", Detail: fmt.Sprintf("%s expands to a read of %s", macro, ref.Name), Location: location(n.Begin.Spelling)}
+		}
+	}
+	b.reads = append(b.reads, r)
 }
 
 // initializer is a variable's initializing expression.

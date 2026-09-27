@@ -70,6 +70,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 	b.findEscapes()
 	b.emitCalls()
 	b.emitStores()
+	b.emitReads()
 	b.emitImports()
 	b.markUnreachable()
 	input, err := b.input()
@@ -112,6 +113,7 @@ type builder struct {
 	rows       []tableRow
 	bindings   []binding
 	constructs []construct
+	reads      []read
 
 	imported  map[string]bool
 	importers map[string]dependencies.Importer
@@ -887,6 +889,28 @@ func (b *builder) emitStores() {
 			ToRefs: []string{c.fn}, Resolution: p.ResolutionExact, Location: location(c.fnSite),
 			Witnesses:      []p.Witness{{Kind: "c_function_pointer_store", Detail: fmt.Sprintf("%s stored in %s.%s", b.objects[c.fn].Name, c.container, c.field), Location: location(c.fnSite)}},
 			SourceArgument: &p.PatternArgumentRefInput{RelationSourceRef: relationRef, PatternSourceRef: patternRef, Keyword: c.field}})
+	}
+}
+
+// emitReads turns each place a function body names a file-scope variable into
+// a reads relation, one per site, exact: the linker's identity of the
+// variable is known.
+func (b *builder) emitReads() {
+	seen := map[string]bool{}
+	for _, r := range b.reads {
+		key := r.from + "\x00" + r.variable + "\x00" + positionKey(r.site)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		at := location(r.site)
+		witnesses := []p.Witness{{Kind: "c_variable_read", Detail: "read of " + b.objects[r.variable].Name, Location: at}}
+		if r.macro != nil {
+			witnesses = append(witnesses, *r.macro)
+		}
+		b.sequence++
+		b.relation(p.RelationInput{SourceRef: fmt.Sprintf("c:read:%d", b.sequence), Kind: p.RelationReads, FromRef: r.from,
+			ToRefs: []string{r.variable}, Resolution: p.ResolutionExact, Location: at, Witnesses: witnesses})
 	}
 }
 

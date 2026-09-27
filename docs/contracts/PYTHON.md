@@ -142,9 +142,10 @@ untyped receivers do not acquire field authority. The cumulative examples test
 these controls and preserve read locations through GroupsIndex.
 
 Clojure already emits comparable native var reads; its cumulative example now
-checks an imported var and a shadowing local. Go and JS/TS do not currently emit
-general variable reads. JS/TS retains its narrower compiler contract/type-use
-relations; these are not evidence of arbitrary runtime value use.
+checks an imported var and a shadowing local. JS/TS emits its compiler-bound
+declared value references (JSTS), and C a function's reads of file-scope
+variables and tables, one per site (C). Go does not currently emit general
+variable reads (GO).
 
 Source-ordered receiver origins may bind a direct attribute write to an existing
 native class field. Method receivers, their local aliases, directly annotated

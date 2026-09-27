@@ -159,6 +159,22 @@ seed.
   `readQueryFromClient` and `sendReplyToClient` (READING), and stays
   unresolved.
 - A function cast to an integer is an address used as data, never a callable.
+- A function body that names a file-scope variable of the program reads it:
+  one exact `reads` relation per place it names it (a `c_variable_read`
+  witness; one a macro body writes is sited at the macro use with a
+  `macro_expansion` witness), whether it takes the value, a member or an
+  element (`symsTable[i].pointer`), or the address. The linker's identity
+  names the variable: a static by its definition, an external name, also
+  through a block-scope `extern` declaration, by its one definition in the
+  program. The variable itself as the destination of `=` (`progname =
+  argv[0]`) is written, not read, while `x += 1`, `x++` and `server.port =
+  p` read it; an operand `sizeof` or `_Alignof` never evaluates reads
+  nothing; a parameter, a local, a static local and a platform variable
+  (`stderr`, `environ`) are no program variable. A file-scope initializer
+  naming another variable (`&table`) is a link-time address, not a read.
+  Writes are not emitted: C has no `writes` relation, as Go, JS/TS and
+  Clojure have none. Redis's `findFuncName` reads `staticsymbols.h`'s `symsTable`; the
+  fixture's `printSymbols` reads `staticsyms.h`'s.
 - Every active `#include` is one `imports` relation and one dependency: a
   repository header is a workspace dependency, a platform header the standard
   library, any other header a package.
@@ -340,7 +356,12 @@ inputs: six requests named `get`, `set`, `del`, `keys`, `ping` and `bgsave`,
 the stats thread as continuous work, and neither the signal handler nor the
 `qsort` comparator; claims, places and report tests cover docstrings, licence blocks, banners,
 section titles and the file description at their consuming boundaries, and the
-fixture's own docstrings reach its declarations. The fixture's map of parts is
+fixture's own docstrings reach its declarations. `TestIndexReadsFileScopeVariables` checks each read and non-read case of a
+function body, and `TestCFixtureReadsFileScopeVariables` the fixture's:
+`printSymbols` reads `symsTable`, each program's `lookupCommand` its own
+`cmdTable`, `onSignal` reads `server` through `server.shutdown = 1`, the dump
+tool's `main` reads `progname` in its error message and not where it assigns
+it, and kvd's reads reach GroupsIndex at their sites. The fixture's map of parts is
 checked like every other language's (`TestCumulativeCMapOfParts`), and its
 split puts `netConnect`, which kvd never runs, alone in a role part that
 leaves kvd's map; `TestCFixtureClientMapLeavesTheLoopItNeverRuns` checks that
