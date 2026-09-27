@@ -1,5 +1,39 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — Orientation evidence restored; parts a program never runs
+
+- **Orientation had lost every member's evidence.**
+  - Cause: since 59ba934b a place names its object qualified by its program
+    (`t1.n4`), while orientation looked evidence up by the bare ID. No
+    member found its place, so no real orientation request sent
+    `member_evidence` from Sep 17 on (7 saved payloads checked).
+  - Symptom: Redis's Main flow was guessed, loadServerConfig before
+    initServerConfig.
+  - Fix: one `atlas.ScopedObjectID`, and a declaration's calls listed in
+    written order (line, then column) for orientation and question evidence;
+    orientation prompt v7.
+  - redis-server's Main flow now reads main → initServerConfig →
+    loadServerConfig → aeMain → aeProcessEvents → readQueryFromClient →
+    processCommand → call.
+  - The Redis orientation request grows from 0.46 MB to 1.68 MB (about 430k
+    input tokens). The packing ladder handles larger repositories.
+  - Learn caches miss once.
+- **The fallback start list** reads the entrypoint's own calls first, in
+  written order.
+- **A part whose every callable is proven unreachable in its program** leaves
+  that program's map, the way a test-only part does (atlas v13, GroupsIndex
+  v16, reason `unreachable`). Its declarations are listed under "Not
+  reachable from the entrypoints", and Find opens them as code.
+  - redis-cli loses "Linked list": adlist.c/.h, 13 functions and their types.
+  - The same part stays on a program that runs it.
+  - Only the C adapter proves unreachability; the other languages record the
+    missing equivalent.
+- **The overview loose-part scale was reverted:** the bigger closed box left
+  an empty 1036×739 card once the areas opened. REPORT.md records the
+  measurement.
+- Redis warm rerun: 6 s, 0 live calls; render is byte-identical. `make test`,
+  `make vet`, npm test and `build --check` pass.
+
 ## 2026-09-27 — The Redis first screen, polished
 
 - The first screen had three defects:
