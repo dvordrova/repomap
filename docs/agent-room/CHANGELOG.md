@@ -1,5 +1,54 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — The Redis reading journey, after an owner-proxy walk
+
+- An owner-proxy walked the Redis report as preparation for the owner's
+  reading session. Its verdict: "путь GET — херня: event loop никуда не
+  ведёт, SET вообще нет на карте, а Server runtime — лесенка из марок".
+  Three reviewed tracks answered it.
+- **Arrows:**
+  - A call left open with stored-candidate witnesses now reaches each
+    witnessed declaration as the existing dashed possible arrow. C, Go and
+    Python witnesses carry an object identity.
+  - Redis Event loop → Client connections (acceptHandler,
+    readQueryFromClient, sendReplyToClient) and → serverCron.
+  - Sentences name each callee once, and the handlers stored behind a
+    function value instead of the field (`proc`).
+- **Inputs and outgoing calls:**
+  - One table row is one registration, so zunion and zinter are no longer
+    doubled.
+  - `http_client` became `client_request`: a socket connect is no longer
+    "HTTP", and an unstated method is not shown as GET.
+- **SET on the map:** the Jev assignment item carries how the code calls the
+  declaration, and an undecided row is asked again with the boxes its
+  neighbours landed in. GET, SET and APPEND land in String commands in 3 of 3
+  fresh namings. An undecided declaration stays findable in Find, and an
+  input whose handler is undecided names no part (GroupsIndex v15).
+- **Report:**
+  - An input names its handler instead of the raw registrar string (287 → 0)
+    and opens where its path starts. Tiles are grouped by the handler's part,
+    without a repeated kind word.
+  - Areas are laid out from their own arrows, and a focused node is centred
+    in the visible canvas.
+  - The small programs' part arrows are drawn.
+  - The code list comes before connections, with fields inside their type.
+  - The entry wins over core for an area's mark.
+  - Find no longer lists outside calls as parts.
+  - A glossary term lists only the files it is written in.
+- The constitution's HTTP-only entry lines now name entries by their written
+  words.
+- Redis: cold 31 s; warm 3.7 s with 0 live calls. `make test` and `make vet`
+  pass.
+- The second proxy walk ("Event loop теперь ведёт к acceptHandler …, SET на
+  месте — красиво") found:
+  - libc and socket drawn as outside systems (inet_aton as sdk, accept as a
+    client request);
+  - listener, accept and inet_aton calls attached to redis-cli and
+    redis-benchmark, which never reach them;
+  - loose parts at the wrong scale;
+  - outside boxes folded by destination text against the constitution;
+  - the GET path still not emphasised when the input is chosen.
+
 ## 2026-09-27 — A file in several boxes (the role split)
 
 - Owner, option "в": "what's in one file can have different roles, and one
