@@ -28,19 +28,48 @@ test('frames naming one destination read it once beside plain tiles, and no head
   expect(errors).toEqual([]);
 });
 
-// Entered, a plain tile opened under no title of its own read only
-// "gethostbyname"; its group's heading stood below the camera.
-test('an entered tile of a display group names its destination on the canvas',async({page})=>{
+// Entered, one plain tile had read only "gethostbyname", its group's heading
+// below the camera; titled one by one, Redis's open DNS tiles then said "DNS
+// resolver" three times, each over a frame half empty, above an empty band.
+test('an entered tile opens its display group under the one heading, each tile as large as its calls',async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/?shared-destination');
   await expect(page.locator('[data-map]')).toHaveAttribute('data-fixture-ready','true');
-  const mark=page.locator('[data-zoom-into="dns-backend"]');
-  await mark.click();
-  await expect(page.locator('[data-component-overview="dns-backend"]')).toHaveCount(0);
-  const title=page.locator('[data-frame-title="dns-backend"]');
-  await expect(title).toHaveText('DNS resolver');
-  const [text,stage]=await Promise.all([title.evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);return range.getBoundingClientRect().toJSON();}),
-    page.locator('.flow-root').boundingBox()]);
-  expect(text.left>=stage.x&&text.right<=stage.x+stage.width&&text.top>=stage.y&&text.bottom<=stage.y+stage.height,'the entered tile\'s name is in view').toBe(true);
+  await page.locator('[data-zoom-into="dns-backend"]').click();
+  const tiles=['dns-front','dns-backend'];
+  for(const id of tiles){
+    await expect(page.locator(`.react-flow__node[data-id="${id}-call"]`),`${id} opens with the entered tile`).toBeVisible();
+    await expect(page.locator(`[data-frame-title="${id}"]`),`${id} repeats no title`).toHaveCount(0);
+  }
+  const heading=page.locator('[data-group-heading]');
+  await expect(heading).toHaveText('DNS resolver');
+  await page.waitForTimeout(600);
+  const look=await page.evaluate(ids=>{
+    const box=el=>el.getBoundingClientRect().toJSON();
+    const heading=document.querySelector('[data-group-heading]'),range=document.createRange();range.selectNodeContents(heading);
+    // The size a text is drawn at: its font size times every scale above it.
+    const drawn=(el,sized)=>parseFloat(getComputedStyle(el).fontSize)*sized.getBoundingClientRect().width/sized.offsetWidth;
+    const call=document.querySelector(`.react-flow__node[data-id="${ids[0]}-call"] .flow-part`);
+    return {stage:box(document.querySelector('.flow-root')),group:box(document.querySelector('.react-flow__node[data-id^="display-group:"]')),
+      text:range.getBoundingClientRect().toJSON(),headingSize:drawn(heading,heading),callSize:drawn(call.querySelector('strong'),call),
+      tiles:ids.map(id=>({frame:box(document.querySelector(`.react-flow__node[data-id="${id}"]`)),call:box(document.querySelector(`.react-flow__node[data-id="${id}-call"]`))}))};
+  },tiles);
+  const inView=r=>r.left>=look.stage.x-.5&&r.right<=look.stage.x+look.stage.width+.5&&r.top>=look.stage.y-.5&&r.bottom<=look.stage.y+look.stage.height+.5;
+  expect(inView(look.text),'the group\'s heading is in view').toBe(true);
+  // The camera frames the group, not the one tile entered.
+  const centre=r=>({x:(r.left+r.right)/2,y:(r.top+r.bottom)/2}),group=centre(look.group),stage={x:look.stage.x+look.stage.width/2,y:look.stage.y+look.stage.height/2};
+  expect(inView(look.group)&&Math.abs(group.x-stage.x)<=2&&Math.abs(group.y-stage.y)<=2,
+    `the group stands whole in the middle of the canvas: ${JSON.stringify(look.group)} in ${JSON.stringify(look.stage)}`).toBe(true);
+  expect(Math.abs(look.headingSize-look.callSize),`the heading reads at ${look.headingSize.toFixed(1)}px beside ${look.callSize.toFixed(1)}px calls`).toBeLessThan(.5);
+  for(const [i,{frame,call}] of look.tiles.entries()){
+    expect(inView(call),`${tiles[i]}'s call is in view`).toBe(true);
+    const left=call.left-frame.left,bottom=frame.bottom-call.bottom;
+    expect(bottom,`${tiles[i]} holds its call with its insets alone`).toBeLessThanOrEqual(left+1);
+  }
+  // The frame ends past its heading, on the band's side, no farther than its
+  // tiles stand from its other edges.
+  const inset=Math.min(...look.tiles.map(tile=>tile.frame.left))-look.group.left;
+  const beside=look.text.left>=Math.max(...look.tiles.map(tile=>tile.frame.right));
+  expect(beside?look.group.right-look.text.right:look.group.bottom-look.text.bottom,'the group\'s frame ends past its heading').toBeLessThanOrEqual(inset+1);
   expect(errors).toEqual([]);
 });

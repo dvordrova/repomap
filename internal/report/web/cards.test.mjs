@@ -66,6 +66,8 @@ test('a frame whose display group carries its destination text draws no heading 
   assert.equal(overviewHeading(titled,titled.overviewMinWidth,measure).lines.join(' '),'DNS resolver','a frame alone keeps its heading');
   assert.equal(tile.displayGroupHeadingAt(3*tile.overviewMinWidth).lines.join(' '),'DNS resolver','the group says it once');
   assert.equal(titled.displayGroupHeadingAt,undefined);
+  // Open, the tile's calls stand under no title row: the group names them.
+  assert.ok(tile.headerHeight<titled.headerHeight,`the open tile reserves ${tile.headerHeight} above its calls, a titled frame ${titled.headerHeight}`);
 });
 
 // In a 1280×720 window Redis's map could not give its summaries their reserved

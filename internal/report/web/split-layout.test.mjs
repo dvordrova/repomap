@@ -524,7 +524,8 @@ test('the whole-map camera that frames a display group still gives every heading
   assert.ok(zoom<.44,'the camera fits below the preferred scale, where the reserve matters');
   for(const node of result.layout.nodes.filter(node=>!node.parentId&&!node.display)){
     const record=records.find(record=>record.id===node.id);
-    if(!record.overviewMinWidth)continue;
+    // A plain tile names nothing: its group's heading does.
+    if(!record.overviewMinWidth||record.displayGroupTitle)continue;
     assert.ok(node.width*zoom+1e-6>=record.overviewMinWidth,`${node.id}: ${node.width*zoom} of ${record.overviewMinWidth}px for its heading`);
     assert.ok(node.height*zoom+1e-6>=record.overviewHeightAtWidth(node.width*zoom,{availableHeight:height-2*overviewInset}),`${node.id}: its summary fits`);
   }
@@ -564,6 +565,46 @@ test('a display group carries its frames\' shared text once, where no arrow runs
       assert.ok(!inside(point),`${edge.from}'s arrow crosses the heading at ${JSON.stringify(point)}`);
     }
   }
+});
+
+// Grown at Redis's whole-map camera to the 50 by 44 pixels of its closed
+// zoom mark and stretched to that proportion, each DNS tile stood 156 world
+// units tall around its one 84-unit call and opened half empty.
+test('a plain tile of a display group is as large as its open calls, not its closed zoom mark',async()=>{
+  const owners=['server','cli','bench'];
+  const items=[...owners.flatMap(owner=>[{id:owner,title:`redis-${owner}`,branch:'component'},{id:`net-${owner}`,title:'Networking',category:'part'},
+    {id:`dns-${owner}`,title:'DNS resolver',branch:'communication',category:'external',displayGroup:'dns',displayGroupTitle:'DNS resolver'},
+    {id:`resolve-${owner}`,title:'gethostbyname',category:'external'}])];
+  const areaList=owners.flatMap(owner=>[{id:owner,nodes:[`net-${owner}`]},{id:`dns-${owner}`,nodes:[`resolve-${owner}`]}]);
+  const width=400,height=300;
+  const prepared=await prepareInteriors(cards(items),owners.map(owner=>({from:`net-${owner}`,to:`resolve-${owner}`})),areaList,{availableHeight:height-2*overviewInset});
+  const {layout}=await layoutPrepared(prepared,width,height),at=new Map(layout.nodes.map(node=>[node.id,node]));
+  assert.ok(systemViewport(layout.nodes,width,height).zoom<.44,'the whole-map camera stands below the preferred scale, where frames grew for their summaries');
+  for(const owner of owners){
+    const tile=at.get(`dns-${owner}`),call=at.get(`resolve-${owner}`);
+    const inset={left:call.absolute.x-tile.absolute.x,right:tile.absolute.x+tile.width-call.absolute.x-call.width,
+      bottom:tile.absolute.y+tile.height-call.absolute.y-call.height};
+    assert.ok(inset.bottom<=inset.left+1e-6&&inset.right<=inset.left+1e-6,
+      `dns-${owner} holds its call with its insets alone: ${JSON.stringify(Object.fromEntries(Object.entries(inset).map(([k,v])=>[k,Math.round(v)])))}`);
+  }
+});
+
+// The group's band is screen room for its heading; the tiles beside it are
+// world room that scales with the camera. Taken as screen pixels too, three
+// plain tiles asked a 400 by 300 canvas for a camera of .14, smaller than
+// the .18 the same frames took each under its own title.
+test('a display group that says its destination once takes no smaller a camera than its frames titled one by one',async()=>{
+  const owners=['server','cli','bench'],width=400,height=300;
+  const fit=async title=>{
+    const items=[...owners.flatMap(owner=>[{id:owner,title:`redis-${owner}`,branch:'component'},{id:`net-${owner}`,title:'Networking',category:'part'},
+      {id:`dns-${owner}`,title:'DNS resolver',branch:'communication',category:'external',displayGroup:'dns',displayGroupTitle:title},
+      {id:`resolve-${owner}`,title:'gethostbyname',category:'external'}])];
+    const areaList=owners.flatMap(owner=>[{id:owner,nodes:[`net-${owner}`]},{id:`dns-${owner}`,nodes:[`resolve-${owner}`]}]);
+    const prepared=await prepareInteriors(cards(items),owners.map(owner=>({from:`net-${owner}`,to:`resolve-${owner}`})),areaList,{availableHeight:height-2*overviewInset});
+    return systemViewport((await layoutPrepared(prepared,width,height)).layout.nodes,width,height).zoom;
+  };
+  const once=await fit('DNS resolver'),titled=await fit('');
+  assert.ok(once+1e-9>=titled,`said once, the map fits at ${once.toFixed(3)}; titled one by one, at ${titled.toFixed(3)}`);
 });
 
 // Redis's Server configuration and lifecycle is its program's entry side,
