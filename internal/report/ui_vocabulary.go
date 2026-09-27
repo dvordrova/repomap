@@ -36,6 +36,12 @@ var russianUI = map[string]string{
 	"{0} go the other way":                  "обратно: {0}",
 	"{0} here":                              "здесь {0}",
 	"all":                                   "все",
+	"Made of {0}":                           "Состав — {0}",
+	"Made of {0} parts":                     "Частей в составе: {0}",
+	"{0} functions":                         "функций: {0}",
+	"{0} types":                             "типов: {0}",
+	"{0} variables":                         "переменных: {0}",
+	"{0} declarations":                      "объявлений: {0}",
 	"one of {0}":                            "один из {0}",
 	"the same {0} as {1}":                   "те же {0}, что у {1}",
 	"the same {0}":                          "те же {0}",
@@ -683,7 +689,9 @@ var uiCountOne = map[string]string{
 	"{0} locations": "{0} location",
 	"{0} calls":     "{0} call", "{0} callbacks": "{0} callback", "{0} reads": "{0} read", "{0} other connections": "{0} other connection",
 	"{0} go the other way": "{0} goes the other way",
-	"{0} results":          "{0} result",
+	"{0} functions":        "{0} function", "{0} types": "{0} type", "{0} variables": "{0} variable", "{0} declarations": "{0} declaration",
+	"Made of {0} parts": "Made of {0} part",
+	"{0} results":       "{0} result",
 }
 
 var uiParameter = regexp.MustCompile(`\{([0-9]+)\}`)

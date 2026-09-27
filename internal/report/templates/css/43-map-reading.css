@@ -167,7 +167,6 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .input-groups>[data-input-group]:has([data-input-subgroup]){display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:0 24px}
 .input-groups>[data-input-group]:has([data-input-subgroup])>h4,.input-groups>[data-input-group]:has([data-input-subgroup])>.input-provenance{grid-column:1/-1}
 .input-subgroup .meta{display:inline}
-.map-member-file{grid-column:1/-1;margin:8px 0 2px;font-size:12px;color:var(--muted);font-family:var(--mono,monospace)}
 .data-kind{font-size:14px;margin:12px 0 4px}.data-kind .meta{display:inline;font-size:12px}
 /* The telegraphic note sits on the call line itself; the click keeps the address, basis and source. */
 .outbound-note{font-family:inherit;font-weight:400;color:var(--ink)}
@@ -283,7 +282,6 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-all-members .map-member{min-height:0;margin:0;padding:1px 0 1px 8px;border:0;border-radius:0;background:none}
 .map-all-members .map-member-name{font-size:13px;line-height:1.5}
 .map-all-members .map-member-fields{margin:0 0 3px 1.3em;line-height:1.45}
-.map-all-members .map-member-file{margin:8px 0 2px}
 .map-all-members .map-member:has(.map-member-name[aria-current]){box-shadow:inset 3px 0 #243044}
 
 /* Rows of one caller and one kind read as one line with their count. */
@@ -293,3 +291,17 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .connection-open-all[hidden]{display:none}
 .system-reaching-inputs{margin:14px 0}.system-reaching-inputs>summary{cursor:pointer;font-weight:600;font-size:14px}
 .key-symbol:not(.key-symbol-key) .chip{font-weight:400}
+
+/* A reading starts with what its subject is made of (owner's 3a): "Made of
+   18 functions" with its files once beside it, then every declaration, the
+   model's keys first and bold, the rest by name, none with a line number.
+   An area lists its parts the same way, each with its own declarations. */
+.map-made-of{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px}
+.map-made-of>small,.map-area-part>small{font:400 12px/1.4 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.map-area-composition{margin:12px 0}.map-area-composition>h5{margin:12px 0 4px}
+.map-area-part{margin:10px 0 0}
+.map-card .map-area-part>button{font:inherit;font-size:14px;font-weight:650;color:var(--ink);margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;text-align:left}
+.map-area-part>small{display:block;font-family:var(--sans);margin:1px 0 2px}
+.map-area-members{display:flex;flex-wrap:wrap;gap:0 10px;font:13px/1.5 var(--mono)}
+.map-card .map-area-members a{text-decoration:none}.map-card .map-area-members a:hover{text-decoration:underline}
+.map-area-members .map-member-key{font-weight:750;color:#4f2f86}

@@ -737,15 +737,24 @@ recorded execution order. All original structural relations remain available.
 The key lists only the kinds and strokes present in that map.
 
 Group readings put the description first, then the input's witness when an
-input is pinned, then Code in this part, then incoming connections before
-outgoing connections: Command dispatch had listed some 5,000 characters of
+input is pinned, then what the part is made of, then incoming connections
+before outgoing connections: Command dispatch had listed some 5,000 characters of
 connections before its code, and Client connections and replies the
 nineteen parts it calls, mostly utilities, before the fourteen that call
-it. Code in this part lists every declaration of the part, the model's keys
-first (in each file, and the files holding keys first) and in bold as the
-part's tiles draw them; it had listed only the keys under a heading that
-said all, and Replication's showed replicationFeedSlaves and not
-syncWithMaster. Each declaration is one line, as a tile is, a type's fields
+it. What a part is made of (owner's choice 3a, 2026-09-27) is headed by
+its declarations counted by the kind its tiles carry ("Made of 18
+functions", "2 functions, 3 types") with the files they are written in
+once beside it, and lists every declaration of the part as a link into its
+code, the model's keys first and in bold as the part's tiles draw them,
+then the rest by name whatever their case, with no line number: by file
+and line, List commands' eighteen functions read as a column of line
+numbers. The tiles keep the page's own order. It had listed only the keys
+under a heading that said all, and Replication's showed
+replicationFeedSlaves and not syncWithMaster. An area's reading starts
+the same way under its description: "Made of 9 parts", then each part, a
+link to its reading, with its counts and files and its declarations as
+links, keys first and bold, the rest by name; a declaration is read in
+its part without moving the camera. Each declaration is one line, as a tile is, a type's fields
 on a line under it, and a key type the model explained keeps its mark and
 its fields: a bordered box each had put Client connections' callers some
 1,700 px further down the reading. The reading column does not repeat the source index, which

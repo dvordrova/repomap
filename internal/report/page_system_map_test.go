@@ -543,7 +543,7 @@ func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(russian), "Номера на границе области или компонента — это пронумерованные части внутри, которые соединяет стрелка, а не порядок выполнения.") {
+	if !strings.Contains(string(russian), "Номера на границе области или компонента — это пронумерованные части внутри, которые соединяет стрелка, а не порядок выполнения; «все» — все части внутри.") {
 		t.Fatal("the Russian legend does not explain the numbers on a frame's border")
 	}
 	// With no areas an open component still numbers its loose parts on its

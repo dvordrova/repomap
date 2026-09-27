@@ -72,16 +72,30 @@ var repomapMembers = (function () {
     else if(source.NoSource)link.title=rmT('No source');
     return link;
   }
+  // A part's complete list reads as the owner asked: the model's keys first,
+  // then every other declaration by name, each a link into its code with no
+  // line number (the file stands once in the heading). By file and line,
+  // List commands' eighteen functions read as a column of numbers.
+  function sorted(node){
+    return items(node).slice().sort(function(a,b){return (b.key?1:0)-(a.key?1:0)||displayName(a).localeCompare(displayName(b),'en',{sensitivity:'base'})||displayName(a).localeCompare(displayName(b));});
+  }
+  // What a part is made of: how many declarations of each kind its list
+  // holds (the kinds its tiles carry), and the files they are written in.
+  function composition(node){
+    var kinds={},counts={},files=[];
+    try{JSON.parse(node.dataset.symbols||'[]').forEach(function(symbol){if(symbol.href||symbol.open)kinds[symbol.href||symbol.open]=symbol.kind;});}catch(_){}
+    items(node).forEach(function(item){
+      var kind=kinds[item.source.Href||item.source.Open]||'';
+      var word=kind==='function'||kind==='method'?'{0} functions':kind==='type'?'{0} types':kind==='variable'?'{0} variables':'{0} declarations';
+      counts[word]=(counts[word]||0)+1;
+      var path=item.source.Path||'';if(path&&files.indexOf(path)<0)files.push(path);
+    });
+    return {total:items(node).length,counts:['{0} functions','{0} types','{0} variables','{0} declarations'].filter(function(word){return counts[word];}).map(function(word){return rmT(word,counts[word]);}).join(', '),files:files.sort()};
+  }
   function grid(map,node,limit) {
     var grid=document.createElement('div');grid.className='map-member-grid';
-    var list=items(node).slice(0,limit===undefined?items(node).length:limit);
-    // The complete list of a large part reads by file: a heading per source
-    // file, its members beneath. The five-cube preview inside the node stays flat.
-    var paths=new Set(list.map(function(item){return item.source.Path||'';}));
-    var byFile=limit===undefined&&list.length>8&&paths.size>1;
-    var lastPath=null;
+    var list=limit===undefined?sorted(node):items(node).slice(0,limit);
     list.forEach(function(item){
-      if(byFile&&(item.source.Path||'')!==lastPath){lastPath=item.source.Path||'';var head=document.createElement('div');head.className='map-member-file';head.textContent=lastPath||rmT('Other');grid.appendChild(head);}
       var row=document.createElement('div');row.className='map-member'+(item.key?' map-member-key':'');
       var name=sourceLink(item.source);name.className='map-member-name';name.textContent=displayName(item);
       name.dataset.memberSource=sourceKey(item.source);
@@ -116,5 +130,5 @@ var repomapMembers = (function () {
     }
     layer.appendChild(body); svg.appendChild(layer);
   }
-  return {sourceKey:sourceKey,items:items,size:size,draw:draw,grid:grid,label:label,displayName:displayName,sourceLink:sourceLink};
+  return {sourceKey:sourceKey,items:items,sorted:sorted,composition:composition,size:size,draw:draw,grid:grid,label:label,displayName:displayName,sourceLink:sourceLink};
 })();

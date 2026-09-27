@@ -538,7 +538,10 @@ function rmDeclarationRelations(map,node,key,nodes){
       };
       if(concepts.length){
         var list=document.createElement('section');list.className='map-all-members';
-        var label=document.createElement('h5');label.textContent=rmT('Code in this part');list.appendChild(label);
+        // The part's composition first, then its code: "Made of 18
+        // functions", the files once beside it (owner's 3a).
+        var made=repomapMembers.composition(node),label=document.createElement('h5');label.className='map-made-of';
+        label.appendChild(rmEl('span','',rmT('Made of {0}',made.counts)));if(made.files.length)label.appendChild(rmEl('small','',made.files.join(', ')));list.appendChild(label);
         list.appendChild(repomapMembers.grid(map,node));card.appendChild(list);
         if(saved?.concept){var selected=concepts.findIndex(function(c){return repomapMembers.sourceKey(c.source)===saved.concept;});map.inspectConcept(selected);}
       }

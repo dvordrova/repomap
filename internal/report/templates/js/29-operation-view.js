@@ -216,9 +216,36 @@ function rmReachingInputs(n,reaching,owner,choose){
     });
     card.querySelector('.map-card-intro').after(section);
   }
+  // What an area is made of: its parts in their order, each with how many
+  // declarations of each kind in which files, and those declarations, the
+  // model's keys first and bold, the rest by name. A part leads to its
+  // reading; a declaration to its own, in its part.
+  function areaComposition(n){
+    var parts=(n.dataset.children||'').split(/\s+/).map(function(id){return byID[id];}).filter(function(part){return part&&!part.dataset.activation&&!part.dataset.branch;});
+    if(!parts.length)return null;
+    var section=rmEl('section','map-area-composition'),made=parts.map(function(part){return repomapMembers.composition(part);});
+    var heading=rmEl('h5','map-made-of');heading.appendChild(rmEl('span','',rmT('Made of {0} parts',parts.length)));section.appendChild(heading);
+    parts.forEach(function(part,index){
+      var entry=rmEl('div','map-area-part'),go=rmEl('button','',part.dataset.title);go.type='button';
+      go.addEventListener('click',function(){select(part,true,null,false);});entry.appendChild(go);
+      var counts=made[index];if(counts.total)entry.appendChild(rmEl('small','',counts.counts+(counts.files.length?' · '+counts.files.join(', '):'')));
+      var members=rmEl('div','map-area-members');
+      repomapMembers.sorted(part).forEach(function(item){
+        var link=repomapMembers.sourceLink(item.source);link.textContent=repomapMembers.displayName(item);if(item.key)link.className='map-member-key';
+        link.title=[item.source.Text,item.source.NoSource?rmT('No source'):''].filter(Boolean).join('\n');
+        link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(part,true,{href:item.source.Href,open:item.source.Open,key:repomapMembers.sourceKey(item.source)},false);});
+        members.appendChild(link);
+      });
+      if(members.childElementCount)entry.appendChild(members);
+      section.appendChild(entry);
+    });
+    return section;
+  }
   map.addEventListener('repomap:inspect',function(e){
     var n=e.detail.node,card=e.detail.card;
     entityWrites(n,card);
+    // What an area is made of comes first, under its description (owner's 3a).
+    if(n.dataset.branch==='area'){var composition=areaComposition(n),intro=card.querySelector('.map-card-intro');var actions=intro?.querySelector(':scope>.map-card-actions');if(composition&&actions)actions.before(composition);else if(composition&&intro)intro.appendChild(composition);}
     writeReading={node:n,card:card,key:map.explorerMember?.key||''};
     var group=document.getElementById((n.getAttribute('href')||'').slice(1));
     if(!n.dataset.activation){

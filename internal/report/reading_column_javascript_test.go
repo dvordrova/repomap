@@ -188,3 +188,51 @@ assert.equal(heads[0].tagName,'BUTTON');assert.equal(heads[0].entry,entries[0],'
 assert.equal(heads[1].tagName,'STRONG','a declaration in several places is chosen by its In links');
 `)
 }
+
+// A reading starts with what its subject is made of (owner's 3a): List
+// commands read "Made of 18 functions" over its declarations by file and
+// line, a column of line numbers. The list is the model's keys first, then
+// every declaration by name, whatever its case, with no line number; the
+// kinds its tiles carry are counted and its files named once.
+func TestAPartsCompositionIsCountedAndItsCodeListedKeysFirstThenByName(t *testing.T) {
+	code := systemJSPiece(t, "26-map-members.js", "var repomapMembers = (function () {", "\n})();") + "\n})();"
+	runSystemJS(t, `
+const document={getElementById:()=>null};
+function rmT(key,...values){return values.reduce((s,v,i)=>s.replace('{'+i+'}',v),key);}
+const concept=(name,href,path,key)=>({name,key,source:{Href:href,Path:path,Text:path+':1'}});
+const node={getAttribute:()=>'',dataset:{
+  concepts:JSON.stringify([concept('lpushCommand','h/lpush','redis.c'),concept('pushGenericCommand','h/push','redis.c'),concept('LZF_STATE','h/lzf','lzfP.h'),
+    concept('blockingPopGenericCommand','h/block','redis.c',true),concept('_dictPanic','h/panic','dict.c'),concept('server','h/server','redis.c')]),
+  symbols:JSON.stringify([{name:'lpushCommand',kind:'function',href:'h/lpush'},{name:'pushGenericCommand',kind:'function',href:'h/push'},{name:'LZF_STATE',kind:'type',href:'h/lzf'},
+    {name:'blockingPopGenericCommand',kind:'function',href:'h/block',key:true},{name:'_dictPanic',kind:'method',href:'h/panic'},{name:'server',kind:'variable',href:'h/server'}])}};
+`+code+`
+assert.deepEqual(repomapMembers.sorted(node).map(i=>i.name),['blockingPopGenericCommand','_dictPanic','lpushCommand','LZF_STATE','pushGenericCommand','server']);
+assert.deepEqual(repomapMembers.items(node).map(i=>i.name).slice(0,2),['lpushCommand','pushGenericCommand'],'the page\'s own order is kept for the tiles');
+assert.deepEqual(repomapMembers.composition(node),{total:6,counts:'4 functions, 1 types, 1 variables',files:['dict.c','lzfP.h','redis.c']});
+`)
+}
+
+// An area's reading starts with its parts, each with what it is made of and
+// its declarations, keys first; a part leads to its reading and a
+// declaration to its own, in its part, without moving the camera.
+func TestAnAreasCompositionListsItsPartsAndTheirCode(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "  function areaComposition(", "  map.addEventListener('repomap:inspect'")
+	runSystemJS(t, fakeElements+`
+const part=(id,title,branch)=>({id,dataset:{title,branch:branch||''}});
+const byID={a:part('a','Compression'),b:part('b','Data structures'),c:part('c','Nested','area')};
+const members={a:[{name:'lzf_compress',key:true,source:{Href:'h/c'}},{name:'u8',source:{Href:'h/u8'}}],b:[{name:'listNext',source:{Href:'h/n'}}]};
+const repomapMembers={sorted:p=>members[p.id]||[],composition:p=>({total:(members[p.id]||[]).length,counts:(members[p.id]||[]).length+' functions',files:p.id==='a'?['lzf.c']:[]}),
+  sourceLink:s=>{const a=rmEl('a');a.href=s.Href;return a;},displayName:i=>i.name,sourceKey:s=>s.Href};
+const chosen=[];function select(n,navigate,source,focus){chosen.push([n.id,source?source.key:undefined,focus]);}
+`+code+`
+const section=areaComposition({dataset:{children:'a b c'}});
+assert.equal(section.children[0].textContent,'Made of 2 parts');
+const parts=section.all(e=>e.className==='map-area-part');
+assert.deepEqual(parts.map(p=>p.children.map(c=>c.textContent)),[['Compression','2 functions · lzf.c','lzf_compressu8'],['Data structures','1 functions','listNext']]);
+assert.equal(parts[0].children[2].children[0].className,'map-member-key','a key is marked');
+parts[0].children[0].listeners.click();
+parts[0].children[2].children[1].listeners.click({preventDefault(){},stopPropagation(){}});
+assert.deepEqual(chosen,[['a',undefined,false],['a','h/u8',false]]);
+assert.equal(areaComposition({dataset:{children:'c'}}),null,'an area of no parts has no composition');
+`)
+}
