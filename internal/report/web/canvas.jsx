@@ -10,7 +10,7 @@ import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {singlePartAreas, inputGroupsByPart} from './overview.mjs';
-import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading} from './cards.mjs';
+import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading,cardText} from './cards.mjs';
 import {overviewInset} from './split-layout.mjs';
 import {HoverGate} from './hover.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
@@ -107,7 +107,7 @@ function Part({data}) {
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
     <strong data-input-name={data.activation?'':undefined}>{heading?.title||data.title}</strong>
-    {data.description&&(!heading||standaloneText)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines,maxHeight:standaloneLines*15}:undefined}>{heading?data.description.replace(/\n/g,' '):data.description}</div>}
+    {data.description&&(!heading||standaloneText)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines,maxHeight:standaloneLines*15}:data.descriptionMost?{WebkitLineClamp:data.descriptionMost}:undefined}>{data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
     {data.symbols?.length>0&&!data.activation&&<button type="button" className="flow-part-zoom nopan" aria-label={t('Zoom into {0}',data.name||data.title)}
       onClick={event=>{event.stopPropagation();data.zoomInto?.();}}>
@@ -173,7 +173,7 @@ function FrameTitle({node,item,focused,enter,select}) {
     <strong>{item.title}</strong>
     {item.metadata&&<div className="flow-component-meta">{item.metadata}</div>}
     {item.role&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
-    {item.description&&<p className="flow-description">{item.description}</p>}
+    {item.description&&<p className="flow-description" style={{maxWidth:cardText}}>{item.description}</p>}
   </div>;
 }
 function RoutedEdge({id,data}) {
@@ -492,7 +492,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {heading.lines.length>0&&<div className="flow-component-overview-heading" style={{maxWidth:heading.width,minHeight:inputs?32:undefined,paddingTop:heading.clearZoom?32:undefined}}>
         <strong style={heading.scale<1?{fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}:undefined}>{heading.lines.join('\n')}</strong></div>}
       {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
-      {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description.replace(/\n/g,' ')}</p>}
+      {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description}</p>}
       {inputs&&<InputTypes groups={item.inputGroups}/>}
       {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
         <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).overviewTitle||byID.get(id).name||byID.get(id).title}</button>

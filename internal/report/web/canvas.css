@@ -90,7 +90,9 @@
    colour and only a small head read. The legend draws the same arrow. */
 .flow-role-triggers,.flow-color-key .entry i{background:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='26'%20height='18'%20viewBox='0%200%2026%2018'%3E%3Cpath%20d='M1.5%205.5H13V1.5L24.5%209L13%2016.5V12.5H1.5Z'%20fill='%23267267'%20stroke='%23e1f3ec'%20stroke-width='3'%20stroke-linejoin='round'%20paint-order='stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat;color:#267267}
 .flow-node-reading .flow-part.flow-core{border-color:#243044}
-.flow-description{font-size:13px;line-height:18px;font-weight:400;white-space:pre-line;overflow-wrap:anywhere;color:#536176;margin:0}
+.flow-description{font-size:13px;line-height:18px;font-weight:400;overflow-wrap:anywhere;color:#536176;margin:0}
+/* A part's description takes at most its three lines, the browser wrapping it. */
+.flow-part>.flow-description{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
 .flow-area-title>strong{font-size:17px;line-height:22px;white-space:pre-line}
 .flow-area-title .flow-description{margin-top:12px}
 /* Retain the header footprint while its secondary text is too small to read. */
@@ -201,9 +203,6 @@
 .flow-part-zoom{position:absolute;right:5px;top:5px;display:grid;place-items:center;width:29px;height:20px;padding:0;border:0;background:transparent;color:#52647d;cursor:zoom-in}
 .flow-part-zoom:hover{color:#243044}
 .flow-part:has(.flow-part-zoom)>strong{padding-right:34px}
-/* An open part's number stands over its bottom corner; a closed area keeps its
-   number in a row of its own and needs no room left under the title. */
-.flow-part:not(.flow-standalone-part):not(.flow-overview-card):has(.flow-number)>strong{padding-bottom:18px}
 .flow-part-symbols .flow-symbol-block a:hover{background:#dfe6ef}
 .flow-part-symbols .flow-symbol-block .flow-symbol-key{font-weight:750;color:#4f2f86}
 .flow-part-symbols .flow-symbol-more{border-style:dashed;color:#536176;text-align:center}

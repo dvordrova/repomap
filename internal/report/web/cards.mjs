@@ -67,6 +67,14 @@ export function fitTitle(title,width,font,measure){
 // A closed external frame's zoom mark, 34 by 24, with its 8px insets.
 const zoomMarkRoom=50;
 
+// A card as canvas.css draws it: 260px wide inside a 1.5px border and 16px
+// padding, its title keeping 34px beside it for a part's zoom button. Text is
+// wrapped at that real column. Wrapped at 228 and 194, a line between the
+// column and those widths broke again in the browser: "Implements Redis set
+// commands and" (225.84px in a 225px column) left "and" alone on a line.
+export const card={width:260,border:1.5,padding:16,zoom:34};
+export const cardText=card.width-2*card.border-2*card.padding;
+
 // A narrow external heading may need the full card width below its zoom mark.
 // Measure the same heading for layout reservation and for the visible card.
 // A frame in a display group that carries its destination text has no
@@ -147,19 +155,21 @@ export function prepareCards(records, _inputOwner, measure, translate) {
   const childNames=id=>(byID.get(id)?.children||[]).map(child=>byID.get(child)?.overviewTitle||byID.get(child)?.title).filter(Boolean);
   return records.map(n=>{
     const frame=!!n.children?.length;
-    // A part's zoom button takes 34px beside its title.
-    const title=wrap(n.title,!frame&&!n.activation&&n.symbols?.length?194:228,'700 17px system-ui');
+    // A part's zoom button takes its room beside its title.
+    const title=wrap(n.title,!frame&&!n.activation&&n.symbols?.length?cardText-card.zoom:cardText,'700 17px system-ui');
     const label=wrap(n.title,152,'12px system-ui');
     const metadata=[n.language,n.componentKind?translate(n.componentKind):''].filter(Boolean).join(' · ');
-    const roleLines=n.role?wrap(n.role,228,'600 13px system-ui'):[];
+    const roleLines=n.role?wrap(n.role,cardText,'600 13px system-ui'):[];
     // A part's name alone does not say what it is: its one-sentence
-    // description stands under the name, at most three lines.
+    // description stands under the name, at most three lines. The browser
+    // wraps it in the text column; its lines are counted there for the
+    // card's height and never inserted into the text.
     const part=!frame&&!n.activation&&!n.branch&&n.category==='part';
-    const description=n.branch==='component'||n.category==='component'||part?n.summary:'';
-    let descriptionLines=description?wrap(description,228,'13px system-ui'):[];
-    if(part&&descriptionLines.length>3)descriptionLines=[...descriptionLines.slice(0,2),descriptionLines[2].replace(/\s*\S*$/,'')+' …'];
+    const description=n.branch==='component'||n.category==='component'||part?n.summary||'':'';
+    const descriptionMost=part?3:0;
+    const descriptionLines=description?Math.min(descriptionMost||Infinity,wrap(description,cardText,'13px system-ui').length):0;
     const subtitle=n.category==='external'&&!n.title.endsWith(n.subtitle||'')?n.subtitle:'';
-    const subtitleLines=subtitle?wrap(subtitle,228,'13px system-ui'):[];
+    const subtitleLines=subtitle?wrap(subtitle,cardText,'13px system-ui'):[];
     const names=n.branch==='component'?childNames(n.id):[];
     // External headings may use the full width below the zoom mark. Its extra
     // row is reserved by overviewHeading, not by forcing a wider frame.
@@ -202,11 +212,11 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     const displayGroupHeadingAt=n.displayGroupTitle?width=>displayGroupHeading(n.displayGroupTitle,width,measure):undefined;
     return {...n,displayGroupHeadingAt,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
-      kindLabel,description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
+      kindLabel,description,descriptionMost,subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,
-      headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines.length?12+descriptionLines.length*18:0)),
+      headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines?12+descriptionLines*18:0)),
       // A tile without its kind row is that row shorter.
-      width:260,height:frame?undefined:66-(input&&!kindLabel?24:0)+title.length*22+descriptionLines.length*18+
+      width:card.width,height:frame?undefined:66-(input&&!kindLabel?24:0)+title.length*22+descriptionLines*18+
         (subtitleLines.length?8+subtitleLines.length*18:0)};
   });
 }

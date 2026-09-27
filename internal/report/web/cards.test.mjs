@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText} from './cards.mjs';
 import {semanticLayout} from './semantic.mjs';
 
+// canvas.css draws a card 260px wide inside a 1.5px border and 16px padding.
+const column=260-2*1.5-2*16;
+
 test('input card labels keep every character across long literals and translated names',()=>{
   for(const title of ['Handle mouse click on board or button','LongUnbrokenInputName'.repeat(8),'Начать симуляцию по нажатию кнопки']){
     const cards=prepareCards([{id:'part',title:'Handler',kind:'Part'},{id:'input',title,activation:'interaction'}],{input:'part'},text=>Array.from(text).length*8,text=>text);
     const label=cards.find(card=>card.id==='input').title;
-    assert.ok(label.split('\n').every(line=>Array.from(line).length*8<=228));
+    assert.ok(label.split('\n').every(line=>Array.from(line).length*8<=column));
     assert.equal(label.replace(/\s/g,''),title.replace(/\s/g,''));
   }
 });
@@ -31,11 +34,30 @@ test('a title breaks only between words and never starts a line with closing pun
   }
 });
 
-// The browser re-broke a part's title measured across the zoom button's room.
+// The browser re-broke a part's title measured across the zoom button's room,
+// and one measured 194px wide beside a button in a 191px column.
 test('a part\'s title lines leave room for its zoom button',()=>{
-  const measure=text=>Array.from(String(text)).length*9;
-  const [part]=prepareCards([{id:'part',title:'Command dispatch table and replies',symbols:[{name:'call'}]}],{},measure,text=>text);
-  assert.ok(part.title.split('\n').every(line=>measure(line)<=194),part.title);
+  const measure=text=>Array.from(String(text)).length*8;
+  for(const title of ['Command dispatch table and replies','Sorted set skiplist code']){
+    const [part]=prepareCards([{id:'part',title,symbols:[{name:'call'}]}],{},measure,text=>text);
+    assert.ok(part.title.split('\n').every(line=>measure(line)<=column-34),part.title);
+  }
+});
+
+// Pre-broken at 228px, "Implements Redis set commands and" (225.84px) broke
+// again in the 225px column and left "and" alone on a line.
+test('a description is wrapped by the browser and counted at the card\'s text column',()=>{
+  const measure=text=>Array.from(String(text)).length*7.6;
+  const summary='Keeps the replica data in step with the master over networks.';
+  assert.equal(wrapText(summary,228,'',measure).length,2,'two lines at the old width');
+  assert.equal(wrapText(summary,column,'',measure).length,3,'three in the real column');
+  const [part]=prepareCards([{id:'part',title:'Replication',category:'part',kind:'Part',summary}],{},measure,text=>text);
+  assert.equal(part.description,summary,'no line break is inserted into the text');
+  assert.equal(part.height,66+22+3*18,'the card has room for the three lines the browser draws');
+  const long=summary+' '+summary;
+  const [capped]=prepareCards([{id:'part',title:'Replication',category:'part',kind:'Part',summary:long}],{},measure,text=>text);
+  assert.equal(capped.description,long);
+  assert.equal(capped.height,66+22+3*18,'a part keeps at most three lines of its description');
 });
 
 // A destination frame fitted a pixel narrower than its reservation read "DNS

@@ -382,6 +382,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   it. The native frame paints the outline at both detail levels; the title
   overlay adds no second, magnified border. Hover and selection change outline
   paint only, never border geometry, padding, title position or wrapping.
+  Nothing inside a card moves when an area is looked at or chosen: a part's
+  number stands in room its card already leaves. A rule reserving a row
+  under the title for that number had dropped every description of Redis's
+  Data type commands 18px whenever the pointer crossed the area's border.
   Closed frames display a subtle outlined child element with a question mark
   as their nested-content hint. The accessible action and the card both enter
   its contents. A toolbar hint explains zooming and dragging. Leaf cards and
@@ -477,7 +481,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   punctuation. Map titles are drawn as those measured lines and the browser
   never breaks a word of them again. A heading whose room is still short of
   its longest word shrinks its type until that word fits instead of breaking
-  it; a part's title leaves room for its zoom button.
+  it; a part's title leaves room for its zoom button. Card text is measured
+  at the card's real text column, its width less its border and padding, and
+  less its zoom button's room beside a part's title: measured 3px wider,
+  "Implements Redis set commands and" (225.84px) broke again in the 225px
+  column and left "and" alone on a line. A part's description is not broken
+  into lines on the page; the browser wraps it in that column, and its lines
+  counted there only size the card, at most three, the third cut with an
+  ellipsis.
   When the whole-map fit still cannot give a summary its reserved width or
   height, in a short window or on a crowded map, the summary is laid out at
   that reserve and drawn scaled down whole, its zoom mark with it until zoom

@@ -21,6 +21,15 @@ if(options.has('loose-part')){
   relations.push({from:'worker',to:'audit'});
 }
 
+// Every part says what it is under its name. Redis's Replication and client
+// sentences are among them: pre-broken at 228px they wrapped again in the
+// card's 225px text column.
+if(options.has('described')){
+  const sentences=['Synchronizes master and replica data over network connections.','Provides an interactive terminal client for sending Redis commands.',
+    'Implements Redis set commands and their operations.','Checks who may change a job and records every decision it takes for the audit trail, then reports refusals.'];
+  records.filter(n=>n.kind==='Part'||n.kind==='Entrypoints').forEach((n,i)=>{n.category='part';n.summary=sentences[i%sentences.length];});
+}
+
 // A part's declarations: the worker's handler calls two functions and takes
 // the job type they return.
 if(options.has('symbols')){
