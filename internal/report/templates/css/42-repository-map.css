@@ -96,10 +96,8 @@ button.repo-component-open::after{content:'⌄';position:absolute;right:.8rem;to
 .repo-role-space>summary{pointer-events:auto;cursor:pointer;width:100%}
 .repo-role-space[open]>.repo-role-heading{margin-bottom:.7rem}
 .recipe-basis{font-size:.78rem;color:var(--muted);border:1px solid var(--line);border-radius:1rem;padding:.1rem .45rem}
-.local-reading-actions{display:flex;gap:.9rem;align-items:center;margin:.6rem 0;font-size:.85rem}
 .input-catalog,.component-coverage,[data-off-map-file]{scroll-margin-top:calc(var(--toolbar-height,0px) + 1rem)}
 .operation-catalog>li{margin:1rem 0;border-bottom:1px solid var(--line);padding-bottom:.75rem}
 .operation-catalog>li>p{margin:.35rem 0}
 @media(max-width:850px){.repo-component-card{grid-template-columns:minmax(10rem,1fr) minmax(16rem,2fr)}.product-catalog{grid-column:2}.repo-row-connections{grid-row:2}}
 
-.local-reading-actions button{padding:.2rem 0;border:0;background:transparent;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}

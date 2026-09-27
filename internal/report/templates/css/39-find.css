@@ -18,3 +18,7 @@
 .find-pages{justify-content:flex-end;border-top:1px solid var(--line);padding-top:.7rem}
 .reading-map-links{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-size:var(--text-small)}
 @media(max-width:650px){.find-tools label{width:100%}.find-tools select{min-width:0;flex:1}.find-result-head{align-items:flex-start}.find-result-type{max-width:30%;overflow-wrap:anywhere}}
+/* A code result reads as its tile: the declaration in code type, a type's
+   fields under it, then its file and line. */
+.find-results .find-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.95em;overflow-wrap:anywhere}
+.find-result-fields{margin:.15rem 0;font:var(--text-small)/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}

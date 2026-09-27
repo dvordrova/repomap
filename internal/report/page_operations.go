@@ -82,6 +82,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	// their caller. They belong to the caller's group, not to an unrelated
 	// operation merely because it is on the same component page.
 	matched := make(map[string]pathEdge)
+	matchedCalls := make(map[string]*pageEdgeCall)
 	// Library and executable views can expose the same source operation. Keep
 	// every underlying connection, but give that physical destination one node
 	// on this map. Different anchors or differently named components stay distinct.
@@ -135,6 +136,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		node.Title = mapTitle(node.FullTitle)
 		foreignNodes[key], usedForeign[key] = node, true
 		matched[connection.ID] = pathEdge{mapNodeID(connection.From.GroupID), node.ID, true, connection.Label, connectionKey(index.Target.ID, connection.ID)}
+		matchedCalls[connectionKey(index.Target.ID, connection.ID)] = builder.connectionCall(connection)
 	}
 	ops := append([]groupindex.Operation(nil), index.Operations...)
 	sort.SliceStable(ops, func(i, j int) bool {
@@ -376,6 +378,9 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		if call, ok := handledBy[edge.from]; ok && label == "implemented in" {
 			drawn.Calls = []pageEdgeCall{call}
 		}
+		if call := matchedCalls[edge.connectionID]; call != nil && edge.connectionID != "" {
+			drawn.Calls = []pageEdgeCall{*call}
+		}
 		result.Edges = append(result.Edges, drawn)
 	}
 	sort.Slice(result.Edges, func(i, j int) bool {
@@ -491,6 +496,9 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		if connection.ToLocation != nil {
 			l := connection.ToLocation
 			edge.ToSource = builder.links.anchor(l.Path, l.Line, l.Column)
+		}
+		if call := builder.connectionCall(connection); call != nil {
+			edge.Calls = []pageEdgeCall{*call}
 		}
 		result.Edges = append(result.Edges, edge)
 	}

@@ -281,6 +281,32 @@ type pageChip struct {
 	// Fields are a type's own fields, listed inside the type's row as the
 	// deep view of a part draws them, never as peers of its functions.
 	Fields []pageChip
+	// Key marks a declaration the model chose as one of its part's keys,
+	// the ones the part's tiles draw first and in bold.
+	Key bool
+}
+
+// keysFirst is a part's complete code list read the way its tiles are: the
+// files holding a key first, and in each file its keys first, in bold. Code
+// in this part had listed only the keys: Replication's showed
+// replicationFeedSlaves and not syncWithMaster.
+func keysFirst(rows []pageChipRow) []pageChipRow {
+	hasKey := func(row pageChipRow) bool {
+		for _, member := range row.Members {
+			if member.Key {
+				return true
+			}
+		}
+		return false
+	}
+	ordered := make([]pageChipRow, len(rows))
+	for i, row := range rows {
+		row.Members = slices.Clone(row.Members)
+		sort.SliceStable(row.Members, func(i, j int) bool { return row.Members[i].Key && !row.Members[j].Key })
+		ordered[i] = row
+	}
+	sort.SliceStable(ordered, func(i, j int) bool { return hasKey(ordered[i]) && !hasKey(ordered[j]) })
+	return ordered
 }
 
 // SymbolCount counts a file's declarations, a type's fields with them.
@@ -324,6 +350,13 @@ type pageConnection struct {
 	// Count is how many times this same line was said. Three exact calls
 	// from one group to another were three identical rows on the card.
 	Count int
+	// Kind, FromName and ToName are the row as one relation between two
+	// named declarations, said through the relation vocabulary (Phrase);
+	// FromDecl and ToDecl are those declarations' own anchors, not the call
+	// site. A row without them is a sentence of its own and keeps its Label.
+	Kind             string
+	FromName, ToName string
+	FromDecl, ToDecl *pageAnchor
 	// fromSubject and at are the declaration a call is written in and where,
 	// when the connection is a native call: the order an entrypoint is read
 	// forward in. They are never shown.
@@ -861,13 +894,7 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 	rows, externals := builder.memberChips(index.Target.ID, group.MemberSubjectIDs)
 	card.Externals = externals
 	card.Inventory = rows
-	var selected []string
-	for _, id := range group.MemberSubjectIDs {
-		if ref, ok := builder.subject(index.Target.ID, id); ok && ref.subject.Interpretation != nil && ref.subject.Interpretation.Key {
-			selected = append(selected, id)
-		}
-	}
-	card.Highlights, _ = builder.memberChips(index.Target.ID, selected)
+	card.Highlights = keysFirst(rows)
 	for _, operation := range index.Operations {
 		if operation.GroupID != group.ID {
 			continue
@@ -938,6 +965,7 @@ func (builder *pageBuilder) memberChips(targetID string, memberIDs []string) ([]
 		if ref.subject.Interpretation != nil {
 			chip.Summary = ref.subject.Interpretation.Line
 			chip.Alias = ref.subject.Interpretation.Alias
+			chip.Key = ref.subject.Interpretation.Key
 		}
 		// A variable its type owns is a field of that type.
 		owner := ""
@@ -1030,6 +1058,7 @@ func (builder *pageBuilder) groupConnections(
 		if row.Title == "" {
 			row.Title = strings.ReplaceAll(connection.SemanticKind, "_", " ")
 		}
+		builder.nameConnectionEnds(&row, connection)
 		if section := builder.byProgram[other.TargetID]; section != nil {
 			row.Href = "#" + groupAnchorID(section.ID, other.GroupID)
 			if other.TargetID != index.Target.ID {

@@ -87,14 +87,15 @@ func TestConnectionReadingGroupsPreserveIdentityDirectionAndEvidence(t *testing.
 		{Title: "Unresolved", Arrow: "→", Label: "unknown 2"},
 	}
 	groups := (pageGroup{Connections: rows}).ConnectionGroups()
-	if len(groups) != 5 || len(groups[0].Summaries) != 1 || len(groups[0].Rows) != 2 {
+	// Who reaches the part is read before what it reaches.
+	if len(groups) != 5 || groups[0].Arrow != "←" || len(groups[1].Summaries) != 1 || len(groups[1].Rows) != 2 {
 		t.Fatalf("unexpected reading groups: %#v", groups)
 	}
 	var restored []pageConnection
 	for _, group := range groups {
 		restored = append(restored, group.Rows...)
 	}
-	if !reflect.DeepEqual(restored, []pageConnection{rows[0], rows[1], rows[3], rows[4], rows[5], rows[2]}) {
+	if !reflect.DeepEqual(restored, []pageConnection{rows[2], rows[0], rows[1], rows[3], rows[4], rows[5]}) {
 		t.Fatal("reading lost original rows, provenance or endpoints")
 	}
 	if got := collapseConnections([]pageConnection{rows[0], {Href: "#other", Title: rows[0].Title, Arrow: rows[0].Arrow, Label: rows[0].Label, Summary: rows[0].Summary, FromSource: rows[0].FromSource}}); len(got) != 2 {

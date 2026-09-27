@@ -251,7 +251,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   this containment context never adds the ancestor's other connections. Frame
   titles retain a light background and readable role/purpose text. The duplicate
   `Reading` line and close action do not occupy space above the canvas. That
-  space has a static type legend, not changing hover prose. The input context
+  space has the map's one key, not changing hover prose: each kind of card
+  drawn as a small card in the fill and border the canvas paints it with,
+  its mark on its border, then the solid "calls" and dashed "possible
+  calls" strokes the arrows are drawn with. Its glyphs had been painted in
+  the marks' dark colours, so Redis's pale green and purple cards matched
+  nothing in it, and no line was keyed. There is no folded prose legend
+  under the map. The input context
   and leave-path action live in the reading card. An input chosen from
   Find, a link, a reading or its own tile on the canvas is entered as its
   path, while the reading column reads the input. The camera takes the part
@@ -299,9 +305,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   selector; the same real endpoints remain connected across zoom levels.
   An open area numbers its parts and an open component its areas and loose
   parts, with those numbers on the frame's border. When an area or component
-  in the map holds anything, one legend line says that the numbers on an
-  area's or component's border are the numbered parts inside that the arrow
-  connects, not an execution order.
+  in the map holds anything, one line says that the numbers on an area's or
+  component's border are the numbered parts inside that the arrow connects,
+  not an execution order. It stands visible beside the map's controls, above
+  the key, where the row had room: folded into a legend at the bottom of a
+  900 px window, no reader of Redis's map found it.
 
 - ELK prepares native area interiors, then places each component's ready
   immediate child rectangles in a flat graph. These children retain their
@@ -442,7 +450,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   left unresolved whose store witnesses name its candidates is possible
   toward each of them (READING, Operation ownership), the same dashed arrow
   alternatives draw, and its rows read "possible" in the source details
-  like theirs. All original endpoint IDs and sources remain on it;
+  like theirs, in the muted text colour: in the warning red it read as an
+  error, and the key's dashed stroke says what it is. All original endpoint IDs and sources remain on it;
   the drawing does not invent another relation. Number badges sit inside the
   frame, centred at the native connection point, and match the associated
   inner part badge in appearance and scale. They preserve every matching number. They do
@@ -608,13 +617,19 @@ matched input after them. Selecting GET had lit every call among fourteen parts
 and listed them starting with Strings. Call depth is a static measure, not a
 recorded execution order. All original structural relations remain available.
 
-Both map legends list only categories present in that map. The expanded legend
-describes current selection and static paths, without removed toolbar controls.
+The key lists only the kinds and strokes present in that map.
 
 Group readings put the description first, then the input's witness when an
-input is pinned, then Code in this part, then outgoing connections before
-incoming connections: Command dispatch had listed some 5,000 characters of
-connections before its code. A type's fields stand inside its row, in the code
+input is pinned, then Code in this part, then incoming connections before
+outgoing connections: Command dispatch had listed some 5,000 characters of
+connections before its code, and Client connections and replies the
+nineteen parts it calls, mostly utilities, before the fourteen that call
+it. Code in this part lists every declaration of the part, the model's keys
+first (in each file, and the files holding keys first) and in bold as the
+part's tiles draw them; it had listed only the keys under a heading that
+said all, and Replication's showed replicationFeedSlaves and not
+syncWithMaster. The reading column does not repeat the source index, which
+is that list again by file and stays on the part's card. A type's fields stand inside its row, in the code
 list and the source index alike, never as peers of the part's functions. The original native relation is available even when the
 model supplied no sentence for that pair. Relations between declarations in
 the same part remain available under Connections within this part, with their
@@ -625,12 +640,29 @@ same-line call occurrences. Selecting a peer pans to it; Back restores the
 camera and expanded source evidence. Connections share one heading per
 exact participant href and direction, with each distinct saved summary once.
 Source details retain every original row, possible-call mark and source pair.
-Unknown destinations and different identities never merge by title. The reading
+A relation row is said through one closed vocabulary of the report's UI
+messages, chosen by its kind and filled with the two declarations' names
+("initServer passes acceptHandler as a callback"), never the stored kind
+("passes_callback"); a C program's import is said as an include, and a
+joint between two programs names the declarations at both of its ends
+("anetTcpGenericConnect connects to anetAccept", not "integrates with").
+The arrow's calls on the map use the same phrases. A row the model wrote
+in its own words keeps them. Rows of one caller and one relation kind in
+one evidence list fold into one line with their count and callees, each
+row inside it with its sources: Client connections and replies listed
+"cmdTable calls …" 97 times. A list with folds has one "Open all" control
+that opens and closes them together. Inputs reaching this part is
+collapsed with its count. The reading column stands beside the map's
+controls and key as well as its canvas and takes their height, with the
+canvas keeping its own: 695 px of a 1440×900 window instead of 610. It
+has no "More details" step, "To explanation" or "To code" action, which
+moved to what was already on screen. Unknown destinations and different identities never merge by title. The reading
 states when no connection to another part exists in this report. That absence
 does not classify the declaration as unused or invent a connecting edge;
 internal relations and the complete source inventory remain available.
 The reading column uses these same grouped sections; the duplicate full-group link and vague
-All disclosure are removed. Returning to a part restores its expanded evidence
+All disclosure are removed. A new selection reads from its top. Returning to
+a part (Back, or the same part shown again) restores its expanded evidence
 and reading scroll as well as the canvas camera. Saved core/entry/dependency
 lanes remain named in the map and reading; an import is not promoted into an
 external communication.
@@ -713,7 +745,15 @@ model popovers. Full answers and provenance remain at the result's destination.
 Exact code-name matches precede matches buried in answer prose. A result says
 what it is: an outside call or its destination is External communication (with
 its own filter), never a Part; an input collection is Inputs; a component is
-listed once.
+listed once. A declaration is one result by its file and line, however many
+programs compile it: adlist.c's listCreate had been three results. It shows
+the declaration as its tile does (a type with its fields) and its file and
+line, and has one "In program / part →" link per program that holds it,
+reading it there; a program that leaves it off its map links to the list
+that says so (Not on the map, or Not reachable from the entrypoints).
+Choosing a component in the header closes the results and makes it the
+results' component. Back to search returns to the same list at the place
+the reader left it.
 The former Learn/Work switch is gone: the
 owner could not tell the two entrances apart, and the switch changed only
 the intro, the question list and where the search field stood. A `mode`
@@ -723,7 +763,19 @@ memberships and select that declaration by its source, without a catalogue hop.
 
 The selected part's panel reads its existing interpreted concepts and group
 highlights; otherwise it shows the original declaration index without inventing
-an explanation. Equal names with different source locations remain separate.
+an explanation. A declaration chosen in the reading, on its tile, from Find
+or from another declaration's reading has a reading of its own: its name as
+its tile writes it (a function with what it takes and returns, a type with
+its fields), the model's line only when there is one, its code ("Open code
+↗" and its file and line), then Called by and Calls, read from the relation
+rows its part already lists (each a fact with the line it is written on),
+grouped by the part at the other end, one line per declaration with every
+place the call is written. A relation other than a call keeps its own
+words. Choosing a line reads that declaration, in place when it is in the
+same part, so a chain such as processInputBuffer → processCommand → call is
+followed one call at a time. A declaration without a line says nothing
+about one: "No explanation saved" had answered a click on every tile but
+the keys. Equal names with different source locations remain separate.
 Original source links and full target evidence retain their order and are
 available without scripting.
 
