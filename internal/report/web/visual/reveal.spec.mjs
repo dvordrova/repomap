@@ -1,9 +1,12 @@
 import {test,expect} from '@playwright/test';
-import {records} from './two-systems-five-externals.mjs';
+import {records,inputOwner} from './two-systems-five-externals.mjs';
 
 const rootIDs=records.filter(r=>r.branch==='component').map(r=>r.id).sort();
 const collectionIDs=records.filter(r=>['communication','inputs'].includes(r.branch)).map(r=>r.id).sort();
 const areaIDs=records.filter(r=>r.branch==='area').map(r=>r.id).sort();
+// A collection whose inputs have handlers in several parts groups them by part;
+// the groups are a layer of their own and open together too.
+const groupIDs=records.filter(r=>r.branch==='inputs').flatMap(r=>{const owners=[...new Set(r.children.map(id=>inputOwner[id]).filter(Boolean))];return owners.length>1?owners.map(owner=>`${r.id}~${owner}`):[];}).sort();
 
 test('pinch reveals and closes the complete hierarchy layer together',async({page},testInfo)=>{
   test.setTimeout(60000);
@@ -22,7 +25,9 @@ test('pinch reveals and closes the complete hierarchy layer together',async({pag
   const check=async()=>{
     const state=await camera();states.push(state);
     expect(state.openComponents.slice().sort()).toEqual(state.openComponents.length?rootIDs:[]);
-    expect(state.communicationsOpen.slice().sort()).toEqual(state.openComponents.length?collectionIDs:[]);
+    expect(state.communicationsOpen.filter(id=>!groupIDs.includes(id)).sort()).toEqual(state.openComponents.length?collectionIDs:[]);
+    const groups=state.communicationsOpen.filter(id=>groupIDs.includes(id)).sort();
+    expect(groups).toEqual(groups.length?groupIDs:[]);
     expect(state.detailAreas.slice().sort()).toEqual(state.detailAreas.length?areaIDs:[]);
     await expect(page.locator('[data-summary-area] .flow-overview-members'),'A group has no intermediate member-list representation').toHaveCount(0);
     return state;

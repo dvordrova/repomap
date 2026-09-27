@@ -62,7 +62,8 @@ async function assertOverviewReadable(page,{allowInventoryScroll=false,participa
   const stage=await page.locator('.flow-root').boundingBox();
   for(const item of participants.filter(n=>['component','communication','inputs'].includes(n.branch))){
     const label=page.locator(`[data-component-overview="${item.id}"] .flow-component-overview-heading>strong`);
-    await expect(label).toHaveText(item.title);
+    // An input collection is headed by the colour key's word, not its component's name.
+    await expect(label).toHaveText(item.branch==='inputs'?'Inputs':item.title);
     const box=await label.boundingBox();
     expect(box,`${item.title} is visible`).not.toBeNull();
     expect(box.x).toBeGreaterThanOrEqual(stage.x);

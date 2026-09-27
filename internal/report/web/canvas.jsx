@@ -517,9 +517,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // Entering a frame opens it, so it may be shown as small as an open frame
       // stays open, about twelve pixels of text, rather than as large as a
       // closed one needs to open by itself.
-      if(['communication','inputs','inputs-part'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id,rootOf(n.id)]);
+      // Entered at its inputs' reading scale, a collection opens its groups
+      // too: they stay open there, as a pinch opens them farther in.
+      const groups=branch==='inputs'?(children.get(n.id)||[]).filter(id=>byID.get(id)?.branch==='inputs-part'):[];
+      if(['communication','inputs','inputs-part'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id,rootOf(n.id),...groups]);
       else if(!component)detailed=new Set([...detailed,n.id]);
-      if(!component)arrive([n.id]);
+      if(!component)arrive([n.id,...groups]);
       // An area is fitted whole only where its parts' headings stay about
       // twelve pixels; larger, it is entered at its first part. Fitted at
       // its layer's floor, Redis's Server runtime stood at 8px headings.
