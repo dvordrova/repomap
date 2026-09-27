@@ -103,6 +103,11 @@ def declared_all(tree):
     return names
 
 
+def statement_position(node):
+    """Where a statement starts, for source order within one module."""
+    return (getattr(node, "lineno", 0), getattr(node, "col_offset", 0))
+
+
 def bounded_text(value):
     # The shared ProgramIndex aggregate/envelope bounds own rejection. Local
     # clipping here used to preserve a plausible but incomplete fact.
@@ -184,7 +189,12 @@ class Scope:
         self.bindings = {}
         self.declared_all = None
         self.export_bindings = {}
-        self.export_star_import = False
+        # Where a module writes each export binding, and where its star
+        # imports are, as (line, column) statement positions. A star may bind
+        # any name where it runs; a binding written after the last one is
+        # still the module's own.
+        self.export_positions = {}
+        self.star_imports = []
         self.global_names = set()
         self.nonlocal_names = set()
         self.opaque_names = set()
@@ -567,6 +577,7 @@ class Collector(ast.NodeVisitor):
             self.scope.export_bindings[name] = None
         else:
             self.scope.export_bindings[name] = binding or {"kind": "declaration"}
+            self.scope.export_positions[name] = statement_position(self.statement)
 
     def generic_visit(self, node):
         # A comprehension decides whether an assignment expression inside it
@@ -1003,7 +1014,7 @@ class Collector(ast.NodeVisitor):
         for alias in node.names:
             if alias.name == "*":
                 if self.scope.kind == "module":
-                    self.scope.export_star_import = True
+                    self.scope.star_imports.append(statement_position(node))
                 continue
             name = alias.asname or alias.name
             binding = {
@@ -1037,10 +1048,15 @@ class RelationVisitor(ast.NodeVisitor):
         if imported_name and scope is not None:
             key = (canonical_module, imported_name)
             seen = set() if seen is None else seen
-            if key in seen or scope.export_star_import:
+            if key in seen:
                 return "unknown", ""
             binding = scope.export_bindings.get(imported_name)
             if imported_name in scope.export_bindings and binding is None:
+                return "unknown", ""
+            # A star import may bind any name, under a branch too. Only one
+            # unconditional binding the module writes after its last star
+            # is still its own; a name a star could bind stays unknown.
+            if scope.star_imports and (binding is None or scope.export_positions[imported_name] < max(scope.star_imports)):
                 return "unknown", ""
             if binding and binding["kind"] in ("from", "module"):
                 # `from . import child` names an indexed child module, not a

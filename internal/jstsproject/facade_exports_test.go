@@ -3,6 +3,7 @@ package jstsproject
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -137,5 +138,52 @@ func TestCumulativeJSTSTypedParameterKeepsCompilerMethodAuthority(t *testing.T) 
 	}
 	if known != 1 || unknown != 1 {
 		t.Fatalf("typed calls known%d unknown%d", known, unknown)
+	}
+}
+
+// Python's star facade (a module that star-imports another and then
+// declares its own helper, called through a module alias) in TypeScript:
+// `export * from` plus the module's own export, called through `import * as`.
+// The compiler resolves both the module's own export and the one `export *`
+// passes on to their declarations.
+func TestCumulativeJSTSStarBarrelKeepsItsOwnExport(t *testing.T) {
+	root := preparedCompilerProject(t)
+	tracked := []string{"package.json", "tsconfig.json", "src/facade-exports/star-rates.ts", "src/facade-exports/star-index.ts", "src/facade-exports/star-consumer.ts"}
+	for _, path := range tracked {
+		contents, err := os.ReadFile(filepath.Join("..", "..", "testdata", "repositories", "jsts", filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestFile(t, root, path, string(contents))
+	}
+	repository, err := corpus.New(t.Context(), root, gitfiles.Listing{Paths: tracked, RegularPaths: tracked})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	_, index, _, err := Build(t.Context(), repository, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]string{}
+	for _, object := range index.Objects {
+		if object.Location != nil && object.Kind == programindex.ObjectFunction {
+			declared[object.ID] = object.Location.Path + ":" + object.Name
+		}
+	}
+	var calls []string
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationCalls || relation.Location == nil || relation.Location.Path != "src/facade-exports/star-consumer.ts" {
+			continue
+		}
+		call := string(relation.Resolution)
+		for _, id := range relation.ToIDs {
+			call += " " + declared[id]
+		}
+		calls = append(calls, call)
+	}
+	want := []string{"exact src/facade-exports/star-index.ts:toText", "exact src/facade-exports/star-rates.ts:getIndex"}
+	if !slices.Equal(calls, want) {
+		t.Fatalf("calls through the star barrel = %q, want %q", calls, want)
 	}
 }

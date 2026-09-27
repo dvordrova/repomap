@@ -15,10 +15,18 @@
     },
     {
       "id": "f4",
-      "path": "src/example/service.cljc"
+      "path": "src/example/facade.clj"
     },
     {
       "id": "f5",
+      "path": "src/example/rates.clj"
+    },
+    {
+      "id": "f6",
+      "path": "src/example/service.cljc"
+    },
+    {
+      "id": "f7",
       "path": "test/example/service_test.clj"
     }
   ]

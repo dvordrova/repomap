@@ -1,5 +1,46 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — A Python module's own names after its star imports resolve
+
+- Scope: gap (a) of the pykrx investigation (`map-model/step3/pykrx-api.md`,
+  Q2): `import_target` answered unknown for every member of a module with
+  any `from … import *`, before reading the module's own bindings, so
+  `from pykrx.website import krx; krx.datetime2string(...)` stayed
+  unresolved although krx/__init__.py defines it after its four stars.
+  Gap (b), following a star, is not part of this change.
+- **Fix.** The collector records each module-level star import's statement
+  position (line, column) instead of one flag, and each export binding's
+  position. A binding the module writes once, unconditionally, in a
+  statement after its last star resolves as it would without the stars;
+  a name only a star binds, one written before a later star, and a child
+  module the package does not bind stay unknown (PYTHON, which now states
+  the ordering rule).
+- **pykrx (fb0d9b3, library target `python:.:library:library`, no model,
+  output under the session's `star-fix/`).** The 152 `krx.<name>(...)` calls
+  were all unresolved; now 77 are exact (`datetime2string` 74 →
+  krx/__init__.py:9, `get_nearest_business_day_in_a_week` 3 → :18) and the
+  75 that only the stars bind stay unresolved. Across the whole index
+  exactly those 77 relations changed (exact 888 → 965, unresolved 1744 →
+  1667, objects 2908 both). pykrx's checkout was clean before and after.
+- **Fixture.** `import_facades/star_facade/__init__.py` (a `def shadowed`,
+  then `from .rates import *`, then `def to_text`), `star_facade/rates.py`
+  and `star_consumer.py`, calling through `from . import star_facade` and
+  `import … as facade_alias`. `TestCumulativePythonStarFacadeKeepsItsOwnLaterDeclarations`:
+  both `to_text` calls exact, `get_index` and `shadowed` unresolved; it fails
+  with the old parser (to_text unresolved) and when any binding of a star
+  module resolves whatever its position (shadowed becomes the facade's).
+  `StarOnly` stays unresolved in the existing facade test.
+- **Equivalents.** TypeScript `export *` plus an own export through
+  `import * as` (`src/facade-exports/star-*.ts`,
+  `TestCumulativeJSTSStarBarrelKeepsItsOwnExport`) and Clojure `:refer :all`
+  plus an own `defn` through an alias (`example.facade`, `example.rates`,
+  core's `facade-text`, asserted in `TestClojureFixtureInventoryAndNativeGraph`)
+  already resolved: both expectations are new, with no production change,
+  and each fails when its fixture drops the `export *` or `:refer :all`. C
+  reuses `kvd.h` (includes loop.h and strbuf.h, declares `kvAssertFail`,
+  called exactly from kvd.c's `acceptHandler`). Go has no wildcard
+  re-export: not applicable. Revert and mutation log: `star-fix/revert.log`.
+
 ## 2026-09-28 — "No tests" and "unused" said only what the report knows
 
 - Scope: two of the three wrong claims a blind judge found in a newcomer's

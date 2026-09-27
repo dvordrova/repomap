@@ -34,6 +34,7 @@ func TestClojureFixtureInventoryAndNativeGraph(t *testing.T) {
 	}
 	assertClojureJavaStaticCalls(t, index)
 	assertClojureAnonymousArgumentCall(t, index)
+	assertClojureReferAllKeepsTheNamespacesOwnVar(t, index)
 	adaptertest.AssertExecutionScope(t, index, graph, "src/example/core.clj", 19, programindex.ObjectModule)
 	adaptertest.AssertSQLQueryFacts(t, index, "src/example/core.clj", map[string]string{"SELECT id FROM direct_rows": "direct_rows", "DROP TABLE IF EXISTS %s": "", "SELECT 0 AS a": ""}, "create %s dir")
 	assertOneStatementPerCall(t, index)
@@ -77,6 +78,40 @@ func assertClojureJavaStaticCalls(t *testing.T, index programindex.Index) {
 	}
 	if !slices.Equal(calls["example.core/new-id"], []string{"invokes_external clojure.core/str", "calls java.util.UUID/randomUUID"}) {
 		t.Fatalf("new-id's static call: %v", calls["example.core/new-id"])
+	}
+}
+
+// Python's star facade in Clojure: example.facade refers every var of
+// example.rates (`:refer :all`) and defines its own to-text, which core calls
+// through an alias. The alias reaches the facade's own var, and the bare
+// index-of the facade calls is the referred var of example.rates.
+func assertClojureReferAllKeepsTheNamespacesOwnVar(t *testing.T, index programindex.Index) {
+	t.Helper()
+	byID := map[string]programindex.Object{}
+	for _, object := range index.Objects {
+		byID[object.ID] = object
+	}
+	var calls []string
+	for _, relation := range index.Relations {
+		from := byID[relation.FromID].Name
+		if relation.Kind != programindex.RelationCalls || from != "example.core/facade-text" && from != "example.facade/to-text" {
+			continue
+		}
+		call := from + " " + string(relation.Resolution)
+		for _, id := range relation.ToIDs {
+			if to := byID[id]; to.Location != nil {
+				call += " " + to.Location.Path + ":" + to.Name
+			}
+		}
+		calls = append(calls, call)
+	}
+	slices.Sort(calls)
+	want := []string{
+		"example.core/facade-text exact src/example/facade.clj:example.facade/to-text",
+		"example.facade/to-text exact src/example/rates.clj:example.rates/index-of",
+	}
+	if !slices.Equal(calls, want) {
+		t.Fatalf("calls through :refer :all = %q, want %q", calls, want)
 	}
 }
 

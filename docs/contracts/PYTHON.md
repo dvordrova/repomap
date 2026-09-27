@@ -119,6 +119,31 @@ returns and unrelated same-named classes gain no receiver authority. No module
 is imported or executed to discover exports. TypeScript uses the compiler's
 existing barrel-export and declared-return resolution for the comparable case.
 
+A module-level star import (`from m import *`) may bind any name where it
+runs, under a branch too, and its names are not followed. The adapter records
+where each star import and each export binding of a module is written, as
+statement positions (line, then column). A member of a module with star
+imports (`pkg.name`, `from pkg import name`, `import pkg as alias` then
+`alias.name`) resolves as it would without the stars only when the module
+writes it once, unconditionally, in a statement that starts after its last
+star import: a `def`, a `class`, an assignment or an explicit import there is
+the module's own. A name only a star could bind, and a name written before a
+later star (which may rebind it), stay unresolved, as does a child module
+of such a package that the package does not bind itself. pykrx's
+`krx/__init__.py` star-imports four subpackages and then defines
+`datetime2string` and `get_nearest_business_day_in_a_week`: their 77 calls
+through `krx` are exact, while the 75 calls to names only its stars bind stay
+unresolved. The cumulative fixture's `import_facades/star_facade` and
+`star_consumer.py` pin both sides, beside `star.py`'s `StarOnly`, which stays
+unresolved. The native equivalents resolve the same shape already: TypeScript
+`export *` plus the module's own export, through `import * as`
+(`src/facade-exports/star-*.ts`), and Clojure `:refer :all` plus the
+namespace's own `defn`, through an alias (`example.facade`), each with its
+expectation; a C header that includes another and declares its own function
+is the fixture's `kvd.h` and `kvAssertFail`, called exactly from `kvd.c`
+(C contract tests). Go has no wildcard re-export, so a package member is
+always a declaration of that package: not applicable.
+
 A source-ordered, directly annotated parameter may supply an existing locally resolved class method as the native target, including an explicitly imported facade class. Annotations and literal values retain distinct provenance. Reassignment or conditional assignment clears that binding; unknown, union and unresolved quoted types remain unresolved. This adds no executed import, body analysis, framework inference or exact runtime dispatch.
 
 Synchronous iteration over a directly annotated homogeneous collection retains

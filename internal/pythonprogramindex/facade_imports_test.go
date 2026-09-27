@@ -1,8 +1,10 @@
 package pythonprogramindex
 
 import (
+	"fmt"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -114,6 +116,50 @@ func TestCumulativePythonExplicitFacadesRetainFactoryCallbackAuthority(t *testin
 		return
 	}
 	t.Fatal("callback declaration is missing from the consuming graph")
+}
+
+// A package facade that star-imports its rates and then defines its own
+// to_text keeps that function: a binding a module writes once,
+// unconditionally, after its last star import is its own, as pykrx's
+// krx.datetime2string is (74 calls were unresolved because krx/__init__.py
+// star-imports four subpackages first). A name only the star binds, or one
+// the module wrote before a star that may rebind it, stays unresolved, and
+// so does star.py's StarOnly (PYTHON).
+func TestCumulativePythonStarFacadeKeepsItsOwnLaterDeclarations(t *testing.T) {
+	const prefix = "src/fixture_app/import_facades/"
+	repository := pythonCorpus(t, cumulativePythonSources(t, prefix+"__init__.py", prefix+"star_facade/__init__.py", prefix+"star_facade/rates.py", prefix+"star_consumer.py"))
+	index, err := buildOneForTest(t.Context(), repository, targetOfKind(t, repository, pythontarget.KindLibrary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]string{}
+	for _, object := range index.Objects {
+		if object.Location != nil && object.Kind == programindex.ObjectFunction {
+			declared[object.ID] = strings.TrimPrefix(object.Location.Path, prefix) + ":" + object.Name
+		}
+	}
+	var calls []string
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationCalls || relation.Location == nil || relation.Location.Path != prefix+"star_consumer.py" {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			call := fmt.Sprintf("%d %s %s", relation.Location.Line, pattern.Selector, relation.Resolution)
+			for _, id := range relation.ToIDs {
+				call += " " + declared[id]
+			}
+			calls = append(calls, call)
+		}
+	}
+	want := []string{
+		"7 to_text exact star_facade/__init__.py:to_text",
+		"7 to_text exact star_facade/__init__.py:to_text",
+		"13 get_index unresolved",
+		"13 shadowed unresolved",
+	}
+	if !slices.Equal(calls, want) {
+		t.Fatalf("calls through the star facade = %q, want %q", calls, want)
+	}
 }
 
 func TestCumulativePythonTypedParameterKeepsPossibleOriginalMethod(t *testing.T) {

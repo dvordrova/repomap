@@ -1,5 +1,5 @@
 (ns example.core
-  (:require [example.service :as service] [clojure.string :as str]) (:import (java.util ArrayList)))
+  (:require [example.service :as service] [clojure.string :as str] [example.facade :as facade]) (:import (java.util ArrayList)))
 
 (defn -main [& names]
   (service/deliver! "greeting.txt" (service/greet (first names))))
@@ -123,3 +123,7 @@
 ;; One statement handed twice to one call, apart only in spacing, is one
 ;; statement at that call.
 (defn zero-rows [] (str "SELECT 0 AS a" " UNION ALL" " SELECT 0 AS a"))
+
+;; example.facade refers every var of example.rates and then defines its own
+;; to-text: the alias reaches the facade's var.
+(defn facade-text [day] (facade/to-text day))
