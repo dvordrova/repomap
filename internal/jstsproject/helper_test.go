@@ -1314,6 +1314,7 @@ func assertCumulativeJSTSDecoratorOwners(t *testing.T, index programindex.Index,
 		t.Fatalf("%s LevelController span %d-%d", source, first, last)
 	}
 	var got []string
+	inlineArrows := 0
 	for _, relation := range index.Relations {
 		if relation.Location == nil || relation.Location.Path != source || relation.Location.Line < first || relation.Location.Line > last {
 			continue
@@ -1328,6 +1329,28 @@ func assertCumulativeJSTSDecoratorOwners(t *testing.T, index programindex.Index,
 			}
 			got = append(got, fmt.Sprintf("%+d %s %s from %s", relation.Location.Line-first, relation.Kind, target, names[relation.FromID]))
 		}
+		// The inline arrow a parameter decorator takes, as Python's
+		// `Depends(lambda: ...)`, is an unresolved argument that borrows no
+		// declaration.
+		for _, pattern := range relation.Patterns {
+			if pattern.Selector != "Inject" && pattern.Selector != "forwardRef" {
+				continue
+			}
+			for _, argument := range pattern.Arguments {
+				if len(argument.ObjectIDs) != 0 {
+					t.Fatalf("%s decorator argument borrowed a declaration: %#v", source, argument)
+				}
+				if pattern.Selector == "forwardRef" || relation.Location.Line-first == 5 {
+					if argument.Resolution != programindex.ResolutionUnresolved || argument.ObjectsObserved != 1 {
+						t.Fatalf("%s inline decorator arrow = %#v", source, argument)
+					}
+					inlineArrows++
+				}
+			}
+		}
+	}
+	if inlineArrows != 2 {
+		t.Fatalf("%s inline decorator arrows = %d, want 2", source, inlineArrows)
 	}
 	sort.Strings(got)
 	want := []string{

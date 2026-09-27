@@ -131,6 +131,10 @@ seed.
   name as written as its selector and the body's spelling as a
   `macro_expansion` witness.
 - A function passed as an argument is `passes_callback` bound to that argument.
+  An assignment target's index and receiver are read like any expression, so
+  a function passed to a call there (`marks[fold(c, n, both)] = 1`, `+=`,
+  `rowFor(both)->exit = 1`) is a callback of the assigning function. C has no
+  lambdas, so Python's store-target and header lambdas have no equivalent.
 - A function stored into a field, variable or array (initializer rows,
   assignments, and a parameter a function stores joined with what its callers
   pass) is `passes_callback` with a primary `c_function_pointer_store` witness,
