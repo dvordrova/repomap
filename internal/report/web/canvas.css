@@ -213,7 +213,7 @@
 .flow-card-fold>.flow-card-row{display:flex;align-items:baseline;flex-wrap:wrap}
 .flow-card-say{font:400 13px/21px system-ui;color:#39455a}
 .flow-card-fold-parts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));column-gap:18px;padding:0 0 2px 12px}
-.flow-card-fold-parts details[open]{grid-column:1/-1}
+.flow-card-fold-parts details{margin:0}.flow-card-fold-parts details[open]{grid-column:1/-1}
 .flow-card-fold-parts summary{display:flex;justify-content:space-between;gap:8px;cursor:pointer;color:#4f3aa3;font:400 12.5px/20px system-ui;list-style:none}
 .flow-card-fold-parts summary::-webkit-details-marker{display:none}
 .flow-card-fold-parts summary>span::before{content:'▸';display:inline-block;width:13px;color:#66758a;font-size:10px}
