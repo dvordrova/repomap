@@ -220,9 +220,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   heavier outline. Emphasis recedes the rest instead of greying what is
   pointed at: the subject takes the existing dark (a part its outline, a
   frame its border at the arrows' 2.5px), the parts across its dark arrows
-  take the same outline, a pointed frame's own parts stay as they are, and
-  every part, frame and arrow the emphasis does not involve recedes to 40%
-  opacity. No veil or tile fill marks the pointed thing: a grey veil on the
+  take the same outline, a pointed frame's own parts and the arrows between
+  them stay as they are, and every part, frame and arrow the emphasis does
+  not involve recedes to 40% opacity. No veil or tile fill marks the pointed thing: a grey veil on the
   pointed area's parts and a grey fill on the pointed declaration had made
   them look deader than their outlined neighbours.
   Component frames retain their language, kind, role and purpose above their parts. Colour never replaces
@@ -469,7 +469,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   cut to 190px, Redis's names read "_dictStringCopyHTKe…". The tiles are
   drawn at a quarter of the card's scale, or smaller when a quarter does not
   hold them all whole: nothing is counted away, and a large part is a larger
-  drawing to pan (Data structures' "+59" had hidden the list struct). The
+  drawing to pan (at 1440×900 Data structures had drawn 40 tiles and
+  counted 63 away as "+63"). The
   part's name stands over them at the same screen size at any such scale.
   Placed by link column first, the repomap self-run's parts hid 88 of their
   256 keys while drawing declarations listed after them. The zoom button

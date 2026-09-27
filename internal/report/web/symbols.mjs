@@ -75,8 +75,8 @@ export function symbolBlocks(symbols,links,columns,height,rank=i=>i){
 // among the dictionary's. The layer is drawn at 1/divisor of the card's
 // scale, the smallest divisor from `least` at which every tile fits whole,
 // so nothing is counted away: a large part is a larger map to pan when read.
-// Cut to 190px, Redis's names read "_dictStringCopyHTKe…" and its "+59" hid
-// the list struct.
+// Cut to 190px, Redis's names read "_dictStringCopyHTKe…", and at 1440x900
+// its Data structures drew 40 tiles and counted 63 away.
 export const tileRoom={header:20,inset:8,columnGap:36};
 // The part's name stands in a band over its tiles, as large on screen as at
 // the quarter scale whatever the divisor: 20 card units at a quarter.
