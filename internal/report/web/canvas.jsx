@@ -944,7 +944,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       overviewFit=false;hover.pause();arrive([node.id]);locationSubject=node.id;
       commitCamera(instance.setViewport(deepViewport(node,Math.min(maxZoom,Math.max(readable,Math.min(fit,readable*1.125))),rect.width,rect.height),{duration:420}),node.id);
     }
-    useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
+    useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,view.scope,overview]);
     // A closed frame stands for the participants hidden inside it.
     // An input group closed: its inputs are not readable yet, its name is.
     const closedGroup=id=>byID.get(id)?.branch==='inputs-part'&&!communicationsOpen.has(id);
@@ -1248,12 +1248,16 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // The reading column's Connections of a frame, drawn by the same rows as
   // the cards into a container the column owns; `open` names the one to open.
   const mounted=new Map();
-  function mountConnections(container,id,open=''){
+  // `choose(part,key)` reads a declaration in the report: a name in the
+  // column's rows is chosen when the part it names lists that declaration
+  // among its own tiles.
+  function mountConnections(container,id,open='',choose=null){
     const groups=frameConnections(id);
     if(!groups.length)return false;
     for(const [element,root] of mounted)if(!element.isConnected){root.unmount();mounted.delete(element);}
     const root=mounted.get(container)||createRoot(container);mounted.set(container,root);
-    flushSync(()=>root.render(<FrameConnections groups={groups} open={open}/>));
+    const chooser=choose&&{go:choose,can:(part,key)=>!!key&&(byID.get(part)?.symbols||[]).some(symbol=>symbol.href===key||symbol.open===key)};
+    flushSync(()=>root.render(<FrameConnections groups={groups} open={open} choose={chooser}/>));
     return true;
   }
   return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,mountConnections,frameConnections,overview:()=>fitOverview(420),update(next){

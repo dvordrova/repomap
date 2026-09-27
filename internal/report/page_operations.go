@@ -367,7 +367,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		id := result.Nodes[i].ID
 		if ref, known := builder.subject(index.Target.ID, operation.SubjectID); known {
 			if name, anchor := builder.subjectDisplay(ref.subject); name != "" {
-				call := pageEdgeCall{Label: "implemented in", Name: name}
+				call := pageEdgeCall{Label: "implemented in", Name: name, Callee: declarationKey(anchor)}
 				if anchor != nil {
 					call.To = anchor.Href
 				}

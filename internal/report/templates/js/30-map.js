@@ -404,6 +404,17 @@ function rmDeclarationRelations(map,node,key,nodes){
       map.previewConnection=function(edge){mapPreview.replaceChildren();var title=document.createElement('strong'),body=document.createElement('div');connectionReading(edge,title,body);mapPreview.append(title,body);mapPreview.hidden=false;inspector.classList.add('has-map-preview');};
     }
     new ResizeObserver(function () { content.dispatchEvent(new Event('scroll')); }).observe(card);
+    // What a reader opens in the reading column comes into view: Redis's
+    // "Source details · 11" under Persistence opened at the column's foot
+    // with three of its five lines below it, and Open all put four of them
+    // there. Only the reader's own click scrolls; a reading restored with
+    // its evidence open keeps its place.
+    content.addEventListener('click',function(event){
+      var summary=event.target.closest&&event.target.closest('summary'),opener=event.target.closest&&event.target.closest('[data-open-all]');
+      var block=summary&&summary.parentElement.tagName==='DETAILS'&&!summary.parentElement.open?summary.parentElement:opener&&opener.closest('details');
+      if(!block||!content.contains(block))return;
+      requestAnimationFrame(function(){if(block.open&&(!opener||rmOpenAllWord(opener.closest('.connection-evidence')||block)==='Close all'))rmRevealOpened(content,block);});
+    });
 
     function sentences(id) {
       edges = map.querySelectorAll('.map-edge');
@@ -700,6 +711,15 @@ function rmDeclarationRelations(map,node,key,nodes){
   }
 })();
 
+// An opened block of a scrolling column is brought into view: the column
+// scrolls by what the block overflows at its foot, and never further than
+// bringing the block's own top (its summary) to the column's top.
+function rmRevealOpened(content,block,room){
+  room=room===undefined?8:room;
+  var box=content.getBoundingClientRect(),at=block.getBoundingClientRect();
+  var shift=Math.min(at.bottom-(box.bottom-room),at.top-(box.top+room));
+  if(shift>0)content.scrollTop+=shift;
+}
 // An evidence list opens every folded line at once, and closes them again;
 // each fold still opens alone, and without scripting. The button says what
 // it will do next, also after folds are opened by hand.

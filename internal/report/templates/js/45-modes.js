@@ -127,6 +127,11 @@
     pages.forEach(function(p){p.hidden=p!==home&&p!==page;});
     placeSearch();showReturn();showLocation();
     for(var p=node;p&&p!==page;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;
+    // A heading reached by a link opens the list it heads: the component
+    // reading's TODOs link landed on its heading at the foot of the page,
+    // "10 markers in 6 files" still closed under it.
+    var list=node.matches?.('h3')&&node.nextElementSibling;
+    if(list&&list.tagName==='DETAILS')list.open=true;
     document.querySelectorAll('.target-picker').forEach(function(p){p.open=false;});
     // Navigation scrolls immediately; the return links and search panel may
     // have changed this height before ResizeObserver gets its next turn.

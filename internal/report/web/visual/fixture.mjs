@@ -42,6 +42,11 @@ if(options.has('symbols')){
   relations.find(r=>r.from==='worker'&&r.to==='save-jobs').calls=[{label:'save calls saveResult',from:'#worker.go-31',to:'#db.go-9'}];
 }
 
+// The request handler calls the worker's handler: the call names the two
+// declarations it joins, as the page data does, and the worker's tiles list
+// the callee.
+if(options.has('reading-names'))relations.find(r=>r.from==='routes'&&r.to==='worker').calls=[{label:'handleCreate calls processJob',from:'#routes.go-20',to:'#worker.go-3',at:'routes.go:20',caller:'#routes.go-5',callee:'#worker.go-3'}];
+
 // A service answering many commands, as Redis's server does: its input
 // collection holds more inputs than read at the scale it opens at.
 if(options.has('many-inputs')){
@@ -109,7 +114,7 @@ const flow=await window.rmCreateFlow(map,stage,records,relations,areas,inputOwne
     map.dataset.openedConnection=`${id} ${key}`;
     const holder=document.createElement('div');holder.dataset.readingConnections='';
     map.querySelector('[data-reading-connections]')?.remove();map.querySelector('.map-inspector-content').appendChild(holder);
-    flow.mountConnections(holder,id,key);
+    flow.mountConnections(holder,id,key,(part,declaration)=>{map.dataset.chosen=`${part} ${declaration}`;});
   },
 });
 map.showWholeMap=()=>{operation='';flow.update({});showReading('');return flow.overview();};

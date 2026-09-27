@@ -2420,6 +2420,14 @@ type pageEdgeCall struct {
 	Of   int    `json:"of,omitempty"`
 	One  bool   `json:"one,omitempty"`
 	Same string `json:"same,omitempty"`
+	// Caller and Callee are the declarations at the call's two ends, keyed
+	// as the page's script keys a declaration (declarationKey): From is
+	// where the call is written and To need not be where the callee is
+	// declared (a joint's To is the accept inside anetAccept). A name in the
+	// reading column reads its declaration by them; either is empty when
+	// that end is no declaration of the report.
+	Caller string `json:"caller,omitempty"`
+	Callee string `json:"callee,omitempty"`
 }
 
 // CallsJSON is the arrow's relations for the page's script.

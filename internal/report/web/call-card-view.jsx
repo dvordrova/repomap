@@ -6,6 +6,24 @@ const stop=event=>event.stopPropagation();
 function Link({href,title,children}){
   return href?<a href={href} title={title||undefined} target="_blank" rel="noopener" onClick={stop}>{children}</a>:<span title={title||undefined}>{children}</span>;
 }
+const modified=event=>event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||event.button!==0;
+// A declaration's name in the reading column reads that declaration in the
+// report, as a click on its tile does; a modifier-click still opens the code
+// it linked to. A name the report has no declaration for is only named.
+// Without a chooser (the canvas's own card) a name stays the link it was.
+// Redis's "anetTcpGeneri…" opened GitHub for a reader who meant to read it.
+function Name({at,href,title,choose,children}){
+  if(!choose)return <Link href={href} title={title}>{children}</Link>;
+  if(!at||!choose.can(at.part,at.key))return <span title={title||undefined}>{children}</span>;
+  const read=event=>{event.stopPropagation();if(href&&modified(event))return;event.preventDefault();choose.go(at.part,at.key);};
+  return href?<a href={href} title={title||undefined} target="_blank" rel="noopener" onClick={read}>{children}</a>
+    :<button type="button" className="flow-card-name" title={title||undefined} onClick={read}>{children}</button>;
+}
+// Once names read declarations, a row's code is its own explicit link:
+// where the call is written.
+function OpenCode({href,title}){
+  return href?<a className="flow-card-code" href={href} title={title||undefined} target="_blank" rel="noopener" onClick={stop}>{t('Open code ↗')}</a>:null;
+}
 // The words between a caller and its callee: an arrow for a call, the
 // relation's own words for anything else ("passes callback").
 const verb=kind=>kind==='calls'||kind==='implemented in'?'→':kind.replace(/_/g,' ');
@@ -37,15 +55,15 @@ function foldWords(fold){
 // A part's own card leaves out the heading of calls made from the part
 // itself (`own`), and a relation with no call of its own that would only
 // name the heading above it again says nothing more.
-export function CallRows({card,sticky=true,own=''}){
-  return <div className={`flow-card-groups ${sticky?'flow-card-sticky':''}`}>
+export function CallRows({card,sticky=true,own='',choose=null}){
+  return <div className={`flow-card-groups ${sticky?'flow-card-sticky':''} ${choose?'flow-card-reading':''}`}>
     {card.groups.map(group=><section key={group.id||'-'} data-call-group={group.id}>
       {group.id&&group.id!==own&&<h4 className="flow-card-group"><span>{group.name}</span><b>{group.count}</b></h4>}
       {group.folds.map(fold=><div key={fold.caller+fold.fold} className="flow-card-fold">
-        <p className="flow-card-row"><Link href={fold.site}>{fold.caller}</Link><i>{verb(fold.kind)}</i><span className="flow-card-say">{foldWords(fold)}</span></p>
+        <p className="flow-card-row"><Name at={fold.callerAt} href={fold.site} choose={choose}>{fold.caller}</Name><i>{verb(fold.kind)}</i><span className="flow-card-say">{foldWords(fold)}</span>{choose&&<OpenCode href={fold.site}/>}</p>
         <div className="flow-card-fold-parts">{fold.parts.map(part=><details key={part.id} onClick={stop}>
           <summary><span>{part.name}</span><b>{part.count}</b></summary>
-          <p>{part.rows.map((row,i)=><React.Fragment key={i}>{i>0&&' '}<Link href={row.href}>{row.callee}</Link></React.Fragment>)}</p>
+          <p>{part.rows.map((row,i)=><React.Fragment key={i}>{i>0&&' '}<Name at={row.calleeAt} href={row.href} choose={choose}>{row.callee}</Name></React.Fragment>)}</p>
         </details>)}</div>
       </div>)}
       {group.pairs.map(pair=><div key={pair.id} className="flow-card-pair-rows">
@@ -53,11 +71,11 @@ export function CallRows({card,sticky=true,own=''}){
         <div className="flow-card-rows">{pair.rows.map((row,i)=>{
           if(row.kind==='other'){
             if(!row.at&&!row.otherHref&&(row.other===pair.name||row.other===group.name))return null;
-            return <p key={i} className="flow-card-row flow-card-other"><Link href={row.otherHref}>{row.other}</Link>{row.at&&<em>{row.at}</em>}</p>;
+            return <p key={i} className="flow-card-row flow-card-other">{choose?<span>{row.other}</span>:<Link href={row.otherHref}>{row.other}</Link>}{row.at&&<em>{row.at}</em>}{choose&&<OpenCode href={row.otherHref} title={row.at}/>}</p>;
           }
           const again=i>0&&pair.rows[i-1].caller===row.caller&&pair.rows[i-1].kind!=='other';
-          return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.kind==='implemented in'?row.caller:<Link href={row.site} title={row.at}>{row.caller}</Link>}</span>
-            <i>{verb(row.kind)}</i><Link href={row.calleeHref}>{row.callee}</Link></p>;
+          return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.kind==='implemented in'?row.caller:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
+            <i>{verb(row.kind)}</i><Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>{choose&&<OpenCode href={row.site||row.calleeHref} title={row.at}/>}</p>;
         })}</div>
       </div>)}
     </section>)}
@@ -67,13 +85,13 @@ export function CallRows({card,sticky=true,own=''}){
 // A frame's connections in the reading column: one line per frame or
 // participant at the other end and direction, its calls' count and the
 // parts they are made from, opening to the same rows as its card.
-export function FrameConnections({groups,open}){
+export function FrameConnections({groups,open,choose=null}){
   return <section className="map-frame-connections">
     <h5>{t('Connections')}</h5>
     {groups.map(group=><details key={group.key} data-connection-key={group.key} open={group.key===open} data-reading-anchor={group.key===open?'':undefined}>
       <summary><span className="map-connection-peer">{group.incoming?'←':'→'} {group.title}</span><b>{group.card.total}</b>
         {group.card.from.length>0&&<small>{group.card.from.map(part=>`${part.name} ${part.count}`).join(' · ')}</small>}</summary>
-      <CallRows card={group.card} sticky={false}/>
+      <CallRows card={group.card} sticky={false} choose={choose}/>
     </details>)}
   </section>;
 }

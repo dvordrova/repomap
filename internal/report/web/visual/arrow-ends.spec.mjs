@@ -73,6 +73,40 @@ test('a click on an arrow end opens its frame\'s connection in the reading',asyn
   expect(errors).toEqual([]);
 });
 
+// A name in a connection of the reading column reads that declaration in
+// the report, as its tile does: Redis's "anetTcpGeneri…" opened GitHub for a
+// reader who meant to read it. The row's code is its own explicit link, and
+// a modifier-click on a name still opens the code it linked to.
+test('a name in the reading\'s connection reads its declaration, and its code is an explicit link',async({page,context})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/?both-parts&symbols&reading-names');
+  const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
+  await map.evaluate(map=>map.focusNode('queue'));
+  await settle(map);
+  await page.locator('[data-map-zoom="0.8"]').click();await settle(map);
+  await page.mouse.move(1430,890);
+  await pointAt(page,page.locator('[data-frame-title="execution"]>strong'));
+  const all=end(page,'boundary:execution:in:requests');
+  await pointAt(page,all);
+  await all.locator('button').click();
+  const row=page.locator('[data-reading-connections] details[open] .flow-card-row',{hasText:'processJob'});
+  await expect(row).toHaveText('handleCreate→processJobOpen code ↗');
+  await expect(row.locator('a',{hasText:'Open code ↗'})).toHaveAttribute('href','#routes.go-20');
+  await expect(row.locator('a,button',{hasText:'handleCreate'}),'a caller the report holds no declaration for is only named').toHaveCount(0);
+  const pages=[];context.on('page',opened=>pages.push(opened));
+  await pointAt(page,row.locator('a',{hasText:/^processJob$/}));
+  await page.mouse.down();await page.mouse.up();
+  await expect(map).toHaveAttribute('data-chosen','worker #worker.go-3');
+  await page.waitForTimeout(300);
+  expect(pages,'the click read the declaration instead of opening its code').toHaveLength(0);
+  await map.evaluate(map=>{delete map.dataset.chosen;});
+  const code=context.waitForEvent('page');
+  await page.keyboard.down('Shift');await page.mouse.down();await page.mouse.up();await page.keyboard.up('Shift');
+  await code;
+  expect(await map.getAttribute('data-chosen'),'a modifier-click opens the code instead').toBeNull();
+  expect(errors).toEqual([]);
+});
+
 // Where an arrow meets the box it points into, 5px back from the tip along
 // the arrow: a point on the drawn head.
 const head=(page,edge,end='end')=>page.evaluate(({edge,end})=>{

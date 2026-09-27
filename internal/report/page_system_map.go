@@ -243,7 +243,7 @@ func (view *pageView) SystemMap() *pageMap {
 				if _, ok := positions[from]; row.MapGroup != "" && ok {
 					edge := pageMapEdge{From: from, To: tile, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
 					if row.Caller != "" && row.External != "" && !strings.ContainsAny(row.Caller+row.External, " \t") {
-						edge.Calls = []pageEdgeCall{{Label: row.Caller + " calls " + row.External, From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text}}
+						edge.Calls = []pageEdgeCall{{Label: row.Caller + " calls " + row.External, From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text, Caller: declarationKey(&row.CallerAnchor)}}
 					}
 					result.Edges = append(result.Edges, edge)
 				}

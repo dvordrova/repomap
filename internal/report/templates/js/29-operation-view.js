@@ -21,7 +21,15 @@ function rmSystemProjection(nodes, edges) {
     }else if(id){edges.forEach(function(e){if(selected.has(e.from)||selected.has(e.to)){active.add(e.from);active.add(e.to);}});}
     return {selected:selected,active:active,path:path,entry:operation||''};
   }
-  return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection};
+  // Whether a thing read while an input is pinned stands off that input's
+  // path: neither it nor a part inside it is an end of the path's arrows.
+  // It is a fact of the reading, not of what the pointer is over.
+  function outside(id,operation){
+    if(!id||!operation||id===operation)return false;
+    var active=selection('',operation).active;
+    return !active.has(id)&&!leaves(id).some(function(leaf){return active.has(leaf);});
+  }
+  return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection,outside:outside};
 }
 // A part's reading goes description, the code to open, then its
 // connections: Command dispatch listed some 5,000 characters of connections
@@ -76,14 +84,18 @@ function rmReachingInputs(n,reaching,owner,choose){
 // An input's path in its reading (owner's 3c): the chains it shares with
 // the other inputs a dispatch site chooses between, each folded into one
 // box, then its own steps from its handler, a callee under its caller. A
-// step is its declaration's name, a link into its code with no line
-// number; the part it stands in heads it where the part changes. The page
-// data computes both (page_input_path.go); this only draws them.
-function rmInputPathSection(path,partNode,choose){
+// step is its declaration's name with no line number; the part it stands
+// in heads it where the part changes. The page data computes both
+// (page_input_path.go); this only draws them. A name of the input's own
+// steps is read in the report (`read(part,key)`), as its tile is; a
+// modifier-click still opens its code, which is one explicit link on its
+// line. getCommand and addReply had opened GitHub for a reader following
+// GET's path. The shared chains' names stay links into their code.
+function rmInputPathSection(path,partNode,choose,read){
   var section=rmEl('section','system-input-path');
   var own=path.own||[],shared=path.shared||[];
   section.appendChild(rmEl('h5','',rmT('Path')));
-  function steps(list,indented){
+  function steps(list,indented,read){
     var box=rmEl('div','system-path-steps'),part='';
     list.forEach(function(step){
       var depth=indented?Math.min(step.depth||0,8):0;
@@ -94,11 +106,21 @@ function rmInputPathSection(path,partNode,choose){
       }
       part=step.part_title||part;
       var line=rmEl('div','system-path-step');line.style.marginLeft=depth*10+'px';
-      var link=repomapMembers.sourceLink({Href:step.href,Open:step.open,Text:step.name,NoSource:step.no_source});
+      var key=read&&(step.href||step.open),at=key&&partNode(step.part);
+      // A name with no drawn part to read it in is only named.
+      var link=key&&!at?rmEl('span','',step.name):repomapMembers.sourceLink({Href:step.href,Open:step.open,Text:step.name,NoSource:step.no_source});
       if(step.source)link.title=step.source;
+      if(at)link.addEventListener('click',function(event){
+        if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+        event.preventDefault();event.stopPropagation();read(at,key);
+      });
       line.appendChild(link);
       if(step.read)line.appendChild(rmEl('span','possible',' · '+rmT('read')));
       else if(step.possible)line.appendChild(rmEl('span','possible',' · '+rmT('possible')));
+      if(key){
+        var code=repomapMembers.sourceLink({Href:step.href,Open:step.open,Text:rmT('Open code ↗')});code.className='system-path-code';
+        line.append(document.createTextNode(' · '),code);
+      }
       box.appendChild(line);
     });
     return box;
@@ -111,7 +133,7 @@ function rmInputPathSection(path,partNode,choose){
     box.appendChild(rmEl('p','meta',chain.through+' → '+rmT('one of {0}',chain.of)));
     section.appendChild(box);
   });
-  if(own.length)section.appendChild(steps(own,true));
+  if(own.length)section.appendChild(steps(own,true,read));
   return section;
 }
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
@@ -125,7 +147,7 @@ function rmInputPathSection(path,partNode,choose){
   // Whether the camera may stand away from the pinned input's own tile: on its
   // path's start, or on a part read since.
   var inputAway=false;
-  var searchValue='',filterValue='',selectionRevision=0,visual=null;
+  var searchValue='',filterValue='',selectionRevision=0;
   var numbered=true;
   map.querySelector('[data-operation-controls]')?.remove();
   var bar=rmEl('div','system-controls'),search=rmEl('input','system-search'),filter=rmEl('select','system-filter'),clear=rmEl('button','',rmT('Clear selection'));
@@ -177,8 +199,6 @@ function rmInputPathSection(path,partNode,choose){
       if(scope||inputAway){var start=rmEl('button','system-input-start',rmT('Show input'));start.type='button';start.addEventListener('click',function(){surface?.clearHover();select(operation,true,null,'input');});context.appendChild(start);}
       clear.textContent=rmT('Leave input path');controls?.append(context,clear);
     }
-    map.querySelector('.map-reading-outside')?.remove();
-    if(visual?.readingOutside)map.querySelector('.map-inspector-heading')?.appendChild(rmEl('small','map-reading-outside',rmT('Outside this input path')));
     caption.appendChild(colorKey);
   }
   function focusNode(n,center){surface?.focus(n.id,center);}
@@ -291,8 +311,40 @@ function rmInputPathSection(path,partNode,choose){
     });
     return section;
   }
+  // A part read while an input is pinned says, in its heading, that it is
+  // off that input's path, drawn with the reading itself. Drawn from the
+  // canvas's emphasis it came a frame late, and again each time the pointer
+  // left the canvas for the column: Introspection and debugging's list moved
+  // 26 px under a reader's click, and monitorCommand was read for pingCommand.
+  function markOutside(n){
+    var heading=map.querySelector('.map-inspector-heading');if(!heading)return;
+    heading.querySelector('.map-reading-outside')?.remove();
+    if(projection.outside(n.id,operation?.id))heading.appendChild(rmEl('small','map-reading-outside',rmT('Outside this input path')));
+  }
+  // A declaration named in the reading is read in its part, as a click on
+  // its tile reads it: in place when that part is the one being read.
+  function readDeclaration(part,key){
+    if(!part)return;
+    if(scope===part.id){map.explainSource?.({key:key});return;}
+    map.revealNode?.(part,false,{key:key});
+  }
+  // The handler an input's reading names ("handled by getCommand") is read
+  // in its part, as the path's steps are, when that part lists it; a
+  // modifier-click still opens its code.
+  function readsHandler(n,card){
+    var name=card.querySelector('.map-card-handler>a'),part=byID[projection.inputOwner[n.id]],key=n.dataset.handlerSource||n.dataset.handlerOpen;
+    if(!name||!part||part.dataset.activation||!key)return;
+    var symbols=[];try{symbols=JSON.parse(part.dataset.symbols||'[]');}catch(_){}
+    if(!symbols.some(function(symbol){return symbol.href===key||symbol.open===key;}))return;
+    name.addEventListener('click',function(event){
+      if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+      event.preventDefault();event.stopPropagation();readDeclaration(part,key);
+    });
+  }
   map.addEventListener('repomap:inspect',function(e){
     var n=e.detail.node,card=e.detail.card;
+    markOutside(n);
+    if(n.dataset.activation)readsHandler(n,card);
     entityWrites(n,card);
     // What an area is made of comes first, under its description (owner's 3a).
     if(n.dataset.branch==='area'){var composition=areaComposition(n),intro=card.querySelector('.map-card-intro');var actions=intro?.querySelector(':scope>.map-card-actions');if(composition&&actions)actions.before(composition);else if(composition&&intro)intro.appendChild(composition);}
@@ -302,7 +354,7 @@ function rmInputPathSection(path,partNode,choose){
     var frameConnections=null;
     if(n.dataset.branch==='area'||n.dataset.branch==='component'){
       frameConnections=rmEl('div','map-frame-connections-holder');
-      if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'')){
+      if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'',function(part,key){readDeclaration(byID[part],key);})){
         (card.querySelector('.map-area-composition')||card.querySelector('.map-card-intro'))?.after(frameConnections);
       }else frameConnections=null;
     }
@@ -353,7 +405,7 @@ function rmInputPathSection(path,partNode,choose){
     var inputPath=null;try{inputPath=n.dataset.inputPath?JSON.parse(n.dataset.inputPath):null;}catch(_){inputPath=null;}
     if(n.dataset.activation&&inputPath){
       // A chosen input's reading opens at its path.
-      var pathSection=rmInputPathSection(inputPath,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},function(part){select(part,true,null,true);});
+      var pathSection=rmInputPathSection(inputPath,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},function(part){select(part,true,null,true);},readDeclaration);
       pathSection.dataset.readingAnchor='';
       card.querySelector('.map-card-intro').after(pathSection);
     }
@@ -438,7 +490,6 @@ function rmInputPathSection(path,partNode,choose){
     try{
       surface=await rmCreateFlow(map,stage,items,relations,projection.areas,projection.inputOwner,{
         select:function(id,center){select(byID[id],true,null,center?'center':false);},
-        emphasis:function(state){visual=state;renderCaption();},
         openConnection:function(id,key){openConnection(id,key);},
         connection:function(group){map.previewConnection?.({from:group.incoming?group.outside:group.area,to:group.incoming?group.area:group.outside,possible:group.relations.some(function(r){return r.possible;}),relations:group.relations});}
       });

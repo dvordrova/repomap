@@ -40,8 +40,6 @@ test('reading an off-path part never colours it as an input participant',()=>{
   const result=emphasis(view,'',leaves,edges);
   assert.deepEqual([...result.activeEdges],['hp']);
   assert.deepEqual([...result.participants],['handler','paint']);
-  assert.equal(result.readingOutside,true);
-  assert.equal(emphasis({...view,scope:'paint'},'',leaves,edges).readingOutside,false);
   const hovered=emphasis(view,'other',leaves,edges);
   assert.equal(hovered.mode,'hover','a pinned input never disables exploring other areas');
   assert.ok(hovered.activeEdges.has('elsewhere'));

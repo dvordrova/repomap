@@ -329,6 +329,15 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-frame-connections .flow-card-fold-parts summary{padding:0;margin:0;font-size:12px;line-height:20px}
 .map-frame-connections .flow-card-fold-parts p{font-size:12px;line-height:18px;word-spacing:4px}
 .map-card .map-frame-connections a{text-decoration:none}.map-card .map-frame-connections a:hover{text-decoration:underline}
+/* In the column a row's names read their declarations and its code is one
+   explicit link at its end, so a row is a line that wraps: in the grid the
+   link had no column, and "anetTcpGeneri…" was cut to fit. */
+.map-frame-connections .flow-card-reading .flow-card-rows{display:block}
+.map-frame-connections .flow-card-reading .flow-card-rows>.flow-card-row{display:block}
+.map-frame-connections .flow-card-reading .flow-card-rows>.flow-card-row>*{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+.map-frame-connections .flow-card-reading .flow-card-again{visibility:visible}
+.map-frame-connections .flow-card-reading .flow-card-row>.flow-card-code{margin-left:6px;font:400 12px/20px system-ui,-apple-system,sans-serif;white-space:nowrap}
+.map-card .flow-card-name{font:inherit;margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;text-align:left}
 /* An input's reading (owner's 3c) carries the Inputs blue of its tile and
    collection, never core's purple: its heading's bar and kind, its links.
    Its path: the chain it shares with other inputs in one pale blue box,
@@ -343,6 +352,7 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-shared-path>p.meta{margin:4px 0;font-size:12px}
 .system-path-steps{font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .system-path-step{overflow-wrap:anywhere}
+.system-path-step>.system-path-code{font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;white-space:nowrap}
 .system-path-step>.possible{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:12px}
 .map-card .system-path-part{display:block;margin-top:6px;padding:0;border:0;border-radius:0;background:none;font:600 12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;color:#204a7b}
 .map-card button.system-path-part{cursor:pointer}.map-card button.system-path-part:hover{text-decoration:underline}

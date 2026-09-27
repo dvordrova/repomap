@@ -18,9 +18,7 @@ export function emphasis(view, hoverArea, leaves, edges, member=null) {
       frame?focus.has(edge.from)!==focus.has(edge.to):(focus.has(edge.from)||focus.has(edge.to))&&own(edge);
     if(active){activeEdges.add(edge.id);participants.add(edge.from);participants.add(edge.to);}
   }
-  const readingOutside=mode==='operation'&&!!view.scope&&!participants.has(view.scope)&&
-    !leaves(view.scope).some(id=>participants.has(id));
-  return {mode,subject,focus,participants,activeEdges,readingOutside};
+  return {mode,subject,focus,participants,activeEdges};
 }
 
 // An arrow end looked at: the parts behind it (or behind its one number
@@ -33,7 +31,7 @@ export function endEmphasis(label,only,edges){
   for(const edge of edges)if(own.has(edge.id)&&(focus.has(edge.from)||focus.has(edge.to))){
     activeEdges.add(edge.id);participants.add(edge.from);participants.add(edge.to);
   }
-  return {mode:'hover',subject:'',focus,participants,activeEdges,readingOutside:false};
+  return {mode:'hover',subject:'',focus,participants,activeEdges};
 }
 
 // Ancestors explain containment only. Never feed them back into the edge

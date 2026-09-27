@@ -228,7 +228,7 @@ func (builder *pageBuilder) connectionCall(connection groupindex.Connection) *pa
 		relation = said.Kind
 	}
 	label := said.FromName + " " + strings.ReplaceAll(relation, " ", "_") + " " + said.ToName
-	call := &pageEdgeCall{Label: label}
+	call := &pageEdgeCall{Label: label, Caller: said.FromKey(), Callee: said.ToKey()}
 	if location := connection.FromLocation; location != nil {
 		from := builder.links.anchor(location.Path, location.Line, location.Column)
 		call.From, call.At = from.Href, from.Text

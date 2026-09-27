@@ -28,17 +28,22 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
       count(into,intoID);
       if(!groups.has(fromID))groups.set(fromID,{id:fromID,name:fromID?nameOf(fromID):'',count:0,folds:new Map(),pairs:new Map()});
       const group=groups.get(fromID);group.count++;
+      // The declarations at the call's ends, as the page data keys them,
+      // each with the part it is read in: the reading column reads a name
+      // there instead of opening its code.
+      const end=(part,key)=>part&&key?{part,key}:null;
       const row={kind,site:call.from||'',at:call.at||'',
         caller:words?words[1]:call.name?nameOf(relation.from):'',
         callee:words?words[3]:call.name||'',calleeHref:words||call.name?call.to||'':'',
+        callerAt:words?end(relation.from,call.caller):null,calleeAt:words||call.name?end(intoID,call.callee):null,
         other:words||call.name?'':nameOf(incoming?relation.from:relation.to),
         otherHref:call.from||call.to||''};
       if(call.fold&&words){
         const foldKey=`${row.caller}\0${call.fold}`;
-        if(!group.folds.has(foldKey))group.folds.set(foldKey,{caller:row.caller,site:row.site,kind,fold:call.fold,of:call.of||0,one:!!call.one,same:call.same||'',count:0,parts:new Map()});
+        if(!group.folds.has(foldKey))group.folds.set(foldKey,{caller:row.caller,callerAt:row.callerAt,site:row.site,kind,fold:call.fold,of:call.of||0,one:!!call.one,same:call.same||'',count:0,parts:new Map()});
         const fold=group.folds.get(foldKey);fold.count++;
         if(!fold.parts.has(intoID))fold.parts.set(intoID,{id:intoID,name:nameOf(intoID),count:0,rows:[]});
-        const part=fold.parts.get(intoID);part.count++;part.rows.push({callee:row.callee,href:row.calleeHref});
+        const part=fold.parts.get(intoID);part.count++;part.rows.push({callee:row.callee,href:row.calleeHref,calleeAt:row.calleeAt});
         continue;
       }
       if(!group.pairs.has(intoID))group.pairs.set(intoID,{id:intoID,name:nameOf(intoID),count:0,rows:[]});

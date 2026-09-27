@@ -310,7 +310,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   larger than a readable camera is entered at the tile. Once the tile is
   framed there is nothing to return to; choosing the tile again returns to
   the path. An input's reading
-  names its handler ("handled by getCommand") as a link into the code. A
+  names its handler ("handled by getCommand"); the name reads that
+  declaration in its part when the part lists it, and a modifier-click
+  opens its code (it had opened GitHub above the same name in the path). A
   registration the model did not explain keeps its own call words as its
   line ("redis.c.redisCommand.proc get in getCommand"); that line is the fact
   said again and is not shown, in the reading or in Find. A chosen input's
@@ -328,11 +330,25 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   steps: every reached part's witness merged into one tree, a callee
   indented under its caller, the branches in the order their parts were
   reached, so nothing claims an order between branches. A step is its
-  declaration's name as a link into its code, with no line number, a read
-  or a possible call marked as elsewhere, and the part it stands in heads
-  it where the part changes, a link to that part's reading when the map
-  draws it. Go computes both in the page data; the browser draws them. The
-  list of the parts on the path is left for an input without one. An
+  declaration's name, with no line number, a read or a possible call
+  marked as elsewhere, and the part it stands in heads it where the part
+  changes, a link to that part's reading when the map draws it. A name of
+  the handler's own steps reads that declaration in its part, as a click on
+  its tile does, and a modifier-click still opens its code; its code is one
+  explicit "Open code ↗" at the end of its line, and a step whose part the
+  map does not draw is only named beside that link. getCommand and addReply
+  had opened GitHub for a reader following GET's path. The shared chains'
+  boxes are left as they were. Go computes both in the page data; the
+  browser draws them. The
+  list of the parts on the path is left for an input without one.
+  A part read while an input is pinned says "Outside this input path" in
+  its heading when neither it nor a part inside it is an end of the path's
+  arrows. The line is drawn with the reading, from the reading's own state,
+  never from what the pointer is over: drawn from the canvas's emphasis it
+  came a frame late and again each time the pointer left the canvas for the
+  column, pushing Introspection and debugging's list 26 px down under a
+  reader's click, and monitorCommand was read for pingCommand. Nothing in
+  the column moves after it is shown except by the reader's own action. An
   up-chevron in
   the reading card's own header closes details, preserving camera and any pinned
   input path; leaving that path remains a separate action.
@@ -816,8 +832,18 @@ then lists its Connections as its arrow ends group them: one line per
 frame or participant at the other end and direction, incoming first, with
 the count of its calls and the parts they are made from, each opening to
 the same rows as the arrow's card; they replace the list of neighbours by
-name. An input collection is named Inputs there, as its canvas heading
-is. Each declaration is one line, as a tile is, a type's fields
+name. In the column a name in those rows reads its declaration in its part,
+as a click on its tile does, and a modifier-click still opens the code it
+linked to; a row's code is one explicit "Open code ↗" at its end, where the
+call is written, and a row wraps with its names whole. The page data names
+the declarations at a call's two ends (`caller`, `callee`, keyed as the
+reading keys a declaration) apart from where the call is written and where
+it lands: redis-cli's joint is written at anet.c:158 and lands at
+anet.c:256, inside anetAccept declared at 248. A name whose part lists no
+such declaration is only named. The canvas's own card keeps its links:
+Redis's "anetTcpGeneri…" in the column had opened GitHub for a reader who
+meant to read it. An input collection is named Inputs there, as its
+canvas heading is. Each declaration is one line, as a tile is, a type's fields
 on a line under it, and a key type the model explained keeps its mark and
 its fields: a bordered box each had put Client connections' callers some
 1,700 px further down the reading. The reading column does not repeat the source index, which
@@ -848,7 +874,14 @@ in its own words keeps them. Rows of one caller and one relation kind in
 one evidence list fold into one line with their count and callees, each
 row inside it with its sources: Client connections and replies listed
 "cmdTable calls …" 97 times. A list with folds has one "Open all" control
-that opens and closes them together. Inputs reaching this part is
+that opens and closes them together. What a reader opens in the reading
+column (Source details, a fold, Open all, any disclosure) comes into view:
+the column scrolls by what it overflows at the column's foot, and no
+further than bringing its summary to the column's top; closing scrolls
+nothing, and a reading restored with its evidence open keeps its place.
+Redis's "Source details · 11" under Persistence opened at the column's foot
+with three of its five lines below it, and Open all put four there.
+Inputs reaching this part is
 collapsed with its count. The reading column stands beside the map's
 controls and key as well as its canvas and takes their height, with the
 canvas keeping its own: 695 px of a 1440×900 window instead of 610. Only
@@ -915,7 +948,10 @@ map links resolve to the same common canvas. Answers, component reference and
 repository material open below that mounted canvas, and each has a direct
 return to it. Component sidebar links expose the existing flow, configuration,
 data, core, dependencies, dynamic execution, coverage and TODO sections when
-present. The redundant single-component entrance is not generated alongside
+present. A link to a section's heading opens the sections holding it and
+the list the heading heads: the TODOs link landed on its heading at the
+foot of the page with "10 markers in 6 files" still closed under it.
+The redundant single-component entrance is not generated alongside
 the common canvas. The repository summary and useful links remain, with no
 "Understand this repository" or visible "Starting points" label.
 The introductory sentence has no model badge or source popover. Its complete

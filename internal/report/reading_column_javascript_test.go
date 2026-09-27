@@ -85,6 +85,115 @@ folds[1].open=folds[2].open=true;listeners.toggle({target:folds[2]});assert.equa
 `)
 }
 
+// Redis's "Source details · 11" under Persistence opened at the column's
+// foot with three of its five lines below it, and Open all put four there.
+// What the reader opens in the column scrolls into view, no further than
+// bringing its summary to the column's top; closing scrolls nothing.
+func TestWhatAReaderOpensInTheColumnComesIntoView(t *testing.T) {
+	reveal := systemJSPiece(t, "30-map.js", "function rmRevealOpened(", "// An evidence list opens every folded line")
+	word := systemJSPiece(t, "30-map.js", "function rmOpenAllWord(", "(function(){")
+	listen := systemJSPiece(t, "30-map.js", "    content.addEventListener('click',function(event){", "    function sentences(")
+	runSystemJS(t, reveal+word+`
+let frames=[];const requestAnimationFrame=f=>frames.push(f),run=()=>{const now=frames;frames=[];now.forEach(f=>f());};
+const content={scrollTop:0,getBoundingClientRect:()=>({top:100,bottom:600}),contains:()=>true,addEventListener(kind,f){this[kind]=f;}};
+// A block whose summary stands at 500 and foot at 900 before any scroll.
+const block=(top,bottom,open=false)=>({tagName:'DETAILS',open,getBoundingClientRect:()=>({top:top-content.scrollTop,bottom:bottom-content.scrollTop})});
+const summaryOf=details=>({parentElement:details,closest:s=>s==='summary'?summaryOf(details):null});
+`+listen+`
+const evidence=block(500,900);
+content.click({target:summaryOf(evidence)});evidence.open=true;run();
+assert.equal(content.scrollTop,308,'the opened block is brought whole into the column');
+const tall=block(500,2000);content.scrollTop=0;
+content.click({target:summaryOf(tall)});tall.open=true;run();
+assert.equal(content.scrollTop,392,'a block taller than the column stops at its summary');
+content.scrollTop=0;content.click({target:summaryOf(tall)});tall.open=false;run();
+assert.equal(content.scrollTop,0,'closing scrolls nothing');
+const shown=block(200,400);content.click({target:summaryOf(shown)});shown.open=true;run();
+assert.equal(content.scrollTop,0,'a block already in view stays');
+// Open all: the list comes into view once its folds are open, not when closed.
+const folds=[{open:false},{open:false}],list=block(500,1400,true);list.querySelectorAll=s=>s===':scope>.conn-fold'?folds:[];
+const button={closest:s=>s==='[data-open-all]'?button:s==='details'||s==='.connection-evidence'?list:null};
+content.click({target:button});folds.forEach(f=>f.open=true);run();
+assert.equal(content.scrollTop,392,'Open all brings the list to the column top');
+content.scrollTop=0;content.click({target:button});folds.forEach(f=>f.open=false);run();
+assert.equal(content.scrollTop,0,'Close all scrolls nothing');
+`)
+}
+
+// A part read while an input is pinned says, in its heading, that it is off
+// the input's path. Drawn from the canvas's emphasis, the line came a frame
+// late and again each time the pointer left the canvas for the column,
+// pushing the list 26 px under the reader's click: monitorCommand was read
+// for pingCommand. It is a fact of the reading, drawn with the reading.
+func TestAPartOffThePinnedInputSaysSoWithItsReading(t *testing.T) {
+	projection := systemJSPiece(t, "29-operation-view.js", "function rmSystemProjection(", "// A part's reading goes description")
+	mark := systemJSPiece(t, "29-operation-view.js", "  function markOutside(n){", "  // A declaration named in the reading")
+	runSystemJS(t, fakeElements+projection+`
+const nodes=[{id:'server',children:['runtime']},{id:'runtime',children:['clients','strings','debug']},{id:'clients'},{id:'strings'},{id:'debug'},{id:'get',activation:'request'}];
+const edges=[{from:'get',to:'strings',label:'implemented in',operations:['get']},{from:'strings',to:'clients',operations:['get']},{from:'clients',to:'debug',operations:[]}];
+const projection=rmSystemProjection(nodes,edges);
+assert.equal(projection.outside('debug','get'),true,'a part none of the path\'s arrows reach is off it');
+assert.equal(projection.outside('clients','get'),false);
+assert.equal(projection.outside('runtime','get'),false,'an area holding a part of the path is on it');
+assert.equal(projection.outside('get','get'),false,'the input itself');
+assert.equal(projection.outside('debug',''),false,'no input pinned');
+const heading={children:[],appendChild(c){this.children.push(c);c.remove=()=>{this.children=this.children.filter(x=>x!==c);};return c;},querySelector(s){return this.children.find(c=>'.'+c.className===s)||null;}};
+const map={querySelector:s=>s==='.map-inspector-heading'?heading:null};
+let operation={id:'get'};
+`+mark+`
+markOutside({id:'debug'});
+assert.deepEqual(heading.children.map(c=>c.textContent),['Outside this input path'],'the reading says it at once');
+markOutside({id:'debug'});assert.equal(heading.children.length,1,'said once');
+markOutside({id:'clients'});assert.equal(heading.children.length,0,'a part on the path says nothing');
+operation=null;markOutside({id:'debug'});assert.equal(heading.children.length,0);
+`)
+}
+
+// "handled by getCommand" in GET's reading opened GitHub, two lines above
+// the same name in its path that reads the declaration. The handler is read
+// in its part when that part lists it; a modifier-click still opens code.
+func TestAnInputsHandlerNameReadsItsDeclaration(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "  function readsHandler(n,card){", "  map.addEventListener('repomap:inspect'")
+	runSystemJS(t, `
+const strings={id:'strings',dataset:{symbols:JSON.stringify([{name:'getCommand',href:'h/getCommand'}])}};
+const byID={strings},projection={inputOwner:{get:'strings',orphan:'strings'}},read=[];
+function readDeclaration(part,key){read.push([part.id,key]);}
+const link=()=>({listeners:{},addEventListener(k,f){this.listeners[k]=f;}});
+const cardWith=name=>({querySelector:s=>s==='.map-card-handler>a'?name:null});
+`+code+`
+const name=link();readsHandler({id:'get',dataset:{activation:'request',handlerSource:'h/getCommand'}},cardWith(name));
+const click=extra=>{let prevented=false;name.listeners.click({button:0,preventDefault(){prevented=true;},stopPropagation(){},...extra});return prevented;};
+assert.equal(click({}),true,'a plain click reads the handler instead of opening its code');
+assert.deepEqual(read,[['strings','h/getCommand']]);
+assert.equal(click({ctrlKey:true}),false,'a modifier-click opens its code');assert.equal(read.length,1);
+const other=link();readsHandler({id:'orphan',dataset:{activation:'request',handlerSource:'h/elsewhere'}},cardWith(other));
+assert.equal(other.listeners.click,undefined,'a handler its part does not list stays the link it was');
+`)
+}
+
+// The TODOs link of a component's reading landed on its heading at the
+// foot of the page, "10 markers in 6 files" still closed under it. A
+// heading reached by a link opens the list it heads.
+func TestAHeadingReachedByALinkOpensTheListItHeads(t *testing.T) {
+	setPage := systemJSPiece(t, "45-modes.js", "function setPage(node){", "  function address(")
+	runSystemJS(t, `
+const home={id:'overview'},repoMap={id:'repository-map'},questionPage={id:'questions'},page={id:'t1'};
+const node=(tag,parent,next,extra={})=>({tagName:tag,parentElement:parent,nextElementSibling:next,textContent:'',closest:()=>null,matches:s=>s.split(',').includes(tag.toLowerCase()),...extra});
+let current=home,question=null,term=null,searchIntent='',detailGroup=null,sectionTitle='';
+const body={dataset:{}},pages=[home,page],document={querySelectorAll:()=>[]};
+function enclosing(){return page;}function revealConcept(){}function placeSearch(){}function showReturn(){}function showLocation(){}function measureToolbar(){}function selectQuestion(){}
+`+setPage+`
+const reference=node('DETAILS',page,null),list=node('DETAILS',page,null),todos=node('H3',reference,list);
+setPage(todos);
+assert.equal(reference.open,true,'the section holding the heading opens, as before');
+assert.equal(list.open,true,'the list under the heading opens');
+const table=node('TABLE',page,null),config=node('H3',page,table);setPage(config);
+assert.equal(table.open,undefined,'a heading over no list opens nothing more');
+const flow=node('DETAILS',page,null),other=node('DIV',page,flow);setPage(other);
+assert.equal(flow.open,undefined,'only a heading opens what follows it');
+`)
+}
+
 // The top key painted its glyphs in the marks' dark colours and keyed no
 // line at all: the solid and dashed arrows went unexplained. It keys a
 // stroke only when the map draws one.
@@ -258,8 +367,11 @@ function select(n,navigate,source,focus){seen.push([n.id,navigate,source,focus,p
 
 // A chosen input's reading lists its path (owner's 3c): the chain it
 // shares with the other inputs its dispatch chooses between, folded into
-// one box, then its own steps, a callee under its caller, each a link to its
-// code with no line number and the part heading it where the part changes.
+// one box, then its own steps, a callee under its caller, with no line
+// number and the part heading it where the part changes. A name of its own
+// steps reads that declaration in the report (getCommand and addReply had
+// opened GitHub); a modifier-click still opens its code, which is one
+// explicit link on the line. The shared box is as it was.
 func TestAnInputsPathIsTheSharedChainThenItsOwnSteps(t *testing.T) {
 	code := systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')")
 	runSystemJS(t, fakeElements+`
@@ -269,9 +381,9 @@ const step=(name,part,title,depth,extra)=>({name,href:'h/'+name,source:'redis.c:
 const path={shared:[{inputs:95,all:false,through:'call',of:94,steps:[step('main','n-config','Server configuration',0),step('aeMain','n-loop','Event loop',0),step('call','n-clients','Client connections',0)]},
   {inputs:95,through:'loadAppendOnlyFile',of:94,steps:[step('main','n-config','Server configuration',0),step('loadAppendOnlyFile','n-persist','Persistence',0)]}],
   own:[step('getCommand','n-strings','String commands',0),step('getGenericCommand','n-strings','String commands',1),step('lookupKeyRead','n-keys','Keyspace',2,{possible:true}),step('addReply','n-clients','Client connections',2)]};
-const parts={'n-strings':{id:'n-strings'},'n-clients':{id:'n-clients'}},chosen=[];
+const parts={'n-strings':{id:'n-strings'},'n-clients':{id:'n-clients'}},chosen=[],read=[];
 `+code+`
-const section=rmInputPathSection(path,id=>parts[id]||null,part=>chosen.push(part.id));
+const section=rmInputPathSection(path,id=>parts[id]||null,part=>chosen.push(part.id),(part,key)=>read.push([part.id,key]));
 assert.equal(section.children[0].textContent,'Path');
 const boxes=section.all(e=>e.className==='system-shared-path');
 assert.deepEqual(boxes.map(b=>[b.tagName,!!b.open,b.children[0].textContent]),[['DETAILS',true,'Shared by {0} inputs, through {1}'.replace('{0}',95).replace('{1}','call')],['DETAILS',false,'Shared by 95 inputs, through loadAppendOnlyFile']]);
@@ -279,7 +391,17 @@ const lines=list=>list.children.map(c=>c.className==='system-path-part'?'['+c.te
 assert.deepEqual(lines(boxes[0].find(e=>e.className==='system-path-steps')),['[Server configuration]','main','[Event loop]','aeMain','[Client connections]','call']);
 assert.equal(boxes[0].children.at(-1).textContent,'call → one of 94');
 const own=section.children.at(-1);
-assert.deepEqual(lines(own),['[String commands]','getCommand','getGenericCommand','[Keyspace]','lookupKeyRead · possible','[Client connections]','addReply']);
+assert.deepEqual(lines(own),['[String commands]','getCommand · Open code ↗','getGenericCommand · Open code ↗','[Keyspace]','lookupKeyRead · possible · Open code ↗','[Client connections]','addReply · Open code ↗']);
+const name=text=>own.find(e=>e.tagName!=='DIV'&&e.textContent===text);
+const click=(element,extra={})=>{let prevented=false;element.listeners.click({button:0,preventDefault(){prevented=true;},stopPropagation(){},...extra});return prevented;};
+assert.equal(click(name('addReply')),true,'a plain click reads the declaration instead of opening its code');
+assert.deepEqual(read,[['n-clients','h/addReply']]);
+assert.equal(click(name('getCommand'),{metaKey:true}),false,'a modifier-click opens its code');
+assert.equal(click(name('getCommand'),{button:1}),false);
+assert.deepEqual(read,[['n-clients','h/addReply']]);
+assert.equal(name('lookupKeyRead').tagName,'SPAN','a step in a part the map does not draw is only named');
+assert.deepEqual(own.all(e=>e.className==='system-path-code').map(e=>[e.textContent,e.href]),[['Open code ↗','h/getCommand'],['Open code ↗','h/getGenericCommand'],['Open code ↗','h/lookupKeyRead'],['Open code ↗','h/addReply']]);
+assert.ok(!boxes[0].find(e=>e.className==='system-path-code')&&!boxes[0].find(e=>e.listeners&&e.listeners.click&&e.tagName==='A'),'the shared box is unchanged');
 assert.deepEqual(own.all(e=>e.className==='system-path-step').map(e=>e.style.marginLeft),['0px','10px','20px','20px'],'a callee stands under its caller');
 assert.ok(!JSON.stringify(lines(own)).includes('redis.c'),'no line number is shown');
 own.find(e=>e.tagName==='BUTTON'&&e.textContent==='String commands').listeners.click();

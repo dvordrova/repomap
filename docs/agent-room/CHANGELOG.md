@@ -1,5 +1,58 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Reading-column bugs from the Redis benchmark
+
+- Benchmark participants studied Redis 1.3.6 in the reading column. Scope
+  (lead): bugs only, no new features; the input path's shared box, the
+  canvas and the camera are left alone. Checked on the saved Redis run
+  with `repomap render` and headless Chromium with real pointer moves at
+  1440×900 and 1280×800.
+- **Late shift.** "Outside this input path" came from the canvas's
+  emphasis: a frame late, and again each time the pointer left the canvas
+  (hover had turned it off). Reproduced: with GET pinned, a click on
+  Introspection and debugging, then the pointer to the column, moved
+  pingCommand 567 → 593 px, and a click aimed at it read monitorCommand.
+  The line is now drawn with the reading from its own state
+  (`projection.outside`); the canvas's `readingOutside` is gone. After:
+  593 px throughout, and the aimed click reads pingCommand.
+- **Names opening GitHub.** A name in the input's own path steps, its
+  "handled by" line and the column's frame Connections rows opened its
+  code in a new tab. It now
+  reads that declaration in its part, as a tile click does; a
+  modifier-click still opens the code, and a path step or connection row
+  ends in an explicit "Open code ↗" (a connection row's is where the call
+  is written). The page
+  data names the declarations at a call's ends (`caller`, `callee`), since
+  a call's `from` is where it is written and `to` where it lands (the
+  joint's anet.c:256 is inside anetAccept, declared at 248); the Redis page
+  grew 12.60 → 13.21 MB. Column rows wrap with names whole to make room
+  for the link. The canvas card and the shared "One shortest static path"
+  box are unchanged. After: addReply reads Client connections and replies
+  with addReply chosen, anetTcpGenericConnect reads redis-cli's Network
+  sockets, no tab opens; a modifier-click opens one.
+- **TODOs link.** It landed on its heading at the page foot with "10
+  markers in 6 files" closed. A heading reached by a link opens the list it
+  heads; the list now stands open under it (heading at 390 px of 900).
+- **Source details off-screen.** Opening "Source details · 11" under
+  Persistence left three of its five lines below the column; Open all left
+  four. What the reader opens in the column scrolls into view, no further
+  than its summary at the column top: all five lines after opening, four
+  (1440×900) or three (1280×800) after Open all, against one.
+- Tests, each failing with its fix reverted: `TestAnArrowsCallNamesTheDeclarationsAtItsEnds`,
+  `TestAPartOffThePinnedInputSaysSoWithItsReading`,
+  `TestWhatAReaderOpensInTheColumnComesIntoView`,
+  `TestAHeadingReachedByALinkOpensTheListItHeads`,
+  `TestAnInputsHandlerNameReadsItsDeclaration`, the extended
+  `TestAnInputsPathIsTheSharedChainThenItsOwnSteps`, a `callCard` node test
+  and a fixture spec (a name in the reading's connection reads its
+  declaration; its code is an explicit link). Deleted: the two
+  `readingOutside` assertions of the emphasis test.
+- `make test`, `make vet`, npm test (123), `build --check` pass;
+  `make ui-visual-test` fails the same 18 tests as main (names compared),
+  42 pass. Left: the component reading's input catalog still links an
+  input's name to its registration and its handler to the code (95 rows on
+  Redis); those rows are shared with the component reference below the map.
+
 ## 2026-09-28 — Arrow ends open their cards for a real pointer on Redis
 
 - A usability tester on the saved Redis run (1440×900, real pointer, 1.1 s

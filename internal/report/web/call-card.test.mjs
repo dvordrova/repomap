@@ -66,6 +66,28 @@ test('a relation with no call of its own is read by its outside end and site',()
   assert.deepEqual(card.groups[0].pairs[0].rows.map(r=>[r.kind,r.other,r.otherHref]),[['other','TCP endpoint','h/anet.c:158']]);
 });
 
+// A name in the reading column reads its declaration: each end of a call
+// carries the part it is read in and the declaration's own key from the
+// page data, never the call site (redis-cli's joint is written at
+// anet.c:158 and lands at anet.c:256, inside anetAccept declared at 248).
+test('a call names the declaration at each end and the part it is read in',()=>{
+  const joint={label:'anetTcpGenericConnect connects_to anetAccept',from:'h/anet.c:158',to:'h/anet.c:256',at:'anet.c:158',caller:'d/anet.c:128',callee:'d/anet.c:248'};
+  const card=callCard([
+    {from:'sockets',to:'networking',calls:[joint,call('anetTcpConnect calls connect','anet.c:170')]},
+    {from:'get',to:'strings',calls:[{label:'implemented in',name:'getCommand',to:'d/getCommand',callee:'d/getCommand'}]},
+    {from:'clients',to:'generic',calls:[call('call calls delCommand','redis.c:2054',{fold:'t1/f6',of:94,one:true,caller:'d/call',callee:'d/delCommand'})]},
+  ],{nameOf,groupable:id=>id!=='get'});
+  const rows=card.groups.flatMap(group=>group.pairs.flatMap(pair=>pair.rows));
+  const joined=rows.find(row=>row.callee==='anetAccept');
+  assert.deepEqual([joined.callerAt,joined.calleeAt],[{part:'sockets',key:'d/anet.c:128'},{part:'networking',key:'d/anet.c:248'}]);
+  assert.equal(joined.site,'h/anet.c:158','the row\'s code is still where the call is written');
+  const unnamed=rows.find(row=>row.callee==='connect');
+  assert.deepEqual([unnamed.callerAt,unnamed.calleeAt],[null,null],'a call without declaration keys names nothing to read');
+  assert.deepEqual(rows.find(row=>row.callee==='getCommand').calleeAt,{part:'strings',key:'d/getCommand'},'an input\'s handler is read in its part');
+  const fold=card.groups.find(group=>group.id==='clients').folds[0];
+  assert.deepEqual([fold.callerAt,fold.parts[0].rows[0].calleeAt],[{part:'clients',key:'d/call'},{part:'generic',key:'d/delCommand'}]);
+});
+
 test('reach says all, some of, or nothing for a single part',()=>{
   assert.deepEqual(reach(8,8),{all:true,count:8});
   assert.deepEqual(reach(8,9),{all:false,count:8,of:9});

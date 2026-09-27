@@ -172,6 +172,39 @@ func TestRelationRowsNameTheDeclarationsAtTheirEnds(t *testing.T) {
 	}
 }
 
+// A name in a connection of the reading column opened GitHub: the arrow's
+// call carried only where it is written and where it lands, and redis-cli's
+// joint lands at anet.c:256, inside anetAccept, not at its declaration. The
+// call names the declarations at both of its ends, keyed as the reading
+// keys a declaration, so the name reads that declaration in the report.
+func TestAnArrowsCallNamesTheDeclarationsAtItsEnds(t *testing.T) {
+	links := pageLinks{repositoryURL: "https://github.com/redis/redis", blobPrefix: "/blob/", revision: "abc"}
+	builder := pageBuilder{subjects: map[string]subjectRef{}, links: links, groupTitles: map[groupindex.Endpoint]string{},
+		byProgram: map[string]*pageSection{"server": {ID: "server", Language: "c"}, "cli": {ID: "cli", Language: "c"}}}
+	for _, item := range []struct {
+		target, id, name string
+		line             int
+	}{{"cli", "connect", "anetTcpGenericConnect", 128}, {"server", "accept", "anetAccept", 248}} {
+		builder.subjects[subjectKey(item.target, item.id)] = subjectRef{subject: groupindex.Subject{ID: item.id, Object: &groupindex.ObjectFacts{Name: item.name, Kind: programindex.ObjectFunction,
+			Location: &programindex.Location{Path: "anet.c", Line: item.line, Column: 1}}}}
+	}
+	joint := groupindex.Connection{ID: "x", From: groupindex.Endpoint{TargetID: "cli", GroupID: "sockets"}, To: groupindex.Endpoint{TargetID: "server", GroupID: "networking"},
+		Label: "integrates with", SourceKind: "integration", FromSubjectID: "connect", ToSubjectID: "accept",
+		FromLocation: &programindex.Location{Path: "anet.c", Line: 158, Column: 1}, ToLocation: &programindex.Location{Path: "anet.c", Line: 256, Column: 1}}
+	call := builder.connectionCall(joint)
+	if call == nil {
+		t.Fatal("the joint has no call on its arrow")
+	}
+	want := func(line int) string { return links.anchor("anet.c", line, 1).Href }
+	if call.Caller != want(128) || call.Callee != want(248) || call.From != want(158) || call.To != want(256) {
+		t.Fatalf("the call does not name its declarations apart from where it is written and lands: %+v", call)
+	}
+	raw := pageMapEdge{Calls: []pageEdgeCall{*call}}.CallsJSON()
+	if !strings.Contains(raw, `"caller":"`+want(128)+`"`) || !strings.Contains(raw, `"callee":"`+want(248)+`"`) {
+		t.Fatalf("the page's script cannot read the declarations: %s", raw)
+	}
+}
+
 // "To explanation" and "To code" scrolled to what was already on screen,
 // "More details ↓" moved a small box by a step, and a click on any tile but
 // the keys said "No explanation saved". Their words are gone from the
