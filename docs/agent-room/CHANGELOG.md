@@ -1,5 +1,36 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — Fixes from the naive-user test (canvas and reading column)
+
+- Five goal-driven naive agents and a designer used the Redis report on a
+  laptop with a mouse. Four of five reached their goal in 40–60 steps, by the
+  reading column, not the map.
+- **Canvas:**
+  - Floating cards open on a 120 ms intent and stay reachable along a safe
+    triangle. A click keeps a card; ✕, Escape or a click on empty canvas
+    closes it.
+  - Emphasis recedes what is not involved instead of veiling the subject; a
+    pointed part is itself the subject.
+  - A drag over tiles pans.
+  - A tile click chooses its declaration, and pointing darkens only its
+    arrows.
+  - Tiles are sized to their longest name, in file order, with no "+N".
+  - The inputs collection is headed Inputs and opens to its groups first.
+  - Show whole map keeps the reading.
+- **Reading column:**
+  - A declaration has its own reading: who calls it and what it calls.
+  - Callers come before callees, and repeated rows fold with their counts.
+  - "To explanation", "To code" and "More details" are gone.
+  - Find lists one entry per declaration.
+  - One key sits above the map.
+  - Relation words come from one vocabulary, and "possible" is muted.
+- A second test with a primer, on the canvas alone, reached no goal fully (55
+  steps on average) against a build that predates these fixes. The
+  designer's mockups for the arrow card, the numbers and the column are the
+  next step (owner: 1b, 2a but less ugly, 3a–3c without line numbers, an
+  input's reading in the Inputs blue).
+- `make test` and `make vet` pass after merging both branches; npm test 114.
+
 ## 2026-09-27 — metabase's Clojure target runs without a model
 
 - `repomap --target clojure:deps.edn --no-model` on metabase exited 1 after
