@@ -964,5 +964,6 @@ func pageTemplateFuncs(language DisplayLanguage) template.FuncMap {
 		"t":                func(key string, params ...any) (string, error) { return uiText(language, key, params...) },
 		"outboundGroups":   groupOutbound,
 		"operationsByFile": operationsByFile,
+		"hasFolds":         hasFolds,
 	}
 }

@@ -569,7 +569,7 @@ func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(without), `class="map-legend"`) || strings.Contains(string(without), line) {
+	if !strings.Contains(string(without), `class="map-note"`) || strings.Contains(string(without), line) {
 		t.Fatal("a map with nothing numbered explains numbers")
 	}
 }

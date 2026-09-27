@@ -360,8 +360,13 @@ func TestGroupCardUsesSelectedKnowledgeAndLinksToItsNeighbour(t *testing.T) {
 		"editor": {subject: groupindex.Subject{ID: "editor", Object: &groupindex.ObjectFacts{Name: "Editor", Location: &programindex.Location{Path: "editor.tsx", Line: 20}}, Interpretation: &groupindex.Interpretation{Key: true, Line: "Edits code."}}},
 	}}
 	card := builder.groupCard("front", index, group)
-	if len(card.Highlights) != 1 || len(card.Highlights[0].Members) != 1 || card.Highlights[0].Members[0].Name != "Editor" || card.Highlights[0].Members[0].Summary != "Edits code." {
-		t.Fatalf("key knowledge lost: %+v", card.Highlights)
+	// Code in this part is every declaration, the key first: Props stands
+	// at line 1, before Editor in the file, and still follows it.
+	if len(card.Highlights) != 1 || len(card.Highlights[0].Members) != 2 {
+		t.Fatalf("code in this part is not every declaration: %+v", card.Highlights)
+	}
+	if key, rest := card.Highlights[0].Members[0], card.Highlights[0].Members[1]; key.Name != "Editor" || !key.Key || key.Summary != "Edits code." || rest.Name != "Props" || rest.Key {
+		t.Fatalf("key knowledge lost or not first: %+v", card.Highlights)
 	}
 	if len(card.Inventory) != 1 || len(card.Inventory[0].Members) != 2 {
 		t.Fatal("source inventory was discarded")

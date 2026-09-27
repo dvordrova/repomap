@@ -70,9 +70,6 @@
 .map-zone-5 rect{fill:var(--zone-5)}.map-zone-6 rect{fill:var(--zone-6)}
 .map-zone-7 rect{fill:var(--zone-7)}.map-zone-8 rect{fill:var(--zone-8)}
 .map-line{display:block}
-.map-legend{margin-top:.3rem}
-.map-legend summary{cursor:pointer;font-weight:600;color:var(--ink)}
-.map-legend ul{margin:.4rem 0 0;font-size:var(--text-small)}
 
 /* Controls appear only when scripting is there to make them work; without it
    the map is a plain picture that already fits and already scrolls. */
@@ -105,11 +102,6 @@
 .map-inspector:not(.has-preview) .map-inspector-heading{display:none}
 .map-inspector-heading label{display:flex;align-items:center;flex-wrap:wrap;gap:.4rem .5rem;min-width:0;padding-left:.8rem;color:#584771}
 .map-inspector-heading select{font:inherit;min-width:0;max-width:100%;padding:.2rem .4rem;background:var(--paper);border:1px solid var(--line);border-radius:4px}
-.map-inspector-continuation{position:relative;flex:0 0 1.8rem;min-height:1.8rem;display:flex;align-items:center;justify-content:center;background:var(--paper)}
-.map-inspector-continuation.has-more{border-top:1px solid var(--line);box-shadow:0 -8px 10px -8px #0007}
-.map-inspector-continuation button{font:inherit;font-size:var(--text-small);font-weight:600;color:var(--accent);background:transparent;border:0;cursor:pointer;padding:.1rem .75rem}
-.map-inspector-continuation button:hover{text-decoration:underline}
-.map-inspector-continuation button[hidden]{display:none}
 .map-inspector-hint{margin:0;color:var(--muted);font-size:var(--text-small)}
 .map-inspector.has-preview .map-inspector-hint{display:none}
 .map-card.map-card-docked{position:static;width:auto;max-width:none;max-height:none;overflow:visible;padding:0;border:0;border-radius:0;box-shadow:none}

@@ -34,12 +34,14 @@ func (builder *pageBuilder) nativeGroupConnections(index groupindex.Index, group
 		if fromName == "" || toName == "" {
 			continue
 		}
+		fromDecl := fromAnchor
 		if edge.Location != nil {
 			fromAnchor = builder.links.anchorPointer(edge.Location.Path, edge.Location.Line, edge.Location.Column)
 		}
 		rows = append(rows, pageConnection{Native: true, EvidenceID: edge.RelationID + "\x00" + edge.ToSubjectID, Arrow: arrow, Title: peer.Title, Href: "#" + groupAnchorID(section.ID, peer.ID),
 			Label:    fromName + " " + strings.ReplaceAll(string(edge.RelationKind), "_", " ") + " " + toName,
 			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: fromAnchor, ToSource: toAnchor,
+			Kind: relationWord(string(edge.RelationKind), section.Language), FromName: fromName, ToName: toName, FromDecl: fromDecl, ToDecl: toAnchor,
 			fromSubject: edge.FromSubjectID, at: edge.Location})
 	}
 	return rows
@@ -132,12 +134,14 @@ func (builder *pageBuilder) internalGroupConnections(index groupindex.Index, gro
 		if fromName == "" || toName == "" {
 			continue
 		}
+		fromDecl := fromAnchor
 		if edge.Location != nil {
 			fromAnchor = builder.links.anchorPointer(edge.Location.Path, edge.Location.Line, edge.Location.Column)
 		}
 		rows = append(rows, pageConnection{Native: true, EvidenceID: edge.RelationID + "\x00" + edge.ToSubjectID,
 			Label:    fromName + " " + strings.ReplaceAll(string(edge.RelationKind), "_", " ") + " " + toName,
-			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: fromAnchor, ToSource: toAnchor})
+			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: fromAnchor, ToSource: toAnchor,
+			Kind: relationWord(string(edge.RelationKind), builder.targetLanguage(index.Target.ID)), FromName: fromName, ToName: toName, FromDecl: fromDecl, ToDecl: toAnchor})
 	}
 	return collapseConnections(rows)
 }
@@ -171,9 +175,12 @@ func (group pageGroup) ConnectionGroups() []pageConnectionGroup {
 			}
 		}
 	}
+	// Who reaches the part comes before what it reaches: Client connections
+	// and replies listed nineteen parts it calls, mostly utilities, before
+	// the fourteen that call it.
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].Arrow != result[j].Arrow {
-			return result[i].Arrow == "→"
+			return result[i].Arrow == "←"
 		}
 		return result[i].Title < result[j].Title
 	})

@@ -30,9 +30,3 @@ function rmScrollToReading(node) {
     window.scrollTo({top:Math.max(0,window.scrollY+node.getBoundingClientRect().top-inset-16),behavior:'instant'});
   });});
 }
-function rmLocalReadingActions(parent,explanation,toCode) {
-  var actions=document.createElement('nav');actions.className='local-reading-actions';
-  [['To explanation',function(){explanation.scrollIntoView({block:'nearest'});}],['To code',toCode]].forEach(function(item){
-    var button=document.createElement('button');button.type='button';button.textContent=rmT(item[0]);button.addEventListener('click',item[1]);actions.appendChild(button);
-  });parent.appendChild(actions);return actions;
-}

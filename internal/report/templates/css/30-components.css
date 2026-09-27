@@ -20,7 +20,7 @@ table{border-collapse:collapse;width:100%;margin:.5rem 0;font-size:.92rem}
 th,td{text-align:left;vertical-align:top;padding:.3rem .5rem;border-bottom:1px solid var(--line)}
 th{color:var(--muted);font-weight:600}
 .method{font-weight:700}
-.possible{color:var(--warn);font-size:max(var(--text-small),.8em);margin-left:.3rem}
+.possible{color:var(--muted);font-size:max(var(--text-small),.8em);margin-left:.3rem}
 ul.plain{list-style:none;padding:0;margin:.3rem 0}
 ul.plain li,ol.flow li{margin:.25rem 0}
 .group{border:1px solid var(--line);border-radius:6px;padding:.6rem .9rem;margin:.6rem 0}

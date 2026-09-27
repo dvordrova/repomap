@@ -19,6 +19,7 @@
   function syncComponentChoice(){var map=document.querySelector('[data-system-map]');if(componentChoice)componentChoice.value=map?.componentSelection?.()||'';}
   componentChoice?.addEventListener('change',async function(){
     var map=document.querySelector('[data-system-map]');if(!map)return;
+    globalSearch?.chooseComponent?.(componentChoice.value);
     if(componentChoice.value)await map.selectComponent(componentChoice.value);else await map.showWholeMap();
     rmScrollToReading(map);
   });

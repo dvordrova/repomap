@@ -19,7 +19,18 @@
     }
     var workspace = document.createElement('div');
     workspace.className = 'map-workspace';
-    stage.before(workspace); workspace.appendChild(stage);
+    stage.before(workspace);
+    if (map.hasAttribute('data-system-map')) {
+      // The reading column stands beside the map's own controls and key as
+      // well as its canvas, so it takes the height they take: beside the
+      // canvas alone it was a box of some 500 px on a laptop screen, and the
+      // answer sat at its bottom. The canvas keeps its own size.
+      var column = document.createElement('div');
+      column.className = 'map-canvas-column';
+      map.querySelectorAll(':scope>.system-controls,:scope>.system-results,:scope>.system-selection').forEach(function (part) { column.appendChild(part); });
+      column.appendChild(stage); workspace.appendChild(column);
+      map.classList.add('map-reading-column');
+    } else workspace.appendChild(stage);
     var inspector = document.createElement('aside');
     inspector.className = 'map-inspector';
     inspector.setAttribute('aria-label', rmT('Selected node details'));
@@ -33,27 +44,10 @@
     var home = map.hasAttribute('data-system-map') && document.querySelector('template[data-system-reading-home]');
     if(home)hint.appendChild(home.content.cloneNode(true));
     else hint.textContent = rmT(map.hasAttribute('data-map-explorer')?'Click a part or code element to keep its explanation here.':'Hover or focus a node to read about it.');
+    // The column is the reading's full height and scrolls as a page does;
+    // it has no "More details" button, which moved a small box by a step a
+    // reader barely noticed.
     content.appendChild(hint); inspector.appendChild(content); workspace.appendChild(inspector);
-    var continuation = document.createElement('div');
-    continuation.className = 'map-inspector-continuation';
-    var more = document.createElement('button');
-    more.type = 'button'; more.hidden = true;
-    continuation.appendChild(more); inspector.appendChild(continuation);
-    function updateContinuation() {
-      var overflow = content.scrollHeight > content.clientHeight + 1;
-      var below = overflow && content.scrollTop + content.clientHeight < content.scrollHeight - 1;
-      more.hidden = !overflow;
-      more.textContent = below ? rmT('More details ↓') : rmT('↑ Back to top');
-      continuation.classList.toggle('has-more', below);
-    }
-    more.addEventListener('click', function () {
-      var below = content.scrollTop + content.clientHeight < content.scrollHeight - 1;
-      content.scrollTo({top: below ? content.scrollTop + content.clientHeight * .8 : 0});
-    });
-    content.addEventListener('scroll', updateContinuation);
-    new ResizeObserver(updateContinuation).observe(content);
-    new MutationObserver(function () { requestAnimationFrame(updateContinuation); })
-      .observe(content, {childList:true, subtree:true, attributes:true, attributeFilter:['hidden','open']});
     var nodes = map.querySelectorAll('[data-node]');
     var edges = map.querySelectorAll('.map-edge, .map-edge-label');
     for (var index = 0; index < nodes.length; index++) {
@@ -289,6 +283,77 @@
   }
 })();
 
+// A declaration's name as its tile writes it: the name and what follows it
+// in a class box, "(c: redisClient *)" for a function, ": int" for a field.
+function rmDeclarationText(node,concept){
+  var symbols=[];try{symbols=JSON.parse(node.dataset.symbols||'[]');}catch(_){}
+  var href=concept.source&&concept.source.Href,symbol=href&&symbols.find(function(s){return s.href===href&&s.kind!=='field';});
+  return symbol?symbol.name+(symbol.text||''):concept.name;
+}
+// The declaration's code: the existing link, and where it stands.
+function rmOpenCode(source){
+  var fragment=document.createDocumentFragment();
+  if(source.Href||source.Open){var link=repomapMembers.sourceLink(source);link.textContent=rmT('Open code ↗');fragment.append(link,document.createTextNode(' '));}
+  var place=rmEl('span','meta',source.Text);if(source.NoSource)place.title=rmT('No source');fragment.appendChild(place);
+  return fragment;
+}
+// Who calls a declaration and what it calls, read from the relation rows
+// its part already lists (each a fact with the line it is written on),
+// grouped by the part at the other end. The declaration at the other end is
+// one line with every place the call is written, and choosing it reads that
+// declaration in its part, so a chain is followed one call at a time. A
+// relation other than a call keeps its own words. Nothing is inferred: a
+// relation the part does not list is not here.
+function rmDeclarationRelations(map,node,key,nodes){
+  var box=rmEl('div','map-concept-relations'),group=document.getElementById((node.getAttribute('href')||'').slice(1));
+  var sides={in:new Map(),out:new Map()};
+  if(group&&key)group.querySelectorAll('.conn[data-kind]').forEach(function(row){
+    var d=row.dataset,peer=row.closest('.conn-group'),link=peer&&peer.querySelector('.conn-peer a'),label=peer&&peer.querySelector('.conn-peer .lbl');
+    var part=peer?{href:link?link.getAttribute('href'):'',title:(link||label||{}).textContent||''}:{href:node.getAttribute('href')||'',title:node.dataset.title||'',own:true};
+    [['in',d.toDecl===key,d.fromDecl,d.fromName],['out',d.fromDecl===key,d.toDecl,d.toName]].forEach(function(end){
+      if(!end[1])return;
+      var parts=sides[end[0]],at=part.href||part.title;
+      if(!parts.has(at))parts.set(at,{part:part,decls:new Map()});
+      var decls=parts.get(at).decls,other=(d.kind==='calls'||d.kind==='invokes_external'?'':d.kind)+'\0'+(end[2]||end[3]);
+      if(!decls.has(other))decls.set(other,{key:end[2],name:end[3],kind:d.kind,sentence:row.querySelector(':scope>p')?.firstChild?.textContent||'',rows:[]});
+      decls.get(other).rows.push(row);
+    });
+  });
+  function peerNode(part){return Array.prototype.find.call(nodes,function(n){return n.getAttribute('href')===part.href||'#'+n.id===part.href;});}
+  function read(part,declKey){
+    if(part.own){map.explainSource?.({key:declKey});return;}
+    var peer=peerNode(part);if(peer&&map.revealNode)map.revealNode(peer,false,declKey?{key:declKey}:null);
+  }
+  [['in','Called by'],['out','Calls']].forEach(function(side){
+    // The declaration's own part first: its neighbours in the code it is read in.
+    var parts=new Map(Array.from(sides[side[0]]).sort(function(a,b){return (b[1].part.own?1:0)-(a[1].part.own?1:0);}));if(!parts.size)return;
+    var section=rmEl('section','map-concept-side');section.appendChild(rmEl('h6','',rmT(side[1])));
+    parts.forEach(function(entry){
+      var head=rmEl('div','map-concept-part'),peer=entry.part.own?null:peerNode(entry.part);
+      if(peer){var go=rmEl('button','',entry.part.title);go.type='button';go.addEventListener('click',function(){read(entry.part,'');});head.appendChild(go);}
+      else head.textContent=entry.part.title;
+      section.appendChild(head);
+      var list=rmEl('ul','plain');
+      entry.decls.forEach(function(decl){
+        var item=rmEl('li'),words=decl.kind==='calls'||decl.kind==='invokes_external'?decl.name:decl.sentence.trim();
+        var name=rmEl(entry.part.own||peer?'button':'span','map-concept-decl',words);
+        if(name.tagName==='BUTTON'){name.type='button';name.addEventListener('click',function(){read(entry.part,decl.key);});}
+        item.appendChild(name);
+        decl.rows.forEach(function(row){
+          var site=row.querySelector('.connection-sources .anchor');if(!site)return;
+          item.appendChild(document.createTextNode(' · '));item.appendChild(site.cloneNode(true));
+          if(row.querySelector(':scope>p>.possible'))item.appendChild(rmEl('span','possible',rmT('possible')));
+        });
+        list.appendChild(item);
+      });
+      section.appendChild(list);
+    });
+    box.appendChild(section);
+  });
+  if(!box.childElementCount)box.appendChild(rmEl('p','meta',rmT("No call to or from it is listed among this part's connections.")));
+  return box;
+}
+
 // The reading layer over the map, written from the journeys a reader
 // actually makes, not from what a canvas can do:
 //   - "what is this box?" — pointing at a node fills the map's details panel:
@@ -361,9 +426,13 @@
     }
     content.addEventListener('scroll',remember);
     function show(node) {
+      // A new selection reads from its top. Its remembered scroll and open
+      // evidence come back only when the reader returns to it: Back, or
+      // the same item shown again.
+      var restoring=map.readingRestoring,returning=restoring||inspectedNode===node;
       remember();inspectedNode=node;inspectionKey=node.id+'\0'+(map.inspectedOperation?.id||'');inspectionPending=true;
       map.explorerMember=null;
-      var saved=remembered.get(inspectionKey), ticket=++inspectionRevision;
+      var saved=returning?remembered.get(inspectionKey):null, ticket=++inspectionRevision;
       content.scrollTop = 0;
       card.classList.remove('map-card-connection');
       var id = node.getAttribute('data-node');
@@ -393,7 +462,7 @@
       var concepts = map.exploreNode ? repomapMembers.items(node) : JSON.parse(node.dataset.concepts || '[]');
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);
       if (concepts.length) {
-        html+='<div class="map-concepts" hidden><strong data-concept-name></strong><p data-concept-explanation></p><div data-concept-source></div></div>';
+        html+='<div class="map-concepts" hidden><strong data-concept-name></strong><code class="map-concept-declaration" data-concept-declaration></code><div class="map-member-fields" data-concept-fields></div><p class="model" data-concept-explanation></p><p class="map-concept-source" data-concept-source></p><div data-concept-relations></div></div>';
       }
       if(map.areaDescriptions){
         var descriptions=Array.from(new Set(map.areaDescriptions(node))).filter(function(text){return text&&text!==summary;});
@@ -441,23 +510,30 @@
         close.addEventListener('click',function(){map.closeDetails();});objectHeading.appendChild(close);
       }
       heading.classList.toggle('has-concepts',concepts.length>0);
-      if(node.dataset.branch!=='communication')rmLocalReadingActions(heading,card.querySelector('.map-card-intro'),function(){
-        var direct=card.querySelector('.map-card-intro a');
-        if(direct){direct.click();return;}
-        var evidence=card.querySelector('.map-all-members')||card.querySelector('.map-card-evidence');
-        if(evidence){if(evidence.tagName==='DETAILS')evidence.open=true;evidence.scrollIntoView({block:'nearest'});}
-      });
+      // A chosen declaration is read by itself: its name as its tile writes
+      // it, the model's line when there is one, its code, and who calls it
+      // and what it calls, from the relation rows the part already lists.
+      // Without a line it says nothing about one: "No explanation saved"
+      // had answered a click on every tile but the keys.
       map.inspectConcept=function(index){
         var panel=card.querySelector('.map-concepts');if(!panel)return;
         panel.hidden=index<0;card.classList.toggle('map-card-has-concepts',index>=0);
+        card.querySelectorAll('.map-member-name[aria-current]').forEach(function(name){name.removeAttribute('aria-current');});
         if(index<0){map.explorerMember=null;map.dispatchEvent(new Event('repomap:reading'));return;}
-        var concept=concepts[index],source=concept.source;
-        map.explorerMember={owner:id,name:repomapMembers.displayName(concept),source:source.Text,href:source.Href,open:source.Open,key:repomapMembers.sourceKey(source)};
+        var concept=concepts[index],source=concept.source,key=repomapMembers.sourceKey(source);
+        map.explorerMember={owner:id,name:repomapMembers.displayName(concept),source:source.Text,href:source.Href,open:source.Open,key:key};
         panel.querySelector('[data-concept-name]').textContent=repomapMembers.displayName(concept);
+        var declaration=panel.querySelector('[data-concept-declaration]'),text=rmDeclarationText(node,concept);
+        declaration.textContent=text;declaration.hidden=!text||text===concept.name;
+        var fields=panel.querySelector('[data-concept-fields]');fields.replaceChildren();fields.hidden=!concept.fields?.length;
+        (concept.fields||[]).forEach(function(field,at){if(at)fields.appendChild(document.createTextNode(' · '));var link=repomapMembers.sourceLink(field.source);link.textContent=field.name;fields.appendChild(link);});
         var explanation=panel.querySelector('[data-concept-explanation]');
-        explanation.textContent=concept.explanation||rmT('No explanation saved. Open the source to inspect this element.');
+        explanation.textContent=concept.explanation||'';explanation.hidden=!concept.explanation;
         explanation.dataset.displayRef=concept.explanation?concept.explanation_ref||'':'';
-        panel.querySelector('[data-concept-source]').replaceChildren(repomapMembers.sourceLink(source));
+        panel.querySelector('[data-concept-source]').replaceChildren(rmOpenCode(source));
+        panel.querySelector('[data-concept-relations]').replaceChildren(rmDeclarationRelations(map,node,key,nodes));
+        card.querySelectorAll('.map-member-name').forEach(function(name){if(name.dataset.memberSource===key)name.setAttribute('aria-current','true');});
+        if(!map.readingRestoring&&!inspectionPending)content.scrollTop+=panel.getBoundingClientRect().top-content.getBoundingClientRect().top;
         map.dispatchEvent(new Event('repomap:reading'));remember();
       };
       if(concepts.length){
@@ -488,6 +564,10 @@
       requestAnimationFrame(function(){if(inspectionRevision===ticket&&!card.hidden){
         if(saved)card.querySelectorAll('details').forEach(function(detail,index){detail.open=saved.expanded.includes(index);});
         content.scrollTop=saved?.scroll||0;
+        // A declaration newly chosen with its part is read from its own
+        // reading; one the reader returns to keeps the place they left.
+        var chosen=card.querySelector('.map-concepts:not([hidden])');
+        if(chosen&&(!saved||!restoring&&map.explorerMember?.key!==saved.concept))content.scrollTop+=chosen.getBoundingClientRect().top-content.getBoundingClientRect().top;
         inspectionPending=false;
       }});
     }
@@ -610,4 +690,27 @@
     map.traceIndex = traceIndex;
     map.traceLength = traceIds.length;
   }
+})();
+
+// An evidence list opens every folded line at once, and closes them again;
+// each fold still opens alone, and without scripting. The button says what
+// it will do next, also after folds are opened by hand.
+function rmOpenAllWord(list){
+  var folds=list.querySelectorAll(':scope>.conn-fold');
+  return Array.prototype.every.call(folds,function(fold){return fold.open;})?'Close all':'Open all';
+}
+(function(){
+  document.querySelectorAll('[data-open-all]').forEach(function(button){button.hidden=false;});
+  document.addEventListener('click',function(event){
+    var button=event.target.closest?.('[data-open-all]');if(!button)return;
+    var list=button.closest('.connection-evidence');if(!list)return;
+    var open=rmOpenAllWord(list)==='Open all';
+    list.querySelectorAll(':scope>.conn-fold').forEach(function(fold){fold.open=open;});
+    button.textContent=rmT(rmOpenAllWord(list));
+  });
+  document.addEventListener('toggle',function(event){
+    var fold=event.target;if(!fold.matches?.('.conn-fold'))return;
+    var list=fold.parentElement,button=list&&list.querySelector(':scope>[data-open-all]');
+    if(button)button.textContent=rmT(rmOpenAllWord(list));
+  },true);
 })();

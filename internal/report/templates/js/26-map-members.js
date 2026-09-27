@@ -5,25 +5,38 @@ var repomapMembers = (function () {
   function sourceKey(source) { return source.Href || source.Open || (source.NoSource ? (source.Path ? JSON.stringify([source.Path,source.Line||0]) : source.Text) : ''); }
   function items(node) {
     if (inventories.has(node)) return inventories.get(node);
-    var result = [], known = new Set();
+    var result = [], known = new Map();
+    // A key type the model explained is listed first from its concept; its
+    // row in Code in this part still says it is a key and carries its
+    // fields, which the concept does not.
     function add(item) {
       var key = sourceKey(item.source);
-      if (!key || known.has(key)) return;
-      known.add(key); result.push(item);
+      if (!key) return;
+      var listed = known.get(key);
+      if (listed) {
+        if (item.key) listed.key = true;
+        if (!listed.fields?.length && item.fields?.length) listed.fields = item.fields;
+        return;
+      }
+      known.set(key, item); result.push(item);
     }
     JSON.parse(node.dataset.concepts || '[]').forEach(add);
     var href = node.getAttribute('href') || '';
     var group = href[0] === '#' && document.getElementById(href.slice(1));
+    // Code in this part is every declaration of the part, the model's keys
+    // first and marked as keys, as its tiles draw them.
     if (group) group.querySelectorAll('.group-highlights .key-symbol').forEach(function (row) {
-      var chip = row.querySelector('strong > .chip');
+      var chip = row.querySelector(':scope>strong>.chip') || row.querySelector(':scope>.chip');
       if (!chip) return;
       var name = chip.cloneNode(true); name.querySelectorAll('.ln').forEach(function (n) { n.remove(); });
-      var prose = row.querySelector('.model [data-display-ref]');
-      var anchor = row.querySelector('.anchor');
-      add({name:name.textContent.trim(), alias:row.dataset.alias||'', explanation:prose ? prose.textContent : '', explanation_ref:prose?.dataset.displayRef||'', source:{
+      var prose = row.querySelector(':scope>.model [data-display-ref]');
+      var anchor = row.querySelector(':scope>.anchor,:scope>.model>.model-sources>.anchor');
+      var item = {name:name.textContent.trim(), alias:row.dataset.alias||'', key:row.dataset.key==='true', explanation:prose ? prose.textContent : '', explanation_ref:prose?.dataset.displayRef||'', source:{
         Href:chip.dataset.open ? '' : chip.getAttribute('href'), Open:chip.dataset.open || '', NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, function(){return chip.closest('.key-file')?.querySelector('.path')?.textContent;}), Line:Number(chip.dataset.sourceLine)||0,
         Text:anchor ? anchor.textContent : (chip.closest('.key-file').querySelector('.path').textContent + (chip.querySelector('.ln')?.textContent || ''))
-      }});
+      }};
+      item.fields = Array.from(row.querySelectorAll(':scope>.symbol-fields>li')).map(function(field){var fieldChip=field.querySelector('.chip');return fieldChip&&inventoryItem(field,fieldChip,function(){return item.source.Path;});}).filter(Boolean);
+      add(item);
     });
     // A part without interpreted highlights still has its original source
     // index. Showing those declarations is useful; inventing an explanation
@@ -69,10 +82,10 @@ var repomapMembers = (function () {
     var lastPath=null;
     list.forEach(function(item){
       if(byFile&&(item.source.Path||'')!==lastPath){lastPath=item.source.Path||'';var head=document.createElement('div');head.className='map-member-file';head.textContent=lastPath||rmT('Other');grid.appendChild(head);}
-      var row=document.createElement('div');row.className='map-member';
+      var row=document.createElement('div');row.className='map-member'+(item.key?' map-member-key':'');
       var name=sourceLink(item.source);name.className='map-member-name';name.textContent=displayName(item);
       name.dataset.memberSource=sourceKey(item.source);
-      name.title=(item.explanation||rmT('No explanation saved. Open the source to inspect this element.'))+'\n'+item.source.Text+(item.source.NoSource?'\n'+rmT('No source'):'');
+      name.title=[item.explanation,item.source.Text,item.source.NoSource?rmT('No source'):''].filter(Boolean).join('\n');
       name.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();map.showMember(node,item);});
       if(item.source.NoSource){name.setAttribute('tabindex','0');name.setAttribute('role','button');name.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();map.showMember(node,item);}});}
       row.appendChild(name);

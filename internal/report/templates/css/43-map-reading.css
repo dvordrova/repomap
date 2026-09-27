@@ -21,7 +21,6 @@
   [data-map-explorer] .map-inspector{position:static;max-height:none;border-left:0;border-top:1px solid var(--line);padding:.8rem .4rem}
 }
 [data-map-explorer] .explorer-breadcrumbs{flex-wrap:wrap;overflow:visible;row-gap:.15rem}
-[data-map-explorer] .map-inspector:not(.has-preview) .map-inspector-continuation{display:none}
 .map-concepts[hidden]{display:none}
 .map-member-content{box-sizing:border-box;height:100%;overflow:hidden;font-size:14px;line-height:1.3}
 .map-member-label{font-size:12px;color:var(--muted);margin-bottom:10px}
@@ -55,7 +54,7 @@
 .input-explanation{font-size:.75rem;font-weight:500;margin-left:.5rem}
 .input-catalog .meta{display:block;margin:.25rem 0}
 .input-catalog .model{font-size:.875rem;line-height:1.5;margin:.4rem 0}
-.input-handler,.input-catalog .local-reading-actions{font-size:.75rem}
+.input-handler{font-size:.75rem}
 .repo-inputs{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr));gap:1rem 2rem;padding:.75rem 0;border-top:1px solid var(--line)}
 .repo-inputs h5{font-size:.8rem;margin:0 0 .5rem;color:var(--muted)}
 .repo-inputs ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr));gap:.2rem 1.25rem}
@@ -82,7 +81,7 @@
 .input-catalog .operation-catalog,.input-catalog .route-catalog{display:block}
 .input-catalog [data-input-item]{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;padding:6px 0;font-size:14px}
 .input-title{font-size:14px;min-width:0}.input-kind{font-size:12px;color:var(--muted)}
-.input-handler{font-size:12px;min-width:0;overflow-wrap:anywhere}.input-explanation,.local-reading-actions>a{white-space:nowrap;flex-shrink:0}
+.input-handler{font-size:12px;min-width:0;overflow-wrap:anywhere}.input-explanation{white-space:nowrap;flex-shrink:0}
 .input-description{margin:0;font-size:12px}.input-description[open]{flex-basis:100%}
 .input-description summary{font-size:12px}.input-description .model{margin:8px 0}
 .input-provenance{font-size:12px;margin:4px 0!important}.input-more{margin:6px 0}.input-more>summary{font-size:14px;color:var(--accent)}
@@ -208,7 +207,6 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-canvas.system-hovering .map-edge-group{opacity:.09}.system-canvas.system-hovering .map-edge-group.system-hover{opacity:1}
 .system-canvas.system-hovering .map-node{opacity:.25}.system-canvas.system-hovering .map-node.system-hover{opacity:1}
 .system-canvas .map-edge-group.system-hover .map-edge{stroke:var(--accent);stroke-width:2.5}
-.system-canvas .map-legend{font-size:12px}.system-canvas .map-legend summary{font-size:12px}
 .system-canvas .map-card-docked{font-size:14px;line-height:1.45;padding:0}.system-canvas .map-card-summary{font-size:14px}
 .system-canvas .map-all-members .map-member-grid{grid-template-columns:minmax(0,1fr)}
 .system-canvas .map-card-hint{display:none}
@@ -231,3 +229,67 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .symbol-fields{list-style:none;margin:2px 0 4px 1.2em;padding:0;font-size:.9em}
 .map-card-handler{margin:4px 0}
 .map-input-context .system-reading-context{margin-right:8px}
+
+/* The reading column stands beside the map's controls and key as well as
+   its canvas, and takes their height; the canvas keeps its own size. Only
+   the canvas's workspace sets that height: when the canvas cannot be drawn,
+   the static map's reading keeps its own scrolling box, not one as tall as
+   everything it says. */
+.map-reading-column .map-canvas-column{display:flex;flex-direction:column;min-width:0;min-height:0}
+.map-reading-column .map-canvas-column>.system-selection{margin-top:0;margin-bottom:8px}
+.flow-enabled.map-reading-column .map-canvas-column>.map-stage{height:auto!important;flex:1 1 0;min-height:0;margin-bottom:-2px;border-radius:8px}
+.flow-enabled.map-reading-column .map-inspector{margin-left:12px;border-left:1px solid var(--line,#d4ddda);border-radius:8px}
+
+/* The one key: each kind of card in the fill and border the canvas paints
+   it with, its mark on its border, and the two strokes of the arrows. */
+.system-canvas .flow-color-key{align-items:center;row-gap:4px}
+.system-canvas .flow-color-key>span:not(.flow-key-stroke){position:relative}
+.system-canvas .flow-color-key>span:not(.flow-key-stroke)::before{content:'';flex:none;width:18px;height:12px;border-radius:3px;background:#fff;box-shadow:inset 0 0 0 1.5px #718096}
+.system-canvas .flow-color-key>span.entry::before{background:#e1f3ec;box-shadow:inset 0 0 0 1.5px #267267}
+.system-canvas .flow-color-key>span.core::before{background:#ede3f6;box-shadow:inset 0 0 0 1.5px #755299}
+.system-canvas .flow-color-key>span.input::before{background:#deedff;box-shadow:inset 0 0 0 1.5px #356faa}
+.system-canvas .flow-color-key>span.external::before{background:#ffefcf;box-shadow:inset 0 0 0 1.5px #906014}
+/* The mark stands on the small card's top border, as on a card: the entry
+   arrow keeps the very glyph the canvas draws, the core diamond its shape. */
+.system-canvas .flow-color-key>span>i{display:none}
+.system-canvas .flow-color-key>.entry>i,.system-canvas .flow-color-key>.core>i{display:block;position:absolute;left:9px;top:calc(50% - 6px);transform:translate(-50%,-50%)}
+.system-canvas .flow-color-key>.entry>i{height:8px}
+.system-canvas .flow-color-key>.core>i{width:7px;height:7px}
+.flow-key-stroke svg{flex:none;overflow:visible}
+.flow-key-stroke svg path:first-child{fill:none;stroke:#64748b;stroke-width:1.5}
+.flow-key-stroke svg path+path{fill:#64748b}
+.flow-key-possible svg path:first-child{stroke-dasharray:7 5}
+.system-controls>.flow-key-numbers{flex:1 1 0;min-width:0;margin:0;font-size:12px;line-height:16px;color:#536176}
+.map-note:empty{display:none}
+
+/* A declaration's own reading, under its part's description. */
+.map-concepts .map-concept-declaration{display:block;margin:4px 0;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);overflow-wrap:anywhere}
+.map-concepts .map-concept-declaration[hidden],.map-concepts [data-concept-explanation][hidden],.map-concepts [data-concept-fields][hidden]{display:none}
+.map-concepts .map-concept-source{margin:6px 0}
+.map-concept-side>h6{font-size:14px;margin:16px 0 4px;color:var(--ink)}
+.map-concept-part{margin:8px 0 2px;font-size:13px;font-weight:600;color:var(--ink)}
+.map-card .map-concept-part>button,.map-card .map-concept-decl{font:inherit;margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;text-align:left}
+.map-concept-side ul{margin:0 0 0 10px}.map-concept-side li{margin:3px 0;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+.map-card .map-concept-decl{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}.map-card span.map-concept-decl{cursor:default}
+.map-concept-side li .anchor{font-size:12px}
+.map-member-key .map-member-name{font-weight:750;color:#4f2f86}
+.map-member-name[aria-current]{text-decoration-thickness:2px}
+.map-member:has(.map-member-name[aria-current]){border-color:#243044}
+/* Code in this part is every declaration, and each is one line as the
+   part's tiles draw it, a type's fields on a line under it: a bordered box
+   per declaration put Client connections' callers two thousand pixels down
+   the reading, below 31 boxes. The chosen one keeps a dark bar. */
+.map-all-members .map-member-grid,.system-canvas .map-all-members .map-member-grid{display:block}
+.map-all-members .map-member{min-height:0;margin:0;padding:1px 0 1px 8px;border:0;border-radius:0;background:none}
+.map-all-members .map-member-name{font-size:13px;line-height:1.5}
+.map-all-members .map-member-fields{margin:0 0 3px 1.3em;line-height:1.45}
+.map-all-members .map-member-file{margin:8px 0 2px}
+.map-all-members .map-member:has(.map-member-name[aria-current]){box-shadow:inset 3px 0 #243044}
+
+/* Rows of one caller and one kind read as one line with their count. */
+.conn-fold{margin:10px 0}.conn-fold>summary{cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conn-fold[open]>summary{white-space:normal}.conn-fold>.conn{margin-left:14px}
+.connection-open-all,.map-card .connection-open-all{font:inherit;font-size:12px;color:var(--accent);background:none;border:0;border-radius:0;padding:2px 0;margin:6px 0 0;cursor:pointer;text-decoration:underline}
+.connection-open-all[hidden]{display:none}
+.system-reaching-inputs{margin:14px 0}.system-reaching-inputs>summary{cursor:pointer;font-weight:600;font-size:14px}
+.key-symbol:not(.key-symbol-key) .chip{font-weight:400}

@@ -43,6 +43,36 @@ function rmInputPath(n,byID){
   if(!n?.dataset?.activation)return [];
   return (n.dataset.inputTrace||'').split(/\s+/).filter(function(id){return byID[id]&&!byID[id].dataset.activation;});
 }
+// The map's one key: each kind of card as a small card in the fill and
+// border the canvas paints it with, its mark on its border, then the two
+// strokes arrows are drawn with. Its glyphs had been painted in the marks'
+// dark colours, so a pale green card matched nothing in it. A kind the map
+// does not draw is not keyed. The line saying what the numbers on a frame's
+// border are stands above it, beside the map's controls, where the row had
+// room; it had been folded into a legend under the map.
+function rmKey(nodes,edges,category){
+  var key=rmEl('span','flow-color-key');
+  [['','Parts'],['entry','Entrypoints'],['core','Core'],['input','Inputs'],['external','External communication']].filter(function(item){return nodes.some(function(n){return ['core','entry'].includes(item[0])?!n.dataset.branch&&!n.dataset.activation&&n.dataset.lane===(item[0]==='entry'?'triggers':'core'):item[0]?category(n)===item[0]:!n.dataset.branch&&category(n)==='part'&&!['core','triggers'].includes(n.dataset.lane);});}).forEach(function(item){var label=rmEl('span',item[0]);label.append(rmEl('i'),document.createTextNode(rmT(item[1])));key.appendChild(label);});
+  [[false,'calls'],[true,'possible calls']].filter(function(item){return edges.some(function(e){return e.possible===item[0];});}).forEach(function(item){
+    var label=rmEl('span','flow-key-stroke'+(item[0]?' flow-key-possible':'')),svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('viewBox','0 0 30 10');svg.setAttribute('width','30');svg.setAttribute('height','10');svg.setAttribute('aria-hidden','true');
+    svg.innerHTML='<path d="M1 5H24"/><path d="M23 1.5 29 5 23 8.5z"/>';
+    label.append(svg,document.createTextNode(rmT(item[1])));key.appendChild(label);
+  });
+  return key;
+}
+// The inputs that reach a part, by kind, folded under their count: most
+// commands reach most parts through the one dispatcher, and Client
+// connections' list of 95 stood open between the part's callers and its
+// own connections.
+function rmReachingInputs(n,reaching,owner,choose){
+  var inputs=rmEl('details','system-reaching-inputs');inputs.appendChild(rmEl('summary','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')+' · '+reaching.length));
+  if(reaching.length){
+    var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
+    types.forEach(function(choices,type){inputs.appendChild(rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')));var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
+  }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
+  return inputs;
+}
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
   var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
@@ -61,13 +91,13 @@ function rmInputPath(n,byID){
   search.type='search';search.placeholder=rmT('Find');search.setAttribute('aria-label',rmT('Find'));clear.type='button';
   [['','Everything'],['component','Components'],['part','Parts'],['input','Inputs'],['external','External communication']].forEach(function(item){var option=rmEl('option','',rmT(item[1]));option.value=item[0];filter.appendChild(option);});filter.setAttribute('aria-label',rmT('Show on map'));
   bar.append(search);map.prepend(bar);bar.appendChild(map.querySelector('[data-map-controls]'));
+  var numbers=map.querySelector('[data-map-numbers]');if(numbers){numbers.classList.add('flow-key-numbers');bar.prepend(numbers);}
   if(map.hasAttribute('data-system-map'))search.hidden=true;
   var styleChoice=rmEl('button','',rmT('Connection labels'));styleChoice.type='button';styleChoice.setAttribute('aria-pressed','true');
   function syncStyle(){styleChoice.textContent=rmT(numbered?'Connection labels':'Arrows');styleChoice.setAttribute('aria-pressed',String(numbered));map.classList.toggle('system-numbered',numbered);}
   styleChoice.addEventListener('click',function(){numbered=!numbered;syncStyle();emphasize();emit();});syncStyle();
   var results=rmEl('div','system-results');results.hidden=true;bar.after(results);
-  var colorKey=rmEl('span','flow-color-key');
-  [['','Parts'],['entry','Entrypoints'],['core','Core'],['input','Inputs'],['external','External communication']].filter(function(item){return nodes.some(function(n){return ['core','entry'].includes(item[0])?!n.dataset.branch&&!n.dataset.activation&&n.dataset.lane===(item[0]==='entry'?'triggers':'core'):item[0]?category(n)===item[0]:!n.dataset.branch&&category(n)==='part'&&!['core','triggers'].includes(n.dataset.lane);});}).forEach(function(item){var label=rmEl('span',item[0]);label.append(rmEl('i'),document.createTextNode(rmT(item[1])));colorKey.appendChild(label);});
+  var colorKey=rmKey(nodes,rawEdges,category);
   var caption=rmEl('div','system-selection');caption.setAttribute('aria-live','polite');results.after(caption);
   var measureControls=new ResizeObserver(function(){map.style.setProperty('--system-controls-height',(bar.offsetHeight+results.offsetHeight+caption.offsetHeight+24)+'px');});
   [bar,results,caption].forEach(function(n){measureControls.observe(n);});
@@ -195,11 +225,7 @@ function rmInputPath(n,byID){
       if(!n.dataset.branch)card.querySelector('.map-related-operations')?.remove();
       var selectedMembers=new Set(projection.leaves(n.id));selectedMembers.add(n.id);
       var reaching=nodes.filter(function(candidate){if(!candidate.dataset.activation)return false;return Array.from(projection.selection('',candidate.id).active).some(function(id){return selectedMembers.has(id);});});
-      var inputs=rmEl('section','system-reaching-inputs');inputs.appendChild(rmEl('h5','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')));
-      if(reaching.length){
-        var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
-        types.forEach(function(choices,type){inputs.appendChild(rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')));var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){select(input,true,null,true);});links.appendChild(b);});inputs.appendChild(links);});
-      }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
+      var inputs=rmReachingInputs(n,reaching,owner,function(input){select(input,true,null,true);});
       if(JSON.parse(n.dataset.concepts||'[]').length)inputs.appendChild(rmEl('p','meta',rmT('Reaching a part does not by itself establish a change to its entities.')));
       if(!n.dataset.branch||n.dataset.branch==='communication'){card.querySelector('.map-card-intro').after(inputs);}
     }
@@ -209,7 +235,9 @@ function rmInputPath(n,byID){
       var witness=card.querySelector('.call-path');
       if(witness){card.querySelector('.map-card-intro').after(witness);witness.open=true;}
       card.querySelector('.map-card-evidence')?.remove();
-      group.querySelectorAll(':scope>.group-connections,:scope>.group-internal-connections,:scope>.group-inventory').forEach(function(section){
+      // Code in this part lists every declaration; the source index is that
+      // list again, by file, and stays on the part's own card.
+      group.querySelectorAll(':scope>.group-connections,:scope>.group-internal-connections,:scope>.group-inventory:not(:has(.inventory-file))').forEach(function(section){
         var copy=section.cloneNode(true);copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});
         copy.querySelectorAll('.conn-peer a').forEach(function(link){
           var href=link.getAttribute('href'),peer=nodes.find(function(candidate){return candidate.getAttribute('href')===href||'#'+candidate.id===href;});
