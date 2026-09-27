@@ -12,6 +12,48 @@ test('input card labels keep every character across long literals and translated
   }
 });
 
+// Redis's input collection read "redis-server (executable" above a lone ")".
+test('a title breaks only between words and never starts a line with closing punctuation',()=>{
+  const measure=text=>Array.from(text).length*8;
+  assert.deepEqual(wrapText('redis-server (executable)',120,'',measure),['redis-server','(executable)']);
+  assert.deepEqual(wrapText('Set commands (SADD, SREM )',150,'',measure),['Set commands','(SADD, SREM )'],'a spaced bracket stays with its word');
+  assert.deepEqual(wrapText('internal/report/templates',96,'',measure),['internal/','report/','templates'],'a path breaks after its separators');
+  assert.deepEqual(wrapText('getHostByNameAndPort',96,'',measure),['getHostBy','NameAndPort'],'an identifier breaks between its words');
+  // Only a word wider than the whole line breaks inside, keeping every
+  // character, and never so that a line starts with ")" or ends with "(".
+  for(const title of ['(executable)','redis-server (executable)','call(argument)']){
+    const lines=wrapText(title,88,'',measure);
+    assert.equal(lines.join('').replace(/\s/g,''),title.replace(/\s/g,''),`${title}: every character kept`);
+    for(const line of lines){
+      assert.ok(measure(line)<=88,`${title}: "${line}" fits`);
+      assert.ok(!/^[)\]},.;:]/.test(line)&&!/[(\[{]$/.test(line),`${title}: "${line}" splits a bracket from its word`);
+    }
+  }
+});
+
+// The browser re-broke a part's title measured across the zoom button's room.
+test('a part\'s title lines leave room for its zoom button',()=>{
+  const measure=text=>Array.from(String(text)).length*9;
+  const [part]=prepareCards([{id:'part',title:'Command dispatch table and replies',symbols:[{name:'call'}]}],{},measure,text=>text);
+  assert.ok(part.title.split('\n').every(line=>measure(line)<=194),part.title);
+});
+
+// A destination frame fitted a pixel narrower than its reservation read "DNS
+// resolve" over a clipped "r". Short of room, a heading shrinks and stays whole.
+test('an overview heading short of its longest word shrinks rather than breaking it',()=>{
+  const measure=(text,font='13px')=>Array.from(String(text)).length*Number(/(\d+)px/.exec(font)[1])*.55;
+  for(const [title,branch] of [['DNS resolver','communication'],['redis-server (executable)','inputs'],['redis-benchmark (executable)','component']]){
+    const [card]=prepareCards([{id:'frame',title,branch,children:['inside']},{id:'inside',title:'inside'}],{},measure,text=>text);
+    for(const width of [card.overviewMinWidth,card.overviewMinWidth-.6,card.overviewMinWidth*.6]){
+      const heading=overviewHeading(card,width,measure),font=`700 ${branch==='component'?18:13}px system-ui`;
+      assert.deepEqual(heading.lines.join(' ').split(' '),title.split(' '),`${title} at ${width}px keeps every word whole`);
+      assert.ok(heading.lines.every(line=>measure(line,font)*heading.scale<=heading.width+1e-9),`${title} at ${width}px fits its room`);
+      if(width>=card.overviewMinWidth)assert.equal(heading.scale,1,`${title} keeps its size at its reserve`);
+      else if(width<card.overviewMinWidth*.7)assert.ok(heading.scale<1,`${title} shrinks well short of its reserve`);
+    }
+  }
+});
+
 test('an external heading fits whole words below its zoom control or beside it',()=>{
   const measure=text=>text.length*7;
   for(const title of ['PostgreSQL','OpenTelemetry collector','Notification gateway']){

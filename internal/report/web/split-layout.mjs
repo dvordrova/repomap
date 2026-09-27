@@ -406,10 +406,15 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   const flat=placed=>placed.children.flatMap(node=>node.children?node.children.map(member=>({...member,x:node.x+member.x,y:node.y+member.y})):[node]);
   const participants=graph=>graph.children.flatMap(node=>node.children||[node]);
   const available={width:Math.max(1,width-2*overviewInset),height:Math.max(1,height-2*overviewInset)};
+  // The whole-map camera frames every placed box, a display group's frame
+  // with its padding included. Measured over the participants alone, Redis's
+  // group of three "DNS resolver" frames at the bottom made the camera 0.85%
+  // smaller than this fit, and every heading reserved to the pixel lost its
+  // last letter.
   function metrics(placed){
-    const roots=flat(placed);
-    const span={width:Math.max(...roots.map(node=>node.x+node.width))-Math.min(...roots.map(node=>node.x)),
-      height:Math.max(...roots.map(node=>node.y+node.height))-Math.min(...roots.map(node=>node.y))};
+    const roots=flat(placed),boxes=placed.children;
+    const span={width:Math.max(...boxes.map(node=>node.x+node.width))-Math.min(...boxes.map(node=>node.x)),
+      height:Math.max(...boxes.map(node=>node.y+node.height))-Math.min(...boxes.map(node=>node.y))};
     const zoom=Math.min(.44,available.width/span.width,available.height/span.height);
     const readable=Math.min(1,...roots.map(node=>{
       const record=byID.get(node.id),minimum=record.overviewMinWidth||0;

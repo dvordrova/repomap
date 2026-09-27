@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {prepareCards,wrapText} from './cards.mjs';
 import {prepareInteriors,layoutPrepared,overviewInset,readableScale} from './split-layout.mjs';
+import {systemViewport} from './semantic.mjs';
 import {denseInventory,manyExternalInventory,records as ordinaryRecords,relations as ordinaryRelations,areas as ordinaryAreas} from './visual/two-systems-five-externals.mjs';
 
 const raw=[
@@ -500,4 +501,29 @@ test('frames naming one destination stand in a display group, each keeping its o
     assert.ok(border(end,frame),`${from}'s arrow reaches ${to}'s border`);
   }
   assert.ok(!layout.edges.some(edge=>edge.outerTo===group.id||edge.to===group.id),'the group ends no arrow');
+});
+
+// Redis's three "DNS resolver" frames stood in a group at the bottom of the
+// map. The fit that reserved every heading measured the frames alone; the
+// camera frames the group too, 0.85% smaller, and each heading reserved to
+// the pixel lost its last letter.
+test('the whole-map camera that frames a display group still gives every heading its reserved room',async()=>{
+  const items=structuredClone(ordinaryRecords),relations=structuredClone(ordinaryRelations),areaList=structuredClone(ordinaryAreas);
+  for(const [id,caller] of [['dns-front','submission'],['dns-backend','worker']]){
+    items.push({id,title:'DNS resolver',category:'external',branch:'communication',children:[`${id}-call`],displayGroup:'dns'},
+      {id:`${id}-call`,title:'gethostbyname',category:'external'});
+    areaList.push({id,nodes:[`${id}-call`]});relations.push({from:caller,to:`${id}-call`});
+  }
+  const records=cards(items),width=1054,height=580;
+  const prepared=await prepareInteriors(records,relations,areaList,{availableHeight:height-2*overviewInset});
+  const result=await layoutPrepared(prepared,width,height);
+  const {zoom}=systemViewport(result.layout.nodes,width,height);
+  assert.ok(result.layout.nodes.some(node=>node.display),'the two frames stand in a display group');
+  assert.ok(zoom<.44,'the camera fits below the preferred scale, where the reserve matters');
+  for(const node of result.layout.nodes.filter(node=>!node.parentId&&!node.display)){
+    const record=records.find(record=>record.id===node.id);
+    if(!record.overviewMinWidth)continue;
+    assert.ok(node.width*zoom+1e-6>=record.overviewMinWidth,`${node.id}: ${node.width*zoom} of ${record.overviewMinWidth}px for its heading`);
+    assert.ok(node.height*zoom+1e-6>=record.overviewHeightAtWidth(node.width*zoom,{availableHeight:height-2*overviewInset}),`${node.id}: its summary fits`);
+  }
 });

@@ -409,6 +409,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Fitting a full oversized list must not enlarge the world repeatedly and
   collapse its fitted width. Long words reserve enough width; a narrow
   heading can continue below its zoom mark instead of breaking a name midway.
+  The fit that sizes those reserves frames exactly what the whole-map camera
+  frames, a display group's frame with its padding included. Measured over
+  the participants alone, the camera framing Redis's group of "DNS resolver"
+  frames stood 0.85% smaller than the fit, and every heading reserved to the
+  pixel lost its last letter ("DNS resolve", "TCP endpoin", "redis-server
+  (executable" over a lone ")").
+  A title wraps only between words, the way the browser wraps it: closing
+  punctuation stays with the word before it and an opening bracket with the
+  word after it, so no line starts with ")" or is ")" alone. A word breaks
+  inside only when it alone is wider than the whole line, after a separator
+  or between camelCase words when it can, and still never before closing
+  punctuation. Map titles are drawn as those measured lines and the browser
+  never breaks a word of them again. A heading whose room is still short of
+  its longest word shrinks its type until that word fits instead of breaking
+  it; a part's title leaves room for its zoom button.
   External width minima allow that arrangement; height reserves the actual
   wrapped heading and nested-content hint with their insets, without an unrelated floor.
   Orientation comparison uses those measured minima before world size.

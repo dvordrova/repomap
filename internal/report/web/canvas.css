@@ -31,7 +31,7 @@
 .system-communication-records article{border-top:1px solid #d4dce6;padding:12px 0}
 .system-communication-records button{width:100%;text-align:left}
 .flow-part{position:relative;box-sizing:border-box;height:100%;width:100%;border:1.5px solid #718096;border-radius:9px;background:#fff;padding:16px;display:flex;flex-direction:column;gap:8px;color:#243044}
-.flow-part>strong{font-size:17px;line-height:1.25;overflow-wrap:anywhere;white-space:pre-line}
+.flow-part>strong{font-size:17px;line-height:1.25;white-space:pre-line;overflow-wrap:normal}
 .flow-kind{font-size:12px;line-height:16px;color:#66758a;display:flex;justify-content:space-between;gap:6px}
 .flow-input{color:#7252b3;font-size:13px;line-height:1.35;white-space:pre-line;overflow-wrap:anywhere;font-weight:600}
 .flow-area.flow-component,.flow-area.flow-communication,.flow-area.flow-input-collection{--flow-frame-width:1.25px}
@@ -132,7 +132,7 @@
 .flow-standalone-part>.flow-description{font-size:11px;line-height:15px;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
 .flow-component-overview{position:absolute;transform-origin:top left;pointer-events:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:8px;overflow:hidden;color:#243044;background:#f8fafc;border-radius:8px;cursor:zoom-in}
 .flow-component-overview-heading{display:flex;flex-shrink:0;gap:8px;align-items:center;width:100%}
-.flow-component-overview-heading>strong{font:700 18px/23px system-ui;overflow-wrap:anywhere;flex:1;min-width:0}
+.flow-component-overview-heading>strong{font:700 18px/23px system-ui;white-space:pre;flex:1;min-width:0}
 .flow-component-overview .flow-component-role{margin:0;white-space:normal;flex-shrink:0}
 .flow-component-overview .flow-description{font-size:13px;line-height:18px;min-height:0;overflow:hidden}
 .flow-component-overview .flow-description-compact{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
@@ -140,18 +140,18 @@
 .flow-component-areas{list-style:none;margin:0;padding:6px 0 0;border-top:1px solid #dce2ea;min-height:0;overflow:auto;flex:0 1 auto}
 .flow-component-areas.flow-scrollable{scrollbar-width:thin;scrollbar-color:#9caabd transparent;background:linear-gradient(#f8fafc 30%,#f8fafc00) center top,linear-gradient(#f8fafc00,#f8fafc 70%) center bottom,radial-gradient(farthest-side at 50% 0,#53617650,#53617600) center top,radial-gradient(farthest-side at 50% 100%,#53617650,#53617600) center bottom;background-repeat:no-repeat;background-size:100% 32px,100% 32px,100% 10px,100% 10px;background-attachment:local,local,scroll,scroll}
 .flow-component-areas li{margin:0;padding:0}
-.flow-enabled .flow-component-areas button{display:block;width:100%;padding:5px 0;border:0;border-radius:0;background:transparent;text-align:left;font:500 13px/18px system-ui;color:#243044;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
+.flow-enabled .flow-component-areas button{display:block;width:100%;padding:5px 0;border:0;border-radius:0;background:transparent;text-align:left;font:500 13px/18px system-ui;color:#243044;white-space:normal;cursor:pointer}
 .flow-enabled .flow-component-areas button:hover{color:#176f68;text-decoration:underline;text-underline-offset:3px;background:transparent}
 .flow-enabled .flow-zoom-mark{position:absolute;transform-origin:top left;display:grid;place-items:center;box-sizing:border-box;width:34px;height:24px;border:0;background:transparent;color:#52647d;border-radius:0;padding:0;cursor:zoom-in;pointer-events:auto}
 .flow-enabled .flow-zoom-mark svg{display:block}
 .flow-enabled .flow-zoom-mark:hover{background:transparent;color:#243044}
 .flow-communication-overview{background:#fffaf1;flex-direction:row;align-items:center;gap:4px;padding:0}
-.flow-communication-overview strong{font-size:13px;line-height:17px;white-space:normal}
+.flow-communication-overview strong{font-size:13px;line-height:17px}
 .flow-component-overview.flow-input-collection{background:#edf5ff;color:#204a7b;padding:0;gap:6px}
-.flow-component-overview.flow-input-collection strong{font-size:13px;line-height:17px;white-space:normal}
+.flow-component-overview.flow-input-collection strong{font-size:13px;line-height:17px}
 .flow-component-overview.flow-input-collection .flow-component-overview-heading{box-sizing:border-box}
 .flow-input-types{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto;flex:0 1 auto}
-.flow-input-types li{margin:0;font:500 13px/18px system-ui;overflow-wrap:anywhere}
+.flow-input-types li{margin:0;font:500 13px/18px system-ui}
 .map-object-heading{position:relative;padding-right:38px;min-height:32px}
 .flow-enabled .map-close-details{position:absolute;top:0;right:0;display:grid;place-items:center;width:32px;height:32px;padding:4px;border:1px solid #d4dce6;border-radius:6px;background:white;color:#39455a;cursor:pointer}
 .flow-enabled .map-close-details:hover{background:#edf2f8;border-color:#8c9eb8}
