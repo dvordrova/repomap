@@ -1,5 +1,31 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — Neighbour branches merged: parameter cycles, definition-time calls
+
+- **facts/parameter-cycle.** etcd's server module overflowed the stack in
+  `parameterValue`: main exited 2, and this branch exits 0 with 196
+  registrations, 44 of them with a holder.
+  - Review fix: each search visits a parameter once, and reaching it again
+    adds no value. A recursive helper that hands itself the same router
+    therefore keeps the holder its outside caller gave it (the neighbour's
+    fixtures had pinned "no holder").
+  - The search is linear, not per path.
+  - C and Clojure have no equivalent.
+- **python/annotation-lambdas.** Lambdas in Python definition headers and
+  store targets are declared.
+- The owner delegated the neighbour's questions. Answer: a call belongs to the
+  scope in which it runs, stated once in PROGRAM_INDEX.
+  - A TS decorator's evaluated arguments and a parameter decorator now belong
+    to the defining class (or the enclosing scope for a class decorator); the
+    decoration itself stays the member's. This supersedes the 2026-09-26 entry
+    above that kept a TS parameter decorator with its method.
+  - Clojure metadata and attr-map calls, `defmulti` included, belong to the
+    namespace.
+  - Go and C have no equivalent.
+  - Open: Clojure `(def x (f))` still gives its load-time call to the var.
+- A no-model metabase Clojure run fails on main with "invalid external symbol
+  authority"; its fix follows.
+
 ## 2026-09-27 — The map model's first steps: dead mechanisms out, C reads in
 
 - Owner: "ты еще прослеживаешь логику того, что мы делаем? или мы уже какие-то
