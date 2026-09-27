@@ -2448,6 +2448,11 @@ type pageNodeSymbol struct {
 	// row and not left to a tooltip.
 	Inner bool   `json:"inner,omitempty"`
 	Text  string `json:"text,omitempty"`
+	// Path is the file the declaration is written in: a part's tiles stand
+	// by file. Open is its source in a served report, as Href is in a static
+	// one: the reading names a declaration by the same source.
+	Path string `json:"path,omitempty"`
+	Open string `json:"open,omitempty"`
 }
 
 const maxTileFields = 8
@@ -2561,7 +2566,7 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		symbol.Inner = object.Visibility != programindex.VisibilityPublic && object.Visibility != programindex.VisibilityUnknown
 		symbol.Text = symbolText(object, name)
 		if anchor != nil {
-			symbol.Href = anchor.Href
+			symbol.Href, symbol.Open, symbol.Path = anchor.Href, anchor.Open, anchor.Path
 		}
 		if interpretation := ref.subject.Interpretation; interpretation != nil && interpretation.Key {
 			symbol.Key = true

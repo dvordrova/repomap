@@ -86,7 +86,7 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
   if(viewport.zoom<=systemViewport(nodes,width,height).zoom)return open;
   const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
   const layers=new Map();
-  // An input collection's part groups open with the collection itself.
+  // An input collection's part groups are a layer of their own (below).
   for(const node of nodes.filter(node=>node.frame&&!node.display&&byID.get(node.id)?.branch!=='inputs-part')){
     let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;
     if(!layers.has(depth))layers.set(depth,[]);
@@ -97,8 +97,17 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
     if(viewport.zoom<layerThreshold(frames,byID,width,height,depth,retaining))break;
     for(const frame of frames)open.add(frame.id);
   }
+  // An open input collection first shows its inputs grouped by the part
+  // holding their handler, each group named; the groups open to their inputs
+  // when those are readable, as areas open to their parts. Opened with the
+  // collection, Redis's 95 inputs stood as a wall of 5px tiles under 5px
+  // group names.
+  const groups=inputGroups(nodes,byID).filter(group=>open.has(group.parentId));
+  if(groups.length&&viewport.zoom>=layerThreshold(groups,byID,width,height,1,groups.some(group=>previous.has(group.id))))
+    for(const group of groups)open.add(group.id);
   return open;
 }
+const inputGroups=(nodes,byID)=>nodes.filter(node=>node.frame&&byID.get(node.id)?.branch==='inputs-part');
 
 // The smallest zoom at which the layer holding frame `id`, and every layer
 // above it, stays open: the retaining side of the detail thresholds.
@@ -106,6 +115,8 @@ export function layerFloor(nodes,records,id,width,height){
   const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
   const depthOf=node=>{let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;return depth;};
   const node=placed.get(id);if(!node)return Infinity;
+  if(byID.get(id)?.branch==='inputs-part')
+    return Math.max(layerFloor(nodes,records,node.parentId,width,height),layerThreshold(inputGroups(nodes,byID),byID,width,height,1,true));
   const frames=nodes.filter(node=>node.frame&&!node.display&&byID.get(node.id)?.branch!=='inputs-part');
   let floor=systemViewport(nodes,width,height).zoom;
   for(let depth=0;depth<=depthOf(node);depth++){
@@ -141,6 +152,21 @@ export function partViewport(node,zoom,width,height,margin=24) {
   const x=width/2-(node.absolute.x+node.width/2)*zoom;
   const y=node.height*zoom<=height-2*margin?height/2-(node.absolute.y+node.height/2)*zoom:margin-node.absolute.y*zoom;
   return {x,y,zoom};
+}
+
+// Zoomed into a part at the scale its declarations read at: the part whole
+// in the middle when it fits, else its head and first column a margin from
+// the canvas's top left, where its callers stand. Fitted whole instead, a
+// part of many declarations stood at 7px type; centred at the reading scale,
+// its first column was cut off at the left.
+export function deepViewport(node,zoom,width,height,margin=24){
+  const across=node.width*zoom<=width-2*margin,down=node.height*zoom<=height-2*margin;
+  return {x:across?width/2-(node.absolute.x+node.width/2)*zoom:margin-node.absolute.x*zoom,
+    y:down?height/2-(node.absolute.y+node.height/2)*zoom:margin-node.absolute.y*zoom,zoom};
+}
+// A point centred at a zoom: a declaration found or chosen in its part.
+export function pointViewport(point,zoom,width,height){
+  return {x:width/2-point.x*zoom,y:height/2-point.y*zoom,zoom};
 }
 
 // Entering a frame, whatever the frame is: an area, an inputs or external
@@ -218,7 +244,7 @@ export function closedContainer(id, placed, records, detailed, componentsOpen, c
   for(let at=placed.get(id)?.parentId;at;at=placed.get(at)?.parentId){
     const branch=records.get(at)?.branch;
     if((branch==='area'&&!detailed.has(at))||
-      (['communication','inputs'].includes(branch)&&communicationsOpen&&!communicationsOpen.has(at))||
+      (['communication','inputs','inputs-part'].includes(branch)&&communicationsOpen&&!communicationsOpen.has(at))||
       (branch==='component'&&(openComponents?!openComponents.has(at):!componentsOpen))||
       (!openComponents&&!componentsOpen&&['communication','inputs'].includes(branch)))closed=placed.get(at);
   }

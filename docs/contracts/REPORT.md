@@ -114,13 +114,24 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 
 - The ordinary entrance includes every saved request, command, activity and
   interaction. SystemMap collects the original input nodes into one blue
-  display frame per component owner, outside the component. Its distant summary
+  display frame per component owner, outside the component. Its heading is
+  "Inputs", the word the colour key uses for them; its component is named by
+  its arrow into it, in its zoom mark's accessible name and in the location
+  row ("Inputs · redis-server (executable)"). Headed with its component's
+  name, Redis's collection had read as a second redis-server beside the
+  programs. It stands attached to its component, in the layer next to it
+  with its arrow straight into it (measured at 1440×900 and 1280×800).
+  Its distant summary
   shows the actual catalogue types (requests, commands, background work,
   interactions, other operations); zoom reveals the original named input nodes.
   Inside the collection the inputs stand together by the part holding their
   handler (the saved implementation owner), each group framed and titled by
   that part's name and ordered by it; choosing a group's title reads that
-  part. An input with no owner stays loose after the groups, and a collection
+  part. The collection opens to its groups first, each closed and named as
+  a closed area is, with a zoom mark that enters it; a group opens to its
+  inputs when their headings read (14px to open, 12px to stay open), as
+  areas open to their parts. Opened with the collection, Redis's 95 inputs
+  had stood as a wall of 5px tiles under 5px group names. An input with no owner stays loose after the groups, and a collection
   whose inputs share one part keeps them loose. A tile names its kind only
   when it is not the collection's most common kind: "Request" on 97 of Redis's
   98 tiles repeated the collection's own summary. The groups are display
@@ -206,11 +217,22 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the right without inserting another row or changing its text position. Dark arrows and outlined participants
   identify the currently emphasized connections: a participant takes the
   arrows' dark on its border, and the card open on the right keeps its
-  heavier outline.
+  heavier outline. Emphasis recedes the rest instead of greying what is
+  pointed at: the subject takes the existing dark (a part its outline, a
+  frame its border at the arrows' 2.5px), the parts across its dark arrows
+  take the same outline, a pointed frame's own parts and the arrows between
+  them stay as they are, and every part, frame and arrow the emphasis does
+  not involve recedes to 40% opacity. Frames grouped under one destination's
+  text recede with their heading when none of them is involved and stay when
+  one is. No veil or tile fill marks the pointed thing: a grey veil on the
+  pointed area's parts and a grey fill on the pointed declaration had made
+  them look deader than their outlined neighbours.
   Component frames retain their language, kind, role and purpose above their parts. Colour never replaces
   the visible type cues or independent fact/model provenance in the reading
   panel. Text has at least 4.5:1 contrast; meaningful frames and connections
-  retain at least 3:1 contrast, including non-selected neighbours. A grayscale
+  retain at least 3:1 contrast, including non-selected neighbours; only
+  what an emphasis does not involve recedes below it while that emphasis
+  lasts. A grayscale
   screenshot and actual browser colour measurements cover this palette; they
   are not a claim of full WCAG conformance for the entire report.
   Equal destination names do not merge records.
@@ -231,8 +253,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   child's bounds inside the viewport do not count as visible content. A fully
   visible, legible part keeps the current camera when opened from a reading.
 
-- The drawing has exactly one reason for emphasis: search results, the area
-  under the pointer, the pinned input path, or the selected part's neighbours.
+- The drawing has exactly one reason for emphasis: search results, the part
+  or frame under the pointer, the pinned input path, or the selected part's
+  neighbours. A pointed part is the subject itself: only its own arrows
+  darken. A frame's title, border and empty space look at the frame, whose
+  arrows crossing its border darken. Lifted to its area, a part pointed at
+  in Data type commands had lit all of the area's arrows.
   A pinned input path is drawn as its trace with the existing dark emphasis:
   the arrows of its shortest call/read witnesses, each reached part joined
   from the part its witness enters through. Other calls among the same parts
@@ -294,10 +320,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - Hovering an area or a part inside it labels its inner parts with local
   numbers. One outside participant and direction form one label with every
   exact inner endpoint number (for example `2 · 3`). Different outside
-  identities and opposite directions remain separate. Hovering that label
-  shows all original relations, sources and possible-call marks in a separate
-  section of the reading column; selected details and their links stay present.
-  Moving into that column keeps the connection evidence available. Clicking its
+  identities and opposite directions remain separate. Resting on that label
+  opens its card: all original relations, sources and possible-call marks
+  behind it; selected details and their links stay present. Clicking its
   number pans to the named outside participant. Connection endpoints use compact number badges; their outside names remain
   available to assistive navigation and the reading column.
   Lines have no click target or native tooltip. These numbers
@@ -310,6 +335,27 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   not an execution order. It stands visible beside the map's controls, above
   the key, where the row had room: folded into a legend at the bottom of a
   900 px window, no reader of Redis's map found it.
+
+- A card (a label's calls, or everything a numbered part is joined to outside
+  its frame) opens on intent: the pointer rests on its handle for about a
+  tenth of a second, so a handle crossed on the way elsewhere opens nothing.
+  It stands flush with its handle, outside the frame being read so it covers
+  none of that frame's parts, on the side with room, and wholly inside the
+  canvas; a label's card goes out through the border its label stands on.
+  With no room outside the frame it stands beside its handle toward the
+  roomier side. It is an element of the map and zooms and moves with it.
+  While a card is open or kept open, the frame being read stays: the way to
+  the card crosses other parts, frames and empty canvas without changing
+  the emphasis or the labels. Leaving the handle, the pointer is safe inside
+  the triangle between where it left and the card: the card lasts and no
+  other handle on the way takes it. Re-targeting on every pointer move had
+  closed the card on the way to it, and with the pointer on it, as soon as
+  it stood outside the frame. A click on a handle or on its card keeps the
+  card open; a kept card has a ✕, and ✕, Escape or a click on empty canvas
+  closes it. That click closes the card and nothing else: it neither
+  selects nor moves the camera. The card's list scrolls under its sticky
+  heading and ✕. The dwell, the linger after leaving and the triangle are
+  interaction timing, tuned on recorded pointer paths, not evidence limits.
 
 - ELK prepares native area interiors, then places each component's ready
   immediate child rectangles in a flat graph. These children retain their
@@ -417,18 +463,48 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   open frames do not promise another hidden layer.
 
   A part with declarations has a zoom button; zoomed far into the part, its
-  declarations stand inside its own card as tiles at a quarter of its size,
-  each a link into the code: a type with its fields and methods under it, a
-  function or a module's variable alone. A tile keeps its link column, the
-  longest chain of calls, returns and takes leading to it, so a caller stands
-  left of what it calls. Tiles are placed in the order the page lists them,
-  the model's keys first, and stack in that order within their column; a
-  column too tall spills into the next, and what finds no room is counted
-  as "+N" with every declaration it holds. A key is never counted while a
-  declaration after the keys is drawn. Placed by link column first, the
-  repomap self-run's parts hid 88 of their 256 keys while drawing
-  declarations listed after them; placed in list order they hide one, in a
-  card too small for its keys.
+  declarations stand inside its own card as tiles, each a declaration to
+  choose: a type with its fields and methods under it, a function or a
+  module's variable alone. A tile keeps its link column, the longest chain
+  of calls, returns and takes leading to it, so a caller stands left of what
+  it calls. Tiles stand by file, the files in the order their first
+  declaration is listed and each file's declarations in the order the page
+  lists them, the model's keys first; the file is a hint, and Redis's
+  linked-list functions had stood scattered among the dictionary's. They
+  stack in that order within their column and a column too tall spills into
+  the next. A tile is as wide as the longest name among the part's
+  declarations, so no name is cut, and the columns share the card's width;
+  cut to 190px, Redis's names read "_dictStringCopyHTKe…". The tiles are
+  drawn at a quarter of the card's scale, or smaller when a quarter does not
+  hold them all whole, however many the part holds: nothing is counted away
+  and no scale is too small to search, and a large part is a larger
+  drawing to pan (at 1440×900 Data structures had drawn 40 tiles and
+  counted 63 away as "+63"). The
+  part's name stands over them at the same screen size at any such scale.
+  Placed by link column first, the repomap self-run's parts hid 88 of their
+  256 keys while drawing declarations listed after them. The zoom button
+  enters at the scale the declarations read at, their own 13px: the part
+  whole when it fits there, else its head and first column a margin from
+  the canvas's top left. Fitted to the canvas, Redis's Persistence had
+  opened at its title's scale with no declaration drawn. A drag over the
+  declarations pans the map, as a drag over the part does; a drag that
+  moved chooses nothing.
+
+  Pointing at a declaration darkens only its own arrows: its links to the
+  part's other declarations, and among the part's arrows those carrying a
+  call into it (the call's callee is its source) or out of it (the call's
+  caller is its name); the declarations its links do not join recede. A
+  click on a tile chooses that declaration: the part is read with it named
+  in the reading column (the existing `map.explainSource`), the tile keeps
+  the dark outline of what is read, its own arrows stay dark, and the camera
+  centres it at its reading scale. A modifier click still opens its code. A
+  declaration the reading column names by its source (Find's code hit, a
+  declaration chosen in the reading, a restored visit) is the one chosen on
+  the canvas, and a newly named one is centred at its reading scale; a
+  restored visit keeps its camera. Clicked, Redis's tiles had opened GitHub
+  in a new tab or bubbled to the part already selected, and a Find code hit
+  had stopped at the part. The page data gives each tile its file and the
+  same source link its reading uses, served or static.
 
   Root summaries prioritize saved area names over role, counts and purpose;
   complete dense inventories scroll without dropping entries. Ordinary wheel
@@ -471,9 +547,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   geometry identity. Component entrance fits the complete participant frame
   before exploring a group, keeping siblings on both sides in view. Entering
   a group or a call then uses its actual content scale for reading. A
-  focused area that fits the canvas at a zoom where its layer stays open is
-  fitted whole, never wider than the visible canvas; only an area too large
-  even so is entered at its first part. Entering a frame or an input's path
+  focused area that fits the canvas at a zoom where its parts' headings stay
+  about twelve pixels (and its layer open) is fitted whole, never wider than
+  the visible canvas; only an area too large even so is entered at its
+  first part at that scale. Fitted at its layer's floor instead, Redis's
+  Server runtime stood at 8px headings at 1440×900 and 4 to 7px at 1280×800. Entering a frame or an input's path
   opens what it enters: those frames stay open through the camera move's own
   zooms, so they arrive open although the camera stands smaller than a
   closed layer needs to open by itself. Closed on the way, microblog's
@@ -702,9 +780,12 @@ The reviewed repository name links to the reviewed directory and revision when
 it is nested in a repository. It sits on the left beside an icon-only Home
 action; the repomap name and GitHub mark link to repomap on the right. The same
 header contains Questions, the component list and one visible Find field.
-All is the list's default and runs the same whole-map action as Show whole map,
-clearing selection, input context and the visible Find query after recording
-the new visit. Component choices and Back restore their
+All is the list's default and runs the whole-map action, clearing selection,
+input context and the visible Find query after recording the new visit. Show
+whole map above the canvas moves only the camera: the reading, its emphasis
+and any input path stay, as a reader zooming out to look around expects;
+clearing them had sent that reader back to the start. Component choices and
+Back restore their
 matching selection and camera.
 
 The toolbar retains the current question and the exact component/area/part

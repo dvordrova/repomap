@@ -64,7 +64,7 @@ test('a description is wrapped by the browser and counted at the card\'s text co
 // resolve" over a clipped "r". Short of room, a heading shrinks and stays whole.
 test('an overview heading short of its longest word shrinks rather than breaking it',()=>{
   const measure=(text,font='13px')=>Array.from(String(text)).length*Number(/(\d+)px/.exec(font)[1])*.55;
-  for(const [title,branch] of [['DNS resolver','communication'],['redis-server (executable)','inputs'],['redis-benchmark (executable)','component']]){
+  for(const [title,branch] of [['DNS resolver','communication'],['Background work (Inputs)','communication'],['redis-benchmark (executable)','component']]){
     const [card]=prepareCards([{id:'frame',title,branch,children:['inside']},{id:'inside',title:'inside'}],{},measure,text=>text);
     for(const width of [card.overviewMinWidth,card.overviewMinWidth-.6,card.overviewMinWidth*.6]){
       const heading=overviewHeading(card,width,measure),font=`700 ${branch==='component'?18:13}px system-ui`;
@@ -247,4 +247,15 @@ test('an input tile names its kind only when it is not its collection\'s common 
   assert.equal(cards.get('thread').kindLabel,'Background activity');
   assert.ok(cards.get('get').height<cards.get('thread').height,'a tile without its kind row is shorter');
   assert.deepEqual(cards.get('inputs').inputGroups.map(group=>group.kind),['request','background'],'the collection still lists every kind it holds');
+});
+
+// Titled with its component's name, Redis's input collection read as a
+// second redis-server beside the programs. It is headed by the word the
+// glyph key uses for inputs; its component stays in its accessible name.
+test('an input collection is headed Inputs, whatever the page titles it',()=>{
+  const measure=(text,font='13px')=>Array.from(String(text)).length*Number(/(\d+)px/.exec(font)[1])*.55;
+  const [card]=prepareCards([{id:'inputs',title:'redis-server (executable)',branch:'inputs',children:['get']},{id:'get',title:'get',activation:'request'}],{},measure,text=>text==='Inputs'?'Входы':text);
+  assert.equal(card.heading,'Входы');
+  assert.equal(card.name,'redis-server (executable)');
+  assert.deepEqual(overviewHeading(card,card.overviewMinWidth,measure).lines,['Входы']);
 });

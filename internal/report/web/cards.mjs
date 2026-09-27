@@ -83,7 +83,7 @@ export function overviewHeading(item,screenWidth,measure){
   const collection=['communication','inputs'].includes(item.branch);
   const size=collection?13:18,lineHeight=collection?17:23,font=`700 ${size}px system-ui`;
   if(item.displayGroupTitle)return {width:0,clearZoom:false,height:0,lines:[],scale:1,fontSize:size,lineHeight};
-  const title=item.name||item.title;
+  const title=item.heading||item.name||item.title;
   const clearZoom=titleWords(title).some(word=>measure(word,font)>screenWidth-64);
   const width=Math.max(1,Math.min(304,screenWidth-(clearZoom?(collection?16:32):64)));
   const {scale,lines}=fitTitle(title,width,font,measure);
@@ -180,7 +180,10 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     // longest-word boundary must not unexpectedly add a row below the zoom mark.
     // A plain tile under its display group's heading needs room for its zoom
     // mark alone.
-    const overviewMinWidth=Math.ceil(Math.max(n.displayGroupTitle?zoomMarkRoom:widest(n.title,collection?'700 13px system-ui':'700 18px system-ui')+(collection?16:64),
+    // An input collection is headed by the glyph key's word: titled with its
+    // component's name, Redis's inputs read as a second redis-server.
+    const heading=n.branch==='inputs'?translate('Inputs'):'';
+    const overviewMinWidth=Math.ceil(Math.max(n.displayGroupTitle?zoomMarkRoom:widest(heading||n.title,collection?'700 13px system-ui':'700 18px system-ui')+(collection?16:64),
       ...names.map(name=>widest(name,'500 13px system-ui')+32),
       ...inputGroups.map(group=>widest(group.title,'500 13px system-ui')+16)));
     // A short target name must not squeeze its area inventory into a column
@@ -210,7 +213,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     const kindLabel=input&&!communicationChildren.has(n.id)&&n.activation!==commonKind.get(n.id)?kind(n):'';
     // The group's heading, measured once for its layout and its drawing.
     const displayGroupHeadingAt=n.displayGroupTitle?width=>displayGroupHeading(n.displayGroupTitle,width,measure):undefined;
-    return {...n,displayGroupHeadingAt,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
+    return {...n,displayGroupHeadingAt,heading,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
       kindLabel,description,descriptionMost,subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,
