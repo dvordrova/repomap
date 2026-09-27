@@ -170,7 +170,9 @@
       var li=document.createElement('li'),head=document.createElement('div');head.className='find-result-head';
       var target=e.kind==='code'&&e.memberships.length===1?membership(e,e.memberships[0]):e;
       var shown=e.kind==='code'?tileRows(e):null,title=shown?shown.head:e.title;
-      if(e.kind==='code'&&e.memberships.length!==1)appendText(head,'strong',title,'find-code');else{var chosen=action(title,target);if(shown)chosen.classList.add('find-code');head.appendChild(chosen);}
+      // A declaration in several places is chosen by its "In" links; one no
+      // map holds still opens its row in the report.
+      if(e.kind==='code'&&e.memberships.length>1)appendText(head,'strong',title,'find-code');else{var chosen=action(title,target);if(shown)chosen.classList.add('find-code');head.appendChild(chosen);}
       appendText(head,'span',e.type,'find-result-type');li.appendChild(head);
       if(shown&&shown.fields.length)appendText(li,'p',shown.fields.join(' · '),'find-result-fields');
       appendText(li,'p',e.kind==='code'?e.path+(e.source.querySelector?.('.ln')?.textContent||''):e.component+(e.path?' · '+e.path:''),'find-result-place');

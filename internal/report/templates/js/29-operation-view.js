@@ -61,6 +61,18 @@ function rmKey(nodes,edges,category){
   });
   return key;
 }
+// The inputs that reach a part, by kind, folded under their count: most
+// commands reach most parts through the one dispatcher, and Client
+// connections' list of 95 stood open between the part's callers and its
+// own connections.
+function rmReachingInputs(n,reaching,owner,choose){
+  var inputs=rmEl('details','system-reaching-inputs');inputs.appendChild(rmEl('summary','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')+' · '+reaching.length));
+  if(reaching.length){
+    var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
+    types.forEach(function(choices,type){inputs.appendChild(rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')));var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
+  }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
+  return inputs;
+}
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
   var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
@@ -213,14 +225,7 @@ function rmKey(nodes,edges,category){
       if(!n.dataset.branch)card.querySelector('.map-related-operations')?.remove();
       var selectedMembers=new Set(projection.leaves(n.id));selectedMembers.add(n.id);
       var reaching=nodes.filter(function(candidate){if(!candidate.dataset.activation)return false;return Array.from(projection.selection('',candidate.id).active).some(function(id){return selectedMembers.has(id);});});
-      // Collapsed with its count: most commands reach most parts through the
-      // one dispatcher, and the list of 95 stood between a part's callers
-      // and its own connections.
-      var inputs=rmEl('details','system-reaching-inputs');inputs.appendChild(rmEl('summary','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')+' · '+reaching.length));
-      if(reaching.length){
-        var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
-        types.forEach(function(choices,type){inputs.appendChild(rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')));var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){select(input,true,null,true);});links.appendChild(b);});inputs.appendChild(links);});
-      }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
+      var inputs=rmReachingInputs(n,reaching,owner,function(input){select(input,true,null,true);});
       if(JSON.parse(n.dataset.concepts||'[]').length)inputs.appendChild(rmEl('p','meta',rmT('Reaching a part does not by itself establish a change to its entities.')));
       if(!n.dataset.branch||n.dataset.branch==='communication'){card.querySelector('.map-card-intro').after(inputs);}
     }

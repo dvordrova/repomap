@@ -207,7 +207,6 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-canvas.system-hovering .map-edge-group{opacity:.09}.system-canvas.system-hovering .map-edge-group.system-hover{opacity:1}
 .system-canvas.system-hovering .map-node{opacity:.25}.system-canvas.system-hovering .map-node.system-hover{opacity:1}
 .system-canvas .map-edge-group.system-hover .map-edge{stroke:var(--accent);stroke-width:2.5}
-.system-canvas .map-legend{font-size:12px}.system-canvas .map-legend summary{font-size:12px}
 .system-canvas .map-card-docked{font-size:14px;line-height:1.45;padding:0}.system-canvas .map-card-summary{font-size:14px}
 .system-canvas .map-all-members .map-member-grid{grid-template-columns:minmax(0,1fr)}
 .system-canvas .map-card-hint{display:none}
@@ -232,10 +231,12 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-input-context .system-reading-context{margin-right:8px}
 
 /* The reading column stands beside the map's controls and key as well as
-   its canvas, and takes their height; the canvas keeps its own size. */
+   its canvas, and takes their height; the canvas keeps its own size. Only
+   the canvas's workspace sets that height: when the canvas cannot be drawn,
+   the static map's reading keeps its own scrolling box, not one as tall as
+   everything it says. */
 .map-reading-column .map-canvas-column{display:flex;flex-direction:column;min-width:0;min-height:0}
 .map-reading-column .map-canvas-column>.system-selection{margin-top:0;margin-bottom:8px}
-.system-canvas.map-reading-column .map-inspector{height:auto;max-height:none}
 .flow-enabled.map-reading-column .map-canvas-column>.map-stage{height:auto!important;flex:1 1 0;min-height:0;margin-bottom:-2px;border-radius:8px}
 .flow-enabled.map-reading-column .map-inspector{margin-left:12px;border-left:1px solid var(--line,#d4ddda);border-radius:8px}
 
@@ -274,6 +275,16 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-member-key .map-member-name{font-weight:750;color:#4f2f86}
 .map-member-name[aria-current]{text-decoration-thickness:2px}
 .map-member:has(.map-member-name[aria-current]){border-color:#243044}
+/* Code in this part is every declaration, and each is one line as the
+   part's tiles draw it, a type's fields on a line under it: a bordered box
+   per declaration put Client connections' callers two thousand pixels down
+   the reading, below 31 boxes. The chosen one keeps a dark bar. */
+.map-all-members .map-member-grid,.system-canvas .map-all-members .map-member-grid{display:block}
+.map-all-members .map-member{min-height:0;margin:0;padding:1px 0 1px 8px;border:0;border-radius:0;background:none}
+.map-all-members .map-member-name{font-size:13px;line-height:1.5}
+.map-all-members .map-member-fields{margin:0 0 3px 1.3em;line-height:1.45}
+.map-all-members .map-member-file{margin:8px 0 2px}
+.map-all-members .map-member:has(.map-member-name[aria-current]){box-shadow:inset 3px 0 #243044}
 
 /* Rows of one caller and one kind read as one line with their count. */
 .conn-fold{margin:10px 0}.conn-fold>summary{cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

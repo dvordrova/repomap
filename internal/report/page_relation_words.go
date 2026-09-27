@@ -206,21 +206,28 @@ func (builder *pageBuilder) nameConnectionEnds(row *pageConnection, connection g
 	row.Kind, row.FromName, row.ToName, row.FromDecl, row.ToDecl = kind, fromName, toName, fromDecl, toDecl
 }
 
-// connectionCall is a stored connection as the call its arrow shows, in the
-// relation vocabulary, as its row in the reading says it; nil when the
-// connection is a sentence of its own. The arrow's calls are not
-// translated, so the English phrase is the call.
+// connectionCall is a stored connection as the call its arrow's card lists,
+// or nil when the connection is a sentence of its own. The card reads a call
+// as three words, caller, relation and callee, links the two names and says
+// the relation with its underscores as spaces ("calls" as an arrow); any
+// other label shows neither name. So the relation is the vocabulary's words
+// when its phrase stands between the two names ("connects to", which had
+// been "integrates with" and named no function), and the relation's own
+// kind when the phrase wraps the callee ("passes {1} as a callback" is
+// "passes callback" on the card). The arrow's calls are not translated.
 func (builder *pageBuilder) connectionCall(connection groupindex.Connection) *pageEdgeCall {
 	var said pageConnection
 	builder.nameConnectionEnds(&said, connection)
 	phrase := said.Phrase()
-	if phrase == "" {
+	if phrase == "" || strings.ContainsAny(said.FromName+said.ToName, " \t\n") {
 		return nil
 	}
-	label, err := uiText(English, phrase, said.FromName, said.ToName)
-	if err != nil {
-		return nil
+	relation, between := strings.CutPrefix(phrase, "{0} ")
+	relation, ends := strings.CutSuffix(relation, " {1}")
+	if !between || !ends || strings.Contains(relation, "{") {
+		relation = said.Kind
 	}
+	label := said.FromName + " " + strings.ReplaceAll(relation, " ", "_") + " " + said.ToName
 	call := &pageEdgeCall{Label: label}
 	if location := connection.FromLocation; location != nil {
 		from := builder.links.anchor(location.Path, location.Line, location.Column)

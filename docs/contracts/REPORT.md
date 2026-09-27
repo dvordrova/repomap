@@ -628,7 +628,10 @@ it. Code in this part lists every declaration of the part, the model's keys
 first (in each file, and the files holding keys first) and in bold as the
 part's tiles draw them; it had listed only the keys under a heading that
 said all, and Replication's showed replicationFeedSlaves and not
-syncWithMaster. The reading column does not repeat the source index, which
+syncWithMaster. Each declaration is one line, as a tile is, a type's fields
+on a line under it, and a key type the model explained keeps its mark and
+its fields: a bordered box each had put Client connections' callers some
+1,700 px further down the reading. The reading column does not repeat the source index, which
 is that list again by file and stays on the part's card. A type's fields stand inside its row, in the code
 list and the source index alike, never as peers of the part's functions. The original native relation is available even when the
 model supplied no sentence for that pair. Relations between declarations in
@@ -646,7 +649,12 @@ messages, chosen by its kind and filled with the two declarations' names
 ("passes_callback"); a C program's import is said as an include, and a
 joint between two programs names the declarations at both of its ends
 ("anetTcpGenericConnect connects to anetAccept", not "integrates with").
-The arrow's calls on the map use the same phrases. A row the model wrote
+An arrow's card reads each of its calls as caller, relation and callee and
+links both names, so an arrow's call is those three words: the phrase's
+words when they stand between the names (the joint's card had shown only
+"anet.c:158"), the relation's kind when the phrase wraps the callee
+("cmdTable passes callback delCommand"; the full sentence showed neither
+name). A row the model wrote
 in its own words keeps them. Rows of one caller and one relation kind in
 one evidence list fold into one line with their count and callees, each
 row inside it with its sources: Client connections and replies listed
@@ -654,7 +662,9 @@ row inside it with its sources: Client connections and replies listed
 that opens and closes them together. Inputs reaching this part is
 collapsed with its count. The reading column stands beside the map's
 controls and key as well as its canvas and takes their height, with the
-canvas keeping its own: 695 px of a 1440×900 window instead of 610. It
+canvas keeping its own: 695 px of a 1440×900 window instead of 610. Only
+the canvas's workspace sets that height; the static map a canvas failure
+leaves keeps the reading's own scrolling box. It
 has no "More details" step, "To explanation" or "To code" action, which
 moved to what was already on screen. Unknown destinations and different identities never merge by title. The reading
 states when no connection to another part exists in this report. That absence
@@ -750,7 +760,8 @@ programs compile it: adlist.c's listCreate had been three results. It shows
 the declaration as its tile does (a type with its fields) and its file and
 line, and has one "In program / part →" link per program that holds it,
 reading it there; a program that leaves it off its map links to the list
-that says so (Not on the map, or Not reachable from the entrypoints).
+that says so (Not on the map, or Not reachable from the entrypoints). A
+declaration no map holds opens at its row in the report by its title.
 Choosing a component in the header closes the results and makes it the
 results' component. Back to search returns to the same list at the place
 the reader left it.

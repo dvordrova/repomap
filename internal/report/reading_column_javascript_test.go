@@ -126,3 +126,65 @@ box.chooseComponent('t2');assert.equal(panel.hidden,true,'choosing a component c
 box.chooseComponent('unknown');assert.equal(component.value,'');
 `)
 }
+
+// Client connections' 95 reaching inputs stood open between the part's
+// callers and its own connections. They are folded under their count, by
+// kind, and each still opens its input.
+func TestInputsReachingAPartAreFoldedUnderTheirCount(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "function rmReachingInputs(", "(function(){document.querySelectorAll('[data-map-explorer]')")
+	runSystemJS(t, fakeElements+code+`
+const get={dataset:{activation:'request',title:'get'}},cron={dataset:{activation:'continuous',title:'serverCron'}};
+let chosen=null;
+const inputs=rmReachingInputs({dataset:{}},[get,cron],()=>'redis-server',input=>{chosen=input;});
+assert.equal(inputs.tagName,'DETAILS');assert.ok(!inputs.open,'the list is folded');
+assert.equal(inputs.children[0].tagName,'SUMMARY');assert.equal(inputs.children[0].textContent,'Inputs reaching this part · 2');
+assert.deepEqual(inputs.all(e=>e.tagName==='H6').map(e=>e.textContent),['Incoming requests','Background work']);
+inputs.find(e=>e.tagName==='BUTTON'&&e.textContent==='redis-server / serverCron').listeners.click();
+assert.equal(chosen,cron);
+const none=rmReachingInputs({dataset:{itemKind:'External communication'}},[],()=>'',()=>{});
+assert.equal(none.children[0].textContent,'Inputs reaching this communication · 0');
+`)
+}
+
+// A key type the model explained is listed from its concept before the
+// part's code rows, and the concept carries neither the key mark nor the
+// type's fields: redisClient read as a plain name with no fields.
+func TestCodeInThisPartKeepsAKeyTypesMarkAndFields(t *testing.T) {
+	code := systemJSPiece(t, "26-map-members.js", "var repomapMembers = (function () {", "\n})();") + "\n})();"
+	runSystemJS(t, `
+const chip=(name,href)=>({textContent:name,dataset:{},getAttribute:k=>k==='href'?href:null,cloneNode(){return {textContent:name,querySelectorAll:()=>[]};},closest:()=>null,querySelector:()=>null});
+const field=(name,href)=>({dataset:{},querySelector:s=>s==='.chip'?chip(name,href):null});
+const row=(name,href,key,fields)=>({dataset:{alias:'',key:String(key)},querySelector:s=>s===':scope>strong>.chip'&&key||s===':scope>.chip'&&!key?chip(name,href):s.startsWith(':scope>.anchor')?{textContent:'redis.c:1'}:null,
+  querySelectorAll:s=>s===':scope>.symbol-fields>li'?fields.map(f=>field(f,href+'#'+f)):[]});
+const rows=[row('redisClient','h#303',true,['fd','db']),row('createClient','h#2440',false,[])];
+const group={querySelectorAll:s=>s==='.group-highlights .key-symbol'?rows:[]};
+const document={getElementById:id=>id==='clients'?group:null};
+const node={dataset:{concepts:JSON.stringify([{name:'redisClient',explanation:'One connected client.',source:{Href:'h#303',Text:'redis.c:303'}}])},getAttribute:()=>'#clients'};
+`+code+`
+const items=repomapMembers.items(node);
+assert.deepEqual(items.map(i=>[i.name,!!i.key,(i.fields||[]).map(f=>f.name)]),[['redisClient',true,['fd','db']],['createClient',false,[]]]);
+assert.equal(items[0].explanation,'One connected client.','the model line stays');
+`)
+}
+
+// Find: a declaration that no map holds had its title as the way to its
+// row; one result per declaration had made that title plain text.
+func TestFindOpensADeclarationNoMapHoldsAtItsRow(t *testing.T) {
+	render := systemJSPiece(t, "40-find.js", "  function render(){", "  box.addEventListener('input',render);")
+	runSystemJS(t, fakeElements+`
+const box={value:'list'},panel={hidden:true},kind={value:'all'},component={value:'',options:[{value:''}]};
+const results=new El('ol'),status=new El('p'),pages=new El('div');pages.querySelector=()=>({disabled:false,textContent:''});
+let page=0,lastQuery='',pageSize=12,lastPlace='',lastScroll=0;
+const source={tagName:'SPAN',querySelector:()=>null};
+const code=(title,memberships)=>({title,summary:'',path:'adlist.c',component:'',section:'',sections:[],kind:'code',type:'Code',haystack:'list',source,memberships,destination:{}});
+const entries=[code('listCreate:41',[]),code('listDup:90',[{title:'a'},{title:'b'}])];
+function expanded(){} function changed(){} function close(){} function rank(){return 0;} function appendText(p,t,v){return p.appendChild(rmEl(t,'',v));}
+function action(label,entry){const b=rmEl('button','',label);b.entry=entry;b.classList={add(){}};return b;} function description(){} function tileRows(e){return {head:e.title.replace(/:\d+$/,''),fields:[]};} function membership(e,m){return m;}
+document.documentElement={lang:'en'};
+`+render+`
+render();
+const heads=results.children.map(li=>li.children[0].children[0]);
+assert.equal(heads[0].tagName,'BUTTON');assert.equal(heads[0].entry,entries[0],'the title opens the declaration where the report lists it');
+assert.equal(heads[1].tagName,'STRONG','a declaration in several places is chosen by its In links');
+`)
+}

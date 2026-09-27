@@ -5,11 +5,20 @@ var repomapMembers = (function () {
   function sourceKey(source) { return source.Href || source.Open || (source.NoSource ? (source.Path ? JSON.stringify([source.Path,source.Line||0]) : source.Text) : ''); }
   function items(node) {
     if (inventories.has(node)) return inventories.get(node);
-    var result = [], known = new Set();
+    var result = [], known = new Map();
+    // A key type the model explained is listed first from its concept; its
+    // row in Code in this part still says it is a key and carries its
+    // fields, which the concept does not.
     function add(item) {
       var key = sourceKey(item.source);
-      if (!key || known.has(key)) return;
-      known.add(key); result.push(item);
+      if (!key) return;
+      var listed = known.get(key);
+      if (listed) {
+        if (item.key) listed.key = true;
+        if (!listed.fields?.length && item.fields?.length) listed.fields = item.fields;
+        return;
+      }
+      known.set(key, item); result.push(item);
     }
     JSON.parse(node.dataset.concepts || '[]').forEach(add);
     var href = node.getAttribute('href') || '';

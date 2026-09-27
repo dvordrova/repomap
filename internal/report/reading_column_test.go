@@ -92,9 +92,21 @@ func TestRelationRowsAreSaidInOneVocabulary(t *testing.T) {
 	if russian := renderGroupFragment(t, Russian, card); !strings.Contains(russian, "initServer передаёт acceptHandler как обратный вызов") {
 		t.Fatalf("the relation's words are not the report's translated words:\n%s", russian)
 	}
-	// The arrow's call on the map says the same.
-	if call := builder.connectionCall(server.Connections[1]); call == nil || call.Label != "anetTcpGenericConnect connects to anetAccept" {
-		t.Fatalf("the arrow's call keeps the stored words: %+v", call)
+	// The arrow's card reads a call as caller, relation and callee, three
+	// words with the relation's underscores read as spaces, and links the
+	// two names; a longer sentence showed neither name, and cmdTable's
+	// callbacks read "Generic key commands redis.c:709". The joint names
+	// both functions there too, where "integrates with" named none.
+	cardCall := regexp.MustCompile(`^(\S+) (\S+) (\S+)$`)
+	for connection, want := range map[int][3]string{0: {"initServer", "passes callback", "acceptHandler"}, 1: {"anetTcpGenericConnect", "connects to", "anetAccept"}, 2: {"redis.c", "includes", "adlist.h"}} {
+		call := builder.connectionCall(server.Connections[connection])
+		if call == nil {
+			t.Fatalf("connection %d has no call on its arrow", connection)
+		}
+		parts := cardCall.FindStringSubmatch(call.Label)
+		if parts == nil || parts[1] != want[0] || strings.ReplaceAll(parts[2], "_", " ") != want[1] || parts[3] != want[2] {
+			t.Fatalf("the arrow's card cannot read %q as %v", call.Label, want)
+		}
 	}
 }
 
@@ -205,5 +217,43 @@ func TestPossibleIsMutedNotAWarning(t *testing.T) {
 	rule := regexp.MustCompile(`(?m)^\.possible\{([^}]*)\}`).FindStringSubmatch(string(raw))
 	if rule == nil || !strings.Contains(rule[1], "color:var(--muted)") || strings.Contains(rule[1], "--warn") {
 		t.Fatalf("possible is not in the muted text colour: %v", rule)
+	}
+}
+
+// Code in this part lists every declaration. A bordered box a declaration
+// put Client connections' 31 declarations some 1,700 pixels long above the
+// part's connections; each is one line, as the part's tiles draw it.
+func TestCodeInThisPartIsALineADeclaration(t *testing.T) {
+	raw, err := reportTemplateFS.ReadFile("templates/css/43-map-reading.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := regexp.MustCompile(`(?m)^\.map-all-members \.map-member\{([^}]*)\}`).FindStringSubmatch(string(raw))
+	if rule == nil || !strings.Contains(rule[1], "border:0") || !strings.Contains(rule[1], "min-height:0") {
+		t.Fatalf("a declaration in the part's code list is drawn as a box: %v", rule)
+	}
+}
+
+// The reading column's height comes from the canvas's workspace. A rule
+// that let it grow outside the canvas made the static map a canvas failure
+// leaves behind carry a reading 6,500 px tall with no scrolling box.
+func TestReadingColumnHeightComesOnlyFromTheCanvas(t *testing.T) {
+	files, err := reportTemplateFS.ReadDir("templates/css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := regexp.MustCompile(`([^{}]+)\{([^}]*)\}`)
+	for _, file := range files {
+		raw, err := reportTemplateFS.ReadFile("templates/css/" + file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range rule.FindAllStringSubmatch(string(raw), -1) {
+			selector, body := match[1], match[2]
+			if strings.Contains(selector, "map-reading-column") && strings.Contains(selector, "map-inspector") &&
+				strings.Contains(body, "height") && !strings.Contains(selector, ".flow-enabled") {
+				t.Errorf("%s sizes the reading column outside the canvas: %s{%s}", file.Name(), strings.TrimSpace(selector), body)
+			}
+		}
 	}
 }

@@ -70,9 +70,6 @@
 .map-zone-5 rect{fill:var(--zone-5)}.map-zone-6 rect{fill:var(--zone-6)}
 .map-zone-7 rect{fill:var(--zone-7)}.map-zone-8 rect{fill:var(--zone-8)}
 .map-line{display:block}
-.map-legend{margin-top:.3rem}
-.map-legend summary{cursor:pointer;font-weight:600;color:var(--ink)}
-.map-legend ul{margin:.4rem 0 0;font-size:var(--text-small)}
 
 /* Controls appear only when scripting is there to make them work; without it
    the map is a plain picture that already fits and already scrolls. */
