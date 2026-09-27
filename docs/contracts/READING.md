@@ -443,7 +443,12 @@ possible, drawn dashed. A call left unresolved because its field or name was
 stored under a branch draws the same possible arrow to each declaration its
 store witnesses name by identity (C `fe->rfileProc`, Go `readyLoop.read`,
 Python `handler`); the relation stays unresolved and its witnesses stay
-witnesses. A call whose stores name nothing draws nothing.
+witnesses. A call whose stores name nothing draws nothing. The reading saw
+no call there, so such a connection never borrows the sentence the pair's
+exact calls were given: it takes the fallback over the names its stores
+wrote, most often named first, each once ("Event loop calls Client
+connection handling: acceptHandler, readQueryFromClient, sendReplyToClient."),
+and a part's card shows that sentence beside the pair's own.
 
 The current operation table asks only `self` or `none` for this declaration. Immediate caller declarations and distinct sites are evidence, never an assignment destination. `none` transfers nothing. Only a complete `self` decision publishes the declaration’s activation, name and description. A real independently launched notification/metrics consumer may be `self` while its AddLogHook/PreRun/constructor/lifespan launcher is `none`. Synchronous helpers within the same responsibility are not separate work. Listener blocking alone is not a worker. Cron, persistent consumers and source-supported one-shot delayed work remain legitimate. Registration, callback and control evidence are interpreted by the model; projection never invents a semantic promotion. Native HTTP registration refs restore their original path and method verbatim; free text does not replace a known route. A `label` row whose `name` comes back empty, null or missing keeps the model's own `description` as its label (first sentence, at most 60 runes) and records `name_from: description`; an empty description still refuses the row.
 

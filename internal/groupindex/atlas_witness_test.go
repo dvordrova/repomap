@@ -12,7 +12,9 @@ import (
 // condition: the call stays unresolved, and its witnesses name the handlers
 // the stores put there. The map draws each of them as a possible arrow, the
 // kind several alternatives draw, and the relation keeps its resolution. A
-// store whose function the adapter could not name draws nothing.
+// store whose function the adapter could not name draws nothing. The part's
+// card says what the arrow reaches: the handlers, not the pair's exact calls,
+// and not no sentence at all.
 func TestUnresolvedCallDrawsItsWitnessedCandidatesAsPossibleArrows(t *testing.T) {
 	location := func(file string, line int) *programindex.Location {
 		return &programindex.Location{Path: file, Line: line, Column: 1}
@@ -63,7 +65,11 @@ func TestUnresolvedCallDrawsItsWitnessedCandidatesAsPossibleArrows(t *testing.T)
 	file := func(path string) atlas.File {
 		return atlas.File{Path: path, Line: "Preset.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}
 	}
-	target := atlas.Target{ID: program.Target.ID, Name: "server", Root: ".", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{
+	// The reading saw only the exact call between the parts and wrote the
+	// pair's sentence over it.
+	exactSentence := "Event loop calls Client connection handling: sendReplyToClient."
+	arrows := []atlas.Arrow{{ID: "a1", From: "loop", To: "clients", Calls: 1, Witnesses: []atlas.Witness{{Caller: "tick", Callee: "sendReplyToClient"}}, Sentence: exactSentence}}
+	target := atlas.Target{ID: program.Target.ID, Name: "server", Root: ".", Zones: []atlas.Zone{}, Arrows: arrows, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{
 		{ID: "loop", Dir: ".", Title: "Event loop", Line: "Waits for sockets.", Side: atlas.SideMid, MemberIDs: []string{ids["processEvents"], ids["tick"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("loop.c")}},
 		{ID: "clients", Dir: ".", Title: "Client connection handling", Line: "Reads queries and writes replies.", Side: atlas.SideMid, MemberIDs: []string{ids["readQueryFromClient"], ids["sendReplyToClient"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("server.c")}},
 	}}
@@ -75,6 +81,7 @@ func TestUnresolvedCallDrawsItsWitnessedCandidatesAsPossibleArrows(t *testing.T)
 	type drawn struct {
 		from, to   string
 		resolution programindex.PatternValueResolution
+		summary    string
 	}
 	names := map[string]string{}
 	for name, id := range ids {
@@ -82,15 +89,18 @@ func TestUnresolvedCallDrawsItsWitnessedCandidatesAsPossibleArrows(t *testing.T)
 	}
 	var got []drawn
 	for _, connection := range indexes[0].Connections {
-		got = append(got, drawn{names[connection.FromSubjectID], names[connection.ToSubjectID], connection.SupportResolution})
+		got = append(got, drawn{names[connection.FromSubjectID], names[connection.ToSubjectID], connection.SupportResolution, connection.Summary})
 		if connection.SourceKind != "native_calls" || connection.FromLocation == nil || connection.FromLocation.Line == 14 {
 			t.Fatalf("connection lost its call site or came from a call naming nothing: %+v", connection)
 		}
 	}
+	// The open call's connections do not borrow the exact call's sentence:
+	// they name the handlers its stores wrote, as the reading's fallback does.
+	stored := "Event loop calls Client connection handling: readQueryFromClient, sendReplyToClient."
 	want := []drawn{
-		{"processEvents", "readQueryFromClient", programindex.PatternValuePossible},
-		{"processEvents", "sendReplyToClient", programindex.PatternValuePossible},
-		{"tick", "sendReplyToClient", programindex.PatternValueExact},
+		{"processEvents", "readQueryFromClient", programindex.PatternValuePossible, stored},
+		{"processEvents", "sendReplyToClient", programindex.PatternValuePossible, stored},
+		{"tick", "sendReplyToClient", programindex.PatternValueExact, exactSentence},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("connections = %+v, want %+v", got, want)

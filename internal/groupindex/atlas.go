@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -247,6 +248,23 @@ func drawnEnds(relation programindex.Relation) []string {
 	return ends
 }
 
+// storedSentence is the fallback sentence of a pair's calls left open: the
+// names their stores wrote, most often named first, as the reading writes it
+// for an arrow the model has not spoken for.
+func storedSentence(from, to string, names map[string]int) string {
+	witnesses := make([]atlas.Witness, 0, len(names))
+	for name := range names {
+		witnesses = append(witnesses, atlas.Witness{Callee: name})
+	}
+	sort.Slice(witnesses, func(i, j int) bool {
+		if names[witnesses[i].Callee] != names[witnesses[j].Callee] {
+			return names[witnesses[i].Callee] > names[witnesses[j].Callee]
+		}
+		return witnesses[i].Callee < witnesses[j].Callee
+	})
+	return lines.FallbackSentence(lines.BoxSummary{Title: from}, lines.BoxSummary{Title: to}, witnesses)
+}
+
 type projectedTarget struct {
 	index      Index
 	groupOfBox map[string]string
@@ -481,6 +499,12 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			sentences[[2]string{connection.From.GroupID, connection.To.GroupID}] = connection.Summary
 		}
 		connections = []Connection{}
+		// A call left open reaches the map through the declarations its stores
+		// name. The reading saw no call there, so the pair's sentence, when it
+		// has one, says what its exact calls do; these connections take the
+		// code's fallback over the names their stores wrote instead.
+		stored := map[[2]string]map[string]int{}
+		var open []int
 		for _, relation := range program.Relations {
 			fromBox := memberBoxes[relation.FromID]
 			if fromBox == nil {
@@ -515,8 +539,25 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 					SemanticKind: string(relation.Kind), Label: label, Summary: summary, SupportResolution: resolution, Evidence: evidence,
 					SourceKind: "native_" + string(relation.Kind), SourceID: relation.ID, FromSubjectID: relation.FromID, ToSubjectID: id,
 					FromLocation: location, ToLocation: objects[id].Location}
+				if relation.Resolution == programindex.ResolutionUnresolved && relation.Kind == programindex.RelationCalls {
+					pair := [2]string{from, to}
+					if stored[pair] == nil {
+						stored[pair] = map[string]int{}
+					}
+					stored[pair][objects[id].Name]++
+					open = append(open, len(connections))
+				}
 				connections = append(connections, connection)
 			}
+		}
+		titles := make(map[string]string, len(groups))
+		for _, group := range groups {
+			titles[group.ID] = group.Title
+		}
+		for _, position := range open {
+			connection := &connections[position]
+			pair := [2]string{connection.From.GroupID, connection.To.GroupID}
+			connection.Summary = storedSentence(titles[pair[0]], titles[pair[1]], stored[pair])
 		}
 	}
 
