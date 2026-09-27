@@ -55,17 +55,29 @@ The Python adapter also keeps an existing callable candidate consistent
 between an argument and the callback transfer that cites that exact argument.
 Aliases assigned to a function or lambda and inline lambdas are exact, while
 unknown or overwritten aliases, and aliases assigned under a branch, gain no
-callback. An inline lambda in a store
-target's receiver or index (the pandas `df.loc[reduce(lambda …), "exit"] = 1`
-idiom, also in annotated-assignment and `for` targets) is declared and passed
-like any other; Freqtrade's example strategy once failed its whole target on it.
-A lambda in a definition header (a parameter or return annotation such as
-FastAPI's `Depends(lambda: …)`, a type-parameter bound, or a lambda's default)
-belongs to the defining scope, which passes it where a call receives it.
-The Airflow Edge3, Azure and Vertica libraries exposed the earlier mismatch:
+callback. The Airflow Edge3, Azure and Vertica libraries exposed the earlier mismatch:
 the argument named the assignment variable while the transfer named its callable.
 Local native extraction does not establish ordinary full-repository acceptance. Cumulative Python,
 Go, TypeScript and JavaScript examples retain their native authority rules.
+
+An inline lambda in a store target's receiver or index (the pandas
+`df.loc[reduce(lambda …), "exit"] = 1` idiom, also in annotated-assignment and
+`for` targets) is declared and passed like any other; Freqtrade's example
+strategy once failed its whole target on it. A lambda in a definition header
+(a parameter or return annotation such as FastAPI's `Depends(lambda: …)`, a
+type-parameter bound, or a lambda's default) belongs to the defining scope,
+which passes it where a call receives it.
+
+A call belongs to the scope in which it runs, in every language. A decorator's
+arguments, a default and an annotation run once, where the function or class
+is defined, so their calls, reads and lambdas belong to the defining scope:
+the module for a class decorator or a top-level function's, the class for a
+method's decorator and default. The `decorates` relation stays the decorated
+declaration's. `LevelRoutes` in `models.py` checks it. TypeScript decorators
+and Clojure metadata and attr-maps follow the same rule
+([JSTS](JSTS.md#callable-jsx-and-declaration-headers),
+[Clojure](CLOJURE.md#calls-that-run-when-a-namespace-loads)); Go and C write
+nothing a definition runs.
 
 Nested Python calls now use their complete native AST span in local relation
 and argument-pattern identities. A chain such as `push().map(first).map(second)`

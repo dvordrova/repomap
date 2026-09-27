@@ -3,6 +3,7 @@ package contracttest
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/lines"
@@ -283,6 +284,39 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 	}
 	if len(headerLambdas) != 2 || headerCallbacks != 1 || sorterLambdas != 2 {
 		t.Fatalf("header lambdas: annotations=%v callbacks=%d row_sorter=%d", headerLambdas, headerCallbacks, sorterLambdas)
+	}
+	// A decorator's arguments and a default run where the class or function
+	// is defined: the module for a class decorator, the class for a method's
+	// decorator and default. The decoration stays the decorated declaration's.
+	routes := programIndexObjectNamed(t, index, programindex.ObjectType, "LevelRoutes", sourcePath)
+	names := map[string]string{module.ID: "module"}
+	for _, object := range index.Objects {
+		if names[object.ID] == "" && object.Location != nil && object.Location.Path == sourcePath {
+			names[object.ID] = object.Name
+		}
+	}
+	var definitionTime []string
+	for _, relation := range index.Relations {
+		if relation.Location == nil || relation.Location.Path != sourcePath || len(relation.ToIDs) != 1 ||
+			relation.Location.Line < routes.Location.Line-1 || relation.Location.Line > routes.EndLine {
+			continue
+		}
+		if target := names[relation.ToIDs[0]]; target == "routed" || target == "route_path" {
+			definitionTime = append(definitionTime, fmt.Sprintf("%+d %s %s from %s",
+				relation.Location.Line-routes.Location.Line, relation.Kind, target, names[relation.FromID]))
+		}
+	}
+	sort.Strings(definitionTime)
+	want := []string{
+		"+1 calls route_path from LevelRoutes",
+		"+1 decorates routed from load_level",
+		"+2 calls route_path from LevelRoutes",
+		"+3 calls route_path from load_level",
+		"-1 calls route_path from module",
+		"-1 decorates routed from LevelRoutes",
+	}
+	if !reflect.DeepEqual(definitionTime, want) {
+		t.Fatalf("definition-time calls:\n have %q\n want %q", definitionTime, want)
 	}
 }
 
@@ -758,7 +792,8 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	}
 	// A result another call acts on, or takes as an argument, is an object
 	// placed where its call expression starts: the direct factory (21:5), the
-	// first map of the chained lambdas (models.py:60:12), and the chains of
+	// first map of the chained lambdas (models.py:60:12), the route_path calls
+	// LevelRoutes' decorators take (models.py:236:9, 238:13), and the chains of
 	// subscribe_chained and chained_text_calls. KafkaConsumer() and the first
 	// subscribe of line 64 both start at 64:5. Patterns and call_result
 	// anchors use the attribute name instead, so calls stay apart there.
@@ -770,6 +805,7 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		}
 	}
 	wantResults := map[string]int{"src/fixture_app/events.py:21:5": 1, "src/fixture_app/models.py:60:12": 1,
+		"src/fixture_app/models.py:236:9": 1, "src/fixture_app/models.py:238:13": 1,
 		"src/fixture_app/events.py:64:5": 2, "src/fixture_app/events.py:68:27": 1, "src/fixture_app/events.py:69:16": 1}
 	if !reflect.DeepEqual(callResults, wantResults) {
 		t.Fatalf("Python callback source call-result objects = %v, want %v", callResults, wantResults)

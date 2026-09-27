@@ -159,6 +159,11 @@ seed.
   `readQueryFromClient` and `sendReplyToClient` (READING), and stays
   unresolved.
 - A function cast to an integer is an address used as data, never a callable.
+- A call belongs to the function whose body runs it. C has no equivalent of
+  a call a definition runs once (a Python decorator's arguments or defaults,
+  a TypeScript decorator, Clojure metadata): there are no decorators or
+  default arguments, and a file-scope initializer is a constant expression
+  that calls nothing.
 - Every active `#include` is one `imports` relation and one dependency: a
   repository header is a workspace dependency, a platform header the standard
   library, any other header a package.

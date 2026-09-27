@@ -40,6 +40,12 @@ ProgramIndex retains:
   binding, so no mechanism prefix is attached;
 - one resolution rule for every language: one known target is `exact`, several
   are `alternatives`, none is `unresolved`;
+- one owner rule for every language: a call, read or callback belongs to the
+  scope in which it runs. What a definition runs once (Python decorator
+  arguments, defaults and annotations; TypeScript decorators; Clojure
+  metadata and attr-maps) belongs to the defining scope, while the
+  `decorates` relation stays the decorated declaration's. Go and C have no
+  such expressions;
 - signatures as short native text for the reader and model: Go names packages
   by their last element (`model.User`), and a named type's signature is only its
   form (`struct`, `interface` or the underlying type), its members being objects;

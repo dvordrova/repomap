@@ -218,3 +218,23 @@ def level_limit(limit: Annotated[int, Depends(lambda: 10)]) -> Annotated[int, la
 
 def row_sorter(field):
     return lambda rows, key=lambda row: row[field]: sorted(rows, key=key)
+
+
+# A decorator's arguments and a default run once, where the class or the
+# function is defined, so a call written there belongs to that defining scope:
+# the module for a class decorator, the class for a method's decorator and
+# default. The decoration stays the decorated declaration's, and the body's
+# call the method's, as in the TypeScript and Clojure fixtures.
+def route_path(name):
+    return "/" + name
+
+
+def routed(path):
+    return lambda declaration: declaration
+
+
+@routed(route_path("levels"))
+class LevelRoutes:
+    @routed(route_path("level"))
+    def load_level(self, suffix=route_path("suffix")):
+        return route_path(suffix)
