@@ -446,7 +446,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 			if group.ID != end.GroupID {
 				continue
 			}
-			id := mapNodeID(section.ID + "-foreign-" + group.ID)
+			id := foreignNodeID(section.ID, end.TargetID, group.ID)
 			add(pageMapNode{ID: id, Component: end.TargetID, Remote: true, Href: "#" + groupAnchorID(otherSection.ID, group.ID), FullTitle: group.Title, Title: mapTitle(group.Title), Summary: group.Summary, Concepts: builder.groupConcepts(end.TargetID, group), Members: len(group.MemberSubjectIDs), Lane: pageLane(group.Lane, group.Core)})
 			return id
 		}
@@ -501,7 +501,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 			for _, groupID := range container.GroupIDs {
 				id := mapNodeID(groupID)
 				if remote {
-					id = mapNodeID(section.ID + "-foreign-" + groupID)
+					id = foreignNodeID(section.ID, owner.Target.ID, groupID)
 				}
 				if _, exists := byID[id]; exists {
 					children = append(children, id)
@@ -632,4 +632,12 @@ func (builder *pageBuilder) callWitness(targetID, root, destination string, pare
 		reversed[left], reversed[right] = reversed[right], reversed[left]
 	}
 	return reversed
+}
+
+// foreignNodeID names another target's group on this section's map. Group
+// IDs are per target, so two peers both have a g15: without the owner the
+// second one's arrows landed on the first's node (redis-benchmark's "Linked
+// list calls Memory allocation" drawn into redis-server's Networking).
+func foreignNodeID(sectionID, targetID, groupID string) string {
+	return mapNodeID(sectionID + "-foreign-" + safeIDFragment(targetID) + "-" + groupID)
 }

@@ -470,7 +470,7 @@ func TestMapStructureRetainsIncomingCrossTargetConnectionsAtDestination(t *testi
 	}
 	for i, connection := range frontend.Connections {
 		edge := relations[i]
-		from := targetMapNodeID("backend", mapNodeID(section.ID+"-foreign-"+connection.From.GroupID))
+		from := targetMapNodeID("backend", foreignNodeID(section.ID, connection.From.TargetID, connection.From.GroupID))
 		if edge.From != from || edge.To != targetMapNodeID("backend", mapNodeID("core")) || edge.Label != connection.Label || edge.Summary != connection.Summary || !edge.Possible {
 			t.Fatalf("incoming direction or interpretation changed: %+v", edge)
 		}
@@ -495,5 +495,39 @@ func TestMapStructureRetainsIncomingCrossTargetConnectionsAtDestination(t *testi
 	}
 	if again := builder.buildMap(section); !reflect.DeepEqual(got, again) {
 		t.Fatal("incoming cross-target projection is nondeterministic")
+	}
+}
+
+// Two peers of redis-server both had a g15. Their foreign nodes shared one
+// ID, so redis-benchmark's own "Linked list calls Memory allocation" was
+// drawn solid into redis-server's Networking and read as the client link.
+func TestPeersWithTheSameGroupIDKeepTheirOwnForeignNodes(t *testing.T) {
+	server := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{{ID: "g15", Title: "Networking", Lane: groupindex.LaneCore}}}
+	bench := groupindex.Index{Target: programindex.Target{ID: "t2"}, Groups: []groupindex.Group{{ID: "g15", Title: "Networking", Lane: groupindex.LaneCore}}}
+	cli := groupindex.Index{Target: programindex.Target{ID: "t4"}, Groups: []groupindex.Group{{ID: "g15", Title: "Memory allocation", Lane: groupindex.LaneCore}}}
+	bench.Connections = []groupindex.Connection{
+		{ID: "x1", SourceKind: "integration", SupportResolution: programindex.PatternValuePossible, From: groupindex.Endpoint{TargetID: "t2", GroupID: "g15"}, To: groupindex.Endpoint{TargetID: "t1", GroupID: "g15"}, Label: "connect to accept"},
+		{ID: "x2", SourceKind: "native_calls", SupportResolution: programindex.PatternValueExact, From: groupindex.Endpoint{TargetID: "t2", GroupID: "g15"}, To: groupindex.Endpoint{TargetID: "t4", GroupID: "g15"}, Label: "calls zmalloc"},
+	}
+	section := &pageSection{ID: "t2", programTargetID: "t2"}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{server, bench, cli}, byProgram: map[string]*pageSection{
+		"t1": {ID: "t1", ShortLabel: "redis-server"}, "t2": section, "t4": {ID: "t4", ShortLabel: "redis-cli"},
+	}}
+	got := builder.buildMap(section)
+	to := map[string]string{}
+	for _, edge := range got.Edges {
+		if edge.Scope == "structure" {
+			to[edge.Label] = edge.To
+		}
+	}
+	if to["connect to accept"] == "" || to["connect to accept"] == to["calls zmalloc"] {
+		t.Fatalf("two peers' g15 share one node: %v", to)
+	}
+	titles := map[string]string{}
+	for _, node := range got.Nodes {
+		titles[node.ID] = node.FullTitle
+	}
+	if titles[to["connect to accept"]] != "Networking" || titles[to["calls zmalloc"]] != "Memory allocation" {
+		t.Fatalf("an arrow lands on another peer's part: %v %v", to, titles)
 	}
 }
