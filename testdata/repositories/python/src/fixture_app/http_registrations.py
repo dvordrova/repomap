@@ -57,15 +57,16 @@ def pass_method_arguments(app: MethodArgumentApplication):
     receive_method_arguments(app.first, app.second, app.first, (app.second))
 
 
-# install_route_tree hands one router to two helpers. The leaves' router
-# reaches the leaf through one more parameter, so its route is held by the
-# APIRouter() call. The branch also hands its router to itself: following that
-# parameter back through its callers comes around to the same parameter, so
-# its routes have no holder.
+# install_route_tree hands one router to three helpers, and every route they
+# register is held by the APIRouter() call unless another value reaches it.
+# The leaf gets the router through one more parameter. The branch also hands
+# its own router to itself, which adds no value. The spare hands itself a
+# router of its own making, so two values reach it and its route has no holder.
 def install_route_tree():
     router = APIRouter()
     register_route_leaves(router)
     register_route_branch(router, False)
+    register_route_spare(router, True)
 
 
 def register_route_leaves(router):
@@ -82,3 +83,9 @@ def register_route_branch(router, nested):
         return
     router.add_api_route("/tree/branch", empty_health_handler)
     register_route_branch(router, True)
+
+
+def register_route_spare(router, again):
+    router.add_api_route("/tree/spare", empty_health_handler)
+    if again:
+        register_route_spare(APIRouter(), False)

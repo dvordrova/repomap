@@ -27,10 +27,10 @@ func assertGoHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index pr
 		wanted["ANY "+name] = 1
 	}
 	wanted["GET /interface-health"] = 1
-	// RegisterRouteTree: the leaf's mux is the NewServeMux passed on through
-	// two parameters; the branch hands its own mux to itself, a cycle with no
-	// holder.
-	holders := map[string]int{"/tree/leaf": 173, "/tree/branch": 0, "/tree/branch/nested": 0}
+	// RegisterRouteTree: the NewServeMux holds the leaf's route two
+	// parameters on and the branch's, though the branch hands its own mux to
+	// itself; the spare is handed a second mux by itself and has no holder.
+	holders := map[string]int{"/tree/leaf": 173, "/tree/branch": 173, "/tree/branch/nested": 173, "/tree/spare": 0}
 	for path := range holders {
 		wanted["ANY "+path] = 1
 	}
@@ -193,10 +193,11 @@ func assertPythonHTTPRegistrations(t *testing.T, repository *corpus.Corpus, inde
 		t.Fatal(err)
 	}
 	want := map[string]string{"/health": "empty_health_handler", "/v1/update": "empty_registered_handler", "/v1/metrics": "empty_registered_handler"}
-	// install_route_tree: the leaf's router is the APIRouter() passed on
-	// through two parameters; the branch hands its own router to itself, a
-	// cycle with no holder.
-	holders := map[string]int{"/tree/leaf": 66, "/tree/branch": 0, "/tree/branch/nested": 0}
+	// install_route_tree: the APIRouter() holds the leaf's route two
+	// parameters on and the branch's, though the branch hands its own router
+	// to itself; the spare is handed a second router by itself and has no
+	// holder.
+	holders := map[string]int{"/tree/leaf": 66, "/tree/branch": 66, "/tree/branch/nested": 66, "/tree/spare": 0}
 	adaptertest.AssertParameterHolders(t, result, source, holders)
 	owners := make(map[string]bool)
 	for _, fact := range result.OfKind(facts.KindRegistration) {

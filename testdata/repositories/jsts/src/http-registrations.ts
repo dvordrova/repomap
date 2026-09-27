@@ -47,15 +47,16 @@ export function passMethodArguments(app: MethodArgumentApplication): void {
   receiveMethodArguments(app.first, app.second, app.first, (app.second))
 }
 
-// installRouteTree hands one application to two helpers. The leaves' app
-// reaches the leaf through one more parameter, so its route is held by the
-// express() call. The branch also hands its app to itself: following that
-// parameter back through its callers comes around to the same parameter, so
-// its routes have no holder.
+// installRouteTree hands one application to three helpers, and every route
+// they register is held by the express() call unless another value reaches
+// it. The leaf gets the app through one more parameter. The branch also hands
+// its own app to itself, which adds no value. The spare hands itself an app
+// of its own making, so two values reach it and its route has no holder.
 export function installRouteTree(): void {
   const app = express()
   registerRouteLeaves(app)
   registerRouteBranch(app, false)
+  registerRouteSpare(app, true)
 }
 
 function registerRouteLeaves(app: Application): void {
@@ -73,4 +74,11 @@ function registerRouteBranch(app: Application, nested: boolean): void {
   }
   app.get("/tree/branch", emptyHealthHandler)
   registerRouteBranch(app, true)
+}
+
+function registerRouteSpare(app: Application, again: boolean): void {
+  app.get("/tree/spare", emptyHealthHandler)
+  if (again) {
+    registerRouteSpare(express(), false)
+  }
 }

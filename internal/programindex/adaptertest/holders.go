@@ -9,8 +9,8 @@ import (
 // AssertParameterHolders checks registrations in source whose receiver is a
 // parameter of their function: each path in want is registered once, held by
 // the call at that line of source, or by nothing when the line is 0. A
-// parameter handed to its own function comes around to itself; that cycle
-// gives no holder and must not recurse without end.
+// parameter handed to its own function comes around to itself; following it
+// must end, and the cycle adds no value of its own.
 func AssertParameterHolders(t *testing.T, layer facts.Result, source string, want map[string]int) {
 	t.Helper()
 	seen := map[string]int{}

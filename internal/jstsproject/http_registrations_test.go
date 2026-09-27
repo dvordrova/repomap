@@ -39,10 +39,10 @@ func TestCumulativeJSTSHTTPConstructorPathsAndEmptyCallbacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{"/health": true, "/returned": true, "/v1/update": true, "/v1/metrics": true}
-	// installRouteTree: the leaf's app is the express() passed on through two
-	// parameters; the branch hands its own app to itself, a cycle with no
-	// holder.
-	holders := map[string]int{"/tree/leaf": 56, "/tree/branch": 0, "/tree/branch/nested": 0}
+	// installRouteTree: the express() holds the leaf's route two parameters
+	// on and the branch's, though the branch hands its own app to itself; the
+	// spare is handed a second app by itself and has no holder.
+	holders := map[string]int{"/tree/leaf": 56, "/tree/branch": 56, "/tree/branch/nested": 56, "/tree/spare": 0}
 	adaptertest.AssertParameterHolders(t, result, source, holders)
 	var emptyID string
 	for _, fact := range result.OfKind(facts.KindRegistration) {
