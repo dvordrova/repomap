@@ -146,13 +146,15 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		start := 0
 		offset := sources[at.Filename].offset(at.Row, at.Col)
 		for _, d := range definitions[at.Filename] {
-			header := slices.ContainsFunc(loaded[objectRef(d)], func(span [2]int) bool { return offset >= span[0] && offset < span[1] })
-			if !header && (at.Row > d.Row || at.Row == d.Row && at.Col >= d.Col) && (at.Row < d.EndRow || at.Row == d.EndRow && at.Col < d.EndCol) {
-				n := d.Row*100000 + d.Col
-				if n >= start {
-					start = n
-					best = objectRef(d)
-				}
+			if !(at.Row > d.Row || at.Row == d.Row && at.Col >= d.Col) || !(at.Row < d.EndRow || at.Row == d.EndRow && at.Col < d.EndCol) {
+				continue
+			}
+			ref := objectRef(d)
+			if slices.ContainsFunc(loaded[ref], func(span [2]int) bool { return offset >= span[0] && offset < span[1] }) {
+				continue
+			}
+			if n := d.Row*100000 + d.Col; n >= start {
+				start, best = n, ref
 			}
 		}
 		return best
