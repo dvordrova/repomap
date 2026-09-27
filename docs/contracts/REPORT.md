@@ -114,13 +114,24 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 
 - The ordinary entrance includes every saved request, command, activity and
   interaction. SystemMap collects the original input nodes into one blue
-  display frame per component owner, outside the component. Its distant summary
+  display frame per component owner, outside the component. Its heading is
+  "Inputs", the word the colour key uses for them; its component is named by
+  its arrow into it, in its zoom mark's accessible name and in the location
+  row ("Inputs · redis-server (executable)"). Headed with its component's
+  name, Redis's collection had read as a second redis-server beside the
+  programs. It stands attached to its component, in the layer next to it
+  with its arrow straight into it (measured at 1440×900 and 1280×800).
+  Its distant summary
   shows the actual catalogue types (requests, commands, background work,
   interactions, other operations); zoom reveals the original named input nodes.
   Inside the collection the inputs stand together by the part holding their
   handler (the saved implementation owner), each group framed and titled by
   that part's name and ordered by it; choosing a group's title reads that
-  part. An input with no owner stays loose after the groups, and a collection
+  part. The collection opens to its groups first, each closed and named as
+  a closed area is, with a zoom mark that enters it; a group opens to its
+  inputs when their headings read (14px to open, 12px to stay open), as
+  areas open to their parts. Opened with the collection, Redis's 95 inputs
+  had stood as a wall of 5px tiles under 5px group names. An input with no owner stays loose after the groups, and a collection
   whose inputs share one part keeps them loose. A tile names its kind only
   when it is not the collection's most common kind: "Request" on 97 of Redis's
   98 tiles repeated the collection's own summary. The groups are display

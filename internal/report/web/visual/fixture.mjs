@@ -45,6 +45,19 @@ if(options.has('symbols')){
   relations.find(r=>r.from==='worker'&&r.to==='save-jobs').calls=[{label:'save calls saveResult',from:'#worker.go-31',to:'#db.go-9'}];
 }
 
+// A service answering many commands, as Redis's server does: its input
+// collection holds more inputs than read at the scale it opens at.
+if(options.has('many-inputs')){
+  const collection=records.find(n=>n.id==='backend-inputs');
+  for(let i=0;i<40;i++){
+    const id=`command-${i}`,owner=i%2?'routes':'worker';
+    records.push({id,title:`command ${i}`,activation:'request',componentOwner:'backend',componentName:'Job processing service'});
+    collection.children.push(id);inputOwner[id]=owner;
+    relations.push({from:id,to:owner,label:'implemented in',operations:[id]});
+  }
+  areas.find(a=>a.id==='backend-inputs').nodes=collection.children;
+}
+
 // Each system calls its own "DNS resolver": two frames the page groups for
 // display and gives their shared text once.
 if(options.has('shared-destination')){

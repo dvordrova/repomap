@@ -164,7 +164,8 @@ function AreaSummary({node,item,number,badge,heading,enter,select,muted}){
 }
 function ZoomMark({node,item,enter,select,compactScale,fitScale=Infinity,muted}) {
   const viewport=useViewport(),{zoom}=viewport;
-  const area=item.branch==='area',size=34,tall=24,inset=area||['communication','inputs'].includes(item.branch)?8:12;
+  // A closed input group's mark stands in its summary's room, as an area's does.
+  const area=['area','inputs-part'].includes(item.branch),size=34,tall=24,inset=area||['communication','inputs'].includes(item.branch)?8:12;
   // A summary scaled down whole to fit its box takes its mark down with it
   // until zoom gives the mark its ordinary screen size.
   const scale=area?compactScale:Math.min(fitScale,1/zoom);
@@ -191,7 +192,7 @@ function FrameTitle({node,item,focused,enter,select,muted}) {
       '--flow-secondary-text':viewport.zoom*scale*13>=12?'visible':'hidden',
       '--flow-small-text':viewport.zoom*scale*12>=12?'visible':'hidden'}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
-    <strong>{item.title}</strong>
+    <strong>{item.heading||item.title}</strong>
     {item.metadata&&<div className="flow-component-meta">{item.metadata}</div>}
     {item.role&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
     {item.description&&<p className="flow-description" style={{maxWidth:cardText}}>{item.description}</p>}
@@ -266,7 +267,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       return {id:n.id,visible,distance:dx*dx+dy*dy};
     }).filter(n=>n.visible>0).sort((a,b)=>a.distance-b.distance||b.visible-a.visible);
     if(candidates.length)locationID=candidates.find(n=>n.id===subject)?.id||candidates[0].id;
-    const names=[];for(let id=locationID;id;id=placed.get(id)?.parentId)names.unshift(byID.get(id)?.name||byID.get(id)?.title);
+    // An input collection is named as its heading reads, with its component.
+    const nameOf=item=>item?.branch==='inputs'?[t('Inputs'),item.componentName].filter(Boolean).join(' · '):item?.name||item?.title;
+    const names=[];for(let id=locationID;id;id=placed.get(id)?.parentId)names.unshift(nameOf(byID.get(id)));
     location.textContent=names.filter(Boolean).join(' / ')||t('System map');
   }
   const isOverview=()=>!detailed.size;
@@ -279,7 +282,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const children=new Map(areas.map(a=>[a.id,a.nodes]));
   const inventories=new Map(areas.map(a=>[a.id,frameInventory(a.id,children,byID)]));
   const leaves=id=>children.has(id)?children.get(id).flatMap(leaves):[id];
-  const communicationScales=()=>new Map(areas.filter(a=>['communication','inputs'].includes(byID.get(a.id)?.branch))
+  const communicationScales=()=>new Map(areas.filter(a=>['communication','inputs','inputs-part'].includes(byID.get(a.id)?.branch))
     .map(a=>[a.id,Math.min(1,...leaves(a.id).map(id=>byID.get(id)?.contentScale||1))]));
   const maximumZoom=()=>Math.max(2,...[...scales.values(),...communicationScales().values(),
     ...[...byID.values()].filter(n=>!n.children?.length).map(n=>n.contentScale||1)].map(scale=>1.8/scale),
@@ -346,7 +349,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     return {
       components:new Set([...open].filter(id=>byID.get(id)?.branch==='component')),
       areas:new Set([...open].filter(id=>byID.get(id)?.branch==='area')),
-      communications:new Set([...open].filter(id=>['communication','inputs'].includes(byID.get(id)?.branch))),
+      communications:new Set([...open].filter(id=>['communication','inputs','inputs-part'].includes(byID.get(id)?.branch))),
     };
   }
   function updateDetail(viewport){
@@ -470,10 +473,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(!instance||initializing){pendingFocus={id,input:true};return;}
     overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
     const rect=host.getBoundingClientRect(),group=placed.get(tile.parentId);
-    communicationsOpen=new Set([...communicationsOpen,rootOf(id)]);
+    const grouped=byID.get(group?.id)?.branch==='inputs-part';
+    communicationsOpen=new Set([...communicationsOpen,rootOf(id),...(grouped?[group.id]:[])]);
     arrive([id]);
     locationSubject=id;
-    const least=layerFloor(layout.nodes,semantic.records,rootOf(id),rect.width,rect.height);
+    const least=layerFloor(layout.nodes,semantic.records,grouped?group.id:rootOf(id),rect.width,rect.height);
     commitCamera(instance.setViewport(tileViewport(tile,byID.get(group?.id)?.branch==='inputs-part'?group:null,rect.width,rect.height,byID.get(id)?.contentScale||1,{least}),{duration:smooth?420:0}),id);
   }
   function focus(id,center=true,smooth=true){
@@ -509,17 +513,17 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // Every frame is entered by the one rule, at the scale its own content is
       // drawn at: a component whole, the others no smaller than readable.
       const branch=byID.get(n.id).branch,component=branch==='component';
-      const scale=component?(componentFonts.get(n.id)||20)/20:['communication','inputs'].includes(branch)?communicationScales().get(n.id)||1:scales.has(n.id)?contentScale:1;
+      const scale=component?(componentFonts.get(n.id)||20)/20:['communication','inputs','inputs-part'].includes(branch)?communicationScales().get(n.id)||1:scales.has(n.id)?contentScale:1;
       // Entering a frame opens it, so it may be shown as small as an open frame
       // stays open, about twelve pixels of text, rather than as large as a
       // closed one needs to open by itself.
-      if(['communication','inputs'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id]);
+      if(['communication','inputs','inputs-part'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id,rootOf(n.id)]);
       else if(!component)detailed=new Set([...detailed,n.id]);
       if(!component)arrive([n.id]);
       // An area is fitted whole only where its parts' headings stay about
       // twelve pixels; larger, it is entered at its first part. Fitted at
       // its layer's floor, Redis's Server runtime stood at 8px headings.
-      const least=scales.has(n.id)?Math.max(layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height),staysOpen/contentScale):Infinity;
+      const least=scales.has(n.id)||branch==='inputs-part'?Math.max(layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height),staysOpen/scale):Infinity;
       commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least}),{duration:smooth?420:0}),id);return;
     }
     commitCamera(instance.setViewport(partViewport(n,1/contentScale,rect.width,rect.height),{duration:smooth?420:0}),id);
@@ -690,7 +694,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       // The closed card is a title over a foot row, the number and the role mark:
       // the title is fitted into what the foot row leaves.
-      return new Map(layout.nodes.filter(n=>scales.has(n.id)).map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure,56,48)]));
+      return new Map(layout.nodes.filter(n=>scales.has(n.id)||byID.get(n.id)?.branch==='inputs-part').map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure,56,48)]));
     },[layoutKey]);
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
@@ -790,7 +794,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     }
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
     // A closed frame stands for the participants hidden inside it.
-    const shut=id=>scales.has(id)?!detailed.has(id):byID.get(id)?.branch==='component'?!openComponents.has(id):['communication','inputs'].includes(byID.get(id)?.branch)&&!communicationsOpen.has(id);
+    // An input group closed: its inputs are not readable yet, its name is.
+    const closedGroup=id=>byID.get(id)?.branch==='inputs-part'&&!communicationsOpen.has(id);
+    const shut=id=>scales.has(id)?!detailed.has(id):byID.get(id)?.branch==='component'?!openComponents.has(id):['communication','inputs','inputs-part'].includes(byID.get(id)?.branch)&&!communicationsOpen.has(id);
     // Emphasis recedes the rest instead of greying what is pointed at. The
     // subject is dark: a part's outline, a frame's border at the arrows'
     // 2.5px. The parts across its dark arrows take the same outline; a
@@ -887,12 +893,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={emphasisedHead} markerHeight={emphasisedHead} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
       <ViewportPortal>
-        {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
+        {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))&&!closedGroup(n.id)).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.display&&byID.get(n.id)?.headingAt).map(n=><GroupHeading key={'group-'+n.id} node={n}/>)}
-        {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
+        {drawing.nodes.filter(n=>(scales.has(n.id)&&!detailed.has(n.id)||closedGroup(n.id))&&visible(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} number={number.get(n.id)} badge={badge(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select} muted={muted(n.id)}/>)}
+        {drawing.nodes.filter(n=>closedGroup(n.id)&&visible(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} muted={muted(n.id)}
+          select={(id,event)=>{hover.remember(event.clientX,event.clientY);focus(id);}}/>)}
         {labelsShown&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
         {labelsShown&&labels.filter(label=>look.key===`label:${label.id}`||pinnedLabels.has(label.id)).map(label=><LabelCard key={'card:'+label.id} label={label} frame={placed.get(label.root)}/>)}
         {[...new Set([pinnedPart,lookBadge()].filter(Boolean))].map(id=><PartSummary key={'summary:'+id} id={id} labels={labels} frame={placed.get(area)}/>)}

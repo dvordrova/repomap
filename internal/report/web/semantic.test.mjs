@@ -506,3 +506,22 @@ test('the magnifier shows a part whole when it fits and its head and first colum
   assert.equal(large.x+1000*10,24,'its left edge a margin from the canvas edge');
   assert.equal(large.y+500*10,24,'its head a margin below the top');
 });
+
+// Pinched open, Redis's input collection stood as a wall of 95 tiles under
+// group names too small to read: the groups first stand closed and named,
+// and open to their inputs when those read, as areas open to their parts.
+test('an input collection opens to its groups first, and the groups to their inputs',()=>{
+  const records=[{id:'inputs',branch:'inputs',children:['g1','g2']},
+    {id:'g1',branch:'inputs-part',title:'String commands',children:['get'],contentScale:.1},{id:'g2',branch:'inputs-part',title:'List commands',children:['lpush'],contentScale:.1},
+    {id:'get',activation:'request',contentScale:.1},{id:'lpush',activation:'request',contentScale:.1}];
+  const box=(id,parentId,x,y,width,height,frame=false)=>({id,parentId,absolute:{x,y},width,height,frame});
+  const nodes=[box('inputs',undefined,0,0,1000,1000,true),box('g1','inputs',20,40,400,300,true),box('g2','inputs',500,40,400,300,true),
+    box('get','g1',40,80,260,60),box('lpush','g2',520,80,260,60)];
+  const open=zoom=>detailLayers(nodes,records,{x:0,y:0,zoom},1000,700);
+  assert.deepEqual([...open(.6)],['inputs'],'the collection opens to its named groups');
+  assert.deepEqual([...open(9)].sort(),['g1','g2','inputs'],'the groups open once their inputs read at 14px');
+  assert.ok(detailLayers(nodes,records,{x:0,y:0,zoom:7.5},1000,700,new Set(['inputs','g1'])).has('g2'),'and stay open down to 12px');
+  assert.ok(Math.abs(layerFloor(nodes,records,'g1',1000,700)-12/1.7)<1e-9,'a group is entered where its inputs stay open');
+  const placed=new Map(nodes.map(node=>[node.id,node])),byID=new Map(records.map(record=>[record.id,record]));
+  assert.equal(closedContainer('get',placed,byID,new Set(),true,new Set(['inputs']),new Set())?.id,'g1','a closed group hides its inputs');
+});

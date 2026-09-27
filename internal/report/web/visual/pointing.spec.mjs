@@ -243,3 +243,37 @@ test('show whole map keeps the reading and its emphasis',async({page})=>{
   await expect(page.locator('[data-reading-title]')).toHaveText('Authentication and permissions');
   await expect(map).toHaveAttribute('data-emphasis','selection');
 });
+
+// Titled with its component's name, Redis's input collection read as a
+// second redis-server; pinched open, it was a wall of 95 tiles under group
+// names too small to read. It is headed Inputs, opens to its inputs grouped
+// by their handler's part, each group named, and a group opens to its inputs
+// once they read.
+test('the input collection is headed Inputs and opens to its groups before its inputs',async({page},testInfo)=>{
+  const map=page.locator('[data-map]');
+  await page.goto('/?many-inputs');await expect(map).toHaveAttribute('data-fixture-ready','true');
+  const overview=page.locator('[data-component-overview="backend-inputs"]');
+  await expect(overview.locator('.flow-component-overview-heading strong')).toHaveText('Inputs');
+  await expect(page.locator('[data-zoom-into="backend-inputs"]')).toHaveAttribute('aria-label','Zoom into Inputs · Job processing service');
+  const group=page.locator('[data-summary-area="backend-inputs~routes"]'),tile=page.locator('.react-flow__node[data-id="create"]');
+  const pinch=async()=>{
+    const box=await page.locator('.react-flow__node[data-id="backend-inputs"]').boundingBox(),canvas=await page.locator('.flow-root').boundingBox();
+    const x=Math.min(Math.max(box.x+box.width/2,canvas.x+10),canvas.x+canvas.width-10),y=Math.min(Math.max(box.y+box.height/2,canvas.y+10),canvas.y+canvas.height-10);
+    const zoom=await map.evaluate(map=>map.captureViewport().zoom);
+    await page.mouse.move(x,y);
+    await page.keyboard.down('Control');try{await page.mouse.wheel(0,-6);}finally{await page.keyboard.up('Control');}
+    await expect.poll(()=>map.evaluate(map=>map.captureViewport().zoom)).toBeGreaterThan(zoom);
+  };
+  for(let step=0;step<60&&await overview.count();step++)await pinch();
+  await expect(overview).toHaveCount(0);
+  await expect(group).toBeVisible();
+  await expect(group.locator('strong')).toHaveText('HTTP handlers');
+  await expect(tile).toHaveCSS('visibility','hidden');
+  await expect(page.locator('.flow-location')).toContainText('Inputs · Job processing service');
+  await testInfo.attach('journey-01 — The inputs grouped by their handler\'s part',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  for(let step=0;step<60&&await group.count();step++)await pinch();
+  await expect(group).toHaveCount(0);
+  await expect(tile).toHaveCSS('visibility','visible');
+  await expect(page.locator('[data-frame-title="backend-inputs~routes"]')).toBeVisible();
+  await testInfo.attach('journey-02 — A group opened to its inputs',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+});
