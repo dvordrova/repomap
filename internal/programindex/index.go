@@ -2804,6 +2804,13 @@ func validOptionalText(value string) bool {
 	return value == "" || validText(value)
 }
 
+// ValidName reports whether an adapter may use value as a name the index
+// accepts (an external symbol's package path or name): not empty, no
+// surrounding space, valid UTF-8 and no control character.
+func ValidName(value string) bool {
+	return validText(value)
+}
+
 func validPatternString(value string) bool {
 	return utf8.ValidString(value)
 }

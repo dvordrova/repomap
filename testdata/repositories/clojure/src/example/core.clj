@@ -1,5 +1,5 @@
 (ns example.core
-  (:require [example.service :as service] [clojure.string :as str]))
+  (:require [example.service :as service] [clojure.string :as str]) (:import (java.util ArrayList)))
 
 (defn -main [& names]
   (service/deliver! "greeting.txt" (service/greet (first names))))
@@ -108,3 +108,18 @@
 (defonce ^{:route (service/greet "once")} routed-once "value")
 
 (defmulti ^{:route (service/greet "multi")} routed-multi :kind)
+
+;; A constructor of an imported class written inside a syntax-quote is
+;; reported as a call that names no method. It is no static method call and
+;; names no outside function; a static method the source names is one.
+(defmacro fresh-list [] `(ArrayList.))
+
+(defn new-id [] (str (java.util.UUID/randomUUID)))
+
+;; Calling an anonymous function literal's argument calls a local clj-kondo
+;; gives no name; the call keeps `%` as written.
+(defn apply-each [fs] (map #(% 1) fs))
+
+;; One statement handed twice to one call, apart only in spacing, is one
+;; statement at that call.
+(defn zero-rows [] (str "SELECT 0 AS a" " UNION ALL" " SELECT 0 AS a"))

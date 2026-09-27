@@ -150,6 +150,21 @@ func (s source) location(file string, offset int) *programindex.Location {
 	}
 	return &programindex.Location{Path: file, Line: row, Column: offset - s.lines[row-1] + 1}
 }
+
+// callee is the source text of the form a call at site calls: `%` in
+// `#(% 1)`, whose local clj-kondo reports with no name.
+func (s source) callee(at site) string {
+	start, end := s.offset(at.Row, at.Col), s.offset(at.EndRow, at.EndCol)
+	if start < 0 || end <= start || s.text[start] != '(' {
+		return ""
+	}
+	nodes, _ := forms(s.text[start:end], 0, 0)
+	if len(nodes) != 1 || len(nodes[0].children) == 0 {
+		return ""
+	}
+	first := nodes[0].children[0]
+	return string(s.text[start+first.start : start+first.end])
+}
 func (s source) arguments(at site) []programindex.PatternArgumentInput {
 	start, end := s.offset(at.Row, at.Col), s.offset(at.EndRow, at.EndCol)
 	if start < 0 || end <= start || s.text[start] != '(' {

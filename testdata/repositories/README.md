@@ -155,6 +155,16 @@ call pattern and becomes no fact. Python knows no type for an untyped
 parameter or for what `subscribe` returns, so those calls name no external
 symbol; they are still separate facts.
 
+A Clojure class usage that names no method is no call:
+[core.clj](clojure/src/example/core.clj) `fresh-list` constructs an imported
+`ArrayList` inside a syntax-quote, which clj-kondo reports as a call with no
+method, and it projects no outside symbol, while `new-id`'s
+`java.util.UUID/randomUUID` is a static call. Go, Python, JS/TS and C name an
+outside callee from a declaration that always carries its name, so they have
+no such row. `apply-each` calls an anonymous function literal's argument
+(`#(% 1)`), a local clj-kondo gives no name; the call keeps `%` as written.
+Every other language names its parameters.
+
 A registration on a router parameter is held by what the function's callers
 pass. One caller hands the same router to a helper that passes it on to the
 leaf, to a branch helper that also hands it to itself, and to a spare helper

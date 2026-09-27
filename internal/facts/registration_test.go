@@ -3,6 +3,7 @@ package facts
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -382,6 +383,27 @@ func TestSQLStatementsNameTheirTables(t *testing.T) {
 	}
 	if want := map[string]string{"store.go:12": "orders, users", "store.go:16": "", "store.go:17": "authors"}; !reflect.DeepEqual(keys, want) {
 		t.Fatalf("sql query tables = %v, want %v", keys, want)
+	}
+}
+
+// metabase: (str "SELECT 0 AS A" " UNION ALL" " SELECT 0 AS A") hands one
+// statement twice, apart only in spacing. Two facts at one call read the same,
+// and the atlas refused the graph for a place with two origins in one target.
+func TestAStatementHandedTwiceToOneCallIsOneFact(t *testing.T) {
+	s := newSynthetic(t, "go", "store", "store.go")
+	s.object("fn", programindex.ObjectFunction, "zeroRows", "store.go", 10, "")
+	s.external("concat", "strings", "Join", programindex.ExternalAuthorityPlatform)
+	s.relate("c", programindex.RelationInvokesExternal, "fn", []string{"concat"}, loc("store.go", 12),
+		pattern("p", programindex.PatternCall, "Join", loc("store.go", 12), nil,
+			literal(1, "SELECT 0 AS a"), literal(2, " UNION ALL"), literal(3, " SELECT 0 AS a"), literal(4, "SELECT 1 AS b")))
+	result := mustBuild(t, Input{Targets: []TargetInput{{Index: s.index(), Root: "."}}})
+	var values []string
+	for _, query := range result.OfKind(KindSQLQuery) {
+		values = append(values, query.Value)
+	}
+	sort.Strings(values)
+	if want := []string{"SELECT 0 AS a", "SELECT 1 AS b"}; !reflect.DeepEqual(values, want) {
+		t.Fatalf("statements at one call = %v, want %v", values, want)
 	}
 }
 

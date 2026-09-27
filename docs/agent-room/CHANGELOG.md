@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — metabase's Clojure target runs without a model
+
+- `repomap --target clojure:deps.edn --no-model` on metabase exited 1 after
+  about 8 minutes with "invalid external symbol authority". Three native rows
+  broke the sealed graph, one after another:
+  1. **Java calls with no method.** clj-kondo reports 178 class usages as
+     calls with no method: 152 classes in an `:import` list, 4 constructors of
+     an imported class inside a syntax-quote (`` `(ArrayList.) ``) and 22 with
+     no position. The adapter made each a static call `Class/` with an empty
+     name. Fix: a static call names its method. A native row whose name the
+     index would refuse names no outside symbol, and its use stays
+     unresolved; an import of it is skipped (`programindex.ValidName`).
+  2. **Anonymous-argument calls.** A call of an anonymous function literal's
+     argument, `#(% 1)`, is a local clj-kondo gives no name, so its pattern
+     had an empty selector. It now keeps `%` as written.
+  3. **Duplicate SQL facts.** `(str "SELECT 0 AS A" " UNION ALL" " SELECT 0 AS
+     A")` gave two facts that read alike at one call, which the atlas refused
+     as a place with two origins in one target. A statement is now one fact
+     at its call as the fact reads it (a shared facts rule for all languages).
+- The Clojure fixture gains `fresh-list`, `new-id`, `apply-each` and
+  `zero-rows`. Each check fails on the old code with the metabase error; the
+  facts unit test covers the SQL rule for every language.
+- metabase: exit 0 in 6m53s (native analysis 3m21s, projection 1m22s); its
+  tree is untouched. `make test` and `make vet` pass.
+
 ## 2026-09-27 — Neighbour branches merged: parameter cycles, definition-time calls
 
 - **facts/parameter-cycle.** etcd's server module overflowed the stack in

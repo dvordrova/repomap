@@ -159,7 +159,12 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		}
 		return best
 	}
-	external := func(ns, name string) string {
+	// A native row whose namespace, class or name is no name the index
+	// accepts names no outside symbol: its use stays unresolved.
+	external := func(ns, name string) (string, bool) {
+		if !p.ValidName(ns) || !p.ValidName(name) {
+			return "", false
+		}
 		ref := "external:" + ns + "/" + name
 		authority := p.ExternalAuthorityPackage
 		if coreNamespace(ns) || platformClass(ns) {
@@ -167,7 +172,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		}
 		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: p.ObjectExternalSymbol, Name: ns + "/" + name, Visibility: p.VisibilityUnknown,
 			External: &p.ExternalSymbol{PackagePath: ns, Name: name, AuthorityKind: authority}}
-		return ref
+		return ref, true
 	}
 	resolve := func(ns, name string) []string {
 		if refs := vars[ns+"/"+name]; len(refs) > 0 {
@@ -178,7 +183,10 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if len(namespaces[ns]) > 0 || ns == "" || ns == "clj-kondo/unknown-namespace" {
 			return nil
 		}
-		return []string{external(ns, name)}
+		if ref, ok := external(ns, name); ok {
+			return []string{ref}
+		}
+		return nil
 	}
 	// A var named in argument position is what that argument carries.
 	argumentTargets := map[site][]string{}
@@ -224,13 +232,21 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		addRelation(kind, owner, targets, u.site, "", &pattern)
 	}
 	for _, u := range a.Java {
-		if !valid(u.site) || !u.Call {
+		// A static method call names its method. clj-kondo also reports, as
+		// a call with no method, an imported class that a syntax-quoted
+		// constructor names (`(ArrayList.)` in a macro body) and classes in
+		// an :import list: like a plain constructor, they call nothing an
+		// outside symbol could name.
+		if !valid(u.site) || !u.Call || u.Method == "" {
 			continue
 		}
-		ref := external(u.Class, u.Method)
+		var targets []string
+		if ref, ok := external(u.Class, u.Method); ok {
+			targets = []string{ref}
+		}
 		args := argumentsOf(u.site)
 		pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("java:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: u.Class + "/" + u.Method, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
-		addRelation(p.RelationCalls, ownerAt(u.site), []string{ref}, u.site, "", &pattern)
+		addRelation(p.RelationCalls, ownerAt(u.site), targets, u.site, "", &pattern)
 	}
 	for _, u := range a.Instances {
 		if u.Row == 0 {
@@ -256,8 +272,18 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		s := sources[u.Filename]
 		offset := s.offset(u.Row, u.Col)
 		if offset >= 0 && offset < len(s.text) && s.text[offset] == '(' {
+			// An anonymous function literal's argument (`#(% 1)`) is a local
+			// clj-kondo names nothing: the call keeps the name as written.
+			name := u.Name
+			if name == "" {
+				name = s.callee(u.site)
+			}
+			if !p.ValidName(name) {
+				addRelation(p.RelationCalls, ownerAt(u.site), nil, u.site, p.DispatchFunctionValue, nil)
+				continue
+			}
 			args := s.arguments(u.site)
-			pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("local:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: u.Name, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
+			pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("local:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: name, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
 			addRelation(p.RelationCalls, ownerAt(u.site), nil, u.site, p.DispatchFunctionValue, &pattern)
 		}
 	}
@@ -286,7 +312,12 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			module = target.Name
 			directory = objects[targets[0]].Directory
 		} else {
-			targets = []string{external(u.To, "namespace")}
+			ref, ok := external(u.To, "namespace")
+			if !ok {
+				// A use of no namespace name imports nothing to name.
+				continue
+			}
+			targets = []string{ref}
 			if coreNamespace(u.To) {
 				kind = dependencies.KindStdlib
 				module = ""

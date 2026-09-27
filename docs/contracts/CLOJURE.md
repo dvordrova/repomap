@@ -28,6 +28,23 @@ ordinary author-claim layer, with their original quote location.
 come from the Clojure distribution's named namespace set, not the `clojure.*`
 prefix; third-party namespaces under that prefix remain packages. Package
 catalog identities are native namespace names, not inferred Maven coordinates.
+A Java static call is a class usage that names its method
+(`(java.util.UUID/randomUUID)`). clj-kondo also reports as a call with no
+method an imported class that a syntax-quoted constructor names
+(`` (defmacro fresh-list [] `(ArrayList.)) `` in the fixture's `core.clj`) and,
+on metabase, classes of an `:import` list; like a plain constructor
+(`:call false`) such a row calls nothing and projects no outside symbol. A
+native row whose namespace, class or name is no name ProgramIndex accepts
+(empty, surrounding space or a control character) names no outside symbol
+either: a use keeps its unresolved call, and an import of it is skipped,
+rather than an invented or empty symbol failing the whole index. Go, Python,
+JS/TS and C name an outside symbol from a native declaration or import that
+always carries its name, so none has an equivalent row to guard.
+A call of an anonymous function literal's argument (`#(% 1)`, the fixture's
+`apply-each`) is a local clj-kondo reports with no name; its function-value
+call keeps the callee as the source writes it (`%`, `%1`, `%&`), so its
+pattern names what is called. Go, Python, JS/TS and C name every parameter,
+so none has such an unnamed local.
 Java instance dispatch and dynamic function targets remain unresolved. This
 initial adapter does not implement ClojureScript execution views or a runtime
 macroexpander; definition/control macro syntax is not promoted into runtime calls.

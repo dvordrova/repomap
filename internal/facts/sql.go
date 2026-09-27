@@ -31,7 +31,11 @@ func (b *builder) addSQLQueries(target *targetContext) {
 				}
 				tokens, _ := sqltext.Tokens(statement, 1)
 				tables := sqltext.Tables(tokens)
-				if !b.once(strings.Join([]string{string(KindSQLQuery), target.target.ID, anchor.String(), statement}, "\x00")) {
+				key, value := strings.Join(tables, ", "), clipText(strings.Join(strings.Fields(statement), " "))
+				// A statement is one fact at its call as the fact reads it:
+				// `(str "SELECT 0 AS a" " UNION ALL" " SELECT 0 AS a")` hands
+				// the same statement twice, with only its spacing apart.
+				if !b.once(strings.Join([]string{string(KindSQLQuery), target.target.ID, anchor.String(), key, value}, "\x00")) {
 					continue
 				}
 				symbol, objectID := target.enclosingSymbol(relation.FromID)
@@ -39,8 +43,8 @@ func (b *builder) addSQLQueries(target *targetContext) {
 					Kind:       KindSQLQuery,
 					TargetID:   target.target.ID,
 					Anchor:     anchor,
-					Key:        strings.Join(tables, ", "),
-					Value:      clipText(strings.Join(strings.Fields(statement), " ")),
+					Key:        key,
+					Value:      value,
 					Symbol:     symbol,
 					ObjectID:   objectID,
 					Resolution: ResolutionExact,

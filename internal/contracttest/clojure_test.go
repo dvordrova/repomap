@@ -1,11 +1,14 @@
 package contracttest
 
 import (
+	"slices"
+	"testing"
+
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/clojureproject"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
-	"testing"
 )
 
 func TestClojureFixtureInventoryAndNativeGraph(t *testing.T) {
@@ -29,8 +32,11 @@ func TestClojureFixtureInventoryAndNativeGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertClojureJavaStaticCalls(t, index)
+	assertClojureAnonymousArgumentCall(t, index)
 	adaptertest.AssertExecutionScope(t, index, graph, "src/example/core.clj", 19, programindex.ObjectModule)
-	adaptertest.AssertSQLQueryFacts(t, index, "src/example/core.clj", map[string]string{"SELECT id FROM direct_rows": "direct_rows", "DROP TABLE IF EXISTS %s": ""}, "create %s dir")
+	adaptertest.AssertSQLQueryFacts(t, index, "src/example/core.clj", map[string]string{"SELECT id FROM direct_rows": "direct_rows", "DROP TABLE IF EXISTS %s": "", "SELECT 0 AS a": ""}, "create %s dir")
+	assertOneStatementPerCall(t, index)
 	// (-> path (str/replace "/" "-") (str/replace "/" "-"))
 	// (str/replace (str/replace path "/" "-") "/" "-")
 	// clj-kondo gives each threaded or nested form its own position. Java
@@ -42,4 +48,77 @@ func TestClojureFixtureInventoryAndNativeGraph(t *testing.T) {
 		{Line: 40, Column: 3, Key: "clojure.string/replace", Text: "clojure.string.replace", Path: "/"},
 		{Line: 40, Column: 16, Key: "clojure.string/replace", Text: "clojure.string.replace", Path: "/"},
 	})
+}
+
+// (defmacro fresh-list [] `(ArrayList.)) with ArrayList imported: clj-kondo
+// reports the quoted constructor as a call that names no method, which once
+// became an outside symbol with no name and failed the whole index (metabase).
+// It calls nothing; (java.util.UUID/randomUUID) in new-id is a static call.
+func assertClojureJavaStaticCalls(t *testing.T, index programindex.Index) {
+	t.Helper()
+	byID := map[string]programindex.Object{}
+	for _, object := range index.Objects {
+		byID[object.ID] = object
+	}
+	calls := map[string][]string{}
+	for _, relation := range index.Relations {
+		from := byID[relation.FromID]
+		if from.Name != "example.core/fresh-list" && from.Name != "example.core/new-id" {
+			continue
+		}
+		for _, id := range relation.ToIDs {
+			if to := byID[id]; to.External != nil {
+				calls[from.Name] = append(calls[from.Name], string(relation.Kind)+" "+to.External.PackagePath+"/"+to.External.Name)
+			}
+		}
+	}
+	if len(calls["example.core/fresh-list"]) != 0 {
+		t.Fatalf("a quoted constructor became a call: %v", calls["example.core/fresh-list"])
+	}
+	if !slices.Equal(calls["example.core/new-id"], []string{"invokes_external clojure.core/str", "calls java.util.UUID/randomUUID"}) {
+		t.Fatalf("new-id's static call: %v", calls["example.core/new-id"])
+	}
+}
+
+// (defn apply-each [fs] (map #(% 1) fs)): clj-kondo names no local for `%`,
+// so the call's pattern had an empty selector and failed the whole index
+// (metabase). The call through the function value keeps `%` as written.
+func assertClojureAnonymousArgumentCall(t *testing.T, index programindex.Index) {
+	t.Helper()
+	byID := map[string]programindex.Object{}
+	for _, object := range index.Objects {
+		byID[object.ID] = object
+	}
+	var selectors []string
+	for _, relation := range index.Relations {
+		if byID[relation.FromID].Name != "example.core/apply-each" || relation.Dispatch != string(programindex.DispatchFunctionValue) {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			selectors = append(selectors, pattern.Selector)
+		}
+	}
+	if !slices.Equal(selectors, []string{"%"}) {
+		t.Fatalf("the call of an anonymous function's argument: %v", selectors)
+	}
+}
+
+// (defn zero-rows [] (str "SELECT 0 AS a" " UNION ALL" " SELECT 0 AS a")):
+// the statement handed twice, apart only in spacing, became two identical
+// facts at one call, and the atlas refused the graph (metabase).
+func assertOneStatementPerCall(t *testing.T, index programindex.Index) {
+	t.Helper()
+	layer, err := facts.Build(facts.Input{Targets: []facts.TargetInput{{Index: index}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, fact := range layer.OfKind(facts.KindSQLQuery) {
+		if fact.Value == "SELECT 0 AS a" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("zero-rows' statement is %d facts, want 1", count)
+	}
 }
