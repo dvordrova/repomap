@@ -152,7 +152,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     const common=[...counts].sort((a,b)=>b[1]-a[1]||(kinds.indexOf(a[0])+1||99)-(kinds.indexOf(b[0])+1||99))[0]?.[0];
     for(const input of inputs)commonKind.set(input.id,common);
   }
-  const childNames=id=>(byID.get(id)?.children||[]).map(child=>byID.get(child)?.overviewTitle||byID.get(child)?.title).filter(Boolean);
+  const childNames=id=>(byID.get(id)?.children||[]).map(child=>byID.get(child)?.title).filter(Boolean);
   return records.map(n=>{
     const frame=!!n.children?.length;
     // A part's zoom button takes its room beside its title.

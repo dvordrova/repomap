@@ -9,7 +9,7 @@ import {createLook} from './look.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
-import {singlePartAreas, inputGroupsByPart} from './overview.mjs';
+import {inputGroupsByPart} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading,cardText} from './cards.mjs';
 import {overviewInset} from './split-layout.mjs';
 import {HoverGate} from './hover.mjs';
@@ -189,8 +189,6 @@ function RoutedEdge({id,data}) {
 const nodeTypes={part:Part,area:Area}, edgeTypes={routed:RoutedEdge};
 
 window.rmCreateFlow = async function(map, stage, records, relations, areas, inputOwner, callbacks) {
-  const display=singlePartAreas(records,areas),displayed=id=>display.aliases.get(id)||id;
-  records=display.records;areas=display.areas;
   ({records,areas}=inputGroupsByPart(records,areas,inputOwner));
   const source=stage.querySelector('svg'), host=document.createElement('div');
   host.className='flow-root';stage.appendChild(host);
@@ -333,7 +331,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // the path's parts nearest it in call depth, as many as stay readable in
   // one camera, with the trace dark from there. Their areas open.
   function focusPath(input,smooth=true){
-    const nodes=[...new Set((byID.get(input)?.trace||[]).map(displayed))].map(id=>placed.get(id)).filter(n=>n&&!n.frame);
+    const nodes=[...new Set(byID.get(input)?.trace||[])].map(id=>placed.get(id)).filter(n=>n&&!n.frame);
     if(!nodes.length)return false;
     if(!instance||initializing){pendingFocus={path:input};return true;}
     overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
@@ -353,7 +351,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // An input's tile among the inputs its handler's part takes: the group it
   // stands in inside the collection, not the collection's whole wall.
   function showInput(id,smooth=true){
-    id=displayed(id);
     const tile=placed.get(id);if(!tile)return;
     if(!instance||initializing){pendingFocus={id,input:true};return;}
     overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
@@ -365,7 +362,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     commitCamera(instance.setViewport(tileViewport(tile,byID.get(group?.id)?.branch==='inputs-part'?group:null,rect.width,rect.height,byID.get(id)?.contentScale||1,{least}),{duration:smooth?420:0}),id);
   }
   function focus(id,center=true,smooth=true){
-    id=displayed(id);
     const n=placed.get(id);if(!n)return;
     const record=byID.get(id);
     if(record?.activation&&focusPath(id,smooth))return;
@@ -488,7 +484,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         // Areas first, then the loose parts beside them.
         [...(children.get(n.id)||[])].sort((a,b)=>(byID.get(b)?.branch==='area')-(byID.get(a)?.branch==='area'));
       const textHeight=(text,font,lineHeight)=>wrapText(text,contentWidth,font,measure).length*lineHeight;
-      const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).overviewTitle||byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
+      const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
       const counts=inventory.parts?t('{0} parts',inventory.parts):'';
       const roleHeight=item.role?textHeight(item.role,'600 13px system-ui',18)+10:0;
       const countsHeight=textHeight(counts,'500 12px system-ui',17)+10;
@@ -513,7 +509,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description}</p>}
       {inputs&&<InputTypes groups={item.inputGroups}/>}
       {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
-        <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).overviewTitle||byID.get(id).name||byID.get(id).title}</button>
+        <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).name||byID.get(id).title}</button>
       </li>)}</ul>}
       {showCounts&&<div className="flow-inside-counts">{counts}</div>}
     </div>;
@@ -879,7 +875,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   });
   return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
-    view={...initial,...next,scope:displayed(next.scope)||'',
-      selected:new Set([...(next.selected||[])].map(displayed)),matched:new Set([...(next.matched||[])].map(displayed))};update();
+    view={...initial,...next,scope:next.scope||'',
+      selected:new Set(next.selected||[]),matched:new Set(next.matched||[])};update();
   }};
 };
