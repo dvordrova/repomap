@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — The map model's first steps: dead mechanisms out, C reads in
+
+- Owner: "ты еще прослеживаешь логику того, что мы делаем? или мы уже какие-то
+  адхок херни ... придумываем?". An audit wrote the model of the map: facts
+  from code, then each model decision asked once, then code derivations,
+  then the report only renders. It gave every mechanism a verdict.
+- Deleted, since nothing reads them, with the Redis canvas byte- and
+  pixel-identical before and after:
+  - atlas_layers (A7);
+  - the atlas trace (B15; atlas v14);
+  - Box.Keys, modelKeys and rankedKeys (B16);
+  - the canvas's one-part area folding (C4), which never fired. The visual
+    fixtures that built one-part areas now make loose parts.
+- C now emits `reads` for a function's use of a file-scope variable or table.
+  - Not a read: the destination of `=`, sizeof or _Alignof, parameters and
+    locals, platform variables.
+  - Redis: findFuncName reads symsTable at 4 sites, so the lone "Debug
+    symbols" part can attach to its reader.
+  - Go has no reads emitter (recorded); Python, JS/TS and Clojure had
+    coverage already.
+  - Side effect: input path traces now also reach parts read as data (set: 11
+    → 12 parts). Paths are revisited with the GET chain.
+- A Redis warm rerun has 0 live calls, except orientation and glossary, whose
+  requests carry the new connections. `make test` and `make vet` pass.
+
 ## 2026-09-27 — The owner's screenshots of the Redis map, clear fixes
 
 The owner sent ten remarks on the Redis map. Read-only investigators
