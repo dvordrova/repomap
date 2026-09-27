@@ -379,7 +379,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   roomier side. It stands in the map's coordinates and moves with it, but
   at the screen's own type size, and is placed again when the zoom
   changes: drawn at the parts' scale, a card of 291 calls read at 10 px
-  beside Redis's Core infrastructure. While a card is open or kept open, the frame being read stays: the way to
+  beside Redis's Core infrastructure. Beside a frame it takes the room
+  there is, from 300 to 500 px wide, so that it stands outside the frame;
+  with less room it keeps its 500 px and stands beside its handle. While a card is open or kept open, the frame being read stays: the way to
   the card crosses other parts, frames and empty canvas without changing
   the emphasis or the labels. Leaving the handle, the pointer is safe inside
   the triangle between where it left and the card: the card lasts and no
@@ -419,7 +421,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   many the set holds, is decided in Go from the relations' retained targets;
   the browser only counts what stands behind the arrow. A caller calling
   every member itself, or handing over part of a set, keeps its rows. A
-  part's number opens the same rows, per label, without the index.
+  part's number opens the same rows, per label, without the index and
+  without a heading for the part's own calls. A label's card first opens on
+  the whole end; a number pointed at once the card is open narrows it to
+  that number's parts, and the chip's own edge widens it again: narrowed by
+  every number crossed on the way, Server runtime → Core infrastructure's
+  card only ever showed the calls of whichever number the pointer met
+  last.
 
 - ELK prepares native area interiors, then places each component's ready
   immediate child rectangles in a flat graph. These children retain their

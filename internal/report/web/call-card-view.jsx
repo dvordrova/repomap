@@ -34,10 +34,13 @@ function foldWords(fold){
 // under headings that stay at the top while the list scrolls. A caller is
 // written once for its run of calls; a fold is one line, its callees by
 // part under it, each part opening to their names.
-export function CallRows({card,sticky=true}){
+// A part's own card leaves out the heading of calls made from the part
+// itself (`own`), and a relation with no call of its own that would only
+// name the heading above it again says nothing more.
+export function CallRows({card,sticky=true,own=''}){
   return <div className={`flow-card-groups ${sticky?'flow-card-sticky':''}`}>
     {card.groups.map(group=><section key={group.id||'-'} data-call-group={group.id}>
-      {group.id&&<h4 className="flow-card-group"><span>{group.name}</span><b>{group.count}</b></h4>}
+      {group.id&&group.id!==own&&<h4 className="flow-card-group"><span>{group.name}</span><b>{group.count}</b></h4>}
       {group.folds.map(fold=><div key={fold.caller+fold.fold} className="flow-card-fold">
         <p className="flow-card-row"><Link href={fold.site}>{fold.caller}</Link><i>{verb(fold.kind)}</i><span className="flow-card-say">{foldWords(fold)}</span></p>
         <div className="flow-card-fold-parts">{fold.parts.map(part=><details key={part.id} onClick={stop}>
@@ -48,7 +51,10 @@ export function CallRows({card,sticky=true}){
       {group.pairs.map(pair=><div key={pair.id} className="flow-card-pair-rows">
         <h5 className="flow-card-pair"><span><i>→</i> {pair.name}</span><b>{pair.count}</b></h5>
         <div className="flow-card-rows">{pair.rows.map((row,i)=>{
-          if(row.kind==='other')return <p key={i} className="flow-card-row flow-card-other"><Link href={row.otherHref}>{row.other}</Link>{row.at&&<em>{row.at}</em>}</p>;
+          if(row.kind==='other'){
+            if(!row.at&&!row.otherHref&&(row.other===pair.name||row.other===group.name))return null;
+            return <p key={i} className="flow-card-row flow-card-other"><Link href={row.otherHref}>{row.other}</Link>{row.at&&<em>{row.at}</em>}</p>;
+          }
           const again=i>0&&pair.rows[i-1].caller===row.caller&&pair.rows[i-1].kind!=='other';
           return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.kind==='implemented in'?row.caller:<Link href={row.site} title={row.at}>{row.caller}</Link>}</span>
             <i>{verb(row.kind)}</i><Link href={row.calleeHref}>{row.callee}</Link></p>;

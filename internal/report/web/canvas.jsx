@@ -975,6 +975,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   function FloatingCard({cardKey,handle,frame,side,content,className='',head,children}){
     const ref=useRef(null),body=useRef(null),[at,setAt]=useState(null),pinned=cardKey.startsWith('badge:')?pinnedPart===cardKey.slice(6):pinnedLabels.has(cardKey.slice(6));
     const zoom=useStore(state=>state.transform[2]);
+    // Beside its frame a card takes the room there is, down to 300px, so it
+    // stands outside the frame it explains; with less it keeps its 500px.
+    const canvas=instance?host.getBoundingClientRect():null,outer=screenBox(frame);
+    const room=canvas&&outer&&side!=='top'&&side!=='bottom'?Math.max(outer.left-canvas.left,canvas.right-outer.right)-16:Infinity;
+    const width=room>=300&&room<500?Math.floor(room):500;
     useEffect(()=>{shownCards.add(cardKey);return()=>shownCards.delete(cardKey);},[cardKey]);
     useLayoutEffect(()=>{
       wheel(body.current);
@@ -982,12 +987,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const v=instance.getViewport(),box=host.getBoundingClientRect(),size=el.getBoundingClientRect();
       const place=placeCard({handle:from,frame:screenBox(frame),canvas:box,size:{width:size.width,height:size.height},side});
       setAt({x:(place.x-box.left-v.x)/v.zoom,y:(place.y-box.top-v.y)/v.zoom});
-    },[cardKey,pinned,content,zoom]);
+    },[cardKey,pinned,content,zoom,width]);
     return <div ref={ref} data-card={cardKey} className={`flow-calls-place flow-floating-card nopan ${className}`}
       onMouseEnter={()=>lookAt(cardKey)} onMouseLeave={()=>lookAway(cardKey)}
       onClick={event=>{event.stopPropagation();if(!pinned)pin(cardKey);}}
       style={{transform:`translate(${at?.x||0}px,${at?.y||0}px) scale(${1/zoom})`,transformOrigin:'top left',visibility:at?'visible':'hidden'}}>
-      <div className={`flow-connection-calls ${pinned?'flow-card-pinned':''}`} style={{maxHeight:Math.max(160,Math.min(600,host.clientHeight-16))}}>
+      <div className={`flow-connection-calls ${pinned?'flow-card-pinned':''}`} style={{width,maxHeight:Math.max(160,Math.min(600,host.clientHeight-16))}}>
         {pinned&&<button type="button" className="flow-card-close" aria-label={t('Close')} title={t('Close')}
           onClick={event=>{event.stopPropagation();closeCard(cardKey);}}>✕</button>}
         {head}
@@ -1032,8 +1037,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     return <FloatingCard cardKey={key} frame={frame} content={mine.map(([label])=>label.id).join(' ')} className="flow-part-summary"
       handle={()=>host.querySelector(`[data-badge="${CSS.escape(id)}"]`)?.getBoundingClientRect()||screenBox(node)}>
       {mine.map(([label,card])=><section key={label.id} className="flow-card-section">
-        <header><button type="button" onClick={going(label)}>{label.incoming?'←':'→'} {label.title}</button><b>{card.total}</b></header>
-        <CallRows card={card} sticky={false}/></section>)}</FloatingCard>;
+        <header><button type="button" onClick={going(label)}>{label.incoming?'←':'→'} {nameOf(label.outside)}</button><b>{card.total}</b></header>
+        <CallRows card={card} sticky={false} own={id}/></section>)}</FloatingCard>;
   }
   function ConnectionLabel({label}){
     const {zoom}=useViewport();
@@ -1065,7 +1070,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
               if(callbacks.openConnection){closeCards();hover.remember(event.clientX,event.clientY);hover.pause();callbacks.openConnection(label.area,label.key);return;}
               if(pinnedLabels.has(label.id))closeCard(key);else{look.enter(key);pin(key);}}}>
             {label.all?<b className={`flow-number-all ${hovered?'flow-number-open':''}`}>{t('all')}</b>:label.numbers.map((k,i)=><React.Fragment key={k}>{i>0&&!upright&&<i> · </i>}
-              <b className={`${label.bold?.has(k)?'flow-number-active':''} ${hovered&&(lookOnly===k||lookOnly===undefined)?'flow-number-open':''}`} onMouseEnter={()=>{lookOnly=label.numbers.length>1?k:undefined;if(look.key===key)update?.();}}>{k}</b></React.Fragment>)}
+              <b className={`${label.bold?.has(k)?'flow-number-active':''} ${hovered&&(lookOnly===k||lookOnly===undefined)?'flow-number-open':''}`} 
+                // The card first opens on the whole end; a number pointed at
+                // once it is open narrows it, and the chip's own edge widens
+                // it again. Narrowed by every number crossed on the way, the
+                // card of Server runtime → Core infrastructure only ever
+                // showed the calls of whichever number the pointer met last.
+                onMouseEnter={()=>{if(look.key!==key)return;lookOnly=label.numbers.length>1?k:undefined;update?.();}}
+                onMouseLeave={event=>{if(event.relatedTarget===event.currentTarget.parentElement&&look.key===key){lookOnly=undefined;update?.();}}}>{k}</b></React.Fragment>)}
           </button>
         </div>;
   }
