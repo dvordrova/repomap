@@ -4,7 +4,7 @@ import {prepareInteriors,layoutPrepared,overviewInset} from './split-layout.mjs'
 // prepared frames again; camera gestures do not enter either layout stage.
 export function createSemanticLayout(items,relations,areas){
   let prepared;
-  return async(width,height)=>layoutPrepared(await(prepared ||= prepareInteriors(items,relations,areas,{availableHeight:height-2*overviewInset})),width,height);
+  return async(width,height)=>layoutPrepared(await(prepared ||= prepareInteriors(items,relations,areas,{availableHeight:height-2*overviewInset,canvas:{width,height}})),width,height);
 }
 
 export function semanticLayout(items,relations,areas,width,height){
@@ -76,7 +76,7 @@ function layerThreshold(frames,byID,width,height,depth,retaining=false){
 // entrance. A smaller sibling must not begin with microscopic headings.
 export function firstDetailZoom(nodes,records,width,height){
   return Math.max(systemViewport(nodes,width,height).zoom,
-    layerThreshold(nodes.filter(node=>node.frame&&!node.parentId),new Map(records.map(record=>[record.id,record])),width,height,0));
+    layerThreshold(nodes.filter(node=>node.frame&&!node.parentId&&!node.display),new Map(records.map(record=>[record.id,record])),width,height,0));
 }
 
 // One decision per hierarchy depth. The first readable interior opens its
@@ -87,7 +87,7 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
   const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
   const layers=new Map();
   // An input collection's part groups open with the collection itself.
-  for(const node of nodes.filter(node=>node.frame&&byID.get(node.id)?.branch!=='inputs-part')){
+  for(const node of nodes.filter(node=>node.frame&&!node.display&&byID.get(node.id)?.branch!=='inputs-part')){
     let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;
     if(!layers.has(depth))layers.set(depth,[]);
     layers.get(depth).push(node);
@@ -98,6 +98,21 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
     for(const frame of frames)open.add(frame.id);
   }
   return open;
+}
+
+// The smallest zoom at which the layer holding frame `id`, and every layer
+// above it, stays open: the retaining side of the detail thresholds.
+export function layerFloor(nodes,records,id,width,height){
+  const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
+  const depthOf=node=>{let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;return depth;};
+  const node=placed.get(id);if(!node)return Infinity;
+  const frames=nodes.filter(node=>node.frame&&!node.display&&byID.get(node.id)?.branch!=='inputs-part');
+  let floor=systemViewport(nodes,width,height).zoom;
+  for(let depth=0;depth<=depthOf(node);depth++){
+    const layer=frames.filter(frame=>depthOf(frame)===depth);
+    if(layer.length)floor=Math.max(floor,layerThreshold(layer,byID,width,height,depth,true));
+  }
+  return floor;
 }
 
 // Keep the same frame and camera; put its small entrance in the visible corner.
@@ -135,9 +150,13 @@ export function partViewport(node,zoom,width,height,margin=24) {
 // for a caller that opens the frame itself, the size at which it stays open. A
 // frame too large even so is entered at its first child. A component is
 // entered whole at any size: its children have scales of their own.
-export function frameViewport(node,nodes,width,height,contentScale=1,{whole=false,pad=24,floor=.86}={}) {
+// A frame that fits the canvas at a zoom where it stays open (`least`) is
+// fitted whole, its content no larger than its reading size: a focused area
+// never renders wider than the visible canvas (Server runtime stood 1300 px
+// wide in a 1214 px canvas, Virtual memory cut off).
+export function frameViewport(node,nodes,width,height,contentScale=1,{whole=false,pad=24,floor=.86,least=Infinity}={}) {
   const fit=Math.min(Math.max(1,width-2*pad)/node.width,Math.max(1,height-2*pad)/node.height);
-  const zoom=Math.max(whole?0:floor/contentScale,Math.min(Math.max(whole?.85:0,1/contentScale),fit));
+  const zoom=fit>=least?Math.max(least,Math.min(1/contentScale,fit)):Math.max(whole?0:floor/contentScale,Math.min(Math.max(whole?.85:0,1/contentScale),fit));
   const viewport={x:Math.max(pad,(width-node.width*zoom)/2)-node.absolute.x*zoom,y:Math.max(pad,(height-node.height*zoom)/2)-node.absolute.y*zoom,zoom};
   const first=(nodes||[]).filter(n=>n.parentId===node.id).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];
   if(first&&!whole){
@@ -145,6 +164,53 @@ export function frameViewport(node,nodes,width,height,contentScale=1,{whole=fals
     if(first.absolute.y*zoom+viewport.y<pad||(first.absolute.y+first.height)*zoom+viewport.y>height-pad)viewport.y=pad-first.absolute.y*zoom;
   }
   return viewport;
+}
+
+// The zoom, relative to a part's reading scale, down to which an open area
+// stays open: its parts' 17px headings at about twelve pixels.
+export const staysOpen=.72;
+
+const bounds=nodes=>({left:Math.min(...nodes.map(n=>n.absolute.x)),top:Math.min(...nodes.map(n=>n.absolute.y)),
+  right:Math.max(...nodes.map(n=>n.absolute.x+n.width)),bottom:Math.max(...nodes.map(n=>n.absolute.y+n.height))});
+const fitZoom=(box,width,height,pad)=>Math.min(Math.max(1,width-2*pad)/(box.right-box.left),Math.max(1,height-2*pad)/(box.bottom-box.top));
+const centred=(box,zoom,width,height)=>({x:width/2-(box.left+box.right)/2*zoom,y:height/2-(box.top+box.bottom)/2*zoom,zoom});
+
+// An input is entered as its path. `nodes` are its parts in call-depth order,
+// the part holding its handler first; `steps` are the trace's arrows between
+// them. The camera takes the handler's part, then each part the trace reaches
+// from a part already taken while all of them still fit at a readable scale,
+// and frames them. When the next step does not fit, the camera stays at the
+// smallest readable scale and leans toward it, keeping what it took inside:
+// the dark arrows leaving the frame show the way. On the handler's part alone,
+// centred, GET showed four of its nine dark arrows and none of the parts they
+// reach. `taken` names the parts framed.
+// `least` is the zoom below which the parts' layer closes.
+export function pathViewport(nodes,steps,width,height,contentScale=1,{pad=24,floor=staysOpen,least=0}={}){
+  if(!nodes.length)return null;
+  const smallest=Math.max(floor/contentScale,least),reading=Math.max(1/contentScale,least);
+  const taken=[nodes[0]],next=[];
+  for(const node of nodes.slice(1)){
+    if(!steps.some(([from,to])=>to===node.id&&taken.some(n=>n.id===from)))continue;
+    if(fitZoom(bounds([...taken,node]),width,height,pad)>=smallest)taken.push(node);
+    else next.push(node);
+  }
+  const box=bounds(taken),fit=fitZoom(box,width,height,pad);
+  if(taken.length===1&&fit<smallest)return {...partViewport(nodes[0],reading,width,height),taken};
+  if(!next.length)return {...centred(box,Math.max(smallest,Math.min(reading,fit)),width,height),taken};
+  const zoom=smallest,ahead=bounds(next),half={x:(width/2-pad)/zoom,y:(height/2-pad)/zoom};
+  const cx=Math.min(Math.max((ahead.left+ahead.right)/2,box.right-half.x),box.left+half.x);
+  const cy=Math.min(Math.max((ahead.top+ahead.bottom)/2,box.bottom-half.y),box.top+half.y);
+  return {x:width/2-cx*zoom,y:height/2-cy*zoom,zoom,taken};
+}
+
+// "Show input": the chosen input's tile among the inputs its handler's part
+// takes, the group it stands in, never the whole collection: framing the tile
+// in Redis's collection showed a wall of 95 inputs. A group larger than the
+// canvas at a readable scale is entered at the tile.
+export function tileViewport(tile,group,width,height,contentScale=1,{pad=24,floor=staysOpen,least=0}={}){
+  const frame=group||tile,fit=fitZoom(bounds([frame]),width,height,pad);
+  const zoom=Math.max(least,Math.min(1/contentScale,Math.max(floor/contentScale,fit)));
+  return centred(bounds([fit>=zoom?frame:tile]),zoom,width,height);
 }
 
 export function closedContainer(id, placed, records, detailed, componentsOpen, communicationsOpen,openComponents) {

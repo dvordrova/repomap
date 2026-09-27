@@ -13,6 +13,21 @@ if(options.has('single-part-area')){
   areas.find(a=>a.id===group.id).nodes=group.children;
 }
 
+// A part in no area stands beside the backend's areas.
+if(options.has('loose-part')){
+  records.find(n=>n.id==='backend').children.push('audit');
+  areas.find(a=>a.id==='backend').nodes.push('audit');
+  records.push({id:'audit',title:'Audit log',kind:'Part',summary:'Records every job decision for later review.'});
+  relations.push({from:'worker',to:'audit'});
+}
+
+// A chosen input carries its saved trace, the parts its code reaches in
+// call-depth order, and its arrows name it.
+if(options.has('input-path')){
+  records.find(n=>n.id==='create').trace=['routes','auth','queue','worker'];
+  for(const relation of relations)if([['routes','auth'],['routes','queue'],['queue','worker']].some(([from,to])=>relation.from===from&&relation.to===to))relation.operations=['create'];
+}
+
 // Only the host callbacks and prepared English labels are supplied here.
 // Rendering, measurement, layout, zoom, hover and controls are production code.
 window.rmT=(text,...args)=>text.replace(/\{(\d+)\}/g,(_,i)=>String(args[Number(i)]));
@@ -46,6 +61,10 @@ const flow=await window.rmCreateFlow(map,stage,records,relations,areas,inputOwne
 });
 map.showWholeMap=()=>{operation='';flow.update({});showReading('');return flow.overview();};
 map.captureViewport=()=>flow.capture();
+// Choosing an input as the report does: the reading is on the input and the
+// canvas is asked to show it.
+map.focusNode=id=>flow.focus(id);
+map.chooseInput=id=>{operation=id;flow.update({operation:id,entry:id,selected:selected(id)});showReading(id);flow.focus(id);};
 map.visibleEdges=flow.layout.edges;
 map.restoreReadingState=saved=>{
   flow.update({scope:saved.scope||'',selected:saved.scope?selected(saved.scope):new Set()});

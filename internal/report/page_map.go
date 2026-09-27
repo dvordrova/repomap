@@ -250,6 +250,11 @@ type pageMapNode struct {
 	Subtitle       string
 	Remote         bool
 	SourceKind     string
+	// DisplayGroup names the display frame outside destination frames of
+	// different programs stand in together because their records name the
+	// same destination. The group is no participant: equal destination text
+	// proves no identity, and each frame keeps its own program and arrows.
+	DisplayGroup string
 }
 
 type pageMapEdge struct {
@@ -2345,11 +2350,14 @@ func pageLane(lane groupindex.Lane, core bool) string {
 	return string(lane)
 }
 
-// areaLane is an area's mark. An area that holds the program's entry, a
-// declaration its execution starts from, says so even when a core part
-// stands in it too: a core mark on Redis's "Server runtime" hid main and
-// processCommand. Parts that only take requests do not make their area the
-// program's entry; otherwise its mark is the one it had.
+// areaLane is an area's mark. Only an area that holds the program's entry,
+// a declaration its execution starts from (a target seed), carries the entry
+// mark, even when a core part stands in it too: a core mark on Redis's
+// "Server runtime" hid main and processCommand. Parts that only take
+// requests or listen do not make their area the program's entry: the
+// triggers lane Networking's listen/bind boundary gave "Core infrastructure"
+// drew a second entry area beside Server runtime. Such an area keeps the core
+// mark when it is core and no mark otherwise.
 func areaLane(index *groupindex.Index, container groupindex.Container) string {
 	if index != nil {
 		seeds := make(map[string]bool, len(index.Target.Seeds))
@@ -2367,7 +2375,10 @@ func areaLane(index *groupindex.Index, container groupindex.Container) string {
 			}
 		}
 	}
-	return pageLane(container.Lane, container.Core)
+	if lane := pageLane(container.Lane, container.Core); lane != string(groupindex.LaneTriggers) {
+		return lane
+	}
+	return ""
 }
 
 // drawsInit says whether a target's initialization arrows are told apart

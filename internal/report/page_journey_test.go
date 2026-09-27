@@ -1,7 +1,6 @@
 package report
 
 import (
-	"slices"
 	"strings"
 	"testing"
 
@@ -53,19 +52,31 @@ func TestAreaHoldingTheEntryShowsTheEntryMarkEvenWhenCore(t *testing.T) {
 		{ID: "shared", Title: "Shared objects", Lane: groupindex.LaneCore, Core: true, MemberSubjectIDs: []string{"incr"}},
 		{ID: "store", Title: "Storage", Lane: groupindex.LaneCore, Core: true, MemberSubjectIDs: []string{"save"}},
 		{ID: "log", Title: "Log", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"log"}},
+		// Networking only listens: its listen/bind boundary put its area in the
+		// triggers lane, and "Core infrastructure" was drawn as a second entry.
+		{ID: "net", Title: "Networking", Lane: groupindex.LaneTriggers, MemberSubjectIDs: []string{"listen"}},
+		{ID: "loop", Title: "Event loop", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"poll"}},
 	}, Containers: []groupindex.Container{
 		{ID: "k1", Title: "Server runtime", Lane: groupindex.LaneTriggers, Core: true, GroupIDs: []string{"dispatch", "shared"}},
 		{ID: "k2", Title: "Persistence", Lane: groupindex.LaneTriggers, Core: true, GroupIDs: []string{"store", "log"}},
+		{ID: "k3", Title: "Core infrastructure", Lane: groupindex.LaneTriggers, GroupIDs: []string{"net", "loop"}},
 	}}
 	got, _ := structureEdges(t, index)
 	lanes := map[string]string{}
+	parts := map[string]string{}
 	for _, node := range got.Nodes {
 		if node.Branch == "area" {
 			lanes[node.FullTitle] = node.Lane
+		} else {
+			parts[node.FullTitle] = node.Lane
 		}
 	}
-	if lanes["Server runtime"] != "triggers" || lanes["Persistence"] != "core" {
+	if lanes["Server runtime"] != "triggers" || lanes["Persistence"] != "core" || lanes["Core infrastructure"] != "" {
 		t.Fatalf("area marks: %+v", lanes)
+	}
+	// The part keeps its own mark; only its area is not the program's entry.
+	if parts["Networking"] != "triggers" {
+		t.Fatalf("the listening part lost its own mark: %+v", parts)
 	}
 }
 
@@ -130,9 +141,12 @@ func TestInputPathIsTheWitnessTraceOrderedByCallDepth(t *testing.T) {
 	}
 }
 
-// Redis linked anet.c into three programs and the system map drew "DNS
-// resolver" and "TCP endpoint" once per program.
-func TestSystemMapDrawsOneBoxPerOutsideDestinationWithAnArrowFromEachProgram(t *testing.T) {
+// One "TCP endpoint" box took arrows from all three Redis programs, though
+// for redis-cli that endpoint is redis-server and for redis-server its
+// master: equal destination text proves no identity. Each program keeps its
+// own destination frame, tile and arrow; frames naming the same destination
+// only share a display group.
+func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	part := func(target string) *pageMap {
 		m := &pageMap{Nodes: []pageMapNode{{ID: "n-g1", FullTitle: "Networking"}}}
 		scopeTargetMapIDs(m, target)
@@ -142,39 +156,78 @@ func TestSystemMapDrawsOneBoxPerOutsideDestinationWithAnArrowFromEachProgram(t *
 		return pageOutbound{ID: target + "-out-b108", Destination: "DNS resolver", External: "netdb.h.gethostbyname", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "anet.c:115"}}
 	}
 	view := pageView{Sections: []*pageSection{
-		{ID: "t1", programTargetID: "t1", ShortLabel: "redis-server", Map: part("t1"), Outbound: []pageOutbound{resolve("t1")}},
+		{ID: "t1", programTargetID: "t1", ShortLabel: "redis-server", Map: part("t1"), Outbound: []pageOutbound{resolve("t1"),
+			{ID: "t1-out-b120", Destination: "Master", External: "sys/socket.h.connect", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "replication.c:40"}}}},
 		{ID: "t2", programTargetID: "t2", ShortLabel: "redis-benchmark", Map: part("t2"), Outbound: []pageOutbound{resolve("t2")}},
 		{ID: "t4", programTargetID: "t4", ShortLabel: "redis-cli", Map: part("t4"), Outbound: []pageOutbound{resolve("t4")}},
 	}}
 	got := view.SystemMap()
-	var frames, tiles []pageMapNode
+	frames := map[string]pageMapNode{}
+	tiles := map[string]pageMapNode{}
 	for _, node := range got.Nodes {
 		switch {
 		case node.Branch == "communication":
-			frames = append(frames, node)
+			frames[node.ID] = node
 		case node.ItemKind == "External communication":
-			tiles = append(tiles, node)
+			tiles[node.ID] = node
 		}
 	}
-	if len(frames) != 1 || frames[0].FullTitle != "DNS resolver" || len(tiles) != 1 || frames[0].Children != tiles[0].ID {
-		t.Fatalf("one destination drawn as %d boxes holding %d tiles: %+v", len(frames), len(tiles), frames)
-	}
-	callers := map[string]bool{}
-	for _, edge := range got.Edges {
-		if edge.To == tiles[0].ID {
-			callers[edge.From] = true
-		}
-	}
+	groups := map[string]bool{}
 	for _, target := range []string{"t1", "t2", "t4"} {
-		if !callers[targetMapNodeID(target, "n-g1")] {
-			t.Fatalf("program %s lost its arrow to the destination: %v", target, callers)
+		frame, tile := frames["system-"+target+"-out-b108-destination"], tiles["system-"+target+"-out-b108"]
+		if frame.Owner != target || tile.Owner != target || frame.Children != tile.ID || frame.FullTitle != "DNS resolver" {
+			t.Fatalf("program %s lost its own destination: frame %+v tile %+v", target, frame, tile)
+		}
+		groups[frame.DisplayGroup] = true
+		callers := map[string]bool{}
+		for _, edge := range got.Edges {
+			if edge.To == tile.ID {
+				callers[edge.From] = true
+			}
+		}
+		if len(callers) != 1 || !callers[targetMapNodeID(target, "n-g1")] {
+			t.Fatalf("the arrows to %s's tile come from %v", target, callers)
 		}
 	}
-	if !slices.Contains(tiles[0].Aliases, "system-t2-out-b108") || !slices.Contains(tiles[0].Aliases, "system-t4-out-b108") {
-		t.Fatalf("a folded record lost its old link: %+v", tiles[0].Aliases)
+	if len(groups) != 1 || groups[""] {
+		t.Fatalf("frames naming one destination stand in one display group: %v", groups)
 	}
-	if tiles[0].Owner != "" || frames[0].Owner != "" {
-		t.Fatalf("an outside call three programs make was drawn as one program's: tile %q, box %q", tiles[0].Owner, frames[0].Owner)
+	if lone := frames["system-t1-out-b120-destination"]; lone.ID == "" || lone.DisplayGroup != "" {
+		t.Fatalf("a destination only one program names needs no group: %+v", lone)
+	}
+	if len(frames) != 4 || len(tiles) != 4 {
+		t.Fatalf("frames %d, tiles %d", len(frames), len(tiles))
+	}
+}
+
+// A program calling one outside symbol from two places draws one tile. An
+// input whose path reaches only the second call kept its witness under the
+// second record's id, a tile no map draws: reading the drawn tile on echo's
+// GET /users/:id lost "Why it appears".
+func TestInputWitnessToAFoldedOutsideCallLeadsToItsTile(t *testing.T) {
+	m := &pageMap{Nodes: []pageMapNode{{ID: "n-g1", FullTitle: "Repository"}}}
+	scopeTargetMapIDs(m, "t1")
+	witness := `[{"name":"GetUser","source":"handler.go:20"},{"name":"Scan","source":"postgres.go:40"}]`
+	m.Nodes = append(m.Nodes, pageMapNode{ID: "t1-o1", FullTitle: "GET /users/:id", Activation: "request", CallPaths: `{"system-t1-out-b2":` + witness + `}`})
+	row := func(id, anchor string) pageOutbound {
+		return pageOutbound{ID: id, Destination: "PostgreSQL", External: "database/sql.Row.Scan", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: anchor}}
+	}
+	view := pageView{Sections: []*pageSection{{ID: "t1", programTargetID: "t1", ShortLabel: "api", Map: m,
+		Outbound: []pageOutbound{row("t1-out-b1", "postgres.go:30"), row("t1-out-b2", "postgres.go:40")}}}}
+	got := view.SystemMap()
+	var input pageMapNode
+	drawn := map[string]bool{}
+	for _, node := range got.Nodes {
+		drawn[node.ID] = true
+		if node.ID == "t1-o1" {
+			input = node
+		}
+	}
+	if drawn["system-t1-out-b2"] || !drawn["system-t1-out-b1"] {
+		t.Fatalf("one outside symbol is one tile: %v", drawn)
+	}
+	if !strings.Contains(input.CallPaths, `"system-t1-out-b1":`) || strings.Contains(input.CallPaths, "system-t1-out-b2") {
+		t.Fatalf("the witness names a tile the map does not draw: %s", input.CallPaths)
 	}
 }
 
@@ -286,11 +339,11 @@ func TestCallsOnAnInputsPathAreWorkNotWiring(t *testing.T) {
 
 // Find → get framed get's tile in a wall of Redis's 98 inputs, and no arrow
 // of its path was in sight: the collection stands outside its component and
-// its tiles draw no arrow of their own. A chosen input is entered where its
-// path starts, its handler's part with the dark trace leaving it, the reading
-// on the input; its tile stays one "Show input" away.
-func TestChosenInputIsEnteredWhereItsPathStarts(t *testing.T) {
-	entrance := systemJSPiece(t, "29-operation-view.js", "function rmInputEntrance(", "(function(){")
+// its tiles draw no arrow of their own. A chosen input, even its tile clicked
+// on the canvas, is entered as its path, the reading on the input; Show input
+// frames the tile among the inputs its handler's part takes.
+func TestChosenInputIsEnteredAsItsPath(t *testing.T) {
+	entrance := systemJSPiece(t, "29-operation-view.js", "function rmInputPath(", "(function(){")
 	selectCode := systemJSPiece(t, "29-operation-view.js", "async function select(", "  function reset(")
 	captionCode := systemJSPiece(t, "29-operation-view.js", "function renderCaption(", "  function focusNode(")
 	runSystemJS(t, entrance+`
@@ -302,9 +355,12 @@ const node=(id,dataset)=>({id,dataset});
 const get=node('get',{activation:'request',title:'get',inputTrace:'gone dispatch reply'}),dispatch=node('dispatch',{title:'Command dispatch'}),
  reply=node('reply',{title:'Client replies'}),ping=node('ping',{activation:'request',title:'ping'});
 const byID={get,dispatch,reply,ping};
+assert.deepEqual(rmInputPath(get,byID),['dispatch','reply'],'the path is the drawn parts of the saved trace');
+assert.deepEqual(rmInputPath(dispatch,byID),[]);
 const inspector=rmEl('div','map-inspector'),controls=rmEl('div','map-input-context'),caption=rmEl('div'),clear=rmEl('button'),colorKey=rmEl('span');
 const map={querySelector(s){return s==='.map-inspector'?inspector:s==='.map-input-context'?controls:null;},showNode(n){this.shown=n.id;},clearMapPreview(){}};
-let scope='',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',visual=null,surface={clearHover(){}};
+const tiles=[];
+let scope='',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',visual=null,surface={clearHover(){},showInput(id){tiles.push(id);}};
 const search={},filter={},ready=Promise.resolve(),focused=[];
 function updateResults(){}function emit(){}function address(){}function emphasize(){renderCaption();}
 function focusNode(n,center){focused.push({id:n.id,center});}
@@ -312,19 +368,22 @@ const showInput=()=>controls.children.flatMap(c=>c.children).find(c=>c.className
 `+selectCode+captionCode+`
 (async()=>{
  await select(get,true,null,true);
- assert.deepEqual(focused.at(-1),{id:'dispatch',center:true},'the camera stands on the first part of the trace that is drawn');
+ assert.deepEqual(focused.at(-1),{id:'get',center:true},'the canvas frames the chosen input: its path');
  assert.equal(map.shown,'get','the reading stays on the chosen input');assert.equal(operation,get);
  assert.ok(showInput(),'the tile is one Show input away');
  await showInput().listeners.click();
- assert.deepEqual(focused.at(-1),{id:'get',center:true},'Show input frames the input itself');
- assert.equal(showInput(),undefined,'once its tile is framed there is nowhere to go back to');
+ assert.deepEqual(tiles,['get'],'Show input frames the tile among its group, not the path or the wall');
+ assert.equal(showInput(),undefined,'once its tile is framed there is nowhere to go');
+ const before=focused.length;await select(get,true);
+ assert.deepEqual(focused.slice(before),[{id:'get',center:true}],'its tile clicked on the canvas moves to its path');
+ assert.ok(showInput());
  await select(dispatch,true,null,true);
- assert.ok(showInput(),'reading a part on the path offers the way back');
+ assert.ok(showInput(),'reading a part on the path offers the tile');
  await select(ping,true,null,true);
  assert.deepEqual(focused.at(-1),{id:'ping',center:true},'an input without a trace is entered as its tile');
  assert.equal(showInput(),undefined);
- const before=focused.length;await select(get,true);
- assert.equal(focused.length,before,'a tile clicked on the canvas keeps the camera');assert.equal(showInput(),undefined);
+ const still=focused.length;await select(ping,true);
+ assert.equal(focused.length,still,'a trace-less tile clicked on the canvas keeps the camera');
 })().catch(error=>{console.error(error);process.exit(1);});
 `)
 }

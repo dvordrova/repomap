@@ -7,7 +7,7 @@ import {connections} from './layout.mjs';
 import {symbolBlocks,symbolRow} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
-import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
+import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {singlePartAreas, inputGroupsByPart} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,groupHeading} from './cards.mjs';
@@ -76,7 +76,7 @@ function PartSymbols({symbols,calls,width,height}){
 }
 function Part({data}) {
   const heading=data.standaloneHeading,scale=heading?.scale||data.contentScale;
-  const box=heading?{width:heading.width,height:heading.height}:{width:data.originalWidth||data.width||260,height:data.originalHeight||data.height||88};
+  const box=heading?{width:heading.width,height:heading.height}:data.fill||{width:data.originalWidth||data.width||260,height:data.originalHeight||data.height||88};
   // Only the flip between the two drawings re-renders the card, not every
   // step of a zoom.
   const far=useStore(state=>box.width*(scale||1)*state.transform[2]>=860);
@@ -92,7 +92,7 @@ function Part({data}) {
     <PartSymbols symbols={data.symbols} calls={data.symbolCalls} width={box.width} height={box.height}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
-  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
+  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
@@ -108,7 +108,7 @@ function Part({data}) {
   </div>;
 }
 function Area({data}) {
-  return <div className={`flow-area ${data.branch==='component'?'flow-component':data.branch==='communication'?'flow-communication':['inputs','inputs-part'].includes(data.branch)?'flow-input-collection':data.branch!=='area'?'':data.lane==='core'?'flow-area-core':data.lane==='triggers'?'flow-area-entry':''}`}>
+  return <div className={`flow-area ${data.branch==='component'?'flow-component':['communication','communication-group'].includes(data.branch)?'flow-communication':['inputs','inputs-part'].includes(data.branch)?'flow-input-collection':data.branch!=='area'?'':data.lane==='core'?'flow-area-core':data.lane==='triggers'?'flow-area-entry':''}`}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
@@ -208,7 +208,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const initial={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false,numbered:true};
   let cameraRevision=0;
   let update, instance, view=initial, hoverArea='', pinnedPart='', pinnedLabels=new Map(), lookOnly, preview='', restorePending, pendingFocus, panning=false, initializing=true;
-  let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
+  let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),arriving=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
   const closed=id=>closedContainer(id,placed,byID,detailed,componentsOpen,communicationsOpen,openComponents);
   new ResizeObserver(()=>{if(instance&&!initializing&&overviewFit)fitOverview();}).observe(host);
   function updateLocation(event,subject=locationSubject){
@@ -257,7 +257,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     };
   }
   function updateDetail(viewport){
-    const next=detailState(viewport,new Set([...openComponents,...detailed,...communicationsOpen]));
+    const next=detailState(viewport,new Set([...openComponents,...detailed,...communicationsOpen,...arriving]));
     const same=(a,b)=>a.size===b.size&&[...a].every(id=>b.has(id));
     if(same(next.components,openComponents)&&same(next.areas,detailed)&&same(next.communications,communicationsOpen))return;
     openComponents=next.components;componentsOpen=!!openComponents.size;detailed=next.areas;communicationsOpen=next.communications;
@@ -277,7 +277,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // React Flow's imperative camera methods need not emit onMoveEnd. Save
     // only after they finish, or Back restores the previous display's camera.
     const revision=++cameraRevision;
-    return Promise.resolve(movement).then(()=>{if(revision===cameraRevision&&!initializing){updateLocation(undefined,subject);map.dispatchEvent(new Event('repomap:viewport'));}});
+    return Promise.resolve(movement).then(()=>{if(revision===cameraRevision&&!initializing){
+      if(arriving.size){updateDetail(instance.getViewport());arriving=new Set();}
+      updateLocation(undefined,subject);map.dispatchEvent(new Event('repomap:viewport'));}});
+  }
+  // Entering a frame opens it, so the camera may stand as small as an open
+  // frame stays open. The move's own intermediate zooms must not close it on
+  // the way: from a closed layer they did, and at the end it needed the larger
+  // zoom that opens a closed layer, so microblog's /explore stood on the closed
+  // Web routes summary with its title at 45 px. The frames a camera move
+  // enters, and their ancestors, stay open through that move; a gesture ends it.
+  function arrive(ids){
+    arriving=new Set();
+    for(const id of ids)for(let at=id;at;at=placed.get(at)?.parentId)if(placed.get(at)?.frame)arriving.add(at);
   }
   // One look for the whole map: a badge, a label, whatever a layer adds.
   const look=createLook();
@@ -291,7 +303,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   function enter(id){
     if(!hover.allowed)return;
-    const n=byID.get(id);if(!n)return;
+    const n=byID.get(id);if(!n||n.display)return;
     // Hover affects the drawing only. The links and description opened by a
     // click stay usable while the pointer crosses other cards to reach them.
     // Pointing anywhere inside a target looks at the target: its frame, its
@@ -300,9 +312,47 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const area=parentArea(id)||id;
     if(hoverArea!==area){hoverArea=area;update?.();}
   }
+  // A chosen input is entered as its path: the part holding its handler and
+  // the path's parts nearest it in call depth, as many as stay readable in
+  // one camera, with the trace dark from there. Their areas open.
+  function focusPath(input,smooth=true){
+    const nodes=[...new Set((byID.get(input)?.trace||[]).map(displayed))].map(id=>placed.get(id)).filter(n=>n&&!n.frame);
+    if(!nodes.length)return false;
+    if(!instance||initializing){pendingFocus={path:input};return true;}
+    overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
+    const rect=host.getBoundingClientRect(),inPath=new Set(nodes.map(n=>n.id));
+    // The trace's own arrows between its parts: those the input's code makes.
+    const steps=layout.edges.filter(e=>inPath.has(e.from)&&inPath.has(e.to)&&e.relations.some(r=>r.operations?.includes(input))).map(e=>[e.from,e.to]);
+    // Areas share one layer: the handler's area, or its component for a
+    // loose part, says how far out the parts stay drawn.
+    const least=layerFloor(layout.nodes,semantic.records,parentArea(nodes[0].id)||rootOf(nodes[0].id),rect.width,rect.height);
+    const {taken,...viewport}=pathViewport(nodes,steps,rect.width,rect.height,byID.get(nodes[0].id)?.contentScale||1,{least});
+    detailed=new Set([...detailed,...taken.map(n=>parentArea(n.id)).filter(Boolean)]);
+    arrive(taken.map(n=>n.id));
+    locationSubject=nodes[0].id;
+    commitCamera(instance.setViewport(viewport,{duration:smooth?420:0}),nodes[0].id);
+    return true;
+  }
+  // An input's tile among the inputs its handler's part takes: the group it
+  // stands in inside the collection, not the collection's whole wall.
+  function showInput(id,smooth=true){
+    id=displayed(id);
+    const tile=placed.get(id);if(!tile)return;
+    if(!instance||initializing){pendingFocus={id,input:true};return;}
+    overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
+    const rect=host.getBoundingClientRect(),group=placed.get(tile.parentId);
+    communicationsOpen=new Set([...communicationsOpen,rootOf(id)]);
+    arrive([id]);
+    locationSubject=id;
+    const least=layerFloor(layout.nodes,semantic.records,rootOf(id),rect.width,rect.height);
+    commitCamera(instance.setViewport(tileViewport(tile,byID.get(group?.id)?.branch==='inputs-part'?group:null,rect.width,rect.height,byID.get(id)?.contentScale||1,{least}),{duration:smooth?420:0}),id);
+  }
   function focus(id,center=true,smooth=true){
     id=displayed(id);
     const n=placed.get(id);if(!n)return;
+    const record=byID.get(id);
+    if(record?.activation&&focusPath(id,smooth))return;
+    if(record?.activation){showInput(id,smooth);return;}
     if(!instance||initializing){pendingFocus={id,center};return;}
     overviewFit=false;
     hover.pause();preview='';map.clearMapPreview?.();
@@ -320,7 +370,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // closed one needs to open by itself.
       if(['communication','inputs'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id]);
       else if(!component)detailed=new Set([...detailed,n.id]);
-      commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:.72}),{duration:smooth?420:0}),id);return;
+      if(!component)arrive([n.id]);
+      const least=scales.has(n.id)?layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height):Infinity;
+      commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least}),{duration:smooth?420:0}),id);return;
     }
     commitCamera(instance.setViewport(partViewport(n,1/contentScale,rect.width,rect.height),{duration:smooth?420:0}),id);
   }
@@ -451,6 +503,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       }));
     },[layoutKey]);
     const overview=isOverview();
+    // A loose part beside areas is a peer of their closed summaries while
+    // they are closed: its heading fitted to its box at their scale. Once the
+    // areas open it is a peer of their parts: the same card at the same
+    // scale, filling its box. Kept at the summary scale, Redis's Debug
+    // symbols read 41 px beside 17 px parts.
+    const looseLook=n=>{
+      const heading=standaloneHeadings.get(n.id);
+      if(!heading)return {};
+      const holdsAreas=(children.get(placed.get(n.id)?.parentId)||[]).some(id=>byID.get(id)?.branch==='area');
+      if(!holdsAreas||!detailed.size)return {standaloneHeading:heading};
+      const scale=byID.get(n.id)?.contentScale||1;
+      return {fill:{width:n.width/scale,height:n.height/scale}};
+    };
     // Zoomed into one area with nothing hovered or chosen, that area is what
     // the reader is looking at: its parts keep their numbers.
     const zoomedArea=state.mode==='all'&&detailed.size===1?[...detailed][0]:'';
@@ -519,16 +584,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // pointer stays on what it was on.
     lookAt=key=>{look.enter(key);update?.();};
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
+    // A closed frame stands for the participants hidden inside it.
+    const shut=id=>scales.has(id)?!detailed.has(id):byID.get(id)?.branch==='component'?!openComponents.has(id):['communication','inputs'].includes(byID.get(id)?.branch)&&!communicationsOpen.has(id);
     const nodes=drawing.nodes.map(n=>{
-      const item=byID.get(n.id),focused=state.focus.has(n.id),on=state.participants.has(n.id)||
-        (overview&&leaves(n.id).some(id=>state.participants.has(id)));
+      const item=byID.get(n.id),focused=state.focus.has(n.id);
       const reading=view.scope===n.id||view.operation===n.id;
       const contains=n.frame&&leaves(n.id).some(id=>state.participants.has(id));
+      const on=state.participants.has(n.id)||contains&&(overview||shut(n.id));
       return {...n,type:n.frame?'area':'part',selected:reading,measured:{width:n.width,height:n.height},
         selectable:false,draggable:false,connectable:false,
         style:{width:n.width,height:n.height,visibility:visible(n.id)?'visible':'hidden'},
         className:`${on||contains||!dim?'':'flow-node-muted'} ${focused?'flow-node-focus':on?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
-        data:{...item,standaloneHeading:standaloneHeadings.get(n.id),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true)}};
+        data:{...item,...looseLook(n),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true)}};
     });
     const edges=routes.map(route=>{
       return {id:route.id,source:route.from,target:route.to,type:'routed',selectable:false,focusable:false,
@@ -545,6 +612,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         map.classList.remove('flow-initializing');host.inert=false;status.remove();
         updateLocation();
         if(restorePending)restore(restorePending);
+        else if(pendingFocus?.path)focusPath(pendingFocus.path);
+        else if(pendingFocus?.input)showInput(pendingFocus.id);
         else if(pendingFocus)focus(pendingFocus.id,pendingFocus.center);
         else if(view.scope||view.operation)focus(view.scope||view.operation,true);
         else map.dispatchEvent(new Event('repomap:viewport'));
@@ -567,14 +636,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         const node=event.target.closest('.react-flow__node');
         if(node){enter(node.dataset.id);return;}
         const point=instance.screenToFlowPosition({x:event.clientX,y:event.clientY});
-        const area=drawing.nodes.filter(n=>n.frame&&visible(n.id)&&point.x>=n.absolute.x&&point.x<=n.absolute.x+n.width&&point.y>=n.absolute.y&&point.y<=n.absolute.y+n.height)
+        const area=drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&point.x>=n.absolute.x&&point.x<=n.absolute.x+n.width&&point.y>=n.absolute.y&&point.y<=n.absolute.y+n.height)
           .sort((a,b)=>a.width*a.height-b.width*b.height)[0];
         if(area)enter(area.id);
       }}
       onPaneClick={event=>{
         if(instance){
           const p=instance.screenToFlowPosition({x:event.clientX,y:event.clientY});
-          const frame=drawing.nodes.find(n=>n.frame&&visible(n.id)&&byID.get(n.id)?.branch!=='inputs-part'&&
+          const frame=drawing.nodes.find(n=>n.frame&&!n.display&&visible(n.id)&&byID.get(n.id)?.branch!=='inputs-part'&&
             (byID.get(n.id)?.branch==='component'?!openComponents.has(n.id):!communicationsOpen.has(n.id))&&
             p.x>=n.absolute.x&&p.x<=n.absolute.x+n.width&&p.y>=n.absolute.y&&p.y<=n.absolute.y+n.height);
           if(frame){select(frame.id,event,true);return;}
@@ -590,14 +659,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         updateDetail(viewport);
         map.querySelectorAll('[data-map-zoom]').forEach(button=>{button.disabled=Number(button.dataset.mapZoom)<1&&viewport.zoom<=minZoom();});
       }}
-      onMoveStart={event=>{if(event){overviewFit=false;locationSubject='';}panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
+      onMoveStart={event=>{if(event){overviewFit=false;locationSubject='';arriving=new Set();}panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
       onMoveEnd={event=>{panning=false;hover.pause();if(instance)updateDetail(instance.getViewport());updateLocation(event);map.dispatchEvent(new Event('repomap:viewport'));}}>
       <svg className="flow-defs"><defs>
         <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker>
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
       <ViewportPortal>
-        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
+        {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} number={number.get(n.id)} badge={badge(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select}/>)}
@@ -726,7 +795,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(button.hasAttribute('data-map-fit'))map.showWholeMap();
     else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
   });
-  return {get layout(){return layout;},focus,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
+  return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
     view={...initial,...next,scope:displayed(next.scope)||'',
       selected:new Set([...(next.selected||[])].map(displayed)),matched:new Set([...(next.matched||[])].map(displayed))};update();

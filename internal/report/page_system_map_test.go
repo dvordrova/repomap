@@ -308,14 +308,19 @@ func TestSystemOutboundGroupingRetainsRecordsAndTheirExactPeerInputs(t *testing.
 	for _, n := range got.Nodes {
 		nodes[n.ID] = n
 	}
-	// One box per destination across the system; each record keeps its own
-	// tile and component unless it calls the same outside symbol.
+	// One frame per destination a component's records name; each record
+	// keeps its own tile and component. Another component naming the same
+	// destination keeps its own frame, beside this one in a display group.
 	group := nodes["system-get-destination"]
-	if group.Branch != "communication" || group.FullTitle != "backend API" || group.Children != "system-get system-unmatched system-other-get" || group.Owner != "" {
+	if group.Branch != "communication" || group.FullTitle != "backend API" || group.Children != "system-get system-unmatched" || group.Owner != "front" {
 		t.Fatalf("external catalogue grouping lost: %+v", group)
 	}
-	if _, repeated := nodes["system-other-get-destination"]; repeated || nodes["system-other-get"].Owner != "other" {
-		t.Fatal("a destination was drawn again for another component, or a record lost its component")
+	other := nodes["system-other-get-destination"]
+	if other.Owner != "other" || other.Children != "system-other-get" || nodes["system-other-get"].Owner != "other" {
+		t.Fatalf("another component's records joined this one's destination: %+v", other)
+	}
+	if group.DisplayGroup == "" || group.DisplayGroup != other.DisplayGroup {
+		t.Fatalf("frames naming one destination do not stand together: %q %q", group.DisplayGroup, other.DisplayGroup)
 	}
 	if _, exists := nodes["system-post"]; exists {
 		t.Fatal("known backend input was drawn as another external participant")

@@ -126,14 +126,22 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   native HTTP registration keeps its original absence of an implementation
   attachment. Selecting an input opens the same saved path and sources. External
   communication records without an exact local peer retain selectable nodes
-  inside amber destination frames, using the external catalogue's grouping
-  across the whole system: one frame per destination text, with an arrow from
-  each program that talks to it (Redis drew DNS resolver and TCP endpoint once
-  per program linking anet.c). Records calling the same native outside symbol
-  share one tile, and each program's caller keeps its own arrow and source; a
-  tile or frame several programs share belongs to none of them. Every record
-  stays in its own component's catalogue, and records of different symbols
-  stay separate tiles.
+  inside amber destination frames, using each component's external catalogue
+  grouping: one frame per destination its records name, one tile per native
+  outside symbol it calls (the same call made from several places is one
+  tile; every caller keeps its line and source on the arrow, and an input's
+  witness to any of those calls leads to that tile). Every frame and
+  tile belongs to its component, and only that component's arrows reach it:
+  equal destination text proves no identity. One "TCP endpoint" box had taken
+  arrows from all three Redis programs, though for redis-cli that endpoint is
+  redis-server and for redis-server its master. Frames of different
+  components that name the same destination stand together in one display
+  group, an amber frame around them in the outer layout, so the three "DNS
+  resolver" frames stand side by side instead of scattered. The group is no
+  participant: it has no title, reading, selection or hover, ends no arrow
+  and adds no relation; each frame in it keeps its own program's arrow.
+  Every record stays in its own component's catalogue, and records of
+  different symbols stay separate tiles.
   When a saved connection identifies one already displayed peer in another
   target, the canvas connects the original caller directly to that peer/input
   instead of adding a third participant. Its outbound catalogue and source
@@ -145,13 +153,18 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   blue and external communications amber; saved lanes supply those identities.
   Core/entry cards use distinct diamond/arrow glyphs with the shared legend and
   accessible names, instead of repeating Core/Entrypoints above every title.
-  An area holding the program's entry (a declaration its execution starts
-  from, a target seed) carries the entry mark even when a core part stands in
-  it; parts that only take requests do not make their area the entry, and
-  other areas keep the core mark over their lane.
+  Only an area holding the program's entry (a declaration its execution
+  starts from, a target seed) carries the entry mark, even when a core part
+  stands in it. Parts that only take requests or listen do not make their
+  area the entry: Networking's listen/bind boundary had drawn Redis's "Core
+  infrastructure" as a second entry area beside Server runtime. Such an area
+  keeps the core mark when it is core and no mark otherwise; each part keeps
+  its own mark.
   Concrete input captions remain. A dark outline identifies the card open on
   the right without inserting another row or changing its text position. Dark arrows and outlined participants
-  identify the currently emphasized connections.
+  identify the currently emphasized connections: a participant takes the
+  arrows' dark on its border, and the card open on the right keeps its
+  heavier outline.
   Component frames retain their language, kind, role and purpose above their parts. Colour never replaces
   the visible type cues or independent fact/model provenance in the reading
   panel. Text has at least 4.5:1 contrast; meaningful frames and connections
@@ -197,17 +210,32 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   titles retain a light background and readable role/purpose text. The duplicate
   `Reading` line and close action do not occupy space above the canvas. That
   space has a static type legend, not changing hover prose. The input context
-  and leave-path action live in the reading card. An input chosen from Find
-  or a link is entered where its path starts: the camera stands on the
-  first part of its trace, its handler's part, with the trace dark from
-  there, while the reading column reads the input. Framing its tile had
-  shown GET as one of 98 tiles with no arrow in sight: the collection stands
-  outside its component, and no one camera shows the tile and the parts it
-  reaches readably. An input without a trace is entered as its tile, and a
-  tile clicked on the canvas keeps the camera. "Show input" stands in the
-  reading card while the camera may be away from the input's tile (at its
-  path's start, or on a part read since) and frames that tile; once the
-  tile is framed there is nothing to return to. An input's reading
+  and leave-path action live in the reading card. An input chosen from
+  Find, a link, a reading or its own tile on the canvas is entered as its
+  path, while the reading column reads the input. The camera takes the part
+  holding its handler, then each part the trace reaches from a part already
+  taken while all of them fit at a scale where their headings stay about
+  twelve pixels (and their layer open), and frames them; when the next step
+  does not fit, the camera stays at that scale and leans toward it, keeping
+  what it took inside, so the dark arrows leaving the frame show the way.
+  The path's parts, and a closed frame standing for parts hidden in it, are
+  outlined in the dark of the path's arrows. Framing its tile had shown GET
+  as one of 98 tiles with no arrow in sight, and centring String commands
+  showed four of its nine dark arrows and none of the parts they reach, drawn
+  like every other part. In Redis the handler's first step, Client
+  connections and replies, stands farther from String commands than the
+  canvas holds at a readable scale: the camera frames String commands,
+  Object and key store, Server configuration and Sorted set commands, six of
+  the nine dark arrows, and leans toward it. An
+  input without a trace is entered as its tile, and such a tile clicked on
+  the canvas keeps the camera. "Show input" stands in the reading card while
+  the camera may be away from the input's tile (on its path, or on a part
+  read since) and frames that tile among the inputs its handler's part
+  takes, the group it stands in, never the whole collection: GET among
+  String commands' fourteen inputs, SET beside it, not a wall of 95. A group
+  larger than a readable camera is entered at the tile. Once the tile is
+  framed there is nothing to return to; choosing the tile again returns to
+  the path. An input's reading
   names its handler ("handled by getCommand") as a link into the code. A
   registration the model did not explain keeps its own call words as its
   line ("redis.c.redisCommand.proc get in getCommand"); that line is the fact
@@ -250,9 +278,18 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   The original endpoints, possible status and source relations remain available for
   reading and operation paths. Aggregated outside strokes are drawn once; they
   are display geometry, not new semantic relations. Each area's interior is
-  laid out alone, from the arrows between its own parts, with a long chain
-  wrapped into rows at ELK's own proportion; arrows between areas are the
-  component's bundles between ready rectangles. Its parts keep their own size,
+  laid out alone, from the arrows between its own parts; arrows between areas
+  are the component's bundles between ready rectangles. The two directions of
+  a pair of ends share one drawn route, so ELK lays out one edge per pair:
+  laid out twice, each such pair made ELK reverse one arrow into a
+  wrap-around, and Server runtime's 21 arrows among six parts had 68 bends.
+  Each area takes, of ELK's directions (rightward, downward) with and without
+  wrapping a long chain into rows toward the canvas proportion, the layout
+  that fits the initial canvas while its 17px part headings stay at the 12px
+  their layer stays open at; then the one whose routes run shortest (the
+  fewest detours around the area); then the squarer box. Wrapping had run
+  Persistence's one arrow around the area and drawn Server runtime 1300 px
+  wide in a 1214 px canvas. Its parts keep their own size,
   the size of the loose parts beside it, so an area is as large as what it
   holds: laid out with the whole component and shrunk to a peer's width,
   Redis's Server runtime stood as a staircase of postage stamps under a
@@ -273,9 +310,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   placement still follows the connections. The parts entrance below the map
   lists each component's areas the same way, then its loose parts by name.
   That overview keeps the saved area caption; the single card and its source
-  reading keep the part's own title. Direct parts use the same fixed first-reveal
-  heading fit and column width as neighbouring groups, with their measured
-  card height, without promising hidden children.
+  reading keep the part's own title. A direct (loose) part beside areas is
+  their closed summaries' peer while they are closed: it uses the same fixed
+  first-reveal heading fit and column width as neighbouring groups, without
+  promising hidden children. Once the areas open it is their parts' peer:
+  the same card at the same scale, filling its box, so its title reads at
+  their parts' size. Kept at the summary scale, Redis's Debug symbols read
+  41 px beside 17 px parts. A component without areas keeps its direct
+  parts' fitted headings.
   Input collections remain outside the component at every scale.
 
   Detail is synchronized by hierarchy depth. The whole-map layer shows targets,
@@ -344,7 +386,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   world after a manual gesture. Saved whole-map intent survives a changed
   geometry identity. Component entrance fits the complete participant frame
   before exploring a group, keeping siblings on both sides in view. Entering
-  a group or a call then uses its actual content scale for reading.
+  a group or a call then uses its actual content scale for reading. A
+  focused area that fits the canvas at a zoom where its layer stays open is
+  fitted whole, never wider than the visible canvas; only an area too large
+  even so is entered at its first part. Entering a frame or an input's path
+  opens what it enters: those frames stay open through the camera move's own
+  zooms, so they arrive open although the camera stands smaller than a
+  closed layer needs to open by itself. Closed on the way, microblog's
+  /explore stood on the closed Web routes summary with its title at 45 px.
   The minimum camera scale permits the complete root bounds even in a short
   window. The initial world choice accounts for readable root-header widths and heights,
   not only its bounding rectangle. After placing the native area interiors,

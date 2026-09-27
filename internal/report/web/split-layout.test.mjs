@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {prepareCards,wrapText} from './cards.mjs';
-import {prepareInteriors,layoutPrepared,overviewInset} from './split-layout.mjs';
+import {prepareInteriors,layoutPrepared,overviewInset,readableScale} from './split-layout.mjs';
 import {denseInventory,manyExternalInventory,records as ordinaryRecords,relations as ordinaryRelations,areas as ordinaryAreas} from './visual/two-systems-five-externals.mjs';
 
 const raw=[
@@ -432,4 +432,72 @@ test('input groups each hold their tiles under their title, side by side without
   const before=(p,q)=>p.absolute.y<q.absolute.y-1e-7||Math.abs(p.absolute.y-q.absolute.y)<1e-7&&p.absolute.x<q.absolute.x;
   assert.ok(before(a,b),'groups keep their reading order');
   for(let i=1;i<6;i++)assert.ok(before(nodes.get(inputs[i-1]),nodes.get(inputs[i])),'tiles keep their reading order');
+});
+
+// Redis's Server runtime: six parts and 21 arrows, most of them pairs with
+// both directions. Laid out twice, each pair made ELK reverse one arrow into
+// a wrap-around, and the area stood 1300 px wide in a 1214 px canvas.
+test('a dense area lays out one route per pair of ends and fits the canvas at a readable scale',async()=>{
+  const parts=['clients','store','replication','config','blocking','memory'];
+  const arrows=[['store','config'],['store','memory'],['store','clients'],['replication','config'],['replication','clients'],['config','clients'],
+    ['blocking','clients'],['memory','config'],['clients','store'],['clients','replication'],['clients','config'],['clients','blocking'],
+    ['clients','memory'],['replication','store'],['config','store'],['config','replication'],['config','blocking'],['config','memory'],
+    ['blocking','store'],['blocking','memory'],['memory','store']];
+  const items=[{id:'server',title:'Server',branch:'component'},{id:'runtime',title:'Server runtime',branch:'area'},
+    ...parts.map(id=>({id,title:`Runtime part ${id}`,summary:'Keeps one responsibility of the running server in one place.',category:'part'}))];
+  const canvas={width:1214,height:680};
+  const prepared=await prepareInteriors(cards(items),arrows.map(([from,to])=>({from,to})),
+    [{id:'server',nodes:['runtime']},{id:'runtime',nodes:parts}],{canvas,availableHeight:canvas.height-32});
+  const {local}=prepared.interiors.get('server'),area=local.nodes.find(node=>node.id==='runtime');
+  assert.ok(area.width*readableScale<=canvas.width-48&&area.height*readableScale<=canvas.height-48,
+    `the area (${Math.round(area.width)}x${Math.round(area.height)}) fits the canvas while its parts stay readable`);
+  const route=(from,to)=>JSON.stringify(local.edges.get(prepared.edges.find(edge=>edge.from===from&&edge.to===to).id));
+  const flip=segments=>JSON.stringify(JSON.parse(segments).slice().reverse().map(points=>points.slice().reverse()));
+  for(const [from,to] of arrows)if(arrows.some(([a,b])=>a===to&&b===from))
+    assert.equal(route(to,from),flip(route(from,to)),`${from} and ${to} share one route in both directions`);
+});
+
+// Persistence's one arrow, wrapped into two rows, ran around the area.
+test('an area with one arrow draws it straight between its two parts, not around them',async()=>{
+  const items=[{id:'server',title:'Server',branch:'component'},{id:'persistence',title:'Persistence',branch:'area'},
+    {id:'aof',title:'AOF persistence',category:'part'},{id:'rdb',title:'RDB persistence',category:'part'}];
+  const prepared=await prepareInteriors(cards(items),[{from:'aof',to:'rdb',possible:true}],
+    [{id:'server',nodes:['persistence']},{id:'persistence',nodes:['aof','rdb']}],{canvas:{width:1214,height:680},availableHeight:648});
+  const {local}=prepared.interiors.get('server'),at=new Map(local.nodes.map(node=>[node.id,node]));
+  const centre=id=>({x:at.get(id).absolute.x+at.get(id).width/2,y:at.get(id).absolute.y+at.get(id).height/2});
+  const [points]=local.edges.get(prepared.edges[0].id);
+  const length=points.slice(1).reduce((sum,point,i)=>sum+Math.abs(point.x-points[i].x)+Math.abs(point.y-points[i].y),0);
+  const a=centre('aof'),b=centre('rdb');
+  assert.ok(length<=Math.abs(a.x-b.x)+Math.abs(a.y-b.y),`the arrow runs ${Math.round(length)} between parts whose centres are ${Math.round(Math.abs(a.x-b.x)+Math.abs(a.y-b.y))} apart`);
+});
+
+// One "TCP endpoint" box took arrows from all three Redis programs. Each
+// program's destination frame stays a participant of its own, with its own
+// arrow; frames naming the same destination stand in one display group.
+test('frames naming one destination stand in a display group, each keeping its own arrow',async()=>{
+  const items=[
+    {id:'server',title:'redis-server',branch:'component'},{id:'cli',title:'redis-cli',branch:'component'},
+    {id:'net-s',title:'Networking',category:'part'},{id:'net-c',title:'Network client',category:'part'},
+    {id:'tcp-s',title:'TCP endpoint',branch:'communication',category:'external',displayGroup:'tcp'},
+    {id:'tcp-c',title:'TCP endpoint',branch:'communication',category:'external',displayGroup:'tcp'},
+    {id:'connect-s',title:'connect',category:'external'},{id:'connect-c',title:'connect',category:'external'},
+  ];
+  const areaList=[{id:'server',nodes:['net-s']},{id:'cli',nodes:['net-c']},{id:'tcp-s',nodes:['connect-s']},{id:'tcp-c',nodes:['connect-c']}];
+  const prepared=await prepareInteriors(cards(items),[{from:'net-s',to:'connect-s'},{from:'net-c',to:'connect-c'}],areaList);
+  const {layout,records}=await layoutPrepared(prepared,1200,700);
+  const at=new Map(layout.nodes.map(node=>[node.id,node]));
+  const group=layout.nodes.find(node=>node.display);
+  assert.ok(group&&records.find(record=>record.id===group.id)?.branch==='communication-group','one display group is drawn');
+  for(const id of ['tcp-s','tcp-c']){
+    const frame=at.get(id);
+    assert.equal(frame.parentId,undefined,`${id} stays a participant of its own`);
+    assert.ok(frame.absolute.x>=group.absolute.x-1e-6&&frame.absolute.y>=group.absolute.y-1e-6&&
+      frame.absolute.x+frame.width<=group.absolute.x+group.width+1e-6&&frame.absolute.y+frame.height<=group.absolute.y+group.height+1e-6,`${id} stands inside the group`);
+  }
+  for(const [from,to] of [['net-s','tcp-s'],['net-c','tcp-c']]){
+    const edge=layout.edges.find(edge=>edge.from===from),end=edge.segments.at(-1).at(-1),frame=at.get(to);
+    assert.equal(edge.outerTo,to,`${from}'s arrow ends at its own frame`);
+    assert.ok(border(end,frame),`${from}'s arrow reaches ${to}'s border`);
+  }
+  assert.ok(!layout.edges.some(edge=>edge.outerTo===group.id||edge.to===group.id),'the group ends no arrow');
 });
