@@ -1,5 +1,48 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — Redis journey, round 2: outside roles, C reachability, the report
+
+- **Outside-symbol roles:** the atlas_api questions are closed Jev choices
+  through `llm.Categorizer` (contract api.v6).
+  - `state.task` says what the map wants; each question holds the symbol row
+    as `outside_symbol`; every option, `none` included, carries criteria.
+  - Unhanded symbols get one `talks` question: serves, client_request, db,
+    queue_producer, queue_consumer, sdk, none.
+  - Measured with 3 draws per variant. Wrong answers / flipped symbols:
+
+    | Variant | Redis | xk6-dns | microblog |
+    |---|---|---|---|
+    | old DeepSeek cells | 7/1 | 18/12 | 9/2 |
+    | DeepSeek with the same criteria | 2/1 | 0/0 | 12/0 |
+    | Jev | 0/0 | 3/2 | 6/2 |
+
+    Every Jev flip is an answer against an explicit unknown.
+  - Redis: accept, bind and listen serve; inet_aton, fopen and sigaction are
+    none; gethostbyname stays DNS. The libc and socket outside boxes are gone.
+  - A known miss: k6 metrics.PushIfNotDone answers sdk.
+- **C reachability per program:** a function is reached only by a direct call
+  or through its address, so a linked function that no chain from main or
+  from an address-taken function reaches is unreachable in that program.
+  - The proof is withheld where a linker script, an asm label or unread code
+    could run a function by name.
+  - Unreachable declarations' boundaries are not that program's; they are
+    listed under "Not reachable from the entrypoints".
+  - redis-cli and redis-benchmark no longer listen or accept.
+  - Other languages record the missing equivalent.
+- **Report:**
+  - Outside destinations are never folded by label: each program keeps its
+    own tile, and same-kind tiles share a display frame.
+  - Only the area holding main gets the entry mark.
+  - A focused area fits the canvas, with one route per pair.
+  - Choosing an input outlines its path's parts and darkens its edges.
+  - A loose part matches its peers when zoomed in.
+  - Fallback sentences break ties by source order (getCommand, setCommand,
+    setnxCommand).
+  - A layout candidate ELK cannot place is left out instead of failing the
+    whole map.
+- `make test` (53 packages) and `make vet` pass; web unit tests 89/89. Redis
+  cold 29.6 s, warm 4.1 s with 0 live calls.
+
 ## 2026-09-27 — The Redis reading journey, after an owner-proxy walk
 
 - An owner-proxy walked the Redis report as preparation for the owner's
