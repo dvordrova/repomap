@@ -30,22 +30,28 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   its file line, captions and keys. Stray declarations in a file a part
   holds name that part (`box_id`); their file stays on the map and is not
   listed. A file whose code several parts hold (READING, the role split) is
-  on the map through them: GroupsIndex (v14) lists it only for its
-  undecided declarations, by name (`declarations`), never as a file off the
-  map. GroupsIndex carries that record as `off_map`, adds the files of
+  on the map through them: GroupsIndex (v15) lists it only for its
+  undecided declarations, by their subjects (`subject_ids`), never as a
+  file off the map. GroupsIndex carries that record as `off_map`, adds the files of
   parts made only of test code under the reason `tests` with their part's
   name, and carries `map_failure`. Subjects off the map keep their interpretations
   outside every group; a boundary in a file off the map names no box and its
-  operation belongs to no group, yet it stays in the component's inputs. A part
+  operation belongs to no group, yet it stays in the component's inputs. An
+  input whose handler is off the map, undecided included, names no box
+  either (READING, "A file in several boxes"): a command table row's `set`
+  request whose handler is undecided is never shown as handled in the part
+  that holds the table. A part
   made only of test code is a fact (every file is a `TestSources` file): it is
   not a group and leaves the canvas.
 
 - The component card lists, after its link to its parts on the system map
   and before its main flow, the compact inventories **Tests** (test-only
   parts' files, with their part) and **Not on the map** (every other off-map
-  file, with its reason; a split file's row names its undecided
-  declarations and reads "In no part of its file"), five rows each and
-  `All N` for the rest. A target
+  file, with its reason; a split file's row shows its undecided
+  declarations as source chips and reads "In no part of its file"), five
+  rows each and
+  `All N` for the rest. Find lists each of those undecided declarations as
+  Code with Open code and no "In part" link; its result opens that row. A target
   with a map failure says "The map of parts is unavailable:" with the reader's
   words for its closed reason (`refused`: the model's answer was refused;
   `no_model`: no model was asked; the refusals themselves are rejected

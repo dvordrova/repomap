@@ -3,12 +3,14 @@ package jstsproject
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/atlas/reading/partstest"
 	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 )
@@ -37,7 +39,13 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index, Dependencies: &catalog}}})
+	// The graph carries the fact layer, as an ordinary run builds it: its
+	// registrations are boundary places.
+	layer, err := facts.Build(facts.Input{Repository: repository, Targets: []facts.TargetInput{{Index: index, Dependencies: &catalog, Root: "."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index, Dependencies: &catalog}}, Facts: layer})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,5 +76,10 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	drawer, draw = split.Symbols[[2]string{"src/platform.ts", "LevelDrawer"}], split.Symbols[[2]string{"src/platform.ts", "LevelDrawer.draw"}]
 	if !split.Split["src/platform.ts"] || split.PartOf[draw] != split.PartOf[drawer] {
 		t.Fatalf("split: a class method in %q, its class in %q", split.PartOf[draw], split.PartOf[drawer])
+	}
+	// A handler's assignment shows the words of the route that hands it
+	// over.
+	if registered := split.Registered["src/server.ts"]; !slices.Contains(registered, "get /products/featured") {
+		t.Fatalf("server.ts's handlers are asked with registrations %v", registered)
 	}
 }

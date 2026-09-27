@@ -651,6 +651,29 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	for position := range operations {
 		operations[position].ID = compactOrdinal("o", position)
 	}
+	// An undecided declaration is named by its subject: the program's object
+	// at the declaration's source key.
+	objectOfKey := make(map[string]string, len(program.Objects))
+	for _, object := range program.Objects {
+		if key := declarationKey(object); key != "" {
+			if _, seen := objectOfKey[key]; !seen {
+				objectOfKey[key] = object.ID
+			}
+		}
+	}
+	offMap, err := projectOffMap(target, func(symbol atlas.Symbol) (string, bool) {
+		key := sourceRefs[symbol.ObjectID]
+		if key == "" {
+			if object, ok := objects[symbol.ObjectID]; ok {
+				key = declarationKey(object)
+			}
+		}
+		id, ok := objectOfKey[key]
+		return id, ok && key != ""
+	})
+	if err != nil {
+		return projectedTarget{}, err
+	}
 	data := projectData(program, target.Data)
 	outbound := projectOutbound(program, target, groupOfBox, sourceRefs)
 	joinOutboundData(outbound, data)
@@ -671,7 +694,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		Containers:         containers,
 		StructuralEdges:    compileStructuralEdges(program, retained),
 		Connections:        connections,
-		OffMap:             projectOffMap(target),
+		OffMap:             offMap,
 		MapFailure:         strings.TrimSpace(target.MapFailure),
 	}
 	applyPhases(&index, program)
@@ -683,9 +706,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 // code under the reason tests with their part's name. A file a part holds is
 // not listed for the few declarations of it that are off the map; their
 // interpretations are still read. A file whose code several parts hold is
-// on the map: only the declarations no box of it took are listed, by name,
-// under the reason undecided.
-func projectOffMap(target atlas.Target) []OffMapFile {
+// on the map: only the declarations no box of it took are listed, by their
+// subjects, under the reason undecided.
+func projectOffMap(target atlas.Target, subjectOf func(atlas.Symbol) (string, bool)) ([]OffMapFile, error) {
 	var files []OffMapFile
 	seen := map[string]bool{}
 	add := func(file OffMapFile) {
@@ -697,12 +720,16 @@ func projectOffMap(target atlas.Target) []OffMapFile {
 	for _, entry := range target.OffMap {
 		switch {
 		case entry.Reason == atlas.OffMapUndecided:
-			var names []string
+			var ids []string
 			for _, symbol := range entry.File.Symbols {
-				names = append(names, symbol.Name)
+				id, ok := subjectOf(symbol)
+				if !ok {
+					return nil, fmt.Errorf("atlas projection: undecided declaration %q of %s is unknown", symbol.Name, entry.File.Path)
+				}
+				ids = appendUniqueString(ids, id)
 			}
-			if len(names) > 0 {
-				add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: OffMapUndecided, Declarations: names})
+			if len(ids) > 0 {
+				add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: OffMapUndecided, SubjectIDs: ids})
 			}
 		case entry.BoxID == "":
 			add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: entry.Reason})
@@ -717,7 +744,7 @@ func projectOffMap(target atlas.Target) []OffMapFile {
 		}
 	}
 	sort.Slice(files, func(i, j int) bool { return offMapKey(files[i]) < offMapKey(files[j]) })
-	return files
+	return files, nil
 }
 
 func operationKey(operation Operation) string {

@@ -235,7 +235,7 @@ survives.
 (2026-09-26): "what's in one file can have different roles, and one role can
 span different files. We build our own map, we group and abstract." A file
 the parts answer placed whole can hold the code of several boxes of our map.
-Three requests decide it, each file on its own, beside the parts request of
+Four requests decide it, each file on its own, beside the parts request of
 its target (a one-file target included; never without a model):
 
 - *Candidates* are the unit-bearing files of the target that are neither
@@ -288,9 +288,26 @@ its target (a one-file target included; never without a model):
   `declaration` go in?": `state.task` is `role_map.md` plus
   `role_assign.md`, `state.context` holds only the file's path, the item
   `declaration` is its name, kind, signature, methods, same-file calls and
-  callers and `calls_elsewhere` ("path:name"), and each box is an option
-  whose criteria are its `holds`. A unit whose choice does not lead by the
-  margin, is not answered or is in a refused window is undecided.
+  callers, `calls_elsewhere` ("path:name") and `registered`: the words of
+  each registration that hands the unit or one of its followers over (a
+  command table row's `redisCommand get`, a route's `GET /users/:id`),
+  each once. Each box is an option whose criteria are its `holds`. The
+  task says that a box which receives, looks up or runs every command,
+  request or job holds that machinery, and one command's code goes in the
+  box of the work it does. A unit whose choice does not lead by the
+  margin, is not answered or is in a refused window is left open.
+- *The neighbours' question* (`atlas_role_neighbours`, Jev,
+  `lines.RoleNeighbours`) asks the same question again, with the same
+  options, criteria and margin, about each unit left open that has a
+  same-file call or caller whose box was chosen; the task adds
+  `role_neighbours.md`. Each entry of `calls` and `called_by` is then
+  `{"name","box"}`, the box by its option name (its ref when two boxes
+  share a name) and absent while that declaration's box is open. A unit
+  with no such neighbour is not asked again: the question would carry
+  nothing new. A unit this leaves open, or that is not asked, is
+  undecided; one it places is recorded as `role_decided_by_neighbours`.
+  Owner, 2026-09-26: a flaky decision means we explained poorly; this is
+  more evidence for the same question, never an identical resample.
 
 A file is split only when at least two boxes hold a unit; otherwise it stays
 whole (`role_not_split`). Each box that holds a unit becomes a part, titled
@@ -313,8 +330,9 @@ differently in each and costs a naming in each. Every outcome is recorded in
 `rejected.jsonl` and `tables.md`, with no label on the page, and a split
 failure never fails the target.
 
-The three requests carry request-local refs (the gate's row `f1`, the
-assignment's `d1…dn` in the file's unit order, boxes `b1…bn`), so a warm
+The four requests carry request-local refs (the gate's row `f1`, the
+assignment's and the neighbours' `d1…dn` in the file's unit order, boxes
+`b1…bn`), so a warm
 cache survives a file added or edited earlier in path order: only an edited
 file's own requests change, and a call into a file from elsewhere changes
 only that file's naming (and so, when the boxes change, its assignment).
@@ -325,6 +343,60 @@ map's rule that a helper goes in the box it serves most is inert in the
 assignment: a helper-only box's `holds` names its helper and Jev puts it
 there (redis "Logging" = redisLog, litestream's value-parsing and flag
 boxes); no code rule empties such a box.
+
+The registrations, the sentence on the box that runs every command and the
+neighbours' question were measured before adoption (2026-09-27) on the
+saved assignment requests of the owner-proxy's redis.c (339 units, 20
+boxes) and pykrx's 7 split files (187 units), 3 draws each. Before, redis.c
+left 4, 9 and 8 units undecided (12 units landed differently between
+draws), with setCommand (String commands 0.36 against Set commands 0.34)
+and pingCommand among them, and getCommand and appendCommand in Command
+dispatch (getCommand at 0.94–0.96). After, redis.c left 3, 3 and 3 (R_Zero,
+saveparam, ttlCommand) and no unit landed differently; getCommand,
+setCommand, appendCommand and echoCommand went in String commands and
+pingCommand in Server administration commands in every draw. pykrx went
+from 3, 6 and 2 undecided to 2, 3 and 2, its remaining near-ties between
+its ticker-name and ETF boxes. The task's sentence alone or the
+registrations alone left getCommand in Command dispatch. The neighbours'
+question decided 3 of the 6 redis.c and both pykrx units it asked about.
+Written as `"name: box"` beside the calls instead of as each entry's own
+`box`, it put setCommand, which calls setGenericCommand of String commands,
+in Set commands in 5 of 5 draws. A helper decided in the first question is
+not asked again: getGenericCommand, called only by string commands, stayed
+in Command dispatch (0.66–0.67 against String commands at 0.16–0.17).
+
+Where pingCommand goes depends on the boxes the naming gives redis.c
+(measured 2026-09-27, 3 draws per task on each saved naming). With a box for
+server administration commands (the owner-proxy's naming) it goes there.
+Three fresh namings had no box for connection or server commands, and on
+each this task puts pingCommand in String commands. On one of them, whose
+Client connection handling box also holds command dispatch, the task
+without the sentence put it in Client connection handling in 2 of 3 draws
+(0.42–0.46, the third a near-tie); the sentence moves it to String commands
+(0.46–0.58, 6 of 6 draws). On another, the task without the sentence put it
+in String commands too (0.45–0.56). A wording that keeps a command whose work
+is the connection with the box that runs commands put pingCommand back in
+Client connection handling there, but left it undecided on the owner-proxy's
+naming, so it was not adopted: PING's box is the naming's to give. On the
+naming whose two boxes both claim command dispatch, processCommand is a
+near-tie between them in 5 of 6 draws (the task without the sentence chose
+Client connection handling at 0.69–0.76), and the neighbours' question puts
+it in Command table and dispatch (0.58–0.61). Asked with its callers' boxes,
+getGenericCommand goes in String commands (0.89–0.91, 3 of 3 draws); asking a
+decided unit again is the owner's decision. On litestream's two split files
+(54 units, no registration in them), undecided went from 2, 3 and 3 to 1, 0
+and 1, and no decided unit landed differently.
+
+Each language's map-of-parts fixture test builds its graph with the fact
+layer, as an ordinary run does, and its split check (`partstest.CheckSplit`)
+requires that every registration handing over a unit of an assigned file
+reaches that file's assignment with its words, that a unit is asked again
+only with a call or caller in a box, and that an input whose handler is
+undecided names no part. The words each fixture shows: Go
+`HandleFunc /v1/update` (`http_registrations.go`), Python `get /health`,
+TypeScript `get /products/featured`, C `kvCommand get` (kvd.c's command
+table). Clojure's fixture registers no route or command in a split file;
+its one such registration hands a function to `clojure.core/map`.
 
 **A split file has no endpoint.** Every lookup that takes a file's part
 follows one written rule:
@@ -342,7 +414,10 @@ follows one written rule:
   and "starts the program" (core) survive a split seed file.
 - A boundary with no subject declaration in a split file takes the part of
   the declaration whose source range holds its line, else of the module
-  body.
+  body. An input that hands a declaration over (a command table row, a
+  route) stands only in that declaration's part: when the declaration is
+  undecided, or in a file off the map, the input names no part, never the
+  part holding the table or the registering call.
 - Learn's evidence of a split file's own chunk names no area; its
   declarations name their parts. A cross-target joint of a file edge into or
   out of a split file names no part and is not drawn; its declarations'
@@ -361,6 +436,7 @@ they sit in two parts) and has no entry of its own. Declarations off the map
 in a file a part holds, such as a method whose type is off the map, are
 listed under their type's reason with that part as `box_id`: the file itself
 stays on the map. A boundary takes its declaration's part, else its file's
+part, and an input that hands a declaration over only that declaration's
 part; one in a file off the map names no box and is still read. A part whose every
 file is test code (the adapter's `TestSources` fact) keeps its membership,
 file lines, captions and keys in the atlas, is not described, not grouped

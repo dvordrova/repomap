@@ -37,7 +37,7 @@
 {{with .OffMap}}<h4>{{t "Not on the map"}} <span class="meta">· {{len .}}</span></h4>{{template "off-map-rows" .}}{{end}}
 </section>{{end}}{{end}}
 {{define "off-map-rows"}}<ul class="plain fact">{{range $i,$row := .}}{{if lt $i 5}}{{template "off-map-row" $row}}{{end}}{{end}}</ul>{{if gt (len .) 5}}<details><summary>{{t "All {0} →" (len .)}}</summary><ul class="plain fact">{{range $i,$row := .}}{{if ge $i 5}}{{template "off-map-row" $row}}{{end}}{{end}}</ul></details>{{end}}{{end}}
-{{define "off-map-row"}}<li data-off-map-file>{{template "anchor" .Anchor}}{{if .Part}} · {{.Part}}{{end}}{{if .Declarations}} · <code>{{.Declarations}}</code>{{end}}{{if .Reason}} · <span class="meta">{{t .Reason}}</span>{{end}}</li>{{end}}
+{{define "off-map-row"}}<li data-off-map-file data-path="{{.Anchor.Path}}">{{template "anchor" .Anchor}}{{if .Part}} · {{.Part}}{{end}}{{if .Members}} · {{range $i, $member := .Members}}{{if $i}}, {{end}}{{template "chip" $member}}{{end}}{{end}}{{if .Reason}} · <span class="meta">{{t .Reason}}</span>{{end}}</li>{{end}}
 
 {{define "operation-row"}}<li data-input-item data-source-kind="{{.Source}}"><strong class="input-title"><a href="{{.Href}}">{{.Name}}</a></strong><span class="input-kind">{{t .Kind}}</span><span class="input-handler">{{template "anchor" .Anchor}}</span>
 {{template "data-links" .Data}}{{if .Summary}}<details class="input-description"><summary>{{t "To explanation"}}</summary><p class="model"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span><span class="model-sources">{{template "anchor" .Anchor}}</span></p><a href="{{.Href}}">{{t "Parts"}} →</a></details>{{end}}</li>{{end}}
