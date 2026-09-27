@@ -347,9 +347,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   objects at the next common layer. There is no intermediate member-list view.
   An architectural area always holds at least two parts: reading draws no area
   of fewer than two and GroupsIndex keeps no container of fewer than two
-  groups, and every group is a node of its component's map. The page's former
-  folding of a one-part area into its part's rectangle could not fire on any
-  saved report and was deleted on 2026-09-27. Participant, input and external
+  groups, and every group is a node of its component's map, so the page draws
+  every area it is given as a frame. Participant, input and external
   destination frames keep their distinct boundary even with one child. Component summaries list their actual immediate areas, in the
   order the model listed them, then their loose parts, so folding a wrapper
   never removes its responsibility from the overview. The component frame's

@@ -173,8 +173,13 @@ seed.
   (`stderr`, `environ`) are no program variable. A file-scope initializer
   naming another variable (`&table`) is a link-time address, not a read.
   Writes are not emitted: C has no `writes` relation, as Go, JS/TS and
-  Clojure have none. Redis's `findFuncName` reads `staticsymbols.h`'s `symsTable`; the
-  fixture's `printSymbols` reads `staticsyms.h`'s.
+  Clojure have none. A field is read only as the file-scope variable that
+  holds or points to it (`server.port` reads `server`); a field reached
+  through a parameter or a local (`c->argv`) reads nothing, where Python
+  reads a typed receiver's field (PYTHON). That missing C field read is
+  recorded, not inferred. Redis's `findFuncName` reads
+  `staticsymbols.h`'s `symsTable`; the fixture's `printSymbols` reads
+  `staticsyms.h`'s.
 - Every active `#include` is one `imports` relation and one dependency: a
   repository header is a workspace dependency, a platform header the standard
   library, any other header a package.

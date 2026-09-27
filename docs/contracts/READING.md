@@ -74,9 +74,7 @@ new description or selection requests.
   set; caption requests follow the existing displayed-key selection (in each
   file, at most three of the keys the selection chose, those with a line or a
   docstring first, then by name), not an independent directory-closure veto.
-  A part carries no key list of its own: `Box.Keys`, three per box by that
-  rule or by an "upper-case first letter is exported" rank, had no reader and
-  was deleted on 2026-09-27 (atlas v14); the page reads each declaration's
+  A part carries no key list of its own; the page reads each declaration's
   `key`. Missing or refused decisions do not close
   descendants. The complete graph and question evidence remain, and accepted
   activation evidence enters its independent operation review.
@@ -417,9 +415,8 @@ follows one written rule:
 - The entry: a seed file's parts are its endpoint, else the parts holding
   its seed declarations (places `seed_decls`), so the "in" column and
   "starts the program" (core) survive a split seed file. The atlas keeps no
-  main path of its own: the busiest-arrow trace from the entry (eight boxes)
-  had no reader and was deleted on 2026-09-27 (atlas v14); orientation's main
-  flow and the report's start list read the entry forward.
+  main path of its own; orientation's main flow and the report's start list
+  read the entry forward.
 - A boundary with no subject declaration in a split file takes the part of
   the declaration whose source range holds its line, else of the module
   body. An input that hands a declaration over (a command table row, a
@@ -732,9 +729,8 @@ written into a response, found through the call that produced it). None of
 this is persisted; all of it is recomputed when an overlay is hydrated.
 
 No table asks what a declaration on a chain does with what passes through
-it: `atlas_layers` (access, adapter, logic, passthrough, read from source
-bodies) had no reader and was deleted on 2026-09-27; a decision without a
-reader is not asked.
+it (access, adapter, logic, passthrough): nothing reads such a role, and a
+decision without a reader is not asked.
 
 Every subject and connection of the overlay carries a derived phase: `init`
 for what the seeds reach by ordinary calls before anything serves, `runtime`
