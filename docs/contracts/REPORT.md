@@ -206,11 +206,20 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the right without inserting another row or changing its text position. Dark arrows and outlined participants
   identify the currently emphasized connections: a participant takes the
   arrows' dark on its border, and the card open on the right keeps its
-  heavier outline.
+  heavier outline. Emphasis recedes the rest instead of greying what is
+  pointed at: the subject takes the existing dark (a part its outline, a
+  frame its border at the arrows' 2.5px), the parts across its dark arrows
+  take the same outline, a pointed frame's own parts stay as they are, and
+  every part, frame and arrow the emphasis does not involve recedes to 40%
+  opacity. No veil or tile fill marks the pointed thing: a grey veil on the
+  pointed area's parts and a grey fill on the pointed declaration had made
+  them look deader than their outlined neighbours.
   Component frames retain their language, kind, role and purpose above their parts. Colour never replaces
   the visible type cues or independent fact/model provenance in the reading
   panel. Text has at least 4.5:1 contrast; meaningful frames and connections
-  retain at least 3:1 contrast, including non-selected neighbours. A grayscale
+  retain at least 3:1 contrast, including non-selected neighbours; only
+  what an emphasis does not involve recedes below it while that emphasis
+  lasts. A grayscale
   screenshot and actual browser colour measurements cover this palette; they
   are not a claim of full WCAG conformance for the entire report.
   Equal destination names do not merge records.
@@ -231,8 +240,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   child's bounds inside the viewport do not count as visible content. A fully
   visible, legible part keeps the current camera when opened from a reading.
 
-- The drawing has exactly one reason for emphasis: search results, the area
-  under the pointer, the pinned input path, or the selected part's neighbours.
+- The drawing has exactly one reason for emphasis: search results, the part
+  or frame under the pointer, the pinned input path, or the selected part's
+  neighbours. A pointed part is the subject itself: only its own arrows
+  darken. A frame's title, border and empty space look at the frame, whose
+  arrows crossing its border darken. Lifted to its area, a part pointed at
+  in Data type commands had lit all of the area's arrows.
   A pinned input path is drawn as its trace with the existing dark emphasis:
   the arrows of its shortest call/read witnesses, each reached part joined
   from the part its witness enters through. Other calls among the same parts

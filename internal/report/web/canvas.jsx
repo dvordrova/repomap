@@ -57,7 +57,10 @@ function PartSymbols({symbols,calls,width,height}){
     return symbol.href?<a key={i} href={symbol.href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()} {...props}>{body}</a>
       :<span key={i} {...props}>{body}</span>;
   };
-  return <div className="flow-part-symbols nopan" style={{top:deepHeader,width,height:height-deepHeader}}>
+  // A drag anywhere over the declarations pans, as it does over the part: at
+  // their reading scale they fill the canvas, and a drag that moved is no
+  // click on the tile it started on.
+  return <div className="flow-part-symbols" style={{top:deepHeader,width,height:height-deepHeader}}>
     <div style={{width:inner.width,height:inner.height,transform:`scale(${1/deepDivisor})`,transformOrigin:'top left'}} onMouseLeave={()=>setHot(-1)}>
       <svg width={inner.width} height={inner.height}>
         <defs>{[['flow-symbol-arrow',arrowHead],['flow-symbol-arrow-hot',emphasisedHead]].map(([id,size])=>
@@ -127,12 +130,12 @@ function Area({data}) {
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
 }
-function AreaSummary({node,item,number,badge,heading,enter,select}){
+function AreaSummary({node,item,number,badge,heading,enter,select,muted}){
   const {scale,title}=heading;
   // A closed area says what it is: its one-line description takes the whole
   // lines left under its title and above its number.
   const lines=Math.floor((node.height/scale-12-title.split('\n').length*16-32)/15);
-  return <div className="flow-area-summary nopan" data-summary-area={node.id}
+  return <div className={`flow-area-summary nopan ${muted?'flow-node-muted':''}`} data-summary-area={node.id}
     style={{transform:`translate(${node.absolute.x}px,${node.absolute.y}px) scale(${scale})`,transformOrigin:'top left',
       width:node.width/scale,height:node.height/scale}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,false);}}>
@@ -145,7 +148,7 @@ function AreaSummary({node,item,number,badge,heading,enter,select}){
     {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
   </div>;
 }
-function ZoomMark({node,item,enter,select,compactScale,fitScale=Infinity}) {
+function ZoomMark({node,item,enter,select,compactScale,fitScale=Infinity,muted}) {
   const viewport=useViewport(),{zoom}=viewport;
   const area=item.branch==='area',size=34,tall=24,inset=area||['communication','inputs'].includes(item.branch)?8:12;
   // A summary scaled down whole to fit its box takes its mark down with it
@@ -155,19 +158,19 @@ function ZoomMark({node,item,enter,select,compactScale,fitScale=Infinity}) {
   if(node.width<(size+2*inset-.5)*scale||node.height<(tall+2*inset-.5)*scale)return null;
   const point={x:node.absolute.x+node.width-(size+inset)*scale,y:node.absolute.y+inset*scale};
   const name=item.branch==='inputs'?`${t('Inputs')} · ${item.name||item.title}`:item.name||item.title;
-  return <button type="button" className="flow-zoom-mark nopan" data-zoom-into={node.id}
+  return <button type="button" className={`flow-zoom-mark nopan ${muted?'flow-node-muted':''}`} data-zoom-into={node.id}
     style={{transform:`translate(${point.x}px,${point.y}px) scale(${scale})`,width:size,height:tall}}
     aria-label={t('Zoom into {0}',name)} onMouseEnter={()=>enter(node.id)}
     onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
     <span className="flow-zoom-picture" aria-hidden="true"/>
   </button>;
 }
-function FrameTitle({node,item,focused,enter,select}) {
+function FrameTitle({node,item,focused,enter,select,muted}) {
   const viewport=useViewport();
   const scale=item.summaryScale||1;
   const component=item.branch==='component',communication=item.branch==='communication',inputs=['inputs','inputs-part'].includes(item.branch);
   const x=node.absolute.x+18*scale;
-  return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${component?'flow-component-title':communication?'flow-communication-title':inputs?'flow-input-collection':item.lane==='core'?'flow-core-title':item.lane==='triggers'?'flow-entry-title':''}`}
+  return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${muted?'flow-node-muted':''} ${component?'flow-component-title':communication?'flow-communication-title':inputs?'flow-input-collection':item.lane==='core'?'flow-core-title':item.lane==='triggers'?'flow-entry-title':''}`}
     data-frame-title={node.id}
     style={{transform:`translate(${x}px,${node.absolute.y+12*scale}px) scale(${scale})`,transformOrigin:'top left',maxWidth:node.width/scale-36,
       '--flow-zoom':viewport.zoom*scale,
@@ -323,11 +326,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const n=byID.get(id);if(!n||n.display)return;
     // Hover affects the drawing only. The links and description opened by a
     // click stay usable while the pointer crosses other cards to reach them.
-    // Pointing anywhere inside a target looks at the target: its frame, its
-    // numbers and what it is. Its initialization wiring stays off, as it
-    // does for a chosen target: init is drawn for a looked-at end only.
-    const area=parentArea(id)||id;
-    if(hoverArea!==area){hoverArea=area;update?.();}
+    // What the pointer is on is the subject: a part is looked at alone, and
+    // only its own arrows darken; a frame's title, border and empty space
+    // look at the frame. Lifted to its area, a pointed part had lit all of
+    // Data type commands' arrows. A target's initialization wiring stays
+    // off, as it does for a chosen target: init is drawn for a looked-at end
+    // only.
+    if(hoverArea!==id){hoverArea=id;update?.();}
   }
   // A chosen input is entered as its path: the part holding its handler and
   // the path's parts nearest it in call depth, as many as stay readable in
@@ -474,7 +479,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const fit=useMemo(()=>overviewScale(item,n.width*zoom,n.height*zoom,layoutSize.height-2*overviewInset),[n.width,n.height,zoom]);
     return {fit,zoom};
   }
-  function ComponentOverview({node:n,fit,zoom}){
+  function ComponentOverview({node:n,fit,zoom,muted}){
     // Short of its reserved room, the summary is laid out at that room and
     // scaled down whole instead of being cut at the frame's edge.
     const item=byID.get(n.id),inventory=inventories.get(n.id),screenWidth=n.width*zoom/fit,screenHeight=n.height*zoom/fit;
@@ -504,7 +509,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(showCounts)remaining-=countsHeight;
     const descriptionLines=Math.floor((remaining-10)/18);
     const x=n.absolute.x+8*scale,y=n.absolute.y+8*scale;
-    return <div key={'component-'+n.id} className={`flow-component-overview nopan ${item.branch==='communication'?'flow-communication-overview':item.branch==='inputs'?'flow-input-collection':''}`}
+    return <div key={'component-'+n.id} className={`flow-component-overview nopan ${item.branch==='communication'?'flow-communication-overview':item.branch==='inputs'?'flow-input-collection':''} ${muted?'flow-node-muted':''}`}
       data-component-overview={n.id} style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width,maxHeight:screenHeight-16}}
       onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,true);}}>
       {heading.lines.length>0&&<div className="flow-component-overview-heading" style={{maxWidth:heading.width,minHeight:inputs?32:undefined,paddingTop:heading.clearZoom?32:undefined}}>
@@ -553,13 +558,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width:heading.width,
         fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}}>{heading.lines.join('\n')}</div>;
   }
-  function ComponentPresentation({node,focused}){
+  function ComponentPresentation({node,focused,muted}){
     const item=byID.get(node.id),open=item.branch==='component'?openComponents.has(node.id):communicationsOpen.has(node.id);
     const {fit,zoom}=useOverviewFit(node);
     // Open, a plain tile shows its calls under its group's heading alone.
     if(open&&item.displayGroupTitle)return null;
-    return open?<FrameTitle node={node} item={item} focused={focused} enter={enter} select={select}/>:<>
-      <ComponentOverview node={node} fit={fit} zoom={zoom}/><ZoomMark node={node} item={item} fitScale={fit<1?fit/zoom:undefined} enter={enter} select={select}/>
+    return open?<FrameTitle node={node} item={item} focused={focused} enter={enter} select={select} muted={muted}/>:<>
+      <ComponentOverview node={node} fit={fit} zoom={zoom} muted={muted}/><ZoomMark node={node} item={item} fitScale={fit<1?fit/zoom:undefined} enter={enter} select={select} muted={muted}/>
     </>;
   }
   function App(){
@@ -665,6 +670,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
     // A closed frame stands for the participants hidden inside it.
     const shut=id=>scales.has(id)?!detailed.has(id):byID.get(id)?.branch==='component'?!openComponents.has(id):['communication','inputs'].includes(byID.get(id)?.branch)&&!communicationsOpen.has(id);
+    // Emphasis recedes the rest instead of greying what is pointed at. The
+    // subject is dark: a part's outline, a frame's border at the arrows'
+    // 2.5px. The parts across its dark arrows take the same outline; a
+    // frame's own parts stay as they are. Whatever the emphasis does not
+    // involve recedes, its arrows with it.
+    const subjects=state.mode==='search'?state.focus:new Set([state.subject].filter(Boolean));
+    const involved=id=>{const n=placed.get(id);return state.participants.has(id)||!!n?.frame&&leaves(id).some(leaf=>state.participants.has(leaf));};
+    const muted=id=>dim&&!involved(id);
     const nodes=drawing.nodes.map(n=>{
       const item=byID.get(n.id),focused=state.focus.has(n.id);
       // A display group draws the box its heading's band leaves it.
@@ -675,7 +688,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       return {...n,width:box.width,height:box.height,type:n.frame?'area':'part',selected:reading,measured:{width:box.width,height:box.height},
         selectable:false,draggable:false,connectable:false,
         style:{width:box.width,height:box.height,visibility:visible(n.id)?'visible':'hidden'},
-        className:`${on||contains||!dim?'':'flow-node-muted'} ${focused?'flow-node-focus':on?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
+        className:`${muted(n.id)?'flow-node-muted':''} ${subjects.has(n.id)?'flow-node-focus':on&&!focused?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
         data:{...item,...looseLook(n),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true)}};
     });
     const edges=routes.map(route=>{
@@ -747,12 +760,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={emphasisedHead} markerHeight={emphasisedHead} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
       <ViewportPortal>
-        {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
-        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
+        {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
+        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.display&&byID.get(n.id)?.headingAt).map(n=><GroupHeading key={'group-'+n.id} node={n}/>)}
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
-          node={n} item={byID.get(n.id)} number={number.get(n.id)} badge={badge(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select}/>)}
-        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select}/>)}
+          node={n} item={byID.get(n.id)} number={number.get(n.id)} badge={badge(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
+        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select} muted={muted(n.id)}/>)}
         {area&&visible(area)&&(detailed.has(area)||openComponents.has(area))&&view.numbered&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
         {[...new Set([pinnedPart,lookBadge()].filter(Boolean))].map(id=><PartSummary key={'summary:'+id} id={id} labels={labels}/>)}
       </ViewportPortal>

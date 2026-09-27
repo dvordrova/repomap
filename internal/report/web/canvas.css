@@ -37,13 +37,17 @@
 .flow-area.flow-component,.flow-area.flow-communication,.flow-area.flow-input-collection{--flow-frame-width:1.25px}
 .flow-node-reading .flow-area.flow-input-collection{--flow-frame-color:#243044;--flow-frame-width:3px}
 .flow-node-reading .flow-part{border-color:#243044;outline:3px solid #243044;outline-offset:-3px}
-.flow-part:not(.flow-part-deep):hover,.flow-node-focus .flow-part:not(.flow-part-deep){box-shadow:inset 0 0 0 999px rgba(36,48,68,.06)}
-/* The parts an emphasised arrow joins, and a closed frame standing for the
-   parts hidden in it, take the dark of that arrow on their border; the card
-   open on the right keeps its heavier outline. Choosing GET had drawn its
-   dark arrows between parts that looked like every other part. */
-.react-flow__node.flow-node-connected:not(.flow-node-reading)>.flow-part:not(.flow-part-deep){border-color:#243044;outline:1px solid #243044;outline-offset:-2.5px}
-.react-flow__node.flow-node-connected:not(.flow-node-reading)>.flow-area{--flow-frame-color:#243044;--flow-frame-width:2.5px}
+.react-flow__node.flow-node-muted,.flow-node-muted.flow-area-title,.flow-node-muted.flow-area-summary,.flow-node-muted.flow-component-overview,.flow-node-muted.flow-zoom-mark,.flow-edge.flow-edge-muted{opacity:.4}
+/* Emphasis recedes the rest; nothing pointed at is greyed. The part pointed
+   at, the parts an emphasised arrow joins, and a closed frame standing for
+   the parts hidden in it, take the dark of that arrow on their border; a
+   frame pointed at takes it on its frame, at the arrow's 2.5px. The card open
+   on the right keeps its heavier outline. Choosing GET had drawn its dark
+   arrows between parts that looked like every other part, and a grey veil on
+   the pointed area's parts had made them look deader than their neighbours. */
+.react-flow__node.flow-node-connected:not(.flow-node-reading)>.flow-part:not(.flow-part-deep),.react-flow__node.flow-node-focus:not(.flow-node-reading)>.flow-part:not(.flow-part-deep){border-color:#243044;outline:1px solid #243044;outline-offset:-2.5px}
+.react-flow__node.flow-node-connected:not(.flow-node-reading)>.flow-area,.react-flow__node.flow-node-focus>.flow-area{--flow-frame-color:#243044;--flow-frame-width:2.5px}
+.react-flow__node.flow-node-reading>.flow-area.flow-input-collection{--flow-frame-width:3px}
 .flow-overview-card>strong{font-size:23px;line-height:28px}
 .flow-enabled .react-flow__handle{opacity:0;pointer-events:none;width:1px;height:1px;min-width:1px;min-height:1px;border:0}
 .flow-enabled .react-flow__edges,.flow-enabled .react-flow__edge,.flow-edge{pointer-events:none!important;cursor:default!important}
@@ -52,7 +56,6 @@
 .flow-edge .flow-edge-casing{stroke:#fbfcfe;stroke-width:calc(5px / var(--flow-zoom,1))}
 .flow-edge-active path{stroke:#34445b;stroke-width:calc(2.5px / var(--flow-zoom,1))}
 .flow-edge-active .flow-edge-casing{stroke:#fbfcfe;stroke-width:calc(6px / var(--flow-zoom,1))}
-.flow-edge-muted path:not(.flow-edge-casing){stroke:#718096}
 .flow-defs{position:absolute;width:0;height:0}
 .flow-number{position:absolute;right:8px;bottom:8px}
 .flow-connection-label{position:absolute;pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:#fbfcfe;border-radius:5px;padding:3px;box-sizing:border-box}
@@ -203,7 +206,6 @@
 .flow-part-zoom{position:absolute;right:5px;top:5px;display:grid;place-items:center;width:29px;height:20px;padding:0;border:0;background:transparent;color:#52647d;cursor:zoom-in}
 .flow-part-zoom:hover{color:#243044}
 .flow-part:has(.flow-part-zoom)>strong{padding-right:34px}
-.flow-part-symbols .flow-symbol-block a:hover{background:#dfe6ef}
 .flow-part-symbols .flow-symbol-block .flow-symbol-key{font-weight:750;color:#4f2f86}
 .flow-part-symbols .flow-symbol-more{border-style:dashed;color:#536176;text-align:center}
 .flow-node-reading .flow-part.flow-part-deep,.flow-node-focus .flow-part.flow-part-deep{border-width:1px;outline:0;box-shadow:none}
