@@ -725,9 +725,12 @@ The reviewed repository name links to the reviewed directory and revision when
 it is nested in a repository. It sits on the left beside an icon-only Home
 action; the repomap name and GitHub mark link to repomap on the right. The same
 header contains Questions, the component list and one visible Find field.
-All is the list's default and runs the same whole-map action as Show whole map,
-clearing selection, input context and the visible Find query after recording
-the new visit. Component choices and Back restore their
+All is the list's default and runs the whole-map action, clearing selection,
+input context and the visible Find query after recording the new visit. Show
+whole map above the canvas moves only the camera: the reading, its emphasis
+and any input path stay, as a reader zooming out to look around expects;
+clearing them had sent that reader back to the start. Component choices and
+Back restore their
 matching selection and camera.
 
 The toolbar retains the current question and the exact component/area/part

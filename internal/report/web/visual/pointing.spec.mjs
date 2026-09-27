@@ -226,3 +226,20 @@ test('a tile points at and chooses its own declaration',async({page},testInfo)=>
   expect(Math.abs(found.y+found.height/2-canvas.y-canvas.height/2)).toBeLessThan(2);
   expect(errors).toEqual([]);
 });
+
+// Zoomed in on a part, the reader asks for the whole map to look around:
+// what they were reading stays.
+test('show whole map keeps the reading and its emphasis',async({page})=>{
+  const map=page.locator('[data-map]');
+  await page.goto('/');await expect(map).toHaveAttribute('data-fixture-ready','true');
+  await map.evaluate(map=>map.focusNode('auth'));
+  await settle(map);
+  await page.locator('.react-flow__node[data-id="auth"] strong').click();
+  await expect(page.locator('[data-reading-title]')).toHaveText('Authentication and permissions');
+  await page.mouse.move(1430,890);
+  await page.getByRole('button',{name:'Show whole map',exact:true}).click();
+  await expect.poll(async()=>(await map.evaluate(map=>map.captureViewport()))?.fit).toBe(true);
+  await expect(page.locator('.flow-location')).toHaveText('System map');
+  await expect(page.locator('[data-reading-title]')).toHaveText('Authentication and permissions');
+  await expect(map).toHaveAttribute('data-emphasis','selection');
+});

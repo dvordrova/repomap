@@ -1031,7 +1031,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const overviewButton=map.querySelector('[data-map-fit]');overviewButton.textContent=t('Show whole map');overviewButton.removeAttribute('title');
   map.querySelector('[data-map-controls]').addEventListener('click',event=>{
     const button=event.target.closest('button');if(!button||!instance)return;
-    if(button.hasAttribute('data-map-fit'))map.showWholeMap();
+    // The whole map keeps what is being read: the reading, its emphasis and
+    // the input path stay; only the camera goes back. Dropping the reading
+    // had sent a reader who zoomed out to look around back to the start.
+    if(button.hasAttribute('data-map-fit')){closeCards();hover.pause();fitOverview(420);}
     else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
   });
   return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
