@@ -107,11 +107,6 @@ export function displayGroupHeading(title,screenWidth,measure){
     extent:16+Math.max(0,...lines.map(line=>measure(line,font)))*scale};
 }
 
-// The room a closed heading leaves in its box: a closed area's title stands
-// over its description and foot row; a loose part's over the zoom mark's row.
-export const areaHeadingRoom={width:56,height:48,least:0};
-export const looseHeadingRoom={width:50,height:15,least:58};
-
 // A group's fixed world box can be much smaller than its siblings at the
 // common reveal threshold. Fit its complete name once, never hide it or
 // rewrap it against the current viewport. The frame itself is painted by Area.
@@ -129,25 +124,6 @@ export function groupHeading(node,title,maxScale,measure,reservedWidth=44,reserv
     scale=low;
   }
   return {scale,title:lines(scale).join('\n')};
-}
-
-// The largest scale at which a closed heading fits its box whole, with no
-// camera cap: no scale fits past a twentieth of the box's height.
-export function headingFit(box,title,measure,room){
-  return groupHeading(box,title,Math.max(box.height,1)/20,measure,room.width,room.height,room.least).scale;
-}
-
-// The smallest box, at least `least`, in which a closed heading fits at
-// `scale`. A loose part beside areas takes the box in which its heading fits
-// at the scale its smallest area's heading fits, so on the component
-// overview its title reads as large as that area's: fitted to a card's box,
-// Redis's Debug symbols read 10 px beside 15 to 17 px area titles. It is
-// found from the areas' ready rectangles before the component places them,
-// so no layout runs twice.
-export function headingBox(title,scale,measure,room,least={width:0,height:0}){
-  const font='600 12px system-ui',width=Math.max(least.width,scale*(widestWord(title,font,measure)+room.width)+1e-6);
-  const lines=wrapText(title,width/scale-room.width,font,measure).length;
-  return {width,height:Math.max(least.height,scale*Math.max(room.least,room.height+Math.max(20,lines*16))+1e-6)};
 }
 
 export function prepareCards(records, _inputOwner, measure, translate) {
@@ -224,10 +200,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     const kindLabel=input&&!communicationChildren.has(n.id)&&n.activation!==commonKind.get(n.id)?kind(n):'';
     // The group's heading, measured once for its layout and its drawing.
     const displayGroupHeadingAt=n.displayGroupTitle?width=>displayGroupHeading(n.displayGroupTitle,width,measure):undefined;
-    // A closed heading's fit in a box and the box it needs, measured once
-    // here for the layout that sizes loose parts.
-    const closedHeading={fit:(box,room)=>headingFit(box,n.title,measure,room),box:(scale,room,least)=>headingBox(n.title,scale,measure,room,least)};
-    return {...n,displayGroupHeadingAt,closedHeading,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
+    return {...n,displayGroupHeadingAt,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
       kindLabel,description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,

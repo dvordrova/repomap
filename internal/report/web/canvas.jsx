@@ -10,7 +10,7 @@ import {emphasis, focusAncestors} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {singlePartAreas, inputGroupsByPart} from './overview.mjs';
-import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading,areaHeadingRoom,looseHeadingRoom} from './cards.mjs';
+import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading} from './cards.mjs';
 import {overviewInset} from './split-layout.mjs';
 import {HoverGate} from './hover.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
@@ -528,12 +528,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       // The closed card is a title over a foot row, the number and the role mark:
       // the title is fitted into what the foot row leaves.
-      return new Map(layout.nodes.filter(n=>scales.has(n.id)).map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure,areaHeadingRoom.width,areaHeadingRoom.height,areaHeadingRoom.least)]));
+      return new Map(layout.nodes.filter(n=>scales.has(n.id)).map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure,56,48)]));
     },[layoutKey]);
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       return new Map(layout.nodes.filter(n=>!n.frame&&!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component').map(n=>{
-        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,looseHeadingRoom.width,looseHeadingRoom.height,looseHeadingRoom.least);
+        const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,50,15,58);
         return [n.id,{...heading,width:n.width/heading.scale,height:n.height/heading.scale}];
       }));
     },[layoutKey]);

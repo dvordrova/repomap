@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import {prepareCards,wrapText,areaHeadingRoom,looseHeadingRoom} from './cards.mjs';
+import {prepareCards,wrapText} from './cards.mjs';
 import {prepareInteriors,layoutPrepared,overviewInset,readableScale} from './split-layout.mjs';
 import {systemViewport} from './semantic.mjs';
 import {denseInventory,manyExternalInventory,records as ordinaryRecords,relations as ordinaryRelations,areas as ordinaryAreas} from './visual/two-systems-five-externals.mjs';
@@ -566,29 +566,26 @@ test('a display group carries its frames\' shared text once, where no arrow runs
   }
 });
 
-// On the component overview a loose part is its closed areas' peer: its
-// closed heading fits its box at no smaller a scale than the smallest area's
-// heading fits that area, so its title reads as large as that area's. Kept
-// at a card's box, Redis's Debug symbols, one generated table beside three
-// areas, read 10 px beside 15 to 17 px area titles.
-test('a loose part beside areas gets the box its heading needs at its smallest area\'s heading scale',async()=>{
-  const runtime=['r1','r2','r3','r4','r5','r6'],types=['t1','t2','t3','t4','t5','t6'];
-  const items=[{id:'server',title:'Server',branch:'component'},
-    {id:'runtime',title:'Server runtime',branch:'area'},{id:'types',title:'Data type commands',branch:'area'},
-    ...runtime.map(id=>({id,title:`Runtime ${id}`})),...types.map(id=>({id,title:`Types ${id}`})),
-    {id:'symbols',title:'Debug symbols'}];
-  const relations=[['r1','r2'],['r2','r3'],['r3','r4'],['r4','r5'],['r5','r6'],['t1','t2'],['t2','t3'],['t3','t4'],['t4','t5'],['t5','t6'],['r6','t1'],['symbols','r1']].map(([from,to])=>({from,to}));
-  const areaList=[{id:'server',nodes:['runtime','types','symbols']},{id:'runtime',nodes:runtime},{id:'types',nodes:types}];
-  const prepared=await prepareInteriors(cards(items),relations,areaList,{canvas:{width:1214,height:620}});
-  const {local}=prepared.interiors.get('server'),nodes=new Map(local.nodes.map(node=>[node.id,node]));
-  const byID=new Map(prepared.records.map(record=>[record.id,record]));
-  const fit=(id,room)=>byID.get(id).closedHeading.fit(nodes.get(id),room);
-  const smallest=Math.min(fit('runtime',areaHeadingRoom),fit('types',areaHeadingRoom)),loose=fit('symbols',looseHeadingRoom);
-  assert.ok(loose>=smallest-1e-3,`the loose heading fits at ${loose.toFixed(3)}, below its smallest area's ${smallest.toFixed(3)}`);
-  assert.ok(nodes.get('symbols').width<=Math.max(nodes.get('runtime').width,nodes.get('types').width)&&nodes.get('symbols').height<=Math.max(nodes.get('runtime').height,nodes.get('types').height),
-    'the loose part is no larger than its areas');
-  for(const other of ['runtime','types']){
-    const a=nodes.get('symbols'),b=nodes.get(other);
-    assert.ok(a.absolute.x+a.width<=b.absolute.x+1e-7||b.absolute.x+b.width<=a.absolute.x+1e-7||a.absolute.y+a.height<=b.absolute.y+1e-7||b.absolute.y+b.height<=a.absolute.y+1e-7,`the loose part overlaps ${other}`);
-  }
+// A loose part beside areas is drawn filling its box once the areas open,
+// at their parts' scale. Its box is its own card's, whatever the areas
+// beside it hold: grown to fit its closed heading at its smallest area's
+// heading scale, a loose part beside two areas of fourteen parts filled
+// 1036 by 739 px beside 260 by 88 px parts (400 by 200 px as a card).
+test('a loose part keeps its own card box however large the areas beside it',async()=>{
+  const loose=async size=>{
+    const runtime=Array.from({length:size},(_,i)=>`r${i}`),types=Array.from({length:size},(_,i)=>`t${i}`);
+    const items=[{id:'server',title:'Server',branch:'component'},
+      {id:'runtime',title:'Server runtime',branch:'area'},{id:'types',title:'Data type commands',branch:'area'},
+      ...runtime.map(id=>({id,title:`Runtime ${id}`})),...types.map(id=>({id,title:`Types ${id}`})),
+      {id:'symbols',title:'Debug symbols'}];
+    const chain=ids=>ids.slice(1).map((id,i)=>({from:ids[i],to:id}));
+    const relations=[...chain(runtime),...chain(types),{from:runtime.at(-1),to:types[0]},{from:'symbols',to:runtime[0]}];
+    const areaList=[{id:'server',nodes:['runtime','types','symbols']},{id:'runtime',nodes:runtime},{id:'types',nodes:types}];
+    const prepared=await prepareInteriors(cards(items),relations,areaList,{canvas:{width:1214,height:620}});
+    const node=prepared.interiors.get('server').local.nodes.find(node=>node.id==='symbols');
+    return {width:node.width,height:node.height};
+  };
+  const small=await loose(2),large=await loose(14);
+  assert.ok(close(small.width,large.width)&&close(small.height,large.height),
+    `the loose part is ${large.width.toFixed(0)} by ${large.height.toFixed(0)} beside areas of fourteen parts, ${small.width.toFixed(0)} by ${small.height.toFixed(0)} beside areas of two`);
 });
