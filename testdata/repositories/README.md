@@ -52,8 +52,8 @@ Current language repositories:
   value merely typed as a platform constructor remains an unresolved frontier.
 - `c/` is a small key-value server, `kvd`, and its client, `kvcli`, read
   through clang with the flags `make -n -B` prints. Each link line of the
-  [Makefile](c/Makefile) is a program; both link `strbuf.c` and `net.c`, each
-  parsed once. [tools/dump.c](c/tools/dump.c), which no link line builds, is a program
+  [Makefile](c/Makefile) is a program; both link `strbuf.c`, `net.c` and
+  `loop.c`, each parsed once. [tools/dump.c](c/tools/dump.c), which no link line builds, is a program
   through its own `main` and links what the linker would take. `loop.c`
   includes the poll backend the build asks for; the epoll backend is outside
   this build on every host and is never parsed. Inside repomap's own
@@ -74,6 +74,7 @@ C function pointers and macros in [kvd.c](c/kvd.c) and [loop.c](c/loop.c):
 | `kvAssert(setNonBlocking(cfd) == 0)` | `setNonBlocking` is called at its own column; the `kvAssertFail` call the macro body writes is at `kvAssert` |
 | `static void oom` in both `loop.c` and `strbuf.c` | two functions, one per file |
 | [net.c](c/net.c)'s `netListen` and `netConnect`, linked into both programs like Redis's `anet.c` | kvd never runs `netConnect`, kvcli never runs `netListen` or `strbuf.c`'s `sbConsume`, and the dump tool never runs `sbConsume`: each is `unreachable` in that program's index. kvd's listener, and the `KVD_BACKLOG` that `netListen` reads, are kvd's alone; `connect` is kvcli's alone; kvcli's page lists `netListen` and `sbConsume` under "Not reachable from the entrypoints" |
+| kvcli links [loop.c](c/loop.c), the server's event loop, like redis-cli links Redis's `adlist.c`, and calls none of it | every function of `loop.c` and of the `loop_poll.c` it includes is `unreachable` in kvcli; drawn one part per file, those two parts leave kvcli's map and are listed by their declarations under "Not reachable from the entrypoints", and stay on kvd's map; `loop.h`, whose types run nothing of their own, keeps its part. Only C proves `unreachable`, so no other fixture has an equivalent (below) |
 | `static inline size_t sbAvail` in [strbuf.h](c/strbuf.h) | one function, whichever units include it |
 
 Go, Python and JS/TS have no macros, so a call a macro writes has no

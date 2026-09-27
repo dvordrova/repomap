@@ -9,6 +9,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -107,7 +108,9 @@ func TestCFixtureProvesWhatEachProgramNeverRuns(t *testing.T) {
 // symbols' roles make a listener of netListen's bind and listen and a
 // client request of netConnect's connect, and each stays with the program
 // that runs it, as does the setting netListen reads. The client listens on
-// nothing; the server connects nowhere.
+// nothing; the server connects nowhere. The event loop both link is a part
+// of the server's map and leaves the client's, which never runs it, as
+// adlist.c's Linked list stays on redis-server's map and leaves redis-cli's.
 func TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem(t *testing.T) {
 	fixture := loadCFixture(t)
 	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
@@ -154,5 +157,28 @@ func TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem(t *te
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("net.c's boundaries by program = %v, want %v", calls, want)
+	}
+	unreached := map[string][]string{}
+	for _, target := range result.Atlas.Targets {
+		for _, box := range target.Boxes {
+			if box.Unreached {
+				unreached[target.Name] = append(unreached[target.Name], box.Title)
+			}
+		}
+	}
+	if want := map[string][]string{"kvcli": {"loop.c", "loop_poll.c"}}; !reflect.DeepEqual(unreached, want) {
+		t.Fatalf("parts off each program's map as never run = %v, want %v", unreached, want)
+	}
+	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{server.Target.ID: server, client.Target.ID: client}, result.Atlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, index := range indexes {
+		program := map[string]programindex.Index{server.Target.ID: server, client.Target.ID: client}[index.Target.ID]
+		checkUnreachedParts(t, program, index)
+		grouped := slices.ContainsFunc(index.Groups, func(group groupindex.Group) bool { return group.Title == "loop.c" })
+		if grouped != (index.Target.ID == server.Target.ID) {
+			t.Fatalf("%s draws loop.c: %v", program.Target.Name, grouped)
+		}
 	}
 }

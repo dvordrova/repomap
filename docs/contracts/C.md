@@ -331,7 +331,8 @@ files, shared objects) and libraries;
 `TestCFixtureProvesWhatEachProgramNeverRuns` checks the fixture's programs,
 their facts and places, and
 `TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem` reads
-kvd and kvcli together: the listener stays kvd's, the connect kvcli's. The kvd
+kvd and kvcli together: the listener stays kvd's, the connect kvcli's, and the
+event loop both link is a part of kvd's map and leaves kvcli's. The kvd
 preset reading
 (`TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests`) answers each
 registrar and each entry from its row alone, without captions, and checks the
