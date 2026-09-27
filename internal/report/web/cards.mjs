@@ -64,16 +64,32 @@ export function fitTitle(title,width,font,measure){
   return {scale,lines:wrapText(title,scale<1?widest:width,font,measure)};
 }
 
+// A closed external frame's zoom mark, 34 by 24, with its 8px insets.
+const zoomMarkRoom=50;
+
 // A narrow external heading may need the full card width below its zoom mark.
 // Measure the same heading for layout reservation and for the visible card.
+// A frame in a display group that carries its destination text has no
+// heading of its own: it is a plain tile under the group's.
 export function overviewHeading(item,screenWidth,measure){
   const collection=['communication','inputs'].includes(item.branch);
   const size=collection?13:18,lineHeight=collection?17:23,font=`700 ${size}px system-ui`;
+  if(item.displayGroupTitle)return {width:0,clearZoom:false,height:0,lines:[],scale:1,fontSize:size,lineHeight};
   const title=item.name||item.title;
   const clearZoom=titleWords(title).some(word=>measure(word,font)>screenWidth-64);
   const width=Math.max(1,Math.min(304,screenWidth-(clearZoom?(collection?16:32):64)));
   const {scale,lines}=fitTitle(title,width,font,measure);
   return {width,clearZoom,lines,scale,fontSize:size*scale,lineHeight:lineHeight*scale,height:lines.length*lineHeight*scale+(clearZoom?32:0)};
+}
+
+// A display group's frame carries the destination text its frames all name,
+// once, at their headings' size. The room is the group's own screen width at
+// the whole-map camera, less its insets; `height` is its band under a row of
+// tiles and `extent` its band beside a column of them.
+export function displayGroupHeading(title,screenWidth,measure){
+  const font='700 13px system-ui',width=Math.max(1,Math.min(304,screenWidth-16)),{scale,lines}=fitTitle(title,width,font,measure);
+  return {width,lines,scale,fontSize:13*scale,lineHeight:17*scale,height:10+lines.length*17*scale,
+    extent:16+Math.max(0,...lines.map(line=>measure(line,font)))*scale};
 }
 
 // A group's fixed world box can be much smaller than its siblings at the
@@ -137,7 +153,9 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     const widest=(text,font)=>widestWord(text,font,measure);
     // Reserve complete physical pixels. A fractional fit round-off at the
     // longest-word boundary must not unexpectedly add a row below the zoom mark.
-    const overviewMinWidth=Math.ceil(Math.max(widest(n.title,collection?'700 13px system-ui':'700 18px system-ui')+(collection?16:64),
+    // A plain tile under its display group's heading needs room for its zoom
+    // mark alone.
+    const overviewMinWidth=Math.ceil(Math.max(n.displayGroupTitle?zoomMarkRoom:widest(n.title,collection?'700 13px system-ui':'700 18px system-ui')+(collection?16:64),
       ...names.map(name=>widest(name,'500 13px system-ui')+32),
       ...inputGroups.map(group=>widest(group.title,'500 13px system-ui')+16)));
     // A short target name must not squeeze its area inventory into a column
@@ -165,11 +183,14 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       return Math.max(controlHeight,base+(base+list>availableHeight&&rows.length?17+rows[0]:list));
     }:undefined;
     const kindLabel=input&&!communicationChildren.has(n.id)&&n.activation!==commonKind.get(n.id)?kind(n):'';
-    return {...n,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
+    // The group's heading, measured once for its layout and its drawing.
+    const displayGroupHeadingAt=n.displayGroupTitle?width=>displayGroupHeading(n.displayGroupTitle,width,measure):undefined;
+    return {...n,displayGroupHeadingAt,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
       kindLabel,description:descriptionLines.join('\n'),subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,
-      headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines.length?12+descriptionLines.length*18:0)),
+      // An open plain tile shows its calls with no title above them.
+      headerHeight:n.displayGroupTitle?32:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines.length?12+descriptionLines.length*18:0)),
       // A tile without its kind row is that row shorter.
       width:260,height:frame?undefined:66-(input&&!kindLabel?24:0)+title.length*22+descriptionLines.length*18+
         (subtitleLines.length?8+subtitleLines.length*18:0)};

@@ -388,7 +388,9 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   // Destination frames of different programs that name the same destination
   // stand together in a display group: a compound of the outer graph around
   // them, drawn as a frame that is no participant and ends no arrow. Each
-  // frame stays a root with its own program's arrows.
+  // frame stays a root with its own program's arrows. When the page gives the
+  // group the text all its frames name, the group carries it once and the
+  // frames stand as plain tiles.
   const members=new Map();
   for(const root of prepared.roots){
     const group=byID.get(root.id)?.displayGroup;if(!group)continue;
@@ -396,10 +398,29 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   }
   for(const [group,ids] of [...members])if(ids.length<2)members.delete(group);
   const groupID=group=>`display-group:${group}`,grouped=new Set([...members.values()].flat());
+  const groupPad=16,headingOf=new Map();
+  for(const [group,ids] of members){const at=byID.get(ids[0])?.displayGroupHeadingAt;if(at)headingOf.set(groupID(group),at);}
+  // The heading stands in a band on the side of its group no arrow enters:
+  // under the tiles when arrows run down, after them when arrows run right.
+  // Above the tiles, Redis's three arrows ran through "DNS resolver". The
+  // band is world room for the heading's screen size at a camera zoom: its
+  // height under a row of tiles, its one-line width beside a column.
+  const headingNeed=(id,groupWidth,zoom,direction)=>direction==='RIGHT'?headingOf.get(id)(Infinity).extent:headingOf.get(id)(groupWidth*zoom).height;
+  // The first placement assumes the preferred camera; the measured correction
+  // below reserves the band at the fit that is actually shown.
+  const firstBands=direction=>new Map([...members].filter(([group])=>headingOf.has(groupID(group))).map(([group,ids])=>{
+    const widths=ids.map(id=>prepared.interiors.get(id).width);
+    const across=direction==='RIGHT'?Math.max(...widths)+2*groupPad:widths.reduce((sum,w)=>sum+w,0)+groupPad*(ids.length+1);
+    return [groupID(group),headingNeed(groupID(group),across,.44,direction)/.44];
+  }));
+  const bandOf=(id,from)=>Math.max(groupPad,from.get(id)||0);
+  const groupPadding=(id,from,direction)=>direction==='RIGHT'?`[top=${groupPad},left=${groupPad},bottom=${groupPad},right=${bandOf(id,from)}]`
+    :`[top=${groupPad},left=${groupPad},bottom=${bandOf(id,from)},right=${groupPad}]`;
+  let bands=new Map(),bandDirection='DOWN';
   const leaf=root=>{const interior=prepared.interiors.get(root.id);return {id:root.id,width:interior.width,height:interior.height,layoutOptions:{}};};
   const input={id:'world',layoutOptions:members.size?{...outerOptions,'elk.hierarchyHandling':'INCLUDE_CHILDREN'}:outerOptions,
     children:[...prepared.roots.filter(root=>!grouped.has(root.id)).map(leaf),
-      ...[...members].map(([group,ids])=>({id:groupID(group),layoutOptions:{'elk.padding':'[top=16,left=16,bottom=16,right=16]'},
+      ...[...members].map(([group,ids])=>({id:groupID(group),layoutOptions:{},
         children:ids.map(id=>leaf(prepared.roots.find(root=>root.id===id)))}))],
     edges:prepared.aggregates.map(edge=>({id:edge.id,sources:[edge.from],targets:[edge.to]}))};
   // The placed participants, with a group's members at their world position.
@@ -407,11 +428,11 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   const participants=graph=>graph.children.flatMap(node=>node.children||[node]);
   const available={width:Math.max(1,width-2*overviewInset),height:Math.max(1,height-2*overviewInset)};
   // The whole-map camera frames every placed box, a display group's frame
-  // with its padding included. Measured over the participants alone, Redis's
-  // group of three "DNS resolver" frames at the bottom made the camera 0.85%
-  // smaller than this fit, and every heading reserved to the pixel lost its
-  // last letter.
-  function metrics(placed){
+  // with its padding and heading included. Measured over the participants
+  // alone, Redis's group of three "DNS resolver" frames at the bottom made the
+  // camera 0.85% smaller than this fit, and every heading reserved to the
+  // pixel lost its last letter.
+  function metrics(placed,used,direction){
     const roots=flat(placed),boxes=placed.children;
     const span={width:Math.max(...boxes.map(node=>node.x+node.width))-Math.min(...boxes.map(node=>node.x)),
       height:Math.max(...boxes.map(node=>node.y+node.height))-Math.min(...boxes.map(node=>node.y))};
@@ -420,7 +441,8 @@ export async function layoutPrepared(prepared,width=1200,height=700){
       const record=byID.get(node.id),minimum=record.overviewMinWidth||0;
       const needed=record.overviewHeightAtWidth?.(node.width*zoom,{availableHeight:available.height})||0;
       return Math.min(minimum?node.width*zoom/minimum:1,needed?node.height*zoom/needed:1);
-    }));
+    }),...boxes.filter(node=>headingOf.has(node.id)).map(node=>
+      bandOf(node.id,used)*zoom/headingNeed(node.id,node.width,zoom,direction)));
     return {span,zoom,readable,overflow:Math.max(span.width/width,span.height/height)};
   }
   let graph,best,bestInput,failure;
@@ -434,8 +456,8 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   // Such a candidate is left out; the map fails only when none is placed.
   for(const nativePorts of [false,true])for(const direction of ['DOWN','RIGHT']){
    for(const unzip of [false,true]){
-    const candidate=structuredClone(input);candidate.layoutOptions['elk.direction']=direction;
-    for(const node of candidate.children)if(node.children)node.layoutOptions['elk.direction']=direction;
+    const candidate=structuredClone(input),used=firstBands(direction);candidate.layoutOptions['elk.direction']=direction;
+    for(const node of candidate.children)if(node.children){node.layoutOptions['elk.direction']=direction;node.layoutOptions['elk.padding']=groupPadding(node.id,used,direction);}
     if(nativePorts){
       for(const node of participants(candidate)){node.ports=structuredClone(prepared.interiors.get(node.id).ports);node.layoutOptions['elk.portConstraints']='FIXED_POS';}
       for(const edge of candidate.edges){const original=prepared.aggregates.find(a=>a.id===edge.id);edge.sources=[original.sourcePort];edge.targets=[original.targetPort];}
@@ -444,8 +466,8 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     const template=structuredClone(candidate);
     let placed;
     try{placed=await native(candidate);}catch(error){failure||=error;continue;}
-    const score=metrics(placed);
-    if(!best||score.readable>best.readable||score.readable===best.readable&&score.overflow<best.overflow){graph=placed;best=score;bestInput=template;}
+    const score=metrics(placed,used,direction);
+    if(!best||score.readable>best.readable||score.readable===best.readable&&score.overflow<best.overflow){graph=placed;best=score;bestInput=template;bands=used;bandDirection=direction;}
    }
   }
   if(!best)throw failure;
@@ -465,6 +487,14 @@ export async function layoutPrepared(prepared,width=1200,height=700){
       return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,
         needed:{width:Math.ceil(physicalWidth),height:Math.ceil(Math.max(node.height*best.zoom,physicalHeight))}}];
     });
+    // A group's heading band grows like a summary: its frame needs the
+    // band's missing screen room at this fit.
+    for(const node of graph.children.filter(node=>headingOf.has(node.id))){
+      const missing=Math.max(0,headingNeed(node.id,node.width,best.zoom,bandDirection)-bandOf(node.id,bands)*best.zoom);
+      const across=bandDirection==='RIGHT'?missing:0,down=bandDirection==='RIGHT'?0:missing;
+      if(missing)growing.push({id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,
+        needed:{width:Math.ceil(node.width*best.zoom+across),height:Math.ceil(node.height*best.zoom+down)}});
+    }
     if(growing.length){
       const reserve=axis=>{
         const coordinate=axis==='width'?'x':'y';
@@ -504,12 +534,18 @@ export async function layoutPrepared(prepared,width=1200,height=700){
           if(side==='SOUTH')port.y=node.height;
         }
       }
+      const next=new Map(bands);
+      for(const node of candidate.children.filter(node=>headingOf.has(node.id))){
+        const group=graph.children.find(item=>item.id===node.id);
+        next.set(node.id,Math.max(bandOf(node.id,bands),headingNeed(node.id,group.width,zoom,bandDirection)/zoom));
+        node.layoutOptions['elk.padding']=groupPadding(node.id,next,bandDirection);
+      }
       const template=structuredClone(candidate);
       let placed;
       // A correction ELK cannot place keeps the placement it would correct.
       try{placed=await native(candidate);}catch{break;}
-      const score=metrics(placed);
-      if(score.readable>best.readable){graph=placed;best=score;bestInput=template;}else break;
+      const score=metrics(placed,next,bandDirection);
+      if(score.readable>best.readable){graph=placed;best=score;bestInput=template;bands=next;}else break;
     }
   }
   const rootOf=new Map();for(const [root,interior] of prepared.interiors)for(const node of interior.local.nodes)rootOf.set(node.id,root);
@@ -572,7 +608,12 @@ export async function layoutPrepared(prepared,width=1200,height=700){
         title:outside.name||outside.title,point:group.incoming?route.at(-1).at(-1):route[0][0]});
     }
   }
-  const groups=nodes.filter(node=>node.display).map(node=>({id:node.id,title:'',name:'',branch:'communication-group',category:'external',display:true,children:[]}));
+  // A group names nothing unless the page gave it its frames' shared text.
+  const groups=nodes.filter(node=>node.display).map(node=>{
+    const ids=members.get(node.id.slice('display-group:'.length))||[],title=byID.get(ids[0])?.displayGroupTitle||'';
+    return {id:node.id,title,name:title,branch:'communication-group',category:'external',display:true,children:[],tiles:ids,
+      headingAt:headingOf.get(node.id),band:bandOf(node.id,bands),side:bandDirection==='RIGHT'?'right':'bottom'};
+  });
   return {layout:{nodes,edges,labels,width:graph.width,height:graph.height},records:[...records,...groups],
     scales,owner:prepared.owner,summaries:prepared.summaries};
 }

@@ -54,6 +54,20 @@ test('an overview heading short of its longest word shrinks rather than breaking
   }
 });
 
+// Redis's first screen showed "DNS resolver" three times side by side.
+test('a frame whose display group carries its destination text draws no heading of its own',()=>{
+  const measure=text=>String(text).length*7;
+  const [tile,,titled]=prepareCards([
+    {id:'dns-cli',title:'DNS resolver',branch:'communication',children:['call'],displayGroup:'dns',displayGroupTitle:'DNS resolver'},
+    {id:'call',title:'gethostbyname'},
+    {id:'dns-alone',title:'DNS resolver',branch:'communication',children:['other']},
+  ],{},measure,text=>text);
+  assert.deepEqual(overviewHeading(tile,tile.overviewMinWidth,measure).lines,[],'the tile repeats nothing');
+  assert.equal(overviewHeading(titled,titled.overviewMinWidth,measure).lines.join(' '),'DNS resolver','a frame alone keeps its heading');
+  assert.equal(tile.displayGroupHeadingAt(3*tile.overviewMinWidth).lines.join(' '),'DNS resolver','the group says it once');
+  assert.equal(titled.displayGroupHeadingAt,undefined);
+});
+
 test('an external heading fits whole words below its zoom control or beside it',()=>{
   const measure=text=>text.length*7;
   for(const title of ['PostgreSQL','OpenTelemetry collector','Notification gateway']){

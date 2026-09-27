@@ -258,11 +258,23 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 		}
 	}
+	// Frames in a group that all spell their destination alike leave it to
+	// the group to say once: three "DNS resolver" tiles side by side said one
+	// thing three times. Different spellings keep their own titles.
 	for n, key := range groupKeys {
-		if frames := groupFrames[key]; len(frames) > 1 {
-			for _, at := range frames {
-				result.Nodes[at].DisplayGroup = fmt.Sprintf("destinations-%d", n+1)
+		frames := groupFrames[key]
+		if len(frames) < 2 {
+			continue
+		}
+		title := result.Nodes[frames[0]].FullTitle
+		for _, at := range frames {
+			if result.Nodes[at].FullTitle != title {
+				title = ""
 			}
+		}
+		for _, at := range frames {
+			result.Nodes[at].DisplayGroup = fmt.Sprintf("destinations-%d", n+1)
+			result.Nodes[at].DisplayGroupTitle = title
 		}
 	}
 	// An input's witness to a folded record leads to the tile that stands for

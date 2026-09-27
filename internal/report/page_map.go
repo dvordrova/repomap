@@ -255,6 +255,11 @@ type pageMapNode struct {
 	// same destination. The group is no participant: equal destination text
 	// proves no identity, and each frame keeps its own program and arrows.
 	DisplayGroup string
+	// DisplayGroupTitle is the destination text every frame of the display
+	// group names, spelled alike. The group's frame carries it once and its
+	// frames stand as plain tiles instead of repeating it side by side. It
+	// is the frames' shared text, not the name of a merged participant.
+	DisplayGroupTitle string
 }
 
 type pageMapEdge struct {

@@ -147,6 +147,7 @@
 .flow-enabled .flow-zoom-mark:hover{background:transparent;color:#243044}
 .flow-communication-overview{background:#fffaf1;flex-direction:row;align-items:center;gap:4px;padding:0}
 .flow-communication-overview strong{font-size:13px;line-height:17px}
+.flow-group-heading{position:absolute;transform-origin:top left;pointer-events:none;box-sizing:border-box;font-family:system-ui;font-weight:700;white-space:pre;color:#77531c}
 .flow-component-overview.flow-input-collection{background:#edf5ff;color:#204a7b;padding:0;gap:6px}
 .flow-component-overview.flow-input-collection strong{font-size:13px;line-height:17px}
 .flow-component-overview.flow-input-collection .flow-component-overview-heading{box-sizing:border-box}

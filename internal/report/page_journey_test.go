@@ -1,6 +1,8 @@
 package report
 
 import (
+	"bytes"
+	"html/template"
 	"strings"
 	"testing"
 
@@ -192,11 +194,45 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	if len(groups) != 1 || groups[""] {
 		t.Fatalf("frames naming one destination stand in one display group: %v", groups)
 	}
-	if lone := frames["system-t1-out-b120-destination"]; lone.ID == "" || lone.DisplayGroup != "" {
+	if lone := frames["system-t1-out-b120-destination"]; lone.ID == "" || lone.DisplayGroup != "" || lone.DisplayGroupTitle != "" {
 		t.Fatalf("a destination only one program names needs no group: %+v", lone)
 	}
 	if len(frames) != 4 || len(tiles) != 4 {
 		t.Fatalf("frames %d, tiles %d", len(frames), len(tiles))
+	}
+	// The first screen showed "DNS resolver" three times side by side: the
+	// page gives the group that text once, for its frame to carry, and each
+	// frame keeps its own title for its reading.
+	var drawn bytes.Buffer
+	parsed, err := template.New("map").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/map.html", "templates/html/partials.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := parsed.ExecuteTemplate(&drawn, "map.html", got); err != nil {
+		t.Fatal(err)
+	}
+	if carried := strings.Count(drawn.String(), `data-display-group-title="DNS resolver"`); carried != 3 {
+		t.Fatalf("%d frames tell the page their group carries their destination text", carried)
+	}
+	for _, target := range []string{"t1", "t2", "t4"} {
+		if frame := frames["system-"+target+"-out-b108-destination"]; frame.DisplayGroupTitle != "DNS resolver" || frame.FullTitle != "DNS resolver" {
+			t.Fatalf("program %s's frame: %+v", target, frame)
+		}
+	}
+	// Grouped without regard to letter case, "DNS Resolver" and "DNS resolver"
+	// stand together but are not one text: each frame keeps its own heading.
+	view.Sections[2].Outbound[0].Destination = "DNS Resolver"
+	together := 0
+	for _, node := range view.SystemMap().Nodes {
+		if node.Branch == "communication" && node.DisplayGroup != "" {
+			together++
+			if node.DisplayGroupTitle != "" {
+				t.Fatalf("differently spelled frames lost their own headings: %+v", node)
+			}
+		}
+	}
+	if together != 3 {
+		t.Fatalf("%d differently spelled frames stand together", together)
 	}
 }
 

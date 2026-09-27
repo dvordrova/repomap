@@ -135,7 +135,8 @@ function ZoomMark({node,item,enter,select,compactScale}) {
   const viewport=useViewport(),{zoom}=viewport;
   const area=item.branch==='area',size=34,tall=24,inset=area||['communication','inputs'].includes(item.branch)?8:12;
   const scale=area?compactScale:1/zoom;
-  if(node.width<(size+2*inset)*scale||node.height<(tall+2*inset)*scale)return null;
+  // A frame reserved exactly this room is fitted to within float round-off.
+  if(node.width<(size+2*inset-.5)*scale||node.height<(tall+2*inset-.5)*scale)return null;
   const point={x:node.absolute.x+node.width-(size+inset)*scale,y:node.absolute.y+inset*scale};
   const name=item.branch==='inputs'?`${t('Inputs')} · ${item.name||item.title}`:item.name||item.title;
   return <button type="button" className="flow-zoom-mark nopan" data-zoom-into={node.id}
@@ -478,8 +479,28 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {showCounts&&<div className="flow-inside-counts">{counts}</div>}
     </div>;
   }
+  // A display group's frame carries the text its frames all name, once, in
+  // its band under the tiles or after them, where no arrow runs. It is laid
+  // out at the whole-map camera like their summaries and zooms with the map;
+  // once the tiles open it reads at their open frames' title size. It is no
+  // participant: nothing to hover, choose or enter.
+  function GroupHeading({node:n}){
+    const item=byID.get(n.id),zoom=systemViewport(layout.nodes,layoutSize.width,layoutSize.height).zoom,beside=item.side==='right';
+    const heading=useMemo(()=>item.headingAt(beside?Infinity:n.width*zoom),[n.width,zoom,beside]);
+    const open=item.tiles.some(id=>communicationsOpen.has(id));
+    // A band left short of the heading takes it smaller, never over the tiles.
+    const scale=Math.min(1,item.band*zoom/(beside?heading.extent:heading.height))/zoom*
+      (open?Math.min(1,(byID.get(item.tiles[0])?.summaryScale||1)*17/13*zoom):1);
+    const x=beside?n.absolute.x+n.width-item.band+8*scale:n.absolute.x+8*scale;
+    const y=beside?n.absolute.y+16:n.absolute.y+n.height-item.band+4*scale;
+    return <div className="flow-group-heading" data-group-heading={n.id}
+      style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width:heading.width,
+        fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}}>{heading.lines.join('\n')}</div>;
+  }
   function ComponentPresentation({node,focused}){
     const item=byID.get(node.id),open=item.branch==='component'?openComponents.has(node.id):communicationsOpen.has(node.id);
+    // Open, a plain tile shows its calls under its group's heading alone.
+    if(open&&item.displayGroupTitle)return null;
     return open?<FrameTitle node={node} item={item} focused={focused} enter={enter} select={select}/>:<>
       <ComponentOverview node={node}/><ZoomMark node={node} item={item} enter={enter} select={select}/>
     </>;
@@ -669,6 +690,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       <ViewportPortal>
         {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
+        {drawing.nodes.filter(n=>n.display&&byID.get(n.id)?.headingAt).map(n=><GroupHeading key={'group-'+n.id} node={n}/>)}
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} number={number.get(n.id)} badge={badge(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select}/>)}

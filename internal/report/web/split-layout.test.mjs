@@ -510,20 +510,58 @@ test('frames naming one destination stand in a display group, each keeping its o
 test('the whole-map camera that frames a display group still gives every heading its reserved room',async()=>{
   const items=structuredClone(ordinaryRecords),relations=structuredClone(ordinaryRelations),areaList=structuredClone(ordinaryAreas);
   for(const [id,caller] of [['dns-front','submission'],['dns-backend','worker']]){
-    items.push({id,title:'DNS resolver',category:'external',branch:'communication',children:[`${id}-call`],displayGroup:'dns'},
+    items.push({id,title:'DNS resolver',category:'external',branch:'communication',children:[`${id}-call`],displayGroup:'dns',displayGroupTitle:'DNS resolver'},
       {id:`${id}-call`,title:'gethostbyname',category:'external'});
     areaList.push({id,nodes:[`${id}-call`]});relations.push({from:caller,to:`${id}-call`});
   }
-  const records=cards(items),width=1054,height=580;
+  // Plain tiles leave Redis's 1054×580 canvas at the preferred camera; a
+  // smaller one keeps the fit below it.
+  const records=cards(items),width=1000,height=540;
   const prepared=await prepareInteriors(records,relations,areaList,{availableHeight:height-2*overviewInset});
   const result=await layoutPrepared(prepared,width,height);
   const {zoom}=systemViewport(result.layout.nodes,width,height);
-  assert.ok(result.layout.nodes.some(node=>node.display),'the two frames stand in a display group');
+  const group=result.layout.nodes.find(node=>node.display),heading=result.records.find(record=>record.id===group.id);
   assert.ok(zoom<.44,'the camera fits below the preferred scale, where the reserve matters');
   for(const node of result.layout.nodes.filter(node=>!node.parentId&&!node.display)){
     const record=records.find(record=>record.id===node.id);
     if(!record.overviewMinWidth)continue;
     assert.ok(node.width*zoom+1e-6>=record.overviewMinWidth,`${node.id}: ${node.width*zoom} of ${record.overviewMinWidth}px for its heading`);
     assert.ok(node.height*zoom+1e-6>=record.overviewHeightAtWidth(node.width*zoom,{availableHeight:height-2*overviewInset}),`${node.id}: its summary fits`);
+  }
+  const need=heading.side==='right'?heading.headingAt(Infinity).extent:heading.headingAt(group.width*zoom).height;
+  assert.ok(heading.band*zoom+1e-6>=need,`the group's heading has ${heading.band*zoom} of ${need}px`);
+});
+
+// Above the tiles, Redis's three arrows ran through "DNS resolver".
+test('a display group carries its frames\' shared text once, where no arrow runs',async()=>{
+  const items=[
+    {id:'server',title:'redis-server',branch:'component'},{id:'cli',title:'redis-cli',branch:'component'},{id:'bench',title:'redis-benchmark',branch:'component'},
+    ...['server','cli','bench'].flatMap(owner=>[{id:`net-${owner}`,title:'Networking',category:'part'},
+      {id:`dns-${owner}`,title:'DNS resolver',branch:'communication',category:'external',displayGroup:'dns',displayGroupTitle:'DNS resolver'},
+      {id:`resolve-${owner}`,title:'gethostbyname',category:'external'}]),
+  ];
+  const areaList=['server','cli','bench'].flatMap(owner=>[{id:owner,nodes:[`net-${owner}`]},{id:`dns-${owner}`,nodes:[`resolve-${owner}`]}]);
+  const prepared=await prepareInteriors(cards(items),['server','cli','bench'].map(owner=>({from:`net-${owner}`,to:`resolve-${owner}`})),areaList);
+  const {layout,records}=await layoutPrepared(prepared,1200,700);
+  const groups=layout.nodes.filter(node=>node.display);
+  assert.equal(groups.length,1);
+  const group=groups[0],heading=records.find(record=>record.id===group.id);
+  assert.equal(heading.title,'DNS resolver','the group says it');
+  assert.deepEqual(heading.tiles.sort(),['dns-bench','dns-cli','dns-server']);
+  // The heading's band is the group's widest strip beside its tiles.
+  const tiles=heading.tiles.map(id=>layout.nodes.find(node=>node.id===id));
+  const box={left:Math.min(...tiles.map(n=>n.absolute.x)),top:Math.min(...tiles.map(n=>n.absolute.y)),
+    right:Math.max(...tiles.map(n=>n.absolute.x+n.width)),bottom:Math.max(...tiles.map(n=>n.absolute.y+n.height))};
+  const {x,y,width,height}={...group.absolute,width:group.width,height:group.height};
+  const band=[{x,y,width,height:box.top-y},{x,y:box.bottom,width,height:y+height-box.bottom},
+    {x,y,width:box.left-x,height},{x:box.right,y,width:x+width-box.right,height}].sort((a,b)=>b.width*b.height-a.width*a.height)[0];
+  assert.ok(Math.min(band.width,band.height)>=heading.band-1e-6,'the heading has its band');
+  const inside=point=>point.x>band.x+1e-6&&point.x<band.x+band.width-1e-6&&point.y>band.y+1e-6&&point.y<band.y+band.height-1e-6;
+  for(const edge of layout.edges){
+    assert.equal(edge.outerTo,edge.to.replace('resolve-','dns-'),'each program\'s arrow ends at its own tile');
+    for(const segment of edge.segments)for(let i=1;i<segment.length;i++)for(let t=0;t<=1;t+=1/64){
+      const point={x:segment[i-1].x+(segment[i].x-segment[i-1].x)*t,y:segment[i-1].y+(segment[i].y-segment[i-1].y)*t};
+      assert.ok(!inside(point),`${edge.from}'s arrow crosses the heading at ${JSON.stringify(point)}`);
+    }
   }
 });

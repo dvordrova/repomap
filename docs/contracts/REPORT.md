@@ -138,8 +138,25 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   components that name the same destination stand together in one display
   group, an amber frame around them in the outer layout, so the three "DNS
   resolver" frames stand side by side instead of scattered. The group is no
-  participant: it has no title, reading, selection or hover, ends no arrow
-  and adds no relation; each frame in it keeps its own program's arrow.
+  participant: it has no reading, selection or hover, ends no arrow and adds
+  no relation; each frame in it keeps its own program's arrow.
+  When every frame in the group spells its destination alike, the page data
+  gives the group that text (`DisplayGroupTitle`) and the group's frame
+  carries it once; its frames stand as small plain amber tiles with their
+  zoom marks, one per program, each hit by its own program's arrow. Three
+  "DNS resolver" headings side by side had said one thing three times.
+  The text is what all the frames name, not the name of a merged
+  participant: each frame keeps its title in its reading, search and
+  accessible name, and different spellings grouped regardless of case keep
+  their own headings and give the group none. The tiles do not name their
+  programs: a program's name inside an amber frame would read as an outside
+  participant, and the arrow already says whose tile it is. The heading
+  stands in a band on the side of the group no arrow enters, under the
+  tiles when arrows run down and after them when they run right; above the
+  tiles, Redis's three arrows ran through it. Like closed summaries it is
+  laid out at the whole-map camera and zooms with the map; once the tiles
+  open it reads at their open frames' title size, and an open tile draws
+  its calls under no title of its own.
   Every record stays in its own component's catalogue, and records of
   different symbols stay separate tiles.
   When a saved connection identifies one already displayed peer in another
@@ -410,11 +427,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   collapse its fitted width. Long words reserve enough width; a narrow
   heading can continue below its zoom mark instead of breaking a name midway.
   The fit that sizes those reserves frames exactly what the whole-map camera
-  frames, a display group's frame with its padding included. Measured over
-  the participants alone, the camera framing Redis's group of "DNS resolver"
-  frames stood 0.85% smaller than the fit, and every heading reserved to the
-  pixel lost its last letter ("DNS resolve", "TCP endpoin", "redis-server
-  (executable" over a lone ")").
+  frames, a display group's frame with its padding and heading band
+  included. Measured over the participants alone, the camera framing Redis's
+  group of "DNS resolver" frames stood 0.85% smaller than the fit, and every
+  heading reserved to the pixel lost its last letter ("DNS resolve", "TCP
+  endpoin", "redis-server (executable" over a lone ")").
   A title wraps only between words, the way the browser wraps it: closing
   punctuation stays with the word before it and an opening bracket with the
   word after it, so no line starts with ")" or is ")" alone. A word breaks
