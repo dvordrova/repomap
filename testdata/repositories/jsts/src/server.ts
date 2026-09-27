@@ -167,3 +167,42 @@ export async function consumeJobs(jobs: AsyncIterable<string>): Promise<void> {
 export function registerChainedOrderConsumers(): void {
   createConsumer().on("orders.chained", handleOrder).on("orders.chained", recordOrder)
 }
+
+const joinCondition = (left: string, right: string): string => left + right
+const rowFor = (_join: typeof joinCondition): { count: number } => ({ count: 0 })
+
+// Mirrors pandas `df.loc[reduce(lambda x, y: x & y, conditions), "exit_long"] = 1`: callbacks inside assignment targets.
+export function markMatchingRows(rows: Record<string, number>, conditions: string[]): void {
+  rows[conditions.reduce((left, right) => left + right.trim())] = 1
+  rows[conditions.reduce(joinCondition)] += 1
+  rowFor(joinCondition).count = 1
+}
+
+// Mirrors Python's FastAPI `Depends(lambda: ...)` and `key=lambda row: row`: arrows in parameter decorators and defaults.
+// A decorator runs once, when its class is defined, so a call written in it belongs to the scope that
+// defines what it decorates, as a call in a Python decorator's arguments does: the module for a class
+// decorator, the class for a method or parameter decorator. The decoration, with a qualified decorator's
+// namespace (`@Marks.Traced`), stays the decorated declaration's.
+function Inject(_token: () => unknown): ParameterDecorator { return () => {} }
+function forwardRef<T>(factory: () => T): () => T { return factory }
+function Route(_path: string): ClassDecorator & MethodDecorator { return () => {} }
+function routePath(name: string): string { return "/" + name }
+const levelRoute = "level"
+const Traced: MethodDecorator = () => {}
+const Marks = { Route, Traced }
+function tracedBy(): () => MethodDecorator { return () => Traced }
+class LevelService {}
+@Route(routePath("levels"))
+export class LevelController {
+  constructor(@Inject(forwardRef(() => LevelService)) private levels: LevelService) {}
+  @Route(routePath(levelRoute))
+  @Traced
+  level(@Inject(() => joinCondition("level", "id")) _id: string): LevelService { return this.levels }
+  @Marks.Route(routePath("all"))
+  @Marks.Traced
+  @tracedBy()()
+  all(): LevelService[] { return [this.levels] }
+}
+export function sortRows(rows: string[], key = (row: string): string => row.toLowerCase()): string[] { return rows.map(key) }
+export const sortRowsBy = (rows: string[], key = (row: string): string => row.toUpperCase()): string[] => rows.map(key)
+export function sortRowsJoined(rows: string[], key = joinCondition): string[] { return rows.map((row) => key(row, row)) }

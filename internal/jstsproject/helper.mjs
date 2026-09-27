@@ -1015,6 +1015,24 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
   visit(sourceFile)
 }
 
+// A decorator runs once, when its class is defined, as a Python decorator's
+// arguments run where the function is defined. The decoration itself (the
+// decorator's call, or its bare name, down to a qualified name's namespace:
+// `@Marks.Traced`) stays the decorated class's or member's. What the decorator
+// evaluates inside it, and a parameter decorator, which decorates nothing,
+// belong to the scope that defines the decorated declaration: the class for a
+// member or a parameter, the enclosing scope for a class. The owner walk from
+// `node` goes on from the node this returns.
+function decoratorScope(decorator, node) {
+  if (ts.isParameter(decorator.parent)) return decorator.parent.parent.parent
+  let head = decorator.expression
+  if (head === node) return decorator.parent
+  if (ts.isCallExpression(head)) head = head.expression
+  while (ts.isPropertyAccessExpression(head) && head !== node) head = head.expression
+  if (head === node && (ts.isIdentifier(head) || ts.isPropertyAccessExpression(head))) return decorator.parent
+  return decorator.parent.parent
+}
+
 const refForDeclarationNode = (node) => {
   let current = node
   while (current && !ts.isSourceFile(current)) {
@@ -1024,7 +1042,7 @@ const refForDeclarationNode = (node) => {
         (!ts.isVariableDeclaration(current) || declarationKind(current) === "function")) {
       return declarationRefByNode.get(current)
     }
-    current = current.parent
+    current = ts.isDecorator(current) ? decoratorScope(current, node) : current.parent
   }
   const sourceFile = node.getSourceFile()
   return moduleRef(relative(sourceFile.fileName))
@@ -2099,7 +2117,7 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
 // value. In particular JSX tags do not invoke their component functions here.
 const reads = []
 function readOwner(node) {
-  for (let current = node; current && !ts.isSourceFile(current); current = current.parent) {
+  for (let current = node; current && !ts.isSourceFile(current); current = ts.isDecorator(current) ? decoratorScope(current, node) : current.parent) {
     if (ts.isFunctionLike(current) && !declarationRefByNode.has(current)) {
       const parent = current.parent
       if (ts.isVariableDeclaration(parent) && parent.initializer === current && declarationRefByNode.has(parent)) return declarationRefByNode.get(parent)
@@ -2210,7 +2228,8 @@ for (const { sourceFile } of sourceFiles) {
       // A decorator `@Get(':slug')` is a call whose caller is the declaration
       // it decorates; the projection reads it as that declaration's decoration.
       // A parameter decorator (`@Body() dto`) reads a value for the method;
-      // it decorates nothing the method is handed over by.
+      // it decorates nothing the method is handed over by, and runs where the
+      // class is defined (decoratorScope).
       const decorates = node.parent && ts.isDecorator(node.parent) && !(node.parent.parent && ts.isParameter(node.parent.parent))
       const invocation = ts.isNewExpression(node) ? "construct" : decorates ? "decorator" : "call"
       const callerRef = refForDeclarationNode(node)

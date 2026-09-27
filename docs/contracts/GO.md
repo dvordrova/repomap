@@ -264,6 +264,12 @@ PEP 695 parameters since the same change
 ([Python](PYTHON.md#generic-declarations)); Clojure declares no type parameters
 and has no equivalent.
 
+A call belongs to the scope in which it runs. Go has no equivalent of a call
+a definition runs once (a Python decorator's arguments or defaults, a
+TypeScript decorator, Clojure metadata): there are no decorators or default
+parameters, parameter and result lists and type-parameter constraints hold
+only types, and a struct tag is a string literal.
+
 A Go method may be declared in another file than its type. Its native owner
 is the type, so on the map of parts it goes with its type's file part, and
 a file holding only such methods has no unit of its own

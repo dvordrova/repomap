@@ -25,3 +25,18 @@ export function jsReadShadow(READ_COLOR) { return READ_COLOR }
 /** @param {import("./facade-exports/exchange").Exchange} _ */
 function typedJSUnderscore(_) { _.resetStream() }
 function unknownJSUnderscore(_) { _.resetStream() }
+
+const joinCondition = (left, right) => left + right
+const rowFor = (_join) => ({ count: 0 })
+
+// Mirrors pandas `df.loc[reduce(lambda x, y: x & y, conditions), "exit_long"] = 1`: callbacks inside assignment targets.
+export function markMatchingRows(rows, conditions) {
+  rows[conditions.reduce((left, right) => left + right.trim())] = 1
+  rows[conditions.reduce(joinCondition)] += 1
+  rowFor(joinCondition).count = 1
+}
+
+// Mirrors Python's `key=lambda row: row`: arrows in parameter defaults (JavaScript has no parameter decorators).
+export function sortRows(rows, key = (row) => row.toLowerCase()) { return rows.map(key) }
+export const sortRowsBy = (rows, key = (row) => row.toUpperCase()) => rows.map(key)
+export function sortRowsJoined(rows, key = joinCondition) { return rows.map((row) => key(row, row)) }

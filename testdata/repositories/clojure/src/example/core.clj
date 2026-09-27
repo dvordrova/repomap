@@ -64,3 +64,47 @@
   (let [upper (str/upper-case line)]
 
     (str upper "!")))
+
+;; Mirrors the pandas store-target idiom: an fn inside a set! target or a binding default.
+(defn handled [row]
+  (.-handled (service/apply-handler (fn [value] (service/greet value)) row)))
+
+(defn mark-handled! [row]
+  (set! (.-handled (service/apply-handler (fn [value] (service/greet value)) row)) true))
+
+(defn handled-or-default [row]
+  (let [{:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}} row]
+    handled))
+
+;; Mirrors Python's lambda in a function header: FastAPI Depends(lambda: ...) and a lambda default.
+(defn handled-param
+  [row & {:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}}]
+  handled)
+
+(defn checked-handled [row]
+  {:pre [(service/apply-handler (fn [value] (service/greet value)) row)]}
+  row)
+
+(def handled-by-default
+  (fn [row & {:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}}]
+    handled))
+
+;; A var's metadata and a defn's attr-maps are evaluated once, when the
+;; namespace loads, so a call written there belongs to the namespace, as a call
+;; in a Python decorator's arguments belongs to the defining scope. A :pre
+;; condition or an :or default runs on each call and stays the function's.
+(defn ^{:route (service/greet "meta")} routed-by-meta [row]
+  (service/greet row))
+
+(defn routed-by-attr-map
+  "Greets a row."
+  {:route (service/greet "attr")}
+  ([row] (service/greet row))
+  ([row suffix] (str (service/greet row) suffix))
+  {:tail (service/greet "tail")})
+
+(def ^{:route (service/greet "def")} routed-value "value")
+
+(defonce ^{:route (service/greet "once")} routed-once "value")
+
+(defmulti ^{:route (service/greet "multi")} routed-multi :kind)

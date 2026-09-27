@@ -354,6 +354,11 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	assertCumulativeJSTSValueReads(t, result, index)
 	assertCumulativeJSTSCallbackAliases(t, index, "src/server.ts", programindex.ResolutionExact)
 	assertCumulativeJSTSChainedCallbacks(t, index, "src/server.ts", programindex.ResolutionExact)
+	assertCumulativeJSTSStoreTargetCallbacks(t, index, "src/server.ts")
+	assertCumulativeJSTSStoreTargetCallbacks(t, index, "src/market-worker.js")
+	assertCumulativeJSTSHeaderArrows(t, index, "src/server.ts")
+	assertCumulativeJSTSHeaderArrows(t, index, "src/market-worker.js")
+	assertCumulativeJSTSDecoratorOwners(t, index, "src/server.ts")
 	adaptertest.AssertCallControls(t, index, graph, "src/server.ts", "processPendingJobs", map[int][]adaptertest.Control{
 		137: nil,
 		139: {{Line: 138, Kind: "while body with constant true condition"}},
@@ -1149,6 +1154,226 @@ func assertCumulativeJSTSCallbackAliases(t *testing.T, index programindex.Index,
 	}
 	if named != 1 || literal != 1 {
 		t.Fatalf("%s callback aliases: named=%d literal=%d", source, named, literal)
+	}
+}
+
+// Python once declared no lambda inside a store target while relating it.
+// In markMatchingRows the element index, compound index and property receiver
+// of assignment targets keep their calls, callbacks and reads like any
+// expression: the inline arrow stays an unresolved argument whose body call
+// belongs to the enclosing function; the named callable is passed and read.
+func assertCumulativeJSTSStoreTargetCallbacks(t *testing.T, index programindex.Index, source string) {
+	t.Helper()
+	var caller, join string
+	callerLine := 0
+	for _, object := range index.Objects {
+		if object.Location == nil || object.Location.Path != source {
+			continue
+		}
+		switch object.Name {
+		case "markMatchingRows":
+			caller, callerLine = object.ID, object.Location.Line
+		case "joinCondition":
+			join = object.ID
+		}
+	}
+	if caller == "" || join == "" {
+		t.Fatalf("%s store-target callers missing: caller=%q joinCondition=%q", source, caller, join)
+	}
+	arguments := make(map[string]programindex.PatternArgument)
+	var inlineArgument *programindex.PatternArgument
+	bodyCall := false
+	for _, relation := range index.Relations {
+		if relation.FromID != caller || relation.Location == nil {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			for i, argument := range pattern.Arguments {
+				arguments[argument.ID] = argument
+				if relation.Location.Line == callerLine+1 && pattern.Selector == "reduce" {
+					inlineArgument = &pattern.Arguments[i]
+				}
+			}
+		}
+		for _, witness := range relation.Witnesses {
+			bodyCall = bodyCall || relation.Location.Line == callerLine+1 && witness.SourceExpression == "right.trim"
+		}
+	}
+	if inlineArgument == nil || inlineArgument.Resolution != programindex.ResolutionUnresolved ||
+		len(inlineArgument.ObjectIDs) != 0 || inlineArgument.ObjectsObserved != 1 || !bodyCall {
+		t.Fatalf("%s inline store-target arrow: argument=%#v body call=%v", source, inlineArgument, bodyCall)
+	}
+	passed, read := make(map[int]bool), make(map[int]bool)
+	for _, relation := range index.Relations {
+		if relation.FromID != caller || relation.Location == nil || len(relation.ToIDs) != 1 || relation.ToIDs[0] != join {
+			continue
+		}
+		switch relation.Kind {
+		case programindex.RelationPassesCallback:
+			argument, found := arguments[relation.SourceArgumentID]
+			if !found || relation.Resolution != programindex.ResolutionExact || argument.Resolution != relation.Resolution ||
+				len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != join {
+				t.Fatalf("%s store-target callback lost its argument: relation=%#v argument=%#v", source, relation, argument)
+			}
+			passed[relation.Location.Line-callerLine] = true
+		case programindex.RelationReads:
+			read[relation.Location.Line-callerLine] = true
+		}
+	}
+	want := map[int]bool{2: true, 3: true}
+	if !reflect.DeepEqual(passed, want) || !reflect.DeepEqual(read, want) {
+		t.Fatalf("%s store-target joinCondition passed on lines %v and read on %v, want +2 and +3", source, passed, read)
+	}
+}
+
+// Python once declared no lambda in a function header (FastAPI's
+// `Depends(lambda: ...)`, a `key=lambda row: row` default) while relating it.
+// JavaScript evaluates a parameter default on each call inside its function,
+// so the call in a default arrow belongs to that function, as the call in
+// markMatchingRows' inline argument arrow does. A named default is read, not
+// passed, and `key` never borrows it.
+func assertCumulativeJSTSHeaderArrows(t *testing.T, index programindex.Index, source string) {
+	t.Helper()
+	objects := make(map[string]programindex.Object)
+	names := make(map[string]string)
+	for _, object := range index.Objects {
+		if object.Location != nil && object.Location.Path == source {
+			objects[object.Name], names[object.ID] = object, object.Name
+		}
+	}
+	owners := map[string][]string{"row.toLowerCase": {"sortRows"}, "row.toUpperCase": {"sortRowsBy"}}
+	headerLines := make(map[int]bool)
+	for _, name := range []string{"joinCondition", "sortRows", "sortRowsBy", "sortRowsJoined"} {
+		if objects[name].ID == "" {
+			t.Fatalf("%s header-arrow declaration %s missing", source, name)
+		}
+		if name != "joinCondition" {
+			headerLines[objects[name].Location.Line] = true
+		}
+	}
+	got := make(map[string][]string)
+	joinReads := 0
+	for _, relation := range index.Relations {
+		if relation.Location == nil || relation.Location.Path != source || !headerLines[relation.Location.Line] {
+			continue
+		}
+		if relation.Kind == programindex.RelationPassesCallback {
+			t.Fatalf("%s header arrow or default became a passed callback: %#v", source, relation)
+		}
+		if relation.Kind == programindex.RelationReads && names[relation.FromID] == "sortRowsJoined" {
+			if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 || relation.ToIDs[0] != objects["joinCondition"].ID {
+				t.Fatalf("%s named default read = %#v", source, relation)
+			}
+			joinReads++
+		}
+		for _, witness := range relation.Witnesses {
+			if _, checked := owners[witness.SourceExpression]; checked {
+				got[witness.SourceExpression] = append(got[witness.SourceExpression], names[relation.FromID])
+			}
+		}
+		for _, pattern := range relation.Patterns {
+			for _, argument := range pattern.Arguments {
+				if len(argument.ObjectIDs) != 0 {
+					t.Fatalf("%s header argument borrowed a declaration: %#v", source, argument)
+				}
+			}
+		}
+	}
+	if !reflect.DeepEqual(got, owners) || joinReads != 1 {
+		t.Fatalf("%s header arrows: owners=%v want %v, named default reads=%d", source, got, owners, joinReads)
+	}
+}
+
+// A decorator runs once, when its class is defined, as a Python decorator's
+// arguments run where the function is defined. The decoration stays the
+// decorated declaration's; a call in a decorator's arguments, and a parameter
+// decorator, which decorates nothing, belong to the scope that defines the
+// decorated declaration: the module for a class decorator, the class for a
+// method or parameter decorator. A bare decorator's name (`@Traced`), down to
+// a qualified name's namespace (`@Marks.Traced`), is its decoration and read by
+// the member; a curried factory's inner call (`@tracedBy()()`) is not. The
+// call in a decorator's inline arrow
+// belongs to that same scope, which creates the arrow, as the call in
+// markMatchingRows' inline arrow belongs to markMatchingRows. JavaScript has
+// no decorators.
+func assertCumulativeJSTSDecoratorOwners(t *testing.T, index programindex.Index, source string) {
+	t.Helper()
+	names := make(map[string]string)
+	first, last := 0, 0
+	for _, object := range index.Objects {
+		if object.Location == nil || object.Location.Path != source {
+			continue
+		}
+		names[object.ID] = object.Name
+		if object.Kind == programindex.ObjectModule {
+			names[object.ID] = "module"
+		}
+		if object.Name == "LevelController" {
+			first, last = object.Location.Line-1, object.EndLine
+		}
+	}
+	if first <= 0 || last <= first {
+		t.Fatalf("%s LevelController span %d-%d", source, first, last)
+	}
+	var got []string
+	inlineArrows := 0
+	for _, relation := range index.Relations {
+		if relation.Location == nil || relation.Location.Path != source || relation.Location.Line < first || relation.Location.Line > last {
+			continue
+		}
+		if len(relation.ToIDs) != 1 {
+			continue
+		}
+		switch target := names[relation.ToIDs[0]]; target {
+		case "Route", "routePath", "levelRoute", "Traced", "Marks", "tracedBy", "Inject", "forwardRef", "joinCondition":
+			if relation.Resolution != programindex.ResolutionExact {
+				t.Fatalf("%s decorator use of %s = %#v", source, target, relation)
+			}
+			got = append(got, fmt.Sprintf("%+d %s %s from %s", relation.Location.Line-first, relation.Kind, target, names[relation.FromID]))
+		}
+		// The inline arrow a parameter decorator takes, as Python's
+		// `Depends(lambda: ...)`, is an unresolved argument that borrows no
+		// declaration.
+		for _, pattern := range relation.Patterns {
+			if pattern.Selector != "Inject" && pattern.Selector != "forwardRef" {
+				continue
+			}
+			for _, argument := range pattern.Arguments {
+				if len(argument.ObjectIDs) != 0 {
+					t.Fatalf("%s decorator argument borrowed a declaration: %#v", source, argument)
+				}
+				if pattern.Selector == "forwardRef" || relation.Location.Line-first == 5 {
+					if argument.Resolution != programindex.ResolutionUnresolved || argument.ObjectsObserved != 1 {
+						t.Fatalf("%s inline decorator arrow = %#v", source, argument)
+					}
+					inlineArrows++
+				}
+			}
+		}
+	}
+	if inlineArrows != 2 {
+		t.Fatalf("%s inline decorator arrows = %d, want 2", source, inlineArrows)
+	}
+	sort.Strings(got)
+	want := []string{
+		"+0 calls routePath from module",
+		"+0 decorates Route from LevelController",
+		"+2 calls Inject from LevelController",
+		"+2 calls forwardRef from LevelController",
+		"+3 calls routePath from LevelController",
+		"+3 decorates Route from LevelController.level",
+		"+3 reads levelRoute from LevelController",
+		"+4 reads Traced from LevelController.level",
+		"+5 calls Inject from LevelController",
+		"+5 calls joinCondition from LevelController",
+		"+6 calls routePath from LevelController",
+		"+6 reads Marks from LevelController.all",
+		"+7 reads Marks from LevelController.all",
+		"+8 calls tracedBy from LevelController",
+		"+8 decorates tracedBy from LevelController.all",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("%s decorator owners:\n have %q\n want %q", source, got, want)
 	}
 }
 

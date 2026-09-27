@@ -177,6 +177,44 @@ func (s source) arguments(at site) []programindex.PatternArgumentInput {
 	return result
 }
 
+// loadedHeaders are the rune spans of a definition form that its namespace
+// evaluates once, when it loads: the reader metadata written on the defined
+// name and, with attrMaps, the attr-map before the parameters or arities and
+// the one after a list of arities. A :pre/:post map follows a parameter
+// vector, runs on each call and is no attr-map.
+func (s source) loadedHeaders(at site, attrMaps bool) [][2]int {
+	start := s.offset(at.Row, at.Col)
+	if start < 0 || start >= len(s.text) || s.text[start] != '(' {
+		return nil
+	}
+	definition, _ := readForm(s.text, start)
+	if len(definition.children) < 2 {
+		return nil
+	}
+	var spans [][2]int
+	for next := definition.children[1].start; next < len(s.text) && s.text[next] == '^'; {
+		var meta form
+		meta, next = readForm(s.text, next+1)
+		spans = append(spans, [2]int{meta.start, meta.end})
+		next = space(s.text, next)
+	}
+	if !attrMaps {
+		return spans
+	}
+	rest := definition.children[2:]
+	if len(rest) > 0 && s.text[rest[0].start] == '"' {
+		rest = rest[1:]
+	}
+	if len(rest) > 0 && s.text[rest[0].start] == '{' {
+		spans = append(spans, [2]int{rest[0].start, rest[0].end})
+		rest = rest[1:]
+	}
+	if last := len(rest) - 1; last > 0 && s.text[rest[0].start] == '(' && s.text[rest[last].start] == '{' {
+		spans = append(spans, [2]int{rest[last].start, rest[last].end})
+	}
+	return spans
+}
+
 func clojureString(value string) (string, error) {
 	// Clojure strings can span physical lines; Go string escapes otherwise
 	// provide the same spelling for the ordinary quoted string literals here.

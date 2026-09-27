@@ -1,8 +1,10 @@
 package clojureproject
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -130,6 +132,63 @@ func TestNativeCumulativeProject(t *testing.T) {
 	}
 	if !foundCall || !foundLiteral || !foundShadow || !foundMacroArgument {
 		t.Fatalf("call=%v literal=%v shadow=%v macro argument=%v", foundCall, foundLiteral, foundShadow, foundMacroArgument)
+	}
+	// Mirrors the pandas store-target idiom: an fn inside a set! target or a
+	// binding default is its function's code, like the fn in an ordinary read.
+	// So is Python's lambda in a function header: an fn in a parameter :or
+	// default, a :pre condition or an fn's own default runs when it is called.
+	wantStoreTarget := []string{
+		"calls example.service/apply-handler exact +1 [(fn [value] (service/greet value)) row]",
+		"calls example.service/greet exact +1 [value]",
+	}
+	for _, name := range []string{
+		"example.core/handled", "example.core/mark-handled!", "example.core/handled-or-default",
+		"example.core/handled-param", "example.core/checked-handled", "example.core/handled-by-default",
+	} {
+		var got []string
+		for _, relation := range index.Relations {
+			from := objects[relation.FromID]
+			if from.Name != name || len(relation.ToIDs) == 0 || objects[relation.ToIDs[0]].External != nil {
+				continue
+			}
+			var args []string
+			for _, pattern := range relation.Patterns {
+				for _, arg := range pattern.Arguments {
+					args = append(args, arg.Origin.Text)
+				}
+			}
+			got = append(got, fmt.Sprintf("%s %s %s %+d %v", relation.Kind, objects[relation.ToIDs[0]].Name, relation.Resolution, relation.Location.Line-from.Location.Line, args))
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, wantStoreTarget) {
+			t.Fatalf("%s:\n have %q\n want %q", name, got, wantStoreTarget)
+		}
+	}
+	// A var's metadata and a defn's attr-maps, before or after its arities,
+	// run once when the namespace loads, as a Python decorator's arguments run
+	// where the function is defined: their calls belong to the namespace,
+	// while the calls in the function's body stay the function's.
+	first := 0
+	for _, object := range index.Objects {
+		if object.Name == "example.core/routed-by-meta" {
+			first = object.Location.Line
+		}
+	}
+	var loaded []string
+	for _, relation := range index.Relations {
+		if relation.Kind != p.RelationCalls || len(relation.ToIDs) != 1 || objects[relation.ToIDs[0]].Name != "example.service/greet" ||
+			relation.Location.Path != "src/example/core.clj" || relation.Location.Line < first {
+			continue
+		}
+		loaded = append(loaded, objects[relation.FromID].Name+" "+relation.Patterns[0].Arguments[0].Origin.Text)
+	}
+	slices.Sort(loaded)
+	wantLoaded := []string{
+		"example.core attr", "example.core def", "example.core meta", "example.core multi", "example.core once", "example.core tail",
+		"example.core/routed-by-attr-map row", "example.core/routed-by-attr-map row", "example.core/routed-by-meta row",
+	}
+	if first == 0 || !slices.Equal(loaded, wantLoaded) {
+		t.Fatalf("load-time calls:\n have %q\n want %q", loaded, wantLoaded)
 	}
 	if err := result.Dependencies.Validate(); err != nil {
 		t.Fatal(err)

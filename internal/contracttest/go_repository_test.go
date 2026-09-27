@@ -102,6 +102,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertGoAliasedCallbackSourceArguments(t, index)
 	chain := programIndexObjectNamed(t, index, programindex.ObjectFunction, "registerChainedCallbacks", "cmd/app/main.go")
 	assertChainedCallbackArguments(t, index, chain.ID, "Map", programindex.ResolutionExact)
+	assertGoStoreTargetCallbackLiterals(t, index)
 	assertGoRetainedProducerReceiverProjection(t, index, producerResultID)
 	assertGoInterfaceFieldEvidence(t, authorities, index)
 	assertGoExternalInterfaceImplementation(t, index)
@@ -809,6 +810,52 @@ func assertGoAliasedCallbackSourceArguments(t *testing.T, index programindex.Ind
 	}
 	if named != 1 || literal != 1 {
 		t.Fatalf("Go callback aliases: named=%d literal=%d", named, literal)
+	}
+}
+
+// assertGoStoreTargetCallbackLiterals checks that a function literal passed
+// inside an assigned index (`=`, `+=`) or selector receiver is declared and
+// passed like the ordinary expression's literal beside it.
+func assertGoStoreTargetCallbackLiterals(t *testing.T, index programindex.Index) {
+	t.Helper()
+	const sourcePath = "cmd/app/main.go"
+	marker := programIndexObjectNamed(t, index, programindex.ObjectFunction, "markExitRows", sourcePath)
+	literals := make(map[string]programindex.Object)
+	for _, object := range index.Objects {
+		if object.Kind == programindex.ObjectFunction && strings.HasPrefix(object.Name, "markExitRows$") &&
+			object.Location != nil && object.Location.Path == sourcePath {
+			literals[object.ID] = object
+		}
+	}
+	arguments := make(map[string]programindex.PatternArgument)
+	for _, relation := range index.Relations {
+		if relation.FromID == marker.ID && relation.Kind == programindex.RelationCalls {
+			for _, pattern := range relation.Patterns {
+				for _, argument := range pattern.Arguments {
+					arguments[argument.ID] = argument
+				}
+			}
+		}
+	}
+	callbackLines := make(map[int]bool)
+	for _, relation := range index.Relations {
+		if relation.FromID != marker.ID || relation.Kind != programindex.RelationPassesCallback {
+			continue
+		}
+		argument, found := arguments[relation.SourceArgumentID]
+		if len(relation.ToIDs) != 1 || !found || !sameSingleID(argument.ObjectIDs, relation.ToIDs[0]) ||
+			relation.Resolution != programindex.ResolutionExact || argument.Resolution != relation.Resolution ||
+			relation.TargetsObserved != 1 || relation.TargetsOmitted != 0 {
+			t.Fatalf("store-target function literal lost its callback argument: relation=%#v argument=%#v", relation, argument)
+		}
+		literal, declared := literals[relation.ToIDs[0]]
+		if !declared || relation.Location == nil || relation.Location.Line != literal.Location.Line {
+			t.Fatalf("store-target callback does not pass its own literal: relation=%#v literal=%#v", relation, literal)
+		}
+		callbackLines[relation.Location.Line] = true
+	}
+	if len(literals) != 4 || len(callbackLines) != 4 {
+		t.Fatalf("store-target function literals: declared=%d callbacks=%v", len(literals), callbackLines)
 	}
 }
 

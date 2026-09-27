@@ -43,6 +43,11 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 	fileModules := map[string]string{}
 	vars := map[string][]string{}
 	definitions := map[string][]definition{}
+	// A definition's metadata and attr-maps run once, when its namespace
+	// loads, not when its function is called: a call there belongs to the
+	// namespace (or to an enclosing definition), as a Python decorator's
+	// arguments and defaults belong to the defining scope.
+	loaded := map[string][][2]int{}
 	objectRef := func(d definition) string {
 		return fmt.Sprintf("var:%s:%d:%d:%s/%s", d.Filename, d.Row, d.Col, d.NS, d.Name)
 	}
@@ -124,6 +129,12 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: kind, Name: d.NS + "/" + d.Name, Visibility: visibility, Signature: signature, OwnerRef: owner, ContainerRef: owner, Location: location(d.site), EndLine: d.EndRow, CodeLines: countLines(codeLines[d.Filename], d.Row, d.EndRow)}
 		vars[d.NS+"/"+d.Name] = append(vars[d.NS+"/"+d.Name], ref)
 		definitions[d.Filename] = append(definitions[d.Filename], d)
+		switch by {
+		case "clojure.core/defn", "clojure.core/defn-", "clojure.core/defmacro":
+			loaded[ref] = sources[d.Filename].loadedHeaders(d.site, true)
+		case "clojure.core/def", "clojure.core/defonce", "clojure.core/defmulti":
+			loaded[ref] = sources[d.Filename].loadedHeaders(d.site, false)
+		}
 		if d.Name == "-main" && kind == p.ObjectFunction {
 			fileRef, _ := repository.ID(d.Filename)
 			input.Target.Sources = append(input.Target.Sources, p.TargetSource{FileRef: string(fileRef), Path: d.Filename})
@@ -133,13 +144,17 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 	ownerAt := func(at site) string {
 		best := fileModules[at.Filename]
 		start := 0
+		offset := sources[at.Filename].offset(at.Row, at.Col)
 		for _, d := range definitions[at.Filename] {
-			if (at.Row > d.Row || at.Row == d.Row && at.Col >= d.Col) && (at.Row < d.EndRow || at.Row == d.EndRow && at.Col < d.EndCol) {
-				n := d.Row*100000 + d.Col
-				if n >= start {
-					start = n
-					best = objectRef(d)
-				}
+			if !(at.Row > d.Row || at.Row == d.Row && at.Col >= d.Col) || !(at.Row < d.EndRow || at.Row == d.EndRow && at.Col < d.EndCol) {
+				continue
+			}
+			ref := objectRef(d)
+			if slices.ContainsFunc(loaded[ref], func(span [2]int) bool { return offset >= span[0] && offset < span[1] }) {
+				continue
+			}
+			if n := d.Row*100000 + d.Col; n >= start {
+				start, best = n, ref
 			}
 		}
 		return best

@@ -765,7 +765,16 @@ class Collector(ast.NodeVisitor):
             self.analyzer.suspended_callables.add(ref)
         if node.returns is not None:
             self.analyzer.return_annotations[ref] = (node.returns, parent)
-        for value in list(node.decorator_list) + list(node.args.defaults) + list(node.args.kw_defaults):
+        arguments = list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
+        if node.args.vararg is not None:
+            arguments.append(node.args.vararg)
+        if node.args.kwarg is not None:
+            arguments.append(node.args.kwarg)
+        # Decorators, defaults, annotations and type parameters are expressions
+        # of the defining scope; the relation pass reads each of them there.
+        header = list(node.decorator_list) + list(node.args.defaults) + list(node.args.kw_defaults)
+        header += [argument.annotation for argument in arguments] + [node.returns]
+        for value in header + list(getattr(node, "type_params", [])):
             if value is not None:
                 self.visit(value)
         child = Scope(
@@ -776,11 +785,6 @@ class Collector(ast.NodeVisitor):
         child.conditional_base = self.conditional_depth
         self.analyzer.node_scopes[id(node)] = child
         previous, self.scope = self.scope, child
-        arguments = list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
-        if node.args.vararg is not None:
-            arguments.append(node.args.vararg)
-        if node.args.kwarg is not None:
-            arguments.append(node.args.kwarg)
         for argument in arguments:
             self.add_variable(argument.arg, argument, True)
             if argument.annotation is not None:
@@ -811,6 +815,8 @@ class Collector(ast.NodeVisitor):
         self.analyzer.node_refs[id(node)] = ref
         for value in list(node.decorator_list) + list(node.bases) + [keyword.value for keyword in node.keywords]:
             self.visit(value)
+        for parameter in getattr(node, "type_params", []):
+            self.visit(parameter)
         child = Scope(ref, qname, "type", parent, class_ref=ref, class_qname=qname)
         child.conditional_base = self.conditional_depth
         self.analyzer.node_scopes[id(node)] = child
@@ -834,6 +840,9 @@ class Collector(ast.NodeVisitor):
             "location": source_location(self.module["path"], node),
         }, qname)
         self.analyzer.node_refs[id(node)] = ref
+        for value in list(node.args.defaults) + list(node.args.kw_defaults):
+            if value is not None:
+                self.visit(value)
         child = Scope(ref, qname, "lambda", parent, class_ref=parent.class_ref, class_qname=parent.class_qname)
         child.conditional_base = self.conditional_depth
         self.analyzer.node_scopes[id(node)] = child
@@ -843,10 +852,24 @@ class Collector(ast.NodeVisitor):
         self.visit(node.body)
         self.scope = previous
 
+    def _target_reads(self, target):
+        # A store target's receiver and index are expressions of this scope,
+        # so a lambda or call there is declared like any other; the relation
+        # pass reads the same parts.
+        if isinstance(target, ast.Attribute):
+            self.visit(target.value)
+        elif isinstance(target, ast.Subscript):
+            self.visit(target.value)
+            self.visit(target.slice)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for value in target.elts:
+                self._target_reads(value)
+
     def visit_Assign(self, node):
         alias_binding = self.callable_alias_binding(node.value)
         self.visit(node.value)
         for target in node.targets:
+            self._target_reads(target)
             if self.scope.kind == "type" and isinstance(target, ast.Name):
                 self.add_variable(target.id, target, signature=target.id + " = " + ast.unparse(node.value))
             else:
@@ -871,6 +894,7 @@ class Collector(ast.NodeVisitor):
         alias_binding = self.callable_alias_binding(node.value) if node.value is not None else None
         if node.value is not None:
             self.visit(node.value)
+        self._target_reads(node.target)
         if isinstance(node.target, ast.Name):
             signature = node.target.id + ": " + ast.unparse(node.annotation)
             if node.value is not None and self.scope.kind in ("module", "type"):
@@ -901,6 +925,7 @@ class Collector(ast.NodeVisitor):
     def visit_For(self, node):
         self.visit(node.iter)
         self.conditional_depth += 1
+        self._target_reads(node.target)
         self.bind_targets(node.target, True)
         for statement in node.body + node.orelse:
             self.visit(statement)

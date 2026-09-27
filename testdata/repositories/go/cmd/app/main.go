@@ -116,3 +116,24 @@ func registerEmbeddedRoutes() {
 	local := &overriddenMux{http.NewServeMux()}
 	local.HandleFunc("/api/overridden-lookalike", getLevel)
 }
+
+// markExitRows mirrors the pandas store target
+// df.loc[reduce(lambda x, y: x & y, conditions), "exit_long"] = 1.
+func markExitRows(rows map[bool]int, conditions []bool) {
+	rows[foldConditions(conditions, func(left, right bool) bool { return left && right })] = 1
+	rows[foldConditions(conditions, func(left, right bool) bool { return left || right })] += 1
+	exitRowFor(func() *exitRow { return &exitRow{} }).Exit = 1
+	_ = foldConditions(conditions, func(left, right bool) bool { return left != right })
+}
+
+type exitRow struct{ Exit int }
+
+func exitRowFor(create func() *exitRow) *exitRow { return create() }
+
+func foldConditions(conditions []bool, combine func(bool, bool) bool) bool {
+	result := true
+	for _, condition := range conditions {
+		result = combine(result, condition)
+	}
+	return result
+}
