@@ -23,6 +23,19 @@ export function emphasis(view, hoverArea, leaves, edges, member=null) {
   return {mode,subject,focus,participants,activeEdges,readingOutside};
 }
 
+// An arrow end looked at: the parts behind it (or behind its one number
+// pointed at) are the subject, outlined in place; the end's own arrows to
+// them are dark and their other ends are involved; the rest recedes.
+// `label` is a boundary group: {insides, edges, byNumber}.
+export function endEmphasis(label,only,edges){
+  const focus=new Set(only===undefined?label.insides:label.byNumber?.get(only)?.ids||[]);
+  const own=new Set(label.edges),activeEdges=new Set(),participants=new Set(focus);
+  for(const edge of edges)if(own.has(edge.id)&&(focus.has(edge.from)||focus.has(edge.to))){
+    activeEdges.add(edge.id);participants.add(edge.from);participants.add(edge.to);
+  }
+  return {mode:'hover',subject:'',focus,participants,activeEdges,readingOutside:false};
+}
+
 // Ancestors explain containment only. Never feed them back into the edge
 // selection: a hovered utility must not light every connection of its target.
 export function focusAncestors(focus, placed) {

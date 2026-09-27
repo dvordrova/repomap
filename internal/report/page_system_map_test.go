@@ -534,7 +534,7 @@ func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
 		t.Fatalf("the parts entrance lists %q, want %q", entrance, want)
 	}
 
-	line := template.HTMLEscapeString("Numbers on an area's or component's border are the numbered parts inside that the arrow connects, not an execution order.")
+	line := template.HTMLEscapeString("Numbers on an area's or component's border are the numbered parts inside that the arrow connects, not an execution order; “all” is every part inside.")
 	if !strings.Contains(string(english), line) {
 		t.Fatal("the legend does not explain the numbers on a frame's border")
 	}

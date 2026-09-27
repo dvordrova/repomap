@@ -61,7 +61,7 @@
 .flow-connection-label{position:absolute;pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:#fbfcfe;border-radius:5px;padding:3px;box-sizing:border-box}
 .flow-connection-label>span{font-size:12px;line-height:16px;white-space:pre-line;text-align:center;cursor:default;color:#39455a;overflow-wrap:anywhere}
 .flow-enabled .flow-connection-label button{padding:3px 9px;background:#e8edf4;border:1px solid #52647d;border-radius:6px;font-size:13px;line-height:18px;cursor:pointer;color:#243044}
-.flow-boundary-label{padding:0;background:transparent}
+.flow-boundary-label{padding:0;background:transparent;z-index:6}
 .flow-number,.flow-enabled .flow-boundary-label button{background:#e8edf4;border:1px solid #52647d;border-radius:7px;padding:1px 7px;font:400 12px/16px system-ui;color:#243044}
 .flow-connection-label button:hover{background:#d4dce6}
 .flow-enabled .system-selection{min-height:32px;margin:8px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}

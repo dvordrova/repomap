@@ -6,7 +6,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
-import {emphasis, focusAncestors} from './emphasis.mjs';
+import {emphasis, focusAncestors, endEmphasis} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {inputGroupsByPart} from './overview.mjs';
@@ -358,6 +358,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(same(next.components,openComponents)&&same(next.areas,detailed)&&same(next.communications,communicationsOpen))return;
     openComponents=next.components;componentsOpen=!!openComponents.size;detailed=next.areas;communicationsOpen=next.communications;
     hoverArea='';hover.pause();update?.();
+  }
+  // How far a point stands from a frame's border, inside or out.
+  function borderDistance(point,frame){
+    if(!point||!frame)return Infinity;
+    const {x,y}=frame.absolute,right=x+frame.width,bottom=y+frame.height;
+    const outside=Math.hypot(Math.max(x-point.x,0,point.x-right),Math.max(y-point.y,0,point.y-bottom));
+    return outside>0?outside:Math.min(point.x-x,right-point.x,point.y-y,bottom-point.y);
   }
   function parentArea(id){while(id){if(byID.get(id)?.branch==='area')return id;id=placed.get(id)?.parentId;}return '';}
   function rootOf(id){while(placed.get(id)?.parentId)id=placed.get(id).parentId;return id;}
@@ -750,14 +757,23 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const badge=id=>({pinned:pinnedPart===id,enter:()=>aimAt(`badge:${id}`),leave:event=>leaveHandle(`badge:${id}`,event),
       toggle:()=>{if(pinnedPart===id)closeCard(`badge:${id}`);else{look.enter(`badge:${id}`);pin(`badge:${id}`);}}});
     const inside=new Set(members);
+    // Behind an end that joins every numbered part of the frame, the end
+    // says so once, "all", instead of listing every number (owner's 2a).
+    const numberCount=new Set(number.values()).size;
     const labelGroups=area?connections(area,members,layout.edges,
       id=>rootOf(id)!==rootOf(area)?rootOf(id):boundaryBetween(id,area)?.id||id,id=>number.get(numbered(id))):[];
     const labels=labelGroups.flatMap(group=>{
       const matching=routes.filter(route=>route.edgeIDs.some(id=>group.edges.includes(id)));
-      const route=group.incoming?matching.at(-1):matching[0];
-      const point=group.incoming?route?.end:route?.start;
-      if(!point)return [];
       const outside=byID.get(group.outside),root=rootOf(group.outside)!==rootOf(area)?rootOf(area):boundaryBetween(group.insides[0],group.outside)?.id||area;
+      // A label stands where its arrow meets the frame it numbers. Both
+      // directions of a pair of frames share one drawn route, so the end a
+      // direction would take can be the other frame's: Data type commands'
+      // incoming numbers stood on Server runtime's border, in the gap where
+      // the pointer looks at the whole component, and could not be reached.
+      const route=group.incoming?matching.at(-1):matching[0];
+      const ends=[group.incoming?route?.end:route?.start,...matching.flatMap(route=>[route.end,route.start])].filter(Boolean);
+      const point=ends.map(end=>[end,borderDistance(end,placed.get(root))]).reduce((best,next)=>next[1]<best[1]-.5?next:best,[ends[0],ends[0]?borderDistance(ends[0],placed.get(root)):0])[0];
+      if(!point)return [];
       // On the component's frame the label is as large as the numbers of
       // the areas and loose parts it names.
       const frameScale=wholeComponent?Math.max(...layout.nodes.filter(n=>n.parentId===area).map(n=>groupHeadings.get(n.id)?.scale||standaloneHeadings.get(n.id)?.scale||0)):0;
@@ -780,10 +796,24 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const active=state.mode==='all'?new Set():new Set(layout.edges.filter(e=>group.edges.includes(e.id)&&state.activeEdges.has(e.id))
         .map(e=>number.get(numbered(inside.has(e.from)?e.from:e.to))));
       const bold=active.size<byNumber.size||byNumber.size===1&&state.mode==='hover'&&hoverArea!==area?active:new Set();
-      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,side,labelScale,cardScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
+      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,all:group.numbers.length>1&&group.numbers.length===numberCount,root,point,frameScale,side,labelScale,cardScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
     });
+    // The two directions of a pair of frames meet the frame at one point:
+    // their labels stand either side of it instead of on top of each other.
+    for(const label of labels){
+      const twin=labels.find(other=>other!==label&&other.outside===label.outside&&Math.hypot(other.point.x-label.point.x,other.point.y-label.point.y)<1);
+      if(twin)label.pair=label.incoming?'before':'after';
+    }
     const labelsShown=!!area&&visible(area)&&(detailed.has(area)||openComponents.has(area))&&view.numbered;
     labelAreas=new Map(labels.map(label=>[label.id,label.area]));
+    // An arrow end whose card is open, or kept open, outlines in place the
+    // parts behind it, or behind its one number pointed at; its own arrows
+    // are dark and whatever it does not involve recedes (owner's 2a).
+    const endLabel=labelsShown?labels.find(label=>look.key===`label:${label.id}`)||[...pinnedLabels.keys()].reverse().map(id=>labels.find(label=>label.id===id)).find(Boolean):null;
+    const end=endLabel?endEmphasis(endLabel,look.key===`label:${endLabel.id}`?lookOnly:undefined,layout.edges):null;
+    const shown=end||state;
+    const drawn=end?routeDrawing(drawing.edges,closed,end.activeEdges,true,boundaryBetween,initVisible,null,end.focus):routes;
+    const shownContext=end?focusAncestors(end.focus,placed):context;
     // Far enough into one part to read its declarations.
     // The magnifier enters at the scale the part's declarations read at: the
     // part whole when it fits there, else its head and first column. Fitted
@@ -806,27 +836,29 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // 2.5px. The parts across its dark arrows take the same outline; a
     // frame's own parts stay as they are. Whatever the emphasis does not
     // involve recedes, its arrows with it.
-    const subjects=state.mode==='search'?state.focus:new Set([state.subject].filter(Boolean));
+    const subjects=end?end.focus:state.mode==='search'?state.focus:new Set([state.subject].filter(Boolean));
     // A display group (the frames sharing one destination's text) is
     // involved when one of its frames is: its frame and heading stay with it.
-    const involved=id=>{const n=placed.get(id),item=byID.get(id);return state.participants.has(id)||(item?.display?(item.tiles||[]).some(involved):!!n?.frame&&leaves(id).some(leaf=>state.participants.has(leaf)));};
-    const muted=id=>dim&&!involved(id);
+    const involved=id=>{const n=placed.get(id),item=byID.get(id);return shown.participants.has(id)||(item?.display?(item.tiles||[]).some(involved):!!n?.frame&&leaves(id).some(leaf=>shown.participants.has(leaf)));};
+    const muted=id=>(dim||!!end)&&!involved(id);
     const nodes=drawing.nodes.map(n=>{
-      const item=byID.get(n.id),focused=state.focus.has(n.id);
+      const item=byID.get(n.id),focused=shown.focus.has(n.id);
       // A display group draws the box its heading's band leaves it.
       const box=n.display&&item?.headingAt?groupLook(n):n;
       const reading=view.scope===n.id||view.operation===n.id;
-      const contains=n.frame&&leaves(n.id).some(id=>state.participants.has(id));
-      const on=state.participants.has(n.id)||contains&&(overview||shut(n.id));
+      const contains=n.frame&&leaves(n.id).some(id=>shown.participants.has(id));
+      // The other end of a looked-at end stays as it is: only the parts
+      // behind the end are outlined.
+      const on=!end&&(shown.participants.has(n.id)||contains&&(overview||shut(n.id)));
       return {...n,width:box.width,height:box.height,type:n.frame?'area':'part',selected:reading,measured:{width:box.width,height:box.height},
         selectable:false,draggable:false,connectable:false,
         style:{width:box.width,height:box.height,visibility:visible(n.id)?'visible':'hidden'},
-        className:`${muted(n.id)?'flow-node-muted':''} ${subjects.has(n.id)?'flow-node-focus':on&&!focused?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
+        className:`${muted(n.id)?'flow-node-muted':''} ${subjects.has(n.id)?'flow-node-focus':on&&!focused?'flow-node-connected':''} ${shownContext.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
         data:{...item,...looseLook(n),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true),
           member:item?.symbols?.length?{hot:pointed?.part===n.id?pointed.index:-1,chosen:memberChoice?.part===n.id&&view.scope===n.id?memberChoice.index:-1,
             point:index=>pointMember(n.id,index),choose:(index,event)=>chooseMember(n.id,index,event)}:undefined}};
     });
-    const edges=routes.map(route=>{
+    const edges=drawn.map(route=>{
       return {id:route.id,source:route.from,target:route.to,type:'routed',selectable:false,focusable:false,
         ariaLabel:'',domAttributes:{'aria-hidden':true},
         data:route};
@@ -1009,11 +1041,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     let upright=false;
     let style={transform:`translate(${label.x}px,${label.y}px) scale(${label.scale||1})`,transformOrigin:'top left',width:label.width/(label.scale||1),minHeight:label.height/(label.scale||1)};
     if(label.boundary){
-      const p=label.point,side={left:{dx:1,dy:0,tx:0,ty:-50},right:{dx:-1,dy:0,tx:-100,ty:-50},top:{dx:0,dy:1,tx:-50,ty:0},bottom:{dx:0,dy:-1,tx:-50,ty:-100}}[label.side];
+      const p=label.point,side={...{left:{dx:1,dy:0,tx:0,ty:-50},right:{dx:-1,dy:0,tx:-100,ty:-50},top:{dx:0,dy:1,tx:-50,ty:0},bottom:{dx:0,dy:-1,tx:-50,ty:-100}}[label.side]};
+      // A twin's label stands before or after the shared point along the border.
+      if(label.pair){const along=label.pair==='before'?-100:0,gap=label.pair==='before'?-2/zoom:2/zoom;if(side.dx!==0){side.ty=along;side.ey=gap;}else{side.tx=along;side.ex=gap;}}
       // Along a side border the numbers stand one above another.
-      upright=side.dx!==0&&label.numbers.length>1;
+      upright=side.dx!==0&&label.numbers.length>1&&!label.all;
       const scale=label.labelScale;
-      style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
+      style={transform:`translate(${p.x+side.dx*6/zoom+(side.ex||0)}px,${p.y+side.dy*6/zoom+(side.ey||0)}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }
     // A label opens its card once the pointer rests on it; a click keeps the
     // card open.
@@ -1025,7 +1059,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
           {!label.boundary&&<span>{label.incoming?'← ':'→ '}{label.labelTitle}</span>}
           <button type="button" aria-label={label.title} className={pinnedLabels.has(label.id)?'flow-label-pinned':''}
             onClick={event=>{event.stopPropagation();if(pinnedLabels.has(label.id))closeCard(key);else{look.enter(key);pin(key);}}}>
-            {label.numbers.map((k,i)=><React.Fragment key={k}>{i>0&&!upright&&<i> · </i>}
+            {label.all?<b className={`flow-number-all ${hovered?'flow-number-open':''}`}>{t('all')}</b>:label.numbers.map((k,i)=><React.Fragment key={k}>{i>0&&!upright&&<i> · </i>}
               <b className={`${label.bold?.has(k)?'flow-number-active':''} ${hovered&&(lookOnly===k||lookOnly===undefined)?'flow-number-open':''}`} onMouseEnter={()=>{lookOnly=label.numbers.length>1?k:undefined;if(look.key===key)update?.();}}>{k}</b></React.Fragment>)}
           </button>
         </div>;

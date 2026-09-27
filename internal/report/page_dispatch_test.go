@@ -14,7 +14,9 @@ import (
 // can say each in one line; a caller that calls every member itself, and a
 // set a caller hands over only in part, stay ordinary rows.
 func TestDispatchRowsCarryTheSetTheyBelongTo(t *testing.T) {
-	at := func(line int) *programindex.Location { return &programindex.Location{Path: "redis.c", Line: line, Column: 5} }
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "redis.c", Line: line, Column: 5}
+	}
 	edge := func(relation, from, to string, kind programindex.RelationKind, resolution programindex.Resolution, line int) groupindex.StructuralEdge {
 		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationID: relation,
 			RelationKind: kind, Resolution: resolution, Location: at(line)}

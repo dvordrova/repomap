@@ -25,7 +25,7 @@
 </div>
 <figcaption class="map-note">
 {{$numbered := false}}{{range .Nodes}}{{if and (or (eq .Branch "area") (eq .Branch "component")) .Children}}{{$numbered = true}}{{end}}{{end}}
-{{if $numbered}}<p class="map-numbers-note" data-map-numbers>{{t "Numbers on an area's or component's border are the numbered parts inside that the arrow connects, not an execution order."}}</p>{{end}}
+{{if $numbered}}<p class="map-numbers-note" data-map-numbers>{{t "Numbers on an area's or component's border are the numbered parts inside that the arrow connects, not an execution order; “all” is every part inside."}}</p>{{end}}
 </figcaption>
 {{range .Nodes}}{{if .Writes}}<noscript><section class="system-entity-writes"><h3>{{.FullTitle}} · {{t "State changes"}}</h3>
 <p>{{t "Writes reachable in code; a call path does not prove they execute on every run."}}</p>

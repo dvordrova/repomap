@@ -328,11 +328,24 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Lines have no click target or native tooltip. These numbers
   identify parts, never execution order. The toolbar has no connection-style
   selector; the same real endpoints remain connected across zoom levels.
+  An end that joins every numbered part of the frame says so once, "all",
+  in the same chip, instead of listing every number (owner's choice 2a,
+  2026-09-27); the numbers stay wherever an end joins some of the parts.
+  While an end's card is open or kept open, the parts behind that end, or
+  behind its one number pointed at, take the dark outline in place, the
+  end's own arrows are dark and whatever the end does not involve recedes;
+  the parts at the arrow's other end stay as they are. A label stands where
+  its arrow meets the frame it numbers: both directions of a pair of frames
+  share one drawn route, and the end one direction took could be the other
+  frame's, so Data type commands' incoming numbers stood on Server
+  runtime's border, in the gap where the pointer looks at the whole
+  component, and could not be reached. The two directions' labels then
+  meet the frame at one point and stand either side of it along the border.
   An open area numbers its parts and an open component its areas and loose
   parts, with those numbers on the frame's border. When an area or component
   in the map holds anything, one line says that the numbers on an area's or
   component's border are the numbered parts inside that the arrow connects,
-  not an execution order. It stands visible beside the map's controls, above
+  not an execution order, and that "all" is every part inside. It stands visible beside the map's controls, above
   the key, where the row had room: folded into a legend at the bottom of a
   900 px window, no reader of Redis's map found it.
 

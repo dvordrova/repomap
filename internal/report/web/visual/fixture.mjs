@@ -14,6 +14,10 @@ if(options.has('loose-part')){
   relations.push({from:'worker',to:'audit'});
 }
 
+// The handlers hand work to both of the execution area's parts: the arrow
+// from Request handling ends at every part of Job execution.
+if(options.has('both-parts'))relations.push({from:'routes',to:'worker'});
+
 // Every part says what it is under its name. Redis's Replication and client
 // sentences are among them: pre-broken at 228px they wrapped again in the
 // card's 225px text column. pykrx's fundamentals sentence starts with a
