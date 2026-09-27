@@ -82,7 +82,7 @@ export const tileRoom={header:20,inset:8,columnGap:36};
 // the quarter scale whatever the divisor: 20 card units at a quarter.
 export const tileHeader=divisor=>tileRoom.header*4/divisor;
 export const tileFont=symbol=>`${symbol.key?750:symbol.owner?400:600} ${symbol.owner?12.5:13}px ui-monospace,SFMono-Regular,Menlo,monospace`;
-export function tileGrid(symbols,links,box,measure,{least=4,step=.5,most=64}={}){
+export function tileGrid(symbols,links,box,measure,{least=4,step=.5}={}){
   const shown=symbols.map((symbol,i)=>[symbol,i]).filter(([symbol])=>symbol.kind!=='skip');
   // Padding and border as canvas.css draws a head (10px a side) and a row
   // (12px left, 10px right) inside a 1px border.
@@ -90,14 +90,17 @@ export function tileGrid(symbols,links,box,measure,{least=4,step=.5,most=64}={})
   const files=new Map();for(const [symbol] of shown){const file=symbol.path||'';if(!files.has(file))files.set(file,files.size);}
   const rank=i=>(files.get(symbols[i].path||'')??files.size)*symbols.length+i;
   const {inset,columnGap:gap}=tileRoom;
-  let grid;
-  for(let divisor=least;divisor<=most;divisor+=step){
+  // The room grows with the divisor, so the search ends at the part's own
+  // size, however many declarations it holds; a card with no room at all is
+  // drawn once. Stopped at a fixed divisor, a part too large for it had its
+  // declarations counted away again.
+  const roomy=box.width>0&&box.height>0;
+  for(let divisor=least;;divisor+=step){
     const inner={width:box.width*divisor,height:(box.height-tileHeader(divisor))*divisor};
     const columns=Math.max(1,Math.floor((inner.width-2*inset+gap)/(nameWidth+gap)));
     const tileWidth=Math.max(nameWidth,Math.floor((inner.width-2*inset-(columns-1)*gap)/columns));
-    grid={divisor,inner,columns,tileWidth,nameWidth,...symbolBlocks(symbols,links,columns,inner.height-2*inset,rank)};
+    const grid={divisor,inner,columns,tileWidth,nameWidth,...symbolBlocks(symbols,links,columns,inner.height-2*inset,rank)};
     // Columns enough for a caller, what it calls and what that returns.
-    if(grid.hidden===0&&(!links.length||columns>=3))return grid;
+    if(!roomy||grid.hidden===0&&(!links.length||columns>=3))return grid;
   }
-  return grid;
 }

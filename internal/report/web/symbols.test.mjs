@@ -100,3 +100,13 @@ test('tiles stand by file, files in the order their first declaration is listed'
   const column=grid.blocks.filter(block=>block.column===0).sort((a,b)=>a.y-b.y).map(block=>symbols[block.head].name);
   assert.deepEqual(column,['dictAdd','dictFind','dictNext','listCreate','listAddNodeTail','zipmapNew']);
 });
+
+// However many declarations a part holds, none is counted away: the search
+// for the scale that holds them has no ceiling of its own. Stopped at a
+// divisor of 64, a small card of 600 declarations counted many of them away.
+test('a part of any size draws every declaration whole',()=>{
+  const symbols=Array.from({length:600},(_,i)=>({name:'handler'+i}));
+  const grid=tileGrid(symbols,[],{width:20,height:30},measure);
+  assert.equal(grid.hidden,0,'nothing is counted away');
+  assert.equal(grid.blocks.length,600);
+});

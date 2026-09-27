@@ -468,7 +468,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   declarations, so no name is cut, and the columns share the card's width;
   cut to 190px, Redis's names read "_dictStringCopyHTKe…". The tiles are
   drawn at a quarter of the card's scale, or smaller when a quarter does not
-  hold them all whole: nothing is counted away, and a large part is a larger
+  hold them all whole, however many the part holds: nothing is counted away
+  and no scale is too small to search, and a large part is a larger
   drawing to pan (at 1440×900 Data structures had drawn 40 tiles and
   counted 63 away as "+63"). The
   part's name stands over them at the same screen size at any such scale.
