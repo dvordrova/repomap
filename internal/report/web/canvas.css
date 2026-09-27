@@ -38,6 +38,12 @@
 .flow-node-reading .flow-area.flow-input-collection{--flow-frame-color:#243044;--flow-frame-width:3px}
 .flow-node-reading .flow-part{border-color:#243044;outline:3px solid #243044;outline-offset:-3px}
 .flow-part:not(.flow-part-deep):hover,.flow-node-focus .flow-part:not(.flow-part-deep){box-shadow:inset 0 0 0 999px rgba(36,48,68,.06)}
+/* The parts an emphasised arrow joins, and a closed frame standing for the
+   parts hidden in it, take the dark of that arrow on their border; the card
+   open on the right keeps its heavier outline. Choosing GET had drawn its
+   dark arrows between parts that looked like every other part. */
+.react-flow__node.flow-node-connected:not(.flow-node-reading)>.flow-part:not(.flow-part-deep){border-color:#243044;outline:1px solid #243044;outline-offset:-2.5px}
+.react-flow__node.flow-node-connected:not(.flow-node-reading)>.flow-area{--flow-frame-color:#243044;--flow-frame-width:2.5px}
 .flow-overview-card>strong{font-size:23px;line-height:28px}
 .flow-enabled .react-flow__handle{opacity:0;pointer-events:none;width:1px;height:1px;min-width:1px;min-height:1px;border:0}
 .flow-enabled .react-flow__edges,.flow-enabled .react-flow__edge,.flow-edge{pointer-events:none!important;cursor:default!important}

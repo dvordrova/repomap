@@ -40,7 +40,7 @@ func TestMapRevealRecordsDestinationBeforeLayout(t *testing.T) {
 	selectCode := systemJSPiece(t, "29-operation-view.js", "async function select(", "  function reset(")
 	stateCode := systemJSPiece(t, "29-operation-view.js", "map.readingState=function(){", "  map.revealNode=")
 	resumeCode := systemJSPiece(t, "29-operation-view.js", "map.resumeExploration=function(){", "  map.readingState=")
-	entranceCode := systemJSPiece(t, "29-operation-view.js", "function rmInputEntrance(", "(function(){")
+	entranceCode := systemJSPiece(t, "29-operation-view.js", "function rmInputPath(", "(function(){")
 	runSystemJS(t, entranceCode+`
 let surface=null,scope='a',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',numbered=true,savedAddress;
 const a={id:'a',dataset:{}},b={id:'b',dataset:{}},op={id:'op',dataset:{activation:'command'}},byID={a,b,op};

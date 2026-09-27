@@ -154,7 +154,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   its own mark.
   Concrete input captions remain. A dark outline identifies the card open on
   the right without inserting another row or changing its text position. Dark arrows and outlined participants
-  identify the currently emphasized connections.
+  identify the currently emphasized connections: a participant takes the
+  arrows' dark on its border, and the card open on the right keeps its
+  heavier outline.
   Component frames retain their language, kind, role and purpose above their parts. Colour never replaces
   the visible type cues or independent fact/model provenance in the reading
   panel. Text has at least 4.5:1 contrast; meaningful frames and connections
@@ -200,17 +202,32 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   titles retain a light background and readable role/purpose text. The duplicate
   `Reading` line and close action do not occupy space above the canvas. That
   space has a static type legend, not changing hover prose. The input context
-  and leave-path action live in the reading card. An input chosen from Find
-  or a link is entered where its path starts: the camera stands on the
-  first part of its trace, its handler's part, with the trace dark from
-  there, while the reading column reads the input. Framing its tile had
-  shown GET as one of 98 tiles with no arrow in sight: the collection stands
-  outside its component, and no one camera shows the tile and the parts it
-  reaches readably. An input without a trace is entered as its tile, and a
-  tile clicked on the canvas keeps the camera. "Show input" stands in the
-  reading card while the camera may be away from the input's tile (at its
-  path's start, or on a part read since) and frames that tile; once the
-  tile is framed there is nothing to return to. An input's reading
+  and leave-path action live in the reading card. An input chosen from
+  Find, a link, a reading or its own tile on the canvas is entered as its
+  path, while the reading column reads the input. The camera takes the part
+  holding its handler, then each part the trace reaches from a part already
+  taken while all of them fit at a scale where their headings stay about
+  twelve pixels (and their layer open), and frames them; when the next step
+  does not fit, the camera stays at that scale and leans toward it, keeping
+  what it took inside, so the dark arrows leaving the frame show the way.
+  The path's parts, and a closed frame standing for parts hidden in it, are
+  outlined in the dark of the path's arrows. Framing its tile had shown GET
+  as one of 98 tiles with no arrow in sight, and centring String commands
+  showed four of its nine dark arrows and none of the parts they reach, drawn
+  like every other part. In Redis the handler's first step, Client
+  connections and replies, stands farther from String commands than the
+  canvas holds at a readable scale: the camera frames String commands,
+  Object and key store, Server configuration and Sorted set commands, six of
+  the nine dark arrows, and leans toward it. An
+  input without a trace is entered as its tile, and such a tile clicked on
+  the canvas keeps the camera. "Show input" stands in the reading card while
+  the camera may be away from the input's tile (on its path, or on a part
+  read since) and frames that tile among the inputs its handler's part
+  takes, the group it stands in, never the whole collection: GET among
+  String commands' fourteen inputs, SET beside it, not a wall of 95. A group
+  larger than a readable camera is entered at the tile. Once the tile is
+  framed there is nothing to return to; choosing the tile again returns to
+  the path. An input's reading
   names its handler ("handled by getCommand") as a link into the code. A
   registration the model did not explain keeps its own call words as its
   line ("redis.c.redisCommand.proc get in getCommand"); that line is the fact

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,layerFloor,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
+import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,pathViewport,tileViewport,staysOpen,layerFloor,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
 
 test('approaching a target reveals its diagram before its smallest descendant text is readable',()=>{
   const nodes=[{id:'target',frame:true,absolute:{x:0,y:0},width:900,height:600}];
@@ -447,6 +447,40 @@ test('a part is entered centred in the canvas at any zoom, and a tall part shows
   assert.ok(Math.abs(tall.absolute.y*1+top.y-24)<1e-6,'a part taller than the canvas starts a screen margin below the top');
 });
 
+// Choosing GET centred String commands at reading scale: four of its nine dark
+// arrows were in the camera and none of the parts they reach.
+test('an input is entered as its path: the handler part and the parts it reaches that fit, readable',()=>{
+  const part=(id,x,y)=>({id,absolute:{x,y},width:260,height:120});
+  const width=1214,height=680,scale=1,inside=(v,n)=>n.absolute.x*v.zoom+v.x>=24-1e-6&&(n.absolute.x+n.width)*v.zoom+v.x<=width-24+1e-6&&
+    n.absolute.y*v.zoom+v.y>=24-1e-6&&(n.absolute.y+n.height)*v.zoom+v.y<=height-24+1e-6;
+  const handler=part('strings',0,0),store=part('store',400,0),reply=part('reply',400,200),far=part('far',-200,300),lone=part('lone',600,300);
+  const near=pathViewport([handler,store,reply,far,lone],[['strings','store'],['strings','reply'],['store','far']],width,height,scale);
+  assert.deepEqual(near.taken.map(n=>n.id),['strings','store','reply','far'],'what the trace reaches from a taken part, in call-depth order');
+  for(const n of near.taken)assert.ok(inside(near,n),`${n.id} stands inside the camera`);
+  assert.ok(near.zoom*scale>=staysOpen&&near.zoom<=1/scale,'the framed parts stay readable and no larger than reading scale');
+  assert.ok(!near.taken.includes(lone),'a part no step of the trace reaches from the frame is not pulled in');
+  // The first step is farther than the canvas holds at a readable scale: the
+  // camera keeps the handler's part and leans toward that step.
+  const distant=part('distant',3000,100),lean=pathViewport([handler,distant],[['strings','distant']],width,height,scale);
+  assert.deepEqual(lean.taken.map(n=>n.id),['strings']);
+  assert.ok(inside(lean,handler),'the handler part stays in the camera');
+  assert.equal(lean.zoom,staysOpen/scale,'the smallest readable scale shows the most of the way');
+  assert.ok(handler.absolute.x*lean.zoom+lean.x<60,'the camera leans toward the next step: the handler stands at the near edge');
+});
+
+// Show input framed the get tile in a wall of 95 inputs.
+test('Show input frames the tile among its part group, or the tile when the group is too large',()=>{
+  const width=1214,height=680,scale=.5;
+  const tile={absolute:{x:1100,y:900},width:130,height:30},group={absolute:{x:1000,y:800},width:500,height:300};
+  const v=tileViewport(tile,group,width,height,scale),seen=n=>n.absolute.x*v.zoom+v.x>=0&&(n.absolute.x+n.width)*v.zoom+v.x<=width&&
+    n.absolute.y*v.zoom+v.y>=0&&(n.absolute.y+n.height)*v.zoom+v.y<=height;
+  assert.ok(seen(group)&&seen(tile),'the whole group and its tile are in view');
+  const huge={absolute:{x:0,y:0},width:40000,height:30000},w=tileViewport(tile,huge,width,height,scale);
+  assert.equal(w.zoom,staysOpen/scale,'a group too large for a readable camera is not fitted');
+  const centre={x:(tile.absolute.x+tile.width/2)*w.zoom+w.x,y:(tile.absolute.y+tile.height/2)*w.zoom+w.y};
+  assert.ok(Math.abs(centre.x-width/2)<1e-6&&Math.abs(centre.y-height/2)<1e-6,'it is entered at the tile');
+});
+
 // Server runtime stood 1300 px wide in a 1214 px canvas: the camera kept its
 // parts at twelve pixels and more and cut Virtual memory off.
 test('a focused area that fits while it stays open is fitted whole',()=>{
@@ -456,10 +490,10 @@ test('a focused area that fits while it stays open is fitted whole',()=>{
     {id:'part',parentId:'runtime',absolute:{x:120,y:140},width:260*scale,height:140*scale}];
   const records=[{id:'server',branch:'component',children:['runtime']},{id:'runtime',branch:'area',summaryScale:scale,contentScale:scale,children:['part']},{id:'part',contentScale:scale}];
   const least=layerFloor(nodes,records,'runtime',width,height);
-  assert.ok(least*scale<.72,'the layer stays open below the reading floor');
-  const area=nodes[1],v=frameViewport(area,nodes,width,height,scale,{floor:.72,least});
+  assert.ok(least*scale<staysOpen,'the layer stays open below the reading floor');
+  const area=nodes[1],v=frameViewport(area,nodes,width,height,scale,{floor:staysOpen,least});
   assert.ok(area.absolute.x*v.zoom+v.x>=24-1e-6&&(area.absolute.x+area.width)*v.zoom+v.x<=width-24+1e-6,'the whole width is in the camera');
   assert.ok(v.zoom>=least,'at a zoom where the area stays open');
-  const wide={...area,width:5000*scale},w=frameViewport(wide,nodes,width,height,scale,{floor:.72,least});
-  assert.equal(w.zoom,.72/scale,'an area too wide even so keeps the reading floor');
+  const wide={...area,width:5000*scale},w=frameViewport(wide,nodes,width,height,scale,{floor:staysOpen,least});
+  assert.equal(w.zoom,staysOpen/scale,'an area too wide even so keeps the reading floor');
 });

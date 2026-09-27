@@ -32,17 +32,16 @@ function rmReadingOrder(card){
   [':scope>.call-path',':scope>.map-concepts',':scope>.map-all-members'].map(function(selector){return card.querySelector(selector);}).filter(Boolean)
     .forEach(function(section){at.after(section);at=section;});
 }
-// An input chosen from Find or a link is entered where its path starts: the
-// first part of its saved trace, its handler's part, with the trace drawn dark
-// from there. Framing its tile showed a wall of inputs and no route: the
+// An input chosen from Find, a link, a reading or its own tile is entered as
+// its path: the canvas frames the part holding its handler and the path's
+// parts nearest it, the trace dark from there, while the reading column
+// reads the input. Framing its tile showed a wall of inputs and no route: the
 // collection stands outside its component, and no one camera shows the tile
-// and the parts it reaches readably. The tile stays one "Show input" away.
-// An input without a trace, or anything else, is entered as itself.
-function rmInputEntrance(n,byID){
-  if(!n?.dataset?.activation)return n;
-  var ids=(n.dataset.inputTrace||'').split(/\s+/);
-  for(var i=0;i<ids.length;i++){var part=byID[ids[i]];if(part&&!part.dataset.activation)return part;}
-  return n;
+// and the parts it reaches readably. The path is the drawn parts of its
+// saved trace; an input without one is entered as its tile.
+function rmInputPath(n,byID){
+  if(!n?.dataset?.activation)return [];
+  return (n.dataset.inputTrace||'').split(/\s+/).filter(function(id){return byID[id]&&!byID[id].dataset.activation;});
 }
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
   var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
@@ -101,8 +100,9 @@ function rmInputEntrance(n,byID){
     if(controls){controls.replaceChildren();controls.hidden=!operation;}
     if(operation){
       var context=rmEl('span','system-reading-context',rmT('Input')+': '+operation.dataset.title);
-      // Back to the input's own tile from its path's start or from a part read
-      // on its path; once the tile is framed there is nowhere to go back to.
+      // From its path, or from a part read since, to the input's own tile
+      // among the inputs its handler's part takes; once the tile is framed
+      // there is nowhere to go. Choosing the tile again returns to the path.
       if(scope||inputAway){var start=rmEl('button','system-input-start',rmT('Show input'));start.type='button';start.addEventListener('click',function(){surface?.clearHover();select(operation,true,null,'input');});context.appendChild(start);}
       clear.textContent=rmT('Leave input path');controls?.append(context,clear);
     }
@@ -117,10 +117,15 @@ function rmInputEntrance(n,byID){
     // Search is a chooser. Once a destination is chosen it must not continue
     // highlighting every other result or covering the destination's drawing.
     search.value=searchValue='';filter.value=filterValue='';updateResults();
-    if(n.dataset.activation){operation=n;scope='';inputAway=!!focus&&focus!=='input'&&rmInputEntrance(n,byID)!==n;}else{scope=n.id;inputAway=true;}
-    emphasize();if(navigate)address(n,!!focus&&!!map.captureViewport?.()?.overview);
+    // Choosing an input, even its tile on the canvas, moves to its path; only
+    // Show input frames the tile.
+    var path=focus!=='input'&&rmInputPath(n,byID).length>0;
+    if(n.dataset.activation){operation=n;scope='';inputAway=path;}else{scope=n.id;inputAway=true;}
+    emphasize();if(navigate)address(n,!!(focus||path)&&!!map.captureViewport?.()?.overview);
     await ready;if(ticket!==selectionRevision)return false;map.showNode?.(n);if(source)map.explainSource?.(source);
-    if(focus)focusNode(focus==='input'?n:rmInputEntrance(n,byID),!!n.dataset.activation||focus==='center');emit();return true;
+    if(focus==='input')surface?.showInput(n.id);
+    else if(focus||path)focusNode(n,!!n.dataset.activation||focus==='center');
+    emit();return true;
   }
   function reset(){selectionRevision++;scope='';operation=null;inputAway=false;surface?.clearHover();emphasize();map.clearInspection?.();emit();}
   map.showWholeMap=async function(){
@@ -298,6 +303,7 @@ function rmInputEntrance(n,byID){
       return {id:n.id,title:n.dataset.title,branch:n.dataset.branch,activation:n.dataset.activation,lane:n.dataset.lane,
         summary:n.dataset.summary,symbols:(function(){try{return JSON.parse(n.dataset.symbols||'[]');}catch(_){return [];}})(),symbolCalls:(function(){try{return JSON.parse(n.dataset.symbolCalls||'[]');}catch(_){return [];}})(),subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
         role:n.dataset.role,roleRef:n.dataset.roleRef,language:n.dataset.language,componentKind:n.dataset.componentKind,
+        trace:n.dataset.activation?rmInputPath(n,byID):[],
         componentOwner:component?.id||'',componentName:component?.dataset.title||'',
         children:(n.dataset.children||'').split(/\s+/).filter(function(id){return id&&(n.dataset.branch==='inputs'||!byID[id]?.dataset.activation);}),kind:kind(n),category:category(n)};
     });

@@ -298,11 +298,11 @@ func TestCallsOnAnInputsPathAreWorkNotWiring(t *testing.T) {
 
 // Find → get framed get's tile in a wall of Redis's 98 inputs, and no arrow
 // of its path was in sight: the collection stands outside its component and
-// its tiles draw no arrow of their own. A chosen input is entered where its
-// path starts, its handler's part with the dark trace leaving it, the reading
-// on the input; its tile stays one "Show input" away.
-func TestChosenInputIsEnteredWhereItsPathStarts(t *testing.T) {
-	entrance := systemJSPiece(t, "29-operation-view.js", "function rmInputEntrance(", "(function(){")
+// its tiles draw no arrow of their own. A chosen input, even its tile clicked
+// on the canvas, is entered as its path, the reading on the input; Show input
+// frames the tile among the inputs its handler's part takes.
+func TestChosenInputIsEnteredAsItsPath(t *testing.T) {
+	entrance := systemJSPiece(t, "29-operation-view.js", "function rmInputPath(", "(function(){")
 	selectCode := systemJSPiece(t, "29-operation-view.js", "async function select(", "  function reset(")
 	captionCode := systemJSPiece(t, "29-operation-view.js", "function renderCaption(", "  function focusNode(")
 	runSystemJS(t, entrance+`
@@ -314,9 +314,12 @@ const node=(id,dataset)=>({id,dataset});
 const get=node('get',{activation:'request',title:'get',inputTrace:'gone dispatch reply'}),dispatch=node('dispatch',{title:'Command dispatch'}),
  reply=node('reply',{title:'Client replies'}),ping=node('ping',{activation:'request',title:'ping'});
 const byID={get,dispatch,reply,ping};
+assert.deepEqual(rmInputPath(get,byID),['dispatch','reply'],'the path is the drawn parts of the saved trace');
+assert.deepEqual(rmInputPath(dispatch,byID),[]);
 const inspector=rmEl('div','map-inspector'),controls=rmEl('div','map-input-context'),caption=rmEl('div'),clear=rmEl('button'),colorKey=rmEl('span');
 const map={querySelector(s){return s==='.map-inspector'?inspector:s==='.map-input-context'?controls:null;},showNode(n){this.shown=n.id;},clearMapPreview(){}};
-let scope='',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',visual=null,surface={clearHover(){}};
+const tiles=[];
+let scope='',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',visual=null,surface={clearHover(){},showInput(id){tiles.push(id);}};
 const search={},filter={},ready=Promise.resolve(),focused=[];
 function updateResults(){}function emit(){}function address(){}function emphasize(){renderCaption();}
 function focusNode(n,center){focused.push({id:n.id,center});}
@@ -324,19 +327,22 @@ const showInput=()=>controls.children.flatMap(c=>c.children).find(c=>c.className
 `+selectCode+captionCode+`
 (async()=>{
  await select(get,true,null,true);
- assert.deepEqual(focused.at(-1),{id:'dispatch',center:true},'the camera stands on the first part of the trace that is drawn');
+ assert.deepEqual(focused.at(-1),{id:'get',center:true},'the canvas frames the chosen input: its path');
  assert.equal(map.shown,'get','the reading stays on the chosen input');assert.equal(operation,get);
  assert.ok(showInput(),'the tile is one Show input away');
  await showInput().listeners.click();
- assert.deepEqual(focused.at(-1),{id:'get',center:true},'Show input frames the input itself');
- assert.equal(showInput(),undefined,'once its tile is framed there is nowhere to go back to');
+ assert.deepEqual(tiles,['get'],'Show input frames the tile among its group, not the path or the wall');
+ assert.equal(showInput(),undefined,'once its tile is framed there is nowhere to go');
+ const before=focused.length;await select(get,true);
+ assert.deepEqual(focused.slice(before),[{id:'get',center:true}],'its tile clicked on the canvas moves to its path');
+ assert.ok(showInput());
  await select(dispatch,true,null,true);
- assert.ok(showInput(),'reading a part on the path offers the way back');
+ assert.ok(showInput(),'reading a part on the path offers the tile');
  await select(ping,true,null,true);
  assert.deepEqual(focused.at(-1),{id:'ping',center:true},'an input without a trace is entered as its tile');
  assert.equal(showInput(),undefined);
- const before=focused.length;await select(get,true);
- assert.equal(focused.length,before,'a tile clicked on the canvas keeps the camera');assert.equal(showInput(),undefined);
+ const still=focused.length;await select(ping,true);
+ assert.equal(focused.length,still,'a trace-less tile clicked on the canvas keeps the camera');
 })().catch(error=>{console.error(error);process.exit(1);});
 `)
 }

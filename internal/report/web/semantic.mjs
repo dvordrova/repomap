@@ -166,6 +166,53 @@ export function frameViewport(node,nodes,width,height,contentScale=1,{whole=fals
   return viewport;
 }
 
+// The zoom, relative to a part's reading scale, down to which an open area
+// stays open: its parts' 17px headings at about twelve pixels.
+export const staysOpen=.72;
+
+const bounds=nodes=>({left:Math.min(...nodes.map(n=>n.absolute.x)),top:Math.min(...nodes.map(n=>n.absolute.y)),
+  right:Math.max(...nodes.map(n=>n.absolute.x+n.width)),bottom:Math.max(...nodes.map(n=>n.absolute.y+n.height))});
+const fitZoom=(box,width,height,pad)=>Math.min(Math.max(1,width-2*pad)/(box.right-box.left),Math.max(1,height-2*pad)/(box.bottom-box.top));
+const centred=(box,zoom,width,height)=>({x:width/2-(box.left+box.right)/2*zoom,y:height/2-(box.top+box.bottom)/2*zoom,zoom});
+
+// An input is entered as its path. `nodes` are its parts in call-depth order,
+// the part holding its handler first; `steps` are the trace's arrows between
+// them. The camera takes the handler's part, then each part the trace reaches
+// from a part already taken while all of them still fit at a readable scale,
+// and frames them. When the next step does not fit, the camera stays at the
+// smallest readable scale and leans toward it, keeping what it took inside:
+// the dark arrows leaving the frame show the way. On the handler's part alone,
+// centred, GET showed four of its nine dark arrows and none of the parts they
+// reach. `taken` names the parts framed.
+// `least` is the zoom below which the parts' layer closes.
+export function pathViewport(nodes,steps,width,height,contentScale=1,{pad=24,floor=staysOpen,least=0}={}){
+  if(!nodes.length)return null;
+  const smallest=Math.max(floor/contentScale,least),reading=Math.max(1/contentScale,least);
+  const taken=[nodes[0]],next=[];
+  for(const node of nodes.slice(1)){
+    if(!steps.some(([from,to])=>to===node.id&&taken.some(n=>n.id===from)))continue;
+    if(fitZoom(bounds([...taken,node]),width,height,pad)>=smallest)taken.push(node);
+    else next.push(node);
+  }
+  const box=bounds(taken),fit=fitZoom(box,width,height,pad);
+  if(taken.length===1&&fit<smallest)return {...partViewport(nodes[0],reading,width,height),taken};
+  if(!next.length)return {...centred(box,Math.max(smallest,Math.min(reading,fit)),width,height),taken};
+  const zoom=smallest,ahead=bounds(next),half={x:(width/2-pad)/zoom,y:(height/2-pad)/zoom};
+  const cx=Math.min(Math.max((ahead.left+ahead.right)/2,box.right-half.x),box.left+half.x);
+  const cy=Math.min(Math.max((ahead.top+ahead.bottom)/2,box.bottom-half.y),box.top+half.y);
+  return {x:width/2-cx*zoom,y:height/2-cy*zoom,zoom,taken};
+}
+
+// "Show input": the chosen input's tile among the inputs its handler's part
+// takes, the group it stands in, never the whole collection: framing the tile
+// in Redis's collection showed a wall of 95 inputs. A group larger than the
+// canvas at a readable scale is entered at the tile.
+export function tileViewport(tile,group,width,height,contentScale=1,{pad=24,floor=staysOpen,least=0}={}){
+  const frame=group||tile,fit=fitZoom(bounds([frame]),width,height,pad);
+  const zoom=Math.max(least,Math.min(1/contentScale,Math.max(floor/contentScale,fit)));
+  return centred(bounds([fit>=zoom?frame:tile]),zoom,width,height);
+}
+
 export function closedContainer(id, placed, records, detailed, componentsOpen, communicationsOpen,openComponents) {
   let closed=null;
   for(let at=placed.get(id)?.parentId;at;at=placed.get(at)?.parentId){

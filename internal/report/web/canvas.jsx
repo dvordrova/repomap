@@ -7,7 +7,7 @@ import {connections} from './layout.mjs';
 import {symbolBlocks,symbolRow} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
-import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
+import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {singlePartAreas, inputGroupsByPart} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,groupHeading} from './cards.mjs';
@@ -300,9 +300,45 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const area=parentArea(id)||id;
     if(hoverArea!==area){hoverArea=area;update?.();}
   }
+  // A chosen input is entered as its path: the part holding its handler and
+  // the path's parts nearest it in call depth, as many as stay readable in
+  // one camera, with the trace dark from there. Their areas open.
+  function focusPath(input,smooth=true){
+    const nodes=[...new Set((byID.get(input)?.trace||[]).map(displayed))].map(id=>placed.get(id)).filter(n=>n&&!n.frame);
+    if(!nodes.length)return false;
+    if(!instance||initializing){pendingFocus={path:input};return true;}
+    overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
+    const rect=host.getBoundingClientRect(),inPath=new Set(nodes.map(n=>n.id));
+    // The trace's own arrows between its parts: those the input's code makes.
+    const steps=layout.edges.filter(e=>inPath.has(e.from)&&inPath.has(e.to)&&e.relations.some(r=>r.operations?.includes(input))).map(e=>[e.from,e.to]);
+    // Areas share one layer: the handler's area, or its component for a
+    // loose part, says how far out the parts stay drawn.
+    const least=layerFloor(layout.nodes,semantic.records,parentArea(nodes[0].id)||rootOf(nodes[0].id),rect.width,rect.height);
+    const {taken,...viewport}=pathViewport(nodes,steps,rect.width,rect.height,byID.get(nodes[0].id)?.contentScale||1,{least});
+    detailed=new Set([...detailed,...taken.map(n=>parentArea(n.id)).filter(Boolean)]);
+    locationSubject=nodes[0].id;
+    commitCamera(instance.setViewport(viewport,{duration:smooth?420:0}),nodes[0].id);
+    return true;
+  }
+  // An input's tile among the inputs its handler's part takes: the group it
+  // stands in inside the collection, not the collection's whole wall.
+  function showInput(id,smooth=true){
+    id=displayed(id);
+    const tile=placed.get(id);if(!tile)return;
+    if(!instance||initializing){pendingFocus={id,input:true};return;}
+    overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
+    const rect=host.getBoundingClientRect(),group=placed.get(tile.parentId);
+    communicationsOpen=new Set([...communicationsOpen,rootOf(id)]);
+    locationSubject=id;
+    const least=layerFloor(layout.nodes,semantic.records,rootOf(id),rect.width,rect.height);
+    commitCamera(instance.setViewport(tileViewport(tile,byID.get(group?.id)?.branch==='inputs-part'?group:null,rect.width,rect.height,byID.get(id)?.contentScale||1,{least}),{duration:smooth?420:0}),id);
+  }
   function focus(id,center=true,smooth=true){
     id=displayed(id);
     const n=placed.get(id);if(!n)return;
+    const record=byID.get(id);
+    if(record?.activation&&focusPath(id,smooth))return;
+    if(record?.activation){showInput(id,smooth);return;}
     if(!instance||initializing){pendingFocus={id,center};return;}
     overviewFit=false;
     hover.pause();preview='';map.clearMapPreview?.();
@@ -321,7 +357,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       if(['communication','inputs'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id]);
       else if(!component)detailed=new Set([...detailed,n.id]);
       const least=scales.has(n.id)?layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height):Infinity;
-      commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:.72,least}),{duration:smooth?420:0}),id);return;
+      commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least}),{duration:smooth?420:0}),id);return;
     }
     commitCamera(instance.setViewport(partViewport(n,1/contentScale,rect.width,rect.height),{duration:smooth?420:0}),id);
   }
@@ -520,11 +556,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // pointer stays on what it was on.
     lookAt=key=>{look.enter(key);update?.();};
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
+    // A closed frame stands for the participants hidden inside it.
+    const shut=id=>scales.has(id)?!detailed.has(id):byID.get(id)?.branch==='component'?!openComponents.has(id):['communication','inputs'].includes(byID.get(id)?.branch)&&!communicationsOpen.has(id);
     const nodes=drawing.nodes.map(n=>{
-      const item=byID.get(n.id),focused=state.focus.has(n.id),on=state.participants.has(n.id)||
-        (overview&&leaves(n.id).some(id=>state.participants.has(id)));
+      const item=byID.get(n.id),focused=state.focus.has(n.id);
       const reading=view.scope===n.id||view.operation===n.id;
       const contains=n.frame&&leaves(n.id).some(id=>state.participants.has(id));
+      const on=state.participants.has(n.id)||contains&&(overview||shut(n.id));
       return {...n,type:n.frame?'area':'part',selected:reading,measured:{width:n.width,height:n.height},
         selectable:false,draggable:false,connectable:false,
         style:{width:n.width,height:n.height,visibility:visible(n.id)?'visible':'hidden'},
@@ -546,6 +584,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         map.classList.remove('flow-initializing');host.inert=false;status.remove();
         updateLocation();
         if(restorePending)restore(restorePending);
+        else if(pendingFocus?.path)focusPath(pendingFocus.path);
+        else if(pendingFocus?.input)showInput(pendingFocus.id);
         else if(pendingFocus)focus(pendingFocus.id,pendingFocus.center);
         else if(view.scope||view.operation)focus(view.scope||view.operation,true);
         else map.dispatchEvent(new Event('repomap:viewport'));
@@ -727,7 +767,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(button.hasAttribute('data-map-fit'))map.showWholeMap();
     else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
   });
-  return {get layout(){return layout;},focus,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
+  return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
     view={...initial,...next,scope:displayed(next.scope)||'',
       selected:new Set([...(next.selected||[])].map(displayed)),matched:new Set([...(next.matched||[])].map(displayed))};update();
