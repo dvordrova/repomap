@@ -1,5 +1,48 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — The owner's screenshots of the Redis map, clear fixes
+
+The owner sent ten remarks on the Redis map. Read-only investigators
+diagnosed each one; the clear ones are fixed here, and the rest wait for
+him.
+- **Text jumps (7–8):**
+  - Cause: a rule from when a card was only a title added 18px under it
+    whenever a number badge appeared. Descriptions were also pre-wrapped at
+    228px in a 225px box, which left a lone "and".
+  - Fix: the rule is gone. Text wraps at the card's real column, derived
+    from its padding, border and zoom-button constants, and the browser
+    wraps descriptions itself.
+  - Check: 0 of 135 Redis cards move when the pointer enters an area or the
+    area is chosen (7 moved before). A real-browser spec pins it.
+- **Arrowheads (9):** an emphasised head was 7× its 2.5px line, 17.5px against
+  10.5px. It is now the ordinary size on the map and in the deep view, and
+  edge-size.spec measures it. That spec had been failing on main, since a
+  click stopped entering areas.
+- **Entry mark (5):** a 26×18 SVG arrow with a halo in the card colour, so the
+  border stops at the mark. The legend draws the same glyph.
+- **Deep view (10):** tiles are placed in the page's order, the model's keys
+  first, each in its link column; a key is never hidden while a non-key is
+  drawn.
+  - repomap self-run: hidden keys 68 of 225 → 1.
+  - Redis Data structures still shows no struct; putting types after keys
+    waits for the owner.
+- **The open DNS group (2):**
+  - One heading under plain tiles in every state.
+  - Tiles only as large as their calls: records 12.7% → 30% of the group.
+  - Entering any tile frames the whole group.
+- **Layout of mutual pairs from the entry side (1c):** measured at 14 window
+  sizes, it helped at 4 and hurt at 8, so it was reverted. REPORT.md
+  records the refusal.
+- Waiting for the owner:
+  - helper arrows (addReply/redisLog/refcount: 8 of Server runtime's 15
+    two-headed lines);
+  - the number chips (remove, or repair the misplaced reverse-direction chip
+    covered by lines);
+  - "Core infrastructure", whose nine parts Jev calls support;
+  - types after keys in the deep view.
+- `make test`, `make vet` and npm test (101) pass. The visual suite has
+  main's failures minus the fixed edge-size spec.
+
 ## 2026-09-27 — Orientation evidence restored; parts a program never runs
 
 - **Orientation had lost every member's evidence.**
