@@ -191,17 +191,21 @@ separate stage outputs.
   Their original
   kinds and provenance stay visible. Observed external communications retain
   each original record; unread components retain their failure explanation.
-  A service entrance should let the reader scan its HTTP methods and paths,
-  the responsibilities of its workers, and its observed external destinations
+  A service entrance should let the reader scan its requests by the names
+  their registrations wrote (an HTTP method and path, an RPC method, a
+  protocol command), the responsibilities of its workers, and its observed
+  external destinations
   without opening the map. An integration code group or an imported package
   alone is not an external destination; unavailable observations stay explicit.
   A communication names the other runtime participant, its purpose and original
   source evidence. A configured remote client is distinguished from a sending
   call. Local delegation through several functions does not make each function
   another external participant; equal destination labels do not prove identity.
-  HTTP operation paths come verbatim from selected source registrations. The
-  model selects their references and interprets the method and responsibility;
-  it does not rewrite the path as a display name.
+  Entry names come verbatim from the words their source registrations wrote,
+  whatever the protocol (owner, 2026-09-27: "там есть GRPC, UDP, TCP,
+  WEBSOCKET … из одного на поверхности должно лепиться при помощи моделей").
+  The model selects which written words name the entry and interprets its
+  kind and responsibility; it does not rewrite them as a display name.
   Opening an area preserves its frame and peers; selecting a part reveals its
   sources in the reading column. Zooming out and Back retain the prior geography. Grouped arrows
   preserve every original directed relation and its evidence on inspection.
