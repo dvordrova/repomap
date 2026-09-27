@@ -145,10 +145,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   blue and external communications amber; saved lanes supply those identities.
   Core/entry cards use distinct diamond/arrow glyphs with the shared legend and
   accessible names, instead of repeating Core/Entrypoints above every title.
-  An area holding the program's entry (a declaration its execution starts
-  from, a target seed) carries the entry mark even when a core part stands in
-  it; parts that only take requests do not make their area the entry, and
-  other areas keep the core mark over their lane.
+  Only an area holding the program's entry (a declaration its execution
+  starts from, a target seed) carries the entry mark, even when a core part
+  stands in it. Parts that only take requests or listen do not make their
+  area the entry: Networking's listen/bind boundary had drawn Redis's "Core
+  infrastructure" as a second entry area beside Server runtime. Such an area
+  keeps the core mark when it is core and no mark otherwise; each part keeps
+  its own mark.
   Concrete input captions remain. A dark outline identifies the card open on
   the right without inserting another row or changing its text position. Dark arrows and outlined participants
   identify the currently emphasized connections.

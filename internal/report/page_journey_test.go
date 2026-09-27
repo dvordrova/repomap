@@ -53,19 +53,31 @@ func TestAreaHoldingTheEntryShowsTheEntryMarkEvenWhenCore(t *testing.T) {
 		{ID: "shared", Title: "Shared objects", Lane: groupindex.LaneCore, Core: true, MemberSubjectIDs: []string{"incr"}},
 		{ID: "store", Title: "Storage", Lane: groupindex.LaneCore, Core: true, MemberSubjectIDs: []string{"save"}},
 		{ID: "log", Title: "Log", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"log"}},
+		// Networking only listens: its listen/bind boundary put its area in the
+		// triggers lane, and "Core infrastructure" was drawn as a second entry.
+		{ID: "net", Title: "Networking", Lane: groupindex.LaneTriggers, MemberSubjectIDs: []string{"listen"}},
+		{ID: "loop", Title: "Event loop", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"poll"}},
 	}, Containers: []groupindex.Container{
 		{ID: "k1", Title: "Server runtime", Lane: groupindex.LaneTriggers, Core: true, GroupIDs: []string{"dispatch", "shared"}},
 		{ID: "k2", Title: "Persistence", Lane: groupindex.LaneTriggers, Core: true, GroupIDs: []string{"store", "log"}},
+		{ID: "k3", Title: "Core infrastructure", Lane: groupindex.LaneTriggers, GroupIDs: []string{"net", "loop"}},
 	}}
 	got, _ := structureEdges(t, index)
 	lanes := map[string]string{}
+	parts := map[string]string{}
 	for _, node := range got.Nodes {
 		if node.Branch == "area" {
 			lanes[node.FullTitle] = node.Lane
+		} else {
+			parts[node.FullTitle] = node.Lane
 		}
 	}
-	if lanes["Server runtime"] != "triggers" || lanes["Persistence"] != "core" {
+	if lanes["Server runtime"] != "triggers" || lanes["Persistence"] != "core" || lanes["Core infrastructure"] != "" {
 		t.Fatalf("area marks: %+v", lanes)
+	}
+	// The part keeps its own mark; only its area is not the program's entry.
+	if parts["Networking"] != "triggers" {
+		t.Fatalf("the listening part lost its own mark: %+v", parts)
 	}
 }
 
