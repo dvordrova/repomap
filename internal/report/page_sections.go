@@ -1142,13 +1142,18 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 	return steps
 }
 
-// startReaches keeps the outgoing connections of a group, the first few.
+// startReaches keeps the outgoing connections of a group, the first few,
+// each line once: three call sites of main calling aeMain are one step read
+// forward, and the next distinct connection takes the freed place.
 func startReaches(rows []pageConnection, most int) []pageConnection {
 	var out []pageConnection
+	shown := map[[3]string]bool{}
 	for _, row := range rows {
-		if row.Arrow != "→" || len(out) == most {
+		line := [3]string{row.Label, row.Title, row.Href}
+		if row.Arrow != "→" || len(out) == most || shown[line] {
 			continue
 		}
+		shown[line] = true
 		out = append(out, row)
 	}
 	return out

@@ -471,6 +471,25 @@ func TestStartReachesKeepsOutgoingHopsOnly(t *testing.T) {
 	}
 }
 
+// redis-benchmark's main calls aeMain at three sites: read forward, that is
+// one step, not "main calls aeMain" three times, and the next distinct
+// connection of the entry's group is shown in the freed place.
+func TestStartReachesNameEachStepOnce(t *testing.T) {
+	loop := pageConnection{Arrow: "→", Label: "main calls aeMain", Title: "Event loop", Href: "#loop"}
+	rows := []pageConnection{loop, loop, loop,
+		{Arrow: "→", Label: "main calls sdscat", Title: "String library", Href: "#sds"},
+		{Arrow: "→", Label: "main calls aeCreateEventLoop", Title: "Event loop", Href: "#loop"},
+	}
+	var got []string
+	for _, row := range startReaches(rows, 3) {
+		got = append(got, row.Label+" "+row.Title)
+	}
+	want := []string{"main calls aeMain Event loop", "main calls sdscat String library", "main calls aeCreateEventLoop Event loop"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("read forward = %q, want %q", got, want)
+	}
+}
+
 // The main path is the groups the flow passes through, in the order of
 // their first step.
 func TestTraceOrderFollowsTheFirstStep(t *testing.T) {
