@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1489,6 +1490,7 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 				}
 			}
 			sort.Strings(call.CalleeIDs)
+			call.Stores = b.callStores(relation, call.CalleeIDs)
 			// The selector alone loses the receiver/package: context.Background
 			// and a remote client's Background would become the same evidence.
 			if len(relation.ToIDs) == 1 {
@@ -1522,6 +1524,31 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			add(relation.FromID, call)
 		}
 	}
+}
+
+// callStores are where the code first stored each function a call reaches
+// through a field or a name, from the witnesses that name the function they
+// store, by callee.
+func (b *builder) callStores(relation programindex.Relation, callees []string) []atlas.CallStore {
+	first := map[string]atlas.CallStore{}
+	for _, witness := range relation.Witnesses {
+		id := b.symbolOf[witness.ObjectID]
+		if witness.ObjectID == "" || witness.Location == nil || id == "" || !slices.Contains(callees, id) {
+			continue
+		}
+		store := atlas.CallStore{CalleeID: id, Path: atlasPath(witness.Location.Path), LineNo: witness.Location.Line, Column: witness.Location.Column}
+		previous, seen := first[id]
+		if !seen || store.Path < previous.Path || store.Path == previous.Path && (store.LineNo < previous.LineNo || store.LineNo == previous.LineNo && store.Column < previous.Column) {
+			first[id] = store
+		}
+	}
+	var stores []atlas.CallStore
+	for _, id := range callees {
+		if store, ok := first[id]; ok {
+			stores = append(stores, store)
+		}
+	}
+	return stores
 }
 
 func (b *builder) symbolCalls() map[string][]atlas.SymbolCall {

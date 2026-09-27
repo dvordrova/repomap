@@ -503,6 +503,24 @@ func assertCDispatchCalls(t *testing.T, fixture cFixture, graph atlas.Graph) {
 	if len(proc) != 1 || proc[0].Dispatch != programindex.DispatchFunctionValue || proc[0].Resolution != string(programindex.ResolutionAlternatives) || len(proc[0].CalleeIDs) != len(cCommandRows) {
 		t.Fatalf("processCommand's dispatch: %+v", proc)
 	}
+	// Each function the call reaches keeps the row that stored it, the order
+	// a tie of the map's sentences follows (READING).
+	names := map[string]string{}
+	for _, place := range graph.Places {
+		if place.Symbol != nil {
+			names[place.ID] = place.Symbol.Decl.Name
+		}
+	}
+	for _, row := range cCommandRows {
+		line, column := fixture.at(t, "kvd.c", `{"`+row.name+`", `+row.function, row.function)
+		stored := false
+		for _, store := range proc[0].Stores {
+			stored = stored || names[store.CalleeID] == row.function && store.Path == "kvd.c" && store.LineNo == line && store.Column == column
+		}
+		if !stored {
+			t.Errorf("%s keeps no store at its row kvd.c:%d:%d: %+v", row.function, line, column, proc[0].Stores)
+		}
+	}
 	for _, field := range []string{"rfileProc", "wfileProc"} {
 		line, _ := fixture.at(t, "loop.c", "fe->"+field+"(l, fd, fe->data, mask)", "")
 		var calls []atlas.SymbolCall

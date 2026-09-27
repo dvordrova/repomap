@@ -115,3 +115,64 @@ func TestUnresolvedCallDrawsItsWitnessedCandidatesAsPossibleArrows(t *testing.T)
 		}
 	}
 }
+
+// The names open calls' stores wrote tie; they go in source order, never in
+// the alphabet's: the call written first, then, at one call, the order the
+// code stored them, before where the functions happen to be declared.
+func TestStoredNamesTieInSourceOrder(t *testing.T) {
+	location := func(file string, line int) *programindex.Location {
+		return &programindex.Location{Path: file, Line: line, Column: 1}
+	}
+	store := func(name, ref string, line int) programindex.Witness {
+		return programindex.Witness{Kind: "c_function_pointer_store", Detail: name + " stored in fileEvent.rfileProc under a condition", Location: location("server.c", line), ObjectRef: ref}
+	}
+	program, err := programindex.New(programindex.Input{
+		ScenarioSHA256: strings.Repeat("a", 64), SourceSHA256: strings.Repeat("b", 64),
+		Target: programindex.TargetInput{Language: "c", Kind: "executable", Name: "server", Selector: "c:server", Sources: []programindex.TargetSource{{FileRef: "loop", Path: "loop.c"}, {FileRef: "server", Path: "server.c"}}, AnchorFileRef: "server"},
+		Objects: []programindex.ObjectInput{
+			{SourceRef: "process", Name: "processEvents", Kind: programindex.ObjectFunction, Visibility: programindex.VisibilityPublic, Location: location("loop.c", 10)},
+			{SourceRef: "zap", Name: "zapHandler", Kind: programindex.ObjectFunction, Visibility: programindex.VisibilityInternal, Location: location("server.c", 30)},
+			{SourceRef: "accept", Name: "acceptHandler", Kind: programindex.ObjectFunction, Visibility: programindex.VisibilityInternal, Location: location("server.c", 10)},
+			{SourceRef: "timer", Name: "timerHandler", Kind: programindex.ObjectFunction, Visibility: programindex.VisibilityInternal, Location: location("server.c", 40)},
+		},
+		Relations: []programindex.RelationInput{
+			{SourceRef: "open", Kind: programindex.RelationCalls, FromRef: "process", Resolution: programindex.ResolutionUnresolved, Dispatch: programindex.DispatchFunctionValue,
+				TargetsObserved: 1, WitnessesObserved: 3, Location: location("loop.c", 12), Witnesses: []programindex.Witness{
+					{Kind: "c_function_value_call", Detail: "call through fileEvent.rfileProc", Location: location("loop.c", 12)},
+					store("acceptHandler", "accept", 60), store("zapHandler", "zap", 50),
+				}},
+			{SourceRef: "timers", Kind: programindex.RelationCalls, FromRef: "process", Resolution: programindex.ResolutionUnresolved, Dispatch: programindex.DispatchFunctionValue,
+				TargetsObserved: 1, WitnessesObserved: 2, Location: location("loop.c", 11), Witnesses: []programindex.Witness{
+					{Kind: "c_function_value_call", Detail: "call through timeEvent.timeProc", Location: location("loop.c", 11)},
+					store("timerHandler", "timer", 70),
+				}},
+		},
+		Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: 4, RelationsObserved: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{}
+	for _, object := range program.Objects {
+		ids[object.Name] = object.ID
+	}
+	file := func(path string) atlas.File {
+		return atlas.File{Path: path, Line: "Preset.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}
+	}
+	target := atlas.Target{ID: program.Target.ID, Name: "server", Root: ".", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{
+		{ID: "loop", Dir: ".", Title: "Event loop", Line: "Waits for sockets.", Side: atlas.SideMid, MemberIDs: []string{ids["processEvents"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("loop.c")}},
+		{ID: "clients", Dir: ".", Title: "Clients", Line: "Serves clients.", Side: atlas.SideMid, MemberIDs: []string{ids["zapHandler"], ids["acceptHandler"], ids["timerHandler"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("server.c")}},
+	}}
+	indexes, err := ProjectAtlas(map[string]programindex.Index{program.Target.ID: program}, atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, connection := range indexes[0].Connections {
+		if want := "Event loop calls Clients: timerHandler, zapHandler, acceptHandler."; connection.Summary != want {
+			t.Fatalf("summary = %q, want %q", connection.Summary, want)
+		}
+	}
+	if len(indexes[0].Connections) != 3 {
+		t.Fatalf("connections = %+v", indexes[0].Connections)
+	}
+}

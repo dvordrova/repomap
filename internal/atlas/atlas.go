@@ -258,6 +258,19 @@ type SymbolCall struct {
 	// CalleeIDs refer to compiler-located symbol places, shared across target
 	// indexes. They are local retrieval keys and never enter provider prose.
 	CalleeIDs []string `json:"callee_ids,omitempty"`
+	// Stores are, for a call through a field or a name, where the code first
+	// put each function the call reaches there (a command table's row): the
+	// order a reader meets those functions in. Local, never provider prose.
+	Stores []CallStore `json:"stores,omitempty"`
+}
+
+// CallStore is where the code first stored one function a call through a
+// field or a name reaches.
+type CallStore struct {
+	CalleeID string `json:"callee_id"`
+	Path     string `json:"path"`
+	LineNo   int    `json:"line_no"`
+	Column   int    `json:"column,omitempty"`
 }
 
 // CallAPI is the exact native external symbol, before display shortening.
@@ -834,6 +847,9 @@ func compactGraphPlaceIDs(graph Graph) (Graph, error) {
 		if place.Symbol != nil {
 			for call := range place.Symbol.Calls {
 				mapIDs(place.Symbol.Calls[call].CalleeIDs)
+				for store := range place.Symbol.Calls[call].Stores {
+					place.Symbol.Calls[call].Stores[store].CalleeID = mapID(place.Symbol.Calls[call].Stores[store].CalleeID)
+				}
 			}
 			for caller := range place.Symbol.CalledBy {
 				place.Symbol.CalledBy[caller].PlaceID = mapID(place.Symbol.CalledBy[caller].PlaceID)
@@ -1159,6 +1175,11 @@ func validateGraph(graph Graph) error {
 				for _, id := range call.CalleeIDs {
 					if seen[id] != PlaceSymbol {
 						return fmt.Errorf("atlas: symbol %q calls unknown symbol place %q", place.ID, id)
+					}
+				}
+				for _, store := range call.Stores {
+					if !slices.Contains(call.CalleeIDs, store.CalleeID) || store.Path == "" || store.LineNo < 1 {
+						return fmt.Errorf("atlas: symbol %q stores %q, which its call does not reach", place.ID, store.CalleeID)
 					}
 				}
 			}

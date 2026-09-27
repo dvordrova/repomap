@@ -113,8 +113,59 @@ type arrowState struct {
 	from, to  string
 	calls     int
 	witnesses map[string]int
-	sentence  string
-	drawn     bool
+	// order is, per witness, the first call site that makes it and the
+	// declaration of the function it reaches: the source order that breaks
+	// a tie of counts.
+	order    map[string]witnessOrder
+	sentence string
+	drawn    bool
+}
+
+// witnessOrder is where a witness first appears in the source: its call,
+// the store that put the function it reaches into the field the call reads
+// (a command table's row), and that function's declaration.
+type witnessOrder struct{ call, store, callee sourceSite }
+
+// sourceSite is a position in source order: by file, then line, then column.
+// An unknown site comes after every known one.
+type sourceSite struct {
+	path         string
+	line, column int
+}
+
+func (a sourceSite) compare(b sourceSite) int {
+	switch {
+	case (a.path == "") != (b.path == ""):
+		if a.path == "" {
+			return 1
+		}
+		return -1
+	case a.path != b.path:
+		return strings.Compare(a.path, b.path)
+	case a.line != b.line:
+		return a.line - b.line
+	default:
+		return a.column - b.column
+	}
+}
+
+// observe counts one witness of the arrow where it first appears.
+func (arrow *arrowState) observe(key string, at witnessOrder) {
+	arrow.witnesses[key]++
+	if arrow.order == nil {
+		arrow.order = make(map[string]witnessOrder)
+	}
+	order, seen := arrow.order[key]
+	if !seen || at.call.compare(order.call) < 0 {
+		order.call = at.call
+	}
+	if !seen || at.store.compare(order.store) < 0 {
+		order.store = at.store
+	}
+	if !seen || at.callee.compare(order.callee) < 0 {
+		order.callee = at.callee
+	}
+	arrow.order[key] = order
 }
 
 func (r *reader) foldArrows() {
@@ -155,7 +206,7 @@ func (r *reader) foldArrows() {
 			}
 			arrow.calls += edge.Count
 			for _, witness := range edge.Witnesses {
-				arrow.witnesses[witness.Caller+"\x00"+witness.Callee+"\x00"+witness.Kind]++
+				arrow.observe(witness.Caller+"\x00"+witness.Callee+"\x00"+witness.Kind, witnessOrder{call: sourceSite{path: witness.Path, line: witness.LineNo}})
 			}
 		}
 		// Declaration observations retain collaborations within one file and
@@ -180,7 +231,16 @@ func (r *reader) foldArrows() {
 							byPair[key] = arrow
 						}
 						arrow.calls++
-						arrow.witnesses[place.Symbol.Decl.Name+"\x00"+r.calleeName(call, callee)+"\x00"+call.Kind]++
+						at := witnessOrder{call: sourceSite{path: place.Path, line: call.Line, column: call.Column}}
+						for _, store := range call.Stores {
+							if store.CalleeID == callee {
+								at.store = sourceSite{path: store.Path, line: store.LineNo, column: store.Column}
+							}
+						}
+						if target, ok := r.places[callee]; ok {
+							at.callee = sourceSite{path: target.Path, line: target.LineNo, column: target.Column}
+						}
+						arrow.observe(place.Symbol.Decl.Name+"\x00"+r.calleeName(call, callee)+"\x00"+call.Kind, at)
 					}
 				}
 			}
@@ -233,19 +293,31 @@ func (arrow *arrowState) topWitnesses() []atlas.Witness {
 	return ranked[:min(len(ranked), 3)]
 }
 
-// rankedWitnesses are every witness of the arrow, most observed first.
+// rankedWitnesses are every witness of the arrow, most observed first. A tie
+// goes in source order: the call written first; among the functions one call
+// reaches through a field, the one stored there first (the command table's
+// first row); then the one declared first. The alphabet would favour names
+// that begin early: the dispatcher's arrow to Redis's string commands named
+// append, decr and decrby and hid get and set.
 func (arrow *arrowState) rankedWitnesses() []atlas.Witness {
 	type pair struct {
 		key   string
 		count int
+		order witnessOrder
 	}
 	pairs := make([]pair, 0, len(arrow.witnesses))
 	for key, count := range arrow.witnesses {
-		pairs = append(pairs, pair{key, count})
+		pairs = append(pairs, pair{key, count, arrow.order[key]})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
 		if pairs[i].count != pairs[j].count {
 			return pairs[i].count > pairs[j].count
+		}
+		a, b := pairs[i].order, pairs[j].order
+		for _, c := range []int{a.call.compare(b.call), a.store.compare(b.store), a.callee.compare(b.callee)} {
+			if c != 0 {
+				return c < 0
+			}
 		}
 		return pairs[i].key < pairs[j].key
 	})

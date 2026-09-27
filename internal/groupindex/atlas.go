@@ -248,19 +248,65 @@ func drawnEnds(relation programindex.Relation) []string {
 	return ends
 }
 
+// storedName is one name the stores of a pair's open calls wrote: how often,
+// the first call that reads it, its first store and where its function is
+// declared.
+type storedName struct {
+	count               int
+	call, store, callee *programindex.Location
+}
+
+func (name *storedName) observe(call, store, callee *programindex.Location) {
+	name.count++
+	if name.count == 1 || locationBefore(call, name.call) {
+		name.call = call
+	}
+	if name.count == 1 || locationBefore(store, name.store) {
+		name.store = store
+	}
+	if name.count == 1 || locationBefore(callee, name.callee) {
+		name.callee = callee
+	}
+}
+
+// locationBefore orders source positions by file, line and column; an
+// unknown one comes after every known one.
+func locationBefore(a, b *programindex.Location) bool {
+	switch {
+	case a == nil || b == nil:
+		return a != nil
+	case a.Path != b.Path:
+		return a.Path < b.Path
+	case a.Line != b.Line:
+		return a.Line < b.Line
+	default:
+		return a.Column < b.Column
+	}
+}
+
 // storedSentence is the fallback sentence of a pair's calls left open: the
 // names their stores wrote, most often named first, as the reading writes it
-// for an arrow the model has not spoken for.
-func storedSentence(from, to string, names map[string]int) string {
+// for an arrow the model has not spoken for. A tie goes in source order, as
+// the reading's does: the call, then the store, then the declaration.
+func storedSentence(from, to string, names map[string]*storedName) string {
 	witnesses := make([]atlas.Witness, 0, len(names))
 	for name := range names {
 		witnesses = append(witnesses, atlas.Witness{Callee: name})
 	}
 	sort.Slice(witnesses, func(i, j int) bool {
-		if names[witnesses[i].Callee] != names[witnesses[j].Callee] {
-			return names[witnesses[i].Callee] > names[witnesses[j].Callee]
+		a, b := names[witnesses[i].Callee], names[witnesses[j].Callee]
+		switch {
+		case a.count != b.count:
+			return a.count > b.count
+		case locationBefore(a.call, b.call) || locationBefore(b.call, a.call):
+			return locationBefore(a.call, b.call)
+		case locationBefore(a.store, b.store) || locationBefore(b.store, a.store):
+			return locationBefore(a.store, b.store)
+		case locationBefore(a.callee, b.callee) || locationBefore(b.callee, a.callee):
+			return locationBefore(a.callee, b.callee)
+		default:
+			return witnesses[i].Callee < witnesses[j].Callee
 		}
-		return witnesses[i].Callee < witnesses[j].Callee
 	})
 	return lines.FallbackSentence(lines.BoxSummary{Title: from}, lines.BoxSummary{Title: to}, witnesses)
 }
@@ -503,7 +549,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		// name. The reading saw no call there, so the pair's sentence, when it
 		// has one, says what its exact calls do; these connections take the
 		// code's fallback over the names their stores wrote instead.
-		stored := map[[2]string]map[string]int{}
+		stored := map[[2]string]map[string]*storedName{}
 		var open []int
 		for _, relation := range program.Relations {
 			fromBox := memberBoxes[relation.FromID]
@@ -542,9 +588,20 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				if relation.Resolution == programindex.ResolutionUnresolved && relation.Kind == programindex.RelationCalls {
 					pair := [2]string{from, to}
 					if stored[pair] == nil {
-						stored[pair] = map[string]int{}
+						stored[pair] = map[string]*storedName{}
 					}
-					stored[pair][objects[id].Name]++
+					name := stored[pair][objects[id].Name]
+					if name == nil {
+						name = &storedName{}
+						stored[pair][objects[id].Name] = name
+					}
+					var store *programindex.Location
+					for _, witness := range relation.Witnesses {
+						if witness.ObjectID == id && witness.Location != nil && (store == nil || locationBefore(witness.Location, store)) {
+							store = witness.Location
+						}
+					}
+					name.observe(location, store, objects[id].Location)
 					open = append(open, len(connections))
 				}
 				connections = append(connections, connection)

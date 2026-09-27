@@ -177,7 +177,9 @@ holds its seed declaration. Each declaration carries its adapter's
 Callable observations from different target indexes meet at their existing
 compiler-located symbol place. Incoming calls retain that place identity as
 well as the target-qualified native object ID; outgoing calls retain callee place IDs for local
-retrieval. Outgoing calls also retain their source column locally. An empty
+retrieval and, for a call through a field or a name, where the code first
+stored each callee (`stores`, from the witnesses naming it by identity), the
+source order a tie of the map's sentences follows (READING). Outgoing calls also retain their source column locally. An empty
 unresolved target view is subsumed only by possible receiver observations at
 the same exact call site with otherwise identical call facts; distinct sites,
 dispatch details and independent evidence remain. Possible dispatch never

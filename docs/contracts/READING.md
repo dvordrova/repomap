@@ -508,7 +508,18 @@ operation of its own: the entry carries it. An arrow without witnesses (an
 import-only edge) takes its fallback sentence "A uses B." without a model
 row. The fallback of an arrow with witnesses, "A calls B: x, y, z.", names
 the most observed callees, each once: three callers of `addReply` make one
-`addReply`, and the next callee takes the place. A call through a function
+`addReply`, and the next callee takes the place. Equally observed callees go
+in source order: the call written first (file, line, column); among the
+functions one call reaches through a field or a name, the one the code stored
+there first (a witness naming the function by identity, places `stores`: the
+command table's first row); then the one declared first. The alphabet is not
+neutral: it favours names that begin early, and Redis's dispatcher read
+"calls String commands: appendCommand, decrCommand, decrbyCommand", hiding
+get and set behind `append`. Declaration order alone still hid `get` when the
+part held `ping` and `echo`, which redis.c defines first; the table's rows are
+the author's own order of the commands (`get`, `set`, `setnx`). Source order
+is the order a reader meets the code in and says nothing about spelling; the
+arrow row's witnesses are ranked the same way. A call through a function
 value writes a field or a variable (`proc`); its witness names the function
 the fact found stored there (`getCommand`), one per stored function, never
 the field.
@@ -522,8 +533,11 @@ Python `handler`); the relation stays unresolved and its witnesses stay
 witnesses. A call whose stores name nothing draws nothing. The reading saw
 no call there, so such a connection never borrows the sentence the pair's
 exact calls were given: it takes the fallback over the names its stores
-wrote, most often named first, each once ("Event loop calls Client
-connection handling: acceptHandler, readQueryFromClient, sendReplyToClient."),
+wrote, most often named first, each once, a tie in the same source order of
+calls, stores and declarations ("Event loop calls Client connection
+handling: readQueryFromClient, acceptHandler, sendReplyToClient.": the
+`rfileProc` call comes before the `wfileProc` one, and redis.c stores
+`readQueryFromClient` before `acceptHandler`),
 and a part's card shows that sentence beside the pair's own.
 
 The current operation table asks only `self` or `none` for this declaration. Immediate caller declarations and distinct sites are evidence, never an assignment destination. `none` transfers nothing. Only a complete `self` decision publishes the declaration’s activation, name and description. A real independently launched notification/metrics consumer may be `self` while its AddLogHook/PreRun/constructor/lifespan launcher is `none`. Synchronous helpers within the same responsibility are not separate work. Listener blocking alone is not a worker. Cron, persistent consumers and source-supported one-shot delayed work remain legitimate. Registration, callback and control evidence are interpreted by the model; projection never invents a semantic promotion. Native HTTP registration refs restore their original path and method verbatim; free text does not replace a known route. A `label` row whose `name` comes back empty, null or missing keeps the model's own `description` as its label (first sentence, at most 60 runes) and records `name_from: description`; an empty description still refuses the row.

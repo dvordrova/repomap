@@ -66,7 +66,7 @@ C function pointers and macros in [kvd.c](c/kvd.c) and [loop.c](c/loop.c):
 | Source | Expected result |
 | --- | --- |
 | `cmdTable` rows `{"get", getCommand, 2}` | each row hands its function over under its own name (`name = "get"`) |
-| `cmd->proc(c)` in `processCommand` | alternatives: the six functions the table stores |
+| `cmd->proc(c)` in `processCommand` | alternatives: the six functions the table stores, each with the row that stored it (the source order a tie of the map's sentences follows) |
 | `fe->rfileProc = proc` under `if (mask & LOOP_READABLE)` | the call through `rfileProc` is unresolved and names every handler passed to `loopCreateFileEvent`; a branch never makes alternatives |
 | `l->beforeSleep = proc`, stored once | the call through `beforeSleep` is exact |
 | [staticsyms.h](c/staticsyms.h) `(unsigned long)getCommand` | an address used as an integer: no call and no callback |

@@ -109,3 +109,61 @@ func TestPartArrowsNameStoredHandlersOnceEach(t *testing.T) {
 		t.Fatalf("sentences = %q, want %q", sentences, want)
 	}
 }
+
+// Equally observed callees go in source order, never in the alphabet's: the
+// call written first; among the functions one call reaches through a field,
+// the one stored there first (the command table's first row); without a
+// known store, the one declared first. Alphabetically Redis's dispatcher
+// "calls String commands: appendCommand, decrCommand, decrbyCommand" and hid
+// get and set.
+func TestPartArrowTiesGoInSourceOrder(t *testing.T) {
+	provider := &mutatedTableProvider{}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through = ""
+	r.opts.Targets = []TargetMeta{{ID: "t"}}
+	symbol := func(id, name, path string, line int, calls ...atlas.SymbolCall) atlas.Place {
+		return atlas.Place{ID: id, Kind: atlas.PlaceSymbol, Path: path, LineNo: line, TargetIDs: []string{"t"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: name}, Calls: calls}}
+	}
+	through := atlas.SymbolCall{Kind: "calls", Name: "proc", Line: 7, Column: 5, Dispatch: "function_value", CalleeIDs: []string{"s:append", "s:decr", "s:get", "s:set"},
+		Stores: []atlas.CallStore{{CalleeID: "s:append", Path: "server.c", LineNo: 3}, {CalleeID: "s:decr", Path: "server.c", LineNo: 4}, {CalleeID: "s:get", Path: "server.c", LineNo: 1}, {CalleeID: "s:set", Path: "server.c", LineNo: 2}}}
+	handler := atlas.SymbolCall{Kind: "calls", Name: "handler", Line: 60, Column: 5, Dispatch: "function_value", CalleeIDs: []string{"s:accept", "s:write"}}
+	places := []atlas.Place{
+		symbol("s:call", "call", "server.c", 5, through),
+		symbol("s:loop", "loop", "loop.c", 58, handler),
+		symbol("s:write", "writeReply", "net.c", 20), symbol("s:accept", "acceptClient", "net.c", 50),
+		symbol("s:main", "main", "main.c", 1,
+			atlas.SymbolCall{Kind: "calls", Name: "zeta", Line: 3, Column: 5, CalleeIDs: []string{"s:zeta"}},
+			atlas.SymbolCall{Kind: "calls", Name: "alpha", Line: 4, Column: 5, CalleeIDs: []string{"s:alpha"}}),
+		symbol("s:set", "setCommand", "server.c", 10), symbol("s:get", "getCommand", "server.c", 12),
+		symbol("s:decr", "decrCommand", "server.c", 30), symbol("s:append", "appendCommand", "server.c", 40),
+		symbol("s:alpha", "alpha", "util.c", 1), symbol("s:zeta", "zeta", "util.c", 2),
+	}
+	r.opts.Graph = atlas.Graph{Places: places}
+	r.places, r.boxes, r.boxOf = map[string]atlas.Place{}, map[string]*boxState{}, map[string]string{}
+	for _, place := range places {
+		r.places[place.ID] = place
+	}
+	parts := map[string]string{"s:call": "dispatch", "s:set": "strings", "s:get": "strings", "s:decr": "strings", "s:append": "strings", "s:main": "main", "s:alpha": "util", "s:zeta": "util",
+		"s:loop": "loop", "s:write": "net", "s:accept": "net"}
+	r.designBoxOf = map[string]map[string]string{"t": parts}
+	for _, box := range []struct{ id, title string }{{"dispatch", "Command dispatch"}, {"strings", "String commands"}, {"main", "Entry"}, {"util", "Utilities"}, {"loop", "Event loop"}, {"net", "Networking"}} {
+		r.boxes[box.id] = &boxState{id: box.id, title: box.title, line: box.title + " does things."}
+	}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	if err := r.readArrows(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	sentences := map[string]string{}
+	for _, arrow := range r.arrows["t"] {
+		sentences[arrow.from+"->"+arrow.to] = arrow.sentence
+	}
+	want := map[string]string{
+		"dispatch->strings": "Command dispatch calls String commands: getCommand, setCommand, appendCommand.",
+		"main->util":        "Entry calls Utilities: zeta, alpha.",
+		"loop->net":         "Event loop calls Networking: writeReply, acceptClient.",
+	}
+	if !reflect.DeepEqual(sentences, want) {
+		t.Fatalf("sentences = %q, want %q", sentences, want)
+	}
+}
