@@ -1,6 +1,7 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {overviewRecords} from './overview.mjs';
+import {areaHeadingRoom,looseHeadingRoom} from './cards.mjs';
 
 let engine;
 export const overviewInset=16;
@@ -319,6 +320,18 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         edgeBundle.set(edge.id,{id:bundled.get(identity).id,reversed:bundled.get(identity).sources[0]!==source});
       }
       const ready=local.nodes.filter(node=>node.parentId===root.id);
+      // A loose part beside areas is their closed summaries' peer on the
+      // component overview: its box is the one in which its closed heading
+      // fits at the scale the smallest of their headings fits, so its title
+      // reads as large as that area's, never smaller.
+      const readyAreas=ready.filter(node=>byID.get(node.id)?.branch==='area'&&byID.get(node.id)?.closedHeading);
+      if(readyAreas.length){
+        const scale=Math.min(...readyAreas.map(node=>byID.get(node.id).closedHeading.fit(node,areaHeadingRoom)));
+        for(const node of ready){
+          const heading=!children.has(node.id)&&byID.get(node.id)?.closedHeading;
+          if(heading&&Number.isFinite(scale)&&scale>0)Object.assign(node,heading.box(scale,looseHeadingRoom,node));
+        }
+      }
       const componentOptions={...options,'elk.portConstraints':'FIXED_SIDE',
         'elk.padding':`[top=${localRecords.get(root.id).headerHeight||64},left=32,bottom=32,right=32]`};
       if(root.minimumWidth||root.minimumHeight){

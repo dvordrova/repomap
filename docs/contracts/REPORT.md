@@ -337,7 +337,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   reading keep the part's own title. A direct (loose) part beside areas is
   their closed summaries' peer while they are closed: it uses the same fixed
   first-reveal heading fit and column width as neighbouring groups, without
-  promising hidden children. Once the areas open it is their parts' peer:
+  promising hidden children, and its box is at least the one in which its
+  closed heading fits at the scale the smallest of their headings fits. That
+  box is found from the areas' ready rectangles before the component places
+  them, so no layout runs twice, and on the component overview its title
+  reads no smaller than its smallest area's title and no larger than the
+  camera's common heading cap. Fitted to a card's box, Redis's Debug symbols
+  read 10 px beside 15 to 17 px area titles on the component overview
+  (about 11 px beside 15.7 px in the proxy's window). Matching the cap
+  itself, which the whole map's other components set, would need the
+  interiors laid out again once the whole map is placed; the smallest area's
+  scale does not. Once the areas open it is their parts' peer:
   the same card at the same scale, filling its box, so its title reads at
   their parts' size. Kept at the summary scale, Redis's Debug symbols read
   41 px beside 17 px parts. A component without areas keeps its direct

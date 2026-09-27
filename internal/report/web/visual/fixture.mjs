@@ -13,12 +13,24 @@ if(options.has('single-part-area')){
   areas.find(a=>a.id===group.id).nodes=group.children;
 }
 
-// A part in no area stands beside the backend's areas.
+// A part in no area stands beside the backend's areas. Each area holds a
+// chain of fourteen parts, so the backend is drawn small beside the web
+// application, as redis-server is beside the small programs: a loose part
+// fitted to a card's box read 11 px beside 15.6 px area titles.
 if(options.has('loose-part')){
   records.find(n=>n.id==='backend').children.push('audit');
   areas.find(a=>a.id==='backend').nodes.push('audit');
   records.push({id:'audit',title:'Audit log',kind:'Part',summary:'Records every job decision for later review.'});
   relations.push({from:'worker',to:'audit'});
+  for(const [area,last] of [['requests','auth'],['execution','worker']]){
+    let previous=last;
+    for(let i=1;i<=12;i++){
+      const id=`${area}-step-${i}`;
+      records.push({id,title:`Step ${i} of ${records.find(n=>n.id===area).title.toLowerCase()}`,kind:'Part',lane:'core'});
+      records.find(n=>n.id===area).children.push(id);areas.find(a=>a.id===area).nodes.push(id);
+      relations.push({from:previous,to:id});previous=id;
+    }
+  }
 }
 
 // Each system calls its own "DNS resolver": two frames the page groups for
