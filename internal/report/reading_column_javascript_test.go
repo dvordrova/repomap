@@ -211,6 +211,25 @@ assert.equal(stroke.className,'flow-key-stroke flow-key-possible');
 `)
 }
 
+// Zoomed into a part, the tiles draw purple dashed links from a function to
+// the type it returns and from a type to the function taking it; Redis's
+// readers met them with nothing in the key saying what they were. The key
+// names them when a part of the map has one, and not otherwise.
+func TestKeyNamesTheTilesTypeLinks(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "function rmKey(", "(function(){document.querySelectorAll('[data-map-explorer]')")
+	runSystemJS(t, fakeElements+`
+const category=n=>n.dataset.activation?'input':'part';
+`+code+`
+const labels=key=>key.children.map(c=>c.textContent);
+const part=calls=>({dataset:{lane:'core',symbolCalls:JSON.stringify(calls)}});
+const key=rmKey([part([[0,1,'calls'],[2,0,'returns']])],[{possible:false}],category);
+assert.deepEqual(labels(key),['Core','calls','returns or takes a type']);
+assert.equal(key.children.at(-1).className,'flow-key-stroke flow-key-types');
+assert.deepEqual(labels(rmKey([part([[3,0,'takes']])],[],category)),['Core','returns or takes a type'],'a type a function takes is keyed too');
+assert.deepEqual(labels(rmKey([part([[0,1,'calls']]),{dataset:{lane:'core'}}],[{possible:false}],category)),['Core','calls'],'a map whose tiles link no type keys none');
+`)
+}
+
 // Find: "Back to search" came back to the top of a list the reader had
 // scrolled, and choosing a component left the results over the map with
 // the other component still chosen in them.
@@ -365,21 +384,24 @@ function select(n,navigate,source,focus){seen.push([n.id,navigate,source,focus,p
 `)
 }
 
-// A chosen input's reading lists its path (owner's 3c): the chain it
-// shares with the other inputs its dispatch chooses between, folded into
-// one box, then its own steps, a callee under its caller, with no line
-// number and the part heading it where the part changes. A name of its own
-// steps reads that declaration in the report (getCommand and addReply had
-// opened GitHub); a modifier-click still opens its code, which is one
-// explicit link on the line. The shared box is as it was.
-func TestAnInputsPathIsTheSharedChainThenItsOwnSteps(t *testing.T) {
+// A chosen input's reading lists its path (owner's 3c): each dispatch
+// site it shares with the other inputs that site chooses between, one box
+// with the declaration it dispatches through, how many it chooses between
+// and the statement that the path by which an input reaches it is not
+// established, then its own steps, a callee under its caller, with no line
+// number and the part heading it where the part changes. No route to the
+// dispatch is drawn: the shortest one, main → aeMain → beforeSleep → call,
+// had been offered as GET's path. A name of its own steps reads that
+// declaration in the report (getCommand and addReply had opened GitHub); a
+// modifier-click still opens its code, which is one explicit link on the
+// line.
+func TestAnInputsPathNamesItsDispatchThenItsOwnSteps(t *testing.T) {
 	code := systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')")
 	runSystemJS(t, fakeElements+`
 const plain=document.createElement;document.createElement=tag=>{const element=plain(tag);element.style={};return element;};
 const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
 const step=(name,part,title,depth,extra)=>({name,href:'h/'+name,source:'redis.c:1',part,part_title:title,depth,...extra});
-const path={shared:[{inputs:95,all:false,through:'call',of:94,steps:[step('main','n-config','Server configuration',0),step('aeMain','n-loop','Event loop',0),step('call','n-clients','Client connections',0)]},
-  {inputs:95,through:'loadAppendOnlyFile',of:94,steps:[step('main','n-config','Server configuration',0),step('loadAppendOnlyFile','n-persist','Persistence',0)]}],
+const path={shared:[{inputs:95,all:false,through:'call',of:94},{inputs:95,through:'loadAppendOnlyFile',of:94}],
   own:[step('getCommand','n-strings','String commands',0),step('getGenericCommand','n-strings','String commands',1),step('lookupKeyRead','n-keys','Keyspace',2,{possible:true}),step('addReply','n-clients','Client connections',2)]};
 const parts={'n-strings':{id:'n-strings'},'n-clients':{id:'n-clients'}},chosen=[],read=[];
 `+code+`
@@ -388,8 +410,9 @@ assert.equal(section.children[0].textContent,'Path');
 const boxes=section.all(e=>e.className==='system-shared-path');
 assert.deepEqual(boxes.map(b=>[b.tagName,!!b.open,b.children[0].textContent]),[['DETAILS',true,'Shared by {0} inputs, through {1}'.replace('{0}',95).replace('{1}','call')],['DETAILS',false,'Shared by 95 inputs, through loadAppendOnlyFile']]);
 const lines=list=>list.children.map(c=>c.className==='system-path-part'?'['+c.textContent+']':c.textContent);
-assert.deepEqual(lines(boxes[0].find(e=>e.className==='system-path-steps')),['[Server configuration]','main','[Event loop]','aeMain','[Client connections]','call']);
-assert.equal(boxes[0].children.at(-1).textContent,'call → one of 94');
+assert.deepEqual(boxes[0].children.slice(1).map(c=>c.textContent),['call → one of 94','The path by which an input reaches {0} is not established.'.replace('{0}','call')]);
+assert.deepEqual(boxes[1].children.slice(1).map(c=>c.textContent),['loadAppendOnlyFile → one of 94','The path by which an input reaches loadAppendOnlyFile is not established.']);
+assert.ok(boxes.every(b=>!b.find(e=>e.className==='system-path-steps')),'no route to the dispatch is drawn');
 const own=section.children.at(-1);
 assert.deepEqual(lines(own),['[String commands]','getCommand · Open code ↗','getGenericCommand · Open code ↗','[Keyspace]','lookupKeyRead · possible · Open code ↗','[Client connections]','addReply · Open code ↗']);
 const name=text=>own.find(e=>e.tagName!=='DIV'&&e.textContent===text);
@@ -401,11 +424,103 @@ assert.equal(click(name('getCommand'),{button:1}),false);
 assert.deepEqual(read,[['n-clients','h/addReply']]);
 assert.equal(name('lookupKeyRead').tagName,'SPAN','a step in a part the map does not draw is only named');
 assert.deepEqual(own.all(e=>e.className==='system-path-code').map(e=>[e.textContent,e.href]),[['Open code ↗','h/getCommand'],['Open code ↗','h/getGenericCommand'],['Open code ↗','h/lookupKeyRead'],['Open code ↗','h/addReply']]);
-assert.ok(!boxes[0].find(e=>e.className==='system-path-code')&&!boxes[0].find(e=>e.listeners&&e.listeners.click&&e.tagName==='A'),'the shared box is unchanged');
 assert.deepEqual(own.all(e=>e.className==='system-path-step').map(e=>e.style.marginLeft),['0px','10px','20px','20px'],'a callee stands under its caller');
 assert.ok(!JSON.stringify(lines(own)).includes('redis.c'),'no line number is shown');
 own.find(e=>e.tagName==='BUTTON'&&e.textContent==='String commands').listeners.click();
 assert.deepEqual(chosen,['n-strings'],'a part on the path leads to its reading');
 assert.equal(own.find(e=>e.textContent==='Keyspace').tagName,'DIV','a part the map does not draw is only named');
+`)
+}
+
+// A component's catalogue row names its input by where it is registered and
+// its handler by its code; a plain click on either opened GitHub (Redis's
+// flushdb and flushdbCommand among 95 rows). When the row's own link names
+// one input, a plain click reads that input in the report and a modifier-
+// click still opens the code. A row naming no input, or two, keeps its links.
+func TestACatalogRowReadsItsInputOnAPlainClick(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "function rmCatalogInputClick(", "(function(){document.querySelectorAll('[data-map-explorer]')")
+	runSystemJS(t, `
+function el(cls,attrs={},children=[]){
+  const node={cls,attrs,children,parent:null,
+    getAttribute:k=>attrs[k],
+    matches(selector){return selector.split(',').some(one=>{one=one.trim();
+      if(one==='.input-catalog [data-input-item]')return 'input-item' in attrs&&!!node.up(n=>n.cls==='input-catalog');
+      if(one==='.input-handler a')return cls==='a'&&!!node.up(n=>n.cls==='input-handler');
+      if(one==='a.input-explanation[href^="#"]')return cls==='a input-explanation'&&String(attrs.href).startsWith('#');
+      if(one==='.input-title>a[href^="#"]:not(.route-path)')return cls==='a'&&node.parent?.cls==='input-title'&&String(attrs.href).startsWith('#');
+      return one==='.'+cls.split(' ').at(-1);});},
+    up(test){for(let at=node.parent;at;at=at.parent)if(test(at))return at;return null;},
+    closest(selector){for(let at=node;at;at=at.parent)if(at.matches(selector))return at;return null;},
+    querySelectorAll(selector){const out=[];const walk=n=>{for(const c of n.children){if(c.matches(selector))out.push(c);walk(c);}};walk(node);return out;}};
+  for(const child of children)child.parent=node;
+  return node;
+}
+function route(ids){
+  const name=el('route-path',{href:'https://github.com/r/redis.c#L791'}),handler=el('route-symbol',{href:'https://github.com/r/redis.c#L6085'});
+  const row=el('li',{'input-item':''},[el('input-title',{},[name,...ids.map(id=>el('a input-explanation',{href:'#'+id}))]),el('input-handler',{},[handler])]);
+  el('input-catalog',{},[row]);
+  return {name,handler};
+}
+`+code+`
+const revealed=[];const reveal=id=>{revealed.push(id);return true;};
+const click=(target,extra={})=>{let prevented=false,stopped=false;const event={target,button:0,preventDefault(){prevented=true;},stopImmediatePropagation(){stopped=true;},...extra};rmCatalogInputClick(event,reveal);return prevented&&stopped;};
+const flushdb=route(['t1-o1']);
+assert.equal(click(flushdb.name),true,'a plain click on the input name reads the input');
+assert.equal(click(flushdb.handler),true,'a plain click on its handler reads the input too');
+assert.deepEqual(revealed,['t1-o1','t1-o1']);
+assert.equal(click(flushdb.name,{metaKey:true}),false,'a modifier-click opens the code');
+assert.equal(click(flushdb.handler,{button:1}),false);
+assert.equal(click(route([]).name),false,'a row that names no input keeps its code link');
+assert.equal(click(route(['t1-o1','t1-o2']).name),false,'nor does a row naming two');
+const operation=el('a',{href:'#t1-o7'}),code=el('a',{href:'https://github.com/r/x.c#L1'});
+el('input-catalog',{},[el('li',{'input-item':''},[el('input-title',{},[operation]),el('input-handler',{},[code])])]);
+assert.equal(click(code),true,'an operation row reads the input its title links to');
+assert.deepEqual(revealed.at(-1),'t1-o7');
+assert.equal(rmCatalogInputClick({target:el('route-path',{href:'x'}),button:0},reveal),false,'a name outside a catalogue row is left alone');
+assert.equal(rmCatalogInputClick({target:flushdb.name,button:0,preventDefault(){throw new Error('prevented')},stopImmediatePropagation(){}},()=>false),false,'an input the map does not draw keeps the link');
+`)
+}
+
+// The toolbar's breadcrumb was one link, "redis-server (executable) /
+// Server runtime / Replication · syncCommand", whose click only re-read the
+// current reading: Redis's readers clicked "Server runtime" in it three
+// times and stayed on syncCommand's tiles. Each segment is its own link, the
+// label still reads as one, and each goes up to its level: a frame is read
+// and framed, the part is read and entered without its declaration, the
+// declaration is read in its part, the input is entered as its path.
+func TestEachBreadcrumbSegmentGoesUpToItsLevel(t *testing.T) {
+	path := systemJSPiece(t, "29-operation-view.js", "function rmExplorationPath(", "// An input's row in a component's catalogue")
+	levels := systemJSPiece(t, "29-operation-view.js", "  map.explorationPath=function(){", "  map.resumeExploration=function(){")
+	crumbs := systemJSPiece(t, "45-modes.js", "function rmCrumbs(", "// One entrance, one report")
+	runSystemJS(t, fakeElements+`
+const node=(id,title,extra={})=>({id,dataset:{title,...extra}});
+const byID={get:node('t1-o7','get',{activation:'request'}),server:node('system-component-t1','redis-server (executable)'),
+  runtime:node('t1-area-k2','Server runtime'),replication:node('n-t1-g18','Replication')};
+for(const key of Object.keys(byID))byID[byID[key].id]=byID[key];
+const parents={'n-t1-g18':'t1-area-k2','t1-area-k2':'system-component-t1'};
+function path(id){const out=[];while(id){out.unshift(id);id=parents[id];}return out;}
+let scope='n-t1-g18',operation=byID.get;const calls=[];
+const map={explorerMember:{owner:'n-t1-g18',name:'syncCommand',key:'h#sync',href:'h#sync',open:''},revealNode(n,all,source){calls.push(['reveal',n.id,all,source]);return Promise.resolve(true);}};
+const surface={clearMember(){calls.push(['clearMember']);}};
+function select(n,navigate,source,focus){calls.push(['select',n.id,navigate,source,focus]);return Promise.resolve(true);}
+`+path+levels+crumbs+`
+const segments=map.explorationPath();
+assert.equal(map.explorationLabel(),'get · redis-server (executable) / Server runtime / Replication · syncCommand','the label reads as before');
+const container=rmEl('span','reading-map-context');
+rmCrumbs(container,segments,{href:'#overview',title:'System map'});
+const links=container.children.filter(c=>c.tagName==='A');
+assert.deepEqual(links.map(a=>[a.textContent,a.href]),[['get','#t1-o7'],['redis-server (executable)','#system-component-t1'],['Server runtime','#t1-area-k2'],['Replication','#n-t1-g18'],['syncCommand','#n-t1-g18']],'one link per segment');
+assert.equal(container.textContent,map.explorationLabel(),'the separators stand between the links');
+assert.deepEqual(links.map(a=>a['aria-current']||''),['','','','','location']);
+for(const link of links)map.goToLevel(segments[Number(link.dataset.crumb)]);
+assert.deepEqual(calls,[
+  ['clearMember'],['select','t1-o7',true,null,true],
+  ['clearMember'],['select','system-component-t1',true,null,'center'],
+  ['clearMember'],['select','t1-area-k2',true,null,'center'],
+  ['clearMember'],['select','n-t1-g18',true,null,'center'],
+  ['reveal','n-t1-g18',false,{key:'h#sync',href:'h#sync',open:''}]]);
+scope='';operation=null;map.explorerMember=null;
+rmCrumbs(container,map.explorationPath(),{href:'#overview',title:map.explorationLabel()});
+assert.deepEqual(container.children.map(a=>[a.textContent,a.href]),[['System map','#overview']],'with nothing read it names the map');
 `)
 }

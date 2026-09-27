@@ -7,7 +7,7 @@ import {connections} from './layout.mjs';
 import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors, endEmphasis} from './emphasis.mjs';
-import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
+import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport, detailLevel, pinchZoom, zoomBelow} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {inputGroupsByPart} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading,cardText} from './cards.mjs';
@@ -610,6 +610,63 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const least=layerFloor(layout.nodes,semantic.records,grouped?group.id:rootOf(id),rect.width,rect.height);
     commitCamera(instance.setViewport(tileViewport(tile,byID.get(group?.id)?.branch==='inputs-part'?group:null,rect.width,rect.height,byID.get(id)?.contentScale||1,{least}),{duration:smooth?420:0}),id);
   }
+  // Every frame is entered by the one rule, at the scale its own content is
+  // drawn at: a component whole, the others no smaller than readable. An
+  // area is fitted whole only where its parts' headings stay about twelve
+  // pixels; larger, it is entered at its first part. Fitted at its layer's
+  // floor, Redis's Server runtime stood at 8px headings.
+  function frameView(n,rect){
+    const branch=byID.get(n.id).branch,component=branch==='component';
+    const scale=component?(componentFonts.get(n.id)||20)/20:['communication','inputs','inputs-part'].includes(branch)?communicationScales().get(n.id)||1:scales.has(n.id)?byID.get(n.id)?.contentScale||1:1;
+    const least=scales.has(n.id)||branch==='inputs-part'?Math.max(layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height),staysOpen/scale):Infinity;
+    return frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least});
+  }
+  // The level the camera would stand at with viewport `v` (semantic.mjs,
+  // detailLevel): the frames open there as a move to it decides them
+  // (updateDetail), and whether a part in sight draws its tiles, as Part
+  // draws them once it stands 860px wide.
+  function levelAt(v){
+    const next=detailState(v,new Set([...openComponents,...detailed,...communicationsOpen,...arriving]));
+    const shut=id=>closedContainer(id,placed,byID,next.areas,next.components.size>0,next.communications,next.components);
+    const width=host.clientWidth,height=host.clientHeight;
+    const tiles=layout.nodes.some(n=>{
+      const item=byID.get(n.id);if(n.frame||item?.activation||!item?.symbols?.length||shut(n.id))return false;
+      const {box,scale}=partBox({...item,...looseOf(n)});
+      if(box.width*scale*v.zoom<860)return false;
+      const x=n.absolute.x*v.zoom+v.x,y=n.absolute.y*v.zoom+v.y;
+      return x<width&&y<height&&x+n.width*v.zoom>0&&y+n.height*v.zoom>0;
+    });
+    return detailLevel(layout.nodes,[...next.components,...next.areas,...next.communications],tiles);
+  }
+  // "−" steps out one level, as a zoom mark steps in one: from a part's
+  // tiles to the frame holding it, from an open area to its component, from
+  // an open component to the whole map. Zooming out by a fifth, it had left
+  // Redis's readers at the level they were on; they reached for "Show whole
+  // map" up to nine times in a question. The camera takes the frame as
+  // entering it would, no closer than the level below the one it leaves.
+  function stepOut(){
+    const v=instance.getViewport(),rect=host.getBoundingClientRect(),level=levelAt(v);
+    if(level===0){overviewFit=false;commitCamera(instance.zoomTo(v.zoom*.8));return;}
+    const centre={x:(rect.width/2-v.x)/v.zoom,y:(rect.height/2-v.y)/v.zoom};
+    const inView=n=>{const x=n.absolute.x*v.zoom+v.x,y=n.absolute.y*v.zoom+v.y;return x<rect.width&&y<rect.height&&x+n.width*v.zoom>0&&y+n.height*v.zoom>0;};
+    const distance=n=>Math.hypot(Math.max(n.absolute.x-centre.x,0,centre.x-n.absolute.x-n.width),Math.max(n.absolute.y-centre.y,0,centre.y-n.absolute.y-n.height));
+    const depth=n=>{let d=0;for(let at=n.parentId;at;at=placed.get(at)?.parentId)d++;return d;};
+    // What the camera is on at its level: the part drawing its tiles, or
+    // else an open frame of the deepest open layer, nearest the centre.
+    const deep=layout.nodes.filter(n=>{const item=byID.get(n.id);if(n.frame||item?.activation||!item?.symbols?.length||closed(n.id)||!inView(n))return false;
+      const {box,scale}=partBox({...item,...looseOf(n)});return box.width*scale*v.zoom>=860;});
+    const open=[...openComponents,...detailed,...communicationsOpen].map(id=>placed.get(id)).filter(n=>n&&!n.display&&inView(n));
+    const deepest=Math.max(-1,...open.map(depth));
+    const from=(deep.length?deep:open.filter(n=>depth(n)===deepest)).sort((a,b)=>distance(a)-distance(b))[0];
+    let up=from?.parentId;while(up&&placed.get(up)?.display)up=placed.get(up).parentId;
+    closeCards();hover.pause();preview='';map.clearMapPreview?.();
+    if(!up||!from){fitOverview(420);return;}
+    const view=frameView(placed.get(up),rect),point={x:(rect.width/2-view.x)/view.zoom,y:(rect.height/2-view.y)/view.zoom};
+    const at=zoom=>({x:rect.width/2-point.x*zoom,y:rect.height/2-point.y*zoom,zoom});
+    const zoom=zoomBelow(view.zoom,minZoom(),z=>levelAt(at(z)),level-1);
+    overviewFit=false;arriving=new Set();locationSubject=up;
+    commitCamera(instance.setViewport(zoom===view.zoom?view:at(zoom),{duration:420}),up);
+  }
   function focus(id,center=true,smooth=true){
     const n=placed.get(id);if(!n)return;
     // A part read with one of its declarations named is entered at that tile.
@@ -639,10 +696,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       commitCamera(instance.setViewport(frameViewport({...group,width,height},layout.nodes,rect.width,rect.height,scale,{floor:staysOpen}),{duration:smooth?420:0}),id);return;
     }
     if(n.frame){
-      // Every frame is entered by the one rule, at the scale its own content is
-      // drawn at: a component whole, the others no smaller than readable.
       const branch=byID.get(n.id).branch,component=branch==='component';
-      const scale=component?(componentFonts.get(n.id)||20)/20:['communication','inputs','inputs-part'].includes(branch)?communicationScales().get(n.id)||1:scales.has(n.id)?contentScale:1;
       // Entering a frame opens it, so it may be shown as small as an open frame
       // stays open, about twelve pixels of text, rather than as large as a
       // closed one needs to open by itself.
@@ -652,11 +706,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       if(['communication','inputs','inputs-part'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id,rootOf(n.id),...groups]);
       else if(!component)detailed=new Set([...detailed,n.id]);
       if(!component)arrive([n.id,...groups]);
-      // An area is fitted whole only where its parts' headings stay about
-      // twelve pixels; larger, it is entered at its first part. Fitted at
-      // its layer's floor, Redis's Server runtime stood at 8px headings.
-      const least=scales.has(n.id)||branch==='inputs-part'?Math.max(layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height),staysOpen/scale):Infinity;
-      commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least}),{duration:smooth?420:0}),id);return;
+      commitCamera(instance.setViewport(frameView(n,rect),{duration:smooth?420:0}),id);return;
     }
     commitCamera(instance.setViewport(partViewport(n,1/contentScale,rect.width,rect.height),{duration:smooth?420:0}),id);
   }
@@ -1234,8 +1284,45 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // the input path stay; only the camera goes back. Dropping the reading
     // had sent a reader who zoomed out to look around back to the start.
     if(button.hasAttribute('data-map-fit')){closeCards();hover.pause();fitOverview(420);}
+    else if(button.hasAttribute('data-map-zoom')&&Number(button.dataset.mapZoom)<1)stepOut();
     else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
   });
+  // One pinch (the wheel with ctrl held, a trackpad's pinch) crosses at most
+  // one level boundary (semantic.mjs, pinchZoom), and a pause ends it. A
+  // pinch of eight ctrl+wheel ticks had carried Redis's readers from the
+  // whole map past the areas into a part's tiles. The zoom a tick asks for
+  // is React Flow's own (on a Mac a ctrl+wheel deltaY of 50 halves or
+  // doubles it); only a tick that would cross a second boundary is held at
+  // the last zoom short of it.
+  const gesturePause=300;
+  let gesture=null;
+  host.addEventListener('wheel',event=>{
+    if(!event.ctrlKey||!instance||initializing||event.target.closest?.('.nowheel'))return;
+    const now=performance.now(),v=instance.getViewport();
+    if(!gesture||now-gesture.at>gesturePause)gesture={level:levelAt(v)};
+    gesture.at=now;
+    const factor=navigator.userAgent.indexOf('Mac')>=0?10:1;
+    const asked=v.zoom*Math.pow(2,-event.deltaY*(event.deltaMode===1?.05:event.deltaMode?1:.002)*factor);
+    const to=Math.min(maxZoom,Math.max(minZoom(),asked));
+    if(to===v.zoom)return;
+    const box=host.getBoundingClientRect(),aim={x:event.clientX-box.left,y:event.clientY-box.top};
+    const at=zoom=>({x:aim.x-(aim.x-v.x)*zoom/v.zoom,y:aim.y-(aim.y-v.y)*zoom/v.zoom,zoom});
+    const zoom=pinchZoom(v.zoom,to,z=>levelAt(at(z)),gesture);
+    if(zoom===to)return;
+    event.preventDefault();event.stopPropagation();
+    if(Math.abs(zoom/v.zoom-1)<1e-9)return;
+    overviewFit=false;locationSubject='';arriving=new Set();
+    commitCamera(instance.setViewport(at(zoom))).then(()=>updateLocation(event));
+  },{capture:true,passive:false});
+  // The location row stands on the canvas, over the map: a wheel over it
+  // moves the map as it does a pixel lower. It had scrolled the page there.
+  location.addEventListener('wheel',event=>{
+    const pane=host.querySelector('.react-flow__pane');if(!pane)return;
+    event.preventDefault();
+    pane.dispatchEvent(new WheelEvent('wheel',{deltaX:event.deltaX,deltaY:event.deltaY,deltaZ:event.deltaZ,deltaMode:event.deltaMode,
+      clientX:event.clientX,clientY:event.clientY,screenX:event.screenX,screenY:event.screenY,
+      ctrlKey:event.ctrlKey,shiftKey:event.shiftKey,altKey:event.altKey,metaKey:event.metaKey,bubbles:true,cancelable:true}));
+  },{passive:false});
   // A frame's connections as its arrow ends group them: by the frame or
   // participant at the other end and the direction, incoming first, each
   // with the calls its card lists.
@@ -1260,7 +1347,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     flushSync(()=>root.render(<FrameConnections groups={groups} open={open} choose={chooser}/>));
     return true;
   }
-  return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,mountConnections,frameConnections,overview:()=>fitOverview(420),update(next){
+  // Going up from a declaration to its part (the toolbar's breadcrumb): no
+  // tile stays chosen, and the part is entered, not its tile.
+  const clearMember=()=>{if(memberChoice){memberChoice=null;update?.();}};
+  return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,clearMember,mountConnections,frameConnections,overview:()=>fitOverview(420),update(next){
     if(memberChoice&&(next.scope||'')!==memberChoice.part)memberChoice=null;
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
     view={...initial,...next,scope:next.scope||'',

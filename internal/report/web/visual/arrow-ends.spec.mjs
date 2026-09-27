@@ -4,6 +4,16 @@ async function settle(map){
   let previous='',stable=0;
   await expect.poll(async()=>{const v=JSON.stringify(await map.evaluate(map=>map.captureViewport()));stable=v===previous?stable+1:0;previous=v;return stable;},{intervals:[100]}).toBeGreaterThanOrEqual(2);
 }
+// A fifth out about the canvas's centre, one ctrl+wheel tick: the "−"
+// control steps out a whole level now.
+async function zoomOutAFifth(page,map){
+  const canvas=await page.locator('.flow-root').boundingBox();
+  await page.mouse.move(canvas.x+canvas.width/2,canvas.y+canvas.height/2);
+  await page.keyboard.down('Control');
+  try{await page.mouse.wheel(0,16.1);}finally{await page.keyboard.up('Control');}
+  await page.mouse.move(1430,890);
+  await settle(map);
+}
 async function pointAt(page,locator){
   const box=await locator.boundingBox();
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2,{steps:12});
@@ -20,7 +30,7 @@ test('an end joining every part of its frame is one all mark that outlines them 
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
   await map.evaluate(map=>map.focusNode('queue'));
   await settle(map);
-  await page.locator('[data-map-zoom="0.8"]').click();await settle(map);
+  await zoomOutAFifth(page,map);
   await page.mouse.move(1430,890);
   await pointAt(page,page.locator('[data-frame-title="execution"]>strong'));
   await expect(map).toHaveAttribute('data-subject','execution');
@@ -50,7 +60,7 @@ test('a click on an arrow end opens its frame\'s connection in the reading',asyn
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
   await map.evaluate(map=>map.focusNode('queue'));
   await settle(map);
-  await page.locator('[data-map-zoom="0.8"]').click();await settle(map);
+  await zoomOutAFifth(page,map);
   await page.mouse.move(1430,890);
   await pointAt(page,page.locator('[data-frame-title="execution"]>strong'));
   const all=end(page,'boundary:execution:in:requests');
@@ -83,7 +93,7 @@ test('a name in the reading\'s connection reads its declaration, and its code is
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
   await map.evaluate(map=>map.focusNode('queue'));
   await settle(map);
-  await page.locator('[data-map-zoom="0.8"]').click();await settle(map);
+  await zoomOutAFifth(page,map);
   await page.mouse.move(1430,890);
   await pointAt(page,page.locator('[data-frame-title="execution"]>strong'));
   const all=end(page,'boundary:execution:in:requests');
@@ -184,7 +194,7 @@ test('an arrowhead at a frame opens its connection\'s card and a click reads it'
   // Inside the backend: the head where the worker's arrow meets the database.
   const overview=await page.locator('[data-component-overview="backend"] strong').boundingBox();
   await page.mouse.click(overview.x+overview.width/2,overview.y+overview.height/2);await settle(map);
-  await page.locator('[data-map-zoom="0.8"]').click();await settle(map);
+  await zoomOutAFifth(page,map);
   await page.mouse.move(1430,890);await page.keyboard.press('Escape');
   await pointAt(page,page.locator('[data-frame-title="execution"]>strong'));
   const atDatabase=await head(page,await edge('worker','save-jobs'));

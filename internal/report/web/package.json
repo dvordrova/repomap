@@ -5,8 +5,7 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "node --test *.test.mjs",
-    "test:visual": "playwright test",
-    "test:visual:update": "playwright test --update-snapshots"
+    "test:visual": "playwright test"
   },
   "dependencies": {
     "@xyflow/react": "12.11.6",

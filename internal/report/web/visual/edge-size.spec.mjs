@@ -146,23 +146,27 @@ test('area frames keep thin outlines and small corners at close zoom',async({pag
     const measured=await frame.evaluate(frame=>{
       const css=getComputedStyle(frame),box=frame.getBoundingClientRect(),host=document.querySelector('.flow-root').getBoundingClientRect();
       return {border:parseFloat(css.borderTopWidth),radius:parseFloat(css.borderTopLeftRadius),
-        stroke:[...css.boxShadow.matchAll(/(-?[\d.]+)px/g)].map(match=>Number(match[1]))[3],
+        stroke:[...css.boxShadow.matchAll(/(-?[\d.]+)px/g)].map(match=>Number(match[1]))[3],width:parseFloat(css.getPropertyValue('--flow-frame-width')),
+        colour:css.boxShadow.match(/rgba?\(([^)]*)\)/)[1].split(',').slice(0,3).map(Number),
         x:Math.round((Math.max(box.left+24,host.left+24)+Math.min(box.right-24,host.right-24))/2),y:box.top};
     });
     expect(measured.border,'No border can be rounded up and then magnified').toBe(0);
-    expect(measured.stroke*zoom).toBeCloseTo(2,3);
+    // The frame paints its screen width at every zoom, never magnified: the
+    // width it is given (1.5px, 2.5px for the frame looked at) is the look's.
+    expect(measured.stroke*zoom).toBeCloseTo(measured.width,3);
+    expect(measured.width).toBeLessThanOrEqual(3);
     expect(measured.radius*zoom).toBeCloseTo(12,3);
     expect(await node.evaluate(node=>({transform:node.style.transform,width:node.style.width,height:node.style.height}))).toEqual(world);
     const screenshot=await page.screenshot();
-    const painted=await page.evaluate(async({png,x,y})=>{
+    const painted=await page.evaluate(async({png,x,y,colour})=>{
       const image=new Image();image.src='data:image/png;base64,'+png;await image.decode();
       const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
       const context=canvas.getContext('2d');context.drawImage(image,0,0);const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
       let count=0;for(let row=Math.floor(y)-4;row<Math.ceil(y)+30;row++){
         const offset=(row*canvas.width+x)*4;
-        if(Math.abs(pixels[offset]-82)<18&&Math.abs(pixels[offset+1]-100)<18&&Math.abs(pixels[offset+2]-125)<18)count++;
+        if(Math.abs(pixels[offset]-colour[0])<18&&Math.abs(pixels[offset+1]-colour[1])<18&&Math.abs(pixels[offset+2]-colour[2])<18)count++;
       }return count;
-    },{png:screenshot.toString('base64'),x:measured.x,y:measured.y});
+    },{png:screenshot.toString('base64'),x:measured.x,y:measured.y,colour:measured.colour});
     expect(painted,'The actual frame edge paints a thin stroke').toBeGreaterThanOrEqual(1);
     expect(painted).toBeLessThanOrEqual(3);
     await testInfo.attach(`journey-${zoom===readableZoom?1:2} — Area frame at zoom ${zoom}`,{body:screenshot,contentType:'image/png'});

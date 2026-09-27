@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,pathViewport,tileViewport,staysOpen,layerFloor,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition,deepViewport} from './semantic.mjs';
+import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,pathViewport,tileViewport,staysOpen,layerFloor,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition,deepViewport,detailLevel,pinchZoom,zoomBelow} from './semantic.mjs';
 
 test('approaching a target reveals its diagram before its smallest descendant text is readable',()=>{
   const nodes=[{id:'target',frame:true,absolute:{x:0,y:0},width:900,height:600}];
@@ -524,4 +524,45 @@ test('an input collection opens to its groups first, and the groups to their inp
   assert.ok(Math.abs(layerFloor(nodes,records,'g1',1000,700)-12/1.7)<1e-9,'a group is entered where its inputs stay open');
   const placed=new Map(nodes.map(node=>[node.id,node])),byID=new Map(records.map(record=>[record.id,record]));
   assert.equal(closedContainer('get',placed,byID,new Set(),true,new Set(['inputs']),new Set())?.id,'g1','a closed group hides its inputs');
+});
+
+// A camera's level: the whole map, then one per open hierarchy depth, then a
+// part's tiles.
+test('the level counts the open depths and the tiles',()=>{
+  const nodes=[{id:'c'},{id:'a',parentId:'c'},{id:'p',parentId:'a'},{id:'i'},{id:'g',parentId:'i'}];
+  assert.equal(detailLevel(nodes,[]),0);
+  assert.equal(detailLevel(nodes,['c','i']),1);
+  assert.equal(detailLevel(nodes,['c','a']),2);
+  assert.equal(detailLevel(nodes,['i','g']),2,'an input collection\'s groups are its second level');
+  assert.equal(detailLevel(nodes,['c','a'],true),3);
+});
+
+// One pinch crosses one boundary and stops short of the next; a new pinch
+// crosses the next. Two layers opening at one zoom are one boundary.
+test('a pinch crosses one level boundary and stops short of the next',()=>{
+  const steps=zoom=>zoom<1?0:zoom<2?1:zoom<4?2:3;
+  const first={level:0};
+  const held=pinchZoom(.5,10,steps,first);
+  assert.equal(first.across,1);
+  assert.ok(held<2&&held>1.99,`held short of the second boundary: ${held}`);
+  assert.equal(pinchZoom(held,20,steps,first),held,'the same pinch goes no farther');
+  assert.ok(pinchZoom(held,.3,steps,first)<1,'back across its boundary it may go');
+  assert.equal(pinchZoom(1.5,1.2,steps,first),1.2,'within its two levels it moves freely');
+  const next={level:1};
+  const on=pinchZoom(held,20,steps,next);
+  assert.equal(next.across,2);
+  assert.ok(on<4&&on>3.99);
+  assert.equal(pinchZoom(.5,.8,steps,{level:0}),.8,'a pinch within its level is left alone');
+  const jump=zoom=>zoom<1?0:zoom<4?2:3,together={level:0};
+  const past=pinchZoom(.5,10,jump,together);
+  assert.equal(together.across,2,'two layers opening at one zoom are one boundary');
+  assert.ok(past<4&&past>3.99);
+});
+
+// "−" takes the largest zoom at which the level is below the one it leaves.
+test('stepping out takes the closest zoom below the level it leaves',()=>{
+  const steps=zoom=>zoom<1?0:zoom<2?1:zoom<4?2:3;
+  const out=zoomBelow(3,.1,steps,1);
+  assert.ok(out<2&&out>1.99,`just below the areas: ${out}`);
+  assert.equal(zoomBelow(1.5,.1,steps,1),1.5,'a frame already framed below it keeps its zoom');
 });

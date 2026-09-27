@@ -109,6 +109,56 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
 }
 const inputGroups=(nodes,byID)=>nodes.filter(node=>node.frame&&byID.get(node.id)?.branch==='inputs-part');
 
+// The level the camera stands at: 0 on the whole map, one more for each
+// hierarchy depth whose frames are open (`open`, as detailLayers decides
+// them), and one more where a part draws its declarations as tiles. It is
+// what the "−" control steps out of and what one pinch may cross once.
+export function detailLevel(nodes,open,tiles=false){
+  const placed=new Map(nodes.map(node=>[node.id,node]));
+  let deepest=-1;
+  for(const id of open){
+    if(!placed.has(id))continue;
+    let depth=0;for(let at=placed.get(id).parentId;at;at=placed.get(at)?.parentId)depth++;
+    deepest=Math.max(deepest,depth);
+  }
+  return deepest+1+(tiles?1:0);
+}
+
+// A zoom on the way from `from` to `to` (a gesture's proposed zoom) that
+// keeps the level between `low` and `high`: `to` itself when it does, else
+// the one nearest it that still does. `levelAt(zoom)` rises with the zoom.
+function boundedZoom(from,to,levelAt,low,high,steps=30){
+  const ok=zoom=>{const level=levelAt(zoom);return level>=low&&level<=high;};
+  if(ok(to)||!ok(from))return ok(to)?to:from;
+  let good=from,bad=to;
+  for(let i=0;i<steps;i++){const middle=Math.sqrt(good*bad);if(ok(middle))good=middle;else bad=middle;}
+  return good;
+}
+
+// The zoom a pinch tick may take on its way from `from` to `to`: one pinch
+// crosses one boundary, a zoom where the level changes, and stops short of
+// the next, going on or back. `gesture.level` is the level the pinch began
+// at; `gesture.across`, set here once it crosses, the level on the other
+// side of that boundary. Two layers that open at one zoom are one boundary.
+export function pinchZoom(from,to,levelAt,gesture,steps=30){
+  if(gesture.across===undefined){
+    if(levelAt(to)===gesture.level)return to;
+    let same=from,other=to;
+    for(let i=0;i<steps;i++){const middle=Math.sqrt(same*other);if(levelAt(middle)===gesture.level)same=middle;else other=middle;}
+    gesture.across=levelAt(other);
+  }
+  return boundedZoom(from,to,levelAt,Math.min(gesture.level,gesture.across),Math.max(gesture.level,gesture.across),steps);
+}
+
+// The largest zoom no larger than `high` at which the level is at most
+// `level`, down to `low`, where it is taken to be.
+export function zoomBelow(high,low,levelAt,level,steps=30){
+  if(levelAt(high)<=level)return high;
+  let good=low,bad=high;
+  for(let i=0;i<steps;i++){const middle=Math.sqrt(good*bad);if(levelAt(middle)<=level)good=middle;else bad=middle;}
+  return good;
+}
+
 // The smallest zoom at which the layer holding frame `id`, and every layer
 // above it, stays open: the retaining side of the detail thresholds.
 export function layerFloor(nodes,records,id,width,height){

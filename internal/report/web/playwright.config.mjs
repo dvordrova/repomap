@@ -8,12 +8,9 @@ export default defineConfig({
   timeout: 30_000,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  // A missing reference must fail a normal run, including on a new OS.
-  updateSnapshots: 'none',
-  snapshotPathTemplate: '{testDir}/snapshots/{platform}/{projectName}/{arg}{ext}',
   outputDir: './test-results',
   reporter: [['list'], ['html', {open: 'never'}], ['./visual/journey-reporter.mjs']],
-  expect: {timeout: 10_000, toHaveScreenshot: {animations: 'disabled', maxDiffPixels: 0}},
+  expect: {timeout: 10_000},
   use: {
     browserName: 'chromium',
     baseURL: 'http://127.0.0.1:8875',

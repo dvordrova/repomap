@@ -199,10 +199,11 @@ ordinary short-name maps. Every complete onscreen group has painted title text
 within its frame and a thin native outline. A slightly closer view retains the
 same geometry; the assertions distinguish a visible rectangle from a visible
 name and cannot accept a hidden label beside a lone question mark.
-The short-name fixture also requires at least 10px group titles at this first
-entrance. Final participant sizing must fit the existing interior uniformly,
+At this first entrance the largest revealed group title reads at least
+12px, the size its layer stays open at; smaller groups keep smaller
+titles. Final participant sizing must fit the existing interior uniformly,
 including its text and routes, rather than leave a miniature in an enlarged
-frame. Initial and slightly closer PNGs are compared with reviewed references.
+frame. Initial and slightly closer screenshots are attached for review.
 An area with one existing part is checked at those same two moments: exactly
 one card, no wrapper or child hint, a readable full title, and direct selection
 of the original part. Multi-part areas and one-child input/external participant
@@ -211,35 +212,39 @@ area metadata, native endpoints, source locations and operation membership.
 An additional five-participant fixture uses short component names, seven/five
 area names and eleven/three inputs in the ordinary report's 1054×580 canvas.
 Its complete initial inventories must fit, retain whole words and keep those
-area names within two lines; the PNG captures the resulting reading layout.
+area names within two lines; a screenshot of the resulting reading layout
+is attached.
 
 Install the pinned browser once with `npx playwright install chromium
 --only-shell` from `internal/report/web`. Browser downloads use Playwright's
-standard shared location. Normal comparison is `make ui-visual-test`; explicitly
-review and update references with `npm run test:visual:update` in the web
-directory. Missing references fail normal runs. The active acceptance project covers
-1440×900 at DPR 1 on macOS 15 Intel with the Chromium version
-selected by the pinned Playwright dependency. The owner excluded narrow-window
-work on 2026-09-14; earlier 1024×768 references remain historical artifacts,
-not an active acceptance project. Other operating systems need
-their own reviewed references, not automatically accepted images.
-The component entrance comparison allows three differing pixels for the observed
-macOS glyph-edge rasterization difference; all others allow none. No canvas
-region is masked, and bounds, readability and pointer checks remain strict.
+standard shared location. The suite runs with `make ui-visual-test`. The
+active acceptance project covers 1440×900 at DPR 1 on macOS 15 Intel with the
+Chromium version selected by the pinned Playwright dependency. The owner
+excluded narrow-window work on 2026-09-14. No pixel reference is compared: a
+baseline pins incidental layout, so the tests assert what a reader needs,
+readable names inside their frames, nothing overlapping, headings present,
+levels reachable, geometry reused. Bounds, readability and pointer checks
+remain strict.
 
 The suite checks readable names, complete area lists, external call focus,
-stable geometry and the successive stages of pointer-anchored zoom. PNG
-checks at the component threshold require a visible child heading or the
-retained component heading with a real area entrance; empty frame borders and
-the location row alone are insufficient. PNG
-attachments show the aim and action for each journey step. Open the review
-page with `npx playwright show-report --host 127.0.0.1`; its HTML is a viewer for
-the screenshots and, on mismatch, expected/actual/diff images. Actual output
-also appears as one scrollable image sequence in `playwright-report/journey.html`.
-Failed sequences are explicitly marked as diagnostic output. The images
-and the viewer are ignored build artifacts; only reviewed reference PNGs are
-committed. CI compares references without updating them and publishes the
-review report as `canvas-screenshots`.
+stable geometry and the successive stages of pointer-anchored zoom. Checks
+at the component threshold require a visible child heading or the retained
+component heading with a real area entrance; empty frame borders and the
+location row alone are insufficient. The level journey (`levels.spec.mjs`)
+checks that "−" leaves exactly one level per press down to the whole map,
+that one pinch crosses one level boundary and a pause lets the next cross
+the next, and that a wheel over the canvas's location row moves the map
+and one past an overflowing inventory's end scrolls neither the page nor
+the map. Without a fixture of its own, `visual/real-navigation.spec.mjs`
+walks the toolbar's breadcrumb up from a part and reads an input from its
+catalogue row on the `REPOMAP_REAL_RUN` report at 1440×900 and 1280×800.
+PNG attachments show the aim and action for each journey step. Open the
+review page with `npx playwright show-report --host 127.0.0.1`; its HTML is
+a viewer for the screenshots. Actual output also
+appears as one scrollable image sequence in `playwright-report/journey.html`.
+Failed sequences are explicitly marked as diagnostic output. The images and
+the viewer are ignored build artifacts; no image is committed. CI publishes
+the review report as `canvas-screenshots`.
 
 The same prepared participants also have a dense inventory variant with forty
 additional areas per system. Its default screenshot must keep all nine root

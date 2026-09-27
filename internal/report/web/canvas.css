@@ -148,7 +148,7 @@
 .flow-component-overview .flow-description{font-size:13px;line-height:18px;min-height:0;overflow:hidden}
 .flow-component-overview .flow-description-compact{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .flow-inside-counts{font:500 12px/17px system-ui;color:#536176;flex-shrink:0}
-.flow-component-areas{list-style:none;margin:0;padding:6px 0 0;border-top:1px solid #dce2ea;min-height:0;overflow:auto;flex:0 1 auto}
+.flow-component-areas{list-style:none;margin:0;padding:6px 0 0;border-top:1px solid #dce2ea;min-height:0;overflow:auto;overscroll-behavior:contain;flex:0 1 auto}
 .flow-component-areas.flow-scrollable{scrollbar-width:thin;scrollbar-color:#9caabd transparent;background:linear-gradient(#f8fafc 30%,#f8fafc00) center top,linear-gradient(#f8fafc00,#f8fafc 70%) center bottom,radial-gradient(farthest-side at 50% 0,#53617650,#53617600) center top,radial-gradient(farthest-side at 50% 100%,#53617650,#53617600) center bottom;background-repeat:no-repeat;background-size:100% 32px,100% 32px,100% 10px,100% 10px;background-attachment:local,local,scroll,scroll}
 .flow-component-areas li{margin:0;padding:0}
 .flow-enabled .flow-component-areas button{display:block;width:100%;padding:5px 0;border:0;border-radius:0;background:transparent;text-align:left;font:500 13px/18px system-ui;color:#243044;white-space:normal;cursor:pointer}
@@ -162,7 +162,7 @@
 .flow-component-overview.flow-input-collection{background:#edf5ff;color:#204a7b;padding:0;gap:6px}
 .flow-component-overview.flow-input-collection strong{font-size:13px;line-height:17px}
 .flow-component-overview.flow-input-collection .flow-component-overview-heading{box-sizing:border-box}
-.flow-input-types{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto;flex:0 1 auto}
+.flow-input-types{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto;overscroll-behavior:contain;flex:0 1 auto}
 .flow-input-types li{margin:0;font:500 13px/18px system-ui}
 .map-object-heading{position:relative;padding-right:38px;min-height:32px}
 .flow-enabled .map-close-details{position:absolute;top:0;right:0;display:grid;place-items:center;width:32px;height:32px;padding:4px;border:1px solid #d4dce6;border-radius:6px;background:white;color:#39455a;cursor:pointer}

@@ -37,14 +37,18 @@ function expectAffineInteriors(before,after,records){
     const widest=ids.map(id=>previous.get(id)).sort((a,b)=>b.width-a.width)[0];
     const scale=next.get(widest.id).width/widest.width;
     expect(scale).toBeGreaterThan(0);
+    // CSSOM serializes a coordinate to six significant digits: half a unit
+    // of the sixth digit, 0.05 at 13443.9, is what reading it back can lose.
+    const rounding=value=>.5*10**(Math.floor(Math.log10(Math.abs(value)||1))-5);
     for(const id of ids){
       const a=previous.get(id),b=next.get(id);
-      for(const [name,actual,expected] of [
-        ['width',b.width,a.width*scale],['height',b.height,a.height*scale],
-        ['x',b.x-moved.x,(a.x-anchor.x)*scale],['y',b.y-moved.y,(a.y-anchor.y)*scale],
+      for(const [name,actual,expected,lost] of [
+        ['width',b.width,a.width*scale,rounding(b.width)+scale*rounding(a.width)],['height',b.height,a.height*scale,rounding(b.height)+scale*rounding(a.height)],
+        ['x',b.x-moved.x,(a.x-anchor.x)*scale,rounding(b.x)+rounding(moved.x)+scale*(rounding(a.x)+rounding(anchor.x))],
+        ['y',b.y-moved.y,(a.y-anchor.y)*scale,rounding(b.y)+rounding(moved.y)+scale*(rounding(a.y)+rounding(anchor.y))],
       // Allow CSSOM serialization rounding of the large world coordinates;
       // exact affine geometry is separately checked in split-layout.test.mjs.
-      ])expect(Math.abs(actual-expected),`${root.title}: ${id} keeps its local ${name} after one scale/translation`).toBeLessThan(.05);
+      ])expect(Math.abs(actual-expected),`${root.title}: ${id} keeps its local ${name} after one scale/translation`).toBeLessThan(Math.max(.05,lost+.01));
     }
   }
 }
@@ -81,7 +85,11 @@ for(const inputs of [true,false]){
     await expect.poll(async()=>(await work(page)).pending).toBe(0);
     const initial=await work(page),placed=await geometry(page),prepared=manyExternalInventory({inputs});
     expect(initial.workers).toBe(1);expect(initial.inner).toBeGreaterThan(0);expect(initial.outer).toBeGreaterThan(0);expect(initial.unknown).toBe(0);
-    expect(placed.map(node=>node.id).sort()).toEqual(prepared.records.map(node=>node.id).sort());
+    // Every prepared record is placed; the only nodes added are the input
+    // collection's groups by the part holding their handlers (`inputs~part`).
+    const records=new Set(prepared.records.map(node=>node.id));
+    expect([...records].filter(id=>!placed.some(node=>node.id===id)),'every record is placed').toEqual([]);
+    expect(placed.map(node=>node.id).filter(id=>!records.has(id)&&!/^[^~]+-inputs~[^~]+$/.test(id)),'nothing but input groups is added').toEqual([]);
 
     const canvas=await page.locator('.flow-root').boundingBox(),beforePan=await camera(page);
     await page.mouse.move(canvas.x+canvas.width/2,canvas.y+canvas.height-60);await page.mouse.down();

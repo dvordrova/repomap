@@ -1,5 +1,85 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Navigation bugs from the Redis benchmark: levels, breadcrumb, input path
+
+- Scope (lead): bugs only; the canvas look and camera policy stay frozen.
+  Checked on the saved Redis run (20260927-205506) rendered with
+  `repomap render`, served on loopback, headless Chromium with real pointer
+  moves at 1440×900 and 1280×800 (driver and logs in the session
+  scratchpad, `nav-fixes/`).
+- **Breadcrumb.** "redis-server (executable) / Server runtime / Replication
+  · syncCommand" was one link; clicking "Server runtime" or the component
+  left the camera at zoom 11.1 on syncCommand's tiles and the reading on
+  Replication. Each segment is now its own link that goes up to its level,
+  reading and camera together: "Server runtime" reads the area and frames
+  it (zoom 2.0, parts open), the component reads it and frames it whole
+  (0.69, areas closed); same at 1280×800 (2.36, 0.64).
+- **"−".** It zoomed by 0.8 and stayed on the level: component 0.69 → 0.55,
+  area 2.0 → 1.6, both unchanged. It now steps out one level as a zoom mark
+  steps in: tiles → their area (11.1 → 2.0), area → component (2.0 → 0.69),
+  component → whole map (0.69 → 0.34); "+" still zooms by a quarter.
+- **Pinch.** Eight ctrl+wheel ticks (deltaY 40, 60 ms apart) over
+  Replication went whole map → components → areas → tiles (levels
+  0,1,1,2,2,2,3). One pinch now crosses one level boundary, a pause
+  (300 ms) ends it: three pinches go 0→1, 1→2, 2→3, one pinch out 3→2.
+  Two layers that open at one zoom (the fixture's small component and its
+  areas) are one boundary; the first design, one level either way, froze a
+  pinch at the whole map there.
+- **Legend.** The tiles' purple dashed links (a function to the type it
+  returns, a type to the function taking it) were unexplained; the key
+  names them, "returns or takes a type", in the tiles' own purple and grey
+  head, when a part draws one.
+- **Wheel.** Over the canvas a plain wheel panned the map, as DEVELOPMENT
+  requires, except over the 30 px location row, where it scrolled the page
+  100 px, and past the end of an overflowing component inventory, where the
+  next notch scrolled the page and the one after panned the map under a
+  still pointer (fixture). The row now forwards the wheel to the map and an
+  inventory contains its overscroll. The wheel's slowness the testers
+  reported is timing, left alone.
+- **Input path.** The reading offered "One shortest static path: main →
+  aeMain → beforeSleep → call" and a box through loadAppendOnlyFile for
+  GET, the benchmark's two wrong lures. The entry chain is gone (Go
+  `entryGraph`/`chain` and its test assertions deleted); each shared
+  dispatch keeps its fact, "call → one of 94", and says "The path by which
+  an input reaches call is not established." The handler's own steps stay.
+  A later change is to compute the chain from input handlers in GroupsIndex.
+- **Catalog rows.** A plain click on "flushdb" or "flushdbCommand" in the
+  component reading's 95 rows opened GitHub. When the row's own link names
+  one input ("To explanation", `#t1-o1`), a plain click reads the input
+  ("Operation · request flushdb", camera on its path); a modifier-click
+  opens the code. No new page data was needed.
+- **Visual suite.** `make ui-visual-test` failed 18 tests on main, 15 of
+  them on PNG baselines last reviewed on 2026-09-15. All 37 baselines and
+  the snapshot config are deleted; every test keeps its semantic checks.
+  Four semantic failures, decided one by one: edge-size pinned a 2 px
+  outline where the frame looked at draws 2.5 px (now: the screen width is
+  the frame's own at every zoom, and the painted colour is read from it);
+  the chip-width equality of gesture-star ignored each number's hover
+  padding (height kept); group-entrance's 10 px floor for every group
+  measured the new input groups too (5.7–9.5 px; now the largest title at
+  the first reveal reads ≥ 12 px, measured 12.1 and 12.2); layout-work
+  compared placed nodes to records without the input groups and then hit
+  CSSOM's six-digit rounding at 13443.9 (now: every record placed, only
+  `…-inputs~part` added, tolerance from the serialized digits). Six specs
+  that used "−" as a fifth-out step now make one ctrl+wheel tick.
+- Run measurements moved out of REPORT.md's card-text and whole-map-fit
+  rules: "Implements Redis set commands and" measured 225.84 px broke in the
+  225 px column; a browser drawing the 1.5 px border 1 px wide left 226 px,
+  where pykrx's 225.39 px "Fetches Korean market fundamentals" fit whole;
+  measured over the participants alone, the camera framing Redis's "DNS
+  resolver" group stood 0.85% smaller than the fit ("DNS resolve", "TCP
+  endpoin").
+- Tests, each failing with its fix reverted (checked):
+  `TestEachBreadcrumbSegmentGoesUpToItsLevel`, `TestKeyNamesTheTilesTypeLinks`,
+  `TestACatalogRowReadsItsInputOnAPlainClick`,
+  `TestAnInputsPathNamesItsDispatchWithoutARouteAndListsItsOwnSteps` (Go),
+  `TestAnInputsPathNamesItsDispatchThenItsOwnSteps` (JS, was
+  `TestAnInputsPathIsTheSharedChainThenItsOwnSteps`), `visual/levels.spec.mjs`
+  ("−" twice, pinch, location row, inventory end), node tests for
+  `detailLevel`, `pinchZoom`, `zoomBelow`; `visual/real-navigation.spec.mjs`
+  walks the breadcrumb and a catalog row on `REPOMAP_REAL_RUN` (passes on
+  the Redis run).
+
 ## 2026-09-28 — Reading-column bugs from the Redis benchmark
 
 - Benchmark participants studied Redis 1.3.6 in the reading column. Scope

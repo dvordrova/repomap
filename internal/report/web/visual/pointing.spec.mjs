@@ -5,6 +5,16 @@ async function settle(map){
   let previous='',stable=0;
   await expect.poll(async()=>{const v=JSON.stringify(await map.evaluate(map=>map.captureViewport()));stable=v===previous?stable+1:0;previous=v;return stable;},{intervals:[100]}).toBeGreaterThanOrEqual(2);
 }
+// A fifth out about the canvas's centre, one ctrl+wheel tick: the "−"
+// control steps out a whole level now.
+async function zoomOutAFifth(page,map){
+  const canvas=await page.locator('.flow-root').boundingBox();
+  await page.mouse.move(canvas.x+canvas.width/2,canvas.y+canvas.height/2);
+  await page.keyboard.down('Control');
+  try{await page.mouse.wheel(0,16.1);}finally{await page.keyboard.up('Control');}
+  await page.mouse.move(1430,890);
+  await settle(map);
+}
 async function pointAt(page,locator){
   const box=await locator.boundingBox();
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2,{steps:12});
@@ -103,7 +113,7 @@ test('a number\'s card is reachable, kept open by a click and closed by ✕, Esc
   await map.evaluate(map=>map.focusNode('auth'));
   await settle(map);
   // Far enough back that the canvas has room beside the area for a card.
-  await page.locator('[data-map-zoom="0.8"]').click();await settle(map);
+  await zoomOutAFifth(page,map);
   await expect(page.locator('.react-flow__node[data-id="routes"]')).toBeVisible();
   await page.mouse.move(1430,890);
   await pointAt(page,page.locator('[data-frame-title="requests"]>strong'));
@@ -290,7 +300,7 @@ test('a kept card whose frame closed does not freeze the map',async({page})=>{
   await page.locator('[data-badge="routes"]').click();
   await expect(page.locator('.flow-part-summary')).toBeVisible();
   // Zoomed out until the area closes: the kept card goes with its frame.
-  for(let step=0;step<12&&await page.locator('.flow-part-summary').count();step++){await page.locator('[data-map-zoom="0.8"]').click();await settle(map);}
+  for(let step=0;step<12&&await page.locator('.flow-part-summary').count();step++){await zoomOutAFifth(page,map);}
   await expect(page.locator('.flow-part-summary')).toHaveCount(0);
   await pointAt(page,page.locator('[data-summary-area="execution"] strong'));
   await expect(map).toHaveAttribute('data-subject','execution');

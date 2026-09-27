@@ -2,20 +2,22 @@ package report
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// An input's reading shows its path: the chain from the program's entry to
-// each dispatch site whose alternatives hold its handler, shared by every
-// input those alternatives handle, then the handler's own steps, a callee
-// under its caller. The chain passes through none of the handlers the site
-// chooses between: Redis's shortest chain to call ran main →
-// loadAppendOnlyFile → execCommand → call, through a command the dispatch
-// itself calls.
-func TestAnInputsPathSharesTheChainToItsDispatchAndListsItsOwnSteps(t *testing.T) {
+// An input's reading shows its path: each dispatch site whose alternatives
+// hold its handler, named by the declaration it dispatches through and how
+// many it chooses between, then the handler's own steps, a callee under its
+// caller. No route from the program's entry to the site is chosen: the
+// shortest static chain to Redis's call ran main → aeMain → beforeSleep →
+// call, which a benchmark reader was offered as GET's path. Which path an
+// input takes to the site is not established, so none is shown.
+func TestAnInputsPathNamesItsDispatchWithoutARouteAndListsItsOwnSteps(t *testing.T) {
 	section := &pageSection{ID: "server", ShortLabel: "Server"}
 	at := func(line int) *programindex.Location {
 		return &programindex.Location{Path: "redis.c", Line: line, Column: 1}
@@ -70,21 +72,14 @@ func TestAnInputsPathSharesTheChainToItsDispatchAndListsItsOwnSteps(t *testing.T
 		}
 		return out
 	}
-	if len(path.Shared) != 2 {
-		t.Fatalf("want the chains to both dispatch sites, got %+v", path.Shared)
+	want := []pageSharedPath{{Inputs: 4, All: true, Through: "callCommand", Of: 4}, {Inputs: 4, All: true, Through: "loadCommand", Of: 4}}
+	if !reflect.DeepEqual(path.Shared, want) {
+		t.Fatalf("the dispatch sites the input shares:\n got %+v\nwant %+v", path.Shared, want)
 	}
-	network, replay := path.Shared[0], path.Shared[1]
-	if want := []string{"mainCommand", "aeMainCommand", "eventsCommand", "readCommand", "processCommand", "callCommand"}; !equalStrings(names(network.Steps), want) {
-		t.Fatalf("the chain to call went through a handler it dispatches to:\n got %v\nwant %v", names(network.Steps), want)
-	}
-	if network.Inputs != 4 || !network.All || network.Of != 4 || network.Through != "callCommand" {
-		t.Fatalf("the shared chain does not say whom it is shared by: %+v", network)
-	}
-	if network.Steps[1].PartTitle != "Event loop" || network.Steps[1].Part != mapNodeID("loop") || network.Steps[0].Href == "" && network.Steps[0].Open == "" && network.Steps[0].Source == "" {
-		t.Fatalf("a step lost its part or its code: %+v", network.Steps[1])
-	}
-	if want := []string{"mainCommand", "loadCommand"}; !equalStrings(names(replay.Steps), want) || replay.Through != "loadCommand" {
-		t.Fatalf("the replay chain: %v", names(replay.Steps))
+	for _, entry := range []string{"mainCommand", "aeMainCommand", "eventsCommand", "readCommand", "processCommand"} {
+		if strings.Contains(raw, `"`+entry+`"`) {
+			t.Fatalf("the path chose a route from the entry through %s: %s", entry, raw)
+		}
 	}
 	own := names(path.Own)
 	if want := []string{"getCommand", "getGenericCommand", "lookupCommand", "replyCommand"}; !equalStrings(own, want) {
@@ -95,7 +90,7 @@ func TestAnInputsPathSharesTheChainToItsDispatchAndListsItsOwnSteps(t *testing.T
 	}
 	renamed := remapInputPath(raw, func(id string) string { return "server-" + id })
 	var moved pageInputPath
-	if json.Unmarshal([]byte(renamed), &moved) != nil || moved.Own[2].Part != "server-"+mapNodeID("keys") || moved.Shared[0].Steps[0].Part != "server-"+mapNodeID("config") {
+	if json.Unmarshal([]byte(renamed), &moved) != nil || moved.Own[2].Part != "server-"+mapNodeID("keys") || !reflect.DeepEqual(moved.Shared, want) {
 		t.Fatalf("a scoped map did not rename the path's parts: %s", renamed)
 	}
 }

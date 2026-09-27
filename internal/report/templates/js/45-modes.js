@@ -1,3 +1,18 @@
+// The toolbar's breadcrumb: one link per segment of the map's reading
+// (`map.explorationPath()`), each going up to its level, the separators
+// as the one label read ("redis-server (executable) / Server runtime /
+// Replication · syncCommand"). With nothing read it is one link, `fallback`.
+function rmCrumbs(container,segments,fallback){
+  container.replaceChildren();
+  if(!segments.length){var only=document.createElement('a');only.href=fallback.href;only.textContent=fallback.title;only.dataset.crumb='';only.dataset.readingMapReturn='';container.appendChild(only);return;}
+  segments.forEach(function(segment,index){
+    if(index)container.appendChild(document.createTextNode(segment.sep));
+    var link=document.createElement('a');link.href='#'+segment.id;link.textContent=segment.title;
+    link.dataset.crumb=String(index);link.dataset.readingMapReturn='';
+    if(index===segments.length-1)link.setAttribute('aria-current','location');
+    container.appendChild(link);
+  });
+}
 // One entrance, one report: the summary, questions, map and search are all
 // here. Local reading actions and browser Back retain the preceding path.
 (function(){
@@ -5,9 +20,9 @@
   var pages=Array.from(document.querySelectorAll('main > [data-report-page]'));
   var home=document.getElementById('overview'), repoMap=document.getElementById('repository-map');
   if(!toolbar||!home)return;
-  var locationLine=toolbar.querySelector('.reading-location'),locationName=document.createElement('span'),mapContext=document.createElement('a'),readingIntent=document.createElement('span');
+  var locationLine=toolbar.querySelector('.reading-location'),locationName=document.createElement('span'),mapContext=document.createElement('span'),readingIntent=document.createElement('span');
   readingIntent.className='reading-intent';readingIntent.hidden=true;locationName.className='reading-address';
-  mapContext.className='reading-map-context';mapContext.dataset.readingMapReturn='';mapContext.hidden=true;locationLine.append(readingIntent,locationName,mapContext);
+  mapContext.className='reading-map-context';mapContext.hidden=true;var crumbSegments=[];locationLine.append(readingIntent,locationName,mapContext);
   var returnLinks=document.createElement('nav');returnLinks.className='reading-return';returnLinks.hidden=true;locationLine.appendChild(returnLinks);
   var returnLink=document.createElement('a'),termLink=document.createElement('a'),mapLink=document.createElement('a'),searchLink=document.createElement('button');mapLink.dataset.readingMapReturn='';searchLink.type='button';searchLink.dataset.readingFind='';returnLinks.append(returnLink,termLink,mapLink,searchLink);
   var detailGroup=null,sectionTitle='';
@@ -100,7 +115,7 @@
     readingIntent.hidden=!readingIntent.textContent;
     var map=!detailGroup&&current.querySelector('[data-map-explorer]');
     mapContext.hidden=!map;
-    if(map){mapContext.href='#'+mapDestination(map).id;mapContext.textContent=map.explorationLabel();}
+    if(map){crumbSegments=map.explorationPath?.()||[];rmCrumbs(mapContext,crumbSegments,{href:'#'+mapDestination(map).id,title:map.explorationLabel()});}
     syncComponentChoice();
   }
   function mapDestination(map){return document.getElementById(map.explorerScope)||map.explorerOperation||home;}
@@ -167,8 +182,11 @@
       if(component&&findAction!==searchLink){component.value=findAction.dataset.readingFind||'';component.dispatchEvent(new Event('change',{bubbles:true}));}
       if(search)search.focusSearch();return;
     }
-    if(e.target.closest('a')===mapContext&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
-      e.preventDefault();var contextMap=current.querySelector('[data-map-explorer]');contextMap.resumeExploration();contextMap.scrollIntoView({block:'start'});return;
+    var crumb=e.target.closest('[data-crumb]');
+    if(crumb&&mapContext.contains(crumb)&&!e.button&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
+      e.preventDefault();var contextMap=current.querySelector('[data-map-explorer]'),segment=crumbSegments[Number(crumb.dataset.crumb)];
+      if(segment&&contextMap.goToLevel)contextMap.goToLevel(segment);else contextMap.resumeExploration();
+      rmScrollToReading(contextMap);return;
     }
     if(e.target.closest('a')===mapLink&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
       e.preventDefault();var map=document.querySelector('[data-system-map]');

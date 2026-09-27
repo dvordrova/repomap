@@ -280,9 +280,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   space has the map's one key, not changing hover prose: each kind of card
   drawn as a small card in the fill and border the canvas paints it with,
   its mark on its border, then the solid "calls" and dashed "possible
-  calls" strokes the arrows are drawn with. Its glyphs had been painted in
+  calls" strokes the arrows are drawn with, and, when a part's tiles draw
+  one, the purple dashed link from a function to the type it returns or
+  from a type to the function taking it ("returns or takes a type"), drawn
+  in the tiles' own purple and grey head. Its glyphs had been painted in
   the marks' dark colours, so Redis's pale green and purple cards matched
-  nothing in it, and no line was keyed. There is no folded prose legend
+  nothing in it, and no line was keyed; its tiles' purple dashed links
+  went unexplained. There is no folded prose legend
   under the map. The input context
   and leave-path action live in the reading card. An input chosen from
   Find, a link, a reading or its own tile on the canvas is entered as its
@@ -320,13 +324,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Inputs blue of its tile and collection, never core's purple: its
   heading's bar and kind and its links. The path is, first, for each
   dispatch site whose retained alternatives hold the handler and handle
-  another input too, the chain from the program's entry to the site,
-  folded into one box headed by how many inputs share it and through
-  which declaration ("Shared by 95 inputs, through call"), the first box
-  open; the chain is one shortest static chain, and it passes through none
-  of the declarations the site chooses between, or Redis's would have run
-  main → loadAppendOnlyFile → execCommand → call; Redis's get shares two,
-  through call and through loadAppendOnlyFile. Then the handler's own
+  another input too, one box headed by how many inputs share it and
+  through which declaration ("Shared by 95 inputs, through call"), the
+  first box open, holding the dispatch fact ("call → one of 94") and the
+  statement that the path by which an input reaches that declaration is
+  not established; Redis's get shares two, through call and through
+  loadAppendOnlyFile. No route to the site is chosen by length: the
+  shortest static chain from the program's entry, Redis's main → aeMain →
+  beforeSleep → call, had been offered to a benchmark reader as GET's
+  path. Which chain leads an input to its dispatch is left for GroupsIndex
+  to compute from the input handlers; until then none is drawn. Then the
+  handler's own
   steps: every reached part's witness merged into one tree, a callee
   indented under its caller, the branches in the order their parts were
   reached, so nothing claims an order between branches. A step is its
@@ -337,9 +345,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   its tile does, and a modifier-click still opens its code; its code is one
   explicit "Open code ↗" at the end of its line, and a step whose part the
   map does not draw is only named beside that link. getCommand and addReply
-  had opened GitHub for a reader following GET's path. The shared chains'
-  boxes are left as they were. Go computes both in the page data; the
-  browser draws them. The
+  had opened GitHub for a reader following GET's path. Go computes both in
+  the page data; the browser draws them. The
   list of the parts on the path is left for an input without one.
   A part read while an input is pinned says "Outside this input path" in
   its heading when neither it nor a part inside it is an end of the path's
@@ -622,7 +629,22 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 
   Root summaries prioritize saved area names over role, counts and purpose;
   complete dense inventories scroll without dropping entries. Ordinary wheel
-  scrolls an overflowing inventory, while pinch passes through to the map.
+  scrolls an overflowing inventory, while pinch passes through to the map;
+  past the inventory's end the wheel stays with it, where the next notch
+  had scrolled the page and the one after moved the map under a still
+  pointer. Anywhere else on the canvas, its location row over the map
+  included, an ordinary wheel moves the map and never scrolls the page;
+  over that row it had scrolled the page while a pixel lower it moved the
+  map. One pinch
+  (ctrl+wheel) crosses at most one level boundary, the zoom where the
+  level changes, and stops short of the next, going on or back; a pause
+  of about a third of a second ends it and the next pinch crosses the next.
+  The levels are the whole map, then one per open hierarchy depth, then a
+  part's tiles in sight; two layers that open at one zoom are one
+  boundary. A pinch of eight ctrl+wheel ticks had carried Redis's readers
+  from the whole map past the areas into a part's tiles. The zoom a tick
+  asks for is React Flow's own; only a tick that would cross a second
+  boundary is held at the last zoom short of it.
   Secondary purpose text uses remaining complete lines, with the full text in
   the reading column. Text and controls remain inside their own frame; viewport
   clipping does not move them to a different visible corner. The persistent
@@ -687,10 +709,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   heading can continue below its zoom mark instead of breaking a name midway.
   The fit that sizes those reserves frames exactly what the whole-map camera
   frames, a display group's frame with its padding and heading band
-  included. Measured over the participants alone, the camera framing Redis's
-  group of "DNS resolver" frames stood 0.85% smaller than the fit, and every
-  heading reserved to the pixel lost its last letter ("DNS resolve", "TCP
-  endpoin", "redis-server (executable" over a lone ")").
+  included: measured over the participants alone, the camera stood smaller
+  than the fit, and every heading reserved to the pixel lost its last
+  letter.
   A title wraps only between words, the way the browser wraps it: closing
   punctuation stays with the word before it and an opening bracket with the
   word after it, so no line starts with ")" or is ")" alone. A word breaks
@@ -701,15 +722,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   its longest word shrinks its type until that word fits instead of breaking
   it; a part's title leaves room for its zoom button. Card text is measured
   at the card's real text column, its width less its border and padding, and
-  less its zoom button's room beside a part's title: measured 3px wider,
-  "Implements Redis set commands and" (225.84px) broke again in the 225px
-  column and left "and" alone on a line. A part's description is not broken
-  into lines on the page; the browser wraps it in that column, and its lines
-  counted there only size the card, at most three, the third cut with an
-  ellipsis. The description is held to that column's width: a browser that
-  draws the 1.5px border 1px wide leaves 226px, where pykrx's 225.39px
-  "Fetches Korean market fundamentals" fit whole and its card kept an empty
-  line.
+  less its zoom button's room beside a part's title: measured wider, a line
+  counted whole broke again in the browser and left its last word alone on
+  a line. A part's description is not broken into lines on the page; the
+  browser wraps it in that column, and its lines counted there only size
+  the card, at most three, the third cut with an ellipsis. The description
+  is held to that column's width, so a browser drawing the border thinner
+  than its width cannot fit whole a line the count broke and leave the card
+  an empty line.
   When the whole-map fit still cannot give a summary its reserved width or
   height, in a short window or on a crowded map, the summary is laid out at
   that reserve and drawn scaled down whole, its zoom mark with it until zoom
@@ -905,6 +925,13 @@ The complete component/input catalogue remains available beside the same map,
 including all original purposes, manifest/entrypoint anchors, incoming and
 outgoing observations. Catalogue rows are all visible within their saved type
 or destination; only an individual record's evidence needs disclosure.
+An input's row names the input by where it is registered and its handler
+by its code; when the row's own link to the input (its "To explanation",
+or its title's anchor) names one input, a plain click on the name or the
+handler reads that input in the report, in the column and on the map, and
+a modifier-click still opens the code. Nothing is matched by name. On
+Redis's 95 command rows a click on flushdb or flushdbCommand had opened
+GitHub.
 This does not expand or change the canvas. The Parts count uses the same local
 leaf groups across all lanes, excluding operations, frames and foreign nodes.
 Its link focuses the component on the common map. The separate core-lane code
@@ -930,12 +957,29 @@ All is the list's default and runs the whole-map action, clearing selection,
 input context and the visible Find query after recording the new visit. Show
 whole map above the canvas moves only the camera: the reading, its emphasis
 and any input path stay, as a reader zooming out to look around expects;
-clearing them had sent that reader back to the start. Component choices and
-Back restore their
+clearing them had sent that reader back to the start. The "−" beside it
+steps out one level, as a zoom mark steps in one, and, as Show whole map
+does, moves only the camera: from a part's tiles to the frame holding
+that part, from an open area to its component, from an open component to
+the whole map. The camera takes the frame as entering it would, and no
+closer than the zoom at which the level it leaves closes; at the whole
+map it zooms out by a fifth. Zooming
+out by a fifth at every level, it had left Redis's readers where they
+were, and they pressed Show whole map up to nine times in a question. "+"
+zooms in by a quarter. Component choices and Back restore their
 matching selection and camera.
 
 The toolbar retains the current question and the exact component/area/part
-path. Browser Back/Forward, a source-details side trip and reload preserve the
+path, with the pinned input before it and the declaration read after it
+("get · redis-server (executable) / Server runtime / Replication ·
+syncCommand"). Each segment is its own link that goes up to its level,
+the reading and the camera together: a component or area is read and
+framed as entering it frames it, the part is read and entered without the
+declaration, the declaration is read in its part with its tile centred,
+the input is entered as its path. With nothing read it names the System
+map. It had been one link that only read the current reading again: Redis's
+readers clicked "Server runtime" in it and stayed on syncCommand's tiles.
+Browser Back/Forward, a source-details side trip and reload preserve the
 question, selected operation, exact code selection, map search/filter and viewport. The completed initial overview camera is saved
 even with no selection or hash, and restoring an empty selection clears the
 previous inspector. Imperative camera changes are saved after they finish.

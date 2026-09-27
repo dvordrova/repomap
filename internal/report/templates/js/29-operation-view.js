@@ -52,17 +52,22 @@ function rmInputPath(n,byID){
   return (n.dataset.inputTrace||'').split(/\s+/).filter(function(id){return byID[id]&&!byID[id].dataset.activation;});
 }
 // The map's one key: each kind of card as a small card in the fill and
-// border the canvas paints it with, its mark on its border, then the two
-// strokes arrows are drawn with. Its glyphs had been painted in the marks'
-// dark colours, so a pale green card matched nothing in it. A kind the map
-// does not draw is not keyed. The line saying what the numbers on a frame's
-// border are stands above it, beside the map's controls, where the row had
-// room; it had been folded into a legend under the map.
+// border the canvas paints it with, its mark on its border, then the
+// strokes arrows are drawn with: calls, possible calls, and the purple
+// dashed links between a part's declarations from a function to the type it
+// returns or from a type to the function taking it, which Redis's readers
+// met in tiles with nothing saying what they were. Its glyphs had been
+// painted in the marks' dark colours, so a pale green card matched nothing
+// in it. A kind the map does not draw is not keyed. The line saying what the
+// numbers on a frame's border are stands above it, beside the map's
+// controls, where the row had room; it had been folded into a legend under
+// the map.
 function rmKey(nodes,edges,category){
   var key=rmEl('span','flow-color-key');
   [['','Parts'],['entry','Entrypoints'],['core','Core'],['input','Inputs'],['external','External communication']].filter(function(item){return nodes.some(function(n){return ['core','entry'].includes(item[0])?!n.dataset.branch&&!n.dataset.activation&&n.dataset.lane===(item[0]==='entry'?'triggers':'core'):item[0]?category(n)===item[0]:!n.dataset.branch&&category(n)==='part'&&!['core','triggers'].includes(n.dataset.lane);});}).forEach(function(item){var label=rmEl('span',item[0]);label.append(rmEl('i'),document.createTextNode(rmT(item[1])));key.appendChild(label);});
-  [[false,'calls'],[true,'possible calls']].filter(function(item){return edges.some(function(e){return e.possible===item[0];});}).forEach(function(item){
-    var label=rmEl('span','flow-key-stroke'+(item[0]?' flow-key-possible':'')),svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  var types=nodes.some(function(n){try{return JSON.parse(n.dataset.symbolCalls||'[]').some(function(link){return link[2]==='returns'||link[2]==='takes';});}catch(_){return false;}});
+  [[false,'calls',edges.some(function(e){return !e.possible;})],[true,'possible calls',edges.some(function(e){return e.possible;})],['types','returns or takes a type',types]].filter(function(item){return item[2];}).forEach(function(item){
+    var label=rmEl('span','flow-key-stroke'+(item[0]==='types'?' flow-key-types':item[0]?' flow-key-possible':'')),svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
     svg.setAttribute('viewBox','0 0 30 10');svg.setAttribute('width','30');svg.setAttribute('height','10');svg.setAttribute('aria-hidden','true');
     svg.innerHTML='<path d="M1 5H24"/><path d="M23 1.5 29 5 23 8.5z"/>';
     label.append(svg,document.createTextNode(rmT(item[1])));key.appendChild(label);
@@ -81,24 +86,28 @@ function rmReachingInputs(n,reaching,owner,choose){
   }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
   return inputs;
 }
-// An input's path in its reading (owner's 3c): the chains it shares with
-// the other inputs a dispatch site chooses between, each folded into one
-// box, then its own steps from its handler, a callee under its caller. A
+// An input's path in its reading (owner's 3c): each dispatch site it shares
+// with the other inputs that site chooses between, one box naming the
+// declaration it dispatches through and how many it chooses between, then
+// its own steps from its handler, a callee under its caller. The box says
+// that the path by which an input reaches that declaration is not
+// established: a route chosen by length, Redis's main → aeMain → beforeSleep
+// → call, had been offered as GET's path, and no route is drawn instead. A
 // step is its declaration's name with no line number; the part it stands
 // in heads it where the part changes. The page data computes both
 // (page_input_path.go); this only draws them. A name of the input's own
 // steps is read in the report (`read(part,key)`), as its tile is; a
 // modifier-click still opens its code, which is one explicit link on its
 // line. getCommand and addReply had opened GitHub for a reader following
-// GET's path. The shared chains' names stay links into their code.
+// GET's path.
 function rmInputPathSection(path,partNode,choose,read){
   var section=rmEl('section','system-input-path');
   var own=path.own||[],shared=path.shared||[];
   section.appendChild(rmEl('h5','',rmT('Path')));
-  function steps(list,indented,read){
+  function steps(list){
     var box=rmEl('div','system-path-steps'),part='';
     list.forEach(function(step){
-      var depth=indented?Math.min(step.depth||0,8):0;
+      var depth=Math.min(step.depth||0,8);
       if(step.part_title&&step.part_title!==part){
         var node=partNode(step.part),head=rmEl(node?'button':'div','system-path-part',step.part_title);
         if(node){head.type='button';head.addEventListener('click',function(){choose(node);});}
@@ -106,7 +115,7 @@ function rmInputPathSection(path,partNode,choose,read){
       }
       part=step.part_title||part;
       var line=rmEl('div','system-path-step');line.style.marginLeft=depth*10+'px';
-      var key=read&&(step.href||step.open),at=key&&partNode(step.part);
+      var key=step.href||step.open,at=key&&partNode(step.part);
       // A name with no drawn part to read it in is only named.
       var link=key&&!at?rmEl('span','',step.name):repomapMembers.sourceLink({Href:step.href,Open:step.open,Text:step.name,NoSource:step.no_source});
       if(step.source)link.title=step.source;
@@ -128,13 +137,40 @@ function rmInputPathSection(path,partNode,choose,read){
   shared.forEach(function(chain,index){
     var box=rmEl('details','system-shared-path');box.open=index===0;
     box.appendChild(rmEl('summary','',rmT(chain.all?'Shared by all {0} inputs, through {1}':'Shared by {0} inputs, through {1}',chain.inputs,chain.through)));
-    box.appendChild(rmEl('p','meta',rmT('One shortest static path:')));
-    box.appendChild(steps(chain.steps,false));
     box.appendChild(rmEl('p','meta',chain.through+' → '+rmT('one of {0}',chain.of)));
+    box.appendChild(rmEl('p','meta',rmT('The path by which an input reaches {0} is not established.',chain.through)));
     section.appendChild(box);
   });
-  if(own.length)section.appendChild(steps(own,true,read));
+  if(own.length)section.appendChild(steps(own));
   return section;
+}
+// Where the reading is, as the toolbar's breadcrumb names it: the pinned
+// input, the frames from the component down to what is read, and the
+// declaration named in it. Each segment is a level to go back up to; it had
+// been one link naming them all that only re-read the current reading, and
+// Redis's readers clicked "Server runtime" in it and stayed on syncCommand's
+// tiles. `sep` is what stands before a segment, as the one label read.
+function rmExplorationPath(operation,frames,member){
+  var segments=[];
+  if(operation)segments.push({id:operation.id,title:operation.dataset.title,kind:'input'});
+  frames.forEach(function(n,i){segments.push({id:n.id,title:n.dataset.title,kind:'frame',sep:i?' / ':' · '});});
+  if(member&&member.name&&frames.length)segments.push({id:frames[frames.length-1].id,title:member.name,kind:'member',sep:' · ',source:{key:member.key,href:member.href,open:member.open}});
+  return segments;
+}
+// An input's row in a component's catalogue names the input by where it is
+// registered and its handler by its code, and both opened GitHub on a plain
+// click: a reader of Redis's 95 commands meant to read flushdb, not its
+// line in redis.c. When the row's own link to the input (its "To
+// explanation", or its title's anchor) names one input, a plain click on
+// the name or the handler reads that input in the report; a modifier-click
+// still opens the code. Nothing is matched by name.
+function rmCatalogInputClick(event,reveal){
+  if(event.button||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return false;
+  var name=event.target.closest&&event.target.closest('.route-path,.route-symbol,.input-handler a');
+  var row=name&&name.closest('.input-catalog [data-input-item]');if(!row)return false;
+  var ids=new Set(Array.from(row.querySelectorAll('a.input-explanation[href^="#"],.input-title>a[href^="#"]:not(.route-path)')).map(function(a){return a.getAttribute('href').slice(1);}).filter(Boolean));
+  if(ids.size!==1||!reveal(Array.from(ids)[0]))return false;
+  event.preventDefault();event.stopImmediatePropagation();return true;
 }
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
   var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
@@ -507,7 +543,18 @@ function rmInputPathSection(path,partNode,choose,read){
   });};
   map.operationChoices=function(id){var children=new Set(projection.leaves(id));return nodes.filter(function(n){return n.dataset.activation&&((n.dataset.near||'').split(/\s+/).some(function(near){return children.has(near);})||children.has(projection.inputOwner[n.id]));});};
   map.chooseOperation=function(id){return select(byID[id],true);};
-  map.explorationLabel=function(){return [operation?.dataset.title,path(scope).map(function(id){return byID[id].dataset.title;}).join(' / '),map.explorerMember?.name].filter(Boolean).join(' · ')||rmT('System map');};
+  map.explorationPath=function(){return rmExplorationPath(operation,path(scope).map(function(id){return byID[id];}),map.explorerMember);};
+  map.explorationLabel=function(){return map.explorationPath().map(function(segment,index){return (index?segment.sep:'')+segment.title;}).join('')||rmT('System map');};
+  // A breadcrumb segment goes up to its level, the reading and the camera
+  // together: a frame is read and framed, the part named with a declaration
+  // is read and centred without it, the declaration is read in its part and
+  // its tile centred, the input is entered as its path.
+  map.goToLevel=function(segment){
+    var n=byID[segment?.id];if(!n)return Promise.resolve(false);
+    if(segment.kind==='member')return map.revealNode(n,false,segment.source);
+    surface?.clearMember?.();
+    return select(n,true,null,segment.kind==='input'?true:'center');
+  };
   map.resumeExploration=function(){var n=byID[scope]||operation;if(n)map.showNode(n);else map.clearInspection?.();};
   map.readingState=function(){return {scope:scope,operation:operation?.id||'',away:inputAway,search:searchValue,filter:filterValue,numbered:numbered,source:map.explorerMember||null,viewport:map.captureViewport?.()||null};};
   map.restoreReadingState=async function(saved){if(!saved)return;var ticket=++selectionRevision;map.readingRestoring=true;try{scope=byID[saved.scope]?saved.scope:'';operation=byID[saved.operation]||null;inputAway=!!operation&&!!saved.away;search.value=searchValue=saved.search||'';filter.value=filterValue=saved.filter||'';numbered=saved.numbered!==false;syncStyle();updateResults();await ready;if(ticket!==selectionRevision)return;emphasize();map.resumeExploration();if(saved.source)map.explainSource(saved.source);else map.inspectConcept?.(-1);if(saved.viewport)map.restoreViewport(saved.viewport);}finally{if(ticket===selectionRevision){map.readingRestoring=false;emit();}}};
@@ -525,6 +572,7 @@ function rmInputPathSection(path,partNode,choose,read){
     if(n===document.getElementById('overview')||n===document.getElementById('repository-map')){reset();return;}
     if(target)select(target,n!==target,null,true);
   }
+  document.addEventListener('click',function(e){rmCatalogInputClick(e,function(id){var target=mapped(document.getElementById(id));if(target)map.revealNode(target,false);return !!target;});},true);
   document.addEventListener('click',function(e){var a=e.target.closest('a[href^="#"]');if(!a||a.closest('[data-map-explorer]')||a.hasAttribute('data-reading-map-return')||a.hasAttribute('data-open')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;var n=document.getElementById(a.getAttribute('href').slice(1)),target=mapped(n);if(!target)return;e.preventDefault();e.stopImmediatePropagation();map.revealNode(target,false);},true);
   if(map.hasAttribute('data-system-map'))document.querySelector('.nav-home')?.addEventListener('click',function(e){if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();map.showWholeMap().then(function(){rmScrollToReading(map);});});
   window.addEventListener('hashchange',hashChanged);

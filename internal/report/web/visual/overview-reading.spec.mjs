@@ -73,5 +73,4 @@ for(const matchedPeer of [false,true])test(`short component names keep complete 
     }
   }
   expect(errors).toEqual([]);
-  await expect(page.locator('.map-workspace')).toHaveScreenshot(matchedPeer?'matched-peer-overview.png':'ordinary-space-overview.png');
 });

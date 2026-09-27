@@ -149,7 +149,6 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		return ops[i].Location.Line < ops[j].Location.Line
 	})
 	// An input's path names the part each of its steps stands in.
-	graph := newEntryGraph(index)
 	partOf := func(subject string) (string, string) {
 		group := groupOf[subject]
 		if group == "" {
@@ -319,7 +318,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			Summary:    builder.operationSummary(operation), Activation: operation.Kind, Source: source, SourceKind: operation.Source,
 			OperationGroup: groups[operation.GroupID].Title,
 			CallPaths:      builder.operationCallPaths(index.Target.ID, operation.SubjectID, firstInGroup, parents),
-			InputPath:      builder.inputPath(index, graph, operation, reached, firstInGroup, parents, partOf),
+			InputPath:      builder.inputPath(index, operation, reached, firstInGroup, parents, partOf),
 			Writes:         builder.operationWrites(index, operation.SubjectID, seen, parents),
 			Subtitle:       subtitle,
 			Lane:           "triggers", X: mapPadding, Y: 40 + float64(i)*84, Width: mapNodeWidth, Height: 68,
