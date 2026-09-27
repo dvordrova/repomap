@@ -1137,7 +1137,7 @@ func localizedUIValue(language DisplayLanguage, text string) string {
 	}
 	if match := countedUIValue.FindStringSubmatch(text); match != nil {
 		count, phrase := match[1], match[2]
-		keys := map[string]string{"could not be read": "{0} could not be read", "route": "{0} routes", "routes": "{0} routes", "request sent": "{0} requests sent", "requests sent": "{0} requests sent", "place running handed-in code": "{0} places running handed-in code", "places running handed-in code": "{0} places running handed-in code", "file nothing reaches": "{0} files nothing reaches", "files nothing reaches": "{0} files nothing reaches", "link": "{0} links", "links": "{0} links", "part": "{0} parts", "parts": "{0} parts", "component": "{0} components", "components": "{0} components", "group": "{0} groups", "groups": "{0} groups", "symbol": "{0} symbols", "symbols": "{0} symbols"}
+		keys := map[string]string{"could not be read": "{0} could not be read", "route": "{0} routes", "routes": "{0} routes", "request": "{0} requests", "requests": "{0} requests", "request sent": "{0} requests sent", "requests sent": "{0} requests sent", "place running handed-in code": "{0} places running handed-in code", "places running handed-in code": "{0} places running handed-in code", "file nothing reaches": "{0} files nothing reaches", "files nothing reaches": "{0} files nothing reaches", "link": "{0} links", "links": "{0} links", "part": "{0} parts", "parts": "{0} parts", "component": "{0} components", "components": "{0} components", "group": "{0} groups", "groups": "{0} groups", "symbol": "{0} symbols", "symbols": "{0} symbols"}
 		for _, relation := range []string{"inferred integrations", "callback bindings", "imports", "calls"} {
 			keys[relation] = "{0} " + relation
 		}

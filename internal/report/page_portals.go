@@ -8,10 +8,13 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 )
 
-// A portal is one target's accepted HTTP request answered by another target's
-// accepted route: the same method and a path the route's parameters admit.
-// Both sides are registrations the reading stage classified; the join itself
-// is literal comparison, made here so the overlay stays free of derived rows.
+// A portal is one target's accepted client request answered by another
+// target's accepted route: a path the route's parameters admit and no method
+// that differs. Both sides are registrations the reading stage classified; the
+// join itself is literal comparison, made here so the overlay stays free of
+// derived rows. A method is only what the code states: a request that states
+// none (a socket connect, a call whose verb is not written) is joined by its
+// path alone and stays possible, never taken for a GET.
 type portalLink struct {
 	call, route  facts.Fact
 	method, path string
@@ -27,12 +30,12 @@ func (builder *pageBuilder) portalLinks() []portalLink {
 		}
 		for _, call := range index.Outbound {
 			if fact, ok := builder.registrationFact(call.FactID); ok && call.Kind == "client_request" {
-				requests = append(requests, registrationRole{fact: fact, method: firstNonEmpty(call.Method, fact.Method, "GET")})
+				requests = append(requests, registrationRole{fact: fact, method: firstNonEmpty(call.Method, fact.Method)})
 			}
 		}
 		for _, operation := range index.Operations {
 			if fact, ok := builder.registrationFact(operation.FactID); ok && operation.Kind == "request" {
-				routes = append(routes, registrationRole{fact: fact, method: firstNonEmpty(fact.Method, "ANY")})
+				routes = append(routes, registrationRole{fact: fact, method: fact.Method})
 			}
 		}
 	}
@@ -50,8 +53,8 @@ func (builder *pageBuilder) portalLinks() []portalLink {
 		}
 		route := matches[0]
 		result = append(result, portalLink{
-			call: request.fact, route: route.fact, method: request.method, path: route.fact.Path,
-			possible: request.fact.Resolution == facts.ResolutionPossible || route.fact.Resolution == facts.ResolutionPossible || hasPathParameters(route.fact.Path),
+			call: request.fact, route: route.fact, method: firstNonEmpty(request.method, route.method), path: route.fact.Path,
+			possible: request.method == "" || request.fact.Resolution == facts.ResolutionPossible || route.fact.Resolution == facts.ResolutionPossible || hasPathParameters(route.fact.Path),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -76,7 +79,8 @@ func (builder *pageBuilder) registrationFact(id string) (facts.Fact, bool) {
 	return fact, true
 }
 
-// outboundRequests lists a target's accepted HTTP requests; an empty target
+// outboundRequests lists a target's accepted client requests, whatever the
+// protocol, each with the method its code states or none; an empty target
 // lists every target's, naming each.
 func (builder *pageBuilder) outboundRequests(programTargetID, _ string) []pageHTTPRow {
 	var rows []pageHTTPRow
@@ -96,7 +100,7 @@ func (builder *pageBuilder) outboundRequests(programTargetID, _ string) []pageHT
 			if !ok {
 				continue
 			}
-			row := builder.registrationRow(fact, firstNonEmpty(call.Method, fact.Method, "GET"))
+			row := builder.registrationRow(fact, call.Method)
 			if programTargetID == "" {
 				row.Target = section.Name
 			}
@@ -133,8 +137,11 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// methodsMatch compares two stated methods; a side that states none (a route
+// registered for every method, a request whose verb is not written) differs
+// from nothing.
 func methodsMatch(routeMethod, callMethod string) bool {
-	return routeMethod == callMethod || routeMethod == "ANY"
+	return routeMethod == "" || callMethod == "" || routeMethod == "ANY" || routeMethod == callMethod
 }
 
 // pathsMatch compares paths segment by segment; a route parameter or a call

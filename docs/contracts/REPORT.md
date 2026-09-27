@@ -500,7 +500,14 @@ Selecting a component on the common map opens its existing purpose, entrypoints 
 
 An outbound kind is shown by the protocol-neutral label its kind has:
 `client_request` is "Request", never "HTTP", and the counts and headings of
-accepted client requests read "requests sent", whatever the protocol.
+accepted client requests read "requests sent", whatever the protocol. A
+request's method is only the one its code states (the call word or a
+literal, Program index): a socket connect or a call whose verb is not
+written is listed without a method, never as a GET. The link from a request
+to another target's route compares two stated methods; a side that states
+none differs from nothing, so a request without a method joins a route by its
+path alone and the link stays possible. The system map counts such links as
+"requests" between components, and their sources are "Request link sources".
 
 The entrance reads accepted outbound communication directly from GroupsIndex, independently of dependency lanes and key captions. Each observation shows the other participant's role, purpose, known literal address or explicit unknown, and its original call/source chain. Dispatch and explicit remote-client configuration stay distinguishable. Native addresses and code names remain original; role/purpose use the existing display bindings. For display the observations are grouped by destination text (case-insensitive; native label or kind when the model named none): one row per destination carries the record count, the shared kind, basis and address (or the number of distinct addresses); its records are compact nested lines (the native method and address, else the callable, else the first sentence of the purpose, with the source location), all lines visible, and each line opens its full purpose, address, basis and call/source chain. The section count and the first screen count destination groups; a destination text is still not proof of one remote system. Dependency/import groups stay in collapsed code reference and do not supply the integration count. Empty observations do not prove that the service contacts nothing.
 

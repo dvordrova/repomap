@@ -717,7 +717,7 @@ func (builder *pageBuilder) portals(view *pageView) {
 	if len(view.Portals) > 0 {
 		return
 	}
-	view.PortalsMissing = "No cross-target HTTP link was found."
+	view.PortalsMissing = "No cross-target request link was found."
 	view.Boundaries = builder.boundaryCounts()
 }
 

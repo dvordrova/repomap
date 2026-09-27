@@ -2064,12 +2064,12 @@ func cutToBudget(value string, budget int) string {
 	return strings.TrimRight(string(runes[:budget-1]), " ·") + "…"
 }
 
-// repoEdgeLabel says what one target takes from another: HTTP crossings,
-// imported symbols, or both.
+// repoEdgeLabel says what one target takes from another: requests it sends
+// to the other's inputs, whatever the protocol, imported symbols, or both.
 func repoEdgeLabel(calls, symbols int) string {
 	var parts []string
 	if calls > 0 {
-		parts = append(parts, fmt.Sprintf("%d HTTP %s", calls, pluralWord(calls, "call", "calls")))
+		parts = append(parts, fmt.Sprintf("%d %s", calls, pluralWord(calls, "request", "requests")))
 	}
 	if symbols > 0 {
 		parts = append(parts, fmt.Sprintf("%d %s", symbols, pluralWord(symbols, "link", "links")))
