@@ -32,7 +32,7 @@ cite a ref of the wrong kind.
 - `member_evidence`: original observations for the cited members. Calls retain
   their source sites, invocation and resolution, receiver and argument origins,
   and possible callee declarations. A member's calls are listed in the order
-  they are written in it. Long call and caller lists are cut after the first;
+  they are written in it. Long call and caller lists keep their first entries;
   `calls_omitted` and `called_by_omitted` count what is not shown. They do not
   contain full bodies. A call
   result does not establish that its error is checked, returned or propagated.

@@ -24,7 +24,7 @@ const (
 
 	executionContract     = "repomap.orientation.v1"
 	preparationVersion    = 3
-	promptVersion         = 6
+	promptVersion         = 7
 	responseSchemaVersion = 1
 	maxOutputTokens       = llm.DefaultMaxOutputTokens
 )
