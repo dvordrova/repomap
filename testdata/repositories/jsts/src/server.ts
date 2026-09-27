@@ -179,11 +179,21 @@ export function markMatchingRows(rows: Record<string, number>, conditions: strin
 }
 
 // Mirrors Python's FastAPI `Depends(lambda: ...)` and `key=lambda row: row`: arrows in parameter decorators and defaults.
+// A decorator runs once, when its class is defined, so a call written in it belongs to the scope that
+// defines what it decorates, as a call in a Python decorator's arguments does: the module for a class
+// decorator, the class for a method or parameter decorator. The decoration stays the decorated declaration's.
 function Inject(_token: () => unknown): ParameterDecorator { return () => {} }
 function forwardRef<T>(factory: () => T): () => T { return factory }
+function Route(_path: string): ClassDecorator & MethodDecorator { return () => {} }
+function routePath(name: string): string { return "/" + name }
+const levelRoute = "level"
+const Traced: MethodDecorator = () => {}
 class LevelService {}
+@Route(routePath("levels"))
 export class LevelController {
   constructor(@Inject(forwardRef(() => LevelService)) private levels: LevelService) {}
+  @Route(routePath(levelRoute))
+  @Traced
   level(@Inject(() => joinCondition("level", "id")) _id: string): LevelService { return this.levels }
 }
 export function sortRows(rows: string[], key = (row: string): string => row.toLowerCase()): string[] { return rows.map(key) }

@@ -356,8 +356,9 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	assertCumulativeJSTSChainedCallbacks(t, index, "src/server.ts", programindex.ResolutionExact)
 	assertCumulativeJSTSStoreTargetCallbacks(t, index, "src/server.ts")
 	assertCumulativeJSTSStoreTargetCallbacks(t, index, "src/market-worker.js")
-	assertCumulativeJSTSHeaderArrows(t, index, "src/server.ts", true)
-	assertCumulativeJSTSHeaderArrows(t, index, "src/market-worker.js", false)
+	assertCumulativeJSTSHeaderArrows(t, index, "src/server.ts")
+	assertCumulativeJSTSHeaderArrows(t, index, "src/market-worker.js")
+	assertCumulativeJSTSDecoratorOwners(t, index, "src/server.ts")
 	adaptertest.AssertCallControls(t, index, graph, "src/server.ts", "processPendingJobs", map[int][]adaptertest.Control{
 		137: nil,
 		139: {{Line: 138, Kind: "while body with constant true condition"}},
@@ -1230,11 +1231,8 @@ func assertCumulativeJSTSStoreTargetCallbacks(t *testing.T, index programindex.I
 // JavaScript evaluates a parameter default on each call inside its function,
 // so the call in a default arrow belongs to that function, as the call in
 // markMatchingRows' inline argument arrow does. A named default is read, not
-// passed, and `key` never borrows it. A TypeScript parameter decorator is a
-// call of the method it is written on, not a decoration; its inline arrow
-// stays an unresolved argument whose body call belongs to that method.
-// JavaScript has no parameter decorators.
-func assertCumulativeJSTSHeaderArrows(t *testing.T, index programindex.Index, source string, decorators bool) {
+// passed, and `key` never borrows it.
+func assertCumulativeJSTSHeaderArrows(t *testing.T, index programindex.Index, source string) {
 	t.Helper()
 	objects := make(map[string]programindex.Object)
 	names := make(map[string]string)
@@ -1243,16 +1241,9 @@ func assertCumulativeJSTSHeaderArrows(t *testing.T, index programindex.Index, so
 			objects[object.Name], names[object.ID] = object, object.Name
 		}
 	}
-	callers := []string{"sortRows", "sortRowsBy", "sortRowsJoined"}
 	owners := map[string][]string{"row.toLowerCase": {"sortRows"}, "row.toUpperCase": {"sortRowsBy"}}
-	if decorators {
-		callers = append(callers, "LevelController.constructor", "LevelController.level")
-		owners["Inject"] = []string{"LevelController.constructor", "LevelController.level"}
-		owners["forwardRef"] = []string{"LevelController.constructor"}
-		owners["joinCondition"] = []string{"LevelController.level"}
-	}
 	headerLines := make(map[int]bool)
-	for _, name := range append([]string{"joinCondition"}, callers...) {
+	for _, name := range []string{"joinCondition", "sortRows", "sortRowsBy", "sortRowsJoined"} {
 		if objects[name].ID == "" {
 			t.Fatalf("%s header-arrow declaration %s missing", source, name)
 		}
@@ -1261,7 +1252,7 @@ func assertCumulativeJSTSHeaderArrows(t *testing.T, index programindex.Index, so
 		}
 	}
 	got := make(map[string][]string)
-	inlineArguments, joinReads := 0, 0
+	joinReads := 0
 	for _, relation := range index.Relations {
 		if relation.Location == nil || relation.Location.Path != source || !headerLines[relation.Location.Line] {
 			continue
@@ -1276,15 +1267,8 @@ func assertCumulativeJSTSHeaderArrows(t *testing.T, index programindex.Index, so
 			joinReads++
 		}
 		for _, witness := range relation.Witnesses {
-			if _, checked := owners[witness.SourceExpression]; !checked {
-				continue
-			}
-			got[witness.SourceExpression] = append(got[witness.SourceExpression], names[relation.FromID])
-			if name := witness.SourceExpression; name == "Inject" || name == "forwardRef" || name == "joinCondition" {
-				if relation.Kind != programindex.RelationCalls || relation.Resolution != programindex.ResolutionExact ||
-					len(relation.ToIDs) != 1 || relation.ToIDs[0] != objects[name].ID {
-					t.Fatalf("%s parameter decorator call %s = %#v", source, name, relation)
-				}
+			if _, checked := owners[witness.SourceExpression]; checked {
+				got[witness.SourceExpression] = append(got[witness.SourceExpression], names[relation.FromID])
 			}
 		}
 		for _, pattern := range relation.Patterns {
@@ -1292,21 +1276,74 @@ func assertCumulativeJSTSHeaderArrows(t *testing.T, index programindex.Index, so
 				if len(argument.ObjectIDs) != 0 {
 					t.Fatalf("%s header argument borrowed a declaration: %#v", source, argument)
 				}
-				if pattern.Selector == "forwardRef" || pattern.Selector == "Inject" && names[relation.FromID] == "LevelController.level" {
-					if argument.Resolution != programindex.ResolutionUnresolved || argument.ObjectsObserved != 1 {
-						t.Fatalf("%s inline decorator arrow = %#v", source, argument)
-					}
-					inlineArguments++
-				}
 			}
 		}
 	}
-	for _, values := range got {
-		sort.Strings(values)
+	if !reflect.DeepEqual(got, owners) || joinReads != 1 {
+		t.Fatalf("%s header arrows: owners=%v want %v, named default reads=%d", source, got, owners, joinReads)
 	}
-	if !reflect.DeepEqual(got, owners) || joinReads != 1 || decorators && inlineArguments != 2 || !decorators && inlineArguments != 0 {
-		t.Fatalf("%s header arrows: owners=%v want %v, named default reads=%d, inline decorator arrows=%d",
-			source, got, owners, joinReads, inlineArguments)
+}
+
+// A decorator runs once, when its class is defined, as a Python decorator's
+// arguments run where the function is defined. The decoration stays the
+// decorated declaration's; a call in a decorator's arguments, and a parameter
+// decorator, which decorates nothing, belong to the scope that defines the
+// decorated declaration: the module for a class decorator, the class for a
+// method or parameter decorator. A bare decorator's name (`@Traced`) is its
+// decoration and read by the member. The call in a decorator's inline arrow
+// belongs to that same scope, which creates the arrow, as the call in
+// markMatchingRows' inline arrow belongs to markMatchingRows. JavaScript has
+// no decorators.
+func assertCumulativeJSTSDecoratorOwners(t *testing.T, index programindex.Index, source string) {
+	t.Helper()
+	names := make(map[string]string)
+	first, last := 0, 0
+	for _, object := range index.Objects {
+		if object.Location == nil || object.Location.Path != source {
+			continue
+		}
+		names[object.ID] = object.Name
+		if object.Kind == programindex.ObjectModule {
+			names[object.ID] = "module"
+		}
+		if object.Name == "LevelController" {
+			first, last = object.Location.Line-1, object.EndLine
+		}
+	}
+	if first <= 0 || last <= first {
+		t.Fatalf("%s LevelController span %d-%d", source, first, last)
+	}
+	var got []string
+	for _, relation := range index.Relations {
+		if relation.Location == nil || relation.Location.Path != source || relation.Location.Line < first || relation.Location.Line > last {
+			continue
+		}
+		if len(relation.ToIDs) != 1 {
+			continue
+		}
+		switch target := names[relation.ToIDs[0]]; target {
+		case "Route", "routePath", "levelRoute", "Traced", "Inject", "forwardRef", "joinCondition":
+			if relation.Resolution != programindex.ResolutionExact {
+				t.Fatalf("%s decorator use of %s = %#v", source, target, relation)
+			}
+			got = append(got, fmt.Sprintf("%+d %s %s from %s", relation.Location.Line-first, relation.Kind, target, names[relation.FromID]))
+		}
+	}
+	sort.Strings(got)
+	want := []string{
+		"+0 calls routePath from module",
+		"+0 decorates Route from LevelController",
+		"+2 calls Inject from LevelController",
+		"+2 calls forwardRef from LevelController",
+		"+3 calls routePath from LevelController",
+		"+3 decorates Route from LevelController.level",
+		"+3 reads levelRoute from LevelController",
+		"+4 reads Traced from LevelController.level",
+		"+5 calls Inject from LevelController",
+		"+5 calls joinCondition from LevelController",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("%s decorator owners:\n have %q\n want %q", source, got, want)
 	}
 }
 
