@@ -43,6 +43,24 @@ function segmentHits(a,b,box) {
     : a.y>y+eps&&a.y<y+box.height-eps&&Math.max(a.x,b.x)>x+eps&&Math.min(a.x,b.x)<x+box.width-eps;
 }
 
+test('a candidate ELK cannot place is left out, and the map fails only when none is placed',async()=>{
+  const prepared=await prepareInteriors(items,relations,areas);
+  const original=ELK.prototype.layout;
+  const unzipped=graph=>graph.id==='world'&&graph.layoutOptions['elk.layered.layerUnzipping.strategy']==='ALTERNATING'&&graph.layoutOptions['elk.direction']==='RIGHT';
+  ELK.prototype.layout=function(graph,...args){
+    if(unzipped(graph))return Promise.reject(new TypeError('java.lang.NullPointerException'));
+    return original.call(this,graph,...args);
+  };
+  let placed;
+  try{placed=await layoutPrepared(prepared,1200,700);}finally{ELK.prototype.layout=original;}
+  assert.ok(placed.layout.nodes.length>0,'the other candidates still place the world');
+  ELK.prototype.layout=function(graph,...args){
+    if(graph.id==='world')return Promise.reject(new TypeError('java.lang.NullPointerException'));
+    return original.call(this,graph,...args);
+  };
+  try{await assert.rejects(layoutPrepared(prepared,1200,700),/NullPointerException/);}finally{ELK.prototype.layout=original;}
+});
+
 test('the ordinary composed layout routes the real endpoints, retaining every original source',async()=>{
   const {layout:result}=await semanticLayout(items,relations,areas,1200,700);
   assert.deepEqual(result.nodes.map(n=>n.id).sort(),items.map(n=>n.id).sort());

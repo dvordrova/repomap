@@ -351,11 +351,15 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     }));
     return {span,zoom,readable,overflow:Math.max(span.width/width,span.height/height)};
   }
-  let graph,best,bestInput;
+  let graph,best,bestInput,failure;
   // Both choices belong to ELK. Free boundary endpoints avoid a star collapsing
   // into one strip; the prepared native ports can pack several connected
   // targets more compactly. Compare only these eight flat candidates. Neither
-  // alternative adds rendered continuations through the participants.
+  // alternative adds rendered continuations through the participants. ELK can
+  // throw on one candidate and place the others: Redis's three programs, each
+  // joined to the others through one shared listener, raised a
+  // NullPointerException only with native ports, RIGHT and layer unzipping.
+  // Such a candidate is left out; the map fails only when none is placed.
   for(const nativePorts of [false,true])for(const direction of ['DOWN','RIGHT']){
    for(const unzip of [false,true]){
     const candidate=structuredClone(input);candidate.layoutOptions['elk.direction']=direction;
@@ -364,10 +368,14 @@ export async function layoutPrepared(prepared,width=1200,height=700){
       for(const edge of candidate.edges){const original=prepared.aggregates.find(a=>a.id===edge.id);edge.sources=[original.sourcePort];edge.targets=[original.targetPort];}
     }
     if(unzip)candidate.layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
-    const template=structuredClone(candidate),placed=await native(candidate),score=metrics(placed);
+    const template=structuredClone(candidate);
+    let placed;
+    try{placed=await native(candidate);}catch(error){failure||=error;continue;}
+    const score=metrics(placed);
     if(!best||score.readable>best.readable||score.readable===best.readable&&score.overflow<best.overflow){graph=placed;best=score;bestInput=template;}
    }
   }
+  if(!best)throw failure;
   for(let correction=0;correction<2&&best.readable<1-1e-7;correction++){
     // Root summaries use physical pixels. A fitted camera below .44 must
     // still reserve their measured minima, including the space their growth
@@ -423,7 +431,11 @@ export async function layoutPrepared(prepared,width=1200,height=700){
           if(side==='SOUTH')port.y=node.height;
         }
       }
-      const template=structuredClone(candidate),placed=await native(candidate),score=metrics(placed);
+      const template=structuredClone(candidate);
+      let placed;
+      // A correction ELK cannot place keeps the placement it would correct.
+      try{placed=await native(candidate);}catch{break;}
+      const score=metrics(placed);
       if(score.readable>best.readable){graph=placed;best=score;bestInput=template;}else break;
     }
   }
