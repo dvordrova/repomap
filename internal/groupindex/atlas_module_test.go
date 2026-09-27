@@ -35,7 +35,7 @@ func TestSelectedModuleBodyKeepsCallsWithoutAssigningTheWholeFile(t *testing.T) 
 	value := atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{{ID: program.Target.ID, Name: "app", Root: ".", Boxes: []atlas.Box{
 		{ID: "start", Dir: ".", Title: "Startup", Line: "Calls work during startup.", Side: atlas.SideIn, MemberIDs: []string{ids["app"]}, Files: []atlas.File{file}, Keys: []atlas.Key{}},
 		{ID: "work", Dir: ".", Title: "Work", Line: "Does the work.", Side: atlas.SideMid, MemberIDs: []string{ids["work"]}, Files: []atlas.File{file}, Keys: []atlas.Key{}},
-	}, Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}}}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}
+	}, Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}}}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}
 	indexes, err := ProjectAtlas(map[string]programindex.Index{program.Target.ID: program}, value)
 	if err != nil {
 		t.Fatal(err)

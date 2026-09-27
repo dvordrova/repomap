@@ -410,8 +410,11 @@ follows one written rule:
   file per unit, in the part that holds the unit (an undecided unit in
   none); a split file's imports are no evidence.
 - The entry: a seed file's parts are its endpoint, else the parts holding
-  its seed declarations (places `seed_decls`), so the trace, the "in" column
-  and "starts the program" (core) survive a split seed file.
+  its seed declarations (places `seed_decls`), so the "in" column and
+  "starts the program" (core) survive a split seed file. The atlas keeps no
+  main path of its own: the busiest-arrow trace from the entry (eight boxes)
+  had no reader and was deleted on 2026-09-27 (atlas v14); orientation's main
+  flow and the report's start list read the entry forward.
 - A boundary with no subject declaration in a split file takes the part of
   the declaration whose source range holds its line, else of the module
   body. An input that hands a declaration over (a command table row, a

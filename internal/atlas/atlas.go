@@ -31,7 +31,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 18
-	Version      = 13
+	Version      = 14
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -506,8 +506,6 @@ type Target struct {
 	// nothing.
 	Files   int `json:"files"`
 	Symbols int `json:"symbols"`
-	// Trace is the main path: box IDs from the entrypoint forward.
-	Trace []string `json:"trace"`
 }
 
 // Zone is one area of a target: a named frame holding several parts.
@@ -1298,8 +1296,7 @@ func Validate(value Atlas) error {
 		if target.Role != "" && !ValidRole(target.Role) {
 			return fmt.Errorf("atlas: target %q has role %q", target.ID, target.Role)
 		}
-		if target.Zones == nil || target.Boxes == nil || target.Arrows == nil ||
-			target.Boundaries == nil || target.Trace == nil {
+		if target.Zones == nil || target.Boxes == nil || target.Arrows == nil || target.Boundaries == nil {
 			return fmt.Errorf("atlas: target %q is missing collections", target.ID)
 		}
 		if target.MapFailure != "" && target.MapFailure != MapFailureRefused && target.MapFailure != MapFailureNoModel {
@@ -1433,11 +1430,6 @@ func Validate(value Atlas) error {
 		}
 		boundaries[target.ID] = owned
 		boxesOf[target.ID] = boxes
-		for _, boxID := range target.Trace {
-			if _, ok := boxes[boxID]; !ok {
-				return fmt.Errorf("atlas: trace names unknown box %q", boxID)
-			}
-		}
 	}
 	roles := make(map[string]string, len(value.Targets))
 	for _, target := range value.Targets {

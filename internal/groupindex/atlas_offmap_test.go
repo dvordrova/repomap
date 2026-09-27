@@ -37,7 +37,7 @@ func TestOffMapFilesKeepTheirBoundariesAndInterpretations(t *testing.T) {
 	}
 	target := atlas.Target{
 		ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: ".",
-		Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Trace: []string{},
+		Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
 		Boxes: []atlas.Box{
 			{ID: "p1", Dir: "api", Title: "API", Side: atlas.SideIn, MemberIDs: []string{objectIn("api/a.go")}, Keys: []atlas.Key{},
 				Files: []atlas.File{file("api/a.go", "Serves.", atlas.Symbol{ID: "s1", ObjectID: objectIn("api/a.go"), Name: "FA", Kind: "function", LineNo: 3})}},
@@ -142,7 +142,7 @@ func TestAPartItsProgramNeverRunsIsListedOffTheMapByItsDeclarations(t *testing.T
 	}
 	target := atlas.Target{
 		ID: p.Target.ID, Name: p.Target.Name, Language: "c", Kind: "executable", Root: ".",
-		Zones: []atlas.Zone{}, Trace: []string{}, Boundaries: []atlas.Boundary{},
+		Zones: []atlas.Zone{}, Boundaries: []atlas.Boundary{},
 		Arrows: []atlas.Arrow{{ID: "a1", From: "p1", To: "p3", Calls: 1, Witnesses: []atlas.Witness{}, Sentence: "Client calls Memory: zmalloc."},
 			{ID: "a2", From: "p2", To: "p3", Calls: 1, Witnesses: []atlas.Witness{}, Sentence: "Linked list calls Memory: zmalloc."}},
 		Boxes: []atlas.Box{

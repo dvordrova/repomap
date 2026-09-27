@@ -1022,47 +1022,6 @@ func (r *reader) side(owner *boxState, targetID string) string {
 	}
 }
 
-// trace follows the busiest arrows forward from the entry points, up to
-// eight boxes.
-func (r *reader) trace(targetID string) []string {
-	var start []string
-	for _, seed := range r.opts.Graph.Seeds {
-		if !contains(r.places[seed].TargetIDs, targetID) {
-			continue
-		}
-		for _, boxID := range r.seedBoxes(targetID, seed) {
-			if !contains(start, boxID) {
-				start = append(start, boxID)
-			}
-		}
-	}
-	if len(start) == 0 {
-		return []string{}
-	}
-	sort.Strings(start)
-	trace := []string{start[0]}
-	visited := map[string]bool{start[0]: true}
-	current := start[0]
-	for len(trace) < 8 {
-		var next *arrowState
-		for _, arrow := range r.arrows[targetID] {
-			if arrow.from != current || visited[arrow.to] {
-				continue
-			}
-			if next == nil || arrow.calls > next.calls || arrow.calls == next.calls && arrow.to < next.to {
-				next = arrow
-			}
-		}
-		if next == nil {
-			break
-		}
-		visited[next.to] = true
-		trace = append(trace, next.to)
-		current = next.to
-	}
-	return trace
-}
-
 func parentDir(filePath string) string {
 	dir := path.Dir(filePath)
 	if dir == "" || dir == "/" {

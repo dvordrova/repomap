@@ -288,8 +288,8 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	partstest.Check(t, graph, meta, root)
 	// Split, core.clj is the seed file: its -main keeps the entry.
 	split := partstest.CheckSplit(t, graph, meta, root)
-	if !split.Split["src/example/core.clj"] || len(split.Target.Trace) == 0 {
-		t.Fatalf("split: core.clj split %v, trace %v", split.Split["src/example/core.clj"], split.Target.Trace)
+	if !split.Split["src/example/core.clj"] {
+		t.Fatal("split: core.clj was not split")
 	}
 	// The fixture registers no route or command in a split file; its one
 	// registration there hands a function to clojure.core/map.
@@ -319,11 +319,11 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 		}
 	}
 	// Split, kvd.c is the seed file, as redis.c is redis-server's: the part
-	// holding main starts the trace and stands in the "in" column.
+	// holding main stands in the "in" column (CheckSplit).
 	split := partstest.CheckSplit(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
 	main := split.Symbols[[2]string{"kvd.c", "main"}]
-	if !split.Split["kvd.c"] || split.PartOf[main] == "" || len(split.Target.Trace) == 0 || split.Target.Trace[0] != split.PartOf[main] {
-		t.Fatalf("split: main in %q, trace %v", split.PartOf[main], split.Target.Trace)
+	if !split.Split["kvd.c"] || split.PartOf[main] == "" {
+		t.Fatalf("split: main in %q", split.PartOf[main])
 	}
 	// A command handler's assignment shows its command table row's words:
 	// getCommand is "kvCommand get", not a command lookup.

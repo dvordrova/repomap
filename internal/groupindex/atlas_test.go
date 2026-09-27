@@ -21,7 +21,7 @@ func TestAtlasInterpretationRebindsTheSameDeclarationAcrossTargets(t *testing.T)
 		t.Fatal("the same target-local ordinal should be reusable across qualified targets")
 	}
 	makeTarget := func(p programindex.Index) atlas.Target {
-		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "pkg", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "pkg", Dir: "pkg", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "pkg/work.go", Line: "Work.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "symbol", ObjectID: p.Target.ID + "." + p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Restores a snapshot.", Alias: "snapshot restorer", Activation: "command", Operation: "snapshot restore", OperationSummary: "Restores a data directory from a saved snapshot.", Key: true}}}}}}}
+		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "pkg", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Boxes: []atlas.Box{{ID: "pkg", Dir: "pkg", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "pkg/work.go", Line: "Work.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "symbol", ObjectID: p.Target.ID + "." + p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Restores a snapshot.", Alias: "snapshot restorer", Activation: "command", Operation: "snapshot restore", OperationSummary: "Restores a data directory from a saved snapshot.", Key: true}}}}}}}
 	}
 	result, err := ProjectAtlas(map[string]programindex.Index{a.Target.ID: a, b.Target.ID: b}, atlas.Atlas{Version: atlas.Version, Repository: "x", Revision: "abc", Targets: []atlas.Target{makeTarget(a), makeTarget(b)}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestAtlasOperationStaysWithTheProgramThatRunsItsDeclaration(t *testing.T) {
 	var targets []atlas.Target
 	for _, p := range rebound {
 		programs[p.Target.ID] = p
-		targets = append(targets, atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "c", Kind: "executable", Root: "pkg", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{},
+		targets = append(targets, atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "c", Kind: "executable", Root: "pkg", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{},
 			Boxes: []atlas.Box{{ID: "pkg", Dir: "pkg", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "pkg/work.go", Line: "Work.", Source: atlas.SourceModel,
 				Symbols: []atlas.Symbol{{ID: "symbol", ObjectID: p.Target.ID + "." + p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Activation: "continuous", Operation: "flush", OperationSummary: "Flushes the log every second."}}}}}}})
 	}
@@ -86,7 +86,7 @@ func TestAtlasOperationStaysWithTheProgramThatRunsItsDeclaration(t *testing.T) {
 
 func TestObservedRoutesReplaceTheDeclarationOperationAndKeepAliases(t *testing.T) {
 	p := atlasTestProgram(t, "server", "api/handler.go")
-	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{p.Objects[0].ID}, Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "handler", ObjectID: p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Returns status.", Activation: "request", Operation: "get status"}}}}}}}
+	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{p.Objects[0].ID}, Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "handler", ObjectID: p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Returns status.", Activation: "request", Operation: "get status"}}}}}}}
 	for i, route := range []string{"/status", "/health"} {
 		target.Boundaries = append(target.Boundaries, atlas.Boundary{ID: fmt.Sprintf("route%d", i), ObjectID: p.Objects[0].ID, BoxID: "api", Path: "api/handler.go", LineNo: 2 + i, Column: 1, Direction: atlas.DirectionIn, Kind: atlas.BoundaryRequest, Method: "GET", Values: []string{route}, Name: "GET " + route, Line: "Returns status.", FactID: "fact"})
 	}
@@ -126,7 +126,7 @@ func TestAtlasProjectsIndependentInterpretationWithoutCaption(t *testing.T) {
 			symbol := atlas.Symbol{ID: "work", ObjectID: p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1,
 				Line: want.Line, Alias: want.Alias, Key: want.Key, Activation: want.Activation, Operation: want.Operation, OperationSummary: want.OperationSummary}
 			target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "app",
-				Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{},
+				Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{},
 				Boxes: []atlas.Box{{ID: "app", Dir: "app", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{},
 					Files: []atlas.File{{Path: "app/work.go", Line: "Work.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{symbol}}}}}}
 			indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
@@ -165,7 +165,7 @@ func TestSharedCodeLinksRemainBoundToTheirCompleteTarget(t *testing.T) {
 	rebound := rebindTestTargets(t, app, shared)
 	app, shared = rebound[0], rebound[1]
 	makeTarget := func(p programindex.Index, role string) atlas.Target {
-		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Role: role, Root: ".", Zones: []atlas.Zone{}, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}}
+		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Role: role, Root: ".", Zones: []atlas.Zone{}, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}}
 	}
 	value := atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{makeTarget(app, atlas.RoleProduct), makeTarget(shared, atlas.RoleSharedCode)}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}
 	value.Targets[0].SharedCode = []string{shared.Target.ID}
@@ -270,7 +270,6 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 				},
 				Arrows:     []atlas.Arrow{{ID: "x1", From: "svc/api", To: "svc/core", Calls: 3, Witnesses: []atlas.Witness{}, Sentence: "The handlers hand requests to the domain."}},
 				Boundaries: []atlas.Boundary{{ID: "b-in", BoxID: "svc/api", Path: "svc/api/h.go", LineNo: 10, Caller: "FA", Direction: atlas.DirectionIn, Kind: atlas.BoundaryRequest, Values: []string{"/api/levels"}, Line: "Serves levels."}},
-				Trace:      []string{"svc/api", "svc/core"},
 			},
 			{
 				ID: web.Target.ID, Language: "typescript", Kind: "package", Name: "web", Root: "web",
@@ -279,7 +278,6 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 					Files: []atlas.File{{Path: "web/src/app.ts", Line: "App.", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{}}}, Keys: []atlas.Key{}}},
 				Arrows:     []atlas.Arrow{},
 				Boundaries: []atlas.Boundary{{ID: "b-out", BoxID: "web/src", Path: "web/src/app.ts", LineNo: 5, Caller: "FA", Direction: atlas.DirectionOut, Kind: atlas.BoundaryClientRequest, Values: []string{"/api/levels"}, Line: "Fetches levels."}},
-				Trace:      []string{},
 			},
 		},
 		Joints: []atlas.Joint{{
@@ -371,7 +369,7 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 // values, which would give every protocol HTTP's shape.
 func TestEntryOperationsTakeTheChosenNameOrTheHandler(t *testing.T) {
 	p := atlasTestProgram(t, "server", "api/handler.go")
-	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Trace: []string{},
+	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
 		Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{p.Objects[0].ID},
 			Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}}}}}
 	entry := func(id string, line int, name string, kind string, values ...string) atlas.Boundary {

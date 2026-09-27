@@ -277,9 +277,6 @@ func TestAreasContainOnlyExplicitlyChosenParts(t *testing.T) {
 	if sides["svc/api"] != atlas.SideIn || sides["svc/db"] != atlas.SideMid || sides["svc/core"] != atlas.SideMid {
 		t.Fatalf("sides: %v", sides)
 	}
-	if len(svc.Trace) < 3 {
-		t.Fatalf("trace: %v", svc.Trace)
-	}
 	if len(svc.Arrows) < 4 {
 		t.Fatalf("arrows: %+v", svc.Arrows)
 	}

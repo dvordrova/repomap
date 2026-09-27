@@ -31,7 +31,7 @@ func TestAtlasExplicitMembershipKeepsSameFileRelationsAndLexicalChildren(t *test
 	for _, object := range program.Objects {
 		ids[object.Name] = object.ID
 	}
-	target := atlas.Target{ID: program.Target.ID, Name: "app", Root: "app", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{
+	target := atlas.Target{ID: program.Target.ID, Name: "app", Root: "app", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Boxes: []atlas.Box{
 		{ID: "entry", Dir: "app", Title: "Application", Line: "Starts the work.", Side: atlas.SideIn, MemberIDs: []string{ids["Start"]}, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "app/main.go", Line: "Mixed responsibilities.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}}},
 		{ID: "storage", Dir: "other", Title: "Storage", Line: "Loads and saves state.", Side: atlas.SideMid, MemberIDs: []string{ids["Load"], ids["Save"]}, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "app/main.go", Line: "Mixed responsibilities.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}, {Path: "other/store.go", Line: "Saves state.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}}},
 	}}

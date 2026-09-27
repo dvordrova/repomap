@@ -1138,7 +1138,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		ID: meta.ID, Language: meta.Language, Kind: meta.Kind, Name: meta.Name, Root: meta.Root,
 		SharedCode: append([]string(nil), meta.SharedCode...),
 		Zones:      []atlas.Zone{}, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{},
-		Boundaries: []atlas.Boundary{}, Trace: []string{}, OffMap: []atlas.OffMapFile{},
+		Boundaries: []atlas.Boundary{}, OffMap: []atlas.OffMapFile{},
 		MapFailure: r.mapFailure[meta.ID],
 	}
 	if state, ok := r.targets[meta.ID]; ok {
@@ -1249,7 +1249,6 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			Source: facts.Source, Destination: state.destination, Address: state.address, Basis: state.basis,
 		})
 	}
-	target.Trace = r.trace(meta.ID)
 	return target
 }
 

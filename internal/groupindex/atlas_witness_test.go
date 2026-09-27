@@ -69,7 +69,7 @@ func TestUnresolvedCallDrawsItsWitnessedCandidatesAsPossibleArrows(t *testing.T)
 	// pair's sentence over it.
 	exactSentence := "Event loop calls Client connection handling: sendReplyToClient."
 	arrows := []atlas.Arrow{{ID: "a1", From: "loop", To: "clients", Calls: 1, Witnesses: []atlas.Witness{{Caller: "tick", Callee: "sendReplyToClient"}}, Sentence: exactSentence}}
-	target := atlas.Target{ID: program.Target.ID, Name: "server", Root: ".", Zones: []atlas.Zone{}, Arrows: arrows, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{
+	target := atlas.Target{ID: program.Target.ID, Name: "server", Root: ".", Zones: []atlas.Zone{}, Arrows: arrows, Boundaries: []atlas.Boundary{}, Boxes: []atlas.Box{
 		{ID: "loop", Dir: ".", Title: "Event loop", Line: "Waits for sockets.", Side: atlas.SideMid, MemberIDs: []string{ids["processEvents"], ids["tick"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("loop.c")}},
 		{ID: "clients", Dir: ".", Title: "Client connection handling", Line: "Reads queries and writes replies.", Side: atlas.SideMid, MemberIDs: []string{ids["readQueryFromClient"], ids["sendReplyToClient"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("server.c")}},
 	}}
@@ -159,7 +159,7 @@ func TestStoredNamesTieInSourceOrder(t *testing.T) {
 	file := func(path string) atlas.File {
 		return atlas.File{Path: path, Line: "Preset.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}
 	}
-	target := atlas.Target{ID: program.Target.ID, Name: "server", Root: ".", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}, Boxes: []atlas.Box{
+	target := atlas.Target{ID: program.Target.ID, Name: "server", Root: ".", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Boxes: []atlas.Box{
 		{ID: "loop", Dir: ".", Title: "Event loop", Line: "Waits for sockets.", Side: atlas.SideMid, MemberIDs: []string{ids["processEvents"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("loop.c")}},
 		{ID: "clients", Dir: ".", Title: "Clients", Line: "Serves clients.", Side: atlas.SideMid, MemberIDs: []string{ids["zapHandler"], ids["acceptHandler"], ids["timerHandler"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("server.c")}},
 	}}

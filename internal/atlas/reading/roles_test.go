@@ -479,8 +479,8 @@ func TestASplitFileIsNoPartsEndpoint(t *testing.T) {
 	if !calls {
 		t.Fatalf("Open's call of Store.Put drew no arrow: %+v", svc.Arrows)
 	}
-	if len(svc.Trace) == 0 || svc.Trace[0] != parts["Entry"].ID || parts["Entry"].Side != atlas.SideIn {
-		t.Fatalf("the entry: trace %v, Entry stands %q", svc.Trace, parts["Entry"].Side)
+	if parts["Entry"].Side != atlas.SideIn {
+		t.Fatalf("the entry: Entry stands %q", parts["Entry"].Side)
 	}
 	if slices.Contains(jev.roleParts(), "Entry") {
 		t.Fatal("the part holding main was asked for a core role")

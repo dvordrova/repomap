@@ -465,7 +465,7 @@ func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
 		}
 	}
 	target := atlas.Target{ID: program.Target.ID, Language: "go", Kind: "executable", Name: "pipeline", Root: ".",
-		Zones: zones, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{}}
+		Zones: zones, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}}
 	for i, p := range parts {
 		target.Boxes = append(target.Boxes, atlas.Box{ID: p.id, Dir: filepath.Dir(p.path), Title: p.title, Line: "Does " + p.title + ".",
 			ZoneID: zoneOf[p.id], Side: atlas.SideMid, Open: true, MemberIDs: []string{program.Objects[i].ID}, Keys: []atlas.Key{},

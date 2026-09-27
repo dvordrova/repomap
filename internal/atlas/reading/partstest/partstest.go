@@ -66,8 +66,8 @@ func Check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 // declaration of a split file is in a role part or off the map as
 // undecided, that a repeated name stays one unit, that a module body is a
 // row of the assignment, that no import-only arrow touches a role part, and
-// that a seed declaration in a split file keeps the entry: the trace starts
-// at a part holding a seed and that part stands in the "in" column.
+// that a seed declaration in a split file keeps the entry: the part holding
+// it stands in the "in" column.
 func CheckSplit(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root string) Map {
 	t.Helper()
 	return check(t, graph, target, root, true)
@@ -324,9 +324,6 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 		part := checked.PartOf[seed]
 		if part == "" {
 			continue // an undecided seed declaration enters through no part
-		}
-		if len(checked.Target.Trace) == 0 {
-			t.Fatalf("the split seed file %s lost the trace", place.Path)
 		}
 		for _, box := range checked.Target.Boxes {
 			if box.ID == part && box.Side != atlas.SideIn {
