@@ -129,7 +129,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   inside amber destination frames, using each component's external catalogue
   grouping: one frame per destination its records name, one tile per native
   outside symbol it calls (the same call made from several places is one
-  tile; every caller keeps its line and source on the arrow). Every frame and
+  tile; every caller keeps its line and source on the arrow, and an input's
+  witness to any of those calls leads to that tile). Every frame and
   tile belongs to its component, and only that component's arrows reach it:
   equal destination text proves no identity. One "TCP endpoint" box had taken
   arrows from all three Redis programs, though for redis-cli that endpoint is

@@ -200,6 +200,37 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	}
 }
 
+// A program calling one outside symbol from two places draws one tile. An
+// input whose path reaches only the second call kept its witness under the
+// second record's id, a tile no map draws: reading the drawn tile on echo's
+// GET /users/:id lost "Why it appears".
+func TestInputWitnessToAFoldedOutsideCallLeadsToItsTile(t *testing.T) {
+	m := &pageMap{Nodes: []pageMapNode{{ID: "n-g1", FullTitle: "Repository"}}}
+	scopeTargetMapIDs(m, "t1")
+	witness := `[{"name":"GetUser","source":"handler.go:20"},{"name":"Scan","source":"postgres.go:40"}]`
+	m.Nodes = append(m.Nodes, pageMapNode{ID: "t1-o1", FullTitle: "GET /users/:id", Activation: "request", CallPaths: `{"system-t1-out-b2":` + witness + `}`})
+	row := func(id, anchor string) pageOutbound {
+		return pageOutbound{ID: id, Destination: "PostgreSQL", External: "database/sql.Row.Scan", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: anchor}}
+	}
+	view := pageView{Sections: []*pageSection{{ID: "t1", programTargetID: "t1", ShortLabel: "api", Map: m,
+		Outbound: []pageOutbound{row("t1-out-b1", "postgres.go:30"), row("t1-out-b2", "postgres.go:40")}}}}
+	got := view.SystemMap()
+	var input pageMapNode
+	drawn := map[string]bool{}
+	for _, node := range got.Nodes {
+		drawn[node.ID] = true
+		if node.ID == "t1-o1" {
+			input = node
+		}
+	}
+	if drawn["system-t1-out-b2"] || !drawn["system-t1-out-b1"] {
+		t.Fatalf("one outside symbol is one tile: %v", drawn)
+	}
+	if !strings.Contains(input.CallPaths, `"system-t1-out-b1":`) || strings.Contains(input.CallPaths, "system-t1-out-b2") {
+		t.Fatalf("the witness names a tile the map does not draw: %s", input.CallPaths)
+	}
+}
+
 // "redis.c.redisCommand.proc get in getCommand" was the get input's whole
 // description: the registration's own words. The reading names the handler.
 func TestInputIsReadByItsHandlerNotItsRegistrationWords(t *testing.T) {

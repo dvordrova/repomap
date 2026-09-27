@@ -194,6 +194,7 @@ func (view *pageView) SystemMap() *pageMap {
 	// around them on the map that is no participant and holds no arrow.
 	groupFrames := map[string][]int{}
 	var groupKeys []string
+	foldedTiles := map[string]string{}
 	for _, section := range view.Sections {
 		for _, group := range groupOutbound(section.Outbound) {
 			var children []string
@@ -231,6 +232,7 @@ func (view *pageView) SystemMap() *pageMap {
 					add(pageMapNode{ID: id, Owner: section.ID, ItemKind: "External communication", FullTitle: title, Summary: row.Summary, SummaryRef: row.SummaryRef, Source: row.Anchor, SourceKind: row.Source, DetailsID: row.ID, Href: "#" + row.ID, Subtitle: row.Address, Lane: "dependencies"})
 					children = append(children, id)
 				} else if id != tile {
+					foldedTiles[id] = tile
 					at := positions[tile]
 					if !slices.Contains(result.Nodes[at].Aliases, id) {
 						result.Nodes[at].Aliases = append(result.Nodes[at].Aliases, id)
@@ -260,6 +262,36 @@ func (view *pageView) SystemMap() *pageMap {
 		if frames := groupFrames[key]; len(frames) > 1 {
 			for _, at := range frames {
 				result.Nodes[at].DisplayGroup = fmt.Sprintf("destinations-%d", n+1)
+			}
+		}
+	}
+	// An input's witness to a folded record leads to the tile that stands for
+	// it: reading that tile on the input's path keeps "Why it appears". Without
+	// it, echo's GET /users/:id and fifteen microblog inputs named tiles no
+	// map draws.
+	if len(foldedTiles) > 0 {
+		for i := range result.Nodes {
+			n := &result.Nodes[i]
+			if n.CallPaths == "" {
+				continue
+			}
+			var paths map[string]json.RawMessage
+			if json.Unmarshal([]byte(n.CallPaths), &paths) != nil {
+				continue
+			}
+			changed := false
+			for id, path := range paths {
+				if tile := foldedTiles[id]; tile != "" {
+					if _, exists := paths[tile]; !exists {
+						paths[tile] = path
+					}
+					delete(paths, id)
+					changed = true
+				}
+			}
+			if changed {
+				raw, _ := json.Marshal(paths)
+				n.CallPaths = string(raw)
 			}
 		}
 	}
