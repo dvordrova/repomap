@@ -54,3 +54,21 @@ test('search matches are not combined with an old input or hover path, including
   assert.deepEqual([...result.participants],['test']);assert.equal(result.activeEdges.size,0);
   assert.equal(emphasis({...view,matched:new Set()},'area',leaves,edges).participants.size,0);
 });
+
+// Pointing at a declaration in a zoomed part darkens only its own arrows:
+// Redis's acceptHandler lit every arrow of Client connections and replies.
+test('a declaration pointed at or chosen darkens only the arrows that carry its calls',()=>{
+  const part=[
+    {id:'in',from:'events',to:'clients',relations:[{calls:[{label:'aeMain calls acceptHandler',from:'ae.c#L10',to:'redis.c#L2551'}]}]},
+    {id:'out',from:'clients',to:'net',relations:[{calls:[{label:'acceptHandler calls anetAccept',from:'redis.c#L2560',to:'anet.c#L300'}]}]},
+    {id:'other',from:'clients',to:'lists',relations:[{calls:[{label:'createClient calls listCreate',from:'redis.c#L90',to:'adlist.c#L40'}]}]},
+  ];
+  const member={part:'clients',names:['acceptHandler'],sources:['redis.c#L2551']};
+  const hovered=emphasis(empty,'clients',id=>[id],part,member);
+  assert.deepEqual([...hovered.activeEdges],['in','out']);
+  assert.ok(!hovered.participants.has('lists'));
+  const chosen=emphasis({...empty,scope:'clients',selected:new Set(['clients'])},'',id=>[id],part,member);
+  assert.deepEqual([...chosen.activeEdges],['in','out']);
+  assert.deepEqual([...emphasis(empty,'clients',id=>[id],part).activeEdges],['in','out','other'],'the part itself keeps all its arrows');
+  assert.deepEqual([...emphasis(empty,'events',id=>[id],part,member).activeEdges],['in'],'a declaration of another part changes nothing');
+});

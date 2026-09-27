@@ -143,6 +143,21 @@ export function partViewport(node,zoom,width,height,margin=24) {
   return {x,y,zoom};
 }
 
+// Zoomed into a part at the scale its declarations read at: the part whole
+// in the middle when it fits, else its head and first column a margin from
+// the canvas's top left, where its callers stand. Fitted whole instead, a
+// part of many declarations stood at 7px type; centred at the reading scale,
+// its first column was cut off at the left.
+export function deepViewport(node,zoom,width,height,margin=24){
+  const across=node.width*zoom<=width-2*margin,down=node.height*zoom<=height-2*margin;
+  return {x:across?width/2-(node.absolute.x+node.width/2)*zoom:margin-node.absolute.x*zoom,
+    y:down?height/2-(node.absolute.y+node.height/2)*zoom:margin-node.absolute.y*zoom,zoom};
+}
+// A point centred at a zoom: a declaration found or chosen in its part.
+export function pointViewport(point,zoom,width,height){
+  return {x:width/2-point.x*zoom,y:height/2-point.y*zoom,zoom};
+}
+
 // Entering a frame, whatever the frame is: an area, an inputs or external
 // frame, a component. It is shown whole in the middle of the free canvas, its
 // content at its own size when there is room and smaller when there is not,

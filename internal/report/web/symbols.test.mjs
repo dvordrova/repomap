@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {symbolBlocks,symbolRow} from './symbols.mjs';
+import {symbolBlocks,symbolRow,tileGrid} from './symbols.mjs';
 
 const type=name=>({name}),method=(name,owner)=>({name,owner}),fn=name=>({name});
 
@@ -79,4 +79,24 @@ test('a key is never counted while a declaration after the keys is drawn',()=>{
   const one=symbolBlocks(typed,[],1,2*symbolRow.header+symbolRow.row+symbolRow.pad+symbolRow.gap);
   assert.deepEqual(one.blocks.map(block=>block.head),[3,1]);
   assert.equal(one.hidden,1);
+});
+
+// A monospace measure: every character 8px wide.
+const measure=text=>text.length*8;
+test('a tile is as wide as the longest name and every tile fits whole',()=>{
+  const names=['_dictStringCopyHTKeyCompare','listCreate','dictAdd',...Array.from({length:60},(_,i)=>'helper'+i)];
+  const grid=tileGrid(names.map(name=>({name})),[],{width:260,height:88},measure);
+  assert.equal(grid.hidden,0,'nothing is counted away');
+  assert.ok(grid.tileWidth>=27*8+22,'the longest name is not cut');
+  assert.ok(grid.divisor>4,'a part with more tiles than its card holds at a quarter is drawn smaller');
+  assert.equal(tileGrid(names.slice(0,3).map(name=>({name})),[],{width:260,height:88},measure).divisor,4,'a small part keeps the quarter scale');
+});
+
+test('tiles stand by file, files in the order their first declaration is listed',()=>{
+  const symbols=[{name:'dictAdd',key:true,path:'dict.c'},{name:'listCreate',key:true,path:'adlist.c'},{name:'dictFind',path:'dict.c'},
+    {name:'listAddNodeTail',path:'adlist.c'},{name:'zipmapNew',path:'zipmap.c'},{name:'dictNext',path:'dict.c'}];
+  const grid=tileGrid(symbols,[],{width:260,height:200},measure);
+  assert.equal(grid.hidden,0);
+  const column=grid.blocks.filter(block=>block.column===0).sort((a,b)=>a.y-b.y).map(block=>symbols[block.head].name);
+  assert.deepEqual(column,['dictAdd','dictFind','dictNext','listCreate','listAddNodeTail','zipmapNew']);
 });

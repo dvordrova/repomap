@@ -57,6 +57,8 @@ test('a pointed part is the subject, dark itself, and the rest recedes',async({p
     expect(part.shadow,`${id}: no veil inside the pointed area`).toBe('none');
     expect(part.opacity).toBe('1');
   }
+  const inner=await map.evaluate(map=>getComputedStyle(document.querySelector(`[data-edge-ids~="${map.visibleEdges.find(e=>e.from==='routes'&&e.to==='auth').id}"]`)).opacity);
+  expect(inner,'an arrow between the area\'s own parts stays as it is').toBe('1');
   await testInfo.attach('journey-02 — The pointed area\'s frame is dark',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });
 
@@ -149,5 +151,78 @@ test('a number\'s card is reachable, kept open by a click and closed by ✕, Esc
   await expect(card).toHaveCount(0);
   await expect(page.locator('[data-reading-title]')).toHaveText(reading);
   expect(await map.evaluate(map=>map.captureViewport())).toEqual(camera);
+  expect(errors).toEqual([]);
+});
+
+async function deepWorker(page,map){
+  await page.goto('/?symbols');
+  await expect(map).toHaveAttribute('data-fixture-ready','true');
+  await map.evaluate(map=>map.focusNode('worker'));
+  await settle(map);
+  await page.locator('.react-flow__node[data-id="worker"] .flow-part-zoom').click();
+  await settle(map);
+  return page.locator('.react-flow__node[data-id="worker"]');
+}
+const tileOf=(part,name)=>part.locator('.flow-symbol-block > *',{hasText:new RegExp('^'+name)}).first();
+// The worker's arrows drawn dark. An outer route drawn once for several
+// arrows is dark when one of them is; only the worker's own are asked about.
+const darkArrows=map=>map.evaluate(map=>[...new Set([...document.querySelectorAll('.flow-edge-active')].flatMap(g=>g.dataset.edgeIds.split(' '))
+  .map(id=>map.visibleEdges.find(e=>e.id===id)).filter(e=>e.from==='worker'||e.to==='worker').map(e=>`${e.from}>${e.to}`))].sort());
+
+// The magnifier enters where the declarations read at their own size, every
+// name whole: Redis's Persistence opened at its title's scale with no
+// declaration drawn, and its names were cut to "rewriteAppendOnlyFil…".
+test('the magnifier enters at the declarations\' reading scale with every name whole',async({page},testInfo)=>{
+  const map=page.locator('[data-map]');
+  const part=await deepWorker(page,map);
+  await expect(part.locator('.flow-part-deep')).toBeVisible();
+  const tiles=await part.locator('.flow-symbol-block > :first-child').evaluateAll(rows=>rows.map(row=>{
+    const range=document.createRange();range.selectNodeContents(row.firstChild);
+    const name=range.getBoundingClientRect(),box=row.getBoundingClientRect();
+    return {name:row.firstChild.textContent,size:parseFloat(getComputedStyle(row).fontSize)*box.height/row.offsetHeight,whole:name.right<=box.right-4};
+  }));
+  expect(tiles.map(tile=>tile.name)).toContain('retryWithExponentialBackoffPolicy');
+  for(const tile of tiles){
+    expect(tile.size,`${tile.name} reads at its own size`).toBeGreaterThan(12);
+    expect(tile.whole,`${tile.name} is not cut`).toBe(true);
+  }
+  await expect(part.locator('.flow-symbol-more')).toHaveCount(0);
+  await testInfo.attach('journey-01 — Entered at the declarations\' reading scale',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+});
+
+// A declaration is chosen on its tile: pointing darkens only its own arrows,
+// a click reads its part with it named and centres it, and a declaration the
+// reading names elsewhere (Find, a restored visit) is the one chosen and
+// centred. A click had opened the code in a new tab, or bubbled to the part
+// already selected and changed nothing.
+test('a tile points at and chooses its own declaration',async({page},testInfo)=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const map=page.locator('[data-map]');
+  const part=await deepWorker(page,map);
+  await page.mouse.move(1430,890);
+  await pointAt(page,tileOf(part,'processJob'));
+  await expect.poll(()=>darkArrows(map)).toEqual(['queue>worker']);
+  await pointAt(page,tileOf(part,'save'));
+  await expect.poll(()=>darkArrows(map)).toEqual(['worker>save-jobs']);
+  const tile=await tileOf(part,'processJob').boundingBox();
+  await page.mouse.move(tile.x+tile.width/2,tile.y+tile.height/2,{steps:6});
+  await page.mouse.click(tile.x+tile.width/2,tile.y+tile.height/2);
+  await settle(map);
+  expect(page.context().pages()).toHaveLength(1);
+  await expect(page.locator('[data-reading-title]')).toHaveText('Processing worker');
+  await expect(tileOf(part,'processJob')).toHaveClass(/flow-symbol-chosen/);
+  const canvas=await page.locator('.flow-root').boundingBox(),chosen=await tileOf(part,'processJob').boundingBox();
+  expect(Math.abs(chosen.x+chosen.width/2-canvas.x-canvas.width/2)).toBeLessThan(2);
+  expect(Math.abs(chosen.y+chosen.height/2-canvas.y-canvas.height/2)).toBeLessThan(2);
+  await page.mouse.move(1430,890);
+  await expect.poll(()=>darkArrows(map)).toEqual(['queue>worker']);
+  await testInfo.attach('journey-01 — processJob chosen and centred',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  // The reading names another declaration, as Find does.
+  await map.evaluate(map=>{map.explorerMember={owner:'worker',name:'save',key:'#worker.go-30',href:'#worker.go-30'};map.dispatchEvent(new Event('repomap:reading'));});
+  await settle(map);
+  await expect(tileOf(part,'save')).toHaveClass(/flow-symbol-chosen/);
+  const found=await tileOf(part,'save').boundingBox();
+  expect(Math.abs(found.x+found.width/2-canvas.x-canvas.width/2)).toBeLessThan(2);
+  expect(Math.abs(found.y+found.height/2-canvas.y-canvas.height/2)).toBeLessThan(2);
   expect(errors).toEqual([]);
 });

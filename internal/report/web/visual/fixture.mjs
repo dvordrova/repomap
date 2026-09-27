@@ -36,9 +36,13 @@ if(options.has('described')){
 // the job type they return.
 if(options.has('symbols')){
   const worker=records.find(n=>n.id==='worker');
-  worker.symbols=[{name:'processJob',kind:'function',key:true,text:'(job: Job)'},{name:'Job',kind:'type'},{name:'id',kind:'field',owner:2,text:': string'},
-    {name:'claim',kind:'function',text:'(): Job'},{name:'save',kind:'function',text:'(job: Job)'}];
+  worker.symbols=[{name:'processJob',kind:'function',key:true,text:'(job: Job)',href:'#worker.go-3',path:'worker.go'},{name:'Job',kind:'type',path:'job.go'},{name:'id',kind:'field',owner:2,text:': string',path:'job.go'},
+    {name:'claim',kind:'function',text:'(): Job',path:'worker.go'},{name:'save',kind:'function',text:'(job: Job)',href:'#worker.go-30',path:'worker.go'},
+    {name:'retryWithExponentialBackoffPolicy',kind:'function',text:'(job: Job, attempts: int)',path:'retry.go'}];
   worker.symbolCalls=[[0,3,'calls'],[0,4,'calls'],[3,1,'returns'],[0,1,'takes']];
+  // The worker's arrows name the calls they carry, as the page's do.
+  relations.find(r=>r.from==='queue'&&r.to==='worker').calls=[{label:'dispatch calls processJob',from:'#queue.go-12',to:'#worker.go-3'}];
+  relations.find(r=>r.from==='worker'&&r.to==='save-jobs').calls=[{label:'save calls saveResult',from:'#worker.go-31',to:'#db.go-9'}];
 }
 
 // Each system calls its own "DNS resolver": two frames the page groups for

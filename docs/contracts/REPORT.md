@@ -444,18 +444,46 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   open frames do not promise another hidden layer.
 
   A part with declarations has a zoom button; zoomed far into the part, its
-  declarations stand inside its own card as tiles at a quarter of its size,
-  each a link into the code: a type with its fields and methods under it, a
-  function or a module's variable alone. A tile keeps its link column, the
-  longest chain of calls, returns and takes leading to it, so a caller stands
-  left of what it calls. Tiles are placed in the order the page lists them,
-  the model's keys first, and stack in that order within their column; a
-  column too tall spills into the next, and what finds no room is counted
-  as "+N" with every declaration it holds. A key is never counted while a
-  declaration after the keys is drawn. Placed by link column first, the
-  repomap self-run's parts hid 88 of their 256 keys while drawing
-  declarations listed after them; placed in list order they hide one, in a
-  card too small for its keys.
+  declarations stand inside its own card as tiles, each a declaration to
+  choose: a type with its fields and methods under it, a function or a
+  module's variable alone. A tile keeps its link column, the longest chain
+  of calls, returns and takes leading to it, so a caller stands left of what
+  it calls. Tiles stand by file, the files in the order their first
+  declaration is listed and each file's declarations in the order the page
+  lists them, the model's keys first; the file is a hint, and Redis's
+  linked-list functions had stood scattered among the dictionary's. They
+  stack in that order within their column and a column too tall spills into
+  the next. A tile is as wide as the longest name among the part's
+  declarations, so no name is cut, and the columns share the card's width;
+  cut to 190px, Redis's names read "_dictStringCopyHTKe…". The tiles are
+  drawn at a quarter of the card's scale, or smaller when a quarter does not
+  hold them all whole: nothing is counted away, and a large part is a larger
+  drawing to pan (Data structures' "+59" had hidden the list struct). The
+  part's name stands over them at the same screen size at any such scale.
+  Placed by link column first, the repomap self-run's parts hid 88 of their
+  256 keys while drawing declarations listed after them. The zoom button
+  enters at the scale the declarations read at, their own 13px: the part
+  whole when it fits there, else its head and first column a margin from
+  the canvas's top left. Fitted to the canvas, Redis's Persistence had
+  opened at its title's scale with no declaration drawn. A drag over the
+  declarations pans the map, as a drag over the part does; a drag that
+  moved chooses nothing.
+
+  Pointing at a declaration darkens only its own arrows: its links to the
+  part's other declarations, and among the part's arrows those carrying a
+  call into it (the call's callee is its source) or out of it (the call's
+  caller is its name); the declarations its links do not join recede. A
+  click on a tile chooses that declaration: the part is read with it named
+  in the reading column (the existing `map.explainSource`), the tile keeps
+  the dark outline of what is read, its own arrows stay dark, and the camera
+  centres it at its reading scale. A modifier click still opens its code. A
+  declaration the reading column names by its source (Find's code hit, a
+  declaration chosen in the reading, a restored visit) is the one chosen on
+  the canvas, and a newly named one is centred at its reading scale; a
+  restored visit keeps its camera. Clicked, Redis's tiles had opened GitHub
+  in a new tab or bubbled to the part already selected, and a Find code hit
+  had stopped at the part. The page data gives each tile its file and the
+  same source link its reading uses, served or static.
 
   Root summaries prioritize saved area names over role, counts and purpose;
   complete dense inventories scroll without dropping entries. Ordinary wheel
@@ -497,9 +525,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   geometry identity. Component entrance fits the complete participant frame
   before exploring a group, keeping siblings on both sides in view. Entering
   a group or a call then uses its actual content scale for reading. A
-  focused area that fits the canvas at a zoom where its layer stays open is
-  fitted whole, never wider than the visible canvas; only an area too large
-  even so is entered at its first part. Entering a frame or an input's path
+  focused area that fits the canvas at a zoom where its parts' headings stay
+  about twelve pixels (and its layer open) is fitted whole, never wider than
+  the visible canvas; only an area too large even so is entered at its
+  first part at that scale. Fitted at its layer's floor instead, Redis's
+  Server runtime stood at 8px headings at 1440×900 and 4 to 7px at 1280×800. Entering a frame or an input's path
   opens what it enters: those frames stay open through the camera move's own
   zooms, so they arrive open although the camera stands smaller than a
   closed layer needs to open by itself. Closed on the way, microblog's

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,pathViewport,tileViewport,staysOpen,layerFloor,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
+import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,pathViewport,tileViewport,staysOpen,layerFloor,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition,deepViewport} from './semantic.mjs';
 
 test('approaching a target reveals its diagram before its smallest descendant text is readable',()=>{
   const nodes=[{id:'target',frame:true,absolute:{x:0,y:0},width:900,height:600}];
@@ -496,4 +496,13 @@ test('a focused area that fits while it stays open is fitted whole',()=>{
   assert.ok(v.zoom>=least,'at a zoom where the area stays open');
   const wide={...area,width:5000*scale},w=frameViewport(wide,nodes,width,height,scale,{floor:staysOpen,least});
   assert.equal(w.zoom,staysOpen/scale,'an area too wide even so keeps the reading floor');
+});
+
+test('the magnifier shows a part whole when it fits and its head and first column when it does not',()=>{
+  const node={absolute:{x:1000,y:500},width:260,height:88};
+  const whole=deepViewport(node,2,1000,700);
+  assert.equal(whole.x+(1000+130)*2,500);assert.equal(whole.y+(500+44)*2,350);
+  const large=deepViewport(node,10,1000,700);
+  assert.equal(large.x+1000*10,24,'its left edge a margin from the canvas edge');
+  assert.equal(large.y+500*10,24,'its head a margin below the top');
 });

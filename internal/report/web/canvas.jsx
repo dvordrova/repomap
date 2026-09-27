@@ -4,10 +4,10 @@ import {flushSync} from 'react-dom';
 import {ReactFlow, Handle, Position, ViewportPortal, useViewport, useStore} from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
-import {symbolBlocks,symbolRow} from './symbols.mjs';
+import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
-import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
+import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {singlePartAreas, inputGroupsByPart} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading,cardText} from './cards.mjs';
@@ -21,28 +21,34 @@ import './canvas.css';
 // Legacy small repository diagrams share the same embedded ELK instance code.
 window.ELK = ELK;
 const t = (...args) => window.rmT(...args);
-// Zoomed far into a part, its declarations stand inside it as tiles, placed
-// in the order the page lists them, the keys the model chose first (see
-// symbolBlocks); every tile is a link into the code. The tiles are drawn in
-// the card's own rectangle at a quarter of its size, so nothing on the map
-// moves when they appear.
-const deepDivisor=4,deepHeader=20,deepTile={width:190,height:28,columnGap:36,rowGap:8,inset:8};
+// Zoomed far into a part, its declarations stand inside it as tiles, by
+// file and in the order the page lists them (tileGrid): a tile is a
+// declaration to choose, as wide as the longest name among them. The tiles
+// are drawn in the card's own rectangle at the scale that fits them all, so
+// nothing on the map moves when they appear.
+// The part's drawing box and the scale it is drawn at, as Part draws it.
+function partBox(data){
+  const heading=data.standaloneHeading,scale=heading?.scale||data.contentScale||1;
+  const box=heading?{width:heading.width,height:heading.height}:data.fill||{width:data.originalWidth||data.width||260,height:data.originalHeight||data.height||88};
+  return {box,scale};
+}
+const tileContext=document.createElement('canvas').getContext('2d');
+const measureTile=(text,font)=>{tileContext.font=font;return tileContext.measureText(text).width;};
+const grids=new Map();
+function partGrid(data,box){
+  const key=`${data.id}|${box.width}|${box.height}`;
+  if(!grids.has(key))grids.set(key,tileGrid(data.symbols||[],data.symbolCalls||[],box,measureTile));
+  return grids.get(key);
+}
 // A marker is drawn in its line's stroke widths, seven of them. Emphasis
 // draws a line 2.5px thick instead of 1.5px (canvas.css), so its marker is
 // 1.5/2.5 of that and every head stands 10.5px. At seven emphasised strokes
 // a head stood 17.5px, nearly three times the area, and covered the number
 // at the frame.
 const arrowHead=7,emphasisedHead=arrowHead*1.5/2.5;
-function PartSymbols({symbols,calls,width,height}){
-  const [hot,setHot]=useState(-1);
-  const inner={width:width*deepDivisor,height:(height-deepHeader)*deepDivisor},inset=deepTile.inset,gap=deepTile.columnGap;
-  const links=calls||[],usable=inner.height-2*inset;
-  const columnsAt=w=>Math.max(1,Math.floor((inner.width-2*inset+gap)/(w+gap)));
-  // The widest tile that leaves nothing out, with columns enough for a
-  // caller, what it calls and what that returns.
-  const fits=w=>symbolBlocks(symbols,links,columnsAt(w),usable);
-  const tileWidth=[340,260,deepTile.width].find(w=>fits(w).hidden===0&&(!links.length||columnsAt(w)>=3))||deepTile.width;
-  const {blocks,rows,hidden}=fits(tileWidth);
+function PartSymbols({symbols,calls,width,height,grid,member}){
+  const {divisor,inner,tileWidth,blocks,rows,hidden}=grid,{inset,columnGap:gap}=tileRoom;
+  const links=calls||[],hot=member?.hot??-1,chosen=member?.chosen??-1;
   const x=column=>inset+column*(tileWidth+gap);
   // A method inside its type's tile needs no line to that type.
   const drawn=links.filter(([from,to])=>rows[from]&&rows[to]&&rows[from].block!==rows[to].block);
@@ -53,16 +59,24 @@ function PartSymbols({symbols,calls,width,height}){
   const mixed=new Set(blocks.filter(block=>{const all=[block.head,...block.rows].filter(i=>symbols[i].kind!=='more');return all.some(i=>symbols[i].inner)&&all.some(i=>!symbols[i].inner);}).flatMap(block=>[block.head,...block.rows]));
   const row=(i,className,first)=>{
     const symbol=symbols[i],kind=symbol.kind==='field'||symbol.kind==='more'?'flow-symbol-field':'';
-    const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner&&mixed.has(i)?'flow-symbol-inner':''} ${tone(i)}`,onMouseEnter:()=>setHot(i)};
+    // A click chooses the declaration: the reading names it and the camera
+    // centres it. Opened with a modifier, a tile's link still opens the code.
+    const choose=event=>{
+      if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey){event.stopPropagation();return;}
+      event.preventDefault();event.stopPropagation();member?.choose(i,event);
+    };
+    const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner&&mixed.has(i)?'flow-symbol-inner':''} ${i===chosen?'flow-symbol-chosen':''} ${tone(i)}`,
+      'data-symbol':i,onMouseEnter:()=>member?.point(i),onClick:symbol.kind==='more'?undefined:choose};
     const body=<>{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
-    return symbol.href?<a key={i} href={symbol.href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()} {...props}>{body}</a>
+    return symbol.href&&symbol.kind!=='more'?<a key={i} href={symbol.href} target="_blank" rel="noopener" {...props}>{body}</a>
       :<span key={i} {...props}>{body}</span>;
   };
   // A drag anywhere over the declarations pans, as it does over the part: at
   // their reading scale they fill the canvas, and a drag that moved is no
   // click on the tile it started on.
-  return <div className="flow-part-symbols" style={{top:deepHeader,width,height:height-deepHeader}}>
-    <div style={{width:inner.width,height:inner.height,transform:`scale(${1/deepDivisor})`,transformOrigin:'top left'}} onMouseLeave={()=>setHot(-1)}>
+  const header=tileHeader(divisor);
+  return <div className="flow-part-symbols" style={{top:header,width,height:height-header}}>
+    <div style={{width:inner.width,height:inner.height,transform:`scale(${1/divisor})`,transformOrigin:'top left'}} onMouseLeave={()=>member?.point(-1)}>
       <svg width={inner.width} height={inner.height}>
         <defs>{[['flow-symbol-arrow',arrowHead],['flow-symbol-arrow-hot',emphasisedHead]].map(([id,size])=>
           <marker key={id} id={id} viewBox="0 0 8 8" refX="7" refY="4" markerWidth={size} markerHeight={size} orient="auto"><path d="M0 0L8 4L0 8z"/></marker>)}</defs>
@@ -89,21 +103,20 @@ function PartSymbols({symbols,calls,width,height}){
   </div>;
 }
 function Part({data}) {
-  const heading=data.standaloneHeading,scale=heading?.scale||data.contentScale;
-  const box=heading?{width:heading.width,height:heading.height}:data.fill||{width:data.originalWidth||data.width||260,height:data.originalHeight||data.height||88};
+  const heading=data.standaloneHeading,{box,scale}=partBox(data);
   // Only the flip between the two drawings re-renders the card, not every
   // step of a zoom.
-  const far=useStore(state=>box.width*(scale||1)*state.transform[2]>=860);
-  const deep=far&&!data.activation&&data.symbols?.length>0;
+  const far=useStore(state=>box.width*scale*state.transform[2]>=860);
+  const deep=far&&!data.activation&&data.symbols?.length>0,grid=deep?partGrid(data,box):null;
   // A loose part's heading is fitted to its box; its description takes the
   // whole lines left under the title and the zoom mark's row.
   const standaloneLines=heading?Math.floor((heading.height-12-heading.title.split('\n').length*16-16)/15):0;
   const standaloneText=standaloneLines>0;
   if(deep)return <div className={`flow-part flow-part-deep flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''}`}
-      style={{width:box.width,height:box.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}}>
+      style={{width:box.width,height:box.height,transform:`scale(${scale})`,transformOrigin:'top left'}}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
-    <strong>{data.name||data.title}</strong>
-    <PartSymbols symbols={data.symbols} calls={data.symbolCalls} width={box.width} height={box.height}/>
+    <strong style={{fontSize:28/grid.divisor,lineHeight:`${40/grid.divisor}px`,padding:`${20/grid.divisor}px ${32/grid.divisor}px 0`}}>{data.name||data.title}</strong>
+    <PartSymbols symbols={data.symbols} calls={data.symbolCalls} width={box.width} height={box.height} grid={grid} member={data.member}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
   return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
@@ -229,6 +242,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const initial={scope:'',operation:'',entry:'',selected:new Set(),matched:new Set(),searching:false,numbered:true};
   let cameraRevision=0;
   let update, instance, view=initial, hoverArea='', pinnedPart='', pinnedLabels=new Map(), lookOnly, preview='', restorePending, pendingFocus, panning=false, initializing=true;
+  // A declaration in a zoomed part: the one under the pointer, and the one
+  // chosen, which the reading names. Each is {part, index} into the part's
+  // symbols.
+  let hoverMember=null,memberChoice=null,looseOf=()=>({});
   let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),arriving=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
   const closed=id=>closedContainer(id,placed,byID,detailed,componentsOpen,communicationsOpen,openComponents);
   new ResizeObserver(()=>{if(instance&&!initializing&&overviewFit)fitOverview();}).observe(host);
@@ -267,7 +284,62 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const maximumZoom=()=>Math.max(2,...[...scales.values(),...communicationScales().values(),
     ...[...byID.values()].filter(n=>!n.children?.length).map(n=>n.contentScale||1)].map(scale=>1.8/scale),
     // Far enough into a part to read its declarations, and no farther.
-    ...[...byID.values()].filter(n=>n.symbols?.length).map(n=>4.5/(n.contentScale||1)));
+    ...[...byID.values()].filter(n=>n.symbols?.length&&placed.has(n.id)).map(n=>1.125*deepZoom(n.id)));
+  // The zoom at which a part's declarations read at their own size (and its
+  // tiles are drawn at all).
+  function deepZoom(id){
+    const data={...byID.get(id),...looseOf(placed.get(id))},{box,scale}=partBox(data),grid=partGrid(data,box);
+    return Math.max(grid.divisor/scale,860*1.02/(box.width*scale));
+  }
+  // What the emphasis needs of a declaration: its part, the names its calls
+  // use for it and its source.
+  function memberFacts(member){
+    const symbols=byID.get(member?.part)?.symbols||[],symbol=symbols[member?.index];
+    if(!symbol)return null;
+    const owner=symbol.owner?symbols[symbol.owner-1]?.name:'';
+    return {part:member.part,names:[symbol.name,owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:[symbol.href,symbol.open].filter(Boolean)};
+  }
+  // Centre a declaration at the scale its tile reads at.
+  function focusMember(part,index,smooth=true){
+    const n=placed.get(part);if(!n||!instance||initializing)return false;
+    const data={...byID.get(part),...looseOf(n)},{box,scale}=partBox(data),grid=partGrid(data,box);
+    const symbols=data.symbols||[],row=grid.rows[index]||grid.rows[(symbols[index]?.owner||0)-1];
+    if(!row)return false;
+    const {inset,columnGap:gap}=tileRoom,rect=host.getBoundingClientRect();
+    // The declarations stand inside the part's 1px border (canvas.css).
+    const point={x:n.absolute.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor),
+      y:n.absolute.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor)};
+    overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
+    arrive([part]);locationSubject=part;
+    commitCamera(instance.setViewport(pointViewport(point,Math.min(maxZoom,deepZoom(part)),rect.width,rect.height),{duration:smooth?420:0}),part);
+    return true;
+  }
+  function pointMember(part,index){
+    const next=index<0?null:{part,index};
+    if(cardOpen()||(hoverMember?.part===next?.part&&hoverMember?.index===next?.index))return;
+    hoverMember=next;update?.();
+  }
+  // A tile clicked: the part is read with that declaration named, and the
+  // camera centres the tile.
+  function chooseMember(part,index,event){
+    const symbol=byID.get(part)?.symbols?.[index];if(!symbol)return;
+    memberChoice={part,index};hoverMember=null;
+    select(part,event,false);
+    // The reading is on the part once the host has shown it.
+    setTimeout(()=>map.explainSource?.({key:symbol.href||symbol.open||'',href:symbol.href,open:symbol.open}),0);
+    focusMember(part,index);
+  }
+  // The reading column names a declaration (Find, a link in the reading, a
+  // restored visit): its tile is the one chosen, and a new one is centred.
+  map.addEventListener('repomap:reading',()=>{
+    const named=map.explorerMember;if(!named?.owner)return;
+    const part=displayed(named.owner),symbols=byID.get(part)?.symbols||[];
+    const same=value=>!!value&&[named.key,named.href,named.open].includes(value);
+    const index=symbols.findIndex(symbol=>same(symbol.href)||same(symbol.open));
+    if(index<0||memberChoice?.part===part&&memberChoice.index===index)return;
+    memberChoice={part,index};update?.();
+    if(!map.readingRestoring)focusMember(part,index);
+  });
   maxZoom=maximumZoom();
   function detailState(viewport,previous){
     const open=detailLayers(layout.nodes,semantic.records,viewport,host.clientWidth,host.clientHeight,previous);
@@ -407,6 +479,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   function focus(id,center=true,smooth=true){
     id=displayed(id);
     const n=placed.get(id);if(!n)return;
+    // A part read with one of its declarations named is entered at that tile.
+    if(memberChoice?.part===id&&focusMember(id,memberChoice.index,smooth))return;
     const record=byID.get(id);
     if(record?.activation&&focusPath(id,smooth))return;
     if(record?.activation){showInput(id,smooth);return;}
@@ -442,7 +516,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       if(['communication','inputs'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id]);
       else if(!component)detailed=new Set([...detailed,n.id]);
       if(!component)arrive([n.id]);
-      const least=scales.has(n.id)?layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height):Infinity;
+      // An area is fitted whole only where its parts' headings stay about
+      // twelve pixels; larger, it is entered at its first part. Fitted at
+      // its layer's floor, Redis's Server runtime stood at 8px headings.
+      const least=scales.has(n.id)?Math.max(layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height),staysOpen/contentScale):Infinity;
       commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least}),{duration:smooth?420:0}),id);return;
     }
     commitCamera(instance.setViewport(partViewport(n,1/contentScale,rect.width,rect.height),{duration:smooth?420:0}),id);
@@ -604,7 +681,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   function App(){
     const [,setVersion]=useState(0);update=()=>setVersion(v=>v+1);
-    const state=emphasis(view,hoverArea,leaves,layout.edges);
+    const pointed=hoverMember&&hoverArea===hoverMember.part?hoverMember:!hoverArea&&memberChoice&&view.scope===memberChoice.part?memberChoice:null;
+    const state=emphasis(view,hoverArea,leaves,layout.edges,memberFacts(pointed));
     const context=focusAncestors(state.focus,placed);
     const visible=id=>!closed(id);
     const drawing=layout;
@@ -635,6 +713,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const scale=byID.get(n.id)?.contentScale||1;
       return {fill:{width:n.width/scale,height:n.height/scale}};
     };
+    looseOf=looseLook;
+    // Every part can be zoomed into until its declarations read at their own size.
+    maxZoom=useMemo(()=>maximumZoom(),[layoutKey,detailed.size>0]);
     // Zoomed into one area with nothing hovered or chosen, that area is what
     // the reader is looking at: its parts keep their numbers.
     const zoomedArea=state.mode==='all'&&detailed.size===1?[...detailed][0]:'';
@@ -652,7 +733,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const number=new Map(!area||!view.numbered?[]:wholeComponent?layout.nodes.filter(n=>n.parentId===area).map((n,i)=>[n.id,i+1]):members.map((id,i)=>[id,i+1]));
     const dim=state.mode!=='all';
     const initVisible=(state.mode==='hover'&&byID.get(hoverArea)?.branch!=='component')||state.mode==='operation'||(state.mode==='selection'&&byID.get(view.scope)?.branch!=='component');
-    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween,initVisible,zoomedArea?new Set(leaves(zoomedArea)):null);
+    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween,initVisible,zoomedArea?new Set(leaves(zoomedArea)):null,state.focus);
     // The labels of a frame do not change with what is hovered inside it;
     // the numbers the hovered thing owns are set bold.
     const numbered=id=>wholeComponent?childOf(id):id;
@@ -696,10 +777,16 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const labelsShown=!!area&&visible(area)&&(detailed.has(area)||openComponents.has(area))&&view.numbered;
     labelAreas=new Map(labels.map(label=>[label.id,label.area]));
     // Far enough into one part to read its declarations.
+    // The magnifier enters at the scale the part's declarations read at: the
+    // part whole when it fits there, else its head and first column. Fitted
+    // to the canvas, Redis's Persistence opened at its title's scale with no
+    // declaration drawn.
     function deepInto(node){
       if(!instance)return;
-      const rect=host.getBoundingClientRect(),zoom=Math.min(maxZoom,Math.min((rect.width-80)/node.width,(rect.height-80)/node.height));
-      instance.setCenter(node.absolute.x+node.width/2,node.absolute.y+node.height/2,{zoom,duration:420});
+      const rect=host.getBoundingClientRect(),readable=deepZoom(node.id);
+      const fit=Math.min((rect.width-48)/node.width,(rect.height-48)/node.height);
+      overviewFit=false;hover.pause();arrive([node.id]);locationSubject=node.id;
+      commitCamera(instance.setViewport(deepViewport(node,Math.min(maxZoom,Math.max(readable,Math.min(fit,readable*1.125))),rect.width,rect.height),{duration:420}),node.id);
     }
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
     // A closed frame stands for the participants hidden inside it.
@@ -723,7 +810,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         selectable:false,draggable:false,connectable:false,
         style:{width:box.width,height:box.height,visibility:visible(n.id)?'visible':'hidden'},
         className:`${muted(n.id)?'flow-node-muted':''} ${subjects.has(n.id)?'flow-node-focus':on&&!focused?'flow-node-connected':''} ${context.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
-        data:{...item,...looseLook(n),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true)}};
+        data:{...item,...looseLook(n),operation:view.operation,reading,number:number.get(n.id),badge:badge(n.id),zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true),
+          member:item?.symbols?.length?{hot:pointed?.part===n.id?pointed.index:-1,chosen:memberChoice?.part===n.id&&view.scope===n.id?memberChoice.index:-1,
+            point:index=>pointMember(n.id,index),choose:(index,event)=>chooseMember(n.id,index,event)}:undefined}};
     });
     const edges=routes.map(route=>{
       return {id:route.id,source:route.from,target:route.to,type:'routed',selectable:false,focusable:false,
@@ -746,7 +835,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         else if(view.scope||view.operation)focus(view.scope||view.operation,true);
         else map.dispatchEvent(new Event('repomap:viewport'));
       })));}}
-      onNodeClick={(event,n)=>{event.stopPropagation();select(n.id,event,false);}}
+      onNodeClick={(event,n)=>{event.stopPropagation();memberChoice=null;select(n.id,event,false);}}
       onNodeMouseEnter={(_,n)=>enter(n.id)}
       onMouseMove={event=>{
         if(panning||!instance)return;
@@ -946,6 +1035,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
   });
   return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
+    if(memberChoice&&displayed(next.scope)!==memberChoice.part)memberChoice=null;
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
     view={...initial,...next,scope:displayed(next.scope)||'',
       selected:new Set([...(next.selected||[])].map(displayed)),matched:new Set([...(next.matched||[])].map(displayed))};update();

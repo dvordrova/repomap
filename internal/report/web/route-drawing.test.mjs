@@ -169,3 +169,10 @@ test('init routes are drawn only for a looked-at end',()=>{
   const elsewhere=routeDrawing(wiring,()=>null,new Set(),false,()=>null,false,new Set(['other']));
   assert.deepEqual(elsewhere.map(route=>route.id),['flow']);
 });
+
+test('an arrow between the looked-at frame\'s own parts stays while the rest recedes',()=>{
+  const edges=[{id:'inner',from:'a',to:'b',segments:[[{x:0,y:0},{x:10,y:0}]]},{id:'far',from:'c',to:'d',segments:[[{x:0,y:10},{x:10,y:10}]]}];
+  const routes=routeDrawing(edges,()=>null,new Set(),true,()=>null,false,null,new Set(['area','a','b']));
+  assert.equal(routes.find(route=>route.id==='inner').dim,false);
+  assert.equal(routes.find(route=>route.id==='far').dim,true);
+});

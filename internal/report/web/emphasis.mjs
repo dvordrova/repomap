@@ -1,6 +1,6 @@
 // Exactly one reason controls the drawing. Reading a card is independent of
 // following an input, and must never add that card's neighbours to the path.
-export function emphasis(view, hoverArea, leaves, edges) {
+export function emphasis(view, hoverArea, leaves, edges, member=null) {
   const mode=view.searching?'search':hoverArea?'hover':view.operation?'operation':view.scope?'selection':'all';
   const subject=mode==='operation'?view.operation:mode==='selection'?view.scope:mode==='hover'?hoverArea:'';
   const focus=new Set(mode==='search'?view.matched:mode==='operation'?[view.entry]:
@@ -11,9 +11,11 @@ export function emphasis(view, hoverArea, leaves, edges) {
   // outward: its arrows crossing the border are dark, the ones between its
   // own parts stay ordinary. A single part's arrows are all its own.
   const frame=mode!=='operation'&&!!subject&&leaves(subject).some(id=>id!==subject);
+  // A declaration pointed at or chosen in its part: only its own arrows.
+  const own=member&&member.part===subject&&(mode==='hover'||mode==='selection')?edge=>carries(edge,member):()=>true;
   if(mode!=='search'&&mode!=='all')for(const edge of edges){
     const active=mode==='operation'?edge.relations.some(r=>r.operations?.includes(view.operation)):
-      frame?focus.has(edge.from)!==focus.has(edge.to):focus.has(edge.from)||focus.has(edge.to);
+      frame?focus.has(edge.from)!==focus.has(edge.to):(focus.has(edge.from)||focus.has(edge.to))&&own(edge);
     if(active){activeEdges.add(edge.id);participants.add(edge.from);participants.add(edge.to);}
   }
   const readingOutside=mode==='operation'&&!!view.scope&&!participants.has(view.scope)&&
@@ -27,4 +29,15 @@ export function focusAncestors(focus, placed) {
   const context=new Set();
   for(const id of focus)for(let at=placed.get(id)?.parentId;at;at=placed.get(at)?.parentId)context.add(at);
   return context;
+}
+
+// Whether an arrow of a part carries a call of one of its declarations: a
+// call into it names its source as the callee, a call out of it names it as
+// the caller. `member` is {part, names, sources} from the page data.
+export function carries(edge,member){
+  const sources=new Set((member.sources||[]).filter(Boolean)),names=new Set(member.names||[]);
+  const into=edge.to===member.part,out=edge.from===member.part;
+  return edge.relations.some(relation=>
+    (into&&sources.has(relation.toSource))||(out&&sources.has(relation.fromSource))||
+    (relation.calls||[]).some(call=>(into&&sources.has(call.to))||(out&&names.has(String(call.label||'').split(' ')[0]))));
 }
