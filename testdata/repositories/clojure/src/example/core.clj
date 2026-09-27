@@ -88,3 +88,21 @@
 (def handled-by-default
   (fn [row & {:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}}]
     handled))
+
+;; A var's metadata and a defn's attr-maps are evaluated once, when the
+;; namespace loads, so a call written there belongs to the namespace, as a call
+;; in a Python decorator's arguments belongs to the defining scope. A :pre
+;; condition or an :or default runs on each call and stays the function's.
+(defn ^{:route (service/greet "meta")} routed-by-meta [row]
+  (service/greet row))
+
+(defn routed-by-attr-map
+  "Greets a row."
+  {:route (service/greet "attr")}
+  ([row] (service/greet row))
+  ([row suffix] (str (service/greet row) suffix))
+  {:tail (service/greet "tail")})
+
+(def ^{:route (service/greet "def")} routed-value "value")
+
+(defonce ^{:route (service/greet "once")} routed-once "value")

@@ -99,6 +99,21 @@ skipped, so the use of `ensure!` itself leaves no relation, and the
 The C adapter records a call written through a macro at its use, as a call of
 the function its expansion calls; that equivalent is missing here.
 
+## Calls that run when a namespace loads
+
+A call belongs to the scope in which it runs, in every language. The reader
+metadata written on a defined name (`def`, `defonce`, `defn`, `defn-`,
+`defmacro`) and a `defn`/`defn-`/`defmacro` attr-map, before the parameters or
+after a list of arities, are evaluated once, when the namespace loads. Their
+calls and reads belong to the namespace (or to an enclosing definition), not
+to the var, the way a Python decorator's arguments and defaults belong to the
+defining scope. `:pre`/`:post` conditions and `:or` defaults run on each call
+and stay the function's. `routed-by-meta`, `routed-by-attr-map`, `routed-value`
+and `routed-once` in `src/example/core.clj` check each form. The owner is read
+from the definition form's spans, as for every other Clojure use. clj-kondo
+reports no use inside a `defmulti` attr-map, so a call there is a missing
+equivalent, recorded rather than fabricated.
+
 ## Test sources
 
 A namespace that requires `clojure.test` or `speclj.core` is a test source.

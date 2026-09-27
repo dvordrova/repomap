@@ -164,6 +164,32 @@ func TestNativeCumulativeProject(t *testing.T) {
 			t.Fatalf("%s:\n have %q\n want %q", name, got, wantStoreTarget)
 		}
 	}
+	// A var's metadata and a defn's attr-maps, before or after its arities,
+	// run once when the namespace loads, as a Python decorator's arguments run
+	// where the function is defined: their calls belong to the namespace,
+	// while the calls in the function's body stay the function's.
+	first := 0
+	for _, object := range index.Objects {
+		if object.Name == "example.core/routed-by-meta" {
+			first = object.Location.Line
+		}
+	}
+	var loaded []string
+	for _, relation := range index.Relations {
+		if relation.Kind != p.RelationCalls || len(relation.ToIDs) != 1 || objects[relation.ToIDs[0]].Name != "example.service/greet" ||
+			relation.Location.Path != "src/example/core.clj" || relation.Location.Line < first {
+			continue
+		}
+		loaded = append(loaded, objects[relation.FromID].Name+" "+relation.Patterns[0].Arguments[0].Origin.Text)
+	}
+	slices.Sort(loaded)
+	wantLoaded := []string{
+		"example.core attr", "example.core def", "example.core meta", "example.core once", "example.core tail",
+		"example.core/routed-by-attr-map row", "example.core/routed-by-attr-map row", "example.core/routed-by-meta row",
+	}
+	if first == 0 || !slices.Equal(loaded, wantLoaded) {
+		t.Fatalf("load-time calls:\n have %q\n want %q", loaded, wantLoaded)
+	}
 	if err := result.Dependencies.Validate(); err != nil {
 		t.Fatal(err)
 	}
