@@ -649,11 +649,20 @@ open, sigaction, pthread_create, k6's `modules.Register`, Flask's `route`,
 `requests.post`, miekg's `ExchangeContext`, k6's `DialContext` and
 `LookupHost` were right in every Jev draw of four rounds of wording. What
 Jev still misses is named by chained Python names (`requests.post.json` as
-`client_request`, `alembic.op.f` as `db`); Flask's `errorhandler` is now
-`none` or unanswered where the text model said `request`, and building a
-SQLAlchemy `select` is `db`, the program's question to its database. The
-2026-09-25 probe that kept this table on the text model asked Jev optional
-yes-only columns without criteria.
+`client_request`, `alembic.op.f` as `db`), k6's `metrics.PushIfNotDone`,
+which sends a sample on the host's channel (never `none` in 12 Jev draws
+over four wordings: `sdk` at about 0.4 against `none` at about 0.2 in 8,
+unanswered in 4; the text table had said `queue_producer` in 2 of 3), so an
+xk6-dns map can show a "k6 metrics" outside system, and the construction of
+a `net.Resolver`, whose usage line is a field line of its literal
+(`client_request` or unanswered). Two task wordings that weigh `declared`
+first, one adding that a value handed on through a channel stays in the
+process, left PushIfNotDone `sdk` 3 of 3 or unanswered 3 of 3 and made more
+microblog answers change between draws (3 draws each, 2026-09-27). Flask's `errorhandler` is now `none` or unanswered
+where the text model said `request`: `request` and `none` both stay near
+0.4. Building a SQLAlchemy `select` is `db`, the program's question to its
+database. The 2026-09-25 probe that kept this table on the text model asked
+Jev optional yes-only columns without criteria.
 
 The roles make the boundaries; no call site is asked whether it is one. A
 registration handing a callable to a `binds` symbol is that entry, with the
