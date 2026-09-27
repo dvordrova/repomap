@@ -55,7 +55,8 @@ The Python adapter also keeps an existing callable candidate consistent
 between an argument and the callback transfer that cites that exact argument.
 Aliases assigned to a function or lambda and inline lambdas are exact, while
 unknown or overwritten aliases, and aliases assigned under a branch, gain no
-callback. The Airflow Edge3, Azure and Vertica libraries exposed the earlier mismatch:
+callback.
+The Airflow Edge3, Azure and Vertica libraries exposed the earlier mismatch:
 the argument named the assignment variable while the transfer named its callable.
 Local native extraction does not establish ordinary full-repository acceptance. Cumulative Python,
 Go, TypeScript and JavaScript examples retain their native authority rules.
