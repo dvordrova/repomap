@@ -23,10 +23,12 @@ if(options.has('loose-part')){
 
 // Every part says what it is under its name. Redis's Replication and client
 // sentences are among them: pre-broken at 228px they wrapped again in the
-// card's 225px text column.
+// card's 225px text column. pykrx's fundamentals sentence starts with a
+// 225.39px line: measured apart in the 225px column, it fit whole where the
+// browser drew the card's 1.5px border 1px wide.
 if(options.has('described')){
   const sentences=['Synchronizes master and replica data over network connections.','Provides an interactive terminal client for sending Redis commands.',
-    'Implements Redis set commands and their operations.','Checks who may change a job and records every decision it takes for the audit trail, then reports refusals.'];
+    'Implements Redis set commands and their operations.','Fetches Korean market fundamentals and sector data by date or ticker.','Checks who may change a job and records every decision it takes for the audit trail, then reports refusals.'];
   records.filter(n=>n.kind==='Part'||n.kind==='Entrypoints').forEach((n,i)=>{n.category='part';n.summary=sentences[i%sentences.length];});
 }
 

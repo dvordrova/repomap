@@ -107,7 +107,11 @@ function Part({data}) {
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
     <strong data-input-name={data.activation?'':undefined}>{heading?.title||data.title}</strong>
-    {data.description&&(!heading||standaloneText)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines,maxHeight:standaloneLines*15}:data.descriptionMost?{WebkitLineClamp:data.descriptionMost}:undefined}>{data.description}</div>}
+    {/* The description wraps in the column its lines were counted in: a
+        browser that draws the 1.5px border 1px wide leaves a 226px column,
+        where pykrx's 225.39px "Fetches Korean market fundamentals" fit whole
+        and the card kept an empty line. */}
+    {data.description&&(!heading||standaloneText)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines,maxHeight:standaloneLines*15}:{WebkitLineClamp:data.descriptionMost||undefined,maxWidth:cardText}}>{data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
     {data.symbols?.length>0&&!data.activation&&<button type="button" className="flow-part-zoom nopan" aria-label={t('Zoom into {0}',data.name||data.title)}
       onClick={event=>{event.stopPropagation();data.zoomInto?.();}}>

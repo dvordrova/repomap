@@ -488,7 +488,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   column and left "and" alone on a line. A part's description is not broken
   into lines on the page; the browser wraps it in that column, and its lines
   counted there only size the card, at most three, the third cut with an
-  ellipsis.
+  ellipsis. The description is held to that column's width: a browser that
+  draws the 1.5px border 1px wide leaves 226px, where pykrx's 225.39px
+  "Fetches Korean market fundamentals" fit whole and its card kept an empty
+  line.
   When the whole-map fit still cannot give a summary its reserved width or
   height, in a short window or on a crowded map, the summary is laid out at
   that reserve and drawn scaled down whole, its zoom mark with it until zoom
