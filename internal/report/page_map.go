@@ -2498,7 +2498,9 @@ func symbolText(object *groupindex.ObjectFacts, name string) string {
 }
 
 // groupSymbols lists a group's declarations, its keys first, each with its
-// place in the code. Compiler-named closures are nobody's symbol to look for.
+// place in the code; the map places a part's tiles in this order, so the keys
+// are the last it leaves out. Compiler-named closures are nobody's symbol to
+// look for.
 func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group) (string, string) {
 	type listed struct {
 		id     string

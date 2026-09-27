@@ -20,10 +20,11 @@ import './canvas.css';
 // Legacy small repository diagrams share the same embedded ELK instance code.
 window.ELK = ELK;
 const t = (...args) => window.rmT(...args);
-// Zoomed far into a part, its declarations stand inside it as tiles: the
-// keys the model chose first, every tile a link into the code. The tiles are
-// drawn in the card's own rectangle at a quarter of its size, so nothing on
-// the map moves when they appear.
+// Zoomed far into a part, its declarations stand inside it as tiles, placed
+// in the order the page lists them, the keys the model chose first (see
+// symbolBlocks); every tile is a link into the code. The tiles are drawn in
+// the card's own rectangle at a quarter of its size, so nothing on the map
+// moves when they appear.
 const deepDivisor=4,deepHeader=20,deepTile={width:190,height:28,columnGap:36,rowGap:8,inset:8};
 function PartSymbols({symbols,calls,width,height}){
   const [hot,setHot]=useState(-1);

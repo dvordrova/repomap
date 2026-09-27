@@ -50,3 +50,33 @@ test('a type taller than the card shows the rows that fit and counts the rest',(
   assert.equal(rows[12],null,'a row that is not drawn anchors no link');
   assert.equal(hidden,0);
 });
+
+// Placed by link column first, Redis's Data structures drew ten zipmap helpers
+// and counted list, a key's return type, in its "+59".
+test('tiles are placed in the listed order, keys first, each in its own link column',()=>{
+  const key=(name,extra={})=>({name,key:true,...extra});
+  // 0 listCreate returns 1 list; six helpers follow in the page's order.
+  const symbols=[key('listCreate'),key('list',{kind:'type'}),...Array.from({length:6},(_,i)=>fn('helper'+i))];
+  const height=3*symbolRow.header+2*symbolRow.gap;
+  const {blocks,hidden}=symbolBlocks(symbols,[[0,1,'returns']],2,height);
+  const drawn=new Set(blocks.map(block=>block.head));
+  assert.ok(drawn.has(0)&&drawn.has(1),'every key is drawn');
+  assert.equal(blocks.find(block=>block.head===1).column,1,'list keeps its link column right of what returns it');
+  assert.deepEqual(blocks.filter(block=>block.column===0).map(block=>block.head),[0,2,3],'a column stacks its tiles in list order');
+  assert.equal(hidden,2);
+  assert.ok(!drawn.has(7)&&!drawn.has(6),'what finds no room is the end of the list');
+});
+
+test('a key is never counted while a declaration after the keys is drawn',()=>{
+  // A key type too tall for the card, and a small function that would fit.
+  const symbols=[{name:'start',key:true},{name:'Config',key:true},...['a','b','c'].map(name=>({name,owner:2,kind:'field'})),fn('helper')];
+  const height=2*symbolRow.header+symbolRow.gap;
+  const {blocks,hidden}=symbolBlocks(symbols,[],1,height);
+  assert.deepEqual(blocks.map(block=>block.head),[0],'the helper does not take the place the key had no room in');
+  assert.equal(hidden,5,'the type with its three fields and the helper are counted');
+  // A type whose key is one of its methods stands among the keys.
+  const typed=[{name:'run',owner:4,key:true},fn('first'),fn('second'),type('Worker')];
+  const one=symbolBlocks(typed,[],1,2*symbolRow.header+symbolRow.row+symbolRow.pad+symbolRow.gap);
+  assert.deepEqual(one.blocks.map(block=>block.head),[3,1]);
+  assert.equal(one.hidden,1);
+});

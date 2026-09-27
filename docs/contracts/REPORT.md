@@ -382,6 +382,20 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   its contents. A toolbar hint explains zooming and dragging. Leaf cards and
   open frames do not promise another hidden layer.
 
+  A part with declarations has a zoom button; zoomed far into the part, its
+  declarations stand inside its own card as tiles at a quarter of its size,
+  each a link into the code: a type with its fields and methods under it, a
+  function or a module's variable alone. A tile keeps its link column, the
+  longest chain of calls, returns and takes leading to it, so a caller stands
+  left of what it calls. Tiles are placed in the order the page lists them,
+  the model's keys first, and stack in that order within their column; a
+  column too tall spills into the next, and what finds no room is counted
+  as "+N" with every declaration it holds. A key is never counted while a
+  declaration after the keys is drawn. Placed by link column first, the
+  repomap self-run's parts hid 88 of their 256 keys while drawing
+  declarations listed after them; placed in list order they hide one, in a
+  card too small for its keys.
+
   Root summaries prioritize saved area names over role, counts and purpose;
   complete dense inventories scroll without dropping entries. Ordinary wheel
   scrolls an overflowing inventory, while pinch passes through to the map.

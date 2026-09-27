@@ -2,8 +2,11 @@
 // under it the methods it owns, each a row. A function or a module's variable
 // is a block of one row. Callers stand left of what they call and a callable
 // left of the type it returns: a block's column is the longest chain of links
-// leading to it. A column too tall for the card spills into the next one, and
-// what finds no room at all is counted, not drawn.
+// leading to it. Blocks are placed in the order the page lists them, the
+// model's keys first, each in its own column under the blocks before it; a
+// column too tall for the card spills into the next one, and what finds no
+// room at all is counted, not drawn. Once a key finds no room, nothing after
+// the keys is drawn in its place.
 export const symbolRow={header:28,row:24,pad:6,gap:10};
 
 export function symbolBlocks(symbols,links,columns,height){
@@ -34,16 +37,23 @@ export function symbolBlocks(symbols,links,columns,height){
   };
   // A type taller than the card shows the rows that fit and counts the rest.
   const most=Math.max(1,Math.floor((height-symbolRow.header-symbolRow.pad)/symbolRow.row)-1);
+  // A block stands where its first declaration is listed: a type holding a
+  // key method is placed among the keys. Placed by link column first, Redis's
+  // Data structures had drawn ten zipmap helpers and counted list and five
+  // other structs in its "+59".
+  const listed=blocks.map(block=>Math.min(block.head,...block.rows));
+  const key=blocks.map(block=>[block.head,...block.rows].some(i=>symbols[i].key));
   for(const block of blocks)if(block.rows.length>most+1){block.more=block.rows.length-most;block.rows=block.rows.slice(0,most);}
   const tall=block=>symbolRow.header+(block.rows.length?(block.rows.length+(block.more?1:0))*symbolRow.row+symbolRow.pad:0);
-  const order=blocks.map((_,i)=>i).sort((a,b)=>column(a)-column(b)||a-b);
+  const order=blocks.map((_,i)=>i).sort((a,b)=>listed[a]-listed[b]);
   const filled=new Array(columns).fill(0),placed=new Map();
-  let hidden=0;
+  let hidden=0,keyLeft=false;
   for(const i of order){
     const need=tall(blocks[i]);
     let c=column(i);
     while(c<columns&&filled[c]&&filled[c]+need>height)c++;
-    if(c>=columns){c=filled.indexOf(Math.min(...filled));if(filled[c]+need>height){hidden+=1+blocks[i].rows.length;continue;}}
+    if(c>=columns)c=filled.indexOf(Math.min(...filled));
+    if(filled[c]+need>height||keyLeft&&!key[i]){hidden+=1+blocks[i].rows.length+(blocks[i].more||0);keyLeft||=key[i];continue;}
     placed.set(i,{column:c,y:filled[c],height:need});
     filled[c]+=need+symbolRow.gap;
   }
