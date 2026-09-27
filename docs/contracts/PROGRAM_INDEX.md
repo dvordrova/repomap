@@ -58,6 +58,14 @@ ProgramIndex retains:
   statement. Zero is unknown and is never shown as a count; validation
   refuses a negative count, a count without a location or one larger than the
   located range;
+- a callable's `unreachable`: the adapter's proof that nothing this program
+  runs reaches it, set only by an adapter that sees every way its language
+  reaches a callable (C, whose functions run only when running code names
+  them). Absent claims nothing, which is every other adapter's case:
+  reflection, dynamic attribute lookup, computed property names, `resolve`
+  and interface calls the platform makes can reach what no relation names.
+  Validation refuses it on a declaration that does not run (a type, a
+  variable, a module, an external symbol);
 - a callable's `parameters` and `results` in order, each `{name, type,
   type_id}`: the type as short text and, when the value carries a repository
   type (through pointers, slices and arrays in Go; `list[X]`/`Optional[X]` in
@@ -154,7 +162,10 @@ external-call observations together. Each saved target decodes once. Shared
 native parsing is an in-memory producer optimization and never changes the
 persisted graph or introduces a reconstruction cache.
 Seed locations are resolved against the complete file inventory before depths
-are assigned. The graph (v17) keeps both the seed files (`seeds`) and, where a
+are assigned. A declaration place shared by several targets lists, as
+`unreached`, the targets whose index proved it `unreachable` (graph v18): it
+stays in their map of parts, but what it calls out to, reads or registers is
+not theirs (READING). The graph keeps both the seed files (`seeds`) and, where a
 launch fact names a declaration that is one of its symbol places, that
 declaration (`seed_decls`): a file whose code the map of parts splits between
 several parts has no one part, and the entry is then located by the part that

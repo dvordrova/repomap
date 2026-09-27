@@ -562,13 +562,14 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 
 	// An operation belongs to its subject's group; one in a file off the map
-	// belongs to none and is still read. Test-only parts publish none.
+	// belongs to none and is still read. Test-only parts publish none, and
+	// neither does a declaration this program never runs.
 	var operations []Operation
 	for _, subject := range subjects {
 		if subject.Interpretation == nil || subject.Interpretation.Activation == "" {
 			continue
 		}
-		if subject.Object == nil || subject.Object.Location == nil {
+		if subject.Object == nil || subject.Object.Location == nil || objects[subject.ID].Unreachable {
 			continue
 		}
 		groupID := ""

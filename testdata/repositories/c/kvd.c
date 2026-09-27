@@ -2,7 +2,6 @@
  * line ("set name ada"); the server looks the first word up in its command
  * table and runs the function that row names. */
 #include <fcntl.h>
-#include <netinet/in.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -14,6 +13,7 @@
 #include <unistd.h>
 
 #include "kvd.h"
+#include "net.h"
 
 /* Global state */
 struct kvServer server;
@@ -238,22 +238,6 @@ static void sendReplyToClient(loop *l, int fd, void *data, int mask) {
 
 static void acceptHandler(loop *l, int fd, void *data, int mask);
 
-static int listenOn(int port) {
-    struct sockaddr_in sa;
-    int on = 1, fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd == -1) return -1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof on);
-    memset(&sa, 0, sizeof sa);
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons((unsigned short)port);
-    sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (bind(fd, (struct sockaddr *)&sa, sizeof sa) == -1 || listen(fd, 16) == -1) {
-        close(fd);
-        return -1;
-    }
-    return fd;
-}
-
 static void acceptHandler(loop *l, int fd, void *data, int mask) {
     kvClient *c;
     int cfd = accept(fd, NULL, NULL);
@@ -330,7 +314,7 @@ int main(int argc, char **argv) {
     server.saveChild = -1;
     setupSignals();
     server.el = loopCreate();
-    fd = listenOn(server.port);
+    fd = netListen(server.port);
     if (fd == -1) {
         fprintf(stderr, "kvd: cannot listen on port %d\n", server.port);
         return 1;

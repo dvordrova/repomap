@@ -71,6 +71,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 	b.emitCalls()
 	b.emitStores()
 	b.emitImports()
+	b.markUnreachable()
 	input, err := b.input()
 	if err != nil {
 		return nil, err
@@ -911,18 +912,14 @@ func (b *builder) input() (p.Input, error) {
 	}
 	target := p.TargetInput{Language: "c", Kind: string(program.Kind), Name: program.Name, Selector: program.Selector, AnchorFileRef: program.AnchorFileRef}
 	if main := b.parsed.Main; main != nil {
-		for _, fn := range b.functions {
-			if fn.node == main.Node || fn.ref == "c:function:@main" && fn.location != nil && fn.location.Path == main.At.File && fn.location.Line == main.At.Line {
-				if err := addSource(fn.location.Path); err != nil {
-					return p.Input{}, err
-				}
-				target.Seeds = append(target.Seeds, p.TargetSeedInput{ObjectRef: fn.ref, Kind: p.SeedCallable, Location: fn.location})
-				break
-			}
-		}
-		if len(target.Seeds) == 0 {
+		fn := b.mainFunction()
+		if fn == nil {
 			return p.Input{}, fmt.Errorf("C program %s: main at %s:%d has no function object", program.Selector, main.At.File, main.At.Line)
 		}
+		if err := addSource(fn.location.Path); err != nil {
+			return p.Input{}, err
+		}
+		target.Seeds = append(target.Seeds, p.TargetSeedInput{ObjectRef: fn.ref, Kind: p.SeedCallable, Location: fn.location})
 	}
 	for file, ref := range sources {
 		target.Sources = append(target.Sources, p.TargetSource{FileRef: ref, Path: file})

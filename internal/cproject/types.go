@@ -406,6 +406,9 @@ type Node struct {
 	// (the record of typedef struct {...} Name).
 	Decl         *DeclRef `json:"decl,omitempty"`
 	OwnedTagDecl *DeclRef `json:"owned_tag_decl,omitempty"`
+	// CleanupFunction is the function a CleanupAttr runs when its variable
+	// leaves scope.
+	CleanupFunction *DeclRef `json:"cleanup_function,omitempty"`
 	// Statements.
 	HasElse           bool   `json:"has_else,omitempty"`
 	TargetLabelDeclID string `json:"target_label_decl_id,omitempty"`

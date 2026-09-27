@@ -404,6 +404,43 @@ func TestCRepositoryOrdinaryRun(t *testing.T) {
 	}
 }
 
+// The client links the fixture's net.c but never listens: the page says
+// where the listener went, in the client's own list of what its entrypoints
+// never reach, as it lists what the traversal never reached before.
+func TestCRepositoryPageListsWhatAProgramNeverRuns(t *testing.T) {
+	root, _ := cumulativeEvidenceRepository(t, "c")
+	debugDir := t.TempDir()
+	var console strings.Builder
+	runErr := runDefaultWithDeps(root, []string{"--no-model", "--target", "c:kvcli", "--no-open", "--debug-dir", debugDir}, defaultRunDeps{
+		ctx: t.Context(), stdout: &console, stderr: &console,
+		serveReport: func(context.Context, reportserver.Options) error { return nil },
+		openReport:  func(string) error { return nil },
+	})
+	if runErr != nil {
+		t.Fatalf("run: %v\n%s", runErr, console.String())
+	}
+	page, err := os.ReadFile(filepath.Join(debugDir, "latest", "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := string(page)
+	start := strings.Index(section, `-dead">Not reachable from the entrypoints</h3>`)
+	if start < 0 {
+		t.Fatal("the page has no list of what the entrypoints never reach")
+	}
+	section = section[start:]
+	section = section[:strings.Index(section, "</details>\n</details>")]
+	var listed []string
+	for _, match := range regexp.MustCompile(`<li><code>([^<]+)</code> · (.*?)</li>`).FindAllStringSubmatch(section, -1) {
+		for _, chip := range regexp.MustCompile(`>([A-Za-z_]\w*)<span class="ln">`).FindAllStringSubmatch(match[2], -1) {
+			listed = append(listed, match[1]+":"+chip[1])
+		}
+	}
+	if want := []string{"net.c:netListen", "strbuf.c:sbConsume"}; !reflect.DeepEqual(listed, want) {
+		t.Fatalf("the client lists %v as never run, want %v:\n%s", listed, want, section)
+	}
+}
+
 // A backend an #ifdef keeps out on this host is outside this platform's
 // build, and the run says so beside the program it belongs to.
 func TestCRepositoryReportsSourcesOutsideThisPlatform(t *testing.T) {

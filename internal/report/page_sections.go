@@ -66,9 +66,13 @@ type pageSection struct {
 	Dynamic     []pageDynamic
 	Config      []pageConfig
 	Dead        []pageAnchor
-	Todos       []pageTodo
-	DeadFolders []pageFileFolder
-	TodoFiles   []pageTodoFile
+	// Unreached are the declarations the adapter proved this program never
+	// runs, by file: what they call out to or register is not its own.
+	Unreached      []pageChipRow
+	UnreachedCount int
+	Todos          []pageTodo
+	DeadFolders    []pageFileFolder
+	TodoFiles      []pageTodoFile
 	// TestFiles and OffMap are the component's files the map of parts does
 	// not draw: those of parts made only of test code, and every other file
 	// no part holds, with why. MapFailure says why there is no map at all.
@@ -522,6 +526,32 @@ func (builder *pageBuilder) fillSectionFacts(section *pageSection) {
 	}
 	section.DeadFolders = groupFiles(section.Dead)
 	section.TodoFiles = groupTodos(section.Todos)
+	section.Unreached = builder.unreachedRows(section.programTargetID)
+	for _, row := range section.Unreached {
+		section.UnreachedCount += len(row.Members)
+	}
+}
+
+// unreachedRows are the declarations of a program its adapter proved nothing
+// it runs reaches (ProgramIndex `unreachable`), by file in line order.
+func (builder *pageBuilder) unreachedRows(programTargetID string) []pageChipRow {
+	if builder.data.ProgramPortfolio == nil {
+		return nil
+	}
+	for _, index := range builder.data.ProgramPortfolio.Entries {
+		if index.Target.ID != programTargetID {
+			continue
+		}
+		var ids []string
+		for _, object := range index.Objects {
+			if object.Unreachable {
+				ids = append(ids, object.ID)
+			}
+		}
+		rows, _ := builder.memberChips(programTargetID, ids)
+		return rows
+	}
+	return nil
 }
 
 // vendoredPath reports a path inside a vendored or generated dependency

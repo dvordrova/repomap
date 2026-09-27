@@ -43,6 +43,9 @@ var cDynamicRules = map[string][]string{
 
 func (b *builder) addDynamicExecution(target *targetContext) {
 	for _, relation := range target.input.Index.Relations {
+		if target.unreachable(relation) {
+			continue
+		}
 		for _, pattern := range relation.Patterns {
 			anchor := target.patternAnchor(relation, pattern)
 			if anchor == nil {

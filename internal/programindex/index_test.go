@@ -108,6 +108,46 @@ func TestExternalAuthorityKindIsRequiredClosedRawAndSealed(t *testing.T) {
 	}
 }
 
+// Only a callable runs, so only a callable can be proven unreachable; the
+// proof survives the artifact's round trip.
+func TestUnreachableIsACallablesSealedProof(t *testing.T) {
+	input := representativeInput()
+	for position, object := range input.Objects {
+		input.Objects[position].Unreachable = object.Kind == ObjectFunction || object.Kind == ObjectMethod
+	}
+	index, err := newMeasuredProgramIndex(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := Encode(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marked := 0
+	for _, object := range decoded.Objects {
+		if object.Unreachable {
+			marked++
+		}
+	}
+	if marked == 0 {
+		t.Fatalf("no callable kept its proof: %s", encoded)
+	}
+	for position, object := range input.Objects {
+		if object.Kind == ObjectFunction || object.Kind == ObjectMethod || object.Kind == ObjectLambda {
+			continue
+		}
+		wrong := representativeInput()
+		wrong.Objects[position].Unreachable = true
+		if _, err := newMeasuredProgramIndex(wrong); err == nil {
+			t.Fatalf("a %s was accepted as unreachable", object.Kind)
+		}
+	}
+}
+
 func TestNewRejectsMethodOwnedByNonType(t *testing.T) {
 	input := representativeInput()
 	input.Objects[0].OwnerRef = "object-package"

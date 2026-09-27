@@ -43,6 +43,27 @@ func (target *targetContext) filePath(id string) string {
 	return location.Path
 }
 
+// unreachable reports that the adapter proved nothing this target runs
+// reaches the code a relation starts in: what that code registers, reads or
+// runs is not the target's, though another target that reaches it holds it.
+func (target *targetContext) unreachable(relation programindex.Relation) bool {
+	current, ok := target.object(relation.FromID)
+	for step := 0; ok && step < ownerChainBound; step++ {
+		if current.Unreachable {
+			return true
+		}
+		next := current.OwnerID
+		if next == "" {
+			next = current.ContainerID
+		}
+		if next == "" {
+			return false
+		}
+		current, ok = target.object(next)
+	}
+	return false
+}
+
 // enclosingSymbol walks from an object up to the function or method that
 // contains it; a module-level object reports its module.
 func (target *targetContext) enclosingSymbol(id string) (string, string) {

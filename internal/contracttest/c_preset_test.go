@@ -133,6 +133,9 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 // the way a reader would from each row, and fails any other request, so a
 // table the reading starts to ask is noticed rather than answered by chance.
 type kvdPreset struct {
+	// roles are what a symbol does, by its api row and column; a symbol
+	// not here middlewares, publishes and talks to nothing.
+	roles         map[string]map[string]string
 	mu            sync.Mutex
 	handed, named []string
 	// unnamed counts rows of the incoming boundaries table that had no words
@@ -232,7 +235,9 @@ func (preset *kvdPreset) answer(table string, fill []map[string]any, row map[str
 				answer["binds"] = "continuous"
 			}
 		case table == "atlas_api":
-			// No symbol here middlewares, publishes or talks for this test.
+			if value := preset.roles[symbol][name]; value != "" {
+				answer[name] = value
+			}
 		case table == "atlas_boundaries" && name == "name":
 			words, _ := row["words"].([]any)
 			var values []string

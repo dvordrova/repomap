@@ -190,6 +190,13 @@ cumulative fixture's `internal/storefixture/command_table.go` checks them:
 
 Missing equivalents, recorded rather than fabricated:
 
+- No Go function is proven `unreachable` (the C adapter's per-program fact,
+  PROGRAM_INDEX). The SSA call graph and its dynamic-call candidates do not
+  see every way a function runs: reflection (`reflect.Value.Call`,
+  `MethodByName`, `text/template` method calls), interface methods the
+  standard library calls on values handed to it (`String`, `ServeHTTP`,
+  `MarshalJSON`), `//go:linkname`, cgo `//export` and `plugin.Lookup`. A
+  boundary in a Go package several commands link stays with every command.
 - A call through the field of a row found by a lookup (`DispatchCommand`)
   stays unresolved: a function-typed field is followed only on one allocated
   value. The C adapter gives such a call every function stored into that field

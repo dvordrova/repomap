@@ -560,17 +560,23 @@ remain model decisions with `self`/`none`, not local middleware classification.
   Native HTTP addresses survive missing or refused prose. Standard-library
   transports may establish communication; this does not promote their package
   objects into remote participants. No package blacklist or API handbook is added.
-- A boundary belongs to every program that holds its declaration's file: a
-  shared `anet.c` gives redis-cli and redis-benchmark the listener
-  `anetTcpServer` although neither calls it. Leaving it out of a program
-  needs proof that the program cannot reach the declaration, and no graph
-  proves that today (2026-09-27): a C function cast to an integer is an
-  address used as data and records no relation (`staticsyms.h`), and the
-  adapter keeps no record of other escaping uses; an unresolved Go interface
-  call, Python attribute call, JS/TS property call or Clojure looked-up
-  invocation can reach declarations it does not name. Until an adapter
-  records every use of a declaration's address, the boundary stays attached
-  everywhere its file is linked.
+- A boundary belongs to every program that holds its declaration's file and
+  may run the declaration. A program whose index proves the declaration
+  `unreachable` (PROGRAM_INDEX; the C adapter records every direct call and
+  every use of a function's address, casts to integers included) does not
+  make its calls: the declaration stays in that program's parts, but its
+  outgoing boundaries, its listener, its registrations, the configuration it
+  reads and the code it runs are not that program's communication or inputs,
+  and a destination chain through it is not that program's either. The
+  shared `anet.c` gives redis-server the listener `anetTcpServer` and
+  `anetAccept`; redis-cli and redis-benchmark, which link it and never reach
+  them, list them under their component's "Not reachable from the
+  entrypoints" (REPORT), where a reader finds what is not shown. Facts do
+  the same per target: a registration, SQL statement, configuration read or
+  code-running call in code a target never runs is the fact of the targets
+  that run it. Every other adapter proves nothing, so an unresolved Go
+  interface call, Python attribute call, JS/TS property call or Clojure
+  looked-up invocation keeps the boundary everywhere its file is linked.
 
 ## External symbols: the `atlas_api` table
 

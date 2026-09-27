@@ -47,6 +47,43 @@ func TestAtlasInterpretationRebindsTheSameDeclarationAcrossTargets(t *testing.T)
 	}
 }
 
+// A declaration linked into two programs runs in one of them: the program
+// whose index proves it never runs the declaration publishes no work of it.
+func TestAtlasOperationStaysWithTheProgramThatRunsItsDeclaration(t *testing.T) {
+	never, err := programindex.New(programindex.Input{
+		ScenarioSHA256: strings.Repeat("a", 64), SourceSHA256: strings.Repeat("b", 64),
+		Target: programindex.TargetInput{Language: "c", Kind: "executable", Name: "client", Selector: "client",
+			Sources: []programindex.TargetSource{{FileRef: "f1", Path: "pkg/work.go"}}, AnchorFileRef: "f1"},
+		Objects: []programindex.ObjectInput{{SourceRef: "oa", Kind: programindex.ObjectFunction, Name: "FA", Visibility: programindex.VisibilityPublic,
+			Location: &programindex.Location{Path: "pkg/work.go", Line: 3, Column: 1}, Unreachable: true}},
+		Relations: []programindex.RelationInput{},
+		Coverage:  programindex.CoverageInput{Measured: true, ObjectsObserved: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebound := rebindTestTargets(t, atlasTestProgram(t, "server", "pkg/work.go"), never)
+	programs := map[string]programindex.Index{}
+	var targets []atlas.Target
+	for _, p := range rebound {
+		programs[p.Target.ID] = p
+		targets = append(targets, atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "c", Kind: "executable", Root: "pkg", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Trace: []string{},
+			Boxes: []atlas.Box{{ID: "pkg", Dir: "pkg", Title: "Work", Line: "Does work.", Side: atlas.SideMid, Keys: []atlas.Key{}, Files: []atlas.File{{Path: "pkg/work.go", Line: "Work.", Source: atlas.SourceModel,
+				Symbols: []atlas.Symbol{{ID: "symbol", ObjectID: p.Target.ID + "." + p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Activation: "continuous", Operation: "flush", OperationSummary: "Flushes the log every second."}}}}}}})
+	}
+	result, err := ProjectAtlas(programs, atlas.Atlas{Version: atlas.Version, Repository: "x", Revision: "abc", Targets: targets, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operations := map[string]int{}
+	for _, index := range result {
+		operations[index.Target.Name] = len(index.Operations)
+	}
+	if want := map[string]int{"server": 1, "client": 0}; !reflect.DeepEqual(operations, want) {
+		t.Fatalf("operations by program = %v, want %v", operations, want)
+	}
+}
+
 func TestObservedRoutesReplaceTheDeclarationOperationAndKeepAliases(t *testing.T) {
 	p := atlasTestProgram(t, "server", "api/handler.go")
 	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Trace: []string{}, Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{p.Objects[0].ID}, Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{{ID: "handler", ObjectID: p.Objects[0].ID, Name: "FA", Kind: "function", LineNo: 3, Column: 1, Line: "Returns status.", Activation: "request", Operation: "get status"}}}}}}}

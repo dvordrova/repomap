@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -821,6 +822,12 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 		if place.Symbol == nil {
 			continue
 		}
+		// A target whose program never runs the declaration does not make
+		// the calls it writes.
+		targets := runningTargets(place)
+		if len(targets) == 0 {
+			continue
+		}
 		decl := place.Symbol.Decl
 		for _, call := range place.Symbol.Calls {
 			// A call to a symbol that talks to another system is that
@@ -862,7 +869,7 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 			}
 			id := boundaryID(fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s\x00%s\x00%s", direction, place.ID, call.Line, call.Column, call.Kind, call.Name, call.Resolution))
 			p := atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: call.Line, Column: call.Column,
-				Parent: place.Parent, TargetIDs: append([]string(nil), place.TargetIDs...), Boundary: &atlas.BoundaryFacts{
+				Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
 					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: call.Name,
 					Values: append([]string{}, call.Values...), Direction: direction, GivenKind: kind}}
 			state := &boundaryState{place: p, kind: kind}
@@ -874,6 +881,21 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 		}
 	}
 	return publishes
+}
+
+// runningTargets are the targets holding a place whose program may run it:
+// for a declaration, every target but those that proved it unreached.
+func runningTargets(place atlas.Place) []string {
+	if place.Symbol == nil || len(place.Symbol.Unreached) == 0 {
+		return place.TargetIDs
+	}
+	var targets []string
+	for _, target := range place.TargetIDs {
+		if !slices.Contains(place.Symbol.Unreached, target) {
+			targets = append(targets, target)
+		}
+	}
+	return targets
 }
 
 // An equal terminal identifier is only a candidate for the model to confirm.

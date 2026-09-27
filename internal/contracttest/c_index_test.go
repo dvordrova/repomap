@@ -313,23 +313,23 @@ func TestCFixtureIndexesTheServer(t *testing.T) {
 	}
 
 	// Platform calls name the header the fixture includes.
-	for _, call := range []struct{ from, name, header, needle string }{
-		{"main", "getenv", "stdlib.h", `getenv("KVD_PORT")`},
-		{"main", "system", "stdlib.h", "system(hook)"},
-		{"keysCommand", "qsort", "stdlib.h", "qsort(keys,"},
-		{"addReplyBulk", "snprintf", "stdio.h", `snprintf(header, sizeof header`},
-		{"bgsaveCommand", "fork", "unistd.h", "child = fork();"},
-		{"listenOn", "socket", "sys/socket.h", "socket(AF_INET, SOCK_STREAM, 0)"},
+	for _, call := range []struct{ from, path, name, header, needle string }{
+		{"main", "kvd.c", "getenv", "stdlib.h", `getenv("KVD_PORT")`},
+		{"main", "kvd.c", "system", "stdlib.h", "system(hook)"},
+		{"keysCommand", "kvd.c", "qsort", "stdlib.h", "qsort(keys,"},
+		{"addReplyBulk", "kvd.c", "snprintf", "stdio.h", `snprintf(header, sizeof header`},
+		{"bgsaveCommand", "kvd.c", "fork", "unistd.h", "child = fork();"},
+		{"netListen", "net.c", "socket", "sys/socket.h", "int on = 1, fd = socket(AF_INET, SOCK_STREAM, 0)"},
 	} {
-		from := cObject(t, index, programindex.ObjectFunction, call.from, "kvd.c")
-		line, _ := fixture.at(t, "kvd.c", call.needle, "")
+		from := cObject(t, index, programindex.ObjectFunction, call.from, call.path)
+		line, _ := fixture.at(t, call.path, call.needle, "")
 		found := false
-		for _, relation := range cRelationsAt(index, programindex.RelationInvokesExternal, from.ID, "kvd.c", line) {
+		for _, relation := range cRelationsAt(index, programindex.RelationInvokesExternal, from.ID, call.path, line) {
 			symbol := cExternal(t, index, relation.ToIDs)
 			found = found || symbol.Name == call.name && symbol.PackagePath == call.header && symbol.AuthorityKind == programindex.ExternalAuthorityPlatform
 		}
 		if !found {
-			t.Errorf("%s does not call %s from %s at kvd.c:%d", call.from, call.name, call.header, line)
+			t.Errorf("%s does not call %s from %s at %s:%d", call.from, call.name, call.header, call.path, line)
 		}
 	}
 

@@ -68,6 +68,11 @@ the var is a read at the binding.
 
 Missing equivalents, recorded rather than fabricated:
 
+- No Clojure function is proven `unreachable` (the C adapter's per-program
+  fact, PROGRAM_INDEX): `resolve`, `requiring-resolve`, `ns-resolve`, a
+  symbol or var invoked as a value, multimethods and protocol dispatch reach
+  functions no call names. A boundary in a namespace several targets load
+  stays with every target.
 - An unresolved `function_value` call names no function a binding could hold,
   so it draws none of the possible arrows the C, Go and Python store
   witnesses draw.

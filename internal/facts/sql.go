@@ -16,7 +16,7 @@ import (
 // not listed. No driver or ORM is named.
 func (b *builder) addSQLQueries(target *targetContext) {
 	for _, relation := range target.input.Index.Relations {
-		if target.ownsCallee(relation) {
+		if target.ownsCallee(relation) || target.unreachable(relation) {
 			continue
 		}
 		for _, pattern := range relation.Patterns {

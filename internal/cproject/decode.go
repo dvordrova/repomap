@@ -808,6 +808,8 @@ func (d *decoder) node(n *Node, mode dumpMode, depth int) error {
 			n.Decl, err = d.declRef()
 		case "ownedTagDecl":
 			n.OwnedTagDecl, err = d.declRef()
+		case "cleanup_function":
+			n.CleanupFunction, err = d.declRef()
 		case "hasElse":
 			n.HasElse, err = d.readBool()
 		case "targetLabelDeclId":

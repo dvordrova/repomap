@@ -27,7 +27,7 @@ func (b *builder) addRegistrations(target *targetContext) {
 	prefixes := target.prefixesByObject()
 	var shapes []registrationShape
 	for _, relation := range target.input.Index.Relations {
-		if target.ownsCallee(relation) && !target.tableRow(relation) {
+		if target.ownsCallee(relation) && !target.tableRow(relation) || target.unreachable(relation) {
 			continue
 		}
 		for _, pattern := range relation.Patterns {

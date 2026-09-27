@@ -52,8 +52,8 @@ Current language repositories:
   value merely typed as a platform constructor remains an unresolved frontier.
 - `c/` is a small key-value server, `kvd`, and its client, `kvcli`, read
   through clang with the flags `make -n -B` prints. Each link line of the
-  [Makefile](c/Makefile) is a program; both link `strbuf.c`, which is parsed
-  once. [tools/dump.c](c/tools/dump.c), which no link line builds, is a program
+  [Makefile](c/Makefile) is a program; both link `strbuf.c` and `net.c`, each
+  parsed once. [tools/dump.c](c/tools/dump.c), which no link line builds, is a program
   through its own `main` and links what the linker would take. `loop.c`
   includes the poll backend the build asks for; the epoll backend is outside
   this build on every host and is never parsed. Inside repomap's own
@@ -73,6 +73,7 @@ C function pointers and macros in [kvd.c](c/kvd.c) and [loop.c](c/loop.c):
 | `act.sa_handler = onSignal` | `onSignal` is handed to `struct sigaction` under the field as written, not the platform's internal union |
 | `kvAssert(setNonBlocking(cfd) == 0)` | `setNonBlocking` is called at its own column; the `kvAssertFail` call the macro body writes is at `kvAssert` |
 | `static void oom` in both `loop.c` and `strbuf.c` | two functions, one per file |
+| [net.c](c/net.c)'s `netListen` and `netConnect`, linked into both programs like Redis's `anet.c` | kvd never runs `netConnect`, kvcli never runs `netListen` or `strbuf.c`'s `sbConsume`, and the dump tool never runs `sbConsume`: each is `unreachable` in that program's index. kvd's listener, and the `KVD_BACKLOG` that `netListen` reads, are kvd's alone; `connect` is kvcli's alone; kvcli's page lists `netListen` and `sbConsume` under "Not reachable from the entrypoints" |
 | `static inline size_t sbAvail` in [strbuf.h](c/strbuf.h) | one function, whichever units include it |
 
 Go, Python and JS/TS have no macros, so a call a macro writes has no
@@ -83,6 +84,14 @@ cast. Go, Python and Clojure get a function's identity only from a call that
 receives the function (`reflect.ValueOf(f).Pointer()`, `id(f)`,
 `System/identityHashCode`), which is a different construct, and TypeScript
 has none. Both cases are recorded as missing rather than imitated.
+
+A C function runs only when running code names it, so the C adapter proves
+what a program never runs. No other adapter can: Go reflection, interfaces
+the standard library calls and `go:linkname`; Python `getattr`, `importlib`
+and special methods; JS/TS computed property names and dynamic `import()`;
+Clojure `resolve` and vars invoked as values all reach functions no call
+names. Their fixtures have no `unreachable` declaration, and their contracts
+record the missing equivalent rather than an unsound one.
 
 Comparable response-field examples:
 

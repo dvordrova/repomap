@@ -105,6 +105,7 @@ func Build(input Input) (atlas.Graph, error) {
 		symbolBindingRows: make(map[string]map[string]atlas.SymbolBinding),
 		symbolCallRows:    make(map[string]map[string]atlas.SymbolCall),
 		factSubjects:      make(map[string]string),
+		unreached:         make(map[string]map[string]struct{}),
 	}
 	for _, fact := range input.Facts.Facts {
 		if fact.ObjectID != "" {
@@ -231,7 +232,8 @@ type builder struct {
 	symbolCallerRows  map[string]map[string]atlas.SymbolCaller
 	symbolBindingRows map[string]map[string]atlas.SymbolBinding
 	symbolCallRows    map[string]map[string]atlas.SymbolCall
-	memberOwners      map[string]string // retained declaration -> native owner's symbol place
+	memberOwners      map[string]string              // retained declaration -> native owner's symbol place
+	unreached         map[string]map[string]struct{} // symbol place -> targets whose program never runs it
 	typeFields        map[string]typeField
 	// workspace lists the package paths of the repository's own modules, from
 	// the dependency catalogs: a call into one of them is not an integration.
@@ -389,6 +391,13 @@ func (b *builder) collectObjects(target TargetInput) {
 		// overlapping targets merge and the current native lookups are released.
 		if _, needed := b.factSubjects[scopedID]; needed {
 			b.factSubjects[scopedID] = b.symbolOf[object.ID]
+		}
+		if object.Unreachable {
+			id := b.symbolOf[object.ID]
+			if b.unreached[id] == nil {
+				b.unreached[id] = make(map[string]struct{})
+			}
+			b.unreached[id][targetID] = struct{}{}
 		}
 		name := object.Name
 		if object.Kind == programindex.ObjectMethod && !strings.Contains(name, ".") {
@@ -1076,11 +1085,19 @@ func (b *builder) collectSymbols() {
 			if decl.Kind == string(programindex.ObjectType) {
 				decl.Doc = b.quotedDocstringFor(filePath, decl.LineNo, state.decls)
 			}
+			// A target the file no longer belongs to (claimByRoot) holds
+			// no declaration of it to leave unreached.
+			var unreached []string
+			for _, target := range sortedKeys(b.unreached[id]) {
+				if _, holds := state.targets[target]; holds {
+					unreached = append(unreached, target)
+				}
+			}
 			b.symbols = append(b.symbols, atlas.Place{
 				ID: id, Kind: atlas.PlaceSymbol, Path: filePath,
 				LineNo: decl.LineNo, Column: decl.Column, Depth: state.depth, TargetIDs: sortedKeys(state.targets),
 				Parent: atlas.FileID(filePath), Given: truncateRunes(given, maxLineRunes),
-				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Candidate: !state.generated, Rank: rank + 1},
+				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached},
 			})
 		}
 	}

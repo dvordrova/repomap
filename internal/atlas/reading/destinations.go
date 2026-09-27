@@ -64,7 +64,7 @@ func NewDestinationReader(places []atlas.Place) *DestinationReader {
 func (d *DestinationReader) Read(place atlas.Place, call atlas.SymbolCall) []atlas.DestinationUse {
 	position, purpose := destinationArgument(call.API)
 	step := destinationStep(place, call)
-	initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), place.TargetIDs...), Steps: []atlas.DestinationStep{step}}}
+	initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningTargets(place)...), Steps: []atlas.DestinationStep{step}}}
 	if purpose == "options" {
 		var result []destinationPath
 		for _, argument := range call.SourceArguments {
@@ -211,7 +211,7 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		var result []destinationPath
 		for _, caller := range d.parameterCallers(value, use) {
 			next := cloneDestinationPath(use)
-			next.TargetIDs = intersectTargets(use.TargetIDs, caller.place.TargetIDs)
+			next.TargetIDs = intersectTargets(use.TargetIDs, runningTargets(caller.place))
 			if len(next.TargetIDs) == 0 {
 				continue
 			}
@@ -482,7 +482,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 					continue
 				}
 				next := cloneDestinationPath(use)
-				next.TargetIDs = intersectTargets(use.TargetIDs, call.place.TargetIDs)
+				next.TargetIDs = intersectTargets(use.TargetIDs, runningTargets(call.place))
 				if len(next.TargetIDs) == 0 {
 					continue
 				}
@@ -501,7 +501,7 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 				continue
 			}
 			next := cloneDestinationPath(use)
-			next.TargetIDs = intersectTargets(use.TargetIDs, call.place.TargetIDs)
+			next.TargetIDs = intersectTargets(use.TargetIDs, runningTargets(call.place))
 			if len(next.TargetIDs) == 0 {
 				continue
 			}

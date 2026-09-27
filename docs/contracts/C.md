@@ -176,6 +176,36 @@ typedef merges with its record, a tentative definition is one variable and an
 `#if` alternative parses one branch. `kvd.c`'s `bgsaveCommand` (17 of its 18
 lines; one comment line) asserts the count.
 
+## What a program never runs
+
+A C function runs only when code that runs names it: calls it directly, or
+uses its address (stores, passes, returns or compares it, or casts it to an
+integer that can be cast back). For a program with a `main`, the adapter
+starts from `main`; from functions the runtime calls without a name in the
+code (a `constructor` or `destructor` attribute); from every function a
+file-scope initializer names, since those tables exist before `main` (Redis's
+command table and `staticsymbols.h`'s integer casts); from an external
+function whose name a platform or package header also declares, which that
+library may call instead of its own; and from a name the implementation
+reserves (`__x`, `_X`). It follows what each definition's body names, in every
+unit's copy of it (a header's `static inline` function reaches each unit's own
+statics), including a `cleanup` attribute's function. Assembly statements,
+file-scope assembly and `alias`/`ifunc` attributes name functions by text:
+every repository function their written text, or its macro's, names is named
+there, and text the adapter cannot read proves nothing for the program. Each
+function nothing reached is `unreachable` in that program's index: a
+deterministic fact about that program, not about the file, so `anet.c`'s
+`anetTcpServer` and `anetAccept` are unreachable in redis-cli and
+redis-benchmark and reached in redis-server. An address taken only inside
+code that never runs is never taken.
+
+A program that calls `dlsym`, `dlvsym` or `dlfunc` can reach any function by
+its name, and a library (no `main`) is called from outside: neither marks
+anything. The fixture's `net.c` is linked into kvd and kvcli like `anet.c`:
+kvd never runs `netConnect`, kvcli never runs `netListen` (nor `strbuf.c`'s
+`sbConsume`), and the backlog `netListen` reads (`KVD_BACKLOG`) is kvd's
+setting alone (PROGRAM_INDEX, READING).
+
 ## Facts and claims
 
 Config reads, SQL statements and registrations are the language-neutral facts
@@ -260,11 +290,19 @@ cover discovery from link lines, repomap's own repository offering no C target
 and running no tool for its fixture, tooling sources beside a program, another
 adapter's explicit target, the files that restore each program, one parse per
 plan for a shared unit and its release after the last projection that needs it,
-a backend outside this platform's build, a missing clang, and an ordinary
+a backend outside this platform's build, a missing clang, an ordinary
 offline run selecting a C program, whose metadata records the platform view and
-whose page shows none of it. Facts tests cover C config reads, SQL, dynamic
-execution, command rows that state no HTTP method and route rows that state
-one, each with its record field as registrar. The kvd preset reading
+whose page shows none of it, and kvcli's page listing `netListen` and
+`sbConsume` under "Not reachable from the entrypoints". Facts tests cover C
+config reads, SQL, dynamic execution, command rows that state no HTTP method
+and route rows that state one, each with its record field as registrar.
+`TestIndexProvesWhatAProgramNeverRuns` checks each way a function is named,
+every unit's copy of a shared static and the programs that prove nothing;
+`TestCFixtureProvesWhatEachProgramNeverRuns` checks the fixture's programs,
+their facts and places, and
+`TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem` reads
+kvd and kvcli together: the listener stays kvd's, the connect kvcli's. The kvd
+preset reading
 (`TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests`) answers each
 registrar and each entry from its row alone, without captions, and checks the
 inputs: six requests named `get`, `set`, `del`, `keys`, `ping` and `bgsave`,

@@ -88,3 +88,29 @@ func TestDestinationAlternativeFieldsKeepTheirSourcePair(t *testing.T) {
 		}
 	}
 }
+
+// A shared helper is linked into the server and the client, like Redis's
+// anetTcpGenericConnect; the client runs it through its own caller, while
+// the other caller, linked into both, runs only in the server. The address
+// that caller passes is the server's alone.
+func TestDestinationChainsStayWithTheTargetsThatRunEveryStep(t *testing.T) {
+	anchor := &sourcevalue.Anchor{Path: "net.go", Line: 10, Column: 1}
+	literal := func(text string) []atlas.SourceArgument {
+		return []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: text}}}
+	}
+	call := atlas.SymbolCall{Name: "http.Get", Line: 12, Column: 5, API: &atlas.CallAPI{Package: "net/http", Name: "Get"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "parameter", Position: 1, Owner: anchor}}}}
+	connect := atlas.Place{ID: "connect", Path: "net.go", LineNo: 10, TargetIDs: []string{"cli", "server"},
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "Connect", Column: 1}, Calls: []atlas.SymbolCall{call}}}
+	cli := atlas.Place{ID: "cli", Path: "cli.go", LineNo: 1, TargetIDs: []string{"cli"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "main"},
+		Calls: []atlas.SymbolCall{{Name: "Connect", Line: 2, Column: 3, CalleeIDs: []string{"connect"}, SourceArguments: literal("https://cli.example")}}}}
+	replicate := atlas.Place{ID: "replicate", Path: "net.go", LineNo: 30, TargetIDs: []string{"cli", "server"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "Replicate"}, Unreached: []string{"cli"},
+		Calls: []atlas.SymbolCall{{Name: "Connect", Line: 31, Column: 3, CalleeIDs: []string{"connect"}, SourceArguments: literal("https://master.example")}}}}
+	targets := map[string][]string{}
+	for _, use := range NewDestinationReader([]atlas.Place{connect, cli, replicate}).Read(connect, call) {
+		targets[use.Address] = use.TargetIDs
+	}
+	if want := map[string][]string{"https://cli.example": {"cli"}, "https://master.example": {"server"}}; !reflect.DeepEqual(targets, want) {
+		t.Fatalf("addresses by target = %v, want %v", targets, want)
+	}
+}

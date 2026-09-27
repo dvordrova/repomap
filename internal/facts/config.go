@@ -9,6 +9,9 @@ import (
 
 func (b *builder) addConfigReads(target *targetContext) {
 	for _, relation := range target.input.Index.Relations {
+		if target.unreachable(relation) {
+			continue
+		}
 		for _, pattern := range relation.Patterns {
 			key, value, ok := configKeyFromPattern(target, relation, pattern)
 			if !ok {

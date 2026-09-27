@@ -30,7 +30,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 17
+	GraphVersion = 18
 	Version      = 12
 
 	GraphFilename    = "places.json"
@@ -226,6 +226,10 @@ type SymbolFacts struct {
 	Candidate bool `json:"candidate"`
 	// Rank is the symbol's place among its file's candidates, from 1.
 	Rank int `json:"rank"`
+	// Unreached are the targets holding this declaration whose adapter
+	// proved their program never runs it (ProgramIndex `unreachable`): what
+	// it calls out to or registers is not those targets'.
+	Unreached []string `json:"unreached,omitempty"`
 }
 
 type TypeMember struct {
@@ -1099,6 +1103,13 @@ func validateGraph(graph Graph) error {
 			for _, target := range place.TargetIDs {
 				if _, exists := owned[target]; !exists {
 					return fmt.Errorf("atlas: boundary %q lacks the native origin for target %q", place.ID, target)
+				}
+			}
+		}
+		if place.Symbol != nil {
+			for _, target := range place.Symbol.Unreached {
+				if !slices.Contains(place.TargetIDs, target) {
+					return fmt.Errorf("atlas: symbol %q is unreached in target %q, which does not hold it", place.ID, target)
 				}
 			}
 		}

@@ -180,7 +180,7 @@ func TestCFixtureProgramsComeFromTheMakefile(t *testing.T) {
 	server := fixture.program(t, "c:kvd")
 	serverRule, _ := fixture.at(t, "Makefile", "kvd: kvd.o", "")
 	if server.Kind != cproject.ProgramExecutable || server.Closure || server.Anchor != (cproject.Site{Path: "Makefile", Line: serverRule}) ||
-		!reflect.DeepEqual(cSpecPaths(server.Units), []string{"kvd.c", "loop.c", "strbuf.c"}) || !reflect.DeepEqual(server.LinkArgs, []string{"-pthread"}) {
+		!reflect.DeepEqual(cSpecPaths(server.Units), []string{"kvd.c", "loop.c", "net.c", "strbuf.c"}) || !reflect.DeepEqual(server.LinkArgs, []string{"-pthread"}) {
 		t.Fatalf("kvd: %+v", server)
 	}
 	if len(server.Evidence) != 1 || server.Evidence[0].Kind != "c_link" || server.Evidence[0].Fields["output"] != "kvd" {
@@ -188,7 +188,7 @@ func TestCFixtureProgramsComeFromTheMakefile(t *testing.T) {
 	}
 	client := fixture.program(t, "c:kvcli")
 	clientRule, _ := fixture.at(t, "Makefile", "kvcli: kvcli.o", "")
-	if client.Anchor != (cproject.Site{Path: "Makefile", Line: clientRule}) || !reflect.DeepEqual(cSpecPaths(client.Units), []string{"kvcli.c", "strbuf.c"}) {
+	if client.Anchor != (cproject.Site{Path: "Makefile", Line: clientRule}) || !reflect.DeepEqual(cSpecPaths(client.Units), []string{"kvcli.c", "net.c", "strbuf.c"}) {
 		t.Fatalf("kvcli: %+v", client)
 	}
 	// Every unit keeps the flags that change what clang reads and drops
@@ -426,7 +426,7 @@ func TestCFixtureParsesWithoutItsMakefile(t *testing.T) {
 		if runtime.GOOS == "linux" {
 			outside = prefix + "loop_poll.c"
 		}
-		if units := cUnitPaths(parsed.Units); !reflect.DeepEqual(units, []string{prefix + "kvd.c", prefix + "loop.c", prefix + "strbuf.c"}) ||
+		if units := cUnitPaths(parsed.Units); !reflect.DeepEqual(units, []string{prefix + "kvd.c", prefix + "loop.c", prefix + "net.c", prefix + "strbuf.c"}) ||
 			!reflect.DeepEqual(parsed.Outside, []string{outside}) {
 			t.Fatalf("kvd.c without its Makefile: units %v, outside %v", units, parsed.Outside)
 		}

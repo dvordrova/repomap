@@ -1,13 +1,11 @@
 /* kvcli: sends one command to kvd and prints the reply. */
-#include <arpa/inet.h>
-#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
+#include "net.h"
 #include "strbuf.h"
 
 /* The commands the client checks before sending: the same names as the
@@ -37,20 +35,6 @@ static const char *withoutScheme(const char *host) {
     return strncmp(host, "kvd://", strlen("kvd://")) == 0 ? host + strlen("kvd://") : host;
 }
 
-static int connectTo(const char *host, int port) {
-    struct sockaddr_in sa;
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd == -1) return -1;
-    memset(&sa, 0, sizeof sa);
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons((unsigned short)port);
-    if (inet_pton(AF_INET, host, &sa.sin_addr) != 1 || connect(fd, (struct sockaddr *)&sa, sizeof sa) == -1) {
-        close(fd);
-        return -1;
-    }
-    return fd;
-}
-
 int main(int argc, char **argv) {
     const char *host = getenv("KVD_HOST");
     const char *port = getenv("KVD_PORT");
@@ -69,7 +53,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "kvcli: unknown command or wrong number of arguments\n");
         return 2;
     }
-    fd = connectTo(host != NULL ? withoutScheme(host) : "127.0.0.1", port != NULL ? atoi(port) : 7379);
+    fd = netConnect(host != NULL ? withoutScheme(host) : "127.0.0.1", port != NULL ? atoi(port) : 7379);
     if (fd == -1) {
         perror("kvcli: connect");
         return 1;
