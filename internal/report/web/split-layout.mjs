@@ -408,11 +408,13 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   for(const [group,ids] of [...members])if(ids.length<2)members.delete(group);
   const groupID=group=>`display-group:${group}`,grouped=new Set([...members.values()].flat());
   const groupPad=16,headingOf=new Map();
-  // A plain tile reserves no closed box at the fit: under its group's heading
-  // it keeps its calls' own box, and a first screen too short for its zoom
-  // mark draws the mark smaller whole (overviewScale). Grown to the mark's
-  // 50 by 44 pixels at Redis's whole-map camera, each DNS tile stood 156
-  // world units tall around an 84-unit open call and opened half empty.
+  // A plain tile keeps its calls' proportion at the fit: it grows whole,
+  // until its zoom mark has its room, and its calls grow with it. Grown to
+  // the mark's 50 by 44 pixels alone at Redis's whole-map camera, each DNS
+  // tile stood 156 world units tall around an 84-unit open call and opened
+  // half empty; not grown at all, its mark was drawn at 0.64 of the size of
+  // the TCP endpoint's beside it on a 1440x900 first screen, 0.41 at
+  // 1280x720.
   const plainGrouped=id=>grouped.has(id)&&plainTile(byID.get(id));
   for(const [group,ids] of members){const at=byID.get(ids[0])?.displayGroupHeadingAt;if(at)headingOf.set(groupID(group),at);}
   // The heading stands in a band on the side of its group no arrow enters:
@@ -452,7 +454,7 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     const span={width:Math.max(...boxes.map(node=>node.x+node.width))-Math.min(...boxes.map(node=>node.x)),
       height:Math.max(...boxes.map(node=>node.y+node.height))-Math.min(...boxes.map(node=>node.y))};
     const zoom=Math.min(.44,available.width/span.width,available.height/span.height);
-    const readable=Math.min(1,...roots.filter(node=>!plainGrouped(node.id)).map(node=>{
+    const readable=Math.min(1,...roots.map(node=>{
       const record=byID.get(node.id),minimum=record.overviewMinWidth||0;
       const needed=record.overviewHeightAtWidth?.(node.width*zoom,{availableHeight:available.height})||0;
       return Math.min(minimum?node.width*zoom/minimum:1,needed?node.height*zoom/needed:1);
@@ -496,22 +498,27 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     // that were already readable in the selected candidate.
     const growing=flat(graph).flatMap(node=>{
       const record=byID.get(node.id);
-      if(!record.overviewHeightAtWidth||plainGrouped(node.id))return [];
+      if(!record.overviewHeightAtWidth)return [];
+      if(plainGrouped(node.id)){
+        // Both sides grow by one factor, so the prepared drawing fills the
+        // grown tile with one uniform transform (interiorScales below).
+        const grow=Math.max(1,(record.overviewMinWidth||0)/(node.width*best.zoom),
+          record.overviewHeightAtWidth(node.width*best.zoom,{availableHeight:available.height})/(node.height*best.zoom));
+        const height=Math.ceil(node.height*best.zoom*grow);
+        return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,needed:{width:height*node.width/node.height,height}}];
+      }
       const physicalWidth=Math.max(node.width*best.zoom,record.overviewMinWidth||0);
       const physicalHeight=record.overviewHeightAtWidth?.(physicalWidth,{availableHeight:available.height})||0;
       return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,
         needed:{width:Math.ceil(physicalWidth),height:Math.ceil(Math.max(node.height*best.zoom,physicalHeight))}}];
     });
-    // A group's heading band grows like a summary: the band needs its
-    // heading's screen room at this fit. Only the band has a screen size; the
-    // tiles beside it are world room that scales with the camera. Taken as
-    // screen pixels too, three plain tiles as wide as their calls asked a
-    // 400 by 300 canvas for a camera of .14 instead of .34.
+    // A group's heading band grows like a summary: its frame needs the
+    // band's missing screen room at this fit.
     for(const node of graph.children.filter(node=>headingOf.has(node.id))){
-      const band=bandOf(node.id,bands),need=headingNeed(node.id,node.width,best.zoom,bandDirection);
-      if(need<=band*best.zoom)continue;
-      growing.push(bandDirection==='RIGHT'?{id:node.id,x:node.x+node.width-band,y:node.y,width:band,height:node.height,needed:{width:Math.ceil(need),height:0}}
-        :{id:node.id,x:node.x,y:node.y+node.height-band,width:node.width,height:band,needed:{width:0,height:Math.ceil(need)}});
+      const missing=Math.max(0,headingNeed(node.id,node.width,best.zoom,bandDirection)-bandOf(node.id,bands)*best.zoom);
+      const across=bandDirection==='RIGHT'?missing:0,down=bandDirection==='RIGHT'?0:missing;
+      if(missing)growing.push({id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,
+        needed:{width:Math.ceil(node.width*best.zoom+across),height:Math.ceil(node.height*best.zoom+down)}});
     }
     if(growing.length){
       const reserve=axis=>{

@@ -166,16 +166,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   The band is the heading's room and shrinks with it: an open group's frame
   wraps its tiles and their heading, and the room its closed heading takes
   at the whole-map camera stays outside the frame. Entering any tile of the
-  group opens every tile of it and frames the group, heading included:
-  framed alone, an entered tile had read only "gethostbyname" with the
-  heading below the camera. The tiles stay separate records, each hit by its
-  own program's arrow; the group still ends no arrow and is not read or
-  chosen. A plain tile reserves its open calls' own box, not its closed zoom
-  mark's: stretched to the mark's proportion and grown to its 50 by 44
-  pixels at the whole-map camera, each of Redis's DNS tiles opened half
-  empty below its one call. A first screen too short for the mark draws it
-  smaller whole (below), about two thirds of its size on Redis's 1440×900
-  first screen.
+  group opens every tile of it and frames the group, heading included, at
+  the scale its calls are drawn at: framed alone, an entered tile had read
+  only "gethostbyname" with the heading below the camera. The tiles stay
+  separate records, each hit by its own program's arrow; the group still
+  ends no arrow and is not read or chosen. A plain tile keeps its open calls' proportion: at the whole-map
+  fit it grows whole until its zoom mark has its room, and its calls grow
+  with it, so it opens with no room of its own below them. Stretched to the
+  mark's proportion and grown to its 50 by 44 pixels, each of Redis's DNS
+  tiles opened half empty below its one call; kept at its calls' own box
+  without growing, its mark was drawn at 0.64 of the size of the TCP
+  endpoint's beside it on a 1440×900 first screen and at 0.41 on 1280×720.
   Every record stays in its own component's catalogue, and records of
   different symbols stay separate tiles.
   When a saved connection identifies one already displayed peer in another
@@ -483,12 +484,6 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   gives the mark its ordinary size, as a small group keeps a smaller complete
   label; a frame too narrow for its text at full size keeps that smaller
   summary instead of standing blank beside a display group's plain tiles.
-  A display group's plain tile reserves no summary room at all: its mark is
-  always drawn this way on a first screen too short for it. The group's
-  heading band is the group's only screen room in that fit; its tiles are
-  world room that scales with the camera. Counted as screen pixels as well,
-  three plain tiles as wide as their calls asked a 400×300 canvas for a
-  camera of .14, smaller than their frames titled one by one needed.
   Drawn into the short box, Redis's 1280×720 first screen cut "TCP
   endpoint" below its frame and "Background" out of its input list.
   External width minima allow that arrangement; height reserves the actual

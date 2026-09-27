@@ -369,11 +369,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // alone, a tile read only "gethostbyname", the heading below the camera.
     const group=record?.displayGroupTitle&&placed.get(`display-group:${record.displayGroup}`);
     if(group){
-      const tiles=byID.get(group.id).tiles,scales=communicationScales();
+      const tiles=byID.get(group.id).tiles;
       communicationsOpen=new Set([...communicationsOpen,...tiles]);arrive(tiles);
-      // The box the open group draws: its tiles and their heading.
-      const {width,height}=groupLook(group);
-      commitCamera(instance.setViewport(frameViewport({...group,width,height},layout.nodes,rect.width,rect.height,Math.min(...tiles.map(tile=>scales.get(tile)||1)),{floor:staysOpen}),{duration:smooth?420:0}),id);return;
+      // The box the open group draws: its tiles and their heading, at the
+      // scale their calls are drawn at. A plain tile grown whole at the fit
+      // draws its calls larger than one: taken as one, Redis's group entered
+      // at 1280x720 stood 978px wide in an 894px canvas, a call cut off.
+      const {width,height}=groupLook(group),scale=Math.min(...tiles.flatMap(tile=>leaves(tile).map(id=>byID.get(id)?.contentScale||1)));
+      commitCamera(instance.setViewport(frameViewport({...group,width,height},layout.nodes,rect.width,rect.height,scale,{floor:staysOpen}),{duration:smooth?420:0}),id);return;
     }
     if(n.frame){
       // Every frame is entered by the one rule, at the scale its own content is
@@ -521,7 +524,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const heading=groupHeadingLines.get(key);
     const open=item.tiles.some(id=>communicationsOpen.has(id)),need=beside?heading.extent:heading.height;
     // A band left short of the heading takes it smaller, never over the tiles.
-    const scale=Math.min(1,item.band*zoom/need)/zoom*(open?Math.min(1,(byID.get(item.tiles[0])?.summaryScale||1)*17/13*zoom):1);
+    // Open, it takes the 17px of the open frames' titles at their own scale:
+    // shrunk by the closed band's shortfall as well, it read at 13.4px over
+    // 16.2px calls when Redis's 1280x720 map entered it.
+    const closed=Math.min(1,item.band*zoom/need)/zoom;
+    const scale=open?Math.min(closed,(byID.get(item.tiles[0])?.summaryScale||1)*17/heading.fontSize):closed;
     const band=open?Math.min(item.band,need*scale):item.band;
     return {item,heading,beside,scale,band,width:beside?n.width-item.band+band:n.width,height:beside?n.height:n.height-item.band+band};
   }

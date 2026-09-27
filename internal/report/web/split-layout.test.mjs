@@ -524,8 +524,7 @@ test('the whole-map camera that frames a display group still gives every heading
   assert.ok(zoom<.44,'the camera fits below the preferred scale, where the reserve matters');
   for(const node of result.layout.nodes.filter(node=>!node.parentId&&!node.display)){
     const record=records.find(record=>record.id===node.id);
-    // A plain tile names nothing: its group's heading does.
-    if(!record.overviewMinWidth||record.displayGroupTitle)continue;
+    if(!record.overviewMinWidth)continue;
     assert.ok(node.width*zoom+1e-6>=record.overviewMinWidth,`${node.id}: ${node.width*zoom} of ${record.overviewMinWidth}px for its heading`);
     assert.ok(node.height*zoom+1e-6>=record.overviewHeightAtWidth(node.width*zoom,{availableHeight:height-2*overviewInset}),`${node.id}: its summary fits`);
   }
@@ -587,24 +586,6 @@ test('a plain tile of a display group is as large as its open calls, not its clo
     assert.ok(inset.bottom<=inset.left+1e-6&&inset.right<=inset.left+1e-6,
       `dns-${owner} holds its call with its insets alone: ${JSON.stringify(Object.fromEntries(Object.entries(inset).map(([k,v])=>[k,Math.round(v)])))}`);
   }
-});
-
-// The group's band is screen room for its heading; the tiles beside it are
-// world room that scales with the camera. Taken as screen pixels too, three
-// plain tiles asked a 400 by 300 canvas for a camera of .14, smaller than
-// the .18 the same frames took each under its own title.
-test('a display group that says its destination once takes no smaller a camera than its frames titled one by one',async()=>{
-  const owners=['server','cli','bench'],width=400,height=300;
-  const fit=async title=>{
-    const items=[...owners.flatMap(owner=>[{id:owner,title:`redis-${owner}`,branch:'component'},{id:`net-${owner}`,title:'Networking',category:'part'},
-      {id:`dns-${owner}`,title:'DNS resolver',branch:'communication',category:'external',displayGroup:'dns',displayGroupTitle:title},
-      {id:`resolve-${owner}`,title:'gethostbyname',category:'external'}])];
-    const areaList=owners.flatMap(owner=>[{id:owner,nodes:[`net-${owner}`]},{id:`dns-${owner}`,nodes:[`resolve-${owner}`]}]);
-    const prepared=await prepareInteriors(cards(items),owners.map(owner=>({from:`net-${owner}`,to:`resolve-${owner}`})),areaList,{availableHeight:height-2*overviewInset});
-    return systemViewport((await layoutPrepared(prepared,width,height)).layout.nodes,width,height).zoom;
-  };
-  const once=await fit('DNS resolver'),titled=await fit('');
-  assert.ok(once+1e-9>=titled,`said once, the map fits at ${once.toFixed(3)}; titled one by one, at ${titled.toFixed(3)}`);
 });
 
 // A loose part beside areas is drawn filling its box once the areas open,
