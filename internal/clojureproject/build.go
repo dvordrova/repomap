@@ -132,7 +132,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		switch by {
 		case "clojure.core/defn", "clojure.core/defn-", "clojure.core/defmacro":
 			loaded[ref] = sources[d.Filename].loadedHeaders(d.site, true)
-		case "clojure.core/def", "clojure.core/defonce":
+		case "clojure.core/def", "clojure.core/defonce", "clojure.core/defmulti":
 			loaded[ref] = sources[d.Filename].loadedHeaders(d.site, false)
 		}
 		if d.Name == "-main" && kind == p.ObjectFunction {

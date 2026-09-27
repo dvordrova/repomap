@@ -45,7 +45,9 @@ ProgramIndex retains:
   arguments, defaults and annotations; TypeScript decorators; Clojure
   metadata and attr-maps) belongs to the defining scope, while the
   `decorates` relation stays the decorated declaration's. Go and C have no
-  such expressions;
+  such expressions. A Clojure `def` value that is not a function is the open
+  exception: it runs at load but stays the var's
+  ([Clojure](CLOJURE.md#calls-that-run-when-a-namespace-loads));
 - signatures as short native text for the reader and model: Go names packages
   by their last element (`model.User`), and a named type's signature is only its
   form (`struct`, `interface` or the underlying type), its members being objects;

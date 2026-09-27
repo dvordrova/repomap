@@ -184,7 +184,7 @@ func TestNativeCumulativeProject(t *testing.T) {
 	}
 	slices.Sort(loaded)
 	wantLoaded := []string{
-		"example.core attr", "example.core def", "example.core meta", "example.core once", "example.core tail",
+		"example.core attr", "example.core def", "example.core meta", "example.core multi", "example.core once", "example.core tail",
 		"example.core/routed-by-attr-map row", "example.core/routed-by-attr-map row", "example.core/routed-by-meta row",
 	}
 	if first == 0 || !slices.Equal(loaded, wantLoaded) {

@@ -106,3 +106,5 @@
 (def ^{:route (service/greet "def")} routed-value "value")
 
 (defonce ^{:route (service/greet "once")} routed-once "value")
+
+(defmulti ^{:route (service/greet "multi")} routed-multi :kind)
