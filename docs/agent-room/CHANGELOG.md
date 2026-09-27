@@ -1,5 +1,25 @@
 # Implementation and acceptance journal
 
+## 2026-09-27 — The Redis first screen, polished
+
+- The first screen had three defects:
+  - titles were cut ("DNS resolve…", "TCP endpoin", a lone ")");
+  - three identical "DNS resolver" tiles stood side by side;
+  - redis-server's input box broke its title before ")".
+- Map titles now break only between words, and a closing bracket stays with
+  its word.
+  - A word wider than its line shrinks the heading instead of being broken.
+  - The camera fit measures the same boxes it frames, and a summary short of
+    its room is drawn whole, scaled down.
+- When every frame of a display group spells its destination the same, the
+  group says it once, where no arrow enters, over small plain tiles. Each
+  tile keeps its own title, reading and program's arrow; an opened tile is
+  named again.
+  - Differently spelled destinations keep their own headings (constitution:
+    "equal destination labels do not prove identity").
+- `make test`, `make vet`, npm test (95) and `build --check` pass. The visual
+  suite has the 20 failures that main already has.
+
 ## 2026-09-27 — Redis journey, round 2: outside roles, C reachability, the report
 
 - **Outside-symbol roles:** the atlas_api questions are closed Jev choices
