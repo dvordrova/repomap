@@ -214,7 +214,7 @@ test('dense internal inventory keeps whole-map headings and zoom controls readab
   }
   await testInfo.attach('journey-02 — Scroll to the final entries',{body:await workspace.screenshot(),contentType:'image/png'});
   await page.locator('[data-overview-area="backend-workflow-40-part"]').click();
-  await expect(page.locator('[data-reading-title]')).toHaveText('Workflow responsibility 40');
+  await expect(page.locator('[data-reading-title]')).toHaveText('Additional workflow 40');
   await assertInsideCanvas(page,page.locator('.react-flow__node[data-id="backend-workflow-40-part"]'),'The final workflow opens its actual part');
   await testInfo.attach('journey-03 — Open the final workflow and its part',{body:await workspace.screenshot(),contentType:'image/png'});
   await showWholeMap(page);

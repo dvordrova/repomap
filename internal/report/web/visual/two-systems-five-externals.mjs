@@ -62,16 +62,16 @@ for(const relation of relations){
 
 // The same participants with a dense internal inventory. No geometry is
 // supplied: production measurement and fitting must keep the overview usable.
+// A saved area holds at least two parts, so the forty workflows stand as
+// loose parts of their component.
 export function denseInventory() {
   const nodes=structuredClone(records),edges=structuredClone(relations),containers=structuredClone(areas);
   for(const root of ['front','backend']){
     const component=nodes.find(n=>n.id===root),container=containers.find(n=>n.id===root);
     for(let index=0;index<40;index++){
-      const id=`${root}-workflow-${index+1}`,part=`${id}-part`;
-      component.children.push(id);container.nodes.push(id);
-      nodes.push({id,title:`Additional workflow ${index+1}`,branch:'area',children:[part]},
-        {id:part,title:`Workflow responsibility ${index+1}`,kind:'Part',lane:'core'});
-      containers.push({id,nodes:[part]});
+      const part=`${root}-workflow-${index+1}-part`;
+      component.children.push(part);container.nodes.push(part);
+      nodes.push({id:part,title:`Additional workflow ${index+1}`,kind:'Part',lane:'core'});
       edges.push({from:root==='front'?'submission':'worker',to:part});
     }
   }
@@ -159,10 +159,10 @@ export function shortNamedInventory({matchedPeer=false}={}) {
     const component=nodes.find(node=>node.id===root);component.title=root;
     for(const [index,title] of titles.entries()){
       if(index<component.children.length){nodes.find(node=>node.id===component.children[index]).title=title;continue;}
-      const id=`${root}-area-${index+1}`,part=`${id}-part`;
-      component.children.push(id);
-      nodes.push({id,title,branch:'area',children:[part]},
-        {id:part,title:`${title} implementation`,kind:'Part',lane:'core'});
+      // A responsibility of one part is that part, loose in its component.
+      const part=`${root}-area-${index+1}-part`;
+      component.children.push(part);
+      nodes.push({id:part,title,kind:'Part',lane:'core'});
       edges.push({from:root==='front'?'submission':'worker',to:part});
     }
     const collection=nodes.find(node=>node.id===`${root}-inputs`);collection.title=root;
@@ -175,7 +175,7 @@ export function shortNamedInventory({matchedPeer=false}={}) {
   for(const [index,title] of frontInputs.entries()){
     const id=`front-input-${index+2}`,area=nodes.find(node=>node.id===front.children[index%front.children.length]);
     nodes.push({id,title,activation:index===frontInputs.length-1?'continuous':'interaction',componentOwner:'front',componentName:'front'});
-    frontCollection.children.push(id);owners[id]=area.children[0];
+    frontCollection.children.push(id);owners[id]=area.children?.[0]||area.id;
     edges.push({from:id,to:owners[id],label:'implemented in',operations:[id]});
   }
   const backendCollection=nodes.find(node=>node.id==='backend-inputs');backendCollection.children=['create'];
