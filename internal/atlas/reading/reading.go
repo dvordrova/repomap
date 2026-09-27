@@ -1165,7 +1165,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			ID: owner.id, Dir: owner.dir, Title: owner.title, Line: owner.line,
 			ZoneID: zoneOf[owner.id], Side: r.side(owner, meta.ID), Open: owner.open,
 			Core: owner.core, ForTests: owner.forTests, Unreached: owner.unreached,
-			MemberIDs: []string{}, Files: []atlas.File{}, Keys: []atlas.Key{},
+			MemberIDs: []string{}, Files: []atlas.File{},
 		}
 		for _, fileID := range owner.files {
 			if !contains(r.places[fileID].TargetIDs, meta.ID) {
@@ -1179,10 +1179,6 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			}
 			box.Files = append(box.Files, file)
 			count(fileID, file)
-		}
-		box.Keys = modelKeys(box.Files)
-		if len(box.Keys) == 0 {
-			box.Keys = rankedKeys(box.Files)
 		}
 		target.Boxes = append(target.Boxes, box)
 	}
@@ -1290,70 +1286,6 @@ func (r *reader) projectFile(fileID string, listed map[string]bool, boxID string
 		file.Symbols = append(file.Symbols, symbol)
 	}
 	return file
-}
-
-// modelKeys lists the symbols the model marked as key, three per box, the
-// documented ones first.
-func modelKeys(files []atlas.File) []atlas.Key {
-	var keys []atlas.Key
-	for _, file := range files {
-		for _, symbol := range file.Symbols {
-			if !symbol.Key {
-				continue
-			}
-			doc := symbol.Line
-			if doc == "" {
-				doc = symbol.Doc
-			}
-			keys = append(keys, atlas.Key{SymbolID: symbol.ID, Name: symbol.Name, Path: file.Path, Doc: doc, LineNo: symbol.LineNo})
-		}
-	}
-	sort.SliceStable(keys, func(i, j int) bool {
-		if (keys[i].Doc != "") != (keys[j].Doc != "") {
-			return keys[i].Doc != ""
-		}
-		return keys[i].Name < keys[j].Name
-	})
-	if len(keys) > 3 {
-		keys = keys[:3]
-	}
-	return keys
-}
-
-// rankedKeys picks a box's key symbols by code: exported and documented
-// first, then by name, three per box.
-func rankedKeys(files []atlas.File) []atlas.Key {
-	type candidate struct {
-		key      atlas.Key
-		exported bool
-	}
-	var candidates []candidate
-	for _, file := range files {
-		for _, symbol := range file.Symbols {
-			if symbol.Doc == "" {
-				continue
-			}
-			exported := symbol.Name != "" && strings.ToUpper(symbol.Name[:1]) == symbol.Name[:1]
-			candidates = append(candidates, candidate{
-				key:      atlas.Key{SymbolID: symbol.ID, Name: symbol.Name, Path: file.Path, Doc: symbol.Doc, LineNo: symbol.LineNo},
-				exported: exported,
-			})
-		}
-	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].exported != candidates[j].exported {
-			return candidates[i].exported
-		}
-		return candidates[i].key.Name < candidates[j].key.Name
-	})
-	keys := make([]atlas.Key, 0, 3)
-	for _, c := range candidates {
-		keys = append(keys, c.key)
-		if len(keys) == 3 {
-			break
-		}
-	}
-	return keys
 }
 
 func directoryTitle(dir string) string {

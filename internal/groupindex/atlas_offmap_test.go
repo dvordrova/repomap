@@ -39,9 +39,9 @@ func TestOffMapFilesKeepTheirBoundariesAndInterpretations(t *testing.T) {
 		ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: ".",
 		Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
 		Boxes: []atlas.Box{
-			{ID: "p1", Dir: "api", Title: "API", Side: atlas.SideIn, MemberIDs: []string{objectIn("api/a.go")}, Keys: []atlas.Key{},
+			{ID: "p1", Dir: "api", Title: "API", Side: atlas.SideIn, MemberIDs: []string{objectIn("api/a.go")},
 				Files: []atlas.File{file("api/a.go", "Serves.", atlas.Symbol{ID: "s1", ObjectID: objectIn("api/a.go"), Name: "FA", Kind: "function", LineNo: 3})}},
-			{ID: "p2", Dir: "api", Title: "API checks", Side: atlas.SideMid, ForTests: true, MemberIDs: []string{objectIn("api/a_test.go")}, Keys: []atlas.Key{},
+			{ID: "p2", Dir: "api", Title: "API checks", Side: atlas.SideMid, ForTests: true, MemberIDs: []string{objectIn("api/a_test.go")},
 				Files: []atlas.File{file("api/a_test.go", "Checks.", atlas.Symbol{ID: "s3", ObjectID: objectIn("api/a_test.go"), Name: "FC", Kind: "function", LineNo: 3})}},
 		},
 		OffMap: []atlas.OffMapFile{
@@ -146,11 +146,11 @@ func TestAPartItsProgramNeverRunsIsListedOffTheMapByItsDeclarations(t *testing.T
 		Arrows: []atlas.Arrow{{ID: "a1", From: "p1", To: "p3", Calls: 1, Witnesses: []atlas.Witness{}, Sentence: "Client calls Memory: zmalloc."},
 			{ID: "a2", From: "p2", To: "p3", Calls: 1, Witnesses: []atlas.Witness{}, Sentence: "Linked list calls Memory: zmalloc."}},
 		Boxes: []atlas.Box{
-			{ID: "p1", Dir: ".", Title: "Client", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{id["main"]},
+			{ID: "p1", Dir: ".", Title: "Client", Side: atlas.SideIn, MemberIDs: []string{id["main"]},
 				Files: []atlas.File{file("cli.c", symbol("main", "function", 3))}},
-			{ID: "p2", Dir: ".", Title: "Linked list", Side: atlas.SideMid, Unreached: true, Keys: []atlas.Key{}, MemberIDs: []string{id["listCreate"], id["listRelease"], id["list"]},
+			{ID: "p2", Dir: ".", Title: "Linked list", Side: atlas.SideMid, Unreached: true, MemberIDs: []string{id["listCreate"], id["listRelease"], id["list"]},
 				Files: []atlas.File{file("list.c", symbol("listCreate", "function", 3), symbol("listRelease", "function", 9)), file("list.h", symbol("list", "type", 3))}},
-			{ID: "p3", Dir: ".", Title: "Memory", Side: atlas.SideOut, Keys: []atlas.Key{}, MemberIDs: []string{id["zmalloc"]},
+			{ID: "p3", Dir: ".", Title: "Memory", Side: atlas.SideOut, MemberIDs: []string{id["zmalloc"]},
 				Files: []atlas.File{file("zmalloc.c", symbol("zmalloc", "function", 3))}},
 		},
 	}

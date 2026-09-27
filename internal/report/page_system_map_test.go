@@ -468,7 +468,7 @@ func TestAreasKeepTheOrderTheModelListedThemOnThePage(t *testing.T) {
 		Zones: zones, Boxes: []atlas.Box{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}}
 	for i, p := range parts {
 		target.Boxes = append(target.Boxes, atlas.Box{ID: p.id, Dir: filepath.Dir(p.path), Title: p.title, Line: "Does " + p.title + ".",
-			ZoneID: zoneOf[p.id], Side: atlas.SideMid, Open: true, MemberIDs: []string{program.Objects[i].ID}, Keys: []atlas.Key{},
+			ZoneID: zoneOf[p.id], Side: atlas.SideMid, Open: true, MemberIDs: []string{program.Objects[i].ID},
 			Files: []atlas.File{{Path: p.path, Line: p.title + ".", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{}}}})
 	}
 	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{program.Target.ID: program},

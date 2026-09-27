@@ -548,7 +548,6 @@ type Box struct {
 	ForTests  bool   `json:"for_tests,omitempty"`
 	Unreached bool   `json:"unreached,omitempty"`
 	Files     []File `json:"files"`
-	Keys      []Key  `json:"keys"`
 }
 
 // OffCanvas reports a part that is kept in the atlas but not drawn: one made
@@ -641,15 +640,6 @@ type Symbol struct {
 	Activation       string `json:"activation,omitempty"`
 	Operation        string `json:"operation,omitempty"`
 	OperationSummary string `json:"operation_summary,omitempty"`
-}
-
-// Key is one key symbol shown on a box.
-type Key struct {
-	SymbolID string `json:"symbol_id"`
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Doc      string `json:"doc,omitempty"`
-	LineNo   int    `json:"line_no"`
 }
 
 // Arrow joins two boxes of one target, caller to callee.
@@ -1318,7 +1308,7 @@ func Validate(value Atlas) error {
 			if invalidText(box.Title) || invalidText(box.Line) || strings.TrimSpace(box.Title) == "" {
 				return fmt.Errorf("atlas: box %q has an invalid title or line", box.ID)
 			}
-			if box.Files == nil || box.Keys == nil {
+			if box.Files == nil {
 				return fmt.Errorf("atlas: box %q is missing collections", box.ID)
 			}
 			for _, file := range box.Files {

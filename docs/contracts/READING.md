@@ -71,8 +71,13 @@ new description or selection requests.
   evidence without becoming description candidates. An
   accepted directory `open=no` can leave descendant directory/file rows unasked
   in exploration mode. Symbol selection still reviews its complete candidate
-  set; caption requests follow the existing displayed-key selection, not an
-  independent directory-closure veto. Missing or refused decisions do not close
+  set; caption requests follow the existing displayed-key selection (in each
+  file, at most three of the keys the selection chose, those with a line or a
+  docstring first, then by name), not an independent directory-closure veto.
+  A part carries no key list of its own: `Box.Keys`, three per box by that
+  rule or by an "upper-case first letter is exported" rank, had no reader and
+  was deleted on 2026-09-27 (atlas v14); the page reads each declaration's
+  `key`. Missing or refused decisions do not close
   descendants. The complete graph and question evidence remain, and accepted
   activation evidence enters its independent operation review.
   Independent directory, file, callable, type, boundary and operation

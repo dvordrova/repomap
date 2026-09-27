@@ -33,8 +33,8 @@ func TestSelectedModuleBodyKeepsCallsWithoutAssigningTheWholeFile(t *testing.T) 
 	}
 	file := atlas.File{Path: "app.py", Source: atlas.SourceModel, Line: "Starts the work.", Symbols: []atlas.Symbol{}}
 	value := atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{{ID: program.Target.ID, Name: "app", Root: ".", Boxes: []atlas.Box{
-		{ID: "start", Dir: ".", Title: "Startup", Line: "Calls work during startup.", Side: atlas.SideIn, MemberIDs: []string{ids["app"]}, Files: []atlas.File{file}, Keys: []atlas.Key{}},
-		{ID: "work", Dir: ".", Title: "Work", Line: "Does the work.", Side: atlas.SideMid, MemberIDs: []string{ids["work"]}, Files: []atlas.File{file}, Keys: []atlas.Key{}},
+		{ID: "start", Dir: ".", Title: "Startup", Line: "Calls work during startup.", Side: atlas.SideIn, MemberIDs: []string{ids["app"]}, Files: []atlas.File{file}},
+		{ID: "work", Dir: ".", Title: "Work", Line: "Does the work.", Side: atlas.SideMid, MemberIDs: []string{ids["work"]}, Files: []atlas.File{file}},
 	}, Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}}}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}
 	indexes, err := ProjectAtlas(map[string]programindex.Index{program.Target.ID: program}, value)
 	if err != nil {

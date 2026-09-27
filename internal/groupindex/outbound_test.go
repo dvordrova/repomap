@@ -17,7 +17,7 @@ func TestAtlasOutboundSurvivesIncomingLaneAndRebindsAcrossTargets(t *testing.T) 
 	makeTarget := func(p programindex.Index) atlas.Target {
 		return atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: p.Target.Kind,
 			Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
-			Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "Proxy", Line: "Receives and forwards requests.", Side: atlas.SideIn, Keys: []atlas.Key{}, MemberIDs: []string{p.Objects[0].ID},
+			Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "Proxy", Line: "Receives and forwards requests.", Side: atlas.SideIn, MemberIDs: []string{p.Objects[0].ID},
 				Files: []atlas.File{{Path: "api/proxy.go", Source: atlas.SourceModel, Line: "Proxy implementation.", Symbols: []atlas.Symbol{}}}}},
 			Boundaries: []atlas.Boundary{
 				{ID: "send-a", ObjectID: library.Objects[0].ID, BoxID: "api", Direction: atlas.DirectionOut, Kind: atlas.BoundaryClientRequest,

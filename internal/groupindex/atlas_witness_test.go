@@ -70,8 +70,8 @@ func TestUnresolvedCallDrawsItsWitnessedCandidatesAsPossibleArrows(t *testing.T)
 	exactSentence := "Event loop calls Client connection handling: sendReplyToClient."
 	arrows := []atlas.Arrow{{ID: "a1", From: "loop", To: "clients", Calls: 1, Witnesses: []atlas.Witness{{Caller: "tick", Callee: "sendReplyToClient"}}, Sentence: exactSentence}}
 	target := atlas.Target{ID: program.Target.ID, Name: "server", Root: ".", Zones: []atlas.Zone{}, Arrows: arrows, Boundaries: []atlas.Boundary{}, Boxes: []atlas.Box{
-		{ID: "loop", Dir: ".", Title: "Event loop", Line: "Waits for sockets.", Side: atlas.SideMid, MemberIDs: []string{ids["processEvents"], ids["tick"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("loop.c")}},
-		{ID: "clients", Dir: ".", Title: "Client connection handling", Line: "Reads queries and writes replies.", Side: atlas.SideMid, MemberIDs: []string{ids["readQueryFromClient"], ids["sendReplyToClient"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("server.c")}},
+		{ID: "loop", Dir: ".", Title: "Event loop", Line: "Waits for sockets.", Side: atlas.SideMid, MemberIDs: []string{ids["processEvents"], ids["tick"]}, Files: []atlas.File{file("loop.c")}},
+		{ID: "clients", Dir: ".", Title: "Client connection handling", Line: "Reads queries and writes replies.", Side: atlas.SideMid, MemberIDs: []string{ids["readQueryFromClient"], ids["sendReplyToClient"]}, Files: []atlas.File{file("server.c")}},
 	}}
 	value := atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}}
 	indexes, err := ProjectAtlas(map[string]programindex.Index{program.Target.ID: program}, value)
@@ -160,8 +160,8 @@ func TestStoredNamesTieInSourceOrder(t *testing.T) {
 		return atlas.File{Path: path, Line: "Preset.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}
 	}
 	target := atlas.Target{ID: program.Target.ID, Name: "server", Root: ".", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{}, Boundaries: []atlas.Boundary{}, Boxes: []atlas.Box{
-		{ID: "loop", Dir: ".", Title: "Event loop", Line: "Waits for sockets.", Side: atlas.SideMid, MemberIDs: []string{ids["processEvents"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("loop.c")}},
-		{ID: "clients", Dir: ".", Title: "Clients", Line: "Serves clients.", Side: atlas.SideMid, MemberIDs: []string{ids["zapHandler"], ids["acceptHandler"], ids["timerHandler"]}, Keys: []atlas.Key{}, Files: []atlas.File{file("server.c")}},
+		{ID: "loop", Dir: ".", Title: "Event loop", Line: "Waits for sockets.", Side: atlas.SideMid, MemberIDs: []string{ids["processEvents"]}, Files: []atlas.File{file("loop.c")}},
+		{ID: "clients", Dir: ".", Title: "Clients", Line: "Serves clients.", Side: atlas.SideMid, MemberIDs: []string{ids["zapHandler"], ids["acceptHandler"], ids["timerHandler"]}, Files: []atlas.File{file("server.c")}},
 	}}
 	indexes, err := ProjectAtlas(map[string]programindex.Index{program.Target.ID: program}, atlas.Atlas{Version: atlas.Version, Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
 	if err != nil {

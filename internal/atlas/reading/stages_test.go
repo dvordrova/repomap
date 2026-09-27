@@ -149,14 +149,19 @@ func withSymbols(t *testing.T, graph atlas.Graph) atlas.Graph {
 	for i := 1; i <= 8; i++ {
 		name := "Op" + itoa(i)
 		objectID := "n" + itoa(100+i)
+		// Op05 alone has a docstring.
+		doc := ""
+		if i == 5 {
+			doc = "Runs the fifth operation."
+		}
 		graph.Places[core].File.Decls = append(graph.Places[core].File.Decls, atlas.Decl{
-			ObjectID: objectID, Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true,
+			ObjectID: objectID, Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true, Doc: doc,
 		})
 		graph.Places = append(graph.Places, atlas.Place{
 			ID: atlas.SymbolID("svc/core/c.go", 10+i, name), Kind: atlas.PlaceSymbol, Path: "svc/core/c.go",
 			LineNo: 10 + i, Depth: 1, TargetIDs: []string{"svc"}, Parent: atlas.FileID("svc/core/c.go"),
 			Given:  "func " + name,
-			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: objectID, Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true}, Candidate: true, Rank: i},
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: objectID, Name: name, Kind: "function", Signature: "func()", LineNo: 10 + i, Exported: true, Doc: doc}, Candidate: true, Rank: i},
 		})
 	}
 	atlas.SortPlaces(graph.Places)
@@ -180,38 +185,36 @@ func TestSymbolsGetLinesAndAtMostFiveKeysPerFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	var core atlas.File
-	var box atlas.Box
 	for _, target := range result.Atlas.Targets {
 		for _, candidate := range target.Boxes {
 			for _, file := range candidate.Files {
 				if file.Path == "svc/core/c.go" {
-					core, box = file, candidate
+					core = file
 				}
 			}
 		}
 	}
-	keys, lined := 0, 0
+	keys := 0
+	var lined []string
 	for _, symbol := range core.Symbols {
 		if symbol.Key {
 			keys++
 		}
 		if strings.HasPrefix(symbol.Line, "Text for") {
-			lined++
+			lined = append(lined, symbol.Name)
 		}
 	}
 	// c.go declares F (not a candidate) plus eight candidates. The fake names
 	// no key inside the part, so the part keeps five by rank, with captions
-	// only for the three displayed keys.
-	if lined != 3 || keys != lines.MaxKeysPerFile {
-		t.Fatalf("lined %d keys %d: %+v", lined, keys, core.Symbols)
+	// only for three of the file's keys: the documented Op05 first, then by
+	// name.
+	if !reflect.DeepEqual(lined, []string{"Op01", "Op02", "Op05"}) || keys != lines.MaxKeysPerFile {
+		t.Fatalf("lined %v keys %d: %+v", lined, keys, core.Symbols)
 	}
 	for _, symbol := range core.Symbols {
 		if symbol.Key && !strings.HasPrefix(symbol.Name, "Op") {
 			t.Fatalf("a non-candidate became a key: %+v", symbol)
 		}
-	}
-	if len(box.Keys) != 3 || box.Keys[0].Doc == "" {
-		t.Fatalf("box keys: %+v", box.Keys)
 	}
 	var use atlas.StageUse
 	for _, candidate := range result.Uses {

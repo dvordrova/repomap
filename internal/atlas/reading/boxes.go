@@ -50,29 +50,38 @@ func (box *boxState) offCanvas() bool {
 }
 
 // overviewKeys chooses the declarations the overview describes, before any
-// part is drawn: each file of a target shows up to three of the keys the
-// selection found in it, the documented ones first. A declaration shared by targets is chosen once. A
-// file without a selected key shows ranked keys, which the selection did not
-// choose and which are therefore not described.
+// part is drawn: each file of a target describes up to three of the keys the
+// selection found in it, those with a line or a docstring first, then by
+// name. A declaration shared by targets is chosen once.
 func (r *reader) overviewKeys() map[string]bool {
+	type key struct {
+		id, name   string
+		documented bool
+	}
 	selected := make(map[string]bool)
 	for _, target := range r.opts.Targets {
 		for _, place := range r.opts.Graph.Places {
 			if place.Kind != atlas.PlaceFile || !contains(place.TargetIDs, target.ID) {
 				continue
 			}
-			file := atlas.File{Path: place.Path}
+			var keys []key
 			for _, decl := range place.File.Decls {
-				symbol := atlas.Symbol{ID: r.symbolID(place.Path, decl.LineNo, decl.Name), Name: decl.Name, Doc: decl.Doc, LineNo: decl.LineNo}
-				if line, ok := r.symbolLine[symbol.ID]; ok {
-					symbol.Line = line.value
+				id := r.symbolID(place.Path, decl.LineNo, decl.Name)
+				if !contains(r.keys[place.ID], id) {
+					continue
 				}
-				symbol.Key = contains(r.keys[place.ID], symbol.ID)
-				file.Symbols = append(file.Symbols, symbol)
+				line, lined := r.symbolLine[id]
+				keys = append(keys, key{id: id, name: decl.Name, documented: lined && line.value != "" || decl.Doc != ""})
 			}
-			for _, key := range modelKeys([]atlas.File{file}) {
-				if contains(r.keys[r.places[key.SymbolID].Parent], key.SymbolID) {
-					selected[key.SymbolID] = true
+			sort.SliceStable(keys, func(i, j int) bool {
+				if keys[i].documented != keys[j].documented {
+					return keys[i].documented
+				}
+				return keys[i].name < keys[j].name
+			})
+			for _, chosen := range keys[:min(len(keys), 3)] {
+				if contains(r.keys[r.places[chosen.id].Parent], chosen.id) {
+					selected[chosen.id] = true
 				}
 			}
 		}
