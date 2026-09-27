@@ -250,6 +250,11 @@ type pageMapNode struct {
 	Subtitle       string
 	Remote         bool
 	SourceKind     string
+	// DisplayGroup names the display frame outside destination frames of
+	// different programs stand in together because their records name the
+	// same destination. The group is no participant: equal destination text
+	// proves no identity, and each frame keeps its own program and arrows.
+	DisplayGroup string
 }
 
 type pageMapEdge struct {

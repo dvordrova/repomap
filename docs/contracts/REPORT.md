@@ -126,14 +126,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   native HTTP registration keeps its original absence of an implementation
   attachment. Selecting an input opens the same saved path and sources. External
   communication records without an exact local peer retain selectable nodes
-  inside amber destination frames, using the external catalogue's grouping
-  across the whole system: one frame per destination text, with an arrow from
-  each program that talks to it (Redis drew DNS resolver and TCP endpoint once
-  per program linking anet.c). Records calling the same native outside symbol
-  share one tile, and each program's caller keeps its own arrow and source; a
-  tile or frame several programs share belongs to none of them. Every record
-  stays in its own component's catalogue, and records of different symbols
-  stay separate tiles.
+  inside amber destination frames, using each component's external catalogue
+  grouping: one frame per destination its records name, one tile per native
+  outside symbol it calls (the same call made from several places is one
+  tile; every caller keeps its line and source on the arrow). Every frame and
+  tile belongs to its component, and only that component's arrows reach it:
+  equal destination text proves no identity. One "TCP endpoint" box had taken
+  arrows from all three Redis programs, though for redis-cli that endpoint is
+  redis-server and for redis-server its master. Frames of different
+  components that name the same destination stand together in one display
+  group, an amber frame around them in the outer layout, so the three "DNS
+  resolver" frames stand side by side instead of scattered. The group is no
+  participant: it has no title, reading, selection or hover, ends no arrow
+  and adds no relation; each frame in it keeps its own program's arrow.
+  Every record stays in its own component's catalogue, and records of
+  different symbols stay separate tiles.
   When a saved connection identifies one already displayed peer in another
   target, the canvas connects the original caller directly to that peer/input
   instead of adding a third participant. Its outbound catalogue and source

@@ -108,7 +108,7 @@ function Part({data}) {
   </div>;
 }
 function Area({data}) {
-  return <div className={`flow-area ${data.branch==='component'?'flow-component':data.branch==='communication'?'flow-communication':['inputs','inputs-part'].includes(data.branch)?'flow-input-collection':data.branch!=='area'?'':data.lane==='core'?'flow-area-core':data.lane==='triggers'?'flow-area-entry':''}`}>
+  return <div className={`flow-area ${data.branch==='component'?'flow-component':['communication','communication-group'].includes(data.branch)?'flow-communication':['inputs','inputs-part'].includes(data.branch)?'flow-input-collection':data.branch!=='area'?'':data.lane==='core'?'flow-area-core':data.lane==='triggers'?'flow-area-entry':''}`}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
@@ -291,7 +291,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   function enter(id){
     if(!hover.allowed)return;
-    const n=byID.get(id);if(!n)return;
+    const n=byID.get(id);if(!n||n.display)return;
     // Hover affects the drawing only. The links and description opened by a
     // click stay usable while the pointer crosses other cards to reach them.
     // Pointing anywhere inside a target looks at the target: its frame, its
@@ -608,14 +608,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         const node=event.target.closest('.react-flow__node');
         if(node){enter(node.dataset.id);return;}
         const point=instance.screenToFlowPosition({x:event.clientX,y:event.clientY});
-        const area=drawing.nodes.filter(n=>n.frame&&visible(n.id)&&point.x>=n.absolute.x&&point.x<=n.absolute.x+n.width&&point.y>=n.absolute.y&&point.y<=n.absolute.y+n.height)
+        const area=drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&point.x>=n.absolute.x&&point.x<=n.absolute.x+n.width&&point.y>=n.absolute.y&&point.y<=n.absolute.y+n.height)
           .sort((a,b)=>a.width*a.height-b.width*b.height)[0];
         if(area)enter(area.id);
       }}
       onPaneClick={event=>{
         if(instance){
           const p=instance.screenToFlowPosition({x:event.clientX,y:event.clientY});
-          const frame=drawing.nodes.find(n=>n.frame&&visible(n.id)&&byID.get(n.id)?.branch!=='inputs-part'&&
+          const frame=drawing.nodes.find(n=>n.frame&&!n.display&&visible(n.id)&&byID.get(n.id)?.branch!=='inputs-part'&&
             (byID.get(n.id)?.branch==='component'?!openComponents.has(n.id):!communicationsOpen.has(n.id))&&
             p.x>=n.absolute.x&&p.x<=n.absolute.x+n.width&&p.y>=n.absolute.y&&p.y<=n.absolute.y+n.height);
           if(frame){select(frame.id,event,true);return;}
@@ -638,7 +638,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
       <ViewportPortal>
-        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
+        {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} number={number.get(n.id)} badge={badge(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select}/>)}

@@ -470,3 +470,34 @@ test('an area with one arrow draws it straight between its two parts, not around
   const a=centre('aof'),b=centre('rdb');
   assert.ok(length<=Math.abs(a.x-b.x)+Math.abs(a.y-b.y),`the arrow runs ${Math.round(length)} between parts whose centres are ${Math.round(Math.abs(a.x-b.x)+Math.abs(a.y-b.y))} apart`);
 });
+
+// One "TCP endpoint" box took arrows from all three Redis programs. Each
+// program's destination frame stays a participant of its own, with its own
+// arrow; frames naming the same destination stand in one display group.
+test('frames naming one destination stand in a display group, each keeping its own arrow',async()=>{
+  const items=[
+    {id:'server',title:'redis-server',branch:'component'},{id:'cli',title:'redis-cli',branch:'component'},
+    {id:'net-s',title:'Networking',category:'part'},{id:'net-c',title:'Network client',category:'part'},
+    {id:'tcp-s',title:'TCP endpoint',branch:'communication',category:'external',displayGroup:'tcp'},
+    {id:'tcp-c',title:'TCP endpoint',branch:'communication',category:'external',displayGroup:'tcp'},
+    {id:'connect-s',title:'connect',category:'external'},{id:'connect-c',title:'connect',category:'external'},
+  ];
+  const areaList=[{id:'server',nodes:['net-s']},{id:'cli',nodes:['net-c']},{id:'tcp-s',nodes:['connect-s']},{id:'tcp-c',nodes:['connect-c']}];
+  const prepared=await prepareInteriors(cards(items),[{from:'net-s',to:'connect-s'},{from:'net-c',to:'connect-c'}],areaList);
+  const {layout,records}=await layoutPrepared(prepared,1200,700);
+  const at=new Map(layout.nodes.map(node=>[node.id,node]));
+  const group=layout.nodes.find(node=>node.display);
+  assert.ok(group&&records.find(record=>record.id===group.id)?.branch==='communication-group','one display group is drawn');
+  for(const id of ['tcp-s','tcp-c']){
+    const frame=at.get(id);
+    assert.equal(frame.parentId,undefined,`${id} stays a participant of its own`);
+    assert.ok(frame.absolute.x>=group.absolute.x-1e-6&&frame.absolute.y>=group.absolute.y-1e-6&&
+      frame.absolute.x+frame.width<=group.absolute.x+group.width+1e-6&&frame.absolute.y+frame.height<=group.absolute.y+group.height+1e-6,`${id} stands inside the group`);
+  }
+  for(const [from,to] of [['net-s','tcp-s'],['net-c','tcp-c']]){
+    const edge=layout.edges.find(edge=>edge.from===from),end=edge.segments.at(-1).at(-1),frame=at.get(to);
+    assert.equal(edge.outerTo,to,`${from}'s arrow ends at its own frame`);
+    assert.ok(border(end,frame),`${from}'s arrow reaches ${to}'s border`);
+  }
+  assert.ok(!layout.edges.some(edge=>edge.outerTo===group.id||edge.to===group.id),'the group ends no arrow');
+});

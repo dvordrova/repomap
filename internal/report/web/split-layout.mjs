@@ -385,13 +385,29 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   const outerOptions={...options,'elk.spacing.nodeNode':'16','elk.spacing.edgeNode':'8','elk.spacing.edgeEdge':'4',
     'elk.layered.spacing.nodeNodeBetweenLayers':'32',
     'elk.layered.spacing.edgeNodeBetweenLayers':'8','elk.layered.spacing.edgeEdgeBetweenLayers':'4'};
-  const input={id:'world',layoutOptions:outerOptions,children:prepared.roots.map(root=>{
-    const interior=prepared.interiors.get(root.id);
-    return {id:root.id,width:interior.width,height:interior.height,layoutOptions:{}};
-  }),edges:prepared.aggregates.map(edge=>({id:edge.id,sources:[edge.from],targets:[edge.to]}))};
+  // Destination frames of different programs that name the same destination
+  // stand together in a display group: a compound of the outer graph around
+  // them, drawn as a frame that is no participant and ends no arrow. Each
+  // frame stays a root with its own program's arrows.
+  const members=new Map();
+  for(const root of prepared.roots){
+    const group=byID.get(root.id)?.displayGroup;if(!group)continue;
+    if(!members.has(group))members.set(group,[]);members.get(group).push(root.id);
+  }
+  for(const [group,ids] of [...members])if(ids.length<2)members.delete(group);
+  const groupID=group=>`display-group:${group}`,grouped=new Set([...members.values()].flat());
+  const leaf=root=>{const interior=prepared.interiors.get(root.id);return {id:root.id,width:interior.width,height:interior.height,layoutOptions:{}};};
+  const input={id:'world',layoutOptions:members.size?{...outerOptions,'elk.hierarchyHandling':'INCLUDE_CHILDREN'}:outerOptions,
+    children:[...prepared.roots.filter(root=>!grouped.has(root.id)).map(leaf),
+      ...[...members].map(([group,ids])=>({id:groupID(group),layoutOptions:{'elk.padding':'[top=16,left=16,bottom=16,right=16]'},
+        children:ids.map(id=>leaf(prepared.roots.find(root=>root.id===id)))}))],
+    edges:prepared.aggregates.map(edge=>({id:edge.id,sources:[edge.from],targets:[edge.to]}))};
+  // The placed participants, with a group's members at their world position.
+  const flat=placed=>placed.children.flatMap(node=>node.children?node.children.map(member=>({...member,x:node.x+member.x,y:node.y+member.y})):[node]);
+  const participants=graph=>graph.children.flatMap(node=>node.children||[node]);
   const available={width:Math.max(1,width-2*overviewInset),height:Math.max(1,height-2*overviewInset)};
   function metrics(placed){
-    const roots=placed.children;
+    const roots=flat(placed);
     const span={width:Math.max(...roots.map(node=>node.x+node.width))-Math.min(...roots.map(node=>node.x)),
       height:Math.max(...roots.map(node=>node.y+node.height))-Math.min(...roots.map(node=>node.y))};
     const zoom=Math.min(.44,available.width/span.width,available.height/span.height);
@@ -410,8 +426,9 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   for(const nativePorts of [false,true])for(const direction of ['DOWN','RIGHT']){
    for(const unzip of [false,true]){
     const candidate=structuredClone(input);candidate.layoutOptions['elk.direction']=direction;
+    for(const node of candidate.children)if(node.children)node.layoutOptions['elk.direction']=direction;
     if(nativePorts){
-      for(const node of candidate.children){node.ports=structuredClone(prepared.interiors.get(node.id).ports);node.layoutOptions['elk.portConstraints']='FIXED_POS';}
+      for(const node of participants(candidate)){node.ports=structuredClone(prepared.interiors.get(node.id).ports);node.layoutOptions['elk.portConstraints']='FIXED_POS';}
       for(const edge of candidate.edges){const original=prepared.aggregates.find(a=>a.id===edge.id);edge.sources=[original.sourcePort];edge.targets=[original.targetPort];}
     }
     if(unzip)candidate.layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
@@ -427,7 +444,7 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     // positions. Interiors keep their prepared geometry in both passes.
     // A lower corrected fit affects every summary, including participants
     // that were already readable in the selected candidate.
-    const growing=graph.children.flatMap(node=>{
+    const growing=flat(graph).flatMap(node=>{
       const record=byID.get(node.id);
       if(!record.overviewHeightAtWidth)return [];
       const physicalWidth=Math.max(node.width*best.zoom,record.overviewMinWidth||0);
@@ -464,7 +481,7 @@ export async function layoutPrepared(prepared,width=1200,height=700){
       };
       const zoom=Math.min(best.zoom,reserve('width'),reserve('height'));
       const candidate=structuredClone(bestInput);
-      for(const node of candidate.children){
+      for(const node of participants(candidate)){
         const minimum=growing.find(item=>item.id===node.id);if(!minimum)continue;
         node.width=Math.max(node.width,minimum.needed.width/zoom);
         node.height=Math.max(node.height,minimum.needed.height/zoom);
@@ -479,11 +496,15 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     }
   }
   const rootOf=new Map();for(const [root,interior] of prepared.interiors)for(const node of interior.local.nodes)rootOf.set(node.id,root);
-  const nodes=[],labels=[],rootOffsets=new Map(graph.children.map(node=>[node.id,{x:node.x,y:node.y}]));
+  const placedRoots=flat(graph);
+  // A display group is drawn first, under its members.
+  const nodes=graph.children.filter(node=>node.children).map(node=>({id:node.id,position:{x:node.x,y:node.y},absolute:{x:node.x,y:node.y},
+    width:node.width,height:node.height,frame:true,display:true}));
+  const labels=[],rootOffsets=new Map(placedRoots.map(node=>[node.id,{x:node.x,y:node.y}]));
   // The final text reserve can enlarge a participant. Fit its already prepared
   // drawing to that rectangle with one uniform transform instead of leaving a
   // miniature in its corner. No interior layout or zoom-time work is added.
-  const interiorScales=new Map(graph.children.map(root=>{
+  const interiorScales=new Map(placedRoots.map(root=>{
     const interior=prepared.interiors.get(root.id);
     return [root.id,Math.min(root.width/interior.local.width,root.height/interior.local.height)];
   }));
@@ -494,8 +515,13 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   });
   for(const record of records)byID.set(record.id,record);
   const scales=new Map([...prepared.scales].map(([id,scale])=>[id,scale*interiorScales.get(rootOf.get(id))/prepared.interiors.get(rootOf.get(id)).scale]));
-  const routes=new Map((graph.edges||[]).map(edge=>[edge.id,(edge.sections||[]).map(section=>[section.startPoint,...section.bendPoints||[],section.endPoint])]));
-  for(const root of graph.children){
+  // An arrow ELK routes inside a group is given in the group's coordinates.
+  const containers=new Map(graph.children.map(node=>[node.id,{x:node.x,y:node.y}]));
+  const routes=new Map((graph.edges||[]).map(edge=>{
+    const offset=containers.get(edge.container)||{x:0,y:0};
+    return [edge.id,(edge.sections||[]).map(section=>[section.startPoint,...section.bendPoints||[],section.endPoint].map(point=>transform(point,1,offset)))];
+  }));
+  for(const root of placedRoots){
     const interior=prepared.interiors.get(root.id),offset=rootOffsets.get(root.id),scale=interiorScales.get(root.id);
     for(const node of interior.local.nodes)nodes.push({...node,
       position:node.parentId?{x:node.position.x*scale,y:node.position.y*scale}:offset,
@@ -529,6 +555,7 @@ export async function layoutPrepared(prepared,width=1200,height=700){
         title:outside.name||outside.title,point:group.incoming?route.at(-1).at(-1):route[0][0]});
     }
   }
-  return {layout:{nodes,edges,labels,width:graph.width,height:graph.height},records,
+  const groups=nodes.filter(node=>node.display).map(node=>({id:node.id,title:'',name:'',branch:'communication-group',category:'external',display:true,children:[]}));
+  return {layout:{nodes,edges,labels,width:graph.width,height:graph.height},records:[...records,...groups],
     scales,owner:prepared.owner,summaries:prepared.summaries};
 }

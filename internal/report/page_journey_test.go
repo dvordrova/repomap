@@ -1,7 +1,6 @@
 package report
 
 import (
-	"slices"
 	"strings"
 	"testing"
 
@@ -142,9 +141,12 @@ func TestInputPathIsTheWitnessTraceOrderedByCallDepth(t *testing.T) {
 	}
 }
 
-// Redis linked anet.c into three programs and the system map drew "DNS
-// resolver" and "TCP endpoint" once per program.
-func TestSystemMapDrawsOneBoxPerOutsideDestinationWithAnArrowFromEachProgram(t *testing.T) {
+// One "TCP endpoint" box took arrows from all three Redis programs, though
+// for redis-cli that endpoint is redis-server and for redis-server its
+// master: equal destination text proves no identity. Each program keeps its
+// own destination frame, tile and arrow; frames naming the same destination
+// only share a display group.
+func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	part := func(target string) *pageMap {
 		m := &pageMap{Nodes: []pageMapNode{{ID: "n-g1", FullTitle: "Networking"}}}
 		scopeTargetMapIDs(m, target)
@@ -154,39 +156,47 @@ func TestSystemMapDrawsOneBoxPerOutsideDestinationWithAnArrowFromEachProgram(t *
 		return pageOutbound{ID: target + "-out-b108", Destination: "DNS resolver", External: "netdb.h.gethostbyname", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "anet.c:115"}}
 	}
 	view := pageView{Sections: []*pageSection{
-		{ID: "t1", programTargetID: "t1", ShortLabel: "redis-server", Map: part("t1"), Outbound: []pageOutbound{resolve("t1")}},
+		{ID: "t1", programTargetID: "t1", ShortLabel: "redis-server", Map: part("t1"), Outbound: []pageOutbound{resolve("t1"),
+			{ID: "t1-out-b120", Destination: "Master", External: "sys/socket.h.connect", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "replication.c:40"}}}},
 		{ID: "t2", programTargetID: "t2", ShortLabel: "redis-benchmark", Map: part("t2"), Outbound: []pageOutbound{resolve("t2")}},
 		{ID: "t4", programTargetID: "t4", ShortLabel: "redis-cli", Map: part("t4"), Outbound: []pageOutbound{resolve("t4")}},
 	}}
 	got := view.SystemMap()
-	var frames, tiles []pageMapNode
+	frames := map[string]pageMapNode{}
+	tiles := map[string]pageMapNode{}
 	for _, node := range got.Nodes {
 		switch {
 		case node.Branch == "communication":
-			frames = append(frames, node)
+			frames[node.ID] = node
 		case node.ItemKind == "External communication":
-			tiles = append(tiles, node)
+			tiles[node.ID] = node
 		}
 	}
-	if len(frames) != 1 || frames[0].FullTitle != "DNS resolver" || len(tiles) != 1 || frames[0].Children != tiles[0].ID {
-		t.Fatalf("one destination drawn as %d boxes holding %d tiles: %+v", len(frames), len(tiles), frames)
-	}
-	callers := map[string]bool{}
-	for _, edge := range got.Edges {
-		if edge.To == tiles[0].ID {
-			callers[edge.From] = true
-		}
-	}
+	groups := map[string]bool{}
 	for _, target := range []string{"t1", "t2", "t4"} {
-		if !callers[targetMapNodeID(target, "n-g1")] {
-			t.Fatalf("program %s lost its arrow to the destination: %v", target, callers)
+		frame, tile := frames["system-"+target+"-out-b108-destination"], tiles["system-"+target+"-out-b108"]
+		if frame.Owner != target || tile.Owner != target || frame.Children != tile.ID || frame.FullTitle != "DNS resolver" {
+			t.Fatalf("program %s lost its own destination: frame %+v tile %+v", target, frame, tile)
+		}
+		groups[frame.DisplayGroup] = true
+		callers := map[string]bool{}
+		for _, edge := range got.Edges {
+			if edge.To == tile.ID {
+				callers[edge.From] = true
+			}
+		}
+		if len(callers) != 1 || !callers[targetMapNodeID(target, "n-g1")] {
+			t.Fatalf("the arrows to %s's tile come from %v", target, callers)
 		}
 	}
-	if !slices.Contains(tiles[0].Aliases, "system-t2-out-b108") || !slices.Contains(tiles[0].Aliases, "system-t4-out-b108") {
-		t.Fatalf("a folded record lost its old link: %+v", tiles[0].Aliases)
+	if len(groups) != 1 || groups[""] {
+		t.Fatalf("frames naming one destination stand in one display group: %v", groups)
 	}
-	if tiles[0].Owner != "" || frames[0].Owner != "" {
-		t.Fatalf("an outside call three programs make was drawn as one program's: tile %q, box %q", tiles[0].Owner, frames[0].Owner)
+	if lone := frames["system-t1-out-b120-destination"]; lone.ID == "" || lone.DisplayGroup != "" {
+		t.Fatalf("a destination only one program names needs no group: %+v", lone)
+	}
+	if len(frames) != 4 || len(tiles) != 4 {
+		t.Fatalf("frames %d, tiles %d", len(frames), len(tiles))
 	}
 }
 

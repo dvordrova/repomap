@@ -303,7 +303,7 @@ function rmInputPath(n,byID){
       return {id:n.id,title:n.dataset.title,branch:n.dataset.branch,activation:n.dataset.activation,lane:n.dataset.lane,
         summary:n.dataset.summary,symbols:(function(){try{return JSON.parse(n.dataset.symbols||'[]');}catch(_){return [];}})(),symbolCalls:(function(){try{return JSON.parse(n.dataset.symbolCalls||'[]');}catch(_){return [];}})(),subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
         role:n.dataset.role,roleRef:n.dataset.roleRef,language:n.dataset.language,componentKind:n.dataset.componentKind,
-        trace:n.dataset.activation?rmInputPath(n,byID):[],
+        trace:n.dataset.activation?rmInputPath(n,byID):[],displayGroup:n.dataset.displayGroup||'',
         componentOwner:component?.id||'',componentName:component?.dataset.title||'',
         children:(n.dataset.children||'').split(/\s+/).filter(function(id){return id&&(n.dataset.branch==='inputs'||!byID[id]?.dataset.activation);}),kind:kind(n),category:category(n)};
     });

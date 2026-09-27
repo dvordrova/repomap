@@ -76,7 +76,7 @@ function layerThreshold(frames,byID,width,height,depth,retaining=false){
 // entrance. A smaller sibling must not begin with microscopic headings.
 export function firstDetailZoom(nodes,records,width,height){
   return Math.max(systemViewport(nodes,width,height).zoom,
-    layerThreshold(nodes.filter(node=>node.frame&&!node.parentId),new Map(records.map(record=>[record.id,record])),width,height,0));
+    layerThreshold(nodes.filter(node=>node.frame&&!node.parentId&&!node.display),new Map(records.map(record=>[record.id,record])),width,height,0));
 }
 
 // One decision per hierarchy depth. The first readable interior opens its
@@ -87,7 +87,7 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
   const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
   const layers=new Map();
   // An input collection's part groups open with the collection itself.
-  for(const node of nodes.filter(node=>node.frame&&byID.get(node.id)?.branch!=='inputs-part')){
+  for(const node of nodes.filter(node=>node.frame&&!node.display&&byID.get(node.id)?.branch!=='inputs-part')){
     let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;
     if(!layers.has(depth))layers.set(depth,[]);
     layers.get(depth).push(node);
@@ -106,7 +106,7 @@ export function layerFloor(nodes,records,id,width,height){
   const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
   const depthOf=node=>{let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;return depth;};
   const node=placed.get(id);if(!node)return Infinity;
-  const frames=nodes.filter(node=>node.frame&&byID.get(node.id)?.branch!=='inputs-part');
+  const frames=nodes.filter(node=>node.frame&&!node.display&&byID.get(node.id)?.branch!=='inputs-part');
   let floor=systemViewport(nodes,width,height).zoom;
   for(let depth=0;depth<=depthOf(node);depth++){
     const layer=frames.filter(frame=>depthOf(frame)===depth);
