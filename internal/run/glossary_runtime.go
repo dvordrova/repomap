@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/facts"
@@ -64,6 +65,34 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 	if err := writeGlossaryArtifact(runDir, "glossary.json", catalog); err != nil {
 		return err
 	}
+	// Where each term is written in the repository's own files: a fact the
+	// glossary lists, found by the same lookup that underlines the term.
+	// Only text is searched: a binary file is not where a reader looks.
+	paths := collector.Paths()
+	if options.Corpus != nil {
+		paths = options.Corpus.VisiblePaths()
+	}
+	data.GlossaryOccurrences = terminology.Occurrences(catalog, paths, func(path string) (string, bool) {
+		var text []byte
+		if options.Corpus != nil {
+			id, known := options.Corpus.ID(path)
+			if !known {
+				return "", false
+			}
+			content, err := options.Corpus.ReadFileAll(id)
+			if err != nil {
+				return "", false
+			}
+			text = content.Bytes
+		} else {
+			read, err := os.ReadFile(filepath.Join(options.Repo, filepath.FromSlash(path)))
+			if err != nil {
+				return "", false
+			}
+			text = read
+		}
+		return string(text), utf8.Valid(text)
+	})
 	state := "ready"
 	if catalog.PartialComparison {
 		state = "partial comparison; original explanations preserved"

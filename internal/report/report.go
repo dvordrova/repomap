@@ -53,6 +53,10 @@ type ReportData struct {
 	Questions   []atlas.QuestionRoute `json:"questions,omitempty"`
 	Learning    *atlas.LearningPlan   `json:"learning,omitempty"`
 	Glossary    *terminology.Catalog  `json:"glossary,omitempty"`
+	// GlossaryOccurrences are the lines of the repository's files that write
+	// each glossary spelling, found by the shared term lookup during the
+	// ordinary run: the files a term appears in, not its analysis context.
+	GlossaryOccurrences []terminology.TermOccurrences `json:"glossary_occurrences,omitempty"`
 
 	OpenablePaths []string          `json:"openable_paths"`
 	SourceIDs     map[string]string `json:"source_ids,omitempty"`

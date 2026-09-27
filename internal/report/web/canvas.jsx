@@ -7,9 +7,9 @@ import {connections} from './layout.mjs';
 import {symbolBlocks,symbolRow} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors} from './emphasis.mjs';
-import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
+import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, closedContainer, readableFocus, frameInventory, systemViewport} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
-import {singlePartAreas} from './overview.mjs';
+import {singlePartAreas, inputGroupsByPart} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,groupHeading} from './cards.mjs';
 import {HoverGate} from './hover.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
@@ -108,7 +108,7 @@ function Part({data}) {
   </div>;
 }
 function Area({data}) {
-  return <div className={`flow-area ${data.branch==='component'?'flow-component':data.branch==='communication'?'flow-communication':data.branch==='inputs'?'flow-input-collection':data.branch!=='area'?'':data.lane==='core'?'flow-area-core':data.lane==='triggers'?'flow-area-entry':''}`}>
+  return <div className={`flow-area ${data.branch==='component'?'flow-component':data.branch==='communication'?'flow-communication':['inputs','inputs-part'].includes(data.branch)?'flow-input-collection':data.branch!=='area'?'':data.lane==='core'?'flow-area-core':data.lane==='triggers'?'flow-area-entry':''}`}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
@@ -148,7 +148,7 @@ function ZoomMark({node,item,enter,select,compactScale}) {
 function FrameTitle({node,item,focused,enter,select}) {
   const viewport=useViewport();
   const scale=item.summaryScale||1;
-  const component=item.branch==='component',communication=item.branch==='communication',inputs=item.branch==='inputs';
+  const component=item.branch==='component',communication=item.branch==='communication',inputs=['inputs','inputs-part'].includes(item.branch);
   const x=node.absolute.x+18*scale;
   return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${component?'flow-component-title':communication?'flow-communication-title':inputs?'flow-input-collection':item.lane==='core'?'flow-core-title':item.lane==='triggers'?'flow-entry-title':''}`}
     data-frame-title={node.id}
@@ -174,6 +174,7 @@ const nodeTypes={part:Part,area:Area}, edgeTypes={routed:RoutedEdge};
 window.rmCreateFlow = async function(map, stage, records, relations, areas, inputOwner, callbacks) {
   const display=singlePartAreas(records,areas),displayed=id=>display.aliases.get(id)||id;
   records=display.records;areas=display.areas;
+  ({records,areas}=inputGroupsByPart(records,areas,inputOwner));
   const source=stage.querySelector('svg'), host=document.createElement('div');
   host.className='flow-root';stage.appendChild(host);
   map.classList.add('flow-enabled','flow-initializing');source.style.display='none';source.setAttribute('aria-hidden','true');
@@ -305,7 +306,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(!instance||initializing){pendingFocus={id,center};return;}
     overviewFit=false;
     hover.pause();preview='';map.clearMapPreview?.();
-    const {x,y}=n.absolute, viewport=instance.getViewport(), rect=host.getBoundingClientRect();
+    const viewport=instance.getViewport(), rect=host.getBoundingClientRect();
     const contentScale=byID.get(n.id)?.contentScale||1;
     if(!center&&readableFocus(n.id,placed,byID,detailed,componentsOpen,viewport,rect.width,rect.height,communicationsOpen,openComponents))return;
     locationSubject=id;
@@ -321,8 +322,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       else if(!component)detailed=new Set([...detailed,n.id]);
       commitCamera(instance.setViewport(frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:.72}),{duration:smooth?420:0}),id);return;
     }
-    const zoom=1/contentScale;
-    commitCamera(instance.setCenter(x+n.width/2,y+Math.min(n.height/2,rect.height/(2*zoom)-24),{zoom,duration:smooth?420:0}),id);
+    commitCamera(instance.setViewport(partViewport(n,1/contentScale,rect.width,rect.height),{duration:smooth?420:0}),id);
   }
   function capture(){return instance&&!initializing?{...instance.getViewport(),layoutKey,overview:isOverview(),detailAreas:[...detailed],componentsOpen,openComponents:[...openComponents],communicationsOpen:[...communicationsOpen],fit:overviewFit}:restorePending||null;}
   function restore(v){if(!v)return;
@@ -378,6 +378,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     return fitting;
   }
   function select(id,event,center=false){
+    // A group of inputs is named by the part their handlers are in; choosing
+    // it reads that part.
+    if(byID.get(id)?.branch==='inputs-part')id=byID.get(id).owner;
     hover.remember(event.clientX,event.clientY);hover.pause();hoverArea='';preview='';map.clearMapPreview?.();callbacks.select(id,center);
   }
   // Lay out text once for the whole-map camera. Pan clips that fixed card;
@@ -571,7 +574,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       onPaneClick={event=>{
         if(instance){
           const p=instance.screenToFlowPosition({x:event.clientX,y:event.clientY});
-          const frame=drawing.nodes.find(n=>n.frame&&visible(n.id)&&
+          const frame=drawing.nodes.find(n=>n.frame&&visible(n.id)&&byID.get(n.id)?.branch!=='inputs-part'&&
             (byID.get(n.id)?.branch==='component'?!openComponents.has(n.id):!communicationsOpen.has(n.id))&&
             p.x>=n.absolute.x&&p.x<=n.absolute.x+n.width&&p.y>=n.absolute.y&&p.y<=n.absolute.y+n.height);
           if(frame){select(frame.id,event,true);return;}
@@ -594,7 +597,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
       <ViewportPortal>
-        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id))&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
+        {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)}/>)}
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} number={number.get(n.id)} badge={badge(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select}/>)}

@@ -635,6 +635,10 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 					for j := range chips {
 						for k := range chips[j].Members {
 							chips[j].Members[k].SummaryRef = add("explanation", &chips[j].Members[k].Summary)
+							for f := range chips[j].Members[k].Fields {
+								field := &chips[j].Members[k].Fields[f]
+								field.SummaryRef = add("explanation", &field.Summary)
+							}
 						}
 					}
 				}

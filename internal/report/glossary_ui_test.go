@@ -14,13 +14,13 @@ func TestGlossaryHTMLKeepsAnswerTermsAndSourceDistinctDefinitions(t *testing.T) 
 		t.Run(string(language), func(t *testing.T) {
 			view := &pageView{Glossary: []pageGlossaryTerm{
 				{ID: "term-first", Name: "Разбор", OriginalName: "Parsing", Explanation: "First explanation with <source> intact.",
-					Sources:   []pageAnchor{{Path: "first.py", Line: 12, Text: "first.py:12", Href: "https://example.test/first.py#L12"}, {Path: "first.py", Line: 18, Text: "first.py:18", Href: "https://example.test/first.py#L18"}},
-					Questions: []pageLearnLink{{Title: "How does the first parser work?", Href: "#question-first"}},
-					Places:    []pageLearnLink{{Title: "First parser", Href: "#part-first"}}},
+					Occurrences: []pageAnchor{{Path: "first.py", Line: 12, Text: "first.py:12", Href: "https://example.test/first.py#L12"}, {Path: "first.py", Line: 18, Text: "first.py:18", Href: "https://example.test/first.py#L18"}},
+					Questions:   []pageLearnLink{{Title: "How does the first parser work?", Href: "#question-first"}},
+					Places:      []pageLearnLink{{Title: "First parser", Href: "#part-first"}}},
 				{ID: "term-second", Name: "Разбор", OriginalName: "Parsing", Explanation: "A separate definition from another source.",
-					Sources:   []pageAnchor{{Path: "second.py", Line: 30, Text: "second.py:30", Href: "https://example.test/second.py#L30"}},
-					Questions: []pageLearnLink{{Title: "How does the second parser work?", Href: "#question-second"}},
-					Places:    []pageLearnLink{{Title: "Second parser", Href: "#part-second"}}},
+					Occurrences: []pageAnchor{{Path: "second.py", Line: 30, Text: "second.py:30", Href: "https://example.test/second.py#L30"}},
+					Questions:   []pageLearnLink{{Title: "How does the second parser work?", Href: "#question-second"}},
+					Places:      []pageLearnLink{{Title: "Second parser", Href: "#part-second"}}},
 			}}
 			templates, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
 			if err != nil {
@@ -34,7 +34,7 @@ func TestGlossaryHTMLKeepsAnswerTermsAndSourceDistinctDefinitions(t *testing.T) 
 				if strings.Count(html.String(), `id="`+term.ID+`"`) != 1 {
 					t.Fatalf("term %s lost its separate address", term.ID)
 				}
-				for _, source := range term.Sources {
+				for _, source := range term.Occurrences {
 					if strings.Count(html.String(), `href="`+source.Href+`"`) != 1 || !strings.Contains(html.String(), source.Text) {
 						t.Fatalf("term %s lost source %+v", term.ID, source)
 					}

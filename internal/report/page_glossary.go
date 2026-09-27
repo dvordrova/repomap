@@ -16,9 +16,13 @@ import (
 type pageGlossaryTerm struct {
 	ID, Name, OriginalName, Explanation string
 	Sources                             []pageAnchor
-	Questions                           []pageLearnLink
-	Places                              []pageLearnLink
-	Code                                bool
+	// Occurrences are the lines of the repository's files that write this
+	// spelling, found by the shared term lookup: the files the term appears
+	// in. The analysis context of a definition (Sources) is not that list.
+	Occurrences []pageAnchor
+	Questions   []pageLearnLink
+	Places      []pageLearnLink
+	Code        bool
 }
 
 type pageGlossarySourceFile struct {
@@ -26,13 +30,14 @@ type pageGlossarySourceFile struct {
 	Locations []pageAnchor
 }
 
-// SourceFiles groups the saved context without selecting evidence for a
-// definition. Every distinct destination remains available in the static HTML.
+// SourceFiles groups the term's occurrences by file, each file once with its
+// lines. A saved report without occurrences lists no files: its analysis
+// context once stood here as the files the term "appears" in.
 func (term pageGlossaryTerm) SourceFiles() []pageGlossarySourceFile {
 	var files []pageGlossarySourceFile
 	byPath := make(map[string]int)
 	seen := make(map[pageAnchor]bool)
-	for _, source := range term.Sources {
+	for _, source := range term.Occurrences {
 		if seen[source] {
 			continue
 		}
@@ -131,6 +136,14 @@ func (builder *pageBuilder) reducedGlossary(view *pageView) error {
 				Explanation: entry.Explanation}
 			for _, source := range entry.Sources {
 				term.Sources = append(term.Sources, builder.links.anchor(source.Path, source.Line, 0))
+			}
+			for _, written := range builder.data.GlossaryOccurrences {
+				if written.Entry != entry.ID || written.Name != spelling {
+					continue
+				}
+				for _, source := range written.Sources {
+					term.Occurrences = append(term.Occurrences, builder.links.anchor(source.Path, source.Line, 0))
+				}
 			}
 			// Exact request and row tie a definition to the question that supplied
 			// its context. Equal words or neighbouring files do not bind senses.

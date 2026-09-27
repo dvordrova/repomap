@@ -23,6 +23,27 @@ function rmSystemProjection(nodes, edges) {
   }
   return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection};
 }
+// A part's reading goes description, the code to open, then its
+// connections: Command dispatch listed some 5,000 characters of connections
+// before "Code in this part". The input's witness, when one is pinned, stays
+// right under the description it explains.
+function rmReadingOrder(card){
+  var at=card.querySelector(':scope>.map-card-intro');if(!at)return;
+  [':scope>.call-path',':scope>.map-concepts',':scope>.map-all-members'].map(function(selector){return card.querySelector(selector);}).filter(Boolean)
+    .forEach(function(section){at.after(section);at=section;});
+}
+// An input chosen from Find or a link is entered where its path starts: the
+// first part of its saved trace, its handler's part, with the trace drawn dark
+// from there. Framing its tile showed a wall of inputs and no route: the
+// collection stands outside its component, and no one camera shows the tile
+// and the parts it reaches readably. The tile stays one "Show input" away.
+// An input without a trace, or anything else, is entered as itself.
+function rmInputEntrance(n,byID){
+  if(!n?.dataset?.activation)return n;
+  var ids=(n.dataset.inputTrace||'').split(/\s+/);
+  for(var i=0;i<ids.length;i++){var part=byID[ids[i]];if(part&&!part.dataset.activation)return part;}
+  return n;
+}
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
   var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
@@ -31,6 +52,9 @@ function rmSystemProjection(nodes, edges) {
   var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).filter(function(e){return e.dataset.scope!=='static';}).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),init:e.classList.contains('map-edge-init'),calls:(function(){try{return JSON.parse(e.dataset.calls||'[]');}catch(_){return [];}})(),label:e.querySelector('title')?.textContent||''};});
   var model=nodes.map(function(n){return {id:n.id,branch:n.dataset.branch,children:(n.dataset.children||'').split(/\s+/).filter(Boolean),activation:n.dataset.activation,inputOwner:n.dataset.inputOwner};});
   var projection=rmSystemProjection(model,rawEdges),scope='',operation=null,surface=null,ready=null;
+  // Whether the camera may stand away from the pinned input's own tile: on its
+  // path's start, or on a part read since.
+  var inputAway=false;
   var searchValue='',filterValue='',selectionRevision=0,visual=null;
   var numbered=true;
   map.querySelector('[data-operation-controls]')?.remove();
@@ -77,7 +101,9 @@ function rmSystemProjection(nodes, edges) {
     if(controls){controls.replaceChildren();controls.hidden=!operation;}
     if(operation){
       var context=rmEl('span','system-reading-context',rmT('Input')+': '+operation.dataset.title);
-      var start=rmEl('button','system-input-start',rmT('Show input'));start.type='button';start.addEventListener('click',function(){surface?.clearHover();select(operation,true,null,true);});context.appendChild(start);
+      // Back to the input's own tile from its path's start or from a part read
+      // on its path; once the tile is framed there is nowhere to go back to.
+      if(scope||inputAway){var start=rmEl('button','system-input-start',rmT('Show input'));start.type='button';start.addEventListener('click',function(){surface?.clearHover();select(operation,true,null,'input');});context.appendChild(start);}
       clear.textContent=rmT('Leave input path');controls?.append(context,clear);
     }
     map.querySelector('.map-reading-outside')?.remove();
@@ -91,12 +117,12 @@ function rmSystemProjection(nodes, edges) {
     // Search is a chooser. Once a destination is chosen it must not continue
     // highlighting every other result or covering the destination's drawing.
     search.value=searchValue='';filter.value=filterValue='';updateResults();
-    if(n.dataset.activation){operation=n;scope='';}else scope=n.id;
+    if(n.dataset.activation){operation=n;scope='';inputAway=!!focus&&focus!=='input'&&rmInputEntrance(n,byID)!==n;}else{scope=n.id;inputAway=true;}
     emphasize();if(navigate)address(n,!!focus&&!!map.captureViewport?.()?.overview);
     await ready;if(ticket!==selectionRevision)return false;map.showNode?.(n);if(source)map.explainSource?.(source);
-    if(focus)focusNode(n,!!n.dataset.activation||focus==='center');emit();return true;
+    if(focus)focusNode(focus==='input'?n:rmInputEntrance(n,byID),!!n.dataset.activation||focus==='center');emit();return true;
   }
-  function reset(){selectionRevision++;scope='';operation=null;surface?.clearHover();emphasize();map.clearInspection?.();emit();}
+  function reset(){selectionRevision++;scope='';operation=null;inputAway=false;surface?.clearHover();emphasize();map.clearInspection?.();emit();}
   map.showWholeMap=async function(){
     search.value=searchValue='';filter.value=filterValue='';updateResults();reset();
     address(null,true);document.querySelector('.nav .find')?.restoreSearch?.();
@@ -185,6 +211,7 @@ function rmSystemProjection(nodes, edges) {
           if(peer)link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(peer,true,null,true);});
         });if(copy.classList.contains('group-connections'))card.querySelector('.map-card-intro').after(copy);else card.appendChild(copy);
       });
+      rmReadingOrder(card);
       return;
     }
     if(n.dataset.branch==='communication'){
@@ -205,7 +232,11 @@ function rmSystemProjection(nodes, edges) {
       var pathState=projection.selection('',n.id),pathParts=rmEl('section','system-input-parts');
       pathParts.appendChild(rmEl('h5','',rmT('Parts on this input path')));
       var pathLinks=rmEl('div','system-neighbours');
-      pathState.active.forEach(function(id){
+      // Nearest the handler first: the saved trace orders the parts by call
+      // depth; a part reached only through a matched input follows it.
+      var ordered=(n.dataset.inputTrace||'').split(/\s+/).filter(function(id){return pathState.active.has(id);});
+      pathState.active.forEach(function(id){if(!ordered.includes(id))ordered.push(id);});
+      ordered.forEach(function(id){
         var part=byID[id];if(!part||part.dataset.activation)return;
         var link=rmEl('button','',part.dataset.title);link.type='button';
         link.addEventListener('click',function(){select(part,true,null,true);});pathLinks.appendChild(link);
@@ -293,8 +324,8 @@ function rmSystemProjection(nodes, edges) {
   map.chooseOperation=function(id){return select(byID[id],true);};
   map.explorationLabel=function(){return [operation?.dataset.title,path(scope).map(function(id){return byID[id].dataset.title;}).join(' / '),map.explorerMember?.name].filter(Boolean).join(' · ')||rmT('System map');};
   map.resumeExploration=function(){var n=byID[scope]||operation;if(n)map.showNode(n);else map.clearInspection?.();};
-  map.readingState=function(){return {scope:scope,operation:operation?.id||'',search:searchValue,filter:filterValue,numbered:numbered,source:map.explorerMember||null,viewport:map.captureViewport?.()||null};};
-  map.restoreReadingState=async function(saved){if(!saved)return;var ticket=++selectionRevision;map.readingRestoring=true;try{scope=byID[saved.scope]?saved.scope:'';operation=byID[saved.operation]||null;search.value=searchValue=saved.search||'';filter.value=filterValue=saved.filter||'';numbered=saved.numbered!==false;syncStyle();updateResults();await ready;if(ticket!==selectionRevision)return;emphasize();map.resumeExploration();if(saved.source)map.explainSource(saved.source);else map.inspectConcept?.(-1);if(saved.viewport)map.restoreViewport(saved.viewport);}finally{if(ticket===selectionRevision){map.readingRestoring=false;emit();}}};
+  map.readingState=function(){return {scope:scope,operation:operation?.id||'',away:inputAway,search:searchValue,filter:filterValue,numbered:numbered,source:map.explorerMember||null,viewport:map.captureViewport?.()||null};};
+  map.restoreReadingState=async function(saved){if(!saved)return;var ticket=++selectionRevision;map.readingRestoring=true;try{scope=byID[saved.scope]?saved.scope:'';operation=byID[saved.operation]||null;inputAway=!!operation&&!!saved.away;search.value=searchValue=saved.search||'';filter.value=filterValue=saved.filter||'';numbered=saved.numbered!==false;syncStyle();updateResults();await ready;if(ticket!==selectionRevision)return;emphasize();map.resumeExploration();if(saved.source)map.explainSource(saved.source);else map.inspectConcept?.(-1);if(saved.viewport)map.restoreViewport(saved.viewport);}finally{if(ticket===selectionRevision){map.readingRestoring=false;emit();}}};
   map.revealNode=async function(n,allUses,source){n=byID[aliases[n?.id]]||byID[n?.dataset?.mapAlias]||byID[n?.id];if(!n)return;if(allUses)operation=null;if(await select(n,true,source,true))rmScrollToReading(map);};
   map.findNode=function(n,source){return map.revealNode(n,true,source);};
   function mapped(node){if(!node)return null;if(byID[node.id])return byID[node.id];if(aliases[node.id])return byID[aliases[node.id]];if(node.dataset.mapAlias)return byID[node.dataset.mapAlias];return byID['system-component-'+node.id]||byID['system-component-'+node.id.replace(/-(parts|inbound|external)$/,'')];}

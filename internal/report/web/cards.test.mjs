@@ -130,3 +130,15 @@ test('one root input collection retains every original input and implementation 
   assert.equal(placed.get('unbound').parentId,undefined,'an unowned input remains visible');
   assert.deepEqual(layout.edges.flatMap(e=>e.relations),relations,'original endpoints and evidence are preserved');
 });
+
+// "Request" stood on 97 of Redis's 98 input tiles, repeating the collection's
+// own "Incoming requests". A tile names its kind only when it differs.
+test('an input tile names its kind only when it is not its collection\'s common kind',()=>{
+  const records=[{id:'inputs',branch:'inputs',children:['group','thread']},{id:'group',branch:'inputs-part',title:'String commands',children:['get','set']},
+    {id:'get',title:'get',activation:'request'},{id:'set',title:'set',activation:'request'},{id:'thread',title:'IOThreadEntryPoint',activation:'continuous'}];
+  const cards=new Map(prepareCards(records,{},text=>String(text).length*7,text=>text).map(card=>[card.id,card]));
+  assert.equal(cards.get('get').kindLabel,'');assert.equal(cards.get('set').kindLabel,'');
+  assert.equal(cards.get('thread').kindLabel,'Background activity');
+  assert.ok(cards.get('get').height<cards.get('thread').height,'a tile without its kind row is shorter');
+  assert.deepEqual(cards.get('inputs').inputGroups.map(group=>group.kind),['request','background'],'the collection still lists every kind it holds');
+});

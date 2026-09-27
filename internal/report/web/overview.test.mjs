@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {semanticLayout,visibleRoute} from './semantic.mjs';
-import {singlePartAreas} from './overview.mjs';
+import {singlePartAreas,inputGroupsByPart} from './overview.mjs';
 
 test('one-part areas share their existing part while participants, sources and multi-part areas remain',async()=>{
   const records=[
@@ -73,4 +73,26 @@ test('overview folds only saved areas and preserves every part, input, external 
   assert.equal(visibleRoute(result.layout.edges.find(e=>e.from==='a'&&e.to==='b'),area,area),'');
   assert.ok(visibleRoute(across,area,null));
   assert.ok(result.layout.nodes.every(n=>Number.isFinite(n.width)&&Number.isFinite(n.height)));
+});
+
+// GET was one of 98 input tiles in no order. The collection stands its inputs
+// together by the part their handler is in, framed and named by that part.
+test('an input collection groups its inputs by their handler part, and keeps an unowned input loose',()=>{
+  const records=[{id:'server-inputs',branch:'inputs',children:['get','set','lpush','thread','orphan']},
+    {id:'get',title:'get',activation:'request'},{id:'set',title:'set',activation:'request'},{id:'lpush',title:'lpush',activation:'request'},
+    {id:'thread',title:'IOThreadEntryPoint',activation:'continuous'},{id:'orphan',title:'ping',activation:'request'},
+    {id:'strings',title:'String commands'},{id:'lists',title:'List commands'},{id:'vm',title:'Virtual memory'}];
+  const areas=[{id:'server-inputs',nodes:['get','set','lpush','thread','orphan']}];
+  const owner={get:'strings',set:'strings',lpush:'lists',thread:'vm'};
+  const original=JSON.stringify({records,areas});
+  const grouped=inputGroupsByPart(records,areas,owner);
+  const collection=grouped.records.find(n=>n.id==='server-inputs');
+  assert.deepEqual(collection.children,['server-inputs~lists','server-inputs~strings','server-inputs~vm','orphan'],'groups by part name, then the loose input');
+  const strings=grouped.records.find(n=>n.id==='server-inputs~strings');
+  assert.equal(strings.branch,'inputs-part');assert.equal(strings.title,'String commands');assert.equal(strings.owner,'strings');
+  assert.deepEqual(strings.children,['get','set']);
+  assert.deepEqual(grouped.areas.find(a=>a.id==='server-inputs~strings').nodes,['get','set']);
+  assert.equal(JSON.stringify({records,areas}),original,'the saved records are not changed');
+  const single=inputGroupsByPart(records,areas,{get:'strings',set:'strings'});
+  assert.equal(single.records,records,'a collection with one owning part keeps its inputs loose');
 });

@@ -182,8 +182,16 @@ func TestOperationMapFollowsInvocationsButNotImportsOrSuppliedCallables(t *testi
 			t.Fatalf("lost operation ownership: %+v", edge)
 		}
 	}
-	if len(got.Edges) != 4 {
-		t.Fatalf("want attachment, cycle of calls and integration, got %+v", got.Edges)
+	// The path is the witness trace: the attachment, the call that brings the
+	// worker in and the integration. The worker's call back into the entry
+	// is a relation of the map, not a step of this input's trace.
+	if len(got.Edges) != 3 {
+		t.Fatalf("want attachment, witness call and integration, got %+v", got.Edges)
+	}
+	for _, edge := range got.Edges {
+		if edge.From == mapNodeID("worker") && edge.To == mapNodeID("entry") {
+			t.Fatalf("a call back to an already reached part became a trace step: %+v", edge)
+		}
 	}
 	if again := builder.buildOperationMap(section, &index); !reflect.DeepEqual(got, again) {
 		t.Fatal("map changes between identical renders")
@@ -296,7 +304,7 @@ func TestZoneFramesDoNotCoverOtherZonesOrLooseNodes(t *testing.T) {
 	for _, entry := range placed.entries {
 		node := pageMapNode{X: mapPadding + float64(entry.column)*(mapNodeWidth+mapColumnGap), Y: mapPadding + entry.y, Width: mapNodeWidth, Height: mapNodeHeight}
 		if entry.container != nil {
-			growFrame(frames, entry.container, node)
+			growFrame(frames, nil, entry.container, node)
 		} else {
 			loose = append(loose, node)
 		}

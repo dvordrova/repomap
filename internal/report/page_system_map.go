@@ -94,7 +94,7 @@ func (view *pageView) SystemMap() *pageMap {
 	}
 	for i := range result.Nodes {
 		n := &result.Nodes[i]
-		n.Children, n.Neighbours = remap(n.Children), remap(n.Neighbours)
+		n.Children, n.Neighbours, n.Trace = remap(n.Children), remap(n.Neighbours), remap(n.Trace)
 		n.InputOwner = remap(n.InputOwner)
 		if n.CallPaths != "" {
 			var paths map[string]json.RawMessage
@@ -183,55 +183,119 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 		}
 	}
-	// Reuse the external catalogue's display grouping for unmatched records.
+	// Reuse the external catalogue's display grouping for unmatched records,
+	// across the whole system: one box per destination, with an arrow from
+	// each program that talks to it. Redis drew "DNS resolver" and "TCP
+	// endpoint" three times, once per program linking anet.c. Every record
+	// stays in its own component's catalogue; the box is display.
+	type ownedRow struct {
+		section *pageSection
+		row     pageOutbound
+	}
+	var owned []ownedRow
+	var outboundRowsInOrder []pageOutbound
 	for _, section := range view.Sections {
-		for _, group := range groupOutbound(section.Outbound) {
-			var children []string
-			name := group.Destination
-			if name == "" {
-				name = group.NativeLabel
+		for _, row := range section.Outbound {
+			owned = append(owned, ownedRow{section, row})
+			outboundRowsInOrder = append(outboundRowsInOrder, row)
+		}
+	}
+	sectionOfRow := make(map[string]*pageSection, len(owned))
+	for _, item := range owned {
+		sectionOfRow[item.row.ID] = item.section
+	}
+	foldedTiles := map[string]string{}
+	for _, group := range groupOutbound(outboundRowsInOrder) {
+		var children []string
+		owners := map[string]bool{}
+		name := group.Destination
+		if name == "" {
+			name = group.NativeLabel
+		}
+		if name == "" {
+			name = group.KindLabel
+		}
+		// One tile per outside symbol: the same call made from several
+		// places, or by several programs, is one thing the system is asked
+		// for. Every place it is made from stays a line of an arrow: which
+		// function of which program asks.
+		tileOf := make(map[string]string)
+		for _, row := range group.Rows {
+			section := sectionOfRow[row.ID]
+			id := "system-" + row.ID
+			if localOutbound[id] != "" {
+				continue
 			}
-			if name == "" {
-				name = group.KindLabel
+			symbol := row.External
+			if symbol == "" {
+				symbol = row.ID
 			}
-			// One tile per outside symbol: the same call made from several
-			// places is one thing the system is asked for. Every place it is
-			// made from stays a line of the arrow: which function asks.
-			tileOf := make(map[string]string)
-			for _, row := range group.Rows {
-				id := "system-" + row.ID
-				if localOutbound[id] != "" {
-					continue
+			tile, folded := tileOf[symbol]
+			if !folded {
+				tile = id
+				tileOf[symbol] = id
+				title := row.Line()
+				if title == "" {
+					title = row.Brief()
 				}
-				symbol := row.External
-				if symbol == "" {
-					symbol = row.ID
+				if title == "" {
+					title = name
 				}
-				tile, folded := tileOf[symbol]
-				if !folded {
-					tile = id
-					tileOf[symbol] = id
-					title := row.Line()
-					if title == "" {
-						title = row.Brief()
-					}
-					if title == "" {
-						title = name
-					}
-					add(pageMapNode{ID: id, Owner: section.ID, ItemKind: "External communication", FullTitle: title, Summary: row.Summary, SummaryRef: row.SummaryRef, Source: row.Anchor, SourceKind: row.Source, DetailsID: row.ID, Href: "#" + row.ID, Subtitle: row.Address, Lane: "dependencies"})
-					children = append(children, id)
+				add(pageMapNode{ID: id, Owner: section.ID, ItemKind: "External communication", FullTitle: title, Summary: row.Summary, SummaryRef: row.SummaryRef, Source: row.Anchor, SourceKind: row.Source, DetailsID: row.ID, Href: "#" + row.ID, Subtitle: row.Address, Lane: "dependencies"})
+				children = append(children, id)
+			} else if id != tile {
+				foldedTiles[id] = tile
+				at := positions[tile]
+				if !slices.Contains(result.Nodes[at].Aliases, id) {
+					result.Nodes[at].Aliases = append(result.Nodes[at].Aliases, id)
 				}
-				from := targetMapNodeID(section.programTargetID, mapNodeID(row.MapGroup))
-				if _, ok := positions[from]; row.MapGroup != "" && ok {
-					edge := pageMapEdge{From: from, To: tile, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
-					if row.Caller != "" && row.External != "" && !strings.ContainsAny(row.Caller+row.External, " \t") {
-						edge.Calls = []pageEdgeCall{{Label: row.Caller + " calls " + row.External, From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text}}
-					}
-					result.Edges = append(result.Edges, edge)
+				// An outside call several programs make belongs to none of them.
+				if result.Nodes[at].Owner != section.ID {
+					result.Nodes[at].Owner = ""
 				}
 			}
-			if len(children) > 0 {
-				add(pageMapNode{ID: "system-" + group.Rows[0].ID + "-destination", Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies"})
+			owners[section.ID] = true
+			from := targetMapNodeID(section.programTargetID, mapNodeID(row.MapGroup))
+			if _, ok := positions[from]; row.MapGroup != "" && ok {
+				edge := pageMapEdge{From: from, To: tile, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
+				if row.Caller != "" && row.External != "" && !strings.ContainsAny(row.Caller+row.External, " \t") {
+					edge.Calls = []pageEdgeCall{{Label: row.Caller + " calls " + row.External, From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text}}
+				}
+				result.Edges = append(result.Edges, edge)
+			}
+		}
+		if len(children) > 0 {
+			owner := ""
+			if len(owners) == 1 {
+				owner = sectionOfRow[group.Rows[0].ID].ID
+			}
+			add(pageMapNode{ID: "system-" + group.Rows[0].ID + "-destination", Owner: owner, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies"})
+		}
+	}
+	// A witness to a folded tile leads to the tile that stands for it.
+	if len(foldedTiles) > 0 {
+		for i := range result.Nodes {
+			n := &result.Nodes[i]
+			if n.CallPaths == "" {
+				continue
+			}
+			var paths map[string]json.RawMessage
+			if json.Unmarshal([]byte(n.CallPaths), &paths) != nil {
+				continue
+			}
+			changed := false
+			for id, path := range paths {
+				if tile := foldedTiles[id]; tile != "" {
+					if _, exists := paths[tile]; !exists {
+						paths[tile] = path
+					}
+					delete(paths, id)
+					changed = true
+				}
+			}
+			if changed {
+				raw, _ := json.Marshal(paths)
+				n.CallPaths = string(raw)
 			}
 		}
 	}
@@ -523,6 +587,10 @@ func completeSystemPaths(view *pageMap) {
 					continuation[0].Integration = true // An endpoint match, not a native call.
 					joined[destination] = append(append([]pageCallStep(nil), prefixes[id]...), continuation...)
 				}
+			}
+			if id != root {
+				// A matched input's own trace continues the root's, after it.
+				node.Trace = joinUniqueFields(node.Trace, inputs[id].Trace)
 			}
 			for _, at := range paths[id] {
 				edge := view.Edges[at]

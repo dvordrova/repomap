@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -176,5 +177,31 @@ func TestQuestionProjectionRetainsOriginalAnswerRequestForGlossaryScope(t *testi
 	}
 	if len(view.Questions) != 1 || len(view.Questions[0].Answers) != 1 || view.Questions[0].Answers[0].RequestSHA256 != origin || view.Questions[0].Answers[0].OriginRow != "r7" {
 		t.Fatal("cached answer projection lost the exact original request context")
+	}
+}
+
+// The glossary listed eighteen files "in which" event loop appears, lzf.h and
+// solarisfixes.h among them: its analysis context. It lists the files that
+// write the term.
+func TestGlossaryListsOnlyTheFilesThatWriteTheTerm(t *testing.T) {
+	catalog := pageGlossaryCatalog(t, []terminology.Candidate{{Name: "event loop", Explanation: "A loop that dispatches ready events.",
+		Sources: []terminology.Source{{Path: "ae.c"}, {Path: "lzf.h"}, {Path: "solarisfixes.h"}},
+		Origins: []terminology.Origin{{RequestSHA256: strings.Repeat("a", 64), Row: "q1"}}}})
+	entry := catalog.Entries[0]
+	builder := &pageBuilder{data: &ReportData{Glossary: catalog, GlossaryOccurrences: []terminology.TermOccurrences{
+		{Entry: entry.ID, Name: "event loop", Sources: []terminology.Source{{Path: "ae.c", Line: 2}, {Path: "ae.c", Line: 40}, {Path: "redis.c", Line: 911}}}}}}
+	view := &pageView{}
+	if err := builder.reducedGlossary(view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Glossary) != 1 {
+		t.Fatalf("glossary: %+v", view.Glossary)
+	}
+	var files []string
+	for _, file := range view.Glossary[0].SourceFiles() {
+		files = append(files, fmt.Sprintf("%s:%d", file.Path, len(file.Locations)))
+	}
+	if strings.Join(files, " ") != "ae.c:2 redis.c:1" {
+		t.Fatalf("the term's files are its analysis context again: %v", files)
 	}
 }

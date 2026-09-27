@@ -3,6 +3,7 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -146,6 +147,9 @@ type pageMap struct {
 	// thousand symbols must not read as the whole target.
 	Subjects int
 	Grouped  int
+	// served holds the part pairs that code an input reaches calls or reads
+	// across: work, not wiring, whichever relation a connection shows first.
+	served map[[2]string]bool
 }
 
 // pageMapFrame is one part of a target drawn around the groups inside it.
@@ -230,6 +234,12 @@ type pageMapNode struct {
 	// so the preview needs no graph traversal in the browser.
 	Neighbours string
 	Degree     int
+	// Trace lists an input's parts by call depth from its handler, the
+	// order its reading gives them. Handler names the declaration the input
+	// is handled by, and HandlerSource where it is.
+	Trace         string
+	Handler       string
+	HandlerSource pageAnchor
 	// Outside counts connections this group has to another target. They are
 	// not drawn: a cross-target arrow on this map would claim a geometry that
 	// belongs to the other target's page.
@@ -310,6 +320,7 @@ func scopeTargetMapIDs(view *pageMap, targetID string) {
 		node.InputOwner = mapID(node.InputOwner)
 		node.Children = mapIDs(node.Children)
 		node.Neighbours = mapIDs(node.Neighbours)
+		node.Trace = mapIDs(node.Trace)
 		for alias := range node.Aliases {
 			node.Aliases[alias] = mapID(node.Aliases[alias])
 		}
@@ -406,7 +417,7 @@ func (builder *pageBuilder) buildZoneMap(section *pageSection, index *groupindex
 			Width:   mapNodeWidth, Height: mapNodeHeight,
 		}
 		if entry.container != nil {
-			growFrame(frames, entry.container, node)
+			growFrame(frames, index, entry.container, node)
 			if frame := frames[entry.container.ID]; frame != nil {
 				frame.Holds = len(entry.container.GroupIDs)
 				frame.Shown++
@@ -1078,11 +1089,11 @@ func blockID(block mapBlock) string {
 }
 
 // growFrame widens a part's frame to hold one more of its boxes.
-func growFrame(frames map[string]*pageMapFrame, container *groupindex.Container, node pageMapNode) {
+func growFrame(frames map[string]*pageMapFrame, index *groupindex.Index, container *groupindex.Container, node pageMapNode) {
 	frame, known := frames[container.ID]
 	if !known {
 		frame = &pageMapFrame{
-			ID: container.ID, Title: container.Title, Lane: pageLane(container.Lane, container.Core),
+			ID: container.ID, Title: container.Title, Lane: areaLane(index, *container),
 			Zone: zoneOf(container.ID),
 			X:    node.X, Y: node.Y, Width: node.Width, Height: node.Height,
 		}
@@ -1309,7 +1320,7 @@ func mapEdges(
 			// uncertain call among several cannot make the whole arrow
 			// look uncertain.
 			Possible: possible[key] && !exact[key],
-			Init:     initOnly[key],
+			Init:     initOnly[key] && drawsInit(&index),
 		}
 		if lines, atX, atY := router.placeLabel(edge.Label, labelX, labelY, room, minLeft); lines != nil {
 			edge.Lines, edge.LabelX, edge.LabelY = lines, atX, atY
@@ -2332,6 +2343,41 @@ func pageLane(lane groupindex.Lane, core bool) string {
 		return ""
 	}
 	return string(lane)
+}
+
+// areaLane is an area's mark. An area that holds the program's entry, a
+// declaration its execution starts from, says so even when a core part
+// stands in it too: a core mark on Redis's "Server runtime" hid main and
+// processCommand. Parts that only take requests do not make their area the
+// program's entry; otherwise its mark is the one it had.
+func areaLane(index *groupindex.Index, container groupindex.Container) string {
+	if index != nil {
+		seeds := make(map[string]bool, len(index.Target.Seeds))
+		for _, seed := range index.Target.Seeds {
+			seeds[seed.ObjectID] = true
+		}
+		for _, group := range index.Groups {
+			if !slices.Contains(container.GroupIDs, group.ID) {
+				continue
+			}
+			for _, id := range group.MemberSubjectIDs {
+				if seeds[id] {
+					return string(groupindex.LaneTriggers)
+				}
+			}
+		}
+	}
+	return pageLane(container.Lane, container.Core)
+}
+
+// drawsInit says whether a target's initialization arrows are told apart
+// from its work. Initialization is the wiring before anything serves, so
+// it exists only beside a runtime: an operation or a chain. A program that
+// serves nothing (a command-line client, a benchmark, a file checker) does
+// all its work from main, and hiding those arrows as wiring left Redis's
+// three small programs with no arrows on the map.
+func drawsInit(index *groupindex.Index) bool {
+	return index != nil && (len(index.Operations) > 0 || len(index.Chains) > 0)
 }
 
 // pageEdgeCall is one relation behind an arrow: "caller calls callee" with

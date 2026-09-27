@@ -51,7 +51,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   declarations as source chips and reads "In no part of its file"), five
   rows each and
   `All N` for the rest. Find lists each of those undecided declarations as
-  Code with Open code and no "In part" link; its result opens that row. A target
+  Code with Open code and no "In part" link; its result opens that row, scrolled below the sticky toolbar as every
+  page destination is. A target
   with a map failure says "The map of parts is unavailable:" with the reader's
   words for its closed reason (`refused`: the model's answer was refused;
   `no_model`: no model was asked; the refusals themselves are rejected
@@ -111,13 +112,28 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   display frame per component owner, outside the component. Its distant summary
   shows the actual catalogue types (requests, commands, background work,
   interactions, other operations); zoom reveals the original named input nodes.
+  Inside the collection the inputs stand together by the part holding their
+  handler (the saved implementation owner), each group framed and titled by
+  that part's name and ordered by it; choosing a group's title reads that
+  part. An input with no owner stays loose after the groups, and a collection
+  whose inputs share one part keeps them loose. A tile names its kind only
+  when it is not the collection's most common kind: "Request" on 97 of Redis's
+  98 tiles repeated the collection's own summary. The groups are display
+  containment, not architectural areas; they add no relation.
   No synthetic type nodes or runtime relations are added. Bound inputs keep
   their exact identity and existing directed implementation relation; they are
   not replaced by their part or duplicated inside it. An unbound operation or
   native HTTP registration keeps its original absence of an implementation
   attachment. Selecting an input opens the same saved path and sources. External
   communication records without an exact local peer retain selectable nodes
-  inside amber destination frames, using the external catalogue's grouping.
+  inside amber destination frames, using the external catalogue's grouping
+  across the whole system: one frame per destination text, with an arrow from
+  each program that talks to it (Redis drew DNS resolver and TCP endpoint once
+  per program linking anet.c). Records calling the same native outside symbol
+  share one tile, and each program's caller keeps its own arrow and source; a
+  tile or frame several programs share belongs to none of them. Every record
+  stays in its own component's catalogue, and records of different symbols
+  stay separate tiles.
   When a saved connection identifies one already displayed peer in another
   target, the canvas connects the original caller directly to that peer/input
   instead of adding a third participant. Its outbound catalogue and source
@@ -129,6 +145,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   blue and external communications amber; saved lanes supply those identities.
   Core/entry cards use distinct diamond/arrow glyphs with the shared legend and
   accessible names, instead of repeating Core/Entrypoints above every title.
+  An area holding the program's entry (a declaration its execution starts
+  from, a target seed) carries the entry mark even when a core part stands in
+  it; parts that only take requests do not make their area the entry, and
+  other areas keep the core mark over their lane.
   Concrete input captions remain. A dark outline identifies the card open on
   the right without inserting another row or changing its text position. Dark arrows and outlined participants
   identify the currently emphasized connections.
@@ -158,6 +178,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 
 - The drawing has exactly one reason for emphasis: search results, the area
   under the pointer, the pinned input path, or the selected part's neighbours.
+  A pinned input path is drawn as its trace with the existing dark emphasis:
+  the arrows of its shortest call/read witnesses, each reached part joined
+  from the part its witness enters through. Other calls among the same parts
+  stay ordinary arrows. Initialization arrows (every relation reached only
+  from the target's seeds) are drawn only while one of their ends is looked
+  at, and only in a target that serves something: a target with no operation
+  and no chain does all its work from main, and Redis's benchmark, client and
+  dump checker had drawn none of their arrows. A call that code reached from
+  an input makes across two parts is work, not wiring.
   Hover temporarily replaces the drawing emphasis; it never unions another
   area's edges into a pinned input path. Leaving the canvas restores that path
   or selection. Reading an off-path part does not make it a path participant;
@@ -168,7 +197,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   titles retain a light background and readable role/purpose text. The duplicate
   `Reading` line and close action do not occupy space above the canvas. That
   space has a static type legend, not changing hover prose. The input context
-  and leave-path action live in the reading card. An up-chevron in
+  and leave-path action live in the reading card. An input chosen from Find
+  or a link is entered where its path starts: the camera stands on the
+  first part of its trace, its handler's part, with the trace dark from
+  there, while the reading column reads the input. Framing its tile had
+  shown GET as one of 98 tiles with no arrow in sight: the collection stands
+  outside its component, and no one camera shows the tile and the parts it
+  reaches readably. An input without a trace is entered as its tile, and a
+  tile clicked on the canvas keeps the camera. "Show input" stands in the
+  reading card while the camera may be away from the input's tile (at its
+  path's start, or on a part read since) and frames that tile; once the
+  tile is framed there is nothing to return to. An input's reading
+  names its handler ("handled by getCommand") as a link into the code. A
+  registration the model did not explain keeps its own call words as its
+  line ("redis.c.redisCommand.proc get in getCommand"); that line is the fact
+  said again and is not shown, in the reading or in Find. An up-chevron in
   the reading card's own header closes details, preserving camera and any pinned
   input path; leaving that path remains a separate action.
 
@@ -206,9 +249,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   shared participant/direction labels retain every matching number and source.
   The original endpoints, possible status and source relations remain available for
   reading and operation paths. Aggregated outside strokes are drawn once; they
-  are display geometry, not new semantic relations. Natural area sizes
-  determine a local content scale; each area wraps its scaled internal drawing
-  and heading without reserving a second member-list height. A closed group
+  are display geometry, not new semantic relations. Each area's interior is
+  laid out alone, from the arrows between its own parts, with a long chain
+  wrapped into rows at ELK's own proportion; arrows between areas are the
+  component's bundles between ready rectangles. Its parts keep their own size,
+  the size of the loose parts beside it, so an area is as large as what it
+  holds: laid out with the whole component and shrunk to a peer's width,
+  Redis's Server runtime stood as a staircase of postage stamps under a
+  full-size title. Each area wraps its drawing and heading without reserving a
+  second member-list height. A closed group
   shows its name and nested-content hint, then directly reveals its actual
   objects at the next common layer. There is no intermediate member-list view.
   An architectural area containing one part uses that existing part's rectangle
@@ -374,6 +423,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   area stay readable. The map uses available window width independently of
   prose width. The initial view is the whole-map summary; reset centers the selected
   item at readable scale (or the topmost part when nothing is selected). A
+  part is centred in the canvas; a part taller than the canvas shows its head
+  a screen margin below the top. The margin is screen pixels: taken as world
+  units at a close-up zoom it put Command dispatch under the canvas edge. A
   regenerated layout invalidates old camera coordinates and reveals the selected
   item instead. A navigation, click or camera move cannot trigger a different
   hover emphasis under a stationary pointer; real pointer movement resumes hover.
@@ -385,13 +437,22 @@ types by its reached code appear as terminal data dependencies, with a distinct
 read label and the original read site. They never execute a data owner's other
 methods or activate a stored callback, integration or mutation. One shortest
 call/read witness explains each reached part; imports and part membership alone
-do not establish a path. All original structural relations remain available.
+do not establish a path. The path is that trace, not a neighbourhood: its arrows
+are the witnesses' steps between parts (a caller off the map passes the step to
+its own caller), and its reading lists the parts by call depth from the handler,
+in the order the walk met them within one depth, with a part reached through a
+matched input after them. Selecting GET had lit every call among fourteen parts
+and listed them starting with Strings. Call depth is a static measure, not a
+recorded execution order. All original structural relations remain available.
 
 Both map legends list only categories present in that map. The expanded legend
 describes current selection and static paths, without removed toolbar controls.
 
-Group readings put outgoing connections before incoming connections, followed
-by Code in this part. The original native relation is available even when the
+Group readings put the description first, then the input's witness when an
+input is pinned, then Code in this part, then outgoing connections before
+incoming connections: Command dispatch had listed some 5,000 characters of
+connections before its code. A type's fields stand inside its row, in the code
+list and the source index alike, never as peers of the part's functions. The original native relation is available even when the
 model supplied no sentence for that pair. Relations between declarations in
 the same part remain available under Connections within this part, with their
 original call/read sites, destination declarations and resolution. Membership
@@ -486,7 +547,10 @@ topic plan remain in a plain fallback group. The current question remains
 visible while scrolling or taking a map side trip. Repository search lives in
 the header; compact results have short plain-text excerpts, without source or
 model popovers. Full answers and provenance remain at the result's destination.
-Exact code-name matches precede matches buried in answer prose.
+Exact code-name matches precede matches buried in answer prose. A result says
+what it is: an outside call or its destination is External communication (with
+its own filter), never a Part; an input collection is Inputs; a component is
+listed once.
 The former Learn/Work switch is gone: the
 owner could not tell the two entrances apart, and the switch changed only
 the intro, the question list and where the search field stood. A `mode`

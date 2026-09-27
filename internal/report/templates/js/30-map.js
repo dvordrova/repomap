@@ -376,6 +376,14 @@
       html += '<b>' + escapeText(titleOf(node)) + '</b>';
       var summary = node.getAttribute('data-summary');
       if (summary) html += '<p class="map-card-summary" data-display-ref="'+escapeText(node.dataset.summaryRef)+'">' + escapeText(summary) + '</p>';
+      // An input is read by its handler: the declaration its registration
+      // hands over, a link into the code.
+      if (node.dataset.handler && node.dataset.handler !== titleOf(node)) {
+        var handler = node.dataset.handlerSource ? '<a target="_blank" rel="noopener" href="'+escapeText(node.dataset.handlerSource)+'">'+escapeText(node.dataset.handler)+'</a>'
+          : node.dataset.handlerOpen ? '<a href="#" data-open="'+escapeText(node.dataset.handlerOpen)+'">'+escapeText(node.dataset.handler)+'</a>'
+          : '<span'+(node.dataset.handlerNoSource==='true'?' title="'+escapeText(rmT('No source'))+'"':'')+'>'+escapeText(node.dataset.handler)+'</span>';
+        html += '<p class="map-card-handler">' + rmT.html('handled by') + ' ' + handler + '</p>';
+      }
       if (node.dataset.operationGroup) html += '<span class="map-card-meta">' + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
       if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
