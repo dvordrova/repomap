@@ -99,7 +99,8 @@ new description or selection requests.
   their own deterministic lines and are written to `rejected.jsonl`; valid
   neighbours survive in the original exact-response cache. An entirely refused
   window is never cached, and each of its rows' reasons is journaled. The
-  key declarations, part roles and keys are closed tables answered only by
+  key declarations, part roles, keys and the outside symbols' roles are
+  closed tables answered only by
   the categorizer (Jev, `JEV_KEY` required; EXECUTION), never by the text
   model; a live reading without it is refused. A
   decision model's (Jev's) choice is taken when the chosen option leads
@@ -594,49 +595,94 @@ remain model decisions with `self`/`none`, not local middleware classification.
 
 ## External symbols: the `atlas_api` table
 
-The model reads the symbols the code calls or hands something to, one row per
-symbol, once per repository: `symbol`, `declared` (its type as its package
-declares it), `usage` (the first line that calls it), its `literals` and
-`hands_callable` when a repository callable is passed to it. A symbol is a
-symbol outside the repository, or, for the rows of a repository table (owner
-decision D1), the field those rows store a callable in, named by the file
-declaring the row's record type, the type and the field
-(`redis.c.redisCommand.proc`); its usage is its first row. `hands_callable`
-holds only when a registration handed a callable over, or a value the
-repository built (`Register("k6/x/dns", new(DNS))`, whose extension entry
-exists only through `binds`): a registration that hands nothing names the
-declaration making the call, and `fopen("/dev/null")` was once asked what a
-callable becomes and answered a request handler. The
-symbols handed a callable and the others are two tables asked at once. Every
-cell is optional and absent when the symbol does not do that. A handed symbol
-is asked `binds`, what the callable becomes, in the activation vocabulary:
-`request` (what a client sends over a connection, whatever the protocol: a
-route, an RPC method, a command a client sends), `command` (a person runs it
-from a command line or task runner), `interaction` (a person's action in a
-user interface), `scheduled` (a timer runs it), `continuous` (it runs for as
-long as the program does, on a thread, task or loop of its own),
-`queue_consumer` and `extension`; a symbol that runs the callable in place, or
-only when the process is signalled or fails, binds nothing. It is also asked
-`middleware` (`yes` when the callable runs around or before the handlers; such
-a symbol binds and publishes nothing) and `publishes`. Every other symbol is
-asked `publishes` (`yes` when the call makes what its holder holds reachable:
-a server started, an app run, a consumer connected) and `talks` (the kind of
-other running system it sends to, reads from or opens a connection to:
-`client_request`, `db`, `queue_producer`, `queue_consumer`, `sdk`).
-`client_request` is the outgoing side of `request` and, like it, names no
-protocol (owner, 2026-09-27): an HTTP request, an RPC and a raw socket
-`connect` are one kind, and a report never calls a TCP connection HTTP. A
-symbol may hold several cells. The roles are recorded on the atlas as `api`.
-A request, like every entry, is named from its registration's words
-(Operation ownership above).
+The categorizer (Jev, `llm.Categorizer`) reads the symbols the code calls or
+hands something to, one question per symbol and decision, once per
+repository. The item is the symbol's row: `symbol`, `declared` (its type as
+its package declares it), `usage` (the first line that calls it), its
+`literals` and `hands_callable` when a repository callable is passed to it.
+A symbol is a symbol outside the repository, or, for the rows of a
+repository table (owner decision D1), the field those rows store a callable
+in, named by the file declaring the row's record type, the type and the
+field (`redis.c.redisCommand.proc`); its usage is its first row.
+`hands_callable` holds only when a registration handed a callable over, or
+a value the repository built (`Register("k6/x/dns", new(DNS))`, whose
+extension entry exists only through `binds`): a registration that hands
+nothing names the declaration making the call, and `fopen("/dev/null")` was
+once asked what a callable becomes and answered a request handler. The
+symbols handed a callable and the others are two tables asked at once.
 
-The table asks only the decisions the boundaries read (`repomap.atlas.api.v5`,
-owner decision 2026-09-26). `reads_input`, `writes_output`, `auth`, `config`
-and `validates` were asked of every symbol, stored in `atlas.json` and read by
-nothing; a window of them flipped between runs. A decision without a reader
-is not asked and keeps no dormant field. When a reader for one arrives, it
-returns as its own table with an explicit `none` option rather than an
-optional cell.
+`state.task` (`prompts/api.md`) says what the map wants: a program's entries
+and its outside systems, the other running programs it talks to; the
+operating system, the runtime and linked libraries are the program's own
+work. Every question is one closed choice, and every option, `none`
+included, carries its criteria (what it is, what it includes, what it is
+not for, examples) from embedded Markdown beside the stage. A handed symbol
+is asked `binds`, what the callable becomes: `request` (what a client sends
+over a connection, whatever the protocol: a route, an RPC method, a command
+a client sends), `command` (a person runs it from a command line or task
+runner), `interaction` (a person's action in a user interface), `scheduled`
+(a timer runs it), `continuous` (it runs for as long as the program does,
+on a thread, task or loop of its own), `queue_consumer`, `extension`,
+`middleware` (it runs around or before the handlers; such a symbol binds
+and publishes nothing) or `none` (the symbol runs it in place, wraps or
+stores it, or runs it only when the process is signalled or fails). It is
+also asked `publishes`: `serves` (the call starts serving what it is
+handed) or `none`. The two are independent (`Alone`): a near-tie on one
+leaves the other standing. Every other symbol is asked one `talks`
+question: `serves` (the program's own listening side: listening on or
+binding an address, running the server, starting a consumer, and accepting
+a connection another program opened to it), `client_request`, `db`,
+`queue_producer`, `queue_consumer`, `sdk`, or `none`, no communication
+(converting an address already in hand, building or configuring a client
+without calling it, reading a result already received, files, threads,
+signals, an open connection's reads and writes). `db` includes building the
+query a database library runs. `client_request` is the
+outgoing side of `request` and, like it, names no protocol (owner,
+2026-09-27): an HTTP request, an RPC and a raw socket `connect` are one
+kind, and a report never calls a TCP connection HTTP. Code only restores
+the closed choices: `serves` is `publishes`, `middleware` the middleware
+role, `none` no role; an answer under the decision margin leaves its
+decision explicitly unanswered, and a symbol without a role makes no
+boundary. The roles are recorded on the atlas as `api`. A request, like
+every entry, is named from its registration's words (Operation ownership
+above).
+
+The table asks only the decisions the boundaries read (`repomap.atlas.api.v6`).
+`reads_input`, `writes_output`, `auth`, `config` and `validates` were asked
+of every symbol, stored in `atlas.json` and read by nothing; a window of
+them flipped between runs (owner decision 2026-09-26). A decision without a
+reader is not asked and keeps no dormant field. When a reader for one
+arrives, it returns as its own question with an explicit `none` option.
+
+Measured 2026-09-27 on the saved requests of redis 1.3.6 (129 symbols),
+xk6-dns (47) and microblog (117), 3 draws each, as wrong answers / symbols
+whose answer changed between draws. The v5 text-model table, whose cells
+were optional notes with no answer for "talks to nothing" and none that
+fitted `accept`: 7/1, 18/12 and 9/2 (inet_aton `talks sdk` 3 of 3, accept
+`client_request` 3 of 3; five saved v5 Redis runs had given inet_aton sdk
+in 3, bind `publishes` in 2 and accept `client_request` in 2). The same
+options and criteria written into the text model's prompt: 2/1 (`select`
+serves in 2 of 3; one earlier wording, 3 of 3), 0/0 and 12/0. Jev with
+them: 0/0, 3/2 and 6/2, and 3 and 3 answers explicitly unanswered.
+inet_aton, inet_ntoa, accept, listen, bind, connect, gethostbyname, fopen,
+open, sigaction, pthread_create, k6's `modules.Register`, Flask's `route`,
+`requests.post`, miekg's `ExchangeContext`, k6's `DialContext` and
+`LookupHost` were right in every Jev draw of four rounds of wording. What
+Jev still misses is named by chained Python names (`requests.post.json` as
+`client_request`, `alembic.op.f` as `db`), k6's `metrics.PushIfNotDone`,
+which sends a sample on the host's channel (never `none` in 12 Jev draws
+over four wordings: `sdk` at about 0.4 against `none` at about 0.2 in 8,
+unanswered in 4; the text table had said `queue_producer` in 2 of 3), so an
+xk6-dns map can show a "k6 metrics" outside system, and the construction of
+a `net.Resolver`, whose usage line is a field line of its literal
+(`client_request` or unanswered). Two task wordings that weigh `declared`
+first, one adding that a value handed on through a channel stays in the
+process, left PushIfNotDone `sdk` 3 of 3 or unanswered 3 of 3 and made more
+microblog answers change between draws (3 draws each, 2026-09-27). Flask's `errorhandler` is now `none` or unanswered
+where the text model said `request`: `request` and `none` both stay near
+0.4. Building a SQLAlchemy `select` is `db`, the program's question to its
+database. The 2026-09-25 probe that kept this table on the text model asked
+Jev optional yes-only columns without criteria.
 
 The roles make the boundaries; no call site is asked whether it is one. A
 registration handing a callable to a `binds` symbol is that entry, with the

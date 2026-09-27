@@ -118,10 +118,7 @@ func TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	preset := &kvdPreset{roles: map[string]map[string]string{
-		"sys/socket.h.bind": {"publishes": "yes"}, "sys/socket.h.listen": {"publishes": "yes"},
-		"sys/socket.h.connect": {"talks": "client_request"},
-	}}
+	preset := &kvdPreset{roles: map[string]map[string]string{"sys/socket.h.connect": {"talks": "client_request"}}}
 	var metas []reading.TargetMeta
 	for _, index := range []programindex.Index{server, client} {
 		metas = append(metas, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."})
@@ -129,7 +126,7 @@ func TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem(t *te
 	result, err := reading.Read(t.Context(), reading.Options{
 		Graph: graph, Repository: "kvd", Revision: "test", NoCaptions: true, Targets: metas,
 		Executor: llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}},
-		Provider: preset, Categorizer: kvdCategorizer(), OwnerRunDir: t.TempDir(),
+		Provider: preset, Categorizer: preset.categorizer(), OwnerRunDir: t.TempDir(),
 		ReadSource: func(path string) ([]byte, error) { return fixture.source(t, path), nil },
 	})
 	if err != nil {

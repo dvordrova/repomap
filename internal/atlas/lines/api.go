@@ -2,9 +2,12 @@ package lines
 
 import (
 	_ "embed"
+	"fmt"
+	"slices"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 const (
@@ -12,33 +15,73 @@ const (
 	StagePublish = "atlas_publish"
 )
 
+// The closed options of the api questions that are not a boundary kind: a
+// call that serves is the program's listening side, and none is the
+// explicit answer that the symbol is no entry, starts no serving or talks to
+// no other running program.
+const (
+	APIServes     = "serves"
+	APIMiddleware = "middleware"
+	APINone       = "none"
+)
+
 //go:embed prompts/api.md
 var apiPrompt string
+
+//go:embed prompts/api_binds_options.md
+var apiBindsOptionsText string
+
+//go:embed prompts/api_publishes_options.md
+var apiPublishesOptionsText string
+
+//go:embed prompts/api_talks_options.md
+var apiTalksOptionsText string
 
 //go:embed prompts/publish.md
 var publishPrompt string
 
-// API reads the external symbols the repository calls. A symbol handed a
-// repository callable is asked what the callable becomes; every other
-// symbol is asked whether it starts serving and what other running system
-// it talks to. Every cell is optional: a symbol that does none of it gets no
-// cell. Only cells the boundaries read are asked: a decision without a
-// reader comes back as its own table, with an explicit none, when a reader
-// for it lands.
+// The criteria of every option of the api questions, read once from their
+// embedded Markdown.
+var (
+	apiBindsOptions     = mustOptions("prompts/api_binds_options.md", apiBindsOptionsText, append(atlas.EntryKinds(), APIMiddleware, APINone))
+	apiPublishesOptions = mustOptions("prompts/api_publishes_options.md", apiPublishesOptionsText, []string{APIServes, APINone})
+	apiTalksOptions     = mustOptions("prompts/api_talks_options.md", apiTalksOptionsText, TalksOptions())
+)
+
+// API reads the external symbols the repository calls, one question per
+// symbol and cell, each a closed choice whose every option, none among them,
+// carries its criteria. A symbol handed a repository callable is asked what
+// the callable becomes and whether the call starts serving it; every other
+// symbol is asked what the call does with other running programs. Only the
+// decisions the boundaries read are asked.
+//
+// The categorizer (Jev) answers them. Measured on the saved requests of
+// redis 1.3.6 (129 symbols), xk6-dns (47) and microblog (117), 3 draws each
+// (2026-09-27), as wrong answers / symbols whose answer changed. The text
+// model's optional cells, with no option for talking to nothing and none
+// that fits accept: 7/1, 18/12 and 9/2 (inet_aton talks sdk, accept talks
+// client_request). These options and criteria in the text model's prompt:
+// 2/1 (select serves), 0/0 and 12/0. Jev with them: 0/0, 3/2 and 6/2, with
+// 3 and 3 answers left explicitly unanswered under table.ClassifierMargin;
+// inet_aton, accept, listen, bind, connect and gethostbyname were right in
+// every draw of four rounds.
 func API(handed bool) table.Definition {
-	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v5", System: apiPrompt}
+	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v6", System: apiPrompt, Classifier: true}
 	if handed {
 		def.Contract += ".handed"
+		// The two decisions are independent: a near-tie on one leaves the
+		// other standing.
 		def.Columns = []table.Column{
-			{Name: "binds", Kind: table.Choice, Options: atlas.EntryKinds(), Optional: true, Note: "what the handed callable becomes: request a handler of what a client sends over a connection, whatever the protocol (a route, an RPC method, a command a client sends); command a command a person runs from a command line or task runner; interaction a handler of a person's action in a user interface; scheduled work a timer runs; continuous work that runs for as long as the program does, on a thread, task or loop of its own; queue_consumer a handler of messages taken from a queue; extension a hook a host program calls at its own points. A symbol that runs the callable in place, wraps it, or only marks or transforms it binds nothing, and neither does one that runs it only when the process is signalled or fails"},
-			{Name: "middleware", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when the callable runs around or before the handlers rather than being an entry of its own"},
-			{Name: "publishes", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this call starts serving: listens on an address, runs the application, connects the consumer"},
+			{Name: "binds", Kind: table.Choice, Options: append(atlas.EntryKinds(), APIMiddleware, APINone), Criteria: apiBindsOptions, Item: "outside_symbol", Alone: true,
+				Ask: "What does the repository's callable handed to `outside_symbol` become on our map?"},
+			{Name: "publishes", Kind: table.Choice, Options: []string{APIServes, APINone}, Criteria: apiPublishesOptions, Item: "outside_symbol", Alone: true,
+				Ask: "Does this call to `outside_symbol` make what the repository hands it reachable by other programs?"},
 		}
 		return def
 	}
 	def.Columns = []table.Column{
-		{Name: "publishes", Kind: table.Choice, Options: []string{"yes"}, Optional: true, Note: "yes when this call starts serving: listens on an address, runs the application, connects the consumer"},
-		{Name: "talks", Kind: table.Choice, Options: talksOptions(), Optional: true, Note: "the kind of other running system this call itself sends to, reads from or opens a connection to: client_request, db, queue_producer, queue_consumer, sdk. A call that builds or configures — returning the same type it was called on, setting a header, tuning a pool — and a call that reads a result already received talk to nothing"},
+		{Name: "talks", Kind: table.Choice, Options: TalksOptions(), Criteria: apiTalksOptions, Item: "outside_symbol",
+			Ask: "What does a call to `outside_symbol` do with other running programs?"},
 	}
 	return def
 }
@@ -55,8 +98,29 @@ func Publish() table.Definition {
 	}
 }
 
-// talksOptions are the outgoing kinds a symbol can talk to. A symbol that
-// talks to nothing named leaves the cell out; there is no "other" to fall into.
-func talksOptions() []string {
-	return []string{atlas.BoundaryClientRequest, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK}
+// TalksOptions are what a call that hands nothing over can do with other
+// running programs: serve as the program's listening side, one of the
+// outgoing kinds, or none. There is no "other" to fall into.
+func TalksOptions() []string {
+	return []string{APIServes, atlas.BoundaryClientRequest, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK, APINone}
+}
+
+// mustOptions reads the criteria of exactly the named options. The text is
+// embedded, so a malformed file is a defect every test of this package meets.
+func mustOptions(file, text string, names []string) map[string]llm.Criteria {
+	options, err := parseOptionCriteria(text)
+	if err != nil {
+		panic(fmt.Sprintf("lines: %s: %v", file, err))
+	}
+	for _, name := range names {
+		if _, ok := options[name]; !ok {
+			panic(fmt.Sprintf("lines: %s has no option %q", file, name))
+		}
+	}
+	for name := range options {
+		if !slices.Contains(names, name) {
+			panic(fmt.Sprintf("lines: %s lists option %q the question does not ask", file, name))
+		}
+	}
+	return options
 }

@@ -195,15 +195,26 @@ func (r *reader) readAPI(ctx context.Context) error {
 	return nil
 }
 
-// apiRoleOf reads one accepted api row into the role the boundaries use.
+// apiRoleOf restores one accepted api row's closed choices into the role the
+// boundaries use: none is no role, a handed callable that becomes
+// middleware binds no entry, and a call that serves, handed or not, is the
+// program's listening side.
 func apiRoleOf(answer table.Answer) apiRole {
-	role := apiRole{
-		binds: answer["binds"], talks: answer["talks"], publishes: answer["publishes"] == "yes",
-		middleware: answer["middleware"] == "yes",
+	role := apiRole{publishes: answer["publishes"] == lines.APIServes}
+	switch binds := answer["binds"]; binds {
+	case "", lines.APINone:
+	case lines.APIMiddleware:
+		// A middleware binds no entry and starts nothing the program serves.
+		return apiRole{middleware: true}
+	default:
+		role.binds = binds
 	}
-	// A middleware binds no entry and starts nothing the program serves.
-	if role.middleware {
-		role.binds, role.publishes = "", false
+	switch talks := answer["talks"]; talks {
+	case "", lines.APINone:
+	case lines.APIServes:
+		role.publishes = true
+	default:
+		role.talks = talks
 	}
 	return role
 }

@@ -2,6 +2,7 @@ package table
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -259,5 +260,28 @@ func TestStaticOptionsCarryTheirCriteria(t *testing.T) {
 	want := `{"questions":{"f1|boxes":{"criteria":{"one box":{"what":"one job"},"several boxes":{"examples":["a web file"],"what":"several jobs"}},"instructions":{"file":{"path":"a.c"},"question":"One or several?"},"type":"choice"}},"state":{"context":{},"task":"gate"}}`
 	if call.Prompt.User != want {
 		t.Fatalf("request:\n%s\nwant:\n%s", call.Prompt.User, want)
+	}
+}
+
+// Two independent decisions about one row: a near-tie on an Alone column
+// leaves that cell unanswered and recorded, and the row keeps the decision
+// that was clear. A row with no decision at all is still unanswered.
+func TestAnAloneClassifierColumnFailsByItself(t *testing.T) {
+	def := Definition{Stage: "atlas_alone", Contract: "c", System: "s", Columns: []Column{
+		{Name: "binds", Kind: Choice, Options: []string{"request", "none"}, Alone: true},
+		{Name: "publishes", Kind: Choice, Options: []string{"serves", "none"}, Alone: true},
+	}}
+	window := Window{Rows: []Row{{ID: "s1"}, {ID: "s2"}}}
+	result, err := DecodeClassifierAnswers(def, window, map[string]llm.Verdict{
+		"s1|binds":     chose("request", map[string]float64{"request": 0.95, "none": 0.05}),
+		"s1|publishes": chose("none", map[string]float64{"none": 0.52, "serves": 0.48}),
+		"s2|binds":     chose("none", map[string]float64{"none": 0.5, "request": 0.5}),
+		"s2|publishes": chose("none", map[string]float64{"none": 0.51, "serves": 0.49}),
+	})
+	if err != nil || result.Answers[0]["binds"] != "request" || len(result.Answers[0]) != 1 || result.Answers[1] != nil {
+		t.Fatalf("a near-tie on one decision cost the row its other: %+v %v", result, err)
+	}
+	if len(result.Rejections) != 2 || result.Rejections[0].Cell != "publishes" || result.Rejections[1].Cell != "" || slices.Contains(result.AcceptedRowKeys(), "s1") {
+		t.Fatalf("the refused cell or row was not recorded: %+v", result.Rejections)
 	}
 }

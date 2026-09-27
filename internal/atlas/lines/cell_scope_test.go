@@ -7,25 +7,6 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
-// One unlisted value on an optional API decision loses that decision only:
-// the symbol's other decisions stand, and a cell the table no longer asks
-// is no decision.
-func TestAPIDecisionsFailAlone(t *testing.T) {
-	window := table.Window{Rows: []table.Row{{ID: "x1"}, {ID: "x2"}}}
-	result, err := table.DecodeResult(API(false), window, []byte(`{"rows":[
-		{"key":"x1","publishes":"yes","talks":"grpc","reads_input":"body","validates":true},
-		{"key":"x2","talks":"db"}]}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := (table.Answer{"publishes": "yes"}); !reflect.DeepEqual(result.Answers[0], want) {
-		t.Fatalf("one unlisted decision cost the symbol its others: %+v", result.Answers[0])
-	}
-	if len(result.Rejections) != 1 || result.Rejections[0].Key != "x1" || result.Rejections[0].Cell != "talks" || result.Answers[1]["talks"] != "db" {
-		t.Fatalf("the unlisted decision was not recorded alone: %+v", result.Rejections)
-	}
-}
-
 // A missing address is the declared unknown and names no address; the line
 // and destination stand. An unlisted destination, or a free destination
 // without its name, loses only itself.

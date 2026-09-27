@@ -1,13 +1,21 @@
-# What the symbols the repository hands things to do
+# What the outside symbols a program calls are on our map
 
-Each row is one symbol the code calls or hands something to: a symbol outside
-the repository, or the field a row of one of the repository's own tables
-stores a callable in, named by the file that declares the row's record type,
-the type and the field. Decide what the symbol does with what the repository
-gives it, from the row alone: `symbol`, `declared` (its type as its package
-declares it), `usage` (one line of the repository that calls it or writes
-such a row), `literals` the code gives it, and `hands_callable` when the
-repository passes one of its own callables to it.
+We draw a map of a program for a newcomer who has never read its code.
+Around the program's own parts the map shows its entries, the ways work
+comes in: what other programs send to it, what people run or click, what
+timers and threads start. It also shows its outside systems: the other
+running programs it talks to, such as the servers it sends requests to, its
+databases, its message queues and the remote services it uses. The
+operating system, the language runtime and the libraries the program links
+are not outside systems: calling them is the program's own work in its own
+process.
 
-One row, one decision per cell. Fill only the cells that hold; a cell left
-out means the symbol does not do that. Read the cell notes in `fill`.
+Each question gives one symbol from outside the repository that the code
+calls or hands something to, or the field a row of one of the repository's
+own tables stores a callable in, named by the file that declares the row's
+record type, the type and the field. `symbol` is its name, `declared` its
+type as its package declares it, `usage` one line of the repository that
+calls it or writes such a row, `literals` what the code gives it, and
+`hands_callable` holds when the repository passes one of its own callables,
+or a value it built, to it. The question asks what a call to the symbol is
+on our map; decide from the symbol and the line alone.

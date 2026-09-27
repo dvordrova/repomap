@@ -15,11 +15,11 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 // slowProvider answers like tableProvider, holding back the requests of the
-// tables slow names: so a chain of stages can be made to finish last. An
-// outside symbol talks to another system without publishing anything.
+// tables slow names: so a chain of stages can be made to finish last.
 type slowProvider struct {
 	*tableProvider
 	slow  map[string]bool
@@ -41,21 +41,7 @@ func (p slowProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.
 			return llm.Completion{}, ctx.Err()
 		}
 	}
-	completion, err := p.tableProvider.Complete(ctx, prepared)
-	if err != nil || request.Table != lines.StageAPI {
-		return completion, err
-	}
-	var response struct {
-		Rows []map[string]any `json:"rows"`
-	}
-	if err := json.Unmarshal(completion.Response, &response); err != nil {
-		return completion, err
-	}
-	for _, row := range response.Rows {
-		delete(row, "publishes")
-	}
-	completion.Response, err = json.Marshal(response)
-	return completion, err
+	return p.tableProvider.Complete(ctx, prepared)
 }
 
 // withEntryCallingOutside binds the route of svc/api/h.go to its F, which
@@ -104,6 +90,8 @@ func forkedReading(t *testing.T, slow map[string]bool, delay time.Duration) (Opt
 	}
 	opts := twoTargetOptions(t, withEntryCallingOutside(t, withSymbols(t, twoTargetGraph(t))), provider)
 	opts.Provider = slowProvider{tableProvider: provider, slow: slow, delay: delay}
+	// The outside symbol talks to another system without serving anything.
+	opts.Categorizer = closedDecisionsWith(map[string]llm.Verdict{"talks": typesafetest.Choose(atlas.BoundaryClientRequest)})
 	return opts, provider
 }
 

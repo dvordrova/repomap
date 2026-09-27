@@ -339,20 +339,7 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 		if !conditionHolds(column, answer, row) {
 			continue
 		}
-		symbol, _ := row["symbol"].(string)
 		switch {
-		case table == "atlas_api":
-			// The roles a reader gives the three symbols that matter here;
-			// every other symbol gets no cell.
-			switch {
-			case name == "binds" && strings.HasSuffix(symbol, "echo/v4.Echo.GET"):
-				preset.sawRegistration = true
-				answer["binds"] = "request"
-			case name == "publishes" && strings.HasSuffix(symbol, "echo/v4.Echo.Start"):
-				answer["publishes"] = "yes"
-			case name == "talks" && symbol == "database/sql.Open":
-				answer["talks"] = "db"
-			}
 		case table == "atlas_layers" && name == "role":
 			// The query itself is never asked: the code names the access.
 			source, _ := row["source"].(string)
@@ -389,11 +376,27 @@ func (preset *echoPreset) answer(table string, fill []map[string]any, row map[st
 
 // categorizer decides the closed tables as a reader would: the part that
 // holds the stored users is this program's domain and the others serve it;
-// every candidate explains its part and is a key.
+// every candidate explains its part and is a key. Of the outside symbols,
+// the route registration binds a request, the server's start serves and
+// the driver's open talks to the database; every other symbol is none.
 func (preset *echoPreset) categorizer() *typesafetest.Categorizer {
 	decide := typesafetest.ByColumn(map[string]llm.Verdict{"explains": typesafetest.Yes(0.9), "key_symbol": typesafetest.Choose("yes")})
 	var mu sync.Mutex
 	return &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		symbol, _ := question.Item["symbol"].(string)
+		switch column := key[strings.LastIndex(key, "|")+1:]; {
+		case column == "binds" && strings.HasSuffix(symbol, "echo/v4.Echo.GET"):
+			mu.Lock()
+			preset.sawRegistration = true
+			mu.Unlock()
+			return typesafetest.Choose("request"), true
+		case column == "talks" && strings.HasSuffix(symbol, "echo/v4.Echo.Start"):
+			return typesafetest.Choose("serves"), true
+		case column == "talks" && symbol == "database/sql.Open":
+			return typesafetest.Choose("db"), true
+		case column == "binds" || column == "publishes" || column == "talks":
+			return typesafetest.Choose("none"), true
+		}
 		if !strings.HasSuffix(key, "|role") {
 			return decide(key, question)
 		}

@@ -353,6 +353,67 @@ func TestSymbolRolesTurnRegistrationsIntoBoundariesAndHoldersCarryAddresses(t *t
 	}
 }
 
+// The categorizer's closed answers restore to roles, and the roles to
+// boundaries: the server accepting a connection on its listening socket is
+// its listening side, not an outgoing request; a local conversion of an
+// address talks to no one and makes no boundary; the resolver still talks
+// to another system. A handed callable that runs around the handlers binds
+// nothing, and a none binds nothing either.
+func TestClosedAPIAnswersMakeTheirBoundaries(t *testing.T) {
+	call := func(id, external string) atlas.Place {
+		return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: "anet.c", LineNo: len(id) * 10, Column: 5, Parent: "file:anet", TargetIDs: []string{"server"}, Given: external,
+			Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "server", FactID: "fact:" + id}}, Caller: "anetAccept", External: external, Direction: atlas.DirectionOut}}
+	}
+	handed := func(id, external string) atlas.Place {
+		place := call(id, external)
+		place.Boundary.Direction, place.Boundary.ObjectID = atlas.DirectionIn, "handler"
+		return place
+	}
+	places := []atlas.Place{
+		call("b1", "sys/socket.h.accept"), call("b2", "arpa/inet.h.inet_aton"), call("b3", "netdb.h.gethostbyname"),
+		handed("b4", "vendor/web.Use"), handed("b5", "stdlib.h.qsort"), handed("b6", "vendor/web.Route"),
+	}
+	answers := map[string]table.Answer{
+		"sys/socket.h.accept":   {"talks": lines.APIServes},
+		"arpa/inet.h.inet_aton": {"talks": lines.APINone},
+		"netdb.h.gethostbyname": {"talks": atlas.BoundarySDK},
+		"vendor/web.Use":        {"binds": lines.APIMiddleware, "publishes": lines.APINone},
+		"stdlib.h.qsort":        {"binds": lines.APINone, "publishes": lines.APINone},
+		"vendor/web.Route":      {"binds": atlas.BoundaryRequest, "publishes": lines.APINone},
+	}
+	r := answerTestReader(t, nil, nil)
+	r.dry, r.opts.Through = true, ""
+	r.opts.Graph.Places = places
+	r.places = map[string]atlas.Place{}
+	for _, place := range places {
+		r.places[place.ID] = place
+	}
+	r.api = map[string]apiRole{}
+	for symbol, answer := range answers {
+		if role := apiRoleOf(answer); role != (apiRole{}) {
+			r.api[symbol] = role
+		}
+	}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var made []string
+	for _, id := range sortedKeys(r.boundaries) {
+		b := r.boundaries[id].place.Boundary
+		made = append(made, id+" "+b.Direction+" "+r.boundaries[id].kind)
+	}
+	want := []string{"b1 in listen_address", "b3 out sdk", "b6 in request"}
+	if !reflect.DeepEqual(made, want) {
+		t.Fatalf("closed answers made boundaries %v, want %v", made, want)
+	}
+	if !reflect.DeepEqual(r.apiRoles(), []atlas.APIRole{
+		{Symbol: "netdb.h.gethostbyname", Talks: "sdk"}, {Symbol: "sys/socket.h.accept", Publishes: true},
+		{Symbol: "vendor/web.Route", Binds: "request"}, {Symbol: "vendor/web.Use", Middleware: true},
+	}) {
+		t.Fatalf("roles recorded differently: %+v", r.apiRoles())
+	}
+}
+
 // The api table asks only what the boundaries read: every cell it asks,
 // written on a row alone or beside a binding, changes what the symbol's
 // registrations become. reads_input, writes_output, auth, config and
