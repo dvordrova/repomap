@@ -336,7 +336,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // restored visit): its tile is the one chosen, and a new one is centred.
   map.addEventListener('repomap:reading',()=>{
     const named=map.explorerMember;if(!named?.owner)return;
-    const part=displayed(named.owner),symbols=byID.get(part)?.symbols||[];
+    const part=named.owner,symbols=byID.get(part)?.symbols||[];
     const same=value=>!!value&&[named.key,named.href,named.open].includes(value);
     const index=symbols.findIndex(symbol=>same(symbol.href)||same(symbol.open));
     if(index<0||memberChoice?.part===part&&memberChoice.index===index)return;
@@ -1053,7 +1053,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
   });
   return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,overview:()=>fitOverview(420),update(next){
-    if(memberChoice&&displayed(next.scope)!==memberChoice.part)memberChoice=null;
+    if(memberChoice&&(next.scope||'')!==memberChoice.part)memberChoice=null;
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
     view={...initial,...next,scope:displayed(next.scope)||'',
       selected:new Set([...(next.selected||[])].map(displayed)),matched:new Set([...(next.matched||[])].map(displayed))};update();
