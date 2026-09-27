@@ -191,3 +191,30 @@ def read_replaced_counter(counter: MutableCounter, other):
 
 def store_level_data(key):
     values[key] = READ_LIMIT
+
+
+# A store target reads its receiver and row selector before the write, so a
+# lambda there is a callback of this function, as in the pandas idiom.
+from functools import reduce
+
+
+def mark_exit_rows(frame, conditions, columns):
+    frame.loc[reduce(lambda left, right: left & right, conditions), "exit"] = 1
+    frame.loc[min(columns, key=lambda column: len(column)), "size"]: int = 0
+    for frame.loc[max(columns, key=lambda column: len(column)), "last"] in conditions:
+        pass
+
+
+# Annotations and defaults run where the function is defined, so a lambda in
+# them belongs to that scope: FastAPI's Depends, a check kept in Annotated
+# metadata, and a lambda default of a lambda.
+from typing import Annotated
+from fastapi import Depends
+
+
+def level_limit(limit: Annotated[int, Depends(lambda: 10)]) -> Annotated[int, lambda value: value >= 0]:
+    return limit
+
+
+def row_sorter(field):
+    return lambda rows, key=lambda row: row[field]: sorted(rows, key=key)

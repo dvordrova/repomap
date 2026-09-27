@@ -354,6 +354,10 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	assertCumulativeJSTSValueReads(t, result, index)
 	assertCumulativeJSTSCallbackAliases(t, index, "src/server.ts", programindex.ResolutionExact)
 	assertCumulativeJSTSChainedCallbacks(t, index, "src/server.ts", programindex.ResolutionExact)
+	assertCumulativeJSTSStoreTargetCallbacks(t, index, "src/server.ts")
+	assertCumulativeJSTSStoreTargetCallbacks(t, index, "src/market-worker.js")
+	assertCumulativeJSTSHeaderArrows(t, index, "src/server.ts", true)
+	assertCumulativeJSTSHeaderArrows(t, index, "src/market-worker.js", false)
 	adaptertest.AssertCallControls(t, index, graph, "src/server.ts", "processPendingJobs", map[int][]adaptertest.Control{
 		137: nil,
 		139: {{Line: 138, Kind: "while body with constant true condition"}},
@@ -1149,6 +1153,160 @@ func assertCumulativeJSTSCallbackAliases(t *testing.T, index programindex.Index,
 	}
 	if named != 1 || literal != 1 {
 		t.Fatalf("%s callback aliases: named=%d literal=%d", source, named, literal)
+	}
+}
+
+// Python once declared no lambda inside a store target while relating it.
+// In markMatchingRows the element index, compound index and property receiver
+// of assignment targets keep their calls, callbacks and reads like any
+// expression: the inline arrow stays an unresolved argument whose body call
+// belongs to the enclosing function; the named callable is passed and read.
+func assertCumulativeJSTSStoreTargetCallbacks(t *testing.T, index programindex.Index, source string) {
+	t.Helper()
+	var caller, join string
+	callerLine := 0
+	for _, object := range index.Objects {
+		if object.Location == nil || object.Location.Path != source {
+			continue
+		}
+		switch object.Name {
+		case "markMatchingRows":
+			caller, callerLine = object.ID, object.Location.Line
+		case "joinCondition":
+			join = object.ID
+		}
+	}
+	if caller == "" || join == "" {
+		t.Fatalf("%s store-target callers missing: caller=%q joinCondition=%q", source, caller, join)
+	}
+	arguments := make(map[string]programindex.PatternArgument)
+	var inlineArgument *programindex.PatternArgument
+	bodyCall := false
+	for _, relation := range index.Relations {
+		if relation.FromID != caller || relation.Location == nil {
+			continue
+		}
+		for _, pattern := range relation.Patterns {
+			for i, argument := range pattern.Arguments {
+				arguments[argument.ID] = argument
+				if relation.Location.Line == callerLine+1 && pattern.Selector == "reduce" {
+					inlineArgument = &pattern.Arguments[i]
+				}
+			}
+		}
+		for _, witness := range relation.Witnesses {
+			bodyCall = bodyCall || relation.Location.Line == callerLine+1 && witness.SourceExpression == "right.trim"
+		}
+	}
+	if inlineArgument == nil || inlineArgument.Resolution != programindex.ResolutionUnresolved ||
+		len(inlineArgument.ObjectIDs) != 0 || inlineArgument.ObjectsObserved != 1 || !bodyCall {
+		t.Fatalf("%s inline store-target arrow: argument=%#v body call=%v", source, inlineArgument, bodyCall)
+	}
+	passed, read := make(map[int]bool), make(map[int]bool)
+	for _, relation := range index.Relations {
+		if relation.FromID != caller || relation.Location == nil || len(relation.ToIDs) != 1 || relation.ToIDs[0] != join {
+			continue
+		}
+		switch relation.Kind {
+		case programindex.RelationPassesCallback:
+			argument, found := arguments[relation.SourceArgumentID]
+			if !found || relation.Resolution != programindex.ResolutionExact || argument.Resolution != relation.Resolution ||
+				len(argument.ObjectIDs) != 1 || argument.ObjectIDs[0] != join {
+				t.Fatalf("%s store-target callback lost its argument: relation=%#v argument=%#v", source, relation, argument)
+			}
+			passed[relation.Location.Line-callerLine] = true
+		case programindex.RelationReads:
+			read[relation.Location.Line-callerLine] = true
+		}
+	}
+	want := map[int]bool{2: true, 3: true}
+	if !reflect.DeepEqual(passed, want) || !reflect.DeepEqual(read, want) {
+		t.Fatalf("%s store-target joinCondition passed on lines %v and read on %v, want +2 and +3", source, passed, read)
+	}
+}
+
+// Python once declared no lambda in a function header (FastAPI's
+// `Depends(lambda: ...)`, a `key=lambda row: row` default) while relating it.
+// JavaScript evaluates a parameter default on each call inside its function,
+// so the call in a default arrow belongs to that function, as the call in
+// markMatchingRows' inline argument arrow does. A named default is read, not
+// passed, and `key` never borrows it. A TypeScript parameter decorator is a
+// call of the method it is written on, not a decoration; its inline arrow
+// stays an unresolved argument whose body call belongs to that method.
+// JavaScript has no parameter decorators.
+func assertCumulativeJSTSHeaderArrows(t *testing.T, index programindex.Index, source string, decorators bool) {
+	t.Helper()
+	objects := make(map[string]programindex.Object)
+	names := make(map[string]string)
+	for _, object := range index.Objects {
+		if object.Location != nil && object.Location.Path == source {
+			objects[object.Name], names[object.ID] = object, object.Name
+		}
+	}
+	callers := []string{"sortRows", "sortRowsBy", "sortRowsJoined"}
+	owners := map[string][]string{"row.toLowerCase": {"sortRows"}, "row.toUpperCase": {"sortRowsBy"}}
+	if decorators {
+		callers = append(callers, "LevelController.constructor", "LevelController.level")
+		owners["Inject"] = []string{"LevelController.constructor", "LevelController.level"}
+		owners["forwardRef"] = []string{"LevelController.constructor"}
+		owners["joinCondition"] = []string{"LevelController.level"}
+	}
+	headerLines := make(map[int]bool)
+	for _, name := range append([]string{"joinCondition"}, callers...) {
+		if objects[name].ID == "" {
+			t.Fatalf("%s header-arrow declaration %s missing", source, name)
+		}
+		if name != "joinCondition" {
+			headerLines[objects[name].Location.Line] = true
+		}
+	}
+	got := make(map[string][]string)
+	inlineArguments, joinReads := 0, 0
+	for _, relation := range index.Relations {
+		if relation.Location == nil || relation.Location.Path != source || !headerLines[relation.Location.Line] {
+			continue
+		}
+		if relation.Kind == programindex.RelationPassesCallback {
+			t.Fatalf("%s header arrow or default became a passed callback: %#v", source, relation)
+		}
+		if relation.Kind == programindex.RelationReads && names[relation.FromID] == "sortRowsJoined" {
+			if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 || relation.ToIDs[0] != objects["joinCondition"].ID {
+				t.Fatalf("%s named default read = %#v", source, relation)
+			}
+			joinReads++
+		}
+		for _, witness := range relation.Witnesses {
+			if _, checked := owners[witness.SourceExpression]; !checked {
+				continue
+			}
+			got[witness.SourceExpression] = append(got[witness.SourceExpression], names[relation.FromID])
+			if name := witness.SourceExpression; name == "Inject" || name == "forwardRef" || name == "joinCondition" {
+				if relation.Kind != programindex.RelationCalls || relation.Resolution != programindex.ResolutionExact ||
+					len(relation.ToIDs) != 1 || relation.ToIDs[0] != objects[name].ID {
+					t.Fatalf("%s parameter decorator call %s = %#v", source, name, relation)
+				}
+			}
+		}
+		for _, pattern := range relation.Patterns {
+			for _, argument := range pattern.Arguments {
+				if len(argument.ObjectIDs) != 0 {
+					t.Fatalf("%s header argument borrowed a declaration: %#v", source, argument)
+				}
+				if pattern.Selector == "forwardRef" || pattern.Selector == "Inject" && names[relation.FromID] == "LevelController.level" {
+					if argument.Resolution != programindex.ResolutionUnresolved || argument.ObjectsObserved != 1 {
+						t.Fatalf("%s inline decorator arrow = %#v", source, argument)
+					}
+					inlineArguments++
+				}
+			}
+		}
+	}
+	for _, values := range got {
+		sort.Strings(values)
+	}
+	if !reflect.DeepEqual(got, owners) || joinReads != 1 || decorators && inlineArguments != 2 || !decorators && inlineArguments != 0 {
+		t.Fatalf("%s header arrows: owners=%v want %v, named default reads=%d, inline decorator arrows=%d",
+			source, got, owners, joinReads, inlineArguments)
 	}
 }
 

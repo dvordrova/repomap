@@ -297,6 +297,52 @@ him.
   - `cache clear` exits 0.
 - `make test` (53 packages) and `make vet` pass.
 
+## 2026-09-26 — Lambdas in Python definition headers
+
+- Closes the gap below: a lambda in a parameter or return annotation
+  (`def endpoint(q: Annotated[int, Depends(lambda: 1)])`), in a `def`/`class`
+  type-parameter bound or default, or in a lambda's own default
+  (`lambda rows, key=lambda row: row: …`) failed the whole target with
+  `python program index: <id>`. The declaration pass now visits exactly the
+  header expressions the relation pass reads, in the defining scope. A
+  42-position probe finds no remaining asymmetry that fails a target.
+  Freqtrade `--no-model` is unchanged (exit 0, 39,468 objects, 57,452
+  relations); no local repository writes either form.
+- Fixtures: `level_limit` and `row_sorter` (models.py) and `Checked` /
+  `first_checked` (generic_types.py); removing any of the three declaration
+  visits fails an expectation with the target-wide error. Go has no
+  equivalent: headers and constraints hold only types and there are no
+  default parameters. JS/TS (parameter defaults; TS parameter decorators, so
+  the fixture's tsconfig enables `experimentalDecorators`) and Clojure
+  (parameter `:or` defaults, `:pre`, an fn's own default) already held and
+  gained examples. They evaluate those per call, so the function owns them;
+  a TS parameter decorator also stays with its method although it runs once.
+- Open: `first, *rest = items` declares no `rest`, and neither pass reads a
+  starred store target's index; Clojure metadata/attr-map calls run at load
+  time but belong to the var.
+
+## 2026-09-26 — Lambdas inside Python store targets
+
+- `repomap ~/git/freqtrade --no-model --target python:.:script:freqtrade`
+  failed the whole target with `python program index: 4635785104`: a
+  `KeyError` on `id(node)`. `freqtrade/templates/FreqaiExampleStrategy.py:263`
+  writes `df.loc[reduce(lambda x, y: x & y, conditions), "exit_long"] = 1`;
+  the relation pass read the target's receiver and index, but the declaration
+  pass never visited them, so the lambda had no scope. The declaration pass
+  now reads the same parts of `=`, annotated and `for` targets. The same run
+  completes (exit 0, 1/1 analyzed, 39,468 objects).
+- Fixtures: Python `mark_exit_rows` (models.py) declares and passes three
+  lambdas; it fails on the old parser with the Freqtrade error. The native
+  equivalents already held and gained regression examples: Go `markExitRows`
+  (SSA closures `$1`–`$4`, exact callbacks), JS/TS `markMatchingRows` in
+  server.ts and market-worker.js (single tree walk; an inline arrow argument
+  stays unresolved as elsewhere, a named callable is passed and read), Clojure
+  `mark-handled!` and `handled-or-default` (`set!` target and `:or` default
+  relate like an ordinary read).
+- Not fixed here: a lambda in a parameter or return annotation
+  (`def f(q: Annotated[int, Depends(lambda: 1)])`) still fails the target the
+  same way; the declaration pass skips annotations the relation pass visits.
+
 ## 2026-09-26 — Table consilium fixes and the alias for non-English names
 
 - A consilium on the table protocol with a 66-call DeepSeek probe (about

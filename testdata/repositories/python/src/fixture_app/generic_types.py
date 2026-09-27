@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar, overload
+from typing import Annotated, Generic, TypeVar, overload
 
 T = TypeVar("T")
 
@@ -37,3 +37,12 @@ def pick(items):
     head = items[0]
 
     return head
+
+
+# A type parameter's bound is an expression of the defining scope too.
+class Checked[T: Annotated[object, lambda value: value is not None]]:
+    value: T
+
+
+def first_checked[T: Annotated[object, lambda value: value is not None]](items: list[T]) -> T:
+    return items[0]

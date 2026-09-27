@@ -223,6 +223,67 @@ func TestCumulativePythonCallbackAliasesRetainArgumentAuthority(t *testing.T) {
 			t.Fatalf("%s lost its call argument", name)
 		}
 	}
+	// Lambdas inside store targets (assignment, annotated assignment and for
+	// targets) belong to the function and are passed like any other lambda.
+	marker := programIndexObjectNamed(t, index, programindex.ObjectFunction, "mark_exit_rows", sourcePath)
+	storeLambdas := make(map[string]programindex.Object)
+	for _, object := range index.Objects {
+		if object.Kind == programindex.ObjectLambda && object.ContainerID == marker.ID {
+			storeLambdas[object.ID] = object
+		}
+	}
+	callbackLines := make(map[int]bool)
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationPassesCallback || relation.FromID != marker.ID {
+			continue
+		}
+		if len(relation.ToIDs) != 1 {
+			t.Fatalf("store-target callback has %d targets: %#v", len(relation.ToIDs), relation)
+		}
+		target, ok := storeLambdas[relation.ToIDs[0]]
+		if !ok || relation.Resolution != programindex.ResolutionExact ||
+			relation.SourceArgumentID == "" || relation.Location == nil ||
+			target.Location == nil || relation.Location.Line != target.Location.Line {
+			t.Fatalf("store-target lambda lost its callback: %#v", relation)
+		}
+		callbackLines[relation.Location.Line] = true
+	}
+	if len(storeLambdas) != 3 || len(callbackLines) != 3 {
+		t.Fatalf("store-target lambdas: declared=%d callbacks=%v", len(storeLambdas), callbackLines)
+	}
+	// Annotations and defaults run where the function is defined: the module
+	// passes the Depends lambda and declares the Annotated check, while the
+	// lambda default belongs to the function that writes it.
+	module := programIndexObjectNamed(t, index, programindex.ObjectModule, "fixture_app.models", sourcePath)
+	limit := programIndexObjectNamed(t, index, programindex.ObjectFunction, "level_limit", sourcePath)
+	sorter := programIndexObjectNamed(t, index, programindex.ObjectFunction, "row_sorter", sourcePath)
+	headerLambdas := make(map[string]string)
+	sorterLambdas := 0
+	for _, object := range index.Objects {
+		if object.Kind != programindex.ObjectLambda || object.Location == nil || object.Location.Path != sourcePath {
+			continue
+		}
+		if object.Location.Line == limit.Location.Line && object.ContainerID == module.ID {
+			headerLambdas[object.ID] = object.Signature
+		}
+		if object.ContainerID == sorter.ID {
+			sorterLambdas++
+		}
+	}
+	headerCallbacks := 0
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationPassesCallback || len(relation.ToIDs) != 1 || headerLambdas[relation.ToIDs[0]] == "" {
+			continue
+		}
+		if relation.FromID != module.ID || relation.Resolution != programindex.ResolutionExact ||
+			relation.SourceArgumentID == "" || headerLambdas[relation.ToIDs[0]] != "lambda" {
+			t.Fatalf("annotation lambda lost its Depends callback: %#v", relation)
+		}
+		headerCallbacks++
+	}
+	if len(headerLambdas) != 2 || headerCallbacks != 1 || sorterLambdas != 2 {
+		t.Fatalf("header lambdas: annotations=%v callbacks=%d row_sorter=%d", headerLambdas, headerCallbacks, sorterLambdas)
+	}
 }
 
 func assertChainedCallbackArguments(t *testing.T, index programindex.Index, callerID, selector string, resolution programindex.Resolution) {

@@ -64,3 +64,27 @@
   (let [upper (str/upper-case line)]
 
     (str upper "!")))
+
+;; Mirrors the pandas store-target idiom: an fn inside a set! target or a binding default.
+(defn handled [row]
+  (.-handled (service/apply-handler (fn [value] (service/greet value)) row)))
+
+(defn mark-handled! [row]
+  (set! (.-handled (service/apply-handler (fn [value] (service/greet value)) row)) true))
+
+(defn handled-or-default [row]
+  (let [{:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}} row]
+    handled))
+
+;; Mirrors Python's lambda in a function header: FastAPI Depends(lambda: ...) and a lambda default.
+(defn handled-param
+  [row & {:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}}]
+  handled)
+
+(defn checked-handled [row]
+  {:pre [(service/apply-handler (fn [value] (service/greet value)) row)]}
+  row)
+
+(def handled-by-default
+  (fn [row & {:keys [handled] :or {handled (service/apply-handler (fn [value] (service/greet value)) row)}}]
+    handled))
