@@ -295,3 +295,26 @@ test('a kept card whose frame closed does not freeze the map',async({page})=>{
   await pointAt(page,page.locator('[data-summary-area="execution"] strong'));
   await expect(map).toHaveAttribute('data-subject','execution');
 });
+
+// Frames that share one destination's text stand in one group under one
+// heading. The group is involved when one of its frames is: pointing at a
+// system whose resolver is dark had left the group's frame receded around
+// it and its heading at full strength when nothing of it was involved.
+test('a group of frames sharing one destination recedes with them and stays with them',async({page})=>{
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const map=page.locator('[data-map]');
+  await page.goto('/?shared-destination');await expect(map).toHaveAttribute('data-fixture-ready','true');
+  const heading=page.locator('[data-group-heading]'),group=page.locator('.react-flow__node[data-id^="display-group:"]');
+  await page.mouse.move(1430,890);
+  await pointAt(page,page.locator('[data-component-overview="backend"]'));
+  await expect(map).toHaveAttribute('data-subject','backend');
+  await expect(page.locator('.react-flow__node[data-id="dns-backend"]')).toHaveCSS('opacity','1');
+  await expect(group,'the group of an involved frame stays').toHaveCSS('opacity','1');
+  await expect(heading).toHaveCSS('opacity','1');
+  await pointAt(page,page.locator('[data-component-overview="api"]'));
+  await expect(map).toHaveAttribute('data-subject','api');
+  await expect(page.locator('.react-flow__node[data-id="dns-backend"]')).toHaveCSS('opacity','0.4');
+  await expect(group,'a group nothing involves recedes').toHaveCSS('opacity','0.4');
+  await expect(heading,'and its heading with it').toHaveCSS('opacity','0.4');
+  expect(errors).toEqual([]);
+});

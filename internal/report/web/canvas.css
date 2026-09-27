@@ -37,7 +37,7 @@
 .flow-area.flow-component,.flow-area.flow-communication,.flow-area.flow-input-collection{--flow-frame-width:1.25px}
 .flow-node-reading .flow-area.flow-input-collection{--flow-frame-color:#243044;--flow-frame-width:3px}
 .flow-node-reading .flow-part{border-color:#243044;outline:3px solid #243044;outline-offset:-3px}
-.react-flow__node.flow-node-muted,.flow-node-muted.flow-area-title,.flow-node-muted.flow-area-summary,.flow-node-muted.flow-component-overview,.flow-node-muted.flow-zoom-mark,.flow-edge.flow-edge-muted{opacity:.4}
+.react-flow__node.flow-node-muted,.flow-node-muted.flow-area-title,.flow-node-muted.flow-group-heading,.flow-node-muted.flow-area-summary,.flow-node-muted.flow-component-overview,.flow-node-muted.flow-zoom-mark,.flow-edge.flow-edge-muted{opacity:.4}
 /* Emphasis recedes the rest; nothing pointed at is greyed. The part pointed
    at, the parts an emphasised arrow joins, and a closed frame standing for
    the parts hidden in it, take the dark of that arrow on their border; a

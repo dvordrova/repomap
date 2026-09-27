@@ -672,11 +672,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const band=open?Math.min(item.band,need*scale):item.band;
     return {item,heading,beside,scale,band,width:beside?n.width-item.band+band:n.width,height:beside?n.height:n.height-item.band+band};
   }
-  function GroupHeading({node:n}){
+  function GroupHeading({node:n,muted}){
     const {heading,beside,scale,band,width,height}=groupLook(n);
     const x=beside?n.absolute.x+width-band+8*scale:n.absolute.x+8*scale;
     const y=beside?n.absolute.y+16:n.absolute.y+height-band+4*scale;
-    return <div className="flow-group-heading" data-group-heading={n.id}
+    return <div className={`flow-group-heading ${muted?'flow-node-muted':''}`} data-group-heading={n.id}
       style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width:heading.width,
         fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}}>{heading.lines.join('\n')}</div>;
   }
@@ -809,7 +809,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // frame's own parts stay as they are. Whatever the emphasis does not
     // involve recedes, its arrows with it.
     const subjects=state.mode==='search'?state.focus:new Set([state.subject].filter(Boolean));
-    const involved=id=>{const n=placed.get(id);return state.participants.has(id)||!!n?.frame&&leaves(id).some(leaf=>state.participants.has(leaf));};
+    // A display group (the frames sharing one destination's text) is
+    // involved when one of its frames is: its frame and heading stay with it.
+    const involved=id=>{const n=placed.get(id),item=byID.get(id);return state.participants.has(id)||(item?.display?(item.tiles||[]).some(involved):!!n?.frame&&leaves(id).some(leaf=>state.participants.has(leaf)));};
     const muted=id=>dim&&!involved(id);
     const nodes=drawing.nodes.map(n=>{
       const item=byID.get(n.id),focused=state.focus.has(n.id);
@@ -901,7 +903,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       <ViewportPortal>
         {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))&&!closedGroup(n.id)).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)} muted={muted(n.id)}/>)}
-        {drawing.nodes.filter(n=>n.display&&byID.get(n.id)?.headingAt).map(n=><GroupHeading key={'group-'+n.id} node={n}/>)}
+        {drawing.nodes.filter(n=>n.display&&byID.get(n.id)?.headingAt).map(n=><GroupHeading key={'group-'+n.id} node={n} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>(scales.has(n.id)&&!detailed.has(n.id)||closedGroup(n.id))&&visible(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} number={number.get(n.id)} badge={badge(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select} muted={muted(n.id)}/>)}

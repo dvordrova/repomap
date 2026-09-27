@@ -222,7 +222,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   frame its border at the arrows' 2.5px), the parts across its dark arrows
   take the same outline, a pointed frame's own parts and the arrows between
   them stay as they are, and every part, frame and arrow the emphasis does
-  not involve recedes to 40% opacity. No veil or tile fill marks the pointed thing: a grey veil on the
+  not involve recedes to 40% opacity. Frames grouped under one destination's
+  text recede with their heading when none of them is involved and stay when
+  one is. No veil or tile fill marks the pointed thing: a grey veil on the
   pointed area's parts and a grey fill on the pointed declaration had made
   them look deader than their outlined neighbours.
   Component frames retain their language, kind, role and purpose above their parts. Colour never replaces
