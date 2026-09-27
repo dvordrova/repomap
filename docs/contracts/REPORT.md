@@ -47,7 +47,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   declarations, each a link to its code, and reads "In no part of its
   file"), five rows each and `All N` for the rest. Find lists those
   declarations as Code by their names ("Not on the map"): setCommand and
-  pingCommand, undecided in Redis, could not be found at all. A target
+  pingCommand, undecided in Redis, could not be found at all. Opening one
+  scrolls its row below the sticky toolbar, as every page destination does;
+  it had opened hidden under it. A target
   with a map failure says "The map of parts is unavailable:" with the reader's
   words for its closed reason (`refused`: the model's answer was refused;
   `no_model`: no model was asked; the refusals themselves are rejected

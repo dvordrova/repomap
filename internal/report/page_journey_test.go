@@ -357,3 +357,22 @@ const showInput=()=>controls.children.flatMap(c=>c.children).find(c=>c.className
 })().catch(error=>{console.error(error);process.exit(1);});
 `)
 }
+
+// Find → pingCommand opened the "Not on the map" row under the sticky
+// toolbar: the declaration was found and still not seen.
+func TestCodeRowsFindOpensStandBelowTheToolbar(t *testing.T) {
+	raw, err := reportTemplateFS.ReadFile("templates/css/39-modes.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range strings.Split(string(raw), "}") {
+		selectors, body, ok := strings.Cut(rule, "{")
+		if !ok || !strings.Contains(body, "scroll-margin-top") {
+			continue
+		}
+		if strings.Contains(selectors, "[data-off-map-file]") && strings.Contains(selectors, ".symbol-index li") {
+			return
+		}
+	}
+	t.Fatal("an off-map declaration or source index line Find opens has no scroll margin below the toolbar")
+}
