@@ -163,3 +163,31 @@ func PassMethodArgumentExpressions(app *methodArgumentApplication) {
 func registerStrippedFiles(mux *http.ServeMux) {
 	mux.Handle("/v/", http.StripPrefix("/v/", http.StripPrefix("/v/", http.NotFoundHandler())))
 }
+
+// RegisterRouteTree hands one mux to two helpers. The leaves' mux reaches the
+// leaf through one more parameter, so its route is held by the NewServeMux
+// call. The branch also hands its mux to itself: following that parameter
+// back through its callers comes around to the same parameter, so its routes
+// have no holder.
+func RegisterRouteTree() {
+	mux := http.NewServeMux()
+	registerRouteLeaves(mux)
+	registerRouteBranch(mux, false)
+}
+
+func registerRouteLeaves(mux *http.ServeMux) {
+	registerRouteLeaf(mux)
+}
+
+func registerRouteLeaf(mux *http.ServeMux) {
+	mux.Handle("/tree/leaf", ReturnedReadyHandler())
+}
+
+func registerRouteBranch(mux *http.ServeMux, nested bool) {
+	if nested {
+		mux.Handle("/tree/branch/nested", ReturnedReadyHandler())
+		return
+	}
+	mux.Handle("/tree/branch", ReturnedReadyHandler())
+	registerRouteBranch(mux, true)
+}

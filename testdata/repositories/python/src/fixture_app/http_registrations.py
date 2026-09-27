@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 application = FastAPI()
 
@@ -55,3 +55,30 @@ def receive_method_arguments(*values):
 
 def pass_method_arguments(app: MethodArgumentApplication):
     receive_method_arguments(app.first, app.second, app.first, (app.second))
+
+
+# install_route_tree hands one router to two helpers. The leaves' router
+# reaches the leaf through one more parameter, so its route is held by the
+# APIRouter() call. The branch also hands its router to itself: following that
+# parameter back through its callers comes around to the same parameter, so
+# its routes have no holder.
+def install_route_tree():
+    router = APIRouter()
+    register_route_leaves(router)
+    register_route_branch(router, False)
+
+
+def register_route_leaves(router):
+    register_route_leaf(router)
+
+
+def register_route_leaf(router):
+    router.add_api_route("/tree/leaf", empty_health_handler)
+
+
+def register_route_branch(router, nested):
+    if nested:
+        router.add_api_route("/tree/branch/nested", empty_health_handler)
+        return
+    router.add_api_route("/tree/branch", empty_health_handler)
+    register_route_branch(router, True)

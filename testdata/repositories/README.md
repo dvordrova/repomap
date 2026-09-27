@@ -155,6 +155,21 @@ call pattern and becomes no fact. Python knows no type for an untyped
 parameter or for what `subscribe` returns, so those calls name no external
 symbol; they are still separate facts.
 
+A registration on a router parameter is held by what the function's callers
+pass. One caller hands the same router to a helper that passes it on to the
+leaf and to a branch helper that also hands it to itself; the leaf is held by
+the construction call two parameters back, and the branch's routes have no
+holder, since following its parameter comes around to itself:
+
+| Language | Source example | The leaf's holder |
+| --- | --- | --- |
+| Go | [http_registrations.go](go/internal/storefixture/http_registrations.go) `RegisterRouteTree` | `http.NewServeMux()` |
+| Python | [http_registrations.py](python/src/fixture_app/http_registrations.py) `install_route_tree` | `APIRouter()` |
+| TypeScript | [http-registrations.ts](jsts/src/http-registrations.ts) `installRouteTree` | `express()` |
+
+Clojure has no equivalent: its adapter records no parameter values, so no
+registration is followed through a parameter.
+
 Test code comes from runner facts, never from a file name alone:
 
 | Language | Test code | Stays production or unclassified |

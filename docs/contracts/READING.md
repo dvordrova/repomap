@@ -27,7 +27,16 @@ new description or selection requests.
   the file-to-file edges and the seeds. A registration's holder is the value
   the call acts on, as `path:line:column` of the call that produced it,
   followed back through the calls outside the repository (a route put into a
-  group made from a router is held by the router). Native boundary places share only exact
+  group made from a router is held by the router). A receiver that is a
+  parameter of its function is the value its repository callers pass in that
+  position, when every caller passes the same one. A caller handing on a
+  parameter still being followed (a function passing its own parameter to
+  itself, or functions passing it round) closes a cycle and passes no value,
+  so no registration on that parameter, or on one it is handed on to, has a
+  holder; following never recurses without end
+  (etcd's `executeTxn` and `node.Repr` pass their logger and clock to
+  themselves). Go, Python and TypeScript fixtures cover it; Clojure records no
+  parameter values. Native boundary places share only exact
   source observations: path, line, column, kind, method, literal values,
   compiler-located subject, call word and external symbol. Every language
   adapter gives each call its own position, so one target has at most one

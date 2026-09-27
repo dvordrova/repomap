@@ -27,6 +27,13 @@ func assertGoHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index pr
 		wanted["ANY "+name] = 1
 	}
 	wanted["GET /interface-health"] = 1
+	// RegisterRouteTree: the leaf's mux is the NewServeMux passed on through
+	// two parameters; the branch hands its own mux to itself, a cycle with no
+	// holder.
+	holders := map[string]int{"/tree/leaf": 173, "/tree/branch": 0, "/tree/branch/nested": 0}
+	for path := range holders {
+		wanted["ANY "+path] = 1
+	}
 	counts := make(map[string]int)
 	var emptyID, emptyFactID string
 	var interfaceEmptyID string
@@ -97,6 +104,7 @@ func assertGoHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index pr
 	if want := map[int]string{34: "GET https://unused.example", 45: "GET https://client.example/account", 50: "POST https://factory.example/events", 79: "GET https://after-only.example"}; !reflect.DeepEqual(requests, want) {
 		t.Fatalf("request methods = %v, want %v", requests, want)
 	}
+	adaptertest.AssertParameterHolders(t, result, source, holders)
 	interfaceArguments := 0
 	for _, relation := range index.Relations {
 		for _, pattern := range relation.Patterns {
@@ -185,9 +193,14 @@ func assertPythonHTTPRegistrations(t *testing.T, repository *corpus.Corpus, inde
 		t.Fatal(err)
 	}
 	want := map[string]string{"/health": "empty_health_handler", "/v1/update": "empty_registered_handler", "/v1/metrics": "empty_registered_handler"}
+	// install_route_tree: the leaf's router is the APIRouter() passed on
+	// through two parameters; the branch hands its own router to itself, a
+	// cycle with no holder.
+	holders := map[string]int{"/tree/leaf": 66, "/tree/branch": 0, "/tree/branch/nested": 0}
+	adaptertest.AssertParameterHolders(t, result, source, holders)
 	owners := make(map[string]bool)
 	for _, fact := range result.OfKind(facts.KindRegistration) {
-		if fact.Anchor == nil || fact.Anchor.Path != source {
+		if _, tree := holders[fact.Path]; fact.Anchor == nil || fact.Anchor.Path != source || tree {
 			continue
 		}
 		name, exists := want[fact.Path]
