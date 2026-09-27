@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 application = FastAPI()
 
@@ -55,3 +55,37 @@ def receive_method_arguments(*values):
 
 def pass_method_arguments(app: MethodArgumentApplication):
     receive_method_arguments(app.first, app.second, app.first, (app.second))
+
+
+# install_route_tree hands one router to three helpers, and every route they
+# register is held by the APIRouter() call unless another value reaches it.
+# The leaf gets the router through one more parameter. The branch also hands
+# its own router to itself, which adds no value. The spare hands itself a
+# router of its own making, so two values reach it and its route has no holder.
+def install_route_tree():
+    router = APIRouter()
+    register_route_leaves(router)
+    register_route_branch(router, False)
+    register_route_spare(router, True)
+
+
+def register_route_leaves(router):
+    register_route_leaf(router)
+
+
+def register_route_leaf(router):
+    router.add_api_route("/tree/leaf", empty_health_handler)
+
+
+def register_route_branch(router, nested):
+    if nested:
+        router.add_api_route("/tree/branch/nested", empty_health_handler)
+        return
+    router.add_api_route("/tree/branch", empty_health_handler)
+    register_route_branch(router, True)
+
+
+def register_route_spare(router, again):
+    router.add_api_route("/tree/spare", empty_health_handler)
+    if again:
+        register_route_spare(APIRouter(), False)

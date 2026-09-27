@@ -341,7 +341,7 @@ func (target *targetContext) holderRoot(pattern programindex.RelationPattern) (*
 		}
 	}
 	if start == nil {
-		start = target.parameterValue(pattern.ReceiverValue)
+		start, _ = target.parameterValue(pattern.ReceiverValue, make(map[parameterSlot]bool))
 	}
 	if start == nil {
 		return nil, nil
@@ -375,13 +375,23 @@ func (target *targetContext) holderRoot(pattern programindex.RelationPattern) (*
 }
 
 // parameterValue follows a receiver that is a parameter of its function to
-// the value the one repository caller passes in that position:
-// ArticlesRegister(v1.Group("/articles")) mounts every route the function
-// registers on its router parameter.
-func (target *targetContext) parameterValue(value *sourcevalue.Value) *sourcevalue.Anchor {
+// the value its repository callers pass in that position, when every caller
+// passes the same one: ArticlesRegister(v1.Group("/articles")) mounts every
+// route the function registers on its router parameter. A caller handing on
+// a parameter this search has already reached (a function passing its own
+// parameter to itself, functions passing it round, two paths meeting) adds
+// no value of its own; what reaches that parameter is counted where it was
+// first reached. known is false when a caller passes an unknown or a
+// different value, or no caller passes one.
+func (target *targetContext) parameterValue(value *sourcevalue.Value, reached map[parameterSlot]bool) (passed *sourcevalue.Anchor, known bool) {
 	if value == nil || value.Kind != "parameter" || value.Owner == nil || value.Position == 0 {
-		return nil
+		return nil, false
 	}
+	slot := parameterSlot{owner: *value.Owner, position: value.Position}
+	if reached[slot] {
+		return nil, true
+	}
+	reached[slot] = true
 	var owner string
 	for _, object := range target.input.Index.Objects {
 		if isCallable(object) && object.Location != nil && object.Location.Path == value.Owner.Path && object.Location.Line == value.Owner.Line {
@@ -390,9 +400,8 @@ func (target *targetContext) parameterValue(value *sourcevalue.Value) *sourceval
 		}
 	}
 	if owner == "" {
-		return nil
+		return nil, false
 	}
-	var passed *sourcevalue.Anchor
 	for _, relation := range target.input.Index.Relations {
 		if relation.Kind != programindex.RelationCalls || len(relation.ToIDs) != 1 || relation.ToIDs[0] != owner {
 			continue
@@ -402,18 +411,31 @@ func (target *targetContext) parameterValue(value *sourcevalue.Value) *sourceval
 				if argument.Position != value.Position {
 					continue
 				}
+				known = true
 				anchor := producedAt(argument.Origin)
 				if anchor == nil {
-					anchor = target.parameterValue(argument.Origin)
+					handed, handedKnown := target.parameterValue(argument.Origin, reached)
+					if !handedKnown {
+						return nil, false
+					}
+					if anchor = handed; anchor == nil {
+						continue
+					}
 				}
-				if anchor == nil || passed != nil && *passed != *anchor {
-					return nil
+				if passed != nil && *passed != *anchor {
+					return nil, false
 				}
 				passed = anchor
 			}
 		}
 	}
-	return passed
+	return passed, known
+}
+
+// parameterSlot is one parameter position of the callable declared at owner.
+type parameterSlot struct {
+	owner    sourcevalue.Anchor
+	position int
 }
 
 func producedAt(value *sourcevalue.Value) *sourcevalue.Anchor {
