@@ -597,7 +597,7 @@ test('restoring a close part view does not cover it with the component summary',
     const scale=new DOMMatrixReadOnly(getComputedStyle(editor.querySelector('.flow-part')).transform).a;
     const zoom=1.5/scale;
     map.restoreReadingState({scope:'editing',viewport:{...saved,
-      x:-position.e*zoom+50,y:-position.f*zoom+60,zoom,
+      x:-position.e*zoom+50,y:-position.f*zoom+12,zoom,
       detailAreas:['editing','tracking'],componentsOpen:true,fit:false}});
   });
   const heading=page.locator('.react-flow__node[data-id="editor"] .flow-part>strong');
