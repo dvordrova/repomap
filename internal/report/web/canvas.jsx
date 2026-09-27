@@ -13,6 +13,7 @@ import {singlePartAreas, inputGroupsByPart} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading,cardText} from './cards.mjs';
 import {overviewInset} from './split-layout.mjs';
 import {HoverGate} from './hover.mjs';
+import {placeCard} from './card-place.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
 import '@xyflow/react/dist/style.css';
 import './canvas.css';
@@ -119,7 +120,7 @@ function Part({data}) {
     {data.symbols?.length>0&&!data.activation&&<button type="button" className="flow-part-zoom nopan" aria-label={t('Zoom into {0}',data.name||data.title)}
       onClick={event=>{event.stopPropagation();data.zoomInto?.();}}>
       <span className="flow-zoom-picture" aria-hidden="true"/></button>}
-    {data.number && <span data-badge={data.id} className={`flow-number nopan ${data.badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>data.badge?.enter(event)} onMouseLeave={()=>data.badge?.leave()}
+    {data.number && <span data-badge={data.id} className={`flow-number nopan ${data.badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>data.badge?.enter(event)} onMouseLeave={event=>data.badge?.leave(event)}
       onClick={event=>{event.stopPropagation();data.badge?.toggle();}}>{data.number}</span>}
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
@@ -142,7 +143,7 @@ function AreaSummary({node,item,number,badge,heading,enter,select,muted}){
     <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong>
       {item?.summary&&lines>0&&<p className="flow-description" style={{WebkitLineClamp:lines,maxHeight:lines*15}}>{item.summary}</p>}
       <footer>
-        {number?<span data-badge={node.id} className={`flow-number ${badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>badge?.enter(event)} onMouseLeave={()=>badge?.leave()}
+        {number?<span data-badge={node.id} className={`flow-number ${badge?.pinned?'flow-number-pinned':''}`} onMouseEnter={event=>badge?.enter(event)} onMouseLeave={event=>badge?.leave(event)}
           onClick={event=>{event.stopPropagation();badge?.toggle();}}>{number}</span>:null}
       </footer></div>
     {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
@@ -313,16 +314,50 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   // One look for the whole map: a badge, a label, whatever a layer adds.
   const look=createLook();
-  // Set by each drawing of the map: showing a look needs the frame being read.
-  let lookAt=()=>{};
   const lookBadge=()=>look.key.startsWith('badge:')?look.key.slice(6):'';
-  const lookLabel=()=>look.key.startsWith('label:')?look.key.slice(6):'';
-  function lookAway(key){
-    const ask=look.leave(key,performance.now());
-    if(ask)setTimeout(()=>{if(look.tick(performance.now()))update?.();},ask-performance.now()+5);
+  let lookTimer;
+  // Time passing opens a look the pointer rests on and ends one it left.
+  function pump(){
+    clearTimeout(lookTimer);
+    const due=look.due;if(!due)return;
+    lookTimer=setTimeout(()=>{if(look.tick(performance.now()))update?.();pump();},Math.max(0,due-performance.now())+5);
   }
+  // The pointer on a card's handle: the card opens once it rests there.
+  function aimAt(key){look.aim(key,performance.now());pump();}
+  // The pointer leaving a handle for the card it opened is safe on its way.
+  function leaveHandle(key,event){
+    const card=host.querySelector(`[data-card="${CSS.escape(key)}"]`)?.getBoundingClientRect();
+    look.leave(key,performance.now(),event?{x:event.clientX,y:event.clientY}:null,card||null);pump();
+  }
+  // The pointer on the card itself keeps it; leaving it lingers.
+  function lookAt(key){if(look.enter(key))update?.();pump();}
+  function lookAway(key){look.leave(key,performance.now());pump();}
+  // A card is open, looked at or pinned: the frame being read stays.
+  const cardOpen=()=>!!look.key||!!pinnedPart||pinnedLabels.size>0;
+  function pin(key){
+    if(key.startsWith('badge:'))pinnedPart=key.slice(6);
+    else if(key.startsWith('label:')&&!pinnedLabels.has(key.slice(6)))pinnedLabels.set(key.slice(6),labelAreas.get(key.slice(6))||'');
+    update?.();
+  }
+  let labelAreas=new Map();
+  function closeCard(key){
+    if(key.startsWith('badge:')&&pinnedPart===key.slice(6))pinnedPart='';
+    if(key.startsWith('label:'))pinnedLabels.delete(key.slice(6));
+    if(look.key===key)look.end();
+    update?.();
+  }
+  // Escape, a card's ✕ or a click on empty canvas closes every open card.
+  function closeCards(){
+    const had=cardOpen();
+    look.end();pinnedPart='';pinnedLabels.clear();clearTimeout(lookTimer);
+    if(had)update?.();
+    return had;
+  }
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&cardOpen()&&closeCards())event.preventDefault();});
   function enter(id){
-    if(!hover.allowed)return;
+    // While a card is open or pinned the frame being read stays: the way to
+    // the card crosses other parts, frames and empty canvas.
+    if(!hover.allowed||cardOpen())return;
     const n=byID.get(id);if(!n||n.display)return;
     // Hover affects the drawing only. The links and description opened by a
     // click stay usable while the pointer crosses other cards to reach them.
@@ -623,8 +658,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const numbered=id=>wholeComponent?childOf(id):id;
     // While the camera draws back the badge slides under the pointer and
     // back; that is not the reader leaving it.
-    const badge=id=>({pinned:pinnedPart===id,enter:()=>lookAt(`badge:${id}`),leave:()=>lookAway(`badge:${id}`),
-      toggle:()=>{pinnedPart=pinnedPart===id?'':id;update?.();}});
+    const badge=id=>({pinned:pinnedPart===id,enter:()=>aimAt(`badge:${id}`),leave:event=>leaveHandle(`badge:${id}`,event),
+      toggle:()=>{if(pinnedPart===id)closeCard(`badge:${id}`);else{look.enter(`badge:${id}`);pin(`badge:${id}`);}}});
     const inside=new Set(members);
     const labelGroups=area?connections(area,members,layout.edges,
       id=>rootOf(id)!==rootOf(area)?rootOf(id):boundaryBetween(id,area)?.id||id,id=>number.get(numbered(id))):[];
@@ -658,15 +693,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const bold=active.size<byNumber.size||byNumber.size===1&&state.mode==='hover'&&hoverArea!==area?active:new Set();
       return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,root,point,frameScale,side,labelScale,cardScale,byNumber,bold,order:Math.min(...group.numbers)*1000+(group.incoming?0:1),title:outside.name||outside.title}];
     });
+    const labelsShown=!!area&&visible(area)&&(detailed.has(area)||openComponents.has(area))&&view.numbered;
+    labelAreas=new Map(labels.map(label=>[label.id,label.area]));
     // Far enough into one part to read its declarations.
     function deepInto(node){
       if(!instance)return;
       const rect=host.getBoundingClientRect(),zoom=Math.min(maxZoom,Math.min((rect.width-80)/node.width,(rect.height-80)/node.height));
       instance.setCenter(node.absolute.x+node.width/2,node.absolute.y+node.height/2,{zoom,duration:420});
     }
-    // A look opens a card beside the thing looked at and moves nothing: the
-    // pointer stays on what it was on.
-    lookAt=key=>{look.enter(key);update?.();};
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,state.readingOutside,view.scope,overview]);
     // A closed frame stands for the participants hidden inside it.
     const shut=id=>scales.has(id)?!detailed.has(id):byID.get(id)?.branch==='component'?!openComponents.has(id):['communication','inputs'].includes(byID.get(id)?.branch)&&!communicationsOpen.has(id);
@@ -718,10 +752,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         if(panning||!instance)return;
         const looked=lookBadge();
         if(looked&&(event.target.closest?.('.flow-part-summary')||event.target.closest?.('.react-flow__node')?.dataset.id===looked||event.target.closest?.('[data-summary-area]')?.dataset.summaryArea===looked))look.enter(look.key);
-        if(look.move(event.clientX,event.clientY,performance.now(),!!event.target.closest?.('[data-badge],.flow-connection-label,.flow-part-summary')))update?.();
+        if(look.move(event.clientX,event.clientY,performance.now(),!!event.target.closest?.('[data-badge],.flow-connection-label,.flow-floating-card')))update?.();
+        pump();
         if(!hover.move(event.clientX,event.clientY))return;
-        const labelElement=event.target.closest('.flow-connection-label');
-        if(labelElement)return;
+        // Labels and the cards they open stay with the frame being read.
+        if(event.target.closest('.flow-connection-label,.flow-floating-card'))return;
         // A frame's title looks at the whole frame, as its empty space does.
         const frameTitle=event.target.closest('[data-frame-title]');
         if(frameTitle){enter(frameTitle.dataset.frameTitle);return;}
@@ -735,6 +770,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         if(area)enter(area.id);
       }}
       onPaneClick={event=>{
+        // A click on empty canvas first closes an open card; the next one
+        // goes where it points.
+        if(closeCards())return;
         if(instance){
           const p=instance.screenToFlowPosition({x:event.clientX,y:event.clientY});
           const frame=drawing.nodes.find(n=>n.frame&&!n.display&&visible(n.id)&&byID.get(n.id)?.branch!=='inputs-part'&&
@@ -766,8 +804,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         {drawing.nodes.filter(n=>scales.has(n.id)&&visible(n.id)&&!detailed.has(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} number={number.get(n.id)} badge={badge(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select} muted={muted(n.id)}/>)}
-        {area&&visible(area)&&(detailed.has(area)||openComponents.has(area))&&view.numbered&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
-        {[...new Set([pinnedPart,lookBadge()].filter(Boolean))].map(id=><PartSummary key={'summary:'+id} id={id} labels={labels}/>)}
+        {labelsShown&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
+        {labelsShown&&labels.filter(label=>look.key===`label:${label.id}`||pinnedLabels.has(label.id)).map(label=><LabelCard key={'card:'+label.id} label={label} frame={placed.get(label.root)}/>)}
+        {[...new Set([pinnedPart,lookBadge()].filter(Boolean))].map(id=><PartSummary key={'summary:'+id} id={id} labels={labels} frame={placed.get(area)}/>)}
       </ViewportPortal>
     </ReactFlow>;
   }
@@ -812,38 +851,56 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   // The wheel scrolls a card only when the card has something to scroll.
   const wheel=el=>{if(el)el.classList.toggle('nowheel',el.scrollHeight>el.clientHeight+1);};
-  const going=label=>event=>{event.stopPropagation();clearHover();select(label.outside,event,true);};
-  // A label's card stands diagonally from it, toward the roomier side and end
-  // of the canvas, so it never leaves the canvas by standing on a border.
-  function ConnectionCalls({label,only,at}){
+  const going=label=>event=>{event.stopPropagation();closeCards();clearHover();select(label.outside,event,true);};
+  const screenBox=node=>{
+    if(!node||!instance)return null;
+    const v=instance.getViewport(),box=host.getBoundingClientRect();
+    return {left:box.left+v.x+node.absolute.x*v.zoom,top:box.top+v.y+node.absolute.y*v.zoom,
+      right:box.left+v.x+(node.absolute.x+node.width)*v.zoom,bottom:box.top+v.y+(node.absolute.y+node.height)*v.zoom};
+  };
+  // A floating card is an element of the map: it stands in the map's own
+  // coordinates and zooms and moves with everything else. It is placed once
+  // it has its size: flush with its handle, outside the frame being read, on
+  // the side with room and inside the canvas (card-place.mjs). A click on it
+  // keeps it open; kept open, it has a ✕.
+  function FloatingCard({cardKey,handle,frame,side,scale,content,className='',children}){
+    const ref=useRef(null),[at,setAt]=useState(null),pinned=cardKey.startsWith('badge:')?pinnedPart===cardKey.slice(6):pinnedLabels.has(cardKey.slice(6));
+    useLayoutEffect(()=>{
+      const el=ref.current,from=handle();if(!el||!instance||!from)return;
+      const v=instance.getViewport(),box=host.getBoundingClientRect(),size=el.getBoundingClientRect();
+      const place=placeCard({handle:from,frame:screenBox(frame),canvas:box,size:{width:size.width,height:size.height},side});
+      setAt({x:(place.x-box.left-v.x)/v.zoom,y:(place.y-box.top-v.y)/v.zoom});
+    },[cardKey,pinned,content,scale]);
+    return <div ref={ref} data-card={cardKey} className={`flow-calls-place flow-floating-card nopan ${className}`}
+      onMouseEnter={()=>lookAt(cardKey)} onMouseLeave={()=>lookAway(cardKey)}
+      onClick={event=>{event.stopPropagation();if(!pinned)pin(cardKey);}}
+      style={{transform:`translate(${at?.x||0}px,${at?.y||0}px) scale(${scale})`,transformOrigin:'top left',visibility:at?'visible':'hidden'}}>
+      <div ref={wheel} className={`flow-connection-calls ${pinned?'flow-card-pinned':''}`}>
+        {pinned&&<div className="flow-card-bar"><button type="button" className="flow-card-close" aria-label={t('Close')}
+          onClick={event=>{event.stopPropagation();closeCard(cardKey);}}>✕</button></div>}
+        {children}
+      </div></div>;
+  }
+  // What a label stands for: every call behind it, or behind the one number
+  // pointed at.
+  function LabelCard({label,frame}){
+    const key=`label:${label.id}`,only=look.key===key?lookOnly:undefined;
     const groups=callGroups(label,only);
     if(!groups.size)return null;
-    const view=instance?.getViewport()||{x:0,y:0,zoom:1};
-    // The roomier side of the label; a card wider than that room is moved
-    // back along the label until it stands inside the canvas.
-    const outer=(label.labelScale||label.scale||1)*view.zoom,wide=520*outer*(label.cardScale||1);
-    const sx=at.x*view.zoom+view.x,right=sx<host.clientWidth/2,down=at.y*view.zoom+view.y<host.clientHeight/2;
-    const over=Math.max(0,right?sx+wide-host.clientWidth+8:wide-sx+8)/outer;
-    const style={[right?'marginLeft':'marginRight']:-over};
-    if(label.cardScale&&Math.abs(label.cardScale-1)>.01)Object.assign(style,{transform:`scale(${label.cardScale})`,transformOrigin:`${down?'top':'bottom'} ${right?'left':'right'}`});
-    return <div className={`flow-calls-place flow-calls-${right?'right':'left'} flow-calls-${down?'down':'up'} nopan`} onClick={event=>event.stopPropagation()} style={style}>
-      <div ref={wheel} className="flow-connection-calls"><Calls label={label} groups={groups} go={going(label)}/></div></div>;
+    return <FloatingCard cardKey={key} side={label.side} frame={frame} scale={(label.labelScale||1)*(label.cardScale||1)} content={String(only)}
+      handle={()=>host.querySelector(`[data-connection-label="${CSS.escape(label.id)}"]`)?.getBoundingClientRect()}>
+      <Calls label={label} groups={groups} go={going(label)}/></FloatingCard>;
   }
-  // Looking at a part's number: one card beside the part with everything it
-  // is joined to outside its frame, neighbour by neighbour. It stands on the
-  // side of the part that has more of the canvas, and nothing else moves.
-  function PartSummary({id,labels}){
+  // Looking at a part's number: one card with everything the part is joined
+  // to outside its frame, neighbour by neighbour.
+  function PartSummary({id,labels,frame}){
     const node=placed.get(id),key=`badge:${id}`;
     const mine=labels.map(label=>[label,[...label.byNumber].find(([,entry])=>entry.key===id)?.[0]]).filter(([,k])=>k!==undefined)
       .map(([label,k])=>[label,callGroups(label,k)]).filter(([,groups])=>groups.size);
     if(!node||!mine.length)return null;
-    const scale=mine[0][0].labelScale*(mine[0][0].cardScale||1);
-    const view=instance?.getViewport()||{x:0,y:0,zoom:1};
-    const right=(node.absolute.x+node.width/2)*view.zoom+view.x<host.clientWidth/2,down=(node.absolute.y+node.height/2)*view.zoom+view.y<host.clientHeight/2;
-    const x=right?node.absolute.x+node.width+10*scale:node.absolute.x-10*scale,y=down?node.absolute.y:node.absolute.y+node.height;
-    return <div className="flow-calls-place flow-part-summary nopan" onMouseEnter={()=>lookAt(key)} onMouseLeave={()=>lookAway(key)} onClick={event=>event.stopPropagation()}
-      style={{transform:`translate(${x}px,${y}px) scale(${scale}) translate(${right?0:-100}%,${down?0:-100}%)`,transformOrigin:'top left'}}>
-      <div ref={wheel} className="flow-connection-calls">{mine.map(([label,groups])=><Calls key={label.id} label={label} groups={groups} go={going(label)}/>)}</div></div>;
+    return <FloatingCard cardKey={key} frame={frame} scale={mine[0][0].labelScale*(mine[0][0].cardScale||1)} content={mine.map(([label])=>label.id).join(' ')} className="flow-part-summary"
+      handle={()=>host.querySelector(`[data-badge="${CSS.escape(id)}"]`)?.getBoundingClientRect()||screenBox(node)}>
+      {mine.map(([label,groups])=><Calls key={label.id} label={label} groups={groups} go={going(label)}/>)}</FloatingCard>;
   }
   function ConnectionLabel({label}){
     const {zoom}=useViewport();
@@ -857,21 +914,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const scale=label.labelScale;
       style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${scale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
     }
-    // A number's badge on its part opens the cards of that number beside
-    // every arrow it has; a click on the badge keeps them open.
-    const only=hovered?lookOnly:undefined;
+    // A label opens its card once the pointer rests on it; a click keeps the
+    // card open.
     return <div
           className={`flow-connection-label nopan ${label.boundary?'flow-boundary-label':''} ${upright?'flow-label-upright':''}`}
-          onMouseEnter={()=>{if(!hovered)lookOnly=undefined;lookAt(key);}} onMouseLeave={()=>lookAway(key)} data-connection-outside={label.outside} data-connection-label={label.id}
+          onMouseEnter={()=>{if(!hovered)lookOnly=undefined;aimAt(key);}} onMouseLeave={event=>leaveHandle(key,event)} data-connection-outside={label.outside} data-connection-label={label.id}
           style={style}
           >
           {!label.boundary&&<span>{label.incoming?'← ':'→ '}{label.labelTitle}</span>}
           <button type="button" aria-label={label.title} className={pinnedLabels.has(label.id)?'flow-label-pinned':''}
-            onClick={event=>{event.stopPropagation();if(pinnedLabels.has(label.id))pinnedLabels.delete(label.id);else pinnedLabels.set(label.id,label.area);update?.();}}>
+            onClick={event=>{event.stopPropagation();if(pinnedLabels.has(label.id))closeCard(key);else{look.enter(key);pin(key);}}}>
             {label.numbers.map((k,i)=><React.Fragment key={k}>{i>0&&!upright&&<i> · </i>}
               <b className={`${label.bold?.has(k)?'flow-number-active':''} ${hovered&&(lookOnly===k||lookOnly===undefined)?'flow-number-open':''}`} onMouseEnter={()=>{lookOnly=label.numbers.length>1?k:undefined;if(look.key===key)update?.();}}>{k}</b></React.Fragment>)}
           </button>
-          {(hovered||pinnedLabels.has(label.id))&&<ConnectionCalls label={label} only={only} at={label.boundary?label.point:label}/>}
         </div>;
   }
   map.classList.add('flow-enabled');source.style.display='none';source.setAttribute('aria-hidden','true');

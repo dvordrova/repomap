@@ -217,9 +217,6 @@
 .flow-connection-calls header button{all:unset;cursor:pointer;color:#4f3aa3;font:600 12px/16px system-ui}
 .flow-connection-calls header button:hover{text-decoration:underline}
 .flow-enabled .flow-connection-label button.flow-label-pinned{background:#243044;color:#fff}
-/* A label's transform makes it a stacking context of its own at level zero,
-   below nested nodes and their arrows; with its card open it goes above. */
-.flow-connection-label:has(.flow-connection-calls){z-index:5000}
 .flow-part-symbols .flow-symbol-block .flow-symbol-inner{color:#7a8798}
 .flow-part-symbols .flow-symbol-block .flow-symbol-inner em{color:#a0abba}
 /* A card stands off the line of the arrow it explains, diagonally from its
@@ -242,8 +239,15 @@
    a small picture, so the ring is the map's own grey, close to the mark. */
 .flow-part-zoom:focus-visible,.flow-enabled .flow-zoom-mark:focus-visible{outline:2px solid #52647d;outline-offset:1px;border-radius:5px}
 .flow-part-symbols .flow-symbol-block .flow-symbol-rest{color:#8492a6}
-/* A part's summary stands beside the part, in the map's coordinates. */
-.flow-part-summary{left:0;top:0;z-index:5000;pointer-events:auto}
+/* A floating card stands in the map's coordinates, above the nodes and
+   their arrows. Kept open, it has a ✕ that stays at its top as its list
+   scrolls, and so does the heading of the calls being read. */
+.flow-floating-card{left:0;top:0;z-index:5000;pointer-events:auto}
+.flow-card-bar{position:sticky;top:-10px;z-index:2;height:0;display:flex;justify-content:flex-end}
+.flow-enabled .flow-card-close{margin:-6px -10px 0 0;width:26px;height:26px;padding:0;display:grid;place-items:center;border:1px solid #d4dce6;border-radius:6px;background:#fff;color:#39455a;font:600 13px/1 system-ui;cursor:pointer}
+.flow-enabled .flow-card-close:hover{background:#edf2f8;border-color:#8c9eb8}
+.flow-connection-calls section>header{position:sticky;top:-10px;z-index:1;background:#fff;padding-top:2px}
+.flow-card-pinned section:first-of-type>header{padding-right:26px}
 .flow-part-summary>.flow-connection-calls{max-height:340px}
 .flow-connection-calls section+section{margin-top:8px;padding-top:8px;border-top:1px solid #d5dce6}
 /* A number can be pointed at, and says so: it answers the pointer, and the one
@@ -259,5 +263,3 @@
 .flow-area-summary>.flow-role-triggers{background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='26'%20height='18'%20viewBox='0%200%2026%2018'%3E%3Cpath%20d='M1.5%205.5H13V1.5L24.5%209L13%2016.5V12.5H1.5Z'%20fill='%23267267'%20stroke='%23eef8f4'%20stroke-width='3'%20stroke-linejoin='round'%20paint-order='stroke'/%3E%3C/svg%3E")}
 .flow-standalone-part>strong{padding-right:38px}
 .flow-area-summary>.flow-overview-compact>footer{justify-content:flex-end}.flow-area-summary .flow-number{position:static}.flow-standalone-part>.flow-part-zoom{top:3px}.flow-standalone-part>.flow-number{right:6px;bottom:4px}
-
-.flow-calls-left{right:calc(100% + 8px)}.flow-calls-right{left:calc(100% + 8px)}.flow-calls-up{bottom:calc(100% + 6px)}.flow-calls-down{top:calc(100% + 6px)}

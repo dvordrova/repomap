@@ -301,10 +301,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - Hovering an area or a part inside it labels its inner parts with local
   numbers. One outside participant and direction form one label with every
   exact inner endpoint number (for example `2 · 3`). Different outside
-  identities and opposite directions remain separate. Hovering that label
-  shows all original relations, sources and possible-call marks in a separate
-  section of the reading column; selected details and their links stay present.
-  Moving into that column keeps the connection evidence available. Clicking its
+  identities and opposite directions remain separate. Resting on that label
+  opens its card: all original relations, sources and possible-call marks
+  behind it; selected details and their links stay present. Clicking its
   number pans to the named outside participant. Connection endpoints use compact number badges; their outside names remain
   available to assistive navigation and the reading column.
   Lines have no click target or native tooltip. These numbers
@@ -315,6 +314,27 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   in the map holds anything, one legend line says that the numbers on an
   area's or component's border are the numbered parts inside that the arrow
   connects, not an execution order.
+
+- A card (a label's calls, or everything a numbered part is joined to outside
+  its frame) opens on intent: the pointer rests on its handle for about a
+  tenth of a second, so a handle crossed on the way elsewhere opens nothing.
+  It stands flush with its handle, outside the frame being read so it covers
+  none of that frame's parts, on the side with room, and wholly inside the
+  canvas; a label's card goes out through the border its label stands on.
+  With no room outside the frame it stands beside its handle toward the
+  roomier side. It is an element of the map and zooms and moves with it.
+  While a card is open or kept open, the frame being read stays: the way to
+  the card crosses other parts, frames and empty canvas without changing
+  the emphasis or the labels. Leaving the handle, the pointer is safe inside
+  the triangle between where it left and the card: the card lasts and no
+  other handle on the way takes it. Re-targeting on every pointer move had
+  closed the card on the way to it, and with the pointer on it, as soon as
+  it stood outside the frame. A click on a handle or on its card keeps the
+  card open; a kept card has a ✕, and ✕, Escape or a click on empty canvas
+  closes it. That click closes the card and nothing else: it neither
+  selects nor moves the camera. The card's list scrolls under its sticky
+  heading and ✕. The dwell, the linger after leaving and the triangle are
+  interaction timing, tuned on recorded pointer paths, not evidence limits.
 
 - ELK prepares native area interiors, then places each component's ready
   immediate child rectangles in a flat graph. These children retain their
