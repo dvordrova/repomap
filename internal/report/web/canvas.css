@@ -172,16 +172,56 @@
 @keyframes flow-reveal{from{opacity:.2}to{opacity:1}}
 .flow-label-upright button{white-space:pre;line-height:15px;padding:3px 6px}
 .flow-calls-place{position:absolute;z-index:5}
-.flow-calls-place::before{content:'';position:absolute;inset:-18px;z-index:-1}
-.flow-connection-calls{position:relative;box-sizing:border-box;width:440px;max-height:230px;overflow:auto;overscroll-behavior:contain;padding:10px 14px;background:#fff;border:2px solid #243044;border-radius:10px;box-shadow:0 10px 28px rgba(36,48,68,.32);text-align:left;cursor:default}
-.flow-connection-calls p em{font-style:normal;color:#8492a6;font-size:11px}
-.flow-connection-calls header{display:flex;gap:8px;align-items:baseline;margin-bottom:6px;font:600 12px/16px system-ui;color:#243044}
-.flow-connection-calls header b{flex:none;background:#e8edf4;border:1px solid #52647d;border-radius:7px;padding:0 7px;font-weight:600}
-.flow-connection-calls>div{margin-bottom:6px}
-.flow-connection-calls strong{display:block;font:600 12px/16px system-ui;color:#536176;margin-bottom:2px}
-.flow-connection-calls p{margin:0;font:400 12px/18px ui-monospace,SFMono-Regular,Menlo,monospace;color:#243044;overflow-wrap:anywhere}
-.flow-connection-calls p i{font-style:normal;color:#8492a6}
+.flow-calls-place::before{content:'';position:absolute;inset:-8px;z-index:-1}
+/* A call card is read at the screen's own type size, beside parts many
+   times its size: a dark frame, a firm shadow, a heading that stays while
+   its list scrolls, and in the list a sticky heading for the part the calls
+   are made from and, under it, for the part they go into. */
+.flow-connection-calls{position:relative;box-sizing:border-box;width:500px;display:flex;flex-direction:column;overflow:hidden;background:#fff;border:2px solid #243044;border-radius:10px;box-shadow:0 10px 28px rgba(36,48,68,.32);text-align:left;cursor:default;color:#243044;font:400 13px/20px system-ui}
 .flow-connection-calls a{color:#4f3aa3;text-decoration:none}.flow-connection-calls a:hover{text-decoration:underline}
+.flow-connection-calls button{all:unset;cursor:pointer}
+.flow-card-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 0 10px}
+.flow-card-head{flex:none;padding:11px 44px 9px 16px;border-bottom:1px solid #d5dce6}
+.flow-card-title{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;font:650 16px/21px system-ui;color:#243044}
+.flow-card-title>i,.flow-card-index>i,.flow-card-pair i,.flow-card-row>i{font-style:normal;color:#8492a6}
+.flow-connection-calls .flow-card-title button:hover,.flow-connection-calls .flow-card-index button:hover{text-decoration:underline}
+.flow-card-count{margin:3px 0 0;color:#536176}
+.flow-connection-calls .flow-card-count button{color:#4f3aa3}.flow-connection-calls .flow-card-count button:hover{text-decoration:underline}
+.flow-enabled .flow-card-close{position:absolute;top:9px;right:9px;z-index:4;box-sizing:border-box;width:26px;height:26px;display:grid;place-items:center;border:1px solid #d4dce6;border-radius:6px;background:#fff;color:#39455a;font:600 13px/1 system-ui}
+.flow-enabled .flow-card-close:hover{background:#edf2f8;border-color:#8c9eb8}
+.flow-card-index{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);column-gap:12px;padding:9px 16px 11px;border-bottom:1px solid #d5dce6}
+.flow-card-index ul{list-style:none;margin:0;padding:0;min-width:0}
+.flow-card-index li{display:flex;justify-content:space-between;gap:8px;white-space:nowrap}
+.flow-card-index li>*:first-child{overflow:hidden;text-overflow:ellipsis}
+.flow-connection-calls .flow-card-index button{color:#4f3aa3}
+.flow-card-index b,.flow-card-group b,.flow-card-pair b,.flow-card-section>header b,.flow-card-fold-parts b{font-weight:400;color:#66758a;font-variant-numeric:tabular-nums}
+.flow-card-groups h4,.flow-card-groups h5{margin:0;display:flex;justify-content:space-between;align-items:baseline;gap:12px;background:#fff}
+.flow-card-group{padding:10px 16px 3px;font:600 14px/19px system-ui;color:#39455a}
+.flow-card-pair{padding:4px 16px 2px 28px;font:500 12.5px/18px system-ui;color:#536176}
+.flow-card-sticky .flow-card-group{position:sticky;top:0;z-index:3}
+.flow-card-sticky .flow-card-pair{position:sticky;top:32px;z-index:2}
+.flow-card-groups:not(.flow-card-sticky) .flow-card-group{padding-top:6px}
+.flow-card-rows{display:grid;grid-template-columns:fit-content(210px) auto minmax(0,1fr);padding:0 14px 2px 22px}
+.flow-card-rows>.flow-card-row{display:contents}
+.flow-card-row{margin:0;font:400 12.5px/21px ui-monospace,SFMono-Regular,Menlo,monospace;color:#243044}
+.flow-card-rows>.flow-card-row>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flow-card-row>i{padding:0 8px;text-align:center}
+.flow-card-again{visibility:hidden}
+.flow-card-rows>.flow-card-other>a,.flow-card-rows>.flow-card-other>span{grid-column:1/3}
+.flow-card-row em{font-style:normal;color:#8492a6;font-size:11.5px}
+.flow-card-fold{padding:2px 14px 4px 22px}
+.flow-card-fold>.flow-card-row{display:flex;align-items:baseline;flex-wrap:wrap}
+.flow-card-say{font:400 13px/21px system-ui;color:#39455a}
+.flow-card-fold-parts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));column-gap:18px;padding:0 0 2px 12px}
+.flow-card-fold-parts details[open]{grid-column:1/-1}
+.flow-card-fold-parts summary{display:flex;justify-content:space-between;gap:8px;cursor:pointer;color:#4f3aa3;font:400 12.5px/20px system-ui;list-style:none}
+.flow-card-fold-parts summary::-webkit-details-marker{display:none}
+.flow-card-fold-parts summary>span::before{content:'▸';display:inline-block;width:13px;color:#66758a;font-size:10px}
+.flow-card-fold-parts details[open]>summary>span::before{content:'▾'}
+.flow-card-fold-parts p{margin:0 0 4px 13px;font:400 12.5px/19px ui-monospace,SFMono-Regular,Menlo,monospace;word-spacing:6px}
+.flow-card-section+.flow-card-section{border-top:1px solid #d5dce6}
+.flow-card-section>header{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;gap:12px;padding:10px 44px 4px 16px;background:#fff;font:650 15px/20px system-ui}
+.flow-connection-calls .flow-card-section>header button{color:#4f3aa3}.flow-connection-calls .flow-card-section>header button:hover{text-decoration:underline}
 .flow-connection-label button b{font-weight:400}.flow-connection-label button i{font-style:normal}
 .flow-connection-label button b.flow-number-active{font-weight:800}
 .flow-label-upright button b{display:block}
@@ -214,21 +254,9 @@
 .flow-part-symbols .flow-symbol-row.flow-symbol-field{color:#39455a}
 .flow-part-symbols .flow-symbol-row.flow-symbol-first-method{border-top:1px solid #c5cedb}
 .flow-part-symbols .flow-symbol-row{padding-left:12px!important}
-.flow-connection-calls header button{all:unset;cursor:pointer;color:#4f3aa3;font:600 12px/16px system-ui}
-.flow-connection-calls header button:hover{text-decoration:underline}
 .flow-enabled .flow-connection-label button.flow-label-pinned{background:#243044;color:#fff}
 .flow-part-symbols .flow-symbol-block .flow-symbol-inner{color:#7a8798}
 .flow-part-symbols .flow-symbol-block .flow-symbol-inner em{color:#a0abba}
-/* A card stands off the line of the arrow it explains, diagonally from its
-   label, and an unseen bridge joins the two so the pointer crosses without
-   leaving the look. */
-.flow-connection-calls header{margin-bottom:4px}
-/* A card is read at a glance among parts many times its size: larger type
-   than its label, a dark frame and a firm shadow. */
-.flow-connection-calls header button{font:650 15px/20px system-ui}
-.flow-connection-calls strong{font:600 14px/19px system-ui;color:#39455a}
-.flow-connection-calls p{font:400 14.5px/21px ui-monospace,SFMono-Regular,Menlo,monospace}
-.flow-connection-calls p em{font-size:12.5px}
 /* The owner's drawing of the way in: an unknown object under a magnifier. One
    picture in the stylesheet, so a mark is a button and nothing more. */
 .flow-zoom-picture{display:block;width:100%;height:100%;background:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2264%22%20height=%2244%22%20viewBox=%22230%20188%20820%20562%22%20fill=%22none%22%3E%3Cdefs%3E%3CclipPath%20id=%22mi-blue-outside%22%20clipPathUnits=%22userSpaceOnUse%22%3E%3Cpath%20d=%22M200%20160H1080V790H200Z%20M806%20413%20A190%20190%200%201%200%20426%20413%20A190%20190%200%201%200%20806%20413Z%22%20clip-rule=%22evenodd%22/%3E%3C/clipPath%3E%3CclipPath%20id=%22mi-blue-inside%22%20clipPathUnits=%22userSpaceOnUse%22%3E%3Ccircle%20cx=%22616%22%20cy=%22413%22%20r=%22190%22/%3E%3C/clipPath%3E%3C/defs%3E%3Cg%20clip-path=%22url(%23mi-blue-outside)%22%3E%3Crect%20x=%22262%22%20y=%22451%22%20width=%22316%22%20height=%22273%22%20rx=%222%22%20stroke=%22%23608CAE%22%20stroke-width=%2218%22/%3E%3Cpath%20d=%22M382%20571%20C382%20525%20414%20496%20461%20496%20C495%20496%20517%20514%20517%20541%20C517%20570%20494%20581%20473%20595%20C448%20612%20432%20618%20432%20630%22%20stroke=%22%23BD7736%22%20stroke-width=%2210.5%22%20stroke-linecap=%22round%22/%3E%3Ccircle%20cx=%22432%22%20cy=%22670%22%20r=%225.8%22%20fill=%22%23BD7736%22/%3E%3C/g%3E%3Cpath%20d=%22M757.841936%20523.819066%20L1002.125269%20714.674123%22%20stroke=%22%234B6275%22%20stroke-width=%2230%22%20stroke-linecap=%22round%22%20clip-path=%22url(%23mi-blue-outside)%22/%3E%3Cg%20clip-path=%22url(%23mi-blue-inside)%22%3E%3Cg%20transform=%22translate(-104.300%20-217.850)%20scale(1.35)%22%3E%3Crect%20x=%22262%22%20y=%22451%22%20width=%22316%22%20height=%22273%22%20rx=%221.5%22%20stroke=%22%23608CAE%22%20stroke-width=%228.9%22/%3E%3Cpath%20d=%22M382%20571%20C382%20525%20414%20496%20461%20496%20C495%20496%20517%20514%20517%20541%20C517%20570%20494%20581%20473%20595%20C448%20612%20432%20618%20432%20630%22%20stroke=%22%23BD7736%22%20stroke-width=%229.2%22%20stroke-linecap=%22round%22/%3E%3Ccircle%20cx=%22432%22%20cy=%22670%22%20r=%225.8%22%20fill=%22%23BD7736%22/%3E%3C/g%3E%3Cg%20stroke=%22%23668296%22%20stroke-width=%2211.5%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%3E%3Cpath%20d=%22M590%20391V287%20M558%20319L590%20287L622%20319%22/%3E%3Cpath%20d=%22M794%20463H690%20M722%20431L690%20463L722%20495%22/%3E%3C/g%3E%3C/g%3E%3Ccircle%20cx=%22616%22%20cy=%22413%22%20r=%22190%22%20stroke=%22%234B6275%22%20stroke-width=%2222%22/%3E%3C/svg%3E") center/contain no-repeat}
@@ -243,13 +271,6 @@
    their arrows. Kept open, it has a ✕ that stays at its top as its list
    scrolls, and so does the heading of the calls being read. */
 .flow-floating-card{left:0;top:0;z-index:5000;pointer-events:auto}
-.flow-card-bar{position:sticky;top:-10px;z-index:2;height:0;display:flex;justify-content:flex-end}
-.flow-enabled .flow-card-close{margin:-6px -10px 0 0;width:26px;height:26px;padding:0;display:grid;place-items:center;border:1px solid #d4dce6;border-radius:6px;background:#fff;color:#39455a;font:600 13px/1 system-ui;cursor:pointer}
-.flow-enabled .flow-card-close:hover{background:#edf2f8;border-color:#8c9eb8}
-.flow-connection-calls section>header{position:sticky;top:-10px;z-index:1;background:#fff;padding-top:2px}
-.flow-card-pinned section:first-of-type>header{padding-right:26px}
-.flow-part-summary>.flow-connection-calls{max-height:340px}
-.flow-connection-calls section+section{margin-top:8px;padding-top:8px;border-top:1px solid #d5dce6}
 /* A number can be pointed at, and says so: it answers the pointer, and the one
    whose card is open stays dark, so the card is never an orphan. */
 .flow-connection-label button b{cursor:pointer;padding:0 3px;border-radius:4px}

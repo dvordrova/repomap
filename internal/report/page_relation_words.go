@@ -236,5 +236,6 @@ func (builder *pageBuilder) connectionCall(connection groupindex.Connection) *pa
 	if location := connection.ToLocation; location != nil {
 		call.To = builder.links.anchor(location.Path, location.Line, location.Column).Href
 	}
+	builder.foldCall(call, connection)
 	return call
 }

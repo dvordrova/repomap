@@ -2408,6 +2408,14 @@ type pageEdgeCall struct {
 	// Name is the declaration at the far end when the near end is not a
 	// declaration: the function an input is handled by. To leads to it.
 	Name string `json:"name,omitempty"`
+	// Fold is the dispatch set the call belongs to (page_dispatch.go), Of
+	// how many declarations that set holds. One marks a call at a dispatch
+	// site, which calls one of them; otherwise Same names the declaration
+	// at the site whose set the caller hands over whole.
+	Fold string `json:"fold,omitempty"`
+	Of   int    `json:"of,omitempty"`
+	One  bool   `json:"one,omitempty"`
+	Same string `json:"same,omitempty"`
 }
 
 // CallsJSON is the arrow's relations for the page's script.

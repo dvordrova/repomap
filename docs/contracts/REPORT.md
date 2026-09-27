@@ -343,8 +343,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   none of that frame's parts, on the side with room, and wholly inside the
   canvas; a label's card goes out through the border its label stands on.
   With no room outside the frame it stands beside its handle toward the
-  roomier side. It is an element of the map and zooms and moves with it.
-  While a card is open or kept open, the frame being read stays: the way to
+  roomier side. It stands in the map's coordinates and moves with it, but
+  at the screen's own type size, and is placed again when the zoom
+  changes: drawn at the parts' scale, a card of 291 calls read at 10 px
+  beside Redis's Core infrastructure. While a card is open or kept open, the frame being read stays: the way to
   the card crosses other parts, frames and empty canvas without changing
   the emphasis or the labels. Leaving the handle, the pointer is safe inside
   the triangle between where it left and the card: the card lasts and no
@@ -356,6 +358,32 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   selects nor moves the camera. The card's list scrolls under its sticky
   heading and ✕. The dwell, the linger after leaving and the triangle are
   interaction timing, tuned on recorded pointer paths, not evidence limits.
+
+  A label's card (owner's choice 1b, 2026-09-27) is headed by the two frames
+  its arrow joins, from → into, and one line of counts: how many calls of
+  each kind, from how many parts of the one frame into how many of the
+  other ("291 calls, from all 8 parts into 8 of 9"), and how many go the
+  other way, a link that opens that direction's card. Its calls stand under
+  the part they are made from, the part with most calls first, then under
+  the part they go into; both headings stay at the top while the list
+  scrolls. A call is caller → callee, the caller a link to where the call
+  is written and the callee to its declaration, in the order the call
+  sites are written; a caller is written once for its run of calls, and a
+  caller calling one callee from several sites is one call. Kept open, the
+  card also shows on top an index of the parts at each end with their
+  counts; a part at the calling end leads to its calls. The page data marks
+  the calls of a dispatch site whose adapter retained several alternatives
+  (Redis's call reaches `c->cmd->proc`, one of 94 command functions), and
+  the calls of a declaration that hands every member of such a set over by
+  another relation (cmdTable passes all 94 as callbacks); each caller's
+  marked calls are one line, "call → one of 94 · 77 here", "cmdTable passes
+  callback the same 94 as call · 77 here", with the callees under it by part,
+  each part opening to their names. Server runtime → Data type commands had
+  listed both 77 times, one row each. Which calls belong to a set, and how
+  many the set holds, is decided in Go from the relations' retained targets;
+  the browser only counts what stands behind the arrow. A caller calling
+  every member itself, or handing over part of a set, keeps its rows. A
+  part's number opens the same rows, per label, without the index.
 
 - ELK prepares native area interiors, then places each component's ready
   immediate child rectangles in a flat graph. These children retain their

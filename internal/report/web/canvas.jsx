@@ -15,6 +15,8 @@ import {overviewInset} from './split-layout.mjs';
 import {HoverGate} from './hover.mjs';
 import {placeCard} from './card-place.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
+import {callCard} from './call-card.mjs';
+import {CallRows, cardCount} from './call-card-view.jsx';
 import '@xyflow/react/dist/style.css';
 import './canvas.css';
 
@@ -906,50 +908,23 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         {drawing.nodes.filter(n=>closedGroup(n.id)&&visible(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} muted={muted(n.id)}
           select={(id,event)=>{hover.remember(event.clientX,event.clientY);focus(id);}}/>)}
         {labelsShown&&labels.map(label=><ConnectionLabel key={label.id} label={label}/>)}
-        {labelsShown&&labels.filter(label=>look.key===`label:${label.id}`||pinnedLabels.has(label.id)).map(label=><LabelCard key={'card:'+label.id} label={label} frame={placed.get(label.root)}/>)}
+        {labelsShown&&labels.filter(label=>look.key===`label:${label.id}`||pinnedLabels.has(label.id)).map(label=><LabelCard key={'card:'+label.id} label={label} frame={placed.get(label.root)} labels={labels}/>)}
         {[...new Set([pinnedPart,lookBadge()].filter(Boolean))].map(id=><PartSummary key={'summary:'+id} id={id} labels={labels} frame={placed.get(area)}/>)}
       </ViewportPortal>
     </ReactFlow>;
   }
-  // What a number stands for, beside its label: every call behind it, caller
-  // and callee, each a link into the code. The card is drawn over the canvas
-  // at screen size and kept inside it, and the pointer can move onto it.
-  // A card is an element of the map: it stands beside its label on the outer
-  // side of the frame, in the map's own coordinates, so it is always in the
-  // same place and zooms and moves with everything else. Each row is a call:
-  // caller and callee as links, or the outside symbol with where it is called.
-  // The calls behind one label, optionally of one number only: what is on
-  // the other side, a part with its calls under it or an outside symbol with
-  // where it is called.
-  function callGroups(label,only){
-    const name=id=>byID.get(id)?.name||byID.get(id)?.title||'';
+  // What an arrow end stands for: every call behind it, grouped by the part
+  // it is made from, then the part it goes into (call-card.mjs). The calls
+  // behind one label, optionally of one number only.
+  const nameOf=id=>byID.get(id)?.name||byID.get(id)?.title||'';
+  const partsOf=id=>leaves(id).filter(leaf=>!byID.get(leaf)?.activation).length;
+  function labelCard(label,only){
     const ids=only===undefined?null:new Set(label.byNumber.get(only)?.ids||[]);
-    const groups=new Map(),seen=new Set();
-    for(const relation of label.relations){
-      if(ids&&!ids.has(relation.from)&&!ids.has(relation.to))continue;
-      const other=name(label.incoming?relation.from:relation.to);
-      const calls=relation.calls?.length?relation.calls:[{label:relation.label||relation.summary||'',from:relation.fromSource,to:relation.toSource}];
-      for(const call of calls){
-        const parts=String(call.label||'').match(/^(\S+) (\S+) (\S+)$/);
-        const heading=parts?other:'';
-        const row=`${heading}|${parts?call.label:other+'|'+(call.at||call.name||'')}`;
-        if(seen.has(row))continue;seen.add(row);
-        if(!groups.has(heading))groups.set(heading,[]);
-        groups.get(heading).push({parts,call,other});
-      }
-    }
-    return groups;
+    const relations=ids?label.relations.filter(relation=>ids.has(relation.from)||ids.has(relation.to)):label.relations;
+    return callCard(relations,{nameOf,incoming:label.incoming,groupable:id=>!byID.get(id)?.activation});
   }
-  function Calls({label,groups,go}){
-    const link=(href,text)=>href?<a href={href} target="_blank" rel="noopener" onClick={event=>event.stopPropagation()}>{text}</a>:<span>{text}</span>;
-    return <section>
-      <header><button type="button" onClick={go}>{label.incoming?'←':'→'} {label.title}</button></header>
-      {[...groups].map(([title,rows])=><div key={title}>{title&&title!==label.title&&<strong>{title}</strong>}
-        {rows.map(({parts,call,other},i)=><p key={i}>{parts
-          ?<>{link(call.from,parts[1])}<i>{parts[2]==='calls'?' → ':` ${parts[2].replace(/_/g,' ')} `}</i>{link(call.to||call.from,parts[3])}</>
-          :call.name?<>{link(call.from,other)}<i> → </i>{link(call.to,call.name)}</>:<>{link(call.from||call.to,other)}{call.at&&<em> {call.at}</em>}</>}</p>)}</div>)}
-    </section>;
-  }
+  // The same frames' calls the other way, when the map has them.
+  const reverseOf=(label,labels)=>labels.find(other=>other.area===label.area&&other.outside===label.outside&&other.incoming!==label.incoming);
   // The wheel scrolls a card only when the card has something to scroll.
   const wheel=el=>{if(el)el.classList.toggle('nowheel',el.scrollHeight>el.clientHeight+1);};
   const going=label=>event=>{event.stopPropagation();closeCards();clearHover();select(label.outside,event,true);};
@@ -959,50 +934,74 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     return {left:box.left+v.x+node.absolute.x*v.zoom,top:box.top+v.y+node.absolute.y*v.zoom,
       right:box.left+v.x+(node.absolute.x+node.width)*v.zoom,bottom:box.top+v.y+(node.absolute.y+node.height)*v.zoom};
   };
-  // A floating card is an element of the map: it stands in the map's own
-  // coordinates and zooms and moves with everything else. It is placed once
-  // it has its size: flush with its handle, outside the frame being read, on
-  // the side with room and inside the canvas (card-place.mjs). A click on it
-  // keeps it open; kept open, it has a ✕.
-  function FloatingCard({cardKey,handle,frame,side,scale,content,className='',children}){
-    const ref=useRef(null),[at,setAt]=useState(null),pinned=cardKey.startsWith('badge:')?pinnedPart===cardKey.slice(6):pinnedLabels.has(cardKey.slice(6));
+  // A floating card stands in the map's coordinates and moves with it, at
+  // the screen's own type size: drawn at the parts' scale, a card of 291
+  // calls read at 10px beside an area's parts. It is placed once it has its
+  // size, and again when the zoom changes: flush with its handle, outside
+  // the frame being read, on the side with room and inside the canvas
+  // (card-place.mjs). A click on it keeps it open; kept open, it has a ✕.
+  function FloatingCard({cardKey,handle,frame,side,content,className='',head,children}){
+    const ref=useRef(null),body=useRef(null),[at,setAt]=useState(null),pinned=cardKey.startsWith('badge:')?pinnedPart===cardKey.slice(6):pinnedLabels.has(cardKey.slice(6));
+    const zoom=useStore(state=>state.transform[2]);
     useEffect(()=>{shownCards.add(cardKey);return()=>shownCards.delete(cardKey);},[cardKey]);
     useLayoutEffect(()=>{
+      wheel(body.current);
       const el=ref.current,from=handle();if(!el||!instance||!from)return;
       const v=instance.getViewport(),box=host.getBoundingClientRect(),size=el.getBoundingClientRect();
       const place=placeCard({handle:from,frame:screenBox(frame),canvas:box,size:{width:size.width,height:size.height},side});
       setAt({x:(place.x-box.left-v.x)/v.zoom,y:(place.y-box.top-v.y)/v.zoom});
-    },[cardKey,pinned,content,scale]);
+    },[cardKey,pinned,content,zoom]);
     return <div ref={ref} data-card={cardKey} className={`flow-calls-place flow-floating-card nopan ${className}`}
       onMouseEnter={()=>lookAt(cardKey)} onMouseLeave={()=>lookAway(cardKey)}
       onClick={event=>{event.stopPropagation();if(!pinned)pin(cardKey);}}
-      style={{transform:`translate(${at?.x||0}px,${at?.y||0}px) scale(${scale})`,transformOrigin:'top left',visibility:at?'visible':'hidden'}}>
-      <div ref={wheel} className={`flow-connection-calls ${pinned?'flow-card-pinned':''}`}>
-        {pinned&&<div className="flow-card-bar"><button type="button" className="flow-card-close" aria-label={t('Close')}
-          onClick={event=>{event.stopPropagation();closeCard(cardKey);}}>✕</button></div>}
-        {children}
+      style={{transform:`translate(${at?.x||0}px,${at?.y||0}px) scale(${1/zoom})`,transformOrigin:'top left',visibility:at?'visible':'hidden'}}>
+      <div className={`flow-connection-calls ${pinned?'flow-card-pinned':''}`} style={{maxHeight:Math.max(160,Math.min(600,host.clientHeight-16))}}>
+        {pinned&&<button type="button" className="flow-card-close" aria-label={t('Close')} title={t('Close')}
+          onClick={event=>{event.stopPropagation();closeCard(cardKey);}}>✕</button>}
+        {head}
+        <div ref={body} className="flow-card-body">{children}</div>
       </div></div>;
   }
   // What a label stands for: every call behind it, or behind the one number
-  // pointed at.
-  function LabelCard({label,frame}){
-    const key=`label:${label.id}`,only=look.key===key?lookOnly:undefined;
-    const groups=callGroups(label,only);
-    if(!groups.size)return null;
-    return <FloatingCard cardKey={key} side={label.side} frame={frame} scale={(label.labelScale||1)*(label.cardScale||1)} content={String(only)}
+  // pointed at. Its heading names the two frames the arrow joins, says how
+  // many calls from how many of their parts, and leads to the calls the
+  // other way; kept open, an index of the parts at each end stands on top.
+  function LabelCard({label,frame,labels}){
+    const key=`label:${label.id}`,only=look.key===key?lookOnly:undefined,pinned=pinnedLabels.has(label.id);
+    const card=labelCard(label,only);
+    if(!card.total)return null;
+    const inside=byID.get(label.area),outside=byID.get(label.outside),reverse=reverseOf(label,labels);
+    const [fromFrame,intoFrame]=label.incoming?[label.outside,label.area]:[label.area,label.outside];
+    const back=reverse?labelCard(reverse).total:0;
+    const openReverse=event=>{event.stopPropagation();closeCard(key);look.enter(`label:${reverse.id}`);pin(`label:${reverse.id}`);};
+    const name=id=>id===label.outside?<button type="button" onClick={going(label)}>{nameOf(id)}</button>:<span>{nameOf(id)}</span>;
+    const toGroup=id=>event=>{event.stopPropagation();const body=event.currentTarget.closest('.flow-connection-calls')?.querySelector('.flow-card-body'),group=body?.querySelector(`[data-call-group="${CSS.escape(id)}"]`);if(body&&group)body.scrollTop=group.offsetTop-body.offsetTop;};
+    const head=<header className="flow-card-head">
+      <div className="flow-card-title">{name(fromFrame)}<i>→</i>{name(intoFrame)}</div>
+      <p className="flow-card-count">{cardCount(card,partsOf(fromFrame),partsOf(intoFrame))}
+        {back>0&&<> · <button type="button" onClick={openReverse}>{t('{0} go the other way',back)}</button></>}</p>
+    </header>;
+    return <FloatingCard cardKey={key} side={label.side} frame={frame} content={`${only} ${pinned}`} className="flow-arrow-card" head={head}
       handle={()=>host.querySelector(`[data-connection-label="${CSS.escape(label.id)}"]`)?.getBoundingClientRect()}>
-      <Calls label={label} groups={groups} go={going(label)}/></FloatingCard>;
+      {pinned&&card.from.length+card.into.length>2&&<div className="flow-card-index">
+        <ul>{card.from.map(part=><li key={part.id}><button type="button" onClick={toGroup(part.id)}>{part.name}</button><b>{part.count}</b></li>)}</ul>
+        <i>→</i>
+        <ul>{card.into.map(part=><li key={part.id}><span>{part.name}</span><b>{part.count}</b></li>)}</ul>
+      </div>}
+      <CallRows card={card}/></FloatingCard>;
   }
   // Looking at a part's number: one card with everything the part is joined
   // to outside its frame, neighbour by neighbour.
   function PartSummary({id,labels,frame}){
     const node=placed.get(id),key=`badge:${id}`;
     const mine=labels.map(label=>[label,[...label.byNumber].find(([,entry])=>entry.key===id)?.[0]]).filter(([,k])=>k!==undefined)
-      .map(([label,k])=>[label,callGroups(label,k)]).filter(([,groups])=>groups.size);
+      .map(([label,k])=>[label,labelCard(label,k)]).filter(([,card])=>card.total);
     if(!node||!mine.length)return null;
-    return <FloatingCard cardKey={key} frame={frame} scale={mine[0][0].labelScale*(mine[0][0].cardScale||1)} content={mine.map(([label])=>label.id).join(' ')} className="flow-part-summary"
+    return <FloatingCard cardKey={key} frame={frame} content={mine.map(([label])=>label.id).join(' ')} className="flow-part-summary"
       handle={()=>host.querySelector(`[data-badge="${CSS.escape(id)}"]`)?.getBoundingClientRect()||screenBox(node)}>
-      {mine.map(([label,groups])=><Calls key={label.id} label={label} groups={groups} go={going(label)}/>)}</FloatingCard>;
+      {mine.map(([label,card])=><section key={label.id} className="flow-card-section">
+        <header><button type="button" onClick={going(label)}>{label.incoming?'←':'→'} {label.title}</button><b>{card.total}</b></header>
+        <CallRows card={card} sticky={false}/></section>)}</FloatingCard>;
   }
   function ConnectionLabel({label}){
     const {zoom}=useViewport();

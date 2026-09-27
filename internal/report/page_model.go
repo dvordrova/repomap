@@ -256,6 +256,8 @@ type pageBuilder struct {
 	groupEdges map[string]*groupEdges
 	// connectionEnds is every connection by the groups at its ends.
 	connectionEnds *connectionEnds
+	// dispatchByTarget is each target's dispatch folds, built once.
+	dispatchByTarget map[string]*dispatchFacts
 }
 
 // subjectKey is the only identity used by the report projection. Subject IDs
