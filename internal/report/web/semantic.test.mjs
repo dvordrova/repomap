@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
+import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,layerFloor,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition} from './semantic.mjs';
 
 test('approaching a target reveals its diagram before its smallest descendant text is readable',()=>{
   const nodes=[{id:'target',frame:true,absolute:{x:0,y:0},width:900,height:600}];
@@ -445,4 +445,21 @@ test('a part is entered centred in the canvas at any zoom, and a tall part shows
   assert.ok(Math.abs(centre.x-width/2)<1e-6&&Math.abs(centre.y-height/2)<1e-6,`centre lands at ${JSON.stringify(centre)}`);
   const tall={absolute:{x:0,y:100},width:200,height:900},top=partViewport(tall,1,width,height);
   assert.ok(Math.abs(tall.absolute.y*1+top.y-24)<1e-6,'a part taller than the canvas starts a screen margin below the top');
+});
+
+// Server runtime stood 1300 px wide in a 1214 px canvas: the camera kept its
+// parts at twelve pixels and more and cut Virtual memory off.
+test('a focused area that fits while it stays open is fitted whole',()=>{
+  const width=1214,height=680,scale=.4;
+  const nodes=[{id:'server',frame:true,absolute:{x:0,y:0},width:3000,height:1600},
+    {id:'runtime',parentId:'server',frame:true,absolute:{x:100,y:100},width:1650*scale,height:500*scale},
+    {id:'part',parentId:'runtime',absolute:{x:120,y:140},width:260*scale,height:140*scale}];
+  const records=[{id:'server',branch:'component',children:['runtime']},{id:'runtime',branch:'area',summaryScale:scale,contentScale:scale,children:['part']},{id:'part',contentScale:scale}];
+  const least=layerFloor(nodes,records,'runtime',width,height);
+  assert.ok(least*scale<.72,'the layer stays open below the reading floor');
+  const area=nodes[1],v=frameViewport(area,nodes,width,height,scale,{floor:.72,least});
+  assert.ok(area.absolute.x*v.zoom+v.x>=24-1e-6&&(area.absolute.x+area.width)*v.zoom+v.x<=width-24+1e-6,'the whole width is in the camera');
+  assert.ok(v.zoom>=least,'at a zoom where the area stays open');
+  const wide={...area,width:5000*scale},w=frameViewport(wide,nodes,width,height,scale,{floor:.72,least});
+  assert.equal(w.zoom,.72/scale,'an area too wide even so keeps the reading floor');
 });

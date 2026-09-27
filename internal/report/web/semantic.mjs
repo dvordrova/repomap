@@ -4,7 +4,7 @@ import {prepareInteriors,layoutPrepared,overviewInset} from './split-layout.mjs'
 // prepared frames again; camera gestures do not enter either layout stage.
 export function createSemanticLayout(items,relations,areas){
   let prepared;
-  return async(width,height)=>layoutPrepared(await(prepared ||= prepareInteriors(items,relations,areas,{availableHeight:height-2*overviewInset})),width,height);
+  return async(width,height)=>layoutPrepared(await(prepared ||= prepareInteriors(items,relations,areas,{availableHeight:height-2*overviewInset,canvas:{width,height}})),width,height);
 }
 
 export function semanticLayout(items,relations,areas,width,height){
@@ -100,6 +100,21 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
   return open;
 }
 
+// The smallest zoom at which the layer holding frame `id`, and every layer
+// above it, stays open: the retaining side of the detail thresholds.
+export function layerFloor(nodes,records,id,width,height){
+  const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
+  const depthOf=node=>{let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;return depth;};
+  const node=placed.get(id);if(!node)return Infinity;
+  const frames=nodes.filter(node=>node.frame&&byID.get(node.id)?.branch!=='inputs-part');
+  let floor=systemViewport(nodes,width,height).zoom;
+  for(let depth=0;depth<=depthOf(node);depth++){
+    const layer=frames.filter(frame=>depthOf(frame)===depth);
+    if(layer.length)floor=Math.max(floor,layerThreshold(layer,byID,width,height,depth,true));
+  }
+  return floor;
+}
+
 // Keep the same frame and camera; put its small entrance in the visible corner.
 export function zoomMarkPosition(node,viewport,width,height,inset=12) {
   const {x,y,zoom}=viewport;
@@ -135,9 +150,13 @@ export function partViewport(node,zoom,width,height,margin=24) {
 // for a caller that opens the frame itself, the size at which it stays open. A
 // frame too large even so is entered at its first child. A component is
 // entered whole at any size: its children have scales of their own.
-export function frameViewport(node,nodes,width,height,contentScale=1,{whole=false,pad=24,floor=.86}={}) {
+// A frame that fits the canvas at a zoom where it stays open (`least`) is
+// fitted whole, its content no larger than its reading size: a focused area
+// never renders wider than the visible canvas (Server runtime stood 1300 px
+// wide in a 1214 px canvas, Virtual memory cut off).
+export function frameViewport(node,nodes,width,height,contentScale=1,{whole=false,pad=24,floor=.86,least=Infinity}={}) {
   const fit=Math.min(Math.max(1,width-2*pad)/node.width,Math.max(1,height-2*pad)/node.height);
-  const zoom=Math.max(whole?0:floor/contentScale,Math.min(Math.max(whole?.85:0,1/contentScale),fit));
+  const zoom=fit>=least?Math.max(least,Math.min(1/contentScale,fit)):Math.max(whole?0:floor/contentScale,Math.min(Math.max(whole?.85:0,1/contentScale),fit));
   const viewport={x:Math.max(pad,(width-node.width*zoom)/2)-node.absolute.x*zoom,y:Math.max(pad,(height-node.height*zoom)/2)-node.absolute.y*zoom,zoom};
   const first=(nodes||[]).filter(n=>n.parentId===node.id).sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x)[0];
   if(first&&!whole){

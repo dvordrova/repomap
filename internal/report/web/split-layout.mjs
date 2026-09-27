@@ -15,6 +15,19 @@ const options={
   'elk.layered.mergeEdges':'false','elk.separateConnectedComponents':'true',
 };
 const key=(...parts)=>JSON.stringify(parts);
+// The drawing shares one route between the two directions of a pair of ends
+// (route-drawing.mjs), so ELK lays out one edge per pair. Laying out both
+// made it reverse one of every such pair into an arrow wrapped around the
+// area: Server runtime's 21 arrows among six parts had 68 bends.
+const pairKey=(a,b)=>a<b?key(a,b):key(b,a);
+const reversed=segments=>segments.slice().reverse().map(points=>points.slice().reverse());
+// The scale, relative to its reading scale, at which an open area's 17px
+// part headings reach the 12px its layer stays open at (semantic.mjs).
+export const readableScale=12/17;
+const routeLength=node=>(node.edges||[]).reduce((sum,edge)=>sum+(edge.sections||[]).reduce((total,section)=>{
+  const points=[section.startPoint,...section.bendPoints||[],section.endPoint];
+  return total+points.slice(1).reduce((length,point,i)=>length+Math.abs(point.x-points[i].x)+Math.abs(point.y-points[i].y),0);
+},0),0);
 const path=segments=>segments.map(points=>points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')).join(' ');
 const transform=(point,scale,offset)=>({x:offset.x+point.x*scale,y:offset.y+point.y*scale});
 
@@ -120,7 +133,7 @@ function localGeometry(root){
 
 // ELK prepares each participant and its original boundary ports independently.
 // Cross-root continuations provide placement evidence but are not painted.
-export async function prepareInteriors(items,relations,areas,{availableHeight=Infinity}={}){
+export async function prepareInteriors(items,relations,areas,{availableHeight=Infinity,canvas=null}={}){
   const byID=new Map(items.map(item=>[item.id,item]));
   const children=new Map(areas.map(area=>[area.id,area.nodes.filter(id=>byID.has(id))]));
   const parent=new Map();for(const [id,members] of children)for(const member of members)parent.set(member,id);
@@ -166,8 +179,11 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     // whole component, Server runtime's seven parts took seven global layers
     // and stood as a staircase in a frame twenty times their height.
     const ownInteriors=root.branch==='component';
-    function graph(minimum){
-      function tree(id){
+    // How each area lays out its own parts: its direction and whether a long
+    // chain wraps into rows. Chosen per area below.
+    const areaLayouts=new Map();
+    let twins=new Map();
+    function tree(id,minimum){
         const record=localRecords.get(id),scale=record.contentScale||1;
         const local={...options,'elk.padding':`[top=${record.headerHeight||64},left=${32*scale},bottom=${32*scale},right=${32*scale}]`};
         for(const name of Object.keys(local))if(name.includes('spacing.'))local[name]=String(Number(local[name])*scale);
@@ -179,10 +195,14 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
           height:Math.max(record.minimumHeight||0,derived?.height||0,peer&&!children.has(id)?Math.max(record.height,200):0)};
         if(min.width||min.height){local['elk.nodeSize.constraints']='MINIMUM_SIZE';local['elk.nodeSize.minimum']=`(${min.width},${min.height})`;}
         if(ownInteriors&&children.has(id))local['elk.hierarchyHandling']='SEPARATE_CHILDREN';
-        // A chain of parts wraps into rows at ELK's own proportion instead of
-        // one row as long as the chain.
-        if(ownInteriors&&children.has(id)&&id!==root.id)local['elk.layered.wrapping.strategy']='MULTI_EDGE';
-        const result=children.has(id)?{id,children:children.get(id).map(tree),layoutOptions:local}
+        if(ownInteriors&&children.has(id)&&id!==root.id){
+          const chosen=areaLayouts.get(id)||{direction:'RIGHT',wrap:true};
+          local['elk.direction']=chosen.direction;
+          // A chain of parts may wrap into rows toward the canvas proportion
+          // instead of one row as long as the chain.
+          if(chosen.wrap){local['elk.layered.wrapping.strategy']='MULTI_EDGE';if(canvas)local['elk.aspectRatio']=String(canvas.width/canvas.height);}
+        }
+        const result=children.has(id)?{id,children:children.get(id).map(child=>tree(child)),layoutOptions:local}
           :{id,width:Math.max(record.width,min.width),height:Math.max(record.height,min.height),layoutOptions:local};
         if(id===root.id){
           result.ports=structuredClone([...ports.get(root.id).values()]);
@@ -190,17 +210,28 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
           if(inputUnzip)result.layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
         }
         return result;
-      }
-      const actual=tree(root.id);
-      actual.edges=ownEdges.flatMap(edge=>{
+    }
+    // The root's own edges for ELK, one per pair of ends; `twins` gives every
+    // other edge of a pair the laid-out one's route.
+    function interiorEdges(inside=()=>true){
+      const laid=new Map();twins=new Map();
+      return ownEdges.flatMap(edge=>{
         const from=rootOf(edge.from),to=rootOf(edge.to),cross=from!==to;
         if(ownInteriors&&(cross||childOfRoot(edge.from)!==childOfRoot(edge.to)))return [];
         if(cross&&(!children.has(root.id)||(from===root.id&&edge.from===root.id)||(to===root.id&&edge.to===root.id)))return [];
+        if(!inside(edge))return [];
         const aggregate=cross?aggregates.get(edge.aggregate):null;
         const source=cross&&from!==root.id?aggregate.targetPort:edge.from;
         const target=cross&&to!==root.id?aggregate.sourcePort:edge.to;
+        const pair=pairKey(source,target),first=laid.get(pair);
+        if(first){twins.set(edge.id,{id:first.id,reversed:first.source!==source});return [];}
+        laid.set(pair,{id:edge.id,source});
         return [{id:edge.id,sources:[source],targets:[target]}];
       });
+    }
+    function graph(minimum){
+      const actual=tree(root.id,minimum);
+      actual.edges=interiorEdges();
       return {id:`interior:${root.id}`,layoutOptions:inputUnzip?{...options,'elk.layered.layerUnzipping.strategy':'ALTERNATING'}:options,children:[actual]};
     }
     let placed=(await native(graph())).children[0];
@@ -228,6 +259,25 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         return [item.id,item.branch==='area'?{...item,contentScale:areaScales.get(item.id),headerHeight:64}
           :{...item,contentScale:scale,width:(item.width||260)*scale,height:(item.height||90)*scale}];
       }));
+      // Each area takes, of ELK's directions with and without wrapping, the
+      // layout that fits this canvas while its parts stay readable, then the
+      // one whose arrows run shortest: the fewest detours and arrows wrapped
+      // around the area; then the squarer box, whose closed title reads
+      // larger. Wrapping had wrapped Persistence's one arrow around it and
+      // drawn Server runtime 1300 px wide in a 1214 px canvas.
+      if(canvas)for(const area of ownAreas){
+        const room={width:Math.max(1,canvas.width-48)/readableScale,height:Math.max(1,canvas.height-48)/readableScale};
+        let best=null;
+        for(const direction of ['RIGHT','DOWN'])for(const wrap of [false,true]){
+          areaLayouts.set(area.id,{direction,wrap});
+          const result=await native({id:`area:${area.id}`,layoutOptions:options,children:[tree(area.id)],edges:interiorEdges(edge=>childOfRoot(edge.from)===area.id)});
+          const laid=result.children[0],fits=laid.width<=room.width&&laid.height<=room.height;
+          const score={direction,wrap,fits,shrink:Math.max(laid.width/room.width,laid.height/room.height),length:routeLength(result),
+            square:Math.abs(Math.log(laid.width/laid.height))};
+          if(!best||(fits!==best.fits?fits:!fits?score.shrink<best.shrink:score.length!==best.length?score.length<best.length:score.square<best.square))best=score;
+        }
+        areaLayouts.set(area.id,{direction:best.direction,wrap:best.wrap});
+      }
       placed=(await native(graph())).children[0];
     }
     const preferredWidth=root.overviewPreferredWidth||root.overviewMinWidth||(root.branch==='component'?220:160);
@@ -248,6 +298,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       placed=(await native(graph(minimum))).children[0];
     }
     let local=localGeometry(placed);
+    for(const [id,twin] of twins)local.edges.set(id,twin.reversed?reversed(local.edges.get(twin.id)||[]):local.edges.get(twin.id)||[]);
     if(root.branch==='component'&&children.get(root.id)?.length){
       // Areas already own their native interiors. Place only these ready
       // rectangles, so an interior edge cannot stretch the whole component.
@@ -263,9 +314,9 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         const source=cross&&from!==root.id?aggregate.targetPort:immediate(edge.from);
         const target=cross&&to!==root.id?aggregate.sourcePort:immediate(edge.to);
         if(source===target)continue;
-        const identity=key(source,target);
+        const identity=pairKey(source,target);
         if(!bundled.has(identity))bundled.set(identity,{id:`component:${root.id}:${identity}`,sources:[source],targets:[target]});
-        edgeBundle.set(edge.id,bundled.get(identity).id);
+        edgeBundle.set(edge.id,{id:bundled.get(identity).id,reversed:bundled.get(identity).sources[0]!==source});
       }
       const ready=local.nodes.filter(node=>node.parentId===root.id);
       const componentOptions={...options,'elk.portConstraints':'FIXED_SIDE',
@@ -297,8 +348,8 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         :{...node,absolute:transform(node.absolute,1,offset(node.id))});
       const routes=new Map();
       for(const edge of ownEdges){
-        const bundle=edgeBundle.get(edge.id);
-        routes.set(edge.id,bundle?compact.edges.get(bundle)||[]
+        const bundle=edgeBundle.get(edge.id),route=bundle&&(compact.edges.get(bundle.id)||[]);
+        routes.set(edge.id,bundle?bundle.reversed?reversed(route):route
           :(local.edges.get(edge.id)||[]).map(segment=>segment.map(point=>transform(point,1,offset(edge.from)))));
       }
       compact.edges=routes;

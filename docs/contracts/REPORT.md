@@ -253,9 +253,18 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   The original endpoints, possible status and source relations remain available for
   reading and operation paths. Aggregated outside strokes are drawn once; they
   are display geometry, not new semantic relations. Each area's interior is
-  laid out alone, from the arrows between its own parts, with a long chain
-  wrapped into rows at ELK's own proportion; arrows between areas are the
-  component's bundles between ready rectangles. Its parts keep their own size,
+  laid out alone, from the arrows between its own parts; arrows between areas
+  are the component's bundles between ready rectangles. The two directions of
+  a pair of ends share one drawn route, so ELK lays out one edge per pair:
+  laid out twice, each such pair made ELK reverse one arrow into a
+  wrap-around, and Server runtime's 21 arrows among six parts had 68 bends.
+  Each area takes, of ELK's directions (rightward, downward) with and without
+  wrapping a long chain into rows toward the canvas proportion, the layout
+  that fits the initial canvas while its 17px part headings stay at the 12px
+  their layer stays open at; then the one whose routes run shortest (the
+  fewest detours around the area); then the squarer box. Wrapping had run
+  Persistence's one arrow around the area and drawn Server runtime 1300 px
+  wide in a 1214 px canvas. Its parts keep their own size,
   the size of the loose parts beside it, so an area is as large as what it
   holds: laid out with the whole component and shrunk to a peer's width,
   Redis's Server runtime stood as a staircase of postage stamps under a
@@ -347,7 +356,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   world after a manual gesture. Saved whole-map intent survives a changed
   geometry identity. Component entrance fits the complete participant frame
   before exploring a group, keeping siblings on both sides in view. Entering
-  a group or a call then uses its actual content scale for reading.
+  a group or a call then uses its actual content scale for reading. A
+  focused area that fits the canvas at a zoom where its layer stays open is
+  fitted whole, never wider than the visible canvas; only an area too large
+  even so is entered at its first part.
   The minimum camera scale permits the complete root bounds even in a short
   window. The initial world choice accounts for readable root-header widths and heights,
   not only its bounding rectangle. After placing the native area interiors,
