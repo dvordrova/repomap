@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -406,12 +407,21 @@ func readOptions(t *testing.T, graph atlas.Graph, provider llm.Provider, cacheRo
 
 // closedDecisions answers the closed tables as the tests decide them: every
 // candidate explains its part, every part is the domain, every declaration
-// is a key. Any other question fails its request.
+// is a key, a handed callable runs around the handlers and a call that hands
+// nothing over serves. Any other question fails its request.
 func closedDecisions() *typesafetest.Categorizer {
-	return &typesafetest.Categorizer{Decide: typesafetest.ByColumn(map[string]llm.Verdict{
+	return closedDecisionsWith(nil)
+}
+
+// closedDecisionsWith is closedDecisions with some columns decided otherwise.
+func closedDecisionsWith(verdicts map[string]llm.Verdict) *typesafetest.Categorizer {
+	decided := map[string]llm.Verdict{
 		"explains": typesafetest.Yes(0.9), "role": typesafetest.Choose(lines.PartDomain), "key_symbol": typesafetest.Choose("yes"),
 		"boxes": typesafetest.Choose(lines.RoleOneBox),
-	})}
+		"binds": typesafetest.Choose(lines.APIMiddleware), "publishes": typesafetest.Choose(lines.APINone), "talks": typesafetest.Choose(lines.APIServes),
+	}
+	maps.Copy(decided, verdicts)
+	return &typesafetest.Categorizer{Decide: typesafetest.ByColumn(decided)}
 }
 
 // jevCalls is how many requests the reading's categorizer answered.

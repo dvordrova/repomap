@@ -337,81 +337,43 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 // listed option, or an optional column's explicit "none of these", leading
 // every other listed option by ClassifierMargin, or a yes/no clear of the
 // uncertain band. Anything else leaves the row explicitly unanswered, never
-// silently absent; other rows stand alone. A window whose every row was
-// answered, even uncertainly, is an explicit answer: its uncertain rows stay
-// unanswered and it is not asked again. A window where no row was accepted
-// and some row was not answered, or was answered outside its options, is
-// refused.
+// silently absent; other rows stand alone. An Alone column that is not
+// decided leaves only itself unanswered, recorded as a refused cell, and
+// the row keeps its other decisions unless none of them was decided. A
+// window whose every row was answered, even uncertainly, is an explicit
+// answer: its uncertain rows stay unanswered and it is not asked again. A
+// window where no row was accepted and some row was not answered, or was
+// answered outside its options, is refused.
 func DecodeClassifierAnswers(def Definition, window Window, verdicts map[string]llm.Verdict) (Result, error) {
 	yesAt := 0.5 + ClassifierNoulMargin
-	result := Result{Answers: make(Answers, len(window.Rows)), rowKeys: make([]string, len(window.Rows))}
+	result := Result{Answers: make(Answers, len(window.Rows)), rowKeys: make([]string, len(window.Rows)), partial: make([]bool, len(window.Rows))}
 	accepted, uncertain := 0, 0
 	for i, row := range window.Rows {
 		result.rowKeys[i] = row.ID
 		answer := make(Answer, len(def.Columns))
 		reason := ""
-		unsure := false
+		// A refused row is uncertain only when every failure was a near-tie:
+		// one column not answered or answered outside its options makes it
+		// unanswered.
+		unsure := true
+		var refused []RowRejection
 		for _, column := range def.Columns {
-			got, ok := verdicts[questionKey(row, column)]
-			options := columnOptions(column, window.Context, row)
-			if yesOnly(column, options) {
-				if def.Ranked && ok && got.Yes != nil {
-					answer[ProbabilityCell(column.Name)] = strconv.FormatFloat(*got.Yes, 'f', 4, 64)
-					if *got.Yes >= yesAt {
-						answer[column.Name] = "yes"
-					}
-					continue
-				}
-				switch {
-				case !ok || got.Yes == nil:
-					reason = fmt.Sprintf("column %s was not answered", column.Name)
-				case *got.Yes >= yesAt:
-					answer[column.Name] = "yes"
-					continue
-				case *got.Yes <= 1-yesAt:
-					continue
-				default:
-					reason, unsure = fmt.Sprintf("column %s is uncertain: yes at %.2f", column.Name, *got.Yes), true
-				}
-				break
-			}
-			if def.YesAt > 0 && len(options) == 2 && slices.Contains(options, "yes") && slices.Contains(options, "no") {
-				if !ok || got.Probabilities == nil {
-					reason = fmt.Sprintf("column %s was not answered", column.Name)
-					break
-				}
-				answer[column.Name] = "no"
-				if got.Probabilities["yes"] >= def.YesAt {
-					answer[column.Name] = "yes"
-				}
+			failed, failedUnsure := decideClassifierColumn(def, window, row, column, verdicts, yesAt, answer)
+			if failed == "" {
 				continue
 			}
-			names := namesFor(column, window.Context, row, options)
-			labels := make([]string, 0, len(options)+1)
-			for _, option := range options {
-				labels = append(labels, names.label[option])
-			}
-			if column.Optional {
-				labels = append(labels, classifierAbsent)
-			}
-			probability := got.Probabilities[got.Choice]
-			rival, rivalAt := runnerUp(got, labels)
-			switch {
-			case !ok || got.Choice == "":
-				reason = fmt.Sprintf("column %s was not answered", column.Name)
-			case !slices.Contains(labels, got.Choice):
-				reason = fmt.Sprintf("column %s chose %q, not one of the options", column.Name, got.Choice)
-			// Jev's probabilities are hundredths carried as floats: 0.30
-			// against 0.20 leads by 0.0999…, which is the margin.
-			case probability-rivalAt < ClassifierMargin-1e-9:
-				reason, unsure = fmt.Sprintf("column %s is uncertain: %q at %.2f against %q at %.2f, a lead under %.2f", column.Name, got.Choice, probability, rival, rivalAt, ClassifierMargin), true
-			case got.Choice == classifierAbsent:
-				continue
-			default:
-				answer[column.Name] = names.ref[got.Choice]
+			unsure = unsure && failedUnsure
+			if column.Alone {
+				refused = append(refused, RowRejection{Key: row.ID, Cell: column.Name, Reason: failed})
 				continue
 			}
+			reason = failed
 			break
+		}
+		if reason == "" && len(refused) == len(def.Columns) {
+			// No column was decided: the row has no answer at all.
+			reason = refused[0].Reason
+			refused = nil
 		}
 		if reason != "" {
 			result.Rejections = append(result.Rejections, RowRejection{Key: row.ID, Reason: reason})
@@ -421,12 +383,78 @@ func DecodeClassifierAnswers(def Definition, window Window, verdicts map[string]
 			continue
 		}
 		result.Answers[i] = answer
+		result.partial[i] = len(refused) > 0
+		result.Rejections = append(result.Rejections, refused...)
 		accepted++
 	}
 	if accepted == 0 && uncertain < len(window.Rows) {
 		return Result{}, fmt.Errorf("table %s: no rows accepted; %s", def.Stage, result.Rejections[0].Reason)
 	}
 	return result, nil
+}
+
+// decideClassifierColumn writes one column's decision into the answer, or
+// says why it has none and whether that is because the answer was uncertain.
+// An optional column's "none of these" and a yes/no question's clear no are
+// decisions that write no cell.
+func decideClassifierColumn(def Definition, window Window, row Row, column Column, verdicts map[string]llm.Verdict, yesAt float64, answer Answer) (string, bool) {
+	got, ok := verdicts[questionKey(row, column)]
+	options := columnOptions(column, window.Context, row)
+	if yesOnly(column, options) {
+		if def.Ranked && ok && got.Yes != nil {
+			answer[ProbabilityCell(column.Name)] = strconv.FormatFloat(*got.Yes, 'f', 4, 64)
+			if *got.Yes >= yesAt {
+				answer[column.Name] = "yes"
+			}
+			return "", false
+		}
+		switch {
+		case !ok || got.Yes == nil:
+			return fmt.Sprintf("column %s was not answered", column.Name), false
+		case *got.Yes >= yesAt:
+			answer[column.Name] = "yes"
+			return "", false
+		case *got.Yes <= 1-yesAt:
+			return "", false
+		default:
+			return fmt.Sprintf("column %s is uncertain: yes at %.2f", column.Name, *got.Yes), true
+		}
+	}
+	if def.YesAt > 0 && len(options) == 2 && slices.Contains(options, "yes") && slices.Contains(options, "no") {
+		if !ok || got.Probabilities == nil {
+			return fmt.Sprintf("column %s was not answered", column.Name), false
+		}
+		answer[column.Name] = "no"
+		if got.Probabilities["yes"] >= def.YesAt {
+			answer[column.Name] = "yes"
+		}
+		return "", false
+	}
+	names := namesFor(column, window.Context, row, options)
+	labels := make([]string, 0, len(options)+1)
+	for _, option := range options {
+		labels = append(labels, names.label[option])
+	}
+	if column.Optional {
+		labels = append(labels, classifierAbsent)
+	}
+	probability := got.Probabilities[got.Choice]
+	rival, rivalAt := runnerUp(got, labels)
+	switch {
+	case !ok || got.Choice == "":
+		return fmt.Sprintf("column %s was not answered", column.Name), false
+	case !slices.Contains(labels, got.Choice):
+		return fmt.Sprintf("column %s chose %q, not one of the options", column.Name, got.Choice), false
+	// Jev's probabilities are hundredths carried as floats: 0.30
+	// against 0.20 leads by 0.0999…, which is the margin.
+	case probability-rivalAt < ClassifierMargin-1e-9:
+		return fmt.Sprintf("column %s is uncertain: %q at %.2f against %q at %.2f, a lead under %.2f", column.Name, got.Choice, probability, rival, rivalAt, ClassifierMargin), true
+	case got.Choice == classifierAbsent:
+		return "", false
+	default:
+		answer[column.Name] = names.ref[got.Choice]
+		return "", false
+	}
 }
 
 // runnerUp is the listed option, other than the chosen one, that the answer

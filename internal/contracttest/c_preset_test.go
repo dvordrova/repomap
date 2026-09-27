@@ -41,7 +41,7 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 		Graph: graph, Repository: "kvd", Revision: "test", NoCaptions: true,
 		Targets:  []reading.TargetMeta{{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}},
 		Executor: llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}},
-		Provider: preset, Categorizer: kvdCategorizer(), OwnerRunDir: t.TempDir(),
+		Provider: preset, Categorizer: preset.categorizer(), OwnerRunDir: t.TempDir(),
 		ReadSource: func(path string) ([]byte, error) { return fixture.source(t, path), nil },
 	})
 	if err != nil {
@@ -93,6 +93,24 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	sort.Slice(want, func(i, j int) bool { return want[i].kind+want[i].name < want[j].kind+want[j].name })
 	if !slices.Equal(got, want) {
 		t.Fatalf("inputs = %+v\nwant %+v", got, want)
+	}
+	// Binding, listening on and accepting from the server's socket are its
+	// listening side: they serve, and the connection accept takes in is no
+	// outgoing request. Nothing else kvd calls talks to another system.
+	var serving []string
+	for _, role := range result.Atlas.API {
+		if role.Publishes {
+			serving = append(serving, role.Symbol)
+		}
+		if role.Talks != "" {
+			t.Fatalf("%s talks %s", role.Symbol, role.Talks)
+		}
+	}
+	if want := []string{"sys/socket.h.accept", "sys/socket.h.bind", "sys/socket.h.listen"}; !slices.Equal(serving, want) {
+		t.Fatalf("symbols serving = %v, want %v", serving, want)
+	}
+	if len(indexes[0].Outbound) != 0 {
+		t.Fatalf("kvd talks to another system: %+v", indexes[0].Outbound)
 	}
 	// Each command's entry was offered the words its row wrote and chose the
 	// command's own. The thread's registration wrote only its call word: no
@@ -175,7 +193,7 @@ func (preset *kvdPreset) Complete(_ context.Context, prepared llm.Prepared) (llm
 		answer = map[string]any{"description": "Preset description."}
 	case request.Task == "repomap.atlas.areas.v1":
 		answer = map[string]any{"areas": []any{}}
-	case request.Table == "atlas_api" || request.Table == "atlas_boundaries" || request.Table == "atlas_layers":
+	case request.Table == "atlas_boundaries" || request.Table == "atlas_layers":
 		outgoing := false
 		for _, column := range request.Fill {
 			outgoing = outgoing || column["name"] == "destination"
@@ -211,28 +229,12 @@ func (preset *kvdPreset) Complete(_ context.Context, prepared llm.Prepared) (llm
 
 func (preset *kvdPreset) answer(table string, fill []map[string]any, row map[string]any) (map[string]any, error) {
 	answer := map[string]any{"key": row["key"]}
-	symbol, _ := row["symbol"].(string)
-	usage, _ := row["usage"].(string)
 	for _, column := range fill {
 		name, _ := column["name"].(string)
 		if !conditionHolds(column, answer, row) {
 			continue
 		}
 		switch {
-		case table == "atlas_api" && name == "binds":
-			preset.mu.Lock()
-			preset.handed = append(preset.handed, symbol)
-			preset.mu.Unlock()
-			switch {
-			case strings.Contains(usage, `{"get", getCommand`), strings.Contains(usage, `{"ping", pingCommand`):
-				// A row of the table a client's first word is looked up in.
-				answer["binds"] = "request"
-			case strings.Contains(usage, "pthread_create"):
-				// The thread's body loops for as long as the server runs.
-				answer["binds"] = "continuous"
-			}
-		case table == "atlas_api":
-			// No symbol here middlewares, publishes or talks for this test.
 		case table == "atlas_boundaries" && name == "name":
 			words, _ := row["words"].([]any)
 			var values []string
@@ -259,12 +261,41 @@ func (preset *kvdPreset) answer(table string, fill []map[string]any, row map[str
 	return answer, nil
 }
 
-// kvdCategorizer answers the closed tables: every declaration and candidate
-// is a key, and the part of the server's commands is what kvd exists for.
-func kvdCategorizer() *typesafetest.Categorizer {
+// categorizer answers the closed tables: every declaration and candidate is
+// a key, and the part of the server's commands is what kvd exists for. Of
+// the outside symbols, a command table row binds a request, the thread's
+// start binds work that runs as long as the server; binding, listening on
+// and accepting from the server's socket serve; every other symbol, such as
+// fopen or the socket's creation, is none.
+func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 	decide := typesafetest.ByColumn(map[string]llm.Verdict{"explains": typesafetest.Yes(0.9), "key_symbol": typesafetest.Choose("yes")})
 	return &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
-		if strings.HasSuffix(key, "|role") {
+		symbol, _ := question.Item["symbol"].(string)
+		usage, _ := question.Item["usage"].(string)
+		switch column := key[strings.LastIndex(key, "|")+1:]; column {
+		case "binds":
+			preset.mu.Lock()
+			preset.handed = append(preset.handed, symbol)
+			preset.mu.Unlock()
+			switch {
+			case strings.Contains(usage, `{"get", getCommand`), strings.Contains(usage, `{"ping", pingCommand`):
+				// A row of the table a client's first word is looked up in.
+				return typesafetest.Choose("request"), true
+			case strings.Contains(usage, "pthread_create"):
+				// The thread's body loops for as long as the server runs.
+				return typesafetest.Choose("continuous"), true
+			}
+			return typesafetest.Choose("none"), true
+		case "publishes":
+			return typesafetest.Choose("none"), true
+		case "talks":
+			for _, serving := range []string{".bind", ".listen", ".accept"} {
+				if strings.HasSuffix(symbol, serving) {
+					return typesafetest.Choose("serves"), true
+				}
+			}
+			return typesafetest.Choose("none"), true
+		case "role":
 			return typesafetest.Choose("domain"), true
 		}
 		return decide(key, question)
