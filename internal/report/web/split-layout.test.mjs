@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {prepareCards,wrapText} from './cards.mjs';
-import {prepareInteriors,layoutPrepared,overviewInset,readableScale} from './split-layout.mjs';
+import {prepareInteriors,layoutPrepared,overviewInset,readableScale,pairLeads} from './split-layout.mjs';
 import {systemViewport} from './semantic.mjs';
 import {denseInventory,manyExternalInventory,records as ordinaryRecords,relations as ordinaryRelations,areas as ordinaryAreas} from './visual/two-systems-five-externals.mjs';
 
@@ -564,6 +564,47 @@ test('a display group carries its frames\' shared text once, where no arrow runs
       assert.ok(!inside(point),`${edge.from}'s arrow crosses the heading at ${JSON.stringify(point)}`);
     }
   }
+});
+
+// Redis's Server configuration and lifecycle is its program's entry side,
+// yet each of its pairs came first as a redisLog call into it: laid out that
+// way, ELK made it a sink and wrapped its routes around Server runtime.
+test('a pair of ends is laid out from the program\'s entry side toward the other',async()=>{
+  const items=[{id:'server',title:'Server',branch:'component'},{id:'runtime',title:'Server runtime',branch:'area'},
+    {id:'config',title:'Server configuration',category:'part',lane:'triggers'},{id:'memory',title:'Virtual memory',category:'part',lane:'core'}];
+  const relations=[{from:'memory',to:'config',fromSource:'vm:10'},{from:'config',to:'memory',fromSource:'config:20'}];
+  const prepared=await prepareInteriors(cards(items),relations,[{id:'server',nodes:['runtime']},{id:'runtime',nodes:['config','memory']}],
+    {canvas:{width:1214,height:680},availableHeight:648});
+  const {local}=prepared.interiors.get('server'),at=new Map(local.nodes.map(node=>[node.id,node]));
+  const config=at.get('config'),memory=at.get('memory');
+  assert.ok(config.absolute.x+config.width<=memory.absolute.x+1e-6||config.absolute.y+config.height<=memory.absolute.y+1e-6,
+    'the entry part stands first in the layout, its pair laid out leaving it');
+  const route=from=>JSON.stringify(local.edges.get(prepared.edges.find(edge=>edge.from===from).id));
+  assert.equal(route('memory'),JSON.stringify(JSON.parse(route('config')).slice().reverse().map(points=>points.slice().reverse())),
+    'both directions keep their arrow on the one route');
+});
+
+// Between areas the same pair rule holds: the entry area leads.
+test('a pair of areas is laid out from the program\'s entry area toward the other',async()=>{
+  const items=[{id:'server',title:'Server',branch:'component'},
+    {id:'core',title:'Core infrastructure',branch:'area'},{id:'runtime',title:'Server runtime',branch:'area',lane:'triggers'},
+    {id:'log',title:'Logging',category:'part'},{id:'config',title:'Server configuration',category:'part',lane:'triggers'}];
+  const relations=[{from:'log',to:'config'},{from:'config',to:'log'}];
+  const prepared=await prepareInteriors(cards(items),relations,[{id:'server',nodes:['core','runtime']},{id:'core',nodes:['log']},{id:'runtime',nodes:['config']}],
+    {canvas:{width:1214,height:680},availableHeight:648});
+  const {local}=prepared.interiors.get('server'),at=new Map(local.nodes.map(node=>[node.id,node]));
+  const runtime=at.get('runtime'),core=at.get('core');
+  assert.ok(runtime.absolute.x+runtime.width<=core.absolute.x+1e-6||runtime.absolute.y+runtime.height<=core.absolute.y+1e-6,
+    'the entry area stands first in the component, the pair laid out leaving it');
+});
+
+test('a pair leads from an entry end to one that is not, and otherwise keeps its first edge',()=>{
+  const entry=id=>id.startsWith('in');
+  const leads=ends=>[...pairLeads(ends,entry).values()].map(end=>`${end.source}>${end.target}`);
+  assert.deepEqual(leads([{source:'b',target:'in'},{source:'in',target:'b'}]),['in>b'],'the entry end leads though it came second');
+  assert.deepEqual(leads([{source:'in2',target:'in'},{source:'in',target:'in2'}]),['in2>in'],'two entry ends keep the first');
+  assert.deepEqual(leads([{source:'b',target:'c'},{source:'c',target:'b'}]),['b>c'],'no entry end keeps the first');
+  assert.deepEqual(leads([{source:'b',target:'in'}]),['b>in'],'a lone direction is laid out as it is');
 });
 
 // A loose part beside areas is drawn filling its box once the areas open,

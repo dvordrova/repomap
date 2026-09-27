@@ -21,6 +21,22 @@ const key=(...parts)=>JSON.stringify(parts);
 // area: Server runtime's 21 arrows among six parts had 68 bends.
 const pairKey=(a,b)=>a<b?key(a,b):key(b,a);
 const reversed=segments=>segments.slice().reverse().map(points=>points.slice().reverse());
+// The one edge ELK lays out for each pair of ends: the direction leaving the
+// program's entry side (a `triggers` end) toward an end that is not, else the
+// direction that comes first. Taken as it came, every pair of Redis's Server
+// configuration and lifecycle came first as a redisLog call into it, so ELK
+// made the lifecycle part a sink and wrapped its routes around the area.
+// `ends` are {source,target} in their order; the result maps each pair's key
+// to the end laid out for it. Only the layout changes: both directions keep
+// their arrows on the one route.
+export function pairLeads(ends,entry){
+  const leads=new Map(),leaves=end=>entry(end.source)&&!entry(end.target);
+  for(const end of ends){
+    const pair=pairKey(end.source,end.target),lead=leads.get(pair);
+    if(!lead||leaves(end)&&!leaves(lead))leads.set(pair,end);
+  }
+  return leads;
+}
 // The scale, relative to its reading scale, at which an open area's 17px
 // part headings reach the 12px its layer stays open at (semantic.mjs).
 export const readableScale=12/17;
@@ -211,11 +227,13 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         }
         return result;
     }
-    // The root's own edges for ELK, one per pair of ends; `twins` gives every
-    // other edge of a pair the laid-out one's route.
+    const entrySide=id=>localRecords.get(id)?.lane==='triggers';
+    // The root's own edges for ELK, one per pair of ends, in the place of the
+    // pair's first edge and in its lead's direction (pairLeads); `twins` gives
+    // every other edge of a pair the laid-out one's route.
     function interiorEdges(inside=()=>true){
-      const laid=new Map();twins=new Map();
-      return ownEdges.flatMap(edge=>{
+      twins=new Map();
+      const ends=ownEdges.flatMap(edge=>{
         const from=rootOf(edge.from),to=rootOf(edge.to),cross=from!==to;
         if(ownInteriors&&(cross||childOfRoot(edge.from)!==childOfRoot(edge.to)))return [];
         if(cross&&(!children.has(root.id)||(from===root.id&&edge.from===root.id)||(to===root.id&&edge.to===root.id)))return [];
@@ -223,10 +241,15 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         const aggregate=cross?aggregates.get(edge.aggregate):null;
         const source=cross&&from!==root.id?aggregate.targetPort:edge.from;
         const target=cross&&to!==root.id?aggregate.sourcePort:edge.to;
-        const pair=pairKey(source,target),first=laid.get(pair);
-        if(first){twins.set(edge.id,{id:first.id,reversed:first.source!==source});return [];}
-        laid.set(pair,{id:edge.id,source});
-        return [{id:edge.id,sources:[source],targets:[target]}];
+        return [{id:edge.id,source,target}];
+      });
+      const leads=pairLeads(ends,entrySide),laid=new Set();
+      return ends.flatMap(end=>{
+        const pair=pairKey(end.source,end.target),lead=leads.get(pair);
+        if(lead!==end)twins.set(end.id,{id:lead.id,reversed:lead.source!==end.source});
+        if(laid.has(pair))return [];
+        laid.add(pair);
+        return [{id:lead.id,sources:[lead.source],targets:[lead.target]}];
       });
     }
     function graph(minimum){
@@ -306,17 +329,20 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         while(parent.has(id)&&parent.get(id)!==root.id)id=parent.get(id);
         return id;
       };
-      const bundled=new Map(),edgeBundle=new Map();
+      const bundled=new Map(),edgeBundle=new Map(),ends=[];
       for(const edge of ownEdges){
         const from=rootOf(edge.from),to=rootOf(edge.to),cross=from!==to;
         if(cross&&((from===root.id&&edge.from===root.id)||(to===root.id&&edge.to===root.id)))continue;
         const aggregate=cross?aggregates.get(edge.aggregate):null;
         const source=cross&&from!==root.id?aggregate.targetPort:immediate(edge.from);
         const target=cross&&to!==root.id?aggregate.sourcePort:immediate(edge.to);
-        if(source===target)continue;
-        const identity=pairKey(source,target);
-        if(!bundled.has(identity))bundled.set(identity,{id:`component:${root.id}:${identity}`,sources:[source],targets:[target]});
-        edgeBundle.set(edge.id,{id:bundled.get(identity).id,reversed:bundled.get(identity).sources[0]!==source});
+        if(source!==target)ends.push({id:edge.id,source,target});
+      }
+      const leads=pairLeads(ends,entrySide);
+      for(const end of ends){
+        const identity=pairKey(end.source,end.target),lead=leads.get(identity);
+        if(!bundled.has(identity))bundled.set(identity,{id:`component:${root.id}:${identity}`,sources:[lead.source],targets:[lead.target]});
+        edgeBundle.set(end.id,{id:bundled.get(identity).id,reversed:lead.source!==end.source});
       }
       const ready=local.nodes.filter(node=>node.parentId===root.id);
       const componentOptions={...options,'elk.portConstraints':'FIXED_SIDE',

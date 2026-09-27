@@ -307,6 +307,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   a pair of ends share one drawn route, so ELK lays out one edge per pair:
   laid out twice, each such pair made ELK reverse one arrow into a
   wrap-around, and Server runtime's 21 arrows among six parts had 68 bends.
+  That edge leaves the program's entry side (a `triggers` part or area)
+  toward an end that is not, and otherwise is the pair's first edge. Taken
+  as it came, each of Redis's Server configuration and lifecycle pairs came
+  first as a redisLog call into it, ELK made the lifecycle part a sink, and
+  Server runtime's 22 routes had 84 bends in a 1728×1000 window; laid out
+  from the entry side they have 70 and run 24% shorter in card pixels. This
+  is layout only: every route and both arrowheads of a pair stay drawn.
   Each area takes, of ELK's directions (rightward, downward) with and without
   wrapping a long chain into rows toward the canvas proportion, the layout
   that fits the initial canvas while its 17px part headings stay at the 12px
