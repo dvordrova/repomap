@@ -19,6 +19,10 @@ type pageAnchor struct {
 	Open     string
 	Text     string
 	NoSource bool `json:"NoSource,omitempty"`
+	// Code is, for a declaration on a static page, the link to all of its
+	// lines (#L1250-L1360), where Href, the page's key for it, names its
+	// first (owner, 2026-09-28: a code link covers the whole declaration).
+	Code string `json:"Code,omitempty"`
 }
 
 // pageLinks builds anchors for one render. Static reports carry one external
@@ -119,6 +123,19 @@ func (links pageLinks) permalink(path string, line int) string {
 		href += "#L" + strconv.Itoa(line)
 	}
 	return href
+}
+
+// rangeLink is the static link to lines line..end of a file, "" when the
+// page has no static links or the range is one line: GitHub writes
+// #L10-L20, GitLab #L10-20.
+func (links pageLinks) rangeLink(path string, line, end int) string {
+	if !links.static() || path == "" || line <= 0 || end <= line || links.unavailable[path] {
+		return ""
+	}
+	if links.blobPrefix == "/-/blob/" {
+		return links.permalink(path, line) + "-" + strconv.Itoa(end)
+	}
+	return links.permalink(path, line) + "-L" + strconv.Itoa(end)
 }
 
 // factLabel is the short principal of a fact shown next to its anchor.

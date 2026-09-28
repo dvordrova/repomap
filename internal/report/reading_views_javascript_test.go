@@ -31,14 +31,14 @@ const nodes={'#own':{dataset:{title:'Server lifecycle and cron',summary:'Keeps t
 const read=[];
 const ctx={nodeByHref:href=>nodes[href]||null,nodeById:()=>null,goDecl:decl=>nodes[decl.part]?()=>read.push(decl.name):null,readNode:n=>read.push(n.dataset.title),light(){}};
 const decl=(name,kind,part,extra)=>Object.assign({name,kind,part,key:'h#'+name,href:'h#'+name,file:'server.c',at:'server.c:1'},extra||{});
-const data={decls:[decl('serverCron','function','#own',{doc:'Called every 100 ms.'}),decl('initServer','function','#own',{bold:true}),decl('beforeSleep','function','#own'),
+const data={decls:[decl('serverCron','function','#own',{doc:'Called every 100 ms.',code:'h#serverCron-L9'}),decl('initServer','function','#own',{bold:true}),decl('beforeSleep','function','#own'),
   decl('main','function','#main'),decl('server','variable','#core'),decl('dictResize','function','#core'),decl('shared','variable','#own')],
  files:['server.c'],
  members:[{kind:'function',decls:[2,1,0]},{kind:'variable',decls:[6]}],
  in:[{part:'#main',title:'main',count:2,lines:[{caller:3,ends:[{decl:1,kind:'calls'},{decl:2,kind:'passes_callback'}]}]}],
  out:[{part:'#core',title:'Server core state',count:2,lines:[{caller:-1,ends:[{decl:5,kind:'calls'},{decl:4,kind:'reads'}]}]}],
- own:[{decl:0,callers:[{part:'#own',title:'Server lifecycle and cron',own:true,decls:[{decl:1,kind:'passes_callback',sites:['server.c:30']}]}],
-   callees:[{part:'#core',title:'Server core state',decls:[{decl:5,kind:'calls',sites:['server.c:22']}]}],uses:[{decl:4,kind:'reads',sites:['server.c:21']}]}]};
+ own:[{decl:0,callers:[{part:'#own',title:'Server lifecycle and cron',own:true,decls:[{decl:1,kind:'passes_callback',sites:[{at:'server.c:30',href:'h#30'}]}]}],
+   callees:[{part:'#core',title:'Server core state',decls:[{decl:5,kind:'calls',sites:[{at:'server.c:22',href:'h#22'}]}]}],uses:[{decl:4,kind:'reads',sites:[{at:'server.c:21',href:'h#21'}]}]}]};
 `
 
 // A part's reading stands as the owner chose (2026-09-28): who calls into
@@ -71,13 +71,14 @@ part.all(c=>c.textContent==='dictResize()'&&c.has('map-reading-name'))[0].listen
 part.all(c=>c.tagName==='BUTTON'&&c.textContent==='main')[0].listeners.click({stopPropagation(){}});
 assert.deepEqual(read,['dictResize','main'],'a name reads its declaration and a part box its part');
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'},explanation:'Runs the cron.',explanation_ref:'e1'});
-assert.deepEqual(view.children.map(c=>c.className),['map-reading-side','map-decl-name','map-decl-where','map-decl-explanation model','map-reading-side','map-reading-side']);
-assert.equal(view.children[0].textContent,'Called byServer lifecycle and cron1initServer()passes it as a callback');
+assert.deepEqual(view.children.map(c=>c.className),['map-reading-side','map-decl-name','map-decl-where','map-author-comment','map-decl-explanation model','map-reading-side','map-reading-side']);
+assert.equal(view.children[0].textContent,'Called byServer lifecycle and cron1initServer()passes it as a callback:30');
+assert.equal(view.children[0].all(c=>c.tagName==='A'&&c.textContent===':30')[0].href,'h#30','the relation links to its own line');
 assert.equal(view.children[1].textContent,'serverCron(id: long)');
-assert.equal(view.children[1].children[0].href,'h#serverCron','the name is the link into its code');
-assert.ok(view.children[2].textContent.startsWith('server.c'),'the file alone, no line');
-assert.ok(view.children[2].textContent.includes('Called every 100 ms.'),'the author\'s comment is there, on hover');
-assert.equal(view.children[5].textContent,'Uses variablesserver');
-assert.equal(view.children[5].all(c=>c.has('map-reading-name'))[0].title,'A global variable of Server core state\nserver.c:21');
+assert.equal(view.children[1].children[0].href,'h#serverCron-L9','the name is the link to all of its code');
+assert.equal(view.children[2].textContent,'server.c','the file alone, no line');
+assert.equal(view.children[3].textContent,"The author's comment in the codeCalled every 100 ms.",'the author\'s comment stands in the reading, marked as theirs');
+assert.equal(view.children[6].textContent,'Uses variablesserver:21');
+assert.equal(view.children[6].all(c=>c.has('map-reading-name'))[0].title,'A global variable of Server core state\nserver.c:21');
 `)
 }

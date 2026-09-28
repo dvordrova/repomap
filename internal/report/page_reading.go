@@ -53,6 +53,8 @@ type pageReadingDecl struct {
 	Href     string `json:"href,omitempty"`
 	Open     string `json:"open,omitempty"`
 	NoSource bool   `json:"no_source,omitempty"`
+	// Code is the link to all of its lines, where Href names the first.
+	Code string `json:"code,omitempty"`
 	// At is where it is declared, "redis.c:1155", said on hover; File is
 	// the file alone, the one the reading writes.
 	At   string `json:"at,omitempty"`
@@ -128,10 +130,19 @@ type pageReadingLine struct {
 // pageReadingEnd is a declaration at a relation's other end: its kind of
 // relation, whether it is only possible, and every place it is written.
 type pageReadingEnd struct {
-	Decl     int      `json:"decl"`
-	Kind     string   `json:"kind"`
-	Possible bool     `json:"possible,omitempty"`
-	Sites    []string `json:"sites,omitempty"`
+	Decl     int               `json:"decl"`
+	Kind     string            `json:"kind"`
+	Possible bool              `json:"possible,omitempty"`
+	Sites    []pageReadingSite `json:"sites,omitempty"`
+}
+
+// pageReadingSite is one place a relation is written: its words
+// ("redis.c:2011") and the link to that line (owner, 2026-09-28: an edge
+// links to the call's own line).
+type pageReadingSite struct {
+	At   string `json:"at"`
+	Href string `json:"href,omitempty"`
+	Open string `json:"open,omitempty"`
 }
 
 // pageReadingOwner is one declaration of the part and its relations.
@@ -221,7 +232,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		if anchor == nil {
 			return -1
 		}
-		return declare(pageReadingDecl{Name: label, Key: declarationKey(anchor), Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource,
+		return declare(pageReadingDecl{Name: label, Key: declarationKey(anchor), Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code,
 			At: anchor.Text, File: path.Base(anchor.Path), Kind: kind, Part: part})
 	}
 
@@ -344,9 +355,9 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		if from < 0 || to < 0 {
 			continue
 		}
-		var sites []string
+		var sites []pageReadingSite
 		if row.FromSource != nil {
-			sites = []string{row.FromSource.Text}
+			sites = []pageReadingSite{{At: row.FromSource.Text, Href: row.FromSource.Href, Open: row.FromSource.Open}}
 		}
 		kind := row.Kind
 		if row.Arrow != "" {
@@ -510,7 +521,7 @@ func mergeEnd(ends []pageReadingEnd, end pageReadingEnd) []pageReadingEnd {
 		if ends[i].Decl == end.Decl && ends[i].Kind == end.Kind {
 			ends[i].Possible = ends[i].Possible && end.Possible
 			for _, site := range end.Sites {
-				if !slices.Contains(ends[i].Sites, site) {
+				if !slices.ContainsFunc(ends[i].Sites, func(listed pageReadingSite) bool { return listed.At == site.At }) {
 					ends[i].Sites = append(ends[i].Sites, site)
 				}
 			}

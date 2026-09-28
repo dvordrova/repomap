@@ -3,6 +3,9 @@ package report
 import (
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 func TestNormalizeGitHubRepositoryURL(t *testing.T) {
@@ -88,5 +91,28 @@ func TestReviewedRootLinkKeepsNestedDirectory(t *testing.T) {
 		if links.rootURL() != links.repositoryURL {
 			t.Fatal("a full repository should link to its root")
 		}
+	}
+}
+
+// A declaration's code link covers all of its lines (owner, 2026-09-28):
+// GitHub writes #L1250-L1360, GitLab #L1250-1360; one line or no static
+// link has none.
+func TestADeclarationsCodeLinkCoversItsLines(t *testing.T) {
+	github := pageLinks{repositoryURL: "https://github.com/o/r", blobPrefix: "/blob/", revision: "abc"}
+	if got := github.rangeLink("redis.c", 1250, 1360); got != "https://github.com/o/r/blob/abc/redis.c#L1250-L1360" {
+		t.Fatalf("GitHub: %s", got)
+	}
+	gitlab := pageLinks{repositoryURL: "https://gitlab.com/o/r", blobPrefix: "/-/blob/", revision: "abc"}
+	if got := gitlab.rangeLink("redis.c", 1250, 1360); got != "https://gitlab.com/o/r/-/blob/abc/redis.c#L1250-1360" {
+		t.Fatalf("GitLab: %s", got)
+	}
+	if github.rangeLink("redis.c", 12, 12) != "" || (pageLinks{}).rangeLink("redis.c", 1, 9) != "" {
+		t.Fatal("one line, or no static links, has no range")
+	}
+	builder := &pageBuilder{links: github, data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{{Objects: []programindex.Object{
+		{ID: "n1", Name: "serverCron", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "redis.c", Line: 1250, Column: 5}, EndLine: 1360}}}}}}}
+	_, anchor := builder.subjectDisplay(groupindex.Subject{ID: "n1", Object: &groupindex.ObjectFacts{Name: "serverCron", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "redis.c", Line: 1250, Column: 5}}})
+	if anchor.Code != "https://github.com/o/r/blob/abc/redis.c#L1250-L1360" || anchor.Href != "https://github.com/o/r/blob/abc/redis.c#L1250" {
+		t.Fatalf("the declaration's anchor: %+v", anchor)
 	}
 }

@@ -39,10 +39,10 @@ function rmModelText(tag,cls,text,ref){
   if(ref)item.dataset.displayRef=ref;
   return item;
 }
-// A declaration's name: a link into its code whose plain click reads it
-// (`go`), and whose hover says where it stands.
+// A declaration's name: a link into its code, all of its lines (`code`),
+// whose plain click reads it (`go`), and whose hover says where it stands.
 function rmDeclName(decl,text,go,title,bold){
-  var link=decl.href||decl.open?repomapMembers.sourceLink({Href:decl.href,Open:decl.open,Text:text}):rmEl('span','',text);
+  var link=decl.href||decl.open?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:text}):rmEl('span','',text);
   link.classList.add('map-reading-name');
   if(decl.key)link.dataset.declKey=decl.key;
   if(bold&&decl.bold)link.classList.add('map-reading-key');
@@ -77,7 +77,17 @@ function rmPeerBox(ctx,peer){
 // written.
 function rmEndTitle(ctx,decl,end){
   var node=decl.part?ctx.nodeByHref(decl.part):null;
-  return [node?node.dataset.title:'',(end&&end.sites||[]).join(' · ')].filter(Boolean).join('\n');
+  return [node?node.dataset.title:'',(end&&end.sites||[]).map(function(site){return site.at;}).join(' · ')].filter(Boolean).join('\n');
+}
+// Where a relation is written, each place a link to its own line (":2011"),
+// its file on hover: the call A → B opens at the call, not at A.
+function rmSiteLinks(end){
+  var sites=rmEl('span','map-reading-sites');
+  (end.sites||[]).forEach(function(site){
+    var line=':'+site.at.split(':').pop(),link=site.href||site.open?repomapMembers.sourceLink({Href:site.href,Open:site.open,Text:line}):rmEl('span','',line);
+    link.title=site.at;sites.appendChild(link);
+  });
+  return sites;
 }
 // One end of a relation: its name, and what the relation says of it when it
 // is not a call (a variable's readers say only who writes it: "Used by"
@@ -88,6 +98,7 @@ function rmEndItem(ctx,data,end,side,quiet){
   var words=quiet&&end.kind==='reads'?'':rmEndWords[side][end.kind];
   if(words)item.appendChild(rmEl('span','map-reading-relation',rmT(words)));
   if(end.possible)item.appendChild(rmEl('span','possible',rmT('possible')));
+  if((end.sites||[]).length)item.appendChild(rmSiteLinks(end));
   return item;
 }
 // The heading's kind line: its word, then the frame holding what is read
@@ -180,24 +191,21 @@ function rmDeclView(ctx,node,data,concept){
   }
   var callers=side(own.callers,variable?'Used by':'Called by','in');if(callers)view.appendChild(callers);
   var name=rmEl('div','map-decl-name');
-  var link=rmDeclName({name:decl.name,href:decl.href,open:decl.open},decl.name,null,decl.at);link.classList.add('map-decl-code');name.appendChild(link);
+  var link=rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code},decl.name,null,decl.at);link.classList.add('map-decl-code');name.appendChild(link);
   symbols=rmPage.data(node,'symbols')||[];
   var symbol=symbols.find(function(s){return (s.href||s.open)===key&&s.kind!=='field';});
   if(symbol&&symbol.text)name.appendChild(rmEl('span','map-decl-signature',symbol.text));
   view.appendChild(name);
   var where=rmEl('p','map-decl-where');where.appendChild(rmEl('span','meta',decl.file||''));
-  if(decl.doc){
-    // The author's comment, quoted as written: their claim, shown on hover
-    // or focus.
-    var comment=rmEl('span','map-author-comment');comment.tabIndex=0;comment.setAttribute('role','note');
-    comment.setAttribute('aria-label',rmT("The author's comment in the code"));
-    comment.innerHTML='<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3 2.5h7l3 3v8H3z M10 2.5v3h3 M5.5 8h5 M5.5 10.5h5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
-    comment.appendChild(rmEl('span','map-author-comment-word',rmT('comment')));
-    var said=rmEl('span','map-author-comment-text');said.setAttribute('role','tooltip');
-    said.append(rmEl('small','',rmT("The author's comment in the code")),rmEl('q','',decl.doc));comment.appendChild(said);
-    where.appendChild(comment);
-  }
   view.appendChild(where);
+  // The author's comment above it, quoted as written in its reading and
+  // marked as theirs (owner, 2026-09-28: it had waited behind a "comment"
+  // hover).
+  if(decl.doc){
+    var comment=rmEl('blockquote','map-author-comment');comment.setAttribute('role','note');
+    comment.append(rmEl('small','',rmT("The author's comment in the code")),rmEl('q','',decl.doc));
+    view.appendChild(comment);
+  }
   if(explanation&&explanation.text)view.appendChild(rmModelText('p','map-decl-explanation',explanation.text,explanation.ref));
   if(decl.fields&&decl.fields.length){
     var fields=rmEl('section','map-reading-fields');fields.appendChild(rmCountHeading('h6','{0} fields',decl.fields.length));
@@ -221,10 +229,11 @@ function rmDeclView(ctx,node,data,concept){
     var list=rmEl('ul','map-reading-ends');
     own.uses.forEach(function(end){
       var used=data.decls[end.decl],holder=used.part?ctx.nodeByHref(used.part):null,item=rmEl('li');
-      var title=[holder?rmT('A global variable of {0}',holder.dataset.title):'',(end.sites||[]).join(' · ')].filter(Boolean).join('\n');
+      var title=[holder?rmT('A global variable of {0}',holder.dataset.title):'',(end.sites||[]).map(function(site){return site.at;}).join(' · ')].filter(Boolean).join('\n');
       item.appendChild(rmDeclName(used,used.name,ctx.goDecl(used),title));
       if(end.kind==='writes')item.appendChild(rmEl('span','map-reading-relation',rmT('written')));
       if(end.possible)item.appendChild(rmEl('span','possible',rmT('possible')));
+      if((end.sites||[]).length)item.appendChild(rmSiteLinks(end));
       list.appendChild(item);
     });
     uses.appendChild(list);view.appendChild(uses);
@@ -284,7 +293,7 @@ function rmCatalogueLines(ctx,catalogue){
   var decls=catalogue.decls||[],lines=[];
   function name(index){
     var decl=decls[index]||{name:''},node=decl.part?ctx.nodeById(decl.part):null;
-    return rmDeclName({name:decl.name,href:decl.href,open:decl.open,part:node?node.getAttribute('href'):'',key:decl.href||decl.open},decl.name,node?function(){ctx.readDeclIn(node,decl.href||decl.open);}:null,decl.source);
+    return rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code,part:node?node.getAttribute('href'):'',key:decl.href||decl.open},decl.name,node?function(){ctx.readDeclIn(node,decl.href||decl.open);}:null,decl.source);
   }
   function callers(calls){var span=rmEl('span','map-collection-callers');calls.forEach(function(call,i){if(i)span.append(document.createTextNode(', '));span.appendChild(name(call.caller));});return span;}
   function line(key,args){

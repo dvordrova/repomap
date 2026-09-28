@@ -22,6 +22,7 @@ func systemJSPiece(t *testing.T, name, start, end string) string {
 	}
 	return start + body
 }
+
 // jsPageDataStandIn reads a value a harness writes into an element's
 // dataset as JSON, where the page refers to it in its page data
 // (10-ui.js rmPage, page_data_table.go).

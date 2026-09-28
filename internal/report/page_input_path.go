@@ -19,6 +19,8 @@ type pageDecl struct {
 	Source   string `json:"source,omitempty"`
 	NoSource bool   `json:"no_source,omitempty"`
 	Part     string `json:"part,omitempty"`
+	// Code is the link to all of its lines, where Href names the first.
+	Code string `json:"code,omitempty"`
 }
 
 // pageCall is one relation the reading lists: the caller's and the callee's
@@ -202,7 +204,7 @@ func (decls *pathDecls) of(subject string) int {
 			}
 		}
 		if anchor != nil {
-			decl.Href, decl.Open, decl.Source, decl.NoSource = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource
+			decl.Href, decl.Open, decl.Source, decl.NoSource, decl.Code = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource, anchor.Code
 		}
 	}
 	decl.Part = decls.part(subject)

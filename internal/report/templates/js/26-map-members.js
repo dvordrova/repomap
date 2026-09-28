@@ -2,6 +2,9 @@
 // neither extend the analysis graph nor attach group relations to a member.
 var repomapMembers = (function () {
   var inventories = new WeakMap();
+  // A chip links to all of a declaration's lines (#L10-L20, GitLab
+  // #L10-20); the page keys the declaration by its first (#L10).
+  function chipKey(chip) { return (chip.getAttribute('href')||'').replace(/(#L\d+)-L?\d+$/, '$1'); }
   function sourceKey(source) { return source.Href || source.Open || (source.NoSource ? (source.Path ? JSON.stringify([source.Path,source.Line||0]) : source.Text) : ''); }
   function items(node) {
     if (inventories.has(node)) return inventories.get(node);
@@ -32,7 +35,7 @@ var repomapMembers = (function () {
       var prose = row.querySelector(':scope>.model [data-display-ref]');
       var anchor = row.querySelector(':scope>.anchor,:scope>.model>.model-sources>.anchor');
       var item = {name:name.textContent.trim(), alias:row.dataset.alias||'', key:row.dataset.key==='true', explanation:prose ? prose.textContent : '', explanation_ref:prose?.dataset.displayRef||'', source:{
-        Href:chip.dataset.open ? '' : chip.getAttribute('href'), Open:chip.dataset.open || '', NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, function(){return chip.closest('.key-file')?.querySelector('.path')?.textContent;}), Line:Number(chip.dataset.sourceLine)||0,
+        Href:chip.dataset.open ? '' : chipKey(chip), Open:chip.dataset.open || '', NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, function(){return chip.closest('.key-file')?.querySelector('.path')?.textContent;}), Line:Number(chip.dataset.sourceLine)||0,
         Text:anchor ? anchor.textContent : (chip.closest('.key-file').querySelector('.path').textContent + (chip.querySelector('.ln')?.textContent || ''))
       }};
       item.fields = Array.from(row.querySelectorAll(':scope>.symbol-fields>li')).map(function(field){var fieldChip=field.querySelector('.chip');return fieldChip&&inventoryItem(field,fieldChip,function(){return item.source.Path;});}).filter(Boolean);
@@ -53,7 +56,7 @@ var repomapMembers = (function () {
   }
   function inventoryItem(row,chip,heading){
     var name=chip.cloneNode(true);name.querySelectorAll('.ln').forEach(function(n){n.remove();});
-    return {name:name.textContent.trim(),alias:row.dataset.alias||'',explanation:'',source:{Href:chip.dataset.open?'':chip.getAttribute('href'),Open:chip.dataset.open||'',NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, heading), Line:Number(chip.dataset.sourceLine)||0,Text:chip.dataset.sourceText||chip.getAttribute('title')||name.textContent.trim()}};
+    return {name:name.textContent.trim(),alias:row.dataset.alias||'',explanation:'',source:{Href:chip.dataset.open?'':chipKey(chip),Open:chip.dataset.open||'',NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, heading), Line:Number(chip.dataset.sourceLine)||0,Text:chip.dataset.sourceText||chip.getAttribute('title')||name.textContent.trim()}};
   }
   function size(node) {
     return {w:360,h:112 + Math.min(items(node).length,5)*66 + (items(node).length>5?32:0)};

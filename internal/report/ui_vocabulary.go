@@ -43,7 +43,6 @@ var russianUI = map[string]string{
 	"Taken by":                             "Кто принимает",
 	"{0} fields":                           "полей: {0}",
 	"The author's comment in the code":     "Комментарий автора в коде",
-	"comment":                              "комментарий",
 	"A global variable of {0}":             "Глобальная переменная части {0}",
 	"Function":                             "Функция",
 	"Type":                                 "Тип",

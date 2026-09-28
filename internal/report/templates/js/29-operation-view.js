@@ -103,7 +103,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
   section.appendChild(rmEl('h5','',rmT('Path')));
   function name(index){
     var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
-    var link=at?repomapMembers.sourceLink({Href:decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
+    var link=at?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
     if(decl.source)link.title=decl.source;
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
@@ -228,7 +228,7 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   var section=rmEl('section','system-catalogue'),decls=catalogue.decls||[];
   function name(index){
     var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
-    var link=key?repomapMembers.sourceLink({Href:decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
+    var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
     if(decl.source)link.title=decl.source;
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
@@ -322,7 +322,7 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
   box.appendChild(rmEl('summary','',rmT('How these were found')));
   function name(index){
     var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
-    var link=key?repomapMembers.sourceLink({Href:decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
+    var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
     if(decl.source)link.title=decl.source;
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;

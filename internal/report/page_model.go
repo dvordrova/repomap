@@ -14,6 +14,7 @@ import (
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/orientation"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
@@ -260,6 +261,9 @@ type pageBuilder struct {
 	dispatchByTarget map[string]*dispatchFacts
 	// runBy is which programs run each declaration, built once.
 	runBy *runByOthers
+	// declarationEnds is the last line of each declaration by its place
+	// (path, line, column), from every program's index, built once.
+	declarationEnds map[string]int
 }
 
 // subjectKey is the only identity used by the report projection. Subject IDs
@@ -841,9 +845,11 @@ func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, 
 	case subject.Object != nil:
 		object := subject.Object
 		if object.Location != nil {
-			return object.Name, builder.links.anchorPointer(
+			anchor := builder.links.anchorPointer(
 				object.Location.Path, object.Location.Line, object.Location.Column,
 			)
+			anchor.Code = builder.links.rangeLink(object.Location.Path, object.Location.Line, builder.declarationEnd(*object.Location))
+			return object.Name, anchor
 		}
 		if object.External != nil {
 			return externalSymbolName(object.External.PackagePath, object.External.Receiver, object.External.Name), nil
@@ -863,6 +869,28 @@ func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, 
 		return name, nil
 	}
 	return "", nil
+}
+
+// declarationEnd is the last line of the declaration at a place, as its
+// program's index records it (ProgramIndex end_line), 0 when none does.
+func (builder *pageBuilder) declarationEnd(location programindex.Location) int {
+	if builder.declarationEnds == nil {
+		builder.declarationEnds = map[string]int{}
+		if builder.data != nil && builder.data.ProgramPortfolio != nil {
+			for _, entry := range builder.data.ProgramPortfolio.Entries {
+				for _, object := range entry.Objects {
+					if object.Location != nil && object.EndLine > object.Location.Line {
+						builder.declarationEnds[placeKey(*object.Location)] = object.EndLine
+					}
+				}
+			}
+		}
+	}
+	return builder.declarationEnds[placeKey(location)]
+}
+
+func placeKey(location programindex.Location) string {
+	return location.Path + "\x00" + strconv.Itoa(location.Line) + "\x00" + strconv.Itoa(location.Column)
 }
 
 func externalSymbolName(packagePath, receiver, name string) string {

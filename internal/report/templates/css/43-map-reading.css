@@ -412,11 +412,15 @@ details.map-reading-peer[open]>summary::before{content:'▾'}
 .map-decl-code.map-reading-name{font-size:17px;font-weight:750}
 .map-decl-signature{color:var(--muted);font-size:12.5px}
 .map-decl-where{display:flex;align-items:center;gap:12px;margin:0 0 10px}
-.map-author-comment{position:relative;display:inline-flex;align-items:center;gap:3px;color:var(--muted);font-size:12px;text-decoration:underline;text-decoration-style:dotted;cursor:help}
-.map-author-comment-text{display:none;position:absolute;left:0;top:calc(100% + 4px);z-index:5;width:max-content;max-width:300px;padding:8px 10px;background:var(--paper);border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 14px rgba(20,30,40,.12);color:var(--ink);font:12.5px/1.45 var(--mono);white-space:pre-wrap;text-decoration:none;cursor:auto}
-.map-author-comment-text small{display:block;margin-bottom:4px;font:600 11px/1.3 system-ui;color:var(--muted)}
-.map-author-comment-text q{quotes:none}
-.map-author-comment:hover .map-author-comment-text,.map-author-comment:focus .map-author-comment-text{display:block}
+/* The author's comment above a declaration, quoted in its reading and marked as theirs. */
+.map-author-comment{margin:6px 0 10px;padding:4px 0 4px 10px;border-left:2px solid var(--line);color:var(--ink)}
+.map-author-comment small{display:block;margin-bottom:2px;font:600 11px/1.3 system-ui;color:var(--muted)}
+.map-author-comment q{quotes:none;white-space:pre-line;font-size:13px;line-height:1.45}
+/* The places a relation is written, each a link to its line. */
+.map-reading-sites{margin-left:6px;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+.map-reading-sites>*+*{margin-left:4px}
+.map-reading-sites a{color:var(--muted)}
+.map-reading-sites>*{white-space:nowrap}
 .map-reading-field-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 12px;margin:0 0 12px;font:13px/1.45 var(--mono)}
 .map-reading-field-grid dt,.map-reading-field-grid dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .map-reading-field-grid dd{color:var(--muted)}

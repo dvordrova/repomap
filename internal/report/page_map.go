@@ -2469,6 +2469,8 @@ type pageNodeSymbol struct {
 	// one: the reading names a declaration by the same source.
 	Path string `json:"path,omitempty"`
 	Open string `json:"open,omitempty"`
+	// Code is the link to all of its lines, where Href names the first.
+	Code string `json:"code,omitempty"`
 }
 
 const maxTileFields = 8
@@ -2583,7 +2585,7 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		symbol.Inner = object.Visibility != programindex.VisibilityPublic && object.Visibility != programindex.VisibilityUnknown
 		symbol.Text = symbolText(object, name)
 		if anchor != nil {
-			symbol.Href, symbol.Open, symbol.Path = anchor.Href, anchor.Open, anchor.Path
+			symbol.Href, symbol.Open, symbol.Path, symbol.Code = anchor.Href, anchor.Open, anchor.Path, anchor.Code
 		}
 		if interpretation := ref.subject.Interpretation; interpretation != nil && interpretation.Key {
 			symbol.Key = true

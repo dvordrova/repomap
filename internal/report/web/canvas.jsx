@@ -76,7 +76,7 @@ function PartSymbols({symbols,calls,width,height,grid,member}){
     const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner&&mixed.has(i)?'flow-symbol-inner':''} ${i===chosen?'flow-symbol-chosen':''} ${tone(i)}`,
       'data-symbol':i,onMouseEnter:()=>member?.point(i),onClick:symbol.kind==='more'?undefined:choose};
     const body=<>{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
-    return symbol.href&&symbol.kind!=='more'?<a key={i} href={symbol.href} target="_blank" {...props}>{body}</a>
+    return symbol.href&&symbol.kind!=='more'?<a key={i} href={symbol.code||symbol.href} target="_blank" {...props}>{body}</a>
       :<span key={i} {...props}>{body}</span>;
   };
   // A drag anywhere over the declarations pans, as it does over the part: at
