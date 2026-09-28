@@ -17,8 +17,8 @@ integration points by kind and direction.
   client sends). Kinds out: `client_request`, `db`, `queue_producer`, `sdk`,
   `config` (a configuration read), `other`; kinds in: `request`, `command`,
   `interaction`, `scheduled`, `continuous`, `queue_consumer`, `extension`,
-  `listen_address`, `other`. Direction `out` is a call this target makes,
-  `in` an interface it exposes.
+  `setting` (a key of its configuration file), `listen_address`, `other`.
+  Direction `out` is a call this target makes, `in` an interface it exposes.
 
 Fill the cells advertised by fill:
 

@@ -66,16 +66,18 @@ func (section *pageSection) NativeRouteCount() int {
 // Group existing, already localized operations for reading. This makes no new
 // classification and adds no entries to the saved translation catalogue.
 func (section *pageSection) ActivityGroups() []pageActivityGroup {
-	groups := []pageActivityGroup{{Title: "Commands"}, {Title: "Background work"}, {Title: "User interactions"}, {Title: "Other operations"}}
+	groups := []pageActivityGroup{{Title: "Commands"}, {Title: "Settings"}, {Title: "Background work"}, {Title: "User interactions"}, {Title: "Other operations"}}
 	for _, row := range section.Activities {
-		i := 3
+		i := 4
 		switch row.Kind {
 		case "command":
 			i = 0
-		case "scheduled", "continuous":
+		case "setting":
 			i = 1
-		case "interaction":
+		case "scheduled", "continuous":
 			i = 2
+		case "interaction":
+			i = 3
 		}
 		groups[i].Rows = append(groups[i].Rows, row)
 	}

@@ -82,7 +82,7 @@ function rmReachingInputs(n,reaching,owner,choose){
   var inputs=rmEl('details','system-reaching-inputs');inputs.appendChild(rmEl('summary','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')+' · '+reaching.length));
   if(reaching.length){
     var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
-    types.forEach(function(choices,type){inputs.appendChild(rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')));var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
+    types.forEach(function(choices,type){inputs.appendChild(rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',setting:'Settings',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')));var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
   }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
   return inputs;
 }
@@ -259,7 +259,7 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   else if(catalogue.declarer>=0)head.append.apply(head,inline(catalogue.table?'In {0}':'Declared in {0}',name(catalogue.declarer)));
   var members=catalogue.members||[];
   if(members.length>=2){
-    var of=({command:'one of {0} commands',request:'one of {0} requests'})[catalogue.kind]||'one of {0} inputs';
+    var of=({command:'one of {0} commands',request:'one of {0} requests',setting:'one of {0} settings'})[catalogue.kind]||'one of {0} inputs';
     head.append(document.createTextNode(' · '+rmT(of,members.length)+': '));
     members.forEach(function(id,i){
       var input=inputNode(id);if(!input)return;

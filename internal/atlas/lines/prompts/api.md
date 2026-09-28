@@ -3,7 +3,8 @@
 We draw a map of a program for a newcomer who has never read its code.
 Around the program's own parts the map shows its entries, the ways work
 comes in to this program: what other programs send to it, what people run
-or click, what timers and threads start. It also shows its outside systems:
+or click, what timers and threads start, and its settings, what a person
+writes in its configuration file. It also shows its outside systems:
 the other running programs it talks to, such as the servers it sends
 requests to, its databases, its message queues and the remote services it
 uses, and the programs it starts. The operating system, the language

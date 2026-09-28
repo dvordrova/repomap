@@ -3,7 +3,8 @@
 We draw a map of a program for a newcomer who has never read its code.
 Around the program's own parts the map shows its entries, the ways work
 comes in to this program: what other programs send to it, what people run
-or click, what timers and threads start. The operating system, the
+or click, what timers and threads start, and its settings, what a person
+writes in its configuration file. The operating system, the
 language runtime and the libraries the program links are not outside
 systems: calling them is the program's own work in its own process.
 

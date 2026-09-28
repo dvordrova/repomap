@@ -2,9 +2,9 @@
 
 Each option of every question that asks what something of the repository
 becomes on our map (the callable handed to an outside symbol, the words a
-call to an outside symbol is given) with its criteria: what it is, what it
-includes, what it is not for, and examples. Every such question sends the
-same criteria for an option.
+call to an outside symbol is given, the key a field's tag names) with its
+criteria: what it is, what it includes, what it is not for, and examples.
+Every such question sends the same criteria for an option.
 
 ## request
 
@@ -25,12 +25,25 @@ What: What a person gives the program when starting it from a command line or a 
 
 Includes: an option, a flag, a positional argument, a subcommand or a task; a word the program checks among its command-line arguments; the names of the commands among which the program looks up what was typed; declaring an option or a subcommand with a command-line parser; a subcommand's handler
 
-Not for: the command line this program gives another program it starts, or the name of a program it looks up or starts (none); the name a parser or an option set is given for its own messages (none); text the program prints, such as a usage line, a format or an error message (none); the program's own name (none); an environment variable (none); a command a client sends over a network connection (request)
+Not for: the command line this program gives another program it starts, or the name of a program it looks up or starts (none); the name a parser or an option set is given for its own messages (none); text the program prints, such as a usage line, a format or an error message (none); the program's own name (none); an environment variable (none); a command a client sends over a network connection (request); a directive or key a person writes in the program's configuration file (setting)
 
 Examples:
 - declaring a --verbose flag with a parser
 - a -p option whose value becomes the port
 - a subcommand registered with a command-line parser
+
+## setting
+
+What: What a person writes in the program's own configuration file to change how it runs.
+
+Includes: a directive or a key name the program looks for in a configuration file it reads, such as a word it compares with the first word of each line of that file; a key a structure the program decodes its configuration file into maps to one of its fields, such as the key a field's tag names or a schema's key; a configuration entry declared under its key with a settings facility
+
+Not for: an option, a flag or a word given on the command line (command); an environment variable the program reads (none: reading it is already on the map as a configuration read beside the settings, while a setting is a key a person writes in a file); a key of data the program merely parses, stores or sends, such as a field of a message another program sends or receives, a record it saves or a file format it converts, which is not the program's own configuration (none); a word a client sends over a connection to read or change a setting while the program runs (none: it belongs to the request that carries it)
+
+Examples:
+- a key the program compares with the first word of each line of the configuration file it loads
+- a structure field whose tag names the key it is read from in the configuration file
+- a default declared for a named configuration key
 
 ## interaction
 
@@ -106,7 +119,7 @@ What: No entry: a step of work already under way, the program's own work, data o
 
 Includes: reading from or writing to a connection an earlier entry accepted or the program opened; opening, binding or listening on a socket, or opening a connection; a hook the loop runs on every turn; a notice from the program's own threads; a listener on the program's own events; a signal, exit or failure handler; a one-shot delay; a comparator, a once-guard or a default the code it is handed to runs in place; text the program prints or logs; the program's own name; comparing, searching, converting or formatting strings; a table of names the program uses only internally
 
-Not for: the ways work comes in from outside the program (request, command, interaction, scheduled, continuous, queue_consumer, extension)
+Not for: the ways work comes in from outside the program (request, command, interaction, scheduled, continuous, queue_consumer, extension) and what a person writes in its configuration file (setting)
 
 Examples:
 - a comparator passed to a sort

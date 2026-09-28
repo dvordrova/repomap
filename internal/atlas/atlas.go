@@ -550,7 +550,7 @@ type APIRole struct {
 // EntryKinds are what a handed callable can become; an entry has a named
 // kind or is none.
 func EntryKinds() []string {
-	return []string{BoundaryRequest, BoundaryCommand, BoundaryInteraction, BoundaryScheduled, BoundaryContinuous, BoundaryQueueConsumer, BoundaryExtension}
+	return []string{BoundaryRequest, BoundaryCommand, BoundaryInteraction, BoundaryScheduled, BoundaryContinuous, BoundaryQueueConsumer, BoundaryExtension, BoundarySetting}
 }
 
 // Target is one analyzed program target with its boxes.
@@ -1676,6 +1676,13 @@ const (
 	// BoundaryCommand is a command a runner activates: a CLI subcommand, a
 	// task a task runner names.
 	BoundaryCommand = "command"
+	// BoundarySetting is what a person writes in the program's own
+	// configuration file: a directive or key the program looks for in a
+	// configuration file it reads, a key a configuration structure maps from
+	// a file, a configuration entry declared with a settings facility. An
+	// environment variable is a configuration read (BoundaryConfig), not a
+	// setting.
+	BoundarySetting = "setting"
 	BoundaryOther   = "other"
 
 	SourceModel  = "model"
@@ -1694,7 +1701,7 @@ func BoundaryKinds() []string {
 	return []string{
 		BoundaryClientRequest, BoundaryRequest, BoundaryDB, BoundaryQueueProducer,
 		BoundaryQueueConsumer, BoundaryScheduled, BoundaryContinuous, BoundaryInteraction, BoundaryExtension,
-		BoundaryCommand, BoundarySDK, BoundaryRunsProgram, BoundaryConfig, BoundaryOther,
+		BoundaryCommand, BoundarySetting, BoundarySDK, BoundaryRunsProgram, BoundaryConfig, BoundaryOther,
 	}
 }
 

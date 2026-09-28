@@ -13,7 +13,7 @@ import (
 // Reuse a declaration's accepted alias only when an operation repeats its
 // native name. A distinct action label or command/path has its own meaning.
 func (builder *pageBuilder) operationDisplayName(targetID string, operation groupindex.Operation) string {
-	if operation.Source != "model" || operation.Kind == "command" || operation.Kind == "request" {
+	if operation.Source != "model" || operation.Kind == "command" || operation.Kind == "request" || operation.Kind == "setting" {
 		return operation.Name
 	}
 	ref, ok := builder.subject(targetID, operation.SubjectID)

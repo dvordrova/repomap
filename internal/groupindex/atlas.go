@@ -1133,7 +1133,7 @@ func snakeCase(label string) string {
 // incoming boundary kinds map onto.
 func validOperationKind(kind string) bool {
 	switch kind {
-	case "command", "request", "consumer", "scheduled", "interaction", "extension", "entry", "continuous":
+	case "command", "request", "consumer", "scheduled", "interaction", "extension", "entry", "continuous", "setting":
 		return true
 	default:
 		return false
@@ -1158,6 +1158,8 @@ func OperationKind(boundaryKind string) string {
 		return "extension"
 	case atlas.BoundaryCommand:
 		return "command"
+	case atlas.BoundarySetting:
+		return "setting"
 	case atlas.BoundaryOther:
 		return "entry"
 	default:

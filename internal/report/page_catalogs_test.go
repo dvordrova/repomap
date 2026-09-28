@@ -124,9 +124,10 @@ func TestInputActivityGroupsRetainOriginalKindsAndDisplayBindings(t *testing.T) 
 		{Name: "scheduled", Kind: "scheduled", SummaryRef: "scheduled-ref", Source: "model"},
 		{Name: "command", Kind: "command", SummaryRef: "command-ref", Source: "fact"},
 		{Name: "click", Kind: "interaction", SummaryRef: "click-ref", Source: "model"},
+		{Name: "port", Kind: "setting", SummaryRef: "port-ref", Source: "model"},
 	}}
 	groups := section.ActivityGroups()
-	if len(groups[0].Rows) != 1 || len(groups[1].Rows) != 2 || len(groups[2].Rows) != 1 {
+	if len(groups[0].Rows) != 1 || len(groups[1].Rows) != 1 || groups[1].Title != "Settings" || len(groups[2].Rows) != 2 || len(groups[3].Rows) != 1 {
 		t.Fatalf("activity kinds not grouped for reading: %+v", groups)
 	}
 	for _, group := range groups {

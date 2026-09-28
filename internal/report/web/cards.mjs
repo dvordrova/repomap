@@ -1,6 +1,6 @@
 // Every card represents one saved report item, including each original input.
 export function groupInputs(inputs=[],translate=text=>text) {
-  const kinds=[['request','Incoming requests'],['command','Commands'],['background','Background work'],['interaction','User interactions'],['other','Other operations']];
+  const kinds=[['request','Incoming requests'],['command','Commands'],['setting','Settings'],['background','Background work'],['interaction','User interactions'],['other','Other operations']];
   const groups=new Map(kinds.map(([kind,title])=>[kind,{kind,title:translate(title),inputs:[]}]));
   for(const input of inputs){
     const kind=['scheduled','continuous'].includes(input.activation)?'background':groups.has(input.activation)?input.activation:'other';
@@ -135,7 +135,7 @@ export function groupHeading(node,title,maxScale,measure,reservedWidth=44,reserv
 }
 
 export function prepareCards(records, _inputOwner, measure, translate) {
-  const kind=n=>translate(({request:'Request',command:'Command',interaction:'UI action',scheduled:'Scheduled task',continuous:'Background activity'})[n.activation]||n.kind||'Input');
+  const kind=n=>translate(({request:'Request',command:'Command',setting:'Setting',interaction:'UI action',scheduled:'Scheduled task',continuous:'Background activity'})[n.activation]||n.kind||'Input');
   const wrap=(text,width,font)=>wrapText(text,width,font,measure);
   const communicationChildren=new Set(records.filter(n=>n.branch==='communication').flatMap(n=>n.children||[]));
   const byID=new Map(records.map(n=>[n.id,n]));
@@ -144,7 +144,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
   // The collection says what kinds of input it holds. A tile names its kind
   // only when that kind is not the collection's most common one: "Request"
   // on 97 of Redis's 98 tiles repeated the frame's own summary.
-  const kinds=['request','command','scheduled','continuous','interaction'];
+  const kinds=['request','command','setting','scheduled','continuous','interaction'];
   const commonKind=new Map();
   for(const collection of records.filter(n=>n.branch==='inputs')){
     const inputs=leavesOf(collection.id).map(id=>byID.get(id)).filter(n=>n?.activation),counts=new Map();
