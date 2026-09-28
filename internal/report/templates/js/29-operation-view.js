@@ -151,12 +151,17 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
       var text=rmT('A request for {0} arrives at {1} from {2}:',title,site_name,'\u0001').split('\u0001');
       head.append(document.createTextNode(text[0]),who,document.createTextNode(text[1]||''));
       box.appendChild(head);
-      if(outer.registers!=null){
-        var reg=rmEl('p','system-path-step');var parts=rmT('{0} registers {1}','\u0001','\u0002').split(/[\u0001\u0002]/);
-        reg.append(document.createTextNode(parts[0]),document.createTextNode(input?input.dataset.title:''),document.createTextNode(parts[1]),name(outer.registers),document.createTextNode(parts[2]||''));
-        box.appendChild(reg);calls(outer.registering||[],box);
-      }
       calls(outer.calls||[],box);
+      // Each callable the input registers whose own code reaches the site:
+      // the hop is named, then the calls it makes to the site; how the
+      // input reaches the registering code is folded.
+      (outer.hops||[]).forEach(function(hop){
+        var reg=rmEl('p','system-path-step');var parts=rmT('{0} registers {1}','\u0001','\u0002').split(/[\u0001\u0002]/);
+        reg.append(document.createTextNode(parts[0]),document.createTextNode(input?input.dataset.title:''),document.createTextNode(parts[1]),name(hop.registers),document.createTextNode(parts[2]||''));
+        box.appendChild(reg);
+        if((hop.registering||[]).length){var how=rmEl('details','system-path-more');how.appendChild(rmEl('summary','',rmT('How it registers it')));calls(hop.registering,how);box.appendChild(how);}
+        calls(hop.calls||[],box);
+      });
     });
     if(!(site.outer||[]).length)box.appendChild(rmEl('p','meta',rmT('How a request for {0} gets to {1} is not established.',title,site_name)));
     else if(site.unexplained)box.appendChild(rmEl('p','meta',rmT('Other ways to {0} are not established.',site_name)));

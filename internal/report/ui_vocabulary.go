@@ -470,6 +470,7 @@ var russianUI = map[string]string{
 	"Reaches {0} more parts deeper":                                    "Глубже — ещё частей: {0}",
 	"Declared in {0}":                                                  "Объявлено в {0}",
 	"Declared on {0}":                                                  "Объявлено на {0}",
+	"How it registers it":                                              "Как регистрирует",
 	"A request for {0} arrives at {1} from {2}:":                       "Запрос {0} приходит в {1} из {2}:",
 	"{0} registers {1}":                                                "{0} регистрирует {1}",
 	"{0} is also reached while the program starts:":                    "{0} достигается и при запуске программы:",

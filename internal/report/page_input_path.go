@@ -56,10 +56,19 @@ type pageDispatched struct {
 	Unexplained bool        `json:"unexplained,omitempty"`
 }
 
-// pageOuter is one outer input of a dispatch site as a reading lists it.
+// pageOuter is one outer input of a dispatch site as a reading lists it:
+// the calls on its own route to the site, when its reach holds it, and each
+// callable it registers whose walk reaches the site.
 type pageOuter struct {
-	Input       string     `json:"input"`
-	Registers   *int       `json:"registers,omitempty"`
+	Input string     `json:"input"`
+	Calls []pageCall `json:"calls,omitempty"`
+	Hops  []pageHop  `json:"hops,omitempty"`
+}
+
+// pageHop is one registration hop: the callable registered, the input's
+// calls to the code handing it over, and the callable's calls to the site.
+type pageHop struct {
+	Registers   int        `json:"registers"`
 	Registering []pageCall `json:"registering,omitempty"`
 	Calls       []pageCall `json:"calls"`
 }
@@ -249,22 +258,33 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 		for _, reached := range site.ReachedFrom {
 			dispatched.ReachedFrom = append(dispatched.ReachedFrom, inputNode(reached.OperationID))
 		}
+		byInput := map[string]int{}
 		for _, outer := range site.Outer {
-			entry := pageOuter{Input: inputNode(outer.OperationID), Calls: []pageCall{}}
-			if outer.Registered != "" {
-				registered := decls.of(outer.Registered)
-				entry.Registers = &registered
-				for _, edge := range outer.Registering {
-					entry.Registering = appendCall(entry.Registering, decls.call(index.StructuralEdges[edge]))
+			node := inputNode(outer.OperationID)
+			at, seen := byInput[node]
+			if !seen {
+				at = len(dispatched.Outer)
+				byInput[node] = at
+				dispatched.Outer = append(dispatched.Outer, pageOuter{Input: node})
+			}
+			entry := &dispatched.Outer[at]
+			if outer.Registered == "" {
+				for _, edge := range outer.Edges {
+					entry.Calls = appendCall(entry.Calls, decls.call(index.StructuralEdges[edge]))
 				}
-				if outer.HandOver >= 0 {
-					entry.Registering = appendCall(entry.Registering, decls.call(index.StructuralEdges[outer.HandOver]))
-				}
+				continue
+			}
+			hop := pageHop{Registers: decls.of(outer.Registered), Calls: []pageCall{}}
+			for _, edge := range outer.Registering {
+				hop.Registering = appendCall(hop.Registering, decls.call(index.StructuralEdges[edge]))
+			}
+			if outer.HandOver >= 0 {
+				hop.Registering = appendCall(hop.Registering, decls.call(index.StructuralEdges[outer.HandOver]))
 			}
 			for _, edge := range outer.Edges {
-				entry.Calls = appendCall(entry.Calls, decls.call(index.StructuralEdges[edge]))
+				hop.Calls = appendCall(hop.Calls, decls.call(index.StructuralEdges[edge]))
 			}
-			dispatched.Outer = append(dispatched.Outer, entry)
+			entry.Hops = append(entry.Hops, hop)
 		}
 		dispatched.Unexplained = site.Unexplained
 		path.Dispatched = append(path.Dispatched, dispatched)
