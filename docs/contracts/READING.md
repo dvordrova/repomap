@@ -29,7 +29,11 @@ new description or selection requests.
   `passes_callback` and `decorates` relations name (a decorated declaration
   uses its decorator), each once with its kind and resolution, with or
   without a pattern, as local keys that never reach a provider; the calls
-  lifted for context keep only such relations that carry a pattern. A read
+  lifted for context keep only such relations that carry a pattern. A
+  callable also uses, exactly, each repository type one of its parameters
+  carries (`takes`, from the ProgramIndex parameter's `type_id`: C, Go,
+  Python annotations and TS/JS declared types; Clojure has no parameter
+  types): redis.c's freeIOJob and queueIOJob take an iojob. A read
   or write of a record's field (a relation with a `field_path`, C) is no
   use: it is the declaration's `fields`, one per site with its kind, the
   record type's place, the field's name and the path as the code reaches it
@@ -312,8 +316,9 @@ without a model), and code places what they leave open:
   and JavaScript functions, methods, lambdas (calls, decorations,
   hand-overs, reads) and variables (reads); Clojure functions (calls,
   hand-overs, reads) and variables (reads). Any other unit is asked, since
-  no recorded use says nothing of its users: a type and a module body (no
-  fact says where a type is used, and no declaration uses a module body), a
+  no recorded use says nothing of its users: a type and a module body (the
+  facts record a type's use only as a parameter's type, and no declaration
+  uses a module body), a
   Go variable (Go records no reads, GO) and a Clojure macro (ProgramIndex
   `macro`: its uses leave no relation, CLOJURE).
   `TestAKindWithNoRecordedUsesIsAsked` holds the statement for Go, Clojure
@@ -380,9 +385,11 @@ without a model), and code places what they leave open:
 - *Code places what the questions leave open* (owner, 2026-09-28: where a
   declaration's users are is a code fact, so the question is not asked
   again). A *user* is a unit that calls a unit, is decorated by it (the
-  decorated unit uses its decorator) or reads it when it does not run (the
-  places graph's exact `uses`), between units of files that are neither
-  test nor generated code. A hand-over is no use: a command table's row or a
+  decorated unit uses its decorator), reads it when it does not run or,
+  for a type, takes it as a parameter (the places graph's exact `uses`;
+  iojob goes with freeIOJob and queueIOJob,
+  `TestATypeGoesWhereTheCallablesTakingItAre`), between units of files that
+  are neither test nor generated code. A hand-over is no use: a command table's row or a
   route registrar hands its handler over without using it, and a read of a
   callable is a function value taken to be called later (JS/TS writes one
   where it hands a handler over), so no unit follows its table or
@@ -407,8 +414,8 @@ without a model), and code places what they leave open:
     included, is a decided helper, and whose users in other files (at least
     one) all stand in one box of a split file, joins that box
     (`role_attached`, by path). A unit that is no helper keeps the file out,
-    whatever other files use of it: a type answered `responsibility` (a type
-    has no use facts, so no user shows it), a function nothing uses, `none
+    whatever other files use of it: a type answered `responsibility` (only
+    a parameter carrying it shows a user of a type), a function nothing uses, `none
     of these`, a near-tie or an unanswered row. So a Go file declaring a
     client type and its constructor, which one box alone calls, keeps a row
     of its own. A whole file never joins a whole file.

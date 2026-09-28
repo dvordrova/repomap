@@ -59,8 +59,10 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 		"pick": {1, 1, 3}, "firstOf": {3},
 	})
 	// The graph records what a declaration reads: recordOrder reads the
-	// module's handledOrderIds.
+	// module's handledOrderIds, and takes an OrderEvent, the interface its
+	// parameter is typed with.
 	adaptertest.AssertDeclarationUses(t, graph,
+		adaptertest.DeclarationUse{FromPath: "src/server.ts", From: "recordOrder", Kind: "takes", ToPath: "src/server.ts", To: "OrderEvent"},
 		adaptertest.DeclarationUse{FromPath: "src/server.ts", From: "recordOrder", Kind: "reads", ToPath: "src/server.ts", To: "handledOrderIds"},
 	)
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "typescript", Kind: "application", Name: index.Target.Name, Root: "."}, root)

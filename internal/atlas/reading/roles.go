@@ -60,8 +60,9 @@ type roleUnit struct {
 	// that call it.
 	callers map[string]bool
 	// users are the units of the target's non-test, non-generated files that
-	// call it, are decorated by it or read it; uses are the units it calls,
-	// is decorated by or reads. A hand-over is neither: a command table or a
+	// call it, are decorated by it, read it or, for a type, take it as a
+	// parameter; uses are the units it calls, is decorated by, reads or
+	// takes. A hand-over is neither: a command table or a
 	// route registrar hands its handlers over without using them, and a read
 	// of a callable is a function value taken to be called later. Nor is the
 	// other half of a hand-over, a call through the function value stored
@@ -235,7 +236,9 @@ func (r *reader) unitFacts(view *designView) *roleFacts {
 				if !ok || place.Symbol == nil || !contains(place.TargetIDs, view.targetID) {
 					continue
 				}
-				if used.Resolution == "exact" && (used.Kind == "decorates" || used.Kind == "reads" && !programindex.ObjectKind(place.Symbol.Decl.Kind).Callable()) {
+				// A callable taking a type as a parameter uses that type: the
+				// one use of a type the facts record.
+				if used.Resolution == "exact" && (used.Kind == "decorates" || used.Kind == atlas.UseTakes || used.Kind == "reads" && !programindex.ObjectKind(place.Symbol.Decl.Kind).Callable()) {
 					use(used.PlaceID)
 				}
 				to := unitOf(used.PlaceID)

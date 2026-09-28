@@ -7,8 +7,8 @@ import (
 )
 
 // DeclarationUse is one expected use of the places graph: the declaration
-// From of file FromPath reads, hands over or is decorated by (Kind) the
-// declaration To of file ToPath.
+// From of file FromPath reads, hands over, is decorated by or takes as a
+// parameter's type (Kind) the declaration To of file ToPath.
 type DeclarationUse struct {
 	FromPath, From, Kind, ToPath, To string
 }

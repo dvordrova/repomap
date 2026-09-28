@@ -45,6 +45,9 @@ A call of an anonymous function literal's argument (`#(% 1)`, the fixture's
 call keeps the callee as the source writes it (`%`, `%1`, `%&`), so its
 pattern names what is called. Go, Python, JS/TS and C name every parameter,
 so none has such an unnamed local.
+Clojure parameters carry no repository type (no `type_id`), so no Clojure
+callable `takes` a type in the places graph (READING); the other four
+adapters record it and their fixtures check it.
 Java instance dispatch and dynamic function targets remain unresolved. This
 initial adapter does not implement ClojureScript execution views or a runtime
 macroexpander; definition/control macro syntax is not promoted into runtime calls.

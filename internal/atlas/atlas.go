@@ -244,8 +244,9 @@ type SymbolFacts struct {
 	// Uses are the other declarations this one reads, hands over to be
 	// called later, or is decorated by: the exact and alternatives `reads`,
 	// `passes_callback` and `decorates` relations of the targets' program
-	// indexes, whether or not a relation carries a pattern. They are local
-	// keys, never provider prose.
+	// indexes, whether or not a relation carries a pattern; and, for a
+	// callable, the repository types its parameters carry (`takes`). They
+	// are local keys, never provider prose.
 	Uses []SymbolUse `json:"uses,omitempty"`
 	// Fields are the fields of repository records this declaration reads
 	// or writes, one per site (ProgramIndex relations with a FieldPath).
@@ -292,13 +293,17 @@ type TypeMember struct {
 
 // SymbolUse is one use of another declaration: PlaceID is its symbol place,
 // Kind the ProgramIndex relation (`reads`, `passes_callback` or
-// `decorates`, where the decorated declaration uses its decorator) and
-// Resolution `exact` or `alternatives`.
+// `decorates`, where the decorated declaration uses its decorator) or
+// UseTakes, and Resolution `exact` or `alternatives`.
 type SymbolUse struct {
 	PlaceID    string `json:"place_id"`
 	Kind       string `json:"kind"`
 	Resolution string `json:"resolution"`
 }
+
+// UseTakes is the use of a repository type by a callable one of whose
+// parameters carries it (ProgramIndex parameter `type_id`), always exact.
+const UseTakes = "takes"
 
 // SymbolField is one read or write of a record's field: TypeID is the
 // record type's symbol place and Field the field's name, Path the field as

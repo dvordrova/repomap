@@ -1182,7 +1182,27 @@ func (b *builder) collectSymbols() {
 // name: what it reads, what it hands over to be called later and, for a
 // decorated declaration, its decorator. Unlike the calls lifted for context,
 // these need no pattern, so a decoration written without arguments counts.
+// A callable also uses, exactly (`takes`), each repository type one of its
+// parameters carries (the ProgramIndex parameter's `type_id`): redis.c's
+// freeIOJob and queueIOJob take an iojob.
 func (b *builder) collectSymbolUses(rows map[string]map[atlas.SymbolUse]bool, target TargetInput) {
+	add := func(from, to string, use atlas.SymbolUse) {
+		if from == "" || to == "" || to == from {
+			return
+		}
+		if rows[from] == nil {
+			rows[from] = make(map[atlas.SymbolUse]bool)
+		}
+		use.PlaceID = to
+		rows[from][use] = true
+	}
+	for _, object := range target.Index.Objects {
+		for _, parameter := range object.Parameters {
+			if parameter.TypeID != "" {
+				add(b.symbolOf[object.ID], b.symbolOf[parameter.TypeID], atlas.SymbolUse{Kind: atlas.UseTakes, Resolution: string(programindex.ResolutionExact)})
+			}
+		}
+	}
 	for _, relation := range target.Index.Relations {
 		switch relation.Kind {
 		case programindex.RelationReads, programindex.RelationPassesCallback, programindex.RelationDecorates:
@@ -1193,18 +1213,8 @@ func (b *builder) collectSymbolUses(rows map[string]map[atlas.SymbolUse]bool, ta
 			continue
 		}
 		from := b.symbolOf[relation.FromID]
-		if from == "" {
-			continue
-		}
 		for _, to := range relation.ToIDs {
-			id := b.symbolOf[to]
-			if id == "" || id == from {
-				continue
-			}
-			if rows[from] == nil {
-				rows[from] = make(map[atlas.SymbolUse]bool)
-			}
-			rows[from][atlas.SymbolUse{PlaceID: id, Kind: string(relation.Kind), Resolution: string(relation.Resolution)}] = true
+			add(from, b.symbolOf[to], atlas.SymbolUse{Kind: string(relation.Kind), Resolution: string(relation.Resolution)})
 		}
 	}
 }

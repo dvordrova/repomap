@@ -52,8 +52,10 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 	// The graph records what a declaration hands over: the command table's
 	// rows hand getCommand over, and registerRouteDefinition hands the
 	// closure requireRouteToken returns to http.HandleFunc. Go emits no
-	// reads (GO), so no Go declaration records one.
+	// reads (GO), so no Go declaration records one. TypedParameter takes a
+	// *TypedQueryClient: a parameter's repository type is a use of it.
 	adaptertest.AssertDeclarationUses(t, graph,
+		adaptertest.DeclarationUse{FromPath: "internal/storefixture/data_sources.go", From: "TypedParameter", Kind: "takes", ToPath: "internal/storefixture/data_sources.go", To: "TypedQueryClient"},
 		adaptertest.DeclarationUse{FromPath: "internal/storefixture/command_table.go", From: "commandTable", Kind: "passes_callback", ToPath: "internal/storefixture/command_table.go", To: "getCommand"},
 		adaptertest.DeclarationUse{FromPath: "internal/storefixture/http_registrations.go", From: "registerRouteDefinition", Kind: "passes_callback", ToPath: "internal/storefixture/http_registrations.go", To: "requireRouteToken$1"},
 	)
@@ -350,9 +352,11 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 	adaptertest.AssertDeclarationCodeLines(t, graph, "src/fixture_app/generic_types.py", map[string][]int{
 		"pick": {1, 1, 3}, "first": {2},
 	})
-	// The graph records what a declaration reads, across files, and what
-	// decorates it, a bare decorator name included.
+	// The graph records what a declaration reads, across files, what
+	// decorates it, a bare decorator name included, and the repository type
+	// a parameter is annotated with: update_counter takes a MutableCounter.
 	adaptertest.AssertDeclarationUses(t, graph,
+		adaptertest.DeclarationUse{FromPath: "src/fixture_app/models.py", From: "update_counter", Kind: "takes", ToPath: "src/fixture_app/models.py", To: "MutableCounter"},
 		adaptertest.DeclarationUse{FromPath: "src/fixture_app/models.py", From: "read_level_data", Kind: "reads", ToPath: "src/fixture_app/levels.py", To: "READ_VALUES"},
 		adaptertest.DeclarationUse{FromPath: "src/fixture_app/models.py", From: "read_level_data", Kind: "reads", ToPath: "src/fixture_app/levels.py", To: "READ_LIMIT"},
 		adaptertest.DeclarationUse{FromPath: "src/fixture_app/models.py", From: "traced_level", Kind: "decorates", ToPath: "src/fixture_app/models.py", To: "traced"},
@@ -507,8 +511,10 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	// The graph records what a declaration reads or hands over: printSymbols
 	// reads staticsyms.h's symsTable, as redis.c's findFuncName does;
 	// keysCommand hands compareKeys to qsort; the command table's rows hand
-	// getCommand over.
+	// getCommand over. freeClient takes a kvClient *, as redis.c's
+	// freeIOJob takes an iojob *: a parameter's record type is a use of it.
 	adaptertest.AssertDeclarationUses(t, graph,
+		adaptertest.DeclarationUse{FromPath: "kvd.c", From: "freeClient", Kind: "takes", ToPath: "kvd.h", To: "kvClient"},
 		adaptertest.DeclarationUse{FromPath: "kvd.c", From: "printSymbols", Kind: "reads", ToPath: "staticsyms.h", To: "symsTable"},
 		adaptertest.DeclarationUse{FromPath: "kvd.c", From: "keysCommand", Kind: "passes_callback", ToPath: "kvd.c", To: "compareKeys"},
 		adaptertest.DeclarationUse{FromPath: "kvd.c", From: "cmdTable", Kind: "passes_callback", ToPath: "kvd.c", To: "getCommand"},

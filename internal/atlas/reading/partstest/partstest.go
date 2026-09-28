@@ -443,7 +443,7 @@ func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Ma
 		for _, use := range place.Symbol.Uses {
 			used := byID[use.PlaceID]
 			runs := used.Symbol != nil && slices.Contains([]string{"function", "method", "lambda"}, used.Symbol.Decl.Kind)
-			if use.Resolution == "exact" && (use.Kind == "decorates" || use.Kind == "reads" && !runs) {
+			if use.Resolution == "exact" && (use.Kind == "decorates" || use.Kind == atlas.UseTakes || use.Kind == "reads" && !runs) {
 				link(place.ID, use.PlaceID)
 			}
 		}
@@ -563,7 +563,7 @@ func checkHelpers(t testing.TB, graph atlas.Graph, targetID string, checked Map,
 		for _, use := range place.Symbol.Uses {
 			used := byID[use.PlaceID]
 			runs := used.Symbol != nil && slices.Contains([]string{"function", "method", "lambda"}, used.Symbol.Decl.Kind)
-			if use.Resolution == "exact" && (use.Kind == "decorates" || use.Kind == "reads" && !runs) {
+			if use.Resolution == "exact" && (use.Kind == "decorates" || use.Kind == atlas.UseTakes || use.Kind == "reads" && !runs) {
 				link(place.ID, use.PlaceID)
 			}
 		}

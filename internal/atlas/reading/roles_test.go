@@ -526,6 +526,40 @@ func ownRow(target atlas.Target, name string) bool {
 	return part.ID != "" && slices.Equal(membersOf(part), []string{name})
 }
 
+// A type's one recorded use is a callable taking it as a parameter
+// (places `takes`): Job, a type no box took, is taken only by Route, so
+// rule C places it in Routing by code, as redis.c's iojob, taken only by
+// freeIOJob and queueIOJob, goes with them. Without that use Job has no
+// user and stays a row of its own.
+func TestATypeGoesWhereTheCallablesTakingItAre(t *testing.T) {
+	graph := roleGraph(t, func(files map[string][]roleDecl) {
+		server := files["svc/server.go"]
+		for i := range server {
+			if server[i].name == "Route" {
+				server[i].uses = []string{"takes svc/server.go:Job"}
+			}
+		}
+		files["svc/server.go"] = append(server, roleDecl{name: "Job", kind: "type", line: 66, end: 70, code: 4})
+	})
+	provider, jev := defaultRoleProvider(), defaultRoleJev()
+	jev.boxOf["Job"] = ""
+	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+	if got := membersOf(partsByTitle(targetOf(t, result, "svc"))["Routing"]); !slices.Equal(got, []string{"Job", "Route"}) {
+		t.Fatalf("Routing holds %v", got)
+	}
+	if !slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool {
+		return row.Kind == "role_placed_by_users" && slices.Contains(row.Samples, "Job")
+	}) || slices.Contains(undecidedUnits(result), "Job") {
+		t.Fatalf("Job was not placed by its users: undecided %v", undecidedUnits(result))
+	}
+}
+
 // helperJev is the default role fake with the named declarations decided
 // helpers.
 func helperJev(names ...string) *roleJev {
