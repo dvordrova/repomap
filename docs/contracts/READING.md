@@ -851,15 +851,49 @@ No table asks what a declaration on a chain does with what passes through
 it (access, adapter, logic, passthrough): nothing reads such a role, and a
 decision without a reader is not asked.
 
-Every subject and connection of the overlay carries a derived phase: `init`
-for what the seeds reach by ordinary calls before anything serves, `runtime`
-for an operation's subject and its chains, `both` when a declaration serves
-in each. It is recomputed on hydrate, never persisted. The helper question's
-mark is persisted as the subject's interpretation (`helper`, GroupsIndex
-18), and beside the phase each connection of the program into a helper
-subject is marked `ToHelper`, derived from that saved mark on projection
-and hydrate alike, so `repomap render` of a saved run quiets what the
+GroupsIndex derives, with one function (`groupindex.Derive`, called by
+`ProjectAtlas` after the joints are in, by `Hydrate` and by `Build`), what
+each input's handler reaches, the dispatch sites and the phases; none of it
+is persisted, and a rendering from the saved overlay derives exactly what the
 ordinary run did.
+
+- **Reach.** From an operation's handler the walk follows structural
+  relation-target edges of kind `calls`, `executes` or `invokes_external`
+  resolved exactly or as alternatives, from every declaration it reaches that
+  way. A read from a function, method, lambda or module body into a variable
+  or type adds the target, one step deeper, and nothing is walked from it: a
+  table's stored callbacks are not reached by reading the table. Imports,
+  hand-overs (`passes_callback`), decorations, writes and unresolved calls are
+  never followed; a stored callback's witnesses draw possible arrows but are
+  not reach. One rule cuts the walk: a relation resolved as alternatives is
+  not followed into another input's handler, since that dispatch is where the
+  other input begins; an exact call into another input's handler is followed,
+  since a handler used as a helper is its caller's code. Depth is the fewest
+  calls from the handler, a read counting one; declarations are listed
+  breadth-first over the structural edges.
+- **Parts entered.** For each part holding reached declarations the reach
+  lists every followed relation into it from a part reached at a lower depth
+  (its witnesses; none is chosen) and counts the others. A caller off the map
+  stands for every earlier part that reaches it through code off the map
+  only; a handler off the map enters its first parts itself.
+- **Hand-overs.** A declaration of the reach that runs (not one only read)
+  handing another input's handler over registers that input
+  (`HandsOver`/`HandedOverBy`): Redis's `spawnIOThread`, reached by twelve
+  inputs, registers `IOThreadEntryPoint`. A table read registers nothing.
+- **Dispatch sites** are the relations resolved as alternatives with at least
+  two targets, in source order. A site names the inputs whose handler is one
+  of its alternatives and, only when it dispatches one, the inputs whose reach
+  holds its declaration, each with every followed call on any route from the
+  handler to it (a backward pass inside that reach; none is chosen).
+- **Phases.** `runtime` is what any input's reach holds; `init` is what the
+  target's seeds reach over the same execution edges and no input does (the
+  launch and the main loop around the work); `both` is in each; a declaration
+  neither reaches, such as a callback a loop stores until what stores it is an
+  input, has no phase and is never quiet. A program with no input handled by
+  a declaration has no phases at all. A connection has its source subject's
+  phase. The helper question's mark is persisted as the subject's
+  interpretation (`helper`, GroupsIndex 18), and beside the phase each
+  connection of the program into a helper subject is marked `ToHelper`.
 
 Without `--captions` the model is asked for decisions alone: every prose cell
 (titles, lines, sentences, operation descriptions) keeps its fallback, and a

@@ -225,6 +225,10 @@ exact callback at its `register` call.
 
 Missing equivalents, recorded rather than fabricated:
 
+- The fixture has no input of its own and no relation resolved as several
+  alternatives, so GroupsIndex's reach is checked by probing declarations as
+  inputs (`flowtest.Probe`: `recordOrder` reads `handledOrderIds`,
+  `runWorker` calls `processPendingJobs`) and there is no dispatch site.
 - No JS/TS function is proven `unreachable` (the C adapter's per-program
   fact, PROGRAM_INDEX): computed property access (`handlers[name]()`),
   dynamic `import()`, callbacks a framework or the DOM calls by the name

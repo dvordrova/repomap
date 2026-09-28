@@ -17,6 +17,7 @@ import (
 	"github.com/dvordrova/repomap/internal/extractors"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/groupindex/flowtest"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
@@ -167,6 +168,29 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if strings.Join(walked, " → ") != "GetUser → GetUser → GetByID → GetUser" {
 		t.Fatalf("route chain to the users table = %v (chains %+v)", walked, overlay.Chains)
 	}
+	// The route's reach holds its handler, the repository method and the
+	// sqlc query: the declarations its chain walks.
+	flowtest.Check(t, index, overlay)
+	for position, operation := range overlay.Operations {
+		if operation.ID != request.ID {
+			continue
+		}
+		located := map[string]string{}
+		for _, subject := range overlay.Subjects {
+			if subject.Object != nil && subject.Object.Location != nil {
+				located[subject.ID] = subject.Object.Name + "@" + subject.Object.Location.Path
+			}
+		}
+		reached := map[string]bool{}
+		for _, subject := range overlay.Reach[position].Subjects {
+			reached[located[subject.SubjectID]] = true
+		}
+		for _, want := range []string{"GetUser@internal/users/handler/handler.go", "GetByID@internal/users/repository/postgres.go", "GetUser@internal/database/sqlc/users.sql.go"} {
+			if !reached[want] {
+				t.Fatalf("the route does not reach %s: %v", want, reached)
+			}
+		}
+	}
 	typeNames := func(ids []string) []string {
 		var result []string
 		for _, id := range ids {
@@ -185,7 +209,7 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	// Initialization is what main reaches by calls; runtime is the route's chain.
 	phases := map[string]string{}
 	for _, subject := range overlay.Subjects {
-		if subject.Phase != "" {
+		if subject.Phase != "" && subject.Object != nil && subject.Object.Location != nil {
 			phases[names[subject.ID]+"@"+subject.Object.Location.Path] = subject.Phase
 		}
 	}
@@ -208,6 +232,9 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	restored, err := groupindex.Decode(encoded, index)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(restored.Reach, overlay.Reach) || !reflect.DeepEqual(restored.Dispatch, overlay.Dispatch) {
+		t.Fatal("the decoded index derives another reach")
 	}
 	if len(restored.Chains) != len(overlay.Chains) || !reflect.DeepEqual(restored.Operations, overlay.Operations) || !reflect.DeepEqual(restored.Subjects, overlay.Subjects) {
 		t.Fatalf("hydrated chains = %d, projected %d; operations equal: %v", len(restored.Chains), len(overlay.Chains), reflect.DeepEqual(restored.Operations, overlay.Operations))

@@ -1,5 +1,68 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Map model step 4, S4-1: one reach, dispatch sites and phases, derived in GroupsIndex
+
+- Scope: S4-1 of `map-model/step4-plan.md` with the skeptic's corrections
+  (step4/skeptic.md): `groupindex.Derive` computes each input's reach, the
+  dispatch sites and the phases once, from the program's structural edges
+  and the saved overlay. `ProjectAtlas` calls it after the joints are in,
+  `Hydrate` and `Build` at their end; nothing new is persisted
+  (groups-index.json and report.json keep their bytes). `WithConnections`
+  is left alone (no production caller). `Snapshot` shares the derived
+  slices. The report is unchanged: its BFS, `served` and `drawsInit` still
+  run, now over full-reach phases.
+- **One walk.** From the handler: calls, executions and outside
+  invocations resolved exactly or as alternatives; reads of a variable or
+  type from running code are terminal; imports, hand-overs, decorations,
+  writes and unresolved calls are never followed; an alternatives relation
+  is not followed into another input's handler (C1), an exact call into one
+  is. Every call into a part from a part reached earlier is listed, the
+  others counted; a caller off the map stands for the earlier parts reaching
+  it through code off the map; a handler off the map enters its first parts
+  itself. Hand-overs count only from running code (B1): `spawnIOThread`
+  registers `IOThreadEntryPoint`, a table read registers nothing. Dispatch
+  sites are in source order; "reached from" is computed only for a site
+  that dispatches an input, from a backward pass inside each reach.
+- **Phases** (B12): runtime is every input's reach, init what the seeds reach
+  and no input does, both in each, none for code neither reaches; a program
+  with no handled input has no phases. C5's `ToHelper` is derived beside it
+  verbatim.
+- **Joint gap fixed.** Joints used to get their phase only on hydrate;
+  `Hydrate` also wrote the derived fields into the overlay's connections
+  (shared with the projected index by `OverlayFromIndex`), which hid the gap
+  in a comparison. It now derives on a copy.
+- **Render-neutral on saved runs.** The step 0 Redis and litestream runs
+  rendered with this code are byte-identical to their report.html. The
+  static zone picture's quiet flags follow the new phases (B3), but the
+  page's one figure, the system canvas, carries no static arrow and hides
+  every other one without scripting: the no-script map shows 151 parts and
+  areas and 0 arrows before and after (Redis; litestream 204 and 0).
+- **Measured.** `Derive` on Redis (96 inputs): 13 ms, 5.8 MB allocated,
+  15,954 reached declarations, 55,473 followed edges, 3,443 entering calls;
+  sites 16, 2 with inputs (`call` reached from exec, lpush, rpoplpush,
+  rpush, slaveof; `loadAppendOnlyFile` from debug). litestream (33): 2 ms.
+  metabase's 497 MB program index (65,661 objects, 698,746 structural
+  edges, 14,490 alternatives) with 3,000 synthetic inputs of the highest
+  call fan-out plus its seeds: 1.35 s, 272 MB allocated, 71 MB retained.
+- Tests: `internal/groupindex/reach_test.go` (reach and reads, witnesses,
+  B12 phases, no phases without inputs, dispatch sites and reached-from with
+  parallel routes and the C1 cut, an exact call into another handler, hand-
+  overs and a table read, render equals the run with a joint);
+  `internal/groupindex/flowtest` checks every fixture's derived values on its
+  real facts and their hydrated equality (projectSplit in every language,
+  the JS/TS map of parts, the C and Echo presets) and probes declarations as
+  inputs (Python `read_level_data`/`traced_level`, JS/TS
+  `recordOrder`/`runWorker`, Clojure `read-limit`/`greet-many`). kvd: one
+  dispatch site (`processCommand`, kvd.c:176, 6 of 6 inputs, reached from
+  none); get's reach holds its handler's work and none of the loop's stored
+  callbacks; main, setupSignals, netListen and loopCreate are init,
+  loopCreateFileEvent both, getCommand, addReply, statsWorker and reportStats
+  runtime. Missing equivalents recorded in C, GO, PYTHON, JSTS and CLOJURE;
+  Clojure records a function handed to `map` as called too, so its fixture
+  has no declaration reached only by a hand-over. Each new test fails on
+  revert (`step4/impl-revert.log`, s41a–s41k).
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Map model step 3 accepted: helpers placed by code, measured on Redis, pykrx and litestream
 
 - Scope: step C8 of `map-model/step3-plan.md`: the acceptance of step 3

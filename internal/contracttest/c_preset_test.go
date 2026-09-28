@@ -14,6 +14,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/groupindex/flowtest"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
@@ -144,6 +145,70 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	sort.Strings(wantNamed)
 	if !slices.Equal(named, wantNamed) {
 		t.Fatalf("entries asked for a name = %v, want %v", named, wantNamed)
+	}
+	checkKvdReach(t, index, indexes[0])
+}
+
+// checkKvdReach holds kvd's derived reach to its code. processCommand's
+// cmd->proc(c) dispatches every command; its cmd->preload is one exact
+// call and no dispatch. No command handler calls back into processCommand,
+// and main's loop reaches it only through calls left unresolved, so no
+// input reaches the site. get's reach is its handler's own work: the
+// reading, accepting and replying callbacks the loop stores are handed
+// over, never called, so they are not in it. What main reaches and no
+// input does is the launch; what both reach is both.
+func checkKvdReach(t *testing.T, program programindex.Index, index groupindex.Index) {
+	t.Helper()
+	flowtest.Check(t, program, index)
+	names := map[string]string{}
+	for _, subject := range index.Subjects {
+		if subject.Object != nil {
+			names[subject.ID] = subject.Object.Name
+		}
+	}
+	var sites []groupindex.DispatchSite
+	for _, site := range index.Dispatch {
+		if len(site.OperationIDs) > 0 {
+			sites = append(sites, site)
+		}
+	}
+	if len(sites) != 1 || names[sites[0].FromSubjectID] != "processCommand" || sites[0].Location == nil || sites[0].Location.Path != "kvd.c" || sites[0].Location.Line != 176 ||
+		len(sites[0].Alternatives) != len(cCommandRows) || len(sites[0].OperationIDs) != len(cCommandRows) || len(sites[0].ReachedFrom) != 0 {
+		t.Fatalf("dispatch sites of kvd's inputs: %+v", sites)
+	}
+	for position, operation := range index.Operations {
+		if len(index.Reach[position].HandsOver) != 0 || len(index.Reach[position].HandedOverBy) != 0 {
+			t.Fatalf("%s hands over or is handed over: %+v", operation.Name, index.Reach[position])
+		}
+		if operation.Name != "get" {
+			continue
+		}
+		reached := flowtest.Reached(index, index.Reach[position])
+		for _, name := range []string{"getCommand", "addReplyBulk", "addReply", "sbAppend", "loopCreateFileEvent"} {
+			if reached[name] == "" {
+				t.Fatalf("get does not reach %s: %v", name, reached)
+			}
+		}
+		for _, name := range []string{"readQueryFromClient", "sendReplyToClient", "acceptHandler", "processCommand"} {
+			if reached[name] != "" {
+				t.Fatalf("get reaches %s: %v", name, reached)
+			}
+		}
+	}
+	phases := map[string]string{}
+	for _, subject := range index.Subjects {
+		if subject.Object != nil && subject.Object.Location != nil {
+			phases[subject.Object.Name] = subject.Phase
+		}
+	}
+	for name, want := range map[string]string{
+		"main": groupindex.PhaseInit, "setupSignals": groupindex.PhaseInit, "netListen": groupindex.PhaseInit, "loopCreate": groupindex.PhaseInit,
+		"loopCreateFileEvent": groupindex.PhaseBoth,
+		"getCommand":          groupindex.PhaseRuntime, "addReply": groupindex.PhaseRuntime, "statsWorker": groupindex.PhaseRuntime, "reportStats": groupindex.PhaseRuntime,
+	} {
+		if phases[name] != want {
+			t.Fatalf("%s is %q, want %q", name, phases[name], want)
+		}
 	}
 }
 

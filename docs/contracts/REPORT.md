@@ -268,12 +268,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   A pinned input path is drawn as its trace with the existing dark emphasis:
   the arrows of its shortest call/read witnesses, each reached part joined
   from the part its witness enters through. Other calls among the same parts
-  stay ordinary arrows. Initialization arrows (every relation reached only
-  from the target's seeds) are drawn only while one of their ends is looked
-  at, and only in a target that serves something: a target with no operation
-  and no chain does all its work from main, and Redis's benchmark, client and
-  dump checker had drawn none of their arrows. A call that code reached from
-  an input makes across two parts is work, not wiring. A call into a helper
+  stay ordinary arrows. Initialization arrows (a relation whose source only
+  the target's seeds reach, no input's handler: GroupsIndex's `init` phase,
+  READING) are drawn only while one of their ends is looked at, and only in a
+  target that serves something: a target with no operation and no chain does
+  all its work from main, and Redis's benchmark, client and dump checker had
+  drawn none of their arrows. A call that code reached from an input makes
+  across two parts is work, not wiring. The static zone picture reads the
+  same phases; the page's one figure, the system canvas, draws none of its
+  arrows, so the no-script page shows parts and areas without arrows. A call into a helper
   (GroupsIndex's derived `ToHelper`: a declaration the helper question
   decided serves the work of others) is quiet by the same mechanism and its
   exception, even on an input's path, since every command handler calls its

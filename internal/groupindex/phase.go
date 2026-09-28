@@ -1,64 +1,60 @@
 package groupindex
 
-import "github.com/dvordrova/repomap/internal/programindex"
-
-// Phases of a program: initialization is what the target's seeds reach by
-// ordinary calls — the wiring before anything serves; runtime is what an
-// operation reaches on its chains. A subject or a connection has one phase,
-// or both when the same declaration serves in each. Derived from the
-// program index, the operations and the chains; never persisted. A
+// Phases of a program. Runtime is what any input's handler reaches (its
+// Reach); initialization is what the target's seeds reach over the same
+// execution edges and no input's handler does: the launch and the main
+// loop around the work. A subject both reach is both. A subject neither
+// reaches has no phase, and is never quiet: until what stores it becomes an
+// input, a stored callback is simply not established. A program with no
+// input handled by a declaration has no phases at all: it does all its work
+// from its launch. A connection has the phase of its source subject. A
 // connection into a helper is derived beside it from the saved helper
-// interpretations, so a decoded index says what the projected one does.
+// interpretations, so a hydrated index says what the projected one does.
 const (
 	PhaseInit    = "init"
 	PhaseRuntime = "runtime"
 	PhaseBoth    = "both"
 )
 
-func applyPhases(index *Index, program programindex.Index) {
-	callees := make(map[string][]string)
-	for _, relation := range program.Relations {
-		if relation.Kind != programindex.RelationCalls || relation.Resolution == programindex.ResolutionUnresolved {
-			continue
-		}
-		callees[relation.FromID] = append(callees[relation.FromID], relation.ToIDs...)
-	}
-	init := make(map[string]bool)
-	var queue []string
-	for _, seed := range program.Target.Seeds {
-		if !init[seed.ObjectID] {
-			init[seed.ObjectID] = true
-			queue = append(queue, seed.ObjectID)
+// phases derives the phases and the helper mark from the reaches.
+func (graph *reachGraph) phases() {
+	index := graph.index
+	runtime := make([]bool, len(index.Subjects))
+	serves := false
+	for _, reach := range index.Reach {
+		for _, subject := range reach.Subjects {
+			runtime[graph.position[subject.SubjectID]] = true
+			serves = true
 		}
 	}
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		for _, next := range callees[current] {
-			if !init[next] {
-				init[next] = true
-				queue = append(queue, next)
+	init := make([]bool, len(index.Subjects))
+	if serves {
+		var queue []int
+		for _, seed := range index.Target.Seeds {
+			if position, known := graph.position[seed.ObjectID]; known && !init[position] {
+				init[position] = true
+				queue = append(queue, position)
+			}
+		}
+		for next := 0; next < len(queue); next++ {
+			for _, edge := range graph.exec[queue[next]] {
+				if to := graph.to[edge]; !init[to] {
+					init[to] = true
+					queue = append(queue, to)
+				}
 			}
 		}
 	}
-	runtime := make(map[string]bool)
-	for _, operation := range index.Operations {
-		if operation.SubjectID != "" {
-			runtime[operation.SubjectID] = true
-		}
-	}
-	for _, chain := range index.Chains {
-		for _, id := range chain.SubjectIDs {
-			runtime[id] = true
-		}
-	}
 	phase := func(id string) string {
+		position, known := graph.position[id]
 		switch {
-		case init[id] && runtime[id]:
+		case !known || id == "":
+			return ""
+		case init[position] && runtime[position]:
 			return PhaseBoth
-		case init[id]:
+		case init[position]:
 			return PhaseInit
-		case runtime[id]:
+		case runtime[position]:
 			return PhaseRuntime
 		}
 		return ""

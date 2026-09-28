@@ -215,6 +215,9 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 		})
 		index.Connections = dedupeConnections(index.Connections)
 		assignConnectionIDs(index.Connections, 0)
+		// Derived after the joints are in, as Hydrate derives them, so the
+		// ordinary run and a saved rendering phase the same connections.
+		Derive(&index)
 		seal, err := indexDigest(index)
 		if err != nil {
 			return nil, err
@@ -781,7 +784,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		OffMap:             offMap,
 		MapFailure:         strings.TrimSpace(target.MapFailure),
 	}
-	applyPhases(&index, program)
 	return projectedTarget{index: index, groupOfBox: groupOfBox}, nil
 }
 

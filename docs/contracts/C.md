@@ -325,6 +325,9 @@ for this first adapter:
   registration as a call outside the repository, and D1 excepts only table
   rows, so an accept handler or a timer registered with the repository's own
   event loop is no input until the owner decides otherwise.
+- a command handler that re-enters the dispatch: no kvd handler calls back
+  into `processCommand`, so no input of the fixture reaches its dispatch site
+  (Redis's `exec` reaches `call`); GroupsIndex's unit test covers it.
 
 The fixture has no HTTP route table: a row whose verb qualifies the path beside
 it is covered by the facts tests alone, beside the Go-shaped record

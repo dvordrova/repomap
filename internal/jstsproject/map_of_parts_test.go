@@ -13,6 +13,9 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/gitfiles"
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/groupindex/flowtest"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 )
 
@@ -107,5 +110,38 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	}
 	if item, asked := split.HelperItems[[2]string{"shared/contracts.ts", "paintColor"}]; asked {
 		t.Fatalf("paintColor, which nothing reads, was asked: %v", item)
+	}
+	// GroupsIndex derives the reach on these facts. The fixture has no
+	// input of its own: as inputs, recordOrder reaches handledOrderIds by
+	// reading it and runWorker reaches processPendingJobs by calling it.
+	// Every relation resolved as several alternatives is a dispatch site
+	// that dispatches no input. The fixture has none today: a call through
+	// a property is never resolved from its stores (JSTS).
+	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{index.Target.ID: index}, split.Atlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected := indexes[0]
+	flowtest.Check(t, index, projected)
+	if got := flowtest.Reached(projected, flowtest.Probe(t, projected, "src/server.ts", "recordOrder")); got["handledOrderIds"] != "read" {
+		t.Fatalf("recordOrder reaches %v", got)
+	}
+	if got := flowtest.Reached(projected, flowtest.Probe(t, projected, "src/server.ts", "runWorker")); got["processPendingJobs"] != "call" {
+		t.Fatalf("runWorker reaches %v", got)
+	}
+	alternatives := map[string]int{}
+	for _, relation := range index.Relations {
+		if relation.Resolution == programindex.ResolutionAlternatives && len(relation.ToIDs) > 1 {
+			alternatives[relation.ID] = len(relation.ToIDs)
+		}
+	}
+	for _, site := range projected.Dispatch {
+		if alternatives[site.RelationID] != len(site.Alternatives) || len(site.OperationIDs) != 0 {
+			t.Fatalf("dispatch site %+v", site)
+		}
+		delete(alternatives, site.RelationID)
+	}
+	if len(alternatives) != 0 {
+		t.Fatalf("relations of several alternatives that are no dispatch site: %v", alternatives)
 	}
 }

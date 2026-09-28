@@ -15,6 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/groupindex/flowtest"
 	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
@@ -159,6 +160,7 @@ func projectSplit(t *testing.T, index programindex.Index, split partstest.Map) g
 	if err != nil {
 		t.Fatal(err)
 	}
+	flowtest.Check(t, index, indexes[0])
 	undecided := 0
 	subjects := map[string]groupindex.Subject{}
 	for _, subject := range indexes[0].Subjects {
@@ -321,7 +323,16 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 			t.Fatalf("%s is asked with read_by %v", name, got)
 		}
 	}
-	projectSplit(t, index, split)
+	projected := projectSplit(t, index, split)
+	// As an input, read_level_data reaches the constants it reads and
+	// walks nothing from them; traced_level does not reach traced, which
+	// only decorates it. The fixture has no input of its own.
+	if got := flowtest.Reached(projected, flowtest.Probe(t, projected, "src/fixture_app/models.py", "read_level_data")); !reflect.DeepEqual(got, map[string]string{"read_level_data": "call", "READ_VALUES": "read", "READ_LIMIT": "read"}) {
+		t.Fatalf("read_level_data reaches %v", got)
+	}
+	if got := flowtest.Reached(projected, flowtest.Probe(t, projected, "src/fixture_app/models.py", "traced_level")); got["traced"] != "" {
+		t.Fatalf("traced_level reaches its decorator: %v", got)
+	}
 }
 
 func TestCumulativeClojureMapOfParts(t *testing.T) {
@@ -383,7 +394,24 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	if got := split.HelperItems[[2]string{service, "example.service/greet"}]["handed_over_by"]; !slices.Contains(anyStrings(got), core+":example.core/greet-many") {
 		t.Fatalf("greet is asked with handed_over_by %v", got)
 	}
-	projectSplit(t, index, split)
+	projected := projectSplit(t, index, split)
+	// As an input, read-limit reaches source-limit by reading it.
+	// greet-many hands greet to clojure.core/map, and the adapter records
+	// the same argument as an exact call of greet too, so greet is reached
+	// by that call; the hand-over itself is never followed (flowtest), and
+	// no declaration of the fixture is handed over without being called.
+	many := flowtest.Probe(t, projected, core, "example.core/greet-many")
+	if got := flowtest.Reached(projected, many); got["example.service/greet"] != "call" {
+		t.Fatalf("greet-many reaches %v", got)
+	}
+	for _, position := range many.Edges {
+		if edge := projected.StructuralEdges[position]; edge.RelationKind == programindex.RelationPassesCallback {
+			t.Fatalf("greet-many follows its hand-over %+v", edge)
+		}
+	}
+	if got := flowtest.Reached(projected, flowtest.Probe(t, projected, core, "example.core/read-limit")); got["example.service/source-limit"] != "read" {
+		t.Fatalf("read-limit reaches %v", got)
+	}
 }
 
 // The C server's parts request carries code structure only, and every

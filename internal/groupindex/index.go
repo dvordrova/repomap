@@ -316,6 +316,12 @@ type Index struct {
 	OffMap     []OffMapFile `json:"off_map,omitempty"`
 	MapFailure string       `json:"map_failure,omitempty"`
 	SHA256     string       `json:"sha256"`
+	// Reach is what each input's handler reaches, one per operation in
+	// Operations order, and Dispatch every relation calling one of several
+	// alternatives, in source order (reach.go). Derived by Derive, never
+	// persisted, and shared read-only by Snapshot.
+	Reach    []Reach        `json:"-"`
+	Dispatch []DispatchSite `json:"-"`
 }
 
 // OffMapTests is the off-map reason of a file of a part made only of test
@@ -552,7 +558,7 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 		StructuralEdges:    structuralEdges,
 		Connections:        connections,
 	}
-	applyPhases(&index, program)
+	Derive(&index)
 	seal, err := indexDigest(index)
 	if err != nil {
 		return Index{}, nil, err
@@ -696,7 +702,8 @@ func WithOutbound(index Index, outbound []OutboundCall) (Index, error) {
 	return result, nil
 }
 
-// Snapshot returns a consumer-owned deep copy.
+// Snapshot returns a consumer-owned deep copy. The derived Reach and
+// Dispatch are immutable after Derive and are shared, not copied.
 func (index Index) Snapshot() Index {
 	result := index
 	result.Data = cloneData(index.Data)
@@ -2243,10 +2250,12 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		Target: program.Target.Snapshot(), ProgramIndexSHA256: artifact.ProgramIndexSHA256,
 		Data: artifact.Data, Subjects: subjects, Groups: artifact.Groups, Operations: operations,
 		Outbound: artifact.Outbound, Chains: projectChains(program, operations, artifact.Outbound), Containers: artifact.Containers,
-		StructuralEdges: compileStructuralEdges(program, retained), Connections: artifact.Connections,
+		StructuralEdges: compileStructuralEdges(program, retained), Connections: slices.Clone(artifact.Connections),
 		OffMap: artifact.OffMap, MapFailure: artifact.MapFailure, SHA256: artifact.SHA256,
 	}
-	applyPhases(&index, program)
+	// Derive writes the connections' derived fields: on a copy, so hydrating
+	// never changes the overlay it reads.
+	Derive(&index)
 	if err := index.Validate(); err != nil {
 		return Index{}, err
 	}

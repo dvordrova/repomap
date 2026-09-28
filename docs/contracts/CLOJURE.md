@@ -85,6 +85,12 @@ the var is a read at the binding.
 
 Missing equivalents, recorded rather than fabricated:
 
+- Multimethod and protocol dispatch stay unresolved, so GroupsIndex derives
+  no dispatch site. A function handed to a higher-order call
+  (`(map service/greet names)`) is recorded as an exact call of it beside the
+  hand-over, so no declaration of the fixture is handed over without being
+  called; the reach's rule that a hand-over is not followed is checked on the
+  other adapters' facts and GroupsIndex's unit test.
 - No Clojure function is proven `unreachable` (the C adapter's per-program
   fact, PROGRAM_INDEX): `resolve`, `requiring-resolve`, `ns-resolve`, a
   symbol or var invoked as a value, multimethods and protocol dispatch reach

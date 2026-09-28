@@ -259,6 +259,11 @@ never `pickle.dumps`.
 
 Missing equivalents, recorded rather than fabricated:
 
+- The fixture has no input of its own, so GroupsIndex's reach is checked by
+  probing declarations as inputs (`flowtest.Probe`: `read_level_data` reads
+  `READ_VALUES` and `READ_LIMIT`, `traced_level` does not reach `traced`); a
+  call through an attribute is never resolved as alternatives (below), so
+  there is no dispatch site.
 - No Python function is proven `unreachable` (the C adapter's per-program
   fact, PROGRAM_INDEX): `getattr`, `importlib`, entry points, decorators that
   register, special methods the interpreter calls and `eval` reach functions

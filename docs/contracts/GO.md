@@ -190,6 +190,10 @@ cumulative fixture's `internal/storefixture/command_table.go` checks them:
 
 Missing equivalents, recorded rather than fabricated:
 
+- GroupsIndex derives no dispatch site on the fixture: `DispatchCommand`'s
+  looked-up row call stays unresolved (below), so no input is dispatched from
+  it, and with no `reads` relation no input's reach enters a part by a read
+  (READING, reach). The Echo preset checks the route's reach.
 - No Go function is proven `unreachable` (the C adapter's per-program fact,
   PROGRAM_INDEX). The SSA call graph and its dynamic-call candidates do not
   see every way a function runs: reflection (`reflect.Value.Call`,
