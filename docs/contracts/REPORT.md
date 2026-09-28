@@ -208,13 +208,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   shaft; cut from a 14px square, its shaft ran along the border in the
   border's colour and only a small head read. The legend draws the same
   arrow.
-  Only an area holding the program's entry (a declaration its execution
-  starts from, a target seed) carries the entry mark, even when a core part
-  stands in it. Parts that only take requests or listen do not make their
-  area the entry: Networking's listen/bind boundary had drawn Redis's "Core
-  infrastructure" as a second entry area beside Server runtime. Such an area
-  keeps the core mark when it is core and no mark otherwise; each part keeps
-  its own mark.
+  An area's mark is its GroupsIndex container's (READING): the core mark
+  when any part in it is the domain, the area holding the program's entry
+  included (owner, 2026-09-27: purple when any part is the domain); the
+  entry mark only on the area holding the program's entry (a declaration
+  its execution starts from, a target seed) when no domain part stands in
+  it; otherwise none, or the dependencies mark. Parts that only take
+  requests or listen do not make their area the entry: Networking's
+  listen/bind boundary had drawn Redis's "Core infrastructure" as a second
+  entry area beside Server runtime. Each part keeps its own mark. The
+  green entry mark on an area that also held a domain part (4a6892a4) was
+  an agent's rule and is reversed.
   Concrete input captions remain. A dark outline identifies the card open on
   the right without inserting another row or changing its text position. Dark arrows and outlined participants
   identify the currently emphasized connections: a participant takes the

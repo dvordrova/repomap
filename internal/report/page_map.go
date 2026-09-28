@@ -3,7 +3,6 @@ package report
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1107,7 +1106,7 @@ func growFrame(frames map[string]*pageMapFrame, index *groupindex.Index, contain
 	frame, known := frames[container.ID]
 	if !known {
 		frame = &pageMapFrame{
-			ID: container.ID, Title: container.Title, Lane: areaLane(index, *container),
+			ID: container.ID, Title: container.Title, Lane: areaLane(*container),
 			Zone: zoneOf(container.ID),
 			X:    node.X, Y: node.Y, Width: node.Width, Height: node.Height,
 		}
@@ -2372,35 +2371,15 @@ func pageLane(lane groupindex.Lane, core bool) string {
 	return string(lane)
 }
 
-// areaLane is an area's mark. Only an area that holds the program's entry,
-// a declaration its execution starts from (a target seed), carries the entry
-// mark, even when a core part stands in it too: a core mark on Redis's
-// "Server runtime" hid main and processCommand. Parts that only take
-// requests or listen do not make their area the program's entry: the
-// triggers lane Networking's listen/bind boundary gave "Core infrastructure"
-// drew a second entry area beside Server runtime. Such an area keeps the core
-// mark when it is core and no mark otherwise.
-func areaLane(index *groupindex.Index, container groupindex.Container) string {
-	if index != nil {
-		seeds := make(map[string]bool, len(index.Target.Seeds))
-		for _, seed := range index.Target.Seeds {
-			seeds[seed.ObjectID] = true
-		}
-		for _, group := range index.Groups {
-			if !slices.Contains(container.GroupIDs, group.ID) {
-				continue
-			}
-			for _, id := range group.MemberSubjectIDs {
-				if seeds[id] {
-					return string(groupindex.LaneTriggers)
-				}
-			}
-		}
-	}
-	if lane := pageLane(container.Lane, container.Core); lane != string(groupindex.LaneTriggers) {
-		return lane
-	}
-	return ""
+// areaLane is an area's mark, read from GroupsIndex's container: the core
+// mark when any part in it is the domain, the program's entry included
+// (owner, 2026-09-27: an area is purple when any part in it is the domain);
+// the entry mark on the area holding the program's entry (a target seed)
+// when none is; otherwise a dependencies mark or none, as a part's. Parts
+// that only take requests or listen do not make their area the entry: the
+// container's lane is the entry's only by a seed.
+func areaLane(container groupindex.Container) string {
+	return pageLane(container.Lane, container.Core)
 }
 
 // allQuiet says whether every part-to-part arrow of a map stands quiet at

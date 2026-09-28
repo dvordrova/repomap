@@ -102,23 +102,25 @@ func TestACallIntoAHelperStandsQuiet(t *testing.T) {
 	}
 }
 
-// Server runtime held main and processCommand beside core parts; its core
-// mark hid where execution comes in. An area whose parts only take requests
-// is not the program's entry.
-func TestAreaHoldingTheEntryShowsTheEntryMarkEvenWhenCore(t *testing.T) {
+// An area's mark is its container's: purple when any part in it is the
+// domain, the entry's area included (owner, 2026-09-27); the entry mark only
+// on the entry's area when no domain part stands in it; none for an area of
+// plain parts, whatever they take in. Each part keeps its own mark.
+func TestAnAreaHoldingADomainPartIsPurple(t *testing.T) {
 	index := groupindex.Index{Target: programindex.Target{ID: "server", Seeds: []programindex.TargetSeed{{ObjectID: "main"}}}, Groups: []groupindex.Group{
 		{ID: "dispatch", Title: "Command dispatch", Lane: groupindex.LaneTriggers, MemberSubjectIDs: []string{"main"}},
 		{ID: "shared", Title: "Shared objects", Lane: groupindex.LaneCore, Core: true, MemberSubjectIDs: []string{"incr"}},
 		{ID: "store", Title: "Storage", Lane: groupindex.LaneCore, Core: true, MemberSubjectIDs: []string{"save"}},
 		{ID: "log", Title: "Log", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"log"}},
-		// Networking only listens: its listen/bind boundary put its area in the
-		// triggers lane, and "Core infrastructure" was drawn as a second entry.
 		{ID: "net", Title: "Networking", Lane: groupindex.LaneTriggers, MemberSubjectIDs: []string{"listen"}},
 		{ID: "loop", Title: "Event loop", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"poll"}},
+		{ID: "cli", Title: "Command line", Lane: groupindex.LaneTriggers, MemberSubjectIDs: []string{"args"}},
+		{ID: "help", Title: "Help text", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"usage"}},
 	}, Containers: []groupindex.Container{
 		{ID: "k1", Title: "Server runtime", Lane: groupindex.LaneTriggers, Core: true, GroupIDs: []string{"dispatch", "shared"}},
-		{ID: "k2", Title: "Persistence", Lane: groupindex.LaneTriggers, Core: true, GroupIDs: []string{"store", "log"}},
-		{ID: "k3", Title: "Core infrastructure", Lane: groupindex.LaneTriggers, GroupIDs: []string{"net", "loop"}},
+		{ID: "k2", Title: "Persistence", Lane: groupindex.LaneCore, Core: true, GroupIDs: []string{"store", "log"}},
+		{ID: "k3", Title: "Core infrastructure", Lane: groupindex.LaneCore, GroupIDs: []string{"net", "loop"}},
+		{ID: "k4", Title: "Startup", Lane: groupindex.LaneTriggers, GroupIDs: []string{"cli", "help"}},
 	}}
 	got, _ := structureEdges(t, index)
 	lanes := map[string]string{}
@@ -130,12 +132,11 @@ func TestAreaHoldingTheEntryShowsTheEntryMarkEvenWhenCore(t *testing.T) {
 			parts[node.FullTitle] = node.Lane
 		}
 	}
-	if lanes["Server runtime"] != "triggers" || lanes["Persistence"] != "core" || lanes["Core infrastructure"] != "" {
+	if lanes["Server runtime"] != "core" || lanes["Persistence"] != "core" || lanes["Core infrastructure"] != "" || lanes["Startup"] != "triggers" {
 		t.Fatalf("area marks: %+v", lanes)
 	}
-	// The part keeps its own mark; only its area is not the program's entry.
-	if parts["Networking"] != "triggers" {
-		t.Fatalf("the listening part lost its own mark: %+v", parts)
+	if parts["Networking"] != "triggers" || parts["Command dispatch"] != "triggers" {
+		t.Fatalf("a part lost its own mark: %+v", parts)
 	}
 }
 

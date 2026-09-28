@@ -1,5 +1,22 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — An area is purple when any part in it is the domain
+
+- Scope: step C6 of `map-model/step3-plan.md`, second part, with
+  correction 8 (the owner's decision of 2026-09-27; skeptic 20).
+- **Change.** The report reads an area's mark from its GroupsIndex
+  container (C5): `pageLane(container.Lane, container.Core)`. The report's
+  own seed scan is deleted. An area holding the program's entry and a
+  domain part is now purple, not green: 4a6892a4's "entry mark even when a
+  core part stands in it" was an agent's rule and is reversed; the green
+  entry mark stays for an entry area with no domain part.
+- **Tests.** `TestAreaHoldingTheEntryShowsTheEntryMarkEvenWhenCore`, which
+  pinned the reversed rule, becomes `TestAnAreaHoldingADomainPartIsPurple`
+  (the entry's core area and another core area purple, a plain area none,
+  an entry area without a domain part green, parts keep their own marks).
+  The entry mark put over core, and core ignored, each fail it
+  (`step3/impl-revert-c4c6.log`).
+
 ## 2026-09-28 — Quiet arrows into helpers like wiring, with wiring's exception
 
 - Scope: step C6 of `map-model/step3-plan.md`, first part, with

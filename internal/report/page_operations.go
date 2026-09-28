@@ -551,7 +551,7 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 			if len(children) == 1 {
 				unit = "group"
 			}
-			add(pageMapNode{ID: id, Branch: "area", Children: strings.Join(children, " "), Remote: remote, Component: owner.Target.ID, Href: "#" + id, FullTitle: container.Title, Title: mapTitle(container.Title), Summary: container.Summary, Subtitle: fmt.Sprintf("%d %s · explore →", len(children), unit), Lane: areaLane(owner, container)})
+			add(pageMapNode{ID: id, Branch: "area", Children: strings.Join(children, " "), Remote: remote, Component: owner.Target.ID, Href: "#" + id, FullTitle: container.Title, Title: mapTitle(container.Title), Summary: container.Summary, Subtitle: fmt.Sprintf("%d %s · explore →", len(children), unit), Lane: areaLane(container)})
 			areaIDs = append(areaIDs, id)
 		}
 		return areaIDs
