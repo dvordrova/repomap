@@ -238,3 +238,59 @@ func TestAnUnreachedDeclarationNamesTheProgramsThatRunIt(t *testing.T) {
 		t.Fatalf("redis-server's unreached declarations = %q, want %q", listed, want)
 	}
 }
+
+// A declaration two programs hold is one declaration: its "Called by" names
+// the calls every other program's own code makes into it, by program, and a
+// program that never runs it says so. A caller its program never runs is no
+// caller, and a same-named function elsewhere is another declaration.
+// anetTcpConnect's "Called by" had listed only redis-server's callers.
+func TestASharedDeclarationListsTheCallsEveryProgramMakesIntoIt(t *testing.T) {
+	at := func(path string, line int) *programindex.Location {
+		return &programindex.Location{Path: path, Line: line, Column: 5}
+	}
+	function := func(id, name, path string, line int, unreachable bool) programindex.Object {
+		return programindex.Object{ID: id, Kind: programindex.ObjectFunction, Name: name, Location: at(path, line), Unreachable: unreachable}
+	}
+	call := func(from, to string, line int) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget,
+			RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact, Location: at("x.c", line)}
+	}
+	portfolio := &ProgramPortfolio{Entries: []programindex.Index{
+		{Target: programindex.Target{ID: "t1"}, Objects: []programindex.Object{
+			function("n1", "syncWithMaster", "replication.c", 300, false), function("n2", "anetTcpConnect", "anet.c", 129, false)}},
+		{Target: programindex.Target{ID: "t2"}, Objects: []programindex.Object{
+			function("n5", "cliConnect", "redis-cli.c", 60, false), function("n6", "anetTcpConnect", "anet.c", 129, false),
+			function("n7", "cliDead", "redis-cli.c", 90, true), function("n8", "anetTcpConnect", "other.c", 129, false)}},
+		{Target: programindex.Target{ID: "t3"}, Objects: []programindex.Object{
+			function("n2", "anetTcpConnect", "anet.c", 129, true)}},
+	}}
+	builder := &pageBuilder{data: &ReportData{ProgramPortfolio: portfolio}, byProgram: map[string]*pageSection{}, indexes: []groupindex.Index{
+		{Target: programindex.Target{ID: "t1"}, StructuralEdges: []groupindex.StructuralEdge{call("n1", "n2", 310)}},
+		{Target: programindex.Target{ID: "t2"}, StructuralEdges: []groupindex.StructuralEdge{call("n5", "n6", 70), call("n7", "n6", 95), call("n5", "n8", 71)}},
+		{Target: programindex.Target{ID: "t3"}},
+	}}
+	for i, name := range []string{"redis-server", "redis-cli", "redis-benchmark"} {
+		section := &pageSection{ID: fmt.Sprintf("t%d", i+1), programTargetID: fmt.Sprintf("t%d", i+1), Label: name}
+		builder.sections = append(builder.sections, section)
+		builder.byProgram[section.programTargetID] = section
+	}
+	callers := func(targetID, subjectID string) []string {
+		var listed []string
+		for _, call := range builder.callersElsewhere(targetID, subjectID) {
+			listed = append(listed, call.targetID+" "+call.caller)
+		}
+		return listed
+	}
+	if got := callers("t1", "n2"); !slices.Equal(got, []string{"t2 n5"}) {
+		t.Fatalf("redis-server's anetTcpConnect is called elsewhere by %q, want redis-cli's cliConnect", got)
+	}
+	if got := callers("t3", "n2"); !slices.Equal(got, []string{"t1 n1", "t2 n5"}) {
+		t.Fatalf("redis-benchmark's anetTcpConnect is called elsewhere by %q, want both programs' callers", got)
+	}
+	if got := callers("t2", "n8"); len(got) != 0 {
+		t.Fatalf("a same-named function elsewhere is called by %q", got)
+	}
+	if !builder.neverRun("t3", "n2") || builder.neverRun("t1", "n2") {
+		t.Fatal("a program's unreachable proof is not read per program")
+	}
+}

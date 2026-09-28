@@ -214,6 +214,9 @@ function rmDeclView(ctx,node,data,concept){
     var total=groups.reduce(function(sum,group){return sum+group.decls.length;},0);
     groups.forEach(function(group){
       var fold=total>30&&group.decls.length>5,box=rmEl(fold?'details':'div','map-reading-peer'),head=rmEl(fold?'summary':'div','map-reading-peer-head');
+      // Another program's calls into a declaration both hold are named by
+      // that program: "redis-cli: [Command line client] cliConnect()".
+      if(group.program)head.appendChild(rmEl('span','map-reading-program',group.program+':'));
       head.append(rmPartBox(ctx,group.part,group.title),rmEl('span','map-reading-peer-count',String(group.decls.length)));box.appendChild(head);
       var list=rmEl('ul','map-reading-ends');group.decls.forEach(function(end){list.appendChild(rmEndItem(ctx,data,end,which,variable));});
       box.appendChild(list);section.appendChild(box);
@@ -221,6 +224,8 @@ function rmDeclView(ctx,node,data,concept){
     return section;
   }
   var callers=side(own.callers,variable?'Used by':'Called by','in');if(callers)view.appendChild(callers);
+  // Its own program never runs it, while another program does.
+  if(own.not_called_in)view.appendChild(rmEl('p','map-reading-not-called meta',rmT('Not called in {0}',own.not_called_in)));
   var name=rmEl('div','map-decl-name');
   var link=rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code},decl.name,null,decl.at);link.classList.add('map-decl-code');name.appendChild(link);
   symbols=rmPage.data(node,'symbols')||[];

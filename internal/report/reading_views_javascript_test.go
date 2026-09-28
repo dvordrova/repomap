@@ -131,3 +131,20 @@ assert.equal(line.tagName,'DETAILS','the fan-out is one folded line');
 assert.equal(line.children[0].textContent,'loadAppendOnlyFile() → 5 request handlers, possible, via cmdTable');
 `)
 }
+
+// A declaration other programs hold too lists their calls into it after its
+// own program's, each group named by its program, and says when its own
+// program never runs it (owner, 2026-09-28: anetTcpConnect).
+func TestASharedDeclarationNamesTheProgramsCallingIt(t *testing.T) {
+	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
+	runSystemJS(t, readingViewElements+code+`
+data.decls.push(decl('cliConnect','function','#cli'));
+data.own[0].callers.push({part:'#cli',title:'Command line client',program:'redis-cli',decls:[{decl:7,kind:'calls'}]});
+data.own[0].not_called_in='redis-benchmark';
+nodes['#cli']={dataset:{title:'Command line client',lane:'entry'},getAttribute:()=>'#cli'};
+const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
+assert.equal(view.children[0].textContent,'Called byServer lifecycle and cron1initServer()passes it as a callback:30redis-cli:Command line client1cliConnect()');
+assert.equal(view.children[1].className,'map-reading-not-called meta');
+assert.equal(view.children[1].textContent,'Not called in redis-benchmark');
+`)
+}

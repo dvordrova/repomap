@@ -42,6 +42,7 @@ var russianUI = map[string]string{
 	"Filter":                               "Фильтр",
 	"Its values":                           "Его значения",
 	"parsed at":                            "разбирается в",
+	"Not called in {0}":                    "Не вызывается в {0}",
 	"Areas and parts":                      "Области и части",
 	"Built from":                           "Собрана из",
 	"Entry":                                "Вход",

@@ -73,7 +73,7 @@ function PartSymbols({symbols,calls,width,height,grid,member}){
       if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey){event.stopPropagation();return;}
       event.preventDefault();event.stopPropagation();member?.choose(i,event);
     };
-    const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner&&mixed.has(i)?'flow-symbol-inner':''} ${i===chosen?'flow-symbol-chosen':''} ${tone(i)}`,
+    const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner&&mixed.has(i)?'flow-symbol-inner':''} ${symbol.quiet?'flow-symbol-quiet':''} ${i===chosen?'flow-symbol-chosen':''} ${tone(i)}`,
       'data-symbol':i,onMouseEnter:()=>member?.point(i),onClick:symbol.kind==='more'?undefined:choose};
     const body=<>{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
     return symbol.href&&symbol.kind!=='more'?<a key={i} href={symbol.code||symbol.href} target="_blank" {...props}>{body}</a>

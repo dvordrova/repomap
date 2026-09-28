@@ -166,6 +166,10 @@ type pageReadingSite struct {
 type pageReadingOwner struct {
 	Decl    int                    `json:"decl"`
 	Callers []pageReadingPeerDecls `json:"callers,omitempty"`
+	// NotCalledIn names this program when its adapter proved it never runs
+	// the declaration (owner, 2026-09-28: "not called in redis-benchmark"),
+	// while other programs of the report call it.
+	NotCalledIn string `json:"not_called_in,omitempty"`
 	Callees []pageReadingPeerDecls `json:"callees,omitempty"`
 	Uses    []pageReadingEnd       `json:"uses,omitempty"`
 	Returns []int                  `json:"returns,omitempty"`
@@ -179,6 +183,9 @@ type pageReadingPeerDecls struct {
 	Title string           `json:"title"`
 	Own   bool             `json:"own,omitempty"`
 	Decls []pageReadingEnd `json:"decls"`
+	// Program names another program of the report whose code makes these
+	// calls into a declaration both hold (page_shared_code.go).
+	Program string `json:"program,omitempty"`
 }
 
 // relationOrder is where a relation's ends stand in a list: calls first,
@@ -257,6 +264,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 	// draw them, each type with every one of its fields.
 	lists := map[string][]int{}
 	types := map[string]int{}
+	functions := map[string]int{}
 	var fields []string
 	for _, id := range group.MemberSubjectIDs {
 		ref, known := builder.subject(targetID, id)
@@ -302,6 +310,9 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		if kind == "type" {
 			types[id] = position
+		}
+		if kind == "function" {
+			functions[id] = position
 		}
 	}
 	for _, id := range fields {
@@ -533,6 +544,63 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			found = len(reading.Own) - 1
 		}
 		reading.Own[found].Returns, reading.Own[found].Takes = returns, takes
+	}
+	// Calls into the part's functions from the other programs of the report
+	// that hold them, each program's callers it runs, after its own; and a
+	// function its own program never runs says so.
+	ownerOf := func(position int) *pageReadingOwner {
+		found := slices.IndexFunc(reading.Own, func(owner pageReadingOwner) bool { return owner.Decl == position })
+		if found < 0 {
+			reading.Own = append(reading.Own, pageReadingOwner{Decl: position})
+			found = len(reading.Own) - 1
+		}
+		return &reading.Own[found]
+	}
+	ids := make([]string, 0, len(functions))
+	for id := range functions {
+		ids = append(ids, id)
+	}
+	slices.SortFunc(ids, func(a, b string) int { return cmp.Compare(functions[a], functions[b]) })
+	for _, id := range ids {
+		position := functions[id]
+		elsewhere := builder.callersElsewhere(targetID, id)
+		var groups []pageReadingPeerDecls
+		for _, call := range elsewhere {
+			ref, known := builder.subject(call.targetID, call.caller)
+			if !known {
+				continue
+			}
+			label, anchor := builder.subjectDisplay(ref.subject)
+			part, title := partOf(call.targetID, call.caller)
+			caller := fromAnchor(label, anchor, kindOf(call.targetID, call.caller), part)
+			if caller < 0 {
+				continue
+			}
+			end := pageReadingEnd{Decl: caller, Kind: string(call.edge.RelationKind), Possible: call.edge.Resolution != programindex.ResolutionExact}
+			if call.edge.Location != nil {
+				site := builder.links.anchor(call.edge.Location.Path, call.edge.Location.Line, call.edge.Location.Column)
+				end.Sites = []pageReadingSite{{At: site.Text, Href: site.Href, Open: site.Open}}
+			}
+			program := componentTitle(builder.byProgram[call.targetID], builder.sections)
+			at := slices.IndexFunc(groups, func(group pageReadingPeerDecls) bool { return group.Program == program && group.Part == part })
+			if at < 0 {
+				groups = append(groups, pageReadingPeerDecls{Part: part, Title: title, Program: program})
+				at = len(groups) - 1
+			}
+			groups[at].Decls = mergeEnd(groups[at].Decls, end)
+		}
+		for i := range groups {
+			groups[i].Decls = sortEnds(groups[i].Decls)
+		}
+		notCalled := len(groups) > 0 && builder.neverRun(targetID, id)
+		if len(groups) == 0 && !notCalled {
+			continue
+		}
+		owner := ownerOf(position)
+		owner.Callers = append(owner.Callers, groups...)
+		if notCalled {
+			owner.NotCalledIn = componentTitle(builder.byProgram[targetID], builder.sections)
+		}
 	}
 	slices.SortFunc(reading.Own, func(a, b pageReadingOwner) int { return cmp.Compare(a.Decl, b.Decl) })
 	if len(reading.Decls) == 0 {

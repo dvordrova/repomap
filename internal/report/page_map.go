@@ -2476,6 +2476,9 @@ type pageNodeSymbol struct {
 	Open string `json:"open,omitempty"`
 	// Code is the link to all of its lines, where Href names the first.
 	Code string `json:"code,omitempty"`
+	// Quiet marks a declaration its program never runs (ProgramIndex
+	// unreachable): its tile is drawn quiet, as code no input reaches.
+	Quiet bool `json:"quiet,omitempty"`
 }
 
 const maxTileFields = 8
@@ -2588,6 +2591,7 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		// Only what an adapter knows to be closed: a language with no such
 		// notion reports every declaration as reachable.
 		symbol.Inner = object.Visibility != programindex.VisibilityPublic && object.Visibility != programindex.VisibilityUnknown
+		symbol.Quiet = builder.neverRun(targetID, id)
 		symbol.Text = symbolText(object, name)
 		if anchor != nil {
 			symbol.Href, symbol.Open, symbol.Path, symbol.Code = anchor.Href, anchor.Open, anchor.Path, anchor.Code

@@ -261,6 +261,9 @@ type pageBuilder struct {
 	dispatchByTarget map[string]*dispatchFacts
 	// runBy is which programs run each declaration, built once.
 	runBy *runByOthers
+	// shared joins the programs by the declarations they hold in common
+	// (page_shared_code.go), built once.
+	shared *sharedCode
 	// declarationEnds is the last line of each declaration by its place
 	// (path, line, column), from every program's index, built once.
 	declarationEnds map[string]int

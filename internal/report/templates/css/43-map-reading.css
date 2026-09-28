@@ -474,3 +474,6 @@ details.map-reading-in>summary{display:flex;gap:8px;cursor:pointer;font-weight:6
 .flow-enabled .map-inspector ul.map-dispatched-list{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto;font:12.5px/1.6 var(--mono)}
 .flow-enabled .map-inspector .map-dispatched-list button{border:0;background:transparent;padding:0;font:inherit;color:var(--link);cursor:pointer}
 .flow-enabled .map-inspector .system-path-handlers{border:0;background:transparent;padding:0;font:inherit;color:var(--link);cursor:pointer;text-decoration:underline dotted}
+/* Another program's calls into a shared declaration are named by that program. */
+.map-reading-program{font-weight:600;font-size:12.5px;color:var(--ink);margin-right:4px}
+.map-reading-not-called{margin:4px 0 8px}
