@@ -1,5 +1,19 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — The entry line names its file (u3)
+
+- The blind GET check read redis-server's reading as "The program's entry
+  is not on the map: main :9124 · In no part of its file" and found no
+  file in it. The component's heading and reading now write the entry by
+  its name and the file:line anchor the page's other source links use:
+  "main redis.c:9124 · In no part of its file" (`target.html`); the "Not
+  on the map" list keeps its chip rows.
+- `TestALaunchPointOffTheMapIsNamedWithItsReason` checks the line's
+  `<code>main</code> <span class="anchor">redis.c:9124</span>` and no
+  `:9124` chip; it fails on revert (`ui-fixes/revert.log`).
+- `make test`: PASS. `make vet`: PASS. `make ui-test`: PASS (127). `make ui-visual-test`:
+  PASS (65 passed, 5 skipped).
+
 ## 2026-09-28 — Every count on an input's and a site's reading says what it counts (u1, u2)
 
 - Evidence: the blind GET check (`blind-get/answers.md`) met "one of 94",

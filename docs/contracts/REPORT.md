@@ -229,7 +229,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   no part holds (redis-server's `main`, undecided between two parts) makes
   no entry part and no label on the canvas; the component's heading and
   reading and its "Not on the map" list name it as the program's entry
-  with its off-map reason. The
+  with its off-map reason, the heading and reading by its name and its
+  file:line anchor, as the page's other source links are written. The
   green entry mark on an area that also held a domain part (4a6892a4) was
   an agent's rule and is reversed.
   Concrete input captions remain. A dark outline identifies the card open on
