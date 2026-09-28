@@ -8,14 +8,21 @@ each giving its exact repository path and line (zero means whole-file scope).
 A p* row lists at most six sample observations and `count`, the real number of
 observations behind that variant. These catalogues encode repeated sources once; follow the selected set for
 every variant. Each request supplies its own complete catalogues, with no refs
-to another window. Source refs identify observations, not semantic equivalence.
-Earlier groups are indivisible. Compare
+to another window. Earlier groups are indivisible. Compare
 their complete original evidence, not only their first or shortest member.
 
-Join groups only when their meanings and source scope agree. Equal spellings
-alone do not establish equal meanings. Different spellings may be aliases only
-when the supplied explanations and sources establish the same meaning. Keep
-uncertain or different senses separate.
+Join groups that name the same concept. The rule is:
+
+- Groups with the same name were found in different places of the report.
+  Join them when their explanations describe the same concept, even when
+  their sources differ.
+- Keep groups separate when their explanations describe different things,
+  even when their names are equal.
+- Groups with different names join only when their explanations show that
+  the names are two spellings or aliases of the same concept.
+- Sources tell where each explanation was observed. Different sources are
+  never a reason to keep groups apart, and shared sources are never a reason
+  to join them.
 
 Return only JSON, with one assignment for EVERY input g ref, including groups that stay alone:
 {"assignments":[{"ref":"g1","representative":"v1"},{"ref":"g2","representative":"v2"},{"ref":"g3","representative":"v2"}]}

@@ -47,15 +47,20 @@ func TestGlossaryClientTimeoutPreservesOptionalWorkButRunCancellationAborts(t *t
 					if stage == "generation" {
 						items := recoveryProse()
 						for i, window := range [][]proseSource{items, items[:1], items[1:]} {
-							call, err := generationCall(window, nil)
+							call, err := namesCall(window, nil)
 							if err != nil {
 								t.Fatal(err)
 							}
-							prepare(call.Prompt, call.Limits, []string{"length", `{"terms":[{"name":"Alpha","kind":"domain","explanation":"Accepted sibling definition.","rows":["p1"]}]}`, "timeout"}[i])
+							prepare(call.Prompt, call.Limits, []string{"length", `{"names":["Alpha"]}`, "timeout"}[i])
 						}
+						call, err := explainCall(items, gatherNames(items, []string{"Alpha"}))
+						if err != nil {
+							t.Fatal(err)
+						}
+						prepare(call.Prompt, call.Limits, `{"terms":[{"ref":"t1","explanation":"Accepted sibling definition."}]}`)
 						collector := recoveryCollector(items)
 						run = func(ctx context.Context, executor llm.Executor) error {
-							return collector.Generate(ctx, executor, client)
+							return collector.Generate(ctx, executor, client, everyConcept(), "")
 						}
 						retained = func() bool {
 							got := collector.Snapshot()
@@ -137,8 +142,14 @@ func TestGlossaryClientTimeoutPreservesOptionalWorkButRunCancellationAborts(t *t
 						return nil
 					})}
 					err := run(ctx, executor)
+					// The refused parent, the accepted half, four attempts of
+					// the timed-out half, and generation's explanation request.
+					wantAttempts := 6
+					if stage == "generation" {
+						wantAttempts = 7
+					}
 					if mode == "provider timeout" {
-						if err != nil || ctx.Err() != nil || !retained() || attempts != 6 || !timeoutEvent {
+						if err != nil || ctx.Err() != nil || !retained() || attempts != wantAttempts || !timeoutEvent {
 							t.Fatalf("provider-local deadline invalidated accepted work: err=%v ctx=%v retained=%v attempts=%d timeoutRecorded=%v", err, ctx.Err(), retained(), attempts, timeoutEvent)
 						}
 					} else if ctx.Err() == nil || !errors.Is(err, ctx.Err()) || attempts != 1 {

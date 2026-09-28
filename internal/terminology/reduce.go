@@ -521,32 +521,27 @@ func splitReduction(entries []Entry) ([]Entry, []Entry, bool) {
 	return entries[:middle], entries[middle:], true
 }
 
+// The same name with the same explanation is one definition: its sources
+// and origins are the union of every observation of it.
 func normalizeCandidates(values []Candidate) ([]Candidate, error) {
 	byValue := make(map[string]Candidate)
 	for _, value := range values {
 		if strings.TrimSpace(value.Name) == "" || strings.TrimSpace(value.Explanation) == "" || len(value.Sources) == 0 {
 			return nil, fmt.Errorf("glossary: invalid original candidate")
 		}
-		value.Sources = append([]Source(nil), value.Sources...)
 		for _, source := range value.Sources {
 			if !canonicalPath(source.Path) || source.Line < 0 {
 				return nil, fmt.Errorf("glossary: invalid original source")
 			}
 		}
-		sort.Slice(value.Sources, func(i, j int) bool {
-			if value.Sources[i].Path != value.Sources[j].Path {
-				return value.Sources[i].Path < value.Sources[j].Path
-			}
-			return value.Sources[i].Line < value.Sources[j].Line
-		})
-		value.Sources = slices.Compact(value.Sources)
+		key, _ := json.Marshal([]string{value.Name, value.Explanation})
+		sources := append([]Source(nil), value.Sources...)
 		origins := append([]Origin(nil), value.Origins...)
-		value.Origins = nil
-		key, _ := json.Marshal(value)
 		if previous, exists := byValue[string(key)]; exists {
+			sources = append(sources, previous.Sources...)
 			origins = append(origins, previous.Origins...)
 		}
-		value.Origins = normalizeOrigins(origins)
+		value.Sources, value.Origins = normalizeSources(sources), normalizeOrigins(origins)
 		byValue[string(key)] = value
 	}
 	keys := make([]string, 0, len(byValue))

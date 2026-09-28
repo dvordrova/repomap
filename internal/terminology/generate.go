@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/dvordrova/repomap/internal/llm"
 )
@@ -22,8 +23,21 @@ import (
 // It remains a separate optional completion with independent validation.
 const glossaryOutputTokens = 32768
 
-//go:embed prompts/generate.md
-var generatePrompt string
+// The glossary is made in three steps, each one decision:
+//
+//  1. names (text model): which names of the report's prose are glossary
+//     terms, as a list of names written in the prose;
+//  2. term (categorizer): for each name, one closed choice of what it is for
+//     a newcomer; only a decided domain concept goes on;
+//  3. explanations (text model): one definition per accepted name.
+//
+// Code, not a model, finds every prose row in which a name is written, folds
+// the names the term lookup treats as one, and attaches each name's rows and
+// their complete source scope. The model never selects rows, so a name is
+// never answered once per row.
+//
+//go:embed prompts/names.md
+var namesPrompt string
 
 type proseSource struct {
 	Texts   []string `json:"texts"`
@@ -59,70 +73,306 @@ func (c *Collector) collectProse(request string, textByRow map[string][]string, 
 	}
 }
 
-type generationResult struct {
-	Terms      []validatedTerm
+// NameDecision is what the glossary decided about one name the names step
+// found: its categorizer decision, or undecided for a near-tie, or
+// unanswered when no accepted answer reached it. Rows is how many prose rows
+// write it.
+type NameDecision struct {
+	Name     string `json:"name"`
+	Decision string `json:"decision"`
+	Rows     int    `json:"rows"`
+}
+
+// The outcomes of a name that the categorizer did not decide.
+const (
+	NameUndecided  = "undecided"
+	NameUnanswered = "unanswered"
+)
+
+// Generate explains the domain concepts of already accepted analysis prose,
+// in the three steps above. All original prose is considered; disjoint
+// windows own their optional results. Provider and response refusals
+// preserve the main analysis and accepted siblings. program is the report's
+// own summary of the program, shared by every categorizer question; it may
+// be empty.
+func (c *Collector) Generate(ctx context.Context, executor llm.Executor, provider llm.Provider, categorizer llm.Categorizer, program string) error {
+	c.mu.Lock()
+	keys := make([]string, 0, len(c.pending))
+	for key := range c.pending {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	items := make([]proseSource, 0, len(keys))
+	for _, key := range keys {
+		items = append(items, c.pending[key])
+	}
+	c.mu.Unlock()
+	if len(items) == 0 {
+		return nil
+	}
+	if categorizer == nil {
+		return fmt.Errorf("glossary: no categorizer decides which names are terms")
+	}
+	code := c.codeNames()
+	var found []string
+	err := runWindows(ctx, executor, provider, items, c.progress, runSpec[proseSource, namesResult]{
+		call:  func(window []proseSource) (llm.Call[namesResult], error) { return namesCall(window, code) },
+		split: splitProse,
+		unit:  "prose sources",
+		accept: func(_ []proseSource, result namesResult) {
+			found = append(found, result.Names...)
+		},
+	})
+	if err != nil {
+		return err
+	}
+	names := gatherNames(items, found)
+	decisions, err := decideNames(ctx, executor, categorizer, items, names, program)
+	if err != nil {
+		return err
+	}
+	var accepted []glossaryName
+	counts := make(map[string]int)
+	record := make([]NameDecision, len(names))
+	for i, name := range names {
+		record[i] = NameDecision{Name: name.Name, Decision: decisions[i], Rows: len(name.Rows)}
+		counts[decisions[i]]++
+		if decisions[i] == TermDomainConcept {
+			accepted = append(accepted, name)
+		}
+	}
+	c.mu.Lock()
+	c.decisions = record
+	c.mu.Unlock()
+	c.progress("decided", fmt.Sprintf("%d names in %d prose rows: %d domain concepts, %d general vocabulary, %d code elements, %d undecided, %d unanswered",
+		len(names), len(items), counts[TermDomainConcept], counts[TermGeneralVocabulary], counts[TermCodeElement], counts[NameUndecided], counts[NameUnanswered]))
+	if len(accepted) == 0 {
+		return nil
+	}
+	return runWindows(ctx, executor, provider, accepted, c.progress, runSpec[glossaryName, explanations]{
+		call:  func(window []glossaryName) (llm.Call[explanations], error) { return explainCall(items, window) },
+		split: splitNames,
+		unit:  "glossary terms",
+		accept: func(window []glossaryName, result explanations) {
+			c.acceptDefinitions(items, window, result.Explanations)
+		},
+	})
+}
+
+// Decisions lists what the last Generate decided about every name found,
+// in name order.
+func (c *Collector) Decisions() []NameDecision {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.decisions)
+}
+
+// runSpec is one text-model step over windows of units: its call, how a
+// refused window splits, and what an accepted answer does.
+type runSpec[U any, T any] struct {
+	call   func([]U) (llm.Call[T], error)
+	split  func([]U) ([]U, []U, bool)
+	accept func([]U, T)
+	unit   string
+}
+
+// planWindows keeps all units in one window unless the provider envelope
+// refuses to prepare it; then it splits complete units.
+func planWindows[U any, T any](ctx context.Context, provider llm.Provider, units []U, spec runSpec[U, T]) ([][]U, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	call, err := spec.call(units)
+	if err != nil {
+		return nil, err
+	}
+	_, err = llm.Prepare(provider, call.Prompt, call.Limits)
+	if err == nil {
+		return [][]U{units}, nil
+	}
+	if !reductionResource(err) {
+		return nil, err
+	}
+	left, right, ok := spec.split(units)
+	if !ok {
+		// An indivisible original unit remains complete. The actual provider
+		// envelope decides whether it fits.
+		return [][]U{units}, nil
+	}
+	a, err := planWindows(ctx, provider, left, spec)
+	if err != nil {
+		return nil, err
+	}
+	b, err := planWindows(ctx, provider, right, spec)
+	return append(a, b...), err
+}
+
+// runWindows asks one text-model step over every unit. A resource refusal
+// continues the complete units in two partitions and remembers the split;
+// a provider, response or validation refusal leaves that window without an
+// answer and never revokes an analysis result or an accepted sibling.
+func runWindows[U any, T any](ctx context.Context, executor llm.Executor, provider llm.Provider, units []U, progress func(state, detail string), spec runSpec[U, T]) error {
+	windows, err := planWindows(ctx, provider, units, spec)
+	if err != nil {
+		return err
+	}
+	for len(windows) > 0 {
+		var calls []llm.Call[T]
+		for i := 0; i < len(windows); i++ {
+			call, err := spec.call(windows[i])
+			if err != nil {
+				return err
+			}
+			refused, err := llm.RecallAdaptiveSplit(executor, provider, call)
+			if err != nil {
+				return err
+			}
+			if refused {
+				if left, right, ok := spec.split(windows[i]); ok {
+					windows = slices.Concat(windows[:i], [][]U{left, right}, windows[i+1:])
+					i-- // Rebuild complete children through the current owner.
+					continue
+				}
+			}
+			calls = append(calls, call)
+		}
+		if executor.PlanNotice != nil {
+			executor.PlanNotice(len(calls))
+		}
+		failures := make(map[string]llm.FailureKind)
+		eachExecutor := executor
+		eachExecutor.Observer = llm.ObserverFunc(func(event llm.Event) error {
+			if event.Kind == llm.EventFailure && event.Source == llm.SourceLive {
+				failures[event.RequestSHA256] = event.Failure
+			}
+			if executor.Observer != nil {
+				return executor.Observer.Observe(event)
+			}
+			return nil
+		})
+		outcomes := llm.ExecuteJSONEach(ctx, eachExecutor, provider, calls)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var pending [][]U
+		for i, outcome := range outcomes {
+			for _, issue := range outcome.Outcome.Issues {
+				if issue.Kind != llm.IssueCacheValidate && issue.Kind != llm.IssueMetrics {
+					return fmt.Errorf("glossary: %w", issue)
+				}
+			}
+			if outcome.Err == nil {
+				spec.accept(windows[i], outcome.Outcome.Value)
+				continue
+			}
+			// A provider-local timeout can wrap DeadlineExceeded while the run
+			// remains alive. It takes the same optional refusal path as other
+			// exhausted provider failures; only this run's context cancels it.
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if reductionResource(outcome.Err) {
+				if left, right, ok := spec.split(windows[i]); ok {
+					if _, err := llm.RememberAdaptiveSplit(executor, provider, calls[i], outcome.Outcome, outcome.Err); err != nil {
+						return err
+					}
+					if progress != nil {
+						progress("partitioned", fmt.Sprintf("the provider refused %d %s in one request by resources; the complete set continues in 2 partitions", len(windows[i]), spec.unit))
+					}
+					for _, child := range [][]U{left, right} {
+						parts, err := planWindows(ctx, provider, child, spec)
+						if err != nil {
+							return err
+						}
+						pending = append(pending, parts...)
+					}
+				}
+			} else {
+				switch failures[outcome.Outcome.RequestSHA256] {
+				case llm.FailureProvider, llm.FailureResponse, llm.FailureValidation:
+				default:
+					return outcome.Err
+				}
+			}
+			// The shared executor records the refused optional response. It
+			// supplies nothing and never revokes an analysis result.
+		}
+		windows = pending
+	}
+	return nil
+}
+
+type namesResult struct {
+	Names      []string
 	Rejections []llm.ResponseRejection
 }
 
-func (result generationResult) ResponseRejections() []llm.ResponseRejection { return result.Rejections }
+func (result namesResult) ResponseRejections() []llm.ResponseRejection { return result.Rejections }
 
-// code is the exact-name set of the owning collector. It never enters the
-// request; it only decides which validated terms are published.
-func generationCall(items []proseSource, code map[string]CodeNameKind) (llm.Call[generationResult], error) {
-	var rows []map[string]any
+// proseRows is the prose catalogue of a request: one p ref per row, with
+// the row's accepted texts as written.
+func proseRows(items []proseSource) []map[string]any {
+	rows := make([]map[string]any, 0, len(items))
 	for i, item := range items {
-		row := fmt.Sprintf("p%d", i+1)
-		rows = append(rows, map[string]any{"ref": row, "text": item.Texts})
+		rows = append(rows, map[string]any{"ref": fmt.Sprintf("p%d", i+1), "text": item.Texts})
 	}
-	input, err := json.Marshal(map[string]any{"prose": rows})
+	return rows
+}
+
+// namesCall asks which names of these prose rows are glossary terms. code is
+// the exact-name set of the owning collector. It never enters the request;
+// it only decides which found names go on.
+func namesCall(items []proseSource, code map[string]CodeNameKind) (llm.Call[namesResult], error) {
+	input, err := json.Marshal(map[string]any{"prose": proseRows(items)})
 	if err != nil {
-		return llm.Call[generationResult]{}, err
+		return llm.Call[namesResult]{}, err
 	}
-	// Validation checks occurrence in the original accepted prose; the model
-	// cannot supply or rewrite that prose in its glossary response.
-	return llm.Call[generationResult]{
-		State: []byte(`{"contract":"repomap.glossary.generate.v5"}`),
-		Prompt: llm.Prompt{System: generatePrompt, User: string(input), ResponseFormatJSON: true, NoResponseAdjunct: true,
-			ResponseExample: `{"terms":[{"name":"<exact name in accepted prose>","kind":"<acronym, domain, protocol or format>","explanation":"<prose-context definition>","rows":["<supporting p ref>"]}]}`},
+	return llm.Call[namesResult]{
+		State: []byte(`{"contract":"repomap.glossary.names.v1"}`),
+		Prompt: llm.Prompt{System: namesPrompt, User: string(input), ResponseFormatJSON: true, NoResponseAdjunct: true,
+			ResponseExample: `{"names":["<a name as the prose writes it>"]}`},
 		Limits: llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: glossaryOutputTokens},
-		DecodeValidate: func(raw []byte) (generationResult, error) {
+		DecodeValidate: func(raw []byte) (namesResult, error) {
 			normalized, err := llm.NormalizeJSON(raw)
 			if err != nil {
-				return generationResult{}, err
+				return namesResult{}, err
 			}
-			wire, err := decodeTerms(normalized)
+			wire, err := decodeNames(normalized)
 			if err != nil {
-				return generationResult{}, err
+				return namesResult{}, err
 			}
-			terms, accepted, rejections := validateGeneration(items, wire, code)
-			result := generationResult{Terms: terms, Rejections: rejections}
+			result, accepted := validateNames(items, wire, code)
 			if len(wire) > 0 && accepted == 0 {
-				return result, fmt.Errorf("glossary: no supported definitions accepted")
+				return result, fmt.Errorf("glossary: no name of the answer is written in the prose")
 			}
 			return result, nil
 		},
 	}, nil
 }
 
-// decodeTerms reads the terms list. For optional glossary work "no terms" is
-// a legitimate answer: a missing or null terms member is an empty list, and a
-// bare top-level array is the list itself. Any other shape is refused.
-func decodeTerms(raw []byte) ([]json.RawMessage, error) {
+// decodeNames reads the names list. "No names" is a legitimate answer: a
+// missing or null names member is an empty list, a bare top-level array is
+// the list itself and one string is a list of one. Any other shape is
+// refused. An entry that is an object with a name member is that name.
+func decodeNames(raw []byte) ([]json.RawMessage, error) {
 	var list []json.RawMessage
 	if err := json.Unmarshal(raw, &list); err == nil && list != nil {
 		return list, nil
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &envelope); err != nil || envelope == nil {
-		return nil, fmt.Errorf("glossary: a terms array is required")
+		return nil, fmt.Errorf("glossary: a names array is required")
 	}
-	terms, present := envelope["terms"]
-	if !present {
+	names, present := envelope["names"]
+	if !present || string(names) == "null" {
 		return []json.RawMessage{}, nil
 	}
-	list = nil
-	if err := json.Unmarshal(terms, &list); err != nil {
-		return nil, fmt.Errorf("glossary: a terms array is required")
+	var one string
+	if json.Unmarshal(names, &one) == nil {
+		return []json.RawMessage{names}, nil
+	}
+	if err := json.Unmarshal(names, &list); err != nil {
+		return nil, fmt.Errorf("glossary: a names array is required")
 	}
 	if list == nil {
 		list = []json.RawMessage{}
@@ -130,90 +380,159 @@ func decodeTerms(raw []byte) ([]json.RawMessage, error) {
 	return list, nil
 }
 
-// A definition selects accepted prose, whose source scope remains complete.
-// Neither a row-number coincidence nor a rejected neighbour supplies provenance.
-// The returned count includes valid terms whose exact name the code already
-// owns. Each is journaled with that name and omitted from the published terms:
-// a window of nothing but code names is an accepted answer, not a refusal.
-func validateGeneration(items []proseSource, wire []json.RawMessage, code map[string]CodeNameKind) ([]validatedTerm, int, []llm.ResponseRejection) {
-	var rejections []llm.ResponseRejection
-	rejectionByReason := make(map[string]int)
+// validateNames keeps each name written in this window's prose, once. The
+// count includes names whose exact spelling the code already owns: each is
+// journaled with that name and not kept, and a window of only code names is
+// an accepted answer, not a refusal.
+func validateNames(items []proseSource, wire []json.RawMessage, code map[string]CodeNameKind) (namesResult, int) {
+	var result namesResult
+	byReason := make(map[string]int)
 	journal := func(kind, reason, position string) {
-		index, found := rejectionByReason[kind+"\x00"+reason]
+		index, found := byReason[kind+"\x00"+reason]
 		if !found {
-			index = len(rejections)
-			rejectionByReason[kind+"\x00"+reason] = index
-			rejections = append(rejections, llm.ResponseRejection{Kind: kind, Reason: reason})
+			index = len(result.Rejections)
+			byReason[kind+"\x00"+reason] = index
+			result.Rejections = append(result.Rejections, llm.ResponseRejection{Kind: kind, Reason: reason})
 		}
-		rejections[index].Count++
-		if len(rejections[index].Samples) < 5 {
-			rejections[index].Samples = append(rejections[index].Samples, position)
+		result.Rejections[index].Count++
+		if len(result.Rejections[index].Samples) < 5 {
+			result.Rejections[index].Samples = append(result.Rejections[index].Samples, position)
 		}
 	}
-	reject := func(reason, position string) { journal("glossary_term_rejected", reason, position) }
-	rows := make(map[string]proseSource, len(items))
-	for i, item := range items {
-		rows[fmt.Sprintf("p%d", i+1)] = item
-	}
-	var terms []validatedTerm
+	seen := make(map[string]bool)
 	accepted := 0
 	for index, raw := range wire {
-		position := fmt.Sprintf("terms[%d]", index)
-		// Extra members are ignored, and kind is neither stored nor shown, so
-		// it gates nothing except a self-declared retired identifier kind.
-		var term termWire
-		if err := json.Unmarshal(raw, &term); err != nil || term.Name == nil || term.Explanation == nil || term.Rows == nil {
-			reject("invalid optional term shape", position)
+		position := fmt.Sprintf("names[%d]", index)
+		var name string
+		if json.Unmarshal(raw, &name) != nil {
+			var object struct {
+				Name *string `json:"name"`
+			}
+			if json.Unmarshal(raw, &object) != nil || object.Name == nil {
+				journal("glossary_name_rejected", "a name is not a string", position)
+				continue
+			}
+			name = *object.Name
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			journal("glossary_name_rejected", "empty name", position)
 			continue
 		}
-		var kind string
-		if json.Unmarshal(term.Kind, &kind) == nil && strings.EqualFold(strings.TrimSpace(kind), retiredIdentifierKind) {
-			reject("term declares itself an identifier, not a concept", position)
-			continue
-		}
-		name, explanation := strings.TrimSpace(*term.Name), strings.TrimSpace(*term.Explanation)
-		if name == "" || explanation == "" || explanation == "none" {
-			reject("invalid optional term fields", position)
-			continue
-		}
-		validated := validatedTerm{candidate: Candidate{Name: name, Explanation: explanation}}
-		seen := make(map[string]bool)
-		for _, ref := range term.Rows {
-			if ref == nil {
-				reject("invalid optional prose row ref", position)
-				continue
-			}
-			item, known := rows[*ref]
-			if !known {
-				reject("unsupported optional prose row ref", position)
-				continue
-			}
-			if seen[*ref] {
-				continue
-			}
-			seen[*ref] = true
-			if !slices.ContainsFunc(item.Texts, func(text string) bool { return mentionsTerm(text, name) }) {
-				continue
-			}
-			validated.rows = append(validated.rows, *ref)
-			validated.sources = append(validated.sources, item.Sources...)
-		}
-		if len(validated.rows) == 0 || len(validated.sources) == 0 {
-			reject("term has no source-backed occurrence in the computed result", position)
+		if !slices.ContainsFunc(items, func(item proseSource) bool {
+			return slices.ContainsFunc(item.Texts, func(text string) bool { return mentionsTerm(text, name) })
+		}) {
+			journal("glossary_name_rejected", "the name is not written in the prose", position)
 			continue
 		}
 		accepted++
+		if seen[name] {
+			continue // An identical repeat is one answer.
+		}
+		seen[name] = true
 		if owner, found := code[name]; found {
 			// The prompt already asks for concepts only. An exact code
 			// spelling is still dropped here, visibly and by name.
-			journal("glossary_code_name_omitted", fmt.Sprintf("term names a code %s: %s", owner, name), position)
+			journal("glossary_code_name_omitted", fmt.Sprintf("name is a code %s: %s", owner, name), position)
 			continue
 		}
-		sort.Strings(validated.rows)
-		validated.sources = normalizeSources(validated.sources)
-		terms = append(terms, validated)
+		result.Names = append(result.Names, name)
 	}
-	return terms, accepted, rejections
+	return result, accepted
+}
+
+// glossaryName is one found name with every prose row, by index into the
+// collected rows, whose text writes it by the shared term lookup.
+type glossaryName struct {
+	Name string
+	Rows []int
+}
+
+// gatherNames makes one term of each name the term lookup treats as one:
+// spellings equal but for case, and a name with its English plural ending
+// ("WAL segments" is "WAL segment"). The term keeps the spelling the prose
+// writes most often, the first in order on a tie, and the rows of every
+// spelling. Rows come from all collected prose, not only the window in which
+// the model found the name.
+func gatherNames(items []proseSource, found []string) []glossaryName {
+	spellings := make(map[string][]string) // folded name -> spellings
+	for _, name := range found {
+		folded := FoldTerm(name)
+		if !slices.Contains(spellings[folded], name) {
+			spellings[folded] = append(spellings[folded], name)
+		}
+	}
+	folds := make([]string, 0, len(spellings))
+	for folded := range spellings {
+		folds = append(folds, folded)
+	}
+	// Shorter folded names first, so a plural finds its singular.
+	sort.Slice(folds, func(i, j int) bool {
+		if len(folds[i]) != len(folds[j]) {
+			return len(folds[i]) < len(folds[j])
+		}
+		return folds[i] < folds[j]
+	})
+	word := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsMark(r) || r == '_' }
+	var texts []string
+	for _, item := range items {
+		texts = append(texts, item.Texts...)
+	}
+	written := func(spelling string) int {
+		count := 0
+		for _, text := range texts {
+			count += len(FoldText(text).FindExact(spelling, word))
+		}
+		return count
+	}
+	var bases []string
+	base := make(map[string]string) // folded name -> its base's folded name
+	for _, folded := range folds {
+		base[folded] = folded
+		for _, candidate := range bases {
+			spelling := spellings[candidate][0]
+			whole := spellings[folded][0]
+			for _, occurrence := range FoldText(whole).Find(FoldTerm(spelling), IsAcronym(spelling), word) {
+				if occurrence.Start == 0 && occurrence.End == len(whole) && occurrence.Ending > 0 {
+					base[folded] = candidate
+				}
+			}
+			if base[folded] != folded {
+				break
+			}
+		}
+		if base[folded] == folded {
+			bases = append(bases, folded)
+		}
+	}
+	var names []glossaryName
+	for _, folded := range bases {
+		choices := slices.Clone(spellings[folded])
+		sort.Strings(choices)
+		chosen, most := choices[0], -1
+		for _, spelling := range choices {
+			if count := written(spelling); count > most {
+				chosen, most = spelling, count
+			}
+		}
+		name := glossaryName{Name: chosen}
+		for i, item := range items {
+			if slices.ContainsFunc(item.Texts, func(text string) bool { return mentionsTerm(text, chosen) }) {
+				name.Rows = append(name.Rows, i)
+			}
+		}
+		if len(name.Rows) > 0 {
+			names = append(names, name)
+		}
+	}
+	sort.Slice(names, func(i, j int) bool {
+		a, b := FoldTerm(names[i].Name), FoldTerm(names[j].Name)
+		if a != b {
+			return a < b
+		}
+		return names[i].Name < names[j].Name
+	})
+	return names
 }
 
 func splitProse(items []proseSource) ([]proseSource, []proseSource, bool) {
@@ -243,164 +562,25 @@ func splitProse(items []proseSource) ([]proseSource, []proseSource, bool) {
 	return items[:middle], items[middle:], true
 }
 
-func planProse(ctx context.Context, provider llm.Provider, items []proseSource) ([][]proseSource, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	// Planning prepares requests only; code names never change their bytes.
-	call, err := generationCall(items, nil)
-	if err != nil {
-		return nil, err
-	}
-	_, err = llm.Prepare(provider, call.Prompt, call.Limits)
-	if err == nil {
-		return [][]proseSource{items}, nil
-	}
-	if err != nil && !reductionResource(err) {
-		return nil, err
-	}
-	left, right, ok := splitProse(items)
-	if !ok {
-		// An indivisible original text remains complete. The actual provider
-		// envelope decides whether it fits.
-		return [][]proseSource{items}, nil
-	}
-	a, err := planProse(ctx, provider, left)
-	if err != nil {
-		return nil, err
-	}
-	b, err := planProse(ctx, provider, right)
-	return append(a, b...), err
-}
-
-// Generate explains names in already accepted analysis prose. All original
-// prose is considered; disjoint windows own their optional glossary results.
-// Provider/response refusals preserve the main analysis and accepted siblings.
-func (c *Collector) Generate(ctx context.Context, executor llm.Executor, provider llm.Provider) error {
-	c.mu.Lock()
-	keys := make([]string, 0, len(c.pending))
-	for key := range c.pending {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	items := make([]proseSource, 0, len(keys))
-	for _, key := range keys {
-		items = append(items, c.pending[key])
-	}
-	c.mu.Unlock()
-	if len(items) == 0 {
-		return nil
-	}
-	windows, err := planProse(ctx, provider, items)
-	if err != nil {
-		return err
-	}
-	code := c.codeNames()
-	for len(windows) > 0 {
-		var calls []llm.Call[generationResult]
-		for i := 0; i < len(windows); i++ {
-			call, err := generationCall(windows[i], code)
-			if err != nil {
-				return err
-			}
-			refused, err := llm.RecallAdaptiveSplit(executor, provider, call)
-			if err != nil {
-				return err
-			}
-			if refused {
-				if left, right, ok := splitProse(windows[i]); ok {
-					windows = slices.Concat(windows[:i], [][]proseSource{left, right}, windows[i+1:])
-					i-- // Rebuild complete children through the current owner.
-					continue
-				}
-			}
-			calls = append(calls, call)
-		}
-		if executor.PlanNotice != nil {
-			executor.PlanNotice(len(calls))
-		}
-		failures := make(map[string]llm.FailureKind)
-		eachExecutor := executor
-		eachExecutor.Observer = llm.ObserverFunc(func(event llm.Event) error {
-			if event.Kind == llm.EventFailure && event.Source == llm.SourceLive {
-				failures[event.RequestSHA256] = event.Failure
-			}
-			if executor.Observer != nil {
-				return executor.Observer.Observe(event)
-			}
-			return nil
-		})
-		outcomes := llm.ExecuteJSONEach(ctx, eachExecutor, provider, calls)
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		var pending [][]proseSource
-		for i, outcome := range outcomes {
-			for _, issue := range outcome.Outcome.Issues {
-				if issue.Kind != llm.IssueCacheValidate && issue.Kind != llm.IssueMetrics {
-					return fmt.Errorf("glossary: %w", issue)
-				}
-			}
-			if outcome.Err == nil {
-				c.acceptDefinitions(windows[i], outcome.Outcome.Value.Terms)
-				continue
-			}
-			// A provider-local timeout can wrap DeadlineExceeded while the run
-			// remains alive. It takes the same optional refusal path as other
-			// exhausted provider failures; only this run's context cancels it.
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if reductionResource(outcome.Err) {
-				if left, right, ok := splitProse(windows[i]); ok {
-					if _, err := llm.RememberAdaptiveSplit(executor, provider, calls[i], outcome.Outcome, outcome.Err); err != nil {
-						return err
-					}
-					c.progress("partitioned", fmt.Sprintf("the provider refused %d prose sources in one request by resources; the complete set continues in 2 partitions", len(windows[i])))
-					for _, child := range [][]proseSource{left, right} {
-						parts, err := planProse(ctx, provider, child)
-						if err != nil {
-							return err
-						}
-						pending = append(pending, parts...)
-					}
-				}
-			} else {
-				switch failures[outcome.Outcome.RequestSHA256] {
-				case llm.FailureProvider, llm.FailureResponse, llm.FailureValidation:
-				default:
-					return outcome.Err
-				}
-			}
-			// The shared executor records the refused optional response. It
-			// supplies no definitions and never revokes an analysis result.
-		}
-		windows = pending
-	}
-	return nil
-}
-
-func (c *Collector) acceptDefinitions(items []proseSource, terms []validatedTerm) {
+// acceptDefinitions records one candidate per explained name: its name, its
+// explanation, and the complete source scope and origin of every prose row
+// that writes it. The same name with the same explanation is one definition.
+func (c *Collector) acceptDefinitions(items []proseSource, names []glossaryName, explanations map[string]string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, term := range terms {
-		candidate := term.candidate
-		for _, source := range term.sources {
-			candidate.Sources = append(candidate.Sources, Source{Path: source.Path, Line: source.Line})
+	for _, name := range names {
+		explanation, found := explanations[name.Name]
+		if !found {
+			continue
 		}
-		for _, row := range term.rows {
-			for i, item := range items {
-				if row == fmt.Sprintf("p%d", i+1) {
-					candidate.Origins = append(candidate.Origins, item.Origin)
-				}
-			}
+		candidate := Candidate{Name: name.Name, Explanation: explanation}
+		for _, row := range name.Rows {
+			candidate.Sources = append(candidate.Sources, items[row].Sources...)
+			candidate.Origins = append(candidate.Origins, items[row].Origin)
 		}
-		candidate.Sources = normalizeSources(candidate.Sources)
-		candidate.Origins = normalizeOrigins(candidate.Origins)
-		identity := candidate
-		identity.Origins = nil
-		key, _ := json.Marshal(identity)
+		key, _ := json.Marshal([]string{candidate.Name, candidate.Explanation})
 		previous := c.values[string(key)]
+		candidate.Sources = normalizeSources(append(candidate.Sources, previous.Sources...))
 		candidate.Origins = normalizeOrigins(append(candidate.Origins, previous.Origins...))
 		c.values[string(key)] = candidate
 	}

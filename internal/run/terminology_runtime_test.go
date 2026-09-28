@@ -19,15 +19,22 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/terminology"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
+
+// glossaryConcepts is the categorizer of readings whose only closed question
+// is the glossary's: it decides every found name is a domain concept.
+func glossaryConcepts() (llm.Categorizer, error) {
+	return &typesafetest.Categorizer{Decide: typesafetest.ByColumn(map[string]llm.Verdict{"term": typesafetest.Choose(terminology.TermDomainConcept)})}, nil
+}
 
 // This provider understands the original table and separate prose-row glossary,
 // as the configured online provider must. No production runtime seam is replaced.
 type terminologyRuntimeProvider struct {
 	calls  int
 	stages map[string]int
-	// prose answers every analysis text column, and terms maps each glossary
-	// name the stub defines, when its prose row contains it, to its kind.
+	// prose answers every analysis text column, and terms holds each glossary
+	// name the stub finds when the prose writes it (the value is unused).
 	// Empty values keep the OHLCV defaults.
 	prose string
 	terms map[string]string
@@ -69,6 +76,10 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 				Ref  string
 				Text []string
 			}
+			Terms []struct {
+				Ref  string
+				Name string
+			}
 		}
 		if err := json.Unmarshal([]byte(message["user"]), &request); err != nil {
 			return llm.Completion{}, err
@@ -82,17 +93,28 @@ func (p *terminologyRuntimeProvider) Complete(_ context.Context, prepared llm.Pr
 		if defined == nil {
 			defined = map[string]string{"OHLCV": "acronym"}
 		}
-		names := slices.Sorted(maps.Keys(defined))
-		terms := []map[string]any{}
-		for _, row := range request.Prose {
-			for _, name := range names {
-				if !strings.Contains(strings.Join(row.Text, " "), name) {
-					continue
+		// The names step lists every defined name the prose writes; the
+		// explanation step explains each term it is given.
+		answer := map[string]any{}
+		if request.Terms == nil {
+			names := []string{}
+			for _, name := range slices.Sorted(maps.Keys(defined)) {
+				for _, row := range request.Prose {
+					if strings.Contains(strings.Join(row.Text, " "), name) {
+						names = append(names, name)
+						break
+					}
 				}
-				terms = append(terms, map[string]any{"name": name, "kind": defined[name], "explanation": "The named group of market-data values described here.", "rows": []string{row.Ref}})
 			}
+			answer["names"] = names
+		} else {
+			terms := []map[string]any{}
+			for _, term := range request.Terms {
+				terms = append(terms, map[string]any{"ref": term.Ref, "explanation": "The named group of market-data values described here."})
+			}
+			answer["terms"] = terms
 		}
-		raw, err := json.Marshal(map[string]any{"terms": terms})
+		raw, err := json.Marshal(answer)
 		return llm.Completion{Response: raw, ChoiceCount: 1, FinishReason: llm.FinishStop, Metrics: llm.Metrics{Attempts: 1}}, err
 	}
 	p.calls++
@@ -152,7 +174,7 @@ func TestReadEnabledTerminologyUsesOrdinaryFactoryAndSeparateAcceptedProsePass(t
 	output := filepath.Join(t.TempDir(), "reading")
 	args := []string{filepath.Join(source, reading.InputFilename), "--through", "files", "--output", output, "--debug-dir", cache}
 	var stdout bytes.Buffer
-	if err := runReadConfigured(context.Background(), args, &stdout, factory, noClosedQuestions, true); err != nil {
+	if err := runReadConfigured(context.Background(), args, &stdout, factory, glossaryConcepts, true); err != nil {
 		t.Fatal(err)
 	}
 	if factoryCalls != 1 || provider.calls == 0 || provider.stages["atlas_directories"] == 0 || provider.stages["atlas_files"] == 0 || provider.stages["glossary"] == 0 {
@@ -183,7 +205,7 @@ func TestReadEnabledTerminologyUsesOrdinaryFactoryAndSeparateAcceptedProsePass(t
 	}
 	calls := provider.calls
 	args[4] = filepath.Join(t.TempDir(), "warm-reading")
-	if err := runReadConfigured(context.Background(), args, &stdout, factory, noClosedQuestions, true); err != nil {
+	if err := runReadConfigured(context.Background(), args, &stdout, factory, glossaryConcepts, true); err != nil {
 		t.Fatal(err)
 	}
 	if provider.calls != calls {
@@ -233,7 +255,7 @@ func TestReadGlossaryJournalsATermThatSpellsADeclaration(t *testing.T) {
 	factory := func() (llm.Provider, error) { return provider, nil }
 	output := filepath.Join(t.TempDir(), "reading")
 	args := []string{filepath.Join(source, reading.InputFilename), "--through", "files", "--output", output, "--debug-dir", t.TempDir()}
-	if err := runReadConfigured(context.Background(), args, &bytes.Buffer{}, factory, noClosedQuestions, true); err != nil {
+	if err := runReadConfigured(context.Background(), args, &bytes.Buffer{}, factory, glossaryConcepts, true); err != nil {
 		t.Fatal(err)
 	}
 	if provider.stages["glossary"] == 0 {
@@ -267,7 +289,7 @@ func TestReadGlossaryJournalsATermThatSpellsADeclaration(t *testing.T) {
 			t.Fatal(err)
 		}
 		if row.Stage == "glossary" && row.Kind == "glossary_code_name_omitted" {
-			if row.Reason != "term names a code declaration: FetchOHLCV" || row.ResponseRef == "" {
+			if row.Reason != "name is a code declaration: FetchOHLCV" || row.ResponseRef == "" {
 				t.Fatalf("unexpected code-name row: %s", line)
 			}
 			dropped += row.Count

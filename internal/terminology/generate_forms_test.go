@@ -1,91 +1,93 @@
 package terminology
 
 import (
-	"strings"
+	"reflect"
 	"testing"
 )
 
-func generationFormsCall(t *testing.T) func(string) (generationResult, error) {
+func namesFormsCall(t *testing.T, text string) func(string) (namesResult, error) {
 	t.Helper()
-	call, err := generationCall([]proseSource{{Texts: []string{"Each OHLCV candle closes the bucket."}, Sources: []Source{{Path: "a.py", Line: 3}}}}, nil)
+	call, err := namesCall([]proseSource{{Texts: []string{text}, Sources: []Source{{Path: "a.py", Line: 3}}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return func(raw string) (generationResult, error) { return call.DecodeValidate([]byte(raw)) }
+	return func(raw string) (namesResult, error) { return call.DecodeValidate([]byte(raw)) }
 }
 
-// "No terms" is a legitimate optional glossary answer however it is written;
-// a terms member of another type is still refused.
-func TestGlossaryNoTermsIsAnEmptyAnswer(t *testing.T) {
-	decode := generationFormsCall(t)
-	for _, raw := range []string{`{"terms":null}`, `{}`, `{"terms":[]}`, `[]`} {
+// "No names" is a legitimate optional glossary answer however it is written;
+// a bare list, one string or a name object are the names they carry, and a
+// names member of another type is still refused.
+func TestGlossaryNamesAnswerForms(t *testing.T) {
+	decode := namesFormsCall(t, "Each OHLCV candle closes the bucket.")
+	for _, raw := range []string{`{"names":null}`, `{}`, `{"names":[]}`, `[]`} {
 		got, err := decode(raw)
-		if err != nil || len(got.Terms) != 0 || len(got.Rejections) != 0 {
-			t.Fatalf("%s: an empty glossary answer was refused: %+v %v", raw, got, err)
+		if err != nil || len(got.Names) != 0 || len(got.Rejections) != 0 {
+			t.Fatalf("%s: an empty answer was refused: %+v %v", raw, got, err)
 		}
 	}
-	got, err := decode(`[{"name":"OHLCV","kind":"acronym","explanation":"Open, high, low, close and volume.","rows":["p1"]}]`)
-	if err != nil || len(got.Terms) != 1 || got.Terms[0].candidate.Name != "OHLCV" {
-		t.Fatalf("a bare terms array was not read as the terms list: %+v %v", got, err)
+	for raw, want := range map[string][]string{
+		`["OHLCV","candle"]`:                      {"OHLCV", "candle"},
+		`{"names":"OHLCV"}`:                       {"OHLCV"},
+		`{"names":[{"name":"OHLCV","kind":"x"}]}`: {"OHLCV"},
+		`{"names":[" OHLCV "],"note":"extra"}`:    {"OHLCV"},
+	} {
+		got, err := decode(raw)
+		if err != nil || !reflect.DeepEqual(got.Names, want) {
+			t.Fatalf("%s: %+v %v", raw, got, err)
+		}
 	}
-	for _, raw := range []string{`{"terms":"none"}`, `{"terms":{"name":"OHLCV"}}`, `null`, `"terms"`} {
+	for _, raw := range []string{`{"names":{"name":"OHLCV"}}`, `{"names":7}`, `null`, `"names"`} {
 		if _, err := decode(raw); err == nil {
-			t.Fatalf("%s: a terms member of the wrong type was accepted", raw)
+			t.Fatalf("%s: a names member of the wrong type was accepted", raw)
 		}
 	}
 }
 
-// Extra members and a missing or unknown kind are harmless; name, explanation
-// and rows stay required, and a self-declared identifier is still dropped.
-func TestGlossaryTermNeedsNameExplanationAndRowsOnly(t *testing.T) {
-	decode := generationFormsCall(t)
-	got, err := decode(`{"terms":[
-		{"name":" OHLCV ","explanation":"Open, high, low, close and volume.","rows":["p1"],"confidence":0.9},
-		{"name":"candle","kind":"concept","explanation":"One time bucket of prices.","rows":["p1"]},
-		{"name":"bucket","kind":7,"explanation":"A fixed time interval.","rows":["p1"]}]}`)
-	if err != nil || len(got.Terms) != 3 || len(got.Rejections) != 0 || got.Terms[0].candidate.Name != "OHLCV" {
-		t.Fatalf("a term with extra members, no kind or another kind was refused: %+v %v", got, err)
+// Owner decision 2026-09-26: prose that says "snapshots" or "classes" writes
+// the name Snapshot or class. Go is still not written in "good" or "goes",
+// nor Snap in "snapshots".
+func TestGlossaryNameIsWrittenInAnyCaseAndPluralForm(t *testing.T) {
+	decode := namesFormsCall(t, "Replicas exchange snapshots of classes. A good cache goes stale.")
+	got, err := decode(`{"names":["Snapshot","class","Replica","Go","Snap"]}`)
+	if err != nil || !reflect.DeepEqual(got.Names, []string{"Snapshot", "class", "Replica"}) {
+		t.Fatalf("case and plural forms: %+v %v", got, err)
 	}
-	got, err = decode(`{"terms":[
-		{"name":"OHLCV","kind":"acronym","explanation":"Open, high, low, close and volume.","rows":["p1"]},
-		{"name":"candle","kind":"domain","explanation":"One time bucket of prices."},
-		{"name":"  ","kind":"domain","explanation":"Nothing is named.","rows":["p1"]},
-		{"name":"bucket","kind":"domain","explanation":"none","rows":["p1"]},
-		{"name":"bucket","kind":" Identifier ","explanation":"A self-declared code name.","rows":["p1"]}]}`)
-	if err != nil || len(got.Terms) != 1 || got.Terms[0].candidate.Name != "OHLCV" {
-		t.Fatalf("a term without rows, name or explanation, or a self-declared identifier was kept: %+v %v", got, err)
+	if len(got.Rejections) != 1 || got.Rejections[0].Reason != "the name is not written in the prose" || got.Rejections[0].Count != 2 {
+		t.Fatalf("a partial word wrote a name: %+v", got.Rejections)
+	}
+}
+
+// Each closed ref takes one explanation. A missing, empty or conflicting one
+// leaves only that name unexplained; an identical repeat, a padded or
+// upper-case ref and extra members are harmless; an unknown ref is dropped.
+func TestExplanationsAreReadPerClosedRef(t *testing.T) {
+	byRef := map[string]string{"t1": "Alpha", "t2": "Beta", "t3": "Gamma", "t4": "Delta"}
+	got, err := decodeExplanations([]byte(`{"terms":[
+		{"ref":"t1","explanation":"The first concept.","extra":1},
+		{"ref":" T1 ","explanation":"The first concept."},
+		{"ref":"t2","explanation":"One meaning."},
+		{"ref":"t2","explanation":"Another meaning."},
+		{"ref":"t4","explanation":"none"},
+		{"ref":"t9","explanation":"Unknown."}]}`), byRef)
+	if err != nil || !reflect.DeepEqual(got.Explanations, map[string]string{"Alpha": "The first concept."}) {
+		t.Fatalf("explanations: %+v %v", got, err)
 	}
 	reasons := make(map[string]int)
 	for _, rejection := range got.Rejections {
 		reasons[rejection.Reason] += rejection.Count
 	}
-	if reasons["invalid optional term shape"] != 1 || reasons["invalid optional term fields"] != 2 || reasons["term declares itself an identifier, not a concept"] != 1 {
-		t.Fatalf("refused terms were not journaled: %+v", got.Rejections)
+	if !reflect.DeepEqual(reasons, map[string]int{"unknown term ref": 1, "a term answered twice with different explanations": 1, "a term was not explained": 2}) {
+		t.Fatalf("journal: %+v", got.Rejections)
 	}
-}
-
-// Owner decision 2026-09-26: prose that says "snapshots" or "classes" backs a
-// term named Snapshot or class. Go still has no occurrence in "good" or
-// "goes", nor Snap in "snapshots".
-func TestGlossaryTermOccursInAnyCaseAndPluralForm(t *testing.T) {
-	call, err := generationCall([]proseSource{{Texts: []string{"Replicas exchange snapshots of classes. A good cache goes stale."}, Sources: []Source{{Path: "raft.go", Line: 7}}}}, nil)
-	if err != nil {
-		t.Fatal(err)
+	if got, err := decodeExplanations([]byte(`[{"ref":"t3","explanation":"The third concept."}]`), byRef); err != nil || got.Explanations["Gamma"] != "The third concept." {
+		t.Fatalf("a bare terms list was not read: %+v %v", got, err)
 	}
-	got, err := call.DecodeValidate([]byte(`{"terms":[
-		{"name":"Snapshot","kind":"domain","explanation":"A saved copy of the state.","rows":["p1"]},
-		{"name":"class","kind":"domain","explanation":"A group of entries.","rows":["p1"]},
-		{"name":"Replica","kind":"domain","explanation":"One copy of the data.","rows":["p1"]},
-		{"name":"Go","kind":"domain","explanation":"A programming language.","rows":["p1"]},
-		{"name":"Snap","kind":"domain","explanation":"A part of a word.","rows":["p1"]}]}`))
-	var published []string
-	for _, term := range got.Terms {
-		published = append(published, term.candidate.Name)
+	for _, raw := range []string{`{}`, `{"terms":null}`, `{"terms":[{"ref":"t9","explanation":"Unknown."}]}`} {
+		if _, err := decodeExplanations([]byte(raw), byRef); err == nil {
+			t.Fatalf("%s: a window that explained no name was accepted", raw)
+		}
 	}
-	if err != nil || strings.Join(published, ",") != "Snapshot,class,Replica" {
-		t.Fatalf("case and plural forms did not back their terms: %v %+v %v", published, got.Rejections, err)
-	}
-	if len(got.Rejections) != 1 || got.Rejections[0].Reason != "term has no source-backed occurrence in the computed result" || got.Rejections[0].Count != 2 {
-		t.Fatalf("a partial word backed a term: %+v", got.Rejections)
+	if _, err := decodeExplanations([]byte(`{"terms":"none"}`), byRef); err == nil {
+		t.Fatal("a terms member of the wrong type was accepted")
 	}
 }

@@ -35,7 +35,7 @@ func TestGenerationResourceMemoKeepsOriginalProseAndWholeParentReplay(t *testing
 			responses := make(map[string]string)
 			prepare := func(window []proseSource) llm.Prepared {
 				t.Helper()
-				call, err := generationCall(window, nil)
+				call, err := namesCall(window, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -45,10 +45,25 @@ func TestGenerationResourceMemoKeepsOriginalProseAndWholeParentReplay(t *testing
 				}
 				return prepared
 			}
+			// The explanation request of these names over this prose.
+			explain := func(prose []proseSource, found ...string) string {
+				t.Helper()
+				call, err := explainCall(prose, gatherNames(prose, found))
+				if err != nil {
+					t.Fatal(err)
+				}
+				prepared, err := llm.Prepare(provider, call.Prompt, call.Limits)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return string(prepared.Bytes())
+			}
 			parent := prepare(items)
 			responses[string(parent.Bytes())] = "refuse"
-			responses[string(prepare(items[:1]).Bytes())] = `{"terms":[{"name":"Alpha","kind":"domain","explanation":"The first concept.","rows":["p1"]}]}`
-			responses[string(prepare(items[1:]).Bytes())] = `{"terms":[{"name":"Beta","kind":"domain","explanation":"The second concept.","rows":["p1"]}]}`
+			responses[string(prepare(items[:1]).Bytes())] = `{"names":["Alpha"]}`
+			responses[string(prepare(items[1:]).Bytes())] = `{"names":["Beta"]}`
+			both := `{"terms":[{"ref":"t1","explanation":"The first concept."},{"ref":"t2","explanation":"The second concept."}]}`
+			responses[explain(items, "Alpha", "Beta")] = both
 			provider.complete = func(prepared llm.Prepared) (llm.Completion, error) {
 				response, known := responses[string(prepared.Bytes())]
 				if !known {
@@ -60,10 +75,11 @@ func TestGenerationResourceMemoKeepsOriginalProseAndWholeParentReplay(t *testing
 				}
 				return completed(response)
 			}
+			decider := everyConcept()
 			run := func(executor llm.Executor, input []proseSource) []Candidate {
 				t.Helper()
 				collector := recoveryCollector(input)
-				if err := collector.Generate(t.Context(), executor, provider); err != nil {
+				if err := collector.Generate(t.Context(), executor, provider, decider, ""); err != nil {
 					t.Fatal(err)
 				}
 				if len(collector.pending) != len(input) {
@@ -73,34 +89,39 @@ func TestGenerationResourceMemoKeepsOriginalProseAndWholeParentReplay(t *testing
 			}
 			cold := run(executor, items)
 			warm := run(executor, items)
-			if provider.calls != 3 || len(cold) != 2 || !reflect.DeepEqual(cold, warm) {
+			// The refused parent, its two halves and one explanation request.
+			if provider.calls != 4 || len(cold) != 2 || !reflect.DeepEqual(cold, warm) {
 				t.Fatalf("warm generation repeated refused parent: calls=%d, cold=%+v warm=%+v", provider.calls, cold, warm)
 			}
 			// Equal provider text rebinds the complete current local source scope.
 			rebound := recoveryProse()
 			rebound[0].Sources[0].Line = 19
 			got := run(executor, rebound)
-			if provider.calls != 3 || got[0].Sources[0].Line != 19 || !reflect.DeepEqual(got[0].Origins, []Origin{items[0].Origin}) {
+			if provider.calls != 4 || got[0].Sources[0].Line != 19 || !reflect.DeepEqual(got[0].Origins, []Origin{items[0].Origin}) {
 				t.Fatalf("memo supplied old provenance: %+v", got)
 			}
 			changed := recoveryProse()
 			changed[0].Texts[0] = "Alpha changed concept."
 			responses[string(prepare(changed).Bytes())] = "refuse"
 			responses[string(prepare(changed[:1]).Bytes())] = responses[string(prepare(items[:1]).Bytes())]
-			if len(run(executor, changed)) != 2 || provider.calls != 5 {
+			responses[explain(changed, "Alpha", "Beta")] = both
+			if len(run(executor, changed)) != 2 || provider.calls != 7 {
 				t.Fatalf("changed input inherited old refusal/answer: calls=%d", provider.calls)
 			}
 			uncached := executor
 			uncached.Enabled = false
-			if !reflect.DeepEqual(run(uncached, items), cold) || provider.calls != 8 {
+			if !reflect.DeepEqual(run(uncached, items), cold) || provider.calls != 11 {
 				t.Fatalf("NoCache retained refusal or child answers: calls=%d", provider.calls)
 			}
-			responses[string(parent.Bytes())] = `{"terms":[{"name":"Alpha","kind":"domain","explanation":"Whole-parent replay definition.","rows":["p1"]},{"name":"Beta","kind":"domain","explanation":"The second concept.","rows":["p2"]}]}`
+			// A replayed whole-parent answer names Alpha alone; it takes
+			// precedence over the remembered split, whose halves name both.
+			responses[string(parent.Bytes())] = `{"names":["Alpha"]}`
+			responses[explain(items, "Alpha")] = `{"terms":[{"ref":"t1","explanation":"Whole-parent replay definition."}]}`
 			if _, err := llm.ReplayJSON(t.Context(), executor, provider, parent); err != nil {
 				t.Fatal(err)
 			}
 			got = run(executor, items)
-			if provider.calls != 9 || got[0].Explanation != "Whole-parent replay definition." {
+			if provider.calls != 13 || len(got) != 1 || got[0].Explanation != "Whole-parent replay definition." {
 				t.Fatalf("split memo overruled exact parent replay: calls=%d, %+v", provider.calls, got)
 			}
 		})
@@ -114,7 +135,7 @@ func TestGenerationIndivisibleResourceRefusalIsOptionalAndNotMemoized(t *testing
 	executor := llm.Executor{RootDir: t.TempDir(), Enabled: true}
 	for range 2 {
 		collector := recoveryCollector(recoveryProse()[:1])
-		if err := collector.Generate(t.Context(), executor, provider); err != nil || len(collector.pending) != 1 || len(collector.Snapshot()) != 0 {
+		if err := collector.Generate(t.Context(), executor, provider, everyConcept(), ""); err != nil || len(collector.pending) != 1 || len(collector.Snapshot()) != 0 {
 			t.Fatalf("indivisible refusal changed accepted prose: %+v / %v", collector, err)
 		}
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/terminology"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 type terminologyProvider struct {
@@ -41,20 +42,25 @@ func (p *terminologyProvider) Complete(_ context.Context, prepared llm.Prepared)
 			Ref  string
 			Text []string
 		}
+		Terms []struct {
+			Ref  string
+			Name string
+		}
 	}
 	if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
 		return llm.Completion{}, err
 	}
-	terms := []map[string]any{}
-	for _, name := range p.names {
-		for _, row := range request.Prose {
-			if !strings.Contains(strings.Join(row.Text, " "), name) {
-				continue
-			}
-			terms = append(terms, map[string]any{"name": name, "kind": "domain", "explanation": "The source-backed meaning of " + name + ".", "rows": []string{row.Ref}})
+	// The names step offers every name; code keeps those the accepted prose
+	// writes. The explanation step explains each term it is given.
+	answer := map[string]any{"names": p.names}
+	if request.Terms != nil {
+		terms := []map[string]any{}
+		for _, term := range request.Terms {
+			terms = append(terms, map[string]any{"ref": term.Ref, "explanation": "The source-backed meaning of " + term.Name + "."})
 		}
+		answer = map[string]any{"terms": terms}
 	}
-	raw, err := json.Marshal(map[string]any{"terms": terms})
+	raw, err := json.Marshal(answer)
 	return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
 }
 
@@ -84,7 +90,8 @@ func TestOrientationTermsUseOnlyAcceptedOriginalSlotsLiveAndCached(t *testing.T)
 		if err != nil || len(rejected) != 4 || result.Summary != "" || len(result.Roles) != 1 || len(result.RunRecipe) != 1 || len(result.MainFlow.Steps) != 1 {
 			t.Fatalf("partial orientation lost valid siblings: %+v, %v", result, err)
 		}
-		if err := collector.Generate(t.Context(), executor, provider); err != nil {
+		concept := &typesafetest.Categorizer{Decide: typesafetest.ByColumn(map[string]llm.Verdict{"term": typesafetest.Choose(terminology.TermDomainConcept)})}
+		if err := collector.Generate(t.Context(), executor, provider, concept, ""); err != nil {
 			t.Fatal(err)
 		}
 		terms := collector.Snapshot()
@@ -103,8 +110,9 @@ func TestOrientationTermsUseOnlyAcceptedOriginalSlotsLiveAndCached(t *testing.T)
 			t.Fatal("cache replay changed accepted term origins")
 		}
 	}
-	if provider.calls != 2 {
-		t.Fatal("cached partial orientation made another provider call")
+	// Orientation, names and explanations, each once: the second run is warm.
+	if provider.calls != 3 {
+		t.Fatalf("cached partial orientation made another provider call: %d calls", provider.calls)
 	}
 }
 

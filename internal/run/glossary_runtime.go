@@ -48,11 +48,20 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 	for kind, names := range glossaryCodeNames(indexes, data.Facts) {
 		collector.ExcludeCodeNames(kind, names...)
 	}
-	if err := collector.Generate(ctx, executor, provider); err != nil {
+	// The report's own summary of the program is the shared context of every
+	// name's closed decision.
+	program := ""
+	if data.Orientation != nil {
+		program = data.Orientation.Summary
+	}
+	if err := collector.Generate(ctx, executor, provider, options.Categorizer, program); err != nil {
 		return fmt.Errorf("glossary: %w", err)
 	}
 	candidates := collector.Snapshot()
 	if err := writeGlossaryArtifact(runDir, "terminology.json", candidates); err != nil {
+		return err
+	}
+	if err := writeGlossaryArtifact(runDir, "glossary_names.json", collector.Decisions()); err != nil {
 		return err
 	}
 	options.Output.Stage("Glossary", fmt.Sprintf("combining %d source-backed term explanations", len(candidates)))

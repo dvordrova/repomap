@@ -27,22 +27,6 @@ type Candidate struct {
 	Origins     []Origin `json:"origins"`
 }
 
-// TermKind names the concept kinds the prompt asks the model to choose. Every
-// kind names a concept; a machine name is not a glossary kind. Self-runs spent
-// most generated terms on an "identifier" kind that code then discarded. The
-// kind is neither stored nor shown, so the decoder does not gate on it except
-// to drop a term that declares itself the retired identifier kind.
-type TermKind string
-
-const (
-	KindAcronym  TermKind = "acronym"
-	KindDomain   TermKind = "domain"
-	KindProtocol TermKind = "protocol"
-	KindFormat   TermKind = "format"
-
-	retiredIdentifierKind = "identifier"
-)
-
 // CodeNameKind says which existing code observation spells a name exactly.
 // A generated term with that exact spelling is journaled, never published.
 type CodeNameKind string

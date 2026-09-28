@@ -176,10 +176,13 @@ func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.W
 		return err
 	}
 	if termCollector != nil {
-		if err := termCollector.Generate(ctx, debugdump.BindStage(opts.Executor, debugdump.SemanticStageGlossary), provider); err != nil {
+		if err := termCollector.Generate(ctx, debugdump.BindStage(opts.Executor, debugdump.SemanticStageGlossary), provider, categorizer, ""); err != nil {
 			return fmt.Errorf("read: glossary: %w", err)
 		}
 		if err := writeGlossaryArtifact(absolute, "terminology.json", termCollector.Snapshot()); err != nil {
+			return err
+		}
+		if err := writeGlossaryArtifact(absolute, "glossary_names.json", termCollector.Decisions()); err != nil {
 			return err
 		}
 	}

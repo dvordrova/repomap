@@ -34,6 +34,8 @@ type Collector struct {
 	// code holds exact names the code already owns. Generation drops a term
 	// with one of these spellings after validation and journals the drop.
 	code map[string]CodeNameKind
+	// decisions is what the last Generate decided about every found name.
+	decisions []NameDecision
 	// Progress, when set, receives console-worthy states such as a refused
 	// window continuing in partitions. It never changes what is generated.
 	Progress func(state, detail string)
@@ -357,18 +359,6 @@ func (c *Collector) requestContext(local []byte) (requestContext, error) {
 		}
 	}
 	return ctx, nil
-}
-
-type termWire struct {
-	Name        *string         `json:"name"`
-	Kind        json.RawMessage `json:"kind"`
-	Explanation *string         `json:"explanation"`
-	Rows        []*string       `json:"rows"`
-}
-type validatedTerm struct {
-	candidate Candidate
-	sources   []Source
-	rows      []string
 }
 
 // AdaptResponse never refuses the main answer. The glossary is optional: when

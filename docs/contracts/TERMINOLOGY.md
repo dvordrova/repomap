@@ -9,19 +9,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 
 - Shared terminology belongs to `internal/terminology`. The owner-approved
   2026-09-10 correction collects accepted analytical prose and its complete
-  source scope, then generates terms in separate aggregate requests. Main
+  source scope, then makes the glossary in separate aggregate requests. Main
   answers carry only their owning JSON contract, without optional terms or a
-  wrapper. Generation and reduction use their own 32,768-token output allowance (legitimate windows produced 1,276–15,278 tokens; two 128,000-token repetition loops were measured on Watchtower) and the actual
+  wrapper. Generation is [three steps, each one decision](#three-glossary-steps).
+  Generation and reduction use their own 32,768-token output allowance (legitimate windows produced 1,276–15,278 tokens; two 128,000-token repetition loops were measured on Watchtower) and the actual
   provider request envelope; no ordinary prose byte cap creates extra windows.
-  Resource refusals partition complete original prose records. A failed glossary
-  request cannot invalidate an accepted analytical answer. Terms must occur in
-  accepted prose, found by the same [term lookup](#term-lookup) as the report,
-  and select its advertised prose-row refs; they name
-  [concepts, not code names](#concepts-not-code-names). Generation
-  (`repomap.glossary.generate.v5`) has one `p*` catalogue and no separate
-  source-ref namespace; Go restores the complete original source scope of every selected row, plus its analytical
-  request and row, including warm reuse. A same-numbered old `g*` ref has no
-  authority and is never repaired into a prose ref. Non-table owners declare
+  Resource refusals partition complete original prose records or names. A failed glossary
+  request cannot invalidate an accepted analytical answer. A name must occur in
+  accepted prose, found by the same [term lookup](#term-lookup) as the report;
+  terms are [concepts, not code names](#concepts-not-code-names). No step has
+  a source-ref namespace: Go restores the complete original source scope of
+  every row that writes the name, plus its analytical request and row,
+  including warm reuse. An old `g*` ref has no authority and is never repaired
+  into a prose ref. Non-table owners declare
   their explanatory response paths; tables use their current prose columns
   and explicit empty-value spellings. Closed refs, states and unused fields
   do not become glossary text, while those same words remain valid in prose.
@@ -34,6 +34,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Changed prepared bytes, provider state or limits do not inherit the refusal.
   NoCache bypasses it, and an indivisible refusal is not a split memo. Old run
   journals are not imported into this cache.
+  The same name with the same explanation is one definition: code joins it,
+  with the union of its sources and origins, before reduction.
   One aggregate closed-ref reduction joins compatible domain candidates and
   chooses an original definition; when every group is a singleton and no two
   lowercased names meet, the reduction round is skipped and the catalogue is
@@ -63,9 +65,70 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   no occurrence markers, sense decisions or hint positions. Distinct meanings
   remain dictionary alternatives. [Term lookup](#term-lookup) preserves that distinction.
 
+## Three glossary steps
+
+Owner decision 2026-09-28. The earlier single request ("define the unfamiliar
+terms in these rows") expressed each inclusion only by leaving other names
+out, so one draw decided the glossary's size: on the same saved litestream
+window its answers fell into about 40–47 terms or 263–288, one draw looped to
+the output ceiling, and most of the extra terms were general words, parts of
+the code in plain words and paraphrases. The glossary is now three steps, each
+one decision, and code joins them.
+
+1. **Names** (`repomap.glossary.names.v1`, text model,
+   `prompts/names.md`): the prose rows as one `p*` catalogue; the answer is
+   `{"names":[…]}`, names as the prose writes them, with no explanation and no
+   rows. A missing or null member is no names, a bare array or one string is
+   the list, and a `{name}` object is its name. Code keeps a name only when
+   the term lookup finds it in that window's prose; an identical repeat is one
+   name, and a window none of whose names the prose writes is refused. Code
+   then makes one term of the names the lookup treats as one (case, English
+   plural), keeps the spelling the prose writes most often, and attaches every
+   collected prose row that writes it, from every window. The model never
+   selects rows, so a name is never answered once per row.
+2. **Decision** (`repomap.glossary.term.v1`, the categorizer): one closed
+   question per name, with three options and criteria for each
+   (`prompts/term_options.md`): `domain_concept`, a concept of the program's
+   field or of a technology it is built around that a newcomer would look
+   up; `general_vocabulary`, words any engineer knows, or a phrase whose
+   meaning is its known words put together; `code_element`, a name whose
+   meaning only this program's own source or report gives. The state
+   (`prompts/term.md`) says what the glossary is for, the shared context is
+   the report's orientation summary (none in saved `read`), and the item is
+   the name with every prose text that writes it, as written.
+   `FitClassifierWindows` packs whole items; nothing is left out, and an item
+   larger than one request goes alone for the provider to accept or refuse.
+   The categorizer margin decides; a near-tie is `undecided`, and a name that
+   no accepted answer reached is `unanswered`. Every decided or undecided
+   answer is remembered per name and item, so a warm run asks nothing and a
+   near-tie is not re-asked for a clearer draw. Only a decided
+   `domain_concept` goes on. Every name's outcome is saved in
+   `glossary_names.json`; declined and undecided names are journaled as
+   `glossary_name_declined` and `glossary_name_undecided`.
+3. **Explanations** (`repomap.glossary.explain.v1`, text model,
+   `prompts/explain.md`): one closed `t*` ref per accepted name, with its name
+   and the `p*` refs of its rows; the prose catalogue holds exactly those rows.
+   The answer is one `{ref, explanation}` per ref. An unknown ref is dropped;
+   a missing, empty, `none` or conflicting explanation leaves only that name
+   out; an identical repeat, a padded or upper-case ref and extra members are
+   harmless; a window that explains no name is refused.
+
+Measured on the two saved litestream generation windows (`61235e8f…` and
+`40bf2f66…`, five draws each): the single request drew 45–248 and 49–270
+distinct terms (union 264 and 276; 42 and 34 in all five draws; up to 14,989
+output tokens). The names step drew 143–181 and 155–271 names in 553–1,667
+output tokens; 54–58 and 47–61 of them were accepted (union 62 and 74; 52 and
+39 in all five), among them LTX file, TXID range, lock page, shadow WAL,
+storage class, WAL segments, salt and multi-level compaction. What still
+varies is whether a draw names a concept at all. Two independent decision
+passes over the same names changed 13 of 207 and 28 of 344 outcomes, every
+one between a decided option and `undecided`, never between two decided
+options. No term cap, stop-list, smaller output allowance, render filter or
+retry was added.
+
 ## Local owning context
 
-Ordinary analytical prompts carry no `REPOMAP_PROSE_SOURCES_V1` appendix and no second `g*` provider namespace. The [shared executor](EXECUTION.md#local-response-context) preserves source/prose ownership locally through cache, entity memo, question memo and exact replay. Generation selects only its p-row catalogue. It never repairs an old g ref or borrows a refused neighbour’s text.
+Ordinary analytical prompts carry no `REPOMAP_PROSE_SOURCES_V1` appendix and no second `g*` provider namespace. The [shared executor](EXECUTION.md#local-response-context) preserves source/prose ownership locally through cache, entity memo, question memo and exact replay. Generation reads only its p-row catalogue. It never repairs an old g ref or borrows a refused neighbour’s text.
 
 ## Reducer completeness
 
@@ -91,7 +154,11 @@ set; its full spelling and explanation remain present. Every partition builds
 its own complete catalogues, without parent/sibling refs or source sampling.
 Only the representation changes: output assignments still select original v*
 representatives, and local restoration retains all original sources and origins.
-Equal names alone never establish equal meanings. Complete groups partition only
+Equal names alone never establish equal meanings, and sources never decide a
+join (owner decision 2026-09-28): groups with the same name come from
+different places of the report and join when their explanations describe the
+same concept, whatever their sources; different names join only as spellings
+or aliases of one concept. Complete groups partition only
 when the provider envelope requires it; a nonshrinking round records partial
 comparison. A refused model window leaves its already accepted input definitions
 separate and stops retrying them in that reduction. Cancellation, invalid local
@@ -107,32 +174,25 @@ use the base provider without recursively collecting another glossary. Saved
 
 ## Concepts, not code names
 
-Generation explains domain and concept terms only. The prompt asks each term
-for a concept `kind` (`acronym`, `domain`, `protocol` or `format`). The kind is
-neither stored nor shown, so a missing or other kind does not refuse a term;
-only a term that declares itself the retired `identifier` kind (in any case) is
-dropped alone. A term needs its name, explanation and prose rows; extra members
-are ignored and a padded name is trimmed. A missing or null `terms` member is
-an empty terms list, and a bare top-level array is the terms list. Self-runs had spent most generated output on `identifier` terms that code
-then discarded (121 of 136 and 100 of 182 terms), on a serial 15–30 s step. The
-embedded prompt therefore tells the model not to define names that the code
-declares or reads: functions, methods, types, variables, constants, packages,
-modules, files, paths, environment and configuration keys, command-line flags,
-headers, commands and rule or ticket codes. A word, acronym, protocol or format
-that code also uses as a name is still a concept; only its code spelling is
-skipped.
+The names step asks for concepts only, and the decision's `code_element`
+option leaves out a part of the program written in words. The earlier single
+request asked each term for a concept `kind` (`acronym`, `domain`, `protocol`
+or `format`) after self-runs had spent most generated output on `identifier`
+terms that code then discarded (121 of 136 and 100 of 182 terms); the kind is
+retired with that request. A word, acronym, protocol or format that code also
+uses as a name is still a concept; only its code spelling is skipped.
 
 The reader is an engineer new to the repository (owner decision 2026-09-25):
 general engineering, computing and version-control vocabulary (repository,
 commit, package, interface, cache, JSON, HTTP) is not explained; terms of the
 repository's own field, and ones an engineer would have to look up, are. On
-one saved self-run request the prompt without this reader drew 36–618 terms
-(6–69 s, four of six draws above 240); with it 66–89 terms in 10–12 s in five
-of six draws and 277 terms (41 s) in one.
+one saved self-run request the single-request prompt without this reader drew
+36–618 terms (6–69 s, four of six draws above 240); with it 66–89 terms in
+10–12 s in five of six draws and 277 terms (41 s) in one.
 
-After validation, Go also drops a valid term whose whole name equals, exactly
-and case-sensitively, a code name that the glossary owner already holds and
-that is in code spelling:
+After the names step, Go also drops a found name whose whole name equals,
+exactly and case-sensitively, a code name that the glossary owner already
+holds and that is in code spelling:
 
 - ordinary run: every name declared in a published target's ProgramIndex
   (types, functions, methods and variables, which include locals, parameters,
@@ -158,18 +218,18 @@ drops 393 names, all class, function, configuration-key or file spellings
 (`ApiServer`, `stake_amount`), and keeps those words. The self-runs drop one
 concept, `ProgramIndex` (a struct field; 4 occurrences). The rule catches 486
 of their 1,173 former `identifier` terms rather than 791. Single-word code names
-such as `Snapshot`, `Corpus`, `IStrategy` or `caplog` are left to the prompt,
-because code cannot tell them from a word.
+such as `Snapshot`, `Corpus`, `IStrategy` or `caplog` are left to the names
+step and the decision, because code cannot tell them from a word.
 
 Lambdas and external symbols are not names this code owns. No package segment,
 affix or case variant is inferred for this drop; it stays exact even though
 [term lookup](#term-lookup) ignores case. No existing artifact records command-line
-flag names, so flags rely on the prompt alone. Each drop is an accepted
-decision journaled in `rejected.jsonl` as `glossary_code_name_omitted`, with
-the name in its reason and a link to the exact exchange, on live and cached
-answers alike. A window of only code names is accepted and publishes nothing.
-Code names never enter the provider request. The changed prompt changes the
-exact request bytes, so earlier cached generation answers are not reused.
+flag names, so flags rely on the names step and the decision. Each drop
+is an accepted decision journaled in `rejected.jsonl` as
+`glossary_code_name_omitted`, with the name in its reason ("name is a code
+declaration: …") and a link to the exact exchange, on live and cached
+answers alike. A window of only code names is accepted and keeps nothing.
+Code names never enter the provider request.
 
 ## Visible comparison scope
 

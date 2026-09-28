@@ -102,13 +102,13 @@ func TestSeparateGlossaryKeepsAcceptedRowsMainOriginsAndWarmCache(t *testing.T) 
 	main := `{"rows":[{"key":"r1","line":"OHLCV gives market values."},{"key":"r2","line":"BadTerm belongs to a refused row."}]}`
 	base.complete = func(prepared llm.Prepared) (llm.Completion, error) {
 		user := inputUser(t, prepared)
-		if strings.Contains(user, `"rows":`) {
-			return completed(main)
+		if answer, ok := glossaryAnswer(user, written("OHLCV", "BadTerm"), explainedBy(map[string]string{"OHLCV": "Open, high, low, close and volume market values."})); ok {
+			if strings.Contains(user, "BadTerm") {
+				t.Fatal("refused prose entered glossary")
+			}
+			return completed(answer)
 		}
-		if strings.Contains(user, "BadTerm") {
-			t.Fatal("refused prose entered glossary")
-		}
-		return completed(`{"terms":[{"name":"OHLCV","kind":"acronym","explanation":"Open, high, low, close and volume market values.","rows":["p1"]}]}`)
+		return completed(main)
 	}
 	call := llm.Call[acceptedRows]{State: []byte(`{"contract":"test.rows.v1"}`), Limits: llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 16000}, Prompt: llm.Prompt{User: `{"rows":[{"key":"r1","path":"api.py"},{"key":"r2","path":"bad.py"}]}`, ResponseExample: `{"rows":[{"key":"r1","line":"<computed>"}]}`}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
@@ -123,7 +123,7 @@ func TestSeparateGlossaryKeepsAcceptedRowsMainOriginsAndWarmCache(t *testing.T) 
 		if string(outcome.Response) != main || len(collector.Snapshot()) != 0 || len(collector.pending) != 1 {
 			t.Fatal("main result or accepted scope changed")
 		}
-		if err := collector.Generate(t.Context(), executor, wrapper); err != nil {
+		if err := collector.Generate(t.Context(), executor, wrapper, everyConcept(), ""); err != nil {
 			t.Fatal(err)
 		}
 		got := collector.Snapshot()
@@ -133,7 +133,7 @@ func TestSeparateGlossaryKeepsAcceptedRowsMainOriginsAndWarmCache(t *testing.T) 
 		}
 		if run == 0 {
 			want = got
-		} else if !reflect.DeepEqual(want, got) || base.calls != 2 {
+		} else if !reflect.DeepEqual(want, got) || base.calls != 3 {
 			t.Fatalf("warm glossary changed or re-bought: %+v calls=%d", got, base.calls)
 		}
 	}
@@ -209,14 +209,12 @@ func TestGlossaryReplayUsesUpdatedAcceptedProseAndOriginalRequestOrigin(t *testi
 	main := `{"rows":[{"key":"r1","line":"Alpha is the original concept."}]}`
 	base.complete = func(prepared llm.Prepared) (llm.Completion, error) {
 		user := inputUser(t, prepared)
-		if strings.Contains(user, `"rows":`) {
-			return completed(main)
+		if answer, ok := glossaryAnswer(user, written("Alpha", "Beta"), explainedBy(map[string]string{"Alpha": "The original concept.", "Beta": "The updated concept."})); ok {
+			return completed(answer)
 		}
-		if strings.Contains(user, "Beta") {
-			return completed(`{"terms":[{"name":"Beta","kind":"domain","explanation":"The updated concept.","rows":["p1"]}]}`)
-		}
-		return completed(`{"terms":[{"name":"Alpha","kind":"domain","explanation":"The original concept.","rows":["p1"]}]}`)
+		return completed(main)
 	}
+	decider := everyConcept()
 	call := llm.Call[acceptedRows]{State: []byte(`{"contract":"replay.prose.v1"}`), Limits: llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 16000}, Prompt: llm.Prompt{User: `{"rows":[{"key":"r1","path":"api.py"}]}`, ResponseExample: `{"rows":[{"key":"r1","line":"<computed>"}]}`}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 	first := NewCollector([]string{"api.py"})
@@ -224,7 +222,7 @@ func TestGlossaryReplayUsesUpdatedAcceptedProseAndOriginalRequestOrigin(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := first.Generate(t.Context(), executor, base); err != nil {
+	if err := first.Generate(t.Context(), executor, base, decider, ""); err != nil {
 		t.Fatal(err)
 	}
 	main = `{"rows":[{"key":"r1","line":"Beta is the updated concept."}]}`
@@ -240,11 +238,11 @@ func TestGlossaryReplayUsesUpdatedAcceptedProseAndOriginalRequestOrigin(t *testi
 	if err != nil || !warm.Cached {
 		t.Fatalf("replay did not replace the original answer: %v %v", warm.Cached, err)
 	}
-	if err := current.Generate(t.Context(), executor, base); err != nil {
+	if err := current.Generate(t.Context(), executor, base, decider, ""); err != nil {
 		t.Fatal(err)
 	}
 	old, got := first.Snapshot(), current.Snapshot()
-	if len(got) != 1 || got[0].Name != "Beta" || len(old) != 1 || old[0].Name != "Alpha" || !reflect.DeepEqual(got[0].Origins, old[0].Origins) || base.calls != 4 {
+	if len(got) != 1 || got[0].Name != "Beta" || len(old) != 1 || old[0].Name != "Alpha" || !reflect.DeepEqual(got[0].Origins, old[0].Origins) || base.calls != 6 {
 		t.Fatalf("replayed prose kept stale glossary or changed its main origin: old=%+v new=%+v calls=%d", old, got, base.calls)
 	}
 }
@@ -305,52 +303,65 @@ func TestOptionalOutputFailureSplitsCompleteProseAndKeepsSibling(t *testing.T) {
 	var seen sync.Map
 	base.complete = func(prepared llm.Prepared) (llm.Completion, error) {
 		user := inputUser(t, prepared)
+		if strings.Contains(user, `"terms":`) {
+			answer, _ := glossaryAnswer(user, nil, explainedBy(map[string]string{"Alpha": "The first concept."}))
+			return completed(answer)
+		}
 		if strings.Contains(user, "Alpha") && strings.Contains(user, "Beta") {
 			return llm.Completion{}, llm.NewResourceLimitError(llm.ResourceLimitError{Kind: llm.ResourceLimitOutputTokens, Limit: 8000})
 		}
 		if strings.Contains(user, "Alpha") {
 			seen.Store("Alpha", true)
-			return completed(`{"terms":[{"name":"Alpha","kind":"domain","explanation":"The first concept.","rows":["p1"]}]}`)
+			return completed(`{"names":["Alpha"]}`)
 		}
 		seen.Store("Beta", true)
-		return completed(`{"terms":[`)
+		return completed(`{"names":[`)
 	}
-	if err := c.Generate(t.Context(), llm.Executor{}, base); err != nil {
+	if err := c.Generate(t.Context(), llm.Executor{}, base, everyConcept(), ""); err != nil {
 		t.Fatal(err)
 	}
 	count := 0
 	seen.Range(func(_, _ any) bool { count++; return true })
-	if count != 2 || len(c.pending) != 2 || len(c.Snapshot()) != 1 || base.calls != 3 || base.limits.MaxOutputTokens != glossaryOutputTokens {
+	// The refused pair, its two halves and one explanation request.
+	if count != 2 || len(c.pending) != 2 || len(c.Snapshot()) != 1 || base.calls != 4 || base.limits.MaxOutputTokens != glossaryOutputTokens {
 		t.Fatalf("optional refusal lost sibling: seen=%d %+v", count, c.Snapshot())
 	}
 }
 
-func TestTermsRequireExactOccurrenceAndScopedSource(t *testing.T) {
-	call, err := generationCall([]proseSource{{Texts: []string{"커스텀 Matcher를 사용합니다."}, Sources: []Source{{Path: "a.py"}}}, {Texts: []string{"Storage is separate."}, Sources: []Source{{Path: "b.py"}}}}, nil)
+// The names step keeps each name that the window's prose writes, once.
+func TestNamesKeepEachNameTheProseWritesOnce(t *testing.T) {
+	call, err := namesCall([]proseSource{{Texts: []string{"커스텀 Matcher를 사용합니다."}, Sources: []Source{{Path: "a.py"}}}, {Texts: []string{"Storage is separate."}, Sources: []Source{{Path: "b.py"}}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := call.DecodeValidate([]byte(`{"terms":[{"name":"Matcher","kind":"domain","explanation":"A configurable comparison concept.","rows":["p1","p1","p999"]},{"name":"Storage","kind":"domain","explanation":"Wrong source.","rows":["p1"]},{"name":"Missing","kind":"domain","explanation":"Not in prose.","rows":["p2"]},{"name":"Matcher","kind":"domain","explanation":"A different meaning.","rows":["p1"]}]}`))
-	if err != nil || len(got.Terms) != 2 || len(got.Rejections) != 2 || len(got.Terms[0].sources) != 1 {
-		t.Fatalf("metadata authority: %+v %v", got, err)
+	got, err := call.DecodeValidate([]byte(`{"names":["Matcher","Storage","Missing","Matcher"," Matcher "]}`))
+	if err != nil || !reflect.DeepEqual(got.Names, []string{"Matcher", "Storage"}) {
+		t.Fatalf("names: %+v %v", got, err)
 	}
-	for _, term := range got.Terms {
-		if !reflect.DeepEqual(term.rows, []string{"p1"}) {
-			t.Fatal(term)
-		}
+	if len(got.Rejections) != 1 || got.Rejections[0].Reason != "the name is not written in the prose" || got.Rejections[0].Count != 1 {
+		t.Fatalf("an unwritten name was not journaled: %+v", got.Rejections)
 	}
-	if empty, err := call.DecodeValidate([]byte(`{"terms":[]}`)); err != nil || len(empty.Terms) != 0 {
-		t.Fatal("valid empty glossary refused")
+	if empty, err := call.DecodeValidate([]byte(`{"names":[]}`)); err != nil || len(empty.Names) != 0 {
+		t.Fatal("a valid empty answer was refused")
+	}
+	if _, err := call.DecodeValidate([]byte(`{"names":["Missing"]}`)); err == nil {
+		t.Fatal("an answer none of whose names the prose writes was accepted")
 	}
 }
 
-func TestGenerationSelectsProseAndRestoresEveryOriginalSourceAndOrigin(t *testing.T) {
+// Code, not the model, attaches every prose row that writes a name; an
+// explanation carries the complete sources and origins of all of them.
+func TestExplanationRestoresEveryRowThatWritesTheName(t *testing.T) {
 	items := []proseSource{
 		{Texts: []string{"The OTLP trace collector receives spans."}, Sources: []Source{{Path: "otel.go", Line: 91}, {Path: "main.go", Line: 21}, {Path: "README.md", Line: 62}}, Origin: Origin{RequestSHA256: strings.Repeat("a", 64), Row: "r26"}},
 		{Texts: []string{"The OTLP trace collector is configurable."}, Sources: []Source{{Path: "main.go", Line: 16}}, Origin: Origin{RequestSHA256: strings.Repeat("b", 64), Row: "r15"}},
 		{Texts: []string{"Unrelated storage."}, Sources: []Source{{Path: "storage.go", Line: 7}}, Origin: Origin{RequestSHA256: strings.Repeat("c", 64), Row: "r1"}},
 	}
-	call, err := generationCall(items, nil)
+	names := gatherNames(items, []string{"OTLP trace collector"})
+	if len(names) != 1 || !reflect.DeepEqual(names[0].Rows, []int{0, 1}) {
+		t.Fatalf("the name's rows: %+v", names)
+	}
+	call, err := explainCall(items, names)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,22 +370,26 @@ func TestGenerationSelectsProseAndRestoresEveryOriginalSourceAndOrigin(t *testin
 			Ref  string
 			Text []string
 		}
+		Terms []struct {
+			Ref, Name string
+			Rows      []string
+		}
 	}
-	if json.Unmarshal([]byte(call.Prompt.User), &input) != nil || len(input.Prose) != 3 || input.Prose[0].Ref != "p1" ||
-		strings.Contains(call.Prompt.User, "source_options") || strings.Contains(call.Prompt.User, `"g1"`) || strings.Contains(call.Prompt.ResponseExample, `"sources"`) {
-		t.Fatalf("generation retained competing source namespace: %s / %s", call.Prompt.User, call.Prompt.ResponseExample)
+	if json.Unmarshal([]byte(call.Prompt.User), &input) != nil || len(input.Prose) != 2 || len(input.Terms) != 1 || !reflect.DeepEqual(input.Terms[0].Rows, []string{"p1", "p2"}) ||
+		strings.Contains(call.Prompt.User, "Unrelated") || strings.Contains(call.Prompt.User, "otel.go") {
+		t.Fatalf("the explanation request is not the name's own rows: %s", call.Prompt.User)
 	}
-	got, err := call.DecodeValidate([]byte(`{"terms":[{"name":"OTLP trace collector","kind":"protocol","explanation":"The configured trace destination.","rows":["p2","p1","p2","p3","g1"]},{"name":"Unrelated","kind":"domain","explanation":"Legacy source refs must not be repaired.","sources":["g3"]}]}`))
-	if err != nil || len(got.Terms) != 1 || len(got.Rejections) != 2 {
-		t.Fatalf("closed prose selection: %+v %v", got, err)
+	got, err := call.DecodeValidate([]byte(`{"terms":[{"ref":"t1","explanation":"The configured trace destination."},{"ref":"g1","explanation":"A legacy ref."}]}`))
+	if err != nil || len(got.Explanations) != 1 || len(got.Rejections) != 1 {
+		t.Fatalf("closed term refs: %+v %v", got, err)
 	}
 	collector := NewCollector([]string{"otel.go", "main.go", "README.md", "storage.go"})
-	collector.acceptDefinitions(items, got.Terms)
+	collector.acceptDefinitions(items, names, got.Explanations)
 	definitions := collector.Snapshot()
 	wantSources := normalizeSources(append(append([]Source{}, items[0].Sources...), items[1].Sources...))
 	if len(definitions) != 1 || !reflect.DeepEqual(definitions[0].Sources, wantSources) ||
 		!reflect.DeepEqual(definitions[0].Origins, normalizeOrigins([]Origin{items[0].Origin, items[1].Origin})) {
-		t.Fatalf("a selected prose row lost original sources or borrowed another row: %+v", definitions)
+		t.Fatalf("a row that writes the name lost its sources, or another row lent its own: %+v", definitions)
 	}
 }
 
@@ -488,7 +503,8 @@ func TestNoSourceModeAndEmptyAcceptancePreserveDomain(t *testing.T) {
 
 func TestProsePlanningRetainsEveryCompleteOriginalText(t *testing.T) {
 	input := []proseSource{{Texts: []string{strings.Repeat("complete original paragraph ", 5000), "Second complete text."}, Sources: []Source{{Path: "a.py", Line: 4}}, Origin: Origin{Row: "r1"}}}
-	windows, err := planProse(t.Context(), &testProvider{}, input)
+	spec := runSpec[proseSource, namesResult]{call: func(window []proseSource) (llm.Call[namesResult], error) { return namesCall(window, nil) }, split: splitProse}
+	windows, err := planWindows(t.Context(), &testProvider{}, input, spec)
 	if err != nil || len(windows) != 1 || !reflect.DeepEqual(windows[0], input) {
 		t.Fatalf("planning: %d %v", len(windows), err)
 	}
@@ -590,63 +606,30 @@ func TestCodeNamesAreDroppedByExactNameAndJournaled(t *testing.T) {
 		t.Fatalf("code names: got %v, want %v", code, want)
 	}
 	items := []proseSource{{Texts: []string{"Set RABBITMQ_URL in main.go; ExchangeWS streams each candle of the Exchange as JSON with funding_rate and ROI."}, Sources: []Source{{Path: "cmd/app/main.go"}}}}
-	call, err := generationCall(items, code)
+	call, err := namesCall(items, code)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain, err := generationCall(items, nil)
-	if err != nil || !reflect.DeepEqual(call.Prompt, plain.Prompt) || strings.Contains(call.Prompt.ResponseExample, "identifier") {
+	plain, err := namesCall(items, nil)
+	if err != nil || !reflect.DeepEqual(call.Prompt, plain.Prompt) {
 		t.Fatalf("code names changed the provider request: %+v %v", call.Prompt, err)
 	}
-	got, err := call.DecodeValidate([]byte(`{"terms":[
-		{"name":"RABBITMQ_URL","kind":"domain","explanation":"The broker address variable.","rows":["p1"]},
-		{"name":"main.go","kind":"format","explanation":"The program entry file.","rows":["p1"]},
-		{"name":"ExchangeWS","kind":"domain","explanation":"The streaming exchange class.","rows":["p1"]},
-		{"name":"funding_rate","kind":"domain","explanation":"The funding rate candle type.","rows":["p1"]},
-		{"name":"candle","kind":"domain","explanation":"One time bucket of price and volume.","rows":["p1"]},
-		{"name":"Exchange","kind":"domain","explanation":"A trading venue.","rows":["p1"]},
-		{"name":"JSON","kind":"format","explanation":"JavaScript Object Notation.","rows":["p1"]},
-		{"name":"ROI","kind":"acronym","explanation":"Return on investment.","rows":["p1"]},
-		{"name":"ROI","kind":"identifier","explanation":"A retired kind.","rows":["p1"]},
-		{"name":"ROI","explanation":"No kind at all.","rows":["p1"],"note":"unused"}]}`))
-	var published []string
-	for _, term := range got.Terms {
-		published = append(published, term.candidate.Name)
-	}
-	if err != nil || !reflect.DeepEqual(published, []string{"candle", "Exchange", "JSON", "ROI", "ROI"}) {
-		t.Fatalf("published terms: %v %+v %v", published, got, err)
+	got, err := call.DecodeValidate([]byte(`{"names":["RABBITMQ_URL","main.go","ExchangeWS","funding_rate","candle","Exchange","JSON","ROI","ROI"]}`))
+	if err != nil || !reflect.DeepEqual(got.Names, []string{"candle", "Exchange", "JSON", "ROI"}) {
+		t.Fatalf("names kept: %+v %v", got, err)
 	}
 	wantJournal := []llm.ResponseRejection{
-		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[0]"}, Reason: "term names a code environment key: RABBITMQ_URL"},
-		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[1]"}, Reason: "term names a code file: main.go"},
-		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[2]"}, Reason: "term names a code declaration: ExchangeWS"},
-		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"terms[3]"}, Reason: "term names a code declaration: funding_rate"},
-		{Kind: "glossary_term_rejected", Count: 1, Samples: []string{"terms[8]"}, Reason: "term declares itself an identifier, not a concept"},
+		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"names[0]"}, Reason: "name is a code environment key: RABBITMQ_URL"},
+		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"names[1]"}, Reason: "name is a code file: main.go"},
+		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"names[2]"}, Reason: "name is a code declaration: ExchangeWS"},
+		{Kind: "glossary_code_name_omitted", Count: 1, Samples: []string{"names[3]"}, Reason: "name is a code declaration: funding_rate"},
 	}
 	if !reflect.DeepEqual(got.Rejections, wantJournal) {
 		t.Fatalf("journal: %+v", got.Rejections)
 	}
-
-	only, err := call.DecodeValidate([]byte(`{"terms":[{"name":"RABBITMQ_URL","kind":"domain","explanation":"The broker address variable.","rows":["p1"]}]}`))
-	if err != nil || len(only.Terms) != 0 || len(only.Rejections) != 1 || only.Rejections[0].Kind != "glossary_code_name_omitted" {
-		t.Fatalf("a window of only code names must be accepted and publish nothing: %+v %v", only, err)
-	}
-	if _, err := call.DecodeValidate([]byte(`{"terms":[{"name":"ROI","kind":"identifier","explanation":"A retired kind.","rows":["p1"]}]}`)); err == nil {
-		t.Fatal("a window whose only term has the retired identifier kind was accepted")
-	}
-}
-
-func TestGeneratePromptDefinesEveryKindOnce(t *testing.T) {
-	for _, kind := range []TermKind{KindAcronym, KindDomain, KindProtocol, KindFormat} {
-		if strings.Count(generatePrompt, "- "+string(kind)+":") != 1 {
-			t.Fatalf("generate prompt does not define %q exactly once", kind)
-		}
-	}
-	if !strings.Contains(generatePrompt, "choose exactly one kind") || strings.Contains(generatePrompt, "identifier") {
-		t.Fatal("generate prompt does not ask for one closed concept kind")
-	}
-	if !strings.Contains(generatePrompt, "Explain domain and concept terms only") {
-		t.Fatal("generate prompt does not exclude code names")
+	only, err := call.DecodeValidate([]byte(`{"names":["RABBITMQ_URL"]}`))
+	if err != nil || len(only.Names) != 0 || len(only.Rejections) != 1 || only.Rejections[0].Kind != "glossary_code_name_omitted" {
+		t.Fatalf("a window of only code names must be accepted and keep nothing: %+v %v", only, err)
 	}
 }
 
@@ -655,11 +638,11 @@ func TestGeneratePromptDefinesEveryKindOnce(t *testing.T) {
 func TestGlossaryKeepsAnAnswerWithInvalidMeasurements(t *testing.T) {
 	base := &testProvider{}
 	base.complete = func(prepared llm.Prepared) (llm.Completion, error) {
-		if strings.Contains(inputUser(t, prepared), `"rows":`) {
+		answer, ok := glossaryAnswer(inputUser(t, prepared), written("OHLCV"), explainedBy(map[string]string{"OHLCV": "Open, high, low, close and volume market values."}))
+		if !ok {
 			return completed(`{"rows":[{"key":"r1","line":"OHLCV gives market values."}]}`)
 		}
-		return llm.Completion{Response: []byte(`{"terms":[{"name":"OHLCV","kind":"acronym","explanation":"Open, high, low, close and volume market values.","rows":["p1"]}]}`),
-			FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 0, InputTokens: -1}}, nil
+		return llm.Completion{Response: []byte(answer), FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 0, InputTokens: -1}}, nil
 	}
 	call := llm.Call[acceptedRows]{State: []byte(`{"contract":"test.rows.v1"}`), Limits: llm.Limits{MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxOutputTokens: 16000}, Prompt: llm.Prompt{User: `{"rows":[{"key":"r1","path":"api.py"}]}`, ResponseExample: `{"rows":[{"key":"r1","line":"<computed>"}]}`}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
@@ -668,7 +651,7 @@ func TestGlossaryKeepsAnAnswerWithInvalidMeasurements(t *testing.T) {
 	if _, err := llm.ExecuteJSON(t.Context(), executor, wrapper, call); err != nil {
 		t.Fatal(err)
 	}
-	if err := collector.Generate(t.Context(), executor, wrapper); err != nil {
+	if err := collector.Generate(t.Context(), executor, wrapper, everyConcept(), ""); err != nil {
 		t.Fatalf("an answer with clamped measurements ended the glossary: %v", err)
 	}
 	if got := collector.Snapshot(); len(got) != 1 || got[0].Name != "OHLCV" {

@@ -549,12 +549,28 @@ func TestReduceStageRefusalDoesNotSwallowLocalOrPersistenceFailures(t *testing.T
 func TestReduceCompleteCatalogueHasNoCandidateCountQuota(t *testing.T) {
 	var items []Candidate
 	for i := range 605 {
-		items = append(items, termCandidate(fmt.Sprintf("Term%03d", i/2), "An original source-bound explanation.", fmt.Sprintf("sources/%03d.py", i)))
+		items = append(items, termCandidate(fmt.Sprintf("Term%03d", i/2), fmt.Sprintf("Original source-bound explanation %d.", i), fmt.Sprintf("sources/%03d.py", i)))
 	}
 	provider := &reductionProvider{}
 	got, err := Reduce(t.Context(), llm.Executor{}, provider, items)
 	if err != nil || len(got.Entries) != len(items) || provider.calls != 1 || got.PartialComparison {
 		t.Fatalf("complete fitting catalogue split or lost entries: entries=%d calls=%d partial=%v err=%v", len(got.Entries), provider.calls, got.PartialComparison, err)
+	}
+}
+
+// The same name with the same explanation, observed in two places, is one
+// definition with both places; it needs no comparison.
+func TestReduceSameNameAndExplanationIsOneDefinition(t *testing.T) {
+	first, second := termCandidate("WAL", "The write-ahead log.", "a.py"), termCandidate("WAL", "The write-ahead log.", "b.py")
+	second.Origins = []Origin{{RequestSHA256: "another-request", Row: "r7"}}
+	provider := &reductionProvider{merge: true}
+	got, err := Reduce(t.Context(), llm.Executor{}, provider, []Candidate{first, second})
+	if err != nil || provider.calls != 0 || len(got.Entries) != 1 || len(got.Entries[0].Variants) != 1 {
+		t.Fatalf("one definition was kept twice or compared: calls=%d got=%+v err=%v", provider.calls, got, err)
+	}
+	variant := got.Entries[0].Variants[0]
+	if !reflect.DeepEqual(variant.Sources, []Source{{Path: "a.py", Line: 12}, {Path: "b.py", Line: 12}}) || len(variant.Origins) != 2 {
+		t.Fatalf("the definition lost a place it was observed: %+v", variant)
 	}
 }
 
