@@ -170,11 +170,10 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 		if !joint.Same || joint.SourceKind != "catalogue" {
 			continue
 		}
-		from, fromOK := at[joint.From.TargetID]
-		to, toOK := at[joint.To.TargetID]
-		if !fromOK || !toOK {
-			continue
-		}
+		// atlas.Validate holds a joint's targets to the atlas's, and every
+		// target is projected. A boundary refused before it became an
+		// input (a name that cannot stand) has no operation to keep a peer.
+		from, to := at[joint.From.TargetID], at[joint.To.TargetID]
 		row, peer := projected[from].operationOf[joint.From.BoundaryID], projected[to].operationOf[joint.To.BoundaryID]
 		if row == "" || peer == "" {
 			continue
@@ -766,20 +765,22 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	wordless := make(map[int]bool)
 	declaredOn := func(boundary atlas.Boundary) *DeclaredOn {
 		on := boundary.DeclaredOn
-		if on == nil || on.Path == "" || on.LineNo < 1 {
+		if on == nil {
 			return nil
 		}
-		text := on.Text
-		if !validText(text) {
-			text = ""
-		}
-		return &DeclaredOn{Location: programindex.Location{Path: on.Path, Line: on.LineNo, Column: max(1, on.Column)}, Text: text}
+		return &DeclaredOn{Location: programindex.Location{Path: on.Path, Line: on.LineNo, Column: max(1, on.Column)}, Text: on.Text}
 	}
 	// An entry whose handler is not established is one input per kind,
 	// words as written and declaring caller: the same option declared at
 	// two sites of one function is one option, and the first site stands
 	// for it.
 	declared := make(map[string]int)
+	// standsFor is, for a boundary whose operation was folded into another
+	// (the same handler-less input at a second site, a hand-over joined to
+	// its word entry, a handler registered twice under one name), the
+	// boundary whose operation stands for it: a joint naming the first
+	// names the second's operation.
+	standsFor := make(map[string]string)
 	for _, boundary := range target.Boundaries {
 		kind := OperationKind(boundary.Kind)
 		if boundary.Direction != atlas.DirectionIn || kind == "" {
@@ -822,7 +823,10 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			}
 			if at, seen := declared[key]; seen {
 				if locationBefore(&location, &operations[at].Location) {
+					standsFor[operations[at].ID] = operation.ID
 					operations[at] = operation
+				} else {
+					standsFor[operation.ID] = operations[at].ID
 				}
 				continue
 			}
@@ -886,6 +890,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			entry.Summary = operation.Summary
 		}
 		joinedInto[at], dropped[position] = true, true
+		standsFor[operation.ID] = entry.ID
 	}
 	if len(dropped) > 0 {
 		kept := operations[:0]
@@ -901,7 +906,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	// presenting the declaration as a second route. Multiple observed routes
 	// on the same handler remain distinct.
 	uniqueOperations := operations[:0]
-	sameOperation := make(map[string]bool)
+	sameOperation := make(map[string]string)
 	for _, operation := range operations {
 		if operation.ID == operation.SubjectID && boundRequests[operation.SubjectID] {
 			continue
@@ -909,18 +914,30 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		// The same handler registered twice under one name (`GET("")` and
 		// `GET("/")`) is one operation; the first site stands for it.
 		key := strings.Join([]string{operation.Kind, operation.Name, operation.SubjectID, operation.Address}, "\x00")
-		if operation.SubjectID != "" && sameOperation[key] {
+		if first, seen := sameOperation[key]; operation.SubjectID != "" && seen {
+			standsFor[operation.ID] = first
 			continue
 		}
-		sameOperation[key] = true
+		sameOperation[key] = operation.ID
 		uniqueOperations = append(uniqueOperations, operation)
 	}
 	operations = uniqueOperations
 	sort.Slice(operations, func(i, j int) bool { return operationKey(operations[i]) < operationKey(operations[j]) })
-	operationOf := make(map[string]string, len(operations))
+	operationOf := make(map[string]string, len(operations)+len(standsFor))
 	for position := range operations {
 		operationOf[operations[position].ID] = compactOrdinal("o", position)
 		operations[position].ID = compactOrdinal("o", position)
+	}
+	for folded := range standsFor {
+		kept := folded
+		for {
+			next, ok := standsFor[kept]
+			if !ok {
+				break
+			}
+			kept = next
+		}
+		operationOf[folded] = operationOf[kept]
 	}
 	offMap, err := projectOffMap(target, unreached, func(symbol atlas.Symbol) (string, bool) {
 		key := sourceRefs[symbol.ObjectID]
@@ -936,10 +953,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		return projectedTarget{}, err
 	}
 	var unsure []UnsureCall
+	// atlas.Validate holds every unsure call, idiom and declared-on site to
+	// its shape.
 	for _, call := range target.Unsure {
-		if !validText(call.Symbol) || call.Path == "" || call.LineNo < 1 {
-			continue
-		}
 		location := programindex.Location{Path: call.Path, Line: call.LineNo, Column: max(1, call.Column)}
 		subject := subjectOf(call.ObjectID)
 		if subject == "" {
@@ -949,11 +965,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	var idioms []Idiom
 	for _, idiom := range target.Idioms {
-		kind := OperationKind(idiom.Kind)
-		if kind == "" || !validText(idiom.Symbol) || idiom.Entries < 1 || idiom.Calls < idiom.Entries {
-			continue
-		}
-		row := Idiom{Symbol: idiom.Symbol, Kind: kind, Entries: idiom.Entries, Calls: idiom.Calls}
+		row := Idiom{Symbol: idiom.Symbol, Kind: OperationKind(idiom.Kind), Entries: idiom.Entries, Calls: idiom.Calls}
 		for _, id := range idiom.ObjectIDs {
 			if subject := subjectOf(id); subject != "" && !slices.Contains(row.SubjectIDs, subject) {
 				row.SubjectIDs = append(row.SubjectIDs, subject)

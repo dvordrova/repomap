@@ -70,20 +70,13 @@ func (builder *pageBuilder) launchReading(index *groupindex.Index, partOf func(s
 	for _, root := range launch.Roots {
 		result.Roots = append(result.Roots, decls.of(root))
 	}
+	// The walk reached each function from one it had reached before, so the
+	// chain of Via edges ends at a root.
 	chain := func(function groupindex.LaunchFunction) []int {
-		var subjects []string
-		for seen := 0; seen < 64; seen++ {
+		subjects := []string{function.SubjectID}
+		for function.Via >= 0 {
+			function = launch.Functions[at[index.StructuralEdges[function.Via].FromSubjectID]]
 			subjects = append([]string{function.SubjectID}, subjects...)
-			if function.Via < 0 {
-				break
-			}
-			from := index.StructuralEdges[function.Via].FromSubjectID
-			position, ok := at[from]
-			if !ok {
-				subjects = append([]string{from}, subjects...)
-				break
-			}
-			function = launch.Functions[position]
 		}
 		positions := make([]int, len(subjects))
 		for i, subject := range subjects {

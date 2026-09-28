@@ -22,6 +22,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
@@ -599,6 +601,13 @@ type Target struct {
 	Unsure []UnsureCall `json:"unsure,omitempty"`
 	Idioms []Idiom      `json:"idioms,omitempty"`
 }
+
+// The reasons a call is unsure: its entry question had no decided answer,
+// or none of the words it is given can name an entry.
+const (
+	UnsureUndecided = "undecided"
+	UnsureNoWords   = "no_words"
+)
 
 // UnsureCall is one call that may declare an input and was not decided.
 // Reason is "undecided" (the call's entry question had no decided answer)
@@ -1583,6 +1592,19 @@ func Validate(value Atlas) error {
 			if invalidText(strings.ReplaceAll(strings.ReplaceAll(boundary.Line, "\n", ""), "\r", "")) || boundary.Values == nil {
 				return fmt.Errorf("atlas: boundary %q is invalid", boundary.ID)
 			}
+			if on := boundary.DeclaredOn; on != nil && (on.Path == "" || on.LineNo < 1 || on.Column < 0 || on.Text != "" && !ValidName(on.Text)) {
+				return fmt.Errorf("atlas: boundary %q is declared on an invalid site", boundary.ID)
+			}
+		}
+		for _, call := range target.Unsure {
+			if call.Path == "" || call.LineNo < 1 || call.Column < 0 || !ValidName(call.Symbol) || call.Reason != UnsureUndecided && call.Reason != UnsureNoWords {
+				return fmt.Errorf("atlas: target %q has an invalid unsure call at %s:%d", target.ID, call.Path, call.LineNo)
+			}
+		}
+		for _, idiom := range target.Idioms {
+			if !ValidName(idiom.Symbol) || !slices.Contains(EntryKinds(), idiom.Kind) || idiom.Entries < 1 || idiom.Calls < idiom.Entries {
+				return fmt.Errorf("atlas: target %q has an invalid idiom %q", target.ID, idiom.Symbol)
+			}
 		}
 		boundaries[target.ID] = owned
 		boxesOf[target.ID] = boxes
@@ -1757,6 +1779,20 @@ func validSource(source string) bool {
 	default:
 		return false
 	}
+}
+
+// ValidName is a name a reader sees as written: not empty, no space around
+// it, valid UTF-8 and no control character.
+func ValidName(text string) bool {
+	if text == "" || text != strings.TrimSpace(text) || !utf8.ValidString(text) {
+		return false
+	}
+	for _, r := range text {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func invalidText(text string) bool {

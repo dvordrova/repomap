@@ -250,9 +250,6 @@ func (r *reader) bindSettingFields() {
 	if len(r.tableKinds) == 0 {
 		return
 	}
-	if r.boundaryIDs == nil {
-		r.boundaryIDs = make(map[string]string)
-	}
 	fields := r.taggedFields()
 	uses := r.structureUses(fields)
 	files := map[string]*lines.CallFile{}
@@ -262,9 +259,6 @@ func (r *reader) bindSettingFields() {
 		}
 		owner := field.owner
 		targets := runningTargets(owner)
-		if len(targets) == 0 {
-			targets = owner.TargetIDs
-		}
 		parent := owner.Parent
 		if field.member.Path != owner.Path {
 			parent = ""
@@ -289,7 +283,7 @@ func (r *reader) bindSettingFields() {
 				Values: slices.Clone(field.words), Words: slices.Clone(field.words), Direction: atlas.DirectionIn, GivenKind: atlas.BoundarySetting}}}
 		if use := uses[owner.ID]; use != nil && len(use.decodes) == 1 {
 			decode := use.decodes[0].site
-			state.on = &atlas.DeclaredOn{Path: decode.path, LineNo: decode.line, Column: decode.column, Text: r.sourceText(files, decode.path, decode.line, decode.column)}
+			state.on = r.declaredOnSite(files, decode.path, decode.line, decode.column)
 		}
 		r.boundaries[id] = state
 	}

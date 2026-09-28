@@ -278,9 +278,7 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 			for _, edge := range outer.Registering {
 				hop.Registering = appendCall(hop.Registering, decls.call(index.StructuralEdges[edge]))
 			}
-			if outer.HandOver >= 0 {
-				hop.Registering = appendCall(hop.Registering, decls.call(index.StructuralEdges[outer.HandOver]))
-			}
+			hop.Registering = appendCall(hop.Registering, decls.call(index.StructuralEdges[outer.HandOver]))
 			for _, edge := range outer.Edges {
 				hop.Calls = appendCall(hop.Calls, decls.call(index.StructuralEdges[edge]))
 			}

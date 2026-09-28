@@ -44,11 +44,7 @@ func (graph *reachGraph) outerInputs(sites []DispatchSite, reaches []Reach) {
 	handsOf := make([][]handed, len(reaches))
 	for position, reach := range reaches {
 		for _, subject := range reach.Subjects {
-			from, ok := graph.position[subject.SubjectID]
-			if !ok {
-				continue
-			}
-			for _, edge := range graph.hands[from] {
+			for _, edge := range graph.hands[graph.position[subject.SubjectID]] {
 				to := graph.to[edge]
 				if len(graph.handlers[to]) > 0 || !graph.executing[to] {
 					continue
@@ -81,10 +77,7 @@ func (graph *reachGraph) outerInputs(sites []DispatchSite, reaches []Reach) {
 		if len(site.OperationIDs) == 0 {
 			continue
 		}
-		declaration, known := graph.position[site.FromSubjectID]
-		if !known {
-			continue
-		}
+		declaration := graph.position[site.FromSubjectID]
 		for _, reached := range site.ReachedFrom {
 			if !slices.Contains(site.OperationIDs, reached.OperationID) {
 				site.Outer = append(site.Outer, OuterInput{OperationID: reached.OperationID, HandOver: -1, Edges: reached.Edges})

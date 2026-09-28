@@ -4,8 +4,10 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -310,5 +312,79 @@ func TestADispatchSiteNamesTheOuterInputsReachingIt(t *testing.T) {
 	}
 	if !site.Unexplained {
 		t.Fatal("the launch-only call from loadAppendOnlyFile is read as explained")
+	}
+}
+
+// A row of a client's table of commands keeps the server's input its peer
+// joint names, even when that boundary's operation was folded into another:
+// the server registers its handler twice under one name, and the second
+// site's boundary stands for the first's operation. A row names no input
+// the joint does not name, and no row draws a connection.
+func TestARowKeepsItsPeerThroughAFoldedBoundary(t *testing.T) {
+	at := func(path string, line int) *programindex.Location {
+		return &programindex.Location{Path: path, Line: line, Column: 1}
+	}
+	program := func(name string, objects ...programindex.ObjectInput) programindex.Index {
+		input := programindex.Input{ScenarioSHA256: strings.Repeat("a", 64), SourceSHA256: strings.Repeat("b", 64),
+			Target: programindex.TargetInput{Language: "c", Kind: "executable", Name: name, Selector: name,
+				Sources: []programindex.TargetSource{{FileRef: "f1", Path: objects[0].Location.Path}}, AnchorFileRef: "f1"},
+			Objects: objects, Relations: []programindex.RelationInput{}, Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: len(objects)}}
+		index, err := programindex.New(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return index
+	}
+	cli := program("cli", programindex.ObjectInput{SourceRef: "table", Kind: programindex.ObjectVariable, Name: "cmdTable", Visibility: programindex.VisibilityInternal, Location: at("cli.c", 3)})
+	srv := program("srv", programindex.ObjectInput{SourceRef: "get", Kind: programindex.ObjectFunction, Name: "getCommand", Visibility: programindex.VisibilityInternal, Location: at("srv.c", 9)})
+	rebound := rebindTestTargets(t, cli, srv)
+	cli, srv = rebound[0], rebound[1]
+	box := func(p programindex.Index, path string) atlas.Box {
+		return atlas.Box{ID: "p1", Dir: "p1", Title: path, Line: path + ".", Side: atlas.SideMid, Open: true, MemberIDs: []string{p.Objects[0].ID},
+			Files: []atlas.File{{Path: path, Line: "File.", Source: atlas.SourceModel, Open: true, Asked: true, Symbols: []atlas.Symbol{{ID: "s1", ObjectID: p.Target.ID + "." + p.Objects[0].ID, Name: p.Objects[0].Name, Kind: "function", LineNo: p.Objects[0].Location.Line, Column: 1}}}}}
+	}
+	row := func(id, word string, line int) atlas.Boundary {
+		return atlas.Boundary{ID: id, BoxID: "p1", ObjectID: cli.Target.ID + "." + cli.Objects[0].ID, Path: "cli.c", LineNo: line, Column: 5, Caller: "cmdTable",
+			Direction: atlas.DirectionIn, Kind: atlas.BoundaryCommand, Values: []string{word}, Name: word, Source: "model", HandlerUnknown: true}
+	}
+	handler := func(id string, line int) atlas.Boundary {
+		return atlas.Boundary{ID: id, BoxID: "p1", ObjectID: srv.Target.ID + "." + srv.Objects[0].ID, Path: "srv.c", LineNo: line, Column: 5, Caller: "main",
+			Direction: atlas.DirectionIn, Kind: atlas.BoundaryRequest, Values: []string{"get"}, Name: "get", Source: "fact"}
+	}
+	value := atlas.Atlas{Version: atlas.Version, Repository: "x", Revision: "abc", Diagnostics: []atlas.Diagnostic{},
+		Targets: []atlas.Target{
+			{ID: cli.Target.ID, Language: "c", Kind: "executable", Name: "cli", Root: ".", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
+				Boxes: []atlas.Box{box(cli, "cli.c")}, Boundaries: []atlas.Boundary{row("b-get", "get", 4), row("b-del", "del", 5)}},
+			{ID: srv.Target.ID, Language: "c", Kind: "executable", Name: "srv", Root: ".", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
+				Boxes: []atlas.Box{box(srv, "srv.c")}, Boundaries: []atlas.Boundary{handler("b-first", 20), handler("b-second", 30)}},
+		},
+		// The peers answer named the second registration for get and
+		// nothing for del.
+		Joints: []atlas.Joint{{ID: "j1", From: atlas.Endpoint{TargetID: cli.Target.ID, BoundaryID: "b-get"}, To: atlas.Endpoint{TargetID: srv.Target.ID, BoundaryID: "b-second"},
+			Value: "get", Same: true, Label: "sends get", Possible: true, SourceKind: "catalogue"}},
+	}
+	indexes, err := ProjectAtlas(map[string]programindex.Index{cli.Target.ID: cli, srv.Target.ID: srv}, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]Index{}
+	for _, index := range indexes {
+		byName[index.Target.Name] = index
+	}
+	server := byName["srv"]
+	if len(server.Operations) != 1 {
+		t.Fatalf("the server's get is %d operations: %+v", len(server.Operations), server.Operations)
+	}
+	sends := map[string][]PeerInput{}
+	for _, operation := range byName["cli"].Operations {
+		sends[operation.Name] = operation.Sends
+	}
+	if want := []PeerInput{{TargetID: srv.Target.ID, OperationID: server.Operations[0].ID, Label: "sends get"}}; !reflect.DeepEqual(sends["get"], want) || len(sends["del"]) != 0 {
+		t.Fatalf("rows send %+v", sends)
+	}
+	for _, index := range indexes {
+		for _, connection := range index.Connections {
+			t.Fatalf("a row draws a connection: %+v", connection)
+		}
 	}
 }

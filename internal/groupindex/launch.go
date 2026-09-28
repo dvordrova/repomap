@@ -136,7 +136,7 @@ func (graph *reachGraph) launch(reaches []Reach) Launch {
 		}
 	}
 	for position, call := range index.Unsure {
-		if function, ok := at[call.SubjectID]; ok && call.SubjectID != "" {
+		if function, ok := at[call.SubjectID]; ok {
 			result.Functions[function].Unsure = append(result.Functions[function].Unsure, position)
 		}
 	}

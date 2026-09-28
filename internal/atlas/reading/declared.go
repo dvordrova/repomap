@@ -113,6 +113,17 @@ func (r *reader) markDeclaredOn() {
 		if on == nil {
 			continue
 		}
-		state.on = &atlas.DeclaredOn{Path: on.Path, LineNo: on.Line, Column: on.Column, Text: r.sourceText(files, on.Path, on.Line, on.Column)}
+		state.on = r.declaredOnSite(files, on.Path, on.Line, on.Column)
 	}
+}
+
+// declaredOnSite is the call at a site that made an object, with the call as
+// written, folded to one line; a call whose text holds a character no line
+// can show is named by its site alone.
+func (r *reader) declaredOnSite(files map[string]*lines.CallFile, path string, line, column int) *atlas.DeclaredOn {
+	text := r.sourceText(files, path, line, column)
+	if !atlas.ValidName(text) {
+		text = ""
+	}
+	return &atlas.DeclaredOn{Path: path, LineNo: line, Column: column, Text: text}
 }

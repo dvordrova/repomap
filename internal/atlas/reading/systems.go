@@ -26,7 +26,8 @@ type packageSymbol struct {
 // dependency its targets' manifests record for it and every symbol of it
 // the program calls, with one call of each as written; each package is
 // remembered on its own. A package answered none, or not decided, has no
-// name, and no catalogue offers anything for it.
+// name, and no catalogue offers anything for it. packages are sorted, each
+// once (targetPackages.all).
 func (r *reader) readSystems(ctx context.Context, packages []string) (map[string]string, error) {
 	names := make(map[string]string)
 	if len(packages) == 0 {
@@ -68,13 +69,10 @@ func (r *reader) readSystems(ctx context.Context, packages []string) (map[string
 			}
 		}
 	}
-	sorted := slices.Clone(packages)
-	sort.Strings(sorted)
-	sorted = slices.Compact(sorted)
 	files := make(map[string]*lines.CallFile)
-	subjects := make(map[string]rowSubject, len(sorted))
-	rows := make([]table.Row, 0, len(sorted))
-	for i, pkg := range sorted {
+	subjects := make(map[string]rowSubject, len(packages))
+	rows := make([]table.Row, 0, len(packages))
+	for i, pkg := range packages {
 		byName := symbols[pkg]
 		called := make([]string, 0, len(byName))
 		for name := range byName {
@@ -104,7 +102,7 @@ func (r *reader) readSystems(ctx context.Context, packages []string) (map[string
 	if err != nil {
 		return nil, err
 	}
-	for i, pkg := range sorted {
+	for i, pkg := range packages {
 		name := "not decided"
 		if answer := answers[i].answer; answer != nil {
 			name = answer[lines.SystemColumn]

@@ -515,15 +515,15 @@ func gatherNames(items []proseSource, found []string) []glossaryName {
 				chosen, most = spelling, count
 			}
 		}
+		// validateNames kept only names the prose writes, so every one has
+		// a row.
 		name := glossaryName{Name: chosen}
 		for i, item := range items {
 			if slices.ContainsFunc(item.Texts, func(text string) bool { return mentionsTerm(text, chosen) }) {
 				name.Rows = append(name.Rows, i)
 			}
 		}
-		if len(name.Rows) > 0 {
-			names = append(names, name)
-		}
+		names = append(names, name)
 	}
 	sort.Slice(names, func(i, j int) bool {
 		a, b := FoldTerm(names[i].Name), FoldTerm(names[j].Name)

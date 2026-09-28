@@ -24,8 +24,8 @@ type wordCallRecord struct {
 const (
 	wordEntry     = "entry"
 	wordNone      = "none"
-	wordUndecided = "undecided"
-	wordNoWords   = "no_words"
+	wordUndecided = atlas.UnsureUndecided
+	wordNoWords   = atlas.UnsureNoWords
 )
 
 func (r *reader) recordWordCall(place atlas.Place, objectID string, line, column int, symbol, outcome, kind string) {

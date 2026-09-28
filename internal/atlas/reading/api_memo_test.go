@@ -70,6 +70,7 @@ func apiReader(t *testing.T, cache string, places []atlas.Place, categorizer llm
 		uses: map[string]*atlas.StageUse{}, started: map[string]time.Time{},
 		knowledge: map[string]*Knowledge{}, knowledgeRecords: map[knowledgeRecordKey]*Knowledge{}, knowledgeSubjects: map[string]*Knowledge{},
 		responseTables: map[string]rememberedTable{}, classifierResponses: map[string]rememberedClassifier{}, shared: &readerShared{},
+		boundaries: map[string]*boundaryState{}, boundaryIDs: map[string]string{},
 	}
 	for _, place := range places {
 		r.places[place.ID] = place

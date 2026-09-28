@@ -220,18 +220,12 @@ func (r *reader) applyStored() {
 // field answered setting one, declared by its structure (settings.go).
 func (r *reader) bindTableRows() {
 	defer r.bindSettingFields()
-	if r.boundaryIDs == nil {
-		r.boundaryIDs = make(map[string]string)
-	}
 	for _, place := range r.opts.Graph.Places {
 		kind := r.tableKinds[place.ID]
 		if place.Symbol == nil || kind == "" || kind == lines.APINone {
 			continue
 		}
 		targets := runningTargets(place)
-		if len(targets) == 0 {
-			targets = place.TargetIDs
-		}
 		decl := place.Symbol.Decl
 		for position, row := range place.Symbol.Rows {
 			var words []string

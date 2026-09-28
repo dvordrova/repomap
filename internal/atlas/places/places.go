@@ -368,17 +368,14 @@ func (b *builder) useTargetObjects(index programindex.Index) {
 		b.symbolOf[object.ID] = atlas.SymbolID(filePath, object.Location.Line, name)
 		if len(object.Rows) > 0 && b.tableRows[b.symbolOf[object.ID]] == nil {
 			var rows []atlas.TableRow
+			// ProgramIndex validates every row: it has literals, each with its
+			// location.
 			for _, row := range object.Rows {
-				var literals []atlas.RowLiteral
+				literals := make([]atlas.RowLiteral, 0, len(row.Literals))
 				for _, literal := range row.Literals {
-					if literal.Location == nil {
-						continue
-					}
 					literals = append(literals, atlas.RowLiteral{Field: literal.Field, Value: literal.Value, LineNo: literal.Location.Line, Column: literal.Location.Column})
 				}
-				if len(literals) > 0 {
-					rows = append(rows, atlas.TableRow{Literals: literals})
-				}
+				rows = append(rows, atlas.TableRow{Literals: literals})
 			}
 			b.tableRows[b.symbolOf[object.ID]] = rows
 		}
