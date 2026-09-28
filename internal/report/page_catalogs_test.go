@@ -166,3 +166,23 @@ func TestRegistrationCatalogueShowsOnlyAStatedMethod(t *testing.T) {
 		t.Fatalf("registration catalogue: %s", html)
 	}
 }
+
+// A word checked only inside another input's handler is that input's
+// sub-argument, never an input of its own: redis-server listed "5 commands"
+// named hashtable, int, limit, raw and zipmap, DEBUG OBJECT's encodings and
+// SORT's LIMIT, and the Inputs collection counted them.
+func TestASubArgumentIsNoInputOfItsOwn(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"},
+		Operations: []groupindex.Operation{{ID: "o1", Kind: "command", Name: "sort", Source: "model"}, {ID: "o2", Kind: "command", Name: "limit", Source: "model"}},
+		Launch:     groupindex.Launch{Nested: map[string]bool{"o2": true}}}
+	builder := &pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
+	section := &pageSection{ID: "t1", programTargetID: "t1"}
+	builder.fillSectionOperations(section)
+	var names []string
+	for _, row := range append(section.Requests, section.Activities...) {
+		names = append(names, row.Name)
+	}
+	if strings.Join(names, " ") != "sort" {
+		t.Fatalf("inputs listed: %v", names)
+	}
+}

@@ -14,6 +14,14 @@ func (builder *pageBuilder) fillSectionOperations(section *pageSection) {
 	var routeFacts []facts.Fact
 	if index := builder.graphIndex(section.programTargetID); index != nil {
 		for _, operation := range index.Operations {
+			// A word checked only inside another input's handler is that
+			// input's sub-argument (GroupsIndex Launch.Nested), read in its
+			// reading, never an input of its own: redis-server's "5 commands"
+			// hashtable, int, limit, raw and zipmap were DEBUG OBJECT's
+			// encodings and SORT's LIMIT.
+			if index.Launch.Nested[operation.ID] {
+				continue
+			}
 			// An input whose handler is not established is no route of a
 			// handler.
 			if fact, ok := builder.factsByID[operation.FactID]; ok && section.FactsAvailable && operation.Kind == "request" && fact.Kind == facts.KindRegistration && !operation.HandlerUnknown {
