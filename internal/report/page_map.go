@@ -352,6 +352,8 @@ func scopeTargetMapIDs(view *pageMap, targetID string) {
 		node.Neighbours = mapIDs(node.Neighbours)
 		node.Trace = mapIDs(node.Trace)
 		node.InputPath = remapInputPath(node.InputPath, mapID)
+		node.Catalogue = remapCatalogue(node.Catalogue, mapID)
+		node.Launch = remapLaunch(node.Launch, mapID)
 		node.Dispatch = remapSiteReadings(node.Dispatch, mapID)
 		for alias := range node.Aliases {
 			node.Aliases[alias] = mapID(node.Aliases[alias])
@@ -366,6 +368,7 @@ func scopeTargetMapIDs(view *pageMap, targetID string) {
 		view.Edges[position].Operations = mapIDs(view.Edges[position].Operations)
 	}
 	view.Trace = mapIDs(view.Trace)
+	view.Launch = remapLaunch(view.Launch, mapID)
 }
 
 func targetMapNodeID(targetID, id string) string {

@@ -130,7 +130,22 @@ type pageInputPath struct {
 	// Checks are the input's sub-arguments: words only its handler's code
 	// declares (GroupsIndex Reach.SubArguments), each at its source.
 	Checks []pageDecl `json:"checks,omitempty"`
-	Decls  []pageDecl `json:"decls,omitempty"`
+	// SentTo are the peer programs' inputs this table row names, and SentBy
+	// the other programs' table rows naming this input (Operation.Sends, a
+	// model match; decision 14).
+	SentTo []pagePeerInput `json:"sent_to,omitempty"`
+	SentBy []pagePeerInput `json:"sent_by,omitempty"`
+	Decls  []pageDecl      `json:"decls,omitempty"`
+}
+
+// pagePeerInput is one input of another program a model match names: its
+// program, its node on the map and its name, and the table it is a row of.
+type pagePeerInput struct {
+	Program string `json:"program"`
+	Input   string `json:"input"`
+	Name    string `json:"name"`
+	In      string `json:"in,omitempty"`
+	Label   string `json:"label,omitempty"`
 }
 
 // pathDecls collects the declarations a reading names, each once.
@@ -268,8 +283,9 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 			}
 		}
 	}
+	path.SentTo, path.SentBy = builder.peerInputs(index, operation)
 	path.Decls = decls.list
-	entered := len(path.Checks) > 0
+	entered := len(path.Checks)+len(path.SentTo)+len(path.SentBy) > 0
 	for _, part := range path.Parts {
 		entered = entered || len(part.Entered) > 0
 	}
@@ -418,4 +434,54 @@ func remapSiteReadings(raw string, rename func(string) string) string {
 		return raw
 	}
 	return string(encoded)
+}
+
+// peerInputs are the model matches between this input and other programs'
+// inputs: the ones this table row names, and the table rows naming it.
+func (builder *pageBuilder) peerInputs(index *groupindex.Index, operation groupindex.Operation) (sentTo, sentBy []pagePeerInput) {
+	nameOf := func(other *groupindex.Index, id string) (groupindex.Operation, bool) {
+		for _, candidate := range other.Operations {
+			if candidate.ID == id {
+				return candidate, true
+			}
+		}
+		return groupindex.Operation{}, false
+	}
+	declarer := func(other *groupindex.Index, operation groupindex.Operation) string {
+		if operation.DeclaredBy == "" {
+			return ""
+		}
+		if ref, ok := builder.subject(other.Target.ID, operation.DeclaredBy); ok && ref.subject.Object != nil {
+			return ref.subject.Object.Name
+		}
+		return ""
+	}
+	for _, send := range operation.Sends {
+		other := builder.graphIndex(send.TargetID)
+		section := builder.byProgram[send.TargetID]
+		if other == nil || section == nil {
+			continue
+		}
+		if peer, ok := nameOf(other, send.OperationID); ok {
+			sentTo = append(sentTo, pagePeerInput{Program: section.ShortLabel, Input: operationNodeID(section.ID, peer.ID), Name: builder.operationDisplayName(other.Target.ID, peer), Label: send.Label})
+		}
+	}
+	for position := range builder.indexes {
+		other := &builder.indexes[position]
+		if other.Target.ID == index.Target.ID {
+			continue
+		}
+		section := builder.byProgram[other.Target.ID]
+		if section == nil {
+			continue
+		}
+		for _, row := range other.Operations {
+			for _, send := range row.Sends {
+				if send.TargetID == index.Target.ID && send.OperationID == operation.ID {
+					sentBy = append(sentBy, pagePeerInput{Program: section.ShortLabel, Input: operationNodeID(section.ID, row.ID), Name: builder.operationDisplayName(other.Target.ID, row), In: declarer(other, row), Label: send.Label})
+				}
+			}
+		}
+	}
+	return sentTo, sentBy
 }

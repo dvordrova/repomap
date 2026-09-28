@@ -155,6 +155,19 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
     path.checks.forEach(function(check,i){if(i)checks.append(document.createTextNode(', '));var link=check.href||check.open?repomapMembers.sourceLink({Href:check.href,Open:check.open,Text:check.name,NoSource:check.no_source}):rmEl('span','',check.name);if(check.source)link.title=check.source;checks.appendChild(link);});
     section.appendChild(checks);
   }
+  // A model match between a table row of one program and an input of
+  // another: named, never drawn.
+  function peer(entry,key){
+    var line=rmEl('p','system-path-peer'),input=inputNode(entry.input);
+    line.appendChild(document.createTextNode(rmT(key,entry.program)+' '));
+    if(input){var b=rmEl('button','system-catalogue-member',entry.name);b.type='button';b.addEventListener('click',function(){choose(input);});line.appendChild(b);}
+    else line.appendChild(rmEl('span','',entry.name));
+    if(entry.in)line.appendChild(document.createTextNode(' ('+entry.in+')'));
+    line.appendChild(rmEl('span','possible',' · '+rmT('model match')));
+    return line;
+  }
+  (path.sent_to||[]).forEach(function(entry){section.appendChild(peer(entry,'Sent to {0} as'));});
+  (path.sent_by||[]).forEach(function(entry){section.appendChild(peer(entry,'Sent by {0}:'));});
   if((path.registered_by||[]).length)section.appendChild(inputs(path.registered_by,rmT('Registered by')));
   if((path.registers||[]).length)section.appendChild(inputs(path.registers,rmT('Registers')));
   // The part holding the handler names it; the parts its handler calls
