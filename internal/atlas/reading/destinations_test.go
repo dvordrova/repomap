@@ -140,13 +140,13 @@ func TestOneOutsideSystemIsOfferedTheSameDestinationsInEveryWindow(t *testing.T)
 	alone := symbol("DeleteLTXFiles", "abs/replica_client.go", 293, deleteBlob(303))
 	beside := symbol("DeleteAll", "abs/all.go", 30, deleteBlob(40), getObject)
 	// Facts without a declaration share a window only with rows of their
-	// own targets: an SFTP call of another target brings nothing to it.
+	// own targets: a gateway call of another target brings nothing to it.
 	fact := func(id, path, external, target string, line int) atlas.Place {
 		return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: path, LineNo: line, Parent: "file:" + id, TargetIDs: []string{target}, Given: external,
 			Boundary: &atlas.BoundaryFacts{Source: "external_call", Origins: []atlas.BoundaryOrigin{{TargetID: target, FactID: id}}, External: external, Direction: atlas.DirectionOut, GivenKind: atlas.BoundarySDK}}
 	}
 	upload := fact("fact:upload", "abs/upload.go", "azblob.Client.UploadStream", "service", 5)
-	remove := fact("fact:remove", "sftp/remove.go", "sftp.Client.Remove", "tool", 7)
+	remove := fact("fact:send", "gateway/send.go", "gateway.Client.Send", "tool", 7)
 	graph := []atlas.Place{alone, beside, upload, remove}
 	offered := make(map[string]string)
 	windows := 0
@@ -163,9 +163,9 @@ func TestOneOutsideSystemIsOfferedTheSameDestinationsInEveryWindow(t *testing.T)
 			offered[site] = catalog
 			rows[i]["line"], rows[i]["address"] = "deletes a blob", "unknown"
 			switch row["path"] {
-			case "sftp/remove.go":
+			case "gateway/send.go":
 				// No offered entry fits: the model names the system.
-				rows[i]["destination"] = "other: SFTP server"
+				rows[i]["destination"] = "other: Example gateway"
 			case "abs/all.go":
 				if row["line"] == float64(41) {
 					rows[i]["destination"] = destinationRef(input, "S3 storage")
@@ -179,7 +179,7 @@ func TestOneOutsideSystemIsOfferedTheSameDestinationsInEveryWindow(t *testing.T)
 	}
 	r := answerTestReader(t, nil, provider)
 	r.opts.Through, r.opts.Graph.Places = "", graph
-	r.opts.Targets = []TargetMeta{{ID: "service", Dependencies: []string{azblob, "github.com/aws/aws-sdk-go-v2/service/s3"}}, {ID: "tool", Dependencies: []string{"github.com/pkg/sftp"}}}
+	r.opts.Targets = []TargetMeta{{ID: "service", Dependencies: []string{azblob, "github.com/aws/aws-sdk-go-v2/service/s3"}}, {ID: "tool", Dependencies: []string{"github.com/example/gateway", "github.com/nats-io/nats.go"}}}
 	r.places = map[string]atlas.Place{}
 	for _, place := range graph {
 		r.places[place.ID] = place
@@ -207,14 +207,14 @@ func TestOneOutsideSystemIsOfferedTheSameDestinationsInEveryWindow(t *testing.T)
 	if azure < 0 || !slices.Equal(entries[azure].Dependencies, []string{azblob}) {
 		t.Fatalf("the target's Azure Blob Storage is not offered with its dependency: %s", service)
 	}
-	if offered["sftp/remove.go:7"] == service || strings.Contains(offered["sftp/remove.go:7"], azblob) {
-		t.Fatalf("another target's row shares the service's annotated choices: %s", offered["sftp/remove.go:7"])
+	if tool := offered["gateway/send.go:7"]; tool == service || strings.Contains(tool, azblob) || !strings.Contains(tool, "github.com/nats-io/nats.go") {
+		t.Fatalf("another target's row is not offered its own target's choices: %s", tool)
 	}
 	got := make(map[string]string)
 	for _, state := range r.boundaries {
 		got[fmt.Sprintf("%s:%d", state.place.Path, state.place.LineNo)] = state.destination
 	}
-	want := map[string]string{"abs/replica_client.go:303": "Azure Blob Storage", "abs/all.go:40": "Azure Blob Storage", "abs/all.go:41": "S3 storage", "abs/upload.go:5": "Azure Blob Storage", "sftp/remove.go:7": "SFTP server"}
+	want := map[string]string{"abs/replica_client.go:303": "Azure Blob Storage", "abs/all.go:40": "Azure Blob Storage", "abs/all.go:41": "S3 storage", "abs/upload.go:5": "Azure Blob Storage", "gateway/send.go:7": "Example gateway"}
 	if !maps.Equal(got, want) {
 		t.Fatalf("destinations = %v, want %v", got, want)
 	}

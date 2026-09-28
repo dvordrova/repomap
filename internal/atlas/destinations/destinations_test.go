@@ -13,7 +13,7 @@ func TestCanonicalFoldsFreeTextOntoOneSystemAndKeepsUnknownText(t *testing.T) {
 		"OTLP trace collector": "OpenTelemetry collector", "AWS S3 bucket": "S3 storage", "proxy service": "proxy service", "": "",
 		// DeepSeek serves an OpenAI-compatible API; the system called is DeepSeek.
 		"api.deepseek.com": "DeepSeek", "OpenAI-compatible DeepSeek chat API": "DeepSeek", "OpenAI API": "OpenAI",
-		"Azure Blob Storage container": "Azure Blob Storage", "Google Cloud Storage bucket": "Google Cloud Storage", "Google": "Google",
+		"Azure Blob Storage container": "Azure Blob Storage", "Google Cloud Storage bucket": "Google Cloud Storage", "Google": "Google", "SFTP": "SFTP server",
 	} {
 		if got := Canonical(text); got != want {
 			t.Fatalf("Canonical(%q) = %q, want %q", text, got, want)
@@ -37,6 +37,7 @@ func TestImpliedReadsDependencyPathsPastHostAndOrganisation(t *testing.T) {
 		"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob": "Azure Blob Storage", "@azure/storage-blob": "Azure Blob Storage", "azure.storage.blob": "Azure Blob Storage",
 		"cloud.google.com/go/storage": "Google Cloud Storage", "@google-cloud/storage": "Google Cloud Storage", "google.cloud.storage": "Google Cloud Storage",
 		"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss": "Alibaba Cloud OSS", "oss2": "Alibaba Cloud OSS",
+		"github.com/pkg/sftp": "SFTP server", "github.com/studio-b12/gowebdav": "WebDAV server", "webdav3.client": "WebDAV server",
 	} {
 		got, ok := Implied(dependency)
 		if !ok || got != want {

@@ -47,6 +47,9 @@ var known = []system{
 	{"slack", "Slack"}, {"telegram", "Telegram"}, {"discord", "Discord"},
 	{"stripe", "Stripe"}, {"twilio", "Twilio"}, {"sendgrid", "SendGrid"},
 	{"smtp", "SMTP server"}, {"smtplib", "SMTP server"}, {"nodemailer", "SMTP server"},
+	// A file server's protocol is its system: litestream's SFTP calls, named
+	// freely per window, came back as "SFTP server" and "SFTP".
+	{"sftp", "SFTP server"}, {"webdav", "WebDAV server"}, {"gowebdav", "WebDAV server"},
 	{"sentry", "Sentry"}, {"otlp", "OpenTelemetry collector"}, {"opentelemetry", "OpenTelemetry collector"}, {"prometheus", "Prometheus"},
 	{"deepseek", "DeepSeek"}, {"openai", "OpenAI"}, {"anthropic", "Anthropic"},
 	{"kubernetes", "Kubernetes API server"}, {"docker", "Docker daemon"},
