@@ -143,8 +143,6 @@ type reader struct {
 	// request key, parsed once for all the rows they answer.
 	classifierResponses map[string]rememberedClassifier
 	designBoxOf         map[string]map[string]string // target -> declaration/file -> accepted part
-	splitFiles          map[string]map[string]bool   // target -> files whose code several parts hold
-	designFiles         map[string]string            // declaration -> its source file
 	designSubjects      map[string]string            // native declaration -> place
 	nextPart            int
 	nextZone            int

@@ -546,8 +546,8 @@ type Zone struct {
 	BoxIDs []string `json:"box_ids"`
 }
 
-// Box is one part of a target's map: the files one parts answer grouped,
-// with the declarations those files hold.
+// Box is one part of a target's map: the whole files and the boxes of split
+// files one parts answer grouped, with the declarations they hold.
 type Box struct {
 	// MemberIDs names the part's declarations: those of its files, and the
 	// methods of its types declared in other files. Native lexical children
@@ -586,18 +586,19 @@ func (box Box) OffCanvas() bool {
 // Why a file stays off a target's map of parts.
 const (
 	// OffMapLeftOut: the parts answer and its placement follow-up left the
-	// file out, or no part was drawn to place it in.
+	// unit out (a whole file, or one box of a file whose code goes in
+	// several boxes), or no part was drawn to place it in.
 	OffMapLeftOut = "left_out"
-	// OffMapConflict: the parts answer listed the file in two parts and the
+	// OffMapConflict: the parts answer listed the unit in two parts and the
 	// follow-up did not settle it.
 	OffMapConflict = "conflict"
 	// OffMapNoUnits: the file declares nothing a part could hold.
 	OffMapNoUnits = "no_units"
 	// OffMapFailure: the target has no map of parts at all.
 	OffMapFailure = "map_failure"
-	// OffMapUndecided: the declarations of a file whose code several parts
-	// hold that no box of that file took. The file itself is on the map
-	// through its other declarations; no part is its endpoint.
+	// OffMapUndecided: the declarations of a file whose code goes in several
+	// boxes that no box of that file took. The file itself is on the map
+	// through its other declarations.
 	OffMapUndecided = "undecided"
 
 	// MapFailureRefused: every window of the parts answer was refused.
@@ -625,8 +626,9 @@ type OffMapFile struct {
 	Reason string `json:"reason"`
 	// BoxID names the part that holds the file itself when only the
 	// declarations listed here are off the map, such as a method whose type
-	// is off the map; the file then stays on the map. Empty when the file
-	// is off the map.
+	// is off the map or a box of the file left out while its other boxes
+	// share one part; the file then stays on the map. Empty when no one
+	// part holds the file.
 	BoxID string `json:"box_id,omitempty"`
 	File  File   `json:"file"`
 }

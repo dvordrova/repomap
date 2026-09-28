@@ -28,11 +28,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   `conflict`, `no_units` for a file that declares nothing, `map_failure`,
   `undecided` for a split file's declarations no box of it took), keeping
   its file line, captions and keys. Stray declarations in a file a part
-  holds name that part (`box_id`); their file stays on the map and is not
-  listed. A file whose code several parts hold (READING, the role split) is
-  on the map through them: GroupsIndex (v16) lists it only for its
-  undecided declarations, by their subjects (`subject_ids`), never as a
-  file off the map. GroupsIndex carries that record as `off_map`, adds the files of
+  holds name the file's part (`box_id`) when it has one; their file stays
+  on the map. A file whose code several parts hold (READING, the role split)
+  is on the map through them. GroupsIndex (v17) lists the declarations off
+  the map in a file a part still holds by their subjects (`subject_ids`),
+  under their own reason (`undecided`, or `left_out`/`conflict` for a box
+  or a stray method), never as a file off the map; a file no part holds is
+  listed whole. GroupsIndex carries that record as `off_map`, adds the files of
   parts made only of test code under the reason `tests` with their part's
   name, adds the declarations of a part its program never runs (atlas
   `unreached`, READING) by file under the reason `unreachable` with their

@@ -142,13 +142,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   credentials, or unadvertised paths.
   A complete names-only tracked-file dictionary is explicitly allowed for the
   README file-role classifier. The map of parts may send aggregates over the
-  refs its request advertises: `calls` as `"f3 -> f7 (12)"`, exact call sites
-  between two listed files counted once per distinct pair of files (calls
-  resolved only to alternatives are left out), `imports` as `"f3 -> f7"` for
-  an import the adapter resolves to one listed file, and the same call counts
-  between parts as `"p3 -> p7 (12)"`. These are counts over advertised refs,
-  not raw edges. A parts or areas request allows min(128,000, max(8,192,
-  16 × listed rows)) output tokens; a part or area description 200.
+  refs its request advertises: `calls` as `"f3 -> c7 (12)"`, each exact call
+  site counted once per distinct other listed unit row it reaches (a whole
+  file `f*` or a request-local box `c*`; calls resolved only to alternatives
+  are left out), `imports` as `"f3 -> f7"` for an import the adapter resolves
+  to one listed whole file, and the same call counts between parts as
+  `"p3 -> p7 (12)"`. These are counts over advertised refs, not raw edges. A
+  parts or areas request allows min(128,000, max(8,192, 16 × listed rows))
+  output tokens; a part or area description 200.
 
 ## Independent validation
 
@@ -243,17 +244,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 Unknown set members are removed; an unresolved mandatory scalar or conflicting known assignment is refused, without first-wins repair or a manufactured semantic complement.
 
 A parts answer is not a coupled assignment: it is validated as independent
-file → part rows. An unknown ref is discarded, a file named twice in one part
-is kept once, a file listed in two parts loses both memberships (no first
-wins) and, like a file left out, goes to one closed-choice placement
-follow-up; a group without a name or without a listed file is not drawn and
-its files are left out. A group given twice with the same name, ignoring
-case, and the same set of listed files is one answer and is drawn once; two
-groups that differ in name or in files keep the rules above, so a file both
-list is a conflict. `files` may also be one string of refs separated by
-spaces or commas; each ref is still checked. Only an answer that draws no
-part is refused whole: not JSON, no groups, or no group holding a listed file
-of its own. An areas answer follows the same rules at part level: a part in
+unit → part rows, a unit being a whole file (`f*`) or one box of a split
+file (`c*`). An unknown ref is discarded, a unit named twice in one part is
+kept once, a unit listed in two parts loses both memberships (no first
+wins) and, like a unit left out, goes to one closed-choice placement
+follow-up; a group without a name or without a listed unit is not drawn and
+its units are left out. A group's list is `units`, or `files` (the form the
+answers to the file-only request wrote): the two given alike are one list,
+given differently they answer one row twice differently and refuse that
+group alone. A group given twice with the same name, ignoring case, and the
+same set of listed units is one answer and is drawn once; two groups that
+differ in name or in units keep the rules above, so a unit both list is a
+conflict. The list may also be one string of refs separated by spaces or
+commas; each ref is still checked. Only an answer that draws no part is
+refused whole: not JSON, no groups, or no group holding a listed unit of its
+own. An areas answer follows the same rules at part level: a part in
 two areas or in none stands alone, and an area given twice with the same name
 and the same parts is drawn once. A refused answer, including one cut at the
 output-token cap, is the window's refusal: it is not asked again, not

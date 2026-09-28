@@ -1,6 +1,7 @@
 // Package partstest checks a language fixture's map of parts: it reads the
-// fixture's graph with a preset provider that draws every listed file as its
-// own part, then checks what the parts request carries and that every
+// fixture's graph with a preset provider that draws every listed unit (a
+// whole file, or one box of a split file) as its own part, then checks what
+// the parts request carries and that every
 // declaration has exactly one part or an entry off the map. Language fixture
 // tests of every adapter share it. CheckSplit reads the same graph with the
 // role split of every candidate file: two boxes per file, the units put in
@@ -25,7 +26,7 @@ import (
 )
 
 const (
-	partsTask = "repomap.atlas.parts.v1"
+	partsTask = "repomap.atlas.parts.v2"
 	boxesTask = "repomap.atlas.file_boxes.v1"
 )
 
@@ -126,7 +127,7 @@ func check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 	if checked.Target.MapFailure != "" {
 		t.Fatalf("map failure: %s", checked.Target.MapFailure)
 	}
-	checkRequest(t, graph, target.ID, root, provider.requests)
+	checkRequest(t, graph, target.ID, root, provider.requests, split)
 	checkMembership(t, graph, target.ID, checked)
 	checked.Split, checked.RoleParts = map[string]bool{}, map[string]bool{}
 	checked.Registered = categorizer.registered
@@ -224,8 +225,8 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 		if entry.Reason != atlas.OffMapUndecided {
 			continue
 		}
-		if !checked.Split[entry.File.Path] || entry.BoxID != "" {
-			t.Fatalf("undecided declarations of %s, which is not split or names part %q", entry.File.Path, entry.BoxID)
+		if !checked.Split[entry.File.Path] {
+			t.Fatalf("undecided declarations of %s, which is not split", entry.File.Path)
 		}
 		for _, symbol := range entry.File.Symbols {
 			undecided[symbol.ID] = true
@@ -437,9 +438,17 @@ func lexicalChildren(decls []atlas.Decl) map[int]bool {
 	return children
 }
 
-var pairPattern = regexp.MustCompile(`^(f[0-9]+) -> (f[0-9]+)( \([0-9]+\))?$`)
+var (
+	pairPattern   = regexp.MustCompile(`^([fc][0-9]+) -> ([fc][0-9]+)( \([0-9]+\))?$`)
+	importPattern = regexp.MustCompile(`^(f[0-9]+) -> (f[0-9]+)$`)
+)
 
-func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, requests [][]byte) {
+// checkRequest checks the parts request: code structure only, one row per
+// whole file (its f* ref) or per box of a split file (a c* ref with the
+// box's name), a split file never a whole row, every file with a
+// declaration of its own listed, and calls and imports over listed refs
+// only, imports between whole files alone.
+func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, requests [][]byte, split bool) {
 	t.Helper()
 	if len(requests) != 1 {
 		t.Fatalf("parts requests: %d, want one", len(requests))
@@ -450,12 +459,12 @@ func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, reques
 		t.Fatal(err)
 	}
 	for key := range request {
-		if !slices.Contains([]string{"task", "files", "calls", "imports"}, key) {
+		if !slices.Contains([]string{"task", "units", "calls", "imports"}, key) {
 			t.Fatalf("the parts request carries %q", key)
 		}
 	}
 	var body struct {
-		Files   []map[string]any `json:"files"`
+		Units   []map[string]any `json:"units"`
 		Calls   []string         `json:"calls"`
 		Imports []string         `json:"imports"`
 	}
@@ -480,19 +489,35 @@ func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, reques
 			}
 		}
 	}
-	listed := map[string]bool{}
-	for _, file := range body.Files {
+	listed, whole, boxed := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	byPath := map[string]atlas.Place{}
+	for _, place := range files {
+		byPath[place.Path] = place
+	}
+	for _, file := range body.Units {
 		for key := range file {
-			if !slices.Contains([]string{"ref", "path", "units", "types", "functions", "variables"}, key) {
-				t.Fatalf("a file row carries %q", key)
+			if !slices.Contains([]string{"ref", "path", "box", "units", "types", "functions", "variables"}, key) {
+				t.Fatalf("a unit row carries %q", key)
 			}
 		}
 		ref := fmt.Sprint(file["ref"])
-		place, ok := files[ref]
-		if !ok || listed[ref] || fmt.Sprint(file["path"]) != place.Path || strings.HasPrefix(place.Path, "/") {
-			t.Fatalf("file row %v is unknown, repeated or not its own path", file)
+		if listed[ref] {
+			t.Fatalf("unit row %v is repeated", file)
 		}
 		listed[ref] = true
+		if box, isBox := file["box"]; isBox {
+			place, ok := byPath[fmt.Sprint(file["path"])]
+			if !ok || !strings.HasPrefix(ref, "c") || fmt.Sprint(box) == "" || !split {
+				t.Fatalf("box row %v is unknown, not a c* ref, unnamed or drawn without a split", file)
+			}
+			boxed[place.ID] = true
+			continue
+		}
+		place, ok := files[ref]
+		if !ok || fmt.Sprint(file["path"]) != place.Path || strings.HasPrefix(place.Path, "/") {
+			t.Fatalf("file row %v is unknown or not its own path", file)
+		}
+		whole[ref] = true
 		children := lexicalChildren(place.File.Decls)
 		var names []string
 		for _, kind := range []string{"types", "functions", "variables"} {
@@ -552,14 +577,26 @@ func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, reques
 				own = true
 			}
 		}
-		if own && !listed[id] {
+		if own && !whole[id] && !boxed[id] {
 			t.Fatalf("%s holds code but is not listed", place.Path)
 		}
+		if whole[id] && boxed[id] {
+			t.Fatalf("%s is split yet listed as a whole row", place.Path)
+		}
 	}
-	for _, pair := range append(append([]string(nil), body.Calls...), body.Imports...) {
+	if split && len(boxed) == 0 {
+		t.Fatal("no split file's boxes are rows of the parts request")
+	}
+	for _, pair := range body.Calls {
 		match := pairPattern.FindStringSubmatch(pair)
 		if match == nil || !listed[match[1]] || !listed[match[2]] || match[1] == match[2] {
-			t.Fatalf("aggregate %q names a ref the request does not list", pair)
+			t.Fatalf("call aggregate %q names a ref the request does not list", pair)
+		}
+	}
+	for _, pair := range body.Imports {
+		match := importPattern.FindStringSubmatch(pair)
+		if match == nil || !whole[match[1]] || !whole[match[2]] || match[1] == match[2] {
+			t.Fatalf("import %q names a ref that is not a listed whole file", pair)
 		}
 	}
 }
@@ -630,7 +667,7 @@ func checkMembership(t testing.TB, graph atlas.Graph, targetID string, checked M
 	}
 }
 
-// preset answers every text-model request of the reading: every listed file
+// preset answers every text-model request of the reading: every listed unit
 // is its own part, every description is a sentence, no areas are drawn, and
 // a table cell takes its first option or a short text.
 type preset struct {
@@ -651,10 +688,11 @@ func (p *preset) Complete(_ context.Context, prepared llm.Prepared) (llm.Complet
 		Fill    []map[string]any `json:"fill"`
 		Context map[string]any   `json:"context"`
 		Rows    []map[string]any `json:"rows"`
-		Files   []struct {
+		Units   []struct {
 			Ref  string `json:"ref"`
 			Path string `json:"path"`
-		} `json:"files"`
+			Box  string `json:"box"`
+		} `json:"units"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
@@ -665,9 +703,15 @@ func (p *preset) Complete(_ context.Context, prepared llm.Prepared) (llm.Complet
 		p.mu.Lock()
 		p.requests = append(p.requests, prepared.Bytes())
 		p.mu.Unlock()
+		// Each unit is a part of its own, named after its file or its box
+		// (the naming names a box after its file).
 		var groups []map[string]any
-		for _, file := range request.Files {
-			groups = append(groups, map[string]any{"name": file.Path, "files": []string{file.Ref}})
+		for _, unit := range request.Units {
+			name := unit.Path
+			if unit.Box != "" {
+				name = unit.Box
+			}
+			groups = append(groups, map[string]any{"name": name, "units": []string{unit.Ref}})
 		}
 		response = map[string]any{"groups": groups}
 	case "repomap.atlas.describe.v1":

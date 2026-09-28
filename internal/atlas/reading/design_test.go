@@ -106,12 +106,63 @@ func TestSavedPartsAnswersKeepEveryGoodFile(t *testing.T) {
 			t.Fatalf("%s: asked again %v, want %v; unknown %v refused %v", draw, asked, expected, result.unknown, result.refused)
 		}
 		placed := 0
-		for _, part := range result.files {
+		for _, part := range result.refs {
 			placed += len(part)
 		}
 		if placed != len(listed)-len(expected) {
 			t.Fatalf("%s placed %d of %d files", draw, placed, len(listed))
 		}
+	}
+}
+
+// The probe's six saved grouping answers over units (Redis redis-server and
+// pykrx, 3 draws each; DeepSeek, 2026-09-27) replay through the decoder as
+// their exact provider bytes, over the request-local refs their requests
+// listed: each draws its every group and places every listed unit once, and
+// none is refused.
+func TestSavedUnitsAnswersKeepEveryUnit(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "units-replay", "listed.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed map[string][]string
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	for draw, want := range map[string]int{"redis-d1": 23, "redis-d2": 20, "redis-d3": 17, "pykrx-d1": 9, "pykrx-d2": 9, "pykrx-d3": 12} {
+		raw, err := os.ReadFile(filepath.Join("testdata", "units-replay", draw+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		answer, err := decodeParts(raw, listed[draw])
+		if err != nil {
+			t.Fatalf("%s refused: %v", draw, err)
+		}
+		result := validatePartition(answer, listed[draw])
+		placed := 0
+		for _, refs := range result.refs {
+			placed += len(refs)
+		}
+		if len(result.names) != want || placed != len(listed[draw]) || len(result.leftOut)+len(result.conflicts)+len(result.unknown)+len(result.refused) != 0 {
+			t.Fatalf("%s: %d parts placing %d of %d units; left out %v, conflicts %v, unknown %v, refused %v",
+				draw, len(result.names), placed, len(listed[draw]), result.leftOut, result.conflicts, result.unknown, result.refused)
+		}
+	}
+}
+
+// A group may give its refs as "units" or as "files", the same list; given
+// both alike they are one list, given differently they refuse that group
+// alone and its units are left out.
+func TestPartsUnitsAndFilesAreOneList(t *testing.T) {
+	listed := []string{"f1", "c1", "c2"}
+	answer, err := decodeParts([]byte(`{"groups":[{"name":"Board","units":["f1","c1"],"files":["c1","f1"]},{"name":"Search","units":["c2"],"files":["f1"]}]}`), listed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := validatePartition(answer, listed)
+	if !slices.Equal(result.names, []string{"Board"}) || !slices.Equal(result.refs[0], []string{"f1", "c1"}) || !slices.Equal(result.leftOut, []string{"c2"}) ||
+		len(result.refused) != 1 || !strings.Contains(result.refused[0], "units and files that differ") {
+		t.Fatalf("units and files: %+v", result)
 	}
 }
 
@@ -135,9 +186,9 @@ func TestPartitionRefusesOnlyWhatIsWrong(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := validatePartition(answer, listed)
-	if len(result.files) != 4 || !slices.Equal(result.files[0], []string{"f1"}) || !slices.Equal(result.files[1], []string{"f2"}) ||
-		!slices.Equal(result.files[2], []string{"f4"}) || !slices.Equal(result.files[3], []string{"f6"}) {
-		t.Fatalf("placements: %v %v", result.names, result.files)
+	if len(result.refs) != 4 || !slices.Equal(result.refs[0], []string{"f1"}) || !slices.Equal(result.refs[1], []string{"f2"}) ||
+		!slices.Equal(result.refs[2], []string{"f4"}) || !slices.Equal(result.refs[3], []string{"f6"}) {
+		t.Fatalf("placements: %v %v", result.names, result.refs)
 	}
 	if !slices.Equal(result.conflicts["f3"], []int{1, 2}) || !slices.Equal(result.leftOut, []string{"f5", "f7"}) {
 		t.Fatalf("conflicts %v left out %v", result.conflicts, result.leftOut)
@@ -172,8 +223,8 @@ func TestIdenticalRepeatedGroupIsDrawnOnce(t *testing.T) {
 		return validatePartition(answer, listed)
 	}
 	repeated := partition(`{"groups":[{"name":"Board","files":["f1","f2"]},{"name":" board ","files":["f2","f1","f9"]},{"name":"Search","files":["f3"]}]}`)
-	if !slices.Equal(repeated.names, []string{"Board", "Search"}) || !slices.Equal(repeated.files[0], []string{"f1", "f2"}) ||
-		!slices.Equal(repeated.files[1], []string{"f3"}) || len(repeated.conflicts) != 0 || len(repeated.leftOut) != 0 ||
+	if !slices.Equal(repeated.names, []string{"Board", "Search"}) || !slices.Equal(repeated.refs[0], []string{"f1", "f2"}) ||
+		!slices.Equal(repeated.refs[1], []string{"f3"}) || len(repeated.conflicts) != 0 || len(repeated.leftOut) != 0 ||
 		len(repeated.repeatedGroups) != 1 || len(repeated.repeated) != 0 {
 		t.Fatalf("repeated group: %+v", repeated)
 	}
@@ -182,8 +233,8 @@ func TestIdenticalRepeatedGroupIsDrawnOnce(t *testing.T) {
 		t.Fatalf("different names over one file: %+v", otherName)
 	}
 	otherFiles := partition(`{"groups":[{"name":"Board","files":["f1","f2"]},{"name":"Board","files":["f2","f3"]}]}`)
-	if !slices.Equal(otherFiles.conflicts["f2"], []int{0, 1}) || !slices.Equal(otherFiles.files[0], []string{"f1"}) ||
-		!slices.Equal(otherFiles.files[1], []string{"f3"}) || len(otherFiles.repeatedGroups) != 0 {
+	if !slices.Equal(otherFiles.conflicts["f2"], []int{0, 1}) || !slices.Equal(otherFiles.refs[0], []string{"f1"}) ||
+		!slices.Equal(otherFiles.refs[1], []string{"f3"}) || len(otherFiles.repeatedGroups) != 0 {
 		t.Fatalf("one name over different files: %+v", otherFiles)
 	}
 
@@ -193,11 +244,11 @@ func TestIdenticalRepeatedGroupIsDrawnOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a group stated twice was refused: %v", err)
 	}
-	if drawn := validatePartition(answer, []string{"f1", "f2"}); len(drawn.names) != 1 || !slices.Equal(drawn.files[0], []string{"f1", "f2"}) {
+	if drawn := validatePartition(answer, []string{"f1", "f2"}); len(drawn.names) != 1 || !slices.Equal(drawn.refs[0], []string{"f1", "f2"}) {
 		t.Fatalf("a group stated twice: %+v", drawn)
 	}
 	if _, err := decodeParts([]byte(`{"groups":[{"name":"Board","files":["f1","f2"]},{"name":"Game","files":["f1","f2"]}]}`), []string{"f1", "f2"}); err == nil ||
-		!strings.Contains(err.Error(), "no group holds a listed file of its own") {
+		!strings.Contains(err.Error(), "no group holds a listed unit of its own") {
 		t.Fatalf("two groups over the same files: %v", err)
 	}
 }
@@ -404,7 +455,7 @@ func TestPartsFilesStringIsAListOfRefs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", files, err)
 		}
-		if result := validatePartition(answer, listed); len(result.files) != 2 || !slices.Equal(result.files[0], []string{"f1", "f2"}) || len(result.refused) != 0 {
+		if result := validatePartition(answer, listed); len(result.refs) != 2 || !slices.Equal(result.refs[0], []string{"f1", "f2"}) || len(result.refused) != 0 {
 			t.Fatalf("%s: %+v", files, result)
 		}
 	}
@@ -912,22 +963,22 @@ func TestTestOnlyPartsLeaveTheCanvasByFact(t *testing.T) {
 // Split windows are whole directory subtrees, halved by file count; a single
 // flat directory halves into contiguous runs in path order.
 func TestWindowsSplitAlongDirectorySubtrees(t *testing.T) {
-	file := func(path string) *designFile {
-		return &designFile{id: path, path: path, dir: filepath.Dir(path)}
+	file := func(path string) *designUnit {
+		return &designUnit{ref: path, path: path, dir: filepath.Dir(path)}
 	}
-	paths := func(files []*designFile) string {
+	paths := func(files []*designUnit) string {
 		var result []string
 		for _, f := range files {
 			result = append(result, f.path)
 		}
 		return strings.Join(result, " ")
 	}
-	tree := []*designFile{file("a/x/1.go"), file("a/x/2.go"), file("a/y/3.go"), file("a/z.go"), file("a/y/4.go")}
+	tree := []*designUnit{file("a/x/1.go"), file("a/x/2.go"), file("a/y/3.go"), file("a/z.go"), file("a/y/4.go")}
 	left, right, ok := splitWindow(tree)
 	if !ok || paths(left) != "a/x/1.go a/x/2.go" || paths(right) != "a/y/3.go a/y/4.go a/z.go" {
 		t.Fatalf("subtrees: %q | %q", paths(left), paths(right))
 	}
-	flat := []*designFile{file("d/1.go"), file("d/2.go"), file("d/3.go"), file("d/4.go"), file("d/5.go")}
+	flat := []*designUnit{file("d/1.go"), file("d/2.go"), file("d/3.go"), file("d/4.go"), file("d/5.go")}
 	left, right, ok = splitWindow(flat)
 	if !ok || paths(left) != "d/1.go d/2.go" || paths(right) != "d/3.go d/4.go d/5.go" {
 		t.Fatalf("flat: %q | %q", paths(left), paths(right))
@@ -1035,12 +1086,12 @@ type sizeLimitedProvider struct {
 func (provider *sizeLimitedProvider) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
 	var request struct {
 		Task  string           `json:"task"`
-		Files []map[string]any `json:"files"`
+		Units []map[string]any `json:"units"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
 	}
-	if request.Task == designPartsTask && len(request.Files) > provider.maxFiles {
+	if request.Task == designPartsTask && len(request.Units) > provider.maxFiles {
 		provider.mu.Lock()
 		provider.refused++
 		provider.mu.Unlock()
@@ -1117,7 +1168,9 @@ func withCrossFileMethods(t *testing.T, graph atlas.Graph) atlas.Graph {
 // declares only such methods is on the map through them: it has no entry off
 // the map, and a boundary in it stands in its methods' part. A method whose
 // type is off the map is listed off the map in its own file under its
-// type's reason, naming the part that still holds its file.
+// type's reason, naming the part that still holds its file. A file keeps
+// the part of its own units when it also declares a method of a type in
+// another part.
 func TestFilesOfMethodsDeclaredElsewhereStayOnTheMap(t *testing.T) {
 	graph := withCrossFileMethods(t, twoTargetGraph(t))
 	provider := &tableProvider{
@@ -1167,5 +1220,32 @@ func TestFilesOfMethodsDeclaredElsewhereStayOnTheMap(t *testing.T) {
 	stray := entries["svc/api/h.go"]
 	if stray.Reason != atlas.OffMapLeftOut || stray.BoxID != boxOf["svc/api"] || len(stray.File.Symbols) != 1 || stray.File.Symbols[0].Name != "Job.Run" {
 		t.Fatalf("the method of a type off the map: %+v", stray)
+	}
+
+	// With Job placed, h.go declares a method of another part's type and
+	// keeps its own part, the one its own unit F is in: the request at line
+	// 10, around which no declaration stands, stands in svc/api.
+	provider = &tableProvider{}
+	result, err = Read(t.Context(), twoTargetOptions(t, graph, provider))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc = targetOf(t, result, "svc")
+	partOf, boxOf = map[string]string{}, map[string]string{}
+	for _, box := range svc.Boxes {
+		boxOf[box.Title] = box.ID
+		for _, file := range box.Files {
+			for _, symbol := range file.Symbols {
+				partOf[symbol.Name] = box.Title
+			}
+		}
+	}
+	if partOf["Job.Run"] != "svc/jobs" {
+		t.Fatalf("Job.Run is in %q", partOf["Job.Run"])
+	}
+	for _, boundary := range svc.Boundaries {
+		if boundary.Path == "svc/api/h.go" && boundary.BoxID != boxOf["svc/api"] {
+			t.Fatalf("the request in h.go stands in %q, not h.go's own part %q", boundary.BoxID, boxOf["svc/api"])
+		}
 	}
 }

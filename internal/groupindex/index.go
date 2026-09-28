@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 16
+	Version          = 17
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -321,11 +321,14 @@ const OffMapUnreachable = "unreachable"
 
 // OffMapFile is one file the map of parts does not draw, and why. Part names
 // the test-only part a file of reason tests belongs to, or the part a file's
-// declarations of reason unreachable belong to. SubjectIDs are, for reason
-// undecided, the subjects of a file whose code several parts hold that no
-// box of the file took, in the atlas's order; that file is on the map
-// through the others. For reason unreachable they are the part's
-// declarations in that file, in subject order.
+// declarations of reason unreachable belong to. SubjectIDs, when present,
+// are the declarations of a file a part still holds that are off the map,
+// in the atlas's order: for reason undecided, those no box of a file whose
+// code goes in several boxes took; for left_out and conflict, those of a
+// box the parts answer and its follow-up left out or listed twice, or the
+// methods of a type off the map; the file is on the map through the others.
+// For reason unreachable they are the part's declarations in that file, in
+// subject order. Without them the whole file is off the map.
 type OffMapFile struct {
 	Path       string   `json:"path"`
 	Reason     string   `json:"reason"`
@@ -2125,8 +2128,9 @@ func validateOffMap(files []OffMapFile, failure string, subjects map[string]Subj
 		}
 		named := file.Reason == OffMapTests || file.Reason == OffMapUnreachable
 		listed := file.Reason == OffMapUndecided || file.Reason == OffMapUnreachable
+		either := file.Reason == "left_out" || file.Reason == "conflict"
 		if !validText(file.Path) || strings.HasPrefix(file.Path, "/") || !validOptionalText(file.Part) || (file.Part != "") != named ||
-			(len(file.SubjectIDs) > 0) != listed {
+			(len(file.SubjectIDs) > 0) != listed && !either {
 			return fmt.Errorf("group index: invalid off-map file %q", file.Path)
 		}
 		for _, id := range file.SubjectIDs {

@@ -265,10 +265,11 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 		Table string           `json:"table"`
 		Fill  []map[string]any `json:"fill"`
 		Rows  []map[string]any `json:"rows"`
-		Files []struct {
+		Units []struct {
 			Ref  string `json:"ref"`
 			Path string `json:"path"`
-		} `json:"files"`
+			Box  string `json:"box"`
+		} `json:"units"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
@@ -278,11 +279,11 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 	preset.mu.Unlock()
 	var response []byte
 	switch {
-	case request.Task == "repomap.atlas.parts.v1":
+	case request.Task == "repomap.atlas.parts.v2":
 		// The parts a reader would draw: what serves requests, what holds
 		// the data, and the program's setup around them.
 		parts := map[string][]string{}
-		for _, file := range request.Files {
+		for _, file := range request.Units {
 			part := "Program setup"
 			switch {
 			case strings.Contains(file.Path, "/handler/"):
@@ -295,7 +296,7 @@ func (preset *echoPreset) Complete(_ context.Context, prepared llm.Prepared) (ll
 		var groups []map[string]any
 		for _, name := range []string{"Request handling", "Stored users", "Program setup"} {
 			if len(parts[name]) > 0 {
-				groups = append(groups, map[string]any{"name": name, "files": parts[name]})
+				groups = append(groups, map[string]any{"name": name, "units": parts[name]})
 			}
 		}
 		var err error

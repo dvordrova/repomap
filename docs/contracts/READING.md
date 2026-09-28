@@ -75,9 +75,11 @@ new description or selection requests.
   walk; only the exchange journal, with the response rejections it appends to
   `rejected.jsonl` as responses arrive, interleaves. The first failure stops the stages beside it
   and is the error reported; `--through` stops inside them at its own stage.
-  A target's parts request, placement follow-up and part descriptions use its
-  position p+1 as their round, as the core table does; its areas request uses
-  it too. Targets read their parts side by side, each on its own record joined
+  A target's role split, parts request, placement follow-up and part
+  descriptions use its position p+1 as their round, as the core table does;
+  its areas request uses it too. Within a target the parts request waits for
+  its role split, since it groups the split files' boxes. Targets read their
+  parts side by side, each on its own record joined
   in target order; parts take their compact IDs in target order, the one point
   where a target waits for the ones before it, and areas take theirs in target
   order once every target's areas answer is in. A row carries the place's own facts and its directory's line, one step up.
@@ -180,15 +182,20 @@ sees code structure only: paths, names, signatures, kinds and counts. No
 README or AGENTS text, docstring, package documentation or `author_context`
 reaches it.
 
-**The grouping unit is the source file.** One `atlas_zones` request per target
-lists one row per target file holding at least one unit: `ref` (the sealed
-graph's `f*`), `path`, `units`, `types`, `functions` and `variables`. A unit
-is a function, a variable, a type together with its methods, or a
+**The grouping unit is a unit: a whole file or a box.** Each target's role
+split (below) runs first; then one `atlas_zones` request per target
+(`repomap.atlas.parts.v2`) lists one row per unit of its code: a whole file
+holding at least one unit (`ref`, the sealed graph's `f*`), or one box of a
+file the role split splits (a request-local `c*` ref, numbered across the
+target in f* order and each file's naming order, with the box's name in
+`box`; a box that holds nothing is no row, and a split file is never a whole
+row). Each row has `path`, `units`, `types`, `functions` and `variables`. A
+unit is a function, a variable, a type together with its methods, or a
 source-located module body. An exported name (the adapter's visibility fact:
 Go capitalization, JS/TS `export`, Python `__all__` when the module declares
 it and otherwise no leading underscore, Clojure not `defn-` nor `^:private`)
 is followed by its signature, a type's by its form. Method names are not
-sent. A declaration takes its file's part. A method goes with its type
+sent. A declaration takes its unit's part. A method goes with its type
 through the native owner the type's members name, even from another file; a
 lexical child (a declaration inside the source range of a function or method
 of its file, by the adapter's own positions and end lines, such as Go `f$1`
@@ -197,67 +204,82 @@ neither a row, a name nor a unit. A declaration that repeats the name of an
 earlier unit of its file follows that unit the same way: a second Go
 `init`, Python `@overload` stubs and their implementation, TypeScript overload
 signatures, a Clojure `declare` and its `defn` are one unit and one name, shown
-with the first declaration's signature (C has no such repeat). `calls` counts exact call sites between
-listed files once per distinct pair (`"f3 -> f7 (12)"`); calls resolved only
-to alternatives are left out. `imports` lists imports the adapter resolves to
-one listed file (`"f3 -> f7"`); Go package imports resolve to a directory and
-add nothing. Files without a unit are not listed. A file that declares only
-what follows units of other files, such as a Go method declared outside its
-type's file, is therefore no row, yet it is on the map through those
-declarations. The prompt sets no count of parts.
+with the first declaration's signature (C has no such repeat). `calls` counts,
+per exact call site, each distinct other listed row the site reaches
+(`"f3 -> c7 (12)"`); a site counts from the unit whose code holds it, a
+method's from its type's unit wherever it is declared; calls resolved only to
+alternatives are left out. `imports` lists imports the adapter resolves to
+one listed whole file, between whole-file rows only (`"f3 -> f7"`); Go
+package imports resolve to a directory and add nothing. Files without a unit
+are not listed. A file that declares only what follows units of other files,
+such as a Go method declared outside its type's file, is therefore no row,
+yet it is on the map through those declarations. The prompt sets no count of
+parts.
 
-**Small targets.** A target without a unit-bearing file sends no request and
-has a legitimate empty map. A target of one such file sends no parts request:
-its one part takes the target's name, unless the role split below splits
-the file. Without a model a target of several
-files has no map: an explicit map failure, never an invented grouping.
+**Small targets.** A target without a unit sends no request and has a
+legitimate empty map. A target of one unit (one unit-bearing file the role
+split keeps whole) sends no parts request: its one part takes the target's
+name. A one-file target whose file splits sends one, over its boxes. Without
+a model a target of several files has no map: an explicit map failure, never
+an invented grouping.
 
 **Too large.** A parts request is split into windows only when its prepared
 request does not fit the provider or the provider refuses its input or
 context size, through the shared adaptive split memo. A window is a whole
-directory subtree, halved by file count until it fits; a single flat
-directory halves into contiguous runs in path order. Parts never cross
-windows; nothing is sampled or truncated.
+directory subtree, halved by unit count until it fits; a single flat
+directory halves into contiguous runs in path order, and a split file's
+boxes stay in one window. Parts never cross windows; nothing is sampled or
+truncated.
 
 **Validation, placement and refusal.** Owner, on a decoder that refused a
 whole good answer: "кто ему дал такое право?" A parts answer
-(`{"groups":[{"name","files"}]}`) is validated as independent file → part
-rows: an unknown ref is discarded and recorded, a file named twice in one
-part is kept once, a file listed in two parts loses both memberships (no
-first-wins) and a file left out stays unplaced; a group without a name or
-without a listed file is not drawn and its files are left out; two parts
-sharing a name over different files are both kept, and a group repeated
-with the same name and files is drawn once. One part holding everything, or one part per
-file, is accepted as returned and recorded. Every annotation is recorded in
-`rejected.jsonl` without refusing the answer. When at least one part was
-drawn, one closed-choice `atlas_placement` table places the unplaced files:
-a left-out file chooses among every drawn part, a conflicting one only
-between the parts that listed it, with its own calls and imports to and
-from placed files as part refs. An unknown, missing or refused choice leaves
-the file off the map with its reason. A group given twice with the same name,
-ignoring case, and the same set of listed files is one answer: it is drawn
-once and the repeat is recorded as `part_repeated_group`. The same name over
-other files keeps both parts, and a file two different groups list is a
-conflict. A `files` string of refs separated by spaces or commas is read as
-that list, and each ref is still checked. Only an answer that draws no part
-is refused whole: it is not JSON, holds no groups, has no group holding a
-listed file of its own (every ref unknown, such as paths instead of refs,
-every group without a name, or every file in two different groups), or ends
-at the output allowance. Such an answer is not asked again, split or accepted in
-part. A refused window is recorded as `window_rejected`; its files are left
-out for the follow-up when another window of the target drew parts. A target all of whose windows
-are refused gets an explicit `map_failure` with every file off the map, and
-the atlas target's `map_failure` word `refused` (`no_model` when no model was
-asked); the refusal texts stay in `rejected.jsonl`. Its other analysis
-survives.
+(`{"groups":[{"name","units"}]}`) is validated as independent unit → part
+rows: an unknown ref is discarded and recorded, a unit named twice in one
+part is kept once, a unit listed in two parts loses both memberships (no
+first-wins) and a unit left out stays unplaced; a group without a name or
+without a listed unit is not drawn and its units are left out; two parts
+sharing a name over different units are both kept, and a group repeated
+with the same name and units is drawn once. A group's `files` is the same
+list as `units` (the form the answers to the file-only request wrote): given
+alike they are one list, given differently they are one row answered twice
+differently and refuse that group alone. One part holding everything, or
+one part per unit, is accepted as returned and recorded. Every annotation
+is recorded in `rejected.jsonl` without refusing the answer. When at least
+one part was drawn, one closed-choice `atlas_placement` table
+(`repomap.atlas.placement.v2`) places the unplaced units, one row per unit
+keyed by its ref: a left-out unit chooses among every drawn part, a
+conflicting one only between the parts that listed it, with its path, its
+box's name when it is a box, its counts and names, its calls to and from
+the placed rows per site as part refs, and, for a whole file, its imports.
+An unknown, missing or refused choice leaves the unit's declarations off
+the map with its reason; a box left out leaves its file on the map through
+its other boxes. A group given twice with the same name, ignoring case, and
+the same set of listed units is one answer: it is drawn once and the repeat
+is recorded as `part_repeated_group`. The same name over other units keeps
+both parts, and a unit two different groups list is a conflict. A `units`
+(or `files`) string of refs separated by spaces or commas is read as that
+list, and each ref is still checked. Only an answer that draws no part is
+refused whole: it is not JSON, holds no groups, has no group holding a
+listed unit of its own (every ref unknown, such as paths instead of refs,
+every group without a name, or every unit in two different groups), or ends
+at the output allowance. Such an answer is not asked again, split or
+accepted in part. A refused window is recorded as `window_rejected`; its
+units are left out for the follow-up when another window of the target drew
+parts. A target all of whose windows are refused gets an explicit
+`map_failure` with every file off the map, and the atlas target's
+`map_failure` word `refused` (`no_model` when no model was asked); the
+refusal texts stay in `rejected.jsonl`. Its other analysis survives. The
+probe's six saved grouping answers over units (Redis and pykrx, three draws
+each, `testdata/units-replay`) replay as their exact provider bytes: each
+draws its every group and places every listed unit once.
 
 **A file in several boxes (the role split).** Owner, choosing option "в"
 (2026-09-26): "what's in one file can have different roles, and one role can
 span different files. We build our own map, we group and abstract." A file
-the parts answer placed whole can hold the code of several boxes of our map.
-Three requests decide it, each file on its own, beside the parts request of
-its target (a one-file target included; never without a model), and code
-places what the last one leaves open:
+can hold the code of several boxes of our map. Three requests decide it,
+each file on its own, before the parts request of its target (a one-file
+target included; never without a model), and code places what the last one
+leaves open:
 
 - *Candidates* are the unit-bearing files of the target that are neither
   test nor generated code and hold at least two units (one unit cannot go in
@@ -334,21 +356,15 @@ places what the last one leaves open:
   `rejected.jsonl` and `tables.md`.
 
 A file is split only when at least two boxes hold a unit; otherwise it stays
-whole (`role_not_split`). Each box that holds a unit becomes a part, titled
-with the box's name, holding those units with their followers (methods,
-lexical children, repeated names); a box holding none is not drawn
-(`role_box_empty`). An undecided unit, with its followers, goes to the
-off-map record under the closed reason `undecided` (`role_undecided`): the
-file-level decision was superseded by the gate, so reusing it would promote
-a failed result. The part the answer gave the file loses it, and is drawn
-only while it still holds a whole file, described by those files' units
-alone. The split applies only to a file the parts answer itself placed in a
-drawn part: a file it left out or listed twice is placed whole and never
-split (`role_not_applied`), and nothing is split under a map failure. IDs:
-the answer's parts in answer order, skipping one left without a file, then
-each split file's boxes in f* order and naming order. **A role part's
-membership is final when it gets its ID; placement may only add whole
-left-out or conflicting files to it.** A file shared by two targets is
+whole (`role_not_split`), one row of the parts request. Each box that holds
+a unit becomes one row of the parts request, a unit of the grouping with its
+units and their followers (methods, lexical children, repeated names), and
+takes the part the answer gives it; the answer may put two boxes of one file
+in one part. A box holding none is no row (`role_box_empty`). An undecided
+unit, with its followers, goes to the off-map record under the closed
+reason `undecided` (`role_undecided`) while its file stays on the map
+through its boxes. Parts take their IDs in answer order; nothing is split
+under a map failure or without a model. A file shared by two targets is
 split per target, since `callers_elsewhere` is per target; it may split
 differently in each and costs a naming in each. Every outcome is recorded in
 `rejected.jsonl` and `tables.md`, with no label on the page, and a split
@@ -405,55 +421,63 @@ requires that every registration handing over a unit of an assigned file
 reaches that file's assignment with its words, that no undecided unit is
 one the code rule places (the units of its file that use it are not all in
 one part, and when none uses it, what it uses in its file is not either),
-and that an input whose handler is undecided names no part. The words each
-fixture shows: Go
+that the parts request lists each split file's boxes as `c*` rows and never
+the file whole, with imports between whole files only, that no import-only
+arrow touches a part holding a split file's box, that the seed's part stands
+in, and that an input whose handler is undecided names no part. The words
+each fixture shows: Go
 `HandleFunc /v1/update` (`http_registrations.go`), Python `get /health`,
 TypeScript `get /products/featured`, C `kvCommand get` (kvd.c's command
 table). Clojure's fixture registers no route or command in a split file;
 its one such registration hands a function to `clojure.core/map`.
 
-**A split file has no endpoint.** Every lookup that takes a file's part
-follows one written rule:
+**One rule for every file.** A declaration takes its unit's part, and a
+place its declaration's. A file's own part is the one part holding every
+placed unit declared in it; a file that declares only what follows units of
+other files takes the one part holding its placed declarations; a file whose
+units sit in two parts, as a split file's usually do, has none. So a whole
+Go file keeps its part when it declares a method of a type in another part,
+and a split file whose boxes the answer put in one part is that part's.
+Every lookup of a file's part follows that one rule, with no branch for a
+split file:
 
-- A split file is in no part's endpoint rows; its role parts name it only
-  as a *source* (their directory, test fact, description and area dirs).
+- A part's *sources* are the files of its units (its directory, test fact,
+  description and area dirs).
 - Arrows: a file edge (an import or an aggregated call) into or out of a
-  split file draws nothing; the declarations' own calls draw the arrows, so
-  no part gets an arrow its declarations do not make.
-- Placement evidence counts a left-out file's calls into and out of a split
-  file per unit, in the part that holds the unit (an undecided unit in
-  none); a split file's imports are no evidence.
-- The entry: a seed file's parts are its endpoint, else the parts holding
-  its seed declarations (places `seed_decls`), so the "in" column and
-  "starts the program" (core) survive a split seed file. The atlas keeps no
-  main path of its own; orientation's main flow and the report's start list
-  read the entry forward.
-- A boundary with no subject declaration in a split file takes the part of
-  the declaration whose source range holds its line, else of the module
-  body. An input that hands a declaration over (a command table row, a
-  route) stands only in that declaration's part: when the declaration is
-  undecided, or in a file off the map, the input names no part, never the
-  part holding the table or the registering call.
-- Learn's evidence of a split file's own chunk names no area; its
-  declarations name their parts. A cross-target joint of a file edge into or
-  out of a split file names no part and is not drawn; its declarations'
-  calls still join their parts inside the target.
+  file with no part draws nothing; the declarations' own calls draw the
+  arrows, so no part gets an arrow its declarations do not make.
+- The entry: the parts holding a seed file's seed declarations (places
+  `seed_decls`), else the seed file's part, so the "in" column and "starts
+  the program" (core) survive a split seed file. The atlas keeps no main
+  path of its own; orientation's main flow and the report's start list read
+  the entry forward.
+- A boundary takes its subject's part. An input that hands a declaration
+  over (a command table row, a route) stands only in that declaration's
+  part: when the declaration is undecided, or in a file off the map, the
+  input names no part, never the part holding the table or the registering
+  call. Without a subject, a boundary takes the part of the innermost
+  declaration whose source range holds its line (none when that declaration
+  is off the map), else the part of its file's module body, else its file's
+  part: a read inside a method of a type in another part stands in the
+  type's part, not in the part of the file's own units.
+- Learn's evidence of a file with no part names no area; its declarations
+  name their parts. A cross-target joint of a file edge into or out of a
+  file with no part names no part and is not drawn; its declarations' calls
+  still join their parts inside the target.
 
 **Membership and the off-map record.** Atlas v12 saves explicit `member_ids`
 per part, and an explicit per-target `off_map` record: every file, or stray
-declaration, no drawn part holds, with its reason (`left_out`, `conflict`,
-`no_units`, `map_failure`, `undecided`), its file line, captions and keys. `no_units` is a
-file that declares nothing. A type's methods declared elsewhere follow it off
-the map; a method whose file is off the map stays with its placed type. A
-file endpoint is its partitioned part directly; a method that follows its
-type into another part changes only its own membership. A file that is no
-row takes as endpoint the one part its drawn declarations share (none when
-they sit in two parts) and has no entry of its own. Declarations off the map
-in a file a part holds, such as a method whose type is off the map, are
-listed under their type's reason with that part as `box_id`: the file itself
-stays on the map. A boundary takes its declaration's part, else its file's
-part, and an input that hands a declaration over only that declaration's
-part; one in a file off the map names no box and is still read. A part whose every
+declaration, no drawn part holds, with its unit's reason (`left_out`,
+`conflict`, `undecided`) or the file's (`no_units`, `map_failure`), its file
+line, captions and keys. `no_units` is a file that declares nothing. A
+type's methods declared elsewhere follow it off the map; a method whose file
+is off the map stays with its placed type. A file that is no row has no
+entry of its own while a part holds its declarations. Declarations off the
+map in a file a part holds, such as a method whose type is off the map or
+the units of a box left out, are listed under their unit's reason, with the
+file's part as `box_id` when it has one: the file itself stays on the map,
+and GroupsIndex lists them by their subjects. A boundary in a file off the
+map names no box and is still read. A part whose every
 file is test code (the adapter's `TestSources` fact) keeps its membership,
 file lines, captions and keys in the atlas, is not described, not grouped
 into areas and not asked for a core role, and leaves the canvas. The model
@@ -475,9 +499,7 @@ PYTHON, JSTS, CLOJURE). Accepted parts and areas are born as short `p*` and
 **Descriptions.** Each drawn part that is not test code gets one
 `atlas_describe` request (`prompts/design_describe.md`): the part's name and
 every unit it holds grouped dir → file with its name and signature, never
-documentation: all units of a file it holds whole, only its own of a split
-file, so an unsplit part's request keeps its bytes (a golden per language
-fixture checks it against the requests before the role split). A part whose
+documentation: the units of its whole files and of its boxes. A part whose
 only units are module bodies has no member to describe it by and sends no
 request; its name alone would invite an invented description. The answer is
 `{"description":"…"}`. A long description is

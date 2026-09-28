@@ -33,7 +33,7 @@ var designDescribePrompt string
 var designAreasPrompt string
 
 const (
-	designPartsTask    = "repomap.atlas.parts.v1"
+	designPartsTask    = "repomap.atlas.parts.v2"
 	designDescribeTask = "repomap.atlas.describe.v1"
 	designAreasTask    = "repomap.atlas.areas.v1"
 
@@ -55,16 +55,14 @@ func designOutputTokens(rows int) int {
 	return min(llm.DefaultMaxOutputTokens, max(designOutputFloor, designOutputPerRow*rows))
 }
 
-// designFile is one row of a target's parts request: a file of the target
-// that holds at least one unit of its own.
+// designFile is a file of the target that holds at least one unit of its
+// own: a function, a variable, a type together with its methods, or a
+// module body.
 type designFile struct {
 	id, path, dir   string
 	test, generated bool
-	// units are the symbol places of the file's units: a function, a
-	// variable, a type together with its methods, or a module body. Their
-	// part is the file's part.
-	units                       []string
-	types, functions, variables []string
+	// units are the symbol places of the file's units in declaration order.
+	units []string
 }
 
 // designView is what the code knows about one target's files before any
@@ -82,17 +80,24 @@ type designView struct {
 	// membership it takes: a method to its type, a lexical child to the
 	// function or method whose source range holds it.
 	follows map[string]string
-	// unitFile is the file whose part a unit takes.
+	// unitFile is the file a unit is declared in; kind is "types",
+	// "functions", "variables" or "" for a module body, and text is its
+	// name, with its signature when it is exported.
 	unitFile map[string]string
-	// calls counts exact call sites between listed files, once per distinct
-	// pair of files; imports are the imports between listed files.
-	calls   map[[2]string]int
+	kind     map[string]string
+	text     map[string]string
+	// sites are the exact call sites of the target's declarations, each with
+	// the units it reaches other than its own; imports are the imports
+	// between unit-bearing files.
+	sites   []unitSite
 	imports map[[2]string]bool
-	// fileUnitCalls and unitFileCalls count the same call sites between a
-	// listed file and a unit of another listed file, once per distinct
-	// reached unit or file: a file whose code several parts hold is reached
-	// through its units.
-	fileUnitCalls, unitFileCalls map[[2]string]int
+}
+
+// unitSite is one exact call site: the unit whose code it is in and the
+// distinct other units its callees belong to.
+type unitSite struct {
+	from string
+	to   []string
 }
 
 // designView reads one target's files and declarations. Every declaration
@@ -101,8 +106,7 @@ type designView struct {
 func (r *reader) designView(targetID string) *designView {
 	view := &designView{
 		targetID: targetID, byID: map[string]*designFile{}, decls: map[string][]string{},
-		follows: map[string]string{}, unitFile: map[string]string{}, calls: map[[2]string]int{}, imports: map[[2]string]bool{},
-		fileUnitCalls: map[[2]string]int{}, unitFileCalls: map[[2]string]int{},
+		follows: map[string]string{}, unitFile: map[string]string{}, kind: map[string]string{}, text: map[string]string{}, imports: map[[2]string]bool{},
 	}
 	var files []atlas.Place
 	for _, place := range r.opts.Graph.Places {
@@ -159,7 +163,6 @@ func (r *reader) designView(targetID string) *designView {
 			if decl.ObjectID != "" {
 				r.designSubjects[decl.ObjectID] = id
 			}
-			r.designFiles[id] = file.ID
 			if owner := typeOf[id]; owner != "" {
 				view.follows[id] = owner
 				continue
@@ -177,19 +180,19 @@ func (r *reader) designView(targetID string) *designView {
 			named[decl.Name] = id
 			row.units = append(row.units, id)
 			view.unitFile[id] = file.ID
-			text := decl.Name
+			view.text[id] = decl.Name
 			if decl.Exported && decl.Signature != "" {
-				text += " " + decl.Signature
+				view.text[id] += " " + decl.Signature
 			}
 			switch decl.Kind {
 			case "type":
-				row.types = appendUnique(row.types, text)
+				view.kind[id] = "types"
 			case "variable":
-				row.variables = appendUnique(row.variables, text)
+				view.kind[id] = "variables"
 			case "module":
 				// A module body counts as a unit; its name repeats the path.
 			default:
-				row.functions = appendUnique(row.functions, text)
+				view.kind[id] = "functions"
 			}
 		}
 		if len(row.units) > 0 {
@@ -197,52 +200,30 @@ func (r *reader) designView(targetID string) *designView {
 			view.byID[file.ID] = row
 		}
 	}
-	// A declaration counts from its own file when that file is listed, else
-	// from the file of the unit it follows.
-	listedFile := func(id string) string {
-		if file := r.designFiles[id]; view.byID[file] != nil {
-			return file
-		}
-		return view.unitFile[view.root(id)]
-	}
+	// A call site counts from the unit whose code holds it: a method's from
+	// its type's unit, wherever the method is declared.
 	for _, file := range view.all {
 		for _, id := range view.decls[file] {
 			symbol := r.places[id].Symbol
-			if symbol == nil {
-				continue
-			}
-			from := listedFile(id)
-			if from == "" {
+			from := view.root(id)
+			if symbol == nil || view.unitFile[from] == "" {
 				continue
 			}
 			for _, call := range symbol.Calls {
 				if call.Kind != "calls" || call.Resolution != "exact" {
 					continue
 				}
-				var reached, units []string
+				var reached []string
 				for _, callee := range call.CalleeIDs {
 					if !inTarget[callee] {
 						continue
 					}
-					to := listedFile(callee)
-					if to == "" || to == from {
-						continue
-					}
-					if !slices.Contains(reached, to) {
+					if to := view.root(callee); view.unitFile[to] != "" && to != from && !slices.Contains(reached, to) {
 						reached = append(reached, to)
 					}
-					if unit := view.root(callee); view.unitFile[unit] != "" && !slices.Contains(units, unit) {
-						units = append(units, unit)
-					}
 				}
-				for _, to := range reached {
-					view.calls[[2]string{from, to}]++
-					if unit := view.root(id); view.unitFile[unit] != "" {
-						view.unitFileCalls[[2]string{unit, to}]++
-					}
-				}
-				for _, unit := range units {
-					view.fileUnitCalls[[2]string{from, unit}]++
+				if len(reached) > 0 {
+					view.sites = append(view.sites, unitSite{from: from, to: reached})
 				}
 			}
 		}
@@ -288,43 +269,132 @@ func enclosingCallable(decls []atlas.Decl, at int) int {
 	return best
 }
 
-// designFileRow is one file as the parts and placement requests show it.
-type designFileRow struct {
+// designUnit is one row of a target's parts request: a whole file (its f*
+// ref), or one box of a file the role split splits (a request-local c* ref,
+// with the box's name). Its units are the declarations whose membership the
+// row carries; they take the row's part.
+type designUnit struct {
+	ref, path, dir, box string
+	// file is the f* place of the file the row's units are declared in.
+	file            string
+	test, generated bool
+	units           []string
+	// types, functions and variables are the units' names, exported ones
+	// with their signature, each once.
+	types, functions, variables []string
+}
+
+// designUnitRow is one unit as the parts and placement requests show it.
+type designUnitRow struct {
 	Ref       string   `json:"ref"`
 	Path      string   `json:"path"`
+	Box       string   `json:"box,omitempty"`
 	Units     int      `json:"units"`
 	Types     []string `json:"types,omitempty"`
 	Functions []string `json:"functions,omitempty"`
 	Variables []string `json:"variables,omitempty"`
 }
 
-func (file *designFile) row() designFileRow {
-	return designFileRow{Ref: file.id, Path: file.path, Units: len(file.units), Types: file.types, Functions: file.functions, Variables: file.variables}
+func (unit *designUnit) row() designUnitRow {
+	return designUnitRow{Ref: unit.ref, Path: unit.path, Box: unit.box, Units: len(unit.units), Types: unit.types, Functions: unit.functions, Variables: unit.variables}
 }
 
-// designPartsInput is the parts request: the listed files with the calls and
-// imports among them, aggregated over refs the request advertises.
+// designUnitOf is a row of the given units of one file.
+func (view *designView) designUnitOf(ref string, file *designFile, box string, units []string) *designUnit {
+	unit := &designUnit{ref: ref, path: file.path, dir: file.dir, box: box, file: file.id, test: file.test, generated: file.generated, units: units}
+	for _, id := range units {
+		switch view.kind[id] {
+		case "types":
+			unit.types = appendUnique(unit.types, view.text[id])
+		case "variables":
+			unit.variables = appendUnique(unit.variables, view.text[id])
+		case "functions":
+			unit.functions = appendUnique(unit.functions, view.text[id])
+		}
+	}
+	return unit
+}
+
+// groupingUnits are the rows of a target's parts request, in f* order: a
+// file the role split splits gives one c* row per box that holds a unit, in
+// naming order (c1, c2… across the target); any other file gives one whole
+// row under its f* ref. The units no box of a split file took stay off the
+// map as undecided.
+func (view *designView) groupingUnits(splits map[string]*roleSplit, outcome *designOutcome) []*designUnit {
+	var units []*designUnit
+	boxes := 0
+	for _, file := range view.files {
+		split := splits[file.id]
+		if split == nil {
+			units = append(units, view.designUnitOf(file.id, file, "", file.units))
+			continue
+		}
+		for i, box := range split.boxes {
+			if len(split.holds[i]) == 0 {
+				continue
+			}
+			boxes++
+			units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, box.Name, split.holds[i]))
+		}
+		for _, id := range split.undecided {
+			outcome.unitReason[id] = atlas.OffMapUndecided
+		}
+	}
+	return units
+}
+
+// designPartsInput is the parts request: the listed units with the calls
+// among them and the imports among whole files, aggregated over refs the
+// request advertises.
 type designPartsInput struct {
 	Task    string          `json:"task"`
-	Files   []designFileRow `json:"files"`
+	Units   []designUnitRow `json:"units"`
 	Calls   []string        `json:"calls,omitempty"`
 	Imports []string        `json:"imports,omitempty"`
 }
 
-func (view *designView) partsInput(files []*designFile) designPartsInput {
+func (view *designView) partsInput(units []*designUnit) designPartsInput {
 	listed := map[string]bool{}
+	rowOf := map[string]string{}
+	whole := map[string]string{}
 	input := designPartsInput{Task: designPartsTask}
-	for _, file := range files {
-		listed[file.id] = true
-		input.Files = append(input.Files, file.row())
+	for _, unit := range units {
+		listed[unit.ref] = true
+		input.Units = append(input.Units, unit.row())
+		for _, id := range unit.units {
+			rowOf[id] = unit.ref
+		}
+		if unit.box == "" {
+			whole[unit.file] = unit.ref
+		}
 	}
-	input.Calls = pairCounts(view.calls, listed)
+	input.Calls = pairCounts(view.siteCounts(rowOf), listed)
 	for _, pair := range sortedPairs(view.imports) {
-		if listed[pair[0]] && listed[pair[1]] {
-			input.Imports = append(input.Imports, pair[0]+" -> "+pair[1])
+		if from, to := whole[pair[0]], whole[pair[1]]; from != "" && to != "" {
+			input.Imports = append(input.Imports, from+" -> "+to)
 		}
 	}
 	return input
+}
+
+// siteCounts counts, per exact call site, each distinct row other than its
+// own that it reaches, by pair of rows; rowOf is each unit's row.
+func (view *designView) siteCounts(rowOf map[string]string) map[[2]string]int {
+	counts := map[[2]string]int{}
+	for _, site := range view.sites {
+		from := rowOf[site.from]
+		if from == "" {
+			continue
+		}
+		var reached []string
+		for _, unit := range site.to {
+			if to := rowOf[unit]; to != "" && to != from && !slices.Contains(reached, to) {
+				reached = append(reached, to)
+				counts[[2]string{from, to}]++
+			}
+		}
+	}
+	return counts
 }
 
 // pairCounts prints "a -> b (n)" for every pair both of whose ends are kept.
@@ -358,10 +428,10 @@ func sortedPairs(pairs map[[2]string]bool) [][2]string {
 
 // partsGroup is one element of a parts answer, read on its own.
 type partsGroup struct {
-	Name  string
-	Files []string
-	// Malformed says the element was not a name with a list of files.
-	Malformed bool
+	Name string
+	Refs []string
+	// Malformed says why the element is not a name with one list of units.
+	Malformed string
 }
 
 type partsAnswer struct {
@@ -372,11 +442,11 @@ type partsAnswer struct {
 func (answer partsAnswer) MarshalJSON() ([]byte, error) {
 	type group struct {
 		Name  string   `json:"name"`
-		Files []string `json:"files"`
+		Units []string `json:"units"`
 	}
 	groups := make([]group, 0, len(answer.Groups))
 	for _, g := range answer.Groups {
-		groups = append(groups, group{Name: g.Name, Files: g.Files})
+		groups = append(groups, group{Name: g.Name, Units: g.Refs})
 	}
 	return json.Marshal(struct {
 		Groups []group `json:"groups"`
@@ -406,13 +476,15 @@ func refList(raw json.RawMessage) ([]string, bool) {
 	return nil, false
 }
 
-// decodeParts reads {"groups":[{"name":…,"files":[…]}]} over the file refs
+// decodeParts reads {"groups":[{"name":…,"units":[…]}]} over the unit refs
 // one request listed. Every group is read on its own, and extra fields such
-// as an "about" are ignored; "files" may also be one string of refs. Only an
-// answer that draws no part is refused whole: it is not JSON, holds no
-// groups, or no group holds a listed file of its own (every ref unknown, such
-// as a path, every group without a name, or every file listed in two
-// different groups).
+// as an "about" are ignored; "files" is the same list as "units" (a form, as
+// the answers to the file-only request wrote it), the two given alike are
+// one list and given differently refuse that group alone; the list may also
+// be one string of refs. Only an answer that draws no part is refused
+// whole: it is not JSON, holds no groups, or no group holds a listed unit of
+// its own (every ref unknown, such as a path, every group without a name,
+// or every unit listed in two different groups).
 func decodeParts(raw []byte, listed []string) (partsAnswer, error) {
 	var envelope struct {
 		Groups json.RawMessage `json:"groups"`
@@ -425,54 +497,77 @@ func decodeParts(raw []byte, listed []string) (partsAnswer, error) {
 		return partsAnswer{}, fmt.Errorf("parts: the answer has no groups")
 	}
 	answer := partsAnswer{Groups: make([]partsGroup, 0, len(elements))}
+	const notAList = "is not a name with a list of files or units"
 	for _, element := range elements {
 		var group struct {
 			Name  string          `json:"name"`
+			Units json.RawMessage `json:"units"`
 			Files json.RawMessage `json:"files"`
 		}
 		if err := json.Unmarshal(element, &group); err != nil {
-			answer.Groups = append(answer.Groups, partsGroup{Malformed: true})
+			answer.Groups = append(answer.Groups, partsGroup{Malformed: notAList})
 			continue
 		}
-		files, ok := refList(group.Files)
-		if !ok {
-			answer.Groups = append(answer.Groups, partsGroup{Malformed: true})
+		units, unitsOK := refList(group.Units)
+		files, filesOK := refList(group.Files)
+		switch {
+		case !unitsOK || !filesOK:
+			answer.Groups = append(answer.Groups, partsGroup{Malformed: notAList})
 			continue
+		case len(group.Units) > 0 && len(group.Files) > 0 && !sameRefs(units, files):
+			answer.Groups = append(answer.Groups, partsGroup{Malformed: "gives units and files that differ"})
+			continue
+		case len(group.Units) == 0:
+			units = files
 		}
-		answer.Groups = append(answer.Groups, partsGroup{Name: cleanText(group.Name), Files: files})
+		answer.Groups = append(answer.Groups, partsGroup{Name: cleanText(group.Name), Refs: units})
 	}
-	for _, files := range validatePartition(answer, listed).files {
-		if len(files) > 0 {
+	for _, refs := range validatePartition(answer, listed).refs {
+		if len(refs) > 0 {
 			return answer, nil
 		}
 	}
-	return partsAnswer{}, fmt.Errorf("parts: no group holds a listed file of its own")
+	return partsAnswer{}, fmt.Errorf("parts: no group holds a listed unit of its own")
 }
 
-// partition is a validated parts answer: independent file → part rows over
-// the files one request listed. Validation annotates; it refuses only the
+// sameRefs says whether two lists hold the same refs, ignoring order,
+// repeats and surrounding space.
+func sameRefs(left, right []string) bool {
+	set := func(refs []string) []string {
+		result := make([]string, 0, len(refs))
+		for _, ref := range refs {
+			result = append(result, strings.TrimSpace(ref))
+		}
+		sort.Strings(result)
+		return slices.Compact(result)
+	}
+	return slices.Equal(set(left), set(right))
+}
+
+// partition is a validated parts answer: independent unit → part rows over
+// the units one request listed. Validation annotates; it refuses only the
 // memberships that are actually wrong and keeps every good neighbour.
 type partition struct {
-	// names and files are the accepted groups in answer order, each with the
-	// files it alone holds. A group every file of which conflicted keeps no
-	// file and is not drawn.
+	// names and refs are the accepted groups in answer order, each with the
+	// units it alone holds. A group every unit of which conflicted keeps no
+	// unit and is not drawn.
 	names []string
-	files [][]string
-	// leftOut are listed files no accepted group holds.
+	refs  [][]string
+	// leftOut are listed units no accepted group holds.
 	leftOut []string
-	// conflicts are listed files two or more accepted groups hold, with
+	// conflicts are listed units two or more accepted groups hold, with
 	// those groups; both memberships are refused, never the first kept.
 	conflicts map[string][]int
 	// unknown are refs the request did not list; they are discarded.
 	unknown []string
 	// refused says why a group was not accepted: unreadable, no name or
-	// no listed file. Its files are left out unless another group holds them.
+	// no listed unit. Its units are left out unless another group holds them.
 	refused []string
 	// repeated are names given to more than one accepted group, ignoring
-	// case; each group keeps its own files.
+	// case; each group keeps its own units.
 	repeated []string
 	// repeatedGroups are groups that restate an earlier accepted group: the
-	// same name, ignoring case, over the same set of listed files. The same
+	// same name, ignoring case, over the same set of listed units. The same
 	// statement twice is one answer, so the repeat is not drawn again.
 	repeatedGroups []string
 }
@@ -488,15 +583,15 @@ func validatePartition(answer partsAnswer, listed []string) partition {
 	var sets [][]string // each accepted group's listed files, sorted
 	for position, group := range answer.Groups {
 		switch {
-		case group.Malformed:
-			result.refused = append(result.refused, fmt.Sprintf("group %d is not a name with a list of files", position+1))
+		case group.Malformed != "":
+			result.refused = append(result.refused, fmt.Sprintf("group %d %s", position+1, group.Malformed))
 			continue
 		case group.Name == "":
 			result.refused = append(result.refused, fmt.Sprintf("group %d has no name", position+1))
 			continue
 		}
-		var files []string
-		for _, ref := range group.Files {
+		var refs []string
+		for _, ref := range group.Refs {
 			ref = strings.TrimSpace(ref)
 			switch {
 			case !known[ref]:
@@ -504,15 +599,15 @@ func validatePartition(answer partsAnswer, listed []string) partition {
 					unknown[ref] = true
 					result.unknown = append(result.unknown, ref)
 				}
-			case !slices.Contains(files, ref):
-				files = append(files, ref)
+			case !slices.Contains(refs, ref):
+				refs = append(refs, ref)
 			}
 		}
-		if len(files) == 0 {
-			result.refused = append(result.refused, fmt.Sprintf("group %q holds no listed file", group.Name))
+		if len(refs) == 0 {
+			result.refused = append(result.refused, fmt.Sprintf("group %q holds no listed unit", group.Name))
 			continue
 		}
-		set := slices.Clone(files)
+		set := slices.Clone(refs)
 		sort.Strings(set)
 		if earlier := sameGroup(result.names, sets, group.Name, set); earlier >= 0 {
 			result.repeatedGroups = append(result.repeatedGroups, fmt.Sprintf("group %d repeats group %q", position+1, result.names[earlier]))
@@ -520,9 +615,9 @@ func validatePartition(answer partsAnswer, listed []string) partition {
 		}
 		index := len(result.names)
 		result.names = append(result.names, group.Name)
-		result.files = append(result.files, nil)
+		result.refs = append(result.refs, nil)
 		sets = append(sets, set)
-		for _, ref := range files {
+		for _, ref := range refs {
 			holders[ref] = append(holders[ref], index)
 		}
 	}
@@ -532,7 +627,7 @@ func validatePartition(answer partsAnswer, listed []string) partition {
 			result.leftOut = append(result.leftOut, ref)
 		case 1:
 			part := holders[ref][0]
-			result.files[part] = append(result.files[part], ref)
+			result.refs[part] = append(result.refs[part], ref)
 		default:
 			result.conflicts[ref] = holders[ref]
 		}
@@ -561,32 +656,32 @@ func sameGroup(names []string, sets [][]string, name string, set []string) int {
 	return -1
 }
 
-// designPartsCall is the parts request of one window of a target's files. An
-// answer refused whole leaves the window refused; it is not asked again.
+// designPartsCall is the parts request of one window of a target's units.
+// An answer refused whole leaves the window refused; it is not asked again.
 func designPartsCall(input designPartsInput) (llm.Call[partsAnswer], error) {
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return llm.Call[partsAnswer]{}, err
 	}
-	listed := make([]string, len(input.Files))
-	for i, file := range input.Files {
-		listed[i] = file.Ref
+	listed := make([]string, len(input.Units))
+	for i, unit := range input.Units {
+		listed[i] = unit.Ref
 	}
 	return llm.Call[partsAnswer]{
 		State: []byte(designPartsTask),
 		Prompt: llm.Prompt{System: designPartsPrompt, User: string(raw), ResponseFormatJSON: true, NoResponseAdjunct: true,
-			ResponseExample: `{"groups":[{"name":"Move search","files":["f4","f9"]},{"name":"Board state","files":["f2"]}]}`},
-		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designOutputTokens(len(input.Files))},
+			ResponseExample: `{"groups":[{"name":"Move search","units":["f4","c2"]},{"name":"Board state","units":["f2"]}]}`},
+		Limits:         llm.Limits{MaxRequestBytes: llm.SemanticRecordByteLimit, MaxResponseBytes: llm.ProviderResponseByteLimit, MaxOutputTokens: designOutputTokens(len(input.Units))},
 		DecodeValidate: func(raw []byte) (partsAnswer, error) { return decodeParts(raw, listed) },
 	}, nil
 }
 
-// splitWindow halves a window of files along whole directory subtrees: the
+// splitWindow halves a window of units along whole directory subtrees: the
 // items are the subtrees and the loose files directly under the deepest
-// directory all the files share, halved by file count in path order. A
-// single flat directory thus splits into contiguous halves. One file does
-// not split.
-func splitWindow(files []*designFile) ([]*designFile, []*designFile, bool) {
+// directory all the units share, halved by unit count in path order, so the
+// boxes of one file stay in one window. A single flat directory thus splits
+// into contiguous halves. One file does not split.
+func splitWindow(files []*designUnit) ([]*designUnit, []*designUnit, bool) {
 	if len(files) < 2 {
 		return nil, nil, false
 	}
@@ -607,20 +702,20 @@ func splitWindow(files []*designFile) ([]*designFile, []*designFile, bool) {
 	}
 	sorted := slices.Clone(files)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].path < sorted[j].path })
-	item := func(file *designFile) string {
+	item := func(file *designUnit) string {
 		rest := strings.Split(file.path, "/")[len(common):]
 		if len(rest) > 1 {
 			return rest[0] + "/"
 		}
 		return file.path
 	}
-	var items [][]*designFile
+	var items [][]*designUnit
 	for _, file := range sorted {
 		if len(items) > 0 && item(items[len(items)-1][0]) == item(file) {
 			items[len(items)-1] = append(items[len(items)-1], file)
 			continue
 		}
-		items = append(items, []*designFile{file})
+		items = append(items, []*designUnit{file})
 	}
 	if len(items) < 2 {
 		return nil, nil, false
@@ -633,7 +728,7 @@ func splitWindow(files []*designFile) ([]*designFile, []*designFile, bool) {
 			half, best = i+1, gap
 		}
 	}
-	var left, right []*designFile
+	var left, right []*designUnit
 	for i, group := range items {
 		if i < half {
 			left = append(left, group...)
@@ -664,25 +759,28 @@ func inputRefused(err error) bool {
 
 // partsWindow is one answered window of a target's parts request.
 type partsWindow struct {
-	files     []*designFile
+	units     []*designUnit
 	partition partition
 	err       error
 }
 
-// askParts sends a target's files, split into directory-subtree windows only
-// when the request does not fit the provider. Parts never cross windows and
-// no file is sampled or left unasked.
-func (r *reader) askParts(ctx context.Context, view *designView, round int) ([]partsWindow, error) {
+// askParts sends a target's units, split into directory-subtree windows
+// only when the request does not fit the provider. Parts never cross
+// windows and no unit is sampled or left unasked.
+func (r *reader) askParts(ctx context.Context, view *designView, round int, units []*designUnit) ([]partsWindow, error) {
+	if _, started := r.started[lines.StageZones]; !started {
+		r.started[lines.StageZones] = time.Now()
+	}
 	executor := debugdump.BindStage(r.opts.Executor, lines.StageZones)
 	provider := r.opts.Provider
 	use := r.use(lines.StageZones)
-	queue := [][]*designFile{view.files}
+	queue := [][]*designUnit{units}
 	var answered []partsWindow
 	index := 0
 	for len(queue) > 0 {
-		var windows [][]*designFile
+		var windows [][]*designUnit
 		var calls []llm.Call[partsAnswer]
-		var next [][]*designFile
+		var next [][]*designUnit
 		for _, files := range queue {
 			call, err := designPartsCall(view.partsInput(files))
 			if err != nil {
@@ -717,7 +815,7 @@ func (r *reader) askParts(ctx context.Context, view *designView, round int) ([]p
 			}
 			window := table.Window{Stage: lines.StageZones, Round: round, Index: index}
 			index++
-			answer := partsWindow{files: windows[i], err: result.Err}
+			answer := partsWindow{units: windows[i], err: result.Err}
 			use.Windows++
 			use.Rows += len(windows[i])
 			if result.Outcome.Cached {
@@ -733,8 +831,8 @@ func (r *reader) askParts(ctx context.Context, view *designView, round int) ([]p
 			recorded := len(r.rejected)
 			if result.Err == nil {
 				listed := make([]string, len(windows[i]))
-				for j, file := range windows[i] {
-					listed[j] = file.id
+				for j, unit := range windows[i] {
+					listed[j] = unit.ref
 				}
 				answer.partition = validatePartition(result.Outcome.Value, listed)
 				r.recordPartition(view.targetID, answer.partition, responseRef, len(windows[i]))
@@ -749,7 +847,7 @@ func (r *reader) askParts(ctx context.Context, view *designView, round int) ([]p
 					responseRef = ""
 				}
 				r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageZones, Target: view.targetID, Kind: "window_rejected", Count: len(windows[i]), Reason: result.Err.Error(), ResponseRef: responseRef})
-				fmt.Fprintf(&r.tables, "%d files · parts answer refused: %s\n\n", len(windows[i]), result.Err)
+				fmt.Fprintf(&r.tables, "%d units · parts answer refused: %s\n\n", len(windows[i]), result.Err)
 				answered = append(answered, answer)
 				continue
 			}
@@ -772,11 +870,11 @@ func (r *reader) askParts(ctx context.Context, view *designView, round int) ([]p
 func (r *reader) recordPartition(targetID string, result partition, responseRef string, listed int) {
 	drawn := 0
 	for i, name := range result.names {
-		if len(result.files[i]) == 0 {
+		if len(result.refs[i]) == 0 {
 			continue
 		}
 		drawn++
-		fmt.Fprintf(&r.tables, "- %s: %s\n", name, strings.Join(result.files[i], " "))
+		fmt.Fprintf(&r.tables, "- %s: %s\n", name, strings.Join(result.refs[i], " "))
 	}
 	note := func(kind string, samples []string, reason string) {
 		if len(samples) == 0 {
@@ -798,57 +896,41 @@ func (r *reader) recordPartition(targetID string, result partition, responseRef 
 	note("part_repeated_group", result.repeatedGroups, "groups given twice, drawn once")
 	switch {
 	case drawn == 1 && listed > 1:
-		fmt.Fprintf(&r.tables, "- one part holds every placed file; accepted as returned\n")
+		fmt.Fprintf(&r.tables, "- one part holds every placed unit; accepted as returned\n")
 	case drawn > 1 && drawn == listed:
-		fmt.Fprintf(&r.tables, "- one part per file; accepted as returned\n")
+		fmt.Fprintf(&r.tables, "- one part per unit; accepted as returned\n")
 	}
 	r.tables.WriteString("\n")
 }
 
-// designPart is one drawn part of a target before it is a box.
+// designPart is one drawn part of a target before it is a box: the units
+// of the rows its refs name.
 type designPart struct {
-	id    string
-	name  string
-	files []string // row files placed in it whole: its endpoint rows
-	// sources are the files of the role split whose units it holds, and
-	// units those units; its membership is final when it gets its ID.
-	sources, units []string
+	id, name string
+	refs     []string
 }
 
 // designOutcome is a target's map of parts once the answer, the follow-up
 // and the membership rules have been applied.
 type designOutcome struct {
-	parts     []*designPart
-	partOf    map[string]string // row file placed whole → part ID
-	unitPart  map[string]string // unit of a split file → part ID
-	offReason map[string]string // file → why it is off the map
-	// undecided are the units of split files no box took; split are the
-	// files whose code several parts hold, which have no endpoint.
-	undecided, split map[string]bool
-	failure          string
-	boxes            []*boxState
-	membership       map[string]string // declaration or file place → part ID
-}
-
-// partOfUnit is the part a unit takes: its file's, or its box's when the
-// file is split.
-func (outcome *designOutcome) partOfUnit(view *designView, unit string) string {
-	if part := outcome.partOf[view.unitFile[unit]]; part != "" {
-		return part
-	}
-	return outcome.unitPart[unit]
+	parts  []*designPart
+	partOf map[string]string // unit row ref → part ID
+	// unitPart is each placed unit's part; unitReason why a unit is off the
+	// map: undecided (no box of its split file took it), left_out or
+	// conflict (its row's).
+	unitPart, unitReason map[string]string
+	failure              string
+	boxes                []*boxState
+	membership           map[string]string // declaration or file place → part ID
 }
 
 func (r *reader) readDesign(ctx context.Context) error {
-	r.started[lines.StageZones] = time.Now()
-	r.opts.Stage(lines.StageZones, "grouping each target's files into parts, placing what the answer left out, then describing the parts")
+	r.opts.Stage(lines.StageZones, "splitting each target's files into boxes, grouping the files and boxes into parts, placing what the answer left out, then describing the parts")
 	r.boxes = map[string]*boxState{}
 	r.designBoxOf = map[string]map[string]string{}
-	r.splitFiles = map[string]map[string]bool{}
 	r.offMap = map[string][]offMapEntry{}
 	r.mapFailure = map[string]string{}
-	if r.designFiles == nil {
-		r.designFiles = map[string]string{}
+	if r.designSubjects == nil {
 		r.designSubjects = map[string]string{}
 	}
 	targets := r.opts.Targets
@@ -858,7 +940,6 @@ func (r *reader) readDesign(ctx context.Context) error {
 	for position, target := range targets {
 		views[position] = r.designView(target.ID)
 		r.designBoxOf[target.ID] = map[string]string{}
-		r.splitFiles[target.ID] = map[string]bool{}
 	}
 	// Every target is read on its own view at once. Its parts take their
 	// compact IDs in target order, the one place a target waits for the ones
@@ -891,12 +972,12 @@ func (r *reader) readDesign(ctx context.Context) error {
 	for _, view := range readers {
 		r.joinView(view)
 	}
-	r.reportStage(lines.StageZones)
 	for _, stage := range []string{lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign} {
 		if _, asked := r.uses[stage]; asked {
 			r.reportStage(stage)
 		}
 	}
+	r.reportStage(lines.StageZones)
 	r.reportStage(lines.StagePlacement)
 	r.reportStage(lines.StageDescribe)
 	return nil
@@ -949,65 +1030,55 @@ type offMapEntry struct {
 }
 
 // designTarget is one target's map of parts, read on the view r and drawn on
-// owner, the reader the views share. The role split of its files runs at
-// once beside the parts request, on its own view, and joins before the
-// parts take their IDs; its records follow the parts record.
+// owner, the reader the views share. The role split of its files runs
+// first; the parts request then groups the files and the boxes of the split
+// files, and its parts take their IDs in answer order.
 func (r *reader) designTarget(ctx context.Context, owner *reader, order *designOrder, position int, view *designView) error {
 	defer order.parts.pass(position)
 	target := r.opts.Targets[position]
 	round := position + 1
-	outcome := &designOutcome{partOf: map[string]string{}, unitPart: map[string]string{}, offReason: map[string]string{},
-		undecided: map[string]bool{}, split: map[string]bool{}, membership: map[string]string{}}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	outcome := &designOutcome{partOf: map[string]string{}, unitPart: map[string]string{}, unitReason: map[string]string{}, membership: map[string]string{}}
 	var splits map[string]*roleSplit
-	var rolesErr error
-	var roles *reader
-	rolesDone := make(chan struct{})
-	if r.dry {
-		close(rolesDone)
-	} else {
-		roles = r.view(nil)
-		go func() {
-			defer close(rolesDone)
-			splits, rolesErr = roles.readRoles(ctx, view, round)
-		}()
+	if !r.dry {
+		var err error
+		if splits, err = r.readRoles(ctx, view, round); err != nil {
+			return err
+		}
 	}
+	units := view.groupingUnits(splits, outcome)
 	var drafts []designPart
 	conflicts := map[string][]int{}
 	var leftOut []string
 	switch {
-	case len(view.files) == 0:
+	case len(units) == 0:
 		// A target without code has a legitimate empty map.
-	case len(view.files) == 1:
-		// Splitting one file among parts is not a decision: the one part
-		// takes the target's name, unless the role split splits the file.
-		drafts = []designPart{{name: target.Name, files: []string{view.files[0].id}}}
+	case len(units) == 1:
+		// Splitting one unit among parts is not a decision: the one part
+		// takes the target's name.
+		drafts = []designPart{{name: target.Name, refs: []string{units[0].ref}}}
 	case r.dry:
 		outcome.failure = atlas.MapFailureNoModel
 	default:
-		windows, err := r.askParts(ctx, view, round)
+		windows, err := r.askParts(ctx, view, round, units)
 		if err != nil {
-			cancel()
-			<-rolesDone
 			return err
 		}
 		refused := 0
 		for _, window := range windows {
 			if window.err != nil {
 				refused++
-				for _, file := range window.files {
-					leftOut = append(leftOut, file.id)
+				for _, unit := range window.units {
+					leftOut = append(leftOut, unit.ref)
 				}
 				continue
 			}
 			drawnIndex := map[int]int{}
 			for i, name := range window.partition.names {
-				if len(window.partition.files[i]) == 0 {
+				if len(window.partition.refs[i]) == 0 {
 					continue
 				}
 				drawnIndex[i] = len(drafts)
-				drafts = append(drafts, designPart{name: name, files: window.partition.files[i]})
+				drafts = append(drafts, designPart{name: name, refs: window.partition.refs[i]})
 			}
 			leftOut = append(leftOut, window.partition.leftOut...)
 			for ref, holders := range window.partition.conflicts {
@@ -1029,66 +1100,35 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 			drafts, leftOut, conflicts = nil, nil, map[string][]int{}
 		}
 	}
-	<-rolesDone
-	if rolesErr != nil {
-		return rolesErr
-	}
-	if roles != nil {
-		r.joinView(roles)
-	}
-	roleDrafts, dropped := r.applyRoles(view, outcome, drafts, splits)
-	// The parts take their compact IDs in target order: the answer's parts
-	// in answer order, then each split file's boxes in f* order and naming
-	// order. A role part's membership is final when it gets its ID.
+	// The parts take their compact IDs in target order, each target's in
+	// answer order.
 	if err := order.parts.wait(ctx, position); err != nil {
 		return err
 	}
 	order.drawing.Lock()
 	for i := range drafts {
-		if !dropped[i] {
-			drafts[i].id = owner.compactID("p", &owner.nextPart)
-		}
-	}
-	for i := range roleDrafts {
-		roleDrafts[i].id = owner.compactID("p", &owner.nextPart)
+		drafts[i].id = owner.compactID("p", &owner.nextPart)
 	}
 	order.drawing.Unlock()
 	order.parts.pass(position)
 	for i := range drafts {
-		if dropped[i] {
-			continue
-		}
 		part := &drafts[i]
 		outcome.parts = append(outcome.parts, part)
-		for _, file := range part.files {
-			outcome.partOf[file] = part.id
+		for _, ref := range part.refs {
+			outcome.partOf[ref] = part.id
 		}
 	}
-	for i := range roleDrafts {
-		part := &roleDrafts[i]
-		outcome.parts = append(outcome.parts, part)
-		for _, unit := range part.units {
-			outcome.unitPart[unit] = part.id
-		}
-	}
-	// A conflict is offered only the drawn parts that listed it; one whose
-	// every such part lost its only file to the role split is left out.
+	// A conflict is offered only the drawn parts that listed it.
 	offered := map[string][]string{}
 	for ref, holders := range conflicts {
 		for _, holder := range holders {
-			if !dropped[holder] {
-				offered[ref] = append(offered[ref], drafts[holder].id)
-			}
-		}
-		if len(offered[ref]) == 0 {
-			delete(offered, ref)
-			leftOut = append(leftOut, ref)
+			offered[ref] = append(offered[ref], drafts[holder].id)
 		}
 	}
-	if err := r.placeFiles(ctx, view, round, outcome, leftOut, offered); err != nil {
+	if err := r.placeUnits(ctx, view, round, outcome, units, leftOut, offered); err != nil {
 		return err
 	}
-	r.drawParts(view, outcome)
+	r.drawParts(view, outcome, units)
 	if err := r.describeParts(ctx, view, round, outcome); err != nil {
 		return err
 	}
@@ -1101,9 +1141,6 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 	for place, part := range outcome.membership {
 		membership[place] = part
 	}
-	for file := range outcome.split {
-		owner.splitFiles[target.ID][file] = true
-	}
 	owner.offMap[target.ID] = r.offMapEntries(view, outcome)
 	if outcome.failure != "" {
 		owner.mapFailure[target.ID] = outcome.failure
@@ -1111,61 +1148,12 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 	return nil
 }
 
-// applyRoles splits the files the parts answer itself placed in a drawn
-// part (never a file it left out or listed twice, and nothing under a map
-// failure): the file leaves its part, each of its boxes that holds a unit
-// becomes a role part, and its undecided units go off the map. A part left
-// without a file is not drawn. It returns the role parts in f* order and
-// naming order, and the drafts no longer drawn.
-func (r *reader) applyRoles(view *designView, outcome *designOutcome, drafts []designPart, splits map[string]*roleSplit) ([]designPart, map[int]bool) {
-	dropped := map[int]bool{}
-	if len(splits) == 0 {
-		return nil, dropped
-	}
-	placed := map[string]int{}
-	for i, draft := range drafts {
-		for _, file := range draft.files {
-			placed[file] = i
-		}
-	}
-	var roleDrafts []designPart
-	var unplaced []string
-	for _, file := range view.files {
-		split := splits[file.id]
-		if split == nil {
-			continue
-		}
-		at, ok := placed[file.id]
-		if !ok || outcome.failure != "" {
-			unplaced = append(unplaced, file.path)
-			continue
-		}
-		drafts[at].files = slices.DeleteFunc(drafts[at].files, func(ref string) bool { return ref == file.id })
-		if len(drafts[at].files) == 0 {
-			dropped[at] = true
-		}
-		for i, box := range split.boxes {
-			if len(split.holds[i]) > 0 {
-				roleDrafts = append(roleDrafts, designPart{name: box.Name, sources: []string{file.id}, units: split.holds[i]})
-			}
-		}
-		for _, unit := range split.undecided {
-			outcome.undecided[unit] = true
-		}
-		outcome.split[file.id] = true
-	}
-	if len(unplaced) > 0 {
-		r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageRoleAssign, Target: view.targetID, Kind: "role_not_applied", Count: len(unplaced), Samples: unplaced,
-			Reason: "the parts answer did not place these files in a drawn part; their split is not applied"})
-		fmt.Fprintf(&r.tables, "role split not applied, the parts answer placed no part for: %s\n\n", strings.Join(unplaced, " "))
-	}
-	return roleDrafts, dropped
-}
-
-// placeFiles asks one closed-choice follow-up for the files the answer left
+// placeUnits asks one closed-choice follow-up for the units the answer left
 // out or listed in two parts, when at least one part was drawn. An unknown,
-// missing or refused choice leaves the file off the map with its reason.
-func (r *reader) placeFiles(ctx context.Context, view *designView, round int, outcome *designOutcome, leftOut []string, conflicts map[string][]string) error {
+// missing or refused choice leaves the unit's declarations off the map with
+// its reason; a box left out leaves its file on the map through its other
+// boxes.
+func (r *reader) placeUnits(ctx context.Context, view *designView, round int, outcome *designOutcome, units []*designUnit, leftOut []string, conflicts map[string][]string) error {
 	reason := map[string]string{}
 	for _, ref := range leftOut {
 		reason[ref] = atlas.OffMapLeftOut
@@ -1173,16 +1161,18 @@ func (r *reader) placeFiles(ctx context.Context, view *designView, round int, ou
 	for ref := range conflicts {
 		reason[ref] = atlas.OffMapConflict
 	}
-	var asked []string
-	for _, file := range view.files {
-		if reason[file.id] != "" {
-			asked = append(asked, file.id)
+	var asked []*designUnit
+	for _, unit := range units {
+		if reason[unit.ref] != "" {
+			asked = append(asked, unit)
 		}
 	}
 	defer func() {
-		for _, ref := range asked {
-			if outcome.partOf[ref] == "" {
-				outcome.offReason[ref] = reason[ref]
+		for _, unit := range asked {
+			if outcome.partOf[unit.ref] == "" {
+				for _, id := range unit.units {
+					outcome.unitReason[id] = reason[unit.ref]
+				}
 			}
 		}
 	}()
@@ -1192,56 +1182,59 @@ func (r *reader) placeFiles(ctx context.Context, view *designView, round int, ou
 	if _, started := r.started[lines.StagePlacement]; !started {
 		r.started[lines.StagePlacement] = time.Now()
 	}
-	partDirs := map[string][]string{}
+	byRef := map[string]*designUnit{}
+	rowOf := map[string]string{}
+	whole := map[string]string{}
+	for _, unit := range units {
+		byRef[unit.ref] = unit
+		for _, id := range unit.units {
+			rowOf[id] = unit.ref
+		}
+		if unit.box == "" {
+			whole[unit.file] = unit.ref
+		}
+	}
 	var catalogue []map[string]any
 	var all []string
 	for _, part := range outcome.parts {
 		var dirs []string
-		for _, file := range append(slices.Clone(part.files), part.sources...) {
-			dirs = appendUnique(dirs, view.byID[file].dir)
+		for _, ref := range part.refs {
+			dirs = appendUnique(dirs, byRef[ref].dir)
 		}
 		sort.Strings(dirs)
-		partDirs[part.id] = dirs
 		catalogue = append(catalogue, map[string]any{"ref": part.id, "name": part.name, "dirs": dirs})
 		all = append(all, part.id)
 	}
+	// A call site reaches a part through the rows it reaches there.
+	counts := view.siteCounts(rowOf)
 	rows := make([]table.Row, 0, len(asked))
 	offered := make([][]string, 0, len(asked))
-	for _, ref := range asked {
-		file := view.byID[ref]
+	for _, unit := range asked {
 		options := all
-		if holders, ok := conflicts[ref]; ok {
+		if holders, ok := conflicts[unit.ref]; ok {
 			options = holders
 		}
-		fields := []table.Field{{Name: "path", Value: file.path}, {Name: "units", Value: len(file.units)}}
-		if len(file.types) > 0 {
-			fields = append(fields, table.Field{Name: "types", Value: file.types})
+		fields := []table.Field{{Name: "path", Value: unit.path}}
+		if unit.box != "" {
+			fields = append(fields, table.Field{Name: "box", Value: unit.box})
 		}
-		if len(file.functions) > 0 {
-			fields = append(fields, table.Field{Name: "functions", Value: file.functions})
+		fields = append(fields, table.Field{Name: "units", Value: len(unit.units)})
+		if len(unit.types) > 0 {
+			fields = append(fields, table.Field{Name: "types", Value: unit.types})
 		}
-		if len(file.variables) > 0 {
-			fields = append(fields, table.Field{Name: "variables", Value: file.variables})
+		if len(unit.functions) > 0 {
+			fields = append(fields, table.Field{Name: "functions", Value: unit.functions})
+		}
+		if len(unit.variables) > 0 {
+			fields = append(fields, table.Field{Name: "variables", Value: unit.variables})
 		}
 		out, in := map[string]int{}, map[string]int{}
-		for pair, count := range view.calls {
-			if pair[0] == ref && outcome.partOf[pair[1]] != "" {
+		for pair, count := range counts {
+			if pair[0] == unit.ref && outcome.partOf[pair[1]] != "" {
 				out[outcome.partOf[pair[1]]] += count
 			}
-			if pair[1] == ref && outcome.partOf[pair[0]] != "" {
+			if pair[1] == unit.ref && outcome.partOf[pair[0]] != "" {
 				in[outcome.partOf[pair[0]]] += count
-			}
-		}
-		// A split file is reached through its units, each in its own part;
-		// an undecided unit is in none.
-		for pair, count := range view.fileUnitCalls {
-			if pair[0] == ref && outcome.split[view.unitFile[pair[1]]] && outcome.unitPart[pair[1]] != "" {
-				out[outcome.unitPart[pair[1]]] += count
-			}
-		}
-		for pair, count := range view.unitFileCalls {
-			if pair[1] == ref && outcome.split[view.unitFile[pair[0]]] && outcome.unitPart[pair[0]] != "" {
-				in[outcome.unitPart[pair[0]]] += count
 			}
 		}
 		var calls []string
@@ -1258,13 +1251,16 @@ func (r *reader) placeFiles(ctx context.Context, view *designView, round int, ou
 		if len(calls) > 0 {
 			fields = append(fields, table.Field{Name: "calls", Value: calls})
 		}
+		// Imports are between whole files: a box has none of its own.
 		imports, importedBy := map[string]bool{}, map[string]bool{}
-		for pair := range view.imports {
-			if pair[0] == ref && outcome.partOf[pair[1]] != "" {
-				imports[outcome.partOf[pair[1]]] = true
-			}
-			if pair[1] == ref && outcome.partOf[pair[0]] != "" {
-				importedBy[outcome.partOf[pair[0]]] = true
+		if unit.box == "" {
+			for pair := range view.imports {
+				if pair[0] == unit.file && outcome.partOf[whole[pair[1]]] != "" {
+					imports[outcome.partOf[whole[pair[1]]]] = true
+				}
+				if pair[1] == unit.file && outcome.partOf[whole[pair[0]]] != "" {
+					importedBy[outcome.partOf[whole[pair[0]]]] = true
+				}
 			}
 		}
 		var importLines []string
@@ -1282,15 +1278,19 @@ func (r *reader) placeFiles(ctx context.Context, view *designView, round int, ou
 			fields = append(fields, table.Field{Name: "imports", Value: importLines})
 		}
 		fields = append(fields, table.Field{Name: "part_options", Value: options})
-		rows = append(rows, table.Row{ID: ref, Fields: fields})
+		rows = append(rows, table.Row{ID: unit.ref, Fields: fields})
 		offered = append(offered, options)
 	}
-	r.opts.Stage(lines.StagePlacement, fmt.Sprintf("%s: placing %d files the parts answer left out or listed twice", r.opts.Targets[round-1].Name, len(rows)))
+	r.opts.Stage(lines.StagePlacement, fmt.Sprintf("%s: placing %d files and boxes the parts answer left out or listed twice", r.opts.Targets[round-1].Name, len(rows)))
 	answers, err := r.runTableWith(ctx, lines.Placement(), round, []table.Field{{Name: "parts", Value: catalogue}}, rows, nil)
 	if err != nil {
 		return err
 	}
-	for i, ref := range asked {
+	position := map[string]int{}
+	for i, unit := range units {
+		position[unit.ref] = i
+	}
+	for i, unit := range asked {
 		choice := ""
 		if answers[i].answer != nil {
 			choice = answers[i].answer["part"]
@@ -1298,90 +1298,78 @@ func (r *reader) placeFiles(ctx context.Context, view *designView, round int, ou
 		if !slices.Contains(offered[i], choice) {
 			continue
 		}
-		outcome.partOf[ref] = choice
+		outcome.partOf[unit.ref] = choice
 		for _, part := range outcome.parts {
 			if part.id == choice {
-				part.files = append(part.files, ref)
+				part.refs = append(part.refs, unit.ref)
 			}
 		}
 	}
 	for _, part := range outcome.parts {
-		sort.Slice(part.files, func(i, j int) bool { return compactIDLess(part.files[i], part.files[j]) })
+		sort.Slice(part.refs, func(i, j int) bool { return position[part.refs[i]] < position[part.refs[j]] })
 	}
 	return nil
 }
 
-// drawParts gives every declaration of a placed file its file's part, a
-// method its type's part and a lexical child its parent's part, and builds
-// the boxes. A part whose every file is test code is a fact, kept in the
-// atlas and off the canvas.
-func (r *reader) drawParts(view *designView, outcome *designOutcome) {
+// drawParts gives every declaration its unit's part (a method its type's, a
+// lexical child its parent's) and builds the boxes. A part's sources are the
+// files of its units. A file's own part is the one part holding every
+// placed unit declared in it, or, for a file that declares only what
+// follows units of other files, the one part holding its placed
+// declarations; a file whose units sit in two parts, as a split file's
+// usually do, has none. A part whose every file is test code is a fact,
+// kept in the atlas and off the canvas.
+func (r *reader) drawParts(view *designView, outcome *designOutcome, units []*designUnit) {
+	byRef := map[string]*designUnit{}
+	for _, unit := range units {
+		byRef[unit.ref] = unit
+	}
 	boxes := map[string]*boxState{}
 	for _, part := range outcome.parts {
 		box := &boxState{id: part.id, targetID: view.targetID, title: part.name, open: true, dir: ".", symbols: map[string]bool{}, test: true}
-		// A file placed whole is an endpoint row of its part; a split file
-		// is only a source of the role parts holding its units, and no
-		// part's endpoint.
-		for _, ref := range part.files {
-			box.unitIDs = append(box.unitIDs, view.byID[ref].units...)
-			box.rows = append(box.rows, ref)
-			box.sources = append(box.sources, ref)
-			box.test = box.test && view.byID[ref].test
-			outcome.membership[ref] = part.id
+		for _, ref := range part.refs {
+			unit := byRef[ref]
+			box.unitIDs = append(box.unitIDs, unit.units...)
+			box.sources = appendUnique(box.sources, unit.file)
+			box.test = box.test && unit.test
+			for _, id := range unit.units {
+				outcome.unitPart[id] = part.id
+			}
 		}
-		for _, ref := range part.sources {
-			box.sources = append(box.sources, ref)
-			box.test = box.test && view.byID[ref].test
-		}
-		box.unitIDs = append(box.unitIDs, part.units...)
 		box.units = len(box.unitIDs)
 		boxes[part.id] = box
 	}
 	for _, ref := range view.all {
 		for _, id := range view.decls[ref] {
-			part := outcome.partOfUnit(view, view.root(id))
+			part := outcome.unitPart[view.root(id)]
 			if part == "" {
 				continue
 			}
 			outcome.membership[id] = part
 			box := boxes[part]
 			box.symbols[id] = true
-			if !slices.Contains(box.files, ref) {
-				box.files = append(box.files, ref)
-			}
+			box.files = appendUnique(box.files, ref)
 		}
 	}
-	// A file that is not a row declares only what follows a unit of another
-	// file, such as a Go method declared outside its type's file. It is on
-	// the map through those declarations, and its endpoint is the one part
-	// they share. Only a file that declares nothing has no units to place;
-	// under a map failure no file is placed.
 	for _, ref := range view.all {
-		switch {
-		case outcome.failure != "":
-			outcome.offReason[ref] = atlas.OffMapFailure
-		case view.byID[ref] != nil:
-		case len(view.decls[ref]) == 0:
-			outcome.offReason[ref] = atlas.OffMapNoUnits
-		default:
-			shared, last := map[string]bool{}, ""
-			for _, id := range view.decls[ref] {
-				if part := outcome.membership[id]; part != "" {
-					shared[part], last = true, part
-				}
+		if outcome.failure != "" {
+			break
+		}
+		own := view.byID[ref] != nil
+		shared, last := map[string]bool{}, ""
+		for _, id := range view.decls[ref] {
+			part := outcome.membership[id]
+			if part == "" || own && view.unitFile[view.root(id)] != ref {
+				continue
 			}
-			if len(shared) == 1 {
-				outcome.membership[ref] = last
-			}
+			shared[part], last = true, part
+		}
+		if len(shared) == 1 {
+			outcome.membership[ref] = last
 		}
 	}
 	for _, part := range outcome.parts {
 		box := boxes[part.id]
-		for _, ref := range part.files {
-			if !slices.Contains(box.files, ref) {
-				box.files = append(box.files, ref)
-			}
-		}
 		sort.Slice(box.files, func(i, j int) bool { return compactIDLess(box.files[i], box.files[j]) })
 		sort.Slice(box.sources, func(i, j int) bool { return compactIDLess(box.sources[i], box.sources[j]) })
 		if len(box.sources) > 0 {
@@ -1416,27 +1404,25 @@ func (r *reader) runsNothing(box *boxState) bool {
 }
 
 // offMapEntries lists every declaration of the target no part holds, under
-// its file: an off-map file with its reason, or, in a file a part holds, a
-// method whose type is off the map, with that type's reason and the file's
-// part. A file every declaration of which a part holds has no entry.
+// its file, by its unit's reason (undecided, left_out, conflict), or
+// map_failure when the target has no map; a file that declares nothing is
+// listed whole as no_units. An entry names the part that holds its file
+// when there is one: the file itself stays on the map then. A file every
+// declaration of which a part holds has no entry.
 func (r *reader) offMapEntries(view *designView, outcome *designOutcome) []offMapEntry {
 	entries := []offMapEntry{}
 	for _, ref := range view.all {
-		reason := outcome.offReason[ref]
 		byReason := map[string][]string{}
 		var reasons []string
 		for _, id := range view.decls[ref] {
 			if outcome.membership[id] != "" {
 				continue
 			}
-			why := reason
-			if why == "" && outcome.undecided[view.root(id)] {
-				why = atlas.OffMapUndecided
-			}
-			if why == "" {
-				why = outcome.offReason[view.unitFile[view.root(id)]]
-			}
-			if why == "" {
+			why := outcome.unitReason[view.root(id)]
+			switch {
+			case outcome.failure != "":
+				why = atlas.OffMapFailure
+			case why == "":
 				why = atlas.OffMapNoUnits
 			}
 			if byReason[why] == nil {
@@ -1444,8 +1430,11 @@ func (r *reader) offMapEntries(view *designView, outcome *designOutcome) []offMa
 			}
 			byReason[why] = append(byReason[why], id)
 		}
-		if reason != "" && byReason[reason] == nil {
-			reasons = append([]string{reason}, reasons...)
+		if len(view.decls[ref]) == 0 {
+			reasons = []string{atlas.OffMapNoUnits}
+			if outcome.failure != "" {
+				reasons = []string{atlas.OffMapFailure}
+			}
 		}
 		for _, why := range reasons {
 			entries = append(entries, offMapEntry{fileID: ref, reason: why, symbols: byReason[why], boxID: outcome.membership[ref]})
@@ -1653,13 +1642,14 @@ func (r *reader) boxFor(targetID, placeID string) string {
 	return r.boxOfPlace(placeID)
 }
 
-// boundaryBox is the part a boundary stands in: its declaration's part, else
-// its file's part. A boundary in a file off the map has none. In a split
-// file, which no part is the endpoint of, it takes the part of the
-// declaration whose source range holds its line, else of the module body.
-// An input that hands a declaration over stands only where that handler is:
-// when the handler is on no part, undecided or in a file off the map, the
-// input names none rather than the part of the code that registers it.
+// boundaryBox is the part a boundary stands in, by one rule for every file:
+// its subject's part; an input that hands a subject over stands only where
+// that handler is, so with the handler on no part (undecided, or in a file
+// off the map) it names none rather than the part of the code that
+// registers it; else the part of the innermost declaration whose source
+// range holds its line, none when that declaration is off the map; else,
+// with no declaration around it, the part of its file's module body, else
+// its file's part.
 func (r *reader) boundaryBox(targetID string, place atlas.Place) string {
 	if place.Boundary != nil {
 		subjects := []string{place.Boundary.SubjectID, r.designSubjects[place.Boundary.ObjectID]}
@@ -1672,46 +1662,47 @@ func (r *reader) boundaryBox(targetID string, place atlas.Place) string {
 			return ""
 		}
 	}
-	if r.splitFiles[targetID][place.Parent] {
-		return r.boxFor(targetID, r.enclosingDecl(place.Parent, place.LineNo))
+	decl, module := r.enclosingDecl(place.Parent, place.LineNo)
+	if decl != "" {
+		return r.boxFor(targetID, decl)
+	}
+	if box := r.boxFor(targetID, module); module != "" && box != "" {
+		return box
 	}
 	return r.boxFor(targetID, place.Parent)
 }
 
 // enclosingDecl is the symbol place of the innermost declaration of a file
-// whose source range holds a line, else of the file's module body.
-func (r *reader) enclosingDecl(fileID string, line int) string {
+// whose source range holds a line, or "" when none does; module is the
+// file's module body.
+func (r *reader) enclosingDecl(fileID string, line int) (decl, module string) {
 	file := r.places[fileID]
 	if file.File == nil {
-		return ""
+		return "", ""
 	}
-	best, module := -1, ""
-	for i, decl := range file.File.Decls {
-		if decl.Kind == "module" {
-			module = r.symbolID(file.Path, decl.LineNo, decl.Name)
+	best := -1
+	for i, candidate := range file.File.Decls {
+		id := r.symbolID(file.Path, candidate.LineNo, candidate.Name)
+		if candidate.Kind == "module" {
+			module = id
 			continue
 		}
-		if decl.EndLine <= 0 || decl.LineNo > line || line > decl.EndLine {
+		if id == "" || candidate.EndLine <= 0 || candidate.LineNo > line || line > candidate.EndLine {
 			continue
 		}
-		if best < 0 || decl.LineNo >= file.File.Decls[best].LineNo {
+		if best < 0 || candidate.LineNo >= file.File.Decls[best].LineNo {
 			best = i
 		}
 	}
-	if best < 0 {
-		return module
+	if best >= 0 {
+		decl = r.symbolID(file.Path, file.File.Decls[best].LineNo, file.File.Decls[best].Name)
 	}
-	decl := file.File.Decls[best]
-	return r.symbolID(file.Path, decl.LineNo, decl.Name)
+	return decl, module
 }
 
-// seedBoxes are the parts a seed file enters its target through: its
-// endpoint, else, when several parts hold its code, the parts holding its
-// seed declarations.
+// seedBoxes are the parts a seed file enters its target through: the parts
+// holding its seed declarations (places `seed_decls`), else its file's part.
 func (r *reader) seedBoxes(targetID, seed string) []string {
-	if box := r.boxFor(targetID, seed); box != "" {
-		return []string{box}
-	}
 	var boxes []string
 	for _, decl := range r.opts.Graph.SeedDecls {
 		if r.places[decl].Parent != seed {
@@ -1721,5 +1712,11 @@ func (r *reader) seedBoxes(targetID, seed string) []string {
 			boxes = appendUnique(boxes, box)
 		}
 	}
-	return boxes
+	if len(boxes) > 0 {
+		return boxes
+	}
+	if box := r.boxFor(targetID, seed); box != "" {
+		return []string{box}
+	}
+	return nil
 }

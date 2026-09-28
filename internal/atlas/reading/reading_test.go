@@ -128,9 +128,11 @@ type tableProvider struct {
 	answerFor          func(map[string]any) table.Answer
 	learningFor        func(learningRequest) learningResponse
 	learningSelectNone bool
-	// partFor names the part of one file row of a parts request; nil puts
-	// each file in the part named after its directory. partsResponse, when
-	// set, answers a parts request verbatim. placeFor chooses a follow-up
+	// partFor names the part of one unit row of a parts request (a whole
+	// file, or a box of a split file with its "box"); nil puts each unit in
+	// the part named after its directory. partsResponse, when set, answers a
+	// parts request verbatim from its unit rows, and partsBodies keeps every
+	// parts request. placeFor chooses a follow-up
 	// row's part; nil takes its first option. areaFor names the area of one
 	// part row of an areas request, "" for none; nil answers no areas.
 	// areasResponse, when set, answers an areas request verbatim.
@@ -138,6 +140,7 @@ type tableProvider struct {
 	// description it returns empty is refused.
 	partFor       func(file map[string]any) string
 	partsResponse func(files []map[string]any) string
+	partsBodies   [][]byte
 	placeFor      func(row map[string]any) string
 	areaFor       func(part map[string]any) string
 	areasResponse func(parts []map[string]any) string
@@ -642,7 +645,7 @@ func TestRequestBytesCarryNoIdentities(t *testing.T) {
 // parts; ok is false for any other request.
 func (provider *tableProvider) design(task string, body []byte) ([]byte, bool, error) {
 	var request struct {
-		Files []map[string]any `json:"files"`
+		Units []map[string]any `json:"units"`
 		Parts []map[string]any `json:"parts"`
 		Part  string           `json:"part"`
 		File  struct {
@@ -676,25 +679,28 @@ func (provider *tableProvider) design(task string, body []byte) ([]byte, bool, e
 		}
 		return []byte(provider.boxesFor(request.File.Path)), true, nil
 	case designPartsTask:
+		provider.mu.Lock()
+		provider.partsBodies = append(provider.partsBodies, append([]byte(nil), body...))
+		provider.mu.Unlock()
 		if provider.partsResponse != nil {
-			return []byte(provider.partsResponse(request.Files)), true, nil
+			return []byte(provider.partsResponse(request.Units)), true, nil
 		}
 		type group struct {
 			Name  string   `json:"name"`
-			Files []string `json:"files"`
+			Units []string `json:"units"`
 		}
 		var groups []group
 		at := map[string]int{}
-		for _, file := range request.Files {
-			name := filepath.Dir(fmt.Sprint(file["path"]))
+		for _, unit := range request.Units {
+			name := filepath.Dir(fmt.Sprint(unit["path"]))
 			if provider.partFor != nil {
-				name = provider.partFor(file)
+				name = provider.partFor(unit)
 			}
 			if _, seen := at[name]; !seen {
 				at[name] = len(groups)
 				groups = append(groups, group{Name: name})
 			}
-			groups[at[name]].Files = append(groups[at[name]].Files, fmt.Sprint(file["ref"]))
+			groups[at[name]].Units = append(groups[at[name]].Units, fmt.Sprint(unit["ref"]))
 		}
 		raw, err := json.Marshal(map[string]any{"groups": groups})
 		return raw, true, err

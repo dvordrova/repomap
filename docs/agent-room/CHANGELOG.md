@@ -1,5 +1,85 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Split files before grouping: one parts request over units, one rule for every file
+
+- Scope: step C3 of `map-model/step3-plan.md` with corrections 5, 6 and 10
+  and skeptic points 6, 7, 8, 12 and 13. The parts request grouped whole
+  files and the role split then cut files out of the answer's parts: stale
+  part names (pykrx's "Stock market API" holding one ticker.py), a
+  `role_not_applied` branch, "a role part's membership is final" and a
+  split file with no endpoint needing its own branch in every lookup.
+- **Change.** Each target's role split runs first. The parts request
+  (`repomap.atlas.parts.v2`) lists units: a whole file under its `f*`, or a
+  box of a split file under a request-local `c*` with its name in `box`
+  (empty boxes are no row). `calls` count per exact call site each other
+  row it reaches, from the unit whose code holds the site; `imports` are
+  between whole files only. The decoder reads `units`, or `files` as the
+  same list (both given differently refuse that group). One unit sends no
+  request. The placement follow-up (`repomap.atlas.placement.v2`) asks per
+  left-out or conflicting unit. A part holds its units' declarations; a
+  file's own part is the one part holding its placed own units (a whole Go
+  file with a method of another part's type keeps it; a methods-only file
+  takes its declarations'); a place takes its declaration's part, else the
+  module body's, else the file's; the entry is the parts of the seed
+  declarations, else the seed file's part. Deleted: `applyRoles`,
+  `role_not_applied`, dropped drafts, `designOutcome.split/undecided`,
+  `partOfUnit`, `r.splitFiles`, the view's file/unit call maps, `box.rows`,
+  the unused `designFiles`. GroupsIndex 16 → 17: an off-map entry of a file
+  a part still holds is listed by its subjects under its own reason
+  (`left_out`, `conflict` or `undecided`); a file no part holds is listed
+  whole. REPORT's data sentence on that record is corrected.
+- **Tests.** `TestSplitFilesAreGroupedAsUnits` (rows, per-site calls, no
+  import into a split file, answer names and IDs, a part holding two boxes,
+  undecided off the map with the file on it, gate candidates, the one-file
+  split target sends a request, `role_box_empty`/`role_undecided`),
+  `TestOneRuleForEveryFile` (a read inside `Store.Flush`, declared in db.go,
+  stands in Storage, not db.go's Database; plus the kept arrow, entry and
+  core checks), `TestALeftOutBoxKeepsItsFileOnTheMap`,
+  `TestSavedUnitsAnswersKeepEveryUnit` (the probe's six saved grouping
+  answers as exact bytes over their `u*` refs: 23/20/17 and 9/9/12 parts,
+  every unit placed), `TestPartsUnitsAndFilesAreOneList`, and the GroupsIndex
+  off-map test listing a stray method and a left-out box by subject. partstest
+  checks the v2 request on every language's real facts, and
+  `TestFilesOfMethodsDeclaredElsewhereStayOnTheMap` now also holds h.go to
+  its own part while it declares a method of another part's type
+  (correction 6). Deleted: `TestTheRoleSplitDrawsAFilesBoxesAsParts`,
+  `TestPlacementOnlyAddsWholeFiles`, `TestAPartKeepsItsOtherFiles` (they
+  pinned the deleted mechanisms). Each rule reverted alone fails its tests
+  (`step3/impl-revert.log`): the old boundary branch, a `files`-only
+  decoder, units/files that differ accepted, every file one whole row
+  (also every fixture's request check), a file's part over all its
+  declarations, and the old GroupsIndex off-map listing.
+- **Saved-window check.** The v2 request's shape and output allowance
+  (8,192 tokens up to 512 rows) are the probe's: its six complete windows
+  (28–69 units) were sent live with this shape and answered in at most
+  1,044 bytes; `TestSavedUnitsAnswersKeepEveryUnit` replays them.
+- **Acceptance, Redis 1.3.6** (`.bin/repomap ~/git/redis-1.3.6 --no-serve
+  --no-open`, default response cache; receipts in
+  `map-model/step3/c3-redis/`). Cold run exit 0 in 38 s (27–38 s before),
+  129 live exchanges; every artifact present: one common manifest,
+  `report.json` and `report.html`, reduced documentation, the ProgramIndex
+  set, dependency catalog and GroupsIndex (v17) of each of the four
+  programs, places (v19), atlas (v14), `tables.md`. Warm rerun exit 0 in
+  6 s with 0 live calls in every stage (133 windows cached); `report.json`
+  differs only in `timing`. The gate split redis.c alone (1 of 15
+  candidates); its naming gave 25 boxes, none empty, two holding one unit
+  (Pattern matching: stringmatchlen; Daemonization: daemonize). The
+  assignment left 7 units open; the code rule placed 2 by their users
+  (rdbSavedObjectPages into Virtual memory, deleteIfSwapped into String
+  commands) and 0 by what they use; 5 stay undecided (saveparam, iojob,
+  createZsetObject, dontWaitForSwappedKey, debugCommand). redis-server's
+  parts request listed 42 units (17 whole files, 25 boxes; 25,320 bytes)
+  and drew 29 parts in 5 areas: each box its own part (no box re-merged by
+  file), the libraries grouped by file, and 3 parts of one unit (the two
+  lone boxes and staticsymbols.h's Static symbols, which `symsTable`'s read
+  does not join to findFuncName until the helper rule). redis-benchmark 6
+  parts (10 files), redis-check-dump 3 (4 files), redis-cli 5 (7 files, 1
+  never run). No parts answer row was refused and no placement follow-up
+  was needed in any program. Headless Chromium walk at 1440×900 of the
+  system map and redis-server at rest (`shots/`): no page error; five
+  areas and two loose parts, "In no part of its file" listing the
+  undecided units.
+
 ## 2026-09-28 — An open declaration goes where its file's users are; the neighbours' question is deleted
 
 - Scope: step C2 of `map-model/step3-plan.md` with its corrections 2 and 5.

@@ -175,21 +175,27 @@ func (preset *kvdPreset) Complete(_ context.Context, prepared llm.Prepared) (llm
 		Table string           `json:"table"`
 		Fill  []map[string]any `json:"fill"`
 		Rows  []map[string]any `json:"rows"`
-		Files []struct {
+		Units []struct {
 			Ref  string `json:"ref"`
 			Path string `json:"path"`
-		} `json:"files"`
+			Box  string `json:"box"`
+		} `json:"units"`
 	}
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
 	}
 	var answer any
 	switch {
-	case request.Task == "repomap.atlas.parts.v1":
-		// One part per source file is as good a map as any for this test.
+	case request.Task == "repomap.atlas.parts.v2":
+		// One part per source file, or per box of a split file, is as good
+		// a map as any for this test.
 		var groups []map[string]any
-		for _, file := range request.Files {
-			groups = append(groups, map[string]any{"name": file.Path, "files": []string{file.Ref}})
+		for _, unit := range request.Units {
+			name := unit.Path
+			if unit.Box != "" {
+				name = unit.Path + ": " + unit.Box
+			}
+			groups = append(groups, map[string]any{"name": name, "units": []string{unit.Ref}})
 		}
 		answer = map[string]any{"groups": groups}
 	case request.Task == "repomap.atlas.describe.v1":

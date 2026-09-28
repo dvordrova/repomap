@@ -20,12 +20,13 @@ import (
 
 // The role split (owner's option "в", 2026-09-26): "what's in one file can
 // have different roles, and one role can span different files. We build our
-// own map, we group and abstract." A file the parts answer placed whole can
-// hold the code of several boxes of our map. Jev decides whether it does
+// own map, we group and abstract." A file can hold the code of several
+// boxes of our map. Before the parts request, Jev decides whether it does
 // (the gate), DeepSeek names the boxes its code goes in (the naming), and
 // Jev puts each of its units in one of them (the assignment); a unit it
 // leaves open goes, by code, where the file's code that uses it went. Each
-// box that holds a unit becomes a part of its own.
+// box that holds a unit is then one unit of the grouping, a c* row of the
+// parts request.
 
 //go:embed prompts/design_boxes.md
 var designBoxesPrompt string

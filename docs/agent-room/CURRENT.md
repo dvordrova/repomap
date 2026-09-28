@@ -107,14 +107,18 @@ never entered into or read from a repository-wide unqualified map.
   leading verb; a table filled in by `%s` or a template hole still counts). Without a model there are
   candidates, not routes; the Echo preset test is the offline acceptance.
 - **Map of parts (2026-09-25, owner's proxy spec; the owner's open questions
-  1–7 of that spec still stand):** one DeepSeek request per target splits the
-  target's unit-bearing source files into named parts from code structure only
-  (paths, names, exported signatures, exact file calls and file imports); no
-  README, AGENTS, docstring or package documentation reaches it. A
-  declaration takes its file's part, a method its type's, a lexical child its
-  parent's. The answer is validated file by file; a file left out or listed in
-  two parts gets one closed-choice placement follow-up, and only what that
-  cannot place stays off the map with its reason. Each drawn part is described
+  1–7 of that spec still stand):** one DeepSeek request per target groups the
+  target's units into named parts from code structure only (paths, names,
+  exported signatures, exact call sites and whole-file imports); no README,
+  AGENTS, docstring or package documentation reaches it. Since 2026-09-28 the
+  role split runs first and a unit is a whole file (`f*`) or one box of a
+  split file (`c*`, parts request v2). A declaration takes its unit's part, a
+  method its type's, a lexical child its parent's; a place takes its
+  declaration's part, and a file's own part is the one part holding all its
+  placed units (one rule for every file, no split-file branch). The answer is
+  validated unit by unit; a unit left out or listed in two parts gets one
+  closed-choice placement follow-up, and only what that cannot place stays
+  off the map with its reason. Each drawn part is described
   from its members' names and signatures in a separate request; a refused
   description is an explicit no-description state. Areas are a closed split of
   the described parts asked beside the keys, with no count. The Jev zone
@@ -125,10 +129,10 @@ never entered into or read from a repository-wide unqualified map.
   and Not on the map. A parts or areas answer refused whole, including one
   that decodes but draws nothing or is cut at the output cap, fails that
   target's map for the run; there is no second draw.
-  Since 2026-09-27 a placed file can go in several boxes: a Jev gate, a
-  DeepSeek naming of its boxes and a Jev assignment of its declarations
-  (READING, "A file in several boxes"); a file nearer the cut stays whole and
-  undecided declarations stay off the map as `undecided`. Since 2026-09-28 a
+  Since 2026-09-27 a file can go in several boxes: a Jev gate, a DeepSeek
+  naming of its boxes and a Jev assignment of its declarations (READING, "A
+  file in several boxes"); a file nearer the cut stays whole and undecided
+  declarations stay off the map as `undecided`. Since 2026-09-28 a
   declaration the assignment leaves open goes, by code, to the box where
   every declaration of its file that calls it, is decorated by it or reads
   it went (never a hand-over), else where everything it uses went; the
@@ -270,7 +274,7 @@ Current shapes are defined by their owning code, not historical run headers:
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
 This wave uses ProgramIndex 18, places graph 19, reading input 18, atlas 14,
-GroupsIndex 16, dependency catalog 2, extraction artifact 2, facts 3, claims 2
+GroupsIndex 17, dependency catalog 2, extraction artifact 2, facts 3, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
 dependencies. Accepted extractor nodes use `u*`; arbitrary public-protocol IDs
@@ -298,6 +302,7 @@ There are no old-format readers or manually rewritten seals.
 | repomap self-run, no `--target` (2026-09-25) | `.bin/repomap .` cold, report server ready: 58.2 / 57.2 / 66.2 s over three consecutive runs (two targets), each reaching the glossary at 46–47 s; `make test`, `make vet` pass; one browser walkthrough (map, glossary page, part card connections). The remaining spread is model output: glossary draws of 37–90 terms took 7–17 s, enumerating draws (165–618 terms) 23–60 s plus a reduce pass; a design proposal that loops to its 8,192-token allowance is refused and leaves that target's map as file inventory. |
 | Decoders relaxed, ordinary self-run (2026-09-26) | `.bin/repomap .` at f819f4be on a checkout named `repomap`, own cold cache: exit 0 in 108.0 s (an enumerating glossary draw took 48 s; the previous run's took 15 s). CLI 53 parts in 8 areas, UI 5 drawn parts and 1 test-only part, no map failure, 0 data rows; the refusals left are rules that keep the report true (invented guidance refs, unsourced glossary terms, Jev core roles under the floor, the oversized symbols window). Warm rerun exit 0 in 25.1 s; `cache clear` removed 47 MB; `make test`, `make vet`, `make build` pass; Playwright walk without page errors. The 2026-09-25 map-of-parts run (36 and 61 parts in two draws) is in the journal. |
 | Redis 1.3.6, C (2026-09-27) | `c/integrate` binary: four programs from `make -n`; cold ordinary run exit 0 in 27–38 s, warm rerun 3 s with 0 live calls and a report.json identical but for `timing`; `cache clear` exit 0; `make test`, `make vet` pass. redis-server lists 97 command requests and one continuous thread. Open: the accept handler and serverCron (handed to Redis's own event loop), redis.c drawn as one "Core server" part until the role split lands, outside boxes repeated per component on the system map. |
+| Redis 1.3.6, map of parts over units (2026-09-28) | Split before grouping (steps C1–C3): cold ordinary run exit 0 in 38 s, warm rerun 6 s with 0 live calls and a report.json identical but for `timing`; `make test`, `make vet` pass. redis.c splits into 25 boxes (none empty, two of one unit), the code rule places 2 of 7 open units, 5 stay undecided; redis-server draws 29 parts in 5 areas, 3 of them one unit (Static symbols among them); no parts row refused. `cache clear` was not run on the owner's system cache. Open: the helper question and its placement rules (C4), the report's quiet helper arrows and area marks (C5, C6). |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 

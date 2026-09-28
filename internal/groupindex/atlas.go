@@ -785,22 +785,31 @@ func projectOffMap(target atlas.Target, unreached map[string][]programindex.Obje
 			files = append(files, file)
 		}
 	}
+	// A file a part holds some declarations of is on the map: what is off it
+	// there is listed by its subjects, under its own reason, and so is every
+	// undecided declaration. A file no part holds is listed whole.
+	held := map[string]bool{}
+	for _, box := range target.Boxes {
+		for _, file := range box.Files {
+			held[atlasPath(file.Path)] = true
+		}
+	}
 	for _, entry := range target.OffMap {
-		switch {
-		case entry.Reason == atlas.OffMapUndecided:
-			var ids []string
-			for _, symbol := range entry.File.Symbols {
-				id, ok := subjectOf(symbol)
-				if !ok {
-					return nil, fmt.Errorf("atlas projection: undecided declaration %q of %s is unknown", symbol.Name, entry.File.Path)
-				}
-				ids = appendUniqueString(ids, id)
+		path := atlasPath(entry.File.Path)
+		if entry.Reason != atlas.OffMapUndecided && (!held[path] || len(entry.File.Symbols) == 0) {
+			add(OffMapFile{Path: path, Reason: entry.Reason})
+			continue
+		}
+		var ids []string
+		for _, symbol := range entry.File.Symbols {
+			id, ok := subjectOf(symbol)
+			if !ok {
+				return nil, fmt.Errorf("atlas projection: off-map declaration %q of %s is unknown", symbol.Name, entry.File.Path)
 			}
-			if len(ids) > 0 {
-				add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: OffMapUndecided, SubjectIDs: ids})
-			}
-		case entry.BoxID == "":
-			add(OffMapFile{Path: atlasPath(entry.File.Path), Reason: entry.Reason})
+			ids = appendUniqueString(ids, id)
+		}
+		if len(ids) > 0 {
+			add(OffMapFile{Path: path, Reason: entry.Reason, SubjectIDs: ids})
 		}
 	}
 	for _, box := range target.Boxes {

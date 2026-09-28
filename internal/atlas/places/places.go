@@ -236,8 +236,8 @@ type builder struct {
 	symbolBindingRows map[string]map[string]atlas.SymbolBinding
 	symbolCallRows    map[string]map[string]atlas.SymbolCall
 	symbolUseRows     map[string]map[atlas.SymbolUse]bool // symbol place -> what it reads, hands over or is decorated by
-	memberOwners      map[string]string              // retained declaration -> native owner's symbol place
-	unreached         map[string]map[string]struct{} // symbol place -> targets whose program never runs it
+	memberOwners      map[string]string                   // retained declaration -> native owner's symbol place
+	unreached         map[string]map[string]struct{}      // symbol place -> targets whose program never runs it
 	typeFields        map[string]typeField
 	// workspace lists the package paths of the repository's own modules, from
 	// the dependency catalogs: a call into one of them is not an integration.

@@ -19,14 +19,15 @@ const (
 //go:embed prompts/placement.md
 var placementPrompt string
 
-// Placement places the files a parts answer left out or listed in two parts.
-// A row offers only the parts that file may take: every drawn part for a
-// file left out, the two parts it was listed in for a conflict.
+// Placement places the units (whole files and boxes of split files) a parts
+// answer left out or listed in two parts. A row offers only the parts that
+// unit may take: every drawn part for a unit left out, the parts it was
+// listed in for a conflict.
 func Placement() table.Definition {
 	return table.Definition{
-		Stage: StagePlacement, Contract: "repomap.atlas.placement.v1", System: placementPrompt,
+		Stage: StagePlacement, Contract: "repomap.atlas.placement.v2", System: placementPrompt,
 		Columns: []table.Column{
-			{Name: "part", Kind: table.Choice, OptionsFrom: "part_options", Note: "the p* ref of the one listed part this file belongs to"},
+			{Name: "part", Kind: table.Choice, OptionsFrom: "part_options", Note: "the p* ref of the one listed part this unit belongs to"},
 		},
 	}
 }

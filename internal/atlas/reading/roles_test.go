@@ -3,6 +3,7 @@ package reading
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -95,8 +96,14 @@ func roleGraphWith(t *testing.T, extra func(files map[string][]roleDecl), bounda
 				symbol.Uses = append(symbol.Uses, atlas.SymbolUse{PlaceID: atlas.SymbolID(usedPath, lineOf[used], name), Kind: kind, Resolution: "exact"})
 			}
 			if spec.name == "Store" {
-				for _, method := range []string{"Store.Get", "Store.Put"} {
-					symbol.Members = append(symbol.Members, atlas.TypeMember{Path: path, Decl: atlas.Decl{Name: method, Kind: "method", LineNo: lineOf[path+":"+method]}})
+				// Store's methods, wherever they are declared.
+				paths := slices.Sorted(maps.Keys(files))
+				for _, methodPath := range paths {
+					for _, method := range files[methodPath] {
+						if strings.HasPrefix(method.name, "Store.") {
+							symbol.Members = append(symbol.Members, atlas.TypeMember{Path: methodPath, Decl: atlas.Decl{Name: method.name, Kind: "method", LineNo: method.line}})
+						}
+					}
 				}
 			}
 			symbols = append(symbols, atlas.Place{ID: atlas.SymbolID(path, spec.line, spec.name), Kind: atlas.PlaceSymbol, Path: path, LineNo: spec.line,
@@ -205,9 +212,15 @@ func roleOptions(t *testing.T, graph atlas.Graph, provider *tableProvider, jev *
 	return opts
 }
 
+// defaultRoleProvider names the naming's boxes after serverBoxes (tool.go's
+// Running and Checking) and answers the parts request with one part per box
+// of a split file, named after the box, and one per whole file.
 func defaultRoleProvider() *tableProvider {
 	return &tableProvider{
 		partFor: func(file map[string]any) string {
+			if box, ok := file["box"].(string); ok {
+				return box
+			}
 			switch file["path"] {
 			case "svc/server.go":
 				return "Server"
@@ -251,17 +264,55 @@ func membersOf(box atlas.Box) []string {
 	return names
 }
 
-// The split itself: server.go's code goes in the role parts Entry, Routing
-// and Storage, in naming order after the answer's parts; its part Server,
-// left without a file, is not drawn and takes no ID; Unused, which holds
-// nothing, is not drawn; helper, a near-tie whose callers main and
-// Store.Put sit in two boxes, is off the map as undecided while its file
-// stays on the map; the Store type's methods follow it. The
-// test and generated files are never candidates; util.go (one unit) is not
-// asked. The one-file target splits too.
-func TestTheRoleSplitDrawsAFilesBoxesAsParts(t *testing.T) {
+// partsRequest is the parts request whose rows lie under prefix.
+func partsRequest(t *testing.T, provider *tableProvider, prefix string) (request struct {
+	Units   []map[string]any `json:"units"`
+	Calls   []string         `json:"calls"`
+	Imports []string         `json:"imports"`
+}) {
+	t.Helper()
+	for _, body := range provider.partsBodies {
+		request.Units, request.Calls, request.Imports = nil, nil, nil
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Fatal(err)
+		}
+		if len(request.Units) > 0 && strings.HasPrefix(fmt.Sprint(request.Units[0]["path"]), prefix) {
+			return request
+		}
+	}
+	t.Fatalf("no parts request lists %s", prefix)
+	return request
+}
+
+// Split files are grouped as units: the role split runs before the parts
+// request, which lists each box of server.go that holds a unit as a c* row
+// with the box's name, in naming order (the empty Unused box is no row),
+// and every other file, db.go and util.go included, as its f* row;
+// server.go has no whole row, calls count per site between rows and an
+// import into server.go counts for no row. The parts take the answer's
+// names and IDs in its order, a part may hold two boxes of one file, and a
+// type's methods follow it. helper, whose callers sit in two boxes, is off
+// the map as undecided while server.go stays on it. Test, generated and
+// one-unit files are no gate candidates; the one-file target whose file
+// splits now sends a parts request.
+func TestSplitFilesAreGroupedAsUnits(t *testing.T) {
 	graph := roleGraph(t, nil)
 	provider, jev := defaultRoleProvider(), defaultRoleJev()
+	provider.partsResponse = func(rows []map[string]any) string {
+		ref := map[string]string{}
+		for _, row := range rows {
+			name := fmt.Sprint(row["path"])
+			if box, ok := row["box"].(string); ok {
+				name = box
+			}
+			ref[name] = fmt.Sprint(row["ref"])
+		}
+		if _, ok := ref["Running"]; ok {
+			return fmt.Sprintf(`{"groups":[{"name":"Checking","units":[%q]},{"name":"Running","units":[%q]}]}`, ref["Checking"], ref["Running"])
+		}
+		return fmt.Sprintf(`{"groups":[{"name":"Storage and data","units":[%q,%q]},{"name":"Serving","units":[%q,%q]},{"name":"Tooling","units":[%q,%q,%q]}]}`,
+			ref["Storage"], ref["svc/db.go"], ref["Entry"], ref["Routing"], ref["svc/gen.go"], ref["svc/server_test.go"], ref["svc/util.go"])
+	}
 	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
 	if err != nil {
 		t.Fatal(err)
@@ -273,40 +324,51 @@ func TestTheRoleSplitDrawsAFilesBoxesAsParts(t *testing.T) {
 	if !slices.Equal(jev.gated, []string{"one/tool.go", "svc/db.go", "svc/server.go"}) {
 		t.Fatalf("gate asked about %v; test, generated and one-unit files are no candidates", jev.gated)
 	}
+	request := partsRequest(t, provider, "svc/")
+	var rows []string
+	for _, row := range request.Units {
+		rows = append(rows, fmt.Sprintf("%v %v %v", row["ref"], row["path"], row["box"]))
+	}
+	if want := []string{"f2 svc/db.go <nil>", "f3 svc/gen.go <nil>", "c1 svc/server.go Entry", "c2 svc/server.go Routing", "c3 svc/server.go Storage",
+		"f5 svc/server_test.go <nil>", "f6 svc/util.go <nil>"}; !slices.Equal(rows, want) {
+		t.Fatalf("svc's parts request rows:\n%v\nwant\n%v", rows, want)
+	}
+	if !slices.Equal(request.Calls, []string{"c1 -> c2 (1)", "c2 -> c3 (1)", "f2 -> c3 (1)"}) || len(request.Imports) != 0 {
+		t.Fatalf("calls %v imports %v: a site counts per row it reaches, an import into a split file counts for none", request.Calls, request.Imports)
+	}
 	svc := targetOf(t, result, "svc")
+	var titles []string
+	for _, box := range svc.Boxes {
+		titles = append(titles, box.ID+" "+box.Title)
+	}
+	if want := []string{"p1 Storage and data", "p2 Serving", "p3 Tooling"}; !slices.Equal(titles, want) {
+		t.Fatalf("parts %v, want the answer's names in its order", titles)
+	}
 	parts := partsByTitle(svc)
-	if _, drawn := parts["Server"]; drawn || parts["Unused"].ID != "" {
-		t.Fatalf("the emptied part or the empty box was drawn: %v", parts)
+	if got := membersOf(parts["Storage and data"]); !slices.Equal(got, []string{"Close", "Open", "Store", "Store.Get", "Store.Put"}) {
+		t.Fatalf("Storage and data holds %v: a type's methods follow it", got)
 	}
-	// The answer lists Database, Other (the test and generated files),
-	// Server and Utilities.
-	ids := []string{parts["Database"].ID, parts["Other"].ID, parts["Utilities"].ID, parts["Entry"].ID, parts["Routing"].ID, parts["Storage"].ID}
-	if !slices.Equal(ids, []string{"p1", "p2", "p3", "p4", "p5", "p6"}) {
-		t.Fatalf("IDs: answer parts in order without the emptied one, then the boxes in naming order: %v", ids)
-	}
-	if got := membersOf(parts["Entry"]); !slices.Equal(got, []string{"Serve", "main"}) {
-		t.Fatalf("Entry holds %v", got)
-	}
-	if got := membersOf(parts["Storage"]); !slices.Equal(got, []string{"Store", "Store.Get", "Store.Put"}) {
-		t.Fatalf("Storage holds %v: a type's methods follow it", got)
+	if got := membersOf(parts["Serving"]); !slices.Equal(got, []string{"Route", "Serve", "main"}) {
+		t.Fatalf("Serving holds %v", got)
 	}
 	var undecided []string
 	for _, entry := range svc.OffMap {
-		if entry.File.Path == "svc/server.go" {
-			if entry.Reason != atlas.OffMapUndecided || entry.BoxID != "" {
-				t.Fatalf("server.go off the map: %+v", entry)
-			}
-			for _, symbol := range entry.File.Symbols {
-				undecided = append(undecided, symbol.Name)
-			}
+		if entry.File.Path != "svc/server.go" {
+			continue
+		}
+		if entry.Reason != atlas.OffMapUndecided || entry.BoxID != "" {
+			t.Fatalf("server.go off the map: %+v", entry)
+		}
+		for _, symbol := range entry.File.Symbols {
+			undecided = append(undecided, symbol.Name)
 		}
 	}
 	if !slices.Equal(undecided, []string{"helper"}) {
 		t.Fatalf("undecided: %v", undecided)
 	}
 	one := targetOf(t, result, "one")
-	if titles := partsByTitle(one); len(one.Boxes) != 2 || titles["Running"].ID == "" || titles["Checking"].ID == "" {
-		t.Fatalf("the one-file target was not split: %+v", one.Boxes)
+	if titles := partsByTitle(one); len(one.Boxes) != 2 || titles["Running"].ID == "" || titles["Checking"].ID == "" || len(partsRequest(t, provider, "one/").Units) != 2 {
+		t.Fatalf("the one-file target was not grouped by its boxes: %+v", one.Boxes)
 	}
 	for _, kind := range []string{"role_box_empty", "role_undecided"} {
 		if !slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool { return row.Kind == kind }) {
@@ -476,23 +538,33 @@ func TestAnInputWithAnUndecidedHandlerNamesNoPart(t *testing.T) {
 	}
 }
 
-// A split file is no part's endpoint. The import from db.go into server.go
-// draws no arrow into a role part, while Open's call of Store.Put draws
-// Database → Storage. The entry stays: main's part, Entry, starts the trace,
-// stands in the "in" column and is not asked for a core role. A config read
-// with no subject stands in the part of the declaration whose range holds
-// its line (main). Each role part is described by the units it holds.
-func TestASplitFileIsNoPartsEndpoint(t *testing.T) {
-	graph := roleGraph(t, nil)
+// One rule for every file: a place takes the part of the declaration around
+// it, and a file's own part is the one part holding all its placed units.
+// server.go's units sit in three parts, so it has no part of its own: the
+// import from db.go into it draws no arrow into its parts, while Open's call
+// of Store.Put draws Database → Storage. The config read at line 5 inside
+// main stands in main's part, Entry, which starts the trace, stands in the
+// "in" column and is not asked for a core role. A config read inside
+// Store.Flush, a method of Store declared in db.go, stands in Store's part,
+// Storage, not in Database, the part of db.go's own units.
+func TestOneRuleForEveryFile(t *testing.T) {
+	graph := roleGraphWith(t, func(files map[string][]roleDecl) {
+		files["svc/db.go"] = append(files["svc/db.go"], roleDecl{name: "Store.Flush", kind: "method", line: 15, end: 19, code: 4})
+	}, []atlas.Place{{ID: "bnd:svc/db.go:17:config", Kind: atlas.PlaceBoundary, Path: "svc/db.go", LineNo: 17,
+		Parent: atlas.FileID("svc/db.go"), TargetIDs: []string{"svc"}, Given: "config FLUSH_EVERY",
+		Boundary: &atlas.BoundaryFacts{Source: "fact", Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryConfig, Values: []string{"FLUSH_EVERY"}}}})
 	provider, jev := defaultRoleProvider(), defaultRoleJev()
 	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
 	svc := targetOf(t, result, "svc")
 	parts := partsByTitle(svc)
-	if parts["Entry"].ID == "" {
-		t.Fatal("no split happened")
+	if parts["Entry"].ID == "" || !slices.Contains(membersOf(parts["Storage"]), "Store.Flush") {
+		t.Fatalf("no split, or Store.Flush left its type: %v", parts)
 	}
 	roleParts := map[string]bool{parts["Entry"].ID: true, parts["Routing"].ID: true, parts["Storage"].ID: true}
 	calls := false
@@ -511,17 +583,15 @@ func TestASplitFileIsNoPartsEndpoint(t *testing.T) {
 	if slices.Contains(jev.roleParts(), "Entry") {
 		t.Fatal("the part holding main was asked for a core role")
 	}
+	stands := map[string]string{}
 	for _, boundary := range svc.Boundaries {
-		if boundary.Path == "svc/server.go" && boundary.BoxID != parts["Entry"].ID {
-			t.Fatalf("the config read at line 5 stands in %q", boundary.BoxID)
-		}
+		stands[fmt.Sprintf("%s:%d", boundary.Path, boundary.LineNo)] = boundary.BoxID
 	}
-	var storage describeInput
-	if err := json.Unmarshal(provider.described["Storage"], &storage); err != nil {
-		t.Fatal(err)
+	if stands["svc/server.go:5"] != parts["Entry"].ID {
+		t.Fatalf("the config read inside main stands in %q, not Entry %q", stands["svc/server.go:5"], parts["Entry"].ID)
 	}
-	if len(storage.Directories) != 1 || len(storage.Directories[0].Files) != 1 || len(storage.Directories[0].Files[0].Members) != 1 || storage.Directories[0].Files[0].Members[0].Name != "Store" {
-		t.Fatalf("Storage is described by %s", provider.described["Storage"])
+	if stands["svc/db.go:17"] != parts["Storage"].ID {
+		t.Fatalf("the config read inside Store.Flush stands in %q, not Storage %q (Database is %q)", stands["svc/db.go:17"], parts["Storage"].ID, parts["Database"].ID)
 	}
 }
 
@@ -530,102 +600,57 @@ func (jev *roleJev) roleParts() []string {
 	return jev.asked["role"]
 }
 
-// A file the parts answer left out is placed whole, never split: its
-// naming may have been asked, but no role part is drawn from it and the
-// split is recorded as not applied. A left-out file placed into a role part
-// joins it whole, and the role part's own units stay exactly its own.
-func TestPlacementOnlyAddsWholeFiles(t *testing.T) {
+// A box the parts answer leaves out goes to the follow-up as its own row,
+// with its file's path, its box's name and its calls to and from the drawn
+// parts; its file stays on the map through its other boxes. Refused, its
+// declarations are off the map as left out while the other boxes keep their
+// parts; placed, it joins the part chosen.
+func TestALeftOutBoxKeepsItsFileOnTheMap(t *testing.T) {
 	graph := roleGraph(t, nil)
-	provider, jev := defaultRoleProvider(), defaultRoleJev()
-	partFor := provider.partFor
-	provider.partFor = func(file map[string]any) string {
-		if file["path"] == "svc/db.go" {
-			return "" // a group without a name: db.go is left out
+	read := func(choice func(options []any) string) (Result, map[string]any) {
+		t.Helper()
+		provider, jev := defaultRoleProvider(), defaultRoleJev()
+		partFor := provider.partFor
+		provider.partFor = func(unit map[string]any) string {
+			if unit["box"] == "Routing" {
+				return "" // a group without a name: the Routing box is left out
+			}
+			return partFor(unit)
 		}
-		return partFor(file)
+		var asked map[string]any
+		provider.placeFor = func(row map[string]any) string {
+			asked = row
+			options, _ := row["part_options"].([]any)
+			return choice(options)
+		}
+		result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := atlas.Validate(result.Atlas); err != nil {
+			t.Fatal(err)
+		}
+		return result, asked
 	}
-	var offered []any
-	storage := ""
-	provider.placeFor = func(row map[string]any) string {
-		offered, _ = row["calls"].([]any)
-		return storage
-	}
-	// Storage is the last role part drawn: p5 (Other, Utilities, then the
-	// boxes Entry, Routing, Storage).
-	storage = "p5"
-	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := atlas.Validate(result.Atlas); err != nil {
-		t.Fatal(err)
-	}
+	result, asked := read(func([]any) string { return "p99" })
 	svc := targetOf(t, result, "svc")
 	parts := partsByTitle(svc)
-	if parts["Storage"].ID != storage {
-		t.Fatalf("Storage is %s", parts["Storage"].ID)
+	if asked["path"] != "svc/server.go" || asked["box"] != "Routing" || fmt.Sprint(asked["calls"]) != fmt.Sprintf("[-> %s (1) %s -> (1)]", parts["Storage"].ID, parts["Entry"].ID) {
+		t.Fatalf("the left-out box was asked as %v", asked)
 	}
-	if got := membersOf(parts["Storage"]); !slices.Equal(got, []string{"Close", "Open", "Store", "Store.Get", "Store.Put"}) {
-		t.Fatalf("Storage holds %v", got)
-	}
-	if !slices.ContainsFunc(offered, func(call any) bool { return call == "-> "+storage+" (1)" }) {
-		t.Fatalf("db.go's placement row shows its call of Store.Put as %v", offered)
-	}
+	offMap := map[string][]string{}
 	for _, entry := range svc.OffMap {
-		if entry.File.Path == "svc/db.go" || entry.File.Path == "svc/server.go" && (entry.Reason != atlas.OffMapUndecided || len(entry.File.Symbols) != 1) {
-			t.Fatalf("off the map: %+v", entry)
+		for _, symbol := range entry.File.Symbols {
+			offMap[entry.File.Path+" "+entry.Reason] = append(offMap[entry.File.Path+" "+entry.Reason], symbol.Name)
 		}
 	}
-
-	// Left out itself, server.go is placed whole.
-	provider, jev = defaultRoleProvider(), defaultRoleJev()
-	partFor = provider.partFor
-	provider.partFor = func(file map[string]any) string {
-		if file["path"] == "svc/server.go" {
-			return ""
-		}
-		return partFor(file)
+	if !slices.Equal(offMap["svc/server.go left_out"], []string{"Route"}) || parts["Entry"].ID == "" || parts["Storage"].ID == "" {
+		t.Fatalf("off the map %v, parts %v", offMap, parts)
 	}
-	result, err = Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
-	if err != nil {
-		t.Fatal(err)
-	}
+	result, _ = read(func(options []any) string { return fmt.Sprint(options[0]) })
 	svc = targetOf(t, result, "svc")
-	if parts := partsByTitle(svc); parts["Entry"].ID != "" || !slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool { return row.Kind == "role_not_applied" }) {
-		t.Fatalf("a left-out file was split: %v", parts)
-	}
-	for _, entry := range svc.OffMap {
-		if entry.Reason == atlas.OffMapUndecided {
-			t.Fatalf("a whole file has undecided declarations: %+v", entry)
-		}
-	}
-}
-
-// A part that still holds a whole file after the split is drawn, described
-// by that file's units alone.
-func TestAPartKeepsItsOtherFiles(t *testing.T) {
-	graph := roleGraph(t, nil)
-	provider, jev := defaultRoleProvider(), defaultRoleJev()
-	provider.partFor = func(file map[string]any) string {
-		switch file["path"] {
-		case "svc/server.go", "svc/util.go":
-			return "Server"
-		}
-		return "Other"
-	}
-	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
-	if err != nil {
-		t.Fatal(err)
-	}
-	parts := partsByTitle(targetOf(t, result, "svc"))
-	if parts["Entry"].ID == "" || parts["Server"].ID == "" {
-		t.Fatalf("parts: %v", parts)
-	}
-	if got := membersOf(parts["Server"]); !slices.Equal(got, []string{"Log"}) {
-		t.Fatalf("Server holds %v", got)
-	}
-	if described := string(provider.described["Server"]); !strings.Contains(described, `"Log"`) || strings.Contains(described, `"Serve"`) {
-		t.Fatalf("Server is described by %s", described)
+	if got := membersOf(partsByTitle(svc)["Database"]); !slices.Equal(got, []string{"Close", "Open", "Route"}) {
+		t.Fatalf("the placed box joined %v", got)
 	}
 }
 
@@ -687,8 +712,18 @@ func TestNamingFormsAndRefusals(t *testing.T) {
 // undecided one included, and nothing of it goes off the map.
 func TestAFileInFewerThanTwoBoxesStaysWhole(t *testing.T) {
 	graph := roleGraph(t, nil)
+	var provider *tableProvider
 	whole := func(t *testing.T, result Result, kind string) {
 		t.Helper()
+		var rows []string
+		for _, row := range partsRequest(t, provider, "svc/").Units {
+			if row["path"] == "svc/server.go" {
+				rows = append(rows, fmt.Sprintf("%v %v", row["ref"], row["box"]))
+			}
+		}
+		if !slices.Equal(rows, []string{"f4 <nil>"}) {
+			t.Fatalf("server.go's rows: %v, want one whole row", rows)
+		}
 		svc := targetOf(t, result, "svc")
 		parts := partsByTitle(svc)
 		if got := membersOf(parts["Server"]); !slices.Equal(got, []string{"Route", "Serve", "Store", "Store.Get", "Store.Put", "helper", "main"}) {
@@ -709,7 +744,8 @@ func TestAFileInFewerThanTwoBoxesStaysWhole(t *testing.T) {
 		}
 	}
 
-	provider, jev := defaultRoleProvider(), defaultRoleJev()
+	provider = defaultRoleProvider()
+	jev := defaultRoleJev()
 	provider.boxesFor = func(path string) string { return `{"boxes":[{"name":"Entry","holds":"All of it."}]}` }
 	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
 	if err != nil {

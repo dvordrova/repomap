@@ -26,10 +26,9 @@ type boxState struct {
 	// line is the part's description; empty is the no-description state.
 	line  string
 	files []string // file place IDs holding its declarations
-	// rows are the files placed in it whole: its file endpoints. sources
-	// are those and the split files whose units it holds: its directory,
-	// its test fact, its description and its area dirs come from them.
-	rows, sources []string
+	// sources are the files its units are declared in: its directory, its
+	// test fact, its description and its area dirs come from them.
+	sources []string
 	// unitIDs are the units it holds; units counts them.
 	unitIDs []string
 	units   int
