@@ -154,8 +154,11 @@ type pageInputPath struct {
 	RegisteredBy []string         `json:"registered_by,omitempty"`
 	Parts        []pageInputPart  `json:"parts,omitempty"`
 	// Checks are the input's sub-arguments: words only its handler's code
-	// declares (GroupsIndex Reach.SubArguments), each at its source.
+	// declares (GroupsIndex Reach.SubArguments), each at its source; of an
+	// input with no handler established (Values), the values its words are
+	// compared with ("appendfsync: always | everysec | no").
 	Checks []pageDecl `json:"checks,omitempty"`
+	Values bool       `json:"values,omitempty"`
 	// SentTo are the peer programs' inputs this table row names, and SentBy
 	// the other programs' table rows naming this input (Operation.Sends, a
 	// model match; decision 14).
@@ -347,6 +350,7 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 			}
 		}
 	}
+	path.Values = operation.HandlerUnknown && len(path.Checks) > 0
 	path.SentTo, path.SentBy = builder.peerInputs(index, operation)
 	path.Decls = decls.list
 	entered := len(path.Checks)+len(path.SentTo)+len(path.SentBy) > 0

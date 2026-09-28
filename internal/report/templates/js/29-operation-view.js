@@ -180,7 +180,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
   });
   if((path.checks||[]).length){
     // Words only the handler's own code checks: the input's sub-arguments.
-    var checks=rmEl('p','system-path-checks');checks.appendChild(rmEl('span','meta',rmT('Words its handler checks')+': '));
+    var checks=rmEl('p','system-path-checks');checks.appendChild(rmEl('span','meta',rmT(path.values?'Its values':'Words its handler checks')+': '));
     path.checks.forEach(function(check,i){if(i)checks.append(document.createTextNode(', '));var link=check.href||check.open?repomapMembers.sourceLink({Href:check.href,Open:check.open,Text:check.name,NoSource:check.no_source}):rmEl('span','',check.name);if(check.source)link.title=check.source;checks.appendChild(link);});
     section.appendChild(checks);
   }

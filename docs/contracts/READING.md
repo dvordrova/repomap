@@ -923,6 +923,28 @@ as written and declaring caller: the same option written twice in one
 function is one input at its first site; the same word in another caller
 is another. A name that cannot stand refuses that entry alone.
 
+A directive's values are its sub-arguments (owner's rule K3: the words
+compared inside an input's handling are its sub-arguments), a code fact
+(`values.go`). Among the entries one function's calls make whose calls
+compare literal elements of one value (where each argument comes from, as
+above: element "0" and element "1" of what `sdssplitlen` returned at
+redis.c:1642), the lowest element's words are entries and each higher
+element's words are a value of the entry written last before them
+(`atlas.Boundary.ValueOf`): Redis's `loadServerConfig` compares `argv[0]`
+with "appendfsync" and then `argv[1]` with "always", "everysec" and "no",
+so `appendfsync` is one of its 30 directives with those three values,
+where redis-server had listed 37 settings, the values among them. A value
+with no entry before it stays an entry. GroupsIndex nests a value under
+its entry (`Operation.ValueOf`, `Launch.Nested`, `Reach.SubArguments`);
+it is no member of a catalogue and no tile, and the entry's reading lists
+it ("Its values"), as the Inputs reading does ("appendfsync: always |
+everysec | no"). The model's answer that the word is a setting is still
+its answer; which entry it belongs to is the code's. Every incoming
+boundary also keeps its registration as the code wrote it at its site
+(`atlas.Boundary.Written`, `lines.CallText`, folded to one line), a
+command table's row with its arity and flags, which the input's reading
+shows; no request carries it.
+
 A field of a repository structure whose tag names a key (Go's object
 aliases, `yaml:"dbs"`) is asked on its own what that key is
 (`repomap.atlas.inputs.v1.field`, stage `atlas_inputs`, Jev, `Memoize`):

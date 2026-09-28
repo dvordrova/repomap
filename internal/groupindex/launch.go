@@ -168,5 +168,18 @@ func (graph *reachGraph) launch(reaches []Reach) Launch {
 			result.Nested[operation.ID] = true
 		}
 	}
+	// A value of another input's words (appendfsync's always) is that
+	// input's sub-argument too.
+	for _, operation := range index.Operations {
+		if operation.ValueOf == "" || result.Nested[operation.ID] {
+			continue
+		}
+		for position := range reaches {
+			if reaches[position].OperationID == operation.ValueOf {
+				reaches[position].SubArguments = append(reaches[position].SubArguments, operation.ID)
+				result.Nested[operation.ID] = true
+			}
+		}
+	}
 	return result
 }

@@ -247,6 +247,10 @@ type Operation struct {
 	// Written is the input's registration as the code wrote it (atlas
 	// Boundary.Written): a table's row with its arity and flags.
 	Written string `json:"written,omitempty"`
+	// ValueOf is, for a handler-less input one of whose words is a value of
+	// another (atlas Boundary.ValueOf: "always" after "appendfsync"), that
+	// input: it is listed as its sub-argument (Launch.Nested).
+	ValueOf string `json:"value_of,omitempty"`
 	// DeclaredBy is the subject whose code makes the call declaring or
 	// registering the input: the caller of that call. For an input whose
 	// handler is not established it is where the input is parsed, never its

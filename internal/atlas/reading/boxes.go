@@ -653,6 +653,12 @@ type boundaryState struct {
 	// asWritten is an incoming boundary's registration as the code wrote it
 	// (declared.go markDeclaredOn).
 	asWritten string
+	// element is, for an entry a call's words make, the element of another
+	// value its call compares (strcasecmp(argv[1],"always"): element 1 of
+	// what sdssplitlen returned at redis.c:1642); valueOf the entry it is
+	// a value of (values.go).
+	element *valueElement
+	valueOf string
 	// tableRow marks an entry a row of an accepted table makes (inputs.go).
 	tableRow bool
 }
@@ -694,6 +700,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	r.applyStored()
 	publishes := r.applyAPIRoles()
 	publishes = append(publishes, r.bindInterpretedBoundaries()...)
+	r.foldValues()
 	r.bindTableRows()
 	r.markDeclaredOn()
 	if err := r.readPrograms(ctx); err != nil {
@@ -1074,7 +1081,7 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 				}
 				if kind := r.readWordCall(running, place.ID, decl.ObjectID, call.Line, call.Column, symbol, call.Values); kind != "" {
 					id := boundaryID(fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s\x00%s\x00%s", atlas.DirectionIn, place.ID, call.Line, call.Column, call.Kind, call.Name, call.Resolution))
-					r.boundaries[id] = &boundaryState{kind: kind, handlerUnknown: true, place: atlas.Place{
+					r.boundaries[id] = &boundaryState{kind: kind, handlerUnknown: true, element: comparedElement(call.SourceArguments), place: atlas.Place{
 						ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: call.Line, Column: call.Column,
 						Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
 							Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, External: call.Name,

@@ -303,7 +303,9 @@ function rmCollectionView(ctx,node,collection){
     var names=rmEl('ul','map-collection-names');
     group.inputs.forEach(function(id){
       var input=ctx.nodeById(id);if(!input)return;
-      var item=rmEl('li'),button=rmEl('button','',input.dataset.title);button.type='button';
+      // A directive with its values: "appendfsync: always | everysec | no".
+      var path=rmPage.data(input,'inputPath'),values=path&&path.values?(path.checks||[]).map(function(check){return check.name;}):[];
+      var item=rmEl('li'),button=rmEl('button','',input.dataset.title+(values.length?': '+values.join(' | '):''));button.type='button';
       button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);names.appendChild(item);
     });
     section.appendChild(names);view.appendChild(section);

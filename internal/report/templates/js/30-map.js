@@ -557,7 +557,9 @@ function rmDeclarationRelations(map,node,key,nodes){
       if (node.dataset.written) html += '<p class="map-card-written"><code>' + escapeText(node.dataset.written) + '</code></p>';
       if (node.dataset.operationGroup && !node.dataset.catalogue) html += '<span class="map-card-meta">' + (node.dataset.handlerUnknown==='true' ? rmT.html('declared in') + ' ' : '') + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
-      if(source) html += '<p><a target="_blank" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
+      // An input with no handler established says where it is parsed.
+      var parsed=node.dataset.activation&&node.dataset.handlerUnknown==='true'?rmT.html('parsed at')+' ':'';
+      if(source) html += '<p>'+parsed+'<a target="_blank" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
       else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';
       else if(node.dataset.noSource==='true') html += '<p><span title="'+escapeText(rmT('No source'))+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</span></p>';
       html += '</div>';

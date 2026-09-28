@@ -321,6 +321,11 @@ static void loadConfig(const char *filename) {
         char **argv = splitLine(line, &words);
         if (words == 2 && strcasecmp(argv[0], "port") == 0) server.port = atoi(argv[1]);
         else if (words == 2 && strcasecmp(argv[0], "dbfilename") == 0) server.dbfile = strdup(argv[1]);
+        /* A directive's values are compared with its second word. */
+        else if (words == 2 && strcasecmp(argv[0], "persist") == 0) {
+            if (strcasecmp(argv[1], "never") == 0) server.dirty = -1;
+            else if (strcasecmp(argv[1], "always") == 0) server.dirty = 0;
+        }
         free(argv);
     }
     fclose(fp);

@@ -172,6 +172,11 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 		{kind: "command", name: "--symbols", source: "model"},
 		{kind: "setting", name: "port", source: "model"},
 		{kind: "setting", name: "dbfilename", source: "model"},
+		{kind: "setting", name: "persist", source: "model"},
+		// persist's values, compared with the second word of the same
+		// line: its sub-arguments, no settings of their own.
+		{kind: "setting", name: "never", source: "model"},
+		{kind: "setting", name: "always", source: "model"},
 	}
 	for _, row := range cCommandRows {
 		want = append(want, input{kind: "request", name: row.name, handler: row.function, source: "fact"})
@@ -292,8 +297,32 @@ func checkKvdReach(t *testing.T, program programindex.Index, index groupindex.In
 			t.Fatalf("loadConfig's catalogue is called from %v", catalogue.Calls)
 		}
 	}
-	if want := map[string][]string{"main command": {"--symbols"}, "loadConfig setting": {"port", "dbfilename"}}; !reflect.DeepEqual(catalogues, want) {
+	if want := map[string][]string{"main command": {"--symbols"}, "loadConfig setting": {"port", "dbfilename", "persist"}}; !reflect.DeepEqual(catalogues, want) {
 		t.Fatalf("catalogues = %v, want %v", catalogues, want)
+	}
+	// A directive's values compared with its line's second word (owner's
+	// rule K3, Redis's "appendfsync: always | everysec | no") are its
+	// sub-arguments: nested, listed in its reading, no inputs of their own.
+	values := map[string][]string{}
+	for position, operation := range index.Operations {
+		if operation.ValueOf != "" {
+			if !index.Launch.Nested[operation.ID] {
+				t.Fatalf("%s is a value of %s and not nested", operation.Name, operations[operation.ValueOf])
+			}
+			values[operations[operation.ValueOf]] = append(values[operations[operation.ValueOf]], operation.Name)
+		}
+		if operation.Name == "persist" {
+			var subArguments []string
+			for _, id := range index.Reach[position].SubArguments {
+				subArguments = append(subArguments, operations[id])
+			}
+			if !slices.Equal(subArguments, []string{"always", "never"}) {
+				t.Fatalf("persist's sub-arguments: %v", subArguments)
+			}
+		}
+	}
+	if want := map[string][]string{"persist": {"always", "never"}}; !reflect.DeepEqual(values, want) {
+		t.Fatalf("values = %v, want %v", values, want)
 	}
 	// The launch walk from main finds them where they are declared.
 	found := map[string][]string{}
@@ -302,7 +331,7 @@ func checkKvdReach(t *testing.T, program programindex.Index, index groupindex.In
 			found[names[function.SubjectID]] = append(found[names[function.SubjectID]], operations[id])
 		}
 	}
-	if slices.Sort(found["loadConfig"]); !slices.Equal(found["loadConfig"], []string{"dbfilename", "port"}) || !slices.Contains(found["main"], "--symbols") {
+	if slices.Sort(found["loadConfig"]); !slices.Equal(found["loadConfig"], []string{"always", "dbfilename", "never", "persist", "port"}) || !slices.Contains(found["main"], "--symbols") {
 		t.Fatalf("the launch finds %v", found)
 	}
 	for position, operation := range index.Operations {

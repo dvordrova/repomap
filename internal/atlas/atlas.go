@@ -879,6 +879,13 @@ type Boundary struct {
 	// REDIS_CMD_BULK|REDIS_CMD_DENYOOM,NULL,1,1,1}), a registering call. A
 	// code fact for the reader; no request carries it.
 	Written string `json:"written,omitempty"`
+	// ValueOf is, for an entry a call's words make, the entry it is a value
+	// of: the calls of one function comparing elements of one value
+	// (strcasecmp(argv[0],"appendfsync") then strcasecmp(argv[1],"always")
+	// on the fields sdssplitlen returned) make the lowest element's words
+	// entries and each other element's words values of the entry written
+	// last before them. A code fact: its answer is still the model's.
+	ValueOf string `json:"value_of,omitempty"`
 }
 
 // DeclaredOn is the call that made the object an entry is declared on, at
@@ -1653,6 +1660,9 @@ func Validate(value Atlas) error {
 			}
 			if boundary.Written != "" && (boundary.Direction != DirectionIn || !ValidName(boundary.Written)) {
 				return fmt.Errorf("atlas: boundary %q has an invalid registration as written", boundary.ID)
+			}
+			if boundary.ValueOf != "" && (!boundary.HandlerUnknown || boundary.ValueOf == boundary.ID) {
+				return fmt.Errorf("atlas: boundary %q is a value of an invalid entry", boundary.ID)
 			}
 		}
 		for _, call := range target.Unsure {

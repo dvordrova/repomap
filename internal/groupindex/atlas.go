@@ -815,7 +815,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			if byID[declaredBy] == nil {
 				declaredBy = ""
 			}
-			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary), Written: boundary.Written}
+			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary), Written: boundary.Written, ValueOf: boundary.ValueOf}
 			key := strings.Join(append([]string{kind, boundary.ObjectID}, boundary.Values...), "\x00")
 			if on := operation.DeclaredOn; on != nil {
 				// Two objects in one function are two declarations.
@@ -938,6 +938,11 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			kept = next
 		}
 		operationOf[folded] = operationOf[kept]
+	}
+	for position := range operations {
+		if operations[position].ValueOf != "" {
+			operations[position].ValueOf = operationOf[operations[position].ValueOf]
+		}
 	}
 	offMap, err := projectOffMap(target, unreached, func(symbol atlas.Symbol) (string, bool) {
 		key := sourceRefs[symbol.ObjectID]

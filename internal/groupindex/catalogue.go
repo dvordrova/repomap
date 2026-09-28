@@ -75,7 +75,9 @@ func catalogues(index *Index) []Catalogue {
 	var result []Catalogue
 	at := map[key]int{}
 	for _, operation := range index.Operations {
-		if !operation.HandlerUnknown || operation.DeclaredBy == "" && operation.DeclaredOn == nil {
+		// A value of another input's words is that input's sub-argument, no
+		// member of a catalogue.
+		if !operation.HandlerUnknown || operation.ValueOf != "" || operation.DeclaredBy == "" && operation.DeclaredOn == nil {
 			continue
 		}
 		k := key{by: operation.DeclaredBy, kind: operation.Kind}

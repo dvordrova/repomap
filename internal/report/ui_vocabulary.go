@@ -40,6 +40,8 @@ var russianUI = map[string]string{
 	"via":                                  "через",
 	"Its handlers by input":                "Обработчики по входам",
 	"Filter":                               "Фильтр",
+	"Its values":                           "Его значения",
+	"parsed at":                            "разбирается в",
 	"Areas and parts":                      "Области и части",
 	"Built from":                           "Собрана из",
 	"Entry":                                "Вход",
