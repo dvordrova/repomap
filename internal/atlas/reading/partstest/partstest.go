@@ -264,11 +264,10 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 			t.Fatalf("the registration %q of %s is not shown with the declarations of %s: %v", words, subject.Given, subject.Path, categorizer.registered[subject.Path])
 		}
 	}
-	// The preset names each file's boxes after its path.
+	// Each box row of the parts request (a named box, or a seed's own row)
+	// is a part of its own named after the row: a role part of its file.
 	for _, box := range checked.Target.Boxes {
-		if path, ok := strings.CutSuffix(box.Title, ": first"); ok {
-			checked.Split[path], checked.RoleParts[box.ID] = true, true
-		} else if path, ok := strings.CutSuffix(box.Title, ": second"); ok {
+		if path, ok := provider.boxRows[box.Title]; ok {
 			checked.Split[path], checked.RoleParts[box.ID] = true, true
 		}
 	}
@@ -335,18 +334,25 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 			t.Fatalf("an import-only arrow %s -> %s touches a role part: a split file has no endpoint", arrow.From, arrow.To)
 		}
 	}
+	// A seed of a split file is never asked the helper question or assigned
+	// a box: it is a row of its own, named by its declaration, and the part
+	// holding it stands in the "in" column.
 	for _, seed := range graph.SeedDecls {
 		place := placeByID(graph, seed)
 		if !slices.Contains(place.TargetIDs, targetID) || !checked.Split[place.Path] {
 			continue
 		}
+		name := place.Symbol.Decl.Name
+		if categorizer.helperAsked[[2]string{place.Path, name}] > 0 || slices.Contains(categorizer.items[place.Path], name) {
+			t.Fatalf("the seed %s of the split file %s was asked the helper question or assigned a box", name, place.Path)
+		}
 		part := checked.PartOf[seed]
-		if part == "" {
-			continue // an undecided seed declaration enters through no part
+		if part == "" || !checked.RoleParts[part] {
+			t.Fatalf("the seed %s of the split file %s is in part %q, not a row of its own", name, place.Path, part)
 		}
 		for _, box := range checked.Target.Boxes {
-			if box.ID == part && box.Side != atlas.SideIn {
-				t.Fatalf("the part %s holding the seed %s stands %q, not in", part, place.Symbol.Decl.Name, box.Side)
+			if box.ID == part && (box.Title != name || box.Side != atlas.SideIn) {
+				t.Fatalf("the part %s holding the seed %s is %q and stands %q, not its own row in", part, name, box.Title, box.Side)
 			}
 		}
 	}
@@ -834,6 +840,9 @@ type preset struct {
 	requests [][]byte
 	// named are, by file path, the declarations each naming request lists.
 	named map[string][]string
+	// boxRows are the parts request's box rows, by the name of the part the
+	// preset draws for each, with their file's path.
+	boxRows map[string]string
 }
 
 func (*preset) State() []byte { return []byte(`{"provider":"parts-preset"}`) }
@@ -863,17 +872,22 @@ func (p *preset) Complete(_ context.Context, prepared llm.Prepared) (llm.Complet
 	case partsTask:
 		p.mu.Lock()
 		p.requests = append(p.requests, prepared.Bytes())
-		p.mu.Unlock()
+		if p.boxRows == nil {
+			p.boxRows = map[string]string{}
+		}
 		// Each unit is a part of its own, named after its file or its box
-		// (the naming names a box after its file).
+		// (the naming names a box after its file; a seed's row is named by
+		// its declaration).
 		var groups []map[string]any
 		for _, unit := range request.Units {
 			name := unit.Path
 			if unit.Box != "" {
 				name = unit.Box
+				p.boxRows[name] = unit.Path
 			}
 			groups = append(groups, map[string]any{"name": name, "units": []string{unit.Ref}})
 		}
+		p.mu.Unlock()
 		response = map[string]any{"groups": groups}
 	case "repomap.atlas.describe.v1":
 		response = map[string]string{"description": "Preset description."}
