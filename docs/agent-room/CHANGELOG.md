@@ -1,5 +1,35 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — An open declaration goes where its file's users are; the neighbours' question is deleted
+
+- Scope: step C2 of `map-model/step3-plan.md` with its corrections 2 and 5.
+  The neighbours' question (A13, `atlas_role_neighbours`) asked the
+  assignment again with the boxes of a unit's calls and callers: where a
+  unit's users are is a code fact, and asking re-decided what the first
+  question had decided.
+- **Change.** After the assignment, `settleOpen` places each open unit by
+  code, to a fixed point: box k when every unit of its file that uses it
+  (an exact call, a decoration, an exact read of what does not run; places'
+  `uses` from C1) has box k; with no such user, k when everything of its
+  file it uses has box k; otherwise it stays undecided. A hand-over is no
+  use (cmdTable's 97 handlers, a Go `HandleFunc` or JS `app.get` registrar),
+  and neither is a read of a callable, which JS/TS writes where it hands a
+  handler over. Each placement is recorded as `role_placed_by_users` or
+  `role_placed_by_uses`. Deleted: `lines.RoleNeighbours`, its stage and
+  prompt, the debugdump stage, `askNeighbours`, `boxLabels`, `countValues`,
+  the assignment item's box annotations.
+- **Tests.** `TestAnOpenUnitGoesWhereItsSameFileUsersAre` (helper and a read
+  variable go to Storage by their users, main by what it uses, a handler
+  its table hands over and its registrar reads as a value stays undecided,
+  a unit whose users sit in two boxes stays undecided, each unit asked
+  once, records written); `TestAnInputWithAnUndecidedHandlerNamesNoPart`
+  now places helper by code; roleGraph's main also calls helper, so the
+  tests that pin helper as undecided stay green (skeptic B5). partstest
+  drops its asked-again fake and checks on every language's real facts that
+  no undecided unit is one the rule places. Reverting the rule fails both
+  reading tests and the Go, Python, Clojure and TS fixtures; counting
+  hand-overs fails the first (`step3/impl-revert.log`).
+
 ## 2026-09-28 — The places graph records what a declaration reads, hands over or is decorated by
 
 - Scope: step C1 of `map-model/step3-plan.md`. `places.json` carried no reads:

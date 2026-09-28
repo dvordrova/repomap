@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"slices"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/modeldiag"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // The role split (owner's option "в", 2026-09-26): "what's in one file can
@@ -23,8 +23,9 @@ import (
 // own map, we group and abstract." A file the parts answer placed whole can
 // hold the code of several boxes of our map. Jev decides whether it does
 // (the gate), DeepSeek names the boxes its code goes in (the naming), and
-// Jev puts each of its units in one of them (the assignment). Each box that
-// holds a unit becomes a part of its own.
+// Jev puts each of its units in one of them (the assignment); a unit it
+// leaves open goes, by code, where the file's code that uses it went. Each
+// box that holds a unit becomes a part of its own.
 
 //go:embed prompts/design_boxes.md
 var designBoxesPrompt string
@@ -46,6 +47,12 @@ type roleUnit struct {
 	// callers are the distinct units of the target's other non-test files
 	// that call it.
 	callers map[string]bool
+	// users are the units of the target's non-test, non-generated files that
+	// call it, are decorated by it or read it; uses are the units it calls,
+	// is decorated by or reads. A hand-over is neither: a command table or a
+	// route registrar hands its handlers over without using them, and a read
+	// of a callable is a function value taken to be called later.
+	users, uses map[string]bool
 	// registered are the words of each registration handing it, or one of
 	// its followers, over to be called later ("redisCommand get"): how the
 	// code calls a handler no declaration calls by name.
@@ -88,7 +95,7 @@ func (r *reader) roleFiles(view *designView) []*roleFile {
 		candidate := &roleFile{file: file, byID: map[string]*roleUnit{}}
 		for _, id := range file.units {
 			decl := r.places[id].Symbol.Decl
-			unit := &roleUnit{id: id, name: decl.Name, kind: decl.Kind, signature: decl.Signature, callers: map[string]bool{}}
+			unit := &roleUnit{id: id, name: decl.Name, kind: decl.Kind, signature: decl.Signature, callers: map[string]bool{}, users: map[string]bool{}, uses: map[string]bool{}}
 			candidate.units = append(candidate.units, unit)
 			candidate.byID[id] = unit
 		}
@@ -156,6 +163,31 @@ func (r *reader) roleFiles(view *designView) []*roleFile {
 			}
 			fromFile := byFile[view.unitFile[from]]
 			fromRow := view.byID[view.unitFile[from]]
+			// A unit's users and uses: its exact calls, decorations and reads
+			// of what does not run, between units of files that are neither
+			// test nor generated code.
+			use := func(callee string) {
+				to := unitOf(callee)
+				toRow := view.byID[view.unitFile[to]]
+				if to == "" || to == from || fromRow == nil || toRow == nil || fromRow.test || fromRow.generated || toRow.test || toRow.generated {
+					return
+				}
+				if fromFile != nil {
+					fromFile.byID[from].uses[to] = true
+				}
+				if toFile := byFile[view.unitFile[to]]; toFile != nil {
+					toFile.byID[to].users[from] = true
+				}
+			}
+			for _, used := range symbol.Uses {
+				place, ok := r.places[used.PlaceID]
+				if used.Resolution != "exact" || !ok || place.Symbol == nil || !contains(place.TargetIDs, view.targetID) {
+					continue
+				}
+				if used.Kind == "decorates" || used.Kind == "reads" && !programindex.ObjectKind(place.Symbol.Decl.Kind).Callable() {
+					use(used.PlaceID)
+				}
+			}
 			for _, call := range symbol.Calls {
 				if call.Resolution != "exact" || call.Kind != "calls" && call.Kind != "decorates" {
 					continue
@@ -165,6 +197,7 @@ func (r *reader) roleFiles(view *designView) []*roleFile {
 					if !ok || place.Symbol == nil || !contains(place.TargetIDs, view.targetID) {
 						continue
 					}
+					use(callee)
 					to := unitOf(callee)
 					var toFile *roleFile
 					if to != "" {
@@ -408,7 +441,7 @@ func designBoxesCall(input boxesInput) (llm.Call[boxesAnswer], error) {
 func (file *roleFile) assignGroup(boxes []roleBox) rowGroup {
 	group := rowGroup{shared: boxesContext(file.file.path, boxes)}
 	for i, unit := range file.units {
-		group.rows = append(group.rows, table.Row{ID: fmt.Sprintf("d%d", i+1), Fields: unit.assignItem(nil)})
+		group.rows = append(group.rows, table.Row{ID: fmt.Sprintf("d%d", i+1), Fields: unit.assignItem()})
 	}
 	return group
 }
@@ -423,34 +456,20 @@ func boxesContext(path string, boxes []roleBox) []table.Field {
 
 // assignItem is a unit as the assignment asks about it: its name, kind,
 // signature, methods, same-file calls and callers, calls elsewhere and the
-// words of its registrations. With boxOf, each same-file call and caller is
-// an object with its name and, when its box was chosen, that box.
-func (unit *roleUnit) assignItem(boxOf map[string]string) []table.Field {
+// words of its registrations.
+func (unit *roleUnit) assignItem() []table.Field {
 	item := []table.Field{{Name: "declaration", Value: unit.name}, {Name: "kind", Value: unit.kind}}
 	if unit.signature != "" {
 		item = append(item, table.Field{Name: "signature", Value: unit.signature})
-	}
-	neighbours := func(names []string) any {
-		if boxOf == nil {
-			return names
-		}
-		entries := make([]map[string]any, len(names))
-		for i, name := range names {
-			entries[i] = map[string]any{"name": name}
-			if box := boxOf[name]; box != "" {
-				entries[i]["box"] = box
-			}
-		}
-		return entries
 	}
 	if len(unit.methods) > 0 {
 		item = append(item, table.Field{Name: "methods", Value: unit.methods})
 	}
 	if len(unit.calls) > 0 {
-		item = append(item, table.Field{Name: "calls", Value: neighbours(unit.calls)})
+		item = append(item, table.Field{Name: "calls", Value: unit.calls})
 	}
 	if len(unit.calledBy) > 0 {
-		item = append(item, table.Field{Name: "called_by", Value: neighbours(unit.calledBy)})
+		item = append(item, table.Field{Name: "called_by", Value: unit.calledBy})
 	}
 	if len(unit.elsewhere) > 0 {
 		item = append(item, table.Field{Name: "calls_elsewhere", Value: unit.elsewhere})
@@ -459,23 +478,6 @@ func (unit *roleUnit) assignItem(boxOf map[string]string) []table.Field {
 		item = append(item, table.Field{Name: "registered", Value: unit.registered})
 	}
 	return item
-}
-
-// boxLabels are the boxes as the options show them: a box by its name,
-// or by its ref when another box of the file shares the name.
-func boxLabels(boxes []roleBox) []string {
-	seen := map[string]int{}
-	for _, box := range boxes {
-		seen[strings.ToLower(box.Name)]++
-	}
-	labels := make([]string, len(boxes))
-	for i, box := range boxes {
-		labels[i] = box.Name
-		if seen[strings.ToLower(box.Name)] > 1 {
-			labels[i] = fmt.Sprintf("b%d", i+1)
-		}
-	}
-	return labels
 }
 
 // boxChoice reads an answer's box ref: its index among boxes, or -1.
@@ -554,9 +556,7 @@ func (r *reader) readRoles(ctx context.Context, view *designView, round int) (ma
 			at++
 		}
 	}
-	if err := r.askNeighbours(ctx, view, round, files, named, chosen); err != nil {
-		return nil, err
-	}
+	r.settleOpen(view.targetID, files, chosen)
 	splits := map[string]*roleSplit{}
 	for f, candidate := range files {
 		boxes := named[candidate.file.id]
@@ -610,68 +610,73 @@ func (r *reader) readRoles(ctx context.Context, view *designView, round int) (ma
 	return splits, nil
 }
 
-// askNeighbours asks again about each unit the assignment left open that
-// has a call or caller of its file whose box was chosen, now showing the box
-// each of those went in, and records in chosen the boxes it takes by the
-// same margin. A unit none of whose calls and callers has a box is not asked
-// again: the second question would carry nothing new.
-func (r *reader) askNeighbours(ctx context.Context, view *designView, round int, files []*roleFile, named map[string][]roleBox, chosen [][]int) error {
-	var groups rowGroups
-	var asked [][2]int // file and unit of each row, in row order
-	for i, candidate := range files {
-		boxes := named[candidate.file.id]
-		labels := boxLabels(boxes)
-		boxOf := map[string]string{}
-		for j, unit := range candidate.units {
-			if chosen[i][j] >= 0 {
-				boxOf[unit.name] = labels[chosen[i][j]]
-			}
-		}
-		group := rowGroup{shared: boxesContext(candidate.file.path, boxes)}
-		for j, unit := range candidate.units {
-			if chosen[i][j] >= 0 || !slices.ContainsFunc(append(slices.Clone(unit.calls), unit.calledBy...), func(name string) bool { return boxOf[name] != "" }) {
+// settleOpen places, by code, each unit the assignment left open: it takes
+// box k when every unit of its file that uses it (calls it, is decorated by
+// it or reads it; never one that only hands it over) has a box and that box
+// is k; a unit no unit of its file uses takes k when everything of its file
+// it uses has box k. Anything else stays open, and so undecided. It runs to
+// a fixed point: a unit placed may settle its neighbours. Where a unit's
+// users are is a code fact, so the question is not asked again (owner,
+// 2026-09-28). Every unit it places is recorded.
+func (r *reader) settleOpen(targetID string, files []*roleFile, chosen [][]int) {
+	byUsers, byUses := map[int][]string{}, map[int][]string{}
+	// common is the one box every unit of ids has, or -1 when one has none,
+	// two differ or ids names none of the file's units.
+	common := func(f int, ids map[string]bool) int {
+		box, seen := -1, false
+		for j, unit := range files[f].units {
+			if !ids[unit.id] {
 				continue
 			}
-			group.rows = append(group.rows, table.Row{ID: fmt.Sprintf("d%d", j+1), Fields: unit.assignItem(boxOf)})
-			asked = append(asked, [2]int{i, j})
+			if chosen[f][j] < 0 || seen && chosen[f][j] != box {
+				return -1
+			}
+			box, seen = chosen[f][j], true
 		}
-		if len(group.rows) > 0 {
-			groups = append(groups, group)
+		return box
+	}
+	sameFile := func(f int, ids map[string]bool) bool {
+		for id := range ids {
+			if files[f].byID[id] != nil {
+				return true
+			}
+		}
+		return false
+	}
+	for changed := true; changed; {
+		changed = false
+		for f, file := range files {
+			for j, unit := range file.units {
+				if chosen[f][j] >= 0 {
+					continue
+				}
+				if sameFile(f, unit.users) {
+					if box := common(f, unit.users); box >= 0 {
+						chosen[f][j], changed = box, true
+						byUsers[f] = append(byUsers[f], unit.name)
+					}
+					continue
+				}
+				if box := common(f, unit.uses); box >= 0 {
+					chosen[f][j], changed = box, true
+					byUses[f] = append(byUses[f], unit.name)
+				}
+			}
 		}
 	}
-	if len(groups) == 0 {
-		return nil
-	}
-	target := r.opts.Targets[round-1]
-	r.opts.Stage(lines.StageRoleNeighbours, fmt.Sprintf("%s: asking again about %d declarations with the boxes their calls and callers went in", target.Name, len(asked)))
-	answers, err := r.runTableGroups(ctx, lines.RoleNeighbours(), round, groups, nil)
-	if err != nil {
-		return err
-	}
-	decided := map[string][]string{}
-	for k, row := range asked {
-		candidate := files[row[0]]
-		if index := boxChoice(answers[k].answer, named[candidate.file.id]); index >= 0 {
-			chosen[row[0]][row[1]] = index
-			decided[candidate.file.path] = append(decided[candidate.file.path], candidate.units[row[1]].name)
+	for f, file := range files {
+		path := file.file.path
+		if names := byUsers[f]; len(names) > 0 {
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageRoleAssign, Target: targetID, Kind: "role_placed_by_users", Count: len(names), Samples: names,
+				Reason: path + ": declarations the assignment left open, placed in the one box of the file's declarations that use them"})
+			fmt.Fprintf(&r.tables, "%s: placed by their users: %s\n\n", path, strings.Join(names, " "))
+		}
+		if names := byUses[f]; len(names) > 0 {
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageRoleAssign, Target: targetID, Kind: "role_placed_by_uses", Count: len(names), Samples: names,
+				Reason: path + ": declarations the assignment left open that no declaration of the file uses, placed in the one box of what they use"})
+			fmt.Fprintf(&r.tables, "%s: placed by what they use: %s\n\n", path, strings.Join(names, " "))
 		}
 	}
-	for _, candidate := range files {
-		if names := decided[candidate.file.path]; len(names) > 0 {
-			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageRoleNeighbours, Target: view.targetID, Kind: "role_decided_by_neighbours", Count: len(names), Samples: names,
-				Reason: candidate.file.path + ": declarations the assignment left open, placed when asked with the boxes their calls and callers went in"})
-		}
-	}
-	fmt.Fprintf(&r.tables, "role neighbours: %d declarations asked again, %d placed\n\n", len(asked), countValues(decided))
-	return nil
-}
-
-func countValues(lists map[string][]string) int {
-	count := 0
-	for _, list := range lists {
-		count += len(list)
-	}
-	return count
 }
 
 // nameBoxes asks the naming for each file at once and returns, by file,
@@ -754,5 +759,5 @@ func (r *reader) nameBoxes(ctx context.Context, view *designView, round int, fil
 // d1…dn) rather than places, as in the role split: a warm cache keeps them
 // when a file is added or edited earlier in path order.
 func localRows(def table.Definition) bool {
-	return def.Stage == lines.StageRoleGate || def.Stage == lines.StageRoleAssign || def.Stage == lines.StageRoleNeighbours
+	return def.Stage == lines.StageRoleGate || def.Stage == lines.StageRoleAssign
 }

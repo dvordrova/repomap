@@ -255,8 +255,9 @@ survives.
 (2026-09-26): "what's in one file can have different roles, and one role can
 span different files. We build our own map, we group and abstract." A file
 the parts answer placed whole can hold the code of several boxes of our map.
-Four requests decide it, each file on its own, beside the parts request of
-its target (a one-file target included; never without a model):
+Three requests decide it, each file on its own, beside the parts request of
+its target (a one-file target included; never without a model), and code
+places what the last one leaves open:
 
 - *Candidates* are the unit-bearing files of the target that are neither
   test nor generated code and hold at least two units (one unit cannot go in
@@ -316,18 +317,21 @@ its target (a one-file target included; never without a model):
   request or job holds that machinery, and one command's code goes in the
   box of the work it does. A unit whose choice does not lead by the
   margin, is not answered or is in a refused window is left open.
-- *The neighbours' question* (`atlas_role_neighbours`, Jev,
-  `lines.RoleNeighbours`) asks the same question again, with the same
-  options, criteria and margin, about each unit left open that has a
-  same-file call or caller whose box was chosen; the task adds
-  `role_neighbours.md`. Each entry of `calls` and `called_by` is then
-  `{"name","box"}`, the box by its option name (its ref when two boxes
-  share a name) and absent while that declaration's box is open. A unit
-  with no such neighbour is not asked again: the question would carry
-  nothing new. A unit this leaves open, or that is not asked, is
-  undecided; one it places is recorded as `role_decided_by_neighbours`.
-  Owner, 2026-09-26: a flaky decision means we explained poorly; this is
-  more evidence for the same question, never an identical resample.
+- *Open units by code* (owner, 2026-09-28: where a declaration's users are
+  is a code fact, so the question is not asked again). A unit the
+  assignment left open takes box k when every unit of its file that *uses*
+  it has a box and that box is k; a unit no unit of its file uses takes k
+  when everything of its file it uses has box k; anything else stays open,
+  undecided. A use is an exact call, a decoration (the decorated unit uses
+  its decorator) or an exact read of what does not run (the places graph's
+  `uses`), between units of files that are neither test nor generated code.
+  A hand-over is no use: a command table's row or a route registrar hands
+  its handler over without using it, and a read of a callable is a function
+  value taken to be called later (JS/TS writes one where it hands a handler
+  over), so an open handler never follows its table or registrar. It runs to
+  a fixed point, since a unit placed may settle another; every unit it
+  places is recorded (`role_placed_by_users`, `role_placed_by_uses`) in
+  `rejected.jsonl` and `tables.md`.
 
 A file is split only when at least two boxes hold a unit; otherwise it stays
 whole (`role_not_split`). Each box that holds a unit becomes a part, titled
@@ -350,9 +354,8 @@ differently in each and costs a naming in each. Every outcome is recorded in
 `rejected.jsonl` and `tables.md`, with no label on the page, and a split
 failure never fails the target.
 
-The four requests carry request-local refs (the gate's row `f1`, the
-assignment's and the neighbours' `d1…dn` in the file's unit order, boxes
-`b1…bn`), so a warm
+The three requests carry request-local refs (the gate's row `f1`, the
+assignment's `d1…dn` in the file's unit order, boxes `b1…bn`), so a warm
 cache survives a file added or edited earlier in path order: only an edited
 file's own requests change, and a call into a file from elsewhere changes
 only that file's naming (and so, when the boxes change, its assignment).
@@ -364,26 +367,19 @@ assignment: a helper-only box's `holds` names its helper and Jev puts it
 there (redis "Logging" = redisLog, litestream's value-parsing and flag
 boxes); no code rule empties such a box.
 
-The registrations, the sentence on the box that runs every command and the
-neighbours' question were measured before adoption (2026-09-27) on the
-saved assignment requests of the owner-proxy's redis.c (339 units, 20
-boxes) and pykrx's 7 split files (187 units), 3 draws each. Before, redis.c
-left 4, 9 and 8 units undecided (12 units landed differently between
-draws), with setCommand (String commands 0.36 against Set commands 0.34)
-and pingCommand among them, and getCommand and appendCommand in Command
-dispatch (getCommand at 0.94–0.96). After, redis.c left 3, 3 and 3 (R_Zero,
-saveparam, ttlCommand) and no unit landed differently; getCommand,
+The registrations and the sentence on the box that runs every command were
+measured before adoption (2026-09-27) on the saved assignment requests of
+the owner-proxy's redis.c (339 units, 20 boxes) and pykrx's 7 split files
+(187 units), 3 draws each. Before, 12 redis.c units landed differently
+between draws, setCommand among them (String commands 0.36 against Set
+commands 0.34), and getCommand and appendCommand went in Command dispatch
+(getCommand at 0.94–0.96). After, no unit landed differently; getCommand,
 setCommand, appendCommand and echoCommand went in String commands and
-pingCommand in Server administration commands in every draw. pykrx went
-from 3, 6 and 2 undecided to 2, 3 and 2, its remaining near-ties between
-its ticker-name and ETF boxes. The task's sentence alone or the
-registrations alone left getCommand in Command dispatch. The neighbours'
-question decided 3 of the 6 redis.c and both pykrx units it asked about.
-Written as `"name: box"` beside the calls instead of as each entry's own
-`box`, it put setCommand, which calls setGenericCommand of String commands,
-in Set commands in 5 of 5 draws. A helper decided in the first question is
-not asked again: getGenericCommand, called only by string commands, stayed
-in Command dispatch (0.66–0.67 against String commands at 0.16–0.17).
+pingCommand in Server administration commands in every draw. The task's
+sentence alone or the registrations alone left getCommand in Command
+dispatch. A unit the assignment decides is not asked again:
+getGenericCommand, called only by string commands, stays in Command
+dispatch (0.66–0.67 against String commands at 0.16–0.17).
 
 Where pingCommand goes depends on the boxes the naming gives redis.c
 (measured 2026-09-27, 3 draws per task on each saved naming). With a box for
@@ -400,19 +396,17 @@ Client connection handling there, but left it undecided on the owner-proxy's
 naming, so it was not adopted: PING's box is the naming's to give. On the
 naming whose two boxes both claim command dispatch, processCommand is a
 near-tie between them in 5 of 6 draws (the task without the sentence chose
-Client connection handling at 0.69–0.76), and the neighbours' question puts
-it in Command table and dispatch (0.58–0.61). Asked with its callers' boxes,
-getGenericCommand goes in String commands (0.89–0.91, 3 of 3 draws); asking a
-decided unit again is the owner's decision. On litestream's two split files
-(54 units, no registration in them), undecided went from 2, 3 and 3 to 1, 0
-and 1, and no decided unit landed differently.
+Client connection handling at 0.69–0.76). On litestream's two split files
+(54 units, no registration in them), no decided unit landed differently.
 
 Each language's map-of-parts fixture test builds its graph with the fact
 layer, as an ordinary run does, and its split check (`partstest.CheckSplit`)
 requires that every registration handing over a unit of an assigned file
-reaches that file's assignment with its words, that a unit is asked again
-only with a call or caller in a box, and that an input whose handler is
-undecided names no part. The words each fixture shows: Go
+reaches that file's assignment with its words, that no undecided unit is
+one the code rule places (the units of its file that use it are not all in
+one part, and when none uses it, what it uses in its file is not either),
+and that an input whose handler is undecided names no part. The words each
+fixture shows: Go
 `HandleFunc /v1/update` (`http_registrations.go`), Python `get /health`,
 TypeScript `get /products/featured`, C `kvCommand get` (kvd.c's command
 table). Clojure's fixture registers no route or command in a split file;

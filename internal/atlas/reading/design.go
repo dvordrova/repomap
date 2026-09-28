@@ -892,7 +892,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 		r.joinView(view)
 	}
 	r.reportStage(lines.StageZones)
-	for _, stage := range []string{lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign, lines.StageRoleNeighbours} {
+	for _, stage := range []string{lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign} {
 		if _, asked := r.uses[stage]; asked {
 			r.reportStage(stage)
 		}

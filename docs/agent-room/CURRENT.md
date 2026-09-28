@@ -128,7 +128,11 @@ never entered into or read from a repository-wide unqualified map.
   Since 2026-09-27 a placed file can go in several boxes: a Jev gate, a
   DeepSeek naming of its boxes and a Jev assignment of its declarations
   (READING, "A file in several boxes"); a file nearer the cut stays whole and
-  undecided declarations stay off the map as `undecided`.
+  undecided declarations stay off the map as `undecided`. Since 2026-09-28 a
+  declaration the assignment leaves open goes, by code, to the box where
+  every declaration of its file that calls it, is decorated by it or reads
+  it went (never a hand-over), else where everything it uses went; the
+  neighbours' second question is deleted.
 - **Map reading on the canvas (2026-09-25):** a part's description stands
   on its box under its name, a closed area's line on the area's box in the
   whole lines it leaves; a loose part beside areas is drawn at a peer's size.

@@ -11,16 +11,13 @@ import (
 
 // The stages of the role split of a file on the map of parts: the gate
 // asks whether a file's code goes in one box of our map or in several, the
-// naming names the boxes a file's code goes in, the assignment puts each of
-// its declarations in one of them, and the neighbours' question asks again
-// about a declaration the assignment left open, with the boxes its calls and
-// callers went in. Each is its own stage, so the journal and the timings say
-// which one a request belonged to.
+// naming names the boxes a file's code goes in, and the assignment puts each
+// of its declarations in one of them. Each is its own stage, so the journal
+// and the timings say which one a request belonged to.
 const (
-	StageRoleGate       = "atlas_role_gate"
-	StageRoleBoxes      = "atlas_role_boxes"
-	StageRoleAssign     = "atlas_role_assign"
-	StageRoleNeighbours = "atlas_role_neighbours"
+	StageRoleGate   = "atlas_role_gate"
+	StageRoleBoxes  = "atlas_role_boxes"
+	StageRoleAssign = "atlas_role_assign"
 )
 
 // RoleMap is what we want, the state every request of the role split
@@ -38,9 +35,6 @@ var roleGateOptionsText string
 
 //go:embed prompts/role_assign.md
 var roleAssignPrompt string
-
-//go:embed prompts/role_neighbours.md
-var roleNeighboursPrompt string
 
 // The gate's options.
 const (
@@ -86,16 +80,14 @@ func RoleGate() table.Definition {
 // declaration carries its calls, its callers and the words of every
 // registration that hands it over.
 //
-// Measured with the neighbours' question after it on the saved requests of
-// redis.c (339 declarations, 20 boxes) and pykrx's 7 split files (187
-// declarations), 3 draws each: redis.c left 3, 3 and 3 declarations
-// undecided (4, 9 and 8 before) and none landed differently between draws
-// (12 before); pykrx 2, 3 and 2 (3, 6 and 2). The sentence on the box that
-// runs every command and the registration's words together put getCommand
-// (Command dispatch at 0.94-0.96 before) and appendCommand in String
-// commands, setCommand there in every draw, and pingCommand in Server
-// administration commands; either one alone left getCommand in Command
-// dispatch.
+// Measured on the saved requests of redis.c (339 declarations, 20 boxes)
+// and pykrx's 7 split files (187 declarations), 3 draws each: the sentence
+// on the box that runs every command and the registration's words together
+// put getCommand (Command dispatch at 0.94-0.96 before) and appendCommand in
+// String commands, setCommand there in every draw, and pingCommand in
+// Server administration commands; either one alone left getCommand in
+// Command dispatch. A declaration it leaves open is placed by code where
+// its file's users are (reading), never asked again.
 func RoleAssign() table.Definition {
 	return table.Definition{
 		Stage: StageRoleAssign, Contract: "repomap.atlas.role_assign.v2", System: RoleMap + roleAssignPrompt,
@@ -105,22 +97,6 @@ func RoleAssign() table.Definition {
 			Ask: "Which box of our map does `declaration` go in?",
 		}},
 	}
-}
-
-// RoleNeighbours asks the assignment's question again for a declaration it
-// left open, one that has a call or a caller of its file whose box was
-// chosen: each of its calls and callers then names the box it went in. The
-// options, their criteria and the lead a choice needs are the assignment's.
-//
-// Measured the same way, it decided 3 of the 6 redis.c and both pykrx
-// declarations it asked about; ttlCommand stayed a near-tie (0.49-0.52
-// against 0.43-0.47). Written as "name: box" beside the calls instead of as
-// each call's own box, it put setCommand, which calls setGenericCommand of
-// String commands, in Set commands in 5 of 5 draws.
-func RoleNeighbours() table.Definition {
-	def := RoleAssign()
-	def.Stage, def.Contract, def.System = StageRoleNeighbours, "repomap.atlas.role_neighbours.v1", RoleMap+roleAssignPrompt+roleNeighboursPrompt
-	return def
 }
 
 // mustRoleGateOptions reads "## option" sections, each with What, Includes,
