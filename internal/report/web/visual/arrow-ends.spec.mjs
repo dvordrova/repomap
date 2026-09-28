@@ -146,7 +146,8 @@ test('a component beside another keeps its plaques while the pointer crosses it 
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/?symbols');
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
-  const overview=await page.locator('[data-component-overview="backend"] strong').boundingBox();
+  // A click on its card reads it; its magnifier enters it.
+  const overview=await page.locator('[data-zoom-into="backend"]').boundingBox();
   await page.mouse.click(overview.x+overview.width/2,overview.y+overview.height/2);await settle(map);
   expect((await map.evaluate(map=>map.captureViewport())).openComponents,'entering the backend opens the front too').toEqual(['front','backend']);
   await page.mouse.move(1430,890);
@@ -191,7 +192,7 @@ test('an arrowhead at a frame opens its connection\'s card and a click reads it'
   await testInfo.attach('journey-01 — The arrowhead at the closed backend opens its card',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   await ontoCard(page);
   // Inside the backend: the head where the worker's arrow meets the database.
-  const overview=await page.locator('[data-component-overview="backend"] strong').boundingBox();
+  const overview=await page.locator('[data-zoom-into="backend"]').boundingBox();
   await page.mouse.click(overview.x+overview.width/2,overview.y+overview.height/2);await settle(map);
   await zoomOutAFifth(page,map);
   await page.mouse.move(1430,890);await page.keyboard.press('Escape');

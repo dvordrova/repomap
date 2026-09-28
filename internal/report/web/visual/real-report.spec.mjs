@@ -60,7 +60,8 @@ for(const [width,height] of [[1440,900],[1280,800]])test(`every arrow end and ch
   // Enter the component holding the most areas, as a reader does.
   const component=await page.evaluate(()=>[...document.querySelectorAll('[data-component-overview]')]
     .map(n=>({id:n.dataset.componentOverview,areas:n.querySelectorAll('[data-overview-area]').length})).sort((a,b)=>b.areas-a.areas)[0].id);
-  const entrance=middle(await page.locator(`[data-component-overview="${component}"] strong`).first().boundingBox());
+  // A click reads it; its magnifier enters it.
+  const entrance=middle(await page.locator(`[data-zoom-into="${component}"]`).boundingBox());
   await page.mouse.click(entrance.x,entrance.y);
   await settle(map);await page.mouse.move(corner.x,corner.y);
   const chips=await page.locator('.flow-connection-label').evaluateAll((labels,canvas)=>labels.map(l=>({id:l.dataset.connectionLabel,box:l.getBoundingClientRect().toJSON()}))

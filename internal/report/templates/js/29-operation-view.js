@@ -453,7 +453,7 @@ function rmCatalogInputClick(event,reveal){
   function kind(n){return n.dataset.itemKind||(n.dataset.activation?'Inputs':n.dataset.branch==='component'?'Component':n.dataset.branch?'Area':n.dataset.lane==='core'?'Core':n.dataset.lane==='dependencies'?'Code dependencies':n.dataset.lane==='triggers'?'Entrypoints':'Part');}
   map.itemKind=kind;
   function category(n){return n.dataset.activation||n.dataset.branch==='inputs'?'input':n.dataset.itemKind==='External communication'?'external':n.dataset.branch==='component'||n.dataset.itemKind==='Component'?'component':'part';}
-  function owner(n){return document.getElementById(n.dataset.owner)?.dataset.componentName||'';}
+  function owner(n){return byID['system-component-'+n.dataset.owner]?.dataset.title||document.getElementById(n.dataset.owner)?.dataset.componentName||'';}
   function emit(){map.dispatchEvent(new Event('repomap:reading'));}
   function address(n,newVisit){document.dispatchEvent(new CustomEvent('repomap:navigate',{detail:{destination:n||document.getElementById('overview'),newVisit:!!newVisit}}));}
   function path(id){var result=[],seen=new Set();while(id&&!seen.has(id)){seen.add(id);result.unshift(id);id=projection.parents[id];}return result;}
@@ -490,7 +490,7 @@ function rmCatalogInputClick(event,reveal){
   function focusNode(n,center){surface?.focus(n.id,center);}
   async function select(n,navigate,source,focus){
     if(!n)return;
-    var ticket=++selectionRevision;map.explorerMember=null;map.clearMapPreview?.();
+    var ticket=++selectionRevision;map.explorerMember=null;map.clearMapPreview?.();surface?.light?.([]);
     // Search is a chooser. Once a destination is chosen it must not continue
     // highlighting every other result or covering the destination's drawing.
     search.value=searchValue='';filter.value=filterValue='';updateResults();
@@ -579,6 +579,27 @@ function rmCatalogInputClick(event,reveal){
     });
     card.querySelector('.map-card-intro').after(section);
   }
+  function nodeByHref(href){return href?nodes.find(function(n){return n.getAttribute('href')===href||'#'+n.id===href;})||null:null;}
+  // What the reading column reads with (31-reading-column.js): every name
+  // it reads is read in the report and shown on the canvas, the camera
+  // moving only when it is out of sight.
+  map.readingContext=function(){return {
+    nodeByHref:nodeByHref,
+    nodeById:function(id){return byID[id]||null;},
+    goDecl:function(decl){var part=nodeByHref(decl.part);return part&&!part.dataset.activation&&decl.key?function(){readDeclaration(part,decl.key);}:null;},
+    readDeclIn:readDeclaration,
+    readNode:function(n){surface?.clearMember?.();select(n,true,null,true);},
+    light:function(ids){surface?.light?.(ids);}
+  };};
+  // The frame holding what is read, and going up to it: from a declaration
+  // to its part, which is read without it; from a part to its area or
+  // component.
+  map.parentFrame=function(n){var id=projection.parents[n.id];return id?byID[id]||null:null;};
+  map.readUp=function(n,member){
+    surface?.clearMember?.();
+    if(member){document.dispatchEvent(new Event('repomap:visit'));map.inspectConcept?.(-1);return;}
+    select(n,true,null,true);
+  };
   // What an area is made of: its parts in their order, each with how many
   // declarations of each kind in which files, and those declarations, the
   // model's keys first and bold, the rest by name. A part leads to its
@@ -616,9 +637,11 @@ function rmCatalogInputClick(event,reveal){
   }
   // A declaration named in the reading is read in its part, as a click on
   // its tile reads it: in place when that part is the one being read.
+  // A new declaration in the same part is a new visit: Back returns to the
+  // one read before it.
   function readDeclaration(part,key){
     if(!part)return;
-    if(scope===part.id){map.explainSource?.({key:key});return;}
+    if(scope===part.id){document.dispatchEvent(new Event('repomap:visit'));map.explainSource?.({key:key});return;}
     map.revealNode?.(part,false,{key:key});
   }
   // The handler an input's reading names ("handled by getCommand") is read
@@ -659,7 +682,21 @@ function rmCatalogInputClick(event,reveal){
       var reaching=nodes.filter(function(candidate){if(!candidate.dataset.activation)return false;return Array.from(projection.selection('',candidate.id).active).some(function(id){return selectedMembers.has(id);});});
       var inputs=rmReachingInputs(n,reaching,owner,function(input){select(input,true,null,true);});
       if(JSON.parse(n.dataset.concepts||'[]').length)inputs.appendChild(rmEl('p','meta',rmT('Reaching a part does not by itself establish a change to its entities.')));
-      if(!n.dataset.branch||n.dataset.branch==='communication'){card.querySelector('.map-card-intro').after(inputs);}
+      var partReading=card.querySelector('.map-part-reading');
+      if(partReading)partReading.appendChild(inputs);
+      else if(!n.dataset.branch||n.dataset.branch==='communication'){card.querySelector('.map-card-intro').after(inputs);}
+    }
+    if(partReading){
+      // The part's own reading (31-reading-column.js) replaces its copied
+      // connection lists: the input's witness under its description, the
+      // inputs reaching it and the calls inside it at its foot.
+      var proof=card.querySelector(':scope>.call-path');
+      if(proof){(partReading.querySelector(':scope>.map-card-summary')||partReading.querySelector(':scope>.map-part-title')).after(proof);proof.open=true;}
+      card.querySelector('.map-card-evidence')?.remove();
+      group?.querySelectorAll(':scope>.group-internal-connections').forEach(function(section){
+        var copy=section.cloneNode(true);copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});partReading.appendChild(copy);
+      });
+      return;
     }
     if(!n.dataset.branch&&!n.dataset.activation&&group?.classList.contains('group')){
       // The grouped connection reading replaces only the duplicated inventory.
@@ -763,8 +800,16 @@ function rmCatalogInputClick(event,reveal){
     });
     if(relations.childElementCount&&!frameConnections)card.querySelector('.map-card-intro').appendChild(relations);
     var details=document.getElementById(n.dataset.detailsId);
-    if(details){
-      var content=n.dataset.branch==='component'?details.querySelector('.input-catalog'):details;
+    if(n.dataset.branch==='inputs'&&n.dataset.collection){
+      // An Inputs collection is read by its catalogues (31-reading-column.js),
+      // its component in its box on top; its records stay on the component's
+      // page.
+      card.querySelector('.map-card-actions')?.remove();
+      card.querySelector('.map-card-intro').after(rmCollectionView(map.readingContext(),n,JSON.parse(n.dataset.collection)));
+    }else if(n.dataset.branch==='component'&&details){
+      rmComponentReading(map,n,card,details,byID['system-inputs-'+n.dataset.owner]||null,pendingEntry===n.id);
+    }else if(details){
+      var content=details;
       if(content){
         var copy=content.cloneNode(true);copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});
         if(n.dataset.branch==='inputs'){
@@ -778,24 +823,6 @@ function rmCatalogInputClick(event,reveal){
           if(peer)link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(peer,true,null,true);});
         });
         card.insertBefore(copy,card.querySelector('.map-all-members'));
-      }
-      if(n.dataset.branch==='component'){
-        card.querySelector('.map-related-operations')?.remove();card.querySelector('.map-card-evidence')?.remove();card.querySelector('.map-all-members')?.remove();
-        var readingLinks=rmEl('nav','system-component-reading');
-        details.querySelectorAll(':scope>.component-flow>h3,:scope>.component-config>h3,:scope>.data-catalog,:scope>.component-reference>h3,:scope>.component-reference>.evidence-list>h3,:scope>.component-reference>.component-coverage').forEach(function(section){
-          if(!section.id)return;
-          var title=section.matches('.data-catalog')?rmT('Data'):section.matches('details')?section.querySelector('summary').textContent:section.textContent;
-          var link=rmEl('a','map-details-link',title);link.href='#'+section.id;readingLinks.appendChild(link);
-        });
-        var heading=rmEl('h5',''),all=card.querySelector('.map-card-actions>.map-details-link');
-        if(all){all.textContent=rmT('Component details');heading.appendChild(all);}else heading.textContent=rmT('Component details');
-        if(readingLinks.childElementCount||all){readingLinks.prepend(heading);card.querySelector('.map-card-intro').after(readingLinks);}
-        // A launch point no part holds is named here, with why: the map
-        // then draws no entry part.
-        details.querySelectorAll(':scope>.component-intro>.component-entry').forEach(function(entry){
-          var line=entry.cloneNode(true);if(pendingEntry===n.id)line.dataset.readingAnchor='';
-          card.querySelector('.map-card-intro').after(line);
-        });
       }
     }
   });

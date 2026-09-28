@@ -499,6 +499,10 @@ function rmDeclarationRelations(map,node,key,nodes){
       content.scrollTop = 0;
       card.classList.remove('map-card-connection');
       var id = node.getAttribute('data-node');
+      // A part of the system map is read from its prepared reading
+      // (31-reading-column.js): its title in its box, its members by kind
+      // and name, its callers above and its callees below.
+      var reading = map.hasAttribute('data-system-map') && !node.dataset.branch && !node.dataset.activation ? rmGroupReading(node) : null;
       var counts = node.dataset.branch ? rmT('{0} parts',(node.dataset.children||'').split(/\s+/).filter(Boolean).length) : node.dataset.activation ? rmT(node.dataset.activation) : node.dataset.members ? rmT('{0} symbols',Number(node.dataset.members)) : '';
       var html = '<div class="map-card-intro">';
       if(map.exploreNode){
@@ -507,7 +511,11 @@ function rmDeclarationRelations(map,node,key,nodes){
       }
       html += '<b>' + escapeText(titleOf(node)) + '</b>';
       var summary = node.getAttribute('data-summary');
-      if (summary) html += '<p class="map-card-summary" data-display-ref="'+escapeText(node.dataset.summaryRef)+'">' + escapeText(summary) + '</p>';
+      // The model's words, told apart by their style alone (a component's
+      // role before its purpose); a part's stand under its box.
+      var modelTitle=' title="'+escapeText(rmT('written by the model'))+'"';
+      if (node.dataset.branch==='component'&&map.hasAttribute('data-system-map')&&(summary||node.dataset.role)) html += '<p class="map-card-summary model"'+modelTitle+'>'+(node.dataset.role?'<strong data-display-ref="'+escapeText(node.dataset.roleRef)+'">'+escapeText(node.dataset.role)+'</strong>'+(summary?' — ':''):'')+(summary?'<span data-display-ref="'+escapeText(node.dataset.summaryRef)+'">'+escapeText(summary)+'</span>':'')+'</p>';
+      else if (summary && !reading) html += '<p class="map-card-summary model"'+modelTitle+' data-display-ref="'+escapeText(node.dataset.summaryRef)+'">' + escapeText(summary) + '</p>';
       // An input is read by its handler: the declaration its registration
       // hands over, a link into the code.
       if (node.dataset.handler && node.dataset.handler !== titleOf(node)) {
@@ -528,7 +536,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       html += '</div>';
       var concepts = map.exploreNode ? repomapMembers.items(node) : JSON.parse(node.dataset.concepts || '[]');
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);
-      if (concepts.length) {
+      if (concepts.length && !reading) {
         html+='<div class="map-concepts" hidden><strong data-concept-name></strong><code class="map-concept-declaration" data-concept-declaration></code><div class="map-member-fields" data-concept-fields></div><p class="model" data-concept-explanation></p><p class="map-concept-source" data-concept-source></p><div data-concept-dispatch></div><div data-concept-relations></div></div>';
       }
       if(map.areaDescriptions){
@@ -573,22 +581,39 @@ function rmDeclarationRelations(map,node,key,nodes){
       // Keep the current object and term above the scrolling evidence. This
       // is a reserved row of the inspector, never an overlay on map controls.
       heading.replaceChildren();
-      var objectHeading=document.createElement('div'),kindHeading=card.querySelector('.map-card-kind');
+      var objectHeading=document.createElement('div'),kindHeading=card.querySelector('.map-card-kind'),titleHeading=card.querySelector('.map-card-intro>b');
       if(kindHeading)objectHeading.appendChild(kindHeading);
-      objectHeading.appendChild(card.querySelector('.map-card-intro>b'));heading.appendChild(objectHeading);
+      // A part, a declaration and an Inputs collection name what they are
+      // in their heading, with the frame holding them as a link up; their
+      // own name stands in the reading, in its box. A component states its
+      // language and kind beside the word.
+      var systemMap=map.hasAttribute('data-system-map');
+      if(kindHeading&&systemMap&&node.dataset.branch==='component'&&node.dataset.language)kindHeading.textContent=rmT('Component')+' · '+rmLanguageNames[node.dataset.language]+(node.dataset.componentKind?' '+rmT(node.dataset.componentKind):'');
+      if(reading||systemMap&&node.dataset.branch==='inputs')titleHeading.remove();
+      else objectHeading.appendChild(titleHeading);
+      var kindWord=kindHeading?kindHeading.textContent:'';
+      if(reading)rmHeadingUp(map,kindHeading,map.parentFrame(node));
+      heading.appendChild(objectHeading);
       if(map.closeDetails){
         objectHeading.className='map-object-heading';
         var close=document.createElement('button');close.type='button';close.className='map-close-details';
         close.setAttribute('aria-label',rmT('Close details'));close.innerHTML='<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="m5 12 5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         close.addEventListener('click',function(){map.closeDetails();});objectHeading.appendChild(close);
       }
-      heading.classList.toggle('has-concepts',concepts.length>0);
+      heading.classList.toggle('has-concepts',concepts.length>0&&!reading);
+      var partView=null,declHolder=null;
+      if(reading){
+        var ctx=map.readingContext(),built=rmPartView(ctx,node,reading);partView=built.view;
+        declHolder=document.createElement('div');declHolder.className='map-decl-holder';declHolder.hidden=true;
+        card.querySelector('.map-card-intro').after(partView,declHolder);
+      }
       // A chosen declaration is read by itself: its name as its tile writes
       // it, the model's line when there is one, its code, and who calls it
       // and what it calls, from the relation rows the part already lists.
       // Without a line it says nothing about one: "No explanation saved"
       // had answered a click on every tile but the keys.
       map.inspectConcept=function(index){
+        if(reading){readDeclaration(index);return;}
         var panel=card.querySelector('.map-concepts');if(!panel)return;
         panel.hidden=index<0;card.classList.toggle('map-card-has-concepts',index>=0);
         card.querySelectorAll('.map-member-name[aria-current]').forEach(function(name){name.removeAttribute('aria-current');});
@@ -610,7 +635,29 @@ function rmDeclarationRelations(map,node,key,nodes){
         if(!map.readingRestoring&&!inspectionPending)content.scrollTop+=panel.getBoundingClientRect().top-content.getBoundingClientRect().top;
         map.dispatchEvent(new Event('repomap:reading'));remember();
       };
-      if(concepts.length){
+      // A declaration of a prepared part is read by itself: the part's
+      // reading steps aside, and the heading names its kind and the part,
+      // a link up to it.
+      function readDeclaration(index){
+        card.querySelectorAll('.map-reading-name[aria-current]').forEach(function(name){name.removeAttribute('aria-current');});
+        if(index<0){
+          map.explorerMember=null;declHolder.hidden=true;declHolder.replaceChildren();partView.hidden=false;
+          rmHeadingKind(kindHeading,kindWord);rmHeadingUp(map,kindHeading,map.parentFrame(node));
+          map.dispatchEvent(new Event('repomap:reading'));return;
+        }
+        var concept=concepts[index],source=concept.source,key=repomapMembers.sourceKey(source);
+        map.explorerMember={owner:id,name:repomapMembers.displayName(concept),source:source.Text,href:source.Href,open:source.Open,key:key};
+        var view=rmDeclView(map.readingContext(),node,reading,concept);
+        view.appendChild(rmSiteReading(map,node,key));
+        declHolder.replaceChildren(view);declHolder.hidden=false;partView.hidden=true;
+        var kind=(reading.decls.find(function(decl){return decl.key===key;})||{}).kind;
+        rmHeadingKind(kindHeading,rmT(({function:'Function',type:'Type',variable:'Variable'})[kind]||'Declaration'));
+        rmHeadingUp(map,kindHeading,node,true);
+        partView.querySelectorAll('.map-reading-name').forEach(function(name){if(name.dataset.declKey===key)name.setAttribute('aria-current','true');});
+        if(!map.readingRestoring&&!inspectionPending)content.scrollTop=0;
+        map.dispatchEvent(new Event('repomap:reading'));remember();
+      }
+      if(concepts.length&&!reading){
         var list=document.createElement('section');list.className='map-all-members';
         // The part's composition first, then its code: "Made of 18
         // functions", the files once beside it (owner's 3a).
@@ -619,6 +666,7 @@ function rmDeclarationRelations(map,node,key,nodes){
         list.appendChild(repomapMembers.grid(map,node));card.appendChild(list);
         if(saved?.concept){var selected=concepts.findIndex(function(c){return repomapMembers.sourceKey(c.source)===saved.concept;});map.inspectConcept(selected);}
       }
+      if(reading&&saved?.concept){var chosen=concepts.findIndex(function(c){return repomapMembers.sourceKey(c.source)===saved.concept;});if(chosen>=0)readDeclaration(chosen);}
       var actions=document.createElement('div');actions.className='map-card-actions';card.querySelector('.map-card-intro').appendChild(actions);
       if(map.exploreNode && !node.dataset.activation){
         if(!map.hasAttribute('data-system-map')&&map.explorerScope!==id){var explore=document.createElement('button');explore.type='button';explore.textContent=node.dataset.branch?rmT('Explore these parts'):rmT('Explore connections');explore.addEventListener('click',function(){map.exploreNode(id);});actions.appendChild(explore);}
@@ -647,6 +695,8 @@ function rmDeclarationRelations(map,node,key,nodes){
         content.scrollTop=saved?.scroll||0;
         // A declaration newly chosen with its part is read from its own
         // reading; one the reader returns to keeps the place they left.
+        // An arrow end opened from the canvas opens that connection alone.
+        if(anchor&&!restoring)card.querySelectorAll('.map-frame-connections>details[open]').forEach(function(detail){if(detail!==anchor)detail.open=false;});
         var chosen=card.querySelector('.map-concepts:not([hidden])');
         if(chosen&&(!saved||!restoring&&map.explorerMember?.key!==saved.concept))content.scrollTop+=chosen.getBoundingClientRect().top-content.getBoundingClientRect().top;
         if(anchor&&!restoring){content.scrollTop+=anchor.getBoundingClientRect().top-content.getBoundingClientRect().top-8;anchor.removeAttribute('data-reading-anchor');}

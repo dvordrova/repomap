@@ -30,7 +30,6 @@
 .map-member-explain:hover,.map-member-explain:focus-visible{color:var(--accent);outline:1px solid var(--accent)}
 .map-member-name{display:block;font-family:var(--mono);font-size:1em;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
 .map-member-aliased .map-member-name{font-size:.85em;color:var(--muted)}
-.map-member-name::before{content:'▫';color:var(--accent);margin-right:.35em}
 .map-member-meaning{display:block;margin-bottom:.4rem;font-weight:600;line-height:1.4;color:var(--ink)}
 .map-member small{display:block;font-size:10px;line-height:1.2;margin-top:2px;color:var(--muted);overflow-wrap:anywhere}
 .map-member:focus-within{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:1px}
@@ -370,3 +369,71 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-launch>h6{margin:10px 0 4px}.system-launch .system-path-step{overflow-wrap:anywhere;margin:3px 0}
 .system-launch a{text-decoration:none}.system-launch a:hover{text-decoration:underline}
 .system-path-checks{font-size:13px;overflow-wrap:anywhere}
+
+/* The reading column (31-reading-column.js): plain lists of names, a key in
+   bold and no mark before a name; each part named stands in a small box
+   drawn as the canvas draws that part. */
+.map-reading-side{margin:0 0 14px}
+.map-reading-side>h6,.map-reading-members>h6,.map-reading-fields>h6,.map-collection-group>h6{display:flex;gap:8px;margin:0 0 6px;font:600 12px/1.4 system-ui;color:var(--muted);letter-spacing:.02em}
+.map-reading-peer{margin:0 0 10px}
+.map-reading-peer-head{display:flex;align-items:center;gap:8px;list-style:none}
+details.map-reading-peer>summary{cursor:pointer}
+details.map-reading-peer>summary::-webkit-details-marker{display:none}
+details.map-reading-peer>summary::before{content:'▸';color:var(--muted);font-size:11px}
+details.map-reading-peer[open]>summary::before{content:'▾'}
+.map-reading-peer-count{margin-left:auto;color:var(--muted);font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
+.flow-enabled .map-inspector .map-part-box,.map-part-box{display:inline-block;max-width:100%;box-sizing:border-box;padding:2px 8px;border:1.5px solid #718096;border-radius:6px;background:#fff;color:#243044;font:600 13px/1.35 system-ui;text-align:left;overflow-wrap:anywhere}
+.flow-enabled .map-inspector button.map-part-box{cursor:pointer}
+.flow-enabled .map-inspector button.map-part-box:hover{border-color:#243044;color:var(--link)}
+.flow-enabled .map-inspector .map-part-box-core{background:var(--core-bg);border-color:var(--core)}
+/* Core keeps its diamond wherever it is marked, the column's boxes too. */
+.map-part-box-core::before{content:'';display:inline-block;width:8px;height:8px;margin-right:5px;vertical-align:1px;background:var(--core);clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.flow-enabled .map-inspector .map-part-box-entry{background:#e1f3ec;border-color:#267267}
+.flow-enabled .map-inspector .map-part-box-input{background:#deedff;border-color:#356faa}
+.flow-enabled .map-inspector .map-part-box-external{background:#ffefcf;border-color:#906014}
+.flow-enabled .map-inspector .map-part-box-component{background:#f8fafc;border-color:#718096}
+.map-part-title{margin:6px 0 8px}
+.flow-enabled .map-inspector .map-part-title .map-part-box{font-size:16px;padding:6px 10px;border-width:2px}
+.map-reading-caller{margin:6px 0 10px 12px}
+.flow-enabled .map-inspector p.map-part-files{margin:0 0 10px;font-family:var(--mono);font-size:12px}
+.flow-enabled .map-inspector .map-reading-ends{list-style:none;margin:2px 0 0 14px;padding:0 0 0 10px;border-left:1px solid var(--line)}
+.flow-enabled .map-inspector .map-reading-ends li{margin:1px 0;font-size:13px}
+.flow-enabled .map-inspector .map-reading-names{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-wrap:wrap;gap:2px 12px}
+.map-reading-name{font-family:var(--mono);font-size:13px;text-decoration:none}
+.map-reading-name:hover{text-decoration:underline}
+.map-reading-key{font-weight:750}
+.map-reading-name[aria-current]{outline:2px solid #243044;outline-offset:1px;border-radius:2px}
+.map-reading-relation{margin-left:.5em;color:var(--muted);font-size:12px}
+.map-reading-relation::before{content:'— '}
+.flow-enabled .map-inspector p.map-reading-uses{margin:6px 0 2px 12px;font-size:12px;color:var(--muted)}
+.map-reading-in{padding-bottom:4px;border-bottom:1px solid var(--line)}
+.map-reading-out{padding-top:10px;border-top:1px solid var(--line)}
+.map-decl-name{margin:8px 0 2px;font-family:var(--mono);overflow-wrap:anywhere}
+.map-decl-code.map-reading-name{font-size:17px;font-weight:750}
+.map-decl-signature{color:var(--muted);font-size:12.5px}
+.map-decl-where{display:flex;align-items:center;gap:12px;margin:0 0 10px}
+.map-author-comment{position:relative;display:inline-flex;align-items:center;gap:3px;color:var(--muted);font-size:12px;text-decoration:underline;text-decoration-style:dotted;cursor:help}
+.map-author-comment-text{display:none;position:absolute;left:0;top:calc(100% + 4px);z-index:5;width:max-content;max-width:300px;padding:8px 10px;background:var(--paper);border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 14px rgba(20,30,40,.12);color:var(--ink);font:12.5px/1.45 var(--mono);white-space:pre-wrap;text-decoration:none;cursor:auto}
+.map-author-comment-text small{display:block;margin-bottom:4px;font:600 11px/1.3 system-ui;color:var(--muted)}
+.map-author-comment-text q{quotes:none}
+.map-author-comment:hover .map-author-comment-text,.map-author-comment:focus .map-author-comment-text{display:block}
+.map-reading-field-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 12px;margin:0 0 12px;font:13px/1.45 var(--mono)}
+.map-reading-field-grid dt,.map-reading-field-grid dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.map-reading-field-grid dd{color:var(--muted)}
+/* A collection's names flow in their order with no holes: a grid with
+   long names spanning two cells left gaps where the eye lost the order. */
+.flow-enabled .map-inspector .map-collection-names{list-style:none;margin:6px 0 12px;padding:0;display:flex;flex-wrap:wrap;gap:3px 14px}
+.flow-enabled .map-inspector .map-collection-names li{margin:0;line-height:1.5}
+.flow-enabled .map-inspector .map-collection-names button{border:0;background:transparent;padding:0;font:13px/1.5 var(--mono);text-align:left;cursor:pointer}
+.map-collection-names button:hover{text-decoration:underline}
+.flow-enabled .map-inspector p.map-collection-line{margin:0 0 4px;font-size:13px}
+.map-component-entry{margin:6px 0}
+.map-component-inputs{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:8px 0}
+.flow-enabled .map-inspector .map-component-inputs button{border:0;background:transparent;padding:0;font:inherit;font-size:13px;cursor:pointer}
+.map-component-inputs button:hover{text-decoration:underline}
+.map-reading-label{font-weight:600;font-size:13px}
+.map-component-section{border-top:1px solid var(--line);padding:8px 0}
+.map-component-section>summary{display:flex;gap:8px;cursor:pointer;font-weight:600;font-size:14px}
+.map-component-section ol,.map-component-section ul{margin:6px 0;padding-left:1.2em}
+.flow-enabled .map-inspector .map-reading-up{border:0;background:transparent;padding:0;font:inherit;cursor:pointer}
+.map-reading-up:hover{text-decoration:underline}

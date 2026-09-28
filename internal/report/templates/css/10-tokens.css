@@ -15,4 +15,5 @@
   --link:#63429d;--link-bg:#f5f3f9;--link-line:#dcd6e7;--link-bg-hover:#eee7f7;
   --core:#913b6d;--core-ink:#62284a;--core-bg:var(--zone-4);--core-area:#fef4f9;
   --type-arrow:#7b8aa0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
 }

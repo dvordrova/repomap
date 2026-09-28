@@ -191,7 +191,7 @@ function FrameTitle({node,item,focused,enter,select,muted}) {
       '--flow-zoom':viewport.zoom*scale,
       '--flow-secondary-text':viewport.zoom*scale*13>=12?'visible':'hidden',
       '--flow-small-text':viewport.zoom*scale*12>=12?'visible':'hidden'}}
-    onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,true);}}>
+    onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,false);}}>
     <strong>{item.heading||item.title}</strong>
     {item.metadata&&<div className="flow-component-meta">{item.metadata}</div>}
     {item.role&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
@@ -315,6 +315,36 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     commitCamera(instance.setViewport(pointViewport(point,Math.min(maxZoom,deepZoom(part)),rect.width,rect.height),{duration:smooth?420:0}),part);
     return true;
   }
+  // Whether a declaration's tile is drawn and in sight at the current
+  // camera: a tile chosen there, on the canvas or in the reading, is only
+  // marked (owner, 2026-09-28: the camera moves only to what is out of
+  // sight).
+  function memberInSight(part,index){
+    const n=placed.get(part);if(!n||!instance||initializing||closed(part))return false;
+    const data={...byID.get(part),...looseOf(n)},{box,scale}=partBox(data),grid=partGrid(data,box),v=instance.getViewport();
+    if(box.width*scale*v.zoom<860)return false;
+    const symbols=data.symbols||[],row=grid.rows[index]||grid.rows[(symbols[index]?.owner||0)-1];
+    if(!row)return false;
+    const {inset,columnGap:gap}=tileRoom;
+    const x=(n.absolute.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor))*v.zoom+v.x;
+    const y=(n.absolute.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor))*v.zoom+v.y;
+    return x>24&&y>24&&x<host.clientWidth-24&&y<host.clientHeight-24;
+  }
+  // Whether a frame (a component, an area, an Inputs collection) is drawn
+  // and mostly in sight: then reading it only marks it. Entered by the
+  // camera, redis-cli's Inputs had filled the canvas with one tile's word.
+  function frameInSight(n){
+    if(!instance||initializing||closed(n.id))return false;
+    const v=instance.getViewport(),width=host.clientWidth,height=host.clientHeight;
+    const left=n.absolute.x*v.zoom+v.x,top=n.absolute.y*v.zoom+v.y,right=left+n.width*v.zoom,bottom=top+n.height*v.zoom;
+    const seen=Math.max(0,Math.min(right,width)-Math.max(left,0))*Math.max(0,Math.min(bottom,height)-Math.max(top,0));
+    return seen>0&&seen>=.5*Math.min((right-left)*(bottom-top),width*height);
+  }
+  // The column's pointer on a group of inputs lights their tiles, or, while
+  // their collection is closed, its row of that kind: it highlights and
+  // dims nothing.
+  let lit=new Set();
+  function light(ids){const next=new Set(ids||[]);if(next.size===lit.size&&[...next].every(id=>lit.has(id)))return;lit=next;update?.();}
   function pointMember(part,index){
     const next=index<0?null:{part,index};
     if(cardOpen()||(hoverMember?.part===next?.part&&hoverMember?.index===next?.index))return;
@@ -328,7 +358,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     select(part,event,false);
     // The reading is on the part once the host has shown it.
     setTimeout(()=>map.explainSource?.({key:symbol.href||symbol.open||'',href:symbol.href,open:symbol.open}),0);
-    focusMember(part,index);
+    if(!memberInSight(part,index))focusMember(part,index);
   }
   // The reading column names a declaration (Find, a link in the reading, a
   // restored visit): its tile is the one chosen, and a new one is centred.
@@ -339,7 +369,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const index=symbols.findIndex(symbol=>same(symbol.href)||same(symbol.open));
     if(index<0||memberChoice?.part===part&&memberChoice.index===index)return;
     memberChoice={part,index};update?.();
-    if(!map.readingRestoring)focusMember(part,index);
+    if(!map.readingRestoring&&!memberInSight(part,index))focusMember(part,index);
   });
   maxZoom=maximumZoom();
   function detailState(viewport,previous){
@@ -663,8 +693,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   function focus(id,center=true,smooth=true){
     const n=placed.get(id);if(!n)return;
-    // A part read with one of its declarations named is entered at that tile.
-    if(memberChoice?.part===id&&focusMember(id,memberChoice.index,smooth))return;
+    // A part read with one of its declarations named is entered at that
+    // tile, unless the tile is in sight.
+    if(memberChoice?.part===id&&(!center&&memberInSight(id,memberChoice.index)||focusMember(id,memberChoice.index,smooth)))return;
     const record=byID.get(id);
     if(record?.activation&&focusPath(id,smooth))return;
     if(record?.activation){showInput(id,smooth);return;}
@@ -673,7 +704,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     hover.pause();preview='';map.clearMapPreview?.();
     const viewport=instance.getViewport(), rect=host.getBoundingClientRect();
     const contentScale=byID.get(n.id)?.contentScale||1;
-    if(!center&&readableFocus(n.id,placed,byID,detailed,componentsOpen,viewport,rect.width,rect.height,communicationsOpen,openComponents))return;
+    if(!center&&(n.frame&&frameInSight(n)||readableFocus(n.id,placed,byID,detailed,componentsOpen,viewport,rect.width,rect.height,communicationsOpen,openComponents)))return;
     locationSubject=id;
     // A plain tile is entered with its display group: every tile of it opens
     // and the camera frames the group, whose heading names them all. Framed
@@ -803,12 +834,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const x=n.absolute.x+8*scale,y=n.absolute.y+8*scale;
     return <div key={'component-'+n.id} className={`flow-component-overview nopan ${item.branch==='communication'?'flow-communication-overview':item.branch==='inputs'?'flow-input-collection':''} ${muted?'flow-node-muted':''}`}
       data-component-overview={n.id} style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width,maxHeight:screenHeight-16}}
-      onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,true);}}>
+      onMouseEnter={()=>enter(n.id)} onClick={event=>{event.stopPropagation();select(n.id,event,false);}}>
       {heading.lines.length>0&&<div className="flow-component-overview-heading" style={{maxWidth:heading.width,minHeight:inputs?32:undefined,paddingTop:heading.clearZoom?32:undefined}}>
         <strong style={heading.scale<1?{fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}:undefined}>{heading.lines.join('\n')}</strong></div>}
       {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
       {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description}</p>}
-      {inputs&&<InputTypes groups={item.inputGroups}/>}
+      {inputs&&<InputTypes groups={item.inputGroups} lit={lit}/>}
       {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
         <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).name||byID.get(id).title}</button>
       </li>)}</ul>}
@@ -994,7 +1025,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       return {...n,width:box.width,height:box.height,type:n.frame?'area':'part',selected:reading,measured:{width:box.width,height:box.height},
         selectable:false,draggable:false,connectable:false,
         style:{width:box.width,height:box.height,visibility:visible(n.id)?'visible':'hidden'},
-        className:`${muted(n.id)?'flow-node-muted':''} ${subjects.has(n.id)?'flow-node-focus':on&&!focused?'flow-node-connected':''} ${shownContext.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''}`,
+        className:`${muted(n.id)?'flow-node-muted':''} ${subjects.has(n.id)?'flow-node-focus':on&&!focused?'flow-node-connected':''} ${shownContext.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''} ${lit.has(n.id)?'flow-node-lit':''}`,
         data:{...item,...looseLook(n),operation:view.operation,reading,zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true),
           member:item?.symbols?.length?{hot:pointed?.part===n.id?pointed.index:-1,chosen:memberChoice?.part===n.id&&view.scope===n.id?memberChoice.index:-1,
             point:index=>pointMember(n.id,index),choose:(index,event)=>chooseMember(n.id,index,event)}:undefined}};
@@ -1279,7 +1310,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // Going up from a declaration to its part (the toolbar's breadcrumb): no
   // tile stays chosen, and the part is entered, not its tile.
   const clearMember=()=>{if(memberChoice){memberChoice=null;update?.();}};
-  return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,clearMember,mountConnections,frameConnections,overview:()=>fitOverview(420),update(next){
+  return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,clearMember,mountConnections,frameConnections,light,overview:()=>fitOverview(420),update(next){
     if(memberChoice&&(next.scope||'')!==memberChoice.part)memberChoice=null;
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
     view={...initial,...next,scope:next.scope||'',

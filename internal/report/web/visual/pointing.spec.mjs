@@ -151,22 +151,30 @@ test('a tile points at and chooses its own declaration',async({page},testInfo)=>
   await expect.poll(()=>darkArrows(map)).toEqual(['worker>save-jobs']);
   const tile=await tileOf(part,'processJob').boundingBox();
   await page.mouse.move(tile.x+tile.width/2,tile.y+tile.height/2,{steps:6});
+  const camera=await map.evaluate(map=>map.captureViewport());
   await page.mouse.click(tile.x+tile.width/2,tile.y+tile.height/2);
   await settle(map);
   expect(page.context().pages()).toHaveLength(1);
   await expect(page.locator('[data-reading-title]')).toHaveText('Processing worker');
   await expect(tileOf(part,'processJob')).toHaveClass(/flow-symbol-chosen/);
-  const canvas=await page.locator('.flow-root').boundingBox(),chosen=await tileOf(part,'processJob').boundingBox();
-  expect(Math.abs(chosen.x+chosen.width/2-canvas.x-canvas.width/2)).toBeLessThan(2);
-  expect(Math.abs(chosen.y+chosen.height/2-canvas.y-canvas.height/2)).toBeLessThan(2);
+  // The first click reads; the tile in sight keeps the camera (owner,
+  // 2026-09-28).
+  expect(await map.evaluate(map=>map.captureViewport()),'a tile in sight is only marked').toEqual(camera);
   await page.mouse.move(1430,890);
   await expect.poll(()=>darkArrows(map)).toEqual(['queue>worker']);
-  await testInfo.attach('journey-01 — processJob chosen and centred',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
-  // The reading names another declaration, as Find does.
+  await testInfo.attach('journey-01 — processJob chosen in place',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  // The reading names another declaration, as Find does: in sight, it is
+  // marked where it stands; out of sight, it is centred.
   await map.evaluate(map=>{map.explorerMember={owner:'worker',name:'save',key:'#worker.go-30',href:'#worker.go-30'};map.dispatchEvent(new Event('repomap:reading'));});
   await settle(map);
   await expect(tileOf(part,'save')).toHaveClass(/flow-symbol-chosen/);
-  const found=await tileOf(part,'save').boundingBox();
+  expect(await map.evaluate(map=>map.captureViewport()),'a named tile in sight is only marked').toEqual(camera);
+  const canvas=await page.locator('.flow-root').boundingBox();
+  await map.evaluate((map,width)=>{const v=map.captureViewport();map.restoreReadingState({scope:'worker',viewport:{...v,fit:false,x:v.x+width*2}});},canvas.width);await settle(map);
+  await map.evaluate(map=>{map.explorerMember={owner:'worker',name:'processJob',key:'#worker.go-3',href:'#worker.go-3'};map.dispatchEvent(new Event('repomap:reading'));});
+  await settle(map);
+  await expect(tileOf(part,'processJob')).toHaveClass(/flow-symbol-chosen/);
+  const found=await tileOf(part,'processJob').boundingBox();
   expect(Math.abs(found.x+found.width/2-canvas.x-canvas.width/2)).toBeLessThan(2);
   expect(Math.abs(found.y+found.height/2-canvas.y-canvas.height/2)).toBeLessThan(2);
   expect(errors).toEqual([]);
