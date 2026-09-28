@@ -69,12 +69,13 @@ func Check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 
 // CheckSplit reads the graph with every candidate file split in two boxes
 // and checks, besides what Check does, that a split happened, that every
-// declaration of a split file is in a role part or off the map as
-// undecided, that no undecided unit is one the code should have placed by
-// its users or what it uses, that a repeated name stays one unit, that a
-// module body is a row of the assignment, that no import-only arrow touches
-// a role part, and that a seed declaration in a split file keeps the entry:
-// the part holding it stands in the "in" column.
+// declaration of a split file is in a role part or off the map as blocked,
+// that every undecided unit is a row of its own named by its declaration
+// and none is one the code should have placed by its users or what it
+// uses, that a repeated name stays one unit, that a module body is a row of
+// the assignment, that no import-only arrow touches a role part, and that a
+// seed declaration in a split file keeps the entry: the part holding it
+// stands in the "in" column.
 func CheckSplit(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root string) Map {
 	t.Helper()
 	return check(t, graph, target, root, true)
@@ -274,19 +275,55 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 	if len(checked.RoleParts) < 2 {
 		t.Fatalf("the split drew %d role parts", len(checked.RoleParts))
 	}
-	undecided := map[string]bool{}
+	// A unit no box took is undecided in the split and a row of its own,
+	// named by its declaration: the preset draws it as a part of its own,
+	// holding it and its followers. A blocked helper is off the map.
+	undecided, units := map[string]bool{}, map[string][]string{}
+	for _, row := range checked.Rejected {
+		if row.Kind != "role_undecided" {
+			continue
+		}
+		path, _, _ := strings.Cut(row.Reason, ": ")
+		if !checked.Split[path] {
+			t.Fatalf("undecided declarations of %s, which is not split", path)
+		}
+		for _, name := range row.Samples {
+			var part atlas.Box
+			for _, box := range checked.Target.Boxes {
+				if box.Title == name && provider.boxRows[name] == path {
+					part = box
+				}
+			}
+			var symbols []string
+			for _, file := range part.Files {
+				for _, symbol := range file.Symbols {
+					symbols = append(symbols, symbol.ID)
+					undecided[symbol.ID] = true
+				}
+			}
+			if !slices.Contains(symbols, checked.Symbols[[2]string{path, name}]) {
+				t.Fatalf("the undecided %s of %s is no row of its own: its part %q holds %v", name, path, part.ID, symbols)
+			}
+			units[path+":"+name] = symbols
+		}
+	}
+	blocked := map[string]bool{}
 	for _, entry := range checked.Target.OffMap {
-		if entry.Reason != atlas.OffMapUndecided && entry.Reason != atlas.OffMapBlocked {
+		if entry.Reason != atlas.OffMapBlocked {
 			continue
 		}
 		if !checked.Split[entry.File.Path] {
-			t.Fatalf("undecided declarations of %s, which is not split", entry.File.Path)
+			t.Fatalf("blocked declarations of %s, which is not split", entry.File.Path)
 		}
 		for _, symbol := range entry.File.Symbols {
-			undecided[symbol.ID] = true
+			blocked[symbol.ID] = true
+		}
+		units[entry.File.Path+":"+entry.File.Symbols[0].Name] = nil
+		for _, symbol := range entry.File.Symbols {
+			units[entry.File.Path+":"+entry.File.Symbols[0].Name] = append(units[entry.File.Path+":"+entry.File.Symbols[0].Name], symbol.ID)
 		}
 	}
-	checkUndecided(t, graph, targetID, checked, undecided)
+	checkUndecided(t, graph, targetID, checked, undecided, blocked, units)
 	for _, place := range graph.Places {
 		if place.File == nil || !checked.Split[place.Path] || !slices.Contains(place.TargetIDs, targetID) {
 			continue
@@ -303,8 +340,8 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 			if part != "" && !checked.RoleParts[part] && !methodElsewhere(graph, id) {
 				t.Fatalf("%s %s of a split file is in part %s, not a role part", place.Path, decl.Name, part)
 			}
-			if part == "" && !undecided[id] && !methodElsewhere(graph, id) {
-				t.Fatalf("%s %s of a split file is off the map but not undecided", place.Path, decl.Name)
+			if part == "" && !blocked[id] && !methodElsewhere(graph, id) {
+				t.Fatalf("%s %s of a split file is off the map but not blocked", place.Path, decl.Name)
 			}
 			// A repeated name is one unit: every declaration of it is where
 			// the first one is.
@@ -318,14 +355,15 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 			}
 		}
 	}
-	// An input whose handler is undecided names no part.
+	// An input whose handler is undecided stands in its handler's own row;
+	// one whose handler is blocked names no part.
 	for _, boundary := range checked.Target.Boundaries {
 		for _, place := range graph.Places {
-			if place.Boundary == nil || place.Path != boundary.Path || place.LineNo != boundary.LineNo || place.Column != boundary.Column {
+			if place.Boundary == nil || place.Path != boundary.Path || place.LineNo != boundary.LineNo || place.Column != boundary.Column || place.Boundary.Direction != atlas.DirectionIn {
 				continue
 			}
-			if place.Boundary.Direction == atlas.DirectionIn && undecided[place.Boundary.SubjectID] && boundary.BoxID != "" {
-				t.Fatalf("the input at %s:%d of an undecided handler stands in part %s", boundary.Path, boundary.LineNo, boundary.BoxID)
+			if subject := place.Boundary.SubjectID; undecided[subject] && boundary.BoxID != checked.PartOf[subject] || blocked[subject] && boundary.BoxID != "" {
+				t.Fatalf("the input at %s:%d of an undecided or blocked handler stands in part %q, its handler in %q", boundary.Path, boundary.LineNo, boundary.BoxID, checked.PartOf[subject])
 			}
 		}
 	}
@@ -358,13 +396,14 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 	}
 }
 
-// checkUndecided holds every undecided unit of a split file to the code
-// rule on real facts: the declarations of its file that use it (call it,
-// are decorated by it, read it when it does not run; never a hand-over or a
-// call through the function value one stored) are
-// not all in one part, and when none uses it, what it uses in its file is
-// not all in one part either. The preset gives each box a part of its own.
-func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Map, undecided map[string]bool) {
+// checkUndecided holds every undecided or blocked unit of a split file (by
+// "path:name", with its followers) to the code rule on real facts: the
+// declarations of its file that use it (call it, are decorated by it, read
+// it when it does not run; never a hand-over or a call through the function
+// value one stored) are not all in one part, and when none uses it, what it
+// uses in its file is not all in one part either. The preset gives each box
+// a part of its own, and each undecided unit's row one of its own.
+func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Map, undecided, blocked map[string]bool, units map[string][]string) {
 	t.Helper()
 	byID := map[string]atlas.Place{}
 	test := map[string]bool{}
@@ -413,7 +452,7 @@ func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Ma
 	inFile := func(ids map[string]bool) []string {
 		var result []string
 		for id := range ids {
-			if !undecided[id] && !methodElsewhere(graph, id) {
+			if !undecided[id] && !blocked[id] && !methodElsewhere(graph, id) {
 				result = append(result, id)
 			}
 		}
@@ -429,29 +468,29 @@ func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Ma
 		}
 		return part != ""
 	}
-	// An undecided entry lists a unit with its followers; their users and
-	// uses are the unit's.
-	for _, entry := range checked.Target.OffMap {
-		if entry.Reason != atlas.OffMapUndecided && entry.Reason != atlas.OffMapBlocked {
+	// A unit's followers' users and uses are the unit's. Rule C places a
+	// unit that is no helper; a helper's users anywhere are checkHelpers'.
+	for unit, symbols := range units {
+		if path, name, _ := strings.Cut(unit, ":"); checked.Helpers[[2]string{path, name}] {
 			continue
 		}
 		unitUsers, unitUses := map[string]bool{}, map[string]bool{}
-		for _, symbol := range entry.File.Symbols {
-			for id := range users[symbol.ID] {
+		for _, symbol := range symbols {
+			for id := range users[symbol] {
 				unitUsers[id] = true
 			}
-			for id := range uses[symbol.ID] {
+			for id := range uses[symbol] {
 				unitUses[id] = true
 			}
 		}
 		if placed := inFile(unitUsers); len(unitUsers) > 0 {
 			if len(placed) == len(unitUsers) && onePart(placed) {
-				t.Fatalf("%s %s is undecided, yet every declaration of its file that uses it is in part %s", entry.File.Path, entry.File.Symbols[0].Name, checked.PartOf[placed[0]])
+				t.Fatalf("%s is undecided, yet every declaration of its file that uses it is in part %s", unit, checked.PartOf[placed[0]])
 			}
 			continue
 		}
 		if placed := inFile(unitUses); len(placed) > 0 && len(placed) == len(unitUses) && onePart(placed) {
-			t.Fatalf("%s %s is undecided, no declaration of its file uses it and all it uses is in part %s", entry.File.Path, entry.File.Symbols[0].Name, checked.PartOf[placed[0]])
+			t.Fatalf("%s is undecided, no declaration of its file uses it and all it uses is in part %s", unit, checked.PartOf[placed[0]])
 		}
 	}
 }

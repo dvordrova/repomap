@@ -807,7 +807,7 @@ func (r *reader) readRoles(ctx context.Context, view *designView, round int) (*u
 			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageRoleAssign, Target: view.targetID, Kind: kind, Count: len(names), Samples: names, Reason: path + ": " + reason})
 			fmt.Fprintf(&r.tables, "%s: %s: %s\n", path, reason, strings.Join(names, " "))
 		}
-		offMap("role_undecided", split.undecided, "declarations no box took; off the map as undecided")
+		offMap("role_undecided", split.undecided, "declarations no box took; each is a row of its own in the parts request")
 		offMap("role_blocked", split.blocked, "helpers never asked, since a declaration that uses them never got a box; off the map as blocked")
 		fmt.Fprintf(&r.tables, "%s: split into %d boxes, %d undecided, %d blocked, %d named boxes empty, %d holding only helpers\n", path, holding, len(split.undecided), len(split.blocked), len(empty), helperOnly)
 		for i, box := range state.boxes {

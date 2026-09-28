@@ -193,7 +193,8 @@ holding at least one unit (`ref`, the sealed graph's `f*`), or one box of a
 file the role split splits (a request-local `c*` ref, numbered across the
 target in f* order and each file's naming order, with the box's name in
 `box`; a box that holds nothing is no row, and a split file is never a whole
-row). Each row has `path`, `units`, `types`, `functions` and `variables`. A
+row), then that file's seeds and the units no box took, each a `c*` row of
+its own with its declaration's name in `box`. Each row has `path`, `units`, `types`, `functions` and `variables`. A
 row also holds the units code placed there from other files (a helper that
 joined its users, a whole file that joined a box; below), so its counts and
 names may include declarations its `path` does not hold. A
@@ -455,10 +456,17 @@ the parts request, a unit of the grouping with its units and their
 followers (methods, lexical children, repeated names) and what code placed
 there from other files, and takes the part the answer gives it; the answer
 may put two boxes of one file in one part. A box holding none is no row
-(`role_box_empty`); `tables.md` counts the boxes holding only helpers. An undecided
-unit, with its followers, goes to the off-map record under the closed
-reason `undecided` (`role_undecided`), a blocked helper under `blocked`
-(`role_blocked`), while its file stays on the map through its boxes. Parts take their IDs in answer order; nothing is split
+(`role_box_empty`); `tables.md` counts the boxes holding only helpers. A unit
+no box took stays undecided in the split (`role_undecided`: its box
+question had no decided answer, and its helper mark is whatever the helper
+question decided); it is a row of its own in the parts request, with its
+followers, named by its declaration as a seed's row is, so the parts step
+places it with its calls like any row, and the placement follow-up places
+a row it leaves out or leaves it off the map as `left_out` (owner's fix B,
+2026-09-29: Redis's lookupKeyRead, a near-tie in the second pass, had
+stayed in no part while a benchmark reader needed it for GET). A blocked
+helper goes to the off-map record under `blocked` (`role_blocked`), while
+its file stays on the map through its boxes. Parts take their IDs in answer order; nothing is split
 under a map failure or without a model. A file shared by two targets is
 split per target, since `callers_elsewhere` is per target; it may split
 differently in each and costs a naming in each. Every outcome is recorded in
@@ -484,14 +492,16 @@ with the box that runs commands: that command's box is the naming's to give.
 Each language's map-of-parts fixture test builds its graph with the fact
 layer, as an ordinary run does, and its split check (`partstest.CheckSplit`)
 requires that every registration handing over a unit of an assigned file
-reaches that file's assignment with its words, that no undecided unit is
+reaches that file's assignment with its words, that every undecided unit
+is a row of its own named by its declaration and none that is no helper is
 one the code rule places (the units of its file that use it are not all in
 one part, and when none uses it, what it uses in its file is not either),
 that the parts request lists each split file's boxes as `c*` rows and never
 the file whole (a file that joined a box is no row), with imports between
 whole files only, that no import-only
 arrow touches a part holding a split file's box, that the seed's part stands
-in, and that an input whose handler is undecided names no part. Its helper
+in, and that an input whose handler is undecided stands in that handler's
+own row (one whose handler is blocked names no part). Its helper
 question takes a declaration for a helper when other code calls, reads or
 hands it over, the language does not export it and no registration names
 it; the check requires that no test or generated declaration is asked and
@@ -545,8 +555,8 @@ split file:
   part for it.
 - A boundary takes its subject's part. An input that hands a declaration
   over (a command table row, a route) stands only in that declaration's
-  part: when the declaration is undecided, or in a file off the map, the
-  input names no part, never the part holding the table or the registering
+  part (an undecided declaration's own row included): when the declaration
+  is blocked, left out or in a file off the map, the input names no part, never the part holding the table or the registering
   call. Without a subject, a boundary takes the part of the innermost
   declaration whose source range holds its line (none when that declaration
   is off the map), else the part of its file's module body, else its file's
@@ -560,7 +570,7 @@ split file:
 **Membership and the off-map record.** Atlas v12 saves explicit `member_ids`
 per part, and an explicit per-target `off_map` record: every file, or stray
 declaration, no drawn part holds, with its unit's reason (`left_out`,
-`conflict`, `undecided`) or the file's (`no_units`, `map_failure`), its file
+`conflict`, `blocked`) or the file's (`no_units`, `map_failure`), its file
 line, captions and keys. `no_units` is a file that declares nothing. A
 type's methods declared elsewhere follow it off the map; a method whose file
 is off the map stays with its placed type. A file that is no row has no

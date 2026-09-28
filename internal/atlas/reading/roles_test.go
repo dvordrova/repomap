@@ -309,8 +309,9 @@ func partsRequest(t *testing.T, provider *tableProvider, prefix string) (request
 // server.go has no whole row, calls count per site between rows and an
 // import into server.go counts for no row. The parts take the answer's
 // names and IDs in its order, a part may hold two boxes of one file, and a
-// type's methods follow it. helper, whose callers sit in two boxes, is off
-// the map as undecided while server.go stays on it. Test, generated and
+// type's methods follow it. helper, whose callers sit in two boxes, stays
+// undecided in the split and is a row of its own (c4, named by its
+// declaration) that the answer places with its callers. Test, generated and
 // one-unit files are no gate candidates; the one-file target whose file
 // splits now sends a parts request.
 func TestSplitFilesAreGroupedAsUnits(t *testing.T) {
@@ -328,8 +329,8 @@ func TestSplitFilesAreGroupedAsUnits(t *testing.T) {
 		if _, ok := ref["Running"]; ok {
 			return fmt.Sprintf(`{"groups":[{"name":"Checking","units":[%q]},{"name":"Running","units":[%q]}]}`, ref["Checking"], ref["Running"])
 		}
-		return fmt.Sprintf(`{"groups":[{"name":"Storage and data","units":[%q,%q]},{"name":"Serving","units":[%q,%q]},{"name":"Tooling","units":[%q,%q,%q]}]}`,
-			ref["Storage"], ref["svc/db.go"], ref["Entry"], ref["Routing"], ref["svc/gen.go"], ref["svc/server_test.go"], ref["svc/util.go"])
+		return fmt.Sprintf(`{"groups":[{"name":"Storage and data","units":[%q,%q]},{"name":"Serving","units":[%q,%q,%q]},{"name":"Tooling","units":[%q,%q,%q]}]}`,
+			ref["Storage"], ref["svc/db.go"], ref["Entry"], ref["Routing"], ref["helper"], ref["svc/gen.go"], ref["svc/server_test.go"], ref["svc/util.go"])
 	}
 	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
 	if err != nil {
@@ -348,10 +349,10 @@ func TestSplitFilesAreGroupedAsUnits(t *testing.T) {
 		rows = append(rows, fmt.Sprintf("%v %v %v", row["ref"], row["path"], row["box"]))
 	}
 	if want := []string{"f2 svc/db.go <nil>", "f3 svc/gen.go <nil>", "c1 svc/server.go Entry", "c2 svc/server.go Routing", "c3 svc/server.go Storage",
-		"f5 svc/server_test.go <nil>", "f6 svc/util.go <nil>"}; !slices.Equal(rows, want) {
+		"c4 svc/server.go helper", "f5 svc/server_test.go <nil>", "f6 svc/util.go <nil>"}; !slices.Equal(rows, want) {
 		t.Fatalf("svc's parts request rows:\n%v\nwant\n%v", rows, want)
 	}
-	if !slices.Equal(request.Calls, []string{"c1 -> c2 (1)", "c2 -> c3 (1)", "f2 -> c3 (1)"}) || len(request.Imports) != 0 {
+	if !slices.Equal(request.Calls, []string{"c1 -> c2 (1)", "c1 -> c4 (1)", "c2 -> c3 (1)", "c3 -> c4 (1)", "f2 -> c3 (1)"}) || len(request.Imports) != 0 {
 		t.Fatalf("calls %v imports %v: a site counts per row it reaches, an import into a split file counts for none", request.Calls, request.Imports)
 	}
 	svc := targetOf(t, result, "svc")
@@ -366,22 +367,15 @@ func TestSplitFilesAreGroupedAsUnits(t *testing.T) {
 	if got := membersOf(parts["Storage and data"]); !slices.Equal(got, []string{"Close", "Open", "Store", "Store.Get", "Store.Put"}) {
 		t.Fatalf("Storage and data holds %v: a type's methods follow it", got)
 	}
-	if got := membersOf(parts["Serving"]); !slices.Equal(got, []string{"Route", "Serve", "main"}) {
+	if got := membersOf(parts["Serving"]); !slices.Equal(got, []string{"Route", "Serve", "helper", "main"}) {
 		t.Fatalf("Serving holds %v", got)
 	}
-	var undecided []string
 	for _, entry := range svc.OffMap {
-		if entry.File.Path != "svc/server.go" {
-			continue
-		}
-		if entry.Reason != atlas.OffMapUndecided || entry.BoxID != "" {
+		if entry.File.Path == "svc/server.go" {
 			t.Fatalf("server.go off the map: %+v", entry)
 		}
-		for _, symbol := range entry.File.Symbols {
-			undecided = append(undecided, symbol.Name)
-		}
 	}
-	if !slices.Equal(undecided, []string{"helper"}) {
+	if undecided := undecidedUnits(result); !slices.Equal(undecided, []string{"helper"}) {
 		t.Fatalf("undecided: %v", undecided)
 	}
 	one := targetOf(t, result, "one")
@@ -446,8 +440,9 @@ func withoutMainCallingHelper(files map[string][]roleDecl) {
 // file does not use goes where everything it uses went: main, which only
 // calls Serve, goes in Entry. A hand-over is no use: handlePing, which the
 // routes table hands over and Route reads as a function value, stays
-// undecided although both sit in Routing. So does a unit whose users sit in
-// two boxes: helper, when main calls it too. Each placement is recorded.
+// undecided although both sit in Routing, a row of its own. So does a unit
+// whose users sit in two boxes: helper, when main calls it too. Each
+// placement is recorded.
 func TestAnOpenUnitGoesWhereItsSameFileUsersAre(t *testing.T) {
 	graph := roleGraph(t, func(files map[string][]roleDecl) {
 		withoutMainCallingHelper(files)
@@ -483,15 +478,7 @@ func TestAnOpenUnitGoesWhereItsSameFileUsersAre(t *testing.T) {
 	if got := membersOf(parts["Entry"]); !slices.Equal(got, []string{"Serve", "main"}) {
 		t.Fatalf("Entry holds %v", got)
 	}
-	var undecided []string
-	for _, entry := range svc.OffMap {
-		if entry.Reason == atlas.OffMapUndecided {
-			for _, symbol := range entry.File.Symbols {
-				undecided = append(undecided, symbol.Name)
-			}
-		}
-	}
-	if !slices.Equal(undecided, []string{"handlePing"}) {
+	if undecided := undecidedUnits(result); !slices.Equal(undecided, []string{"handlePing"}) || !ownRow(svc, "handlePing") {
 		t.Fatalf("undecided: %v; a hand-over or a function value read placed a unit", undecided)
 	}
 	for _, name := range []string{"helper", "limits", "main", "handlePing"} {
@@ -514,11 +501,29 @@ func TestAnOpenUnitGoesWhereItsSameFileUsersAre(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.ContainsFunc(targetOf(t, result, "svc").OffMap, func(entry atlas.OffMapFile) bool {
-		return entry.Reason == atlas.OffMapUndecided && len(entry.File.Symbols) == 1 && entry.File.Symbols[0].Name == "helper"
-	}) {
+	if !slices.Equal(undecidedUnits(result), []string{"helper"}) || !ownRow(targetOf(t, result, "svc"), "helper") {
 		t.Fatal("helper, whose callers sit in Entry and Storage, was placed")
 	}
+}
+
+// undecidedUnits are the units of split files no box took, as the role
+// split records them.
+func undecidedUnits(result Result) []string {
+	var names []string
+	for _, row := range result.Rejected {
+		if row.Kind == "role_undecided" {
+			names = append(names, row.Samples...)
+		}
+	}
+	return names
+}
+
+// ownRow says whether the unit named name is a part of its own named by its
+// declaration: the parts request's row of a unit no box took, which the
+// test provider draws as a part named after the row.
+func ownRow(target atlas.Target, name string) bool {
+	part := partsByTitle(target)[name]
+	return part.ID != "" && slices.Equal(membersOf(part), []string{name})
 }
 
 // helperJev is the default role fake with the named declarations decided
@@ -606,7 +611,8 @@ func TestHelpersAreNotNamedAndGoWithTheirUsers(t *testing.T) {
 // Storage) is shared: code cannot place it, so the assignment asks about it
 // once, after code has settled, in a round of its own whose windows keep the
 // first pass's. Placed, it goes where the answer says; a near-tie leaves it
-// undecided. No unit is asked twice.
+// undecided, a row of its own in the parts request that keeps its helper
+// mark. No unit is asked twice.
 func TestASharedHelperIsAskedOnceInASecondPass(t *testing.T) {
 	read := func(box string) (Result, *roleJev, Options) {
 		t.Helper()
@@ -646,10 +652,8 @@ func TestASharedHelperIsAskedOnceInASecondPass(t *testing.T) {
 		}
 	}
 	result, _, _ = read("")
-	if !slices.ContainsFunc(targetOf(t, result, "svc").OffMap, func(entry atlas.OffMapFile) bool {
-		return entry.Reason == atlas.OffMapUndecided && len(entry.File.Symbols) == 1 && entry.File.Symbols[0].Name == "helper"
-	}) {
-		t.Fatal("a near-tie in the second pass placed the helper")
+	if svc := targetOf(t, result, "svc"); !slices.Equal(undecidedUnits(result), []string{"helper"}) || !ownRow(svc, "helper") || !slices.Equal(helperMarks(svc), []string{"helper"}) {
+		t.Fatal("a near-tie in the second pass placed the helper, or its row lost the helper mark")
 	}
 }
 
@@ -909,14 +913,8 @@ func TestAHelperWaitingOnAnUndecidedUserIsAskedOnceNothingElseIs(t *testing.T) {
 	if !slices.Contains(membersOf(parts["Routing"]), "inner") || !slices.Contains(membersOf(parts["Storage"]), "outer") || !slices.Contains(membersOf(parts["Storage"]), "leaf") {
 		t.Fatalf("Routing holds %v, Storage %v", membersOf(parts["Routing"]), membersOf(parts["Storage"]))
 	}
-	reasons := map[string]string{}
-	for _, entry := range svc.OffMap {
-		for _, symbol := range entry.File.Symbols {
-			reasons[symbol.Name] = entry.Reason
-		}
-	}
-	if reasons["stuck"] != atlas.OffMapUndecided || reasons["leaf"] != "" {
-		t.Fatalf("off the map: %v", reasons)
+	if !slices.Contains(undecidedUnits(result), "stuck") || slices.Contains(undecidedUnits(result), "leaf") || !ownRow(svc, "stuck") {
+		t.Fatalf("undecided %v; stuck is no row of its own: %v", undecidedUnits(result), partsByTitle(svc))
 	}
 	if slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool { return row.Kind == "role_blocked" }) {
 		t.Fatal("a helper is recorded blocked")
@@ -950,9 +948,9 @@ func TestAnUncertainHelperAnswerIsNoHelper(t *testing.T) {
 
 // An input stands where its handler is. helper, registered at line 6 inside
 // main's source range, is undecided while main and Store.Put call it: its
-// input names no part, not main's Entry. Called only by Store.Put, it goes
-// in Storage by code and its input stands there.
-func TestAnInputWithAnUndecidedHandlerNamesNoPart(t *testing.T) {
+// input stands in helper's own row, not main's Entry. Called only by
+// Store.Put, it goes in Storage by code and its input stands there.
+func TestAnInputStandsWhereItsHandlerIs(t *testing.T) {
 	registered := []atlas.Place{registration(6, "helper", "HandleFunc", "/helper")}
 	graph := roleGraphWith(t, nil, registered)
 	input := func(result Result) atlas.Boundary {
@@ -970,8 +968,8 @@ func TestAnInputWithAnUndecidedHandlerNamesNoPart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if box := input(result).BoxID; box != "" {
-		t.Fatalf("the input of the undecided helper stands in %q (Entry is %q)", box, partsByTitle(targetOf(t, result, "svc"))["Entry"].ID)
+	if box, own := input(result).BoxID, partsByTitle(targetOf(t, result, "svc"))["helper"].ID; box != own || own == "" {
+		t.Fatalf("the input of the undecided helper stands in %q, not its own row %q (Entry is %q)", box, own, partsByTitle(targetOf(t, result, "svc"))["Entry"].ID)
 	}
 	provider, jev = defaultRoleProvider(), defaultRoleJev()
 	result, err = Read(t.Context(), roleOptions(t, roleGraphWith(t, withoutMainCallingHelper, registered), provider, jev, ""))
@@ -1096,6 +1094,60 @@ func TestALeftOutBoxKeepsItsFileOnTheMap(t *testing.T) {
 	svc = targetOf(t, result, "svc")
 	if got := membersOf(partsByTitle(svc)["Database"]); !slices.Equal(got, []string{"Close", "Open", "Route"}) {
 		t.Fatalf("the placed box joined %v", got)
+	}
+}
+
+// A unit no box took (helper, whose callers main and Store.Put sit in Entry
+// and Storage, a near-tie) is a row of its own named by its declaration: the
+// parts request lists it with its calls and places it like any row. Left
+// out, it is asked the follow-up with its calls to the drawn parts; refused
+// there, it is off the map as left out, never as undecided, and chosen, it
+// joins that part. Its box question stays undecided in the record.
+func TestAnUndecidedUnitIsARowOfItsOwn(t *testing.T) {
+	read := func(choice func(options []any) string) (atlas.Target, map[string]any, Result) {
+		t.Helper()
+		provider, jev := defaultRoleProvider(), defaultRoleJev()
+		partFor := provider.partFor
+		provider.partFor = func(unit map[string]any) string {
+			if unit["box"] == "helper" {
+				if unit["units"] != float64(1) || unit["path"] != "svc/server.go" {
+					t.Fatalf("helper's row: %v", unit)
+				}
+				return ""
+			}
+			return partFor(unit)
+		}
+		var asked map[string]any
+		provider.placeFor = func(row map[string]any) string {
+			asked = row
+			options, _ := row["part_options"].([]any)
+			return choice(options)
+		}
+		result, err := Read(t.Context(), roleOptions(t, roleGraph(t, nil), provider, jev, ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := atlas.Validate(result.Atlas); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(undecidedUnits(result), []string{"helper"}) {
+			t.Fatalf("undecided: %v", undecidedUnits(result))
+		}
+		return targetOf(t, result, "svc"), asked, result
+	}
+	svc, asked, _ := read(func([]any) string { return "p99" })
+	parts := partsByTitle(svc)
+	if asked["box"] != "helper" || fmt.Sprint(asked["calls"]) != fmt.Sprintf("[%s -> (1) %s -> (1)]", parts["Entry"].ID, parts["Storage"].ID) {
+		t.Fatalf("the left-out row was asked as %v", asked)
+	}
+	for _, entry := range svc.OffMap {
+		if entry.File.Path == "svc/server.go" && (entry.Reason != atlas.OffMapLeftOut || len(entry.File.Symbols) != 1 || entry.File.Symbols[0].Name != "helper") {
+			t.Fatalf("server.go off the map: %+v", entry)
+		}
+	}
+	svc, _, _ = read(func(options []any) string { return fmt.Sprint(options[0]) })
+	if got := membersOf(svc.Boxes[0]); !slices.Contains(got, "helper") {
+		t.Fatalf("the placed row joined %v", got)
 	}
 }
 

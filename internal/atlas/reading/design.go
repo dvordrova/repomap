@@ -96,6 +96,9 @@ type designView struct {
 	// split file gives it a row of its own, so the entry is never left off
 	// the map by the assignment.
 	seedName map[string]string
+	// name is every unit's declaration name: the name of the row a split
+	// file gives a unit no box took.
+	name map[string]string
 }
 
 // unitSite is one exact call site: the unit whose code it is in and the
@@ -112,7 +115,7 @@ func (r *reader) designView(targetID string) *designView {
 	view := &designView{
 		targetID: targetID, byID: map[string]*designFile{}, decls: map[string][]string{},
 		follows: map[string]string{}, unitFile: map[string]string{}, kind: map[string]string{}, text: map[string]string{}, imports: map[[2]string]bool{},
-		seedName: map[string]string{},
+		seedName: map[string]string{}, name: map[string]string{},
 	}
 	var files []atlas.Place
 	for _, place := range r.opts.Graph.Places {
@@ -189,6 +192,7 @@ func (r *reader) designView(targetID string) *designView {
 			if symbol := r.places[id].Symbol; symbol != nil && slices.Contains(symbol.Seeds, targetID) {
 				view.seedName[id] = decl.Name
 			}
+			view.name[id] = decl.Name
 			view.text[id] = decl.Name
 			if decl.Exported && decl.Signature != "" {
 				view.text[id] += " " + decl.Signature
@@ -326,10 +330,14 @@ func (view *designView) designUnitOf(ref string, file *designFile, box string, u
 
 // groupingUnits are the rows of a target's parts request, in f* order: a
 // file the role split splits gives one c* row per box that holds a unit, in
-// naming order (c1, c2… across the target); a whole file that joined a box
-// gives no row; any other file gives one whole row under its f* ref. A row
-// also holds the units code placed there from other files. The units no box
-// of a split file took stay off the map as undecided.
+// naming order (c1, c2… across the target), then one per seed and one per
+// unit no box took, each named by its declaration; a whole file that joined
+// a box gives no row; any other file gives one whole row under its f* ref. A
+// row also holds the units code placed there from other files. A unit no
+// box took stays undecided in the split (its box question had no decided
+// answer); its own row lets the parts request place it with its calls, and
+// only a row that request leaves unplaced is off the map. A blocked helper
+// stays off the map.
 func (view *designView) groupingUnits(split *unitSplit, outcome *designOutcome) []*designUnit {
 	if split == nil {
 		split = &unitSplit{}
@@ -358,7 +366,8 @@ func (view *designView) groupingUnits(split *unitSplit, outcome *designOutcome) 
 				units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, name, held))
 			}
 			for _, id := range roles.undecided {
-				outcome.unitReason[id] = atlas.OffMapUndecided
+				boxes++
+				units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, view.name[id], []string{id}))
 			}
 			for _, id := range roles.blocked {
 				outcome.unitReason[id] = atlas.OffMapBlocked
