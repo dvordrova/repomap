@@ -27,7 +27,7 @@
   }
   // An input the model did not explain is read by its handler, never by its
   // registration's raw call words.
-  function nodeSummary(d){return d.summary||(d.handler&&d.handler!==d.title?rmT('handled by')+' '+d.handler:'');}
+  function nodeSummary(d){return d.summary||(d.handler&&d.handler!==d.title?rmT('handled by')+' '+d.handler:d.declaredBy?rmT('Declared in {0}',d.declaredBy):'');}
   // A declaration off the map stays findable by its name: it opens its code
   // and the component's list of what is not on the map.
   document.querySelectorAll('[data-system-map] [data-branch="component"]').forEach(function(n){
@@ -43,7 +43,7 @@
     var section=document.getElementById(n.dataset.owner)||n.closest('section'),id=section.id,href=n.getAttribute('href');
     if(href&&href[0]==='#'&&!n.dataset.activation&&!n.dataset.branch)groupNodes[href.slice(1)]=n;
     var found=nodeKind(n.dataset);if(!found)return;
-    add({title:n.dataset.title,summary:nodeSummary(n.dataset),additionalText:map.areaDescriptions(n).join(' '),component:components[id]||(section.querySelector('h2')||section.querySelector('h3')||n).textContent||n.dataset.title,section:id,
+    add({title:n.dataset.title,summary:nodeSummary(n.dataset),additionalText:map.areaDescriptions(n).concat(n.dataset.declaredBy?[n.dataset.declaredBy]:[]).join(' '),component:components[id]||(section.querySelector('h2')||section.querySelector('h3')||n).textContent||n.dataset.title,section:id,
       kind:found.kind,type:found.type,node:n,map:map});
   });
   // One entry per declaration, by its file and line: adlist.c's listCreate,

@@ -362,3 +362,7 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-path-steps a,.map-area-members a{text-decoration:none}.system-path-steps a:hover,.map-area-members a:hover{text-decoration:underline}
 .system-path-deeper>summary{margin-top:6px;cursor:pointer;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--muted)}
 .system-input-flow{margin:8px 0;font-size:14px}.system-input-flow>.map-details-link{margin:0}.system-input-flow>.flow-title{margin:2px 0 0}
+.system-catalogue{margin:14px 0;font-size:13px;line-height:1.55}.system-catalogue>p{margin:6px 0;overflow-wrap:anywhere}
+.system-catalogue a{text-decoration:none}.system-catalogue a:hover{text-decoration:underline}
+.system-catalogue-member{font:inherit;color:var(--accent);background:none;border:0;padding:0;cursor:pointer}.system-catalogue-member:hover{text-decoration:underline}
+.system-catalogue-users>summary{cursor:pointer;color:var(--muted,inherit)}

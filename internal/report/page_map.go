@@ -242,6 +242,11 @@ type pageMapNode struct {
 	// reading says the part its call is written in declares it and that its
 	// handler is not established, and no arrow binds it there.
 	HandlerUnknown bool
+	// Catalogue is, for an input of a catalogue (page_catalogue.go), the
+	// catalogue's reading, one JSON string its members share; DeclaredBy
+	// names what declares them, for Find.
+	Catalogue  string
+	DeclaredBy string
 	// InputPath is an input's reading of its saved reach
 	// (page_input_path.go): where it is dispatched from, the sites it
 	// reaches, and the parts it enters with their calls.

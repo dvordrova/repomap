@@ -175,6 +175,85 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
   if(parts.childElementCount)section.appendChild(parts);
   return section;
 }
+// <catalogue>
+// A catalogue's reading (page_catalogue.go), shared by its members: where
+// they are declared and where that code is called from, what else it uses
+// and who else uses that, then once that where these inputs take effect is
+// not established. "Uses" is never read as "takes effect".
+function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
+  var section=rmEl('section','system-catalogue'),decls=catalogue.decls||[];
+  function name(index){
+    var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
+    var link=key?repomapMembers.sourceLink({Href:decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
+    if(decl.source)link.title=decl.source;
+    if(at)link.addEventListener('click',function(event){
+      if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+      event.preventDefault();event.stopPropagation();read(at,key);
+    });
+    return link;
+  }
+  // A translated line with nodes in its {n} places.
+  function line(cls,key){
+    var args=Array.prototype.slice.call(arguments,2),marks=args.map(function(_,i){return '\u0001'+i+'\u0002';});
+    var text=rmT.apply(null,[key].concat(marks)),p=rmEl('p',cls);
+    text.split(/(\u0001\d+\u0002)/).forEach(function(piece){
+      var m=/^\u0001(\d+)\u0002$/.exec(piece);
+      if(m){var arg=args[Number(m[1])];p.append(arg instanceof Node?arg:document.createTextNode(String(arg)));}
+      else if(piece)p.append(document.createTextNode(piece));
+    });
+    return p;
+  }
+  function inline(key){return Array.from(line.apply(null,['',key].concat(Array.prototype.slice.call(arguments,1))).childNodes);}
+  var head=rmEl('p','system-catalogue-declared');
+  if(catalogue.on!=null)head.append.apply(head,inline('Declared on {0}',name(catalogue.on)));
+  if(catalogue.declarer>=0){if(head.childNodes.length)head.append(document.createTextNode(' · '));head.append.apply(head,inline('Declared in {0}',name(catalogue.declarer)));}
+  var members=catalogue.members||[];
+  if(members.length>=2){
+    var of=({command:'one of {0} commands',request:'one of {0} requests'})[catalogue.kind]||'one of {0} inputs';
+    head.append(document.createTextNode(' · '+rmT(of,members.length)+': '));
+    members.forEach(function(id,i){
+      var input=inputNode(id);if(!input)return;
+      if(i)head.append(document.createTextNode(' '));
+      if(input.dataset.title===title){head.append(rmEl('b','',input.dataset.title));return;}
+      var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});head.append(b);
+    });
+  }
+  if((catalogue.calls||[]).length){
+    var from=document.createElement('span');
+    catalogue.calls.forEach(function(call,i){
+      if(i)from.append(document.createTextNode(', '));
+      from.append(name(call.caller));
+      if(call.line){var at=call.href?repomapMembers.sourceLink({Href:call.href,Open:call.open,Text:':'+call.line}):rmEl('span','',':'+call.line);from.append(document.createTextNode(' '),at);}
+      if(call.possible)from.append(rmEl('span','possible',' · '+rmT('possible')));
+    });
+    head.append(document.createTextNode(' · '));head.append.apply(head,inline('called from {0}',from));
+  }
+  section.appendChild(head);
+  (catalogue.uses||[]).forEach(function(use){
+    if(catalogue.declarer<0)return;
+    var box=rmEl('div','system-catalogue-uses');
+    var p=line('system-catalogue-use','{0} also uses {1}',name(catalogue.declarer),name(use.decl));
+    box.appendChild(p);
+    if((use.users||[]).length){
+      var more=rmEl('details','system-catalogue-users');
+      var summary=rmEl('summary');
+      summary.textContent=rmT('{0} is also used by',(decls[use.decl]||{}).name||'')+' ('+rmT('{0} functions in {1} parts',use.users.length,use.parts||0)+')';
+      more.appendChild(summary);
+      var byPart=new Map();use.users.forEach(function(user){var part=(decls[user]||{}).part||'';if(!byPart.has(part))byPart.set(part,[]);byPart.get(part).push(user);});
+      byPart.forEach(function(users,part){
+        var row=rmEl('div','system-neighbours'),node=partNode(part);
+        if(node){var b=rmEl('button','',node.dataset.title);b.type='button';b.addEventListener('click',function(){choose(node);});row.appendChild(b);row.append(document.createTextNode(': '));}
+        users.forEach(function(user,i){if(i)row.append(document.createTextNode(', '));row.append(name(user));});
+        more.appendChild(row);
+      });
+      box.appendChild(more);
+    }
+    section.appendChild(box);
+  });
+  section.appendChild(rmEl('p','meta',rmT('Where these take effect is not established.')));
+  return section;
+}
+// </catalogue>
 // An input's reading leads to its program's Main flow, the model's reading
 // of a request through the program, with the title the model wrote kept as
 // model text: a reader had found that page only by chance. Null when the
@@ -501,6 +580,12 @@ function rmCatalogInputClick(event,reveal){
     // An input's reading carries the Inputs blue, never core's purple.
     map.querySelector('.map-inspector')?.classList.toggle('map-reading-input',!!n.dataset.activation);
     var inputPath=null;try{inputPath=n.dataset.inputPath?JSON.parse(n.dataset.inputPath):null;}catch(_){inputPath=null;}
+    var catalogue=null;try{catalogue=n.dataset.catalogue?JSON.parse(n.dataset.catalogue):null;}catch(_){catalogue=null;}
+    if(n.dataset.activation&&catalogue){
+      var catalogueSection=rmCatalogueSection(catalogue,n.dataset.title,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);},readDeclaration,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;});
+      catalogueSection.dataset.readingAnchor='';
+      card.querySelector('.map-card-intro').after(catalogueSection);
+    }
     if(n.dataset.activation&&inputPath){
       // A chosen input's reading opens at its path.
       var pathSection=rmInputPathSection(inputPath,n.dataset.title,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(part){select(part,true,null,true);},readDeclaration);

@@ -518,8 +518,9 @@ function rmDeclarationRelations(map,node,key,nodes){
       }
       // An input whose handler is not established is read where its call
       // declares it: the part is where it is declared, not what handles it.
-      if (node.dataset.handlerUnknown==='true') html += '<p class="map-card-handler">' + rmT.html('handler not established') + '</p>';
-      if (node.dataset.operationGroup) html += '<span class="map-card-meta">' + (node.dataset.handlerUnknown==='true' ? rmT.html('declared in') + ' ' : '') + escapeText(node.dataset.operationGroup) + '</span>';
+      // A catalogued input reads its catalogue instead (rmCatalogueSection).
+      if (node.dataset.handlerUnknown==='true' && !node.dataset.catalogue) html += '<p class="map-card-handler">' + rmT.html('handler not established') + '</p>';
+      if (node.dataset.operationGroup && !node.dataset.catalogue) html += '<span class="map-card-meta">' + (node.dataset.handlerUnknown==='true' ? rmT.html('declared in') + ' ' : '') + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
       if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
       else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';

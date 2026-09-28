@@ -114,8 +114,26 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		matched[connection.ID] = pathEdge{mapNodeID(connection.From.GroupID), node.ID, true, connection.Label, connectionKey(index.Target.ID, connection.ID)}
 		matchedCalls[connectionKey(index.Target.ID, connection.ID)] = builder.connectionCall(connection)
 	}
+	inputNode := func(id string) string { return operationNodeID(section.ID, id) }
+	partOf := func(subject string) string {
+		if group := groupOf[subject]; group != "" {
+			return mapNodeID(group)
+		}
+		return ""
+	}
+	// Inputs of a catalogue follow those of none, in catalogue order and
+	// then in source order: redis-cli's options stand together.
+	catalogueOf, catalogueAt, declaredByOf := builder.catalogueReadings(index, partOf, inputNode)
 	ops := append([]groupindex.Operation(nil), index.Operations...)
 	sort.SliceStable(ops, func(i, j int) bool {
+		left, inLeft := catalogueAt[ops[i].ID]
+		right, inRight := catalogueAt[ops[j].ID]
+		if inLeft != inRight {
+			return !inLeft
+		}
+		if inLeft {
+			return left < right
+		}
 		if ops[i].Kind != ops[j].Kind {
 			return ops[i].Kind < ops[j].Kind
 		}
@@ -127,13 +145,6 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	reachOf := make(map[string]groupindex.Reach, len(index.Reach))
 	for _, reach := range index.Reach {
 		reachOf[reach.OperationID] = reach
-	}
-	inputNode := func(id string) string { return operationNodeID(section.ID, id) }
-	partOf := func(subject string) string {
-		if group := groupOf[subject]; group != "" {
-			return mapNodeID(group)
-		}
-		return ""
 	}
 	for i, operation := range ops {
 		id := operationNodeID(section.ID, operation.ID)
@@ -259,6 +270,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			Neighbours: strings.Join(nearIDs, " "), Degree: len(near), Members: 1,
 			Trace:   strings.Join(trace, " "),
 			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown,
+			Catalogue: catalogueOf[operation.ID], DeclaredBy: declaredByOf[operation.ID],
 		})
 	}
 	ordered := append([]groupindex.Group(nil), index.Groups...)
