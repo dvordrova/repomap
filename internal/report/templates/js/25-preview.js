@@ -52,7 +52,7 @@ var repomapPreview = (function () {
     options=options||{};
     if (!card.parentNode) { card.hidden=true; document.body.appendChild(card); }
     var inspector=card.closest('.map-inspector');
-    var timer, item={card:card,trigger:trigger,docked:!!inspector,pinned:false,exit:null,lastInside:null,hide:hide,place:place};
+    var timer, dwell, item={card:card,trigger:trigger,docked:!!inspector,pinned:false,exit:null,lastInside:null,hide:hide,place:place};
     function hide(returnFocus) {
       clearTimeout(timer);
       if (active !== item) return;
@@ -93,11 +93,20 @@ var repomapPreview = (function () {
       // Only pointermove resumes a hover after layout, never mouseenter alone.
       if(event.type==='mouseenter' && trigger.closest('[data-map]')?.previewStationaryPoint) return;
       if(event.type==='mouseenter') pointer={x:event.clientX,y:event.clientY};
+      // A card that asks for it opens only once the pointer rests on its
+      // trigger (`hoverDelay`, ms), never as it passes: a term's card had
+      // opened over the canvas as a reader's pointer crossed "Redis".
+      if(options.hoverDelay&&event.type==='mouseenter'){
+        clearTimeout(dwell);
+        dwell=setTimeout(function(){if(trigger.matches(':hover')&&!(active?.pinned&&active!==item))show(false);},options.hoverDelay);
+        return;
+      }
       if (active && active!==item && event.type==='mouseenter' && towardCard()) {
         waiting=function(){ if(trigger.matches(':hover')) show(); };
       } else show(false);
     }
     function leave(event) {
+      if(event.type==='mouseleave')clearTimeout(dwell);
       if (active!==item||item.pinned) return;
       if (inspector) {
         // The description stays readable, but leaving the node ends its
@@ -116,7 +125,9 @@ var repomapPreview = (function () {
       },220);
     }
     trigger.addEventListener('mouseenter',enter); trigger.addEventListener('mouseleave',leave);
-    trigger.addEventListener('focusin',function(event){if(ownerOf(event.target)===trigger)show(false);}); trigger.addEventListener('focusout',leave);
+    // A pointer's press focuses the trigger too: only a keyboard's focus
+    // opens a delayed card, its click pins it.
+    trigger.addEventListener('focusin',function(event){if(ownerOf(event.target)===trigger&&(!options.hoverDelay||trigger.matches(':focus-visible')))show(false);}); trigger.addEventListener('focusout',leave);
     trigger.addEventListener('click',function(event){
       if(ownerOf(event.target)!==trigger)return;
       waiting=null;

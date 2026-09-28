@@ -48,7 +48,7 @@
       var state=document.createElement('p');state.className='term-popup-state';state.textContent=rmT('Explanation pinned');card.appendChild(state);
       if(ids.length>1){var note=document.createElement('p');note.className='term-popup-variants';note.textContent=rmT('This name has {0} definitions in this report.',ids.length);card.appendChild(note);}
       ids.forEach(function(id){card.appendChild(copyDefinition(entries.get(id)));});
-    },{pinOnClick:true,returnFocus:true,focusOnPin:true});
+    },{pinOnClick:true,returnFocus:true,focusOnPin:true,hoverDelay:600});
   }
   function annotate(element){
     if(!element.isConnected||element.closest(excluded)||element.querySelector('.term-mention'))return;

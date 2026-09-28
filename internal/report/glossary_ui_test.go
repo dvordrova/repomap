@@ -74,3 +74,39 @@ func TestGlossaryHTMLKeepsAnswerTermsAndSourceDistinctDefinitions(t *testing.T) 
 		})
 	}
 }
+
+// A term's card opens on a click, or once the pointer has rested on the term
+// for 600 ms, never as the pointer passes (a Redis reader's pointer crossing
+// "Redis" in Main flow's caption opened it over the canvas twice).
+func TestATermCardOpensOnlyOnAClickOrADeliberatePause(t *testing.T) {
+	preview := systemJSPiece(t, "25-preview.js", "var repomapPreview = (function () {", "\n(function () {")
+	glossary, err := reportTemplateFS.ReadFile("templates/js/46-glossary.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(glossary), "hoverDelay:600") {
+		t.Fatal("the term cards do not wait for a deliberate pause")
+	}
+	runSystemJS(t, `
+class Element{}
+globalThis.Element=Element;
+const doc={body:{appendChild(){}},addEventListener(){}};globalThis.document=doc;globalThis.window={addEventListener(){},innerWidth:1000,innerHeight:800};
+function node(extra){const n=Object.assign(new Element(),{listeners:{},hovered:false,parentElement:null,classList:{add(){},remove(){}},dataset:{},hidden:true,
+  addEventListener(kind,f){(this.listeners[kind]||=[]).push(f);},fire(kind,event={}){(this.listeners[kind]||[]).forEach(f=>f({type:kind,target:this,currentTarget:this,clientX:0,clientY:0,...event}));},
+  matches(selector){return selector.includes(':hover')&&this.hovered;},setAttribute(){},dispatchEvent(){},getBoundingClientRect(){return {left:0,right:10,top:0,bottom:10};},closest(){return null;},contains(other){return other===this;},focus(){},offsetWidth:10,offsetHeight:10,style:{}},extra);return n;}
+`+preview+`
+const trigger=node(),card=node({parentNode:{}});let shown=0;
+repomapPreview.bind(trigger,card,()=>shown++,{pinOnClick:true,hoverDelay:600});
+(async()=>{
+ trigger.hovered=true;trigger.fire('mouseenter');
+ await new Promise(r=>setTimeout(r,200));trigger.hovered=false;trigger.fire('mouseleave');
+ await new Promise(r=>setTimeout(r,600));
+ assert.equal(shown,0,'a pointer passing over the term opens nothing');
+ trigger.hovered=true;trigger.fire('mouseenter');
+ await new Promise(r=>setTimeout(r,650));
+ assert.equal(shown,1,'a pause of 600 ms opens it');
+ trigger.fire('click');
+ assert.equal(card.hidden,false,'a click pins it');
+})().catch(error=>{console.error(error);process.exit(1);});
+`)
+}
