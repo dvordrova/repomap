@@ -931,8 +931,10 @@ package, never of a list kept in code (`repomap.atlas.systems.v1`, stage
 `atlas_systems`, the text model, since a name is text). The code groups the
 outgoing rows of the boundaries table by the outside package their call
 goes through, as the facts record it at the call's site (a Go import path,
-a Python or JavaScript module, a C header, a Clojure namespace); a row
-whose site names no call has no package. One row per package for the
+a Python or JavaScript module, a C header, a Clojure namespace). Only the
+boundary's own call counts: the one its external names. A row whose site
+holds no such call has no package, such as a query fact where the call is
+the `fmt.Sprintf` formatting the query's text. One row per package for the
 whole run: `package`, `dependency` (each module and version its targets'
 dependency catalogues record for it, when they do) and `calls`, every
 symbol of the package the program calls with one call of each as written
@@ -951,9 +953,10 @@ An outgoing row's catalogue is built from these names for the row's own
 targets (`lines.Destinations`): one `d*` entry per name (equal but for
 case is one), in name order, listing the `packages` that reach it. A
 package answered `none` gives no entry. The row chooses the entry of the
-system its call reaches, usually the one listing its `package`, or writes
-`other: ` and a name when its call reaches a system no entry names (a
-general HTTP client calling one known service). The report groups records
+system its call reaches, the one listing its `package` when there is one,
+or writes `other: ` and a name when its call reaches a system no entry is
+(a general HTTP client calling one known service); the prompt says a
+package, a protocol, a host, a URL or a key is not a system's name. The report groups records
 by the stored name without its parenthetical qualifier, case-insensitively,
 and folds no text onto another name.
 

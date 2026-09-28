@@ -711,7 +711,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		for _, call := range owner.Symbol.Calls {
 			if call.Line == state.place.LineNo && call.Column == state.place.Column {
 				state.uses = append(state.uses, tracer.Read(owner, call)...)
-				if call.API != nil {
+				if callsExternal(call, facts.External) {
 					state.outside = call.API.Package
 				}
 			}
@@ -932,6 +932,22 @@ func destinationChoice(def table.Definition, catalog []lines.Destination, cell s
 		}
 	}
 	return lines.DestinationValue(catalog, cell)
+}
+
+// callsExternal reports whether the call at a boundary's site is the
+// boundary's own outside call: the boundary's external is the call as
+// named, or ends with the symbol it calls. A query literal formatted where
+// the boundary stands (fmt.Sprintf of an SQL text) is not the call that
+// reaches anything.
+func callsExternal(call atlas.SymbolCall, external string) bool {
+	if call.API == nil || call.API.Package == "" || external == "" {
+		return false
+	}
+	symbol := call.API.Name
+	if call.API.Receiver != "" {
+		symbol = strings.TrimPrefix(call.API.Receiver, "*") + "." + symbol
+	}
+	return external == call.Name || external == symbol || strings.HasSuffix(external, "."+symbol)
 }
 
 // targetPackages are, by target, the outside packages its outgoing rows

@@ -123,7 +123,9 @@ func TestDestinationChainsStayWithTheTargetsThatRunEveryStep(t *testing.T) {
 // different neighbours, are offered one and the same catalogue and take the
 // same name: litestream's lone Azure DeleteBlob was named S3 while its
 // siblings' window named Azure Blob Storage. The name is asked once per
-// package; a package that reaches no outside system gives no entry.
+// package; a package that reaches no outside system gives no entry, and a
+// call at a boundary's site that is not the boundary's own (the SQL text
+// formatted where a query fact stands) names no package.
 func TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow(t *testing.T) {
 	const azblob, s3, gateway = "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob", "github.com/aws/aws-sdk-go-v2/service/s3", "example.com/gateway"
 	call := func(pkg, receiver, name string, line int) atlas.SymbolCall {
@@ -144,7 +146,11 @@ func TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow(t *testing.T
 	// target's catalogue all the same.
 	upload := atlas.Place{ID: "fact:upload", Kind: atlas.PlaceBoundary, Path: "abs/upload.go", LineNo: 5, Parent: "file:upload", TargetIDs: []string{"service"},
 		Boundary: &atlas.BoundaryFacts{Source: "external_call", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "upload"}}, External: "azblob.Client.UploadStream", Direction: atlas.DirectionOut, GivenKind: atlas.BoundarySDK}}
-	graph := []atlas.Place{alone, beside, ping, send, upload}
+	// A query fact whose site holds the fmt.Sprintf formatting its text.
+	shrink := symbol("Shrink", "db/shrink.go", "service", 250, atlas.SymbolCall{Kind: "invokes_external", Name: "fmt.Sprintf", Line: 252, Column: 22, API: &atlas.CallAPI{Package: "fmt", Name: "Sprintf"}})
+	query := atlas.Place{ID: "fact:query", Kind: atlas.PlaceBoundary, Path: "db/shrink.go", LineNo: 252, Column: 22, Parent: "file:Shrink", TargetIDs: []string{"service"},
+		Boundary: &atlas.BoundaryFacts{Source: "fact", ObjectID: "object:Shrink", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "query"}}, Values: []string{"PRAGMA wal_checkpoint(%s)"}, Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryDB}}
+	graph := []atlas.Place{alone, beside, ping, send, upload, shrink, query}
 	systems := map[string]string{azblob: "Azure Blob Storage", s3: "Amazon S3", "net/http": "none", gateway: "Example gateway"}
 	asked := make(map[string]int)
 	var packageRows []map[string]any
@@ -176,6 +182,11 @@ func TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow(t *testing.T
 			// its own, and a row without a package takes the target's
 			// object store.
 			switch pkg, _ := row["package"].(string); {
+			case row["path"] == "db/shrink.go":
+				if pkg != "" {
+					t.Errorf("the query fact took the package of the call formatting its text: %v", row)
+				}
+				rows[i]["destination"] = "other: SQLite"
 			case pkg == "net/http":
 				rows[i]["destination"] = "other: Control socket"
 			case pkg == "":
@@ -214,10 +225,10 @@ func TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow(t *testing.T
 		}
 	}
 	service := offered["abs/replica_client.go:303"]
-	if len(offered) != 6 {
+	if len(offered) != 7 {
 		t.Fatalf("rows lost: %d windows, %v", windows, offered)
 	}
-	for _, site := range []string{"abs/all.go:40", "abs/all.go:41", "abs/upload.go:5", "control/ping.go:12"} {
+	for _, site := range []string{"abs/all.go:40", "abs/all.go:41", "abs/upload.go:5", "control/ping.go:12", "db/shrink.go:252"} {
 		if offered[site] != service {
 			t.Fatalf("%s was offered other destinations than the lone call:\n%s\n%s", site, offered[site], service)
 		}
@@ -235,7 +246,7 @@ func TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow(t *testing.T
 	for _, state := range r.boundaries {
 		got[fmt.Sprintf("%s:%d", state.place.Path, state.place.LineNo)] = state.destination
 	}
-	want := map[string]string{"abs/replica_client.go:303": "Azure Blob Storage", "abs/all.go:40": "Azure Blob Storage", "abs/all.go:41": "Amazon S3", "abs/upload.go:5": "Azure Blob Storage", "control/ping.go:12": "Control socket", "gateway/send.go:7": "Example gateway"}
+	want := map[string]string{"abs/replica_client.go:303": "Azure Blob Storage", "abs/all.go:40": "Azure Blob Storage", "abs/all.go:41": "Amazon S3", "abs/upload.go:5": "Azure Blob Storage", "control/ping.go:12": "Control socket", "gateway/send.go:7": "Example gateway", "db/shrink.go:252": "SQLite"}
 	if !maps.Equal(got, want) {
 		t.Fatalf("destinations = %v, want %v", got, want)
 	}

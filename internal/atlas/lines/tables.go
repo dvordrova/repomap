@@ -326,7 +326,7 @@ const DestinationOther = "other: "
 // were given (Destinations), or names a system none of them covers.
 func destinationColumn() table.Column {
 	return table.Column{Name: "destination", Kind: table.Choice, OptionsFrom: "destination_options", Free: DestinationOther, FreeMaxRunes: LabelRunes, Alone: true,
-		Note: "the d* ref of the system this call reaches from context.destination_catalog, or other: and its short name when no entry names it"}
+		Note: "the d* ref of the system this call reaches from context.destination_catalog, or other: and that system's short name when no entry is it; never a package, protocol, host or URL"}
 }
 
 // addressColumn is asked only where the row carries address candidates: a

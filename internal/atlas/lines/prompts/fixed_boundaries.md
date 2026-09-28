@@ -37,12 +37,13 @@ Fill only the columns in `fill`:
   over the bare literal it was composed from. Leave out a word that only
   names the registering call or the record type, and answer `none` when no
   word names the entry.
-- `destination`, when requested: the outside system this call reaches.
-  `context.destination_catalog` lists, as `d*` refs, the systems that the
-  outside packages of this program reach, each with those `packages`.
-  Choose the entry of the system this call reaches: usually the one that
-  lists the row's `package`. Write `other: ` and the system's short name
-  only when no entry names the system this call reaches. Never a host, URL
-  or key.
+- `destination`, when requested: the outside system this call reaches,
+  the service or program at the other end as a newcomer would name it.
+  `context.destination_catalog` lists, as `d*` refs, the systems the
+  program's outside packages reach, each with its `packages`. Choose the
+  entry that lists the row's `package`, else the entry that is the system
+  this call reaches. When no entry is, write `other: ` and that system's
+  short name, as the call's values and the owner's calls show it. A
+  package, a protocol, a host, a URL or a key is not a system's name.
 - `address`, when requested: one `a*` ref from `address_catalog` naming the
   request's destination, else `unknown`.
