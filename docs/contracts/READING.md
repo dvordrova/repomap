@@ -414,7 +414,10 @@ without a model), and code places what they leave open:
   - C: a unit that is no helper and that the assignment left open takes the
     row of its file every unit of its file that uses it stands in, box k or
     a seed's own row; one no unit of its file uses takes the row everything
-    of its file it uses that is no helper stands in (`role_placed_by_users`,
+    of its file it uses that is no helper stands in, or, once the second
+    pass has nothing more to ask, the row of the helpers of its file it
+    uses when it uses nothing else (the Go fixture's RunEventLoop runs
+    eventLoop, a helper only it uses) (`role_placed_by_users`,
     `role_placed_by_uses`). Anything else stays open.
 - *The second pass* asks the assignment once more, after code has
   settled, about the helpers of split files still open whose users stand
@@ -428,13 +431,21 @@ without a model), and code places what they leave open:
   once (`role_second_pass`; `tables.md` counts each round's asked and
   placed). The k-th round is a round of windows of its own
   (`len(targets)·k + round`: after every target's first pass and each
-  earlier round), so no window overwrites another. A helper never asked
-  because a unit that uses it never got a row (its users still open to the
-  end, such as a near-tie of the round before) is *blocked*, not
-  undecided (`role_blocked`): it waited on its users, no question left it
-  open. `TestABlockedHelperIsAskedOnceItsUsersHaveBoxes` holds both: a
+  earlier round), so no window overwrites another. When a round has
+  nothing to ask, a unit still open can never get a row (a near-tie, an
+  undecided helper): the rules settle once more without waiting on it as a
+  user, and the rounds go on asking the helpers whose users with rows stand
+  in two or more rows or in none, until again none qualifies (owner,
+  2026-09-28: one near-tie, lookupKeyRead at 0.37 against 0.34, had kept
+  expireIfNeeded, lookupKey, vmLoadObject, vmGenericLoadObject and
+  vmReadObjectFromSwap off Redis's map, and a benchmark reader found
+  expireIfNeeded and lookupKeyRead in no part).
+  `TestAHelperWaitingOnAnUndecidedUserIsAskedOnceNothingElseIs` holds it: a
   helper waiting on a helper the first round places is asked in a second
-  round, one waiting on a near-tie is blocked.
+  round, and one waiting on a near-tie is asked once nothing else is left.
+  A helper is *blocked* (`role_blocked`) only when it is never asked; with
+  those rounds every open helper is asked, and the reason stays for saved
+  runs.
 
 A file is split only when the assignment puts units that are no helpers in
 at least two boxes (code only places a unit in a box that already holds

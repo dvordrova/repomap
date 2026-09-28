@@ -223,6 +223,12 @@ type placement struct {
 	// what each of its rounds asked and placed, in round order.
 	asked  map[string]bool
 	rounds []passRound
+	// settledOut is set once the second pass has nothing left to ask: a
+	// unit still open then can never get a row, and the rules stop waiting
+	// on it as a user (keysOf). One near-tie (lookupKeyRead) had kept
+	// every helper it uses (expireIfNeeded, lookupKey and three VM
+	// functions after them) off the map, blocked.
+	settledOut bool
 }
 
 // passRound is one round of the second pass: the helpers it asked and how
@@ -282,7 +288,8 @@ func (p *placement) keysOf(ids map[string]bool) (map[groupKey]bool, bool) {
 	for id := range ids {
 		key, ok := p.keyOf(id)
 		if !ok {
-			open = true
+			// Once nothing more can be asked, an open unit is absent.
+			open = open || !p.settledOut
 			continue
 		}
 		keys[key] = true
@@ -317,7 +324,8 @@ func onlyKey(keys map[groupKey]bool) groupKey {
 //   - C: a unit of a split file that is no helper and that the assignment
 //     left open takes the row of its file every unit of it that uses it
 //     stands in, a box or a seed's own row; with none using it, the row of
-//     every unit of its file it uses that is no helper.
+//     every unit of its file it uses that is no helper, or, once nothing
+//     more is asked, of the helpers it uses when it uses nothing else.
 func (p *placement) settle() {
 	for changed := true; changed; {
 		changed = false
@@ -427,6 +435,16 @@ func (p *placement) settle() {
 						uses = append(uses, id)
 					}
 				}
+				// Once nothing more is asked, a unit that uses only helpers
+				// of its file takes the row they got: the fixture's
+				// RunEventLoop runs eventLoop, a helper only it uses.
+				if len(uses) == 0 && p.settledOut {
+					for id := range unit.uses {
+						if file.byID[id] != nil {
+							uses = append(uses, id)
+						}
+					}
+				}
 				if row, ok := oneRow(uses); ok {
 					place(unit, row)
 					p.byUses[file.file.id] = append(p.byUses[file.file.id], unit.name)
@@ -448,11 +466,23 @@ func (p *placement) settle() {
 // so no window overwrites another. A near-tie leaves the helper undecided; a
 // helper never asked because a unit that uses it never got a row is
 // blocked.
+//
+// When a round asks nothing, the units still open can never get a row: the
+// rules settle once more without waiting on them as users, and the rounds
+// go on asking the helpers whose users with rows share two or more rows,
+// or have none, until again none qualifies.
 func (r *reader) secondPass(ctx context.Context, round int, p *placement) error {
 	for pass := 1; ; pass++ {
 		asked, err := r.passRound(ctx, round, pass, p)
-		if err != nil || !asked {
+		if err != nil {
 			return err
+		}
+		if !asked {
+			if p.settledOut {
+				return nil
+			}
+			p.settledOut = true
+			p.settle()
 		}
 	}
 }
@@ -473,7 +503,7 @@ func (r *reader) passRound(ctx context.Context, round, pass int, p *placement) (
 			if !p.helpers[unit.id] || !p.open(unit.id) || p.asked[unit.id] {
 				continue
 			}
-			if keys, _ := p.keysOf(unit.users); len(unit.users) == 0 || len(keys) >= 2 {
+			if keys, _ := p.keysOf(unit.users); len(unit.users) == 0 || len(keys) >= 2 || p.settledOut && len(keys) == 0 {
 				rest = append(rest, unit)
 			}
 		}

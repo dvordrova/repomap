@@ -863,15 +863,12 @@ func inLanguage(opts Options, language string) Options {
 	return opts
 }
 
-// The second pass repeats until no helper qualifies. A helper a user of
-// which is still open is not asked: inner, which outer and Route call, waits
-// while outer, which main and Store.Put share, is open. The first round
-// puts outer in Storage, so inner's users stand in Storage and Routing, and
-// a second round, in windows of its own, asks it once. leaf, which only
-// stuck calls, waits for stuck, a near-tie of the first round, and is never
-// asked: it is off the map as blocked, stuck as undecided. No helper is
-// asked twice.
-func TestABlockedHelperIsAskedOnceItsUsersHaveBoxes(t *testing.T) {
+// A helper waits for its users to get their boxes and is asked then; once
+// nothing more can be asked, a user still without a box is absent, and the
+// helper is asked with what it has (owner, 2026-09-28): one near-tie,
+// lookupKeyRead, had kept expireIfNeeded, lookupKey and three VM functions
+// after them off Redis's map, "blocked".
+func TestAHelperWaitingOnAnUndecidedUserIsAskedOnceNothingElseIs(t *testing.T) {
 	graph := roleGraph(t, func(files map[string][]roleDecl) {
 		server := files["svc/server.go"]
 		for i := range server {
@@ -890,7 +887,7 @@ func TestABlockedHelperIsAskedOnceItsUsersHaveBoxes(t *testing.T) {
 		)
 	})
 	provider, jev := defaultRoleProvider(), helperJev("outer", "inner", "stuck", "leaf")
-	jev.boxOf["outer"], jev.boxOf["inner"] = "Storage", "Routing"
+	jev.boxOf["outer"], jev.boxOf["inner"], jev.boxOf["leaf"] = "Storage", "Routing", "Storage"
 	opts := roleOptions(t, graph, provider, jev, "")
 	result, err := Read(t.Context(), opts)
 	if err != nil {
@@ -899,17 +896,17 @@ func TestABlockedHelperIsAskedOnceItsUsersHaveBoxes(t *testing.T) {
 	if err := atlas.Validate(result.Atlas); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"outer", "inner", "stuck"} {
+	for _, name := range []string{"outer", "inner", "stuck", "leaf"} {
 		if count := slices.Index(jev.assigned, name); count < 0 || slices.Contains(jev.assigned[count+1:], name) {
 			t.Fatalf("%s was not asked exactly once: %v", name, jev.assigned)
 		}
 	}
-	if slices.Contains(jev.assigned, "leaf") {
-		t.Fatalf("leaf, whose one user never got a box, was asked: %v", jev.assigned)
+	if slices.Index(jev.assigned, "leaf") < slices.Index(jev.assigned, "stuck") {
+		t.Fatalf("leaf was asked before its user stuck was: %v", jev.assigned)
 	}
 	svc := targetOf(t, result, "svc")
 	parts := partsByTitle(svc)
-	if !slices.Contains(membersOf(parts["Routing"]), "inner") || !slices.Contains(membersOf(parts["Storage"]), "outer") {
+	if !slices.Contains(membersOf(parts["Routing"]), "inner") || !slices.Contains(membersOf(parts["Storage"]), "outer") || !slices.Contains(membersOf(parts["Storage"]), "leaf") {
 		t.Fatalf("Routing holds %v, Storage %v", membersOf(parts["Routing"]), membersOf(parts["Storage"]))
 	}
 	reasons := map[string]string{}
@@ -918,17 +915,16 @@ func TestABlockedHelperIsAskedOnceItsUsersHaveBoxes(t *testing.T) {
 			reasons[symbol.Name] = entry.Reason
 		}
 	}
-	if reasons["leaf"] != atlas.OffMapBlocked || reasons["stuck"] != atlas.OffMapUndecided {
+	if reasons["stuck"] != atlas.OffMapUndecided || reasons["leaf"] != "" {
 		t.Fatalf("off the map: %v", reasons)
 	}
-	if !slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool {
-		return row.Kind == "role_blocked" && slices.Equal(row.Samples, []string{"leaf"})
-	}) {
-		t.Fatal("the blocked helper is not recorded")
+	if slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool { return row.Kind == "role_blocked" }) {
+		t.Fatal("a helper is recorded blocked")
 	}
 	// Two targets: svc's first pass is round 1, its second pass rounds 3
-	// and 5.
-	for _, name := range []string{"atlas_role_assign-r3-w0.request.ref.json", "atlas_role_assign-r5-w0.request.ref.json"} {
+	// and 5; round 7 asks nothing, and once nothing else is left round 9
+	// asks leaf.
+	for _, name := range []string{"atlas_role_assign-r3-w0.request.ref.json", "atlas_role_assign-r5-w0.request.ref.json", "atlas_role_assign-r9-w0.request.ref.json"} {
 		if _, err := os.Stat(filepath.Join(opts.OwnerRunDir, atlas.TablesDir, name)); err != nil {
 			t.Fatalf("no %s: %v", name, err)
 		}
