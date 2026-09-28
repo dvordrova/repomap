@@ -208,8 +208,9 @@ type placement struct {
 	facts   *roleFacts
 	helpers map[string]bool
 	split   map[string]*splitFile
-	// attached are helpers of split files placed in a row of another file;
-	// attachedFiles are whole files that joined a box of a split file.
+	// attached are units of split files placed in a row that is no box of
+	// their own file (a row of another file, or a seed's row); attachedFiles
+	// are whole files that joined a box of a split file.
 	attached      map[string]groupKey
 	attachedFiles map[string]groupKey
 	// What each rule placed, by the file of what it placed: rule A's
@@ -314,9 +315,9 @@ func onlyKey(keys map[groupKey]bool) groupKey {
 //     answered responsibility, an entry nothing uses, a near-tie) keeps the
 //     file out. A whole file never joins a whole file.
 //   - C: a unit of a split file that is no helper and that the assignment
-//     left open takes the box every unit of its file that uses it has; with
-//     none using it, the box of every unit of its file it uses that is no
-//     helper.
+//     left open takes the row of its file every unit of it that uses it
+//     stands in, a box or a seed's own row; with none using it, the row of
+//     every unit of its file it uses that is no helper.
 func (p *placement) settle() {
 	for changed := true; changed; {
 		changed = false
@@ -383,17 +384,26 @@ func (p *placement) settle() {
 			if split == nil {
 				continue
 			}
-			// oneBox is the box of this file every listed unit of it stands in.
-			oneBox := func(ids []string) int {
-				box := -1
-				for _, id := range ids {
+			// oneRow is the row of this file every listed unit of it stands
+			// in: one of its boxes, or the row of one of its seeds.
+			oneRow := func(ids []string) (groupKey, bool) {
+				var row groupKey
+				for i, id := range ids {
 					key, ok := p.keyOf(id)
-					if !ok || key.file != file.file.id || key.box < 0 || box >= 0 && key.box != box {
-						return -1
+					if !ok || key.file != file.file.id || key.box < 0 && key.seed == "" || i > 0 && key != row {
+						return groupKey{}, false
 					}
-					box = key.box
+					row = key
 				}
-				return box
+				return row, len(ids) > 0
+			}
+			place := func(unit *roleUnit, row groupKey) {
+				if row.seed == "" {
+					split.box[unit.id] = row.box
+				} else {
+					p.attached[unit.id] = row
+				}
+				changed = true
 			}
 			for _, unit := range file.units {
 				if p.helpers[unit.id] || unit.seed || !p.open(unit.id) {
@@ -406,10 +416,9 @@ func (p *placement) settle() {
 					}
 				}
 				if len(users) > 0 {
-					if box := oneBox(users); box >= 0 {
-						split.box[unit.id] = box
+					if row, ok := oneRow(users); ok {
+						place(unit, row)
 						p.byUsers[file.file.id] = append(p.byUsers[file.file.id], unit.name)
-						changed = true
 					}
 					continue
 				}
@@ -418,10 +427,9 @@ func (p *placement) settle() {
 						uses = append(uses, id)
 					}
 				}
-				if box := oneBox(uses); len(uses) > 0 && box >= 0 {
-					split.box[unit.id] = box
+				if row, ok := oneRow(uses); ok {
+					place(unit, row)
 					p.byUses[file.file.id] = append(p.byUses[file.file.id], unit.name)
-					changed = true
 				}
 			}
 		}

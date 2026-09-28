@@ -142,6 +142,52 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 	projectSplit(t, index, split)
 }
 
+// Split, the Go executable's main.go is its seed file: main is a row of its
+// own (e1), never asked the helper question or a box, and the part holding
+// it is the program's one entry part, the only one in the triggers lane.
+func TestCumulativeGoExecutableSeedIsItsOwnRow(t *testing.T) {
+	t.Setenv("CGO_ENABLED", "0")
+	t.Setenv("GOTOOLCHAIN", "local")
+	t.Setenv("GOWORK", "off")
+	root, repository := materializeFixtureRepository(t, "go")
+	app := analyzeGoFixture(t, root, repository, goFixtureAppPackage, "cumulative-go-seed-row")
+	index, err := goadapter.Build(repository, app.target, app.origins, app.direct, app.external, app.core, app.dynamic, app.tests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := graphWithFacts(t, repository, places.TargetInput{Index: index, Root: "."})
+	split := partstest.CheckSplit(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}, root)
+	main := split.Symbols[[2]string{"cmd/app/main.go", "main"}]
+	if !split.Split["cmd/app/main.go"] || !split.RoleParts[split.PartOf[main]] {
+		t.Fatalf("split: main in %q, split files %v", split.PartOf[main], split.Split)
+	}
+	checkOneEntryPart(t, projectSplit(t, index, split), main, "main")
+}
+
+// checkOneEntryPart holds a program's triggers lane to the one part holding
+// its seed.
+func checkOneEntryPart(t *testing.T, index groupindex.Index, seedPlace, name string) {
+	t.Helper()
+	var entries []groupindex.Group
+	for _, group := range index.Groups {
+		if group.Lane == groupindex.LaneTriggers {
+			entries = append(entries, group)
+		}
+	}
+	if len(entries) != 1 {
+		t.Fatalf("%d entry parts, want the one holding %s: %+v", len(entries), name, entries)
+	}
+	holds := false
+	for _, id := range entries[0].MemberSubjectIDs {
+		for _, subject := range index.Subjects {
+			holds = holds || subject.ID == id && subject.Object != nil && subject.Object.Name == name
+		}
+	}
+	if !holds {
+		t.Fatalf("the entry part %q does not hold %s (%s)", entries[0].Title, name, seedPlace)
+	}
+}
+
 // graphWithFacts is the places graph of one target with its fact layer, as
 // an ordinary run builds it: its registrations are boundary places.
 func graphWithFacts(t *testing.T, repository *corpus.Corpus, target places.TargetInput) atlas.Graph {
@@ -542,9 +588,11 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	// by its declaration.
 	netConnect := cObject(t, index, programindex.ObjectFunction, "netConnect", "net.c")
 	listed := false
-	for _, file := range projectSplit(t, index, split).OffMap {
+	projected := projectSplit(t, index, split)
+	for _, file := range projected.OffMap {
 		listed = listed || file.Path == "net.c" && file.Reason == groupindex.OffMapUnreachable && slices.Equal(file.SubjectIDs, []string{netConnect.ID})
 	}
+	checkOneEntryPart(t, projected, main, "main")
 	if !listed {
 		t.Fatal("the role part of net.c the server never runs is not listed off its map")
 	}
