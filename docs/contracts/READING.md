@@ -406,11 +406,11 @@ without a model), and code places what they leave open:
     of these`, a near-tie or an unanswered row. So a Go file declaring a
     client type and its constructor, which one box alone calls, keeps a row
     of its own. A whole file never joins a whole file.
-  - C: a unit that is no helper and that the assignment left open takes box
-    k when every unit of its file that uses it has box k; one no unit of
-    its file uses takes k when everything of its file it uses that is no
-    helper has box k (`role_placed_by_users`, `role_placed_by_uses`).
-    Anything else stays open.
+  - C: a unit that is no helper and that the assignment left open takes the
+    row of its file every unit of its file that uses it stands in, box k or
+    a seed's own row; one no unit of its file uses takes the row everything
+    of its file it uses that is no helper stands in (`role_placed_by_users`,
+    `role_placed_by_uses`). Anything else stays open.
 - *The second pass* asks the assignment once more, after code has
   settled, about the helpers of split files still open whose users stand
   in two or more rows or that nothing uses, with every named box of their
@@ -514,7 +514,10 @@ split file:
   arrows, so no part gets an arrow its declarations do not make.
 - The entry: the parts holding a seed file's seed declarations (places
   `seed_decls`), else the seed file's part, so the "in" column and "starts
-  the program" (core) survive a split seed file. The atlas keeps no main
+  the program" (core) survive a split seed file. A seed of a split file is
+  never asked the helper question or a box: it is a grouping row of its own
+  (a `c*` unit named by its declaration) with the helpers and open units
+  only it uses (places `SymbolFacts.Seeds`, for the targets holding it). The atlas keeps no main
   path of its own; orientation's main flow and the report's start list read
   the entry forward. GroupsIndex (19) marks as the entry only the part
   holding a seed declaration, and an area only when one of its parts is;
@@ -840,6 +843,10 @@ each call is remembered on its own by what the item shows, never by its
 line or its program, so an edit elsewhere asks nothing again. A row too
 large for a request goes alone and a refusal leaves it unanswered; nothing
 is cut. An undecided call makes no entry and is unsure in the launch walk.
+GroupsIndex's launch walk (launch.go) says of each function it reaches
+what it holds: the inputs it declares (found), its unsure calls, the calls
+the code cannot follow (the function's unresolved calls, compiled in memory
+from the bound ProgramIndex beside the structural edges), or nothing.
 
 A call to a `runs_program` symbol is one outgoing boundary of that kind,
 unless its receiver is the result of a call to a `runs_program` symbol
@@ -1408,6 +1415,14 @@ including distinct calls at one source line. The ordinary report projection
 keeps this information in GroupsIndex, with no legacy reader. Blind matching now compares each peer window's winners again against
 the original evidence until one counterpart or none remains per outgoing
 boundary. It no longer publishes one independent winner from every window.
+A blind call's counterparts are only inputs whose handler is known. When a
+program has a confirmed integration into a peer program, each row of its
+accepted tables of inputs is one peers row against the peer's inputs (K5):
+the chosen input is kept on the row (`Operation.Sends`), never drawn, and
+equal words never link. A peer boundary whose operation GroupsIndex folded
+into another (the same handler registered twice under one name, a
+hand-over joined to its word entry, an option repeated at a second site)
+names the operation standing for it.
 Peer eligibility is partitioned inside each bounded window to keep unrelated
 outgoing rows batched. Candidate declarations retain exact signatures and
 comments, including streaming result types; protocol similarity alone is not
