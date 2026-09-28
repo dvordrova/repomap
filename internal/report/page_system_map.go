@@ -380,6 +380,38 @@ func (view *pageView) SystemMap() *pageMap {
 				Children: strings.Join(children, " "), Href: "#" + section.ID + "-inbound", DetailsID: section.ID + "-inbound", Lane: "triggers", Launch: launch})
 		}
 	}
+	// Every input collection has its arrow into its own component: that the
+	// program takes its inputs in is a fact. A collection none of whose
+	// inputs has an arrow into a part of its component (no handler's part,
+	// no part taking it in) draws each input's arrow into the component
+	// itself, which also stands the collection beside it. The arrow adds no
+	// handler, reach or phase.
+	for _, section := range view.Sections {
+		inputs := inputsByOwner[section.ID]
+		component, known := positions["system-component-"+section.ID]
+		if len(inputs) == 0 || !known {
+			continue
+		}
+		own := map[string]bool{}
+		for _, id := range inputs {
+			own[id] = true
+		}
+		joined := false
+		for _, edge := range result.Edges {
+			to, ok := positions[edge.To]
+			if ok && own[edge.From] && result.Nodes[to].Owner == section.ID && result.Nodes[to].Activation == "" && result.Nodes[to].Branch != "inputs" {
+				joined = true
+				break
+			}
+		}
+		if joined {
+			continue
+		}
+		for _, id := range inputs {
+			input := result.Nodes[positions[id]]
+			result.Edges = append(result.Edges, pageMapEdge{From: id, To: result.Nodes[component].ID, Scope: "operation", Operations: id, Possible: input.SourceKind == "model"})
+		}
+	}
 	// Saved containment supplies the remaining frames; component membership
 	// supplies the outer frame without duplicating either reading catalogue.
 	contained := map[string]bool{}

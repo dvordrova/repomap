@@ -18,6 +18,15 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
+// withoutMembership leaves out the arrows of inputs into their own
+// component itself, which the system map draws for a collection no other
+// arrow joins to its component: the program takes them in.
+func withoutMembership(edges []pageMapEdge) []pageMapEdge {
+	return slices.DeleteFunc(slices.Clone(edges), func(edge pageMapEdge) bool {
+		return strings.HasPrefix(edge.To, "system-component-") && edge.Scope == "operation" && edge.Label == "" && edge.ConnectionID == "" && len(edge.Calls) == 0
+	})
+}
+
 func TestSystemMapKeepsInventoryAndExactCrossComponentDestinations(t *testing.T) {
 	native := pageMapNode{ID: "backend-part", Href: "#backend-code", FullTitle: "Validation"}
 	view := pageView{Sections: []*pageSection{
@@ -39,7 +48,7 @@ func TestSystemMapKeepsInventoryAndExactCrossComponentDestinations(t *testing.T)
 	if !slices.Contains(nodes["backend-part"].Aliases, "remote") {
 		t.Fatal("old deep link lost")
 	}
-	if len(got.Edges) != 1 || got.Edges[0].To != "backend-part" || got.Edges[0].FromSource.Text != "client.ts:9" || got.Edges[0].ToSource.Text != "server.py:18" {
+	if edges := withoutMembership(got.Edges); len(edges) != 1 || edges[0].To != "backend-part" || edges[0].FromSource.Text != "client.ts:9" || edges[0].ToSource.Text != "server.py:18" {
 		t.Fatalf("original connection lost: %+v", got.Edges)
 	}
 	if nodes["task"].Activation != "scheduled" {
@@ -101,10 +110,11 @@ func TestSystemMapDrawsOneArrowPerDirectedNodePair(t *testing.T) {
 		},
 	}}}
 	got := view.SystemMap()
-	if len(got.Edges) != 1 {
-		t.Fatalf("same directed pair produced %d physical arrows: %+v", len(got.Edges), got.Edges)
+	edges := withoutMembership(got.Edges)
+	if len(edges) != 1 {
+		t.Fatalf("same directed pair produced %d physical arrows: %+v", len(edges), edges)
 	}
-	edge := got.Edges[0]
+	edge := edges[0]
 	if edge.From != "handler" || edge.To != "service" || edge.Scope != "operation" || edge.Operations != "o1 o2" ||
 		edge.Label != "calls · passes callback" || edge.Summary != "Handler supplies the service method." || edge.Possible ||
 		edge.ConnectionID != "" || edge.FromSource != (pageAnchor{}) {
@@ -206,8 +216,19 @@ func TestSystemInputCataloguesKeepEveryKindOutsideItsActualComponent(t *testing.
 	if parents["system-send"] == "system-inputs-first" || nodes["area"].Children != "part" {
 		t.Fatal("outbound entered the input catalogue or an input stayed in its old frame")
 	}
-	if len(got.Edges) != 1 || got.Edges[0].From != "command" || got.Edges[0].To != "part" || got.Edges[0].FromSource.Text != "main.go:12" {
+	if edges := withoutMembership(got.Edges); len(edges) != 1 || edges[0].From != "command" || edges[0].To != "part" || edges[0].FromSource.Text != "main.go:12" {
 		t.Fatalf("grouping changed or invented runtime connections: %+v", got.Edges)
+	}
+	// A collection whose inputs no arrow joins to their component draws each
+	// input's arrow into the component itself; one already joined draws none.
+	var members []string
+	for _, edge := range got.Edges {
+		if edge.To == "system-component-second" || edge.To == "system-component-first" {
+			members = append(members, edge.From+" → "+edge.To)
+		}
+	}
+	if !reflect.DeepEqual(members, []string{"other-command → system-component-second"}) {
+		t.Fatalf("inputs are joined to their component by %v", members)
 	}
 	if nodes["command"].InputOwner != command.InputOwner || nodes["command"].SummaryRef != command.SummaryRef || nodes["command"].Source != command.Source {
 		t.Fatal("grouping changed the original input's implementation or source")
@@ -351,7 +372,7 @@ func TestSystemOutboundGroupingRetainsRecordsAndTheirExactPeerInputs(t *testing.
 	if _, exists := nodes["system-post"]; exists {
 		t.Fatal("known backend input was drawn as another external participant")
 	}
-	if len(got.Edges) != 1 || got.Edges[0].From != "n-http" || got.Edges[0].To != "post" || !got.Edges[0].Possible || got.Edges[0].Operations != "click" || got.Edges[0].FromSource.Text != "http.ts:20" {
+	if edges := withoutMembership(got.Edges); len(edges) != 1 || edges[0].From != "n-http" || edges[0].To != "post" || !edges[0].Possible || edges[0].Operations != "click" || edges[0].FromSource.Text != "http.ts:20" {
 		t.Fatalf("communication gained a peer by name or lost its exact connection: %+v", got.Edges)
 	}
 	if view.Sections[0].Map.Edges[0].From != "n-http" {
@@ -383,9 +404,9 @@ func TestSystemMatchedOutboundKeepsReadingWithoutAnotherParticipant(t *testing.T
 					t.Fatalf("matched participant still has an external copy: %+v", node)
 				}
 			}
-			if len(got.Edges) != 1 || got.Edges[0].From != "n-http" || got.Edges[0].To != peerID ||
-				got.Edges[0].ConnectionID != "run-match" || got.Edges[0].Operations != "click" || !got.Edges[0].Possible ||
-				got.Edges[0].FromSource != row.Anchor || got.Edges[0].ToSource != peer.Source {
+			if edges := withoutMembership(got.Edges); len(edges) != 1 || edges[0].From != "n-http" || edges[0].To != peerID ||
+				edges[0].ConnectionID != "run-match" || edges[0].Operations != "click" || !edges[0].Possible ||
+				edges[0].FromSource != row.Anchor || edges[0].ToSource != peer.Source {
 				t.Fatalf("direct integration lost its exact endpoint, input path or sources: %+v", got.Edges)
 			}
 			after, _ := json.Marshal(view.Sections)

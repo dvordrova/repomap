@@ -137,9 +137,22 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   groups, and a collection whose inputs share one part keeps them loose. An
   input whose handler is not established (GroupsIndex `handler_unknown`: an
   option a call declares, a value handed over) has no owner: it stands
-  loose, no arrow binds it to a part, its part's card does not list it among
-  its operations, and a request of that kind is no route and joins no
-  portal. A
+  loose, no implementation arrow binds it to a part, its part's card does
+  not list it among its operations, and a request of that kind is no route
+  and joins no portal. It draws the ordinary Inputs arrow into the part
+  where its code takes it in, from saved `DeclaredBy` and catalogue data
+  (page_catalogue.go `takenInPlaces`): an option or word into the part of
+  its declaring function ("declared in parseOptions"), a table's row into
+  the part of every function reading the table ("looked up in
+  lookupCommand"), each part when readers stand in several and none when
+  the table has no reader. The arrow means "taken in here", never
+  "implemented in": its card and Connections line count inputs ("100
+  inputs"), not handlers, the reading still says the handler is not
+  established, and the function is no handler for reach or phases. Every
+  collection draws its Inputs arrow into its own component: one none of
+  whose inputs has an arrow into a part of it draws each input's arrow into
+  the component itself, since that the program takes its inputs in is a
+  fact, and ELK places the collection beside its component by that arrow. A
   tile names its kind only when it is not the collection's most common
   kind. The groups are display containment, not architectural areas; they
   add no relation.
@@ -823,7 +836,9 @@ the same rows as the arrow's card; they replace the list of neighbours by
 name. A line from inputs counts the handlers they are implemented in, with
 that unit ("← Inputs 12 handlers"; its card "12 handlers, into 3 of 5"),
 and inputs sharing a handler stand in its one row, each named ("{a}, {b} →
-{handler}"); no input is dropped from it. In the column a name in those rows reads its declaration in its part,
+{handler}"); no input is dropped from it. Inputs taken in where their
+handler is not established count as inputs and share one row per place,
+named in order ("-a, -h declared in parseOptions"). In the column a name in those rows reads its declaration in its part,
 as a click on its tile does, and a modifier-click still opens the code it
 linked to; a row's code is one explicit "Open code ↗" at its end, where the
 call is written, and a row wraps with its names whole. The page data names

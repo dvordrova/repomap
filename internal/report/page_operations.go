@@ -124,6 +124,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	// Inputs of a catalogue follow those of none, in catalogue order and
 	// then in source order: redis-cli's options stand together.
 	catalogueOf, catalogueAt, declaredByOf, declaresOf := builder.catalogueReadings(index, partOf, inputNode)
+	takenIn := builder.takenInPlaces(index, partOf)
 	// An input only its handler's code declares (a sub-argument) is read in
 	// that input's reading and is no tile of its own.
 	var ops []groupindex.Operation
@@ -318,6 +319,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		usage[edge] = nil
 	}
 	handledBy := make(map[string]pageEdgeCall)
+	takenCalls := make(map[pathEdge][]pageEdgeCall)
 	for i, operation := range ops {
 		id := result.Nodes[i].ID
 		if ref, known := builder.subject(index.Target.ID, operation.SubjectID); known {
@@ -332,6 +334,25 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		if operation.GroupID != "" && !operation.HandlerUnknown {
 			usage[pathEdge{id, mapNodeID(operation.GroupID), operation.Source == "model", "implemented in", ""}] = []string{id}
 		}
+		// An input whose handler is not established draws the same arrow
+		// into each part its code takes it in: "declared in" its declaring
+		// function, "looked up in" a reader of its table.
+		for _, place := range takenIn[operation.ID] {
+			key := pathEdge{id, place.part, operation.Source == "model", place.label, ""}
+			usage[key] = []string{id}
+			call := pageEdgeCall{Label: place.label}
+			if ref, known := builder.subject(index.Target.ID, place.subject); known {
+				if name, anchor := builder.subjectDisplay(ref.subject); name != "" {
+					call.Name, call.Callee = name, declarationKey(anchor)
+					if anchor != nil {
+						call.To = anchor.Href
+					}
+				}
+			}
+			if call.Name != "" && !slices.Contains(takenCalls[key], call) {
+				takenCalls[key] = append(takenCalls[key], call)
+			}
+		}
 		for edge := range paths[id] {
 			usage[edge] = append(usage[edge], id)
 		}
@@ -342,6 +363,9 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		drawn := pageMapEdge{ConnectionID: edge.connectionID, From: edge.from, To: edge.to, Label: label, Possible: edge.possible, Scope: "operation", Operations: strings.Join(operations, " ")}
 		if call, ok := handledBy[edge.from]; ok && label == "implemented in" {
 			drawn.Calls = []pageEdgeCall{call}
+		}
+		if calls := takenCalls[edge]; len(calls) > 0 {
+			drawn.Calls = calls
 		}
 		if call := matchedCalls[edge.connectionID]; call != nil && edge.connectionID != "" {
 			drawn.Calls = []pageEdgeCall{*call}

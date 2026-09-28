@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {callCard,reach,countWords,countsHandlers} from './call-card.mjs';
+import {callCard,reach,countWords,countsHandlers,countsInputs} from './call-card.mjs';
 
 const names={persist:'Persistence',clients:'Client connections',data:'Data structures',strings:'Strings',
   generic:'Generic key commands',lists:'List commands',get:'get',inputs:'Inputs'};
@@ -76,6 +76,25 @@ test('inputs sharing a handler are one row naming each input, counted as one han
   assert.equal(card.total,2,'the card counts handlers');
   assert.equal(countsHandlers(card),true);assert.equal(countWords['implemented in'],'{0} handlers','its count says handlers');
   assert.deepEqual(card.groups[0].pairs[0].rows.map(r=>`${r.caller}>${r.callee}`),['sadd>saddCommand','sinter, smembers>sinterCommand']);
+});
+
+// redis-cli's options and cmdTable rows have no established handler: their
+// arrows go into the parts taking them in. The card names the inputs by where
+// they are taken in and counts inputs, never handlers; an input its
+// component takes in with no call of its own is named alone.
+test('inputs taken in, not handled, are one line per place and counted as inputs',()=>{
+  const declared=name=>({label:'declared in',name:'parseOptions',to:'d/parseOptions'});
+  const looked={label:'looked up in',name:'lookupCommand',to:'d/lookupCommand'};
+  const card=callCard([
+    {from:'-h',to:'cli',calls:[declared()]},{from:'-p',to:'cli',calls:[declared()]},
+    {from:'get',to:'cli',calls:[looked]},{from:'set',to:'cli',calls:[looked]},{from:'del',to:'cli',calls:[looked]},
+    {from:'info',to:'component',calls:[],label:''},{from:'ping',to:'component',calls:[],label:''},
+  ],{nameOf,groupable:()=>false,incoming:true});
+  assert.deepEqual(card.kinds,[['inputs',7]]);
+  assert.equal(countsHandlers(card),false,'no handler is counted');
+  assert.equal(countsInputs(card),7);
+  const rows=card.groups[0].pairs.flatMap(pair=>pair.rows.map(r=>[r.caller,r.kind,r.callee]));
+  assert.deepEqual(rows.sort(),[['-h, -p','declared in','parseOptions'],['del, get, set','looked up in','lookupCommand'],['info, ping','input','']]);
 });
 
 test('a relation with no call of its own is read by its outside end and site',()=>{

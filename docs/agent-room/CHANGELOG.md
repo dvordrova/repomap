@@ -1,5 +1,39 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Inputs point into their component: "taken in here" arrows (speed mode)
+
+- **Problem (owner):** "а че у нас инпуты не указывают никуда?" On Redis's
+  whole map redis-cli's Inputs (94 cmdTable rows, 6 options) floated beside
+  redis-check-dump and redis-benchmark's (11 options) above-right: a
+  handler-less input had no arrow, and the undrawn ELK edge of Q1 did not
+  place them.
+- **Change:** a handler-less input draws the ordinary Inputs arrow into the
+  part where its code takes it in (`takenInPlaces`, page_catalogue.go, from
+  saved `DeclaredBy` and the derived catalogue readers): "declared in" the
+  declaring function's part, "looked up in" each table reader's part; no
+  part is chosen among several and a table with no reader draws none. The
+  label is data, not drawn; the arrow keeps the input's own style (model
+  inputs dashed, as "implemented in" is) and chip rules. It is never an
+  "implemented in": `inputOwner`, reach, phases and the part's operations
+  are unchanged, and the reading still says "handler not established". The
+  arrow card counts such rows as inputs ("100 inputs") and names each row's
+  inputs in order ("-a, -h … declared in parseOptions"); a named call's
+  label is no longer parsed as "caller verb callee". SystemMap draws a
+  collection none of whose inputs reaches a part of its component into the
+  component itself (per input, no calls, no label); the undrawn layout edge
+  is gone.
+- **Verified** (render of `20260928-093656-redis-1-3-6-19b3b69d547d` and
+  `20260928-093822-litestream-v24-86f5c09bd44d`, Playwright 1440×900): the
+  Redis whole map at rest draws 9 arrows (7 before); redis-cli's and
+  redis-benchmark's Inputs stand above their components with an arrow into
+  each. Zoomed into redis-cli the arrow enters chip 2, Command line client
+  (parseOptions and lookupCommand are both there), and the reading lists
+  "-a, -h, -i, -n, -p, -r declared in parseOptions" and the 94 commands
+  "looked up in lookupCommand". Every collection of both maps has drawn
+  relations into its component (redis-server 97 of 98 inputs by handler).
+  `go build`, `go test ./internal/report`, the web node tests and
+  `node build.mjs` pass; full suites not run (speed mode).
+
 ## 2026-09-28 — Where an input takes effect: catalogues, the launch walk, per-call words, C tables and kept callables, peer inputs, outer inputs (e1, K1–K5, pass 2, u6; speed mode)
 
 - **Speed mode (owner):** every commit builds and vets; focused tests ran where

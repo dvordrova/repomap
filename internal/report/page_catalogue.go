@@ -149,6 +149,56 @@ func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf fu
 	return reading, order, declaredBy, declares
 }
 
+// pageTakenIn is one place an input whose handler is not established is
+// taken in: the part, the function there, and how ("declared in",
+// "looked up in").
+type pageTakenIn struct{ part, subject, label string }
+
+// takenInPlaces are, by operation ID, the parts the code taking in each
+// handler-less input stands in, from saved DeclaredBy and catalogue data:
+// an option or word is taken in by the function declaring it, a table's row
+// by every function reading the table (a table with no reader is taken in
+// nowhere drawn). The arrow into such a part says "taken in here", never
+// "implemented in": where the input takes effect stays not established, and
+// neither the declaring function nor a reader becomes its handler, its reach
+// or its phase. No part is chosen among several: each is drawn.
+func (builder *pageBuilder) takenInPlaces(index *groupindex.Index, partOf func(string) string) map[string][]pageTakenIn {
+	catalogueOf := map[string]int{}
+	for position, catalogue := range index.Catalogues {
+		for _, id := range catalogue.OperationIDs {
+			catalogueOf[id] = position
+		}
+	}
+	result := map[string][]pageTakenIn{}
+	for _, operation := range index.Operations {
+		if !operation.HandlerUnknown {
+			continue
+		}
+		var places []pageTakenIn
+		add := func(subject, label string) {
+			if part := partOf(subject); part != "" {
+				places = append(places, pageTakenIn{part: part, subject: subject, label: label})
+			}
+		}
+		position, catalogued := catalogueOf[operation.ID]
+		switch {
+		case catalogued && len(index.Catalogues[position].Readers) > 0:
+			for _, reader := range index.Catalogues[position].Readers {
+				add(reader.SubjectID, "looked up in")
+			}
+		case operation.DeclaredBy != "":
+			if ref, known := builder.subject(index.Target.ID, operation.DeclaredBy); known && ref.subject.Object != nil && ref.subject.Object.Kind == programindex.ObjectVariable {
+				continue
+			}
+			add(operation.DeclaredBy, "declared in")
+		}
+		if len(places) > 0 {
+			result[operation.ID] = places
+		}
+	}
+	return result
+}
+
 // remapCatalogue renames the parts and input nodes a catalogue reading
 // names, as remapInputPath does for an input's path.
 func remapCatalogue(raw string, rename func(string) string) string {

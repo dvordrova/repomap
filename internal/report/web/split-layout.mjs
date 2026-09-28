@@ -440,17 +440,6 @@ export async function layoutPrepared(prepared,width=1200,height=700){
       ...[...members].map(([group,ids])=>({id:groupID(group),layoutOptions:{},
         children:ids.map(id=>leaf(prepared.roots.find(root=>root.id===id)))}))],
     edges:prepared.aggregates.map(edge=>({id:edge.id,sources:[edge.from],targets:[edge.to]}))};
-  // A collection of inputs that no arrow joins to its component (inputs
-  // whose handler is not established) stays beside that component through
-  // an edge ELK places by and the map never draws (owner, 2026-09-28 Q1):
-  // redis-benchmark's options had drifted beside redis-cli.
-  const rootIDs=new Set(prepared.roots.map(root=>root.id));
-  for(const root of prepared.roots){
-    const component=root.componentOwner;
-    if(root.branch!=='inputs'||!component||!rootIDs.has(component)||grouped.has(root.id)||grouped.has(component))continue;
-    if(prepared.aggregates.some(edge=>edge.from===root.id&&edge.to===component||edge.from===component&&edge.to===root.id))continue;
-    input.edges.push({id:'layout:'+root.id,sources:[root.id],targets:[component]});
-  }
   // The placed participants, with a group's members at their world position.
   const flat=placed=>placed.children.flatMap(node=>node.children?node.children.map(member=>({...member,x:node.x+member.x,y:node.y+member.y})):[node]);
   const participants=graph=>graph.children.flatMap(node=>node.children||[node]);
@@ -488,7 +477,7 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     for(const node of candidate.children)if(node.children){node.layoutOptions['elk.direction']=direction;node.layoutOptions['elk.padding']=groupPadding(node.id,used,direction);}
     if(nativePorts){
       for(const node of participants(candidate)){node.ports=structuredClone(prepared.interiors.get(node.id).ports);node.layoutOptions['elk.portConstraints']='FIXED_POS';}
-      for(const edge of candidate.edges){const original=prepared.aggregates.find(a=>a.id===edge.id);if(!original)continue;edge.sources=[original.sourcePort];edge.targets=[original.targetPort];}
+      for(const edge of candidate.edges){const original=prepared.aggregates.find(a=>a.id===edge.id);edge.sources=[original.sourcePort];edge.targets=[original.targetPort];}
     }
     if(unzip)candidate.layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
     const template=structuredClone(candidate);

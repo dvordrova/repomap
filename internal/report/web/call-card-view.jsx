@@ -1,5 +1,5 @@
 import React from 'react';
-import {reach, countWords, countsHandlers} from './call-card.mjs';
+import {reach, countWords, countsHandlers, countsInputs} from './call-card.mjs';
 
 const t=(...args)=>window.rmT(...args);
 const stop=event=>event.stopPropagation();
@@ -25,8 +25,10 @@ function OpenCode({href,title}){
   return href?<a className="flow-card-code" href={href} title={title||undefined} target="_blank" rel="noopener" onClick={stop}>{t('Open code ↗')}</a>:null;
 }
 // The words between a caller and its callee: an arrow for a call, the
-// relation's own words for anything else ("passes callback").
-const verb=kind=>kind==='calls'||kind==='implemented in'?'→':kind.replace(/_/g,' ');
+// relation's own words for anything else ("passes callback"). Inputs taken
+// in, not handled, say where ("declared in parseOptions"); an input its
+// component takes in names no callee.
+const verb=kind=>kind==='calls'||kind==='implemented in'?'→':kind==='declared in'?t('declared in'):kind==='looked up in'?t('looked up in'):kind==='input'?'':kind.replace(/_/g,' ');
 
 // What a card's calls are, in one line: how many of each kind, then from
 // how many parts into how many of the frames at its ends.
@@ -38,9 +40,11 @@ export function cardCount(card,fromTotal,intoTotal){
   return [said.join(', '),ends].filter(Boolean).join(', ');
 }
 
-// A card's total, with its unit where it counts handlers, not calls.
+// A card's total, with its unit where it counts handlers or inputs, not
+// calls.
 export function cardTotal(card){
-  return countsHandlers(card)?t('{0} handlers',card.total):card.total;
+  const inputs=countsInputs(card);
+  return countsHandlers(card)?t('{0} handlers',card.total):inputs?t('{0} inputs',inputs):card.total;
 }
 
 // A fold says what its set is: one of the set a dispatch site calls, or the
@@ -78,8 +82,8 @@ export function CallRows({card,sticky=true,own='',choose=null}){
             return <p key={i} className="flow-card-row flow-card-other">{choose?<span>{row.other}</span>:<Link href={row.otherHref}>{row.other}</Link>}{row.at&&<em>{row.at}</em>}{choose&&<OpenCode href={row.otherHref} title={row.at}/>}</p>;
           }
           const again=i>0&&pair.rows[i-1].caller===row.caller&&pair.rows[i-1].kind!=='other';
-          return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.kind==='implemented in'?row.caller:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
-            <i>{verb(row.kind)}</i><Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>{choose&&<OpenCode href={row.site||row.calleeHref} title={row.at}/>}</p>;
+          return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.inputs?row.caller:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
+            {verb(row.kind)&&<i>{verb(row.kind)}</i>}{row.callee&&<Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>}{choose&&<OpenCode href={row.site||row.calleeHref} title={row.at}/>}</p>;
         })}</div>
       </div>)}
     </section>)}

@@ -14,24 +14,37 @@
 //   nameOf(id): a node's name; groupable(id): whether calls from the node
 //   are grouped under it (an input is not a part a call is made from);
 //   incoming: whether the calls come in from outside the frame.
+// An input whose handler is not established draws its arrow into the part
+// its code takes it in (page_operations.go): "declared in" the function
+// declaring it, "looked up in" a reader of its table. Its line names its
+// inputs as a handler's line does ("-h, -p declared in parseOptions"); it
+// never reads as "implemented in".
+export const takenIn=new Set(['declared in','looked up in']);
 export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=false}={}){
-  const seen=new Map(),groups=new Map(),from=new Map(),into=new Map(),kinds=new Map();
+  const seen=new Map(),groups=new Map(),from=new Map(),into=new Map(),kinds=new Map(),inputs=new Set();
   let total=0;
   const count=(map,id)=>map.set(id,(map.get(id)||0)+1);
   for(const relation of relations){
     const calls=relation.calls?.length?relation.calls:[{label:relation.label||relation.summary||'',from:relation.fromSource,to:relation.toSource}];
     const fromID=groupable(relation.from)?relation.from:'',intoID=relation.to;
+    // An input's own arrow with no call and no words is its component
+    // taking it in (page_system_map.go).
+    const member=!relation.calls?.length&&!relation.label&&!relation.summary&&!groupable(relation.from);
     for(const call of calls){
-      const words=String(call.label||'').match(/^(\S+) (\S+) (\S+)$/);
+      // A named call's label is its relation's words ("looked up in"),
+      // never "caller verb callee".
+      const words=!call.name&&String(call.label||'').match(/^(\S+) (\S+) (\S+)$/);
       const key=[fromID,intoID,words?call.label:`${call.label}|${call.at||''}|${call.name||''}`].join('|');
-      const kind=words?words[2]:call.name?'implemented in':'other';
+      const kind=words?words[2]:call.name?(takenIn.has(call.label)?call.label:'implemented in'):member?'input':'other';
+      // Inputs taken in, not handled, count as inputs, each once.
+      if(takenIn.has(kind)||kind==='input'){inputs.add(relation.from);kinds.set('inputs',inputs.size);}
       if(seen.has(key)){
         const row=seen.get(key),input=nameOf(relation.from);
-        if(kind==='implemented in'&&row&&!row.inputs.includes(input)){row.inputs.push(input);row.caller=row.inputs.join(', ');}
+        if(row?.inputs&&!row.inputs.includes(input)){row.inputs.push(input);row.inputs.sort((a,b)=>String(a).localeCompare(String(b)));row.caller=row.inputs.join(', ');}
         continue;
       }
       total++;
-      count(kinds,['calls','passes_callback','reads','implemented in'].includes(kind)?kind:'other');
+      if(!takenIn.has(kind)&&kind!=='input')count(kinds,['calls','passes_callback','reads','implemented in'].includes(kind)?kind:'other');
       if(fromID)count(from,fromID);
       count(into,intoID);
       if(!groups.has(fromID))groups.set(fromID,{id:fromID,name:fromID?nameOf(fromID):'',count:0,folds:new Map(),pairs:new Map()});
@@ -41,12 +54,12 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
       // there instead of opening its code.
       const end=(part,key)=>part&&key?{part,key}:null;
       const row={kind,site:call.from||'',at:call.at||'',
-        caller:words?words[1]:call.name?nameOf(relation.from):'',
+        caller:words?words[1]:call.name||member?nameOf(relation.from):'',
         callee:words?words[3]:call.name||'',calleeHref:words||call.name?call.to||'':'',
         callerAt:words?end(relation.from,call.caller):null,calleeAt:words||call.name?end(intoID,call.callee):null,
         other:words||call.name?'':nameOf(incoming?relation.from:relation.to),
         otherHref:call.from||call.to||''};
-      seen.set(key,kind==='implemented in'?Object.assign(row,{inputs:[row.caller]}):null);
+      seen.set(key,!words&&(call.name||member)?Object.assign(row,{inputs:[row.caller]}):null);
       if(call.fold&&words){
         const foldKey=`${row.caller}\0${call.fold}`;
         if(!group.folds.has(foldKey))group.folds.set(foldKey,{caller:row.caller,callerAt:row.callerAt,site:row.site,kind,fold:call.fold,of:call.of||0,one:!!call.one,same:call.same||'',count:0,parts:new Map()});
@@ -74,10 +87,16 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
 // the handlers they are implemented in (inputs sharing one stand in its
 // line), so its total says handlers: "← Inputs 94" had stood beside
 // "Inputs 96" and "95 inputs dispatched here" with nothing telling them
-// apart.
-export const countWords={calls:'{0} calls',passes_callback:'{0} callbacks',reads:'{0} reads','implemented in':'{0} handlers',other:'{0} other connections'};
+// apart. Inputs whose handler is not established are counted as inputs:
+// the part their arrow enters takes them in and handles none of them.
+export const countWords={calls:'{0} calls',passes_callback:'{0} callbacks',reads:'{0} reads','implemented in':'{0} handlers',inputs:'{0} inputs',other:'{0} other connections'};
 export function countsHandlers(card){
   return card.kinds.length>0&&card.kinds.every(([kind])=>kind==='implemented in');
+}
+// The number of inputs a card of inputs taken in counts, or 0 when it
+// counts anything else too.
+export function countsInputs(card){
+  return card.kinds.length===1&&card.kinds[0][0]==='inputs'?card.kinds[0][1]:0;
 }
 
 // Rows stand in the order their call sites are written: file, then line.
