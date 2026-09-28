@@ -366,7 +366,9 @@ func testAliasesAskedByName(t *testing.T, captions bool) {
 		page := aliasReport(t, program.index, result.Atlas)
 		for _, shown := range []string{
 			`data-term-name="stock quote" data-term-original="주가정보"`, `data-term-name="Quote" data-term-original="Quote"`,
-			`data-alias="program start"`, `<strong class="key-alias model">program start</strong>`,
+			// The function's alias reaches the reading column with it, in
+			// the page's data (the part's card is no longer printed).
+			`"alias":"program start"`,
 		} {
 			if !strings.Contains(page, shown) {
 				t.Fatalf("the report does not show %s", shown)
@@ -382,8 +384,8 @@ func testAliasesAskedByName(t *testing.T, captions bool) {
 			slices.Sort(values)
 			return values
 		}
-		if terms, labels := shown("data-term-name"), shown("data-alias"); !slices.Equal(terms, []string{"Quote", "stock quote"}) || !slices.Equal(labels, []string{"program start", "stock quote"}) {
-			t.Fatalf("the report shows glossary names %v and aliases %v", terms, labels)
+		if terms := shown("data-term-name"); !slices.Equal(terms, []string{"Quote", "stock quote"}) {
+			t.Fatalf("the report shows glossary names %v", terms)
 		}
 	}
 	assertReport(first)
