@@ -1,5 +1,91 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Ask once whether a declaration is a helper, and let code place helpers with their users
+
+- Scope: step C4 of `map-model/step3-plan.md` with corrections 1, 2, 3, 11
+  and 12 and skeptic points B2, B3, 4, 5 and 9. The owner approved the
+  helper question; steps 0b and 0c measured its baseline criteria with the
+  no-users rule (Redis passes; pykrx's library target is NO-GO on
+  `get_market_ohlcv` alone, and the lead decided C4 goes).
+- **Change.** A new closed table `atlas_role_helper`
+  (`repomap.atlas.role_helper.v1`, Jev, `lines.RoleHelper`) asks once per
+  unit of every file of the target that is neither test nor generated code,
+  one request per file, rows `dN` by the unit's place in its file: helper,
+  responsibility or none of these. The task is `role_map.md` plus
+  `role_helper.md`, the probe's text with the one `read_by` sentence step 0b
+  measured; the options are the probe's baseline criteria
+  (`role_helper_options.md`), `none of these` a listed option with its own
+  criteria as the probe asked it, not the table's optional cell (a
+  deviation from the plan body, which assumed the optional cell; step 0b/0c
+  measured the listed one). No `exported` field (correction 1). The item:
+  name, kind, file, signature, lines, methods, target-wide `calls` and
+  `called_by`, `read_by` and `handed_over_by` as "path:name" without test
+  or generated code, `registered`. A function, method, lambda or variable
+  nothing uses (calls, decorations, hand-overs and reads, exact or
+  alternatives, and registrations) is not asked and is no helper; types and
+  module bodies are always asked; `tables.md` names what the rule took out.
+  Only a decided `helper` is a helper. The question runs beside the gate.
+  A helper is never named or assigned; the naming also drops its name from
+  the others' calls and callers. Code then settles to a fixed point: rule A
+  puts a helper of a split file whose users (callers, decorated units,
+  readers of what does not run; never a hand-over, correction 2) all stand
+  in one row into that row, which may be a box of another split file or a
+  whole file's row (skeptic 4); rule B joins a whole non-test,
+  non-generated file whose non-empty face is all helpers used from one box
+  of a split file to that box (skeptic 5); rule C is C2's, its callee
+  fallback over units that are no helpers (skeptic B3). A second pass asks
+  the assignment once more about the helpers still open whose users stand
+  in two or more rows or that nothing uses, in round `len(targets)+round`
+  so its windows keep the first pass's (skeptic B2), then code settles
+  again (correction 3). A file splits only when the assignment fills two
+  boxes with units that are no helpers. Records: `role_attached` (helpers
+  by name, joined files by path), `role_second_pass`,
+  `role_placed_by_users`/`uses`, `role_undecided`, `role_not_split` for a
+  gated file with fewer than two units that are no helpers; `tables.md`
+  counts boxes holding only helpers. The atlas symbol carries the MODEL
+  `helper` mark (atlas 14 → 15); a parts row may now hold units of other
+  files, which bring their files to the part's sources.
+- **Known miss (correction 12).** pykrx's `get_market_ohlcv`, a public
+  dispatcher whose only user is `stock_api.py`'s `__main__` demo (the
+  module body stays a unit of the library target), is asked and comes out
+  helper at 0.17–0.35 in 8 of 8 step-0c draws. It is tied to the owner's
+  open question "a library's public API as entries (an `export` seed
+  kind)": if the owner says yes, "an entry is never a helper" is a code
+  fact and fixes it. No launch-code exclusion was added; on data it would
+  also take out 8 current helpers used only by demos.
+- **Missing equivalents, recorded not patched (correction 11).** Go emits
+  no reads, so no Go item carries `read_by`, and a call in a package `var`
+  initializer or a function value stored in a var, table or slice leaves
+  its function with no user (GO). A Clojure macro's use leaves no relation,
+  so a macro nothing else uses is no helper by code instead of being asked
+  (the fixture's `ensure!`; CLOJURE).
+- **Tests.** `TestHelpersAreNotNamedAndGoWithTheirUsers`,
+  `TestASharedHelperIsAskedOnceInASecondPass` (placed by the answer,
+  undecided on a near-tie, pass-2 windows in round 3 beside round 1's, no
+  unit assigned twice), `TestAHelperFileJoinsTheBoxOfItsUsers` (and not
+  when a whole file also uses it), `TestTheHelperItemCarriesItsUsers`
+  (read_by, handed_over_by, registrations, a test caller left out, no
+  question for what nothing uses), `TestAnUncertainHelperAnswerIsNoHelper`,
+  and the cache test's helper counts (warm 0 live; an earlier file 1 live
+  group; a call from another file re-asks that file's group). partstest's
+  split check adds the helper question on real facts (a helper has users,
+  is not exported and is not registered) with its invariants: nothing of
+  test or generated code asked, nothing asked twice, no helper named, no
+  unit assigned twice, a split-file helper whose users all stand in one
+  part is in it. Fixture cases: C `saveSnapshot` with `bgsaveCommand`,
+  `staticsyms.h` joining `printSymbols`'s box, `addReplyBulk` and
+  `addReplyLong` asked once more; Go `lookupCommand` with
+  `DispatchCommand`, which is not asked, and the table's handlers asked
+  once more; Python `format_score` keeping `exports.py` whole and the
+  levels constants' `read_by`; TypeScript `handledOrderIds` with
+  `recordOrder`, `paintColor` (only re-exported) not asked; Clojure's new
+  private `exclaim` (appended to `core.clj` with `cheer`, no line moved)
+  with `cheer`. The kvd fixture shows the plan's limit: `addReply`, whose
+  callers all stood in one box while a caller was still open, is blocked,
+  so not asked in the second pass, and stays undecided after it. Each rule
+  reverted alone fails its tests (`step3/impl-revert-c4c6.log`, 12
+  reverts).
+
 ## 2026-09-28 — Split files before grouping: one parts request over units, one rule for every file
 
 - Scope: step C3 of `map-model/step3-plan.md` with corrections 5, 6 and 10

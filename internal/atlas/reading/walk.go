@@ -189,6 +189,7 @@ func (r *reader) join(view *reader, chain []string) {
 			r.nextBoundary, r.boundaryIDs = view.nextBoundary, view.boundaryIDs
 		case lines.StageZones:
 			r.boxes, r.designBoxOf, r.offMap, r.mapFailure = view.boxes, view.designBoxOf, view.offMap, view.mapFailure
+			r.helperOf = view.helperOf
 			r.designSubjects = view.designSubjects
 			r.nextPart = view.nextPart
 		case lines.StageAreas:

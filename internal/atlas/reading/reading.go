@@ -143,6 +143,7 @@ type reader struct {
 	// request key, parsed once for all the rows they answer.
 	classifierResponses map[string]rememberedClassifier
 	designBoxOf         map[string]map[string]string // target -> declaration/file -> accepted part
+	helperOf            map[string]map[string]bool   // target -> declaration -> decided helper
 	designSubjects      map[string]string            // native declaration -> place
 	nextPart            int
 	nextZone            int
@@ -1169,7 +1170,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			if !contains(r.places[fileID].TargetIDs, meta.ID) {
 				continue
 			}
-			file := r.projectFile(fileID, owner.symbols, owner.id)
+			file := r.projectFile(meta.ID, fileID, owner.symbols, owner.id)
 			for _, symbol := range file.Symbols {
 				if symbol.ObjectID != "" {
 					box.MemberIDs = append(box.MemberIDs, symbol.ObjectID)
@@ -1185,7 +1186,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 		for _, id := range entry.symbols {
 			symbols[id] = true
 		}
-		file := r.projectFile(entry.fileID, symbols, "")
+		file := r.projectFile(meta.ID, entry.fileID, symbols, "")
 		target.OffMap = append(target.OffMap, atlas.OffMapFile{ID: entry.fileID, Reason: entry.reason, BoxID: entry.boxID, File: file})
 		count(entry.fileID, file)
 	}
@@ -1250,7 +1251,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 // and the listed declarations with their captions, aliases and keys. Inside a
 // part whose keys were chosen, that choice stands; elsewhere a file keeps the
 // selection by file.
-func (r *reader) projectFile(fileID string, listed map[string]bool, boxID string) atlas.File {
+func (r *reader) projectFile(targetID, fileID string, listed map[string]bool, boxID string) atlas.File {
 	place := r.places[fileID]
 	line := r.lines[fileID]
 	file := atlas.File{
@@ -1273,6 +1274,7 @@ func (r *reader) projectFile(fileID string, listed map[string]bool, boxID string
 		if line, ok := r.symbolLine[symbol.ID]; ok {
 			symbol.Line = line.value
 		}
+		symbol.Helper = r.helperOf[targetID][symbolID]
 		if knowledge := r.knowledge[symbol.ID]; knowledge != nil && knowledge.Cells["alias"] != "none" {
 			symbol.Alias = knowledge.Cells["alias"]
 		}

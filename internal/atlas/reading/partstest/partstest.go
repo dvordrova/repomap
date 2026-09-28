@@ -4,9 +4,12 @@
 // the parts request carries and that every
 // declaration has exactly one part or an entry off the map. Language fixture
 // tests of every adapter share it. CheckSplit reads the same graph with the
-// role split of every candidate file: two boxes per file, the units put in
-// them alternately and every fifth left open for the code to place by its
-// users, so the split's rules are checked on each adapter's real facts.
+// role split of every candidate file: two boxes per file, the units that are
+// no helpers put in them alternately and every fifth left open for the code
+// to place by its users, so the split's rules are checked on each adapter's
+// real facts. Its helper question takes a declaration for a helper when
+// other code calls, reads or hands it over, the language does not export
+// it and no registration names it.
 package partstest
 
 import (
@@ -22,6 +25,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
@@ -46,6 +50,12 @@ type Map struct {
 	// Registered are, by file path, the words of the registrations the
 	// assignment showed with that file's declarations ("HandleFunc /x").
 	Registered map[string][]string
+	// HelperItems are the helper question's items by file and name, and
+	// Helpers the declarations the check's helper rule took for helpers.
+	HelperItems map[[2]string]map[string]any
+	Helpers     map[[2]string]bool
+	// Rejected is the reading's journal of what it refused or recorded.
+	Rejected []modeldiag.Row
 }
 
 // Check reads the graph for one target with the gate answering "one box"
@@ -89,8 +99,30 @@ func check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 	}
 	byColumn := typesafetest.ByColumn(map[string]llm.Verdict{
 		"explains": typesafetest.Yes(0.9), "role": typesafetest.Choose("domain"), "key_symbol": typesafetest.Choose("yes"), "boxes": gate,
+		"helper": typesafetest.Choose("responsibility"),
 	})
+	exported := map[[2]string]bool{}
+	for _, place := range graph.Places {
+		if place.Symbol != nil {
+			exported[[2]string{place.Path, place.Symbol.Decl.Name}] = place.Symbol.Decl.Exported
+		}
+	}
+	var helpersMu sync.Mutex
+	helpers := map[[2]string]bool{}
 	categorizer := &recording{Categorizer: typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		if strings.HasSuffix(key, "|helper") && split {
+			// A helper has users, is not exported and is not registered.
+			file, _ := question.Item["file"].(string)
+			name, _ := question.Item["name"].(string)
+			used := question.Item["called_by"] != nil || question.Item["read_by"] != nil || question.Item["handed_over_by"] != nil
+			if used && question.Item["registered"] == nil && !exported[[2]string{file, name}] {
+				helpersMu.Lock()
+				helpers[[2]string{file, name}] = true
+				helpersMu.Unlock()
+				return typesafetest.Choose("helper"), true
+			}
+			return typesafetest.Choose("responsibility"), true
+		}
 		if !strings.HasSuffix(key, "|box") {
 			return byColumn(key, question)
 		}
@@ -118,7 +150,7 @@ func check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 	if err := atlas.Validate(result.Atlas); err != nil {
 		t.Fatal(err)
 	}
-	checked := Map{Atlas: result.Atlas, PartOf: map[string]string{}, Symbols: map[[2]string]string{}}
+	checked := Map{Atlas: result.Atlas, PartOf: map[string]string{}, Symbols: map[[2]string]string{}, Helpers: helpers, Rejected: result.Rejected}
 	for _, candidate := range result.Atlas.Targets {
 		if candidate.ID == target.ID {
 			checked.Target = candidate
@@ -127,12 +159,23 @@ func check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 	if checked.Target.MapFailure != "" {
 		t.Fatalf("map failure: %s", checked.Target.MapFailure)
 	}
-	checkRequest(t, graph, target.ID, root, provider.requests, split)
+	// A whole file whose face is helpers used from one box joins that box
+	// and is no row of its own.
+	joined := map[string]bool{}
+	for _, row := range result.Rejected {
+		if row.Kind == "role_attached" {
+			for _, sample := range row.Samples {
+				joined[sample] = true
+			}
+		}
+	}
+	checkRequest(t, graph, target.ID, root, provider.requests, split, joined)
 	checkMembership(t, graph, target.ID, checked)
 	checked.Split, checked.RoleParts = map[string]bool{}, map[string]bool{}
 	checked.Registered = categorizer.registered
+	checked.HelperItems = categorizer.helperItems
 	if split {
-		checkSplit(t, graph, target.ID, checked, categorizer)
+		checkSplit(t, graph, target.ID, checked, categorizer, provider)
 	} else if categorizer.assigned > 0 {
 		t.Fatalf("the gate answered one box, yet %d declarations were assigned", categorizer.assigned)
 	}
@@ -149,6 +192,10 @@ type recording struct {
 	// items are, by file path, the declarations the assignment asked about;
 	// registered the words of their registrations.
 	items, registered map[string][]string
+	// helperItems are the helper question's items by file and name, and
+	// helperAsked how often each was asked.
+	helperItems map[[2]string]map[string]any
+	helperAsked map[[2]string]int
 }
 
 func (c *recording) Complete(ctx context.Context, prepared llm.Prepared) (llm.Completion, error) {
@@ -164,9 +211,16 @@ func (c *recording) Complete(ctx context.Context, prepared llm.Prepared) (llm.Co
 		c.mu.Lock()
 		if c.items == nil {
 			c.items, c.registered = map[string][]string{}, map[string][]string{}
+			c.helperItems, c.helperAsked = map[[2]string]map[string]any{}, map[[2]string]int{}
 		}
 		for key, question := range body.Questions {
 			switch {
+			case strings.HasSuffix(key, "|helper"):
+				item, _ := question.Instructions["declaration"].(map[string]any)
+				file, _ := item["file"].(string)
+				name, _ := item["name"].(string)
+				c.helperItems[[2]string{file, name}] = item
+				c.helperAsked[[2]string{file, name}]++
 			case strings.HasSuffix(key, "|boxes"):
 				c.gated++
 			case strings.HasSuffix(key, "|box"):
@@ -189,11 +243,12 @@ func (c *recording) Complete(ctx context.Context, prepared llm.Prepared) (llm.Co
 }
 
 // checkSplit checks what the role split must keep on real facts.
-func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, categorizer *recording) {
+func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, categorizer *recording, provider *preset) {
 	t.Helper()
 	if categorizer.gated == 0 || categorizer.assigned == 0 {
 		t.Fatalf("no split happened: %d gate questions, %d assignments", categorizer.gated, categorizer.assigned)
 	}
+	checkHelpers(t, graph, targetID, checked, categorizer, provider)
 	// Every registration handing over a declaration of an assigned file
 	// shows its words with that file's declarations.
 	for _, place := range graph.Places {
@@ -394,6 +449,105 @@ func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Ma
 	}
 }
 
+// checkHelpers holds the helper question and the code rules for helpers to
+// real facts: no declaration of test or generated code is asked, none is
+// asked twice, no helper is named, no unit is assigned twice, and a helper
+// of a split file whose users (the declarations of the program that call
+// it, are decorated by it or read it when it does not run; never a
+// hand-over) all stand in one part is in that part.
+func checkHelpers(t testing.TB, graph atlas.Graph, targetID string, checked Map, categorizer *recording, provider *preset) {
+	t.Helper()
+	hidden := map[string]bool{}
+	for _, place := range graph.Places {
+		if place.File != nil {
+			hidden[place.Path] = place.File.Test || place.File.Generated
+		}
+	}
+	if len(categorizer.helperAsked) == 0 {
+		t.Fatal("the helper question asked nothing")
+	}
+	for key, count := range categorizer.helperAsked {
+		if count != 1 || hidden[key[0]] {
+			t.Fatalf("%s %s was asked the helper question %d times (test or generated: %v)", key[0], key[1], count, hidden[key[0]])
+		}
+	}
+	for path, names := range provider.named {
+		for _, name := range names {
+			if checked.Helpers[[2]string{path, name}] {
+				t.Fatalf("the naming of %s lists the helper %s", path, name)
+			}
+		}
+	}
+	for path, names := range categorizer.items {
+		for i, name := range names {
+			if slices.Contains(names[i+1:], name) {
+				t.Fatalf("%s %s was assigned twice", path, name)
+			}
+		}
+	}
+	byID := map[string]atlas.Place{}
+	for _, place := range graph.Places {
+		byID[place.ID] = place
+	}
+	// users by declaration, between declarations of files that are neither
+	// test nor generated code, in any file.
+	users := map[string]map[string]bool{}
+	link := func(from, to string) {
+		source, target := byID[from], byID[to]
+		if from == to || target.Symbol == nil || hidden[source.Path] || hidden[target.Path] || !slices.Contains(target.TargetIDs, targetID) {
+			return
+		}
+		if users[to] == nil {
+			users[to] = map[string]bool{}
+		}
+		users[to][from] = true
+	}
+	for _, place := range graph.Places {
+		if place.Symbol == nil || !slices.Contains(place.TargetIDs, targetID) {
+			continue
+		}
+		for _, call := range place.Symbol.Calls {
+			if call.Resolution == "exact" && (call.Kind == "calls" || call.Kind == "decorates") {
+				for _, callee := range call.CalleeIDs {
+					link(place.ID, callee)
+				}
+			}
+		}
+		for _, use := range place.Symbol.Uses {
+			used := byID[use.PlaceID]
+			runs := used.Symbol != nil && slices.Contains([]string{"function", "method", "lambda"}, used.Symbol.Decl.Kind)
+			if use.Resolution == "exact" && (use.Kind == "decorates" || use.Kind == "reads" && !runs) {
+				link(place.ID, use.PlaceID)
+			}
+		}
+	}
+	for key := range checked.Helpers {
+		id := checked.Symbols[key]
+		place := byID[id]
+		// A function or variable is its unit alone, but for what its source
+		// range holds, which only it can call.
+		if !checked.Split[key[0]] || place.Symbol == nil || place.Symbol.Decl.Kind != "function" && place.Symbol.Decl.Kind != "variable" {
+			continue
+		}
+		decl := place.Symbol.Decl
+		part, one := "", false
+		for user := range users[id] {
+			if other := byID[user]; other.Path == place.Path && decl.EndLine > 0 && other.LineNo >= decl.LineNo && other.LineNo <= decl.EndLine {
+				continue
+			}
+			at := checked.PartOf[user]
+			if at == "" || part != "" && at != part {
+				part, one = "", false
+				break
+			}
+			part, one = at, true
+		}
+		if one && checked.PartOf[id] != part {
+			t.Fatalf("the helper %s %s is in part %q, yet every declaration that uses it is in part %s", key[0], key[1], checked.PartOf[id], part)
+		}
+	}
+}
+
 // methodElsewhere says whether a declaration follows a type declared in
 // another file: its part is its type's, whatever its own file.
 func methodElsewhere(graph atlas.Graph, id string) bool {
@@ -446,9 +600,9 @@ var (
 // checkRequest checks the parts request: code structure only, one row per
 // whole file (its f* ref) or per box of a split file (a c* ref with the
 // box's name), a split file never a whole row, every file with a
-// declaration of its own listed, and calls and imports over listed refs
-// only, imports between whole files alone.
-func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, requests [][]byte, split bool) {
+// declaration of its own listed unless it joined a box (joined), and calls
+// and imports over listed refs only, imports between whole files alone.
+func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, requests [][]byte, split bool, joined map[string]bool) {
 	t.Helper()
 	if len(requests) != 1 {
 		t.Fatalf("parts requests: %d, want one", len(requests))
@@ -577,8 +731,11 @@ func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, reques
 				own = true
 			}
 		}
-		if own && !whole[id] && !boxed[id] {
+		if own && !whole[id] && !boxed[id] && !joined[place.Path] {
 			t.Fatalf("%s holds code but is not listed", place.Path)
+		}
+		if joined[place.Path] && (whole[id] || boxed[id]) {
+			t.Fatalf("%s joined a box yet is listed", place.Path)
 		}
 		if whole[id] && boxed[id] {
 			t.Fatalf("%s is split yet listed as a whole row", place.Path)
@@ -673,6 +830,8 @@ func checkMembership(t testing.TB, graph atlas.Graph, targetID string, checked M
 type preset struct {
 	mu       sync.Mutex
 	requests [][]byte
+	// named are, by file path, the declarations each naming request lists.
+	named map[string][]string
 }
 
 func (*preset) State() []byte { return []byte(`{"provider":"parts-preset"}`) }
@@ -719,12 +878,23 @@ func (p *preset) Complete(_ context.Context, prepared llm.Prepared) (llm.Complet
 	case boxesTask:
 		var named struct {
 			File struct {
-				Path string `json:"path"`
+				Path         string `json:"path"`
+				Declarations []struct {
+					Name string `json:"name"`
+				} `json:"declarations"`
 			} `json:"file"`
 		}
 		if err := json.Unmarshal(prepared.Bytes(), &named); err != nil {
 			return llm.Completion{}, err
 		}
+		p.mu.Lock()
+		if p.named == nil {
+			p.named = map[string][]string{}
+		}
+		for _, decl := range named.File.Declarations {
+			p.named[named.File.Path] = append(p.named[named.File.Path], decl.Name)
+		}
+		p.mu.Unlock()
 		response = map[string]any{"boxes": []map[string]string{
 			{"name": named.File.Path + ": first", "holds": "The odd declarations."},
 			{"name": named.File.Path + ": second", "holds": "The even declarations."},

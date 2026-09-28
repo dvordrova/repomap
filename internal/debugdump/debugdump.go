@@ -169,6 +169,7 @@ const (
 	SemanticStageAtlasPlacement   = "atlas_placement"
 	SemanticStageAtlasDescribe    = "atlas_describe"
 	SemanticStageAtlasAreas       = "atlas_areas"
+	SemanticStageAtlasRoleHelper  = "atlas_role_helper"
 	SemanticStageAtlasRoleGate    = "atlas_role_gate"
 	SemanticStageAtlasRoleBoxes   = "atlas_role_boxes"
 	SemanticStageAtlasRoleAssign  = "atlas_role_assign"
@@ -801,6 +802,7 @@ func validSemanticStage(stage string) bool {
 		SemanticStageAtlasPlacement,
 		SemanticStageAtlasDescribe,
 		SemanticStageAtlasAreas,
+		SemanticStageAtlasRoleHelper,
 		SemanticStageAtlasRoleGate,
 		SemanticStageAtlasRoleBoxes,
 		SemanticStageAtlasRoleAssign:

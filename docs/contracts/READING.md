@@ -190,6 +190,9 @@ file the role split splits (a request-local `c*` ref, numbered across the
 target in f* order and each file's naming order, with the box's name in
 `box`; a box that holds nothing is no row, and a split file is never a whole
 row). Each row has `path`, `units`, `types`, `functions` and `variables`. A
+row also holds the units code placed there from other files (a helper that
+joined its users, a whole file that joined a box; below), so its counts and
+names may include declarations its `path` does not hold. A
 unit is a function, a variable, a type together with its methods, or a
 source-located module body. An exported name (the adapter's visibility fact:
 Go capitalization, JS/TS `export`, Python `__all__` when the module declares
@@ -276,14 +279,47 @@ draws its every group and places every listed unit once.
 **A file in several boxes (the role split).** Owner, choosing option "в"
 (2026-09-26): "what's in one file can have different roles, and one role can
 span different files. We build our own map, we group and abstract." A file
-can hold the code of several boxes of our map. Three requests decide it,
-each file on its own, before the parts request of its target (a one-file
-target included; never without a model), and code places what the last one
-leaves open:
+can hold the code of several boxes of our map. Four questions decide it,
+before the parts request of its target (a one-file target included; never
+without a model), and code places what they leave open:
 
-- *Candidates* are the unit-bearing files of the target that are neither
-  test nor generated code and hold at least two units (one unit cannot go in
-  two boxes). No size, count or threshold decides it.
+- *The helper question* (`atlas_role_helper`, Jev, `lines.RoleHelper`;
+  owner, 2026-09-28) asks once per unit of every file of the target that is
+  neither test nor generated code, one request per file (rows `dN` by the
+  unit's place in its file, `state.context` empty): "What is `declaration`
+  on our map: a helper, the code of a responsibility, or none of these?".
+  `state.task` is `role_map.md` plus `role_helper.md`; each option carries
+  its criteria from `role_helper_options.md` (the probe's baseline text;
+  `none of these` is a listed option with its own what and not-for). The
+  item is the unit's name, kind, `file`, signature, `lines`, methods,
+  `calls` and `called_by` (the declarations of the program it calls and
+  that call it, decorations included), `read_by` and `handed_over_by`
+  (exact reads and hand-overs), each as "path:name" with test and generated
+  code left out, and `registered`; no documentation and no visibility. A
+  function, method, lambda or variable that nothing in the program uses (no
+  call, decoration, hand-over or read, exact or among alternatives, and no
+  registration; test and generated code left out) is no helper by code and
+  is not asked: an entry point, or an operation a library offers, has no
+  user of its own. A type and a module body are always asked, since no fact
+  says where a type is used. Only a decided `helper` (a lead of
+  `ClassifierMargin`) is a helper; responsibility, none of these, a
+  near-tie, an unanswered row or a refused window leave the unit named and
+  assigned as before. There is no second ask, and a refusal never fails the
+  target. A helper carries the atlas symbol's `helper` mark. Measured before
+  adoption (steps 0b and 0c): redis-server's main, processCommand, call,
+  rdbSave, syncWithMaster, serverCron and its 94 registered handlers are no
+  helpers, symsTable is one at 0.85–0.91 once its item names its reader,
+  and the library files keep their marks; pykrx's library target has 49–50
+  helpers among 188 asked units, 78.9% of leads 0.40 or more. Known miss:
+  pykrx's `get_market_ohlcv`, whose only user is its file's `__main__`
+  demo, comes out helper (0.17–0.35); a library's public API as entries is
+  the owner's open question, not a rule here. The question and the gate
+  run at once.
+- *Candidates* of the gate are the unit-bearing files of the target that
+  are neither test nor generated code and hold at least two units (one unit
+  cannot go in two boxes). No size, count or threshold decides it. A file
+  the gate puts in several boxes whose units that are no helpers number
+  fewer than two stays whole (`role_not_split`).
 - *The gate* (`atlas_role_gate`, Jev, `lines.RoleGate`) asks, in one request
   per file, "Does the code of `file` go in one box of our map, or in several
   boxes?". `state.task` is what we want (`lines/prompts/role_map.md`: our own
@@ -312,7 +348,9 @@ leaves open:
   only its types and helpers and still goes in several boxes (0.86–0.90).
 - *The naming* (`atlas_role_boxes`, DeepSeek, `prompts/design_boxes.md`
   after `role_map.md`) names the boxes the file's code goes in:
-  `{"boxes":[{"name","holds"}]}` over every unit, whole, with its name, kind,
+  `{"boxes":[{"name","holds"}]}` over every unit that is no helper, whole
+  (a helper's name is also left out of the others' `calls` and
+  `called_by`), with its name, kind,
   signature, `lines` (its code lines with those of followers outside its
   range; a module body counts its file's code lines less its other top-level
   declarations; zero is unknown and not sent), methods, same-file `calls` and
@@ -327,8 +365,8 @@ leaves open:
   than two boxes (`role_one_box`), an answer that is not JSON or has no list,
   or one the provider refuses keep the file whole.
 - *The assignment* (`atlas_role_assign`, Jev, `lines.RoleAssign`) asks for
-  each unit, the module body included, "Which box of our map does
-  `declaration` go in?": `state.task` is `role_map.md` plus
+  each unit that is no helper, the module body included, "Which box of our
+  map does `declaration` go in?": `state.task` is `role_map.md` plus
   `role_assign.md`, `state.context` holds only the file's path, the item
   `declaration` is its name, kind, signature, methods, same-file calls and
   callers, `calls_elsewhere` ("path:name") and `registered`: the words of
@@ -339,28 +377,49 @@ leaves open:
   request or job holds that machinery, and one command's code goes in the
   box of the work it does. A unit whose choice does not lead by the
   margin, is not answered or is in a refused window is left open.
-- *Open units by code* (owner, 2026-09-28: where a declaration's users are
-  is a code fact, so the question is not asked again). A unit the
-  assignment left open takes box k when every unit of its file that *uses*
-  it has a box and that box is k; a unit no unit of its file uses takes k
-  when everything of its file it uses has box k; anything else stays open,
-  undecided. A use is an exact call, a decoration (the decorated unit uses
-  its decorator) or an exact read of what does not run (the places graph's
-  `uses`), between units of files that are neither test nor generated code.
-  A hand-over is no use: a command table's row or a route registrar hands
-  its handler over without using it, and a read of a callable is a function
-  value taken to be called later (JS/TS writes one where it hands a handler
-  over), so an open handler never follows its table or registrar. It runs to
-  a fixed point, since a unit placed may settle another; every unit it
-  places is recorded (`role_placed_by_users`, `role_placed_by_uses`) in
-  `rejected.jsonl` and `tables.md`.
+- *Code places what the questions leave open* (owner, 2026-09-28: where a
+  declaration's users are is a code fact, so the question is not asked
+  again). A *user* is a unit that calls a unit, is decorated by it (the
+  decorated unit uses its decorator) or reads it when it does not run (the
+  places graph's exact `uses`), between units of files that are neither
+  test nor generated code. A hand-over is no use: a command table's row or a
+  route registrar hands its handler over without using it, and a read of a
+  callable is a function value taken to be called later (JS/TS writes one
+  where it hands a handler over), so no unit follows its table or
+  registrar. A *row* is a box of a split file or a whole file's row. Three
+  rules run together to a fixed point, since what one places may settle
+  another, each recorded in `rejected.jsonl` and `tables.md`:
+  - A: a helper of a split file whose users, in any file, all stand in one
+    row joins that row: a box of its own file, a box of another split file
+    or a whole file's row (`role_attached`, by name).
+  - B: a whole file that is neither test nor generated code, whose face
+    (its units used from other files) is not empty and all helpers, and all
+    of whose outside users stand in one box of a split file, joins that box
+    (`role_attached`, by path). A whole file never joins a whole file.
+  - C: a unit that is no helper and that the assignment left open takes box
+    k when every unit of its file that uses it has box k; one no unit of
+    its file uses takes k when everything of its file it uses that is no
+    helper has box k (`role_placed_by_users`, `role_placed_by_uses`).
+    Anything else stays open.
+- *The second pass* asks the assignment once more, after code has
+  settled, about the helpers of split files still open whose users stand
+  in two or more rows or that nothing uses, with every named box of their
+  file as the options and the same item; a helper with a user still open is
+  not asked. It is a round of its own (the round after every target's
+  first: `len(targets)+round`), so its windows never overwrite the first
+  pass's, and it decodes like the first (a near-tie leaves the helper
+  undecided). Code then settles again. A unit is asked the assignment at
+  most once (`role_second_pass`).
 
-A file is split only when at least two boxes hold a unit; otherwise it stays
-whole (`role_not_split`), one row of the parts request. Each box that holds
-a unit becomes one row of the parts request, a unit of the grouping with its
-units and their followers (methods, lexical children, repeated names), and
-takes the part the answer gives it; the answer may put two boxes of one file
-in one part. A box holding none is no row (`role_box_empty`). An undecided
+A file is split only when the assignment puts units that are no helpers in
+at least two boxes (code only places a unit in a box that already holds
+one); otherwise it stays whole (`role_not_split`), one row of the parts
+request, helpers included. Each box that holds a unit becomes one row of
+the parts request, a unit of the grouping with its units and their
+followers (methods, lexical children, repeated names) and what code placed
+there from other files, and takes the part the answer gives it; the answer
+may put two boxes of one file in one part. A box holding none is no row
+(`role_box_empty`); `tables.md` counts the boxes holding only helpers. An undecided
 unit, with its followers, goes to the off-map record under the closed
 reason `undecided` (`role_undecided`) while its file stays on the map
 through its boxes. Parts take their IDs in answer order; nothing is split
@@ -370,11 +429,13 @@ differently in each and costs a naming in each. Every outcome is recorded in
 `rejected.jsonl` and `tables.md`, with no label on the page, and a split
 failure never fails the target.
 
-The three requests carry request-local refs (the gate's row `f1`, the
-assignment's `d1…dn` in the file's unit order, boxes `b1…bn`), so a warm
-cache survives a file added or edited earlier in path order: only an edited
-file's own requests change, and a call into a file from elsewhere changes
-only that file's naming (and so, when the boxes change, its assignment).
+The requests carry request-local refs (the gate's row `f1`, the helper
+question's and the assignment's `dN` by the unit's place in its file, boxes
+`b1…bn`), so a warm cache survives a file added or edited earlier in path
+order: only an edited file's own requests change, and a call into a file
+from elsewhere changes only that file's naming (and so, when the boxes
+change, its assignment) and the helper questions of the files whose items
+name the call.
 Measured on the saved V0WFR boxes (3 identical draws, 118 Jev calls in all
 with the gate, $0.067): redis.c 8–11 of 342 units undecided, 1 decided
 choice flipped; pykrx 2–4 of 87, litestream 1–2 of 46, none flipped. The
@@ -422,9 +483,21 @@ reaches that file's assignment with its words, that no undecided unit is
 one the code rule places (the units of its file that use it are not all in
 one part, and when none uses it, what it uses in its file is not either),
 that the parts request lists each split file's boxes as `c*` rows and never
-the file whole, with imports between whole files only, that no import-only
+the file whole (a file that joined a box is no row), with imports between
+whole files only, that no import-only
 arrow touches a part holding a split file's box, that the seed's part stands
-in, and that an input whose handler is undecided names no part. The words
+in, and that an input whose handler is undecided names no part. Its helper
+question takes a declaration for a helper when other code calls, reads or
+hands it over, the language does not export it and no registration names
+it; the check requires that no test or generated declaration is asked and
+none twice, that no helper is named, that no unit is assigned twice, and
+that a helper of a split file whose users all stand in one part is in that
+part. Each fixture checks a case: C's saveSnapshot goes with bgsaveCommand
+and staticsyms.h, read only by printSymbols, joins its box; Go's
+lookupCommand goes with DispatchCommand, which nothing calls and so is not
+asked, and the command table's handlers are asked once more; Python's
+format_score keeps exports.py whole; TypeScript's handledOrderIds goes with
+recordOrder; Clojure's private exclaim goes with cheer. The words
 each fixture shows: Go
 `HandleFunc /v1/update` (`http_registrations.go`), Python `get /health`,
 TypeScript `get /products/featured`, C `kvCommand get` (kvd.c's command

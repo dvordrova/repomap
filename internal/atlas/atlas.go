@@ -31,7 +31,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 19
-	Version      = 14
+	Version      = 15
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -665,6 +665,10 @@ type Symbol struct {
 	Alias string `json:"alias,omitempty"`
 	// Key is MODEL; without a symbol layer the code ranks.
 	Key bool `json:"key"`
+	// Helper is MODEL: the helper question decided the declaration's unit
+	// serves the work of other declarations, so code placed it with its
+	// users.
+	Helper bool `json:"helper,omitempty"`
 	// Activation and Operation are model interpretations of an exposed action.
 	Activation       string `json:"activation,omitempty"`
 	Operation        string `json:"operation,omitempty"`

@@ -226,7 +226,11 @@ Missing equivalents, recorded rather than fabricated:
   initializer, and a function value stored in a package variable, table or
   slice (`getCluster = srv.GetCluster`, `append(filters, filterNoPut)`),
   leave no relation at all, so the function has no use there; recorded,
-  not patched.
+  not patched. The role split's helper question (READING) therefore never
+  shows a Go declaration's `read_by`, and a function used only in those
+  ways has no user, so it is no helper by code rather than asked. The
+  fixture's `lookupCommand`, called only by `DispatchCommand`, goes with it;
+  `DispatchCommand`, which nothing calls, is not asked.
 - A row storing two callables (`{Name: "get", Run: getCommand, Preload:
   preloadGet}`) keeps two bindings. No Go row is a registration, so the C
   rule that such a row is one input has nothing to apply to.

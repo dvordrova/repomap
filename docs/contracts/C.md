@@ -381,7 +381,10 @@ tool's `main` reads `progname` in its error message and not where it assigns
 it, and kvd's reads reach GroupsIndex at their sites. The places graph keeps
 them as declarations' `uses` (READING): `TestCumulativeCMapOfParts` checks that
 `printSymbols` uses `symsTable` (a read), `keysCommand` hands `compareKeys` to
-`qsort` and `cmdTable` hands `getCommand` over. The fixture's map of parts is
+`qsort` and `cmdTable` hands `getCommand` over. The role split's helper
+question (READING) shows `symsTable` with its reader, and the split check
+places `saveSnapshot` with `bgsaveCommand` and joins `staticsyms.h` to the
+box of `printSymbols`. The fixture's map of parts is
 checked like every other language's (`TestCumulativeCMapOfParts`), and its
 split puts `netConnect`, which kvd never runs, alone in a role part that
 leaves kvd's map; `TestCFixtureClientMapLeavesTheLoopItNeverRuns` checks that

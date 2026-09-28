@@ -185,7 +185,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   A response without a rows array, or with no accepted row, is refused and
   not cached, and each of its rows' reasons is journaled.
 - The closed tables (key declarations, part roles, keys, the role split's
-  gate and assignment, and the outside symbols' roles:
+  helper question, gate and assignment, and the outside symbols' roles:
   `Definition.Classifier`) go only to the run's
   categorizer
   (`llm.Categorizer`), never to the text model; there is no fallback

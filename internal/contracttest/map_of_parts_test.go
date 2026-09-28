@@ -1,7 +1,9 @@
 package contracttest
 
 import (
+	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/adaptertest"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
@@ -97,6 +100,28 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 	if registered := split.Registered["internal/storefixture/http_registrations.go"]; !slices.Contains(registered, "HandleFunc /v1/update") {
 		t.Fatalf("http_registrations.go's handlers are asked with registrations %v", registered)
 	}
+	// The helper question: lookupCommand, unexported and called only by
+	// DispatchCommand, is a helper and goes with it by code; DispatchCommand,
+	// exported and called by nothing, is no helper by code and not asked;
+	// the command table's getCommand and setCommand, which only its rows hand
+	// over, have no user to follow and are asked once more. Go records no
+	// reads, so no item carries read_by (GO).
+	commands := "internal/storefixture/command_table.go"
+	lookup, dispatch := split.Symbols[[2]string{commands, "lookupCommand"}], split.Symbols[[2]string{commands, "DispatchCommand"}]
+	if !split.Helpers[[2]string{commands, "lookupCommand"}] || split.PartOf[lookup] == "" || split.PartOf[lookup] != split.PartOf[dispatch] || !recorded(split, "role_attached", "lookupCommand") {
+		t.Fatalf("lookupCommand in %q, DispatchCommand in %q", split.PartOf[lookup], split.PartOf[dispatch])
+	}
+	if _, asked := split.HelperItems[[2]string{commands, "DispatchCommand"}]; asked {
+		t.Fatal("DispatchCommand, which nothing calls, was asked the helper question")
+	}
+	if !recorded(split, "role_second_pass", "getCommand") || !recorded(split, "role_second_pass", "setCommand") {
+		t.Fatal("the table's handlers were not asked once more")
+	}
+	for key, item := range split.HelperItems {
+		if item["read_by"] != nil {
+			t.Fatalf("the Go declaration %v carries read_by", key)
+		}
+	}
 	projectSplit(t, index, split)
 }
 
@@ -117,6 +142,12 @@ func graphWithFacts(t *testing.T, repository *corpus.Corpus, target places.Targe
 		t.Fatal(err)
 	}
 	return graph
+}
+
+// recorded says whether the reading recorded a row of this kind naming the
+// sample.
+func recorded(split partstest.Map, kind, sample string) bool {
+	return slices.ContainsFunc(split.Rejected, func(row modeldiag.Row) bool { return row.Kind == kind && slices.Contains(row.Samples, sample) })
 }
 
 // projectSplit checks that GroupsIndex accepts a split atlas and lists a
@@ -276,6 +307,20 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 	if registered := split.Registered["src/fixture_app/http_registrations.py"]; !slices.Contains(registered, "get /health") {
 		t.Fatalf("http_registrations.py's handlers are asked with registrations %v", registered)
 	}
+	// The helper question: format_score, which __all__ leaves out and only
+	// render_level calls, is a helper, so exports.py keeps one declaration
+	// that is none and stays whole with it. levels.py's constants are asked
+	// with the function of models.py that reads them.
+	exports := "src/fixture_app/exports.py"
+	format, render := split.Symbols[[2]string{exports, "format_score"}], split.Symbols[[2]string{exports, "render_level"}]
+	if !split.Helpers[[2]string{exports, "format_score"}] || split.Helpers[[2]string{exports, "render_level"}] || split.PartOf[format] == "" || split.PartOf[format] != split.PartOf[render] || !recorded(split, "role_not_split", exports) {
+		t.Fatalf("format_score in %q, render_level in %q", split.PartOf[format], split.PartOf[render])
+	}
+	for _, name := range []string{"READ_VALUES", "READ_LIMIT"} {
+		if got := split.HelperItems[[2]string{"src/fixture_app/levels.py", name}]["read_by"]; !slices.Contains(anyStrings(got), "src/fixture_app/models.py:read_level_data") {
+			t.Fatalf("%s is asked with read_by %v", name, got)
+		}
+	}
 	projectSplit(t, index, split)
 }
 
@@ -316,6 +361,27 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	// registration there hands a function to clojure.core/map.
 	if registered := split.Registered["src/example/service.cljc"]; !slices.Contains(registered, "clojure.core/map") {
 		t.Fatalf("service.cljc's declarations are asked with registrations %v", registered)
+	}
+	// The helper question: the private exclaim, which only cheer calls, is a
+	// helper and goes with cheer by code; cheer, public and called by
+	// nothing, is not asked. The items carry what reads and what hands over:
+	// read-limit reads source-limit, greet-many hands greet to map. A macro's
+	// uses leave no relation (CLOJURE), so a macro nothing else uses is no
+	// helper by code.
+	core := "src/example/core.clj"
+	exclaim, cheer := split.Symbols[[2]string{core, "example.core/exclaim"}], split.Symbols[[2]string{core, "example.core/cheer"}]
+	if !split.Helpers[[2]string{core, "example.core/exclaim"}] || split.PartOf[exclaim] == "" || split.PartOf[exclaim] != split.PartOf[cheer] || !recorded(split, "role_attached", "example.core/exclaim") {
+		t.Fatalf("exclaim in %q, cheer in %q", split.PartOf[exclaim], split.PartOf[cheer])
+	}
+	if _, asked := split.HelperItems[[2]string{core, "example.core/cheer"}]; asked {
+		t.Fatal("cheer, which nothing calls, was asked the helper question")
+	}
+	service := "src/example/service.cljc"
+	if got := split.HelperItems[[2]string{service, "example.service/source-limit"}]["read_by"]; !slices.Contains(anyStrings(got), core+":example.core/read-limit") {
+		t.Fatalf("source-limit is asked with read_by %v", got)
+	}
+	if got := split.HelperItems[[2]string{service, "example.service/greet"}]["handed_over_by"]; !slices.Contains(anyStrings(got), core+":example.core/greet-many") {
+		t.Fatalf("greet is asked with handed_over_by %v", got)
 	}
 	projectSplit(t, index, split)
 }
@@ -359,6 +425,34 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	// getCommand is "kvCommand get", not a command lookup.
 	if registered := split.Registered["kvd.c"]; !slices.Contains(registered, "kvCommand get") {
 		t.Fatalf("kvd.c's handlers are asked with registrations %v", registered)
+	}
+	// The helper question: saveSnapshot, static and called only by
+	// bgsaveCommand, goes with it by code. staticsyms.h's symsTable, which
+	// only printSymbols reads, is a helper, so the header keeps one
+	// declaration that is none and stays whole; it is then the header's
+	// face, used from one box only, so the whole header joins printSymbols's
+	// box, as redis.c's findFuncName takes staticsymbols.h. addReplyBulk and
+	// addReplyLong, whose callers stand in both boxes, are asked once more.
+	snapshot, bgsave := split.Symbols[[2]string{"kvd.c", "saveSnapshot"}], split.Symbols[[2]string{"kvd.c", "bgsaveCommand"}]
+	if split.PartOf[snapshot] == "" || split.PartOf[snapshot] != split.PartOf[bgsave] || !recorded(split, "role_attached", "saveSnapshot") {
+		t.Fatalf("saveSnapshot in %q, bgsaveCommand in %q", split.PartOf[snapshot], split.PartOf[bgsave])
+	}
+	printer := split.PartOf[split.Symbols[[2]string{"kvd.c", "printSymbols"}]]
+	for _, name := range []string{"symsTable", "kvSymbol"} {
+		if at := split.PartOf[split.Symbols[[2]string{"staticsyms.h", name}]]; at == "" || at != printer {
+			t.Fatalf("staticsyms.h's %s is in %q, printSymbols in %q", name, at, printer)
+		}
+	}
+	if !recorded(split, "role_attached", "staticsyms.h") {
+		t.Fatal("the header's joining is not recorded")
+	}
+	if got := split.HelperItems[[2]string{"staticsyms.h", "symsTable"}]["read_by"]; !reflect.DeepEqual(got, []any{"kvd.c:printSymbols"}) {
+		t.Fatalf("symsTable is asked with read_by %v", got)
+	}
+	for _, name := range []string{"addReplyBulk", "addReplyLong"} {
+		if !recorded(split, "role_second_pass", name) {
+			t.Fatalf("%s was not asked once more", name)
+		}
 	}
 	// The split puts netConnect, which the server never runs, alone in a
 	// role part of net.c: that part leaves the server's map and is listed
@@ -420,4 +514,14 @@ func TestCFixtureClientMapLeavesTheLoopItNeverRuns(t *testing.T) {
 	if want := map[string]string{"loop.c": "loop.c", "loop_poll.c": "loop_poll.c"}; !maps.Equal(listed, want) {
 		t.Fatalf("listed as never run = %v, want %v", listed, want)
 	}
+}
+
+// anyStrings reads a JSON list of strings.
+func anyStrings(value any) []string {
+	list, _ := value.([]any)
+	var result []string
+	for _, item := range list {
+		result = append(result, fmt.Sprint(item))
+	}
+	return result
 }

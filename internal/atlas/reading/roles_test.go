@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -152,17 +155,31 @@ type roleJev struct {
 	assigned []string
 	// items are the declarations asked by the assignment, by name.
 	items map[string]map[string]any
+	// helper answers the helper question by declaration name
+	// (responsibility when absent); helperAsked keeps every name it was
+	// asked about and helperItems their items.
+	helper      map[string]llm.Verdict
+	helperAsked []string
+	helperItems map[string]map[string]any
 	// asked are the items of every other closed question, by column.
 	asked map[string][]string
 }
 
 func newRoleJev(gate map[string]llm.Verdict, boxOf map[string]string) *roleJev {
-	jev := &roleJev{gate: gate, boxOf: boxOf, items: map[string]map[string]any{}}
+	jev := &roleJev{gate: gate, boxOf: boxOf, items: map[string]map[string]any{}, helper: map[string]llm.Verdict{}, helperItems: map[string]map[string]any{}}
 	closed := closedDecisions().Decide
 	jev.Decide = func(key string, question llm.Question) (llm.Verdict, bool) {
 		jev.mu.Lock()
 		defer jev.mu.Unlock()
 		switch {
+		case strings.HasSuffix(key, "|helper"):
+			name, _ := question.Item["name"].(string)
+			jev.helperAsked = append(jev.helperAsked, name)
+			jev.helperItems[name] = question.Item
+			if verdict, ok := jev.helper[name]; ok {
+				return verdict, true
+			}
+			return typesafetest.Choose(lines.RoleHelperOwnJob), true
 		case strings.HasSuffix(key, "|boxes"):
 			path, _ := question.Item["path"].(string)
 			jev.gated = append(jev.gated, path)
@@ -503,6 +520,259 @@ func TestAnOpenUnitGoesWhereItsSameFileUsersAre(t *testing.T) {
 	}
 }
 
+// helperJev is the default role fake with the named declarations decided
+// helpers.
+func helperJev(names ...string) *roleJev {
+	jev := defaultRoleJev()
+	for _, name := range names {
+		jev.helper[name] = typesafetest.Choose(lines.RoleHelperHelper)
+	}
+	return jev
+}
+
+// helperMarks are the atlas symbols of a target that carry the helper mark,
+// by name.
+func helperMarks(target atlas.Target) []string {
+	var names []string
+	for _, box := range target.Boxes {
+		for _, file := range box.Files {
+			for _, symbol := range file.Symbols {
+				if symbol.Helper {
+					names = append(names, symbol.Name)
+				}
+			}
+		}
+	}
+	for _, entry := range target.OffMap {
+		for _, symbol := range entry.File.Symbols {
+			if symbol.Helper {
+				names = append(names, symbol.Name)
+			}
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// A helper is never named or assigned: the naming of server.go lists
+// neither helper nor its name among Store's calls, and the assignment never
+// asks about it. Called only by Store.Put, it joins Storage by code with no
+// question (rule A), is recorded as attached and carries the helper mark.
+func TestHelpersAreNotNamedAndGoWithTheirUsers(t *testing.T) {
+	graph := roleGraph(t, withoutMainCallingHelper)
+	provider, jev := defaultRoleProvider(), helperJev("helper")
+	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+	var naming struct {
+		File struct {
+			Declarations []boxesDecl `json:"declarations"`
+		} `json:"file"`
+	}
+	if err := json.Unmarshal(provider.named["svc/server.go"], &naming); err != nil {
+		t.Fatal(err)
+	}
+	for _, decl := range naming.File.Declarations {
+		if decl.Name == "helper" || slices.Contains(decl.Calls, "helper") || slices.Contains(decl.CalledBy, "helper") {
+			t.Fatalf("the naming shows the helper: %+v", decl)
+		}
+	}
+	if len(naming.File.Declarations) != 4 {
+		t.Fatalf("the naming lists %d declarations, want the 4 that are no helpers", len(naming.File.Declarations))
+	}
+	if slices.Contains(jev.assigned, "helper") {
+		t.Fatalf("the helper was assigned: %v", jev.assigned)
+	}
+	svc := targetOf(t, result, "svc")
+	if got := membersOf(partsByTitle(svc)["Storage"]); !slices.Equal(got, []string{"Store", "Store.Get", "Store.Put", "helper"}) {
+		t.Fatalf("Storage holds %v", got)
+	}
+	if !slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool {
+		return row.Kind == "role_attached" && slices.Equal(row.Samples, []string{"helper"})
+	}) {
+		t.Fatal("the helper's placement is not recorded")
+	}
+	if marks := helperMarks(svc); !slices.Equal(marks, []string{"helper"}) {
+		t.Fatalf("helper marks: %v", marks)
+	}
+}
+
+// A helper whose users stand in two boxes (main in Entry, Store.Put in
+// Storage) is shared: code cannot place it, so the assignment asks about it
+// once, after code has settled, in a round of its own whose windows keep the
+// first pass's. Placed, it goes where the answer says; a near-tie leaves it
+// undecided. No unit is asked twice.
+func TestASharedHelperIsAskedOnceInASecondPass(t *testing.T) {
+	read := func(box string) (Result, *roleJev, Options) {
+		t.Helper()
+		provider, jev := defaultRoleProvider(), helperJev("helper")
+		jev.boxOf["helper"] = box
+		opts := roleOptions(t, roleGraph(t, nil), provider, jev, "")
+		result, err := Read(t.Context(), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := atlas.Validate(result.Atlas); err != nil {
+			t.Fatal(err)
+		}
+		for i, name := range jev.assigned {
+			if slices.Contains(jev.assigned[i+1:], name) {
+				t.Fatalf("%s was assigned twice: %v", name, jev.assigned)
+			}
+		}
+		return result, jev, opts
+	}
+	result, jev, opts := read("Routing")
+	if !slices.Contains(jev.assigned, "helper") {
+		t.Fatalf("the shared helper was not asked again: %v", jev.assigned)
+	}
+	if got := membersOf(partsByTitle(targetOf(t, result, "svc"))["Routing"]); !slices.Equal(got, []string{"Route", "helper"}) {
+		t.Fatalf("Routing holds %v", got)
+	}
+	if !slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool {
+		return row.Kind == "role_second_pass" && slices.Equal(row.Samples, []string{"helper"})
+	}) {
+		t.Fatal("the second pass is not recorded")
+	}
+	// Two targets: the first pass of svc is round 1, its second pass round 3.
+	for _, name := range []string{"atlas_role_assign-r1-w0.request.ref.json", "atlas_role_assign-r3-w0.request.ref.json"} {
+		if _, err := os.Stat(filepath.Join(opts.OwnerRunDir, atlas.TablesDir, name)); err != nil {
+			t.Fatalf("no %s: %v", name, err)
+		}
+	}
+	result, _, _ = read("")
+	if !slices.ContainsFunc(targetOf(t, result, "svc").OffMap, func(entry atlas.OffMapFile) bool {
+		return entry.Reason == atlas.OffMapUndecided && len(entry.File.Symbols) == 1 && entry.File.Symbols[0].Name == "helper"
+	}) {
+		t.Fatal("a near-tie in the second pass placed the helper")
+	}
+}
+
+// pool.go's getBuf, a helper Store.Get alone calls, is its face; bufPool,
+// which getBuf reads, is used only in pool.go. The whole file joins Storage,
+// the box of Store (rule B): it is no row of the parts request and Storage
+// holds its units. When util.go's Log, a whole file, calls getBuf too, the
+// file's outside users stand in two rows and it keeps a row of its own.
+func TestAHelperFileJoinsTheBoxOfItsUsers(t *testing.T) {
+	pool := func(logUses bool) func(files map[string][]roleDecl) {
+		return func(files map[string][]roleDecl) {
+			files["svc/pool.go"] = []roleDecl{
+				{name: "bufPool", kind: "variable", line: 3, end: 3, code: 1},
+				{name: "getBuf", kind: "function", line: 5, end: 9, code: 4, uses: []string{"reads svc/pool.go:bufPool"}},
+			}
+			server := files["svc/server.go"]
+			for i := range server {
+				if server[i].name == "Store.Get" {
+					server[i].calls = []string{"svc/pool.go:getBuf"}
+				}
+			}
+			if logUses {
+				files["svc/util.go"][0].calls = []string{"svc/pool.go:getBuf"}
+			}
+		}
+	}
+	read := func(logUses bool) (atlas.Target, *tableProvider, Result) {
+		t.Helper()
+		provider, jev := defaultRoleProvider(), helperJev("getBuf")
+		result, err := Read(t.Context(), roleOptions(t, roleGraph(t, pool(logUses)), provider, jev, ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := atlas.Validate(result.Atlas); err != nil {
+			t.Fatal(err)
+		}
+		return targetOf(t, result, "svc"), provider, result
+	}
+	svc, provider, result := read(false)
+	for _, row := range partsRequest(t, provider, "svc/").Units {
+		if row["path"] == "svc/pool.go" && row["box"] == nil {
+			t.Fatalf("pool.go joined no box: %v", row)
+		}
+	}
+	if got := membersOf(partsByTitle(svc)["Storage"]); !slices.Equal(got, []string{"Store", "Store.Get", "Store.Put", "bufPool", "getBuf"}) {
+		t.Fatalf("Storage holds %v", got)
+	}
+	if !slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool {
+		return row.Kind == "role_attached" && slices.Equal(row.Samples, []string{"svc/pool.go"})
+	}) {
+		t.Fatal("the file's joining is not recorded")
+	}
+	svc, provider, _ = read(true)
+	rows := 0
+	for _, row := range partsRequest(t, provider, "svc/").Units {
+		if row["path"] == "svc/pool.go" && row["box"] == nil {
+			rows++
+		}
+	}
+	if rows != 1 || slices.Contains(membersOf(partsByTitle(svc)["Storage"]), "getBuf") {
+		t.Fatalf("pool.go, which a whole file also uses, joined Storage: %d rows", rows)
+	}
+}
+
+// The helper question's item is code structure only: its name, kind, file,
+// signature and lines, the declarations of the program it calls and that
+// call it, read it or hand it over, as "path:name", with test code left out,
+// and its registrations. A function or variable nothing uses is not asked;
+// a type always is.
+func TestTheHelperItemCarriesItsUsers(t *testing.T) {
+	graph := roleGraphWith(t, func(files map[string][]roleDecl) {
+		server := files["svc/server.go"]
+		for i := range server {
+			if server[i].name == "Store.Get" {
+				server[i].uses = []string{"reads svc/server.go:limits"}
+			}
+		}
+		files["svc/server.go"] = append(server,
+			roleDecl{name: "limits", kind: "variable", line: 66, end: 66, code: 1},
+			roleDecl{name: "routes", kind: "variable", line: 68, end: 68, code: 1, uses: []string{"passes_callback svc/server.go:handlePing"}},
+			roleDecl{name: "handlePing", kind: "function", line: 70, end: 72, code: 3},
+		)
+		files["svc/server_test.go"][0].calls = []string{"svc/server.go:Route"}
+	}, []atlas.Place{registration(6, "Route", "HandleFunc", "/route")})
+	provider, jev := defaultRoleProvider(), defaultRoleJev()
+	if _, err := Read(t.Context(), roleOptions(t, graph, provider, jev, "")); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]map[string]any{
+		"limits":     {"name": "limits", "kind": "variable", "file": "svc/server.go", "signature": "func()", "lines": 1.0, "read_by": []any{"svc/server.go:Store"}},
+		"handlePing": {"name": "handlePing", "kind": "function", "file": "svc/server.go", "signature": "func()", "lines": 3.0, "handed_over_by": []any{"svc/server.go:routes"}},
+		"Route": {"name": "Route", "kind": "function", "file": "svc/server.go", "signature": "func()", "lines": 7.0,
+			"calls": []any{"svc/server.go:Store"}, "called_by": []any{"svc/server.go:Serve"}, "registered": []any{"HandleFunc /route"}},
+		"Store": {"name": "Store", "kind": "type", "file": "svc/server.go", "signature": "func()", "lines": 22.0, "methods": []any{"Get func()", "Put func()"},
+			"calls": []any{"svc/server.go:helper"}, "called_by": []any{"svc/db.go:Open", "svc/server.go:Route"}},
+	} {
+		if got := jev.helperItems[name]; !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s is asked as %v, want %v", name, got, want)
+		}
+	}
+	for _, name := range []string{"main", "Close", "Log", "TestServe", "Gen1", "routes"} {
+		if slices.Contains(jev.helperAsked, name) {
+			t.Fatalf("%s, which nothing in the program uses or which is test or generated code, was asked", name)
+		}
+	}
+}
+
+// Only a decided "helper" is a helper: a near-tie (0.52 against 0.48) leaves
+// the declaration named and assigned as before, with no mark.
+func TestAnUncertainHelperAnswerIsNoHelper(t *testing.T) {
+	provider, jev := defaultRoleProvider(), defaultRoleJev()
+	jev.helper["helper"] = llm.Verdict{Choice: lines.RoleHelperHelper, Probabilities: map[string]float64{lines.RoleHelperHelper: 0.52, lines.RoleHelperOwnJob: 0.48}}
+	result, err := Read(t.Context(), roleOptions(t, roleGraph(t, nil), provider, jev, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(jev.helperAsked, "helper") || !slices.Contains(jev.assigned, "helper") || !strings.Contains(string(provider.named["svc/server.go"]), `"name":"helper"`) {
+		t.Fatalf("an uncertain helper was not named and assigned: %v", jev.assigned)
+	}
+	if marks := helperMarks(targetOf(t, result, "svc")); len(marks) != 0 {
+		t.Fatalf("helper marks: %v", marks)
+	}
+}
+
 // An input stands where its handler is. helper, registered at line 6 inside
 // main's source range, is undecided while main and Store.Put call it: its
 // input names no part, not main's Entry. Called only by Store.Put, it goes
@@ -813,16 +1083,20 @@ func TestTheRoleSplitCacheIsLocalToEachFile(t *testing.T) {
 	if jev.Calls() != 0 {
 		t.Fatalf("a warm read asked Jev %d times", jev.Calls())
 	}
-	for _, stage := range []string{lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign} {
+	for _, stage := range []string{lines.StageRoleHelper, lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign} {
 		if fresh, _ := live(warm, stage); fresh != 0 {
 			t.Fatalf("a warm read asked %s %d times live", stage, fresh)
 		}
 	}
 	earlier, _ := read(roleGraph(t, func(files map[string][]roleDecl) {
-		files["svc/a.go"] = []roleDecl{{name: "A", kind: "function", line: 3, end: 4, code: 2}, {name: "B", kind: "function", line: 6, end: 7, code: 2}}
+		files["svc/a.go"] = []roleDecl{{name: "A", kind: "function", line: 3, end: 4, code: 2}, {name: "B", kind: "function", line: 6, end: 7, code: 2, calls: []string{"svc/a.go:A"}}}
 	}))
 	if fresh, cached := live(earlier, lines.StageRoleGate); fresh != 1 || cached != 3 {
 		t.Fatalf("an earlier file re-asked the gate: %d live, %d cached", fresh, cached)
+	}
+	// The helper question asks one group per file: a.go's is the one new.
+	if fresh, cached := live(earlier, lines.StageRoleHelper); fresh != 1 || cached != 1 {
+		t.Fatalf("an earlier file re-asked the helper question: %d live, %d cached", fresh, cached)
 	}
 	for _, stage := range []string{lines.StageRoleBoxes, lines.StageRoleAssign} {
 		if fresh, _ := live(earlier, stage); fresh != 0 {
@@ -837,6 +1111,11 @@ func TestTheRoleSplitCacheIsLocalToEachFile(t *testing.T) {
 	}
 	if fresh, cached := live(called, lines.StageRoleBoxes); fresh != 1 || cached != 1 {
 		t.Fatalf("a call into server.go re-asked the naming %d times (%d cached)", fresh, cached)
+	}
+	// Route's item names its callers across files, so server.go's helper
+	// group is asked again.
+	if fresh, _ := live(called, lines.StageRoleHelper); fresh != 1 {
+		t.Fatalf("a call into server.go re-asked the helper question %d times", fresh)
 	}
 }
 
@@ -874,7 +1153,7 @@ func TestTheMapOfPartsStagesAreJournaled(t *testing.T) {
 	defer writer.Close()
 	for _, stage := range []string{
 		lines.StageZones, lines.StagePlacement, lines.StageDescribe, lines.StageAreas,
-		lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign, lines.StageCore, lines.StageKeys,
+		lines.StageRoleHelper, lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign, lines.StageCore, lines.StageKeys,
 	} {
 		reference := writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: stage, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1, RequestProvenance: debugdump.SemanticRequestExactSent,

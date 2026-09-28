@@ -121,7 +121,13 @@ macro's own use leaves no relation, so the places graph records no use of a
 macro (READING). The graph's `uses` hold var reads and hand-overs:
 `TestCumulativeClojureMapOfParts` checks that `read-limit` uses
 `example.service/source-limit` and `greet-many` hands `example.service/greet`
-to `clojure.core/map`.
+to `clojure.core/map`. The role split's helper question (READING) counts
+these as users; a macro nothing else uses therefore has none, and is no
+helper by code instead of being asked (the fixture's `ensure!`), a missing
+equivalent recorded, not patched. The private `exclaim` at the end of
+`core.clj`, which only `cheer` calls, is the fixture's helper: the split
+check places it with `cheer`, and `cheer`, public and called by nothing, is
+not asked.
 
 ## Calls that run when a namespace loads
 

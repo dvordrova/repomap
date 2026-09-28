@@ -115,7 +115,13 @@ to the method. A parameter default runs on each call and stays the function's.
 a declaration's reads, hand-overs and decorations as its `uses` (READING);
 `TestCumulativeJSTSMapOfParts` checks that `recordOrder` uses the module's
 `handledOrderIds`. A callable named as a value is also a read of it: the
-function handed to a registration is both read and handed over. A JavaScript file
+function handed to a registration is both read and handed over. The role
+split's helper question (READING) counts reads of a callable, hand-overs and
+alternatives as users, so an overloaded handler stays asked; its placement
+counts neither. In the split check the unexported `processPendingJobs` and
+`handledOrderIds` are helpers and `handledOrderIds` goes with `recordOrder`;
+`shared/contracts.ts`'s `paintColor`, which that program only re-exports, is
+not asked. A JavaScript file
 follows the same walk; `src/market-worker.js` holds no decorator, since Node
 runs no decorator syntax.
 

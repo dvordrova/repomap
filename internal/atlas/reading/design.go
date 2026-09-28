@@ -317,28 +317,35 @@ func (view *designView) designUnitOf(ref string, file *designFile, box string, u
 
 // groupingUnits are the rows of a target's parts request, in f* order: a
 // file the role split splits gives one c* row per box that holds a unit, in
-// naming order (c1, c2… across the target); any other file gives one whole
-// row under its f* ref. The units no box of a split file took stay off the
-// map as undecided.
-func (view *designView) groupingUnits(splits map[string]*roleSplit, outcome *designOutcome) []*designUnit {
+// naming order (c1, c2… across the target); a whole file that joined a box
+// gives no row; any other file gives one whole row under its f* ref. A row
+// also holds the units code placed there from other files. The units no box
+// of a split file took stay off the map as undecided.
+func (view *designView) groupingUnits(split *unitSplit, outcome *designOutcome) []*designUnit {
+	if split == nil {
+		split = &unitSplit{}
+	}
 	var units []*designUnit
 	boxes := 0
 	for _, file := range view.files {
-		split := splits[file.id]
-		if split == nil {
-			units = append(units, view.designUnitOf(file.id, file, "", file.units))
+		if roles := split.splits[file.id]; roles != nil {
+			for i, box := range roles.boxes {
+				held := append(slices.Clone(roles.holds[i]), split.into[groupKey{file: file.id, box: i}]...)
+				if len(held) == 0 {
+					continue
+				}
+				boxes++
+				units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, box.Name, held))
+			}
+			for _, id := range roles.undecided {
+				outcome.unitReason[id] = atlas.OffMapUndecided
+			}
 			continue
 		}
-		for i, box := range split.boxes {
-			if len(split.holds[i]) == 0 {
-				continue
-			}
-			boxes++
-			units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, box.Name, split.holds[i]))
+		if _, joined := split.attachedFiles[file.id]; joined {
+			continue
 		}
-		for _, id := range split.undecided {
-			outcome.unitReason[id] = atlas.OffMapUndecided
-		}
+		units = append(units, view.designUnitOf(file.id, file, "", append(slices.Clone(file.units), split.into[groupKey{file: file.id, box: -1}]...)))
 	}
 	return units
 }
@@ -928,6 +935,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 	r.opts.Stage(lines.StageZones, "splitting each target's files into boxes, grouping the files and boxes into parts, placing what the answer left out, then describing the parts")
 	r.boxes = map[string]*boxState{}
 	r.designBoxOf = map[string]map[string]string{}
+	r.helperOf = map[string]map[string]bool{}
 	r.offMap = map[string][]offMapEntry{}
 	r.mapFailure = map[string]string{}
 	if r.designSubjects == nil {
@@ -972,7 +980,7 @@ func (r *reader) readDesign(ctx context.Context) error {
 	for _, view := range readers {
 		r.joinView(view)
 	}
-	for _, stage := range []string{lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign} {
+	for _, stage := range []string{lines.StageRoleHelper, lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign} {
 		if _, asked := r.uses[stage]; asked {
 			r.reportStage(stage)
 		}
@@ -1038,14 +1046,25 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 	target := r.opts.Targets[position]
 	round := position + 1
 	outcome := &designOutcome{partOf: map[string]string{}, unitPart: map[string]string{}, unitReason: map[string]string{}, membership: map[string]string{}}
-	var splits map[string]*roleSplit
+	var split *unitSplit
 	if !r.dry {
 		var err error
-		if splits, err = r.readRoles(ctx, view, round); err != nil {
+		if split, err = r.readRoles(ctx, view, round); err != nil {
 			return err
 		}
 	}
-	units := view.groupingUnits(splits, outcome)
+	units := view.groupingUnits(split, outcome)
+	// Every declaration whose unit Jev decided is a helper carries the mark.
+	helpers := map[string]bool{}
+	if split != nil {
+		for _, file := range view.all {
+			for _, id := range view.decls[file] {
+				if split.helpers[view.root(id)] {
+					helpers[id] = true
+				}
+			}
+		}
+	}
 	var drafts []designPart
 	conflicts := map[string][]int{}
 	var leftOut []string
@@ -1141,6 +1160,7 @@ func (r *reader) designTarget(ctx context.Context, owner *reader, order *designO
 	for place, part := range outcome.membership {
 		membership[place] = part
 	}
+	owner.helperOf[target.ID] = helpers
 	owner.offMap[target.ID] = r.offMapEntries(view, outcome)
 	if outcome.failure != "" {
 		owner.mapFailure[target.ID] = outcome.failure
@@ -1331,6 +1351,10 @@ func (r *reader) drawParts(view *designView, outcome *designOutcome, units []*de
 			unit := byRef[ref]
 			box.unitIDs = append(box.unitIDs, unit.units...)
 			box.sources = appendUnique(box.sources, unit.file)
+			// A unit code placed in this row from another file brings its file.
+			for _, id := range unit.units {
+				box.sources = appendUnique(box.sources, view.unitFile[id])
+			}
 			box.test = box.test && unit.test
 			for _, id := range unit.units {
 				outcome.unitPart[id] = part.id

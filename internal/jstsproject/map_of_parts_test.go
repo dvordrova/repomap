@@ -3,6 +3,7 @@ package jstsproject
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -86,5 +87,25 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	// over.
 	if registered := split.Registered["src/server.ts"]; !slices.Contains(registered, "get /products/featured") {
 		t.Fatalf("server.ts's handlers are asked with registrations %v", registered)
+	}
+	// The helper question: processPendingJobs, not exported and called by
+	// runWorker, and handledOrderIds, not exported and read by recordOrder,
+	// are helpers; handledOrderIds goes with its one reader by code.
+	// shared/contracts.ts's paintColor, which destinations.ts only re-exports
+	// and no file of this program reads, is no helper by code and not asked.
+	for _, name := range []string{"processPendingJobs", "handledOrderIds"} {
+		if !split.Helpers[[2]string{"src/server.ts", name}] {
+			t.Fatalf("%s is no helper: %v", name, split.HelperItems[[2]string{"src/server.ts", name}])
+		}
+	}
+	if got := split.HelperItems[[2]string{"src/server.ts", "handledOrderIds"}]["read_by"]; !reflect.DeepEqual(got, []any{"src/server.ts:recordOrder"}) {
+		t.Fatalf("handledOrderIds is asked with read_by %v", got)
+	}
+	ids, record := split.Symbols[[2]string{"src/server.ts", "handledOrderIds"}], split.Symbols[[2]string{"src/server.ts", "recordOrder"}]
+	if split.PartOf[ids] == "" || split.PartOf[ids] != split.PartOf[record] {
+		t.Fatalf("handledOrderIds in %q, recordOrder in %q", split.PartOf[ids], split.PartOf[record])
+	}
+	if item, asked := split.HelperItems[[2]string{"shared/contracts.ts", "paintColor"}]; asked {
+		t.Fatalf("paintColor, which nothing reads, was asked: %v", item)
 	}
 }

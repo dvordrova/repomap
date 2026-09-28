@@ -189,7 +189,11 @@ The places graph keeps these reads, with every exact decoration, as the
 declaration's `uses` (READING): `TestCumulativePythonMapOfParts` checks that
 `read_level_data` uses `levels.py`'s `READ_VALUES` and `READ_LIMIT`, and that
 `traced_level` uses `traced`, a decorator written as a bare name, which
-leaves no pattern and so no lifted call.
+leaves no pattern and so no lifted call. The role split's helper question
+(READING) shows those constants with the functions that read them, and
+counts every exact decoration as a use. In the split check, `exports.py`'s
+`format_score`, which `__all__` leaves out and only `render_level` calls, is
+a helper, so the file keeps one declaration that is none and stays whole.
 
 Clojure already emits comparable native var reads; its cumulative example now
 checks an imported var and a shadowing local. JS/TS emits its compiler-bound

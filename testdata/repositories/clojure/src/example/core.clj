@@ -127,3 +127,9 @@
 ;; example.facade refers every var of example.rates and then defines its own
 ;; to-text: the alias reaches the facade's var.
 (defn facade-text [day] (facade/to-text day))
+
+;; A private function only cheer calls: the map of parts places it with its
+;; one user.
+(defn- exclaim [s] (str s "!"))
+
+(defn cheer [name] (exclaim name))
