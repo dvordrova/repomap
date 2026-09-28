@@ -13,7 +13,7 @@
 .find-results button:hover,.find-results button:focus-visible{background:var(--soft);outline:2px solid var(--accent);outline-offset:3px}
 .find-result-type{font-size:var(--text-small);color:var(--muted);flex-shrink:0}
 .find-result-place{font-size:var(--text-small);color:var(--muted);margin:.15rem 0;overflow-wrap:anywhere}
-.find-result-summary{margin:.35rem 0;color:#51406f;max-width:80ch}
+.find-result-summary{margin:.35rem 0;font-style:italic;color:var(--model);max-width:80ch}
 .find-result-links{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-size:var(--text-small)}
 .find-pages{justify-content:flex-end;border-top:1px solid var(--line);padding-top:.7rem}
 .reading-map-links{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-size:var(--text-small)}

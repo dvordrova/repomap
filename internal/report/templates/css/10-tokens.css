@@ -5,9 +5,14 @@
   --text-body:1rem;--text-small:.875rem;
   --canvas:#f3f6f4;--paper:#fff;--ink:#172b2a;--muted:#61716e;--line:#d5dfda;
   --bg:#fff;--soft:#edf4f0;--accent:#176b62;--warn:#9a3412;
-  --claim:#6b5300;--claim-bg:#fff8e1;--model:#3f3f46;--model-bg:#ece7f6;
+  --claim:#6b5300;--claim-bg:#fff8e1;--model:#3f3f46;--model-bg:#edf2f8;
   --edge:1px;--rule:1px;--drop:3px;--radius:12px;
   --shadow:none;--shadow-sm:none;
   --zone-1:#dbeafe;--zone-2:#dcfce7;--zone-3:#fef3c7;--zone-4:#fce7f3;
   --zone-5:#e0e7ff;--zone-6:#ffedd5;--zone-7:#ccfbf1;--zone-8:#ede9fe;
+  /* One meaning per colour: purple is a link and nothing else; core parts
+     and areas are rose (--zone-4's hue), marked by the diamond. */
+  --link:#63429d;--link-bg:#f5f3f9;--link-line:#dcd6e7;--link-bg-hover:#eee7f7;
+  --core:#913b6d;--core-ink:#62284a;--core-bg:var(--zone-4);--core-area:#fef4f9;
+  --type-arrow:#7b8aa0;
 }
