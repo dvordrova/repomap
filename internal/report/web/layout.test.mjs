@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {connections, endPlaques, borderCrossing, plaqueCentre} from './layout.mjs';
+import {connections, endPlaques, borderCrossing, plaqueCentre, stubEnds} from './layout.mjs';
 import {prepareInteriors,layoutPrepared} from './split-layout.mjs';
 import {semanticLayout} from './semantic.mjs';
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -140,4 +140,16 @@ test('a plaque stands where its arrow crosses the frame border, clear of what th
   assert.deepEqual(plaqueCentre({x:0,y:70},'left',tiles,{x:11.5,y:10}),{x:0,y:70},'nothing inside there: centred on the border');
   assert.deepEqual(plaqueCentre({x:50,y:80},'bottom',tiles,{x:11.5,y:10}),{x:50,y:80});
   assert.deepEqual(plaqueCentre({x:30,y:0},'top',[{left:0,top:0,right:100,bottom:18}],{x:11.5,y:10}),{x:30,y:-10},'clear of the title band');
+});
+
+// A part read by itself inside an area had no arrow: the route to the part
+// or area beside it is drawn from its area's border.
+test('a part looked at gets one short arrow per connection out of the side facing its neighbour',()=>{
+  const part={x:0,y:0,width:100,height:50};
+  const ends=stubEnds(part,[{key:'in:left',box:{x:-300,y:0,width:50,height:50},incoming:true},{key:'out:right',box:{x:300,y:-10,width:50,height:50},incoming:false},
+    {key:'out:right2',box:{x:300,y:40,width:50,height:50},incoming:false},{key:'out:below',box:{x:0,y:300,width:100,height:50},incoming:false}],10);
+  assert.deepEqual(ends.get('in:left'),{side:'left',point:{x:0,y:25},points:[{x:-10,y:25},{x:0,y:25}]},'an incoming one points in');
+  assert.equal(ends.get('out:right').point.x,100);assert.ok(Math.abs(ends.get('out:right').point.y-50/3)<1e-9,'two on one side spread along it, in their neighbours\' order');
+  assert.deepEqual(ends.get('out:right2').points.map(p=>[p.x,Math.round(p.y*1e6)/1e6]),[[100,33.333333],[110,33.333333]],'an outgoing one points out');
+  assert.equal(ends.get('out:below').side,'bottom');
 });

@@ -34,6 +34,8 @@ var russianUI = map[string]string{
 	"sources it":                           "подключает",
 	"connects to it":                       "соединяется",
 	"Calls into":                           "Вызывает",
+	"Expand all":                           "Раскрыть все",
+	"Collapse all":                         "Свернуть все",
 	"Uses variables":                       "Использует переменные",
 	"Used by":                              "Кто использует",
 	"Uses":                                 "Что использует",

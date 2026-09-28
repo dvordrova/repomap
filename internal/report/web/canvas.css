@@ -168,6 +168,10 @@
 .map-object-heading{position:relative;padding-right:38px;min-height:32px}
 .flow-enabled .map-close-details{position:absolute;top:0;right:0;display:grid;place-items:center;width:32px;height:32px;padding:4px;border:1px solid #d4dce6;border-radius:6px;background:white;color:#39455a;cursor:pointer}
 .flow-enabled .map-close-details:hover{background:#edf2f8;border-color:#8c9eb8}
+/* Every fold of the reading at once, beside the close control. */
+.flow-enabled .map-expand-all{position:absolute;top:6px;right:42px;padding:2px 4px;border:0;background:none;font:500 12px/16px system-ui;color:var(--link,#5b3fb3);cursor:pointer}
+.flow-enabled .map-expand-all:hover{text-decoration:underline}
+.flow-enabled .map-object-heading:has(.map-expand-all:not([hidden]))>.map-card-kind{display:block;padding-right:84px}
 .map-input-context{flex:none;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid #d4dce6;font-size:12px;max-height:110px;overflow:auto}
 .map-input-context[hidden]{display:none}
 .map-input-context button{font-size:12px;padding:4px 7px;margin-top:6px}

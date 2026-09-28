@@ -64,35 +64,51 @@ test('the − control steps from an area to its component, then to the whole map
 
 // One pinch crosses at most one level boundary; a pause lets the next pinch
 // cross the next. Eight ctrl+wheel ticks had carried a Redis reader from
-// the whole map past the areas into a part's tiles.
+// the whole map past the areas into a part's tiles, and one pinch over
+// Replication's 7px card went on into syncRead's tiles: the part under the
+// pinch reading its title is a level of its own (owner, 2026-09-28).
 test('one pinch crosses at most one level boundary and a pause lets the next cross one more',async({page},testInfo)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const map=await ready(page,'?symbols');
   const worker=await page.locator('.react-flow__node[data-id="worker"]').boundingBox();
   const aim={x:worker.x+worker.width/2,y:worker.y+worker.height/2};
   await page.mouse.move(aim.x,aim.y,{steps:4});
+  // The level, and half a level more once the part under the pinch reads
+  // its title at twelve pixels.
+  const aimed=async()=>{
+    const base=await level(map);
+    if(base===3)return 3.5;
+    // Its font on screen: the CSS size times the scale it is drawn at (the
+    // title wraps, so its height is no measure of it).
+    const title=base<2?0:await page.locator('.react-flow__node[data-id="worker"] .flow-part>strong').evaluate(strong=>parseFloat(getComputedStyle(strong).fontSize)*strong.getBoundingClientRect().height/strong.offsetHeight);
+    return base+(title>=12?.5:0);
+  };
   async function pinch(ticks,deltaY){
-    const seen=[await level(map)];
+    const seen=[await aimed()];
     await page.keyboard.down('Control');
-    try{for(let tick=0;tick<ticks;tick++){await page.mouse.wheel(0,deltaY);await page.waitForTimeout(60);seen.push(await level(map));}}
+    try{for(let tick=0;tick<ticks;tick++){await page.mouse.wheel(0,deltaY);await page.waitForTimeout(60);seen.push(await aimed());}}
     finally{await page.keyboard.up('Control');}
-    await settle(map);seen.push(await level(map));
+    await settle(map);seen.push(await aimed());
     return seen;
   }
   const crossings=seen=>seen.slice(1).filter((level,i)=>level!==seen[i]).length;
-  const first=await pinch(10,-40);
-  expect(crossings(first),`one pinch in crosses one boundary: ${first}`).toBe(1);
-  expect(first.at(-1)).toBeGreaterThan(0);
-  await testInfo.attach('journey-01 — One pinch in: one boundary',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
-  await page.waitForTimeout(500);
-  const second=await pinch(10,-40);
-  expect(crossings(second),`after a pause the next pinch crosses the next: ${second}`).toBe(1);
-  expect(second.at(-1)).toBe(3);
-  await testInfo.attach('journey-02 — After a pause, the tiles',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  // Pinch in, pausing between pinches, until the tiles are drawn: each
+  // pinch crosses at most one boundary, and the stop before the tiles is
+  // the part reading its title.
+  const stops=[];
+  for(let pinches=0;pinches<5&&stops.at(-1)!==3.5;pinches++){
+    if(pinches)await page.waitForTimeout(500);
+    const seen=await pinch(10,-40);
+    expect(crossings(seen),`one pinch in crosses at most one boundary: ${seen}`).toBeLessThanOrEqual(1);
+    stops.push(seen.at(-1));
+    await testInfo.attach(`journey-0${pinches+1} — Pinch ${pinches+1}: level ${seen.at(-1)}`,{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  }
+  expect(stops.at(-1),`the tiles are reached: ${stops}`).toBe(3.5);
+  expect(stops.at(-2),`before the tiles the part's title reads: ${stops}`).toBe(2.5);
   await page.waitForTimeout(500);
   const out=await pinch(14,40);
   expect(crossings(out),`one pinch out crosses one boundary: ${out}`).toBe(1);
-  expect(out.at(-1)).toBe(second.at(-1)-1);
+  expect(out.at(-1)).toBe(2.5);
   expect(errors).toEqual([]);
 });
 

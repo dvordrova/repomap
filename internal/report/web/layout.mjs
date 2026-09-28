@@ -82,3 +82,34 @@ export function plaqueCentre(point, side, obstacles, half) {
   }
   return centre;
 }
+
+// Where the arrows of a part looked at leave it when no drawn route touches
+// it: a route between two areas is drawn from area to area, so Replication,
+// read by itself, had no arrow of its own. Each connection gets one short
+// arrow out of the side facing what it connects to, spread along that side
+// in the order its neighbours stand, pointing out for an outgoing one and in
+// for an incoming one; its plaque sits where it meets the border. `box`
+// {x,y,width,height}; `outsides` [{key, box, incoming}]; `length` the
+// arrow's length in the same units.
+export function stubEnds(box, outsides, length) {
+  const cx=box.x+box.width/2,cy=box.y+box.height/2,sides=new Map();
+  for(const outside of outsides){
+    const dx=outside.box.x+outside.box.width/2-cx,dy=outside.box.y+outside.box.height/2-cy;
+    const side=Math.abs(dx)/box.width>=Math.abs(dy)/box.height?(dx<0?'left':'right'):(dy<0?'top':'bottom');
+    const along=side==='left'||side==='right'?cy+dy:cx+dx;
+    if(!sides.has(side))sides.set(side,[]);
+    sides.get(side).push({...outside,along});
+  }
+  const ends=new Map(),normal={left:{x:-1,y:0},right:{x:1,y:0},top:{x:0,y:-1},bottom:{x:0,y:1}};
+  for(const [side,list] of sides){
+    list.sort((a,b)=>a.along-b.along||String(a.key).localeCompare(String(b.key)));
+    list.forEach((outside,i)=>{
+      const t=(i+1)/(list.length+1);
+      const point=side==='left'?{x:box.x,y:box.y+box.height*t}:side==='right'?{x:box.x+box.width,y:box.y+box.height*t}
+        :side==='top'?{x:box.x+box.width*t,y:box.y}:{x:box.x+box.width*t,y:box.y+box.height};
+      const far={x:point.x+normal[side].x*length,y:point.y+normal[side].y*length};
+      ends.set(outside.key,{side,point,points:outside.incoming?[far,point]:[point,far]});
+    });
+  }
+  return ends;
+}

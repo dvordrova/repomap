@@ -42,7 +42,7 @@ func TestMapRevealRecordsDestinationBeforeLayout(t *testing.T) {
 	resumeCode := systemJSPiece(t, "29-operation-view.js", "map.resumeExploration=function(){", "  map.readingState=")
 	entranceCode := systemJSPiece(t, "29-operation-view.js", "function rmInputPath(", "(function(){")
 	runSystemJS(t, entranceCode+`
-let surface=null,scope='a',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',savedAddress;
+let surface=null,scope='a',operation=null,inputAway=false,beforeInput=null,selectionRevision=0,searchValue='',filterValue='',savedAddress;
 const a={id:'a',dataset:{}},b={id:'b',dataset:{}},op={id:'op',dataset:{activation:'command'}},byID={a,b,op};
 let finish;const ready=new Promise(resolve=>finish=resolve),search={},filter={};
 const map={explorerMember:{owner:'a',key:'source-a'},captureViewport(){return {scale:1,left:20,top:40};},
@@ -59,7 +59,7 @@ function address(n){savedAddress={id:n.id,state:map.readingState()};}
  const restored=map.restoreReadingState({scope:'a',operation:'op',source:{key:'source-a'},viewport:{scale:1.2,left:32,top:65}});
  finish();await Promise.all([pending,restored]);
  assert.equal(map.shown,'a');assert.equal(map.explorerMember.key,'source-a');assert.equal(map.readingState().operation,'op');assert.equal(map.viewport.left,32);
- const beforeClick=emphasisCount;await select(b,true);assert.equal(map.readingState().operation,'op','part selection preserves operation');
+ const beforeClick=emphasisCount;await select(b,true);assert.equal(map.readingState().operation,'','reading a part leaves the input path (owner, 2026-09-28)');
  assert.equal(emphasisCount-beforeClick,1,'one click updates selection once');
  await map.restoreReadingState({scope:'',operation:'',viewport:{overview:true,x:16,y:16,zoom:.6}});
  assert.equal(map.shown,null,'Back to the first visit clears the previous part reading');
@@ -170,5 +170,54 @@ const shown=[];function appendText(parent,tag,text,cls){shown.push({tag,text,cls
 assert.ok(rank({title:'Config:10',kind:'code'},'config')<rank({title:'How do I run it?',kind:'question'},'config'));
 description({summary:'Intro '.repeat(100)+'config setting '+'After '.repeat(100)}, {}, ['config']);
 assert.equal(shown.length,1);assert.equal(shown[0].tag,'p');assert.ok(shown[0].text.length<160);assert.ok(shown[0].text.includes('config'));assert.equal(shown[0].cls,'find-result-summary');
+`)
+}
+
+// "Leave input path" returns to what was read before the input and to its
+// camera (owner, 2026-09-28): it had gone to the repository's summary, and
+// a reader needed the Components list to get back to redis-server.
+func TestLeavingAnInputPathReturnsToThePreviousReading(t *testing.T) {
+	selectCode := systemJSPiece(t, "29-operation-view.js", "async function select(", "  function reset(")
+	stateCode := systemJSPiece(t, "29-operation-view.js", "map.readingState=function(){", "  map.revealNode=")
+	resumeCode := systemJSPiece(t, "29-operation-view.js", "map.resumeExploration=function(){", "  map.readingState=")
+	leaveCode := systemJSPiece(t, "29-operation-view.js", "  clear.addEventListener('click',function(){", "  function filterChanged(){")
+	entranceCode := systemJSPiece(t, "29-operation-view.js", "function rmInputPath(", "(function(){")
+	runSystemJS(t, entranceCode+`
+let surface=null,scope='',operation=null,inputAway=false,beforeInput=null,selectionRevision=0,searchValue='',filterValue='',addresses=[],camera={x:1,y:2,zoom:3};
+const server={id:'server',dataset:{}},get={id:'get',dataset:{activation:'request'}},set={id:'set',dataset:{activation:'request'}},byID={server,get,set};
+const ready=Promise.resolve(),search={},filter={};let listener;const clear={addEventListener(kind,f){listener=f;}};
+const map={captureViewport(){return camera;},showNode(n){this.shown=n.id;},clearInspection(){this.shown=null;},explainSource(){},inspectConcept(){},restoreViewport(v){camera=v;}};
+function emphasize(){}function updateResults(){}function emit(){}function focusNode(){}function reset(){scope='';operation=null;map.shown=null;}
+function address(n,visit){addresses.push([n?n.id:'home',!!visit]);}
+`+selectCode+resumeCode+stateCode+leaveCode+`
+(async()=>{
+ await select(server,true);
+ await select(get,true,null,true);camera={x:9,y:9,zoom:9};
+ await select(set,true,null,true);
+ assert.equal(operation,set);
+ listener();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(operation,null,'the input path is left');
+ assert.equal(scope,'server','the reading before the first input returns');assert.equal(map.shown,'server');
+ assert.deepEqual(camera,{x:1,y:2,zoom:3},'and its camera');
+ assert.deepEqual(addresses.at(-1),['server',true],'a new visit, so Back returns to the input');
+})().catch(error=>{console.error(error);process.exit(1);});
+`)
+}
+
+// A reading's folds stay open when the reader comes back to it by a click
+// (owner, 2026-09-28: Persistence's "Called from" tree closed again on every
+// return), each known by its words, whatever the reading shows around it.
+func TestAReadingsFoldsAreRememberedByTheirWords(t *testing.T) {
+	code := systemJSPiece(t, "30-map.js", "function rmFolds(card){", "// \"Expand all\" opens")
+	runSystemJS(t, code+`
+const fold=(words,open)=>({open,closest(){return null;},querySelector(){return {textContent:words};}});
+const card=list=>({querySelectorAll(){return list;}});
+const first=[fold('Called from · 3',true),fold('+2',false),fold('+2',true),fold('Source details',false)];
+const keys=rmOpenFolds(card(first));
+assert.deepEqual(keys,['Called from · 3#1','+2#2']);
+// Shown again with a declaration's fold above them.
+const again=[fold('Calls',false),fold('Called from · 3',false),fold('+2',false),fold('+2',false),fold('Source details',true)];
+rmRestoreFolds(card(again),keys);
+assert.deepEqual(again.map(f=>f.open),[false,true,false,true,false]);
 `)
 }

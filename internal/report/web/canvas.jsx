@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {ReactFlow, Handle, Position, ViewportPortal, useViewport, useStore} from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import {connections, endPlaques, borderCrossing, plaqueCentre} from './layout.mjs';
+import {connections, endPlaques, borderCrossing, plaqueCentre, stubEnds} from './layout.mjs';
 import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors, endEmphasis, recedes} from './emphasis.mjs';
@@ -250,6 +250,37 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   let detailed=new Set(),openComponents=new Set(),communicationsOpen=new Set(),arriving=new Set(),locationID='',locationSubject='',componentsOpen=false,zoom=systemViewport(layout.nodes,host.clientWidth,host.clientHeight).zoom,paintedZoom,overviewFit=false;
   const closed=id=>closedContainer(id,placed,byID,detailed,componentsOpen,communicationsOpen,openComponents);
   new ResizeObserver(()=>{if(instance&&!initializing&&overviewFit)fitOverview();}).observe(host);
+  // The part the camera stands in, drawing its declarations as tiles: the
+  // one nearest the canvas's centre. It is the frame the reader looks at
+  // (owner, 2026-09-28): its arrows run out of its own border toward the
+  // part or area at their other end, each end marked by its plaque, and
+  // the location names it.
+  let deepPart='';
+  function deepPartAt(v){
+    const width=host.clientWidth,height=host.clientHeight,centre={x:(width/2-v.x)/v.zoom,y:(height/2-v.y)/v.zoom};
+    let best='',nearest=Infinity;
+    for(const n of layout.nodes){
+      const item=byID.get(n.id);if(n.frame||item?.activation||!item?.symbols?.length||closed(n.id))continue;
+      const {box,scale}=partBox({...item,...looseOf(n)});if(box.width*scale*v.zoom<860)continue;
+      const x=n.absolute.x*v.zoom+v.x,y=n.absolute.y*v.zoom+v.y;
+      if(x>=width||y>=height||x+n.width*v.zoom<=0||y+n.height*v.zoom<=0)continue;
+      const distance=Math.hypot(Math.max(n.absolute.x-centre.x,0,centre.x-n.absolute.x-n.width),Math.max(n.absolute.y-centre.y,0,centre.y-n.absolute.y-n.height));
+      if(distance<nearest){best=n.id;nearest=distance;}
+    }
+    return best;
+  }
+  function trackDeepPart(v){const next=deepPartAt(v);if(next!==deepPart){deepPart=next;update?.();}}
+  // What the camera looks at: the part drawing its tiles, else what the
+  // location row names; nothing on the whole map.
+  function lookedAt(){return !instance||!openComponents.size&&!communicationsOpen.size?'':deepPart||locationID;}
+  // A zoom (a pinch, the magnifier, "+" or "−") that brings another frame
+  // before the reader has the column read it, the camera staying (owner,
+  // 2026-09-28): zoomed into Command line client, the column had still read
+  // redis-cli. A click reads without moving the camera; this is the zoom's.
+  function follow(before){
+    const now=lookedAt();
+    if(now&&now!==before&&!byID.get(now)?.display&&byID.get(now)?.branch!=='inputs-part')callbacks.follow?.(now);
+  }
   function updateLocation(event,subject=locationSubject){
     if(!instance)return;
     if(layoutError){location.textContent=t('Could not arrange this map. Reload to try again.');return;}
@@ -264,9 +295,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const x=n.absolute.x*v.zoom+v.x,y=n.absolute.y*v.zoom+v.y;
       const visible=Math.max(0,Math.min(w,x+n.width*v.zoom)-Math.max(0,x))*Math.max(0,Math.min(h,y+n.height*v.zoom)-Math.max(0,y));
       const dx=Math.max(n.absolute.x-point.x,0,point.x-n.absolute.x-n.width),dy=Math.max(n.absolute.y-point.y,0,point.y-n.absolute.y-n.height);
-      return {id:n.id,visible,distance:dx*dx+dy*dy};
-    }).filter(n=>n.visible>0).sort((a,b)=>a.distance-b.distance||b.visible-a.visible);
+      let depth=0;for(let at=n.parentId;at;at=placed.get(at)?.parentId)depth++;
+      return {id:n.id,visible,distance:dx*dx+dy*dy,depth};
+    // The deepest frame under the point: pinched into Core infrastructure
+    // until it filled the canvas, the location had still named redis-server,
+    // which filled it as well.
+    }).filter(n=>n.visible>0).sort((a,b)=>a.distance-b.distance||b.depth-a.depth||b.visible-a.visible);
     if(candidates.length)locationID=candidates.find(n=>n.id===subject)?.id||candidates[0].id;
+    if(deepPart)locationID=deepPart;
     // An input collection is named as its heading reads, with its component.
     const nameOf=item=>item?.branch==='inputs'?[t('Inputs'),item.componentName].filter(Boolean).join(' · '):item?.name||item?.title;
     const names=[];for(let id=locationID;id;id=placed.get(id)?.parentId)names.unshift(nameOf(byID.get(id)));
@@ -433,18 +469,38 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // type commands' incoming labels stood on Server runtime's border, in
   // the gap where the pointer looks at the whole component.
   function crossing(group,frame,matching){
-    const root=rootOf(group.outside)!==rootOf(frame)?rootOf(frame):boundaryBetween(group.insides[0],group.outside)?.id||frame;
+    // A part looked at marks its own border.
+    const root=!placed.get(frame)?.frame?frame:rootOf(group.outside)!==rootOf(frame)?rootOf(frame):boundaryBetween(group.insides[0],group.outside)?.id||frame;
     const route=group.incoming?matching.at(-1):matching[0],box=placed.get(root);
     if(!box)return null;
     // Where the drawn arrow crosses that border: its own route first.
     const rect={x:box.absolute.x,y:box.absolute.y,width:box.width,height:box.height};
     const point=[route,...matching].filter(Boolean).map(drawn=>borderCrossing(drawn.points||[],rect)).find(Boolean);
-    return point?{root,point,side:sideOf(point,box),obstacles:frameObstacles(root)}:null;
+    if(point)return {root,point,side:sideOf(point,box),obstacles:frameObstacles(root)};
+    // A part looked at whose route is drawn from its area's border gets a
+    // short arrow of its own (placeStubs).
+    return box.frame?null:{root,stub:true,obstacles:frameObstacles(root)};
+  }
+  // The short arrows of a part looked at, one per connection no drawn
+  // route brings to its border (layout.mjs stubEnds): their plaques and the
+  // routes that draw them.
+  function placeStubs(labels,part){
+    const n=placed.get(part),stubs=labels.filter(label=>label.stub);
+    if(!n||!stubs.length)return [];
+    const box={x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height};
+    const outsides=stubs.map(label=>{const other=placed.get(label.outside);return {key:label.id,incoming:label.incoming,box:{x:other.absolute.x,y:other.absolute.y,width:other.width,height:other.height}};});
+    const ends=stubEnds(box,outsides,.06*(n.width+n.height)/2);
+    return stubs.map(label=>{
+      const end=ends.get(label.id);Object.assign(label,{point:end.point,side:end.side});
+      return {id:`stub:${label.id}`,from:part,to:part,edgeIDs:label.edges,points:end.points,path:end.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' '),
+        arrow:true,reverseArrow:false,possible:label.relations.every(relation=>relation.possible),init:false,near:true,kept:true,dim:false};
+    });
   }
   // What a plaque on a frame's border must not cover: the boxes the frame
   // holds and the band its title stands in above them.
   function frameObstacles(root){
     const box=placed.get(root),inner=layout.nodes.filter(n=>n.parentId===root);
+    if(!box.frame)return partObstacles(box);
     const boxes=inner.map(n=>({left:n.absolute.x,top:n.absolute.y,right:n.absolute.x+n.width,bottom:n.absolute.y+n.height}));
     if(!boxes.length)return boxes;
     return [{left:box.absolute.x,top:box.absolute.y,right:box.absolute.x+box.width,bottom:Math.min(...boxes.map(b=>b.top))},...boxes];
@@ -458,6 +514,16 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const outside=byID.get(group.outside);
       return [{...group,id:`boundary:${frame}:${group.key}`,boundary:true,...at,title:outside?.name||outside?.title||''}];
     });
+  }
+  // A part's tiles and its title's band, as Part draws them: what a plaque
+  // on the border of a part looked at must not cover.
+  function partObstacles(n){
+    const data={...byID.get(n.id),...looseOf(n)},{box,scale}=partBox(data),grid=partGrid(data,box);
+    const {inset,columnGap:gap}=tileRoom,header=tileHeader(grid.divisor);
+    const left=column=>n.absolute.x+scale*(1+(inset+column*(grid.tileWidth+gap))/grid.divisor);
+    const top=y=>n.absolute.y+scale*(1+header+(inset+y)/grid.divisor);
+    return [{left:n.absolute.x,top:n.absolute.y,right:n.absolute.x+n.width,bottom:n.absolute.y+scale*(1+header)},
+      ...grid.blocks.map(block=>({left:left(block.column),top:top(block.y),right:left(block.column)+scale*grid.tileWidth/grid.divisor,bottom:top(block.y+block.height)}))];
   }
   // The arrowheads drawn, each the handle of the connection whose arrow it
   // ends: {route, tip, back, into, from}, `back` the point the arrow comes
@@ -640,21 +706,25 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     commitCamera(instance.setViewport(tileViewport(tile,byID.get(group?.id)?.branch==='inputs-part'?group:null,rect.width,rect.height,byID.get(id)?.contentScale||1,{least}),{duration:smooth?420:0}),id);
   }
   // Every frame is entered by the one rule, at the scale its own content is
-  // drawn at: a component whole, the others no smaller than readable. An
-  // area is fitted whole only where its parts' headings stay about twelve
-  // pixels; larger, it is entered at its first part. Fitted at its layer's
-  // floor, Redis's Server runtime stood at 8px headings.
+  // drawn at, and whole (owner, 2026-09-28: an area shows all its parts and
+  // nothing is cut at the edges), no smaller than its layer stays open; a
+  // frame too large even then is entered at its first part. Entered no
+  // smaller than its parts' twelve-pixel headings, Redis's Core
+  // infrastructure stood cut at both edges.
   function frameView(n,rect){
     const branch=byID.get(n.id).branch,component=branch==='component';
     const scale=component?(componentFonts.get(n.id)||20)/20:['communication','inputs','inputs-part'].includes(branch)?communicationScales().get(n.id)||1:scales.has(n.id)?byID.get(n.id)?.contentScale||1:1;
-    const least=scales.has(n.id)||branch==='inputs-part'?Math.max(layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height),staysOpen/scale):Infinity;
+    const least=scales.has(n.id)||branch==='inputs-part'?layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height):Infinity;
     return frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least});
   }
   // The level the camera would stand at with viewport `v` (semantic.mjs,
   // detailLevel): the frames open there as a move to it decides them
   // (updateDetail), and whether a part in sight draws its tiles, as Part
-  // draws them once it stands 860px wide.
-  function levelAt(v){
+  // draws them once it stands 860px wide. With `aim`, the point a pinch
+  // began over, the part there reading its title is a level of its own
+  // (owner, 2026-09-28): one pinch over Redis's 7px Replication card had
+  // gone on into syncRead's tiles, past the card the reader wanted to read.
+  function levelAt(v,aim=null){
     const next=detailState(v,new Set([...openComponents,...detailed,...communicationsOpen,...arriving]));
     const shut=id=>closedContainer(id,placed,byID,next.areas,next.components.size>0,next.communications,next.components);
     const width=host.clientWidth,height=host.clientHeight;
@@ -665,7 +735,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const x=n.absolute.x*v.zoom+v.x,y=n.absolute.y*v.zoom+v.y;
       return x<width&&y<height&&x+n.width*v.zoom>0&&y+n.height*v.zoom>0;
     });
-    return detailLevel(layout.nodes,[...next.components,...next.areas,...next.communications],tiles);
+    const level=detailLevel(layout.nodes,[...next.components,...next.areas,...next.communications],tiles);
+    const under=aim&&layout.nodes.find(n=>{const item=byID.get(n.id);return !n.frame&&!item?.activation&&!shut(n.id)&&
+      aim.x>=n.absolute.x&&aim.x<=n.absolute.x+n.width&&aim.y>=n.absolute.y&&aim.y<=n.absolute.y+n.height;});
+    return under&&titleSize(under,v.zoom)>=12?level+.5:level;
+  }
+  // A part's title on screen, in pixels, at a zoom.
+  function titleSize(n,zoom){
+    const item=byID.get(n.id),{scale}=partBox({...item,...looseOf(n)});
+    return (looseOf(n).standaloneHeading?12:17)*scale*zoom;
   }
   // "−" steps out one level, as a zoom mark steps in one: from a part's
   // tiles to the frame holding it, from an open area to its component, from
@@ -694,7 +772,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const at=zoom=>({x:rect.width/2-point.x*zoom,y:rect.height/2-point.y*zoom,zoom});
     const zoom=zoomBelow(view.zoom,minZoom(),z=>levelAt(at(z)),level-1);
     overviewFit=false;arriving=new Set();locationSubject=up;
-    commitCamera(instance.setViewport(zoom===view.zoom?view:at(zoom),{duration:420}),up);
+    const before=lookedAt();
+    commitCamera(instance.setViewport(zoom===view.zoom?view:at(zoom),{duration:420}),up).then(()=>follow(before));
   }
   function focus(id,center=true,smooth=true){
     const n=placed.get(id);if(!n)return;
@@ -738,7 +817,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       if(!component)arrive([n.id,...groups]);
       commitCamera(instance.setViewport(frameView(n,rect),{duration:smooth?420:0}),id);return;
     }
-    commitCamera(instance.setViewport(partViewport(n,1/contentScale,rect.width,rect.height),{duration:smooth?420:0}),id);
+    // A part is framed whole, at its reading scale when it fits there.
+    const fit=Math.min((rect.width-48)/n.width,(rect.height-48)/n.height);
+    commitCamera(instance.setViewport(partViewport(n,Math.min(1/contentScale,fit),rect.width,rect.height),{duration:smooth?420:0}),id);
   }
   function capture(){return instance&&!initializing?{...instance.getViewport(),layoutKey,overview:isOverview(),detailAreas:[...detailed],componentsOpen,openComponents:[...openComponents],communicationsOpen:[...communicationsOpen],fit:overviewFit}:restorePending||null;}
   function restore(v){if(!v)return;
@@ -944,17 +1025,23 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const pinnedFrame=[...pinnedLabels.values()].find(id=>byID.get(id)?.branch==='area')||'';
     // A thing pointed at or chosen is read in its frame: an area, or else the
     // open component it stands in.
-    const chosen=pinnedFrame||(state.mode==='hover'?frameOf(hoverArea):state.mode==='selection'?frameOf(view.scope):zoomedArea);
+    // The part the camera stands in is looked at whatever the pointer or the
+    // reading is on, unless a card is pinned.
+    const deep=pinnedFrame?'':deepPart;
+    const chosen=pinnedFrame||deep||(state.mode==='hover'?frameOf(hoverArea):state.mode==='selection'?frameOf(view.scope):zoomedArea);
     // The frame the reader looks at has its arrow ends marked: an open area
     // with its parts, or else the open component with its areas and loose parts.
     const lookedComponent=chosen?rootOf(chosen):openComponents.size===1?[...openComponents][0]:'';
-    const area=chosen&&detailed.has(chosen)?chosen:byID.get(lookedComponent)?.branch==='component'&&openComponents.has(lookedComponent)?lookedComponent:chosen;
+    const area=deep||(chosen&&detailed.has(chosen)?chosen:byID.get(lookedComponent)?.branch==='component'&&openComponents.has(lookedComponent)?lookedComponent:chosen);
     const wholeComponent=byID.get(area)?.branch==='component';
     const childOf=id=>{while(id&&placed.get(id)?.parentId!==area)id=placed.get(id)?.parentId;return id||'';};
     const members=!area?[]:wholeComponent?layout.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&childOf(n.id)).map(n=>n.id):leaves(area);
     const parts=new Set(wholeComponent?layout.nodes.filter(n=>n.parentId===area).map(n=>n.id):members);
     const initVisible=(state.mode==='hover'&&byID.get(hoverArea)?.branch!=='component')||state.mode==='operation'||(state.mode==='selection'&&byID.get(view.scope)?.branch!=='component');
-    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,recede,boundaryBetween,initVisible,zoomedArea?new Set(leaves(zoomedArea)):null);
+    // A part looked at draws its arrows from its own border, not from the
+    // border of the area holding it.
+    const boundary=(id,other)=>id===deep?null:boundaryBetween(id,other);
+    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,recede,boundary,initVisible,deep?new Set([deep]):zoomedArea?new Set(leaves(zoomedArea)):null);
     const matchingOf=routeIndex(routes);
     const labels=(area?connections(area,members,layout.edges,outsideOf(area)):[]).flatMap(group=>{
       // A label stands where its arrow meets the frame it marks.
@@ -963,8 +1050,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const outside=byID.get(group.outside);
       return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,...at,title:outside.name||outside.title}];
     });
+    const stubRoutes=deep?placeStubs(labels,deep):[];
     endPlaques(labels,parts,id=>wholeComponent?childOf(id):id);
-    const labelsShown=!!area&&visible(area)&&(detailed.has(area)||openComponents.has(area));
+    const labelsShown=!!area&&visible(area)&&(detailed.has(area)||openComponents.has(area)||area===deep);
     lookedLabels=labelsShown?labels:[];lastMatchingOf=matchingOf;
     // A connection opened from its arrowhead that is not one of the looked-at
     // frame's stays while its card is looked at, about to open or kept open.
@@ -977,7 +1065,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const endLabel=cardLabels.find(label=>look.key===`label:${label.id}`)||[...pinnedLabels.keys()].reverse().map(id=>cardLabels.find(label=>label.id===id)).find(Boolean);
     const end=endLabel?endEmphasis(endLabel,layout.edges):null;
     const shown=end||state;
-    const drawn=end?routeDrawing(drawing.edges,closed,end.activeEdges,recede,boundaryBetween,initVisible,null):routes;
+    const active=end?end.activeEdges:state.activeEdges;
+    const drawn=[...(end?routeDrawing(drawing.edges,closed,end.activeEdges,recede,boundary,initVisible,null):routes),
+      ...stubRoutes.map(route=>({...route,on:route.edgeIDs.some(id=>active.has(id))}))];
     heads=drawnHeads(drawn);
     const shownContext=end?focusAncestors(end.focus,placed):context;
     // Far enough into one part to read its declarations.
@@ -985,12 +1075,17 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // part whole when it fits there, else its head and first column. Fitted
     // to the canvas, Redis's Persistence opened at its title's scale with no
     // declaration drawn.
+    // The magnifier frames the part whole where its tiles are drawn (owner,
+    // 2026-09-28: nothing cut at the edges; Command line client had stood
+    // with its last column off the canvas), and the column reads it.
     function deepInto(node){
       if(!instance)return;
       const rect=host.getBoundingClientRect(),readable=deepZoom(node.id);
       const fit=Math.min((rect.width-48)/node.width,(rect.height-48)/node.height);
+      const {box,scale}=partBox({...byID.get(node.id),...looseOf(node)}),tiles=860*1.02/(box.width*scale);
       overviewFit=false;hover.pause();arrive([node.id]);locationSubject=node.id;
-      commitCamera(instance.setViewport(deepViewport(node,Math.min(maxZoom,Math.max(readable,Math.min(fit,readable*1.125))),rect.width,rect.height),{duration:420}),node.id);
+      callbacks.follow?.(node.id,true);
+      commitCamera(instance.setViewport(deepViewport(node,Math.min(maxZoom,Math.max(tiles,Math.min(fit,readable*1.125))),rect.width,rect.height),{duration:420}),node.id);
     }
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,view.scope,overview]);
     // A closed frame stands for the participants hidden inside it.
@@ -1090,11 +1185,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         paintedZoom=viewport.zoom;
         zoom=viewport.zoom;
         host.style.setProperty('--flow-zoom',String(zoom));
-        updateDetail(viewport);
+        updateDetail(viewport);trackDeepPart(viewport);
         map.querySelectorAll('[data-map-zoom]').forEach(button=>{button.disabled=Number(button.dataset.mapZoom)<1&&viewport.zoom<=minZoom();});
       }}
       onMoveStart={event=>{if(event){overviewFit=false;locationSubject='';arriving=new Set();}panning=true;hover.pause();preview='';map.clearMapPreview?.();}}
-      onMoveEnd={event=>{panning=false;hover.pause();if(instance)updateDetail(instance.getViewport());updateLocation(event);map.dispatchEvent(new Event('repomap:viewport'));}}>
+      onMoveEnd={event=>{panning=false;hover.pause();if(instance){updateDetail(instance.getViewport());trackDeepPart(instance.getViewport());}updateLocation(event);map.dispatchEvent(new Event('repomap:viewport'));}}>
       <svg className="flow-defs"><defs>
         <marker id="flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={arrowHead} markerHeight={arrowHead} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker>
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={emphasisedHead} markerHeight={emphasisedHead} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
@@ -1242,7 +1337,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // had sent a reader who zoomed out to look around back to the start.
     if(button.hasAttribute('data-map-fit')){closeCards();hover.pause();fitOverview(420);}
     else if(button.hasAttribute('data-map-zoom')&&Number(button.dataset.mapZoom)<1)stepOut();
-    else if(button.hasAttribute('data-map-zoom')){overviewFit=false;commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom)));}
+    else if(button.hasAttribute('data-map-zoom')){overviewFit=false;const before=lookedAt();commitCamera(instance.zoomTo(instance.getZoom()*Number(button.dataset.mapZoom))).then(()=>follow(before));}
   });
   // One pinch (the wheel with ctrl held, a trackpad's pinch) crosses at most
   // one level boundary (semantic.mjs, pinchZoom), and a pause ends it. A
@@ -1252,19 +1347,24 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // doubles it); only a tick that would cross a second boundary is held at
   // the last zoom short of it.
   const gesturePause=300;
-  let gesture=null;
+  let gesture=null,followTimer;
   host.addEventListener('wheel',event=>{
     if(!event.ctrlKey||!instance||initializing||event.target.closest?.('.nowheel'))return;
     const now=performance.now(),v=instance.getViewport();
-    if(!gesture||now-gesture.at>gesturePause)gesture={level:levelAt(v)};
+    if(!gesture||now-gesture.at>gesturePause){
+      const box=host.getBoundingClientRect(),aim={x:(event.clientX-box.left-v.x)/v.zoom,y:(event.clientY-box.top-v.y)/v.zoom};
+      gesture={level:levelAt(v,aim),aim,before:lookedAt()};
+    }
     gesture.at=now;
+    // Once the pinch ends, the column reads the frame it brought.
+    const pinch=gesture;clearTimeout(followTimer);followTimer=setTimeout(()=>{if(gesture===pinch)follow(pinch.before);},gesturePause+60);
     const factor=navigator.userAgent.indexOf('Mac')>=0?10:1;
     const asked=v.zoom*Math.pow(2,-event.deltaY*(event.deltaMode===1?.05:event.deltaMode?1:.002)*factor);
     const to=Math.min(maxZoom,Math.max(minZoom(),asked));
     if(to===v.zoom)return;
     const box=host.getBoundingClientRect(),aim={x:event.clientX-box.left,y:event.clientY-box.top};
     const at=zoom=>({x:aim.x-(aim.x-v.x)*zoom/v.zoom,y:aim.y-(aim.y-v.y)*zoom/v.zoom,zoom});
-    const zoom=pinchZoom(v.zoom,to,z=>levelAt(at(z)),gesture);
+    const zoom=pinchZoom(v.zoom,to,z=>levelAt(at(z),gesture.aim),gesture);
     if(zoom===to)return;
     event.preventDefault();event.stopPropagation();
     if(Math.abs(zoom/v.zoom-1)<1e-9)return;
@@ -1301,7 +1401,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     for(const [element,root] of mounted)if(!element.isConnected){root.unmount();mounted.delete(element);}
     const root=mounted.get(container)||createRoot(container);mounted.set(container,root);
     const chooser=choose&&{go:choose,can:(part,key)=>!!key&&(byID.get(part)?.symbols||[]).some(symbol=>symbol.href===key||symbol.open===key)};
-    flushSync(()=>root.render(<FrameConnections groups={groups} open={open} choose={chooser}/>));
+    flushSync(()=>root.render(<FrameConnections groups={groups} open={open} choose={chooser} single={!placed.get(id)?.frame}/>));
     return true;
   }
   // Going up from a declaration to its part (the toolbar's breadcrumb): no

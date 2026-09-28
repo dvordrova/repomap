@@ -106,6 +106,9 @@ const flow=await window.rmCreateFlow(map,stage,records,relations,areas,inputOwne
     if(center)flow.focus(id);
   },
   connection(){},
+  // A zoom that brings another frame: the column reads it, as the report's
+  // does, the camera staying.
+  follow(id){map.dataset.followed=id;flow.update({scope:id,selected:selected(id)});showReading(id);},
   emphasis(state){map.dataset.emphasis=state.mode;map.dataset.subject=state.subject;},
   // An arrow end clicked: the reading is on its frame, with the frame's
   // connections under it and that one open, as the report's column does.

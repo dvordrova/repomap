@@ -438,6 +438,11 @@ function rmCatalogInputClick(event,reveal){
   // Whether the camera may stand away from the pinned input's own tile: on its
   // path's start, or on a part read since.
   var inputAway=false;
+  // What was read, and where the camera stood, before an input's path was
+  // entered: "Leave input path" returns there (owner, 2026-09-28), as Back
+  // would. It had gone to the repository's summary, and a reader needed
+  // the Components list to get back to redis-server.
+  var beforeInput=null;
   var searchValue='',filterValue='',selectionRevision=0;
   map.querySelector('[data-operation-controls]')?.remove();
   var bar=rmEl('div','system-controls'),search=rmEl('input','system-search'),filter=rmEl('select','system-filter'),clear=rmEl('button','',rmT('Clear selection'));
@@ -497,7 +502,10 @@ function rmCatalogInputClick(event,reveal){
     // Choosing an input, even its tile on the canvas, moves to its path; only
     // Show input frames the tile.
     var path=focus!=='input'&&rmInputPath(n,byID).length>0;
-    if(n.dataset.activation){operation=n;scope='';inputAway=path;}else{scope=n.id;inputAway=true;}
+    // Reading anything else leaves the input's path (owner, 2026-09-28):
+    // "serverCron ·" had prefixed every breadcrumb for four questions.
+    if(n.dataset.activation){if(!operation)beforeInput=map.readingState();operation=n;scope='';inputAway=path;}
+    else{scope=n.id;operation=null;inputAway=false;beforeInput=null;}
     emphasize();if(navigate)address(n,!!(focus||path)&&!!map.captureViewport?.()?.overview);
     await ready;if(ticket!==selectionRevision)return false;map.showNode?.(n);if(source)map.explainSource?.(source);
     if(focus==='input')surface?.showInput(n.id);
@@ -513,7 +521,7 @@ function rmCatalogInputClick(event,reveal){
     return select(frame,true,null,false).finally(function(){pendingConnection=null;});
   }
   map.openConnection=openConnection;
-  function reset(){selectionRevision++;scope='';operation=null;inputAway=false;surface?.clearHover();emphasize();map.clearInspection?.();emit();}
+  function reset(){selectionRevision++;scope='';operation=null;inputAway=false;beforeInput=null;surface?.clearHover();emphasize();map.clearInspection?.();emit();}
   map.showWholeMap=async function(){
     search.value=searchValue='';filter.value=filterValue='';updateResults();reset();
     address(null,true);document.querySelector('.nav .find')?.restoreSearch?.();
@@ -534,7 +542,12 @@ function rmCatalogInputClick(event,reveal){
     selectionRevision++;scope='';surface?.clearHover();emphasize();map.clearInspection?.();
     address(operation||null);emit();
   };
-  clear.addEventListener('click',function(){reset();address(null);});
+  clear.addEventListener('click',function(){
+    var saved=operation&&beforeInput;
+    if(!saved){reset();address(null);return;}
+    beforeInput=null;
+    map.restoreReadingState(Object.assign({},saved,{operation:''})).then(function(){address(byID[saved.scope]||null,true);});
+  });
   function filterChanged(){searchValue=search.value;filterValue=filter.value;updateResults();emphasize();emit();}
   search.addEventListener('input',filterChanged);filter.addEventListener('change',filterChanged);
   nodes.forEach(function(n){n.addEventListener('click',function(e){e.preventDefault();e.stopImmediatePropagation();select(n,true);});});
@@ -667,11 +680,14 @@ function rmCatalogInputClick(event,reveal){
     // A frame's Connections are its arrow ends as the canvas groups them,
     // each opening to the calls its card lists; they replace the list of
     // neighbours by name.
-    var frameConnections=null;
-    if(n.dataset.branch==='area'||n.dataset.branch==='component'){
+    // A part's are its arrow ends when it is the frame looked at: to the
+    // parts and areas beside it, as its plaques stand for them.
+    var frameConnections=null,partConnections=card.querySelector('.map-part-reading');
+    if(n.dataset.branch==='area'||n.dataset.branch==='component'||partConnections){
       frameConnections=rmEl('div','map-frame-connections-holder');
       if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'',function(part,key){readDeclaration(byID[part],key);})){
-        (card.querySelector('.map-area-composition')||card.querySelector('.map-card-intro'))?.after(frameConnections);
+        if(partConnections)partConnections.insertBefore(frameConnections,partConnections.querySelector(':scope>.map-reading-out'));
+        else (card.querySelector('.map-area-composition')||card.querySelector('.map-card-intro'))?.after(frameConnections);
       }else frameConnections=null;
     }
     writeReading={node:n,card:card,key:map.explorerMember?.key||''};
@@ -842,6 +858,10 @@ function rmCatalogInputClick(event,reveal){
     try{
       surface=await rmCreateFlow(map,stage,items,relations,projection.areas,projection.inputOwner,{
         select:function(id,center){select(byID[id],true,null,center?'center':false);},
+        // A zoom that brings another frame has the column read it, the
+        // camera staying; a pinch leaves an input's path alone, the
+        // magnifier reads the part it enters.
+        follow:function(id,explicit){var n=byID[id];if(!n||scope===id||!explicit&&operation&&!scope)return;select(n,true,null,false);},
         openConnection:function(id,key){openConnection(id,key);},
         connection:function(group){map.previewConnection?.({from:group.incoming?group.outside:group.area,to:group.incoming?group.area:group.outside,possible:group.relations.some(function(r){return r.possible;}),relations:group.relations});}
       });

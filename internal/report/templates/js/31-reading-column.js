@@ -241,6 +241,9 @@ function rmCollectionView(ctx,node,collection){
   if(component){var head=rmEl('div','map-part-title');head.appendChild(rmPartBox(ctx,component.getAttribute('href'),component.dataset.title));head.firstChild.classList.add('map-part-box-component');view.appendChild(head);}
   collection.groups.forEach(function(group){
     var section=rmEl('section','map-collection-group'),heading=rmEl('h6','map-reading-count');
+    // "37 settings" in the component's reading lands on its own section.
+    section.dataset.kind=group.kind;
+    if(rmPendingKind===group.kind){section.dataset.readingAnchor='';rmPendingKind='';}
     heading.append(rmEl('span','',rmT(rmInputKindTitles[group.kind]||'Inputs')),rmEl('span','map-reading-peer-count',String(group.inputs.length)));
     rmLights(ctx,heading,group.inputs);section.appendChild(heading);
     var first=group.catalogue&&ctx.nodeById(group.catalogue),catalogue=first&&first.dataset.catalogue?JSON.parse(first.dataset.catalogue):null;
@@ -307,6 +310,8 @@ function rmCatalogueLines(ctx,catalogue){
 // the collection when chosen; its connections (29-operation-view.js); then
 // its main flow, what its program never runs, its TODOs and its analysis
 // coverage, each a list opening in place, and a link to its whole page.
+// The kind whose section a count chosen in a component's reading lands on.
+var rmPendingKind='';
 var rmInputKindCounts={request:'{0} requests',command:'{0} commands',setting:'{0} settings',interaction:'{0} user interactions',continuous:'{0} continuous',scheduled:'{0} scheduled'};
 function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   var ctx=map.readingContext(),intro=card.querySelector('.map-card-intro'),page=card.querySelector('.map-card-actions>.map-details-link');
@@ -336,7 +341,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     collection.kinds.forEach(function(kind){
       var count=rmEl('button','',rmT(rmInputKindCounts[kind.kind]||'{0} inputs',kind.inputs.length));count.type='button';
       rmLights(ctx,count,kind.inputs);
-      count.addEventListener('click',function(){ctx.light([]);ctx.readNode(collectionNode);});
+      count.addEventListener('click',function(){ctx.light([]);rmPendingKind=kind.kind;ctx.readNode(collectionNode);});
       inputs.appendChild(count);
     });
     place(inputs);

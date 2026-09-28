@@ -484,10 +484,12 @@ function rmDeclarationRelations(map,node,key,nodes){
     var inspectedNode=null, inspectionKey='', inspectionRevision=0, inspectionPending=false, remembered=new Map();
     function remember(){
       if(inspectionPending||!inspectedNode||card.classList.contains('map-card-connection'))return;
-      remembered.set(inspectionKey,{concept:map.explorerMember?.key,scroll:content.scrollTop,
-        expanded:Array.from(card.querySelectorAll('details')).map(function(detail,index){return detail.open?index:-1;}).filter(function(index){return index>=0;})});
+      remembered.set(inspectionKey,{concept:map.explorerMember?.key,scroll:content.scrollTop,expanded:rmOpenFolds(card)});
     }
     content.addEventListener('scroll',remember);
+    // A fold opened or closed is remembered at once: returning to the
+    // reading by a click, not only by Back, finds it as it was left.
+    card.addEventListener('toggle',function(){if(!inspectionPending)remember();rmExpandAllWord(card);},true);
     function show(node) {
       // A new selection reads from its top. Its remembered scroll and open
       // evidence come back only when the reader returns to it: Back, or
@@ -495,7 +497,10 @@ function rmDeclarationRelations(map,node,key,nodes){
       var restoring=map.readingRestoring,returning=restoring||inspectedNode===node;
       remember();inspectedNode=node;inspectionKey=node.id+'\0'+(map.inspectedOperation?.id||'');inspectionPending=true;
       map.explorerMember=null;
-      var saved=returning?remembered.get(inspectionKey):null, ticket=++inspectionRevision;
+      // Its folds come back whenever the reading is shown again (owner,
+      // 2026-09-28: Persistence's "Called from" tree was closed again on
+      // every return); its scroll and declaration only on Back.
+      var memory=remembered.get(inspectionKey),saved=returning?memory:null, ticket=++inspectionRevision;
       content.scrollTop = 0;
       card.classList.remove('map-card-connection');
       var id = node.getAttribute('data-node');
@@ -599,6 +604,10 @@ function rmDeclarationRelations(map,node,key,nodes){
         var close=document.createElement('button');close.type='button';close.className='map-close-details';
         close.setAttribute('aria-label',rmT('Close details'));close.innerHTML='<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="m5 12 5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         close.addEventListener('click',function(){map.closeDetails();});objectHeading.appendChild(close);
+        // Every fold of the reading at once.
+        var expand=document.createElement('button');expand.type='button';expand.className='map-expand-all';expand.dataset.expandAll='';
+        expand.addEventListener('click',function(){var open=expand.dataset.state!=='open';rmFolds(card).forEach(function(detail){detail.open=open;});rmExpandAllWord(card);remember();});
+        objectHeading.insertBefore(expand,close);
       }
       heading.classList.toggle('has-concepts',concepts.length>0&&!reading);
       var partView=null,declHolder=null;
@@ -690,7 +699,7 @@ function rmDeclarationRelations(map,node,key,nodes){
         // A reading opened at one of its sections (an arrow end's connection,
         // an input's path) starts there, that section open.
         var anchor=card.querySelector('[data-reading-anchor]');
-        if(saved)card.querySelectorAll('details').forEach(function(detail,index){detail.open=saved.expanded.includes(index);});
+        if(memory)rmRestoreFolds(card,memory.expanded);
         if(anchor?.matches('details'))anchor.open=true;
         content.scrollTop=saved?.scroll||0;
         // A declaration newly chosen with its part is read from its own
@@ -700,7 +709,7 @@ function rmDeclarationRelations(map,node,key,nodes){
         var chosen=card.querySelector('.map-concepts:not([hidden])');
         if(chosen&&(!saved||!restoring&&map.explorerMember?.key!==saved.concept))content.scrollTop+=chosen.getBoundingClientRect().top-content.getBoundingClientRect().top;
         if(anchor&&!restoring){content.scrollTop+=anchor.getBoundingClientRect().top-content.getBoundingClientRect().top-8;anchor.removeAttribute('data-reading-anchor');}
-        inspectionPending=false;
+        inspectionPending=false;rmExpandAllWord(card);
       }});
     }
     map.explainSource=function(source){
@@ -855,3 +864,23 @@ function rmOpenAllWord(list){
     if(button)button.textContent=rmT(rmOpenAllWord(list));
   },true);
 })();
+
+// A reading's folds, each known by its summary's words and how many folds
+// with the same words stand before it: the same fold whatever else the
+// reading shows (a declaration read in its part adds folds above others).
+function rmFolds(card){return Array.from(card.querySelectorAll('details')).filter(function(detail){return !detail.closest('[hidden]');});}
+function rmFoldKeys(card){
+  var seen={};
+  return Array.from(card.querySelectorAll('details')).map(function(detail){
+    var words=(detail.querySelector(':scope>summary')?.textContent||'').trim(),n=seen[words]=(seen[words]||0)+1;
+    return {detail:detail,key:words+'#'+n};
+  });
+}
+function rmOpenFolds(card){return rmFoldKeys(card).filter(function(fold){return fold.detail.open;}).map(function(fold){return fold.key;});}
+function rmRestoreFolds(card,keys){var open=new Set(keys||[]);rmFoldKeys(card).forEach(function(fold){fold.detail.open=open.has(fold.key);});}
+// "Expand all" opens every fold of the reading; with all open it closes them.
+function rmExpandAllWord(card){
+  var button=card.closest('.map-inspector')?.querySelector('[data-expand-all]');if(!button)return;
+  var folds=rmFolds(card),open=folds.length>0&&folds.every(function(detail){return detail.open;});
+  button.hidden=!folds.length;button.dataset.state=open?'open':'';button.textContent=rmT(open?'Collapse all':'Expand all');
+}

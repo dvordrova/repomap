@@ -407,9 +407,10 @@ const byID={get,dispatch,reply,ping};
 assert.deepEqual(rmInputPath(get,byID),['dispatch','reply'],'the path is the drawn parts of the saved trace');
 assert.deepEqual(rmInputPath(dispatch,byID),[]);
 const inspector=rmEl('div','map-inspector'),controls=rmEl('div','map-input-context'),caption=rmEl('div'),clear=rmEl('button'),colorKey=rmEl('span');
-const map={querySelector(s){return s==='.map-inspector'?inspector:s==='.map-input-context'?controls:null;},showNode(n){this.shown=n.id;},clearMapPreview(){}};
+const map={querySelector(s){return s==='.map-inspector'?inspector:s==='.map-input-context'?controls:null;},showNode(n){this.shown=n.id;},clearMapPreview(){},
+ readingState(){return {scope,operation:operation?.id||''};}};
 const tiles=[];
-let scope='',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',visual=null,surface={clearHover(){},showInput(id){tiles.push(id);}};
+let scope='',operation=null,inputAway=false,beforeInput=null,selectionRevision=0,searchValue='',filterValue='',visual=null,surface={clearHover(){},showInput(id){tiles.push(id);}};
 const search={},filter={},ready=Promise.resolve(),focused=[];
 function updateResults(){}function emit(){}function address(){}function emphasize(){renderCaption();}
 function focusNode(n,center){focused.push({id:n.id,center});}
@@ -427,7 +428,9 @@ const showInput=()=>controls.children.flatMap(c=>c.children).find(c=>c.className
  assert.deepEqual(focused.slice(before),[{id:'get',center:true}],'its tile clicked on the canvas moves to its path');
  assert.ok(showInput());
  await select(dispatch,true,null,true);
- assert.ok(showInput(),'reading a part on the path offers the tile');
+ assert.equal(operation,null,'reading a part leaves the input path (owner, 2026-09-28)');
+ assert.equal(showInput(),undefined);
+ assert.equal(controls.hidden,true,'and its "Leave input path" with it');
  await select(ping,true,null,true);
  assert.deepEqual(focused.at(-1),{id:'ping',center:true},'an input without a trace is entered as its tile');
  assert.equal(showInput(),undefined);

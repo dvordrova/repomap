@@ -91,13 +91,15 @@ export function CallRows({card,sticky=true,choose=null}){
 
 // A frame's connections in the reading column: one line per frame or
 // participant at the other end and direction, its calls' count and the
-// parts they are made from, opening to the same rows as its card.
-export function FrameConnections({groups,open,choose=null}){
+// parts they are made from, opening to the same rows as its card. Of one
+// part (`single`) the line names the parts at the other end instead:
+// "→ Core infrastructure · Network sockets 2 · Dynamic strings 1".
+export function FrameConnections({groups,open,choose=null,single=false}){
   return <section className="map-frame-connections">
     <h5>{t('Connections')}</h5>
     {groups.map(group=><details key={group.key} data-connection-key={group.key} open={group.key===open} data-reading-anchor={group.key===open?'':undefined}>
       <summary><span className="map-connection-peer">{group.incoming?'←':'→'} {group.title}</span><b>{cardTotal(group.card)}</b>
-        {group.card.from.length>0&&<small>{group.card.from.map(part=>`${part.name} ${part.count}`).join(' · ')}</small>}</summary>
+        {(single&&!group.incoming?group.card.into:group.card.from).length>0&&<small>{(single&&!group.incoming?group.card.into:group.card.from).map(part=>`${part.name} ${part.count}`).join(' · ')}</small>}</summary>
       <CallRows card={group.card} sticky={false} choose={choose}/>
     </details>)}
   </section>;
