@@ -381,8 +381,10 @@ type kvdPreset struct {
 	// function keeping it and while what it is kept; tables the tables of
 	// names asked, each with its readers.
 	kept, tables []string
-	// systems are the outside packages asked which system they reach.
-	systems []string
+	// systems are the outside packages asked which system they reach, and
+	// connectOffered the values of the inputs the client's connect was
+	// offered as its counterpart.
+	systems, connectOffered []string
 	// peers are the table rows asked which peer input they send, each with
 	// the peer the preset chose ("none" for del: a reader who is unsure).
 	peers []string
@@ -545,6 +547,12 @@ func (preset *kvdPreset) peer(context, row map[string]any) string {
 		return "none"
 	}
 	if external, _ := side["external"].(string); strings.HasSuffix(external, ".connect") {
+		preset.mu.Lock()
+		for _, item := range peers {
+			peer, _ := item.(map[string]any)
+			preset.connectOffered = append(preset.connectOffered, strings.Join(stringsOf(peer["values"]), " "))
+		}
+		preset.mu.Unlock()
 		return choose(func(peer map[string]any) bool { external, _ := peer["external"].(string); return strings.HasSuffix(external, ".listen") })
 	}
 	chosen := "none"

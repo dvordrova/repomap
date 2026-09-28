@@ -226,6 +226,20 @@ func TestCFixturePresetReadingNamesTheClientsOptionsAndCommands(t *testing.T) {
 	if !slices.Equal(systems, []string{"sys/socket.h"}) {
 		t.Fatalf("outside packages asked their system: %v", systems)
 	}
+	// Its counterpart is chosen among kvd's inputs whose code is known: an
+	// input whose handler is not established (--symbols, the settings) is
+	// no endpoint another program's call reaches.
+	pair.preset.mu.Lock()
+	offered := slices.Clone(pair.preset.connectOffered)
+	pair.preset.mu.Unlock()
+	if len(offered) == 0 {
+		t.Fatal("the client's connect was offered no counterpart")
+	}
+	for _, values := range offered {
+		if slices.Contains([]string{"--symbols", "port", "dbfilename"}, values) {
+			t.Fatalf("the connect was offered the handler-less input %q among %q", values, offered)
+		}
+	}
 	for _, call := range []string{
 		`string.h.strcasecmp in main: 1: element "1" of parameter #2 argv of main; 2: "--raw"`,
 		`string.h.strcasecmp in main: 1: field name of result of calling lookupCommand(argv[first]); 2: "bgsave"`,
