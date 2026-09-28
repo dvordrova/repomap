@@ -187,3 +187,32 @@ func equalInts(left, right []int) bool {
 	}
 	return true
 }
+
+// The ways a request arrives at a dispatch site stand requests first, then
+// scheduled work, then continuous work (owner, 2026-09-28): GET's reading
+// had opened with "arrives at call from serverCron" before acceptHandler.
+func TestOuterInputsStandRequestsBeforeScheduledBeforeContinuous(t *testing.T) {
+	at := &programindex.Location{Path: "redis.c", Line: 1, Column: 1}
+	index := groupindex.Index{Target: programindex.Target{ID: "server"},
+		Operations: []groupindex.Operation{{ID: "get", Kind: "request", SubjectID: "get"}, {ID: "loop", Kind: "continuous"}, {ID: "cron", Kind: "scheduled"}, {ID: "accept", Kind: "request"}},
+		Dispatch: []groupindex.DispatchSite{{FromSubjectID: "call", Location: at, Alternatives: []string{"get"}, OperationIDs: []string{"get"},
+			Outer: []groupindex.OuterInput{{OperationID: "loop"}, {OperationID: "cron"}, {OperationID: "accept"}}}}}
+	builder := &pageBuilder{indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{}}
+	decls := builder.pathDecls("server", func(string) string { return "" })
+	raw := builder.inputPath(&builder.indexes[0], index.Operations[0], groupindex.Reach{}, decls, func(string) string { return "" }, func(id string) string { return "n-" + id }, nil)
+	var path struct {
+		Dispatched []struct {
+			Outer []struct{ Input string } `json:"outer"`
+		} `json:"dispatched"`
+	}
+	if err := json.Unmarshal([]byte(raw), &path); err != nil || len(path.Dispatched) != 1 {
+		t.Fatalf("%s %v", raw, err)
+	}
+	var order []string
+	for _, outer := range path.Dispatched[0].Outer {
+		order = append(order, outer.Input)
+	}
+	if strings.Join(order, " ") != "n-accept n-cron n-loop" {
+		t.Fatalf("outer inputs: %v", order)
+	}
+}

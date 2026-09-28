@@ -286,6 +286,17 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 			}
 			entry.Hops = append(entry.Hops, hop)
 		}
+		// Requests first, then scheduled work, then continuous work: a
+		// structural order of kinds, not a choice among them (owner,
+		// 2026-09-28). GET had read "arrives at call from serverCron" before
+		// the acceptHandler route a request takes.
+		kindOf := map[string]string{}
+		for _, operation := range index.Operations {
+			kindOf[inputNode(operation.ID)] = operation.Kind
+		}
+		slices.SortStableFunc(dispatched.Outer, func(a, b pageOuter) int {
+			return outerKindRank(kindOf[a.Input]) - outerKindRank(kindOf[b.Input])
+		})
 		dispatched.Unexplained = site.Unexplained
 		path.Dispatched = append(path.Dispatched, dispatched)
 	}
@@ -539,4 +550,19 @@ func (builder *pageBuilder) peerInputs(index *groupindex.Index, operation groupi
 		}
 	}
 	return sentTo, sentBy
+}
+
+// outerKindRank is where an outer input stands among the ways a request
+// arrives at a dispatch site: a request, a command or an interaction first,
+// then scheduled work, then continuous work, then the rest.
+func outerKindRank(kind string) int {
+	switch kind {
+	case "request", "command", "interaction":
+		return 0
+	case "scheduled":
+		return 1
+	case "continuous":
+		return 2
+	}
+	return 3
 }
