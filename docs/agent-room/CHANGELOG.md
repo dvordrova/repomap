@@ -1,5 +1,58 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — A whole file joins its users' box only when it is a file of helpers
+
+- Scope: the lead's fix to C4's rule B after the litestream run, before
+  C8. Rule B now reads the map model literally: a library file is a file
+  of helpers.
+- **Change.** A whole file that is neither test nor generated code joins a
+  box of a split file only when every unit it declares, its types
+  included, is a decided helper and all its users in other files
+  (callers, decorated units, readers; never a hand-over; no test or
+  generated code) stand in that one box. A type answered responsibility, a
+  function nothing uses, `none of these`, a near-tie or an unanswered row
+  keeps the file out. The face condition (only the units other files use
+  had to be helpers) is deleted: types have no use facts, so a Go file's
+  client type never counted. On litestream `cmd/litestream` the abs, gs,
+  nats, oss, sftp and webdav `replica_client.go` files, whose only used
+  unit is the helper `NewReplicaClient` (0.75–0.84) called from main.go's
+  `newXReplicaClientFromConfig`, had joined main.go's "Replica client
+  setup" box: a 114-function part over seven files, while "Storage
+  backends" kept only file and s3. Rules A and C and the second pass are
+  unchanged.
+- **Tests.** `TestAFileWithAResponsibilityJoinsNoBox` (the Go shape: a
+  file of a responsibility type and a helper constructor Store.Get alone
+  calls keeps its own row, no join recorded, the constructor keeps its
+  mark) and `TestAFileOfHelpersJoinsTheBoxOfItsUsers` (the C shape: a
+  file of two helpers joins Storage; one near-tie among its units, or a
+  whole file also using it, keeps it out). Both fail on the face rule. The
+  C fixture's `staticsyms.h`, whose type `kvSymbol` the split check takes
+  for no helper (a type has no users), now keeps a part of its own; READING
+  and C say so.
+- **Runs** (`.bin/repomap <repo> --no-serve --no-open`, the default system
+  response cache, so the helper, gate and assignment answers are the saved
+  ones of the C4–C6 runs; no `cache clear`):
+  - Redis 1.3.6, exit 0 in 25 s (one live parts request, redis-server's):
+    `staticsymbols.h`, `lzf_c.c` and `lzf_d.c` still join (their one unit
+    each is a helper at 0.93–0.95). `pqsort.c` no longer joins: its
+    `_pqsort` is a near-tie (helper 0.49, responsibility 0.48); `swapfunc`,
+    `med3` and `pqsort` are helpers at 0.95–0.99. It is a row of its own,
+    which the grouping puts in the Sorting part beside redis.c's Sorting
+    box. redis-server: 21 parts (20 before), 0 lone, 19 units undecided
+    (unchanged); `lzfP.h` now stands alone as "Compression support".
+  - litestream v24, exit 0 in 65 s: the six backends stay out of main.go's
+    box, each kept out by its `ReplicaClient` type (responsibility at
+    1.00) and its `init`, which nothing uses. All eight
+    `replica_client.go` files and `s3/leaser.go` stand in one "Replica
+    clients" part; "Replica client setup" holds main.go's 11 units.
+    cmd/litestream: 12 parts (9 before), 0 lone, 2 units (4 declarations)
+    undecided. `replica_url.go`, whose 24 units are all helpers used from
+    several rows, is a part of its own made only of helpers.
+  - pykrx library target, exit 0 in 3 s, all answers cached: no file joined
+    before or after; the map is identical.
+  - Warm reruns of Redis and litestream: 0 live calls. Headless walk of both
+    reports without page errors (`step3/ruleb/shots`).
+
 ## 2026-09-28 — A part's tiles stand keys, then types, then the rest
 
 - Scope: step C6 of `map-model/step3-plan.md`, third part (owner decision

@@ -231,9 +231,12 @@ func onlyKey(keys map[groupKey]bool) groupKey {
 //   - A: a helper of a split file whose users, in any file, all stand in one
 //     row joins that row: a box of its file, a box of another split file or
 //     a whole file's row.
-//   - B: a whole file whose face (its units used from other files) is all
-//     helpers, and all of whose outside users stand in one box of a split
-//     file, joins that box. A whole file never joins a whole file.
+//   - B: a whole file of helpers (owner's map model: a library file is a
+//     file of helpers), every unit of which, its types included, is a
+//     decided helper, and all of whose outside users stand in one box of a
+//     split file, joins that box. One unit that is no helper (a type
+//     answered responsibility, an entry nothing uses, a near-tie) keeps the
+//     file out. A whole file never joins a whole file.
 //   - C: a unit of a split file that is no helper and that the assignment
 //     left open takes the box every unit of its file that uses it has; with
 //     none using it, the box of every unit of its file it uses that is no
@@ -271,18 +274,20 @@ func (p *placement) settle() {
 			if _, joined := p.attachedFiles[id]; joined {
 				continue
 			}
-			face, outside := false, map[string]bool{}
-			helpersOnly := true
+			outside := map[string]bool{}
+			helpersOnly := len(file.units) > 0
 			for _, unit := range file.units {
+				if !p.helpers[unit.id] {
+					helpersOnly = false
+					break
+				}
 				for user := range unit.users {
-					if p.facts.units[user].file == id {
-						continue
+					if p.facts.units[user].file != id {
+						outside[user] = true
 					}
-					face, outside[user] = true, true
-					helpersOnly = helpersOnly && p.helpers[unit.id]
 				}
 			}
-			if !face || !helpersOnly {
+			if !helpersOnly || len(outside) == 0 {
 				continue
 			}
 			keys, open := p.keysOf(outside)
@@ -421,7 +426,7 @@ func (r *reader) recordPlacement(targetID string, p *placement) {
 			fmt.Fprintf(&r.tables, "%s: %s: %s\n\n", path, printed, strings.Join(names, " "))
 		}
 		note("role_attached", p.byHelperUsers[id], "helpers whose users all stand in one box or file, placed there by code", "helpers placed with their users")
-		note("role_attached", p.joined[id], "whole files whose declarations used elsewhere are all helpers used only from one box of this file, joined to it by code", "files joined to a box")
+		note("role_attached", p.joined[id], "whole files of helpers only, used from other files by one box of this file alone, joined to it by code", "files joined to a box")
 		note("role_placed_by_users", p.byUsers[id], "declarations the assignment left open, placed in the one box of the file's declarations that use them", "placed by their users")
 		note("role_placed_by_uses", p.byUses[id], "declarations the assignment left open that no declaration of the file uses, placed in the one box of what they use that is no helper", "placed by what they use")
 		if asked := p.secondAsked[id]; len(asked) > 0 {

@@ -159,8 +159,8 @@ func check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 	if checked.Target.MapFailure != "" {
 		t.Fatalf("map failure: %s", checked.Target.MapFailure)
 	}
-	// A whole file whose face is helpers used from one box joins that box
-	// and is no row of its own.
+	// A whole file of helpers used from one box joins that box and is no
+	// row of its own.
 	joined := map[string]bool{}
 	for _, row := range result.Rejected {
 		if row.Kind == "role_attached" {

@@ -383,8 +383,9 @@ them as declarations' `uses` (READING): `TestCumulativeCMapOfParts` checks that
 `printSymbols` uses `symsTable` (a read), `keysCommand` hands `compareKeys` to
 `qsort` and `cmdTable` hands `getCommand` over. The role split's helper
 question (READING) shows `symsTable` with its reader, and the split check
-places `saveSnapshot` with `bgsaveCommand` and joins `staticsyms.h` to the
-box of `printSymbols`. The fixture's map of parts is
+places `saveSnapshot` with `bgsaveCommand` and keeps `staticsyms.h` out of
+the box of `printSymbols`: the check takes its type `kvSymbol` for no
+helper, so the header is no file of helpers. The fixture's map of parts is
 checked like every other language's (`TestCumulativeCMapOfParts`), and its
 split puts `netConnect`, which kvd never runs, alone in a role part that
 leaves kvd's map; `TestCFixtureClientMapLeavesTheLoopItNeverRuns` checks that

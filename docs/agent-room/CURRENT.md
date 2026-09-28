@@ -139,8 +139,9 @@ never entered into or read from a repository-wide unqualified map.
   neighbours' second question is deleted. Since 2026-09-28 Jev also asks
   once per unit whether it is a helper (a function or variable nothing in
   the program uses is none by code and not asked); a helper is never named
-  or assigned, code places it with its users (a whole file whose face is
-  helpers joins its users' box), and only a helper its users share between
+  or assigned, code places it with its users (a whole file every
+  declaration of which, its types included, is a helper joins its users'
+  box), and only a helper its users share between
   rows, or one nothing uses, is asked the assignment once more.
 - **Map reading on the canvas (2026-09-25):** a part's description stands
   on its box under its name, a closed area's line on the area's box in the

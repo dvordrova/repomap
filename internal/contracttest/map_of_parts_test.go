@@ -429,22 +429,25 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	// The helper question: saveSnapshot, static and called only by
 	// bgsaveCommand, goes with it by code. staticsyms.h's symsTable, which
 	// only printSymbols reads, is a helper, so the header keeps one
-	// declaration that is none and stays whole; it is then the header's
-	// face, used from one box only, so the whole header joins printSymbols's
-	// box, as redis.c's findFuncName takes staticsymbols.h. addReplyBulk and
+	// declaration that is none and stays whole. That one is its type
+	// kvSymbol, which the check does not take for a helper (a type has no
+	// use facts), so the header is no file of helpers and keeps a part of
+	// its own, although all it shows other files is a helper used from
+	// printSymbols's box alone: rule B joins a whole file only when every
+	// declaration of it is a helper (redis's staticsymbols.h holds only its
+	// table, its struct being declared in redis.c). addReplyBulk and
 	// addReplyLong, whose callers stand in both boxes, are asked once more.
 	snapshot, bgsave := split.Symbols[[2]string{"kvd.c", "saveSnapshot"}], split.Symbols[[2]string{"kvd.c", "bgsaveCommand"}]
 	if split.PartOf[snapshot] == "" || split.PartOf[snapshot] != split.PartOf[bgsave] || !recorded(split, "role_attached", "saveSnapshot") {
 		t.Fatalf("saveSnapshot in %q, bgsaveCommand in %q", split.PartOf[snapshot], split.PartOf[bgsave])
 	}
 	printer := split.PartOf[split.Symbols[[2]string{"kvd.c", "printSymbols"}]]
-	for _, name := range []string{"symsTable", "kvSymbol"} {
-		if at := split.PartOf[split.Symbols[[2]string{"staticsyms.h", name}]]; at == "" || at != printer {
-			t.Fatalf("staticsyms.h's %s is in %q, printSymbols in %q", name, at, printer)
-		}
+	header := split.PartOf[split.Symbols[[2]string{"staticsyms.h", "kvSymbol"}]]
+	if table := split.PartOf[split.Symbols[[2]string{"staticsyms.h", "symsTable"}]]; !split.Helpers[[2]string{"staticsyms.h", "symsTable"}] || header == "" || table != header || header == printer {
+		t.Fatalf("staticsyms.h's symsTable is in %q, kvSymbol in %q, printSymbols in %q", table, header, printer)
 	}
-	if !recorded(split, "role_attached", "staticsyms.h") {
-		t.Fatal("the header's joining is not recorded")
+	if recorded(split, "role_attached", "staticsyms.h") {
+		t.Fatal("the header, which declares a type that is no helper, is recorded as joined")
 	}
 	if got := split.HelperItems[[2]string{"staticsyms.h", "symsTable"}]["read_by"]; !reflect.DeepEqual(got, []any{"kvd.c:printSymbols"}) {
 		t.Fatalf("symsTable is asked with read_by %v", got)

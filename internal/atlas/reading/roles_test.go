@@ -652,12 +652,16 @@ func TestASharedHelperIsAskedOnceInASecondPass(t *testing.T) {
 	}
 }
 
-// pool.go's getBuf, a helper Store.Get alone calls, is its face; bufPool,
-// which getBuf reads, is used only in pool.go. The whole file joins Storage,
-// the box of Store (rule B): it is no row of the parts request and Storage
-// holds its units. When util.go's Log, a whole file, calls getBuf too, the
-// file's outside users stand in two rows and it keeps a row of its own.
-func TestAHelperFileJoinsTheBoxOfItsUsers(t *testing.T) {
+// A whole file of helpers joins the box its users stand in (rule B; the
+// owner's map model: a library file is a file of helpers). pool.go's getBuf,
+// which Store.Get alone calls, and bufPool, which only getBuf reads, are both
+// helpers, so the whole file joins Storage, the box of Store: it is no row
+// of the parts request and Storage holds its units, as redis-server's
+// pqsort.c and lzf files join the boxes of their users. One unit that is no
+// helper keeps the file out: with bufPool a near-tie, pool.go keeps a row of
+// its own although everything used from other files is a helper. So does an
+// outside user in another row: util.go's Log, a whole file, calling getBuf.
+func TestAFileOfHelpersJoinsTheBoxOfItsUsers(t *testing.T) {
 	pool := func(logUses bool) func(files map[string][]roleDecl) {
 		return func(files map[string][]roleDecl) {
 			files["svc/pool.go"] = []roleDecl{
@@ -675,9 +679,10 @@ func TestAHelperFileJoinsTheBoxOfItsUsers(t *testing.T) {
 			}
 		}
 	}
-	read := func(logUses bool) (atlas.Target, *tableProvider, Result) {
+	read := func(logUses bool, bufPool llm.Verdict) (atlas.Target, *tableProvider, Result) {
 		t.Helper()
 		provider, jev := defaultRoleProvider(), helperJev("getBuf")
+		jev.helper["bufPool"] = bufPool
 		result, err := Read(t.Context(), roleOptions(t, roleGraph(t, pool(logUses)), provider, jev, ""))
 		if err != nil {
 			t.Fatal(err)
@@ -687,11 +692,20 @@ func TestAHelperFileJoinsTheBoxOfItsUsers(t *testing.T) {
 		}
 		return targetOf(t, result, "svc"), provider, result
 	}
-	svc, provider, result := read(false)
-	for _, row := range partsRequest(t, provider, "svc/").Units {
-		if row["path"] == "svc/pool.go" && row["box"] == nil {
-			t.Fatalf("pool.go joined no box: %v", row)
+	// ownRows counts pool.go's whole-file rows of the parts request.
+	ownRows := func(provider *tableProvider) int {
+		rows := 0
+		for _, row := range partsRequest(t, provider, "svc/").Units {
+			if row["path"] == "svc/pool.go" && row["box"] == nil {
+				rows++
+			}
 		}
+		return rows
+	}
+	decided := typesafetest.Choose(lines.RoleHelperHelper)
+	svc, provider, result := read(false, decided)
+	if rows := ownRows(provider); rows != 0 {
+		t.Fatalf("pool.go, a file of helpers, joined no box: %d rows", rows)
 	}
 	if got := membersOf(partsByTitle(svc)["Storage"]); !slices.Equal(got, []string{"Store", "Store.Get", "Store.Put", "bufPool", "getBuf"}) {
 		t.Fatalf("Storage holds %v", got)
@@ -701,15 +715,66 @@ func TestAHelperFileJoinsTheBoxOfItsUsers(t *testing.T) {
 	}) {
 		t.Fatal("the file's joining is not recorded")
 	}
-	svc, provider, _ = read(true)
+	nearTie := llm.Verdict{Choice: lines.RoleHelperHelper, Probabilities: map[string]float64{lines.RoleHelperHelper: 0.52, lines.RoleHelperOwnJob: 0.48}}
+	svc, provider, _ = read(false, nearTie)
+	if rows := ownRows(provider); rows != 1 || slices.Contains(membersOf(partsByTitle(svc)["Storage"]), "getBuf") {
+		t.Fatalf("pool.go, whose bufPool is no decided helper, joined Storage: %d rows", rows)
+	}
+	svc, provider, _ = read(true, decided)
+	if rows := ownRows(provider); rows != 1 || slices.Contains(membersOf(partsByTitle(svc)["Storage"]), "getBuf") {
+		t.Fatalf("pool.go, which a whole file also uses, joined Storage: %d rows", rows)
+	}
+}
+
+// A file that declares a responsibility is no file of helpers, however its
+// code is used from other files (the Go shape): backend.go declares the
+// Client type, which the helper question answers responsibility, and
+// NewClient, a helper Store.Get alone calls. A type has no use facts, so
+// NewClient is all that other files use of backend.go, a helper used from
+// Storage alone; still the file keeps a row of its own and joins no box, as
+// litestream's replica_client.go files of every storage backend keep out of
+// the box of main.go that calls their constructors.
+func TestAFileWithAResponsibilityJoinsNoBox(t *testing.T) {
+	graph := roleGraph(t, func(files map[string][]roleDecl) {
+		files["svc/backend.go"] = []roleDecl{
+			{name: "Client", kind: "type", line: 3, end: 9, code: 6},
+			{name: "NewClient", kind: "function", line: 11, end: 14, code: 3},
+		}
+		server := files["svc/server.go"]
+		for i := range server {
+			if server[i].name == "Store.Get" {
+				server[i].calls = []string{"svc/backend.go:NewClient"}
+			}
+		}
+	})
+	provider, jev := defaultRoleProvider(), helperJev("NewClient")
+	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(jev.helperAsked, "Client") {
+		t.Fatalf("the type was not asked the helper question: %v", jev.helperAsked)
+	}
 	rows := 0
 	for _, row := range partsRequest(t, provider, "svc/").Units {
-		if row["path"] == "svc/pool.go" && row["box"] == nil {
+		if row["path"] == "svc/backend.go" && row["box"] == nil {
 			rows++
 		}
 	}
-	if rows != 1 || slices.Contains(membersOf(partsByTitle(svc)["Storage"]), "getBuf") {
-		t.Fatalf("pool.go, which a whole file also uses, joined Storage: %d rows", rows)
+	svc := targetOf(t, result, "svc")
+	if storage := membersOf(partsByTitle(svc)["Storage"]); rows != 1 || slices.Contains(storage, "NewClient") || slices.Contains(storage, "Client") {
+		t.Fatalf("backend.go, which declares a responsibility, joined Storage: %d rows, Storage holds %v", rows, storage)
+	}
+	if slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool {
+		return row.Kind == "role_attached" && slices.Contains(row.Samples, "svc/backend.go")
+	}) {
+		t.Fatal("backend.go is recorded as joined")
+	}
+	if marks := helperMarks(svc); !slices.Contains(marks, "NewClient") {
+		t.Fatalf("NewClient lost its helper mark: %v", marks)
 	}
 }
 

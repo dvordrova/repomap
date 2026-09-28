@@ -392,10 +392,17 @@ without a model), and code places what they leave open:
   - A: a helper of a split file whose users, in any file, all stand in one
     row joins that row: a box of its own file, a box of another split file
     or a whole file's row (`role_attached`, by name).
-  - B: a whole file that is neither test nor generated code, whose face
-    (its units used from other files) is not empty and all helpers, and all
-    of whose outside users stand in one box of a split file, joins that box
-    (`role_attached`, by path). A whole file never joins a whole file.
+  - B: a whole file of helpers joins its users' box (owner's map model,
+    2026-09-28: a library file is a file of helpers). A whole file that is
+    neither test nor generated code, every unit of which, its types
+    included, is a decided helper, and whose users in other files (at least
+    one) all stand in one box of a split file, joins that box
+    (`role_attached`, by path). A unit that is no helper keeps the file out,
+    whatever other files use of it: a type answered `responsibility` (a type
+    has no use facts, so no user shows it), a function nothing uses, `none
+    of these`, a near-tie or an unanswered row. So a Go file declaring a
+    client type and its constructor, which one box alone calls, keeps a row
+    of its own. A whole file never joins a whole file.
   - C: a unit that is no helper and that the assignment left open takes box
     k when every unit of its file that uses it has box k; one no unit of
     its file uses takes k when everything of its file it uses that is no
@@ -492,8 +499,9 @@ hands it over, the language does not export it and no registration names
 it; the check requires that no test or generated declaration is asked and
 none twice, that no helper is named, that no unit is assigned twice, and
 that a helper of a split file whose users all stand in one part is in that
-part. Each fixture checks a case: C's saveSnapshot goes with bgsaveCommand
-and staticsyms.h, read only by printSymbols, joins its box; Go's
+part. Each fixture checks a case: C's saveSnapshot goes with bgsaveCommand,
+and staticsyms.h, whose symsTable only printSymbols reads, keeps a part of
+its own, since the check takes its type kvSymbol for no helper; Go's
 lookupCommand goes with DispatchCommand, which nothing calls and so is not
 asked, and the command table's handlers are asked once more; Python's
 format_score keeps exports.py whole; TypeScript's handledOrderIds goes with
