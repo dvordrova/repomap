@@ -101,10 +101,11 @@ type DispatchReach struct {
 }
 
 // Entry is a declaration execution starts from (a target seed) and where
-// the map has it: GroupID is the part holding it, the program's entry part;
-// a seed no part holds keeps OffMap, the reason its file lists it off the
-// map ("undecided" for Redis's main, a near-tie of the parts answer). The
-// code never picks a part for it.
+// the map has it: GroupID is the part holding it, the program's entry part.
+// A seed is never asked the role split's box question: a split file gives
+// it a grouping row of its own, so only a parts answer that leaves that row
+// out (and a follow-up that places it nowhere) keeps it OffMap, with the
+// reason its file lists it off the map. The code never picks a part for it.
 type Entry struct {
 	SubjectID string
 	GroupID   string

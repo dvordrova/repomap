@@ -143,10 +143,14 @@ func (r *reader) askHelpers(ctx context.Context, round int, facts *roleFacts) (m
 	target := r.opts.Targets[round-1]
 	var groups rowGroups
 	var asked []*roleUnit
-	var unused []string
+	var unused, seeds []string
 	for _, file := range facts.files {
 		var group rowGroup
 		for i, unit := range file.units {
+			if unit.seed {
+				seeds = append(seeds, unit.path+":"+unit.name)
+				continue
+			}
 			if !unit.askedHelper(target.Language) {
 				unused = append(unused, unit.path+":"+unit.name)
 				continue
@@ -174,15 +178,20 @@ func (r *reader) askHelpers(ctx context.Context, round int, facts *roleFacts) (m
 	if len(unused) > 0 {
 		fmt.Fprintf(&r.tables, ": %s", strings.Join(unused, " "))
 	}
+	if len(seeds) > 0 {
+		fmt.Fprintf(&r.tables, "; %d seeds are not asked: %s", len(seeds), strings.Join(seeds, " "))
+	}
 	r.tables.WriteString("\n\n")
 	return helpers, nil
 }
 
 // groupKey is a row of the parts request code can place a unit in: a box of
-// a split file, or a whole file's row (box -1).
+// a split file, a whole file's row (box -1), or the row of a split file's
+// seed (box -1 and the seed's unit).
 type groupKey struct {
 	file string
 	box  int
+	seed string
 }
 
 // splitFile is a file the assignment splits: its boxes and, by unit, the
@@ -230,7 +239,7 @@ func newPlacement(facts *roleFacts, helpers map[string]bool) *placement {
 
 // resolve follows a whole file's row to the box the file joined.
 func (p *placement) resolve(key groupKey) groupKey {
-	if key.box < 0 {
+	if key.box < 0 && key.seed == "" {
 		if to, ok := p.attachedFiles[key.file]; ok {
 			return to
 		}
@@ -245,6 +254,9 @@ func (p *placement) keyOf(id string) (groupKey, bool) {
 		return groupKey{}, false
 	}
 	if split := p.split[unit.file]; split != nil {
+		if unit.seed {
+			return groupKey{file: unit.file, box: -1, seed: id}, true
+		}
 		if box := split.box[id]; box >= 0 {
 			return groupKey{file: unit.file, box: box}, true
 		}
@@ -321,7 +333,7 @@ func (p *placement) settle() {
 				if open || len(keys) != 1 {
 					continue
 				}
-				if key := onlyKey(keys); key.file == file.file.id {
+				if key := onlyKey(keys); key.file == file.file.id && key.seed == "" {
 					split.box[unit.id] = key.box
 				} else {
 					p.attached[unit.id] = key
@@ -384,7 +396,7 @@ func (p *placement) settle() {
 				return box
 			}
 			for _, unit := range file.units {
-				if p.helpers[unit.id] || !p.open(unit.id) {
+				if p.helpers[unit.id] || unit.seed || !p.open(unit.id) {
 					continue
 				}
 				var users, uses []string

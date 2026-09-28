@@ -1,5 +1,16 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — A seed of a split file is its own grouping row (e1)
+
+- `atlas.SymbolFacts.Seeds` (graph 20) names the targets whose execution
+  begins at the declaration. The role split never asks a seed the helper
+  question or the box question; a split file gives each seed a `c*` row of
+  its own, its box the seed's name, with the helpers only it uses (rule A
+  places them there). A whole file keeps its seed in its one row. So an
+  executable's `main` is never left off the map by a box near-tie.
+- Speed mode (owner): build and vet only; tests for the cleanup pass are
+  listed in the scratchpad `impl/cleanup-todo.md`.
+
 ## 2026-09-28 — A call that starts another program is an outward boundary named by its word (runs another program)
 
 - **Measured before code** (`runsprog/`: probe.py, analyze-A.txt,

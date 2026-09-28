@@ -30,7 +30,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 19
+	GraphVersion = 20
 	Version      = 17
 
 	GraphFilename    = "places.json"
@@ -251,6 +251,10 @@ type SymbolFacts struct {
 	// proved their program never runs it (ProgramIndex `unreachable`): what
 	// it calls out to or registers is not those targets'.
 	Unreached []string `json:"unreached,omitempty"`
+	// Seeds are the targets whose execution begins at this declaration
+	// (ProgramIndex target seeds): each is the entry of its program, so its
+	// file's grouping gives it a row of its own.
+	Seeds []string `json:"seeds,omitempty"`
 }
 
 type TypeMember struct {
@@ -1192,6 +1196,11 @@ func validateGraph(graph Graph) error {
 			for _, target := range place.Symbol.Unreached {
 				if !slices.Contains(place.TargetIDs, target) {
 					return fmt.Errorf("atlas: symbol %q is unreached in target %q, which does not hold it", place.ID, target)
+				}
+			}
+			for _, target := range place.Symbol.Seeds {
+				if !slices.Contains(place.TargetIDs, target) {
+					return fmt.Errorf("atlas: symbol %q is the seed of target %q, which does not hold it", place.ID, target)
 				}
 			}
 		}

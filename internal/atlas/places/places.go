@@ -99,6 +99,7 @@ func Build(input Input) (atlas.Graph, error) {
 		entries:           make(map[string]corpus.Entry),
 		seeds:             make(map[string]struct{}),
 		seedDecls:         make(map[string]struct{}),
+		seedTargets:       make(map[string]map[string]struct{}),
 		targetOf:          make(map[string]map[string]struct{}),
 		bounds:            make(map[boundaryKey]*boundaryState),
 		workspace:         make(map[string]struct{}),
@@ -228,7 +229,8 @@ type builder struct {
 	readmes           map[string]corpus.Entry
 	entries           map[string]corpus.Entry
 	seeds             map[string]struct{}
-	seedDecls         map[string]struct{} // symbol places of seed declarations
+	seedDecls         map[string]struct{}            // symbol places of seed declarations
+	seedTargets       map[string]map[string]struct{} // symbol place -> targets it is the seed of
 	targetOf          map[string]map[string]struct{}
 	bounds            map[boundaryKey]*boundaryState
 	symbols           []atlas.Place
@@ -645,6 +647,10 @@ func (b *builder) collectSeeds(target TargetInput) {
 		// graph's symbol places, locates the entry inside its file.
 		if symbol := b.symbolOf[seed.ObjectID]; symbol != "" {
 			b.seedDecls[symbol] = struct{}{}
+			if b.seedTargets[symbol] == nil {
+				b.seedTargets[symbol] = make(map[string]struct{})
+			}
+			b.seedTargets[symbol][target.Index.Target.ID] = struct{}{}
 		}
 		if filePath, ok := b.fileOf[seed.ObjectID]; ok {
 			b.seeds[filePath] = struct{}{}
@@ -1099,11 +1105,17 @@ func (b *builder) collectSymbols() {
 					unreached = append(unreached, target)
 				}
 			}
+			var seeds []string
+			for _, target := range sortedKeys(b.seedTargets[id]) {
+				if _, holds := state.targets[target]; holds {
+					seeds = append(seeds, target)
+				}
+			}
 			b.symbols = append(b.symbols, atlas.Place{
 				ID: id, Kind: atlas.PlaceSymbol, Path: filePath,
 				LineNo: decl.LineNo, Column: decl.Column, Depth: state.depth, TargetIDs: sortedKeys(state.targets),
 				Parent: atlas.FileID(filePath), Given: truncateRunes(given, maxLineRunes),
-				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached},
+				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached, Seeds: seeds},
 			})
 		}
 	}

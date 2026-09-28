@@ -91,6 +91,11 @@ type designView struct {
 	// between unit-bearing files.
 	sites   []unitSite
 	imports map[[2]string]bool
+	// seedName is, for each unit the target's execution begins at (a symbol
+	// place whose Seeds hold the target), the declaration's own name: a
+	// split file gives it a row of its own, so the entry is never left off
+	// the map by the assignment.
+	seedName map[string]string
 }
 
 // unitSite is one exact call site: the unit whose code it is in and the
@@ -107,6 +112,7 @@ func (r *reader) designView(targetID string) *designView {
 	view := &designView{
 		targetID: targetID, byID: map[string]*designFile{}, decls: map[string][]string{},
 		follows: map[string]string{}, unitFile: map[string]string{}, kind: map[string]string{}, text: map[string]string{}, imports: map[[2]string]bool{},
+		seedName: map[string]string{},
 	}
 	var files []atlas.Place
 	for _, place := range r.opts.Graph.Places {
@@ -180,6 +186,9 @@ func (r *reader) designView(targetID string) *designView {
 			named[decl.Name] = id
 			row.units = append(row.units, id)
 			view.unitFile[id] = file.ID
+			if symbol := r.places[id].Symbol; symbol != nil && slices.Contains(symbol.Seeds, targetID) {
+				view.seedName[id] = decl.Name
+			}
 			view.text[id] = decl.Name
 			if decl.Exported && decl.Signature != "" {
 				view.text[id] += " " + decl.Signature
@@ -336,6 +345,17 @@ func (view *designView) groupingUnits(split *unitSplit, outcome *designOutcome) 
 				}
 				boxes++
 				units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, box.Name, held))
+			}
+			// A seed is never assigned a box: it is its own row, named by
+			// its declaration, with the helpers only it uses.
+			for _, id := range file.units {
+				name := view.seedName[id]
+				if name == "" {
+					continue
+				}
+				boxes++
+				held := append([]string{id}, split.into[groupKey{file: file.id, box: -1, seed: id}]...)
+				units = append(units, view.designUnitOf(fmt.Sprintf("c%d", boxes), file, name, held))
 			}
 			for _, id := range roles.undecided {
 				outcome.unitReason[id] = atlas.OffMapUndecided

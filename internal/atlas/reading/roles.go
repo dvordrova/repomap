@@ -81,6 +81,10 @@ type roleUnit struct {
 	// alternatives, or a registration).
 	callees, calledByAll, readers, handers map[string]bool
 	used                                   bool
+	// seed says the target's execution begins at this unit: it is never
+	// asked the helper question or assigned a box, and a split file gives
+	// it a row of its own.
+	seed bool
 }
 
 // roleFile is one unit-bearing file of the target that is neither test nor
@@ -141,7 +145,8 @@ func (r *reader) unitFacts(view *designView) *roleFacts {
 		roles := &roleFile{file: file, byID: map[string]*roleUnit{}}
 		for _, id := range file.units {
 			decl := r.places[id].Symbol.Decl
-			unit := &roleUnit{id: id, name: decl.Name, kind: decl.Kind, macro: decl.Macro, signature: decl.Signature, file: file.id, path: file.path,
+			_, seed := view.seedName[id]
+			unit := &roleUnit{id: id, name: decl.Name, kind: decl.Kind, macro: decl.Macro, signature: decl.Signature, file: file.id, path: file.path, seed: seed,
 				callers: map[string]bool{}, users: map[string]bool{}, uses: map[string]bool{},
 				callees: map[string]bool{}, calledByAll: map[string]bool{}, readers: map[string]bool{}, handers: map[string]bool{}}
 			roles.units = append(roles.units, unit)
@@ -667,7 +672,7 @@ func (r *reader) readRoles(ctx context.Context, view *designView, round int) (*u
 		}
 		kept := 0
 		for _, unit := range candidate.units {
-			if !helpers[unit.id] {
+			if !helpers[unit.id] && !unit.seed {
 				kept++
 			}
 		}
@@ -686,7 +691,7 @@ func (r *reader) readRoles(ctx context.Context, view *designView, round int) (*u
 	if err != nil {
 		return nil, err
 	}
-	notHelper := func(unit *roleUnit) bool { return !helpers[unit.id] }
+	notHelper := func(unit *roleUnit) bool { return !helpers[unit.id] && !unit.seed }
 	var files []*roleFile
 	var groups rowGroups
 	for _, candidate := range named {
@@ -712,7 +717,7 @@ func (r *reader) readRoles(ctx context.Context, view *designView, round int) (*u
 		holding := map[int]bool{}
 		for _, unit := range candidate.units {
 			split.box[unit.id] = -1
-			if helpers[unit.id] {
+			if helpers[unit.id] || unit.seed {
 				continue
 			}
 			if box := boxChoice(assigned[at].answer, boxes); box >= 0 {
@@ -750,6 +755,9 @@ func (r *reader) readRoles(ctx context.Context, view *designView, round int) (*u
 		}
 		split := &roleSplit{file: file.file, boxes: state.boxes, holds: make([][]string, len(state.boxes))}
 		for _, unit := range file.units {
+			if unit.seed {
+				continue
+			}
 			if box := state.box[unit.id]; box >= 0 {
 				split.holds[box] = append(split.holds[box], unit.id)
 				continue
