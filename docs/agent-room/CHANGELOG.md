@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — GroupsIndex carries the helper mark, and an area's marks come from data
+
+- Scope: step C5 of `map-model/step3-plan.md` with correction 4 (skeptic
+  B1). GroupsIndex 17 → 18.
+- **Change.** A subject's interpretation keeps the atlas symbol's helper
+  mark (`helper`, saved). `Connection.ToHelper` (never saved) is derived in
+  `applyPhases`, beside `Phase`, from the saved marks of the program's own
+  subjects, on projection and on hydrate alike, so a report rendered from a
+  saved run marks the same connections as the ordinary run. A container's
+  lane is `triggers` only when one of its groups holds a target seed;
+  otherwise the majority of its groups' lanes, a part that takes requests
+  counting as core. Its `core` stays "any group is core" (owner,
+  2026-09-27: purple when any part is the domain). The report does not read
+  either yet (C6).
+- **Tests.** `TestAConnectionIntoAHelperIsMarkedAfterDecoding` (only the
+  relation into the marked subject is marked; the saved JSON carries the
+  interpretation and no derived field; the mark survives `Encode` →
+  `Decode`) and `TestAnAreaIsTheEntryOnlyByItsSeedAndCoreByAnyPart` (the
+  seed's area is triggers and not core; an area whose part takes requests
+  without the seed is not triggers, and is core by its one domain part).
+  Reverted alone, each of: no helper in the interpretation, the mark
+  derived only on projection, any taking part making the area triggers,
+  and area core ignoring its parts fails them
+  (`step3/impl-revert-c4c6.log`).
+
 ## 2026-09-28 — Ask once whether a declaration is a helper, and let code place helpers with their users
 
 - Scope: step C4 of `map-model/step3-plan.md` with corrections 1, 2, 3, 11

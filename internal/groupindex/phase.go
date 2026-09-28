@@ -6,7 +6,9 @@ import "github.com/dvordrova/repomap/internal/programindex"
 // ordinary calls — the wiring before anything serves; runtime is what an
 // operation reaches on its chains. A subject or a connection has one phase,
 // or both when the same declaration serves in each. Derived from the
-// program index, the operations and the chains; never persisted.
+// program index, the operations and the chains; never persisted. A
+// connection into a helper is derived beside it from the saved helper
+// interpretations, so a decoded index says what the projected one does.
 const (
 	PhaseInit    = "init"
 	PhaseRuntime = "runtime"
@@ -64,7 +66,15 @@ func applyPhases(index *Index, program programindex.Index) {
 	for position := range index.Subjects {
 		index.Subjects[position].Phase = phase(index.Subjects[position].ID)
 	}
+	helpers := make(map[string]bool)
+	for _, subject := range index.Subjects {
+		if subject.Interpretation != nil && subject.Interpretation.Helper {
+			helpers[subject.ID] = true
+		}
+	}
 	for position := range index.Connections {
-		index.Connections[position].Phase = phase(index.Connections[position].FromSubjectID)
+		connection := &index.Connections[position]
+		connection.Phase = phase(connection.FromSubjectID)
+		connection.ToHelper = connection.To.TargetID == index.Target.ID && helpers[connection.ToSubjectID]
 	}
 }

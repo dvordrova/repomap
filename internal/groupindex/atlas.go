@@ -349,7 +349,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	interpretations := make(map[string]Interpretation)
 	interpret := func(file atlas.File) {
 		for _, symbol := range file.Symbols {
-			interpretation := Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary}
+			interpretation := Interpretation{Line: symbol.Line, Alias: symbol.Alias, Key: symbol.Key, Activation: symbol.Activation, Operation: symbol.Operation, OperationSummary: symbol.OperationSummary, Helper: symbol.Helper}
 			if interpretation != (Interpretation{}) {
 				interpretations[sourceRefs[symbol.ObjectID]] = interpretation
 			}
@@ -478,10 +478,21 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		groupOfBox[boxID] = groupIDByValue[value]
 	}
 
+	// An area is the program's entry when one of its groups holds a
+	// declaration execution starts from (a target seed); taking requests or
+	// listening does not make one.
+	seeds := make(map[string]bool, len(program.Target.Seeds))
+	for _, seed := range program.Target.Seeds {
+		seeds[seed.ObjectID] = true
+	}
+	groupByID := make(map[string]Group, len(groups))
+	for _, group := range groups {
+		groupByID[group.ID] = group
+	}
 	containers := make([]Container, 0, len(target.Zones))
 	for _, zone := range target.Zones {
 		var ids []string
-		core := false
+		core, entry := false, false
 		lanes := make(map[Lane]int)
 		for _, boxID := range zone.BoxIDs {
 			groupID, ok := groupOfBox[boxID]
@@ -489,9 +500,18 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				continue
 			}
 			ids = append(ids, groupID)
+			for _, id := range groupByID[groupID].MemberSubjectIDs {
+				entry = entry || seeds[id]
+			}
 			for _, box := range target.Boxes {
 				if box.ID == boxID {
-					lanes[laneOfSide(box.Side)]++
+					// A part that takes requests counts with the core: only
+					// the entry makes the area's lane triggers.
+					lane := laneOfSide(box.Side)
+					if lane == LaneTriggers {
+						lane = LaneCore
+					}
+					lanes[lane]++
 					core = core || box.Core
 				}
 			}
@@ -503,14 +523,12 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		sort.Slice(ids, func(i, j int) bool { return compactIDLess(ids[i], ids[j], "g") })
 		lane := LaneCore
 		best := 0
-		for _, candidate := range []Lane{LaneCore, LaneTriggers, LaneDependencies} {
+		for _, candidate := range []Lane{LaneCore, LaneDependencies} {
 			if lanes[candidate] > best {
 				lane, best = candidate, lanes[candidate]
 			}
 		}
-		// Execution enters the container wherever it enters one of its
-		// groups, however many groups beside it only serve.
-		if lanes[LaneTriggers] > 0 {
+		if entry {
 			lane = LaneTriggers
 		}
 		summary := strings.TrimSpace(zone.Line)

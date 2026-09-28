@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 17
+	Version          = 18
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -83,6 +83,10 @@ type Connection struct {
 	// Phase is the phase of the connection's source subject: init wiring
 	// or runtime flow. Derived, never persisted.
 	Phase string `json:"-"`
+	// ToHelper says the connection's far end is a declaration of this
+	// program the helper question decided is a helper (its saved
+	// Interpretation.Helper). Derived with Phase, never persisted.
+	ToHelper bool `json:"-"`
 }
 
 // SubjectEndpoint qualifies evidence by target so a cross-target connection
@@ -201,6 +205,9 @@ type Interpretation struct {
 	Activation       string `json:"activation,omitempty"`
 	Operation        string `json:"operation,omitempty"`
 	OperationSummary string `json:"operation_summary,omitempty"`
+	// Helper is the helper question's decision that the declaration serves
+	// the work of other declarations (atlas Symbol.Helper).
+	Helper bool `json:"helper,omitempty"`
 }
 
 // SubjectAnnotation is the only subject material owned by GroupsIndex. Native

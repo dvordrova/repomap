@@ -606,7 +606,12 @@ Accepted areas keep the order the answer lists them, which usually follows
 the pipeline, and take their `z*` IDs in it. The request asks for no order and
 nothing validates or repairs one: code only carries it. GroupsIndex numbers
 its containers `k*` in that order, and the page lists areas and hands them to
-the canvas layout in it, with the parts in no area after them.
+the canvas layout in it, with the parts in no area after them. A container's
+marks are data: its lane is `triggers` only when one of its groups holds a
+target seed (the program's entry), otherwise the majority of its groups'
+lanes, a part that takes requests counting as core; it is core when any of
+its groups is (owner, 2026-09-27: an area is purple when any part in it is
+the domain).
 
 The browser does not choose, validate or repair architectural membership.
 
@@ -841,7 +846,12 @@ decision without a reader is not asked.
 Every subject and connection of the overlay carries a derived phase: `init`
 for what the seeds reach by ordinary calls before anything serves, `runtime`
 for an operation's subject and its chains, `both` when a declaration serves
-in each. It is recomputed on hydrate, never persisted.
+in each. It is recomputed on hydrate, never persisted. The helper question's
+mark is persisted as the subject's interpretation (`helper`, GroupsIndex
+18), and beside the phase each connection of the program into a helper
+subject is marked `ToHelper`, derived from that saved mark on projection
+and hydrate alike, so `repomap render` of a saved run quiets what the
+ordinary run did.
 
 Without `--captions` the model is asked for decisions alone: every prose cell
 (titles, lines, sentences, operation descriptions) keeps its fallback, and a
