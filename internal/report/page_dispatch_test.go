@@ -23,9 +23,11 @@ func TestDispatchRowsCarryTheSetTheyBelongTo(t *testing.T) {
 	}
 	calls, callback := programindex.RelationCalls, programindex.RelationPassesCallback
 	alternatives, exact := programindex.ResolutionAlternatives, programindex.ResolutionExact
+	// The replay site comes first among the edges and later in the source:
+	// the fold is named by the first site in source order (B2).
 	index := groupindex.Index{Target: programindex.Target{ID: "server"}, StructuralEdges: []groupindex.StructuralEdge{
-		edge("dispatch", "call", "get", calls, alternatives, 2054), edge("dispatch", "call", "set", calls, alternatives, 2054), edge("dispatch", "call", "del", calls, alternatives, 2054),
 		edge("replay", "load", "get", calls, alternatives, 7587), edge("replay", "load", "set", calls, alternatives, 7587), edge("replay", "load", "del", calls, alternatives, 7587),
+		edge("dispatch", "call", "get", calls, alternatives, 2054), edge("dispatch", "call", "set", calls, alternatives, 2054), edge("dispatch", "call", "del", calls, alternatives, 2054),
 		edge("row1", "table", "get", callback, exact, 704), edge("row2", "table", "set", callback, exact, 705), edge("row3", "table", "del", callback, exact, 706),
 		edge("row4", "table", "ping", callback, exact, 707),
 		// Calling every member directly is its own three calls.
@@ -38,9 +40,11 @@ func TestDispatchRowsCarryTheSetTheyBelongTo(t *testing.T) {
 	builder := pageBuilder{indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{},
 		byProgram: map[string]*pageSection{"server": {ID: "server", Language: "c"}}}
 	for line, name := range []string{"call", "load", "table", "debug", "partial", "one", "get", "set", "del", "ping"} {
-		builder.subjects[subjectKey("server", name)] = subjectRef{subject: groupindex.Subject{ID: name,
-			Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction, Location: at(line + 1)}}}
+		subject := groupindex.Subject{ID: name, Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction, Location: at(line + 1)}}
+		builder.subjects[subjectKey("server", name)] = subjectRef{subject: subject}
+		builder.indexes[0].Subjects = append(builder.indexes[0].Subjects, subject)
 	}
+	groupindex.Derive(&builder.indexes[0])
 	row := func(relation, from, to string, kind programindex.RelationKind) pageEdgeCall {
 		connection := groupindex.Connection{ID: relation + to, From: groupindex.Endpoint{TargetID: "server", GroupID: "a"}, To: groupindex.Endpoint{TargetID: "server", GroupID: "b"},
 			SourceKind: "native_" + string(kind), SourceID: relation, FromSubjectID: from, ToSubjectID: to, FromLocation: at(1)}

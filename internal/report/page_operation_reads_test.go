@@ -36,21 +36,26 @@ func TestInputPathIncludesDataReadsWithoutExecutingTheirNeighbours(t *testing.T)
 		edge("callback", "field", programindex.RelationWrites),
 	}
 	index.Operations = []groupindex.Operation{{ID: "request", SubjectID: "input", GroupID: "input-group", Name: "GET /levels", Kind: "request", Location: programindex.Location{Path: "app.py", Line: 3, Column: 1}}}
+	groupindex.Derive(&index)
 	result := b.buildOperationMap(&pageSection{ID: "test"}, &index)
 	operation := result.Nodes[0]
-	var paths map[string][]pageCallStep
-	if err := json.Unmarshal([]byte(operation.CallPaths), &paths); err != nil {
+	var path pageInputPath
+	if err := json.Unmarshal([]byte(operation.InputPath), &path); err != nil {
 		t.Fatal(err)
 	}
-	steps := paths[mapNodeID("data-group")]
-	if len(steps) != 3 || steps[0].Name != "input" || steps[1].Name != "helper" || !steps[2].Read || !steps[2].Possible || steps[2].ReadAt == nil || steps[2].ReadAt.Open != "app.py:17:9" {
-		t.Fatalf("data lost its call/read explanation or source: %+v", steps)
+	parts := map[string][]pageCall{}
+	for _, part := range path.Parts {
+		parts[part.Part] = part.Entered
+	}
+	read := parts[mapNodeID("data-group")]
+	if len(read) != 1 || path.Decls[read[0][0]].Name != "helper" || path.Decls[read[0][1]].Name != "data" || read[0][2] != callRead|callPossible {
+		t.Fatalf("data lost its read or its uncertainty: %+v (decls %+v)", read, path.Decls)
 	}
 	if len(operation.Writes) != 0 {
 		t.Fatal("reading data executed a callback's effects")
 	}
 	for _, id := range []string{"sibling", "other-data", "callback", "field"} {
-		if _, found := paths[mapNodeID(id+"-group")]; found {
+		if _, found := parts[mapNodeID(id+"-group")]; found {
 			t.Fatalf("read fabricated path to %s", id)
 		}
 	}

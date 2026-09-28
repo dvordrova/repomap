@@ -96,10 +96,17 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 	if index == nil {
 		return
 	}
-	adj := executionAdjacency(index)
+	// The inputs reaching a call are those whose saved reach holds the
+	// declaration that makes it.
 	reachable := make(map[string]map[string]bool)
-	for _, operation := range index.Operations {
-		reachable[operationNodeID(section.ID, operation.ID)] = reachedSubjects(operation.SubjectID, adj)
+	for position, operation := range index.Operations {
+		reached := map[string]bool{}
+		if position < len(index.Reach) {
+			for _, subject := range index.Reach[position].Subjects {
+				reached[subject.SubjectID] = true
+			}
+		}
+		reachable[operationNodeID(section.ID, operation.ID)] = reached
 	}
 	for _, call := range index.Outbound {
 		row := pageOutbound{

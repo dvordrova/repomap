@@ -2,161 +2,200 @@ package report
 
 import (
 	"encoding/json"
-	"sort"
+	"slices"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// pagePathStep is one declaration on an input's path as its reading lists
-// it: a link into its code (Source is its place, for a tooltip only), the
-// part it stands in, and how deep it is under the handler.
-type pagePathStep struct {
-	Name      string `json:"name"`
-	Href      string `json:"href,omitempty"`
-	Open      string `json:"open,omitempty"`
-	Source    string `json:"source,omitempty"`
-	NoSource  bool   `json:"no_source,omitempty"`
-	Part      string `json:"part,omitempty"`
-	PartTitle string `json:"part_title,omitempty"`
-	Depth     int    `json:"depth,omitempty"`
-	Possible  bool   `json:"possible,omitempty"`
-	Read      bool   `json:"read,omitempty"`
+// pageDecl is one declaration an input's reading names: a link into its
+// code (Source is its place, for a tooltip only) and the drawn part it
+// stands in, where a plain click reads it.
+type pageDecl struct {
+	Name     string `json:"name"`
+	Href     string `json:"href,omitempty"`
+	Open     string `json:"open,omitempty"`
+	Source   string `json:"source,omitempty"`
+	NoSource bool   `json:"no_source,omitempty"`
+	Part     string `json:"part,omitempty"`
 }
 
-// pageSharedPath is a dispatch site whose alternatives include the input's
-// handler: every input handled by one of those alternatives is dispatched
-// there, so the reading names it once, with the declaration it dispatches
-// through and how many alternatives it chooses between. The path by which
-// an input reaches that declaration is not established here: a route chosen
-// by length from the program's entry ran Redis's main → aeMain → beforeSleep
-// → call, which a benchmark reader was offered as GET's path, and no route
-// is shown instead.
-type pageSharedPath struct {
-	Inputs  int    `json:"inputs"`
-	All     bool   `json:"all,omitempty"`
-	Through string `json:"through"`
-	Of      int    `json:"of"`
+// pageCall is one relation the reading lists: the caller's and the callee's
+// positions in Decls, and flags (callPossible, callRead, callIntegration).
+type pageCall [3]int
+
+const (
+	callPossible    = 1
+	callRead        = 2
+	callIntegration = 4
+)
+
+// pageDispatched is a dispatch site whose alternatives hold the input's
+// handler: the input is dispatched there, one of Of. ReachedFrom are the
+// inputs whose reach holds the site's declaration; the input's reading does
+// not list them (a reader took them for its own route), the site's does.
+type pageDispatched struct {
+	Site        int      `json:"site"`
+	Of          int      `json:"of"`
+	Inputs      int      `json:"inputs"`
+	All         bool     `json:"all,omitempty"`
+	ReachedFrom []string `json:"reached_from,omitempty"`
 }
 
-// pageInputPath is an input's path for its reading: the dispatch sites it
-// shares with other inputs, then its own steps from its handler.
+// pageReaches is a dispatch site the input's own code reaches, with every
+// call of its reach on a route to it.
+type pageReaches struct {
+	Site   int        `json:"site"`
+	Inputs int        `json:"inputs"`
+	Calls  []pageCall `json:"calls"`
+}
+
+// pageInputPart is a part (or an outside call's tile, or a matched peer)
+// the input's reach enters: its depth, every call into it from a part
+// reached earlier, and how many other calls enter it on this path.
+type pageInputPart struct {
+	Part string `json:"part"`
+	// Title names the part where the map does not draw it.
+	Title   string     `json:"title,omitempty"`
+	Depth   int        `json:"depth"`
+	Entered []pageCall `json:"entered,omitempty"`
+	Others  int        `json:"others,omitempty"`
+}
+
+// pageInputPath is an input's reading of its reach (GroupsIndex's Reach and
+// dispatch sites): where it is dispatched from, the sites its code reaches,
+// the inputs it registers or is registered by, and the parts it enters in
+// depth order. The page projects saved data; it walks no code.
 type pageInputPath struct {
-	Shared []pageSharedPath `json:"shared,omitempty"`
-	Own    []pagePathStep   `json:"own,omitempty"`
+	Dispatched   []pageDispatched `json:"dispatched,omitempty"`
+	Reaches      []pageReaches    `json:"reaches,omitempty"`
+	Registers    []string         `json:"registers,omitempty"`
+	RegisteredBy []string         `json:"registered_by,omitempty"`
+	Parts        []pageInputPart  `json:"parts,omitempty"`
+	Decls        []pageDecl       `json:"decls,omitempty"`
 }
 
-// pathStep is a declaration as a step of an input's path.
-func (builder *pageBuilder) pathStep(targetID, subject string, part func(string) (string, string)) pagePathStep {
-	step := pagePathStep{Name: subject}
-	if ref, known := builder.subject(targetID, subject); known {
-		name, anchor := builder.subjectDisplay(ref.subject)
+// pathDecls collects the declarations a reading names, each once.
+type pathDecls struct {
+	builder  *pageBuilder
+	targetID string
+	part     func(string) string
+	list     []pageDecl
+	position map[string]int
+}
+
+func (builder *pageBuilder) pathDecls(targetID string, part func(string) string) *pathDecls {
+	return &pathDecls{builder: builder, targetID: targetID, part: part, position: map[string]int{}}
+}
+
+func (decls *pathDecls) of(subject string) int {
+	if position, known := decls.position[subject]; known {
+		return position
+	}
+	decl := pageDecl{Name: subject}
+	if ref, known := decls.builder.subject(decls.targetID, subject); known {
+		name, anchor := decls.builder.subjectDisplay(ref.subject)
 		if name != "" {
-			step.Name = name
+			decl.Name = name
 		}
 		if anchor != nil {
-			step.Href, step.Open, step.Source, step.NoSource = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource
+			decl.Href, decl.Open, decl.Source, decl.NoSource = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource
 		}
 	}
-	step.Part, step.PartTitle = part(subject)
-	return step
+	decl.Part = decls.part(subject)
+	return decls.add(subject, decl)
 }
 
-// inputPath is an input's path for its reading. Shared: each dispatch site
-// whose alternatives hold the handler and handle at least one other input,
-// named by the declaration it dispatches through. Own: the handler's witness
-// tree, every reached part's shortest witness merged into one tree, a
-// callee under its caller, the branches in the order their parts were
-// reached; nothing in it claims an order of execution between branches.
-func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupindex.Operation, reached []string, firstInGroup map[string]string,
-	parents map[string]groupindex.StructuralEdge, part func(string) (string, string)) string {
+// add names a declaration that is no subject of this program (an outside
+// call, a matched peer) under its own key.
+func (decls *pathDecls) add(key string, decl pageDecl) int {
+	if position, known := decls.position[key]; known {
+		return position
+	}
+	decls.position[key] = len(decls.list)
+	decls.list = append(decls.list, decl)
+	return len(decls.list) - 1
+}
+
+// call is one followed relation of the reach as the reading lists it.
+func (decls *pathDecls) call(edge groupindex.StructuralEdge) pageCall {
+	flags := 0
+	if edge.Resolution != programindex.ResolutionExact {
+		flags |= callPossible
+	}
+	if edge.RelationKind == programindex.RelationReads {
+		flags |= callRead
+	}
+	return pageCall{decls.of(edge.FromSubjectID), decls.of(edge.ToSubjectID), flags}
+}
+
+// appendCall lists a call once: two sites of one caller calling one callee
+// read as the same line, which the reading writes without line numbers.
+func appendCall(calls []pageCall, call pageCall) []pageCall {
+	if slices.Contains(calls, call) {
+		return calls
+	}
+	return append(calls, call)
+}
+
+// inputPath projects an input's saved reach for its reading. nodeOf names
+// a group's node on the map, inputNode an operation's; extra are the tiles
+// and peers the reach enters beyond the parts, already built.
+func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupindex.Operation, reach groupindex.Reach,
+	decls *pathDecls, nodeOf func(string) string, inputNode func(string) string, extra []pageInputPart) string {
 	var path pageInputPath
-	targetID := index.Target.ID
-	handled := map[string]int{}
-	for _, other := range index.Operations {
-		handled[other.SubjectID]++
-	}
-	through := map[string]bool{}
-	for _, site := range builder.dispatch(targetID).sites {
-		if through[site.from] || !containsString(site.targets, operation.SubjectID) {
+	seen := map[string]bool{}
+	for _, site := range index.Dispatch {
+		if seen[site.FromSubjectID] || !slices.Contains(site.OperationIDs, operation.ID) {
 			continue
 		}
-		inputs := 0
-		for _, target := range site.targets {
-			inputs += handled[target]
+		seen[site.FromSubjectID] = true
+		dispatched := pageDispatched{Site: decls.of(site.FromSubjectID), Of: len(site.Alternatives), Inputs: len(site.OperationIDs), All: len(site.OperationIDs) == len(index.Operations)}
+		for _, reached := range site.ReachedFrom {
+			dispatched.ReachedFrom = append(dispatched.ReachedFrom, inputNode(reached.OperationID))
 		}
-		if inputs < 2 {
-			continue
-		}
-		through[site.from] = true
-		path.Shared = append(path.Shared, pageSharedPath{Inputs: inputs, All: inputs == len(index.Operations), Of: len(site.targets),
-			Through: builder.pathStep(targetID, site.from, part).Name})
+		path.Dispatched = append(path.Dispatched, dispatched)
 	}
-	// The witness tree: the chain from the handler to each reached part's
-	// first declaration, the branch toward an earlier reached part first.
-	rank := map[string]int{}
-	children := map[string][]string{}
-	destinations := make([]string, 0, len(firstInGroup))
-	for node := range firstInGroup {
-		destinations = append(destinations, node)
+	for _, site := range index.Dispatch {
+		for _, reached := range site.ReachedFrom {
+			if reached.OperationID != operation.ID {
+				continue
+			}
+			entry := pageReaches{Site: decls.of(site.FromSubjectID), Inputs: len(site.OperationIDs), Calls: []pageCall{}}
+			for _, edge := range reached.Edges {
+				entry.Calls = appendCall(entry.Calls, decls.call(index.StructuralEdges[edge]))
+			}
+			path.Reaches = append(path.Reaches, entry)
+		}
 	}
-	order := map[string]int{}
-	for i, node := range reached {
-		order[node] = i
-	}
-	sort.Slice(destinations, func(i, j int) bool {
-		left, leftReached := order[destinations[i]]
-		right, rightReached := order[destinations[j]]
-		if leftReached != rightReached {
-			return leftReached
-		}
-		if left != right {
-			return left < right
-		}
-		return destinations[i] < destinations[j]
-	})
-	for position, node := range destinations {
-		var chain []string
-		for at := firstInGroup[node]; ; {
-			chain = append(chain, at)
-			if at == operation.SubjectID {
-				break
-			}
-			edge, ok := parents[at]
-			if !ok {
-				chain = nil
-				break
-			}
-			at = edge.FromSubjectID
-		}
-		for i, subject := range chain {
-			if previous, ranked := rank[subject]; !ranked || position < previous {
-				rank[subject] = position
-			}
-			if i+1 < len(chain) && !containsString(children[chain[i+1]], subject) {
-				children[chain[i+1]] = append(children[chain[i+1]], subject)
+	for _, edge := range reach.HandsOver {
+		for _, other := range index.Operations {
+			if other.SubjectID == index.StructuralEdges[edge].ToSubjectID && other.ID != operation.ID && !slices.Contains(path.Registers, inputNode(other.ID)) {
+				path.Registers = append(path.Registers, inputNode(other.ID))
 			}
 		}
 	}
-	if _, reachedAny := rank[operation.SubjectID]; reachedAny || len(path.Shared) > 0 {
-		var walk func(subject string, depth int)
-		walk = func(subject string, depth int) {
-			step := builder.pathStep(targetID, subject, part)
-			step.Depth = depth
-			if edge, ok := parents[subject]; ok && subject != operation.SubjectID {
-				step.Possible = edge.Resolution != programindex.ResolutionExact
-				step.Read = edge.RelationKind == programindex.RelationReads
-			}
-			path.Own = append(path.Own, step)
-			next := children[subject]
-			sort.SliceStable(next, func(i, j int) bool { return rank[next[i]] < rank[next[j]] })
-			for _, child := range next {
-				walk(child, depth+1)
-			}
-		}
-		walk(operation.SubjectID, 0)
+	for _, id := range reach.HandedOverBy {
+		path.RegisteredBy = append(path.RegisteredBy, inputNode(id))
 	}
-	if len(path.Shared) == 0 && len(path.Own) <= 1 {
+	titles := make(map[string]string, len(index.Groups))
+	for _, group := range index.Groups {
+		titles[group.ID] = group.Title
+	}
+	for _, group := range reach.Groups {
+		part := pageInputPart{Part: nodeOf(group.GroupID), Title: titles[group.GroupID], Depth: group.Depth, Others: group.Others}
+		for _, witness := range group.Entered {
+			part.Entered = appendCall(part.Entered, decls.call(index.StructuralEdges[witness.Edge]))
+		}
+		path.Parts = append(path.Parts, part)
+	}
+	path.Parts = append(path.Parts, extra...)
+	path.Decls = decls.list
+	entered := false
+	for _, part := range path.Parts {
+		entered = entered || len(part.Entered) > 0
+	}
+	if len(path.Dispatched) == 0 && len(path.Reaches) == 0 && len(path.Registers) == 0 && len(path.RegisteredBy) == 0 && !entered {
 		return ""
 	}
 	raw, err := json.Marshal(path)
@@ -166,8 +205,9 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 	return string(raw)
 }
 
-// remapInputPath renames the parts an input's path names, as the map's
-// node IDs are renamed when its maps are scoped or joined.
+// remapInputPath renames the map nodes an input's path names, as the map's
+// node IDs are renamed when its maps are scoped or joined. Two tiles folded
+// into one keep the first entry.
 func remapInputPath(raw string, rename func(string) string) string {
 	if raw == "" {
 		return raw
@@ -176,15 +216,115 @@ func remapInputPath(raw string, rename func(string) string) string {
 	if json.Unmarshal([]byte(raw), &path) != nil {
 		return raw
 	}
-	steps := func(list []pagePathStep) {
+	path.renameNodes(rename)
+	encoded, err := json.Marshal(path)
+	if err != nil {
+		return raw
+	}
+	return string(encoded)
+}
+
+func (path *pageInputPath) renameNodes(rename func(string) string) {
+	ids := func(list []string) {
 		for i := range list {
-			if list[i].Part != "" {
-				list[i].Part = rename(list[i].Part)
-			}
+			list[i] = rename(list[i])
 		}
 	}
-	steps(path.Own)
-	encoded, err := json.Marshal(path)
+	for i := range path.Decls {
+		if path.Decls[i].Part != "" {
+			path.Decls[i].Part = rename(path.Decls[i].Part)
+		}
+	}
+	for i := range path.Dispatched {
+		ids(path.Dispatched[i].ReachedFrom)
+	}
+	ids(path.Registers)
+	ids(path.RegisteredBy)
+	parts := path.Parts[:0]
+	seen := map[string]bool{}
+	for _, part := range path.Parts {
+		part.Part = rename(part.Part)
+		if seen[part.Part] {
+			continue
+		}
+		seen[part.Part] = true
+		parts = append(parts, part)
+	}
+	path.Parts = parts
+}
+
+// pageSiteReadings are the dispatch sites declared in a part, read with
+// their declaration: the inputs dispatched there and the inputs whose own
+// code reaches the site, each with its calls to it.
+type pageSiteReadings struct {
+	Sites []pageSiteReading `json:"sites"`
+	Decls []pageDecl        `json:"decls"`
+}
+
+type pageSiteReading struct {
+	Site        int             `json:"site"`
+	Of          int             `json:"of"`
+	Inputs      int             `json:"inputs"`
+	ReachedFrom []pageSiteInput `json:"reached_from,omitempty"`
+}
+
+type pageSiteInput struct {
+	Input string     `json:"input"`
+	Calls []pageCall `json:"calls"`
+}
+
+// siteReadings are the dispatch sites of a group's declarations that
+// dispatch an input, for their declarations' readings.
+func (builder *pageBuilder) siteReadings(index *groupindex.Index, group groupindex.Group, decls *pathDecls, inputNode func(string) string) string {
+	var readings pageSiteReadings
+	seen := map[string]bool{}
+	for _, site := range index.Dispatch {
+		if len(site.OperationIDs) == 0 || seen[site.FromSubjectID] || !slices.Contains(group.MemberSubjectIDs, site.FromSubjectID) {
+			continue
+		}
+		seen[site.FromSubjectID] = true
+		reading := pageSiteReading{Site: decls.of(site.FromSubjectID), Of: len(site.Alternatives), Inputs: len(site.OperationIDs)}
+		for _, reached := range site.ReachedFrom {
+			input := pageSiteInput{Input: inputNode(reached.OperationID), Calls: []pageCall{}}
+			for _, edge := range reached.Edges {
+				input.Calls = appendCall(input.Calls, decls.call(index.StructuralEdges[edge]))
+			}
+			reading.ReachedFrom = append(reading.ReachedFrom, input)
+		}
+		readings.Sites = append(readings.Sites, reading)
+	}
+	if len(readings.Sites) == 0 {
+		return ""
+	}
+	readings.Decls = decls.list
+	raw, err := json.Marshal(readings)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+// remapSiteReadings renames the input and part nodes a part's site readings
+// name.
+func remapSiteReadings(raw string, rename func(string) string) string {
+	if raw == "" {
+		return raw
+	}
+	var readings pageSiteReadings
+	if json.Unmarshal([]byte(raw), &readings) != nil {
+		return raw
+	}
+	for i := range readings.Decls {
+		if readings.Decls[i].Part != "" {
+			readings.Decls[i].Part = rename(readings.Decls[i].Part)
+		}
+	}
+	for i := range readings.Sites {
+		for j := range readings.Sites[i].ReachedFrom {
+			readings.Sites[i].ReachedFrom[j].Input = rename(readings.Sites[i].ReachedFrom[j].Input)
+		}
+	}
+	encoded, err := json.Marshal(readings)
 	if err != nil {
 		return raw
 	}

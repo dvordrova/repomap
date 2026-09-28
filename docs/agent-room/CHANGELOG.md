@@ -1,5 +1,60 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Map model step 4, S4-4: an input's path is its saved reach
+
+- The report walks no code: `buildOperationMap`'s BFS, `served`,
+  `operationCallPaths`, `callWitness`, `pageMapNode.CallPaths` (with
+  `data-call-paths` and its remaps) and `page_reachability.go` are deleted.
+  The trace, the pinned arrows, the matched peers, the outgoing tiles, the
+  outbound catalogue's inputs and the state changes read GroupsIndex's
+  `Reach`; the dispatch folds keep `dispatchRelations` for the rows a table
+  hands over and take the sites from `index.Dispatch` in source order (B2).
+- **Pinned arrows:** one per pair of parts where a call (or read) of the
+  reach enters a part from a part reached earlier; every such call is
+  listed, the others counted, none chosen by length (lead's depth layering;
+  the neighbourhood is rejected). Dashed only when none of the pair's calls
+  is exact. Redis GET: 12 → 15 dark arrows (13 parts); all inputs: 955 →
+  1,026 operation arrows.
+- **Readings** (`page_input_path.go`, `29-operation-view.js`): "Dispatched
+  from call · one of 94" and "How get reaches call is not established."
+  (lead correction: the inputs reaching a site are not listed in a
+  dispatched input's reading); "Reaches call, where 95 inputs are
+  dispatched" with the input's own calls (exec, lpush, rpoplpush, rpush,
+  slaveof; debug reaches loadAppendOnlyFile); "Registered by" / "Registers"
+  (IOThreadEntryPoint is registered by the 11 inputs whose running code
+  reaches spawnIOThread); then the parts by depth, each with every entering
+  call (five, the rest folded), and "{n} other calls into it on this path".
+  An identical line (two sites of one call) is written once. The site's own
+  reading, with its declaration (`data-dispatch` on its part), lists "call
+  is reached from these inputs:" with their calls and "Which of these, if
+  any, leads to an input dispatched here is not established.", or "No input
+  reaches loadAppendOnlyFile by calls". "Why it appears in get" lists the
+  calls entering the part and counts the others; "One shortest static
+  path", "Shared by … through" and "The path by which an input reaches …"
+  are deleted from the vocabulary. A state change lists its writer's
+  callers on the path instead of a call chain; a matched input's parts and
+  writes join the root's as a possible integration, with no prefix chain.
+- **One arrow, one flag:** the system map collapses the relations between
+  two nodes into one arrow and took the first relation's quiet flag;
+  `served` had hidden that for pairs on an input's path. The arrow is now
+  quiet only when every relation it draws is (as the canvas groups them):
+  on Redis one pair changes.
+- **Page size (Redis, escaped bytes):** report.html 12,555,599 →
+  12,268,850 (−286,749); `data-call-paths` 992,292 → 0; `data-input-path`
+  472,245 → 831,348 (median 5,099 → 8,547, max 20,498).
+- Tests deleted: `TestCallsOnAnInputsPathAreWorkNotWiring` (`served`). Tests
+  rewritten on the saved reach (they call `groupindex.Derive`): the witness
+  trace (now a part entered from two earlier parts draws both), the
+  dispatch-without-a-route reading (with exec's reach of call, call's own
+  reading, one line per identical call), invocations and data reads, entity
+  writes' callers, the system joins, the folded tile, the dispatch folds
+  (B2: the replay site comes first among the edges and the fold is still
+  named by call), the JS reading (no reached-from list in GET's reading, no
+  "through"). New: the site's reading (JS) and one quiet flag per arrow.
+  Each fails on revert (s44a–h).
+- `make test`: PASS. `make vet`: PASS. `make ui-test`: PASS.
+  `make ui-visual-test`: PASS (65 passed, 2 workers). `make build`: PASS.
+
 ## 2026-09-28 — Map model step 4, S4-2: only the part holding a launch point is the entry (GroupsIndex 19)
 
 - `projectTarget` places every declaration first, then gives each part its

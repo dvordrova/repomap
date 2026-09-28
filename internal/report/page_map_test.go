@@ -149,19 +149,34 @@ func TestOperationMapFollowsInvocationsButNotImportsOrSuppliedCallables(t *testi
 	builder := pageBuilder{indexes: []groupindex.Index{index, peer}, byProgram: map[string]*pageSection{"client": section, "server": server}}
 	builder.subjects = make(map[string]subjectRef)
 	for n, name := range []string{"start", "work", "imported", "supplied", "later"} {
-		builder.subjects[name] = subjectRef{subject: groupindex.Subject{ID: name, Object: &groupindex.ObjectFacts{Name: name, Location: &programindex.Location{Path: "client/run.go", Line: n + 1, Column: 1}}}}
+		subject := groupindex.Subject{ID: name, Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "client/run.go", Line: n + 1, Column: 1}}}
+		builder.subjects[name] = subjectRef{subject: subject}
+		index.Subjects = append(index.Subjects, subject)
+	}
+	groupindex.Derive(&index)
+	entered := func(m *pageMap, part string) [][2]string {
+		var path pageInputPath
+		if err := json.Unmarshal([]byte(m.Nodes[0].InputPath), &path); err != nil {
+			t.Fatal(err)
+		}
+		var calls [][2]string
+		for _, entry := range path.Parts {
+			if entry.Part != mapNodeID(part) {
+				continue
+			}
+			for _, call := range entry.Entered {
+				possible := ""
+				if call[2]&callPossible != 0 {
+					possible = " possible"
+				}
+				calls = append(calls, [2]string{path.Decls[call[0]].Name, path.Decls[call[1]].Name + possible})
+			}
+		}
+		return calls
 	}
 	got := builder.buildOperationMap(section, &index)
-	var witnesses map[string][]struct {
-		Name     string `json:"name"`
-		Possible bool   `json:"possible"`
-	}
-	if err := json.Unmarshal([]byte(got.Nodes[0].CallPaths), &witnesses); err != nil {
-		t.Fatal(err)
-	}
-	workerPath := witnesses[mapNodeID("worker")]
-	if len(workerPath) != 2 || workerPath[0].Name != "start" || workerPath[1].Name != "work" || workerPath[1].Possible {
-		t.Fatalf("lost call witness: %+v", workerPath)
+	if calls := entered(got, "worker"); !reflect.DeepEqual(calls, [][2]string{{"start", "work"}}) {
+		t.Fatalf("lost the call entering the worker: %+v", calls)
 	}
 	for _, group := range []string{"unrelated", "callback", "behind-callback"} {
 		if strings.Contains(got.Nodes[0].Neighbours, mapNodeID(group)) {
@@ -215,13 +230,13 @@ func TestOperationMapFollowsInvocationsButNotImportsOrSuppliedCallables(t *testi
 		t.Fatal("maps share an arrow marker ID")
 	}
 	index.StructuralEdges = append(index.StructuralEdges, groupindex.StructuralEdge{FromSubjectID: "work", ToSubjectID: "supplied", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionAlternatives})
+	groupindex.Derive(&index)
 	invoked := builder.buildOperationMap(section, &index)
-	if err := json.Unmarshal([]byte(invoked.Nodes[0].CallPaths), &witnesses); err != nil {
-		t.Fatal(err)
+	if calls := entered(invoked, "callback"); !reflect.DeepEqual(calls, [][2]string{{"work", "supplied possible"}}) {
+		t.Fatalf("possible dispatch lost from the path: %+v", calls)
 	}
-	callbackPath := witnesses[mapNodeID("behind-callback")]
-	if len(callbackPath) != 4 || !callbackPath[2].Possible {
-		t.Fatalf("possible dispatch lost from witness: %+v", callbackPath)
+	if calls := entered(invoked, "behind-callback"); !reflect.DeepEqual(calls, [][2]string{{"supplied", "later"}}) {
+		t.Fatalf("the work behind the invoked callable lost its call: %+v", calls)
 	}
 	if !strings.Contains(invoked.Nodes[0].Neighbours, mapNodeID("behind-callback")) {
 		t.Fatal("a real invocation of the supplied callable lost its downstream path")

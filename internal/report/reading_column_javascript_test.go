@@ -384,51 +384,79 @@ function select(n,navigate,source,focus){seen.push([n.id,navigate,source,focus,p
 `)
 }
 
-// A chosen input's reading lists its path (owner's 3c): each dispatch
-// site it shares with the other inputs that site chooses between, one box
-// with the declaration it dispatches through, how many it chooses between
-// and the statement that the path by which an input reaches it is not
-// established, then its own steps, a callee under its caller, with no line
-// number and the part heading it where the part changes. No route to the
-// dispatch is drawn: the shortest one, main → aeMain → beforeSleep → call,
-// had been offered as GET's path. A name of its own steps reads that
+// A chosen input's reading lists its path (owner's 3c): each dispatch site
+// that dispatches it, the first open, "Dispatched from call · one of 94",
+// saying that how the input reaches the site is not established; not the
+// inputs whose own code reaches the site, which a reader took for GET's
+// route. Then the inputs registering it, and the parts it enters by depth,
+// each with every call entering it from an earlier part, five and the rest
+// folded, and the other calls counted, with no line number. A name reads its
 // declaration in the report (getCommand and addReply had opened GitHub); a
-// modifier-click still opens its code, which is one explicit link on the
-// line.
+// modifier-click still opens its code.
 func TestAnInputsPathNamesItsDispatchThenItsOwnSteps(t *testing.T) {
 	code := systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')")
 	runSystemJS(t, fakeElements+`
-const plain=document.createElement;document.createElement=tag=>{const element=plain(tag);element.style={};return element;};
 const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
-const step=(name,part,title,depth,extra)=>({name,href:'h/'+name,source:'redis.c:1',part,part_title:title,depth,...extra});
-const path={shared:[{inputs:95,all:false,through:'call',of:94},{inputs:95,through:'loadAppendOnlyFile',of:94}],
-  own:[step('getCommand','n-strings','String commands',0),step('getGenericCommand','n-strings','String commands',1),step('lookupKeyRead','n-keys','Keyspace',2,{possible:true}),step('addReply','n-clients','Client connections',2)]};
-const parts={'n-strings':{id:'n-strings'},'n-clients':{id:'n-clients'}},chosen=[],read=[];
+const decl=(name,part)=>({name,href:'h/'+name,source:'redis.c:1',part});
+const path={dispatched:[{site:0,of:94,inputs:95,reached_from:['t1-exec']},{site:1,of:94,inputs:95}],registered_by:['t1-accept'],
+  parts:[{part:'n-strings',title:'String commands',depth:0},{part:'n-keys',title:'Keyspace',depth:2,entered:[[3,4,1]]},
+    {part:'n-clients',title:'Client connections',depth:2,entered:[[3,5,0],[3,6,0],[3,7,0],[3,8,0],[3,9,0],[3,10,2]],others:3}],
+  decls:[decl('call','n-clients'),decl('loadAppendOnlyFile','n-persist'),decl('getCommand','n-strings'),decl('getGenericCommand','n-strings'),decl('lookupKeyRead','n-keys'),
+    decl('addReply','n-clients'),decl('addReplyBulk','n-clients'),decl('addReplyLong','n-clients'),decl('addReplySds','n-clients'),decl('addReplyDouble','n-clients'),decl('shared','n-clients')]};
+const node=(id,title)=>({id,dataset:{title}});
+const parts={'n-strings':node('n-strings','String commands'),'n-clients':node('n-clients','Client connections')},inputs={'t1-exec':node('t1-exec','exec'),'t1-accept':node('t1-accept','accept')},chosen=[],read=[];
 `+code+`
-const section=rmInputPathSection(path,id=>parts[id]||null,part=>chosen.push(part.id),(part,key)=>read.push([part.id,key]));
+const section=rmInputPathSection(path,'get',id=>parts[id]||null,id=>inputs[id]||null,part=>chosen.push(part.id),(part,key)=>read.push([part.id,key]));
 assert.equal(section.children[0].textContent,'Path');
 const boxes=section.all(e=>e.className==='system-shared-path');
-assert.deepEqual(boxes.map(b=>[b.tagName,!!b.open,b.children[0].textContent]),[['DETAILS',true,'Shared by {0} inputs, through {1}'.replace('{0}',95).replace('{1}','call')],['DETAILS',false,'Shared by 95 inputs, through loadAppendOnlyFile']]);
-const lines=list=>list.children.map(c=>c.className==='system-path-part'?'['+c.textContent+']':c.textContent);
-assert.deepEqual(boxes[0].children.slice(1).map(c=>c.textContent),['call → one of 94','The path by which an input reaches {0} is not established.'.replace('{0}','call')]);
-assert.deepEqual(boxes[1].children.slice(1).map(c=>c.textContent),['loadAppendOnlyFile → one of 94','The path by which an input reaches loadAppendOnlyFile is not established.']);
-assert.ok(boxes.every(b=>!b.find(e=>e.className==='system-path-steps')),'no route to the dispatch is drawn');
-const own=section.children.at(-1);
-assert.deepEqual(lines(own),['[String commands]','getCommand · Open code ↗','getGenericCommand · Open code ↗','[Keyspace]','lookupKeyRead · possible · Open code ↗','[Client connections]','addReply · Open code ↗']);
-const name=text=>own.find(e=>e.tagName!=='DIV'&&e.textContent===text);
+assert.deepEqual(boxes.map(b=>[b.tagName,!!b.open,b.children[0].textContent]),[['DETAILS',true,'Dispatched from call · one of 94'],['DETAILS',false,'Dispatched from loadAppendOnlyFile · one of 94']]);
+assert.deepEqual(boxes[0].children.slice(1).map(c=>c.textContent),['call → one of 94','How get reaches call is not established.']);
+assert.ok(!section.textContent.includes('exec'),'the inputs reaching call are its reading, not get\'s');
+assert.ok(!/Shared|through/.test(section.textContent),'no "Shared by … through" remains');
+section.find(e=>e.tagName==='BUTTON'&&e.textContent==='accept').listeners.click();
+assert.deepEqual(chosen,['t1-accept'],'the input registering get leads to its reading');
+const steps=section.children.at(-1);
+const lines=steps.children.map(c=>c.className==='system-path-part'?'['+c.textContent+']':c.textContent);
+assert.deepEqual(lines,['[String commands]','[Keyspace]','getGenericCommand → lookupKeyRead · possible','[Client connections]',
+  'getGenericCommand → addReply','getGenericCommand → addReplyBulk','getGenericCommand → addReplyLong','getGenericCommand → addReplySds','getGenericCommand → addReplyDouble',
+  '+1getGenericCommand → shared · read','3 other calls into it on this path']);
+assert.ok(!section.textContent.includes('redis.c'),'no line number is shown');
+const name=text=>steps.find(e=>e.tagName!=='DIV'&&e.textContent===text);
 const click=(element,extra={})=>{let prevented=false;element.listeners.click({button:0,preventDefault(){prevented=true;},stopPropagation(){},...extra});return prevented;};
 assert.equal(click(name('addReply')),true,'a plain click reads the declaration instead of opening its code');
 assert.deepEqual(read,[['n-clients','h/addReply']]);
-assert.equal(click(name('getCommand'),{metaKey:true}),false,'a modifier-click opens its code');
-assert.equal(click(name('getCommand'),{button:1}),false);
+assert.equal(click(name('addReply'),{metaKey:true}),false,'a modifier-click opens its code');
+assert.equal(click(name('addReply'),{button:1}),false);
 assert.deepEqual(read,[['n-clients','h/addReply']]);
-assert.equal(name('lookupKeyRead').tagName,'SPAN','a step in a part the map does not draw is only named');
-assert.deepEqual(own.all(e=>e.className==='system-path-code').map(e=>[e.textContent,e.href]),[['Open code ↗','h/getCommand'],['Open code ↗','h/getGenericCommand'],['Open code ↗','h/lookupKeyRead'],['Open code ↗','h/addReply']]);
-assert.deepEqual(own.all(e=>e.className==='system-path-step').map(e=>e.style.marginLeft),['0px','10px','20px','20px'],'a callee stands under its caller');
-assert.ok(!JSON.stringify(lines(own)).includes('redis.c'),'no line number is shown');
-own.find(e=>e.tagName==='BUTTON'&&e.textContent==='String commands').listeners.click();
-assert.deepEqual(chosen,['n-strings'],'a part on the path leads to its reading');
-assert.equal(own.find(e=>e.textContent==='Keyspace').tagName,'DIV','a part the map does not draw is only named');
+assert.equal(name('lookupKeyRead').tagName,'SPAN','a declaration in a part the map does not draw is only named');
+steps.find(e=>e.tagName==='BUTTON'&&e.textContent==='String commands').listeners.click();
+assert.deepEqual(chosen,['t1-accept','n-strings'],'a part on the path leads to its reading');
+assert.equal(steps.find(e=>e.textContent==='Keyspace').tagName,'DIV','a part the map does not draw is only named');
+`)
+}
+
+// A dispatch site is read with its declaration: how many it chooses
+// between, how many inputs are dispatched there, and the inputs whose own
+// code reaches it, each with its calls to it and a button to its reading,
+// with the line that none of them is established as leading to an input
+// dispatched there; or that no input reaches it by calls.
+func TestADispatchSitesReadingListsTheInputsReachingIt(t *testing.T) {
+	code := systemJSPiece(t, "30-map.js", "function rmSiteReading(", "// Who calls a declaration and what it calls")
+	runSystemJS(t, fakeElements+`
+const readings={sites:[{site:0,of:94,inputs:95,reached_from:[{input:'t1-exec',calls:[[2,0,0]]},{input:'t1-lpush',calls:[[3,4,0],[4,0,1]]}]},{site:1,of:94,inputs:95}],
+  decls:[{name:'call',href:'h/call'},{name:'loadAppendOnlyFile',href:'h/load'},{name:'execCommand'},{name:'lpushCommand'},{name:'handleClientsWaitingListPush'}]};
+const node={dataset:{dispatch:JSON.stringify(readings)}},chosen=[];
+const map={chooseOperation:id=>chosen.push(id)};
+document.getElementById=id=>({'t1-exec':{dataset:{title:'exec'}},'t1-lpush':{dataset:{title:'lpush'}}})[id]||null;
+`+code+`
+const box=rmSiteReading(map,node,'h/call');
+assert.deepEqual(box.children.map(c=>c.textContent),['Dispatch site · one of 94 · 95 inputs dispatched here','call is reached from these inputs:',
+  'execexecCommand → call','lpushlpushCommand → handleClientsWaitingListPushhandleClientsWaitingListPush → call · possible',
+  'Which of these, if any, leads to an input dispatched here is not established.']);
+box.find(e=>e.tagName==='BUTTON'&&e.textContent==='lpush').listeners.click();
+assert.deepEqual(chosen,['t1-lpush']);
+assert.deepEqual(rmSiteReading(map,node,'h/load').children.map(c=>c.textContent),['Dispatch site · one of 94 · 95 inputs dispatched here','No input reaches loadAppendOnlyFile by calls']);
+assert.equal(rmSiteReading(map,node,'h/other').childElementCount,0,'another declaration has no site reading');
 `)
 }
 

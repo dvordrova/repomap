@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,13 +11,13 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// An input's reading shows its path: each dispatch site whose alternatives
-// hold its handler, named by the declaration it dispatches through and how
-// many it chooses between, then the handler's own steps, a callee under its
-// caller. No route from the program's entry to the site is chosen: the
-// shortest static chain to Redis's call ran main → aeMain → beforeSleep →
-// call, which a benchmark reader was offered as GET's path. Which path an
-// input takes to the site is not established, so none is shown.
+// An input's reading shows where it is dispatched from, never a route to
+// the dispatch: the shortest static chain to Redis's call ran main → aeMain
+// → beforeSleep → call, which a benchmark reader was offered as GET's path.
+// Which path an input takes to the site is not established. The inputs
+// whose own code reaches the site are saved with it (exec's calls call),
+// and the parts the input enters are listed by depth with every call
+// entering each from an earlier part.
 func TestAnInputsPathNamesItsDispatchWithoutARouteAndListsItsOwnSteps(t *testing.T) {
 	section := &pageSection{ID: "server", ShortLabel: "Server"}
 	at := func(line int) *programindex.Location {
@@ -35,6 +36,8 @@ func TestAnInputsPathNamesItsDispatchWithoutARouteAndListsItsOwnSteps(t *testing
 	for _, handler := range []string{"get", "set", "del", "exec"} {
 		edges = append(edges, edge("dispatch", "call", handler, alternatives, 2054), edge("replay", "load", handler, alternatives, 7587))
 	}
+	// A second site of the same call reads as the same line: listed once.
+	edges = append(edges, edge("rz", "getGeneric", "lookup", exact, 120))
 	operation := func(id, handler string) groupindex.Operation {
 		return groupindex.Operation{ID: id, SubjectID: handler, GroupID: "strings", Name: id, Kind: "request", Source: "fact", Location: *at(704)}
 	}
@@ -52,46 +55,77 @@ func TestAnInputsPathNamesItsDispatchWithoutARouteAndListsItsOwnSteps(t *testing
 		StructuralEdges: edges}
 	builder := pageBuilder{indexes: []groupindex.Index{index}, byProgram: map[string]*pageSection{"server": section}, subjects: map[string]subjectRef{}}
 	for line, name := range []string{"main", "aeMain", "events", "read", "process", "call", "load", "exec", "get", "set", "del", "getGeneric", "lookup", "reply"} {
-		builder.subjects[subjectKey("server", name)] = subjectRef{subject: groupindex.Subject{ID: name,
-			Object: &groupindex.ObjectFacts{Name: name + "Command", Kind: programindex.ObjectFunction, Location: at(line + 1)}}}
+		subject := groupindex.Subject{ID: name, Object: &groupindex.ObjectFacts{Name: name + "Command", Kind: programindex.ObjectFunction, Location: at(line + 1)}}
+		builder.subjects[subjectKey("server", name)] = subjectRef{subject: subject}
+		builder.indexes[0].Subjects = append(builder.indexes[0].Subjects, subject)
 	}
+	groupindex.Derive(&builder.indexes[0])
+	index = builder.indexes[0]
 	got := builder.buildOperationMap(section, &index)
-	var raw string
+	readings := map[string]string{}
 	for _, node := range got.Nodes {
-		if node.Activation != "" && node.Handler == "getCommand" {
-			raw = node.InputPath
+		if node.Activation != "" {
+			readings[node.Handler] = node.InputPath
 		}
 	}
 	var path pageInputPath
+	raw := readings["getCommand"]
 	if err := json.Unmarshal([]byte(raw), &path); err != nil {
 		t.Fatalf("get has no path: %q %v", raw, err)
 	}
-	names := func(steps []pagePathStep) (out []string) {
-		for _, step := range steps {
-			out = append(out, step.Name)
-		}
-		return out
+	name := func(position int) string { return path.Decls[position].Name }
+	type dispatched struct {
+		site        string
+		of, inputs  int
+		all         bool
+		reachedFrom []string
 	}
-	want := []pageSharedPath{{Inputs: 4, All: true, Through: "callCommand", Of: 4}, {Inputs: 4, All: true, Through: "loadCommand", Of: 4}}
-	if !reflect.DeepEqual(path.Shared, want) {
-		t.Fatalf("the dispatch sites the input shares:\n got %+v\nwant %+v", path.Shared, want)
+	var sites []dispatched
+	for _, site := range path.Dispatched {
+		sites = append(sites, dispatched{name(site.Site), site.Of, site.Inputs, site.All, site.ReachedFrom})
 	}
-	for _, entry := range []string{"mainCommand", "aeMainCommand", "eventsCommand", "readCommand", "processCommand"} {
+	want := []dispatched{{"callCommand", 4, 4, true, []string{operationNodeID("server", "exec")}}, {"loadCommand", 4, 4, true, nil}}
+	if !reflect.DeepEqual(sites, want) {
+		t.Fatalf("the dispatch sites of get:\n got %+v\nwant %+v", sites, want)
+	}
+	for _, entry := range []string{"mainCommand", "aeMainCommand", "eventsCommand", "readCommand", "processCommand", "execCommand"} {
 		if strings.Contains(raw, `"`+entry+`"`) {
-			t.Fatalf("the path chose a route from the entry through %s: %s", entry, raw)
+			t.Fatalf("get's reading names %s, which is no step of its own: %s", entry, raw)
 		}
 	}
-	own := names(path.Own)
-	if want := []string{"getCommand", "getGenericCommand", "lookupCommand", "replyCommand"}; !equalStrings(own, want) {
-		t.Fatalf("own steps\n got %v\nwant %v", own, want)
+	var parts []string
+	for _, part := range path.Parts {
+		entry := fmt.Sprintf("%s d%d", part.Title, part.Depth)
+		for _, call := range part.Entered {
+			entry += " " + name(call[0]) + ">" + name(call[1])
+		}
+		parts = append(parts, entry)
 	}
-	if depths := []int{path.Own[0].Depth, path.Own[1].Depth, path.Own[2].Depth, path.Own[3].Depth}; !equalInts(depths, []int{0, 1, 2, 2}) {
-		t.Fatalf("a callee is not under its caller: %v", depths)
+	if want := []string{"String commands d0", "Keyspace d2 getGenericCommand>lookupCommand", "Client connections d2 getGenericCommand>replyCommand"}; !reflect.DeepEqual(parts, want) {
+		t.Fatalf("parts\n got %v\nwant %v", parts, want)
+	}
+	// exec's own code calls call: its reading says so, with that call.
+	var exec pageInputPath
+	if err := json.Unmarshal([]byte(readings["execCommand"]), &exec); err != nil || len(exec.Reaches) != 1 || exec.Decls[exec.Reaches[0].Site].Name != "callCommand" ||
+		exec.Reaches[0].Inputs != 4 || len(exec.Reaches[0].Calls) != 1 || exec.Decls[exec.Reaches[0].Calls[0][0]].Name != "execCommand" {
+		t.Fatalf("exec's reach of call: %+v", exec.Reaches)
 	}
 	renamed := remapInputPath(raw, func(id string) string { return "server-" + id })
 	var moved pageInputPath
-	if json.Unmarshal([]byte(renamed), &moved) != nil || moved.Own[2].Part != "server-"+mapNodeID("keys") || !reflect.DeepEqual(moved.Shared, want) {
-		t.Fatalf("a scoped map did not rename the path's parts: %s", renamed)
+	if json.Unmarshal([]byte(renamed), &moved) != nil || moved.Parts[1].Part != "server-"+mapNodeID("keys") || moved.Decls[moved.Parts[1].Entered[0][1]].Part != "server-"+mapNodeID("keys") ||
+		moved.Dispatched[0].ReachedFrom[0] != "server-"+operationNodeID("server", "exec") {
+		t.Fatalf("a scoped map did not rename the path's nodes: %s", renamed)
+	}
+	// call's own reading, in its part, lists exec reaching it with its call.
+	for _, node := range got.Nodes {
+		if node.ID != mapNodeID("clients") {
+			continue
+		}
+		var readings pageSiteReadings
+		if err := json.Unmarshal([]byte(node.Dispatch), &readings); err != nil || len(readings.Sites) != 1 || readings.Decls[readings.Sites[0].Site].Name != "callCommand" ||
+			len(readings.Sites[0].ReachedFrom) != 1 || readings.Sites[0].ReachedFrom[0].Input != operationNodeID("server", "exec") {
+			t.Fatalf("call's reading: %s", node.Dispatch)
+		}
 	}
 }
 

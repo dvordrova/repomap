@@ -140,8 +140,9 @@ func TestAnAreaHoldingADomainPartIsPurple(t *testing.T) {
 }
 
 // Selecting GET lit fourteen parts in no order: every call among every part
-// its handler reaches. The path is the trace of shortest witnesses, and the
-// reading lists its parts by call depth from the handler.
+// its handler reaches. The path draws every call into a part from a part
+// reached earlier (none chosen by length) and no other, and the reading
+// lists its parts by call depth from the handler.
 func TestInputPathIsTheWitnessTraceOrderedByCallDepth(t *testing.T) {
 	section := &pageSection{ID: "server", ShortLabel: "Server"}
 	calls := func(from, to string) groupindex.StructuralEdge {
@@ -156,7 +157,10 @@ func TestInputPathIsTheWitnessTraceOrderedByCallDepth(t *testing.T) {
 	}, Operations: []groupindex.Operation{{ID: "get", SubjectID: "getCommand", GroupID: "dispatch", Name: "get", Kind: "request", Source: "fact", Location: programindex.Location{Path: "redis.c", Line: 704, Column: 5}}},
 		Subjects: []groupindex.Subject{
 			{ID: "getCommand", Object: &groupindex.ObjectFacts{Name: "getCommand", Kind: programindex.ObjectFunction}},
+			{ID: "getGeneric", Object: &groupindex.ObjectFacts{Name: "getGeneric", Kind: programindex.ObjectFunction}},
 			{ID: "lookup", Object: &groupindex.ObjectFacts{Name: "lookup", Kind: programindex.ObjectFunction}},
+			{ID: "addReply", Object: &groupindex.ObjectFacts{Name: "addReply", Kind: programindex.ObjectFunction}},
+			{ID: "zmalloc", Object: &groupindex.ObjectFacts{Name: "zmalloc", Kind: programindex.ObjectFunction}},
 			{ID: "db", Object: &groupindex.ObjectFacts{Name: "db", Kind: programindex.ObjectVariable}},
 		},
 		StructuralEdges: []groupindex.StructuralEdge{
@@ -164,12 +168,16 @@ func TestInputPathIsTheWitnessTraceOrderedByCallDepth(t *testing.T) {
 			calls("getCommand", "addReply"),
 			calls("getGeneric", "lookup"),
 			calls("lookup", "zmalloc"),
-			// The reply part calls back into strings: a relation, not a step.
+			// Memory is entered from two earlier parts: both calls draw.
+			calls("addReply", "zmalloc"),
+			// The reply part calls back into strings, reached as early: a
+			// relation, not a step.
 			calls("addReply", "lookup"),
 			// The handler reads the keyspace itself: one step from it, before
 			// what its callees call.
 			{FromSubjectID: "getCommand", ToSubjectID: "db", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationReads, Resolution: programindex.ResolutionExact},
 		}}
+	groupindex.Derive(&index)
 	builder := pageBuilder{indexes: []groupindex.Index{index}, byProgram: map[string]*pageSection{"server": section}}
 	builder.subjects = make(map[string]subjectRef)
 	for n, name := range []string{"getCommand", "getGeneric", "lookup", "addReply", "zmalloc", "db"} {
@@ -190,12 +198,12 @@ func TestInputPathIsTheWitnessTraceOrderedByCallDepth(t *testing.T) {
 			steps[strings.TrimPrefix(edge.From, "n-")+">"+strings.TrimPrefix(edge.To, "n-")] = true
 		}
 	}
-	for _, step := range []string{"dispatch>strings", "dispatch>reply", "strings>memory", "dispatch>keys"} {
+	for _, step := range []string{"dispatch>strings", "dispatch>reply", "strings>memory", "reply>memory", "dispatch>keys"} {
 		if !steps[step] {
 			t.Fatalf("trace step %s missing: %v", step, steps)
 		}
 	}
-	if steps["reply>strings"] || len(steps) != 4 {
+	if steps["reply>strings"] || len(steps) != 5 {
 		t.Fatalf("the path is a neighbourhood again: %v", steps)
 	}
 }
@@ -294,14 +302,14 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 }
 
 // A program calling one outside symbol from two places draws one tile. An
-// input whose path reaches only the second call kept its witness under the
+// input whose path reaches only the second call kept its entry under the
 // second record's id, a tile no map draws: reading the drawn tile on echo's
 // GET /users/:id lost "Why it appears".
 func TestInputWitnessToAFoldedOutsideCallLeadsToItsTile(t *testing.T) {
 	m := &pageMap{Nodes: []pageMapNode{{ID: "n-g1", FullTitle: "Repository"}}}
 	scopeTargetMapIDs(m, "t1")
-	witness := `[{"name":"GetUser","source":"handler.go:20"},{"name":"Scan","source":"postgres.go:40"}]`
-	m.Nodes = append(m.Nodes, pageMapNode{ID: "t1-o1", FullTitle: "GET /users/:id", Activation: "request", CallPaths: `{"system-t1-out-b2":` + witness + `}`})
+	reading := `{"parts":[{"part":"system-t1-out-b2","depth":2,"entered":[[0,1,0]]}],"decls":[{"name":"GetUser","source":"handler.go:20"},{"name":"Scan","source":"postgres.go:40","part":"system-t1-out-b2"}]}`
+	m.Nodes = append(m.Nodes, pageMapNode{ID: "t1-o1", FullTitle: "GET /users/:id", Activation: "request", InputPath: reading})
 	row := func(id, anchor string) pageOutbound {
 		return pageOutbound{ID: id, Destination: "PostgreSQL", External: "database/sql.Row.Scan", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: anchor}}
 	}
@@ -319,8 +327,8 @@ func TestInputWitnessToAFoldedOutsideCallLeadsToItsTile(t *testing.T) {
 	if drawn["system-t1-out-b2"] || !drawn["system-t1-out-b1"] {
 		t.Fatalf("one outside symbol is one tile: %v", drawn)
 	}
-	if !strings.Contains(input.CallPaths, `"system-t1-out-b1":`) || strings.Contains(input.CallPaths, "system-t1-out-b2") {
-		t.Fatalf("the witness names a tile the map does not draw: %s", input.CallPaths)
+	if !strings.Contains(input.InputPath, `"part":"system-t1-out-b1"`) || strings.Contains(input.InputPath, "system-t1-out-b2") {
+		t.Fatalf("the path names a tile the map does not draw: %s", input.InputPath)
 	}
 }
 
@@ -382,39 +390,6 @@ assert.deepEqual(card.children.map(child=>child.name),['map-card-intro','call-pa
 `)
 }
 
-// A call an input's code makes between two parts is work, even when the
-// connection first names a relation main reaches. Drawing only the trace
-// must not turn those arrows into hidden wiring.
-func TestCallsOnAnInputsPathAreWorkNotWiring(t *testing.T) {
-	calls := func(from, to string) groupindex.StructuralEdge {
-		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact}
-	}
-	connection := func(id, from, to, subject string) groupindex.Connection {
-		return groupindex.Connection{ID: id, From: groupindex.Endpoint{TargetID: "server", GroupID: from}, To: groupindex.Endpoint{TargetID: "server", GroupID: to}, FromSubjectID: subject, Label: "calls", Phase: groupindex.PhaseInit}
-	}
-	index := groupindex.Index{Target: programindex.Target{ID: "server"}, Groups: []groupindex.Group{
-		{ID: "dispatch", Title: "Command dispatch", MemberSubjectIDs: []string{"call", "init"}},
-		{ID: "reply", Title: "Client replies", MemberSubjectIDs: []string{"addReply", "reset"}},
-		{ID: "config", Title: "Configuration", MemberSubjectIDs: []string{"load"}},
-		{ID: "memory", Title: "Memory", MemberSubjectIDs: []string{"zmalloc"}},
-	}, Operations: []groupindex.Operation{{ID: "get", SubjectID: "call", GroupID: "dispatch", Name: "get", Kind: "request"}},
-		StructuralEdges: []groupindex.StructuralEdge{calls("call", "addReply"), calls("addReply", "reset"), calls("load", "zmalloc")},
-		Connections:     []groupindex.Connection{connection("x1", "dispatch", "reply", "init"), connection("x2", "config", "memory", "load")}}
-	_, edges := structureEdges(t, index)
-	init := map[string]bool{}
-	for _, edge := range edges {
-		init[edge.ConnectionID[strings.LastIndex(edge.ConnectionID, "/")+1:]] = edge.Init
-	}
-	if init["x1"] || !init["x2"] {
-		t.Fatalf("work on an input's path hidden as wiring, or wiring shown as work: %v", init)
-	}
-}
-
-// Find → get framed get's tile in a wall of Redis's 98 inputs, and no arrow
-// of its path was in sight: the collection stands outside its component and
-// its tiles draw no arrow of their own. A chosen input, even its tile clicked
-// on the canvas, is entered as its path, the reading on the input; Show input
-// frames the tile among the inputs its handler's part takes.
 func TestChosenInputIsEnteredAsItsPath(t *testing.T) {
 	entrance := systemJSPiece(t, "29-operation-view.js", "function rmInputPath(", "(function(){")
 	selectCode := systemJSPiece(t, "29-operation-view.js", "async function select(", "  function reset(")

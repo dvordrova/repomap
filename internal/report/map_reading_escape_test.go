@@ -38,7 +38,7 @@ func TestMapReadingPreservesQuotedSourceAttributesAndNames(t *testing.T) {
 		}
 		return start + value
 	}
-	helpers := between("function escapeText(text)", "  function bindReading(map)")
+	helpers := between("function rmInputPart(", "// A dispatch site read with its declaration") + between("function escapeText(text)", "  function bindReading(map)")
 	show := between("function show(node) {", "      // Keep the current object and term") + "\n}"
 	// A real relative source filename may contain quotes, ampersands and Unicode.
 	// The added attribute-looking text is inert data, not an executable payload.
@@ -79,8 +79,9 @@ function render(value) {
   let inspectedNode = null, inspectionKey = '', inspectionPending = false, inspectionRevision = 0;
   function remember() {}
   function sentences() {return [];}
-  const step = {name:value.name,source:value.name,open:value.open,href:value.source,no_source:value.no_source};
-  const map = {classList:{contains(){return false;}},inspectedOperation:{dataset:{title:'Operation',callPaths:JSON.stringify({'node-1':[step]})}}};
+  const callee = {name:value.name,source:value.name,open:value.open,href:value.source,no_source:value.no_source};
+  const reading = {parts:[{part:'node-1',depth:1,entered:[[0,1,0]]}],decls:[{name:'caller'},callee]};
+  const map = {classList:{contains(){return false;}},inspectedOperation:{dataset:{title:'Operation',inputPath:JSON.stringify(reading)}}};
   const attrs = {'data-node':'node-1','data-summary':value.name,'data-source':value.source,'data-source-text':value.name};
   const node = {dataset:{title:value.name,sourceText:value.name,open:value.open,noSource:String(value.no_source),summaryRef:'t1',concepts:'[]'},getAttribute(name){return attrs[name]||'';}};
 ` + show + `

@@ -32,19 +32,17 @@ type dispatchFold struct {
 type dispatchFacts struct {
 	site   map[string]*dispatchFold
 	handed map[[3]string]*dispatchFold
-	// sites are the dispatch relations themselves, in source order.
-	sites []dispatchRelation
 }
 
 type dispatchRelation struct {
 	id, from, kind string
 	location       *programindex.Location
 	targets        []string
-	alternatives   bool
 }
 
-// dispatchSites is every relation of a target with its retained targets,
-// in source order.
+// dispatchRelations is every relation of a target with its retained
+// targets, in source order: the rows a declaration hands a set over by.
+// The dispatch sites themselves are GroupsIndex's (index.Dispatch).
 func dispatchRelations(index *groupindex.Index) []dispatchRelation {
 	byID := map[string]*dispatchRelation{}
 	var order []string
@@ -54,8 +52,7 @@ func dispatchRelations(index *groupindex.Index) []dispatchRelation {
 		}
 		relation := byID[edge.RelationID]
 		if relation == nil {
-			relation = &dispatchRelation{id: edge.RelationID, from: edge.FromSubjectID, kind: string(edge.RelationKind), location: edge.Location,
-				alternatives: edge.Resolution == programindex.ResolutionAlternatives}
+			relation = &dispatchRelation{id: edge.RelationID, from: edge.FromSubjectID, kind: string(edge.RelationKind), location: edge.Location}
 			byID[edge.RelationID] = relation
 			order = append(order, edge.RelationID)
 		}
@@ -101,13 +98,16 @@ func (builder *pageBuilder) dispatch(targetID string) *dispatchFacts {
 		return facts
 	}
 	relations := dispatchRelations(index)
+	kinds := make(map[string]string, len(relations))
+	for _, relation := range relations {
+		kinds[relation.id] = relation.kind
+	}
 	bySet := map[string]*dispatchFold{}
 	var folds []*dispatchFold
-	for _, relation := range relations {
-		if !relation.alternatives || len(relation.targets) < 2 {
-			continue
-		}
-		members := slices.Clone(relation.targets)
+	// GroupsIndex lists the dispatch sites in source order, so the first
+	// site of a set names its fold.
+	for _, site := range index.Dispatch {
+		members := slices.Clone(site.Alternatives)
 		sort.Strings(members)
 		key := strings.Join(members, "\x00")
 		fold := bySet[key]
@@ -116,15 +116,14 @@ func (builder *pageBuilder) dispatch(targetID string) *dispatchFacts {
 			for _, member := range members {
 				fold.members[member] = true
 			}
-			if ref, known := builder.subject(targetID, relation.from); known {
+			if ref, known := builder.subject(targetID, site.FromSubjectID); known {
 				fold.through, _ = builder.subjectDisplay(ref.subject)
 			}
 			bySet[key] = fold
 			folds = append(folds, fold)
 		}
-		fold.kinds[relation.kind] = true
-		facts.site[relation.id] = fold
-		facts.sites = append(facts.sites, relation)
+		fold.kinds[kinds[site.RelationID]] = true
+		facts.site[site.RelationID] = fold
 	}
 	if len(folds) == 0 {
 		return facts

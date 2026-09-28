@@ -7,6 +7,7 @@ import (
 	"html"
 	"html/template"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -228,6 +229,23 @@ func TestSystemInputCataloguesKeepEveryKindOutsideItsActualComponent(t *testing.
 	}
 }
 
+// One arrow of the system map draws every relation between its two nodes.
+// It stands quiet only when each of them is quiet: the first relation's
+// flag had decided it, so a pair of an initialization call and a command's
+// call stood quiet or not by their order.
+func TestAnArrowIsQuietOnlyWhenEveryRelationItDrawsIs(t *testing.T) {
+	quiet := pageMapEdge{From: "a", To: "b", Scope: "structure", Init: true, Label: "calls"}
+	work := pageMapEdge{From: "a", To: "b", Scope: "structure", Label: "calls"}
+	for _, order := range [][]pageMapEdge{{quiet, work}, {work, quiet}} {
+		if got := collapseSystemMapEdges(order); len(got) != 1 || got[0].Init {
+			t.Fatalf("a pair with a working call stands quiet: %+v", got)
+		}
+	}
+	if got := collapseSystemMapEdges([]pageMapEdge{quiet, quiet}); len(got) != 1 || !got[0].Init {
+		t.Fatalf("a pair of quiet calls stands at rest: %+v", got)
+	}
+}
+
 func TestSystemMapKeepsConnectionsToUnreadComponents(t *testing.T) {
 	view := pageView{Sections: []*pageSection{{ID: "front", ShortLabel: "front"}}, RepoMap: &pageRepoMap{
 		Nodes: []pageRepoNode{{ID: "source", Href: "#front", Analyzed: true}, {ID: "failed", FullName: "worker", Note: "No compiler"}},
@@ -269,24 +287,32 @@ func TestSystemPathsContinueThroughExactInputsWithoutBorrowingSiblingPaths(t *te
 	}
 }
 
+// A matched input's parts continue the root's path, each with the calls
+// that enter it on that input's own side, marked a possible integration:
+// the join is an endpoint match, not a native call.
 func TestSystemPathWitnessRetainsBothSidesAndTheIntegrationUncertainty(t *testing.T) {
 	view := &pageMap{Nodes: []pageMapNode{
-		{ID: "click", Activation: "interaction", CallPaths: `{"post":[{"name":"handleClick","source":"ui.ts:10","href":"ui.ts#L10"},{"name":"send","source":"http.ts:20","href":"http.ts#L20"}]}`},
-		{ID: "post", Activation: "request", CallPaths: `{"validation":[{"name":"handler","source":"api.py:30","href":"api.py#L30"},{"name":"validate","source":"check.py:40","href":"check.py#L40","possible":true}]}`},
+		{ID: "click", Activation: "interaction", InputPath: `{"parts":[{"part":"post","depth":2,"entered":[[0,1,0]]}],"decls":[{"name":"handleClick","source":"ui.ts:10","href":"ui.ts#L10"},{"name":"send","source":"http.ts:20","href":"http.ts#L20"}]}`},
+		{ID: "post", Activation: "request", InputPath: `{"parts":[{"part":"validation","depth":1,"entered":[[0,1,1]]}],"decls":[{"name":"handler","source":"api.py:30","href":"api.py#L30"},{"name":"validate","source":"check.py:40","href":"check.py#L40"}]}`},
 	}, Edges: []pageMapEdge{{From: "ui", To: "post", Operations: "click", Possible: true}, {From: "api", To: "validation", Operations: "post"}}}
 	completeSystemPaths(view)
-	var paths map[string][]pageCallStep
-	if err := json.Unmarshal([]byte(view.Nodes[0].CallPaths), &paths); err != nil {
+	var path pageInputPath
+	if err := json.Unmarshal([]byte(view.Nodes[0].InputPath), &path); err != nil {
 		t.Fatal(err)
 	}
-	witness := paths["validation"]
-	if len(witness) != 4 || witness[0].Name != "handleClick" || witness[3].Name != "validate" || !witness[2].Possible || !witness[3].Possible || witness[0].Possible || witness[1].Possible {
-		t.Fatalf("incomplete or misattributed cross-component proof: %+v", witness)
-	}
-	for _, step := range witness {
-		if step.Href == "" {
-			t.Fatalf("source link lost: %+v", step)
+	calls := map[string]string{}
+	for _, part := range path.Parts {
+		for _, call := range part.Entered {
+			calls[part.Part] = fmt.Sprintf("%s>%s %d %s", path.Decls[call[0]].Name, path.Decls[call[1]].Name, call[2], path.Decls[call[1]].Href)
 		}
+	}
+	want := map[string]string{"post": "handleClick>send 0 http.ts#L20", "validation": "handler>validate 5 check.py#L40"}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("incomplete or misattributed cross-component path: %v", calls)
+	}
+	var own pageInputPath
+	if err := json.Unmarshal([]byte(view.Nodes[1].InputPath), &own); err != nil || len(own.Parts) != 1 || own.Parts[0].Entered[0][2] != callPossible {
+		t.Fatalf("joining changed the matched input's own reading: %s", view.Nodes[1].InputPath)
 	}
 }
 

@@ -297,6 +297,44 @@ function rmOpenCode(source){
   var place=rmEl('span','meta',source.Text);if(source.NoSource)place.title=rmT('No source');fragment.appendChild(place);
   return fragment;
 }
+// A pinned input's entry into a part, from its saved reading: the calls
+// entering the part from a part reached earlier, the other calls counted,
+// and the declarations they name. Null when the path does not enter it.
+function rmInputPart(operation,id){
+  var path=null;try{path=JSON.parse(operation.dataset.inputPath||'null');}catch(_){path=null;}
+  var part=path&&(path.parts||[]).find(function(entry){return entry.part===id;});
+  if(!part||!(part.entered||[]).length&&!part.others)return null;
+  return {entered:part.entered||[],others:part.others||0,decls:path.decls||[]};
+}
+// A dispatch site read with its declaration (page_input_path.go): how many
+// it chooses between and how many inputs are dispatched there, then the
+// inputs whose own code reaches it, each with its calls to it, or that no
+// input does. Which of them, if any, leads to an input dispatched there is
+// not established: that list stands here, never in a dispatched input's
+// reading, where a reader took it for GET's route.
+function rmSiteReading(map,node,key){
+  var box=rmEl('div','map-concept-dispatch'),readings=null;
+  try{readings=JSON.parse(node.dataset.dispatch||'null');}catch(_){readings=null;}
+  if(!readings||!key)return box;
+  var decls=readings.decls||[];
+  function name(index){var decl=decls[index]||{name:''},item=rmEl('span','',decl.name);if(decl.source)item.title=decl.source;return item;}
+  (readings.sites||[]).forEach(function(site){
+    var decl=decls[site.site];if(!decl||(decl.href||decl.open)!==key)return;
+    box.appendChild(rmEl('h6','',rmT('Dispatch site · one of {0} · {1} inputs dispatched here',site.of,site.inputs)));
+    if(!(site.reached_from||[]).length){box.appendChild(rmEl('p','meta',rmT('No input reaches {0} by calls',decl.name)));return;}
+    box.appendChild(rmEl('p','',rmT('{0} is reached from these inputs:',decl.name)));
+    site.reached_from.forEach(function(entry){
+      var input=document.getElementById(entry.input),row=rmEl('div','map-concept-reached');
+      var button=rmEl('button','',input?input.dataset.title:entry.input);button.type='button';
+      button.addEventListener('click',function(){map.chooseOperation?.(entry.input);});row.appendChild(button);
+      var list=rmEl('ul','plain');
+      (entry.calls||[]).forEach(function(call){var item=rmEl('li');item.append(name(call[0]),document.createTextNode(' → '),name(call[1]));if(call[2]&1)item.appendChild(rmEl('span','possible',' · '+rmT('possible')));list.appendChild(item);});
+      row.appendChild(list);box.appendChild(row);
+    });
+    box.appendChild(rmEl('p','meta',rmT('Which of these, if any, leads to an input dispatched here is not established.')));
+  });
+  return box;
+}
 // Who calls a declaration and what it calls, read from the relation rows
 // its part already lists (each a fact with the line it is written on),
 // grouped by the part at the other end. The declaration at the other end is
@@ -473,7 +511,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       var concepts = map.exploreNode ? repomapMembers.items(node) : JSON.parse(node.dataset.concepts || '[]');
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);
       if (concepts.length) {
-        html+='<div class="map-concepts" hidden><strong data-concept-name></strong><code class="map-concept-declaration" data-concept-declaration></code><div class="map-member-fields" data-concept-fields></div><p class="model" data-concept-explanation></p><p class="map-concept-source" data-concept-source></p><div data-concept-relations></div></div>';
+        html+='<div class="map-concepts" hidden><strong data-concept-name></strong><code class="map-concept-declaration" data-concept-declaration></code><div class="map-member-fields" data-concept-fields></div><p class="model" data-concept-explanation></p><p class="map-concept-source" data-concept-source></p><div data-concept-dispatch></div><div data-concept-relations></div></div>';
       }
       if(map.areaDescriptions){
         var descriptions=Array.from(new Set(map.areaDescriptions(node))).filter(function(text){return text&&text!==summary;});
@@ -485,19 +523,25 @@ function rmDeclarationRelations(map,node,key,nodes){
       html += ("<details class=\"map-card-evidence\"><summary>"+rmT.html("Code and connections")+"</summary>");
       if (counts && !node.dataset.activation) html += '<span class="map-card-meta">' + escapeText(counts) + '</span>';
       var operation = map.inspectedOperation;
-      var witness = operation && !node.dataset.activation && JSON.parse(operation.dataset.callPaths || '{}')[id];
-      if (witness && witness.length) {
-        html += '<details class="call-path"><summary>'+rmT.html('Why it appears in {0}',operation.dataset.title)+'</summary><p>'+rmT.html('One shortest static path:')+'</p><ol>';
-        witness.forEach(function (step) {
-          html += '<li>'+((step.possible||step.read)?("<span class=\"possible\">"+rmT.html(step.read?(step.possible?"possible read":"read"):step.integration?"possible integration":"possible call")+"</span> "):'')+'<strong>'+escapeText(step.name)+'</strong><br>';
-          if (step.href) html += '<a target="_blank" rel="noopener" href="'+escapeText(step.href)+'">'+escapeText(step.source)+'</a>';
-          else if (step.open) html += '<a href="#" data-open="'+escapeText(step.open)+'">'+escapeText(step.source)+'</a>';
-          else if(step.no_source) html += '<span title="'+escapeText(rmT('No source'))+'">'+escapeText(step.source)+'</span>';
-          else html += escapeText(step.source);
-          if(step.read_at) html += '<br>'+rmT.html('Read at')+' '+repomapMembers.sourceLink(step.read_at).outerHTML;
+      var witness = operation && !node.dataset.activation && rmInputPart(operation, id);
+      if (witness) {
+        // Every call entering this part on the pinned input's path from a
+        // part reached earlier, and how many others enter it: no shortest
+        // route is chosen.
+        html += '<details class="call-path"><summary>'+rmT.html('Why it appears in {0}',operation.dataset.title)+'</summary><ol>';
+        witness.entered.forEach(function (entry) {
+          var caller = witness.decls[entry[0]] || {name:''}, callee = witness.decls[entry[1]] || {name:''};
+          var mark = entry[2]&4 ? 'possible integration' : entry[2]&2 ? (entry[2]&1 ? 'possible read' : 'read') : entry[2]&1 ? 'possible call' : '';
+          html += '<li>'+(mark?("<span class=\"possible\">"+rmT.html(mark)+"</span> "):'')+escapeText(caller.name)+' → <strong>'+escapeText(callee.name)+'</strong><br>';
+          if (callee.href) html += '<a target="_blank" rel="noopener" href="'+escapeText(callee.href)+'">'+escapeText(callee.source)+'</a>';
+          else if (callee.open) html += '<a href="#" data-open="'+escapeText(callee.open)+'">'+escapeText(callee.source)+'</a>';
+          else if (callee.no_source) html += '<span title="'+escapeText(rmT('No source'))+'">'+escapeText(callee.source)+'</span>';
+          else html += escapeText(callee.source||'');
           html += '</li>';
         });
-        html += '</ol></details>';
+        html += '</ol>';
+        if (witness.others) html += '<p class="meta">'+rmT.html('{0} other calls into it on this path',witness.others)+'</p>';
+        html += '</details>';
       }
       var step = map.traceIndex ? map.traceIndex(node) : -1;
       if (step >= 0) html += '<span class="map-card-meta">'+rmT.html('step {0} of {1} on the main path',step+1,map.traceLength)+'</span>';
@@ -542,6 +586,7 @@ function rmDeclarationRelations(map,node,key,nodes){
         explanation.textContent=concept.explanation||'';explanation.hidden=!concept.explanation;
         explanation.dataset.displayRef=concept.explanation?concept.explanation_ref||'':'';
         panel.querySelector('[data-concept-source]').replaceChildren(rmOpenCode(source));
+        panel.querySelector('[data-concept-dispatch]').replaceChildren(rmSiteReading(map,node,key));
         panel.querySelector('[data-concept-relations]').replaceChildren(rmDeclarationRelations(map,node,key,nodes));
         card.querySelectorAll('.map-member-name').forEach(function(name){if(name.dataset.memberSource===key)name.setAttribute('aria-current','true');});
         if(!map.readingRestoring&&!inspectionPending)content.scrollTop+=panel.getBoundingClientRect().top-content.getBoundingClientRect().top;

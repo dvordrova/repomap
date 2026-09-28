@@ -1,7 +1,6 @@
 package report
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -27,23 +26,29 @@ func TestEntityWritesRequireReachedCallableFieldOwnerAndWriteSite(t *testing.T) 
 	local.ToSubjectID = "local"
 	old := write
 	old.Location = nil
-	index := groupindex.Index{StructuralEdges: []groupindex.StructuralEdge{call, write, other, read, local, old}}
-	got := b.operationWrites(&index, "input", reachedSubjects("input", executionAdjacency(&index)), map[string]groupindex.StructuralEdge{"writer": call})
-	if len(got) != 1 || got[0].Source.Line != 17 || got[0].Source.Open != "state.py:17:5" || !got[0].Possible || len(got[0].Steps) != 2 || got[0].EntityName != "state" {
+	index := groupindex.Index{StructuralEdges: []groupindex.StructuralEdge{call, write, other, read, local, old},
+		Operations: []groupindex.Operation{{ID: "o1", SubjectID: "input", Kind: "request", Name: "input"}}}
+	for _, id := range []string{"input", "writer", "reader", "state", "field", "local"} {
+		index.Subjects = append(index.Subjects, b.subjects[id].subject)
+	}
+	groupindex.Derive(&index)
+	got := b.operationWrites(&index, index.Reach[0])
+	// The writer is reached by one possible call: the write is possible, and
+	// its callers are the reach's calls into it.
+	if len(got) != 1 || got[0].Source.Line != 17 || got[0].Source.Open != "state.py:17:5" || !got[0].Possible || len(got[0].Callers) != 1 || got[0].Callers[0].Name != "input" || got[0].EntityName != "state" {
 		t.Fatalf("effects borrowed membership, reads or lost source/uncertainty: %+v", got)
 	}
 }
 
 func TestSystemEntityWritesFollowMatchedInputAndPreserveOwnEvidence(t *testing.T) {
-	witness, _ := json.Marshal(map[string][]pageCallStep{"post": {{Name: "click"}, {Name: "send", Possible: true}}})
-	write := pageEntityWrite{EntityName: "State", Field: "position", Source: pageAnchor{Text: "state.py:17"}, Steps: []pageCallStep{{Name: "post"}, {Name: "move"}}}
-	view := pageMap{Nodes: []pageMapNode{{ID: "click", Activation: "interaction", CallPaths: string(witness)}, {ID: "post", Activation: "request", Writes: []pageEntityWrite{write}}, {ID: "get", Activation: "request"}}, Edges: []pageMapEdge{{From: "ui", To: "post", Operations: "click"}, {From: "post", To: "state", Operations: "post"}, {From: "get", To: "state", Operations: "get"}}}
+	write := pageEntityWrite{EntityName: "State", Field: "position", Source: pageAnchor{Text: "state.py:17"}, Callers: []pageCallStep{{Name: "post"}}}
+	view := pageMap{Nodes: []pageMapNode{{ID: "click", Activation: "interaction"}, {ID: "post", Activation: "request", Writes: []pageEntityWrite{write}}, {ID: "get", Activation: "request"}}, Edges: []pageMapEdge{{From: "ui", To: "post", Operations: "click"}, {From: "post", To: "state", Operations: "post"}, {From: "get", To: "state", Operations: "get"}}}
 	completeSystemPaths(&view)
 	got := view.Nodes[0].Writes
-	if len(got) != 1 || !got[0].Possible || len(got[0].Steps) != 4 || !got[0].Steps[2].Integration || got[0].Source.Text != "state.py:17" {
+	if len(got) != 1 || !got[0].Possible || !got[0].Integration || len(got[0].Callers) != 1 || got[0].Source.Text != "state.py:17" {
 		t.Fatalf("front-end input lost remote write evidence: %+v", got)
 	}
-	if view.Nodes[1].Writes[0].Possible || view.Nodes[1].Writes[0].Steps[0].Integration || len(view.Nodes[2].Writes) != 0 {
+	if view.Nodes[1].Writes[0].Possible || view.Nodes[1].Writes[0].Integration || len(view.Nodes[2].Writes) != 0 {
 		t.Fatal("composition mutated native evidence or borrowed a sibling's writes")
 	}
 }

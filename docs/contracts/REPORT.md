@@ -148,7 +148,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   grouping: one frame per destination its records name, one tile per native
   outside symbol it calls (the same call made from several places is one
   tile; every caller keeps its line and source on the arrow, and an input's
-  witness to any of those calls leads to that tile). Every frame and
+  path into any of those calls leads to that tile). Every frame and
   tile belongs to its component, and only that component's arrows reach it:
   equal destination text proves no identity. One "TCP endpoint" box had taken
   arrows from all three Redis programs, though for redis-cli that endpoint is
@@ -274,10 +274,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   darken. A frame's title, border and empty space look at the frame, whose
   arrows crossing its border darken. Lifted to its area, a part pointed at
   in Data type commands had lit all of the area's arrows.
-  A pinned input path is drawn as its trace with the existing dark emphasis:
-  the arrows of its shortest call/read witnesses, each reached part joined
-  from the part its witness enters through. Other calls among the same parts
-  stay ordinary arrows. Initialization arrows (a relation whose source only
+  A pinned input path is drawn from its saved reach (GroupsIndex, READING)
+  with the existing dark emphasis: one arrow for every pair of parts where a
+  call (or read) of the reach enters a part from a part reached earlier, at
+  a lower depth; none is chosen by length, every such call is listed in the
+  reading and the others are counted. An arrow is dashed only when none of
+  its calls is exact. A caller off the map stands for the earlier parts that
+  reach it through code off the map. Other calls among the same parts stay
+  ordinary arrows. On Redis GET draws 20 arrows where its single shortest
+  witnesses drew 14; the neighbourhood of every call among its parts, which
+  this rejects, would be 43. Initialization arrows (a relation whose source only
   the target's seeds reach, no input's handler: GroupsIndex's `init` phase,
   READING) are drawn only while one of their ends is looked at, and only in a
   target that serves something: a target with no operation and no chain does
@@ -345,32 +351,36 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   and the reading and Find name its handler. A chosen input's
   reading opens at its path (owner's choice 3c, 2026-09-27), drawn in the
   Inputs blue of its tile and collection, never core's purple: its
-  heading's bar and kind and its links. The path is, first, for each
-  dispatch site whose retained alternatives hold the handler and handle
-  another input too, one box headed by how many inputs share it and
-  through which declaration ("Shared by 95 inputs, through call"), the
-  first box open, holding the dispatch fact ("call → one of 94") and the
-  statement that the path by which an input reaches that declaration is
-  not established; Redis's get shares two, through call and through
-  loadAppendOnlyFile. No route to the site is chosen by length: the
-  shortest static chain from the program's entry, Redis's main → aeMain →
-  beforeSleep → call, had been offered to a benchmark reader as GET's
-  path. Which chain leads an input to its dispatch is left for GroupsIndex
-  to compute from the input handlers; until then none is drawn. Then the
-  handler's own
-  steps: every reached part's witness merged into one tree, a callee
-  indented under its caller, the branches in the order their parts were
-  reached, so nothing claims an order between branches. A step is its
-  declaration's name, with no line number, a read or a possible call
-  marked as elsewhere, and the part it stands in heads it where the part
-  changes, a link to that part's reading when the map draws it. A name of
-  the handler's own steps reads that declaration in its part, as a click on
-  its tile does, and a modifier-click still opens its code; its code is one
-  explicit "Open code ↗" at the end of its line, and a step whose part the
-  map does not draw is only named beside that link. getCommand and addReply
-  had opened GitHub for a reader following GET's path. Go computes both in
-  the page data; the browser draws them. The
-  list of the parts on the path is left for an input without one.
+  heading's bar and kind and its links. The path projects GroupsIndex's
+  saved reach and dispatch sites; the page walks no code. It is, first, one
+  box per dispatch site whose alternatives hold the handler, the first open:
+  "Dispatched from call · one of 94", holding the dispatch fact and the
+  statement "How get reaches call is not established."; Redis's get is
+  dispatched from call and from loadAppendOnlyFile. No route to the site is
+  drawn: the shortest static chain from the program's entry, Redis's main →
+  aeMain → beforeSleep → call, had been offered to a benchmark reader as
+  GET's path. The inputs whose own code reaches a site (exec, lpush,
+  rpoplpush, rpush and slaveof reach call) are not listed in a dispatched
+  input's reading, where a reader takes them for its route; they are the
+  site's own reading, with the declaration: "call is reached from these
+  inputs:", each input a button to its reading with its calls to the site,
+  then "Which of these, if any, leads to an input dispatched here is not
+  established.", or "No input reaches loadAppendOnlyFile by calls". An
+  input whose own code reaches a site says so in its reading ("Reaches
+  call, where 95 inputs are dispatched") with those calls. An input a
+  running declaration of another input's reach hands over reads "Registered
+  by" with those inputs (Redis's IOThreadEntryPoint, handed over by
+  spawnIOThread); the other reads "Registers". Then the parts the input
+  enters, nearest the handler first: each part's name (a link to its
+  reading when the map draws it), every call entering it from a part
+  reached earlier, the first five and the rest folded under "+N", and "{n}
+  other calls into it on this path". A call is its two declarations' names,
+  with no line number, a read or a possible call marked as elsewhere; a
+  name in a drawn part reads that declaration there, as a click on its tile
+  does, and a modifier-click opens its code; a name in a part the map does
+  not draw is only named. getCommand and addReply had opened GitHub for a
+  reader following GET's path. The words "Shared by" and "through" are gone.
+  The list of the parts on the path is left for an input without one.
   A part read while an input is pinned says "Outside this input path" in
   its heading when neither it nor a part inside it is an end of the path's
   arrows. The line is drawn with the reading, from the reading's own state,
@@ -839,18 +849,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Viewport history includes its zoom, open areas and the fixed world's geometry identity.
   All no-script sections, operation catalogues and source links remain available.
 
-An input path follows native call/execution edges. Reads of declared values or
+An input path is its saved reach: GroupsIndex follows native call/execution
+edges (READING) and the page draws what it saved. Reads of declared values or
 types by its reached code appear as terminal data dependencies, with a distinct
-read label and the original read site. They never execute a data owner's other
-methods or activate a stored callback, integration or mutation. One shortest
-call/read witness explains each reached part; imports and part membership alone
-do not establish a path. The path is that trace, not a neighbourhood: its arrows
-are the witnesses' steps between parts (a caller off the map passes the step to
-its own caller), and its reading lists the parts by call depth from the handler,
-in the order the walk met them within one depth, with a part reached through a
-matched input after them. Selecting GET had lit every call among fourteen parts
-and listed them starting with Strings. Call depth is a static measure, not a
-recorded execution order. All original structural relations remain available.
+read label. They never execute a data owner's other methods or activate a
+stored callback, integration or mutation. Every call entering a part from a
+part reached earlier explains that part; imports and part membership alone do
+not establish a path. The path is not a neighbourhood: its arrows are those
+entering calls' part pairs, and its reading lists the parts by call depth from
+the handler, then by the first declaration reached in each, with a part
+reached through a matched input after them. Selecting GET had lit every call
+among fourteen parts and listed them starting with Strings. Call depth is a
+static measure, not a recorded execution order. All original structural
+relations remain available. With GET pinned, a part's card says "Why it
+appears in get" with the calls entering it and the count of the others,
+never a single shortest path.
 
 The key lists only the kinds and strokes present in that map.
 
@@ -1089,7 +1102,7 @@ available without scripting.
 
 ## External communication and data
 
-Selecting a component on the common map opens its existing purpose, entrypoints and complete input catalogue in the panel. Its original full-reference section remains available with the main flow, configuration, group cards, dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches, then the parts its program never runs, one row per file with the file, the part's name and its declarations there as source chips (GroupsIndex `unreachable`), and then, under "{0} symbols" and by file in line order, the other declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: redis-cli lists `anet.c`'s `anetTcpServer` and `anetAccept`, and neither listens nor accepts on its map, and it lists "adlist.c · Linked list" with its thirteen functions and "adlist.h · Linked list" with its types, a part it no longer draws. A declaration is listed once: a part's row does not repeat among the symbols. Find lists each declaration of such a row as Code with no "In part" link and opens its row. Above the parts and symbols the list says, as the files' list does, that nothing this program runs reaches them and that this does not establish that the code is unused. Each declaration another program of the same report runs names those programs, "(run by redis-benchmark)", each linking to its component, in page order: redis-server lists `aeStop` run by redis-benchmark and `anetRead`/`anetWrite` run by redis-cli, where a newcomer had read "unused helpers" and skipped redis-cli's whole network I/O. This is page data joined from the saved ProgramIndex set, not a walk: a program runs a declaration when its index holds the same declaration (GroupsIndex's cross-program identity, `groupindex.DeclarationKey`: path, line, column, kind and name; never a name alone), does not mark it `unreachable`, and marks some other callable `unreachable`. An index that marks nothing (a library, a program other code can enter by any name, every adapter but C) proves nothing and names no program; a program that reaches every one of its callables is not named either. The join moves with reachability if that moves into GroupsIndex. The list reuses the existing heading, the off-map row and the "{0} symbols" summary; no badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. In the connections' stored order, grouped by the part they reach, redis-benchmark's start read "main calls aeMain" before the `aeCreateEventLoop` main calls thirty lines earlier; three call sites of `main` calling `aeMain` are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
+Selecting a component on the common map opens its existing purpose, entrypoints and complete input catalogue in the panel. Its original full-reference section remains available with the main flow, configuration, group cards, dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches, then the parts its program never runs, one row per file with the file, the part's name and its declarations there as source chips (GroupsIndex `unreachable`), and then, under "{0} symbols" and by file in line order, the other declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: redis-cli lists `anet.c`'s `anetTcpServer` and `anetAccept`, and neither listens nor accepts on its map, and it lists "adlist.c · Linked list" with its thirteen functions and "adlist.h · Linked list" with its types, a part it no longer draws. A declaration is listed once: a part's row does not repeat among the symbols. Find lists each declaration of such a row as Code with no "In part" link and opens its row. Above the parts and symbols the list says, as the files' list does, that nothing this program runs reaches them and that this does not establish that the code is unused. Each declaration another program of the same report runs names those programs, "(run by redis-benchmark)", each linking to its component, in page order: redis-server lists `aeStop` run by redis-benchmark and `anetRead`/`anetWrite` run by redis-cli, where a newcomer had read "unused helpers" and skipped redis-cli's whole network I/O. This is page data joined from the saved ProgramIndex set, not a walk: a program runs a declaration when its index holds the same declaration (GroupsIndex's cross-program identity, `groupindex.DeclarationKey`: path, line, column, kind and name; never a name alone), does not mark it `unreachable`, and marks some other callable `unreachable`. An index that marks nothing (a library, a program other code can enter by any name, every adapter but C) proves nothing and names no program; a program that reaches every one of its callables is not named either. It stays a page join over the adapters' saved proofs; GroupsIndex's reach is the input handlers' and is per program. The list reuses the existing heading, the off-map row and the "{0} symbols" summary; no badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. In the connections' stored order, grouped by the part they reach, redis-benchmark's start read "main calls aeMain" before the `aeCreateEventLoop` main calls thirty lines earlier; three call sites of `main` calling `aeMain` are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
 
 An outbound kind is shown by the protocol-neutral label its kind has:
 `client_request` is "Request", never "HTTP", and the counts and headings of
@@ -1349,10 +1362,12 @@ to assess. Do not infer an unrecorded user intention from the selected object.
 
 The common map joins already saved operation paths only through an exact
 activation endpoint. It retains all reached paths across multiple components
-and cycles, without borrowing a sibling operation in the same part. Native
-source steps and possible integration steps remain distinct in the sidebar.
-Outgoing communication is attached to inputs through execution reachability
-of its saved caller subject. Clicking a part or communication lists those
+and cycles, without borrowing a sibling operation in the same part. A matched
+input's parts and state changes continue the root's path marked a possible
+integration, with that input's own entering calls; no chain is prefixed to
+them. Outgoing communication is attached to inputs whose saved reach holds its
+caller subject.
+Clicking a part or communication lists those
 inputs by activation type; selecting one restores its full path.
 
 The main toolbar contains search and camera controls. Search retains its full
@@ -1368,11 +1383,13 @@ Reachability is not entity mutation. The current concept projection reads
 accepted native type declarations only; value-based domain models without a
 named type are not silently invented during rendering. Target-bound native writes
 carry their original call-site location into GroupsIndex. The report lists writes
-only when the input reaches the writer through execution edges and the written
+only when the input's saved reach holds the writer and the written
 variable has an exact native type owner. It retains possible receiver/call
-resolution, the write source, and the source-backed call witness; reachability
-does not claim execution on every request. Entity readings reverse these same
-records. Matched inputs may extend the witness across a possible integration;
+resolution, the write source, and the writer's callers on the path (every call
+of the reach into it, none chosen as a route; none when the handler writes
+itself); reachability does not claim execution on every request. Entity
+readings reverse these same records. A matched input's writes join as a
+possible integration;
 sibling inputs gain no effects. Unresolved writes, ordinary reads and mere
 membership in a type-bearing part do not establish mutation. Older saved graphs
 without write locations produce no invented evidence.

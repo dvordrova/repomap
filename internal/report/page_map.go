@@ -146,9 +146,6 @@ type pageMap struct {
 	// thousand symbols must not read as the whole target.
 	Subjects int
 	Grouped  int
-	// served holds the part pairs that code an input reaches calls or reads
-	// across: work, not wiring, whichever relation a connection shows first.
-	served map[[2]string]bool
 }
 
 // pageMapFrame is one part of a target drawn around the groups inside it.
@@ -199,16 +196,18 @@ type pageMapNode struct {
 	// Symbols and the kind, one of calls, returns, takes.
 	SymbolCalls string
 	Concepts    string
-	CallPaths   string
-	Writes      []pageEntityWrite
-	Children    string
-	Branch      string
-	Component   string
-	ID          string
-	Href        string
-	Title       []string
-	Summary     string
-	Lane        string
+	// Dispatch holds the dispatch sites declared in this part, read with
+	// their declaration (page_input_path.go).
+	Dispatch  string
+	Writes    []pageEntityWrite
+	Children  string
+	Branch    string
+	Component string
+	ID        string
+	Href      string
+	Title     []string
+	Summary   string
+	Lane      string
 	// Members is how many subjects this group holds, and Share how much of the
 	// target that is. The node's height carries the same number, so a bucket
 	// looks like a bucket before any of it is read.
@@ -239,8 +238,9 @@ type pageMapNode struct {
 	Trace         string
 	Handler       string
 	HandlerSource pageAnchor
-	// InputPath is an input's path for its reading (page_input_path.go):
-	// the chains it shares with other inputs, then its own steps.
+	// InputPath is an input's reading of its saved reach
+	// (page_input_path.go): where it is dispatched from, the sites it
+	// reaches, and the parts it enters with their calls.
 	InputPath string
 	// Outside counts connections this group has to another target. They are
 	// not drawn: a cross-target arrow on this map would claim a geometry that
@@ -334,19 +334,9 @@ func scopeTargetMapIDs(view *pageMap, targetID string) {
 		node.Neighbours = mapIDs(node.Neighbours)
 		node.Trace = mapIDs(node.Trace)
 		node.InputPath = remapInputPath(node.InputPath, mapID)
+		node.Dispatch = remapSiteReadings(node.Dispatch, mapID)
 		for alias := range node.Aliases {
 			node.Aliases[alias] = mapID(node.Aliases[alias])
-		}
-		if node.CallPaths != "" {
-			var paths map[string]json.RawMessage
-			if json.Unmarshal([]byte(node.CallPaths), &paths) == nil {
-				mapped := make(map[string]json.RawMessage, len(paths))
-				for id, path := range paths {
-					mapped[mapID(id)] = path
-				}
-				raw, _ := json.Marshal(mapped)
-				node.CallPaths = string(raw)
-			}
 		}
 	}
 	for position := range view.Frames {

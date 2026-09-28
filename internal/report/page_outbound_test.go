@@ -46,6 +46,10 @@ func TestOutboundInputsFollowCallerSubjectsNotTheirSharedPart(t *testing.T) {
 		},
 		Outbound: []groupindex.OutboundCall{{ID: "queue", SubjectID: "send", GroupID: "shared"}, {ID: "unresolved", GroupID: "shared"}},
 	}
+	for _, id := range []string{"tick", "send", "read"} {
+		index.Subjects = append(index.Subjects, groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectFunction}})
+	}
+	groupindex.Derive(&index)
 	section := &pageSection{ID: "service", programTargetID: "service"}
 	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
 	builder.fillSectionOutbound(section)

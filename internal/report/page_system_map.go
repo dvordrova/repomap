@@ -97,17 +97,7 @@ func (view *pageView) SystemMap() *pageMap {
 		n.Children, n.Neighbours, n.Trace = remap(n.Children), remap(n.Neighbours), remap(n.Trace)
 		n.InputOwner = remap(n.InputOwner)
 		n.InputPath = remapInputPath(n.InputPath, canonical)
-		if n.CallPaths != "" {
-			var paths map[string]json.RawMessage
-			if json.Unmarshal([]byte(n.CallPaths), &paths) == nil {
-				joined := map[string]json.RawMessage{}
-				for id, path := range paths {
-					joined[canonical(id)] = path
-				}
-				raw, _ := json.Marshal(joined)
-				n.CallPaths = string(raw)
-			}
-		}
+		n.Dispatch = remapSiteReadings(n.Dispatch, canonical)
 	}
 	// A saved integration may already name a participant in this same map.
 	// Keep the outbound catalogue intact, but do not draw that known participant
@@ -278,34 +268,18 @@ func (view *pageView) SystemMap() *pageMap {
 			result.Nodes[at].DisplayGroupTitle = title
 		}
 	}
-	// An input's witness to a folded record leads to the tile that stands for
-	// it: reading that tile on the input's path keeps "Why it appears". Without
-	// it, echo's GET /users/:id and fifteen microblog inputs named tiles no
-	// map draws.
+	// An input's path into a folded record leads to the tile that stands for
+	// it: reading that tile on the input's path keeps "Why it appears".
+	// Without it, echo's GET /users/:id and fifteen microblog inputs named
+	// tiles no map draws.
 	if len(foldedTiles) > 0 {
 		for i := range result.Nodes {
-			n := &result.Nodes[i]
-			if n.CallPaths == "" {
-				continue
-			}
-			var paths map[string]json.RawMessage
-			if json.Unmarshal([]byte(n.CallPaths), &paths) != nil {
-				continue
-			}
-			changed := false
-			for id, path := range paths {
+			result.Nodes[i].InputPath = remapInputPath(result.Nodes[i].InputPath, func(id string) string {
 				if tile := foldedTiles[id]; tile != "" {
-					if _, exists := paths[tile]; !exists {
-						paths[tile] = path
-					}
-					delete(paths, id)
-					changed = true
+					return tile
 				}
-			}
-			if changed {
-				raw, _ := json.Marshal(paths)
-				n.CallPaths = string(raw)
-			}
+				return id
+			})
 		}
 	}
 	// Exact duplicate display copies (e.g. a cross-component arrow seen from
@@ -469,6 +443,9 @@ func collapseSystemMapEdges(edges []pageMapEdge) []pageMapEdge {
 		merged.Label = joinUniqueText(merged.Label, edge.Label, " · ")
 		merged.Summary = joinUniqueText(merged.Summary, edge.Summary, " ")
 		merged.Possible = merged.Possible && edge.Possible
+		// One arrow stands quiet only when every relation it draws does, as
+		// the canvas groups them: the first relation's flag had decided it.
+		merged.Init = merged.Init && edge.Init
 		if edgeScopeRank(edge.Scope) < edgeScopeRank(merged.Scope) {
 			merged.Scope = edge.Scope
 		}
@@ -532,19 +509,21 @@ func edgeScopeRank(scope string) int {
 }
 
 // Compose only already established paths whose endpoint is an exact input.
-// Never traverse a neighbouring part merely because it shares a group or name.
+// Never traverse a neighbouring part merely because it shares a group or
+// name. A matched input's parts and writes continue the root's path as a
+// possible integration; no chain is prefixed to them.
 func completeSystemPaths(view *pageMap) {
 	inputs := map[string]*pageMapNode{}
+	readings := map[string]pageInputPath{}
 	paths := map[string][]int{}
-	witnesses := map[string]map[string][]pageCallStep{}
 	writes := map[string][]pageEntityWrite{}
 	uses := make([]map[string]bool, len(view.Edges))
 	for i := range view.Nodes {
 		if n := &view.Nodes[i]; n.Activation != "" {
 			inputs[n.ID] = n
-			var paths map[string][]pageCallStep
-			_ = json.Unmarshal([]byte(n.CallPaths), &paths)
-			witnesses[n.ID] = paths
+			var reading pageInputPath
+			_ = json.Unmarshal([]byte(n.InputPath), &reading)
+			readings[n.ID] = reading
 			writes[n.ID] = n.Writes
 		}
 	}
@@ -558,11 +537,14 @@ func completeSystemPaths(view *pageMap) {
 	for root, node := range inputs {
 		var joinedWrites []pageEntityWrite
 		seen := map[string]bool{}
-		joined := map[string][]pageCallStep{}
-		for id, steps := range witnesses[root] {
-			joined[id] = steps
+		own := readings[root]
+		own.Parts = slices.Clone(own.Parts)
+		own.Decls = slices.Clone(own.Decls)
+		parts := map[string]bool{}
+		for _, part := range own.Parts {
+			parts[part.Part] = true
 		}
-		prefixes := map[string][]pageCallStep{}
+		joined := false
 		near := map[string]bool{}
 		for _, id := range strings.Fields(node.Neighbours) {
 			near[id] = true
@@ -576,39 +558,35 @@ func completeSystemPaths(view *pageMap) {
 			}
 			seen[id] = true
 			for _, write := range writes[id] {
-				write.Steps = append([]pageCallStep(nil), write.Steps...)
+				write.Callers = slices.Clone(write.Callers)
 				if id != root {
-					write.Possible = true // The remote input is an integration match.
-					if len(write.Steps) > 0 {
-						write.Steps[0].Possible, write.Steps[0].Integration = true, true
-					}
-					write.Steps = append(append([]pageCallStep(nil), prefixes[id]...), write.Steps...)
+					write.Possible, write.Integration = true, true // The remote input is an integration match.
 				}
 				joinedWrites = append(joinedWrites, write)
 			}
-			if id != root && len(prefixes[id]) > 0 {
-				for destination, steps := range witnesses[id] {
-					if len(joined[destination]) > 0 || len(steps) == 0 {
+			if id != root {
+				// A matched input's own trace and parts continue the root's,
+				// after it.
+				node.Trace = joinUniqueFields(node.Trace, inputs[id].Trace)
+				other := readings[id]
+				for _, part := range other.Parts {
+					if parts[part.Part] {
 						continue
 					}
-					continuation := append([]pageCallStep(nil), steps...)
-					continuation[0].Possible = true
-					continuation[0].Integration = true // An endpoint match, not a native call.
-					joined[destination] = append(append([]pageCallStep(nil), prefixes[id]...), continuation...)
+					parts[part.Part] = true
+					joined = true
+					copied := pageInputPart{Part: part.Part, Title: part.Title, Depth: part.Depth, Others: part.Others}
+					for _, call := range part.Entered {
+						copied.Entered = append(copied.Entered, pageCall{own.adopt(other.Decls[call[0]]), own.adopt(other.Decls[call[1]]), call[2] | callPossible | callIntegration})
+					}
+					own.Parts = append(own.Parts, copied)
 				}
-			}
-			if id != root {
-				// A matched input's own trace continues the root's, after it.
-				node.Trace = joinUniqueFields(node.Trace, inputs[id].Trace)
 			}
 			for _, at := range paths[id] {
 				edge := view.Edges[at]
 				uses[at][root] = true
 				near[edge.From], near[edge.To] = true, true
 				if inputs[edge.To] != nil && !seen[edge.To] {
-					if len(prefixes[edge.To]) == 0 {
-						prefixes[edge.To] = joined[edge.To]
-					}
 					queue = append(queue, edge.To)
 				}
 			}
@@ -616,14 +594,25 @@ func completeSystemPaths(view *pageMap) {
 		delete(near, root)
 		node.Writes = joinedWrites
 		node.Neighbours = sortedKeys(near)
-		if len(joined) > 0 {
-			raw, _ := json.Marshal(joined)
-			node.CallPaths = string(raw)
+		if joined {
+			raw, _ := json.Marshal(own)
+			node.InputPath = string(raw)
 		}
 	}
 	for i := range view.Edges {
 		view.Edges[i].Operations = sortedKeys(uses[i])
 	}
+}
+
+// adopt adds another reading's declaration to this one's, once.
+func (path *pageInputPath) adopt(decl pageDecl) int {
+	for position, known := range path.Decls {
+		if known == decl {
+			return position
+		}
+	}
+	path.Decls = append(path.Decls, decl)
+	return len(path.Decls) - 1
 }
 
 func sortedKeys(values map[string]bool) string {
