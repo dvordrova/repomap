@@ -1,5 +1,37 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — An input's reading links to its program's Main flow (u7); the UI fixes u1–u7 walked
+
+- The blind GET check found the Main flow ("A client command from socket
+  read to reply") only by chance, from the component's card. An input's
+  reading now links to the component's flow section after its dispatch
+  boxes: "Main flow" and the flow's title as the model wrote it, kept as
+  model text (its `model` class and display ref); a component with no flow
+  section gives no link (`rmInputFlow`). On the saved Redis run the title
+  is "Server startup and command dispatch", main → … → processCommand →
+  call; the link lands on `#t1-flow`.
+- **Test.** `TestAnInputsReadingLinksToItsProgramsMainFlow` fails on revert
+  (`ui-fixes/revert.log`).
+- **Walk** (`repomap render` of `20260928-050038-redis-1-3-6-d8547ea73628`,
+  headless Chromium 1440×900 over a loopback server; `ui-fixes/`
+  before-*/after-* screenshots of GET's reading and path, the component
+  card and the Entrypoints landing). The blind question "what runs for GET
+  key", re-asked of the rendered text only (`ui-fixes/blind-recheck.cjs`):
+  before, GET's path showed 167 words on arrival with getCommand,
+  getGenericCommand, lookupKeyReadOrReply, addReply and addReplyBulk among
+  rdbLoadObject, createListObject, convertToRealHash, vmReadObjectFromSwap
+  and "other calls into it", no Main flow link; after, 56 words on arrival
+  (dispatch, "handled by getCommand", getCommand → getGenericCommand,
+  "Reaches 11 more parts deeper", the Main flow link), none of the VM or
+  RDB names; one click opens the rest (205 words, all five answer names);
+  the link reaches the flow with processCommand and call. The old "How get
+  reaches call" key is in no page. Left: the handler calls only
+  getGenericCommand, so GET's own work (depth 2) is behind the fold, and
+  no input's reading names a route from the network to call (u6, with the
+  inputs work).
+- `make test`: PASS. `make vet`: PASS. `make ui-test`: PASS (127). `make ui-visual-test`:
+  PASS (65 passed, 5 skipped).
+
 ## 2026-09-28 — An input's path opens at its handler's own calls; deeper parts fold (u5)
 
 - The blind GET check found GET's Path listing every part GET's code can

@@ -367,7 +367,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   dispatched from call and from loadAppendOnlyFile. No route to the site is
   drawn: the shortest static chain from the program's entry, Redis's main →
   aeMain → beforeSleep → call, had been offered to a benchmark reader as
-  GET's path. The inputs whose own code reaches a site (exec, lpush,
+  GET's path. After the boxes the reading links to its program's Main
+  flow (the component's flow section), with the flow's title as the model
+  wrote it, kept as model text; a component with no flow section gives no
+  link. The inputs whose own code reaches a site (exec, lpush,
   rpoplpush, rpush and slaveof reach call) are not listed in a dispatched
   input's reading, where a reader takes them for its route; they are the
   site's own reading, with the declaration: "call is reached from these
