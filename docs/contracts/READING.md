@@ -826,7 +826,13 @@ A call to a `runs_program` symbol is one outgoing boundary of that kind,
 unless its receiver is the result of a call to a `runs_program` symbol
 (`cmd.Run()`, `exec.Command(…).Output()`, a `call_result` receiver
 anchored at the launching call): that call starts, waits for or reads the
-same program, so the call that named it is the one boundary. Which
+same program, so the call that named it is the one boundary. A receiver
+that is `alternatives` every part of which is such a result (a command
+built by `exec.CommandContext` on either branch of an if/else) is each of
+those launches': the call on it is no boundary, and each launch keeps its
+own boundary and program, one destination when they name the same word.
+One part from anywhere else (a nil on the other branch, a field) leaves
+the call its own boundary. Which
 program it starts is asked of each such call on its own
 (`repomap.atlas.program.v1`, stage `atlas_program`, Jev): a symbol such as
 `exec.Command` starts git at one site and make at another. The item is the

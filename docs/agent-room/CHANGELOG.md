@@ -1,5 +1,61 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — A command built on either branch is both launches' (speed mode)
+
+- **Problem (owner):** litestream's whole map had a "Program not established"
+  frame holding CombinedOutput although `cmd` in cmd/litestream-test's
+  validate.go:110–124 is `exec.CommandContext(ctx, "litestream", …)` on both
+  branches of an if/else. The Go adapter recorded that SSA φ as `unknown`
+  "conditional value", so the launch fold (a call on a launching call's
+  `call_result`) never saw it.
+- **Change:** the Go adapter records a φ as `alternatives` of its incoming
+  values in edge order (identical values once; an unfollowed edge stays its
+  `unknown` part); a join already expanded in the same recorded value stays
+  the "conditional value" frontier, so 24 conditional `q += …` appends are
+  97 nodes, not 2^24 (the test without that rule times out). The fold takes a
+  receiver whose every alternative is a launching call's result
+  (`launchedBy`, boxes.go); one other part keeps the call its own boundary.
+  `alternatives` already existed in the sourcevalue vocabulary.
+- **Fixture:** Go `RevisionOf` (storefixture/destinations.go): the contract
+  test checks CombinedOutput's receiver is the alternatives of both launches,
+  each giving git; the reading test folds it into both, each named git, and
+  keeps `held.Run()` on a one-branch command its own boundary.
+- **Other tiles of that frame** (litestream-v24, read only): replicate.go:376
+  `exec.CommandContext(ctx, execArgs[0], execArgs[1:]...)` gives no word (both
+  arguments are `unknown`: a slice element and a re-slice of
+  `shellwords.Parse(c.Config.Exec)`), so it is not asked, as before;
+  replicate.go:380 `c.cmd.Start()` reads the field `cmd` of the receiver (the
+  store at :376 goes through the pointer and no fact carries it), stays not
+  established; etc/s3_mock.py:32 `subprocess.run(cmd, env=env)` with
+  `cmd = sys.argv[1:]` gives no word, stays not established. No fact names
+  which argument is the program, so none becomes "named at run time".
+- **Other languages:** Python (a reassigned binding's read is `unknown` with
+  the name) and JSTS (a `let` without initializer or reassigned is `unknown`)
+  do not give alternatives: recorded as missing equivalents in PYTHON.md and
+  JSTS.md.
+- **Verified:** `make build`; `go vet` of surfacediscovery, atlas/reading,
+  contracttest; tests of surfacediscovery, atlas/..., programindex/...,
+  contracttest pass except the known ProgramIndex-18 fixture tests (places
+  TestFixturePlaces, facts TestFixturePythonTutorialGame and
+  TestFixtureAnchorsResolveInTheRepository) and the e1 split-file seed tests
+  (contracttest TestCumulativeClojureMapOfParts, TestCumulativeCMapOfParts).
+  Ordinary litestream run on the default cache
+  (`20260928-104647-litestream-v24-655b9ef38d8b`): exit 0 in 1m48s; launches
+  not established cmd/litestream 2 = 2, cmd/litestream-test 1 → 0 (4 → 3
+  launches, litestream ×3), etc/s3_mock 1 = 1; the frame holds CommandContext,
+  Cmd.Start and run (CombinedOutput gone); render byte-identical,
+  Playwright 1440×900 without page errors.
+- **Side effects for the owner (model re-asks, not reverted):** the new
+  origins changed 25 atlas_boundaries windows, 2 atlas_api rows, glossary and
+  orientation. Call order inside a declaration follows pattern IDs, so
+  Main.Run's two `strings.HasPrefix` calls swapped and the symbol's `usage`
+  became `strings.HasPrefix(cmd, "-")` (was `(err.Error(), "signal:")`);
+  Jev answered `enters: command`, and cmd/litestream gained 31 false command
+  inputs (`http://`, `10.`, `arn:` …; 75 → 106). azblob DeleteBlob is now
+  named "S3 storage"; the glossary drew 263 terms (45), report.html
+  10.7 → 14.0 MB. nats.Connect's row gained `result_receives: Close ×1` (a φ
+  of one value is now that call's result).
+
 ## 2026-09-28 — Inputs point into their component: "taken in here" arrows (speed mode)
 
 - **Problem (owner):** "а че у нас инпуты не указывают никуда?" On Redis's

@@ -1,6 +1,7 @@
 package contracttest
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
 	"github.com/dvordrova/repomap/internal/pythonprogramindex"
 	"github.com/dvordrova/repomap/internal/pythontarget"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 // launch is one call that starts another program, as a fixture writes it:
@@ -52,15 +54,33 @@ func launchCalls(t *testing.T, repository *corpus.Corpus, index programindex.Ind
 			}
 		}
 	}
+	// A receiver is what a launch returned when it is that call's result,
+	// or alternatives every one of which is (a command built on either
+	// branch).
+	var launchedBy func(*sourcevalue.Value) bool
+	launchedBy = func(value *sourcevalue.Value) bool {
+		switch {
+		case value == nil:
+			return false
+		case value.Kind == "call_result":
+			return value.Anchor != nil && launched[site{value.Anchor.Path, value.Anchor.Line, value.Anchor.Column}]
+		case value.Kind == "alternatives":
+			for i := range value.Parts {
+				if !launchedBy(&value.Parts[i]) {
+					return false
+				}
+			}
+			return len(value.Parts) > 0
+		}
+		return false
+	}
 	var onResult []string
 	for _, place := range graph.Places {
 		if place.Symbol == nil {
 			continue
 		}
 		for _, call := range place.Symbol.Calls {
-			receiver := call.ReceiverValue
-			if call.API != nil && receiver != nil && receiver.Kind == "call_result" && receiver.Anchor != nil &&
-				launched[site{receiver.Anchor.Path, receiver.Anchor.Line, receiver.Anchor.Column}] {
+			if call.API != nil && launchedBy(call.ReceiverValue) {
 				onResult = append(onResult, apiSymbolName(call.API.Package, call.API.Receiver, call.API.Name))
 			}
 		}
@@ -107,8 +127,10 @@ func expectAskedAs(t *testing.T, asked map[string]askedSymbol, symbol, question,
 // written; the call gives the program question every word it writes, the
 // program's word among them. A call on what a launching call returned is
 // recorded as made on that call's result, which is how the reading keeps
-// one boundary per launch. A launch whose program a variable holds gives
-// no word. Two gaps are recorded, not answered: Python's words inside a
+// one boundary per launch; in Go a command built on either branch of an
+// if/else is the alternatives of both calls' results, in edge order, so
+// the call on it is both launches'. A launch whose program a variable
+// holds gives no word. Two gaps are recorded, not answered: Python's words inside a
 // list literal are no call words (PYTHON.md), and JavaScript's
 // node:child_process has no declarations in the fixture (no @types/node),
 // so spawn names no symbol and is not asked (JSTS.md).
@@ -141,9 +163,11 @@ func TestEveryLanguageAsksItsLaunchingCallsWithTheirWords(t *testing.T) {
 		asked := askedOutsideSymbols(t, repository, index)
 		onResult := expectLaunch(t, asked, repository, index,
 			launch{"os/exec.CommandContext", `exec.CommandContext(ctx, "git", "rev-parse", "HEAD")`, []string{"git", "rev-parse", "HEAD"}}, "given")
-		if !slices.Equal(onResult, []string{"os/exec.Cmd.Output"}) {
-			t.Fatalf("calls on the started command = %q, want Output", onResult)
+		slices.Sort(onResult)
+		if !slices.Equal(onResult, []string{"os/exec.Cmd.CombinedOutput", "os/exec.Cmd.Output"}) {
+			t.Fatalf("calls on the started command = %q, want CombinedOutput (RevisionOf) and Output (Revision)", onResult)
 		}
+		expectEitherBranchLaunch(t, repository, index)
 		onResult = expectLaunch(t, asked, repository, index, launch{"os/exec.Command", "exec.Command(hook, args...)", nil}, "talks")
 		if !slices.Equal(onResult, []string{"os/exec.Cmd.Run"}) {
 			t.Fatalf("calls on the hook's command = %q, want Run", onResult)
@@ -198,4 +222,46 @@ func TestEveryLanguageAsksItsLaunchingCallsWithTheirWords(t *testing.T) {
 		expectLaunch(t, askedOutsideSymbols(t, repository, index), repository, index,
 			launch{"clojure.java.shell.sh", `(shell/sh "git" "rev-parse" "HEAD")`, []string{"git", "rev-parse", "HEAD"}}, "given")
 	})
+}
+
+// expectEitherBranchLaunch checks RevisionOf in the Go fixture: cmd is built
+// by exec.CommandContext on either branch, both calls give git as a word,
+// and the receiver of cmd.CombinedOutput() is the alternatives of the two
+// calls' results in edge order (then, else), neither picked.
+func expectEitherBranchLaunch(t *testing.T, repository *corpus.Corpus, index programindex.Index) {
+	t.Helper()
+	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index, Root: "."}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var launches []string
+	var receiver *sourcevalue.Value
+	for _, place := range graph.Places {
+		if place.Symbol == nil || place.Symbol.Decl.Name != "RevisionOf" {
+			continue
+		}
+		for _, call := range place.Symbol.Calls {
+			switch call.Name {
+			case "exec.CommandContext":
+				if !slices.Contains(call.Values, "git") {
+					t.Fatalf("RevisionOf's launch at line %d gives %q, no git", call.Line, call.Values)
+				}
+				launches = append(launches, fmt.Sprintf("call_result %s:%d:%d", place.Path, call.Line, call.Column))
+			case "exec.Cmd.CombinedOutput":
+				receiver = call.ReceiverValue
+			}
+		}
+	}
+	var parts []string
+	if receiver != nil && receiver.Kind == "alternatives" {
+		for _, part := range receiver.Parts {
+			if part.Anchor != nil {
+				parts = append(parts, fmt.Sprintf("%s %s:%d:%d", part.Kind, part.Anchor.Path, part.Anchor.Line, part.Anchor.Column))
+			}
+		}
+	}
+	slices.Sort(launches)
+	if len(launches) != 2 || !slices.Equal(parts, launches) {
+		t.Fatalf("CombinedOutput's receiver = %+v, want the alternatives %q", receiver, launches)
+	}
 }

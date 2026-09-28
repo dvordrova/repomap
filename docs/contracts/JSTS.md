@@ -241,7 +241,12 @@ from `node:child_process`. The fixture installs no `@types/node`, so the
 compiler names no symbol and nothing is asked: a missing equivalent,
 recorded, like the npm packages above. With Node's declarations the call
 would be asked `talks`; its arguments array, like Python's list, would
-still give no words beyond `"git"`.
+still give no words beyond `"git"`. Missing equivalent (2026-09-28): a
+`let` declared without an initializer, or reassigned, and assigned on both
+branches of an if/else (`child = spawn(…)` in each) reads as `unknown` with
+its name as text, not the `alternatives` of both `call_result`s that Go
+records; a call on it would stay its own launch boundary instead of folding
+into both launches (READING).
 
 ## Handler tables and stored callbacks
 

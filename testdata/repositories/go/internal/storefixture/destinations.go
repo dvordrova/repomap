@@ -100,3 +100,17 @@ func Revision(ctx context.Context) (string, error) {
 func RunHook(hook string, args ...string) error {
 	return exec.Command(hook, args...).Run()
 }
+
+// RevisionOf starts git on either branch and reads what it prints: the
+// command is built by one of two calls, both naming git, and CombinedOutput
+// on it is the program either call started, not another one.
+func RevisionOf(ctx context.Context, ref string) (string, error) {
+	var cmd *exec.Cmd
+	if ref != "" {
+		cmd = exec.CommandContext(ctx, "git", "rev-parse", ref)
+	} else {
+		cmd = exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	}
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

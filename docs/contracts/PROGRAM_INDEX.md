@@ -245,7 +245,12 @@ field values and callback targets remain separate.
 
 ProgramIndex retains source expressions for non-callable arguments,
 receivers and locally observed return values. Go, Python and JSTS extract these in their existing parse. Parameter/capture owners, call-result anchors, constructors, field
-initializers and concatenations remain source observations. The existing atlas
+initializers and concatenations remain source observations. `alternatives`
+is a value that is one of its parts at run time, none picked: a conditional
+expression, a closure's several bindings, a callable's several returns, and
+in Go a control-flow join's incoming values in edge order (GO.md; Python
+and JSTS read a local assigned on both branches as `unknown`, a recorded
+missing equivalent). The existing atlas
 calls carry them locally. Compact caption/selection rows retain native API identity through their owning projection; question and boundary evidence retain safe source arguments, receivers, results and native API identity without internal IDs. Destination reading follows those native sites within retained owners,
 preserves separate uses and correlated arguments, and stops explicitly at
 unknown values or cycles. Flag/environment expressions are not deployed values;

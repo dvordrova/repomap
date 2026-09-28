@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 func TestExternalCallIndexCaptureIsOptInAndIndependentFromTargetRoots(t *testing.T) {
@@ -467,4 +469,68 @@ func externalCallTestCaller(
 	}
 	node.ID = stableDirectCallNodeID(node)
 	return node
+}
+
+// A value chosen by an if/else is the alternatives of its branches, in edge
+// order, neither picked; a join that reads an earlier join on both edges
+// keeps the earlier one expanded once, so twenty-four conditional appends
+// stay a value the size of the code, not of its 2^24 paths.
+func TestGoConditionalValueIsItsBranchesOnce(t *testing.T) {
+	repository := t.TempDir()
+	writeFixtureFile(t, filepath.Join(repository, "go.mod"), "module example.com/joins\n\ngo 1.25\n")
+	var appends strings.Builder
+	for i := 0; i < 24; i++ {
+		fmt.Fprintf(&appends, "\tif len(flags) > %d {\n\t\tq += \"&f%d\"\n\t}\n", i, i)
+	}
+	writeFixtureFile(t, filepath.Join(repository, "main.go"), `package main
+
+import (
+	"net/http"
+	"os"
+)
+
+func main() {
+	var base string
+	if len(os.Args) > 1 {
+		base = "https://then.example"
+	} else {
+		base = "https://else.example"
+	}
+	_, _ = http.Get(base)
+	flags := os.Args
+	q := "https://query.example/?"
+`+appends.String()+`	_, _ = http.Head(q)
+}
+`)
+	input := targetDirectCallExecutableInput("example.com/joins", "main.go", 8)
+	options := defaultHostOptions(repository)
+	options.DirectCallDepth = 1
+	options.CaptureExternalCallIndex = true
+	result, err := analyzeForTest(options, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origins := map[string]*sourcevalue.Value{}
+	for _, family := range result.ExternalCallIndex.Families {
+		if family.Target.PackagePath == "net/http" && len(family.Patterns) == 1 && len(family.Patterns[0].Arguments) == 1 {
+			origins[family.Target.Name] = family.Patterns[0].Arguments[0].Origin
+		}
+	}
+	branches := origins["Get"]
+	if branches == nil || branches.Kind != "alternatives" || len(branches.Parts) != 2 ||
+		branches.Parts[0].Text != "https://then.example" || branches.Parts[1].Text != "https://else.example" {
+		t.Fatalf("if/else origin = %+v, want the alternatives then, else", branches)
+	}
+	var nodes func(*sourcevalue.Value) int
+	nodes = func(value *sourcevalue.Value) int {
+		count := 1
+		for i := range value.Parts {
+			count += nodes(&value.Parts[i])
+		}
+		return count
+	}
+	appended := origins["Head"]
+	if appended == nil || appended.Kind != "alternatives" || sourcevalue.Validate(appended) != nil || nodes(appended) > 24*8 {
+		t.Fatalf("conditional appends origin: %+v", appended)
+	}
 }

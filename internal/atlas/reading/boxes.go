@@ -14,6 +14,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 // boxState is one drawn part of a target and its exact declaration members.
@@ -1032,12 +1033,10 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 			// A call on what a call starting another program returned
 			// (cmd.Run() on exec.Command's command) starts, waits for or
 			// reads that same program: the call that named it is the one
-			// boundary.
-			if role.talks == atlas.BoundaryRunsProgram && call.ReceiverValue != nil && call.ReceiverValue.Kind == "call_result" && call.ReceiverValue.Anchor != nil {
-				anchor := call.ReceiverValue.Anchor
-				if r.api[calledAt[sourceSite{anchor.Path, anchor.Line, anchor.Column}]].talks == atlas.BoundaryRunsProgram {
-					continue
-				}
+			// boundary. A command built on either branch is each branch's
+			// launch, and the call on it is theirs.
+			if role.talks == atlas.BoundaryRunsProgram && r.launchedBy(call.ReceiverValue, calledAt) {
+				continue
 			}
 			claimed := false
 			for _, existing := range r.boundaries {
@@ -1080,6 +1079,27 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 		}
 	}
 	return publishes
+}
+
+// launchedBy reports a value that is what a call starting another program
+// returned: that call's result, or alternatives every one of which is such
+// a result. An alternative from anywhere else leaves the value not one.
+func (r *reader) launchedBy(value *sourcevalue.Value, calledAt map[sourceSite]string) bool {
+	if value == nil {
+		return false
+	}
+	switch value.Kind {
+	case "call_result":
+		return value.Anchor != nil && r.api[calledAt[sourceSite{value.Anchor.Path, value.Anchor.Line, value.Anchor.Column}]].talks == atlas.BoundaryRunsProgram
+	case "alternatives":
+		for i := range value.Parts {
+			if !r.launchedBy(&value.Parts[i], calledAt) {
+				return false
+			}
+		}
+		return len(value.Parts) > 0
+	}
+	return false
 }
 
 // factClaims reports a call a fact boundary already names, in or out: the

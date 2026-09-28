@@ -1,6 +1,7 @@
 package reading
 
 import (
+	"fmt"
 	"reflect"
 	"slices"
 	"sort"
@@ -18,13 +19,24 @@ import (
 
 // launchSource is one Go file whose main starts programs: litestream with
 // a subcommand and options (another program's command line), git through
-// a shell, and a program whose path a variable holds; two calls act on
+// a shell, a program whose path a variable holds, git built on either
+// branch, and a hook's command built on one branch only; four calls act on
 // what a launching call returned.
 const launchSource = `func main() {
 	out, err := exec.CommandContext(ctx, "litestream", "restore", "-config", path, "-o", db).CombinedOutput()
 	cmd := exec.Command("sh", "-c", "git status")
 	cmd.Run()
 	exec.Command(binary, args...)
+	if ref != "" {
+		built = exec.CommandContext(ctx, "git", "rev-parse", ref)
+	} else {
+		built = exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	}
+	built.CombinedOutput()
+	if hook != "" {
+		held = exec.Command(hook)
+	}
+	held.Run()
 }
 `
 
@@ -87,21 +99,35 @@ func (p *programAsking) categorizer() *typesafetest.Categorizer {
 // symbol that starts litestream at one site and git through a shell at
 // another is asked once per call, and the shell's command line, not the
 // shell, is what Jev picks here. A call on what a launching call returned
-// (CombinedOutput, Run) is the same program, not another boundary; a call
-// given no word is not asked and its program stays not established (no
-// recorded word is no evidence that none names it). No launch is an entry
-// of this program.
+// (CombinedOutput, Run) is the same program, not another boundary, and a
+// call on a command built on either branch is both branches' launch, each
+// naming git; a command one branch leaves nil is not only a launch's
+// result, so the call on it stays its own boundary. A call given no word
+// is not asked and its program stays not established (no recorded word is
+// no evidence that none names it). No launch is an entry of this program.
 func TestACallThatStartsAProgramIsNamedByTheWordItsCallWrote(t *testing.T) {
 	restore := launchCall(t, "os/exec.CommandContext", 2, "exec.CommandContext", nil, "litestream", "restore", "-config", "-o")
 	output := launchCall(t, "os/exec.Cmd.CombinedOutput", 2, ".CombinedOutput", &restore)
 	shell := launchCall(t, "os/exec.Command", 3, "exec.Command", nil, "sh", "-c", "git status")
 	run := launchCall(t, "os/exec.Cmd.Run", 4, "cmd.Run", &shell)
 	unnamed := launchCall(t, "os/exec.Command", 5, "exec.Command", nil)
-	places := apiGraph(restore, output, shell, run, unnamed)
+	byRef := launchCall(t, "os/exec.CommandContext", 7, "exec.CommandContext", nil, "git", "rev-parse")
+	atHead := launchCall(t, "os/exec.CommandContext", 9, "exec.CommandContext", nil, "git", "rev-parse", "HEAD")
+	either := launchCall(t, "os/exec.Cmd.CombinedOutput", 11, ".CombinedOutput", nil)
+	either.ReceiverValue = &sourcevalue.Value{Kind: "alternatives", Parts: []sourcevalue.Value{
+		{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "main.go", Line: byRef.Line, Column: byRef.Column}},
+		{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "main.go", Line: atHead.Line, Column: atHead.Column}}}}
+	hook := launchCall(t, "os/exec.Command", 13, "exec.Command", nil)
+	held := launchCall(t, "os/exec.Cmd.Run", 15, ".Run", nil)
+	held.ReceiverValue = &sourcevalue.Value{Kind: "alternatives", Parts: []sourcevalue.Value{
+		{Kind: "unknown"}, {Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "main.go", Line: hook.Line, Column: hook.Column}}}}
+	places := apiGraph(restore, output, shell, run, unnamed, byRef, atHead, either, hook, held)
 	places[0].Path, places[1].Path = "main.go", "main.go"
 	asking := &programAsking{offers: map[string][]string{}, choose: map[string]string{
 		`exec.CommandContext(ctx, "litestream", "restore", "-config", path, "-o", db)`: "litestream",
-		`exec.Command("sh", "-c", "git status")`:                                         "git status",
+		`exec.Command("sh", "-c", "git status")`:                                       "git status",
+		`exec.CommandContext(ctx, "git", "rev-parse", ref)`:                            "git",
+		`exec.CommandContext(ctx, "git", "rev-parse", "HEAD")`:                         "git",
 	}}
 	r := apiReader(t, t.TempDir(), places, asking.categorizer())
 	r.opts.ReadSource = func(string) ([]byte, error) { return []byte(launchSource), nil }
@@ -114,22 +140,28 @@ func TestACallThatStartsAProgramIsNamedByTheWordItsCallWrote(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []string
-	for _, id := range sortedKeys(r.boundaries) {
-		state := r.boundaries[id]
+	for _, state := range r.boundaries {
 		b := state.place.Boundary
-		got = append(got, strings.Join([]string{b.Direction, state.kind, state.apiSymbol, strings.Join(b.Values, "|"), state.destination, map[bool]string{true: "not named", false: "-"}[state.programNotNamed]}, " "))
+		got = append(got, strings.Join([]string{fmt.Sprint(state.place.LineNo), b.Direction, state.kind, state.apiSymbol, strings.Join(b.Values, "|"), state.destination, map[bool]string{true: "not named", false: "-"}[state.programNotNamed]}, " "))
 	}
+	sort.Strings(got)
 	want := []string{
-		"out runs_program os/exec.CommandContext litestream|restore|-config|-o litestream -",
-		"out runs_program os/exec.Command sh|-c|git status git status -",
-		"out runs_program os/exec.Command   -",
+		"13 out runs_program os/exec.Command   -",
+		"15 out runs_program os/exec.Cmd.Run   -",
+		"2 out runs_program os/exec.CommandContext litestream|restore|-config|-o litestream -",
+		"3 out runs_program os/exec.Command sh|-c|git status git status -",
+		"5 out runs_program os/exec.Command   -",
+		"7 out runs_program os/exec.CommandContext git|rev-parse git -",
+		"9 out runs_program os/exec.CommandContext git|rev-parse|HEAD git -",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("boundaries = %q\nwant %q", got, want)
 	}
 	wantOffers := map[string][]string{
 		`exec.CommandContext(ctx, "litestream", "restore", "-config", path, "-o", db)`: {"-config", "-o", "litestream", lines.ProgramNotNamed, "restore"},
-		`exec.Command("sh", "-c", "git status")`:                                         {"-c", "git status", lines.ProgramNotNamed, "sh"},
+		`exec.Command("sh", "-c", "git status")`:                                       {"-c", "git status", lines.ProgramNotNamed, "sh"},
+		`exec.CommandContext(ctx, "git", "rev-parse", ref)`:                            {"git", lines.ProgramNotNamed, "rev-parse"},
+		`exec.CommandContext(ctx, "git", "rev-parse", "HEAD")`:                         {"HEAD", "git", lines.ProgramNotNamed, "rev-parse"},
 	}
 	if !reflect.DeepEqual(asking.offers, wantOffers) {
 		t.Fatalf("the program question offered %v\nwant %v", asking.offers, wantOffers)

@@ -341,6 +341,11 @@ strings inside a list or tuple literal are no call words (a call's words
 are its literal arguments), so this call gives the program question no
 word, is not asked, and its program stays not established. `os.system`
 and `subprocess.Popen` given a string are asked like any word-given call.
+Missing equivalent (2026-09-28): a name assigned on both branches of an
+if/else (`proc = subprocess.Popen(…)` in each) is a reassigned binding,
+so its read is `unknown` with the name as text, not the `alternatives` of
+both `call_result`s that Go records; `proc.communicate()` on it stays its
+own launch boundary instead of folding into both launches (READING).
 
 ## Test sources
 

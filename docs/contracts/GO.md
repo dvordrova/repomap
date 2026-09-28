@@ -216,7 +216,24 @@ asked nothing:
 launching call gives the words `git`, `rev-parse`, `HEAD`, and `Output` is
 made on its `call_result`, so the reading keeps one boundary (READING).
 `RunHook`'s `exec.Command(hook, args...).Run()` gives no word: its program
-stays not established.
+stays not established. `RevisionOf` builds its command on either branch of
+an if/else (`cmd = exec.CommandContext(ctx, "git", "rev-parse", ref)` or
+`… "HEAD")`) and calls `cmd.CombinedOutput()`: the receiver is the
+`alternatives` of the two `call_result`s, so the call on it is both
+launches', each naming git.
+
+A value SSA joins at a control-flow merge (a φ) is the `alternatives` of its
+incoming values, in edge order (a value that is the same on every edge is
+that value): none is picked, and an edge whose value is not followed (a nil,
+a load through memory) stays its `unknown` part, so the list is honest. A
+join already expanded in the same recorded value (a later join reading an
+earlier one on both edges, as conditional `q += …` appends do) stays the
+`unknown` "conditional value" frontier where it comes again: a value tree
+cannot share a node, and expanding it again would grow with the paths
+through the code, 2^n for n appends, not with the code. A loop's join
+reading itself is the "cyclic value" frontier as before. A field stored
+through a pointer (`c.cmd = exec.CommandContext(…)` then `c.cmd.Start()`)
+is still read as the `field`, not the value last stored there.
 
 ## Handler tables and stored callbacks
 

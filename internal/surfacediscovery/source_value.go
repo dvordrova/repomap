@@ -38,8 +38,21 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 		unknown.Text = "cyclic value"
 		return unknown
 	}
+	// A join this value already expanded (a later join reading an earlier
+	// one on two edges) stays its frontier: the value grows with the code,
+	// not with the number of paths through it.
+	if _, expanded := active[value]; expanded {
+		unknown.Text = "conditional value"
+		return unknown
+	}
 	active[value] = true
-	defer delete(active, value)
+	defer func() {
+		if _, join := value.(*ssa.Phi); join {
+			active[value] = false
+			return
+		}
+		delete(active, value)
+	}()
 	switch v := value.(type) {
 	case *ssa.Const:
 		if v.Value != nil && v.Value.Kind() == constant.String {
@@ -124,9 +137,13 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 			return a.sourceValue(v.X, active, v)
 		}
 	case *ssa.Phi:
-		// A control-flow join is not a single source expression. Keep its
-		// frontier instead of expanding an exponential set of runtime paths.
-		unknown.Text = "conditional value"
+		// A control-flow join is each incoming value, in edge order: none is
+		// picked, and an edge whose value is not followed stays its unknown.
+		values := make([]*sourcevalue.Value, 0, len(v.Edges))
+		for _, edge := range v.Edges {
+			values = append(values, a.sourceValue(edge, active, readAt))
+		}
+		return orderedAlternatives(values, unknown.Anchor)
 	case *ssa.Alloc:
 		var stores []*ssa.Store
 		fields := make(map[int][]*ssa.Store)
@@ -237,6 +254,25 @@ func sourceAlternatives(values []*sourcevalue.Value, anchor *sourcevalue.Anchor)
 	result := &sourcevalue.Value{Kind: "alternatives", Anchor: anchor}
 	for _, key := range keys {
 		result.Parts = append(result.Parts, *byContent[key])
+	}
+	return result
+}
+
+// orderedAlternatives keeps each distinct value once, where it first comes;
+// values all the same are that one value.
+func orderedAlternatives(values []*sourcevalue.Value, anchor *sourcevalue.Anchor) *sourcevalue.Value {
+	seen := make(map[string]bool)
+	result := &sourcevalue.Value{Kind: "alternatives", Anchor: anchor}
+	for _, value := range values {
+		raw, _ := json.Marshal(value)
+		if seen[string(raw)] {
+			continue
+		}
+		seen[string(raw)] = true
+		result.Parts = append(result.Parts, *value)
+	}
+	if len(result.Parts) == 1 {
+		return &result.Parts[0]
 	}
 	return result
 }
