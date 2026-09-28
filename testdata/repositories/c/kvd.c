@@ -299,9 +299,37 @@ static void printSymbols(void) {
         printf("%s %#lx\n", symsTable[j].name, symsTable[j].pointer);
 }
 
+/* Splits a configuration line into its words, as Redis's sdssplitlen does;
+ * the caller frees the array. */
+static char **splitLine(char *line, int *count) {
+    char **words = calloc(KV_MAX_ARGS, sizeof(char *));
+    char *word;
+    *count = 0;
+    for (word = strtok(line, " \t\r\n"); word != NULL && *count < KV_MAX_ARGS; word = strtok(NULL, " \t\r\n"))
+        words[(*count)++] = word;
+    return words;
+}
+
+/* Reads the configuration file an operator writes, one directive per line
+ * ("port 7380", "dbfilename backup.kv"), as Redis reads redis.conf. */
+static void loadConfig(const char *filename) {
+    FILE *fp = fopen(filename, "r");
+    char line[256];
+    if (fp == NULL) return;
+    while (fgets(line, sizeof line, fp) != NULL) {
+        int words;
+        char **argv = splitLine(line, &words);
+        if (words == 2 && strcasecmp(argv[0], "port") == 0) server.port = atoi(argv[1]);
+        else if (words == 2 && strcasecmp(argv[0], "dbfilename") == 0) server.dbfile = strdup(argv[1]);
+        free(argv);
+    }
+    fclose(fp);
+}
+
 int main(int argc, char **argv) {
     const char *port = getenv("KVD_PORT");
     const char *hook = getenv("KVD_START_HOOK");
+    const char *config = getenv("KVD_CONFIG");
     pthread_t stats;
     int fd;
 
@@ -312,6 +340,7 @@ int main(int argc, char **argv) {
     server.port = port != NULL ? atoi(port) : KVD_DEFAULT_PORT;
     server.dbfile = "dump.kv";
     server.saveChild = -1;
+    if (config != NULL) loadConfig(config);
     setupSignals();
     server.el = loopCreate();
     fd = netListen(server.port);

@@ -111,7 +111,17 @@ func TestCFixtureProvesWhatEachProgramNeverRuns(t *testing.T) {
 // nothing; the server connects nowhere. The event loop both link is a part
 // of the server's map and leaves the client's, which never runs it, as
 // adlist.c's Linked list stays on redis-server's map and leaves redis-cli's.
-func TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem(t *testing.T) {
+// kvdPair is kvd and kvcli read together with the kvd preset, and their
+// projected GroupsIndexes.
+type kvdPair struct {
+	server, client programindex.Index
+	preset         *kvdPreset
+	result         reading.Result
+	indexes        map[string]groupindex.Index
+}
+
+func readKvdPair(t *testing.T) kvdPair {
+	t.Helper()
 	fixture := loadCFixture(t)
 	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
 	server, client := set["c:kvd"], set["c:kvcli"]
@@ -138,6 +148,25 @@ func TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, row := range result.Rejected {
+		if row.Kind == "window_rejected" {
+			t.Fatalf("a question was left unanswered: %+v", row)
+		}
+	}
+	projected, err := groupindex.ProjectAtlas(map[string]programindex.Index{server.Target.ID: server, client.Target.ID: client}, result.Atlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexes := map[string]groupindex.Index{}
+	for _, index := range projected {
+		indexes[index.Target.Name] = index
+	}
+	return kvdPair{server: server, client: client, preset: preset, result: result, indexes: indexes}
+}
+
+func TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem(t *testing.T) {
+	pair := readKvdPair(t)
+	server, client, result := pair.server, pair.client, pair.result
 	calls := map[string][]string{}
 	for _, target := range result.Atlas.Targets {
 		for _, boundary := range target.Boundaries {
@@ -169,16 +198,94 @@ func TestCFixturePresetReadingKeepsSharedSocketsWithTheProgramThatRunsThem(t *te
 	if want := map[string][]string{"kvcli": {"loop.c", "loop_poll.c"}}; !reflect.DeepEqual(unreached, want) {
 		t.Fatalf("parts off each program's map as never run = %v, want %v", unreached, want)
 	}
-	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{server.Target.ID: server, client.Target.ID: client}, result.Atlas)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, index := range indexes {
+	for _, index := range pair.indexes {
 		program := map[string]programindex.Index{server.Target.ID: server, client.Target.ID: client}[index.Target.ID]
 		checkUnreachedParts(t, program, index)
 		grouped := slices.ContainsFunc(index.Groups, func(group groupindex.Group) bool { return group.Title == "loop.c" })
 		if grouped != (index.Target.ID == server.Target.ID) {
 			t.Fatalf("%s draws loop.c: %v", program.Target.Name, grouped)
+		}
+	}
+}
+
+// kvcli's inputs: --raw, an option main compares an element of its argument
+// vector with, and the rows of its table of command names, asked once as a
+// table read by lookupCommand, one catalogue looked up there. The same
+// symbol's comparison of a command's own name ("bgsave") is no input: each
+// call is asked on its own with where its arguments come from. The client
+// connects to the server, so each row is asked which of the server's inputs
+// it sends (K5); a row the reader leaves unmatched names none although the
+// server has an input of the same word, and no row draws an arrow.
+func TestCFixturePresetReadingNamesTheClientsOptionsAndCommands(t *testing.T) {
+	pair := readKvdPair(t)
+	client, server := pair.indexes["kvcli"], pair.indexes["kvd"]
+	pair.preset.mu.Lock()
+	entered, tables, peers := slices.Clone(pair.preset.entered), slices.Clone(pair.preset.tables), slices.Clone(pair.preset.peers)
+	pair.preset.mu.Unlock()
+	for _, call := range []string{
+		`string.h.strcasecmp in main: 1: element "1" of parameter #2 argv of main; 2: "--raw"`,
+		`string.h.strcasecmp in main: 1: field name of result of calling lookupCommand(argv[first]); 2: "bgsave"`,
+	} {
+		if !slices.Contains(entered, call) {
+			t.Fatalf("%s was not asked on its own: %v", call, entered)
+		}
+	}
+	if !slices.Contains(tables, "cmdTable read by [lookupCommand]") {
+		t.Fatalf("kvcli's table of names was not asked with its reader: %v", tables)
+	}
+	names := map[string]string{}
+	for _, subject := range client.Subjects {
+		if subject.Object != nil {
+			names[subject.ID] = subject.Object.Name
+		}
+	}
+	serverOperations := map[string]string{}
+	for _, operation := range server.Operations {
+		serverOperations[operation.ID] = operation.Name
+	}
+	type input struct{ kind, name, by, sends string }
+	var got []input
+	for _, operation := range client.Operations {
+		var sends []string
+		for _, peer := range operation.Sends {
+			if peer.TargetID != server.Target.ID {
+				t.Fatalf("%s sends to %s", operation.Name, peer.TargetID)
+			}
+			sends = append(sends, serverOperations[peer.OperationID])
+		}
+		if !operation.HandlerUnknown || operation.SubjectID != "" {
+			t.Fatalf("kvcli's %s has a handler", operation.Name)
+		}
+		got = append(got, input{kind: operation.Kind, name: operation.Name, by: names[operation.DeclaredBy], sends: strings.Join(sends, " ")})
+	}
+	slices.SortFunc(got, func(a, b input) int { return strings.Compare(a.name, b.name) })
+	want := []input{
+		{kind: "command", name: "--raw", by: "main"},
+		{kind: "command", name: "bgsave", by: "cmdTable", sends: "bgsave"},
+		{kind: "command", name: "del", by: "cmdTable"},
+		{kind: "command", name: "get", by: "cmdTable", sends: "get"},
+		{kind: "command", name: "keys", by: "cmdTable", sends: "keys"},
+		{kind: "command", name: "ping", by: "cmdTable", sends: "ping"},
+		{kind: "command", name: "set", by: "cmdTable", sends: "set"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("kvcli's inputs = %+v\nwant %+v", got, want)
+	}
+	if !slices.Contains(peers, "del -> none") {
+		t.Fatalf("the rows were asked %v", peers)
+	}
+	var table *groupindex.Catalogue
+	for position := range client.Catalogues {
+		if names[client.Catalogues[position].DeclaredBy] == "cmdTable" {
+			table = &client.Catalogues[position]
+		}
+	}
+	if table == nil || len(table.OperationIDs) != 6 || len(table.Readers) != 1 || names[table.Readers[0].SubjectID] != "lookupCommand" {
+		t.Fatalf("kvcli's table catalogue: %+v", table)
+	}
+	for _, connection := range client.Connections {
+		if connection.SourceKind == "catalogue" {
+			t.Fatalf("a row of the table draws an arrow: %+v", connection)
 		}
 	}
 }

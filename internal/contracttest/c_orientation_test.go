@@ -85,9 +85,10 @@ func TestCFixtureOrientationReadsMainsCallsInWrittenOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	main := ""
+	mainLine, _ := fixture.at(t, "kvd.c", "int main(int argc, char **argv) {", "")
 	for _, group := range request.Groups {
 		for _, member := range group.Members {
-			if member.Name == "main" && member.Anchor == "kvd.c:302" {
+			if member.Name == "main" && member.Anchor == fmt.Sprintf("kvd.c:%d", mainLine) {
 				main = member.Ref
 			}
 		}
@@ -102,9 +103,9 @@ func TestCFixtureOrientationReadsMainsCallsInWrittenOrder(t *testing.T) {
 			names = append(names, call.Name)
 			lines = append(lines, call.Line)
 		}
-		// The first six of main's fifteen calls, as written: its two
-		// settings, the --symbols branch, then setupSignals.
-		if want := []string{"stdlib.h.getenv", "stdlib.h.getenv", "string.h.strcmp", "printSymbols", "stdlib.h.atoi", "setupSignals"}; !slices.Equal(names, want) || !slices.IsSorted(lines) || row.Evidence.CallsOmitted != 9 {
+		// The first six of main's seventeen calls, as written: its three
+		// settings, the --symbols branch, then the port.
+		if want := []string{"stdlib.h.getenv", "stdlib.h.getenv", "stdlib.h.getenv", "string.h.strcmp", "printSymbols", "stdlib.h.atoi"}; !slices.Equal(names, want) || !slices.IsSorted(lines) || row.Evidence.CallsOmitted != 11 {
 			t.Fatalf("main's calls read %v at %v (%d more), want %v first as written", names, lines, row.Evidence.CallsOmitted, want)
 		}
 		return

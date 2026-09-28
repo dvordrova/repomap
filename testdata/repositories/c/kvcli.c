@@ -42,25 +42,29 @@ int main(int argc, char **argv) {
     strbuf request;
     char reply[4096];
     ssize_t n;
-    int fd, j;
+    int fd, j, first = 1;
 
-    if (argc < 2) {
-        fprintf(stderr, "usage: kvcli command [argument ...]\n");
+    /* --raw, an option of the client, comes before the command. */
+    if (argc > 2 && strcasecmp(argv[1], "--raw") == 0) first = 2;
+    if (argc <= first) {
+        fprintf(stderr, "usage: kvcli [--raw] command [argument ...]\n");
         return 2;
     }
-    cmd = lookupCommand(argv[1]);
-    if (cmd == NULL || (cmd->arity > 0 && argc - 1 != cmd->arity) || argc - 1 < -cmd->arity) {
+    cmd = lookupCommand(argv[first]);
+    if (cmd == NULL || (cmd->arity > 0 && argc - first != cmd->arity) || argc - first < -cmd->arity) {
         fprintf(stderr, "kvcli: unknown command or wrong number of arguments\n");
         return 2;
     }
+    /* The same comparison of a command's own name is no option. */
+    if (first == 1 && strcasecmp(cmd->name, "bgsave") == 0) fprintf(stderr, "kvcli: the save runs in the background\n");
     fd = netConnect(host != NULL ? withoutScheme(host) : "127.0.0.1", port != NULL ? atoi(port) : 7379);
     if (fd == -1) {
         perror("kvcli: connect");
         return 1;
     }
     sbInit(&request);
-    for (j = 1; j < argc; j++) {
-        if (j > 1) sbAppend(&request, " ", 1);
+    for (j = first; j < argc; j++) {
+        if (j > first) sbAppend(&request, " ", 1);
         sbAppend(&request, argv[j], strlen(argv[j]));
     }
     sbAppend(&request, "\n", 1);

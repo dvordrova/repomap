@@ -320,15 +320,38 @@ for this first adapter:
   configuration files the corpus does not admit;
 - parts smaller than one file (D2), protocol commands as their own entry kind
   and joints inside one target (D7, D8);
-- a callable handed to a repository function that keeps it for its own loop
-  (`loopCreateFileEvent(..., acceptHandler, ...)`, Redis's
-  `aeCreateTimeEvent(..., serverCron, ...)`): the constitution defines a
-  registration as a call outside the repository, and D1 excepts only table
-  rows, so an accept handler or a timer registered with the repository's own
-  event loop is no input until the owner decides otherwise.
 - a command handler that re-enters the dispatch: no kvd handler calls back
   into `processCommand`, so no input of the fixture reaches its dispatch site
-  (Redis's `exec` reaches `call`); GroupsIndex's unit test covers it.
+  directly (Redis's `exec` reaches `call`); GroupsIndex's unit test covers it.
+  The request arrives there from `acceptHandler`, which registers
+  `readQueryFromClient` (below).
+
+## Callables the program's own functions keep, and tables of names (pass 2)
+
+A callable handed to a repository function that stores that parameter in a
+field or a file-scope variable is a registration with its registrar
+(ProgramIndex `ParameterStores`, facts `Registrar`): kvd's
+`loopCreateFileEvent(..., acceptHandler, ...)` keeps `acceptHandler` in the
+loop's file event, as Redis's `aeCreateFileEvent` and `aeCreateTimeEvent`
+keep `acceptHandler` and `serverCron`. Each registrar and callable is asked
+once (`atlas_inputs` stored) with the call as written and while what it is
+kept (`registered_during`: from the program's start at `main`, or while the
+callables another registration hands over run, each route listed). The kvd
+preset answers `acceptHandler` request and `readQueryFromClient`,
+`sendReplyToClient` and `beforeSleep` none: `acceptHandler` is an input with
+its handler, and the request dispatched at `processCommand` arrives from it
+through the reader it registers (GroupsIndex outer inputs).
+
+A file-scope table whose rows write string literals and store no repository
+callable (ProgramIndex `Rows`) is asked once (`atlas_inputs` table) with its
+rows and the functions reading it: kvcli's `cmdTable`, read by
+`lookupCommand`, makes six commands whose handler is not established, one
+catalogue declared by the table and looked up in `lookupCommand`; kvd's
+`symsTable` is answered none. When kvcli has a confirmed integration into
+kvd (its `connect` to kvd's listening socket), each row is asked which of
+kvd's inputs it sends (the joints peers question): the chosen input is kept
+on the row (`Operation.Sends`) and never drawn as an arrow, and a row the
+answer leaves unmatched names none, whatever words the two share.
 
 The fixture has no HTTP route table: a row whose verb qualifies the path beside
 it is covered by the facts tests alone, beside the Go-shaped record
@@ -342,11 +365,13 @@ method.
 Every language asks each call that gives an outside symbol words what the
 words become (READING, the `atlas_api` per-call question). In C that is a
 call such as `strcmp(argv[i], "-h")` or `fprintf(stderr, "usage: …")`: the
-kvd fixture asks `strcmp`'s call (`strcmp(argv[1], "--symbols")`),
-`fprintf`'s and the other word calls, and its preset answers none; a
-`getenv` call is a setting read the facts already name and is not asked.
-The answer is the call's, so `strcmp(argv[i], "-h")` can be an option
-while `strcasecmp(c->name, "monitor")` is not. The item shows where each
+kvd fixture asks `strcmp(argv[1], "--symbols")` in `main`, which its preset
+answers command, `loadConfig`'s `strcasecmp(argv[0], "port")` and
+`strcasecmp(argv[0], "dbfilename")`, answered setting, and `fprintf`'s and
+the other word calls, answered none; a `getenv` call is a setting read the
+facts already name and is not asked. The answer is the call's, so
+kvcli's `strcasecmp(argv[1], "--raw")` is an option while its
+`strcasecmp(cmd->name, "bgsave")` is not. The item shows where each
 argument comes from as the index records it (`internal/cproject`
 `originOf`, `locals.go`):
 
@@ -375,10 +400,14 @@ So Redis's `strcasecmp(argv[0], "timeout")` in `loadServerConfig` reads
 element 0 of the result of `sdssplitlen(line, …)`, a line of the file it
 reads, and `strcmp(argv[i], "-h")` in redis-cli's `parseOptions` element
 `one of: 1 | i++` of parameter #2 `argv`. The cproject test
-`TestArgumentOriginsFollowElementsFieldsAndLocals` holds the four shapes;
-the kvd fixture does not read a configuration file yet (cleanup). Tables of names
+`TestArgumentOriginsFollowElementsFieldsAndLocals` holds the four shapes,
+and the fixture holds them on real calls: kvd's `loadConfig` reads its
+directives as element "0" of the result of `splitLine(line, &words)`
+through the local `argv`, `main`'s `--symbols` as element "1" of parameter
+#2 `argv`, and kvcli's `bgsave` comparison as field `name` of the result
+of `lookupCommand(argv[first])` through the local `cmd`. Tables of names
 (S3) and callables the repository's own functions keep (S1) are asked in
-pass 2. Not recorded yet, and so asked nothing:
+pass 2 (above). Not recorded yet, and so asked nothing:
 
 - `switch` or `==` on an argument's characters (`case 'h':`);
 - an option string handed with the whole argument vector
