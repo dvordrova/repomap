@@ -257,7 +257,17 @@ func (r *reader) readJoints(ctx context.Context) error {
 	// Every eligible endpoint participates. Window choices are candidates for
 	// one final counterpart, not separate published integrations.
 	round := 2
-	choices, err := r.chooseBlindPeers(ctx, []peerBatch{{outs: blind, ins: ins}}, byTarget, &round)
+	// A counterpart is an entry whose code is known: an input whose
+	// handler is not established (an option, a table's row) is no endpoint
+	// another program's call reaches, and offering it crowded the listening
+	// socket out of Redis's window.
+	var endpoints []*boundaryState
+	for _, in := range ins {
+		if !in.handlerUnknown {
+			endpoints = append(endpoints, in)
+		}
+	}
+	choices, err := r.chooseBlindPeers(ctx, []peerBatch{{outs: blind, ins: endpoints}}, byTarget, &round)
 	if err != nil {
 		return err
 	}
