@@ -474,6 +474,26 @@ assert.equal(rmSiteReading(map,node,'h/other').childElementCount,0,'another decl
 `)
 }
 
+// The component's "Entrypoints" link lands on the program's entry: the part
+// whose reading the link names, with the seed read there, or the component
+// itself, read at its entry line, when no part holds the seed; with neither
+// on this map it is left to the page it names.
+func TestTheEntrypointsLinkLandsOnThePartOrTheComponentsEntryLine(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "function rmEntryLanding(", "// An input's row in a component's catalogue")
+	runSystemJS(t, code+`
+const node=(id,href)=>({id,getAttribute:k=>k==='href'?href:null});
+const nodes=[node('n-t1-g1','#t1-g1'),node('n-t1-g2','#t1-g2')],component=node('system-component-t1','#t1');
+const link=data=>({dataset:data});
+let landing=rmEntryLanding(link({entryPart:'t1-g2',entrySource:'h/kvd.c#L302'}),nodes,()=>component);
+assert.deepEqual([landing.node.id,landing.source,landing.entry],['n-t1-g2',{key:'h/kvd.c#L302'},false],'the seed is read in its part');
+landing=rmEntryLanding(link({entryPart:'t1-g1'}),nodes,()=>component);
+assert.deepEqual([landing.node.id,landing.source,landing.entry],['n-t1-g1',null,false],'seeds in one part land on the part');
+landing=rmEntryLanding(link({}),nodes,()=>component);
+assert.deepEqual([landing.node.id,landing.source,landing.entry],['system-component-t1',null,true],'a seed off the map reads the component at its entry line');
+assert.equal(rmEntryLanding(link({}),nodes,()=>null),null,'with no component on this map the link keeps its page');
+`)
+}
+
 // A component's catalogue row names its input by where it is registered and
 // its handler by its code; a plain click on either opened GitHub (Redis's
 // flushdb and flushdbCommand among 95 rows). When the row's own link names

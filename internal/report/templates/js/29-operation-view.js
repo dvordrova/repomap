@@ -175,6 +175,19 @@ function rmExplorationPath(operation,frames,member){
   if(member&&member.name&&frames.length)segments.push({id:frames[frames.length-1].id,title:member.name,kind:'member',sep:' · ',source:{key:member.key,href:member.href,open:member.open}});
   return segments;
 }
+// Where a component's "Entrypoints" link lands (page_sections.go): the part
+// holding the program's seed, the seed read there, or, when no part holds
+// it, the component, read at its entry line. It had landed on the inputs.
+// Null leaves the link to the page it names.
+function rmEntryLanding(link,nodes,component){
+  var part=link.dataset.entryPart;
+  if(part){
+    var node=nodes.find(function(n){return n.getAttribute('href')==='#'+part;});
+    if(node)return {node:node,source:link.dataset.entrySource?{key:link.dataset.entrySource}:null,entry:false};
+  }
+  var owner=component();
+  return owner?{node:owner,source:null,entry:true}:null;
+}
 // An input's row in a component's catalogue names the input by where it is
 // registered and its handler by its code, and both opened GitHub on a plain
 // click: a reader of Redis's 95 commands meant to read flushdb, not its
@@ -534,7 +547,10 @@ function rmCatalogInputClick(event,reveal){
         if(readingLinks.childElementCount||all){readingLinks.prepend(heading);card.querySelector('.map-card-intro').after(readingLinks);}
         // A launch point no part holds is named here, with why: the map
         // then draws no entry part.
-        details.querySelectorAll(':scope>.component-intro>.component-entry').forEach(function(entry){card.querySelector('.map-card-intro').after(entry.cloneNode(true));});
+        details.querySelectorAll(':scope>.component-intro>.component-entry').forEach(function(entry){
+          var line=entry.cloneNode(true);if(pendingEntry===n.id)line.dataset.readingAnchor='';
+          card.querySelector('.map-card-intro').after(line);
+        });
       }
     }
   });
@@ -600,6 +616,18 @@ function rmCatalogInputClick(event,reveal){
     if(n===document.getElementById('overview')||n===document.getElementById('repository-map')){reset();return;}
     if(target)select(target,n!==target,null,true);
   }
+  // The Entrypoints link of a component's details lands on the program's
+  // entry, the reading opened at it.
+  var pendingEntry=null;
+  document.addEventListener('click',function(e){
+    var a=e.target.closest&&e.target.closest('a[data-entry-landing]');
+    if(!a||e.button||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
+    var landing=rmEntryLanding(a,nodes,function(){return mapped(a.closest('[data-report-page]'));});
+    if(!landing)return;
+    e.preventDefault();e.stopImmediatePropagation();
+    if(landing.entry)pendingEntry=landing.node.id;
+    map.revealNode(landing.node,false,landing.source||undefined).finally(function(){pendingEntry=null;});
+  },true);
   document.addEventListener('click',function(e){rmCatalogInputClick(e,function(id){var target=mapped(document.getElementById(id));if(target)map.revealNode(target,false);return !!target;});},true);
   document.addEventListener('click',function(e){var a=e.target.closest('a[href^="#"]');if(!a||a.closest('[data-map-explorer]')||a.hasAttribute('data-reading-map-return')||a.hasAttribute('data-open')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;var n=document.getElementById(a.getAttribute('href').slice(1)),target=mapped(n);if(!target)return;e.preventDefault();e.stopImmediatePropagation();map.revealNode(target,false);},true);
   if(map.hasAttribute('data-system-map'))document.querySelector('.nav-home')?.addEventListener('click',function(e){if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();map.showWholeMap().then(function(){rmScrollToReading(map);});});

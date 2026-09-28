@@ -66,3 +66,60 @@ func TestALaunchPointOffTheMapIsNamedWithItsReason(t *testing.T) {
 		}
 	}
 }
+
+// The component's "Entrypoints" link had landed on its inputs, where a
+// reader looking for main found none. It lands on the program's entry: the
+// part holding the seed, with the seed read there; a seed no part holds
+// leaves no part, and the link reads the component at its entry line.
+func TestTheEntrypointsLinkLandsOnTheProgramsEntry(t *testing.T) {
+	object := func(id, name string, line int) groupindex.Subject {
+		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction,
+			Location: &programindex.Location{Path: "kvd.c", Line: line, Column: 1}}}
+	}
+	build := func(groups []groupindex.Group, seeds ...string) (*pageSection, string) {
+		index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: groups,
+			Subjects: []groupindex.Subject{object("n1", "main", 302), object("n2", "loopMain", 40), object("n3", "setupSignals", 273)}}
+		for _, seed := range seeds {
+			index.Target.Seeds = append(index.Target.Seeds, programindex.TargetSeed{ObjectID: seed})
+		}
+		groupindex.Derive(&index)
+		builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{},
+			links: pageLinks{repositoryURL: "https://example.test/kvd", blobPrefix: "/blob/", revision: "r"}}
+		for _, subject := range index.Subjects {
+			builder.subjects[subjectKey("t1", subject.ID)] = subjectRef{subject: subject}
+		}
+		section := &pageSection{ID: "t1", programTargetID: "t1", FactsAvailable: true, Entrypoints: []pageEntrypoint{{Symbol: "main"}}}
+		builder.fillSectionOffMap(section)
+		parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var page bytes.Buffer
+		if err := parsed.ExecuteTemplate(&page, "target.html", section); err != nil {
+			t.Fatal(err)
+		}
+		link := page.String()[strings.Index(page.String(), `<a href="#t1-entrypoints"`):]
+		return section, link[:strings.Index(link, ">")+1]
+	}
+	server := groupindex.Group{ID: "g1", Title: "Server", MemberSubjectIDs: []string{"n1", "n3"}}
+	loop := groupindex.Group{ID: "g2", Title: "Event loop", MemberSubjectIDs: []string{"n2"}}
+	section, link := build([]groupindex.Group{server, loop}, "n1")
+	if section.EntryPart != groupAnchorID("t1", "g1") || section.EntrySource != "https://example.test/kvd/blob/r/kvd.c#L302" {
+		t.Fatalf("the entry on the map lands at %q %q", section.EntryPart, section.EntrySource)
+	}
+	if link != `<a href="#t1-entrypoints" data-entry-landing data-entry-part="t1-g1" data-entry-source="https://example.test/kvd/blob/r/kvd.c#L302">` {
+		t.Fatalf("the Entrypoints link: %s", link)
+	}
+	// Two seeds in one part land on the part; in two parts, on no part.
+	if section, _ := build([]groupindex.Group{server, loop}, "n1", "n3"); section.EntryPart != "t1-g1" || section.EntrySource != "" {
+		t.Fatalf("two seeds in one part land at %q %q", section.EntryPart, section.EntrySource)
+	}
+	if section, _ := build([]groupindex.Group{server, loop}, "n1", "n2"); section.EntryPart != "" {
+		t.Fatalf("seeds in two parts land on %q", section.EntryPart)
+	}
+	// A seed no part holds leaves the link to the component's entry line.
+	section, link = build([]groupindex.Group{loop}, "n1")
+	if section.EntryPart != "" || section.EntrySource != "" || link != `<a href="#t1-entrypoints" data-entry-landing>` {
+		t.Fatalf("an entry off the map lands at %q %q: %s", section.EntryPart, section.EntrySource, link)
+	}
+}

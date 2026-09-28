@@ -88,6 +88,13 @@ type pageSection struct {
 	// (GroupsIndex's Entries): the map then draws no entry part, and the
 	// component's reading names them.
 	OffMapEntries []pageOffMapEntry
+	// EntryPart and EntrySource are where the component's "Entrypoints"
+	// link lands (GroupsIndex's Entries): the part holding every seed of
+	// the program, and the seed's source key, read there, when it is one.
+	// A seed no part holds leaves them empty: the link then reads the
+	// component at its entry line.
+	EntryPart   string
+	EntrySource string
 }
 
 // pageOffMapEntry is a launch point the map of parts does not draw.
@@ -131,6 +138,7 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 		return
 	}
 	section.MapFailure = mapFailureReasons[index.MapFailure]
+	section.EntryPart, section.EntrySource = builder.entryLanding(section.ID, index)
 	offEntries := map[string]bool{}
 	for _, entry := range index.Entries {
 		if entry.GroupID != "" {
@@ -167,6 +175,36 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 		row.Reason = offMapReasons[file.Reason]
 		section.OffMap = append(section.OffMap, row)
 	}
+}
+
+// entryLanding is where a component's "Entrypoints" link lands: the part
+// holding every seed of the program, with the seed read there when there is
+// one. A seed off the map, or seeds in two parts, give no part, and the link
+// reads the component at its entry line. It had landed on the inputs, where
+// a reader looking for main found none.
+func (builder *pageBuilder) entryLanding(sectionID string, index *groupindex.Index) (string, string) {
+	group := ""
+	for _, entry := range index.Entries {
+		if entry.GroupID == "" || group != "" && entry.GroupID != group {
+			return "", ""
+		}
+		group = entry.GroupID
+	}
+	if group == "" {
+		return "", ""
+	}
+	source := ""
+	if len(index.Entries) == 1 {
+		if ref, known := builder.subject(index.Target.ID, index.Entries[0].SubjectID); known {
+			if _, anchor := builder.subjectDisplay(ref.subject); anchor != nil {
+				source = anchor.Href
+				if source == "" {
+					source = anchor.Open
+				}
+			}
+		}
+	}
+	return groupAnchorID(sectionID, group), source
 }
 
 type pageFileFolder struct {

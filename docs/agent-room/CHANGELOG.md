@@ -1,5 +1,31 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — The Entrypoints link lands on the program's entry (u4)
+
+- The blind GET check clicked "Entrypoints 1" under "Code, entrypoints and
+  sources" and landed on "Inputs · 96 · External communication · 2" with
+  no main in sight: the link went to the header line `#t1-entrypoints`,
+  which the scroll left under the toolbar.
+- **Change.** The page data (`entryLanding`, from GroupsIndex's entries)
+  names the part holding every seed of the program and, for one seed, its
+  source key; the link carries them (`data-entry-part`,
+  `data-entry-source`). A click reads that part on the map with the seed
+  read in it; with the seed in no part (redis-server's main) or seeds in
+  two parts, it reads the component, its reading opened at the entry line
+  ("The program's entry is not on the map: main redis.c:9124 · In no part
+  of its file"). Only a map holding neither leaves the link to its page.
+- **Walk** (headless Chromium 1440×900, loopback): Redis, the link from the
+  Main flow page lands on `#system-component-t1` with the entry line at
+  the column's top, in view; litestream, it lands on `#n-t1-g11`,
+  "Command entry point", with `main` read (cmd/litestream/main.go:79). No
+  page errors.
+- **Tests.** `TestTheEntrypointsLinkLandsOnTheProgramsEntry` (one seed on
+  the map, two in one part, two in two parts, one off the map) and
+  `TestTheEntrypointsLinkLandsOnThePartOrTheComponentsEntryLine`; each
+  fails on revert (`ui-fixes/revert.log`).
+- `make test`: PASS. `make vet`: PASS. `make ui-test`: PASS (127). `make ui-visual-test`:
+  PASS (65 passed, 5 skipped).
+
 ## 2026-09-28 — The entry line names its file (u3)
 
 - The blind GET check read redis-server's reading as "The program's entry
