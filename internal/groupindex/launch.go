@@ -82,8 +82,9 @@ func (graph *reachGraph) launch(reaches []Reach) Launch {
 			root(position)
 		case index.Target.Language == "go" && subject.Object.Kind == programindex.ObjectFunction && subject.Object.Name == "init":
 			root(position)
-		case subject.Object.Kind == programindex.ObjectVariable && len(graph.exec[position]) > 0:
-			// A package-level variable whose initializer calls is run at load.
+		case index.Target.Language == "go" && subject.Object.Kind == programindex.ObjectVariable && len(graph.exec[position]) > 0:
+			// A Go package-level variable whose initializer calls is run at
+			// load. A C table's rows are constructions, not load-time code.
 			root(position)
 		}
 	}

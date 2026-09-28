@@ -698,6 +698,10 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	// enclosing is the innermost function, method or lambda whose source
 	// holds a site, else the module body of its file: the code making a
 	// call there.
+	kindByID := make(map[string]programindex.ObjectKind, len(program.Objects))
+	for _, object := range program.Objects {
+		kindByID[object.ID] = object.Kind
+	}
 	enclosing := func(location programindex.Location) string {
 		best, module := "", ""
 		var bestLine int
@@ -705,10 +709,15 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			if object.Location == nil || object.Location.Path != location.Path {
 				continue
 			}
+			if object.Kind == programindex.ObjectVariable && object.ContainerID != "" && kindByID[object.ContainerID] != programindex.ObjectModule && kindByID[object.ContainerID] != programindex.ObjectPackage {
+				continue
+			}
 			switch object.Kind {
 			case programindex.ObjectModule:
 				module = object.ID
-			case programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectLambda:
+			case programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectLambda, programindex.ObjectVariable:
+				// A table variable's initializer holds its rows: the table
+				// declares them.
 				if object.Location.Line <= location.Line && location.Line <= object.EndLine && object.Location.Line >= bestLine {
 					best, bestLine = object.ID, object.Location.Line
 				}
