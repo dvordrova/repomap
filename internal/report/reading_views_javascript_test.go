@@ -57,14 +57,14 @@ func TestReadingColumnViewsFollowThePreparedData(t *testing.T) {
 const part=rmPartView(ctx,nodes['#own'],data).view;
 const lines=part.children.map(c=>c.className+': '+c.textContent);
 assert.deepEqual(lines,[
- 'map-reading-side map-reading-in: Called frommain2main()initServer()beforeSleep()passed as a callback',
  'map-part-title: Server lifecycle and cron',
  'map-card-summary model: Keeps the server running.',
  'map-part-files meta: server.c',
  'map-reading-members: 3 functionsbeforeSleepinitServerserverCron',
  'map-reading-members: 1 variablesshared',
+ 'map-reading-side map-reading-in: Called frommain2main()initServer()beforeSleep()passed as a callback',
  'map-reading-side map-reading-out: Calls intoServer core state2dictResize()Uses variablesserver',
-]);
+],'what it is made of first, then who calls it (owner, 2026-09-28)');
 assert.equal(part.all(c=>c.has('map-card-summary'))[0].title,'written by the model','model text says so on hover, with no chip');
 assert.deepEqual(part.all(c=>c.has('map-reading-key')).map(c=>c.textContent),['initServer'],'only the key is bold, in the members list');
 assert.ok(part.all(c=>c.has('map-part-box-entry')).length===1&&part.all(c=>c.has('map-part-box-core')).length===1,'a part box takes its lane');
@@ -108,5 +108,26 @@ assert.deepEqual(opened,['Core infrastructure'],'a name reads its area');
 const holder=rmEl('div');
 rmProgramsTable(context,holder,[all['system-component-t1']],()=>[{incoming:true,title:'redis-cli'},{incoming:false,title:'TCP endpoint'}]);
 assert.equal(holder.textContent,'Programsredis-serverBackend database serverEntrymain()Inputs2 requests · 1 settingsConnections← redis-cli · → TCP endpointBuilt fromadlist.c redis.c');
+`)
+}
+
+// A part of several files lists its declarations file by file; a caller
+// reaching many of its declarations through one dispatch site is one line,
+// folded (owner, 2026-09-28: Sorted set commands' "Called from" opened with
+// 17 loadAppendOnlyFile() → z*Command() possible rows).
+func TestAPartReadsFileByFileAndAFanOutAsOneLine(t *testing.T) {
+	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
+	runSystemJS(t, readingViewElements+code+`
+const d=(name,file)=>({name,kind:'function',part:'#own',key:'h#'+name,href:'h#'+name,file,at:file+':1'});
+const decls=[d('listCreate','adlist.c'),d('dictCreate','dict.c'),d('sdsnew','sds.c'),d('loadAppendOnlyFile','redis.c'),d('cmdTable','redis.c')]
+ .concat(['zadd','zrem','zrank','zcard','zscore'].map(n=>d(n+'Command','redis.c')));
+const fanned={decls,files:['adlist.c','dict.c','sds.c'],members:[{kind:'function',decls:[0,1,2]}],
+ in:[{part:'#main',title:'main',count:5,lines:[{caller:3,ends:[5,6,7,8,9].map(i=>({decl:i,kind:'calls',possible:true})),fan:{of:94,noun:'request',via:[4]}}]}]};
+const view=rmPartView(ctx,nodes['#own'],fanned).view;
+assert.deepEqual(view.children.filter(c=>c.has('map-reading-file')).map(c=>c.textContent),
+ ['adlist.c1 functionslistCreate','dict.c1 functionsdictCreate','sds.c1 functionssdsnew'],'file by file');
+const line=view.all(c=>c.has('map-reading-caller'))[0];
+assert.equal(line.tagName,'DETAILS','the fan-out is one folded line');
+assert.equal(line.children[0].textContent,'loadAppendOnlyFile() → 5 request handlers, possible, via cmdTable');
 `)
 }

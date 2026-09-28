@@ -125,7 +125,24 @@ const readingInputs = "\x00inputs"
 type pageReadingLine struct {
 	Caller int              `json:"caller"`
 	Ends   []pageReadingEnd `json:"ends"`
+	// Fan marks a caller reaching many declarations of this part through
+	// one dispatch site: the line reads as one ("loadAppendOnlyFile() → 17
+	// request handlers, possible, via cmdTable"), its ends folded under it.
+	Fan *pageReadingFan `json:"fan,omitempty"`
 }
+
+// pageReadingFan is a caller's dispatch into a part: Of is how many
+// declarations its site can call in all, Noun the kind of input each end
+// handles when they all handle one kind ("request"), and Via the
+// declarations that hand the whole set over (cmdTable), by position.
+type pageReadingFan struct {
+	Of   int    `json:"of"`
+	Noun string `json:"noun,omitempty"`
+	Via  []int  `json:"via,omitempty"`
+}
+
+// readingFanOut is how many ends of one caller's dispatch make its line one.
+const readingFanOut = 5
 
 // pageReadingEnd is a declaration at a relation's other end: its kind of
 // relation, whether it is only possible, and every place it is written.
@@ -342,6 +359,9 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		return "#" + groupAnchorID(section.ID, group), builder.groupTitles[groupindex.Endpoint{TargetID: target, GroupID: group}]
 	}
 	inputs := map[string]bool{}
+	// The dispatch set each incoming caller reaches this part through.
+	folds := map[int]*dispatchFold{}
+	mixed := map[int]bool{}
 	rows := make([]pageConnection, 0, len(card.Connections)+len(card.InternalConnections))
 	rows = append(append(rows, card.Connections...), card.InternalConnections...)
 	for _, row := range rows {
@@ -383,6 +403,13 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			line := from
 			if row.Arrow == "→" {
 				line = -1
+			} else if !row.input {
+				relation, _, _ := strings.Cut(row.EvidenceID, "\x00")
+				fold := builder.dispatch(row.fromTarget).site[relation]
+				if known, seen := folds[line]; seen && known != fold || fold == nil {
+					mixed[line] = true
+				}
+				folds[line] = fold
 			}
 			peers[peer].ends[line] = mergeEnd(peers[peer].ends[line], pageReadingEnd{Decl: to, Kind: kind, Possible: row.Possible})
 		}
@@ -420,7 +447,11 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 				return byName(a, b)
 			})
 			for _, line := range lines {
-				item.Lines = append(item.Lines, pageReadingLine{Caller: line, Ends: sortEnds(peer.ends[line])})
+				entry := pageReadingLine{Caller: line, Ends: sortEnds(peer.ends[line])}
+				if fold := folds[line]; arrow == "←" && fold != nil && !mixed[line] && len(entry.Ends) >= readingFanOut {
+					entry.Fan = builder.readingFan(targetID, fold, entry.Ends, reading.Decls, declare)
+				}
+				item.Lines = append(item.Lines, entry)
 			}
 			result = append(result, item)
 		}
@@ -512,6 +543,51 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		return ""
 	}
 	return string(raw)
+}
+
+// readingFan says a caller's dispatch into a part: how many its site can
+// call, the kind of input they all handle, and what hands the set over.
+func (builder *pageBuilder) readingFan(targetID string, fold *dispatchFold, ends []pageReadingEnd, decls []pageReadingDecl, declare func(pageReadingDecl) int) *pageReadingFan {
+	fan := &pageReadingFan{Of: len(fold.members)}
+	if index := builder.graphIndex(targetID); index != nil {
+		kinds := map[string]string{}
+		for _, operation := range index.Operations {
+			if operation.SubjectID != "" && !operation.HandlerUnknown {
+				kinds[declarationKeyOf(builder, targetID, operation.SubjectID)] = operation.Kind
+			}
+		}
+		for i, end := range ends {
+			kind := kinds[decls[end.Decl].Key]
+			if kind == "" || i > 0 && kind != fan.Noun {
+				fan.Noun = ""
+				break
+			}
+			fan.Noun = kind
+		}
+	}
+	for _, hander := range builder.dispatch(targetID).handers(fold) {
+		ref, known := builder.subject(targetID, hander)
+		if !known {
+			continue
+		}
+		name, anchor := builder.subjectDisplay(ref.subject)
+		if anchor == nil {
+			continue
+		}
+		if position := declare(pageReadingDecl{Name: name, Key: declarationKey(anchor), Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code, At: anchor.Text, File: path.Base(anchor.Path)}); position >= 0 {
+			fan.Via = append(fan.Via, position)
+		}
+	}
+	return fan
+}
+
+func declarationKeyOf(builder *pageBuilder, targetID, subjectID string) string {
+	ref, known := builder.subject(targetID, subjectID)
+	if !known {
+		return ""
+	}
+	_, anchor := builder.subjectDisplay(ref.subject)
+	return declarationKey(anchor)
 }
 
 // mergeEnd adds an end to a declaration's list, one entry per declaration

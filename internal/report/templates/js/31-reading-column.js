@@ -111,43 +111,74 @@ function rmHeadingUp(map,kind,frame,member){
   up.addEventListener('click',function(){map.readUp(frame,!!member);});
   kind.append(document.createTextNode(' · '),up);
 }
+// One caller and what it calls in the part. A caller reaching many of its
+// declarations through one dispatch site is one line: "loadAppendOnlyFile()
+// → 17 request handlers, possible, via cmdTable", its ends folded under it.
+function rmCallerLine(ctx,data,line){
+  var caller=data.decls[line.caller],row=rmEl(line.fan?'details':'div','map-reading-caller'),head=line.fan?rmEl('summary'):row;
+  head.appendChild(rmDeclName(caller,rmCallableName(caller),ctx.goDecl(caller),rmEndTitle(ctx,caller,null)));
+  if(line.fan){
+    var fan=line.fan,say=rmEl('span','map-reading-fan');
+    say.append(document.createTextNode(' → '+rmT(({request:'{0} request handlers',command:'{0} command handlers'})[fan.noun]||'{0} functions',line.ends.length)));
+    if(line.ends.every(function(end){return end.possible;}))say.append(document.createTextNode(', '),rmEl('span','possible',rmT('possible')));
+    if((fan.via||[]).length){
+      say.append(document.createTextNode(', '+rmT('via')+' '));
+      fan.via.forEach(function(at,i){if(i)say.append(document.createTextNode(', '));var via=data.decls[at];say.appendChild(rmDeclName(via,via.name,ctx.goDecl(via),via.at));});
+    }
+    head.appendChild(say);row.appendChild(head);
+  }
+  var ends=rmEl('ul','map-reading-ends');line.ends.forEach(function(end){ends.appendChild(rmEndItem(ctx,data,end,'out'));});
+  row.appendChild(ends);
+  return row;
+}
 // A heading with its count: "12 functions".
 function rmCountHeading(tag,key,count){return rmEl(tag,'map-reading-count',rmT(key,count));}
 
-// A part's reading: the parts calling into it, each caller with what it
-// calls here; the part in its box, the model's description and its files;
-// its declarations by kind and name, the keys bold; then the parts it calls
-// into, each with its callees, and the variables it uses there.
+// A part's reading (owner, 2026-09-28): the part in its box, the model's
+// description and its files; what it is made of first, its declarations by
+// kind and name, the keys bold, by file when it holds several; its
+// connections (29-operation-view.js mounts them); the parts calling into it,
+// each caller with what it calls here, folded when long; then the parts it
+// calls into, each with its callees, and the variables it uses there.
 function rmPartView(ctx,node,data){
   var view=rmEl('div','map-part-reading');
+  var title=rmEl('div','map-part-title');title.appendChild(rmPartBox(ctx,node.getAttribute('href'),node.dataset.title,true));view.appendChild(title);
+  if(node.dataset.summary)view.appendChild(rmModelText('p','map-card-summary',node.dataset.summary,node.dataset.summaryRef));
+  var files=data.files||[];
+  if(files.length)view.appendChild(rmEl('p','map-part-files meta',files.join(', ')));
+  function members(into,file){
+    (data.members||[]).forEach(function(kind){
+      var decls=kind.decls.filter(function(position){return !file||data.decls[position].file===file;});
+      if(!decls.length)return;
+      var list=rmEl('section','map-reading-members');
+      list.appendChild(rmCountHeading('h6',{function:'{0} functions',type:'{0} types',variable:'{0} variables'}[kind.kind],decls.length));
+      var names=rmEl('ul','map-reading-names');
+      decls.forEach(function(position){var decl=data.decls[position],item=rmEl('li');item.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at,true));names.appendChild(item);});
+      list.appendChild(names);into.appendChild(list);
+    });
+  }
+  // A part of several files, as Core data structures is of adlist.c,
+  // dict.c, sds.c, zipmap.c and zmalloc.c, lists them file by file.
+  if(files.length>1)files.forEach(function(file){
+    var box=rmEl('section','map-reading-file');box.appendChild(rmEl('h5','map-reading-file-name',file.split('/').pop()));
+    members(box,file);if(box.childElementCount>1)view.appendChild(box);
+  });
+  else members(view,'');
   if(data.in&&data.in.length){
-    var incoming=rmEl('section','map-reading-side map-reading-in');incoming.appendChild(rmEl('h6','',rmT('Called from')));
-    // Many callers fold each part to its line, so the part itself stays
-    // near the top: Server core state had its name below 2,000 px of them.
-    var lines=data.in.reduce(function(sum,peer){return sum+peer.lines.length;},0),folded=lines>12;
+    // Many callers fold the whole list under its count: Server core state
+    // had its own declarations below 2,000 px of them.
+    var lines=data.in.reduce(function(sum,peer){return sum+peer.lines.length;},0),long=lines>12;
+    var incoming=rmEl(long?'details':'section','map-reading-side map-reading-in'),heading=rmEl(long?'summary':'h6','',rmT('Called from'));
+    if(long)heading.appendChild(rmEl('span','map-reading-peer-count',String(lines)));
+    incoming.appendChild(heading);
     data.in.forEach(function(peer){
-      var box=rmEl(folded?'details':'div','map-reading-peer'),head=rmEl(folded?'summary':'div','map-reading-peer-head');
+      var box=rmEl(long?'details':'div','map-reading-peer'),head=rmEl(long?'summary':'div','map-reading-peer-head');
       head.append(rmPeerBox(ctx,peer),rmEl('span','map-reading-peer-count',String(peer.count)));box.appendChild(head);
-      peer.lines.forEach(function(line){
-        var caller=data.decls[line.caller],row=rmEl('div','map-reading-caller');
-        row.appendChild(rmDeclName(caller,rmCallableName(caller),ctx.goDecl(caller),rmEndTitle(ctx,caller,null)));
-        var ends=rmEl('ul','map-reading-ends');line.ends.forEach(function(end){ends.appendChild(rmEndItem(ctx,data,end,'out'));});
-        row.appendChild(ends);box.appendChild(row);
-      });
+      peer.lines.forEach(function(line){box.appendChild(rmCallerLine(ctx,data,line));});
       incoming.appendChild(box);
     });
     view.appendChild(incoming);
   }
-  var title=rmEl('div','map-part-title');title.appendChild(rmPartBox(ctx,node.getAttribute('href'),node.dataset.title,true));view.appendChild(title);
-  if(node.dataset.summary)view.appendChild(rmModelText('p','map-card-summary',node.dataset.summary,node.dataset.summaryRef));
-  if((data.files||[]).length)view.appendChild(rmEl('p','map-part-files meta',data.files.join(', ')));
-  (data.members||[]).forEach(function(members){
-    var list=rmEl('section','map-reading-members');
-    list.appendChild(rmCountHeading('h6',{function:'{0} functions',type:'{0} types',variable:'{0} variables'}[members.kind],members.decls.length));
-    var names=rmEl('ul','map-reading-names');
-    members.decls.forEach(function(position){var decl=data.decls[position],item=rmEl('li');item.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at,true));names.appendChild(item);});
-    list.appendChild(names);view.appendChild(list);
-  });
   if(data.out&&data.out.length){
     var outgoing=rmEl('section','map-reading-side map-reading-out');outgoing.appendChild(rmEl('h6','',rmT('Calls into')));
     data.out.forEach(function(peer){

@@ -686,7 +686,7 @@ function rmCatalogInputClick(event,reveal){
     if(n.dataset.branch==='area'||n.dataset.branch==='component'||partConnections){
       frameConnections=rmEl('div','map-frame-connections-holder');
       if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'',function(part,key){readDeclaration(byID[part],key);})){
-        if(partConnections)partConnections.insertBefore(frameConnections,partConnections.querySelector(':scope>.map-reading-out'));
+        if(partConnections)partConnections.insertBefore(frameConnections,partConnections.querySelector(':scope>.map-reading-in')||partConnections.querySelector(':scope>.map-reading-out'));
         else (card.querySelector('.map-area-composition')||card.querySelector('.map-card-intro'))?.after(frameConnections);
       }else frameConnections=null;
     }

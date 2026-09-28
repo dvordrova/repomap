@@ -173,6 +173,19 @@ func (builder *pageBuilder) dispatch(targetID string) *dispatchFacts {
 	return facts
 }
 
+// handers are the declarations that hand a fold's whole set over (cmdTable
+// passes all 94 as callbacks), by subject ID.
+func (facts *dispatchFacts) handers(fold *dispatchFold) []string {
+	var result []string
+	for row, handed := range facts.handed {
+		if handed == fold && !slices.Contains(result, row[0]) {
+			result = append(result, row[0])
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
 // foldCall marks a card's call with the dispatch fold it belongs to, if any.
 func (builder *pageBuilder) foldCall(call *pageEdgeCall, connection groupindex.Connection) {
 	if call == nil || !strings.HasPrefix(connection.SourceKind, "native_") || connection.From.TargetID != connection.To.TargetID {

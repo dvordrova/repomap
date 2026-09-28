@@ -458,3 +458,10 @@ details.map-reading-peer[open]>summary::before{content:'▾'}
 .system-programs td code{font-size:12px}
 .flow-enabled .system-programs button{border:0;background:transparent;padding:0;font:inherit;font-weight:600;color:var(--link);cursor:pointer;text-align:left}
 .system-programs button:hover{text-decoration:underline}
+/* A part of several files lists its declarations file by file. */
+.map-reading-file{margin:8px 0 4px}
+.map-reading-file-name{margin:0 0 2px;font:600 13px/1.4 var(--mono);color:var(--ink)}
+/* A caller's dispatch into the part, one line, its ends folded under it. */
+details.map-reading-caller>summary{cursor:pointer;list-style-position:outside}
+.map-reading-fan{color:var(--muted);font-size:13px}
+details.map-reading-in>summary{display:flex;gap:8px;cursor:pointer;font-weight:600;font-size:13px}
