@@ -145,23 +145,25 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
     // listed, none chosen; through a callable one registers, that hop is
     // named. Without any, how it gets there is not established.
     (site.outer||[]).forEach(function(outer){
-      var input=inputNode(outer.input),head=rmEl('p','system-path-outer');
+      // One closed fold per outer input: its name and the callables it
+      // registers on the line, its route and each hop inside.
+      var input=inputNode(outer.input),fold=rmEl('details','system-path-outer'),head=rmEl('summary');
       var who=input?rmEl('button','system-catalogue-member',input.dataset.title):rmEl('span','',outer.input);
-      if(input){who.type='button';who.addEventListener('click',function(){choose(input);});}
+      if(input){who.type='button';who.addEventListener('click',function(event){event.preventDefault();choose(input);});}
       var text=rmT('A request for {0} arrives at {1} from {2}:',title,site_name,'\u0001').split('\u0001');
-      head.append(document.createTextNode(text[0]),who,document.createTextNode(text[1]||''));
-      box.appendChild(head);
-      calls(outer.calls||[],box);
-      // Each callable the input registers whose own code reaches the site:
-      // the hop is named, then the calls it makes to the site; how the
-      // input reaches the registering code is folded.
+      head.append(document.createTextNode(text[0]),who,document.createTextNode((text[1]||'').replace(/:\s*$/,'')));
+      var registered=(outer.hops||[]).map(function(hop){return (decls[hop.registers]||{}).name||'';}).filter(Boolean);
+      if(registered.length)head.append(document.createTextNode(' · '+rmT('registers {0}',registered.join(', '))));
+      fold.appendChild(head);
+      calls(outer.calls||[],fold);
       (outer.hops||[]).forEach(function(hop){
         var reg=rmEl('p','system-path-step');var parts=rmT('{0} registers {1}','\u0001','\u0002').split(/[\u0001\u0002]/);
         reg.append(document.createTextNode(parts[0]),document.createTextNode(input?input.dataset.title:''),document.createTextNode(parts[1]),name(hop.registers),document.createTextNode(parts[2]||''));
-        box.appendChild(reg);
-        if((hop.registering||[]).length){var how=rmEl('details','system-path-more');how.appendChild(rmEl('summary','',rmT('How it registers it')));calls(hop.registering,how);box.appendChild(how);}
-        calls(hop.calls||[],box);
+        fold.appendChild(reg);
+        if((hop.registering||[]).length){var how=rmEl('details','system-path-more');how.appendChild(rmEl('summary','',rmT('How it registers it')));calls(hop.registering,how);fold.appendChild(how);}
+        calls(hop.calls||[],fold);
       });
+      box.appendChild(fold);
     });
     if(!(site.outer||[]).length)box.appendChild(rmEl('p','meta',rmT('How a request for {0} gets to {1} is not established.',title,site_name)));
     else if(site.unexplained)box.appendChild(rmEl('p','meta',rmT('Other ways to {0} are not established.',site_name)));
