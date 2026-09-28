@@ -2525,16 +2525,17 @@ func symbolText(object *groupindex.ObjectFacts, name string) string {
 	return ""
 }
 
-// groupSymbols lists a group's declarations, its keys first, each with its
-// place in the code; the map places a part's tiles in this order, so the keys
-// are the last it leaves out. Compiler-named closures are nobody's symbol to
-// look for.
+// groupSymbols lists a group's declarations, its keys first, then its types,
+// then the rest, each with its place in the code; the map places a part's
+// tiles in this order, so the keys are the last it leaves out and a part's
+// data stands before the code that works on it (owner, 2026-09-28).
+// Compiler-named closures are nobody's symbol to look for.
 func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group) (string, string) {
 	type listed struct {
 		id     string
 		symbol pageNodeSymbol
 	}
-	var keys, rest []listed
+	var keys, types, rest []listed
 	for _, id := range group.MemberSubjectIDs {
 		ref, known := builder.subject(targetID, id)
 		if !known {
@@ -2596,9 +2597,13 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 			keys = append(keys, listed{id, symbol})
 			continue
 		}
+		if object.Kind == programindex.ObjectType {
+			types = append(types, listed{id, symbol})
+			continue
+		}
 		rest = append(rest, listed{id, symbol})
 	}
-	all := append(keys, rest...)
+	all := append(append(keys, types...), rest...)
 	if len(all) == 0 {
 		return "", ""
 	}

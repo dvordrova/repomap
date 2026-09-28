@@ -30,7 +30,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   its file line, captions and keys. Stray declarations in a file a part
   holds name the file's part (`box_id`) when it has one; their file stays
   on the map. A file whose code several parts hold (READING, the role split)
-  is on the map through them. GroupsIndex (v17) lists the declarations off
+  is on the map through them. GroupsIndex (since v17) lists the declarations off
   the map in a file a part still holds by their subjects (`subject_ids`),
   under their own reason (`undecided`, or `left_out`/`conflict` for a box
   or a stray method), never as a file off the map; a file no part holds is
@@ -601,8 +601,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   of calls, returns and takes leading to it, so a caller stands left of what
   it calls. Tiles stand by file, the files in the order their first
   declaration is listed and each file's declarations in the order the page
-  lists them, the model's keys first; the file is a hint, and Redis's
-  linked-list functions had stood scattered among the dictionary's. They
+  lists them: the model's keys first, then the types, then the rest, so a
+  part's data stands before the code that works on it (owner, 2026-09-28);
+  the file is a hint, and Redis's linked-list functions had stood scattered
+  among the dictionary's. They
   stack in that order within their column and a column too tall spills into
   the next. A tile is as wide as the longest name among the part's
   declarations, so no name is cut, and the columns share the card's width;

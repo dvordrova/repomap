@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — A part's tiles stand keys, then types, then the rest
+
+- Scope: step C6 of `map-model/step3-plan.md`, third part (owner decision
+  of 2026-09-28: types after keys).
+- **Change.** `groupSymbols` lists a part's declarations as the model's
+  keys, then its types, then the rest; the canvas places the tiles in the
+  page's order within each file (`symbols.mjs` keeps it, sorting nothing
+  else), so a part's data stands before the code that works on it. REPORT
+  says so; its off-map sentence now names GroupsIndex "since v17".
+- **Tests.** `TestPartTilesStandKeysThenTypesThenTheRest` (a key function,
+  two types, then a function, whatever their lines); with types among the
+  rest it fails (`step3/impl-revert-c4c6.log`).
+  `TestPartTilesCarryTheirFileAndSource` no longer pins the incidental
+  order of its two tiles.
+
 ## 2026-09-28 — An area is purple when any part in it is the domain
 
 - Scope: step C6 of `map-model/step3-plan.md`, second part, with
