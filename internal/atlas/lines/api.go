@@ -28,8 +28,8 @@ const (
 //go:embed prompts/api.md
 var apiPrompt string
 
-//go:embed prompts/api_binds_options.md
-var apiBindsOptionsText string
+//go:embed prompts/entry_options.md
+var entryOptionsText string
 
 //go:embed prompts/api_publishes_options.md
 var apiPublishesOptionsText string
@@ -41,12 +41,35 @@ var apiTalksOptionsText string
 var publishPrompt string
 
 // The criteria of every option of the api questions, read once from their
-// embedded Markdown.
+// embedded Markdown. Every question that asks what something of the
+// repository becomes on our map reads one file: an option means the same
+// in each of them.
 var (
-	apiBindsOptions     = mustOptions("prompts/api_binds_options.md", apiBindsOptionsText, append(atlas.EntryKinds(), APIMiddleware, APINone))
+	entryOptions        = mustOptions("prompts/entry_options.md", entryOptionsText, entryOptionNames())
 	apiPublishesOptions = mustOptions("prompts/api_publishes_options.md", apiPublishesOptionsText, []string{APIServes, APINone})
 	apiTalksOptions     = mustOptions("prompts/api_talks_options.md", apiTalksOptionsText, TalksOptions())
 )
+
+// entryOptionNames are every option an entry question may offer: the entry
+// kinds, middleware and none.
+func entryOptionNames() []string {
+	return append(atlas.EntryKinds(), APIMiddleware, APINone)
+}
+
+// EntryCriteria are the criteria of the named entry options, read from the
+// one criteria file every entry question shares. A name the file does not
+// define is a defect of the question asking it.
+func EntryCriteria(names ...string) map[string]llm.Criteria {
+	criteria := make(map[string]llm.Criteria, len(names))
+	for _, name := range names {
+		option, ok := entryOptions[name]
+		if !ok {
+			panic(fmt.Sprintf("lines: prompts/entry_options.md has no option %q", name))
+		}
+		criteria[name] = option
+	}
+	return criteria
+}
 
 // API reads the external symbols the repository calls, one question per
 // symbol and cell, each a closed choice whose every option, none among them,
@@ -64,7 +87,11 @@ var (
 // 2/1 (select serves), 0/0 and 12/0. Jev with them: 0/0, 3/2 and 6/2, with
 // 3 and 3 answers left explicitly unanswered under table.ClassifierMargin;
 // inet_aton, accept, listen, bind, connect and gethostbyname were right in
-// every draw of four rounds.
+// every draw of four rounds. With the one entry criteria file (2026-09-28),
+// the saved binds questions of Redis, litestream, python-tutorial-game and
+// pykrx (37 symbols, 5 draws against 5 control draws) kept every entry but
+// two, each for a stated reason: a flag set's usage printer is printed text
+// (none) and an errgroup's goroutine does one piece of work and ends (none).
 func API(handed bool) table.Definition {
 	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v6", System: apiPrompt, Classifier: true}
 	if handed {
@@ -72,7 +99,7 @@ func API(handed bool) table.Definition {
 		// The two decisions are independent: a near-tie on one leaves the
 		// other standing.
 		def.Columns = []table.Column{
-			{Name: "binds", Kind: table.Choice, Options: append(atlas.EntryKinds(), APIMiddleware, APINone), Criteria: apiBindsOptions, Item: "outside_symbol", Alone: true,
+			{Name: "binds", Kind: table.Choice, Options: entryOptionNames(), Criteria: EntryCriteria(entryOptionNames()...), Item: "outside_symbol", Alone: true,
 				Ask: "What does the repository's callable handed to `outside_symbol` become on our map?"},
 			{Name: "publishes", Kind: table.Choice, Options: []string{APIServes, APINone}, Criteria: apiPublishesOptions, Item: "outside_symbol", Alone: true,
 				Ask: "Does this call to `outside_symbol` make what the repository hands it reachable by other programs?"},

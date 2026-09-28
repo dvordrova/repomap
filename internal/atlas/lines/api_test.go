@@ -1,7 +1,9 @@
 package lines
 
 import (
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/table"
@@ -93,4 +95,57 @@ func TestHandedAPIDecisionsFailAlone(t *testing.T) {
 	if err != nil || result.Answers[0]["binds"] != "extension" || len(result.Rejections) != 1 || result.Rejections[0].Cell != "publishes" {
 		t.Fatalf("a near-tie on publishes cost the symbol its binds: %+v %v", result, err)
 	}
+}
+
+// Every question that asks what something of the repository becomes on our
+// map reads one criteria file: an option such as command or none means the
+// same wherever it is offered, and no question keeps a copy of its own.
+func TestEveryEntryQuestionReadsOneCriteria(t *testing.T) {
+	asked := 0
+	for _, question := range entryQuestions() {
+		for _, column := range question.def.Columns {
+			if column.Name != question.column {
+				continue
+			}
+			for _, option := range column.Options {
+				asked++
+				want, ok := entryOptions[option]
+				if got := column.Criteria[option]; !ok || !reflect.DeepEqual(got, want) {
+					t.Fatalf("%s %s asks %s with its own criteria:\n got %+v\nwant %+v", question.def.Contract, column.Name, option, got, want)
+				}
+			}
+		}
+	}
+	if asked == 0 {
+		t.Fatal("no entry question was found")
+	}
+}
+
+// The criteria describe every repository in generic words: an example
+// taken from a repository the questions were tuned on would teach the model
+// that repository's answers.
+func TestEntryCriteriaNameNoRepositoryItem(t *testing.T) {
+	text := strings.ToLower(entryOptionsText)
+	for _, name := range []string{"accepthandler", "servercron", "readqueryfromclient", "beforesleep", "cmdtable", "getcommand", "kvd", "redis", "symstable", "litestream"} {
+		if strings.Contains(text, name) {
+			t.Fatalf("prompts/entry_options.md names %s", name)
+		}
+	}
+	for _, name := range entryOptionNames() {
+		if _, ok := entryOptions[name]; !ok {
+			t.Fatalf("prompts/entry_options.md has no option %s", name)
+		}
+	}
+}
+
+// entryQuestions are the columns that ask what something of the
+// repository becomes on our map.
+func entryQuestions() []struct {
+	def    table.Definition
+	column string
+} {
+	return []struct {
+		def    table.Definition
+		column string
+	}{{API(true), "binds"}}
 }

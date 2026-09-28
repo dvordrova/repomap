@@ -737,16 +737,25 @@ and its outside systems, the other running programs it talks to; the
 operating system, the runtime and linked libraries are the program's own
 work. Every question is one closed choice, and every option, `none`
 included, carries its criteria (what it is, what it includes, what it is
-not for, examples) from embedded Markdown beside the stage. A handed symbol
+not for, examples) from embedded Markdown beside the stage. Every question
+that asks what something of the repository becomes on our map reads one
+criteria file, `prompts/entry_options.md`: an option such as `command` or
+`none` means the same wherever it is offered, and no question keeps a copy
+of its own. Its examples are generic; none names a repository the
+questions were measured on. A handed symbol
 is asked `binds`, what the callable becomes: `request` (what a client sends
 over a connection, whatever the protocol: a route, an RPC method, a command
 a client sends), `command` (a person runs it from a command line or task
 runner), `interaction` (a person's action in a user interface), `scheduled`
-(a timer runs it), `continuous` (it runs for as long as the program does,
-on a thread, task or loop of its own), `queue_consumer`, `extension`,
-`middleware` (it runs around or before the handlers; such a symbol binds
-and publishes nothing) or `none` (the symbol runs it in place, wraps or
-stores it, or runs it only when the process is signalled or fails). It is
+(a timer the program keeps for as long as it runs calls it again and again,
+or a scheduler runs it at set times; a one-shot delay is none), `continuous`
+(it runs for as long as the program does, on a thread, task or loop of its
+own; a thread that does one piece of work and ends is none),
+`queue_consumer`, `extension`, `middleware` (it runs around or before the
+handlers; such a symbol binds and publishes nothing) or `none` (a step of
+work already under way, such as reading or writing a connection an earlier
+entry accepted; the symbol runs it in place, wraps or stores it; printed
+text; or it runs only on a signal, at exit or on a failure). It is
 also asked `publishes`: `serves` (the call starts serving what it is
 handed) or `none`. The two are independent (`Alone`): a near-tie on one
 leaves the other standing. Every other symbol is asked one `talks`

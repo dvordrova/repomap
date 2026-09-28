@@ -1,5 +1,50 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Every entry question reads one criteria file (inputs pass 1, A1)
+
+- `internal/atlas/lines/prompts/entry_options.md` replaces
+  `api_binds_options.md`: the nine options an entry question may offer
+  (the seven entry kinds, `middleware`, `none`) with generic examples.
+  `lines.EntryCriteria(names…)` gives any entry question its subset and
+  panics on a name the file does not define; `binds` reads it. Merged from
+  the binds criteria and the inputs probe's v4 wording: `request` excludes
+  reading or writing a connection an earlier entry accepted; `scheduled` is
+  a timer the program keeps (a one-shot delay is none); `none` names
+  printed text, the program's own name, string comparison and conversion,
+  a thread that does one piece of work and ends, and signal, exit and
+  failure handlers.
+- **Measured before A2** (correction 5; `inputs/pass1/merge/`): the saved
+  round-1 `binds` questions of four ordinary runs on the default cache
+  (Redis 4, litestream 23, python-tutorial-game 4, pykrx 6 symbols), five
+  draws under the merged criteria against five control draws under the
+  criteria they were asked with, jev-1.13.0, margin 0.10, about 1.9 MB
+  (under $0.03). Every accepted entry kept its kind in every draw
+  (pthread_create continuous 0.96, the command table's field request
+  0.88–0.93, AddTool and HandleFunc request, svc.Run extension 0.17–0.35,
+  fastapi get/post request, requestAnimationFrame scheduled 0.19–0.29, the
+  three smithy middlewares 0.64–0.84) except two, each for a stated reason:
+  - `flag.FlagSet` (`fs.Usage = c.Usage`, litestream): command at a 0.19–0.31
+    lead in the control → none (0.14–0.17) or a near-tie (0.08–0.09). The
+    handed callable prints the usage text, which the criteria make none. It
+    removes 14 `X.Usage` commands from cmd/litestream and 6 from
+    cmd/litestream-test; litestream's subcommands are dispatched by a Go
+    `switch`, which is no fact (a recorded missing equivalent), so pass 1
+    shows their flags (A3) and not the subcommand names.
+  - `errgroup.Group.Go` (litestream): continuous at 0.36–0.52 in the
+    control → none (0.10–0.18). Its three sites (store.go:176,
+    oss/replica_client.go:453, s3/replica_client.go:1436) open one database
+    or fetch one object each and end; the criteria's "a thread that does one
+    piece of work and ends" is none. It removes 3 continuous inputs.
+  No accepted entry disappeared without a reason, so A1 goes on.
+- Tests: `TestEveryEntryQuestionReadsOneCriteria` (every entry column's
+  options carry exactly the shared file's criteria) and
+  `TestEntryCriteriaNameNoRepositoryItem`. Both fail on revert (build), and
+  the first on a mutation giving binds its own `none`
+  (`inputs/pass1-revert.log`).
+- Cache: the round-1 (`binds`) request bytes change once; `talks` and
+  `publishes` are unchanged.
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Moved from REPORT and READING: run measurements and Redis narratives (f4)
 
 - **CURRENT.** The "Owner decisions of 2026-09-28" bullet is split: the
