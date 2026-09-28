@@ -94,6 +94,13 @@ type DispatchSite struct {
 	Alternatives  []string
 	OperationIDs  []string
 	ReachedFrom   []DispatchReach
+	// Outer are the inputs a request dispatched here arrives from, directly
+	// or through a callable one of them registers (outer.go); Unexplained
+	// says a call into the site's declaration comes from code no input or
+	// registered
+	// callable reaches.
+	Outer       []OuterInput
+	Unexplained bool
 }
 
 // DispatchReach is one input reaching a dispatch site, with every followed
@@ -247,6 +254,7 @@ func Derive(index *Index) {
 	index.Entries = entries(index)
 	index.Catalogues = catalogues(index)
 	index.Launch = graph.launch(index.Reach)
+	graph.outerInputs(index.Dispatch, index.Reach)
 	graph.phases()
 }
 

@@ -141,7 +141,25 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
     // How many inputs are dispatched there and which handler serves
     // several of them, where a reader compares the counts.
     at.title=[rmT('{0} inputs are dispatched here',site.inputs)].concat(rmSharedHandlers(site,decls,function(id){return inputNode(id)?.dataset.title||'';})).join('\n');
-    box.appendChild(rmEl('p','meta',rmT('How a request for {0} gets to {1} is not established.',title,site_name)));
+    // The outer inputs a request dispatched here arrives from (u6): each
+    // listed, none chosen; through a callable one registers, that hop is
+    // named. Without any, how it gets there is not established.
+    (site.outer||[]).forEach(function(outer){
+      var input=inputNode(outer.input),head=rmEl('p','system-path-outer');
+      var who=input?rmEl('button','system-catalogue-member',input.dataset.title):rmEl('span','',outer.input);
+      if(input){who.type='button';who.addEventListener('click',function(){choose(input);});}
+      var text=rmT('A request for {0} arrives at {1} from {2}:',title,site_name,'\u0001').split('\u0001');
+      head.append(document.createTextNode(text[0]),who,document.createTextNode(text[1]||''));
+      box.appendChild(head);
+      if(outer.registers!=null){
+        var reg=rmEl('p','system-path-step');var parts=rmT('{0} registers {1}','\u0001','\u0002').split(/[\u0001\u0002]/);
+        reg.append(document.createTextNode(parts[0]),document.createTextNode(input?input.dataset.title:''),document.createTextNode(parts[1]),name(outer.registers),document.createTextNode(parts[2]||''));
+        box.appendChild(reg);calls(outer.registering||[],box);
+      }
+      calls(outer.calls||[],box);
+    });
+    if(!(site.outer||[]).length)box.appendChild(rmEl('p','meta',rmT('How a request for {0} gets to {1} is not established.',title,site_name)));
+    else if(site.unexplained)box.appendChild(rmEl('p','meta',rmT('Other ways to {0} are not established.',site_name)));
     section.appendChild(box);
   });
   (path.reaches||[]).forEach(function(site){

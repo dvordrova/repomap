@@ -48,6 +48,20 @@ type pageDispatched struct {
 	Shared      []pageSharedHandler `json:"shared,omitempty"`
 	All         bool                `json:"all,omitempty"`
 	ReachedFrom []string            `json:"reached_from,omitempty"`
+	// Outer are the inputs a request dispatched here arrives from (u6):
+	// each with the callable it registers, when it arrives through one, and
+	// the calls on a route to the site; Unexplained says other ways to the
+	// site are not established.
+	Outer       []pageOuter `json:"outer,omitempty"`
+	Unexplained bool        `json:"unexplained,omitempty"`
+}
+
+// pageOuter is one outer input of a dispatch site as a reading lists it.
+type pageOuter struct {
+	Input       string     `json:"input"`
+	Registers   *int       `json:"registers,omitempty"`
+	Registering []pageCall `json:"registering,omitempty"`
+	Calls       []pageCall `json:"calls"`
 }
 
 // pageSharedHandler is a handler of several inputs dispatched at one site,
@@ -235,6 +249,24 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 		for _, reached := range site.ReachedFrom {
 			dispatched.ReachedFrom = append(dispatched.ReachedFrom, inputNode(reached.OperationID))
 		}
+		for _, outer := range site.Outer {
+			entry := pageOuter{Input: inputNode(outer.OperationID), Calls: []pageCall{}}
+			if outer.Registered != "" {
+				registered := decls.of(outer.Registered)
+				entry.Registers = &registered
+				for _, edge := range outer.Registering {
+					entry.Registering = appendCall(entry.Registering, decls.call(index.StructuralEdges[edge]))
+				}
+				if outer.HandOver >= 0 {
+					entry.Registering = appendCall(entry.Registering, decls.call(index.StructuralEdges[outer.HandOver]))
+				}
+			}
+			for _, edge := range outer.Edges {
+				entry.Calls = appendCall(entry.Calls, decls.call(index.StructuralEdges[edge]))
+			}
+			dispatched.Outer = append(dispatched.Outer, entry)
+		}
+		dispatched.Unexplained = site.Unexplained
 		path.Dispatched = append(path.Dispatched, dispatched)
 	}
 	for _, site := range index.Dispatch {
@@ -331,6 +363,9 @@ func (path *pageInputPath) renameNodes(rename func(string) string) {
 	}
 	for i := range path.Dispatched {
 		ids(path.Dispatched[i].ReachedFrom)
+		for j := range path.Dispatched[i].Outer {
+			path.Dispatched[i].Outer[j].Input = rename(path.Dispatched[i].Outer[j].Input)
+		}
 		for j := range path.Dispatched[i].Shared {
 			ids(path.Dispatched[i].Shared[j].Inputs)
 		}
