@@ -1,5 +1,43 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — One destination list per outgoing row, whatever shares its window (speed mode)
+
+- **Problem (lead):** litestream's azblob `DeleteBlob` at
+  abs/replica_client.go:303, alone in its `atlas_boundaries` window, was
+  named "S3 storage"; the one at :344, beside its siblings, "other: Azure
+  Blob Storage". The saved requests (run 20260928-104647) show both windows
+  offered the identical 45-entry list: no window-mate brought an entry. The
+  list had no Azure entry and the azblob import annotated nothing, so a row
+  asked alone took the nearest listed store; oss (2 rows) and a second
+  azblob pager did the same, and GCS clients were "Google".
+- **Change (c4a871f3, b362538b):** the known systems list Azure Blob
+  Storage, Google Cloud Storage, Alibaba Cloud OSS, SFTP server and WebDAV
+  server; a system of several words may take one from a package host
+  (`cloud.google.com/go/storage`), a host alone still implies nothing. An
+  outgoing row's catalogue is annotated with its own targets' dependencies
+  (the owner-less window no longer unions other targets'). The prompt
+  explains an entry's `dependencies` and says another system of the same
+  sort is `other:`. Test: `TestOneOutsideSystemIsOfferedTheSameDestinationsInEveryWindow`
+  (two azblob calls in different windows, one beside an S3 call, get
+  byte-identical choices; another target's gateway row keeps its own list
+  and its `other:` name). Fails with either half reverted.
+- **Acceptance (default cache, binary 3b9ea79efb25, run
+  20260928-115417, exit 0, 98 live boundary windows):** :303 and :344 are
+  both Azure Blob Storage; every abs/oss/gs/sftp/webdav row now has one
+  destination per backend. Against 20260928-112717, 18 of 198 outgoing
+  destinations changed: azblob ×2, oss ×2 and GCS ×2 corrected; WebDAV ×9
+  renamed "WebDAV server"; "Unix socket" ×2 joined "Unix domain socket";
+  "heartbeat endpoint" became "heartbeat service". Still wrong: db.go:992
+  `sql.DB.Conn` is PostgreSQL (it was before; SQLite in the intermediate run).
+  The intermediate run (c4a871f3, 20260928-115102) showed free text differs
+  per window ("SFTP" beside "SFTP server", a capitalised control socket) and
+  one window answered 1 of 3 rows. Rendered to the scratchpad
+  `redis-r2/run/latest-litestream.html`.
+- **Cost:** DeepSeek ≈ 0.66 M input (0.31 M cache hits) + 7 k output over two
+  runs, about $0.13; no live Jev calls.
+- Speed mode: build, vet and the destinations, lines, reading and report
+  packages pass; no full `make test`.
+
 ## 2026-09-28 — What a call's words become is asked of each call (speed mode)
 
 - **Problem (lead, owner "пробуй"):** `enters` was decided once per outside
