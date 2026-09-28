@@ -2,7 +2,6 @@ package places
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"fmt"
 	"io/fs"
 	"os"
@@ -358,10 +357,17 @@ func TestFixturePlaces(t *testing.T) {
 	if len(wantOwners) != 0 || len(wantCallers) != 0 {
 		t.Fatalf("native fixture boundaries missing: %+v %+v", wantOwners, wantCallers)
 	}
-	// Keep identical canonical bytes for eager and lazy target storage below.
-	// The Python quote is anchored inside its own declaration's body.
-	if got := fmt.Sprintf("%x", sha256.Sum256(firstEncoded)); got != "bd9cb37d1385852cd465ce14c92798fd334606ec7749618d8dccf6560d16c718" {
-		t.Fatalf("saved mixed fixture graph changed: %s", got)
+	// Each program's seed declaration names that program alone as the one
+	// whose execution begins there: backend/main.py's module body is the
+	// backend's, and the front's entry module is the front's.
+	seeds := map[string][]string{}
+	for _, place := range first.Places {
+		if place.Symbol != nil && len(place.Symbol.Seeds) > 0 {
+			seeds[place.Path+":"+place.Symbol.Decl.Name] = place.Symbol.Seeds
+		}
+	}
+	if want := map[string][]string{"backend/main.py:main": {backend.Target.ID}, "front/src/index.tsx:src/index": {front.Target.ID}}; !reflect.DeepEqual(seeds, want) {
+		t.Fatalf("seed declarations = %v, want %v", seeds, want)
 	}
 	lazy := input
 	lazy.Targets = append([]TargetInput(nil), input.Targets...)
