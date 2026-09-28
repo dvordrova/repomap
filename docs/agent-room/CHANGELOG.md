@@ -1,5 +1,58 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Each outside system named once per package; the known-systems list is gone (speed mode)
+
+- **Problem (owner: yes, "промпт сразу поправь на норм"):** the
+  destination catalogue was a hand-kept list of known systems
+  (`internal/atlas/destinations`), grown one entry at a time (c4a871f3,
+  b362538b), and the report folded free text onto it by host and word.
+- **Change (7ac6df61):** code groups outgoing rows by the outside package
+  of their call; one DeepSeek question per package for the whole run
+  (`lines.Systems`, `atlas_systems`, memoized per package): the package,
+  its dependency record (module and version) and every symbol of it the
+  program calls, one call of each as written; the answer is a short system
+  name or `none`. Each outgoing row is offered its own targets' catalogue of
+  these names (`lines.Destinations`; `none` gives no entry) plus `other:`.
+  The list, its tests and every host/word fold are deleted; the report
+  groups by the stored name without a parenthetical. `fixed_boundaries.md`
+  rewritten short. Reading input 19.
+- **Fix after the first run (73251559):** a query fact took the package of
+  the `fmt.Sprintf` formatting its SQL at its site (two litestream-test
+  queries named "fmt"); a row now takes the package of its own call only
+  (`callsExternal`). Rows through a package answered `none` wrote the
+  package or a host (`other: net` ×7, `localhost` ×2); the destination
+  instruction now says to name the service or program at the other end, the
+  entry listing the row's package first, and that a package, protocol,
+  host, URL or key is not a name. Test:
+  `TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow` (one
+  question per package; two azblob calls in different windows get the same
+  catalogue and name; `net/http` answered none gives no entry; the query
+  fact carries no package; fails with the package rule reverted).
+- **Acceptance, litestream (binary 400e81aaf333, run 20260928-123728,
+  exit 0):** 14 packages named: boto3, s3, s3/manager → Amazon S3;
+  azblob, azcore/runtime → Azure Blob Storage; cloud.google.com/go/storage
+  → Google Cloud Storage; oss → Alibaba Cloud OSS; nats.go, jetstream →
+  NATS; pkg/sftp → SFTP; gowebdav → WebDAV; database/sql → SQLite; net,
+  net/http → none. Every backend is exactly one destination. Against
+  20260928-115417: db.go:992 `sql.DB.Conn` PostgreSQL → SQLite (fixed);
+  names now follow the per-package answer ("S3 storage" → "Amazon S3",
+  "SFTP server" → "SFTP"). Still free text per row: the seven control-socket
+  requests are "litestream control socket" ×5, "litestream daemon control
+  socket" ×1 and "localhost" ×1 (a host despite the prompt); shrink.go:252
+  once "other: fmt" beside SQLite (its destination chain is the formatting
+  call); 5 sql rows unanswered ("row was not answered", 2 windows).
+- **Redis (run 20260928-123903, exit 0, cached):** netdb.h and
+  sys/socket.h → none, so no entry; destinations unchanged against
+  20260928-112659: "DNS resolver" (gethostbyname) and "TCP endpoint"
+  (connect) in each of redis-server, redis-cli and redis-benchmark.
+- **Cost:** DeepSeek ≈ 1.01 M input (0.24 M cache hits) + 23 k output over
+  two litestream runs, about $0.2, of which this stream's own requests are
+  the boundaries (2 × 97 windows) and one systems call; the first run also
+  re-bought 229 Jev `atlas_api` calls (3.7 M input, ≈ $0.16) and glossary,
+  orientation and joints calls whose requests other streams changed.
+- Speed mode: build, vet, and the lines, reading, report and run packages
+  pass on HEAD plus the first commit alone; no full `make test`.
+
 ## 2026-09-28 — One destination list per outgoing row, whatever shares its window (speed mode)
 
 - **Problem (lead):** litestream's azblob `DeleteBlob` at
