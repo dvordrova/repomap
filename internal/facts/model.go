@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 4
+	Version          = 5
 	ArtifactFilename = "facts.json"
 
 	digestDomain = "repomap-facts-v3\x00"
@@ -70,13 +70,16 @@ const (
 	// their human-readable labels are not architecture classifications.
 	KindEntity   Kind = "entity"
 	KindRelation Kind = "relation"
+	// KindUnanalysedFile is an inspected file written in a language no
+	// adapter analyses: its path, its language (Key) and its lines.
+	KindUnanalysedFile Kind = "unanalysed_file"
 )
 
 func (kind Kind) Valid() bool {
 	switch kind {
 	case KindEntrypoint, KindRegistration, KindSQLQuery, KindConfigRead,
 		KindDynamicExecution, KindManifest, KindTODO,
-		KindDeadModule, KindNegative, KindDependency, KindImport, KindEntity, KindRelation:
+		KindDeadModule, KindNegative, KindDependency, KindImport, KindEntity, KindRelation, KindUnanalysedFile:
 		return true
 	default:
 		return false
@@ -193,8 +196,11 @@ type Fact struct {
 	Text       string     `json:"text,omitempty"`
 	Values     []string   `json:"values,omitempty"`
 	Resolution Resolution `json:"resolution,omitempty"`
-	Refs       []string   `json:"refs,omitempty"`
-	Evidence   []Anchor   `json:"evidence,omitempty"`
+	// Lines is how many lines an unanalysed file holds; 0 when they could
+	// not be counted.
+	Lines    int      `json:"lines,omitempty"`
+	Refs     []string `json:"refs,omitempty"`
+	Evidence []Anchor `json:"evidence,omitempty"`
 	// Extractor names the producer of an extension fact, including built-ins.
 	Extractor string `json:"extractor,omitempty"`
 }
@@ -487,6 +493,10 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 	case KindTODO:
 		if fact.Text == "" || fact.Anchor == nil {
 			return fmt.Errorf("todo requires text and anchor")
+		}
+	case KindUnanalysedFile:
+		if fact.Key == "" || fact.Anchor == nil || fact.Lines < 0 {
+			return fmt.Errorf("unanalysed_file requires its language and path")
 		}
 	case KindDeadModule, KindImport:
 		if fact.Path == "" {

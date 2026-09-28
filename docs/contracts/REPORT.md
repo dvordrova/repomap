@@ -1302,10 +1302,14 @@ failed, is rendered by the server through the same `RenderServedPage`.
   labeled. `facts.json` holds the anchored fact layer: entrypoints,
   registrations (call word, literals, stated verb, callable handed over),
   SQL statements with their tables, environment keys, the places where the program runs code it was given,
-  manifest rows, TODO markers, imports, dead modules, negatives, and
-  dependencies. A negative says only what it knows: missing tests read "No
+  manifest rows, TODO markers, imports, dead modules, negatives,
+  dependencies, and the files in languages no adapter analyses with their
+  language and lines. A negative says only what it knows: missing tests read "No
   recognized test files found in the inspected paths", never "No test
-  files". Routes, client requests and the portals between targets are
+  files". Beside the negatives, "What is missing" names that unanalysed code
+  by language, the most lines first, each file with its lines
+  (`test-redis.tcl · 2 083 lines`), so an unrecognised test suite is not read
+  as no tests. Routes, client requests and the portals between targets are
   not facts: they are registrations the reading stage classified, read from
   the GroupsIndex operations and outbound rows and joined on literals in the
   report. `claims.json` holds quotes with their

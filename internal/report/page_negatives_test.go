@@ -1,6 +1,9 @@
 package report
 
 import (
+	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/facts"
@@ -45,5 +48,34 @@ func TestNoTestsNegativeSaysOnlyWhatIsRecognized(t *testing.T) {
 				t.Fatalf("negative %d = %q, want %q", i, got, want)
 			}
 		}
+	}
+}
+
+// Code no adapter analyses is named beside the negatives, by language with
+// its files: the most code first, the biggest file first, so "No recognized
+// test files" stands next to test-redis.tcl's 2,083 lines.
+func TestUnanalysedFilesStandByLanguageMostCodeFirst(t *testing.T) {
+	file := func(path, language string, lines int) facts.Fact {
+		return facts.Fact{Kind: facts.KindUnanalysedFile, Anchor: &facts.Anchor{Path: path}, Key: language, Lines: lines}
+	}
+	data := &ReportData{Facts: &facts.Result{Facts: []facts.Fact{
+		file("redis.tcl", "Tcl", 131), file("test-redis.tcl", "Tcl", 2083), file("utils/build-static-symbols.tcl", "Tcl", 22),
+		file("utils/redis-copy.rb", "Ruby", 80), file("utils/redis-sha1.rb", "Ruby", 52), file("utils/unreadable.rb", "Ruby", 0),
+	}}}
+	view := &pageView{}
+	(&pageBuilder{data: data, links: newPageLinks(data)}).negatives(view)
+	var said []string
+	for _, language := range view.Unanalysed {
+		line := fmt.Sprintf("%s %d %s:", language.Language, language.Count, language.Lines)
+		for _, file := range language.Files {
+			line += " " + file.Anchor.Path + " " + file.Lines
+		}
+		said = append(said, strings.TrimSpace(line))
+	}
+	if want := []string{
+		"Tcl 3 2 236: test-redis.tcl 2 083 redis.tcl 131 utils/build-static-symbols.tcl 22",
+		"Ruby 3 132: utils/redis-copy.rb 80 utils/redis-sha1.rb 52 utils/unreadable.rb",
+	}; !slices.Equal(said, want) {
+		t.Fatalf("unanalysed code = %q, want %q", said, want)
 	}
 }

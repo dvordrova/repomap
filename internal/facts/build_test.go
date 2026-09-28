@@ -2,8 +2,10 @@ package facts
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -636,5 +638,47 @@ func TestPackageInitEdgesFollowPythonImport(t *testing.T) {
 	}
 	if _, ok := edges["src/pkg/sub/__init__.py"]["src/pkg/sub/__init__.py"]; ok {
 		t.Fatal("a package init reaches itself")
+	}
+}
+
+// Code in a language no adapter analyses is named with its language and its
+// lines, through the ordinary filesystem inventory: Redis's tests live in
+// test-redis.tcl, a path the corpus lists but never reads, and "No
+// recognized test files" had read as "no tests". An extensionless script
+// is named by its interpreter; an analysed language, a document and a
+// Python script are not listed.
+func TestBuildNamesFilesInLanguagesNoAdapterAnalyses(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"test-redis.tcl":            "proc test {} {\n  puts ok\n}\nputs done",
+		"utils/redis-copy.rb":       "require 'redis'\n",
+		"utils/redis_init_script":   "#!/bin/sh\necho start\n",
+		"utils/tool":                "#!/usr/bin/env python3\nprint(1)\n",
+		"redis.c":                   "int main(void) { return 0; }\n",
+		"README":                    "Redis\n",
+		"design-documents/VM.notes": "notes\n",
+	} {
+		file := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repository, err := corpus.Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	if _, readable := repository.ID("test-redis.tcl"); readable {
+		t.Fatal("test must exercise a path outside readable source content")
+	}
+	var listed []string
+	for _, row := range mustBuild(t, Input{Repository: repository}).OfKind(KindUnanalysedFile) {
+		listed = append(listed, fmt.Sprintf("%s %s %d", row.Anchor.Path, row.Key, row.Lines))
+	}
+	if want := []string{"test-redis.tcl Tcl 4", "utils/redis-copy.rb Ruby 1", "utils/redis_init_script Shell 2"}; !slices.Equal(listed, want) {
+		t.Fatalf("unanalysed files = %q, want %q", listed, want)
 	}
 }

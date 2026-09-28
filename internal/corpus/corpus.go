@@ -3,6 +3,7 @@
 package corpus
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,7 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -334,6 +336,33 @@ func (corpus *Corpus) VisiblePaths() []string {
 		return nil
 	}
 	return append([]string(nil), corpus.visiblePaths...)
+}
+
+// Lines counts the lines of one visible file through the same confined
+// no-symlink reader, whether or not the analysis reads it: a file in a
+// language no adapter analyses (test-redis.tcl) is listed with its size and
+// never read into any analysis. A last line without a newline counts.
+func (corpus *Corpus) Lines(filePath string) (int, error) {
+	if corpus == nil {
+		return 0, fmt.Errorf("repository corpus: corpus is not initialized")
+	}
+	if _, visible := slices.BinarySearch(corpus.visiblePaths, filePath); !visible || ForbiddenPath(filePath) {
+		return 0, fmt.Errorf("repository corpus: %q is not a visible path", filePath)
+	}
+	corpus.mu.RLock()
+	defer corpus.mu.RUnlock()
+	if corpus.closed || corpus.reader == nil {
+		return 0, fmt.Errorf("repository corpus: corpus is closed")
+	}
+	content, err := corpus.reader.ReadFileNoSymlinksAll(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("repository corpus: count lines of %s: %w", filePath, err)
+	}
+	lines := bytes.Count(content.Bytes, []byte{'\n'})
+	if len(content.Bytes) > 0 && content.Bytes[len(content.Bytes)-1] != '\n' {
+		lines++
+	}
+	return lines, nil
 }
 
 // Info resolves one exact FileID and returns its sealed identity.

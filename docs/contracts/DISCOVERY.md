@@ -58,6 +58,11 @@ to exclude; it is separate from `.gitignore`. Installed dependency trees,
 virtual environments and known caches are excluded. A directory named `build`,
 `dist` or `coverage` alone is not grounds to omit its sources. The current run's
 output directory is excluded when it is inside the analyzed directory.
+Every other inspected path stays listed without a readable identity. Of those,
+a file whose extension (or, without one, whose `#!` interpreter) names a
+language no adapter analyses (`test-redis.tcl`, Tcl) has its lines counted
+through the same confined reader and becomes an `unanalysed_file` fact with
+its language; its content enters no analysis.
 
 Remaining integration work: ordinary repository-state capture still requires
 a Git HEAD, and claims extraction and report validation still require a

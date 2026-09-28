@@ -1,10 +1,12 @@
 package report
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,6 +68,7 @@ type pageView struct {
 	PortalsMissing   string
 	Boundaries       []pageBoundary
 	Negatives        []pageNegative
+	Unanalysed       []pageUnanalysed
 	NegativesMissing string
 	Recipe           []pageRecipe
 	RecipeMissing    string
@@ -185,6 +188,25 @@ type pageRoutePath struct {
 type pageNegative struct {
 	Text   string
 	Anchor *pageAnchor
+}
+
+// pageUnanalysed is one language no adapter analyses, with every file of
+// the repository written in it (facts.KindUnanalysedFile): the most code
+// first, a file with more lines before one with fewer. Lines are the
+// language's total and a file's own, grouped; a file whose lines could not
+// be counted has none.
+type pageUnanalysed struct {
+	Language string
+	Count    int
+	Lines    string
+	Files    []pageUnanalysedFile
+	lines    int
+}
+
+type pageUnanalysedFile struct {
+	Anchor pageAnchor
+	Lines  string
+	lines  int
 }
 
 type pageRecipe struct {
@@ -745,6 +767,33 @@ func (builder *pageBuilder) negatives(view *pageView) {
 	if len(view.Negatives) == 0 {
 		view.NegativesMissing = "Nothing is missing among README, tests, Dockerfile and CI."
 	}
+	byLanguage := map[string]int{}
+	for _, fact := range builder.data.Facts.OfKind(facts.KindUnanalysedFile) {
+		at, known := byLanguage[fact.Key]
+		if !known {
+			at = len(view.Unanalysed)
+			byLanguage[fact.Key] = at
+			view.Unanalysed = append(view.Unanalysed, pageUnanalysed{Language: fact.Key})
+		}
+		file := pageUnanalysedFile{Anchor: builder.links.anchor(fact.Anchor.Path, 0, 0), lines: fact.Lines}
+		if fact.Lines > 0 {
+			file.Lines = thousands(fact.Lines)
+		}
+		language := &view.Unanalysed[at]
+		language.Files = append(language.Files, file)
+		language.Count++
+		language.lines += fact.Lines
+	}
+	for i := range view.Unanalysed {
+		language := &view.Unanalysed[i]
+		language.Lines = thousands(language.lines)
+		slices.SortStableFunc(language.Files, func(a, b pageUnanalysedFile) int {
+			return cmp.Or(cmp.Compare(b.lines, a.lines), cmp.Compare(a.Anchor.Path, b.Anchor.Path))
+		})
+	}
+	slices.SortStableFunc(view.Unanalysed, func(a, b pageUnanalysed) int {
+		return cmp.Or(cmp.Compare(b.lines, a.lines), cmp.Compare(a.Language, b.Language))
+	})
 }
 
 func (builder *pageBuilder) recipe(view *pageView) {

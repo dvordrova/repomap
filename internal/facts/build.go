@@ -73,6 +73,7 @@ func Build(input Input) (Result, error) {
 	builder.addManifests()
 	builder.addTODOs()
 	builder.addNegatives()
+	builder.addUnanalysedFiles()
 	targets := make([]Target, 0, len(builder.targets))
 	for _, target := range builder.targets {
 		targets = append(targets, target.target)
