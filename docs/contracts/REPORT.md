@@ -360,7 +360,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   saved reach and dispatch sites; the page walks no code. It is, first, one
   box per dispatch site whose alternatives hold the handler, the first open:
   "Dispatched from call · one of 94", holding the dispatch fact and the
-  statement "How get reaches call is not established."; Redis's get is
+  statement "How a request for get gets to call is not established.": how
+  a request for the input arrives at the dispatch site from outside;
+  Redis's get is
   dispatched from call and from loadAppendOnlyFile. No route to the site is
   drawn: the shortest static chain from the program's entry, Redis's main →
   aeMain → beforeSleep → call, had been offered to a benchmark reader as
@@ -371,8 +373,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   inputs:", each input a button to its reading with its calls to the site,
   then "Which of these, if any, leads to an input dispatched here is not
   established.", or "No input reaches loadAppendOnlyFile by calls". An
-  input whose own code reaches a site says so in its reading ("Reaches
-  call, where 95 inputs are dispatched") with those calls. An input a
+  input whose own code reaches a site says so in its reading, as its
+  handler's own call back into the site ("exec's handler itself calls call,
+  where 95 inputs are dispatched:") with those calls; the two lines had
+  read "How exec reaches call is not established." beside "Reaches call",
+  which contradicted each other on their face. An input a
   running declaration of another input's reach hands over reads "Registered
   by" with those inputs (Redis's IOThreadEntryPoint, handed over by
   spawnIOThread); the other reads "Registers". Then the parts the input

@@ -138,12 +138,12 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
     var box=rmEl('details','system-shared-path'),site_name=(decls[site.site]||{}).name||'';box.open=index===0;
     box.appendChild(rmEl('summary','',rmT('Dispatched from {0} · one of {1}',site_name,site.of)));
     var at=rmEl('p','meta');at.append(name(site.site),document.createTextNode(' → '+rmT('one of {0}',site.of)));box.appendChild(at);
-    box.appendChild(rmEl('p','meta',rmT('How {0} reaches {1} is not established.',title,site_name)));
+    box.appendChild(rmEl('p','meta',rmT('How a request for {0} gets to {1} is not established.',title,site_name)));
     section.appendChild(box);
   });
   (path.reaches||[]).forEach(function(site){
     var box=rmEl('div','system-path-reaches');
-    box.appendChild(rmEl('h6','',rmT('Reaches {0}, where {1} inputs are dispatched',(decls[site.site]||{}).name||'',site.inputs)));
+    box.appendChild(rmEl('h6','',rmT("{0}'s handler itself calls {1}, where {2} inputs are dispatched:",title,(decls[site.site]||{}).name||'',site.inputs)));
     calls(site.calls||[],box);section.appendChild(box);
   });
   if((path.registered_by||[]).length)section.appendChild(inputs(path.registered_by,rmT('Registered by')));

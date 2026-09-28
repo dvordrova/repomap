@@ -386,9 +386,11 @@ function select(n,navigate,source,focus){seen.push([n.id,navigate,source,focus,p
 
 // A chosen input's reading lists its path (owner's 3c): each dispatch site
 // that dispatches it, the first open, "Dispatched from call · one of 94",
-// saying that how the input reaches the site is not established; not the
-// inputs whose own code reaches the site, which a reader took for GET's
-// route. Then the inputs registering it, and the parts it enters by depth,
+// saying that how a request for the input gets to the site is not
+// established; not the inputs whose own code reaches the site, which a
+// reader took for GET's route. A site the input's own handler calls reads
+// apart ("exec's handler itself calls call"), so the two lines no longer
+// read as one contradicting the other. Then the inputs registering it, and the parts it enters by depth,
 // each with every call entering it from an earlier part, five and the rest
 // folded, and the other calls counted, with no line number. A name reads its
 // declaration in the report (getCommand and addReply had opened GitHub); a
@@ -410,7 +412,7 @@ const section=rmInputPathSection(path,'get',id=>parts[id]||null,id=>inputs[id]||
 assert.equal(section.children[0].textContent,'Path');
 const boxes=section.all(e=>e.className==='system-shared-path');
 assert.deepEqual(boxes.map(b=>[b.tagName,!!b.open,b.children[0].textContent]),[['DETAILS',true,'Dispatched from call · one of 94'],['DETAILS',false,'Dispatched from loadAppendOnlyFile · one of 94']]);
-assert.deepEqual(boxes[0].children.slice(1).map(c=>c.textContent),['call → one of 94','How get reaches call is not established.']);
+assert.deepEqual(boxes[0].children.slice(1).map(c=>c.textContent),['call → one of 94','How a request for get gets to call is not established.']);
 assert.ok(!section.textContent.includes('exec'),'the inputs reaching call are its reading, not get\'s');
 assert.ok(!/Shared|through/.test(section.textContent),'no "Shared by … through" remains');
 section.find(e=>e.tagName==='BUTTON'&&e.textContent==='accept').listeners.click();
@@ -432,6 +434,12 @@ assert.equal(name('lookupKeyRead').tagName,'SPAN','a declaration in a part the m
 steps.find(e=>e.tagName==='BUTTON'&&e.textContent==='String commands').listeners.click();
 assert.deepEqual(chosen,['t1-accept','n-strings'],'a part on the path leads to its reading');
 assert.equal(steps.find(e=>e.textContent==='Keyspace').tagName,'DIV','a part the map does not draw is only named');
+// exec is dispatched from call and its handler calls call again: the two
+// lines say different things and do not read as a contradiction.
+const exec=rmInputPathSection({dispatched:[{site:0,of:94,inputs:95}],reaches:[{site:0,inputs:95,calls:[[1,0,0]]}],decls:[decl('call','n-clients'),decl('execCommand','n-strings')]},
+  'exec',id=>parts[id]||null,id=>inputs[id]||null,()=>{},()=>{});
+assert.deepEqual(exec.all(e=>e.className==='system-shared-path')[0].children.slice(1).map(c=>c.textContent),['call → one of 94','How a request for exec gets to call is not established.']);
+assert.deepEqual(exec.find(e=>e.className==='system-path-reaches').children.map(c=>c.textContent),["exec's handler itself calls call, where 95 inputs are dispatched:",'execCommand → call']);
 `)
 }
 

@@ -1,5 +1,22 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — exec's reading: the two lines say what each means
+
+- Step 4's open item: exec's reading showed "How exec reaches call is not
+  established." beside "Reaches call … execCommand → call", which
+  contradicted each other on their face. The first is about how a request
+  for the input arrives at the dispatch site from outside; the second is
+  the handler's own call back into the site.
+- They now read "How a request for exec gets to call is not established."
+  and "exec's handler itself calls call, where 95 inputs are dispatched:"
+  followed by `execCommand → call`; Russian "Как запрос exec попадает в
+  call, не установлено." and "Обработчик exec сам вызывает call, где
+  выбираются входы (95):" (`ui_vocabulary.go`).
+- `TestAnInputsPathNamesItsDispatchThenItsOwnSteps` checks get's line and
+  exec's two lines; either old string fails it (revert log). REPORT
+  describes both.
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Follow-up f3: blocked helpers are asked once their users have boxes
 
 - Sanity check 3 (queue f3): the second pass ran once, and a helper with a
