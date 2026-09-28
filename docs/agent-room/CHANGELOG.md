@@ -1,5 +1,49 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Follow-ups f1–f3 and the exec wording accepted on Redis and litestream
+
+- Runs (`.bin/repomap <repo> --no-serve --no-open`, default system cache,
+  no `--debug-dir`, no `cache clear`), binary `8d8e0b4d…` at 030dbc9e;
+  receipts `followups/` (before/, after/, walk/, etcd-probe/, revert.log).
+  "Before" is step 4's acceptance at 08f6a3ce on the same cache.
+- **Redis**: exit 0 in 27 s with 23 live calls (3 assignment windows
+  re-asked because dupClientReplyValue joined redis.c's second-pass window,
+  then 9 descriptions, 6 areas, keys, core, zones, glossary and
+  orientation), 138 cached; warm rerun exit 0 in 4 s, 0 live, 161 cached.
+  The helper question stayed cached (its items did not change).
+  redis-server off the map, before → after:
+  - 13 helpers never asked because their users were open when the second
+    pass ran → 7 asked in round 2 (freeClientMultiState,
+    initClientMultiState, setDictType, vmGenericLoadObject,
+    vmMarkPagesFree, zslCreateNode, zslFreeNode; 7 placed), 5 placed by
+    rule A after it (vmFreePage, vmMarkPageFree, vmReadObjectFromSwap,
+    zsetDictType, zslCreate), 1 `blocked` (resetServerSaveParams: main and
+    initServerConfig call it, and main is undecided);
+  - helpers asked without a decision 4 → 3 (createHashObject and
+    redisFunctionSym as before; checkType, placed before, is a near-tie in
+    the re-asked window; createZsetObject and oom are placed);
+  - units the assignment left open: main, selectCommand, unchanged.
+  - dupClientReplyValue: rule A into adlist.c's "Core data structures"
+    → asked in round 1 (no placement user) → redis.c's "Server core
+    state". createClient, which hands it over, is in "Client connection
+    handling": the box is the model's choice, not a code rule.
+  - Second pass: round 1 asked 63, placed 60; round 2 asked 7, placed 7.
+- **litestream**: exit 0 in 7 s, 0 live, 195 cached. Nothing moved: none
+  of its Go targets has a package-level variable whose initializer calls
+  repository code; cmd/litestream keeps IsSQLiteDatabase and txidVar
+  undecided, one round of 14 asked, 12 placed, nothing blocked. The four
+  functions sanity check 3 named (addNewField, GetCluster, filterNoPut,
+  filterNoDelete) are etcd's (step 0b's etcd server run), not
+  litestream's; the etcd probe (f1b) gives addNewField its user, and the
+  other three stay function values with no relation.
+- **Walk** (headless Chromium, loopback, after Redis run): exec's path reads
+  "How a request for exec gets to call is not established." and "exec's
+  handler itself calls call, where 95 inputs are dispatched:" /
+  `execCommand → call`; get's reads "How a request for get gets to call is
+  not established."; "Used by code in no part" is listed among the
+  off-map rows; no page errors. Neither analysed repository changed.
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — exec's reading: the two lines say what each means
 
 - Step 4's open item: exec's reading showed "How exec reaches call is not

@@ -164,10 +164,20 @@ never entered into or read from a repository-wide unqualified map.
   reach, init what only the seeds reach) and which arrows are quiet; the
   report walks no code. A pinned input draws every call into a part from a
   part reached earlier and counts the rest (depth layering, accepted); its
-  reading says where it is dispatched from and that how it reaches the
-  site is not established, the site's own reading lists the inputs
-  reaching it. An entry keeps a line only when the model wrote one. Chains
-  and operation types are deleted.
+  reading says where it is dispatched from and that how a request for it
+  gets to the site is not established, and apart what its handler itself
+  calls there; the site's own reading lists the inputs reaching it. An
+  entry keeps a line only when the model wrote one. Chains and operation
+  types are deleted.
+- **Follow-ups of sanity check 3 (2026-09-28).** The no-users rule applies
+  only to a kind whose uses the adapter records (`recordedUses`, per
+  language and kind): Go variables and Clojure macros (ProgramIndex
+  `macro`) are asked like types. A Go package-level variable is the caller
+  of its initializer's calls (direct-call index 15). A call through a stored
+  function value is no user for placement, the other half of a hand-over.
+  The second pass repeats rounds until no waiting helper qualifies; a
+  helper no round could ask is off the map as `blocked`, apart from
+  `undecided`.
 - **Owner decisions of 2026-09-28 (map model step 3):** ask once whether a
   declaration is a helper, with the no-users rule and no `exported`; shared
   helpers go to a second pass; arrows into helpers are quiet like
@@ -349,6 +359,8 @@ There are no old-format readers or manually rewritten seals.
 | litestream v24 `cmd/litestream`, Go, map model step 3 (2026-09-28) | Ordinary run exit 0 (cold 2m6s with 58 helper and 52 gate Jev requests over six targets; after the rule B fix 65 s), warm rerun 7 s with 0 live calls. main.go splits into 3 boxes; the six storage backends stay out of its box (each `ReplicaClient` type is responsibility) and stand with file and s3 in one "Replica clients" part; 12 parts (11 drawn), 0 lone, 2 units (4 declarations) undecided; `replica_url.go` is a part made only of helpers. The map draws 16 arrows at rest, 18 in all. cmd/litestream-test keeps 2 one-unit parts (a box of its split main.go and shrink.go). |
 | Redis 1.3.6, map model step 4 (2026-09-28) | One reach in GroupsIndex (S4-1–S4-6) at 08f6a3ce on the default system response cache: ordinary run exit 0 in 6 s with 0 live calls (the lanes' one orientation call and one glossary call were made by the S4-4 run), warm rerun 5 s with 0 live calls and a report.json identical but for `timing`; `repomap render` byte-identical to report.html for both; `make test`, `make vet`, `make ui-test`, `make ui-visual-test` pass. GET is dispatched from call and from loadAppendOnlyFile ("How get reaches call is not established."), its reading lists no route; call's own reading lists exec, lpush, rpoplpush, rpush and slaveof with their calls, loadAppendOnlyFile debug. GET draws 15 part-pair arrows (12 before), exec 11 (17). IOThreadEntryPoint reads "Registered by" 11 inputs. redis-server has no entry part (main is undecided off the map) and its reading says "The program's entry is not on the map: main:9124 · In no part of its file"; 10 command and networking parts lost the entry mark. 96 of 96 entry summaries that restated the registration are empty. Arrows at rest unchanged: redis-server 19, redis-cli 4, redis-benchmark 5, redis-check-dump 1. report.html 12,555,599 → 12,268,850 bytes. Headless walk (Find → get, name reads, modifier-click opens, why it appears, outside this path, reload with GET pinned) without page errors. |
 | litestream v24, Go, map model step 4 (2026-09-28) | Ordinary run exit 0 in 24 s (orientation and glossary asked once live: the lanes changed), warm rerun 7 s with 0 live calls, report.json identical but for `timing`, render byte-identical. cmd/litestream keeps one entry part (Command entry point, 5 before) and its area; cmd/litestream-test one (6). 33 entry and 16 outgoing summaries that restated their facts are empty. Arrows at rest: cmd/litestream 16 = 16, cmd/litestream-test 2 → 3. report.html +680,407 bytes, almost all a longer glossary from the live glossary answer (47 terms, 42 before); `data-call-paths` −160,964, `data-input-path` +37,649. |
+| Redis 1.3.6, follow-ups f1–f3 (2026-09-28) | At 030dbc9e on the default system response cache: ordinary run exit 0 in 27 s (23 live calls: 3 assignment windows re-asked, then the parts' descriptions, areas, keys, core, zones, glossary and orientation that followed; 138 cached), warm rerun exit 0 in 4 s with 0 live. redis-server off the map 19 → 6: 13 helpers left waiting by order → 12 placed (7 asked in round 2, 5 by rule A after it) and 1 `blocked` (resetServerSaveParams, whose user main is undecided); near-ties 4 → 3 helpers (re-asked window: checkType now a near-tie, createZsetObject and oom placed), main and selectCommand unchanged. dupClientReplyValue no longer follows listDup into adlist.c's "Core data structures": asked in round 1, it is in redis.c's "Server core state". Second pass: round 1 asked 63, placed 60; round 2 asked 7, placed 7. Headless walk: exec reads "How a request for exec gets to call is not established." and "exec's handler itself calls call, where 95 inputs are dispatched:"; "Used by code in no part" is listed; no page errors. |
+| litestream v24, follow-ups f1–f3 (2026-09-28) | Ordinary run exit 0 in 7 s, 0 live calls (195 cached). No Go package-level variable of its targets calls repository code, so nothing moved: cmd/litestream keeps its two undecided helpers (IsSQLiteDatabase, txidVar), second pass one round (14 asked, 12 placed), nothing blocked. etcd's server library (no-model probe): addNewField ← `calls exact` from the variable schemaChanges; GetCluster, filterNoPut and filterNoDelete are function values and still have no relation (GO's recorded gap). |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 
