@@ -230,7 +230,7 @@ func (r *reader) bindTableRows() {
 				id = r.compactID("b", &r.nextBoundary)
 				r.boundaryIDs[source] = id
 			}
-			r.boundaries[id] = &boundaryState{kind: kind, handlerUnknown: true, place: atlas.Place{
+			r.boundaries[id] = &boundaryState{kind: kind, handlerUnknown: true, tableRow: true, place: atlas.Place{
 				ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: first.LineNo, Column: first.Column,
 				Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
 					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name,

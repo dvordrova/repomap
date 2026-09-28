@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 24
+	Version          = 25
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -255,6 +255,18 @@ type Operation struct {
 	// one catalogue; an input declared at that call itself is what they are
 	// declared on.
 	DeclaredOn *DeclaredOn `json:"declared_on,omitempty"`
+	// Sends are, for a row of a table of inputs, the peer program's inputs
+	// the model matched it to (the joints peers question, decision 14):
+	// redis-cli's `get` row names redis-server's get. MODEL; never an arrow.
+	Sends []PeerInput `json:"sends,omitempty"`
+}
+
+// PeerInput is one input of another program: its target and operation, and
+// the model's label of the integration.
+type PeerInput struct {
+	TargetID    string `json:"target_id"`
+	OperationID string `json:"operation_id"`
+	Label       string `json:"label,omitempty"`
 }
 
 // DeclaredOn is the call that made the object an input is declared on.
@@ -776,6 +788,7 @@ func (index Index) Snapshot() Index {
 		result.Idioms[i].SubjectIDs = cloneStrings(index.Idioms[i].SubjectIDs)
 	}
 	for i := range result.Operations {
+		result.Operations[i].Sends = append([]PeerInput(nil), index.Operations[i].Sends...)
 		if on := result.Operations[i].DeclaredOn; on != nil {
 			copied := *on
 			result.Operations[i].DeclaredOn = &copied

@@ -160,8 +160,34 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 		boxOfBoundary[target.ID] = boxes
 	}
 	// Joints are stored by their source target, as matching stored them.
+	// A catalogue joint names the peer input a table row sends: it is kept
+	// on the row's input and draws nothing.
+	at := make(map[string]int, len(projected))
+	for position := range projected {
+		at[projected[position].index.Target.ID] = position
+	}
 	for _, joint := range value.Joints {
-		if !joint.Same {
+		if !joint.Same || joint.SourceKind != "catalogue" {
+			continue
+		}
+		from, fromOK := at[joint.From.TargetID]
+		to, toOK := at[joint.To.TargetID]
+		if !fromOK || !toOK {
+			continue
+		}
+		row, peer := projected[from].operationOf[joint.From.BoundaryID], projected[to].operationOf[joint.To.BoundaryID]
+		if row == "" || peer == "" {
+			continue
+		}
+		for position := range projected[from].index.Operations {
+			operation := &projected[from].index.Operations[position]
+			if operation.ID == row {
+				operation.Sends = append(operation.Sends, PeerInput{TargetID: joint.To.TargetID, OperationID: peer, Label: strings.TrimSpace(joint.Label)})
+			}
+		}
+	}
+	for _, joint := range value.Joints {
+		if !joint.Same || joint.SourceKind == "catalogue" {
 			continue
 		}
 		endpointBox := func(endpoint atlas.Endpoint) string {
@@ -325,6 +351,8 @@ func storedSentence(from, to string, names map[string]*storedName) string {
 type projectedTarget struct {
 	index      Index
 	groupOfBox map[string]string
+	// operationOf is the operation each boundary became, by boundary ID.
+	operationOf map[string]string
 }
 
 func categoryOfLane(lane Lane) programindex.Category {
@@ -889,7 +917,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	operations = uniqueOperations
 	sort.Slice(operations, func(i, j int) bool { return operationKey(operations[i]) < operationKey(operations[j]) })
+	operationOf := make(map[string]string, len(operations))
 	for position := range operations {
+		operationOf[operations[position].ID] = compactOrdinal("o", position)
 		operations[position].ID = compactOrdinal("o", position)
 	}
 	offMap, err := projectOffMap(target, unreached, func(symbol atlas.Symbol) (string, bool) {
@@ -954,7 +984,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		Unsure:             unsure,
 		Idioms:             idioms,
 	}
-	return projectedTarget{index: index, groupOfBox: groupOfBox}, nil
+	return projectedTarget{index: index, groupOfBox: groupOfBox, operationOf: operationOf}, nil
 }
 
 // projectOffMap lists the files the map of parts does not draw: the atlas's

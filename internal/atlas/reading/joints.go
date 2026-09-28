@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -280,9 +281,68 @@ func (r *reader) readJoints(ctx context.Context) error {
 			}
 		}
 	}
+	if err := r.catalogueJoints(ctx, byTarget, ins, &round); err != nil {
+		return err
+	}
 	r.joints = append(r.joints, r.linkJoints()...)
 	sort.Slice(r.joints, func(i, j int) bool { return compactIDLess(r.joints[i].ID, r.joints[j].ID) })
 	r.reportStage(def.Stage)
+	return nil
+}
+
+// catalogueJoints names the peer input each row of a table of inputs sends
+// (decision 14, K5): only when the table's program already has a confirmed
+// integration into that peer program, each row is one closed peers row
+// against the peer program's inputs, the same question as a blind peer;
+// equal words alone never link. A chosen peer is a joint of kind
+// "catalogue": saved on the row's input, never drawn as an arrow.
+func (r *reader) catalogueJoints(ctx context.Context, byTarget map[string]TargetMeta, ins []*boundaryState, round *int) error {
+	joined := map[[2]string]bool{}
+	for _, joint := range r.joints {
+		if joint.Same && joint.SourceKind == "integration" && joint.From.TargetID != joint.To.TargetID {
+			joined[[2]string{joint.From.TargetID, joint.To.TargetID}] = true
+		}
+	}
+	if len(joined) == 0 {
+		return nil
+	}
+	var pairs [][2]string
+	for pair := range joined {
+		pairs = append(pairs, pair)
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i][0]+"\x00"+pairs[i][1] < pairs[j][0]+"\x00"+pairs[j][1] })
+	for _, pair := range pairs {
+		var rows, peers []*boundaryState
+		for _, in := range ins {
+			switch {
+			case in.tableRow && slices.Contains(in.place.TargetIDs, pair[0]):
+				rows = append(rows, in)
+			case !in.tableRow && !in.handlerUnknown && in.kind != atlas.BoundaryListenAddress && slices.Contains(in.place.TargetIDs, pair[1]) && !slices.Contains(in.place.TargetIDs, pair[0]):
+				peers = append(peers, in)
+			}
+		}
+		if len(rows) == 0 || len(peers) == 0 {
+			continue
+		}
+		r.opts.Stage(lines.StageJoints, fmt.Sprintf("%d table rows of %s against %d inputs of %s", len(rows), byTarget[pair[0]].Name, len(peers), byTarget[pair[1]].Name))
+		choices, err := r.chooseBlindPeers(ctx, []peerBatch{{outs: rows, ins: peers}}, byTarget, round)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			peer, ok := choices[row.place.ID]
+			if !ok {
+				continue
+			}
+			r.joints = append(r.joints, atlas.Joint{
+				ID:    r.compactID("j", &r.nextJoint),
+				From:  atlas.Endpoint{TargetID: pair[0], BoundaryID: row.place.ID},
+				To:    atlas.Endpoint{TargetID: pair[1], BoundaryID: peer.in.place.ID},
+				Value: strings.Join(row.place.Boundary.Values, ", "),
+				Same:  true, Label: peer.label, Possible: true, SourceKind: "catalogue",
+			})
+		}
+	}
 	return nil
 }
 

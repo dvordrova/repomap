@@ -647,6 +647,8 @@ type boundaryState struct {
 	programNotNamed bool
 	// on is the object an incoming boundary's call is made on (declared.go).
 	on *atlas.DeclaredOn
+	// tableRow marks an entry a row of an accepted table makes (inputs.go).
+	tableRow bool
 }
 
 // writtenLine is the boundary's line: only one the model wrote. A fixed
