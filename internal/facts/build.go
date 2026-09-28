@@ -59,6 +59,7 @@ func Build(input Input) (Result, error) {
 		}
 		builder.addEntrypoints(target)
 		builder.addRegistrations(target)
+		builder.addRepositoryRegistrations(target)
 		builder.addSQLQueries(target)
 		builder.addConfigReads(target)
 		builder.addDynamicExecution(target)

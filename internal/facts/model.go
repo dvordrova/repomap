@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 3
+	Version          = 4
 	ArtifactFilename = "facts.json"
 
 	digestDomain = "repomap-facts-v3\x00"
@@ -179,7 +179,13 @@ type Fact struct {
 	OwnerID string `json:"owner_id,omitempty"`
 	// Handed marks a registration that hands over a value of the
 	// repository's own (an instance, a module) rather than a callable.
-	Handed     bool       `json:"handed,omitempty"`
+	Handed bool `json:"handed,omitempty"`
+	// Registrar is the repository function a registration hands its
+	// callable to when the repository owns that function and it stores the
+	// parameter in a field or a module-level variable (owner decision
+	// 2026-09-27). A registration with an outside symbol names it in Text
+	// instead; a registrar is never an outside system.
+	Registrar  *Registrar `json:"registrar,omitempty"`
 	Method     string     `json:"method,omitempty"`
 	Path       string     `json:"path,omitempty"`
 	Key        string     `json:"key,omitempty"`
@@ -458,6 +464,18 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 				return fmt.Errorf("invalid registration value")
 			}
 		}
+		if registrar := fact.Registrar; registrar != nil {
+			if !validText(registrar.ObjectID) || !validText(registrar.Name) || validateRepositoryPath(registrar.Path) != nil ||
+				registrar.Signature != "" && (!utf8.ValidString(registrar.Signature) || strings.ContainsRune(registrar.Signature, 0)) ||
+				len(registrar.Slots) == 0 || fact.ObjectID == "" || fact.Text != "" {
+				return fmt.Errorf("registration registrar requires its declaration, file, slots and a handed callable")
+			}
+			for _, slot := range registrar.Slots {
+				if !validText(slot) {
+					return fmt.Errorf("invalid registrar slot")
+				}
+			}
+		}
 	case KindSQLQuery:
 		if fact.Value == "" || fact.Anchor == nil {
 			return fmt.Errorf("sql_query requires statement and anchor")
@@ -604,6 +622,20 @@ func clone(result Result) Result {
 		}
 		copied.Refs = cloneSlice(fact.Refs)
 		copied.Values = cloneSlice(fact.Values)
+		if fact.Registrar != nil {
+			registrar := *fact.Registrar
+			registrar.Slots = cloneSlice(fact.Registrar.Slots)
+			registrar.During = make([]RegisteredDuring, len(fact.Registrar.During))
+			for i, during := range fact.Registrar.During {
+				during.Handlers = cloneSlice(during.Handlers)
+				during.Through = cloneSlice(during.Through)
+				registrar.During[i] = during
+			}
+			if len(registrar.During) == 0 {
+				registrar.During = nil
+			}
+			copied.Registrar = &registrar
+		}
 		copied.Evidence = cloneSlice(fact.Evidence)
 		owned.Facts[position] = copied
 	}
