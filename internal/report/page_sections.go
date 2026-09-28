@@ -41,7 +41,13 @@ type pageSection struct {
 	factsTargetID   string
 
 	FactsAvailable bool
-	Map            *pageMap
+	// BuiltFrom are the files its program is built from, by path: for C
+	// the units its link line names, else the files its declarations are
+	// written in, tests left out. The home's table of programs lists them:
+	// a model's summary had claimed all four Redis programs share ae, sds,
+	// adlist, dict and anet, which the Makefile does not.
+	BuiltFrom []string
+	Map       *pageMap
 	RouteGroups    []pageRouteGroup
 	Requests       []pageGroupOperation
 	Activities     []pageGroupOperation
@@ -304,6 +310,11 @@ type pageFlowStep struct {
 	Target         string
 	Explanation    string
 	Anchor         *pageAnchor
+	// Part and Key are, for a step that is a declaration of this program,
+	// the part it is read in ("#…") and its key there: the step's name reads
+	// it and shows it on the canvas (owner, 2026-09-28).
+	Part string
+	Key  string
 }
 
 // pageGroup is one responsibility card. Members are grouped by file so the
@@ -464,6 +475,7 @@ func (builder *pageBuilder) buildSections() {
 		overview.fillSectionOperations(section)
 		overview.fillSectionOutbound(section)
 		overview.fillSectionData(section)
+		section.BuiltFrom = builder.builtFrom(section.programTargetID)
 		section.InboundCount = section.NativeRouteCount() + len(section.Requests)
 		section.InputsCount = section.InboundCount + len(section.Activities)
 		section.Coverage = sectionCoverage(section)

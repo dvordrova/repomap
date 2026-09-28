@@ -441,3 +441,20 @@ details.map-reading-peer[open]>summary::before{content:'▾'}
 .map-component-section ol,.map-component-section ul{margin:6px 0;padding-left:1.2em}
 .flow-enabled .map-inspector .map-reading-up{border:0;background:transparent;padding:0;font:inherit;cursor:pointer}
 .map-reading-up:hover{text-decoration:underline}
+/* A Main flow step's name reads that declaration. */
+.flow-enabled .map-inspector .map-flow-step-name{border:0;background:transparent;padding:0;font:inherit;color:var(--link);cursor:pointer}
+.map-flow-step-name:hover{text-decoration:underline}
+/* A component's areas and parts, each named in its box with its description on one line. */
+.map-component-outline{margin:10px 0}
+.map-component-outline h6{margin:0 0 6px;font-size:13px}
+.flow-enabled .map-inspector ul.map-outline{list-style:none;margin:0;padding:0}
+.flow-enabled .map-inspector ul.map-outline ul.map-outline{padding-left:14px;margin:4px 0 6px}
+.map-outline li{margin:3px 0;min-width:0}
+.map-outline-summary{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12.5px;color:var(--muted);margin:1px 0 0 2px}
+/* The home's table of programs: role, entry, inputs, connections and the files each is built from. */
+.system-programs table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
+.system-programs th{text-align:left;font-weight:600;color:var(--muted);padding:4px 6px 4px 0;border-bottom:1px solid var(--line)}
+.system-programs td{vertical-align:top;padding:5px 6px 5px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.system-programs td code{font-size:12px}
+.flow-enabled .system-programs button{border:0;background:transparent;padding:0;font:inherit;font-weight:600;color:var(--link);cursor:pointer;text-align:left}
+.system-programs button:hover{text-decoration:underline}

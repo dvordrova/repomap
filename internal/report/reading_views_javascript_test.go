@@ -11,6 +11,7 @@ class El{
  has(c){return this.className.split(' ').includes(c);}
  appendChild(c){if(c instanceof El)c.parent=this;this.children.push(c);return c;}
  append(...c){c.forEach(x=>this.appendChild(typeof x==='string'?text(x):x));}
+ replaceChildren(...c){this.children=[];this.append(...c);}
  remove(){if(this.parent)this.parent.children=this.parent.children.filter(c=>c!==this);}
  get childElementCount(){return this.children.filter(c=>c instanceof El).length;}
  get firstChild(){return this.children[0];}
@@ -80,5 +81,32 @@ assert.equal(view.children[2].textContent,'server.c','the file alone, no line');
 assert.equal(view.children[3].textContent,"The author's comment in the codeCalled every 100 ms.",'the author\'s comment stands in the reading, marked as theirs');
 assert.equal(view.children[6].textContent,'Uses variablesserver:21');
 assert.equal(view.children[6].all(c=>c.has('map-reading-name'))[0].title,'A global variable of Server core state\nserver.c:21');
+`)
+}
+
+// A component's reading names every area and part, each reading it, with
+// its description on one line; the home names every program with its role,
+// entry, inputs, connections and the files it is built from (owner,
+// 2026-09-28).
+func TestAComponentsOutlineAndTheHomesProgramsFollowThePageData(t *testing.T) {
+	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading") +
+		systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "function rmCollectionView(") +
+		systemJSPiece(t, "31-reading-column.js", "// The kind whose section a count", "function rmComponentReading(") +
+		systemJSPiece(t, "31-reading-column.js", "// The home's table of programs", "// </reading-column>")
+	runSystemJS(t, readingViewElements+code+`
+const all={
+ 'system-component-t1':{id:'system-component-t1',dataset:{title:'redis-server',owner:'t1',role:'Backend database server',children:'area core',entries:'[{"name":"main","callable":true}]',sources:'["adlist.c","redis.c"]'}},
+ area:{id:'area',dataset:{title:'Core infrastructure',summary:'Provides runtime services.',children:'core'},getAttribute:()=>'#area'},
+ core:{id:'core',dataset:{title:'Server core state',summary:'Manages core state.',lane:'core'},getAttribute:()=>'#core'},
+ 'system-inputs-t1':{id:'system-inputs-t1',dataset:{collection:'{"groups":[],"kinds":[{"kind":"request","inputs":["a","b"]},{"kind":"setting","inputs":["c"]}]}'}}};
+const opened=[];
+const context={nodeByHref:href=>all[href.slice(1)]||null,nodeById:id=>all[id]||null,readNode:n=>opened.push(n.dataset.title)};
+const outline=rmOutline(context,all['system-component-t1']);
+assert.equal(outline.textContent,'Areas and partsCore infrastructureProvides runtime services.Server core stateManages core state.Server core stateManages core state.');
+outline.all(c=>c.tagName==='BUTTON'&&c.textContent==='Core infrastructure')[0].listeners.click({stopPropagation(){}});
+assert.deepEqual(opened,['Core infrastructure'],'a name reads its area');
+const holder=rmEl('div');
+rmProgramsTable(context,holder,[all['system-component-t1']],()=>[{incoming:true,title:'redis-cli'},{incoming:false,title:'TCP endpoint'}]);
+assert.equal(holder.textContent,'Programsredis-serverBackend database serverEntrymain()Inputs2 requests · 1 settingsConnections← redis-cli · → TCP endpointBuilt fromadlist.c redis.c');
 `)
 }

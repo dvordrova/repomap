@@ -325,6 +325,25 @@ function rmCatalogueLines(ctx,catalogue){
 // coverage, each a list opening in place, and a link to its whole page.
 // The kind whose section a count chosen in a component's reading lands on.
 var rmPendingKind='';
+// A section of so few lines stands open in a reading.
+var rmShortSection=8;
+// A component's areas and parts: each area with its parts under it, each a
+// name in its box that reads it, and its description on one line, the
+// whole on hover.
+function rmOutline(ctx,component){
+  function children(node){return (node.dataset.children||'').split(/\s+/).map(ctx.nodeById).filter(function(child){return child&&!child.dataset.activation&&child.dataset.branch!=='inputs';});}
+  var top=children(component);if(!top.length)return null;
+  function item(node){
+    var li=rmEl('li'),box=rmPartBox(ctx,'#'+node.id,node.dataset.title);li.appendChild(box);
+    if(node.dataset.summary){var said=rmModelText('span','map-outline-summary',node.dataset.summary,node.dataset.summaryRef);said.title=node.dataset.summary;li.appendChild(said);}
+    var inner=children(node);
+    if(inner.length){var list=rmEl('ul','map-outline');inner.forEach(function(child){list.appendChild(item(child));});li.appendChild(list);}
+    return li;
+  }
+  var box=rmEl('section','map-component-outline');box.appendChild(rmEl('h6','',rmT('Areas and parts')));
+  var list=rmEl('ul','map-outline');top.forEach(function(node){list.appendChild(item(node));});box.appendChild(list);
+  return box;
+}
 var rmInputKindCounts={request:'{0} requests',command:'{0} commands',setting:'{0} settings',interaction:'{0} user interactions',continuous:'{0} continuous',scheduled:'{0} scheduled'};
 function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   var ctx=map.readingContext(),intro=card.querySelector('.map-card-intro'),page=card.querySelector('.map-card-actions>.map-details-link');
@@ -365,14 +384,33 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     clone.querySelectorAll('.collapse-label').forEach(function(label){label.remove();});
     return clone;
   }
-  function section(title,count,parts){
-    if(!parts.length)return;
+  // A section of the reading, a list opening in place; a short one stands
+  // open (owner, 2026-09-28).
+  function section(title,count,parts,open,at){
+    if(!parts.length)return null;
     var box=rmEl('details','map-component-section'),summary=rmEl('summary');summary.appendChild(rmEl('span','',title));
     if(count)summary.appendChild(rmEl('span','map-reading-peer-count',String(count)));
-    box.appendChild(summary);parts.forEach(function(part){box.appendChild(copy(part));});card.appendChild(box);
+    box.appendChild(summary);parts.forEach(function(part){box.appendChild(copy(part));});
+    box.open=!!open||box.querySelectorAll('li').length<=rmShortSection;
+    if(at)at(box);else card.appendChild(box);
+    return box;
   }
+  // Its Main flow near the top, open (owner, 2026-09-28), each step's name
+  // reading that declaration and showing it on the canvas.
   var flow=details.querySelector(':scope>.component-flow');
-  if(flow)section(rmT('Main flow'),flow.querySelectorAll(':scope>ol>li').length,Array.from(flow.querySelectorAll(':scope>.flow-title,:scope>p.meta,:scope>ol')));
+  if(flow){
+    var steps=section(rmT('Main flow'),flow.querySelectorAll(':scope>ol>li').length,Array.from(flow.querySelectorAll(':scope>.flow-title,:scope>p.meta,:scope>ol')),true,place);
+    steps.querySelectorAll('li[data-step-part]').forEach(function(step){
+      var part=ctx.nodeByHref(step.dataset.stepPart),code=step.querySelector('.flow-what>code');
+      if(!part||!code)return;
+      var name=rmEl('button','map-flow-step-name',code.textContent);name.type='button';
+      name.addEventListener('click',function(){ctx.readDeclIn(part,rmPage.link(step.dataset.stepKey));});
+      code.replaceChildren(name);
+    });
+  }
+  // Its areas and parts, each a name that reads it, with its description on
+  // one line (owner, 2026-09-28).
+  var outline=rmOutline(ctx,n);if(outline)place(outline);
   var dead=details.querySelector(':scope>.component-reference h3[id$="-dead"]');
   if(dead){var unreached=[];for(var at=dead.nextElementSibling;at;at=at.nextElementSibling)unreached.push(at);section(rmT('Not reachable from the entrypoints'),0,unreached);}
   var todos=details.querySelector(':scope>.component-reference h3[id$="-todos"]');
@@ -380,5 +418,37 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   var coverage=details.querySelector(':scope>.component-reference .component-coverage');
   if(coverage)section(rmT('Analysis coverage'),coverage.querySelectorAll('li').length,Array.from(coverage.children).filter(function(child){return child.tagName!=='SUMMARY';}));
   if(page){page.textContent=rmT('Component details');var foot=rmEl('p','map-component-page');foot.appendChild(page);card.appendChild(foot);}
+}
+// The home's table of programs (owner, 2026-09-28), one block each in the
+// component's page order: its name, reading it; its role, the model's; its
+// entry; its inputs by kind; its connections as its arrow ends group them;
+// and the files it is built from (page data: for C its link line's units),
+// a build fact: a model's summary had said all four Redis programs share
+// ae, sds, adlist, dict and anet, which their Makefile does not.
+function rmProgramsTable(ctx,holder,components,connections){
+  if(!holder||!components.length)return;
+  var table=rmEl('dl','system-programs-list');
+  function line(label,content){if(!content)return;table.append(rmEl('dt','',rmT(label)),content);}
+  components.forEach(function(n){
+    var head=rmEl('dt','system-program-name'),name=rmEl('button','',n.dataset.title);name.type='button';
+    name.addEventListener('click',function(){ctx.readNode(n);});head.appendChild(name);table.appendChild(head);
+    var about=rmEl('dd','system-program-about');
+    if(n.dataset.role)about.appendChild(rmModelText('span','',n.dataset.role,n.dataset.roleRef));
+    table.appendChild(about);
+    var entries=rmPage.data(n,'entries')||[];
+    if(entries.length)line('Entry',rmEl('dd','',entries.map(function(entry){return entry.name+(entry.callable?'()':'');}).join(' · ')));
+    var collection=ctx.nodeById('system-inputs-'+n.dataset.owner),kinds=(collection&&rmPage.data(collection,'collection')||{}).kinds||[];
+    if(kinds.length)line('Inputs',rmEl('dd','',kinds.map(function(kind){return rmT(rmInputKindCounts[kind.kind]||'{0} inputs',kind.inputs.length);}).join(' · ')));
+    var ends=connections(n.id);
+    if(ends.length)line('Connections',rmEl('dd','',ends.map(function(end){return (end.incoming?'← ':'→ ')+end.title;}).join(' · ')));
+    var files=rmPage.data(n,'sources')||[];
+    if(files.length){
+      var built=rmEl('dd');
+      if(files.length<=rmShortSection*2)built.appendChild(rmEl('code','',files.join(' ')));
+      else{var fold=rmEl('details');fold.append(rmEl('summary','',rmT('{0} files',files.length)),rmEl('code','',files.join(' ')));built.appendChild(fold);}
+      line('Built from',built);
+    }
+  });
+  holder.replaceChildren(rmEl('h4','',rmT('Programs')),table);
 }
 // </reading-column>

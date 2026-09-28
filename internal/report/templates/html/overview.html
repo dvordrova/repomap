@@ -13,6 +13,7 @@
 {{with .Summary}}{{if .Anchors}}<a href="#repository-summary-sources">{{t "Repository summary sources"}} →</a>{{end}}{{end}}
 {{if .Claims}}<a href="#repository-claims">{{t "What the people who wrote it said"}} →</a>{{end}}
 </nav>
+<div class="system-programs" data-programs-table></div>
 {{if .MutedCards}}<h4>{{t "This run could not read {0} targets" (len .MutedCards)}}</h4>
 {{range .MutedCards}}<article><strong>{{.Name}}</strong><p class="meta">{{.Reason}}</p></article>{{end}}{{end}}
 </div>

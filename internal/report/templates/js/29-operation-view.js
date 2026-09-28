@@ -866,6 +866,8 @@ function rmCatalogInputClick(event,reveal){
         connection:function(group){map.previewConnection?.({from:group.incoming?group.outside:group.area,to:group.incoming?group.area:group.outside,possible:group.relations.some(function(r){return r.possible;}),relations:group.relations});}
       });
       map.visibleEdges=surface.layout.edges;
+      if(map.hasAttribute('data-system-map'))rmProgramsTable(map.readingContext(),map.querySelector('[data-programs-table]'),nodes.filter(function(n){return n.dataset.branch==='component';}),
+        function(id){return surface.frameConnections(id).map(function(group){return {incoming:group.incoming,title:group.title};});});
       emphasize();
     }catch(error){caption.textContent=rmT('Could not arrange this map. Reload to try again.');console.error(error);}
     map.setAttribute('aria-busy','false');

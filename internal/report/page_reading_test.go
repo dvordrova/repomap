@@ -248,3 +248,22 @@ func TestInputCollectionListsItsInputsByKindAndName(t *testing.T) {
 		}
 	}
 }
+
+// The files a program is built from are a build fact (owner, 2026-09-28): a
+// model's summary had said all four Redis programs share ae, sds, adlist,
+// dict and anet, and redis-check-dump links none of them. For C they are
+// the units its link line names; for another language the files its
+// declarations are written in, tests left out.
+func TestAProgramIsBuiltFromItsLinkedUnits(t *testing.T) {
+	builder := &pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{
+		{Target: programindex.Target{ID: "t3", Language: "c", Sources: []programindex.TargetSource{{Path: "redis-check-dump.c"}, {Path: "Makefile"}, {Path: "lzf_d.c"}, {Path: "lzf_c.c"}}}},
+		{Target: programindex.Target{ID: "t5", Language: "go", TestSources: []string{"app/app_test.go"}}, Objects: []programindex.Object{
+			{ID: "n1", Location: &programindex.Location{Path: "app/main.go", Line: 1}}, {ID: "n2", Location: &programindex.Location{Path: "app/app_test.go", Line: 1}}, {ID: "n3", Location: &programindex.Location{Path: "app/main.go", Line: 9}}}},
+	}}}}
+	if got := strings.Join(builder.builtFrom("t3"), " "); got != "lzf_c.c lzf_d.c redis-check-dump.c" {
+		t.Fatalf("C: %s", got)
+	}
+	if got := strings.Join(builder.builtFrom("t5"), " "); got != "app/main.go" {
+		t.Fatalf("Go: %s", got)
+	}
+}

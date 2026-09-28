@@ -254,8 +254,10 @@ type pageMapNode struct {
 	// own call made (a subcommand's options), in source order.
 	Declares string
 	// Entries are, on a component, its program's entrypoints as its reading
-	// names them (componentEntries).
+	// names them (componentEntries); Sources the files its program is built
+	// from (pageSection BuiltFrom), a JSON list.
 	Entries string
+	Sources string
 	// Collection is, on a component's Inputs collection, its reading
 	// (pageInputCollection): its inputs by catalogue and by kind, by name.
 	Collection string

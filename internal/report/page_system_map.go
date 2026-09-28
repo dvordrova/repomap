@@ -51,7 +51,7 @@ func (view *pageView) SystemMap() *pageMap {
 			destinations["#"+id] = id
 		}
 		id := "system-component-" + section.ID
-		add(pageMapNode{ID: id, Owner: section.ID, Branch: "component", ItemKind: "Component", Href: "#" + section.ID, FullTitle: componentTitle(section, view.Sections), Entries: componentEntries(section), Summary: section.Purpose, SummaryRef: section.PurposeRef, Role: section.Role, RoleRef: section.RoleRef, Language: section.Language, ComponentKind: section.Kind, SourceKind: "model", DetailsID: section.ID})
+		add(pageMapNode{ID: id, Owner: section.ID, Branch: "component", ItemKind: "Component", Href: "#" + section.ID, FullTitle: componentTitle(section, view.Sections), Entries: componentEntries(section), Sources: jsonStrings(section.BuiltFrom), Summary: section.Purpose, SummaryRef: section.PurposeRef, Role: section.Role, RoleRef: section.RoleRef, Language: section.Language, ComponentKind: section.Kind, SourceKind: "model", DetailsID: section.ID})
 		destinations["#"+section.ID] = id
 	}
 	for _, section := range view.Sections {
@@ -692,4 +692,16 @@ func sortedKeys(values map[string]bool) string {
 	}
 	sort.Strings(keys)
 	return strings.Join(keys, " ")
+}
+
+// jsonStrings is a list as the page's data writes it, "" when empty.
+func jsonStrings(list []string) string {
+	if len(list) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(list)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }

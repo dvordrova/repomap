@@ -835,7 +835,56 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 	if owner != nil && owner != section {
 		row.Target = owner.Name
 	}
+	// A declaration of this program is read in its part.
+	if owner == section && step.SubjectID != "" && row.Anchor != nil {
+		if index := builder.graphIndex(section.programTargetID); index != nil {
+			if group := builder.edgesBetweenGroups(*index).groupOf[step.SubjectID]; group != "" {
+				row.Part, row.Key = "#"+groupAnchorID(section.ID, group), declarationKey(row.Anchor)
+			}
+		}
+	}
 	return row
+}
+
+// builtFrom lists the files a program is built from, by path (pageSection
+// BuiltFrom).
+func (builder *pageBuilder) builtFrom(programTargetID string) []string {
+	if builder.data == nil || builder.data.ProgramPortfolio == nil {
+		return nil
+	}
+	for _, entry := range builder.data.ProgramPortfolio.Entries {
+		if entry.Target.ID != programTargetID {
+			continue
+		}
+		seen := map[string]bool{}
+		var files []string
+		add := func(file string) {
+			if file != "" && !seen[file] {
+				seen[file] = true
+				files = append(files, file)
+			}
+		}
+		if entry.Target.Language == "c" {
+			for _, source := range entry.Target.Sources {
+				if strings.HasSuffix(source.Path, ".c") {
+					add(source.Path)
+				}
+			}
+		} else {
+			tests := map[string]bool{}
+			for _, test := range entry.Target.TestSources {
+				tests[test] = true
+			}
+			for _, object := range entry.Objects {
+				if object.Location != nil && !tests[object.Location.Path] {
+					add(object.Location.Path)
+				}
+			}
+		}
+		sort.Strings(files)
+		return files
+	}
+	return nil
 }
 
 // subjectDisplay names one GroupsIndex subject and anchors it when it has a
