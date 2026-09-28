@@ -544,6 +544,39 @@ type Target struct {
 	// nothing.
 	Files   int `json:"files"`
 	Symbols int `json:"symbols"`
+	// Unsure are the calls outside tests that may declare an input the
+	// reading could not decide: words given to an outside symbol whose
+	// entry question was not decided, or a call to a symbol whose words are
+	// entries given no word that can name one. Idioms are, by outside
+	// symbol whose words became entries, how many of its word calls did and
+	// in which declarations. Both are the launch walk's evidence (GroupsIndex
+	// Launch); neither is an input.
+	Unsure []UnsureCall `json:"unsure,omitempty"`
+	Idioms []Idiom      `json:"idioms,omitempty"`
+}
+
+// UnsureCall is one call that may declare an input and was not decided.
+// Reason is "undecided" (the symbol's entry question had no decided
+// answer) or "no_words" (none of the words the call is given can name an
+// entry, as `add_argument(*opt.cli)`).
+type UnsureCall struct {
+	ObjectID string `json:"object_id"`
+	Path     string `json:"path"`
+	LineNo   int    `json:"line_no"`
+	Column   int    `json:"column,omitempty"`
+	Symbol   string `json:"symbol"`
+	Reason   string `json:"reason"`
+}
+
+// Idiom is what one outside symbol's word calls made in a target: Entries
+// of its Calls became entries of Kind, declared in ObjectIDs. MODEL: the
+// symbol's answer made them.
+type Idiom struct {
+	Symbol    string   `json:"symbol"`
+	Kind      string   `json:"kind"`
+	Entries   int      `json:"entries"`
+	Calls     int      `json:"calls"`
+	ObjectIDs []string `json:"object_ids"`
 }
 
 // Zone is one area of a target: a named frame holding several parts.

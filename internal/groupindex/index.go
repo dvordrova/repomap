@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 23
+	Version          = 24
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -244,9 +244,10 @@ type Operation struct {
 	// is the part its call is written in, which declares it and is not
 	// claimed to implement it.
 	HandlerUnknown bool `json:"handler_unknown,omitempty"`
-	// DeclaredBy is, for an input whose handler is not established, the
-	// subject whose code declares it: the caller of the declaring call. It
-	// is where the input is parsed, never its handler.
+	// DeclaredBy is the subject whose code makes the call declaring or
+	// registering the input: the caller of that call. For an input whose
+	// handler is not established it is where the input is parsed, never its
+	// handler.
 	DeclaredBy string `json:"declared_by,omitempty"`
 	// DeclaredOn is the object the input's call is made on (a parser, a
 	// flag set, a command object), at the call that made it, as written: a
@@ -349,6 +350,34 @@ type Index struct {
 	// Catalogues are the inputs whose handler is not established, grouped
 	// by what declares them (catalogue.go). Derived, never persisted.
 	Catalogues []Catalogue `json:"-"`
+	// Unsure are the calls that may declare an input the reading could not
+	// decide, and Idioms what each outside symbol's word calls made
+	// (atlas Target.Unsure and Idioms). Launch is the walk from the
+	// program's seeds and load-time code, with what each function it
+	// reaches holds (launch.go): derived, never persisted.
+	Unsure []UnsureCall `json:"unsure,omitempty"`
+	Idioms []Idiom      `json:"idioms,omitempty"`
+	Launch Launch       `json:"-"`
+}
+
+// UnsureCall is one call that may declare an input and was not decided:
+// Reason "undecided" (its symbol's entry question had no decided answer)
+// or "no_words" (it gives the symbol no word that can name an entry).
+type UnsureCall struct {
+	SubjectID string                `json:"subject_id,omitempty"`
+	Location  programindex.Location `json:"location"`
+	Symbol    string                `json:"symbol"`
+	Reason    string                `json:"reason"`
+}
+
+// Idiom is what one outside symbol's word calls made: Entries of its Calls
+// became inputs of Kind, declared in SubjectIDs. MODEL: its answer.
+type Idiom struct {
+	Symbol     string   `json:"symbol"`
+	Kind       string   `json:"kind"`
+	Entries    int      `json:"entries"`
+	Calls      int      `json:"calls"`
+	SubjectIDs []string `json:"subject_ids,omitempty"`
 }
 
 // OffMapTests is the off-map reason of a file of a part made only of test
@@ -741,6 +770,11 @@ func (index Index) Snapshot() Index {
 	result.Data = cloneData(index.Data)
 	result.SharedCode = cloneStrings(index.SharedCode)
 	result.Operations = append([]Operation(nil), index.Operations...)
+	result.Unsure = append([]UnsureCall(nil), index.Unsure...)
+	result.Idioms = append([]Idiom(nil), index.Idioms...)
+	for i := range result.Idioms {
+		result.Idioms[i].SubjectIDs = cloneStrings(index.Idioms[i].SubjectIDs)
+	}
 	for i := range result.Operations {
 		if on := result.Operations[i].DeclaredOn; on != nil {
 			copied := *on
@@ -851,12 +885,27 @@ func (index Index) Validate() error {
 			return fmt.Errorf("group index: operation %q is declared on an invalid object", operation.ID)
 		}
 		_, declarerExists := subjectsByID[operation.DeclaredBy]
-		if operation.DeclaredBy != "" && (!operation.HandlerUnknown || !declarerExists) {
+		if operation.DeclaredBy != "" && !declarerExists {
 			return fmt.Errorf("group index: operation %q is declared by %q, which is no subject or declares an input with a handler", operation.ID, operation.DeclaredBy)
 		}
 		if operation.GroupID != "" && !groupExists || operation.SubjectID != "" && !subjectExists || operation.HandlerUnknown && operation.SubjectID != "" || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validOptionalText(operation.Summary) ||
 			(operation.Source != "model" && operation.Source != "fact") || operation.Location.Path == "" || operation.Location.Line < 1 || operation.Location.Column < 1 {
 			return fmt.Errorf("group index: invalid operation %q", operation.ID)
+		}
+	}
+	for _, call := range index.Unsure {
+		if _, ok := subjectsByID[call.SubjectID]; call.SubjectID != "" && !ok || call.Location.Path == "" || call.Location.Line < 1 || !validText(call.Symbol) || call.Reason != "undecided" && call.Reason != "no_words" && call.Reason != "per_call_undecided" {
+			return fmt.Errorf("group index: invalid unsure call at %s:%d", call.Location.Path, call.Location.Line)
+		}
+	}
+	for _, idiom := range index.Idioms {
+		if !validText(idiom.Symbol) || !validOperationKind(idiom.Kind) || idiom.Entries < 1 || idiom.Calls < idiom.Entries {
+			return fmt.Errorf("group index: invalid idiom %q", idiom.Symbol)
+		}
+		for _, id := range idiom.SubjectIDs {
+			if _, ok := subjectsByID[id]; !ok {
+				return fmt.Errorf("group index: idiom %q names unknown subject %q", idiom.Symbol, id)
+			}
 		}
 	}
 	if err := index.validateData(subjectsByID); err != nil {
@@ -2167,6 +2216,8 @@ type Overlay struct {
 	Connections        []Connection        `json:"connections"`
 	OffMap             []OffMapFile        `json:"off_map,omitempty"`
 	MapFailure         string              `json:"map_failure,omitempty"`
+	Unsure             []UnsureCall        `json:"unsure,omitempty"`
+	Idioms             []Idiom             `json:"idioms,omitempty"`
 	SHA256             string              `json:"sha256"`
 }
 
@@ -2225,7 +2276,8 @@ func OverlayFromIndex(index Index) Overlay {
 		Version: index.Version, TargetID: index.Target.ID, ProgramIndexSHA256: index.ProgramIndexSHA256,
 		Role: index.Role, SharedCode: index.SharedCode, Summary: index.Summary, Data: index.Data,
 		Subjects: subjects, Groups: index.Groups, Operations: index.Operations, Outbound: index.Outbound,
-		Containers: index.Containers, Connections: index.Connections, OffMap: index.OffMap, MapFailure: index.MapFailure, SHA256: index.SHA256,
+		Containers: index.Containers, Connections: index.Connections, OffMap: index.OffMap, MapFailure: index.MapFailure,
+		Unsure: index.Unsure, Idioms: index.Idioms, SHA256: index.SHA256,
 	}
 }
 
@@ -2292,7 +2344,7 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		Data: artifact.Data, Subjects: subjects, Groups: artifact.Groups, Operations: operations,
 		Outbound: artifact.Outbound, Containers: artifact.Containers,
 		StructuralEdges: compileStructuralEdges(program, retained), Connections: slices.Clone(artifact.Connections),
-		OffMap: artifact.OffMap, MapFailure: artifact.MapFailure, SHA256: artifact.SHA256,
+		OffMap: artifact.OffMap, MapFailure: artifact.MapFailure, Unsure: artifact.Unsure, Idioms: artifact.Idioms, SHA256: artifact.SHA256,
 	}
 	// Derive writes the connections' derived fields: on a copy, so hydrating
 	// never changes the overlay it reads.

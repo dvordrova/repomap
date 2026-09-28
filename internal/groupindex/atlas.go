@@ -110,6 +110,14 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 		for _, boundary := range target.Boundaries {
 			sourceRefs[boundary.ObjectID] = ""
 		}
+		for _, call := range target.Unsure {
+			sourceRefs[call.ObjectID] = ""
+		}
+		for _, idiom := range target.Idioms {
+			for _, id := range idiom.ObjectIDs {
+				sourceRefs[id] = ""
+			}
+		}
 	}
 	if keys == nil || !slices.Equal(keys.targets, ids) {
 		read, err := ReadDeclarationKeys(ids, read)
@@ -674,6 +682,46 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			}
 		}
 	}
+	// subjectOf is the program's object for an atlas object reference.
+	subjectOf := func(ref string) string {
+		if ref == "" {
+			return ""
+		}
+		if byID[ref] != nil {
+			return ref
+		}
+		if key := sourceRefs[ref]; key != "" {
+			return objectOfKey[key]
+		}
+		return ""
+	}
+	// enclosing is the innermost function, method or lambda whose source
+	// holds a site, else the module body of its file: the code making a
+	// call there.
+	enclosing := func(location programindex.Location) string {
+		best, module := "", ""
+		var bestLine int
+		for _, object := range program.Objects {
+			if object.Location == nil || object.Location.Path != location.Path {
+				continue
+			}
+			switch object.Kind {
+			case programindex.ObjectModule:
+				module = object.ID
+			case programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectLambda:
+				if object.Location.Line <= location.Line && location.Line <= object.EndLine && object.Location.Line >= bestLine {
+					best, bestLine = object.ID, object.Location.Line
+				}
+			}
+		}
+		if best == "" {
+			best = module
+		}
+		if byID[best] == nil {
+			return ""
+		}
+		return best
+	}
 	boundRequests := make(map[string]bool)
 	// What each boundary's operation is declared on, and whether its call
 	// gives words of its own, by operation position (J1 below).
@@ -767,7 +815,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		onOf[len(operations)] = declaredOn(boundary)
 		wordless[len(operations)] = len(boundary.Values) == 0
-		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location})
+		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, DeclaredBy: enclosing(location)})
 		if subjectID != "" {
 			boundRequests[subjectID] = true
 		}
@@ -796,7 +844,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		entry := &operations[at]
 		entry.SubjectID, entry.GroupID, entry.FactID, entry.Source = operation.SubjectID, operation.GroupID, operation.FactID, operation.Source
-		entry.HandlerUnknown, entry.DeclaredBy = false, ""
+		entry.HandlerUnknown = false
 		if entry.Summary == "" {
 			entry.Summary = operation.Summary
 		}
@@ -848,6 +896,32 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	if err != nil {
 		return projectedTarget{}, err
 	}
+	var unsure []UnsureCall
+	for _, call := range target.Unsure {
+		if !validText(call.Symbol) || call.Path == "" || call.LineNo < 1 {
+			continue
+		}
+		location := programindex.Location{Path: call.Path, Line: call.LineNo, Column: max(1, call.Column)}
+		subject := subjectOf(call.ObjectID)
+		if subject == "" {
+			subject = enclosing(location)
+		}
+		unsure = append(unsure, UnsureCall{SubjectID: subject, Location: location, Symbol: call.Symbol, Reason: call.Reason})
+	}
+	var idioms []Idiom
+	for _, idiom := range target.Idioms {
+		kind := OperationKind(idiom.Kind)
+		if kind == "" || !validText(idiom.Symbol) || idiom.Entries < 1 || idiom.Calls < idiom.Entries {
+			continue
+		}
+		row := Idiom{Symbol: idiom.Symbol, Kind: kind, Entries: idiom.Entries, Calls: idiom.Calls}
+		for _, id := range idiom.ObjectIDs {
+			if subject := subjectOf(id); subject != "" && !slices.Contains(row.SubjectIDs, subject) {
+				row.SubjectIDs = append(row.SubjectIDs, subject)
+			}
+		}
+		idioms = append(idioms, row)
+	}
 	data := projectData(program, target.Data)
 	outbound := projectOutbound(program, target, groupOfBox, sourceRefs)
 	joinOutboundData(outbound, data)
@@ -868,6 +942,8 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		Connections:        connections,
 		OffMap:             offMap,
 		MapFailure:         strings.TrimSpace(target.MapFailure),
+		Unsure:             unsure,
+		Idioms:             idioms,
 	}
 	return projectedTarget{index: index, groupOfBox: groupOfBox}, nil
 }

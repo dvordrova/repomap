@@ -313,9 +313,15 @@ func (r *reader) readAPI(ctx context.Context) error {
 	for round := 1; round < len(groups); round++ {
 		r.joinView(views[round])
 	}
+	r.undecidedEnters = make(map[string]bool)
 	for round, group := range groups {
 		for i, s := range group {
 			answer := answers[round][i].answer
+			// A symbol asked what its words become with no decided answer
+			// leaves each of its word calls unsure.
+			if round == 2 && (answer == nil || answer["enters"] == "") {
+				r.undecidedEnters[s.name] = true
+			}
 			if answer == nil {
 				continue
 			}
@@ -435,7 +441,11 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 		entry := b.Direction != atlas.DirectionIn && !b.Handed && role.enters != "" && len(words) > 0 && !r.testFile(state.place.Parent)
 		if entry && len(lines.NameableWords(words)) == 0 {
 			r.noEntryWithoutWords(state.place, role.enters)
+			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordNoWords, role.enters)
 			entry = false
+		}
+		if entry {
+			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordEntry, role.enters)
 		}
 		switch {
 		case b.Direction == atlas.DirectionIn:

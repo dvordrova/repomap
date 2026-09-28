@@ -986,13 +986,27 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 			if call.Line < 1 || call.Kind != string(programindex.RelationInvokesExternal) || call.API == nil {
 				continue
 			}
-			role := r.api[apiName(*call.API)]
+			symbol := apiName(*call.API)
+			role := r.api[symbol]
+			running := atlas.Place{Path: place.Path, TargetIDs: targets}
+			// A word call to a symbol whose entry question was not decided,
+			// or a call to a symbol whose words are entries given no word,
+			// may declare an input: the launch walk says it is unsure.
+			if !inTest && !r.factClaims(place.Path, call.Line, call.Column) {
+				switch {
+				case role.enters == "" && r.undecidedEnters[symbol] && len(call.Values) > 0:
+					r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordUndecided, "")
+				case role.enters != "" && len(call.Values) == 0:
+					r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordNoWords, role.enters)
+				}
+			}
 			// A call outside tests that gives words to a symbol whose words
 			// are an entry is that entry, unless a fact already names the
 			// call: its words are what the code wrote, and its handler is
 			// not established.
 			if role.enters != "" && len(call.Values) > 0 && !inTest && !r.factClaims(place.Path, call.Line, call.Column) {
 				if len(lines.NameableWords(call.Values)) > 0 {
+					r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordEntry, role.enters)
 					id := boundaryID(fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s\x00%s\x00%s", atlas.DirectionIn, place.ID, call.Line, call.Column, call.Kind, call.Name, call.Resolution))
 					r.boundaries[id] = &boundaryState{kind: role.enters, handlerUnknown: true, place: atlas.Place{
 						ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: call.Line, Column: call.Column,
@@ -1002,6 +1016,7 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 					continue
 				}
 				r.noEntryWithoutWords(atlas.Place{ID: place.ID, Path: place.Path, LineNo: call.Line}, role.enters)
+				r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordNoWords, role.enters)
 			}
 			if role.talks == "" && !role.publishes {
 				continue

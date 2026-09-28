@@ -139,6 +139,11 @@ type reader struct {
 
 	symbolLine map[string]cell     // symbol place ID -> model line
 	api        map[string]apiRole  // external symbol -> what it binds, publishes, talks to
+	// undecidedEnters are the outside symbols asked what their words become
+	// that got no decided answer; wordCalls what the reading made of each
+	// word call (launch.go).
+	undecidedEnters map[string]bool
+	wordCalls       []wordCallRecord
 	keys       map[string][]string // file place ID -> key symbol IDs, by rank
 	// selectedKeys is every declaration the selection found worth a reader's
 	// attention; partKeys is what explains the part it stands in.
@@ -1265,6 +1270,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			DeclaredOn: state.on,
 		})
 	}
+	target.Unsure, target.Idioms = r.launchEvidence(meta.ID)
 	return target
 }
 

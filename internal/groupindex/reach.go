@@ -47,6 +47,10 @@ type Reach struct {
 	// a table the reach only reads registers nothing.
 	HandsOver    []int
 	HandedOverBy []string
+	// SubArguments are the handler-less inputs declared by code only this
+	// reach (and no launch) holds, in operation order: words the handler
+	// itself checks (launch.go).
+	SubArguments []string
 }
 
 // ReachedSubject is one reached declaration and its depth: the fewest calls
@@ -242,6 +246,7 @@ func Derive(index *Index) {
 	index.Dispatch = graph.dispatchSites(index.Reach)
 	index.Entries = entries(index)
 	index.Catalogues = catalogues(index)
+	index.Launch = graph.launch(index.Reach)
 	graph.phases()
 }
 
