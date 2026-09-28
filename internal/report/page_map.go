@@ -146,6 +146,9 @@ type pageMap struct {
 	// thousand symbols must not read as the whole target.
 	Subjects int
 	Grouped  int
+	// Launch is the target's "How these were found" reading (page_launch.go),
+	// shown in its Inputs collection's reading.
+	Launch string
 }
 
 // pageMapFrame is one part of a target drawn around the groups inside it.
@@ -250,6 +253,9 @@ type pageMapNode struct {
 	// Declares lists the input nodes declared on the object this input's
 	// own call made (a subcommand's options), in source order.
 	Declares string
+	// Launch is, on a component's Inputs collection, how its inputs were
+	// found (page_launch.go).
+	Launch string
 	// InputPath is an input's reading of its saved reach
 	// (page_input_path.go): where it is dispatched from, the sites it
 	// reaches, and the parts it enters with their calls.

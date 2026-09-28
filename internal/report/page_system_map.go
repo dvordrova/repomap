@@ -99,6 +99,7 @@ func (view *pageView) SystemMap() *pageMap {
 		n.InputPath = remapInputPath(n.InputPath, canonical)
 		n.Catalogue = remapCatalogue(n.Catalogue, canonical)
 		n.Declares = remap(n.Declares)
+		n.Launch = remapLaunch(n.Launch, canonical)
 		n.Dispatch = remapSiteReadings(n.Dispatch, canonical)
 	}
 	// A saved integration may already name a participant in this same map.
@@ -371,8 +372,12 @@ func (view *pageView) SystemMap() *pageMap {
 	}
 	for _, section := range view.Sections {
 		if children := inputsByOwner[section.ID]; len(children) > 0 {
+			launch := ""
+			if section.Map != nil {
+				launch = section.Map.Launch
+			}
 			add(pageMapNode{ID: "system-inputs-" + section.ID, Owner: section.ID, Branch: "inputs", ItemKind: "Inputs", FullTitle: section.ShortLabel,
-				Children: strings.Join(children, " "), Href: "#" + section.ID + "-inbound", DetailsID: section.ID + "-inbound", Lane: "triggers"})
+				Children: strings.Join(children, " "), Href: "#" + section.ID + "-inbound", DetailsID: section.ID + "-inbound", Lane: "triggers", Launch: launch})
 		}
 	}
 	// Saved containment supplies the remaining frames; component membership

@@ -126,7 +126,10 @@ type pageInputPath struct {
 	Registers    []string         `json:"registers,omitempty"`
 	RegisteredBy []string         `json:"registered_by,omitempty"`
 	Parts        []pageInputPart  `json:"parts,omitempty"`
-	Decls        []pageDecl       `json:"decls,omitempty"`
+	// Checks are the input's sub-arguments: words only its handler's code
+	// declares (GroupsIndex Reach.SubArguments), each at its source.
+	Checks []pageDecl `json:"checks,omitempty"`
+	Decls  []pageDecl `json:"decls,omitempty"`
 }
 
 // pathDecls collects the declarations a reading names, each once.
@@ -249,8 +252,16 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 		path.Parts = append(path.Parts, part)
 	}
 	path.Parts = append(path.Parts, extra...)
+	for _, id := range reach.SubArguments {
+		for _, other := range index.Operations {
+			if other.ID == id {
+				anchor := builder.links.anchor(other.Location.Path, other.Location.Line, other.Location.Column)
+				path.Checks = append(path.Checks, pageDecl{Name: other.Name, Href: anchor.Href, Open: anchor.Open, Source: anchor.Text, NoSource: anchor.NoSource})
+			}
+		}
+	}
 	path.Decls = decls.list
-	entered := false
+	entered := len(path.Checks) > 0
 	for _, part := range path.Parts {
 		entered = entered || len(part.Entered) > 0
 	}

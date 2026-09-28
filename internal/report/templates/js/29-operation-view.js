@@ -149,6 +149,12 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
     box.appendChild(rmEl('h6','',rmT("{0}'s handler itself calls {1}, where {2} inputs are dispatched:",title,(decls[site.site]||{}).name||'',site.inputs)));
     calls(site.calls||[],box);section.appendChild(box);
   });
+  if((path.checks||[]).length){
+    // Words only the handler's own code checks: the input's sub-arguments.
+    var checks=rmEl('p','system-path-checks');checks.appendChild(rmEl('span','meta',rmT('Words its handler checks')+': '));
+    path.checks.forEach(function(check,i){if(i)checks.append(document.createTextNode(', '));var link=check.href||check.open?repomapMembers.sourceLink({Href:check.href,Open:check.open,Text:check.name,NoSource:check.no_source}):rmEl('span','',check.name);if(check.source)link.title=check.source;checks.appendChild(link);});
+    section.appendChild(checks);
+  }
   if((path.registered_by||[]).length)section.appendChild(inputs(path.registered_by,rmT('Registered by')));
   if((path.registers||[]).length)section.appendChild(inputs(path.registers,rmT('Registers')));
   // The part holding the handler names it; the parts its handler calls
@@ -261,6 +267,62 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   return section;
 }
 // </catalogue>
+// <launch>
+// The Inputs reading's fold "How these were found" (page_launch.go): the
+// launch functions that hold inputs, each by its chain of calls from where
+// the program starts; each symbol's idiom line, a model answer; the calls
+// that may declare an input and were not decided; the calls the code cannot
+// follow; and the other functions the launch reaches, counted only.
+function rmLaunchSection(launch,inputNode,choose,read,partNode){
+  var box=rmEl('details','system-launch'),decls=launch.decls||[];
+  box.appendChild(rmEl('summary','',rmT('How these were found')));
+  function name(index){
+    var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
+    var link=key?repomapMembers.sourceLink({Href:decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
+    if(decl.source)link.title=decl.source;
+    if(at)link.addEventListener('click',function(event){
+      if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+      event.preventDefault();event.stopPropagation();read(at,key);
+    });
+    return link;
+  }
+  function site(line,href,open){return href||open?repomapMembers.sourceLink({Href:href,Open:open,Text:':'+line}):rmEl('span','',':'+line);}
+  (launch.found||[]).forEach(function(found){
+    var row=rmEl('div','system-path-step');
+    found.chain.forEach(function(index,i){if(i)row.append(document.createTextNode(' → '));row.append(name(index));});
+    row.append(document.createTextNode(' ('+found.inputs.length+') '));
+    found.inputs.slice(0,8).forEach(function(id){var input=inputNode(id);if(!input)return;var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});row.append(b,document.createTextNode(' '));});
+    if(found.inputs.length>8)row.append(document.createTextNode('+'+(found.inputs.length-8)));
+    box.appendChild(row);
+  });
+  (launch.idioms||[]).forEach(function(idiom){
+    var row=rmEl('div','system-path-step system-launch-idiom');
+    var functions=document.createElement('span');(idiom.functions||[]).forEach(function(index,i){if(i)functions.append(document.createTextNode(', '));functions.append(name(index));});
+    row.append(document.createTextNode(rmT('{0}: {1} of {2} word calls declare inputs ({3}), in',idiom.symbol,idiom.entries,idiom.calls,rmT(idiom.kind))+' '),functions);
+    row.appendChild(rmEl('span','possible',' · '+rmT('model')));
+    box.appendChild(row);
+  });
+  if((launch.unsure||[]).length){
+    box.appendChild(rmEl('h6','',rmT('Unsure')));
+    launch.unsure.forEach(function(call){
+      var row=rmEl('div','system-path-step');
+      row.append(name(call.function),document.createTextNode(' '+rmT(call.reason==='no_words'?'calls {0} with words the code computes':'calls {0} with words; whether they are inputs is not decided',call.symbol)+' '),site(call.line,call.href,call.open));
+      box.appendChild(row);
+    });
+  }
+  if((launch.closed||[]).length){
+    box.appendChild(rmEl('h6','',rmT('Could not look inside')));
+    launch.closed.forEach(function(closed){
+      var row=rmEl('div','system-path-step');
+      row.append(name(closed.function),document.createTextNode(' · '+rmT('{0} calls the code cannot follow',closed.sites.length)+' '));
+      closed.sites.slice(0,5).forEach(function(at){if(at.line)row.append(site(at.line,at.href,at.open),document.createTextNode(' '));});
+      box.appendChild(row);
+    });
+  }
+  if(launch.nothing)box.appendChild(rmEl('p','meta',rmT('{0} more functions the launch reaches declare none',launch.nothing)));
+  return box;
+}
+// </launch>
 // An input's reading leads to its program's Main flow, the model's reading
 // of a request through the program, with the title the model wrote kept as
 // model text: a reader had found that page only by chance. Null when the
@@ -588,6 +650,10 @@ function rmCatalogInputClick(event,reveal){
     map.querySelector('.map-inspector')?.classList.toggle('map-reading-input',!!n.dataset.activation);
     var inputPath=null;try{inputPath=n.dataset.inputPath?JSON.parse(n.dataset.inputPath):null;}catch(_){inputPath=null;}
     var catalogue=null;try{catalogue=n.dataset.catalogue?JSON.parse(n.dataset.catalogue):null;}catch(_){catalogue=null;}
+    if(n.dataset.branch==='inputs'&&n.dataset.launch){
+      var launch=null;try{launch=JSON.parse(n.dataset.launch);}catch(_){launch=null;}
+      if(launch)card.querySelector('.map-card-intro').after(rmLaunchSection(launch,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);},readDeclaration,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;}));
+    }
     if(n.dataset.activation&&n.dataset.declares){
       // The inputs declared on the object this input's own call made.
       var declared=rmEl('div','system-neighbours');declared.appendChild(rmEl('span','meta',rmT('Declares')));

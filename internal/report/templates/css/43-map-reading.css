@@ -366,3 +366,7 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-catalogue a{text-decoration:none}.system-catalogue a:hover{text-decoration:underline}
 .system-catalogue-member{font:inherit;color:var(--accent);background:none;border:0;padding:0;cursor:pointer}.system-catalogue-member:hover{text-decoration:underline}
 .system-catalogue-users>summary{cursor:pointer;color:var(--muted,inherit)}
+.system-launch{margin:14px 0;font-size:13px;line-height:1.55}.system-launch>summary{cursor:pointer;font-weight:600}
+.system-launch>h6{margin:10px 0 4px}.system-launch .system-path-step{overflow-wrap:anywhere;margin:3px 0}
+.system-launch a{text-decoration:none}.system-launch a:hover{text-decoration:underline}
+.system-path-checks{font-size:13px;overflow-wrap:anywhere}
