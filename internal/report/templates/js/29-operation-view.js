@@ -205,8 +205,14 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   }
   function inline(key){return Array.from(line.apply(null,['',key].concat(Array.prototype.slice.call(arguments,1))).childNodes);}
   var head=rmEl('p','system-catalogue-declared');
-  if(catalogue.on!=null)head.append.apply(head,inline('Declared on {0}',name(catalogue.on)));
-  if(catalogue.declarer>=0){if(head.childNodes.length)head.append(document.createTextNode(' · '));head.append.apply(head,inline('Declared in {0}',name(catalogue.declarer)));}
+  // The object they are declared on: the input declared at its call, when
+  // there is one, else that call as written.
+  var onInput=catalogue.on_input&&inputNode(catalogue.on_input),on=null;
+  if(onInput){on=rmEl('button','system-catalogue-member',onInput.dataset.title);on.type='button';on.addEventListener('click',function(){choose(onInput);});}
+  else if(catalogue.on!=null)on=name(catalogue.on);
+  if(on&&catalogue.declarer>=0)head.append.apply(head,inline('Declared on {0} in {1}',on,name(catalogue.declarer)));
+  else if(on)head.append.apply(head,inline('Declared on {0}',on));
+  else if(catalogue.declarer>=0)head.append.apply(head,inline('Declared in {0}',name(catalogue.declarer)));
   var members=catalogue.members||[];
   if(members.length>=2){
     var of=({command:'one of {0} commands',request:'one of {0} requests'})[catalogue.kind]||'one of {0} inputs';
@@ -229,6 +235,7 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
     head.append(document.createTextNode(' · '));head.append.apply(head,inline('called from {0}',from));
   }
   section.appendChild(head);
+  if(onInput&&catalogue.on_handler!=null)section.appendChild(line('system-catalogue-handled','{0} is handled by {1}',onInput.dataset.title,name(catalogue.on_handler)));
   (catalogue.uses||[]).forEach(function(use){
     if(catalogue.declarer<0)return;
     var box=rmEl('div','system-catalogue-uses');
@@ -581,6 +588,12 @@ function rmCatalogInputClick(event,reveal){
     map.querySelector('.map-inspector')?.classList.toggle('map-reading-input',!!n.dataset.activation);
     var inputPath=null;try{inputPath=n.dataset.inputPath?JSON.parse(n.dataset.inputPath):null;}catch(_){inputPath=null;}
     var catalogue=null;try{catalogue=n.dataset.catalogue?JSON.parse(n.dataset.catalogue):null;}catch(_){catalogue=null;}
+    if(n.dataset.activation&&n.dataset.declares){
+      // The inputs declared on the object this input's own call made.
+      var declared=rmEl('div','system-neighbours');declared.appendChild(rmEl('span','meta',rmT('Declares')));
+      n.dataset.declares.split(/\s+/).forEach(function(id){var input=byID[id];if(!input)return;var b=rmEl('button','',input.dataset.title);b.type='button';b.addEventListener('click',function(){select(input,true,null,true);});declared.appendChild(b);});
+      card.querySelector('.map-card-intro').after(declared);
+    }
     if(n.dataset.activation&&catalogue){
       var catalogueSection=rmCatalogueSection(catalogue,n.dataset.title,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);},readDeclaration,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;});
       catalogueSection.dataset.readingAnchor='';

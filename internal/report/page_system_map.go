@@ -98,6 +98,7 @@ func (view *pageView) SystemMap() *pageMap {
 		n.InputOwner = remap(n.InputOwner)
 		n.InputPath = remapInputPath(n.InputPath, canonical)
 		n.Catalogue = remapCatalogue(n.Catalogue, canonical)
+		n.Declares = remap(n.Declares)
 		n.Dispatch = remapSiteReadings(n.Dispatch, canonical)
 	}
 	// A saved integration may already name a participant in this same map.

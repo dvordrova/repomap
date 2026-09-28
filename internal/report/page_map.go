@@ -247,6 +247,9 @@ type pageMapNode struct {
 	// names what declares them, for Find.
 	Catalogue  string
 	DeclaredBy string
+	// Declares lists the input nodes declared on the object this input's
+	// own call made (a subcommand's options), in source order.
+	Declares string
 	// InputPath is an input's reading of its saved reach
 	// (page_input_path.go): where it is dispatched from, the sites it
 	// reaches, and the parts it enters with their calls.

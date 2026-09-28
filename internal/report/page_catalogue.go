@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -17,6 +18,10 @@ import (
 type pageCatalogue struct {
 	Declarer int                 `json:"declarer"`
 	On       *int                `json:"on,omitempty"`
+	// OnInput is the input declared at the call that made the object, and
+	// OnHandler its handler when established (the members' L2).
+	OnInput   string `json:"on_input,omitempty"`
+	OnHandler *int   `json:"on_handler,omitempty"`
 	Kind     string              `json:"kind"`
 	Members  []string            `json:"members"`
 	Calls    []pageCatalogueCall `json:"calls,omitempty"`
@@ -44,8 +49,9 @@ type pageCatalogueUse struct {
 
 // catalogueReadings builds each catalogue's shared JSON, by operation ID,
 // and each operation's position in catalogue order.
-func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf func(string) string, inputNode func(string) string) (map[string]string, map[string]int, map[string]string) {
+func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf func(string) string, inputNode func(string) string) (map[string]string, map[string]int, map[string]string, map[string][]string) {
 	reading := map[string]string{}
+	declares := map[string][]string{}
 	order := map[string]int{}
 	declaredBy := map[string]string{}
 	at := 0
@@ -57,11 +63,28 @@ func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf fu
 			result.Declarer = decls.of(catalogue.DeclaredBy)
 			name = decls.list[result.Declarer].Name
 		}
-		if catalogue.DeclaredOn != "" {
-			on := decls.of(catalogue.DeclaredOn)
-			result.On = &on
+		if on := catalogue.On; on != nil {
+			text := on.Text
+			if text == "" {
+				text = fmt.Sprintf("%s:%d", on.Location.Path, on.Location.Line)
+			}
+			anchor := builder.links.anchor(on.Location.Path, on.Location.Line, on.Location.Column)
+			at := decls.add("on "+operationLocationKey(on.Location), pageDecl{Name: text, Href: anchor.Href, Open: anchor.Open, Source: anchor.Text, NoSource: anchor.NoSource})
+			result.On = &at
+			if catalogue.OnOperationID != "" {
+				result.OnInput = inputNode(catalogue.OnOperationID)
+				for _, id := range catalogue.OperationIDs {
+					declares[catalogue.OnOperationID] = append(declares[catalogue.OnOperationID], inputNode(id))
+				}
+				for _, operation := range index.Operations {
+					if operation.ID == catalogue.OnOperationID && operation.SubjectID != "" {
+						handler := decls.of(operation.SubjectID)
+						result.OnHandler = &handler
+					}
+				}
+			}
 			if name == "" {
-				name = decls.list[on].Name
+				name = text
 			}
 		}
 		for _, id := range catalogue.OperationIDs {
@@ -101,7 +124,7 @@ func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf fu
 			at++
 		}
 	}
-	return reading, order, declaredBy
+	return reading, order, declaredBy, declares
 }
 
 // remapCatalogue renames the parts and input nodes a catalogue reading
@@ -121,6 +144,9 @@ func remapCatalogue(raw string, rename func(string) string) string {
 	}
 	for i := range catalogue.Members {
 		catalogue.Members[i] = rename(catalogue.Members[i])
+	}
+	if catalogue.OnInput != "" {
+		catalogue.OnInput = rename(catalogue.OnInput)
 	}
 	encoded, err := json.Marshal(catalogue)
 	if err != nil {

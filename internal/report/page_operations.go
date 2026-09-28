@@ -123,7 +123,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	}
 	// Inputs of a catalogue follow those of none, in catalogue order and
 	// then in source order: redis-cli's options stand together.
-	catalogueOf, catalogueAt, declaredByOf := builder.catalogueReadings(index, partOf, inputNode)
+	catalogueOf, catalogueAt, declaredByOf, declaresOf := builder.catalogueReadings(index, partOf, inputNode)
 	ops := append([]groupindex.Operation(nil), index.Operations...)
 	sort.SliceStable(ops, func(i, j int) bool {
 		left, inLeft := catalogueAt[ops[i].ID]
@@ -270,7 +270,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			Neighbours: strings.Join(nearIDs, " "), Degree: len(near), Members: 1,
 			Trace:   strings.Join(trace, " "),
 			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown,
-			Catalogue: catalogueOf[operation.ID], DeclaredBy: declaredByOf[operation.ID],
+			Catalogue: catalogueOf[operation.ID], DeclaredBy: declaredByOf[operation.ID], Declares: strings.Join(declaresOf[operation.ID], " "),
 		})
 	}
 	ordered := append([]groupindex.Group(nil), index.Groups...)
