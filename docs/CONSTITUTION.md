@@ -53,13 +53,14 @@ reach the screen.
 ## Layers of truth (data model invariant)
 
 1. **facts** — deterministic. Targets and their context (manifests, roots),
-   entrypoints found by reachability, imports/calls graph, registrations (a
-   call outside the repository that receives a repository callable, an
-   address, or a value named by a literal: its call word, literals, the verb
-   it states, and the callable handed over; what it registers is not decided
-   here), SQL statements with the tables they name, config reads (env keys), dynamic execution
-   (`exec`, `eval`, `subprocess`, `os.system`, `pickle.loads`, …, the places
-   where control leaves code the reader can follow), manifest
+   entrypoints found by reachability, imports/calls graph, registrations
+   (code hands a function, an address or a name to a dispatcher — an
+   outside library, or the program's own event loop or table — to call it
+   or match against it later: the call or row as written, its words, the
+   verb it states, and what it hands over; what it registers is decided
+   later by the model), SQL statements with the tables they name, config
+   reads (env keys), dynamic execution (`exec`, `eval`, `pickle.loads`, …,
+   the places where control leaves code the reader can follow), manifest
    facts (`scripts`, `proxy`, `engines`, pinned versions, committed `.env`
    keys without values), TODO/FIXME, dead modules (unreachable from real
    entrypoints), and negatives (README below N bytes, zero test files, no
