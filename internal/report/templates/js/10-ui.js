@@ -31,31 +31,80 @@ function rmScrollToReading(node) {
   });});
 }
 
-// The page's data (page_data_table.go): the values an element's attribute
-// refers to by index (data-reading="12"), each written once; the
-// declarations a reading names, once, by index in its "decls"; and the base
-// of the source links, once, a link inside the data starting with \u0001
-// and one in a key attribute with "@". rmPage.data(element, name) is the
-// value its dataset[name] refers to, parsed once, or null.
+// The page's data (page_data_table.go), read back exactly as Go wrote each
+// value: the values an element's attribute refers to by index
+// (data-reading="12"), each written once; the declarations a reading names,
+// once, by index in its "decls"; the base of the source links, once (a link
+// inside the data starting with \u0001, one in a key attribute with "@");
+// a link its place says written as 1 ("href":1 beside "at":"redis.c:9068"),
+// a link to all of a declaration's lines as its last line; a call's ends by
+// their index in the declarations and its words when their names say them;
+// a tile's declaration by its index; a reading's call as a call unless it
+// says otherwise; and any part written again elsewhere as {"$": index} into
+// "shared". rmPage.data(element, name) is the value its dataset[name]
+// refers to, read once, or null.
 var rmPage = (function () {
   var page=null,values=new Map(),decls=new Map(),named={reading:1,inputPath:1,catalogue:1,launch:1};
   function load(){
-    if(!page){var node=document.getElementById('rm-page-data');page=node?JSON.parse(node.textContent):{decls:[],values:[]};page.base=page.base||'';}
+    if(!page){var node=document.getElementById('rm-page-data');page=node?JSON.parse(node.textContent):{decls:[],values:[]};page.base=page.base||'';page.range=page.range||'-L';page.shared=page.shared||[];}
     return page;
   }
+  // A place as the page writes it: "path:line" or "path:line:column".
+  function place(text){var at=/^(.*?):(\d+)(?::(\d+))?$/.exec(text);return at?{path:at[1],line:Number(at[2])}:{path:text,line:0};}
+  function said(text){var at=place(text);return load().base+at.path+(at.line>0?'#L'+at.line:'');}
+  var links=[['href','at','code'],['href','source','code'],['from','at',''],['Href','Text','Code']];
   function expand(value){
     if(typeof value==='string')return value.charCodeAt(0)===1?load().base+value.slice(1):value;
     if(Array.isArray(value))return value.map(expand);
-    if(value&&typeof value==='object'){var out={};Object.keys(value).forEach(function(key){out[key]=expand(value[key]);});return out;}
+    if(value&&typeof value==='object'){
+      var keys=Object.keys(value);
+      if(keys.length===1&&keys[0]==='$')return expand(load().shared[value.$]);
+      var out={};keys.forEach(function(key){out[key]=expand(value[key]);});
+      links.forEach(function(pair){
+        var text=out[pair[1]];if(typeof text!=='string'||!text)return;
+        if(out[pair[0]]===1)out[pair[0]]=said(text);
+        if(pair[1]==='Text'&&!('Open' in out))out.Open='';
+        if(pair[2]&&typeof out[pair[2]]==='number'&&place(text).line>0)out[pair[2]]=said(text)+load().range+out[pair[2]];
+      });
+      return out;
+    }
     return value;
   }
   function decl(index){if(!decls.has(index))decls.set(index,expand(load().decls[index]));return Object.assign({},decls.get(index));}
+  function declKey(index){var d=decl(index);return d.key||d.href;}
+  // A call's ends by index, its words from their names.
+  function call(item){
+    var caller=typeof item.caller==='number'?item.caller:-1,callee=typeof item.callee==='number'?item.callee:typeof item.to==='number'?item.to:-1;
+    if(caller>=0)item.caller=declKey(caller);
+    if(typeof item.callee==='number')item.callee=declKey(item.callee);
+    if(typeof item.to==='number')item.to=declKey(item.to);
+    if(!('label' in item)&&caller>=0&&callee>=0)item.label=decl(caller).name+' '+(item.v||'calls')+' '+decl(callee).name;
+    delete item.v;
+  }
+  // A tile's declaration by index: its name, link, code and file.
+  function symbol(item){
+    if(typeof item.d!=='number')return;
+    var d=decl(item.d);item.name=d.name;item.href=d.href;if(d.code!==undefined)item.code=d.code;item.path=place(d.at||d.source).path;delete item.d;
+  }
+  // A reading's relation ends are calls unless they say otherwise.
+  function kinds(value){
+    if(Array.isArray(value)){value.forEach(kinds);return;}
+    if(!value||typeof value!=='object')return;
+    Object.keys(value).forEach(function(key){
+      var item=value[key];
+      if(Array.isArray(item)&&(key==='ends'||key==='decls'||key==='uses'))item.forEach(function(end){if(end&&typeof end==='object'&&!('kind' in end))end.kind='calls';});
+      kinds(item);
+    });
+  }
   function data(element,name){
     var ref=element&&element.dataset?element.dataset[name]:undefined;
     if(ref===undefined||ref==='')return null;
     var key=name+'\0'+ref;
     if(!values.has(key)){
       var value=expand(load().values[Number(ref)]);
+      if(name==='calls'&&Array.isArray(value))value.forEach(function(item){if(item&&typeof item==='object')call(item);});
+      if(name==='symbols'&&Array.isArray(value))value.forEach(function(item){if(item&&typeof item==='object')symbol(item);});
+      if(name==='reading')kinds(value);
       if(named[name]&&value&&Array.isArray(value.decls))value.decls=value.decls.map(function(index){return typeof index==='number'?decl(index):index;});
       values.set(key,value);
     }
