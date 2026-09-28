@@ -909,6 +909,25 @@ it; a function's flow; what else it relates to ("Calls", "Uses"), by
 part; and the variables it uses ("Uses variables"), each with a hover
 naming the part holding it.
 
+A declaration two programs of the report hold is one declaration by
+exact identity (`groupindex.DeclarationKey`: path, line, column, kind and
+name; never a name alone; `page_shared_code.go`). Its "Called by" lists,
+after its own program's callers, the calls each other program's own
+reachable code makes into it, each group named by that program
+("redis-cli: [Command line client] cliConnect()"), a name reading it there;
+when its own program's adapter proved it never runs the declaration while
+another program calls it, the reading says "Not called in redis-benchmark"
+and its tile is drawn quiet. A call that leaves its program names each
+program's side from that program's own code: the shortest run of calls
+from the nearest declaration no other program holds to the declaration
+making or taking the call ("redis-cli: cliConnect → anetTcpConnect →
+anetTcpGenericConnect ⇢ redis-server: acceptHandler → anetAccept"); a call
+to an outside endpoint has the one side and says it is outgoing
+("redis-server: syncWithMaster → anetTcpConnect → anetTcpGenericConnect →
+socket.h.connect outgoing"), and its row in the component's reference says
+the program connects out from that run. The shared anet pair alone had
+named neither program.
+
 A function's flow (owner-approved 2026-09-29, the designer's flow v2;
 `page_flow.go`, `32-flow.js`) is what it calls in the order the calls are
 written: GroupsIndex's calls, callbacks, executions and library calls

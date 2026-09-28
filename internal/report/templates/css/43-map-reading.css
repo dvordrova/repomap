@@ -337,6 +337,8 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-frame-connections .flow-card-reading .flow-card-rows{display:block}
 .map-frame-connections .flow-card-reading .flow-card-rows>.flow-card-row{display:block}
 .map-frame-connections .flow-card-reading .flow-card-rows>.flow-card-row>*{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+.map-frame-connections .flow-card-reading .flow-card-sides>b.flow-card-program{margin-right:5px}
+.map-frame-connections .flow-card-reading .flow-card-sides>em{margin-left:6px}
 .map-frame-connections .flow-card-reading .flow-card-again{visibility:visible}
 .map-frame-connections .flow-card-reading .flow-card-row>.flow-card-code{margin-left:6px;font:400 12px/20px system-ui,-apple-system,sans-serif;white-space:nowrap}
 .map-card .flow-card-name{font:inherit;margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;text-align:left}

@@ -196,7 +196,7 @@ func (builder *pageBuilder) callSide(targetID, subjectID string) *pageCallSide {
 		// No own code of the program calls it: the declaration stands alone.
 		path = []string{subjectID}
 	}
-	side := &pageCallSide{Program: section.ShortLabel}
+	side := &pageCallSide{Program: componentTitle(section, builder.sections)}
 	var groupOf map[string]string
 	if index := builder.graphIndex(targetID); index != nil {
 		groupOf = builder.edgesBetweenGroups(*index).groupOf

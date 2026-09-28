@@ -296,6 +296,11 @@ Missing equivalents, recorded rather than fabricated:
   names the handler.
 - With no table-row registration, the C rule that a row storing two
   callables is one input has nothing to apply to.
+- An incoming boundary's registration as written (`atlas.Boundary.Written`,
+  READING; checked on the C, Go, Python and Clojure fixtures, 2026-09-29)
+  has no JS/TS check: the fixture has no inputs test that reads its
+  registrations back, so a route's `app.get("/health", …)` as written is
+  kept by the shared atlas code but not held by a test of its own.
 - A property store records no relation of its own. Storing a parameter
   (`this.onRead = handler`) leaves nothing, and storing a named function
   (`this.onRead = getCommand`) is only a value read of that function. A call
