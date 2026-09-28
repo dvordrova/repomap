@@ -78,6 +78,11 @@ func digest(data []byte) string {
 
 func (r *reader) knowledgeInput(def table.Definition, shared []table.Field, row table.Row) (Knowledge, table.Window, error) {
 	place, known := r.places[row.ID]
+	if subject, named := r.rowSubjects[row.ID]; named {
+		// A row about no place, such as an outside symbol, is its own
+		// subject: no target, no context, where it is first used.
+		place, known = atlas.Place{ID: subject.id, Path: subject.path, LineNo: subject.line}, true
+	}
 	if !known {
 		return Knowledge{}, table.Window{}, fmt.Errorf("knowledge: row %s has no internal entity", row.ID)
 	}
@@ -387,6 +392,17 @@ func (r *reader) runIndependent(ctx context.Context, def table.Definition, round
 	saved := make(map[string]bool)
 	for i, answer := range answers {
 		if answer.answer == nil {
+			// A row a decision model answered uncertainly keeps no knowledge,
+			// but its memo: the same response leaves it undecided again, and
+			// asking once more would be drawing again for a clearer answer.
+			if answer.uncertain && answer.requestKey != "" && !r.recallOnly && !reused[i] && !saved[inputs[i].BasisID] {
+				raw, err := json.Marshal(rememberedRow{RequestKey: answer.requestKey, RowKey: answer.rowKey})
+				if err != nil {
+					return nil, err
+				}
+				memos = append(memos, memo{key: inputs[i].BasisID, raw: raw})
+				saved[inputs[i].BasisID] = true
+			}
 			continue
 		}
 		k := inputs[i]

@@ -14,8 +14,9 @@ Each question gives one symbol from outside the repository that the code
 calls or hands something to, or the field a row of one of the repository's
 own tables stores a callable in, named by the file that declares the row's
 record type, the type and the field. `symbol` is its name, `declared` its
-type as its package declares it, `usage` one line of the repository that
-calls it or writes such a row, `literals` what the code gives it, and
+type as its package declares it, `usage` one call of it as the repository
+wrote it, or the row or statement that stores such a callable, `literals`
+what the code gives it, and
 `hands_callable` holds when the repository passes one of its own callables,
 or a value it built, to it. The question asks what a call to the symbol is
-on our map; decide from the symbol and the line alone.
+on our map; decide from the symbol and its call alone.

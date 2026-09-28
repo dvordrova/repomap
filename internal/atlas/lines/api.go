@@ -93,7 +93,7 @@ func EntryCriteria(names ...string) map[string]llm.Criteria {
 // two, each for a stated reason: a flag set's usage printer is printed text
 // (none) and an errgroup's goroutine does one piece of work and ends (none).
 func API(handed bool) table.Definition {
-	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v6", System: apiPrompt, Classifier: true}
+	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v7", System: apiPrompt, Classifier: true, Memoize: true}
 	if handed {
 		def.Contract += ".handed"
 		// The two decisions are independent: a near-tie on one leaves the

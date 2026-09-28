@@ -176,7 +176,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   are journaled as `cell_rejected`, and a row that lost a cell authorizes no
   glossary prose. Accepted neighbours keep their exact-response cache.
   Description and operation rows additionally retain their entity memos,
-  recalled under the same rules. Independent arrows and target
+  recalled under the same rules. A decision model's memo basis pins what its
+  questions ask beyond the serialized columns: each column's `Ask`, `Item`,
+  options and their criteria (only for a table whose columns carry one of
+  them, so the symbol selection keeps its basis); a remembered answer to a
+  question worded otherwise is not recalled. A row the decision model
+  answered uncertainly is remembered too, as that explicit undecided
+  answer: a warm reading recalls it undecided and never asks again for a
+  clearer draw. Independent arrows and target
   lines use the ordinary window cache. Aggregate architecture decisions use the
   same exact prepared-request cache and the owning closed-ref decoder for
   parts, merge and areas; there is no directory-assignment memo or browser

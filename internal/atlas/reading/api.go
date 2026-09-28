@@ -30,12 +30,12 @@ type apiSymbol struct {
 	// belongs to testing and is not asked about.
 	sites   int
 	holders map[string]bool
-	// usage is the first site: the line a reader would look at. A symbol
-	// only registrations name uses its first registration's line.
-	usagePath        string
-	usageLine        int
-	registrationPath string
-	registrationLine int
+	// usage is the first site: the call a reader would look at. A symbol
+	// only registrations name uses its first registration.
+	usagePath                            string
+	usageLine, usageColumn               int
+	registrationPath                     string
+	registrationLine, registrationColumn int
 }
 
 func apiName(api atlas.CallAPI) string {
@@ -80,7 +80,7 @@ func (r *reader) apiSymbols() []*apiSymbol {
 			// A registrar only rows of a table name (a record's field) is
 			// called nowhere: its usage is the first registration.
 			if s.registrationPath == "" {
-				s.registrationPath, s.registrationLine = place.Path, place.LineNo
+				s.registrationPath, s.registrationLine, s.registrationColumn = place.Path, place.LineNo, place.Column
 			}
 		}
 		if place.Symbol == nil {
@@ -99,14 +99,14 @@ func (r *reader) apiSymbols() []*apiSymbol {
 				s.signature = call.API.Signature
 			}
 			if s.usagePath == "" && call.Line > 0 {
-				s.usagePath, s.usageLine = place.Path, call.Line
+				s.usagePath, s.usageLine, s.usageColumn = place.Path, call.Line, call.Column
 			}
 		}
 	}
 	result := make([]*apiSymbol, 0, len(byName))
 	for _, s := range byName {
 		if s.usagePath == "" {
-			s.usagePath, s.usageLine = s.registrationPath, s.registrationLine
+			s.usagePath, s.usageLine, s.usageColumn = s.registrationPath, s.registrationLine, s.registrationColumn
 		}
 		if s.sites > 0 {
 			result = append(result, s)
@@ -116,21 +116,29 @@ func (r *reader) apiSymbols() []*apiSymbol {
 	return result
 }
 
-// sourceLine is one line of a repository file as written, after its number.
-func (r *reader) sourceLine(path string, line int) string {
+// sourceText is the call at a source position as the code wrote it
+// (lines.CallText), reading each file once.
+func (r *reader) sourceText(files map[string][]byte, path string, line, column int) string {
 	if r.opts.ReadSource == nil || line < 1 {
 		return ""
 	}
-	content, err := r.opts.ReadSource(path)
-	if err != nil {
+	content, read := files[path]
+	if !read {
+		var err error
+		if content, err = r.opts.ReadSource(path); err != nil {
+			content = nil
+		}
+		files[path] = content
+	}
+	if content == nil {
 		return ""
 	}
-	text := strings.Split(string(content), "\n")
-	if line > len(text) {
-		return ""
-	}
-	return fmt.Sprintf("%d  %s", line, text[line-1])
+	return lines.CallText(content, path, line, column)
 }
+
+// apiSubject is the knowledge subject of an outside symbol's row: no
+// compact place ID holds a colon, so it names no place.
+func apiSubject(symbol string) string { return "api:" + symbol }
 
 // readAPI asks the model what the external symbols do with what the
 // repository gives them, one row per symbol.
@@ -148,14 +156,21 @@ func (r *reader) readAPI(ctx context.Context) error {
 	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d outside symbols: %d handed a callable, %d given values", len(symbols), len(handed), len(other)))
 	groups := [][]*apiSymbol{handed, other}
 	rows := make([][]table.Row, len(groups))
+	// Each round remembers every symbol's answer apart: a row is its own
+	// subject, keyed by its symbol, so a new call asks only its symbol.
+	subjects := make([]map[string]rowSubject, len(groups))
+	files := make(map[string][]byte)
 	for round, group := range groups {
 		rows[round] = make([]table.Row, 0, len(group))
+		subjects[round] = make(map[string]rowSubject, len(group))
 		for i, s := range group {
+			id := fmt.Sprintf("sym%d", i+1)
+			subjects[round][id] = rowSubject{id: apiSubject(s.name), path: s.usagePath, line: s.usageLine}
 			fields := []table.Field{{Name: "symbol", Value: s.name}}
 			if s.signature != "" {
 				fields = append(fields, table.Field{Name: "declared", Value: s.signature})
 			}
-			if usage := strings.TrimSpace(r.sourceLine(s.usagePath, s.usageLine)); usage != "" {
+			if usage := r.sourceText(files, s.usagePath, s.usageLine, s.usageColumn); usage != "" {
 				fields = append(fields, table.Field{Name: "usage", Value: usage})
 			}
 			if len(s.literals) > 0 {
@@ -168,7 +183,7 @@ func (r *reader) readAPI(ctx context.Context) error {
 			if s.handsCallable {
 				fields = append(fields, table.Field{Name: "hands_callable", Value: true})
 			}
-			rows[round] = append(rows[round], table.Row{ID: fmt.Sprintf("sym%d", i+1), Fields: fields})
+			rows[round] = append(rows[round], table.Row{ID: id, Fields: fields})
 		}
 	}
 	// The handed and the other symbols are asked at once: neither round
@@ -177,6 +192,9 @@ func (r *reader) readAPI(ctx context.Context) error {
 	asking, cancel := context.WithCancel(ctx)
 	defer cancel()
 	second := r.view(nil)
+	second.rowSubjects = subjects[1]
+	r.rowSubjects = subjects[0]
+	defer func() { r.rowSubjects = nil }()
 	var secondAnswers []rowAnswer
 	var secondErr error
 	secondDone := make(chan struct{})

@@ -1,5 +1,47 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — An outside symbol's call as written, and each symbol's answer remembered (inputs pass 1, A2)
+
+- **Usage is the call** (queue item c, trusted inputs): `lines.CallText`
+  lexes C, Go, JavaScript/TypeScript, Python and Clojure (comments, strings,
+  Go raw strings, template literals, triple quotes, Clojure characters) and
+  sends the call at the adapter's position with its receiver chain
+  (`KafkaConsumer().subscribe(…)`, `path.split("/")[0].split("/")`,
+  `program.option(…).action(run)`), generic arguments and JavaScript's
+  `new`, through its closing parenthesis; a table row or Clojure form when
+  the position is no call, an assignment's statement
+  (`act.sa_handler = onSignal`, `fs.Usage = c.Usage`). Comments dropped,
+  whitespace folded, no line number and no length cap (correction 2): the
+  call goes whole and a row too large for its request is the request's to
+  refuse. Checked against the real anchors of the five fixtures' no-model
+  runs (`inputs/pass1/anchors/`): Go anchors at the parenthesis, C at the
+  name, Python and JS at the selector, Clojure at the form; every call and
+  registration rendered as its call or row. `sourceLine` is deleted.
+- **Memo per symbol**: `repomap.atlas.api.v7`, `Memoize` on both rounds; a
+  row that is no place takes its subject from `rowSubjects`
+  (`api:<symbol>`, no targets, no context) in `knowledge.json`.
+- **Uncertain rows are remembered** (correction 1): `table.Result` marks a
+  row the categorizer answered under the margin; its memo is saved like an
+  answered row's, and a recall returns it found and undecided, so a warm
+  reading asks nothing and never draws a near-tie again.
+- **The basis pins the questions**: `table.MemoIdentity` adds `questions`
+  (a digest of each column's `Ask`, `Item`, options and criteria), only for
+  a table with such a column; the symbol selection's basis is unchanged.
+- `read --through api` stops a reading after the outside symbols.
+- Tests: `TestCallTextIsTheCallAsWritten`,
+  `TestCallTextSendsNothingItCannotRead`, `TestCallTextKeepsALongCallWhole`,
+  `TestCallTextFollowsIndexesGenericsAndNew`,
+  `TestAnOutsideSymbolsUsageIsItsCallNotItsLine`,
+  `TestAWarmAtlasAPIRereadMakesNoLiveCall` (with an uncertain row),
+  `TestAtlasAPIAsksOnlyTheSymbolANewCallAdds`,
+  `TestMemoBasisChangesWithAnOptionsCriteria`,
+  `TestAReadingCanStopAfterTheOutsideSymbols`; each fails on revert or on a
+  mutation of the rule it pins (`inputs/pass1-revert.log`).
+- Cache: every atlas_api row is asked once more (new usage, contract and
+  prompt); the pinned Jev request golden is a synthetic table and is
+  unchanged.
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Every entry question reads one criteria file (inputs pass 1, A1)
 
 - `internal/atlas/lines/prompts/entry_options.md` replaces

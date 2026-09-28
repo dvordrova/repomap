@@ -60,7 +60,7 @@ func runReadConfigured(ctx context.Context, args []string, stdout io.Writer, fac
 func runReadConfiguredWithOutput(ctx context.Context, args []string, stdout io.Writer, factory targetPortfolioProviderFactory, newCategorizer func() (llm.Categorizer, error), collectTerms bool, output *runOutput) error {
 	fs := flag.NewFlagSet("repomap read", flag.ContinueOnError)
 	fs.SetOutput(stdout)
-	through := fs.String("through", "", "stop after directories, files, symbols, operations, boundaries, zones, arrows, targets, joints, learn, question or answer")
+	through := fs.String("through", "", "stop after directories, files, symbols, api, operations, boundaries, zones, arrows, targets, joints, learn, question or answer")
 	var questions []string
 	fs.Func("question", "answer from code and documentation with a reading route; repeat for several questions", func(value string) error { return appendQuestion(&questions, value) })
 	outputDir := fs.String("output", "", "new directory for the reading; default: a new directory under debug-dir")

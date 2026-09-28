@@ -285,3 +285,42 @@ func TestAnAloneClassifierColumnFailsByItself(t *testing.T) {
 		t.Fatalf("the refused cell or row was not recorded: %+v", result.Rejections)
 	}
 }
+
+// A remembered answer is the answer to one question: a classifier row's
+// memo basis pins each question's wording, its item and every option's
+// criteria, which the request serializes only to the categorizer. A table
+// that asks none of them keeps the basis it had.
+func TestMemoBasisChangesWithAnOptionsCriteria(t *testing.T) {
+	criteria := map[string]llm.Criteria{
+		"none":    {What: "no entry", NotFor: "a way in", Includes: "printed text", Examples: []string{"a format"}},
+		"command": {What: "what a person gives", NotFor: "a request", Includes: "an option", Examples: []string{"--verbose"}},
+	}
+	def := Definition{Stage: "atlas_api", Contract: "repomap.atlas.api.v7", System: "task", Classifier: true, Memoize: true,
+		Columns: []Column{{Name: "enters", Kind: Choice, Options: []string{"command", "none"}, Criteria: criteria, Item: "outside_symbol", Ask: "What do the words become?"}}}
+	window := Window{Rows: []Row{{ID: "sym1", Fields: []Field{{Name: "symbol", Value: "flag.Bool"}}}}}
+	basis := func(def Definition) string {
+		t.Helper()
+		id, err := MemoIdentity(&typesafe.Client{Model: "jev-1.13.0"}, def, window)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	original := basis(def)
+	reworded := def
+	reworded.Columns = []Column{def.Columns[0]}
+	changed := map[string]llm.Criteria{"none": criteria["none"], "command": {What: "what a person types", NotFor: "a request", Includes: "an option", Examples: []string{"--verbose"}}}
+	reworded.Columns[0].Criteria = changed
+	if basis(reworded) == original {
+		t.Fatal("a changed option's criteria kept the remembered answer")
+	}
+	reworded.Columns[0].Criteria, reworded.Columns[0].Ask = criteria, "What does the call become?"
+	if basis(reworded) == original {
+		t.Fatal("a changed question kept the remembered answer")
+	}
+	plain := Definition{Stage: "atlas_symbols", Contract: "repomap.atlas.symbol-selection.v9", System: "task", Classifier: true, Memoize: true,
+		Columns: []Column{{Name: "key_symbol", Kind: Choice, Options: []string{"yes", "no"}, Note: "a declaration to look at first"}}}
+	if questions, err := questionsDigest(plain); err != nil || questions != "" {
+		t.Fatalf("a table that asks no worded question pins %q: %v", questions, err)
+	}
+}

@@ -30,6 +30,15 @@ type Result struct {
 	// partial marks accepted rows that lost a cell: their written text is not
 	// accepted as glossary prose.
 	partial []bool
+	// uncertain marks rows a decision model answered, but not clearly
+	// enough to take: an explicit answer that the row stays undecided.
+	uncertain []bool
+}
+
+// Uncertain reports a row without an answer because every decision it
+// missed was a near-tie: the response answered it, uncertainly.
+func (result Result) Uncertain(row int) bool {
+	return row < len(result.uncertain) && result.uncertain[row]
 }
 
 // AcceptedRowKeys limits optional response metadata to rows accepted with

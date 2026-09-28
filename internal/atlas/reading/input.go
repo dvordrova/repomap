@@ -139,10 +139,10 @@ func StageName(name string) (string, error) {
 		return "", nil
 	case "route":
 		return "", fmt.Errorf("reading stage route was removed; use --through answer for answers with ordered supporting sources")
-	case "directories", "files", "symbols", "operations", "boundaries", "zones", "arrows", "targets", "joints", "learn", "question", "answer":
+	case "directories", "files", "symbols", "api", "operations", "boundaries", "zones", "arrows", "targets", "joints", "learn", "question", "answer":
 		return "atlas_" + name, nil
 	default:
-		return "", fmt.Errorf("unknown reading stage %q; use directories, files, symbols, operations, boundaries, zones, arrows, targets, joints, learn, question or answer", name)
+		return "", fmt.Errorf("unknown reading stage %q; use directories, files, symbols, api, operations, boundaries, zones, arrows, targets, joints, learn, question or answer", name)
 	}
 }
 

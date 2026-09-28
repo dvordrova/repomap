@@ -720,8 +720,20 @@ remain model decisions with `self`/`none`, not local middleware classification.
 The categorizer (Jev, `llm.Categorizer`) reads the symbols the code calls or
 hands something to, one question per symbol and decision, once per
 repository. The item is the symbol's row: `symbol`, `declared` (its type as
-its package declares it), `usage` (the first line that calls it), its
+its package declares it), `usage` (its first call as the code wrote it), its
 `literals` and `hands_callable` when a repository callable is passed to it.
+`usage` is the call at the adapter's position (`lines.CallText`): its
+receiver chain, name and arguments through the closing parenthesis, whole,
+with comments dropped and whitespace folded, never the source line with its
+number; a position in a table row or a Clojure form that is no call gives
+that row or form, and one in an assignment its statement. Lexers read C,
+Go, JavaScript/TypeScript, Python and Clojure; a file of another language
+sends no usage. Nothing shortens the call: a row too large for its request
+is refused by the request, never trimmed. Each symbol's answer is
+remembered on its own (`Memoize`, subject `api:<symbol>`, which names no
+place), so a new call asks only its symbol and a warm reading asks
+nothing; an answer under the margin is remembered as undecided, never
+drawn again.
 A symbol is a symbol outside the repository, or, for the rows of a
 repository table (owner decision D1), the field those rows store a callable
 in, named by the file declaring the row's record type, the type and the
@@ -777,7 +789,7 @@ boundary. The roles are recorded on the atlas as `api`. A request, like
 every entry, is named from its registration's words (Operation ownership
 above).
 
-The table asks only the decisions the boundaries read (`repomap.atlas.api.v6`).
+The table asks only the decisions the boundaries read (`repomap.atlas.api.v7`).
 `reads_input`, `writes_output`, `auth`, `config` and `validates` were asked
 of every symbol, stored in `atlas.json` and read by nothing; a window of
 them flipped between runs (owner decision 2026-09-26). A decision without a

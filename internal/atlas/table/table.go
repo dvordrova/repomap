@@ -704,15 +704,51 @@ func MemoIdentity(provider llm.Provider, def Definition, window Window) (string,
 	if err != nil {
 		return "", err
 	}
+	questions, err := questionsDigest(def)
+	if err != nil {
+		return "", err
+	}
 	state, err := json.Marshal(struct {
 		Contract  string `json:"contract"`
 		Prompt    string `json:"prompt_sha256"`
 		Reasoning bool   `json:"reasoning,omitempty"`
-	}{def.Contract, sha256Hex([]byte(def.System)), def.Reasoning})
+		Questions string `json:"questions,omitempty"`
+	}{def.Contract, sha256Hex([]byte(def.System)), def.Reasoning, questions})
 	if err != nil {
 		return "", err
 	}
 	return llm.MemoIdentityBytes(provider, state, semantic)
+}
+
+// questionsDigest pins what a decision model is asked beyond the columns
+// the request serializes: each question's wording, its item's name, its
+// options and their criteria. A remembered answer to a question worded
+// otherwise is not this question's answer. A table that asks none of them
+// keeps its basis ("" leaves the field out).
+func questionsDigest(def Definition) (string, error) {
+	type question struct {
+		Column       string                  `json:"column"`
+		Ask          string                  `json:"ask,omitempty"`
+		Item         string                  `json:"item,omitempty"`
+		Options      []string                `json:"options,omitempty"`
+		Criteria     map[string]llm.Criteria `json:"criteria,omitempty"`
+		CriteriaFrom string                  `json:"criteria_from,omitempty"`
+	}
+	var questions []question
+	for _, column := range def.Columns {
+		if column.Ask == "" && column.Item == "" && len(column.Criteria) == 0 && column.CriteriaFrom == "" {
+			continue
+		}
+		questions = append(questions, question{Column: column.Name, Ask: column.Ask, Item: column.Item, Options: column.Options, Criteria: column.Criteria, CriteriaFrom: column.CriteriaFrom})
+	}
+	if len(questions) == 0 {
+		return "", nil
+	}
+	raw, err := json.Marshal(questions)
+	if err != nil {
+		return "", err
+	}
+	return sha256Hex(raw), nil
 }
 
 // ResponseExample is the one-line answer shape appended to every system

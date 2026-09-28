@@ -346,7 +346,7 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 // answered outside its options, is refused.
 func DecodeClassifierAnswers(def Definition, window Window, verdicts map[string]llm.Verdict) (Result, error) {
 	yesAt := 0.5 + ClassifierNoulMargin
-	result := Result{Answers: make(Answers, len(window.Rows)), rowKeys: make([]string, len(window.Rows)), partial: make([]bool, len(window.Rows))}
+	result := Result{Answers: make(Answers, len(window.Rows)), rowKeys: make([]string, len(window.Rows)), partial: make([]bool, len(window.Rows)), uncertain: make([]bool, len(window.Rows))}
 	accepted, uncertain := 0, 0
 	for i, row := range window.Rows {
 		result.rowKeys[i] = row.ID
@@ -379,6 +379,7 @@ func DecodeClassifierAnswers(def Definition, window Window, verdicts map[string]
 			result.Rejections = append(result.Rejections, RowRejection{Key: row.ID, Reason: reason})
 			if unsure {
 				uncertain++
+				result.uncertain[i] = true
 			}
 			continue
 		}

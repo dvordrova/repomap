@@ -113,6 +113,13 @@ type Result struct {
 	Learning   *atlas.LearningPlan
 }
 
+// rowSubject is what a row about no place is about: its own subject ID
+// and where it is first seen.
+type rowSubject struct {
+	id, path string
+	line     int
+}
+
 // cell is one model line with where it came from.
 type cell struct {
 	value  string
@@ -175,7 +182,10 @@ type reader struct {
 	knowledgeSubjects map[string]*Knowledge
 	symbolSelections  map[string]*Knowledge // native subject -> independent selection evidence
 	responseTables    map[string]rememberedTable
-	recallOnly        bool
+	// rowSubjects names the subject of a table row that is no place, by its
+	// row ID in the table being asked: an outside symbol's row.
+	rowSubjects map[string]rowSubject
+	recallOnly  bool
 	// shared guards knowledge and the response caches for concurrent work.
 	shared *readerShared
 	// knowledge.json is rewritten only when the shared record version moved
@@ -619,6 +629,9 @@ type rowAnswer struct {
 	// partial marks a recalled answer that lost a cell: its text is not
 	// accepted as glossary prose.
 	partial bool
+	// uncertain marks a row a decision model answered under its margin:
+	// no answer, but an explicit one, remembered like any other.
+	uncertain bool
 }
 
 func (r *reader) runTable(ctx context.Context, def table.Definition, round int, rows []table.Row) ([]rowAnswer, error) {
@@ -857,6 +870,11 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 			for j := range window.Rows {
 				if value.Answers[j] == nil {
 					answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven}
+					if value.Uncertain(j) {
+						// The response answered the row, uncertainly: that is
+						// its answer, remembered so a warm reading asks nothing.
+						answers[offsets[i]+j] = rowAnswer{source: atlas.SourceGiven, uncertain: true, requestSHA: result.Outcome.RequestSHA256, responseSHA: result.Outcome.ResponseSHA256, requestKey: result.Outcome.CacheKey, rowKey: window.Rows[j].ID}
+					}
 					rejectedRows++
 					continue
 				}
