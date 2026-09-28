@@ -44,6 +44,9 @@ const designBoxesTask = "repomap.atlas.file_boxes.v1"
 type roleUnit struct {
 	id                    string
 	name, kind, signature string
+	// macro says the unit is a macro (atlas Decl.Macro), a declaration kind
+	// of its own for what its adapter records of its uses.
+	macro bool
 	// file and path are the unit's file place and its path.
 	file, path string
 	// lines is the unit's weight in code lines; zero is unknown and is not
@@ -131,7 +134,7 @@ func (r *reader) unitFacts(view *designView) *roleFacts {
 		roles := &roleFile{file: file, byID: map[string]*roleUnit{}}
 		for _, id := range file.units {
 			decl := r.places[id].Symbol.Decl
-			unit := &roleUnit{id: id, name: decl.Name, kind: decl.Kind, signature: decl.Signature, file: file.id, path: file.path,
+			unit := &roleUnit{id: id, name: decl.Name, kind: decl.Kind, macro: decl.Macro, signature: decl.Signature, file: file.id, path: file.path,
 				callers: map[string]bool{}, users: map[string]bool{}, uses: map[string]bool{},
 				callees: map[string]bool{}, calledByAll: map[string]bool{}, readers: map[string]bool{}, handers: map[string]bool{}}
 			roles.units = append(roles.units, unit)

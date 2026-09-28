@@ -24,7 +24,8 @@ import (
 type roleDecl struct {
 	name, kind      string
 	line, end, code int
-	calls           []string // "path:name" of exact callees
+	macro           bool
+	calls          []string // "path:name" of exact callees
 	uses            []string // "kind path:name" of exact reads, hand-overs and decorators
 }
 
@@ -85,7 +86,7 @@ func roleGraphWith(t *testing.T, extra func(files map[string][]roleDecl), bounda
 		var symbols []atlas.Place
 		for _, spec := range decls {
 			nextObject++
-			decl := atlas.Decl{ObjectID: fmt.Sprintf("n%d", nextObject), Name: spec.name, Kind: spec.kind, Signature: "func()", LineNo: spec.line, EndLine: spec.end, CodeLines: spec.code, Exported: true}
+			decl := atlas.Decl{ObjectID: fmt.Sprintf("n%d", nextObject), Name: spec.name, Kind: spec.kind, Signature: "func()", LineNo: spec.line, EndLine: spec.end, CodeLines: spec.code, Exported: true, Macro: spec.macro}
 			facts.Decls = append(facts.Decls, decl)
 			symbol := &atlas.SymbolFacts{Decl: decl}
 			for _, callee := range spec.calls {
@@ -781,8 +782,9 @@ func TestAFileWithAResponsibilityJoinsNoBox(t *testing.T) {
 // The helper question's item is code structure only: its name, kind, file,
 // signature and lines, the declarations of the program it calls and that
 // call it, read it or hand it over, as "path:name", with test code left out,
-// and its registrations. A function or variable nothing uses is not asked;
-// a type always is.
+// and its registrations. A function or variable nothing uses is not asked
+// where the adapter records such uses (a C target: calls, hand-overs and
+// variable reads); a type always is.
 func TestTheHelperItemCarriesItsUsers(t *testing.T) {
 	graph := roleGraphWith(t, func(files map[string][]roleDecl) {
 		server := files["svc/server.go"]
@@ -799,11 +801,11 @@ func TestTheHelperItemCarriesItsUsers(t *testing.T) {
 		files["svc/server_test.go"][0].calls = []string{"svc/server.go:Route"}
 	}, []atlas.Place{registration(6, "Route", "HandleFunc", "/route")})
 	provider, jev := defaultRoleProvider(), defaultRoleJev()
-	if _, err := Read(t.Context(), roleOptions(t, graph, provider, jev, "")); err != nil {
+	if _, err := Read(t.Context(), inLanguage(roleOptions(t, graph, provider, jev, ""), "c")); err != nil {
 		t.Fatal(err)
 	}
 	for name, want := range map[string]map[string]any{
-		"limits":     {"name": "limits", "kind": "variable", "file": "svc/server.go", "signature": "func()", "lines": 1.0, "read_by": []any{"svc/server.go:Store"}},
+		"limits":    {"name": "limits", "kind": "variable", "file": "svc/server.go", "signature": "func()", "lines": 1.0, "read_by": []any{"svc/server.go:Store"}},
 		"handlePing": {"name": "handlePing", "kind": "function", "file": "svc/server.go", "signature": "func()", "lines": 3.0, "handed_over_by": []any{"svc/server.go:routes"}},
 		"Route": {"name": "Route", "kind": "function", "file": "svc/server.go", "signature": "func()", "lines": 7.0,
 			"calls": []any{"svc/server.go:Store"}, "called_by": []any{"svc/server.go:Serve"}, "registered": []any{"HandleFunc /route"}},
@@ -819,6 +821,46 @@ func TestTheHelperItemCarriesItsUsers(t *testing.T) {
 			t.Fatalf("%s, which nothing in the program uses or which is test or generated code, was asked", name)
 		}
 	}
+}
+
+// No recorded use is no proof of none where the adapter records no use of
+// such a declaration (recordedUses): a Go variable nothing reads is asked,
+// since Go records no reads (GO), and so is a Clojure macro nothing uses,
+// since Clojure records no use of a macro (CLOJURE). C records a
+// variable's reads, so there a variable nothing reads is no helper by code;
+// it has no macro declarations, so it states no uses of one. A function
+// nothing calls is asked in none of them.
+func TestAKindWithNoRecordedUsesIsAsked(t *testing.T) {
+	graph := roleGraph(t, func(files map[string][]roleDecl) {
+		files["svc/server.go"] = append(files["svc/server.go"],
+			roleDecl{name: "routes", kind: "variable", line: 66, end: 66, code: 1},
+			roleDecl{name: "ensure", kind: "function", line: 68, end: 70, code: 2, macro: true},
+		)
+	})
+	for language, want := range map[string][]string{"go": {"routes", "ensure"}, "clojure": {"ensure"}, "c": {"ensure"}} {
+		provider, jev := defaultRoleProvider(), defaultRoleJev()
+		if _, err := Read(t.Context(), inLanguage(roleOptions(t, graph, provider, jev, ""), language)); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"routes", "ensure"} {
+			if asked := slices.Contains(jev.helperAsked, name); asked != slices.Contains(want, name) {
+				t.Fatalf("%s: %s asked %v; want only %v, the kinds with no recorded uses, asked", language, name, asked, want)
+			}
+		}
+		for _, name := range []string{"main", "Close", "Log"} {
+			if slices.Contains(jev.helperAsked, name) {
+				t.Fatalf("%s: %s, a function nothing calls, was asked", language, name)
+			}
+		}
+	}
+}
+
+// inLanguage gives every target of opts the language.
+func inLanguage(opts Options, language string) Options {
+	for i := range opts.Targets {
+		opts.Targets[i].Language = language
+	}
+	return opts
 }
 
 // Only a decided "helper" is a helper: a near-tie (0.52 against 0.48) leaves

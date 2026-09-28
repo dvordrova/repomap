@@ -1,5 +1,34 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Follow-up f1a: the no-users rule asks a kind whose uses are not recorded
+
+- Sanity check 3 (queue f1): "nothing uses it" turned a fact gap into
+  "none" for a kind whose uses the adapter never records. `askedHelper`
+  took any function or variable with no recorded user out of the helper
+  question, so Clojure's `ensure!` (a macro: CLOJURE, its uses leave no
+  relation) was "no helper by code".
+- `recordedUses` (`helpers.go`) now states, by target language and
+  declaration kind, which uses each adapter records, from the contracts: C
+  functions (calls, hand-overs) and variables (reads); Go functions and
+  methods (calls, hand-overs); Python/TypeScript/JavaScript functions,
+  methods, lambdas and variables; Clojure functions and variables. A unit
+  of any other kind is asked: types, module bodies, Go variables (no reads)
+  and Clojure macros. No name heuristics: a macro is a ProgramIndex fact,
+  `macro` (clj-kondo's own mark on the definition), carried to the places
+  graph's `Decl.Macro`.
+- Effect today: only Clojure macros change (the fixture's `ensure!` and
+  `fresh-list` are asked). C, Go, Python and JS/TS units are asked exactly
+  as before; Go has no variable units yet.
+- Tests: `TestAKindWithNoRecordedUsesIsAsked` (a Go variable and a macro
+  asked, a C variable nothing reads not), `TestTheHelperItemCarriesItsUsers`
+  runs as C, `TestCumulativeClojureMapOfParts` checks both macro marks and
+  that `ensure!` is asked. Revert checks (`followups/revert.log`): the old
+  kind switch fails the unit and the Clojure fixture test; an adapter that
+  marks no macro fails the fixture test.
+- Docs: READING (helper question), CLOJURE (calls written through macros),
+  PROGRAM_INDEX (`macro`).
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Map model step 4 accepted: one reach in GroupsIndex, measured on Redis and litestream
 
 - Scope: S4-7 of `map-model/step4-plan.md`: the acceptance of S4-1–S4-6 at

@@ -419,6 +419,7 @@ func (b *builder) collectObjects(target TargetInput) {
 			EndLine:   object.EndLine,
 			CodeLines: object.CodeLines,
 			Exported:  object.Visibility == programindex.VisibilityPublic,
+			Macro:     object.Macro,
 			ObjectID:  scopedID,
 		})
 		if owner := b.byID[object.OwnerID]; owner.Kind == programindex.ObjectType && owner.Location != nil {

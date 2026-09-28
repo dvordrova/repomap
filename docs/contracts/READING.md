@@ -296,12 +296,26 @@ without a model), and code places what they leave open:
   that call it, decorations included), `read_by` and `handed_over_by`
   (exact reads and hand-overs), each as "path:name" with test and generated
   code left out, and `registered`; no documentation and no visibility. A
-  function, method, lambda or variable that nothing in the program uses (no
-  call, decoration, hand-over or read, exact or among alternatives, and no
-  registration; test and generated code left out) is no helper by code and
-  is not asked: an entry point, or an operation a library offers, has no
-  user of its own. A type and a module body are always asked, since no fact
-  says where a type is used. Only a decided `helper` (a lead of
+  unit that nothing in the program uses (no call, decoration, hand-over or
+  read, exact or among alternatives, and no registration; test and
+  generated code left out) is no helper by code and is not asked, but only
+  when its adapter records such uses of its kind: an entry point, or an
+  operation a library offers, has no user of its own. `recordedUses`
+  (`helpers.go`) states them by target language and declaration kind, from
+  the language contracts: C functions (calls, hand-overs) and variables
+  (reads); Go functions and methods (calls, hand-overs); Python, TypeScript
+  and JavaScript functions, methods, lambdas (calls, decorations,
+  hand-overs, reads) and variables (reads); Clojure functions (calls,
+  hand-overs, reads) and variables (reads). Any other unit is asked, since
+  no recorded use says nothing of its users: a type and a module body (no
+  fact says where a type is used, and no declaration uses a module body), a
+  Go variable (Go records no reads, GO) and a Clojure macro (ProgramIndex
+  `macro`: its uses leave no relation, CLOJURE).
+  `TestAKindWithNoRecordedUsesIsAsked` holds the statement for Go, Clojure
+  and C. A gap an adapter leaves in a kind it records stays that adapter's
+  recorded gap: Go's function values kept in a slice, a map or a package
+  variable (GO), Python's unresolved module-attribute calls (PYTHON). Only
+  a decided `helper` (a lead of
   `ClassifierMargin`) is a helper; responsibility, none of these, a
   near-tie, an unanswered row or a refused window leave the unit named and
   assigned as before. There is no second ask, and a refusal never fails the
@@ -505,7 +519,8 @@ its own, since the check takes its type kvSymbol for no helper; Go's
 lookupCommand goes with DispatchCommand, which nothing calls and so is not
 asked, and the command table's handlers are asked once more; Python's
 format_score keeps exports.py whole; TypeScript's handledOrderIds goes with
-recordOrder; Clojure's private exclaim goes with cheer. The words
+recordOrder; Clojure's private exclaim goes with cheer, and its macro
+ensure! is asked. The words
 each fixture shows: Go
 `HandleFunc /v1/update` (`http_registrations.go`), Python `get /health`,
 TypeScript `get /products/featured`, C `kvCommand get` (kvd.c's command

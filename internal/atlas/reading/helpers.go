@@ -17,19 +17,71 @@ import (
 // "helper" is one: responsibility, none of these, a near-tie, an unanswered
 // row and a refused window all leave the unit named and assigned as before.
 
-// askedHelper says whether the helper question asks about a unit. A
-// function, method, lambda or variable nothing in the program uses (no
-// call, decoration, hand-over or read, exact or among alternatives, and no
-// registration; test and generated code left out) is no helper by code: an
-// entry point or an operation a library offers is used by no declaration of
-// its own. A type and a module body are always asked, since no fact names
-// where a type is used: their users are unknown, not none.
-func (unit *roleUnit) askedHelper() bool {
-	switch unit.kind {
-	case "function", "method", "lambda", "variable":
-		return unit.used
+// recordedUses states, by target language and declaration kind, which uses
+// of a declaration its language adapter records as facts, as the language
+// contracts say: calls (decorations included), hand-overs, reads and
+// registrations. A kind absent here has none: no fact names where a type is
+// used as a type, a module body is used by no declaration, Go records no
+// read of a variable (GO) and Clojure records no use of a macro (CLOJURE).
+// What an adapter records only in part stays listed, and its gap recorded
+// in its contract: Go's function values kept in a slice, a map or a
+// package variable (GO), Python's unresolved module-attribute calls
+// (PYTHON).
+var recordedUses = map[string]map[string][]string{
+	"c": {
+		"function": {"calls", "hand-overs", "registrations"},
+		"variable": {"reads"},
+	},
+	"go": {
+		"function": {"calls", "hand-overs", "registrations"},
+		"method":   {"calls", "hand-overs", "registrations"},
+	},
+	"python": {
+		"function": {"calls", "decorations", "hand-overs", "reads", "registrations"},
+		"method":   {"calls", "decorations", "hand-overs", "reads", "registrations"},
+		"lambda":   {"calls", "hand-overs", "reads"},
+		"variable": {"reads"},
+	},
+	"typescript": {
+		"function": {"calls", "decorations", "hand-overs", "reads", "registrations"},
+		"method":   {"calls", "decorations", "hand-overs", "reads", "registrations"},
+		"lambda":   {"calls", "hand-overs", "reads"},
+		"variable": {"reads"},
+	},
+	"javascript": {
+		"function": {"calls", "decorations", "hand-overs", "reads", "registrations"},
+		"method":   {"calls", "decorations", "hand-overs", "reads", "registrations"},
+		"lambda":   {"calls", "hand-overs", "reads"},
+		"variable": {"reads"},
+	},
+	"clojure": {
+		"function": {"calls", "hand-overs", "reads"},
+		"variable": {"reads"},
+	},
+}
+
+// useKind is the unit's declaration kind as recordedUses knows it: a macro
+// is a kind of its own, whatever kind its index gives it.
+func (unit *roleUnit) useKind() string {
+	if unit.macro {
+		return "macro"
 	}
-	return true
+	return unit.kind
+}
+
+// askedHelper says whether the helper question asks about a unit of a
+// target in language. A unit of a kind whose uses the adapter records
+// (recordedUses) that nothing in the program uses (no call, decoration,
+// hand-over or read, exact or among alternatives, and no registration; test
+// and generated code left out) is no helper by code: an entry point or an
+// operation a library offers is used by no declaration of its own. Any
+// other unit is asked, since no recorded use says nothing of its users:
+// they are unknown, not none.
+func (unit *roleUnit) askedHelper(language string) bool {
+	if len(recordedUses[language][unit.useKind()]) == 0 {
+		return true
+	}
+	return unit.used
 }
 
 // helperItem is a unit as the helper question asks about it: its name,
@@ -88,13 +140,14 @@ func (facts *roleFacts) labels(ids map[string]bool) []string {
 // asked; tables.md names it.
 func (r *reader) askHelpers(ctx context.Context, round int, facts *roleFacts) (map[string]bool, error) {
 	helpers := map[string]bool{}
+	target := r.opts.Targets[round-1]
 	var groups rowGroups
 	var asked []*roleUnit
 	var unused []string
 	for _, file := range facts.files {
 		var group rowGroup
 		for i, unit := range file.units {
-			if !unit.askedHelper() {
+			if !unit.askedHelper(target.Language) {
 				unused = append(unused, unit.path+":"+unit.name)
 				continue
 			}
@@ -105,7 +158,6 @@ func (r *reader) askHelpers(ctx context.Context, round int, facts *roleFacts) (m
 			groups = append(groups, group)
 		}
 	}
-	target := r.opts.Targets[round-1]
 	if len(asked) > 0 {
 		r.opts.Stage(lines.StageRoleHelper, fmt.Sprintf("%s: asking whether %d declarations of %d files are helpers", target.Name, len(asked), len(groups)))
 		answers, err := r.runTableGroups(ctx, lines.RoleHelper(), round, groups, nil)

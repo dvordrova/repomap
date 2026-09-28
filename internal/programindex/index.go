@@ -386,6 +386,10 @@ type ObjectInput struct {
 	// program's entry points names it. Only an adapter that sees every way
 	// its language can reach a callable sets it; false claims nothing.
 	Unreachable bool
+	// Macro says the declaration is a macro: code the compiler expands where
+	// it is written (Clojure's `defmacro`), so a use of it is no runtime
+	// relation and the adapter records none. Only a callable can be one.
+	Macro bool
 	// Directory is an adapter-observed repository directory for a package or
 	// module. It remains available when that boundary has no source file.
 	Directory string
@@ -501,6 +505,7 @@ type Object struct {
 	EndLine     int             `json:"end_line,omitempty"`
 	CodeLines   int             `json:"code_lines,omitempty"`
 	Unreachable bool            `json:"unreachable,omitempty"`
+	Macro       bool            `json:"macro,omitempty"`
 	Directory   string          `json:"directory,omitempty"`
 	External    *ExternalSymbol `json:"external,omitempty"`
 	Aliases     []Alias         `json:"aliases,omitempty"`
@@ -1039,7 +1044,7 @@ func New(input Input) (Index, error) {
 		object := Object{
 			ID: id, SourceRef: value.SourceRef,
 			Kind: value.Kind, Name: value.Name, Visibility: value.Visibility,
-			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Unreachable: value.Unreachable, Directory: value.Directory,
+			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Unreachable: value.Unreachable, Macro: value.Macro, Directory: value.Directory,
 			External: cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases),
 		}
 		index.Objects = append(index.Objects, object)
@@ -1779,7 +1784,7 @@ func validateObjectInput(value ObjectInput) error {
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerRef) ||
 		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
 		!validAliases(canonicalAliases(value.Aliases)) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
-		value.Unreachable && !callableKind(value.Kind) {
+		(value.Unreachable || value.Macro) && !callableKind(value.Kind) {
 		return fmt.Errorf("program index: invalid object input")
 	}
 	for _, typed := range append(append([]TypedNameInput(nil), value.Parameters...), value.Results...) {
@@ -1798,7 +1803,7 @@ func validateObject(value Object) error {
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerID) ||
 		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
 		!validAliases(value.Aliases) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
-		value.Unreachable && !callableKind(value.Kind) {
+		(value.Unreachable || value.Macro) && !callableKind(value.Kind) {
 		return fmt.Errorf("program index: invalid object")
 	}
 	for _, typed := range append(append([]TypedName(nil), value.Parameters...), value.Results...) {

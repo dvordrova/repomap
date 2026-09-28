@@ -126,7 +126,10 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if len(d.Arglists) > 0 {
 			signature += " " + strings.Join(d.Arglists, " ")
 		}
-		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: kind, Name: d.NS + "/" + d.Name, Visibility: visibility, Signature: signature, OwnerRef: owner, ContainerRef: owner, Location: location(d.site), EndLine: d.EndRow, CodeLines: countLines(codeLines[d.Filename], d.Row, d.EndRow)}
+		// clj-kondo marks a macro's definition; its uses are skipped below, so
+		// the index records no use of it and says so (CLOJURE).
+		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: kind, Name: d.NS + "/" + d.Name, Visibility: visibility, Signature: signature, OwnerRef: owner, ContainerRef: owner, Location: location(d.site), EndLine: d.EndRow, CodeLines: countLines(codeLines[d.Filename], d.Row, d.EndRow),
+			Macro: d.Macro && kind == p.ObjectFunction}
 		vars[d.NS+"/"+d.Name] = append(vars[d.NS+"/"+d.Name], ref)
 		definitions[d.Filename] = append(definitions[d.Filename], d)
 		switch by {

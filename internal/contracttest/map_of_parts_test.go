@@ -377,9 +377,22 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	// helper and goes with cheer by code; cheer, public and called by
 	// nothing, is not asked. The items carry what reads and what hands over:
 	// read-limit reads source-limit, greet-many hands greet to map. A macro's
-	// uses leave no relation (CLOJURE), so a macro nothing else uses is no
-	// helper by code.
+	// uses leave no relation (CLOJURE), so the index marks the macro, and the
+	// question asks about ensure!, which ensured-limit uses, like a type:
+	// no recorded use says nothing of its users.
 	core := "src/example/core.clj"
+	macros := map[string]bool{}
+	for _, object := range index.Objects {
+		if object.Macro {
+			macros[object.Name] = true
+		}
+	}
+	if !maps.Equal(macros, map[string]bool{"example.core/ensure!": true, "example.core/fresh-list": true}) {
+		t.Fatalf("the index marks the macros %v", macros)
+	}
+	if _, asked := split.HelperItems[[2]string{core, "example.core/ensure!"}]; !asked {
+		t.Fatal("ensure!, a macro whose uses Clojure does not record, was not asked the helper question")
+	}
 	exclaim, cheer := split.Symbols[[2]string{core, "example.core/exclaim"}], split.Symbols[[2]string{core, "example.core/cheer"}]
 	if !split.Helpers[[2]string{core, "example.core/exclaim"}] || split.PartOf[exclaim] == "" || split.PartOf[exclaim] != split.PartOf[cheer] || !recorded(split, "role_attached", "example.core/exclaim") {
 		t.Fatalf("exclaim in %q, cheer in %q", split.PartOf[exclaim], split.PartOf[cheer])

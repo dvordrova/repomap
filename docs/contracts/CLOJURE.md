@@ -128,9 +128,14 @@ macro (READING). The graph's `uses` hold var reads and hand-overs:
 `TestCumulativeClojureMapOfParts` checks that `read-limit` uses
 `example.service/source-limit` and `greet-many` hands `example.service/greet`
 to `clojure.core/map`. The role split's helper question (READING) counts
-these as users; a macro nothing else uses therefore has none, and is no
-helper by code instead of being asked (the fixture's `ensure!`), a missing
-equivalent recorded, not patched. The private `exclaim` at the end of
+these as users. Since no use of a macro is recorded, the adapter marks each
+declaration clj-kondo reports as a macro with ProgramIndex's `macro`
+(`ensure!` and `fresh-list` in the fixture), and the question asks about a
+macro whatever the graph shows of its uses, as it does about a type: no
+recorded use is no proof of none (`TestCumulativeClojureMapOfParts` checks
+both marks and that `ensure!`, which `ensured-limit` uses, is asked). The
+recorded use of a macro stays a missing equivalent, not patched. The private
+`exclaim` at the end of
 `core.clj`, which only `cheer` calls, is the fixture's helper: the split
 check places it with `cheer`, and `cheer`, public and called by nothing, is
 not asked.

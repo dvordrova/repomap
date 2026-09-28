@@ -185,6 +185,9 @@ type Decl struct {
 	// module counts its whole file. Zero is unknown.
 	CodeLines int  `json:"code_lines,omitempty"`
 	Exported  bool `json:"exported"`
+	// Macro says the declaration is a macro, expanded where it is written:
+	// its adapter records no use of it (ProgramIndex `macro`).
+	Macro bool `json:"macro,omitempty"`
 	// FanIn counts distinct callers of this declaration in the graph.
 	FanIn int `json:"fan_in"`
 	// ObjectID keeps the program-index identity for the page's anchors,

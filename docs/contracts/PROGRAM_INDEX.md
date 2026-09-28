@@ -83,6 +83,12 @@ ProgramIndex retains:
   runs (REPORT); no graph is walked for it.
   Validation refuses it on a declaration that does not run (a type, a
   variable, a module, an external symbol);
+- a callable's `macro`: the declaration is a macro, code the compiler expands
+  where it is written, so a use of it is no runtime relation and the adapter
+  records none (Clojure's `defmacro`, which clj-kondo marks). The places
+  graph carries it on the declaration; the role split's helper question
+  reads it as a kind of its own (READING). Validation refuses it on a
+  declaration that is not callable;
 - a callable's `parameters` and `results` in order, each `{name, type,
   type_id}`: the type as short text and, when the value carries a repository
   type (through pointers, slices and arrays in Go; `list[X]`/`Optional[X]` in
