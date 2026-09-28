@@ -244,6 +244,9 @@ type Operation struct {
 	// is the part its call is written in, which declares it and is not
 	// claimed to implement it.
 	HandlerUnknown bool `json:"handler_unknown,omitempty"`
+	// Written is the input's registration as the code wrote it (atlas
+	// Boundary.Written): a table's row with its arity and flags.
+	Written string `json:"written,omitempty"`
 	// DeclaredBy is the subject whose code makes the call declaring or
 	// registering the input: the caller of that call. For an input whose
 	// handler is not established it is where the input is parsed, never its

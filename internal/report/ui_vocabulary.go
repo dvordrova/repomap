@@ -38,6 +38,8 @@ var russianUI = map[string]string{
 	"{0} request handlers":                 "Обработчиков запросов: {0}",
 	"{0} command handlers":                 "Обработчиков команд: {0}",
 	"via":                                  "через",
+	"Its handlers by input":                "Обработчики по входам",
+	"Filter":                               "Фильтр",
 	"Areas and parts":                      "Области и части",
 	"Built from":                           "Собрана из",
 	"Entry":                                "Вход",

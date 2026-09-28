@@ -279,7 +279,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			Lane:           "triggers", X: mapPadding, Y: 40 + float64(i)*84, Width: mapNodeWidth, Height: 68,
 			Neighbours: strings.Join(nearIDs, " "), Degree: len(near), Members: 1,
 			Trace:   strings.Join(trace, " "),
-			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown,
+			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown, Written: operation.Written,
 			Catalogue: catalogueOf[operation.ID], DeclaredBy: declaredByOf[operation.ID], Declares: strings.Join(declaresOf[operation.ID], " "),
 		})
 	}

@@ -46,14 +46,14 @@ type pageSection struct {
 	// written in, tests left out. The home's table of programs lists them:
 	// a model's summary had claimed all four Redis programs share ae, sds,
 	// adlist, dict and anet, which the Makefile does not.
-	BuiltFrom []string
-	Map       *pageMap
-	RouteGroups    []pageRouteGroup
-	Requests       []pageGroupOperation
-	Activities     []pageGroupOperation
-	InputsCount    int
-	Outbound       []pageOutbound
-	Coverage       []string
+	BuiltFrom   []string
+	Map         *pageMap
+	RouteGroups []pageRouteGroup
+	Requests    []pageGroupOperation
+	Activities  []pageGroupOperation
+	InputsCount int
+	Outbound    []pageOutbound
+	Coverage    []string
 	// InboundCount counts native route records plus unmatched request
 	// interpretations. They can describe the same endpoint.
 	InboundCount     int

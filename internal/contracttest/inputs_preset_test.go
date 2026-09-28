@@ -259,3 +259,16 @@ func catalogueRows(index groupindex.Index) []string {
 	slices.Sort(rows)
 	return rows
 }
+
+// writtenRows are the registrations of the inputs declared in a file as the
+// code wrote them, by name: the reading shows them (a table's row with its
+// arity and flags).
+func writtenRows(index groupindex.Index, file string) map[string]string {
+	written := map[string]string{}
+	for _, operation := range index.Operations {
+		if operation.Location.Path == file {
+			written[operation.Name] = operation.Written
+		}
+	}
+	return written
+}

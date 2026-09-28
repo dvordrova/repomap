@@ -216,3 +216,28 @@ func TestOuterInputsStandRequestsBeforeScheduledBeforeContinuous(t *testing.T) {
 		t.Fatalf("outer inputs: %v", order)
 	}
 }
+
+// A dispatcher's reading lists the inputs dispatched there by name, each
+// with its handler (owner, 2026-09-28: "one of 94 handlers" opened nothing).
+func TestADispatchersReadingListsItsInputsByName(t *testing.T) {
+	at := &programindex.Location{Path: "redis.c", Line: 1, Column: 1}
+	index := groupindex.Index{Target: programindex.Target{ID: "server"},
+		Operations: []groupindex.Operation{{ID: "set", Name: "set", Kind: "request", SubjectID: "setCommand"}, {ID: "get", Name: "get", Kind: "request", SubjectID: "getCommand"}, {ID: "DEL", Name: "DEL", Kind: "request", SubjectID: "delCommand"}},
+		Dispatch:   []groupindex.DispatchSite{{FromSubjectID: "call", Location: at, Alternatives: []string{"setCommand", "getCommand", "delCommand"}, OperationIDs: []string{"set", "get", "DEL"}}}}
+	builder := &pageBuilder{indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{}}
+	for _, name := range []string{"call", "setCommand", "getCommand", "delCommand"} {
+		builder.subjects[subjectKey("server", name)] = subjectRef{subject: groupindex.Subject{ID: name, Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction, Location: at}}}
+	}
+	raw := builder.siteReadings(&builder.indexes[0], groupindex.Group{MemberSubjectIDs: []string{"call"}}, builder.pathDecls("server", func(string) string { return "" }), func(id string) string { return "n-" + id })
+	var readings pageSiteReadings
+	if err := json.Unmarshal([]byte(raw), &readings); err != nil || len(readings.Sites) != 1 {
+		t.Fatalf("%s %v", raw, err)
+	}
+	var listed []string
+	for _, entry := range readings.Sites[0].Dispatched {
+		listed = append(listed, entry.Input+" "+readings.Decls[entry.Handler].Name)
+	}
+	if strings.Join(listed, ", ") != "n-DEL delCommand, n-get getCommand, n-set setCommand" {
+		t.Fatalf("dispatched: %v", listed)
+	}
+}

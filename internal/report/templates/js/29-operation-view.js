@@ -137,7 +137,11 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
   (path.dispatched||[]).forEach(function(site,index){
     var box=rmEl('details','system-shared-path'),site_name=(decls[site.site]||{}).name||'';box.open=index===0;
     box.appendChild(rmEl('summary','',rmT('Dispatched from {0}',site_name)+' · '+rmSiteHandlers(site)));
-    var at=rmEl('p','meta');at.append(name(site.site),document.createTextNode(' → '+rmSiteHandlers(site)));box.appendChild(at);
+    // "one of 94 handlers" reads the dispatcher, whose reading lists them
+    // by input with a filter.
+    var at=rmEl('p','meta'),handlers=rmEl('button','system-path-handlers',rmSiteHandlers(site)),siteDecl=decls[site.site]||{},sitePart=partNode(siteDecl.part);handlers.type='button';
+    if(sitePart)handlers.addEventListener('click',function(){read(sitePart,siteDecl.href||siteDecl.open);});
+    at.append(name(site.site),document.createTextNode(' → '),handlers);box.appendChild(at);
     // How many inputs are dispatched there and which handler serves
     // several of them, where a reader compares the counts.
     at.title=[rmT('{0} inputs are dispatched here',site.inputs)].concat(rmSharedHandlers(site,decls,function(id){return inputNode(id)?.dataset.title||'';})).join('\n');

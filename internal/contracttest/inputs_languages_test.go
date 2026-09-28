@@ -106,6 +106,10 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("inputs:\n%+v\nwant\n%+v", got, want)
 	}
+	// Each input keeps its registration as the code wrote it.
+	if written := writtenRows(projected, "internal/storefixture/tool_cli.go"); written["check"] != `strings.EqualFold(os.Args[1], "check")` || !strings.Contains(written["port"], `"port"`) {
+		t.Fatalf("registrations as written: %q", written)
+	}
 	catalogues := catalogueRows(projected)
 	for _, row := range []string{
 		`command on flag.NewFlagSet("serve", flag.ContinueOnError): port`,
@@ -219,6 +223,9 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tool_cli.py's inputs:\n%+v\nwant\n%+v", got, want)
 	}
+	if written := writtenRows(projected, "src/fixture_app/tool_cli.py"); !strings.Contains(written["--force"], `"--force"`) || !strings.Contains(written["init"], `"init"`) {
+		t.Fatalf("registrations as written: %q", written)
+	}
 	catalogues := catalogueRows(projected)
 	for _, row := range []string{
 		`command on argparse.ArgumentParser("tool"): -v`,
@@ -293,6 +300,9 @@ func TestCumulativeClojureInputsAreAskedPerCall(t *testing.T) {
 	got := inputRows(projected, "src/example/core.clj")
 	if len(got) != 1 || got[0].kind != "command" || got[0].name != "--shout" || got[0].declaredBy != "example.core/shouted?" {
 		t.Fatalf("core.clj's inputs: %+v", got)
+	}
+	if written := writtenRows(projected, "src/example/core.clj"); written["--shout"] != `(= (first args) "--shout")` {
+		t.Fatalf("registration as written: %q", written)
 	}
 	var programs []string
 	for _, boundary := range projected.Outbound {

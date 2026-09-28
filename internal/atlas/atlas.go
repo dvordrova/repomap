@@ -873,6 +873,12 @@ type Boundary struct {
 	// fact; nil when the value is a parameter, a variable or nothing a call
 	// produced.
 	DeclaredOn *DeclaredOn `json:"declared_on,omitempty"`
+	// Written is an incoming boundary's registration as the code wrote it
+	// at its site, folded to one line (lines.CallText): a command table's
+	// row with its arity and flags ({"rpush",rpushCommand,3,
+	// REDIS_CMD_BULK|REDIS_CMD_DENYOOM,NULL,1,1,1}), a registering call. A
+	// code fact for the reader; no request carries it.
+	Written string `json:"written,omitempty"`
 }
 
 // DeclaredOn is the call that made the object an entry is declared on, at
@@ -1644,6 +1650,9 @@ func Validate(value Atlas) error {
 			}
 			if on := boundary.DeclaredOn; on != nil && (on.Path == "" || on.LineNo < 1 || on.Column < 0 || on.Text != "" && !ValidName(on.Text)) {
 				return fmt.Errorf("atlas: boundary %q is declared on an invalid site", boundary.ID)
+			}
+			if boundary.Written != "" && (boundary.Direction != DirectionIn || !ValidName(boundary.Written)) {
+				return fmt.Errorf("atlas: boundary %q has an invalid registration as written", boundary.ID)
 			}
 		}
 		for _, call := range target.Unsure {

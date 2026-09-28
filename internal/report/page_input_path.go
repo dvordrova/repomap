@@ -1,6 +1,7 @@
 package report
 
 import (
+	"cmp"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -431,6 +432,16 @@ type pageSiteReading struct {
 	Inputs      int                 `json:"inputs"`
 	Shared      []pageSharedHandler `json:"shared,omitempty"`
 	ReachedFrom []pageSiteInput     `json:"reached_from,omitempty"`
+	// Dispatched are the inputs dispatched here, each with its handler, by
+	// name: the dispatcher's reading lists them with a filter (owner,
+	// 2026-09-28: "one of 94 handlers" opened nothing).
+	Dispatched []pageSiteDispatch `json:"dispatched,omitempty"`
+}
+
+// pageSiteDispatch is one input dispatched at a site and its handler.
+type pageSiteDispatch struct {
+	Input   string `json:"input"`
+	Handler int    `json:"handler"`
 }
 
 type pageSiteInput struct {
@@ -450,6 +461,18 @@ func (builder *pageBuilder) siteReadings(index *groupindex.Index, group groupind
 		seen[site.FromSubjectID] = true
 		reading := pageSiteReading{Site: decls.of(site.FromSubjectID), Of: len(site.Alternatives), Inputs: len(site.OperationIDs)}
 		reading.Handlers, reading.Shared = siteHandlers(index, site, decls, inputNode)
+		var dispatched []groupindex.Operation
+		for _, operation := range index.Operations {
+			if slices.Contains(site.OperationIDs, operation.ID) {
+				dispatched = append(dispatched, operation)
+			}
+		}
+		slices.SortStableFunc(dispatched, func(a, b groupindex.Operation) int {
+			return cmp.Or(strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), strings.Compare(a.Name, b.Name))
+		})
+		for _, operation := range dispatched {
+			reading.Dispatched = append(reading.Dispatched, pageSiteDispatch{Input: inputNode(operation.ID), Handler: decls.of(operation.SubjectID)})
+		}
 		for _, reached := range site.ReachedFrom {
 			input := pageSiteInput{Input: inputNode(reached.OperationID), Calls: []pageCall{}}
 			for _, edge := range reached.Edges {
@@ -488,6 +511,9 @@ func remapSiteReadings(raw string, rename func(string) string) string {
 	for i := range readings.Sites {
 		for j := range readings.Sites[i].ReachedFrom {
 			readings.Sites[i].ReachedFrom[j].Input = rename(readings.Sites[i].ReachedFrom[j].Input)
+		}
+		for j := range readings.Sites[i].Dispatched {
+			readings.Sites[i].Dispatched[j].Input = rename(readings.Sites[i].Dispatched[j].Input)
 		}
 		for j := range readings.Sites[i].Shared {
 			for k := range readings.Sites[i].Shared[j].Inputs {

@@ -309,6 +309,24 @@ function rmInputPart(operation,id){
 // What a dispatch site's "one of N" counts: the handlers it chooses
 // between, or its functions and how many of them are handlers when some
 // are not (page_input_path.go).
+// The inputs dispatched at a site, by name, each with its handler, and a box
+// that filters them by either (owner, 2026-09-28: "one of 94 handlers"
+// opened nothing). A name reads its input.
+function rmDispatchedList(map,site,decls){
+  var fold=rmEl('details','map-dispatched');fold.open=true;
+  fold.appendChild(rmEl('summary','',rmT('Its handlers by input')+' · '+site.dispatched.length));
+  var filter=rmEl('input','map-dispatched-filter');filter.type='search';filter.placeholder=rmT('Filter');filter.setAttribute('aria-label',rmT('Filter'));
+  var list=rmEl('ul','map-dispatched-list');
+  site.dispatched.forEach(function(entry){
+    var input=document.getElementById(entry.input),item=rmEl('li'),name=rmEl('button','',input?input.dataset.title:entry.input);name.type='button';
+    name.addEventListener('click',function(){map.chooseOperation?.(entry.input);});
+    item.append(name,document.createTextNode(' → '+((decls[entry.handler]||{}).name||'')));
+    item.dataset.filter=(item.textContent||'').toLowerCase();list.appendChild(item);
+  });
+  filter.addEventListener('input',function(){var words=filter.value.trim().toLowerCase();list.querySelectorAll('li').forEach(function(item){item.hidden=!!words&&item.dataset.filter.indexOf(words)<0;});});
+  fold.append(filter,list);
+  return fold;
+}
 function rmSiteHandlers(site){
   return site.handlers<site.of?rmT('one of {0} functions, {1} of them handlers',site.of,site.handlers):rmT('one of {0} handlers',site.of);
 }
@@ -335,6 +353,7 @@ function rmSiteReading(map,node,key){
     var decl=decls[site.site];if(!decl||(decl.href||decl.open)!==key)return;
     box.appendChild(rmEl('h6','',rmT('Dispatch site · {0} · {1} inputs dispatched here',rmSiteHandlers(site),site.inputs)));
     rmSharedHandlers(site,decls,function(id){return document.getElementById(id)?.dataset.title||id;}).forEach(function(line){box.appendChild(rmEl('p','meta',line));});
+    if((site.dispatched||[]).length)box.appendChild(rmDispatchedList(map,site,decls));
     if(!(site.reached_from||[]).length){box.appendChild(rmEl('p','meta',rmT('No input reaches {0} by calls',decl.name)));return;}
     box.appendChild(rmEl('p','',rmT('{0} is reached from these inputs:',decl.name)));
     site.reached_from.forEach(function(entry){
@@ -533,6 +552,9 @@ function rmDeclarationRelations(map,node,key,nodes){
       // declares it: the part is where it is declared, not what handles it.
       // A catalogued input reads its catalogue instead (rmCatalogueSection).
       if (node.dataset.handlerUnknown==='true' && !node.dataset.catalogue) html += '<p class="map-card-handler">' + rmT.html('handler not established') + '</p>';
+      // Its registration as the code wrote it: a command table's row says
+      // its arity and flags ({"rpush",rpushCommand,3,REDIS_CMD_BULK|…}).
+      if (node.dataset.written) html += '<p class="map-card-written"><code>' + escapeText(node.dataset.written) + '</code></p>';
       if (node.dataset.operationGroup && !node.dataset.catalogue) html += '<span class="map-card-meta">' + (node.dataset.handlerUnknown==='true' ? rmT.html('declared in') + ' ' : '') + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
       if(source) html += '<p><a target="_blank" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';

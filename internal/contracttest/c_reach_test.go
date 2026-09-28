@@ -307,3 +307,26 @@ func TestCFixturePresetReadingNamesTheClientsOptionsAndCommands(t *testing.T) {
 		}
 	}
 }
+
+// An input's registration is kept as the code wrote it, so its reading
+// shows a command table's row with its arity and flags (owner, 2026-09-28:
+// RPUSH's arity 3 and REDIS_CMD_BULK were in no reading of Redis).
+func TestCFixtureInputsKeepTheirRegistrationAsWritten(t *testing.T) {
+	pair := readKvdPair(t)
+	written := map[string]string{}
+	for _, target := range pair.result.Atlas.Targets {
+		for _, boundary := range target.Boundaries {
+			if target.Name == "kvd" && boundary.Path == "kvd.c" && boundary.Direction == "in" && boundary.Name == "get" {
+				written[boundary.Name] = boundary.Written
+			}
+		}
+	}
+	if written["get"] != `{"get", getCommand, 2, preloadKey}` {
+		t.Fatalf("get's registration as written: %q", written["get"])
+	}
+	for _, operation := range pair.indexes["kvd"].Operations {
+		if operation.Name == "get" && operation.Written != written["get"] {
+			t.Fatalf("GroupsIndex's get: %q", operation.Written)
+		}
+	}
+}

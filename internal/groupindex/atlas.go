@@ -815,7 +815,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			if byID[declaredBy] == nil {
 				declaredBy = ""
 			}
-			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary)}
+			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary), Written: boundary.Written}
 			key := strings.Join(append([]string{kind, boundary.ObjectID}, boundary.Values...), "\x00")
 			if on := operation.DeclaredOn; on != nil {
 				// Two objects in one function are two declarations.
@@ -856,7 +856,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		onOf[len(operations)] = declaredOn(boundary)
 		wordless[len(operations)] = len(boundary.Values) == 0
-		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, DeclaredBy: enclosing(location)})
+		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, DeclaredBy: enclosing(location), Written: boundary.Written})
 		if subjectID != "" {
 			boundRequests[subjectID] = true
 		}

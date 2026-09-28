@@ -465,3 +465,12 @@ details.map-reading-peer[open]>summary::before{content:'▾'}
 details.map-reading-caller>summary{cursor:pointer;list-style-position:outside}
 .map-reading-fan{color:var(--muted);font-size:13px}
 details.map-reading-in>summary{display:flex;gap:8px;cursor:pointer;font-weight:600;font-size:13px}
+/* An input's registration as the code wrote it. */
+.map-card-written{margin:4px 0 8px}
+.map-card-written code{font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap;color:var(--ink)}
+/* A dispatcher's inputs by name, each with its handler, and their filter. */
+.map-dispatched>summary{cursor:pointer;font-weight:600;font-size:13px}
+.flow-enabled .map-inspector .map-dispatched-filter{width:100%;box-sizing:border-box;margin:6px 0;padding:4px 6px;font:13px system-ui;border:1px solid var(--line);border-radius:5px}
+.flow-enabled .map-inspector ul.map-dispatched-list{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto;font:12.5px/1.6 var(--mono)}
+.flow-enabled .map-inspector .map-dispatched-list button{border:0;background:transparent;padding:0;font:inherit;color:var(--link);cursor:pointer}
+.flow-enabled .map-inspector .system-path-handlers{border:0;background:transparent;padding:0;font:inherit;color:var(--link);cursor:pointer;text-decoration:underline dotted}

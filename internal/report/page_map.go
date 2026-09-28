@@ -264,6 +264,9 @@ type pageMapNode struct {
 	// Launch is, on a component's Inputs collection, how its inputs were
 	// found (page_launch.go).
 	Launch string
+	// Written is an input's registration as the code wrote it: a table's
+	// row with its arity and flags.
+	Written string
 	// InputPath is an input's reading of its saved reach
 	// (page_input_path.go): where it is dispatched from, the sites it
 	// reaches, and the parts it enters with their calls.
