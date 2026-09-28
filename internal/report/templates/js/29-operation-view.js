@@ -507,6 +507,9 @@ function rmCatalogInputClick(event,reveal){
         var heading=rmEl('h5',''),all=card.querySelector('.map-card-actions>.map-details-link');
         if(all){all.textContent=rmT('Component details');heading.appendChild(all);}else heading.textContent=rmT('Component details');
         if(readingLinks.childElementCount||all){readingLinks.prepend(heading);card.querySelector('.map-card-intro').after(readingLinks);}
+        // A launch point no part holds is named here, with why: the map
+        // then draws no entry part.
+        details.querySelectorAll(':scope>.component-intro>.component-entry').forEach(function(entry){card.querySelector('.map-card-intro').after(entry.cloneNode(true));});
       }
     }
   });

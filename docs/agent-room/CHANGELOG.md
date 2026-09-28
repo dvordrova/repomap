@@ -1,5 +1,37 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Map model step 4, S4-2: only the part holding a launch point is the entry (GroupsIndex 19)
+
+- `projectTarget` places every declaration first, then gives each part its
+  lane: `triggers` only when it holds a target seed, `dependencies` when its
+  box only calls out, `core` otherwise; the subjects' categories follow that
+  lane. An area is the entry when one of its parts is, else it stands where
+  most of its parts stand; C5's seed scan and "a part that takes requests
+  counts as core" collapse into the parts' lanes. The atlas side stays the
+  reading's column fact. `groupKey` starts with the lane, so `g*` ordinals
+  renumber; GroupsIndex 19 refuses v18 runs. The report reads an area's mark
+  with `pageLane` directly; `areaLane` is deleted.
+- **A launch point off the map** (lead, owner's "no labels"): GroupsIndex
+  derives `Entries`, each seed with its part or its off-map reason. A seed
+  no part holds (redis-server's `main`, undecided at 0.54 against 0.46)
+  makes no entry part and no canvas label; the component's heading and
+  reading say "The program's entry is not on the map: main · In no part of
+  its file", and its "Not on the map" row marks main "(the program's
+  entry)". Russian strings added.
+- Orientation's request carries the group lanes (`internal/orientation/
+  request.go`), so the next ordinary run asks orientation once live.
+- Tests: `TestOnlyThePartHoldingALaunchPointIsTheEntry` (a listening part
+  and a part taking requests are core, main's part and area the entry, a
+  calling-out part dependencies, categories follow); the lane assertions of
+  `TestProjectAtlasMakesGroupsContainersAndConnections` and
+  `outbound_test.go` follow the rule; flowtest checks triggers ⇔ holds a
+  seed and area triggers ⇔ holds a triggers part on every fixture (kvd's
+  net.c part, which listens, is caught on revert; Echo: only cmd/api's main
+  part); `TestALaunchPointOffTheMapIsNamedWithItsReason` (report). Each
+  fails on revert (s42a–e).
+- `make test`: PASS. `make vet`: PASS. `make ui-test`: PASS.
+  `make ui-visual-test`: PASS (65 passed, 2 workers).
+
 ## 2026-09-28 — Map model step 4, S4-3: an entry keeps a line only when the model wrote one (B19)
 
 - `atlas.Boundary.Line` now holds only a line the model wrote

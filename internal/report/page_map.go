@@ -1106,7 +1106,7 @@ func growFrame(frames map[string]*pageMapFrame, index *groupindex.Index, contain
 	frame, known := frames[container.ID]
 	if !known {
 		frame = &pageMapFrame{
-			ID: container.ID, Title: container.Title, Lane: areaLane(*container),
+			ID: container.ID, Title: container.Title, Lane: pageLane(container.Lane, container.Core),
 			Zone: zoneOf(container.ID),
 			X:    node.X, Y: node.Y, Width: node.Width, Height: node.Height,
 		}
@@ -2358,9 +2358,12 @@ func stepRanges(listed string) string {
 	return word + " " + strings.Join(runs, ", ")
 }
 
-// pageLane is the mark a part shows. The middle column is only where a part
-// stands between what enters and what leaves; the core mark is the model's
-// word that the program exists for the part.
+// pageLane is the mark a part or an area shows, from GroupsIndex's lanes.
+// The middle column is only where a part stands between what enters and
+// what leaves; the core mark is the model's word that the program exists
+// for the part, and wins over the entry (owner, 2026-09-27: an area is
+// purple when any part in it is the domain). Only a part holding the
+// program's launch point, and its area, is the entry.
 func pageLane(lane groupindex.Lane, core bool) string {
 	if core {
 		return string(groupindex.LaneCore)
@@ -2369,17 +2372,6 @@ func pageLane(lane groupindex.Lane, core bool) string {
 		return ""
 	}
 	return string(lane)
-}
-
-// areaLane is an area's mark, read from GroupsIndex's container: the core
-// mark when any part in it is the domain, the program's entry included
-// (owner, 2026-09-27: an area is purple when any part in it is the domain);
-// the entry mark on the area holding the program's entry (a target seed)
-// when none is; otherwise a dependencies mark or none, as a part's. Parts
-// that only take requests or listen do not make their area the entry: the
-// container's lane is the entry's only by a seed.
-func areaLane(container groupindex.Container) string {
-	return pageLane(container.Lane, container.Core)
 }
 
 // allQuiet says whether every part-to-part arrow of a map stands quiet at

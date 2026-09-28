@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -113,6 +114,21 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	}
 	if !provider.sawDomainPart || core != 1 {
 		t.Fatalf("the model's core part did not reach the groups: %d of %d", core, len(overlay.Groups))
+	}
+	// Only the part holding cmd/api's main is the entry; the handler's
+	// part, which the route calls into, is not.
+	entries := 0
+	for _, group := range overlay.Groups {
+		holdsMain := slices.ContainsFunc(group.MemberSubjectIDs, func(id string) bool { return id == index.Target.Seeds[0].ObjectID })
+		if holdsMain != (group.Lane == groupindex.LaneTriggers) || slices.Contains(group.MemberSubjectIDs, handler.ID) && group.Lane == groupindex.LaneTriggers {
+			t.Fatalf("part %q is %s (holds main: %v)", group.Title, group.Lane, holdsMain)
+		}
+		if holdsMain {
+			entries++
+		}
+	}
+	if entries != 1 || len(index.Target.Seeds) != 1 {
+		t.Fatalf("%d parts hold cmd/api's %d seeds", entries, len(index.Target.Seeds))
 	}
 	kinds := map[string]int{}
 	for _, call := range overlay.Outbound {

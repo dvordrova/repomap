@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 18
+	Version          = 19
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -322,6 +322,9 @@ type Index struct {
 	// persisted, and shared read-only by Snapshot.
 	Reach    []Reach        `json:"-"`
 	Dispatch []DispatchSite `json:"-"`
+	// Entries are the target's seeds, each with its part or its off-map
+	// reason (reach.go). Derived, never persisted.
+	Entries []Entry `json:"-"`
 }
 
 // OffMapTests is the off-map reason of a file of a part made only of test

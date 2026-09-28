@@ -14,9 +14,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   connections with exact endpoints and source locations. Containers keep the
   atlas's zone order, the order the areas answer listed them; no key sort
   replaces it. A joint is a connection
-  into another target. Lanes follow a box's side: `triggers` where the
-  outside calls in or execution starts, `dependencies` where it only calls
-  out, `core` otherwise. No request sends repository source text: paths,
+  into another target. A group is `triggers` only when it holds a target
+  seed (the program's launch point), `dependencies` when its box only calls
+  out, `core` otherwise (GroupsIndex 19). No request sends repository source text: paths,
   names, signatures, first sentences of docstrings and documentation excerpts,
   literal values and the model's own earlier lines cross the wire. Question
   excerpts preserve Markdown-authored command/code examples; implementation
@@ -216,7 +216,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   it; otherwise none, or the dependencies mark. Parts that only take
   requests or listen do not make their area the entry: Networking's
   listen/bind boundary had drawn Redis's "Core infrastructure" as a second
-  entry area beside Server runtime. Each part keeps its own mark. The
+  entry area beside Server runtime. The same holds for a part: only the
+  part holding the program's launch point has the entry mark; a part that
+  only takes requests or listens has none, and its inputs' blue arrows say
+  where the outside calls in (17 of redis-server's 29 parts had been
+  green). The component reference's "Input responsibilities" list holds
+  only that part. A launch point
+  no part holds (redis-server's `main`, undecided between two parts) makes
+  no entry part and no label on the canvas; the component's heading and
+  reading and its "Not on the map" list name it as the program's entry
+  with its off-map reason. The
   green entry mark on an area that also held a domain part (4a6892a4) was
   an agent's rule and is reversed.
   Concrete input captions remain. A dark outline identifies the card open on

@@ -154,11 +154,29 @@ func Check(t testing.TB, program programindex.Index, index groupindex.Index) {
 			}
 		}
 	}
+	// Only a part holding a seed is the entry, and only an area holding
+	// such a part.
+	seeds := map[string]bool{}
+	for _, seed := range index.Target.Seeds {
+		seeds[seed.ObjectID] = true
+	}
+	lanes := map[string]groupindex.Lane{}
+	for _, g := range index.Groups {
+		lanes[g.ID] = g.Lane
+		if (g.Lane == groupindex.LaneTriggers) != slices.ContainsFunc(g.MemberSubjectIDs, func(id string) bool { return seeds[id] }) {
+			t.Fatalf("part %q is %s, and holding a seed is its only entry", g.Title, g.Lane)
+		}
+	}
+	for _, container := range index.Containers {
+		if (container.Lane == groupindex.LaneTriggers) != slices.ContainsFunc(container.GroupIDs, func(id string) bool { return lanes[id] == groupindex.LaneTriggers }) {
+			t.Fatalf("area %q is %s, and holding the entry's part is its only entry", container.Title, container.Lane)
+		}
+	}
 	hydrated, err := groupindex.OverlayFromIndex(index).Hydrate(program)
 	if err != nil {
 		t.Fatalf("hydrate: %v", err)
 	}
-	if !reflect.DeepEqual(index.Reach, hydrated.Reach) || !reflect.DeepEqual(index.Dispatch, hydrated.Dispatch) {
+	if !reflect.DeepEqual(index.Reach, hydrated.Reach) || !reflect.DeepEqual(index.Dispatch, hydrated.Dispatch) || !reflect.DeepEqual(index.Entries, hydrated.Entries) {
 		t.Fatal("the hydrated index derives another reach or other dispatch sites")
 	}
 	for position, subject := range index.Subjects {

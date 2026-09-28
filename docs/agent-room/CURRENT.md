@@ -151,7 +151,11 @@ never entered into or read from a repository-wide unqualified map.
   initialization, with its exception (a program all of whose arrows would
   be quiet draws them); an area is purple when any part in it is the
   domain, the entry area included; a part's tiles stand keys, then types,
-  then the rest.
+  then the rest. Only the part holding the program's launch point (a
+  target seed), and its area, is the entry (GroupsIndex 19): a part that
+  takes requests or listens is not, and a launch point no part holds makes
+  no entry part and is named, with its off-map reason, in the component's
+  reading and its "Not on the map" list.
 - **Owner decisions of 2026-09-28 (map model step 3):** ask once whether a
   declaration is a helper, with the no-users rule and no `exported`; shared
   helpers go to a second pass; arrows into helpers are quiet like
@@ -300,7 +304,7 @@ Current shapes are defined by their owning code, not historical run headers:
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
 This wave uses ProgramIndex 18, places graph 19, reading input 18, atlas 15,
-GroupsIndex 18, dependency catalog 2, extraction artifact 2, facts 3, claims 2
+GroupsIndex 19, dependency catalog 2, extraction artifact 2, facts 3, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
 dependencies. Accepted extractor nodes use `u*`; arbitrary public-protocol IDs

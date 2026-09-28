@@ -84,6 +84,16 @@ type pageSection struct {
 	TestFiles  []pageOffMapRow
 	OffMap     []pageOffMapRow
 	MapFailure string
+	// OffMapEntries are the program's launch points no part holds, with why
+	// (GroupsIndex's Entries): the map then draws no entry part, and the
+	// component's reading names them.
+	OffMapEntries []pageOffMapEntry
+}
+
+// pageOffMapEntry is a launch point the map of parts does not draw.
+type pageOffMapEntry struct {
+	Chip   pageChip
+	Reason string
 }
 
 // pageOffMapRow is one file outside the map of parts: its source link, the
@@ -120,11 +130,27 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 		return
 	}
 	section.MapFailure = mapFailureReasons[index.MapFailure]
+	offEntries := map[string]bool{}
+	for _, entry := range index.Entries {
+		if entry.GroupID != "" {
+			continue
+		}
+		offEntries[entry.SubjectID] = true
+		chips, _ := builder.memberChips(index.Target.ID, []string{entry.SubjectID})
+		for _, row := range chips {
+			for _, chip := range row.Members {
+				section.OffMapEntries = append(section.OffMapEntries, pageOffMapEntry{Chip: chip, Reason: offMapReasons[entry.OffMap]})
+			}
+		}
+	}
 	for _, file := range index.OffMap {
 		row := pageOffMapRow{Anchor: builder.links.anchor(file.Path, 0, 0), Part: file.Part}
 		chips, _ := builder.memberChips(index.Target.ID, file.SubjectIDs)
 		for _, chip := range chips {
 			row.Members = append(row.Members, chip.Members...)
+		}
+		for position := range row.Members {
+			row.Members[position].Entry = offEntries[row.Members[position].objectID]
 		}
 		if file.Reason == groupindex.OffMapTests {
 			section.TestFiles = append(section.TestFiles, row)
@@ -289,6 +315,9 @@ type pageChip struct {
 	// this program never runs (runByOthers), set only where the page lists
 	// what the program never runs.
 	RunBy []pageExternal
+	// Entry marks the program's launch point where a list names it off the
+	// map.
+	Entry bool
 	// objectID is the listed subject, the target's own object.
 	objectID string
 }

@@ -3,6 +3,7 @@ package groupindex
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -320,7 +321,9 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 			t.Fatalf("group %s members: %v", group.Title, group.MemberSubjectIDs)
 		}
 	}
-	if lanes["HTTP handlers"] != LaneTriggers || lanes["Domain"] != LaneCore {
+	// Taking requests makes no entry: without a seed the handlers' part
+	// stands in the middle.
+	if lanes["HTTP handlers"] != LaneCore || lanes["Domain"] != LaneCore {
 		t.Fatalf("lanes: %v", lanes)
 	}
 	if svcIndex.Containers[0].Title != "Serving" || len(svcIndex.Containers[0].GroupIDs) != 2 {
@@ -392,5 +395,46 @@ func TestEntryOperationsTakeTheChosenNameOrTheHandler(t *testing.T) {
 	sort.Strings(got)
 	if want := []string{"continuous FA @6", "request FA @5", "request get @4"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("operations = %v, want %v", got, want)
+	}
+}
+
+// Only the part holding a declaration execution starts from (a target seed)
+// is the program's entry, and only its area. Redis's networking part, which
+// listens and accepts, and its command parts, which take requests, had all
+// been marked the entry: 17 of 29 parts.
+func TestOnlyThePartHoldingALaunchPointIsTheEntry(t *testing.T) {
+	p := helperTestProgram(t)
+	value := helperTestAtlas(p)
+	target := &value.Targets[0]
+	// Handlers (c.go, in the reading's "in" column) also listens; b.go
+	// only calls out.
+	target.Boundaries = []atlas.Boundary{
+		{ID: "listen", ObjectID: p.Target.ID + "." + p.Objects[2].ID, BoxID: "pc", Path: "svc/c.go", LineNo: 3, Column: 1,
+			Direction: atlas.DirectionIn, Kind: atlas.BoundaryListenAddress, Values: []string{":6379"}, FactID: "listen"},
+	}
+	target.Boxes[1].Title, target.Boxes[1].Side = "Client", atlas.SideOut
+	indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lanes := map[string]Lane{}
+	for _, group := range indexes[0].Groups {
+		lanes[group.Title] = group.Lane
+		want := map[Lane]programindex.Category{LaneTriggers: programindex.CategoryInbound, LaneCore: programindex.CategoryCore, LaneDependencies: programindex.CategoryDependency}[group.Lane]
+		for _, subject := range indexes[0].Subjects {
+			if subject.ID == group.MemberSubjectIDs[0] && !slices.Equal(subject.Categories, []programindex.Category{want}) {
+				t.Fatalf("%s's declaration is %v in a %s part", subject.ID, subject.Categories, group.Lane)
+			}
+		}
+	}
+	if want := map[string]Lane{"Main": LaneTriggers, "Handlers": LaneCore, "Domain": LaneCore, "Client": LaneDependencies}; !reflect.DeepEqual(lanes, want) {
+		t.Fatalf("lanes %v, want %v", lanes, want)
+	}
+	areas := map[string]Lane{}
+	for _, container := range indexes[0].Containers {
+		areas[container.Title] = container.Lane
+	}
+	if want := map[string]Lane{"Start": LaneTriggers, "Requests": LaneCore}; !reflect.DeepEqual(areas, want) {
+		t.Fatalf("areas %v, want %v", areas, want)
 	}
 }

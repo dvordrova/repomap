@@ -39,8 +39,10 @@ func TestAtlasOutboundSurvivesIncomingLaneAndRebindsAcrossTargets(t *testing.T) 
 		t.Fatal(err)
 	}
 	for _, index := range indexes {
-		if len(index.Groups) != 1 || index.Groups[0].Lane != LaneTriggers || len(index.Outbound) != 2 {
-			t.Fatalf("incoming lane lost outgoing communication or promoted non-communication: %+v", index.Outbound)
+		// The part takes requests and holds no seed: it is no entry, and
+		// its outgoing calls stay its own.
+		if len(index.Groups) != 1 || index.Groups[0].Lane != LaneCore || len(index.Outbound) != 2 {
+			t.Fatalf("a part taking requests lost outgoing communication or promoted non-communication: %+v", index.Outbound)
 		}
 		program := map[string]programindex.Index{library.Target.ID: library, app.Target.ID: app}[index.Target.ID]
 		for _, call := range index.Outbound {

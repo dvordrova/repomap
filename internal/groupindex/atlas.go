@@ -319,17 +319,6 @@ type projectedTarget struct {
 	groupOfBox map[string]string
 }
 
-func laneOfSide(side string) Lane {
-	switch side {
-	case atlas.SideIn:
-		return LaneTriggers
-	case atlas.SideOut:
-		return LaneDependencies
-	default:
-		return LaneCore
-	}
-}
-
 func categoryOfLane(lane Lane) programindex.Category {
 	switch lane {
 	case LaneTriggers:
@@ -429,23 +418,46 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	// A part its program never runs is listed off the map by its
 	// declarations, file by file.
 	unreached := make(map[string][]programindex.Object)
+	drawn := make(map[string]*atlas.Box)
 	for _, object := range program.Objects {
-		categories := []programindex.Category{}
 		box := locate(object.ID, map[string]bool{})
 		if box != nil && box.Unreached && object.Location != nil {
 			unreached[box.ID] = append(unreached[box.ID], object)
 		}
 		if box != nil && !box.OffCanvas() {
-			categories = []programindex.Category{categoryOfLane(laneOfSide(box.Side))}
+			drawn[object.ID] = box
 			membersOfBox[box.ID] = append(membersOfBox[box.ID], object.ID)
 		}
 		subject := byID[object.ID]
-		subject.Categories = categories
+		subject.Categories = []programindex.Category{}
 		if object.Location != nil {
 			if interpretation, ok := interpretations[DeclarationKey(object)]; ok {
 				subject.Interpretation = &interpretation
 			}
 		}
+	}
+	// Only the part holding a declaration execution starts from (a target
+	// seed) is the program's entry. Taking requests or listening does not
+	// make one: the inputs' own arrows say where the outside calls in. A
+	// part that only calls out stands with the dependencies; every other
+	// part is in the middle. The atlas side stays the reading's column fact.
+	seeds := make(map[string]bool, len(program.Target.Seeds))
+	for _, seed := range program.Target.Seeds {
+		seeds[seed.ObjectID] = true
+	}
+	laneOfBox := make(map[string]Lane, len(target.Boxes))
+	for _, box := range target.Boxes {
+		lane := LaneCore
+		if box.Side == atlas.SideOut {
+			lane = LaneDependencies
+		}
+		if slices.ContainsFunc(membersOfBox[box.ID], func(id string) bool { return seeds[id] }) {
+			lane = LaneTriggers
+		}
+		laneOfBox[box.ID] = lane
+	}
+	for id, box := range drawn {
+		byID[id].Categories = []programindex.Category{categoryOfLane(laneOfBox[box.ID])}
 	}
 	sort.Slice(subjects, func(i, j int) bool { return subjectIDLess(subjects[i].ID, subjects[j].ID) })
 
@@ -465,7 +477,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		// An empty line is the part's explicit no-description state.
 		summary := strings.TrimSpace(box.Line)
 		group := Group{
-			Title: strings.TrimSpace(box.Title), Summary: summary, Lane: laneOfSide(box.Side), Core: box.Core,
+			Title: strings.TrimSpace(box.Title), Summary: summary, Lane: laneOfBox[box.ID], Core: box.Core,
 			MemberSubjectIDs: members, EvidenceSubjectIDs: []string{},
 		}
 		groupValueOfBox[box.ID] = groupKey(group)
@@ -481,13 +493,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		groupOfBox[boxID] = groupIDByValue[value]
 	}
 
-	// An area is the program's entry when one of its groups holds a
-	// declaration execution starts from (a target seed); taking requests or
-	// listening does not make one.
-	seeds := make(map[string]bool, len(program.Target.Seeds))
-	for _, seed := range program.Target.Seeds {
-		seeds[seed.ObjectID] = true
-	}
+	// An area is the program's entry when one of its parts is; otherwise
+	// it stands where most of its parts stand. It is core when any part in
+	// it is.
 	groupByID := make(map[string]Group, len(groups))
 	for _, group := range groups {
 		groupByID[group.ID] = group
@@ -495,7 +503,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	containers := make([]Container, 0, len(target.Zones))
 	for _, zone := range target.Zones {
 		var ids []string
-		core, entry := false, false
+		core := false
 		lanes := make(map[Lane]int)
 		for _, boxID := range zone.BoxIDs {
 			groupID, ok := groupOfBox[boxID]
@@ -503,21 +511,8 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				continue
 			}
 			ids = append(ids, groupID)
-			for _, id := range groupByID[groupID].MemberSubjectIDs {
-				entry = entry || seeds[id]
-			}
-			for _, box := range target.Boxes {
-				if box.ID == boxID {
-					// A part that takes requests counts with the core: only
-					// the entry makes the area's lane triggers.
-					lane := laneOfSide(box.Side)
-					if lane == LaneTriggers {
-						lane = LaneCore
-					}
-					lanes[lane]++
-					core = core || box.Core
-				}
-			}
+			lanes[groupByID[groupID].Lane]++
+			core = core || groupByID[groupID].Core
 		}
 		// A zone of one group is that group; a container holds several.
 		if len(ids) < 2 {
@@ -531,7 +526,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				lane, best = candidate, lanes[candidate]
 			}
 		}
-		if entry {
+		if lanes[LaneTriggers] > 0 {
 			lane = LaneTriggers
 		}
 		summary := strings.TrimSpace(zone.Line)

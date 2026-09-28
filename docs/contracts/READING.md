@@ -531,7 +531,14 @@ split file:
   `seed_decls`), else the seed file's part, so the "in" column and "starts
   the program" (core) survive a split seed file. The atlas keeps no main
   path of its own; orientation's main flow and the report's start list read
-  the entry forward.
+  the entry forward. GroupsIndex (19) marks as the entry only the part
+  holding a seed declaration, and an area only when one of its parts is;
+  every other part stands in the middle, or with the dependencies when it
+  only calls out. The atlas side stays the reading's column fact: a box
+  that takes requests or listens stands "in" there without being the
+  program's entry. A seed no part holds (Redis's `main`, a near-tie of the
+  parts answer) makes no entry part; GroupsIndex keeps it with its off-map
+  reason (`Entries`), and the code never picks a part for it.
 - A boundary takes its subject's part. An input that hands a declaration
   over (a command table row, a route) stands only in that declaration's
   part: when the declaration is undecided, or in a file off the map, the

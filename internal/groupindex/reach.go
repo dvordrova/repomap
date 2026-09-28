@@ -100,6 +100,46 @@ type DispatchReach struct {
 	Edges       []int
 }
 
+// Entry is a declaration execution starts from (a target seed) and where
+// the map has it: GroupID is the part holding it, the program's entry part;
+// a seed no part holds keeps OffMap, the reason its file lists it off the
+// map ("undecided" for Redis's main, a near-tie of the parts answer). The
+// code never picks a part for it.
+type Entry struct {
+	SubjectID string
+	GroupID   string
+	OffMap    string
+}
+
+// entries places every seed of the target on the map or off it.
+func entries(index *Index) []Entry {
+	var result []Entry
+	for _, seed := range index.Target.Seeds {
+		entry := Entry{SubjectID: seed.ObjectID}
+		for _, group := range index.Groups {
+			if slices.Contains(group.MemberSubjectIDs, seed.ObjectID) {
+				entry.GroupID = group.ID
+			}
+		}
+		if entry.GroupID == "" {
+			path := ""
+			for _, subject := range index.Subjects {
+				if subject.ID == seed.ObjectID && subject.Object != nil && subject.Object.Location != nil {
+					path = subject.Object.Location.Path
+				}
+			}
+			for _, file := range index.OffMap {
+				if slices.Contains(file.SubjectIDs, seed.ObjectID) || len(file.SubjectIDs) == 0 && file.Path == path && path != "" {
+					entry.OffMap = file.Reason
+					break
+				}
+			}
+		}
+		result = append(result, entry)
+	}
+	return result
+}
+
 // reachGraph is the program's execution structure by subject position.
 type reachGraph struct {
 	index     *Index
@@ -186,8 +226,9 @@ func executionEdge(edge StructuralEdge) bool {
 }
 
 // Derive computes what GroupsIndex derives from the program's structure and
-// the saved overlay: each input's reach, the dispatch sites, the phases of
-// subjects and connections, and which connections go into helpers. It is
+// the saved overlay: each input's reach, the dispatch sites, where the
+// program's entries stand, the phases of subjects and connections, and
+// which connections go into helpers. It is
 // deterministic and idempotent; ProjectAtlas, Hydrate and Build call it, so
 // the ordinary run and a saved rendering derive the same values.
 func Derive(index *Index) {
@@ -198,6 +239,7 @@ func Derive(index *Index) {
 	}
 	graph.handOvers(index.Reach)
 	index.Dispatch = graph.dispatchSites(index.Reach)
+	index.Entries = entries(index)
 	graph.phases()
 }
 
