@@ -222,3 +222,25 @@ such casts. Clojure has macros: a call written in a macro's argument keeps its
 own place and caller (`ensured-limit` in
 [core.clj](clojure/src/example/core.clj)), while the use of the macro itself
 leaves no call, which the Clojure contract records.
+
+The inputs a program's code declares (the 2026-09-28 inputs sequence) are
+read end to end with a preset that answers each closed question from the
+item it shows (`internal/contracttest`: the kvd preset for C, the inputs
+preset for the others):
+
+| Shape | C | Go | Python | TypeScript | Clojure |
+| --- | --- | --- | --- | --- | --- |
+| A split file's seed is its own row (e1) | [kvd.c](c/kvd.c) `main` with `setupSignals` | [cmd/app/main.go](go/cmd/app/main.go) `main` with `Subscribe` | not read: the map test reads the library, which has no seed | any seed of a split file (partstest checks it on every split read) | [core.clj](clojure/src/example/core.clj) `-main` |
+| Each word call asked on its own | `strcasecmp(argv[1], "--raw")` beside `strcasecmp(cmd->name, "bgsave")` in [kvcli.c](c/kvcli.c) | `strings.EqualFold(os.Args[1], "check")` beside `strings.EqualFold(level, "default")` in [tool_cli.go](go/internal/storefixture/tool_cli.go) | missing: a comparison is an operator | missing: `process.argv` names no symbol without Node's declarations | `(= (first args) "--shout")` beside `(= (:name row) "default")` |
+| Where a compared argument comes from | element "0" of `splitLine`'s result through a local, element "1" of `argv`, field `name` of `lookupCommand`'s result | the call as written | the call as written | missing | the call as written |
+| Catalogue of a declaring function (K1) | `main`'s `--symbols`, `loadConfig`'s directives | `DestinationApplication`'s `price-endpoint` | by object (below) | missing: commander's declarations are not installed | missing: `tools.cli` vectors are no call literals |
+| Catalogue of an object (K2) and J1 | missing: no object is made for an option | two `flag.NewFlagSet` objects in `ToolCommand`; J1 missing | `argparse.ArgumentParser("tool")`, init's parser; `add_parser` + `set_defaults` one input | missing (commander) | missing: no call-result origins |
+| Setting | `loadConfig`'s `port`, `dbfilename` | `ServerConfig`'s tagged fields decoded by `json.Unmarshal` | missing: no key alias recorded | missing | missing: EDN keys are keywords |
+| Kept callable and table of names (pass 2) | `acceptHandler` request; kvcli's `cmdTable` rows | missing: S1 not enabled | missing | missing | missing |
+| A row's peer input (K5) | kvcli's rows name kvd's inputs; `del`, left unmatched, names none | no table of inputs | none | none | none |
+| Outer inputs of a dispatch site (u6) | `processCommand` from `acceptHandler` through `readQueryFromClient` | no dispatch site | no dispatch site | no dispatch site | no dispatch site |
+| A launch named by its word | missing in a preset read (`tools/dump.c`'s `popen("sort -u")` is asked up to atlas_api) | `Revision` names git | missing: a list's strings are no call words | missing (Node) | `revision` names git |
+| Outside package asked its system once | kvcli's socket calls | `net/http` with every symbol called | `httpx` (`requests` is the fixture's own module) | missing (`fetch` names no package) | no outgoing call |
+
+The three-step glossary reads accepted prose, not a language's code: its
+tests are the terminology package's, with no fixture here.

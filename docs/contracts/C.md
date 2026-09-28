@@ -407,7 +407,10 @@ through the local `argv`, `main`'s `--symbols` as element "1" of parameter
 #2 `argv`, and kvcli's `bgsave` comparison as field `name` of the result
 of `lookupCommand(argv[first])` through the local `cmd`. Tables of names
 (S3) and callables the repository's own functions keep (S1) are asked in
-pass 2 (above). Not recorded yet, and so asked nothing:
+pass 2 (above). The object an input is declared on (K2) and J1, a word
+entry joined with the hand-over made on its result, have no C equivalent:
+C's option parsing compares words and makes no object options are declared
+on. Not recorded yet, and so asked nothing:
 
 - `switch` or `==` on an argument's characters (`case 'h':`);
 - an option string handed with the whole argument vector

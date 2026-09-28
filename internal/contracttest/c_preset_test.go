@@ -381,6 +381,8 @@ type kvdPreset struct {
 	// function keeping it and while what it is kept; tables the tables of
 	// names asked, each with its readers.
 	kept, tables []string
+	// systems are the outside packages asked which system they reach.
+	systems []string
 	// peers are the table rows asked which peer input they send, each with
 	// the peer the preset chose ("none" for del: a reader who is unsure).
 	peers []string
@@ -502,6 +504,10 @@ func (preset *kvdPreset) answer(table string, fill []map[string]any, context, ro
 			answer[name] = "unknown"
 		case table == "atlas_systems" && name == "system":
 			// A socket or libc header is no system of its own.
+			pkg, _ := row["package"].(string)
+			preset.mu.Lock()
+			preset.systems = append(preset.systems, pkg)
+			preset.mu.Unlock()
 			answer[name] = "none"
 		case table == "atlas_joints" && name == "same":
 			answer[name] = "yes"

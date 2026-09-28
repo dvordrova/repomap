@@ -189,6 +189,10 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 	preset := &inputsPreset{decide: func(column string, item map[string]any, options []string) (string, bool) {
 		symbol, _ := item["symbol"].(string)
 		switch column {
+		case "talks":
+			if symbol == "httpx.get" {
+				return "client_request", true
+			}
 		case "enters":
 			if strings.HasSuffix(symbol, ".add_argument") || strings.HasSuffix(symbol, ".add_parser") {
 				return "command", true
@@ -221,6 +225,13 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 	}
 	for _, item := range preset.asked["program"] {
 		t.Fatalf("a program was asked although no call word names it: %v", item)
+	}
+	// httpx, the package levels.py's outgoing call goes through, is asked
+	// its system once, with the call as written (requests is the fixture's
+	// own module, src/requests.py, and no outside package).
+	systems := preset.items("atlas_systems.system")
+	if len(systems) != 1 || !strings.Contains(systems[0], `"package":"httpx"`) || !strings.Contains(systems[0], `"symbol":"get"`) {
+		t.Fatalf("systems asked: %v", systems)
 	}
 }
 

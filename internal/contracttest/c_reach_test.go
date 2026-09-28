@@ -220,8 +220,12 @@ func TestCFixturePresetReadingNamesTheClientsOptionsAndCommands(t *testing.T) {
 	pair := readKvdPair(t)
 	client, server := pair.indexes["kvcli"], pair.indexes["kvd"]
 	pair.preset.mu.Lock()
-	entered, tables, peers := slices.Clone(pair.preset.entered), slices.Clone(pair.preset.tables), slices.Clone(pair.preset.peers)
+	entered, tables, peers, systems := slices.Clone(pair.preset.entered), slices.Clone(pair.preset.tables), slices.Clone(pair.preset.peers), slices.Clone(pair.preset.systems)
 	pair.preset.mu.Unlock()
+	// The package kvcli's connect goes through is asked its system once.
+	if !slices.Equal(systems, []string{"sys/socket.h"}) {
+		t.Fatalf("outside packages asked their system: %v", systems)
+	}
 	for _, call := range []string{
 		`string.h.strcasecmp in main: 1: element "1" of parameter #2 argv of main; 2: "--raw"`,
 		`string.h.strcasecmp in main: 1: field name of result of calling lookupCommand(argv[first]); 2: "bgsave"`,
