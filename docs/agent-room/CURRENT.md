@@ -346,6 +346,31 @@ never entered into or read from a repository-wide unqualified map.
   retain their consuming contract and require fresh ordinary acceptance. Data
   links use existing exact model/callable ownership; an unresolved endpoint or
   unowned SQL literal cannot acquire a database flow in the report.
+- **Where an input takes effect (consilium 2026-09-28, speed mode, owner
+  answers Q1 and Q2 yes; tests owed to the cleanup pass):** a seed of a split
+  file is its own grouping row, so an executable's `main` is on the map
+  (e1). Inputs without a handed function form catalogues keyed by the
+  object they are declared on (the call that made it, followed through
+  outside calls that name nothing), else by the declaring function (L3); the
+  reading says "Declared on/in", "called from", "F also uses V" (never
+  "takes effect") and once "Where these take effect is not established." A
+  wordless hand-over on a word entry's own result of the same kind is one
+  input with it (J1). A collection no arrow joins stays beside its component
+  through an undrawn layout edge. GroupsIndex derives the launch walk from
+  the seeds and load-time roots (Go init and package variables, module bodies
+  outside C) with found / unsure / could not look inside / nothing per
+  function, shown only in the Inputs reading's fold; words only an input's
+  handler checks are its sub-arguments, never tiles. `enters` gains
+  `per_call` (each word call then asked in its context; no Redis or
+  litestream symbol is answered so) and every literal is sent. C: a table's
+  rows that store no function and a callable the program's own function
+  keeps are asked once each (atlas_inputs); an accepted table is one
+  catalogue "looked up in" its readers; a table row names the peer program's
+  input only through the joints peers question (Operation.Sends, never an
+  arrow); a dispatched input's reading names every outer input reaching its
+  dispatch site, the registration hop included. The launched-program → own
+  executable link is not built (a redesign: executable names per adapter
+  and a new joint side).
 
 ## Contracts and formats
 
@@ -370,8 +395,8 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 18, places graph 19, reading input 18, atlas 16,
-GroupsIndex 20, dependency catalog 2, extraction artifact 2, facts 3, claims 2
+This wave uses ProgramIndex 19, places graph 21, reading input 18, atlas 18,
+GroupsIndex 25, dependency catalog 2, extraction artifact 2, facts 4, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
 dependencies. Accepted extractor nodes use `u*`; arbitrary public-protocol IDs
@@ -409,7 +434,8 @@ There are no old-format readers or manually rewritten seals.
 | Redis 1.3.6, inputs pass 1 (2026-09-28) | Default system cache: the first run (c9ca55bd, A3 before its registration-words fix) exit 0 in 23 s with 11 atlas_api Jev windows and 3 joint windows live, once; at 28a57619 two runs of 18 s and 11 s with 0 live, report.json identical but for `timing`, `repomap render` byte-identical. `strcmp` answered `command` (lead 0.64), every one of its 18 word-given calls compares `argv[i]` in redis-cli's and redis-benchmark's `parseOptions`: redis-cli 0 → 6 options, redis-benchmark 0 → 11 (handler not established; the two `-h` sites of one caller are one input); `strcasecmp`, `printf`, `fprintf` none; redis-server 96 = 96, GET's reading unchanged. In-view arrows at rest: redis-server 20 → 15 from the neighbours' new layout (its own frame and saved connections unchanged), redis-cli 4, redis-benchmark 5, redis-check-dump 1. |
 | litestream v24, inputs pass 1 (2026-09-28) | First run (c9ca55bd) exit 0 in 130 s (36 atlas_api Jev windows; boundaries, core, joints, publish, glossary and orientation re-asked once); at 28a57619 11 s with one boundaries window live (the re-worded registrations' names), warm 9 s with 0 live, report.json identical but for `timing`, render byte-identical. cmd/litestream 33 → 93 inputs (the 14 `X.Usage` commands and 3 errgroup goroutines leave by the merged criteria; its FlagSet options, flag-set names and 7 MCP tool names arrive with their handler not established, and `svc.Run`, re-asked with its call as usage, no longer serves, so the Windows service registration is an extension entry instead of a listener), cmd/litestream-test 6 → 34. Misses for the owner: `exec.CommandContext` answered `command` (12 calls launching `litestream` subprocesses, 10 inputs), `flag.NewFlagSet` `command` (20 flag-set names), `setuptools.Extension` `extension` (1); MCP tool names duplicate their AddTool inputs. Arrows at rest 16 = 16, 3 → 2. |
 | Runs another program (2026-09-28) | `runs_program` talks outcome, per-call `atlas_program` Jev question, entry refused beside any talks but none. Redis 17.7 s / warm 15.3 s 0 live, inputs unchanged; litestream 41.7 s / warm 8.3 s 0 live, launch inputs 11 → 0, `litestream` launched ×9 (cmd/litestream MCP) and ×3 (litestream-test), 4 launches not established; repomap self (`cmd/repomap`, cold) git ×4, go ×2, clj-kondo, python3, 2 named at run time, 8 not established. Own-executable links not done (joints pair two boundaries). Full make test/ui tests not run. |
-| Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. |
+| Inputs: catalogues, launch, C tables, peers, outer inputs (2026-09-28, speed mode) | Default system cache, no `cache clear`, tests owed (scratchpad `impl/cleanup-todo.md`). Redis exit 0 in 20.8 s / warm 19.6 s, 0 live: redis-server's entry part holds main; redis-cli 6 options in parseOptions's catalogue and 94 cmdTable requests "looked up in lookupCommand, called from cliSendCommand :311, main :522", 91 of them naming redis-server's input (model match, no arrow); acceptHandler request and serverCron scheduled; GET names both as outer inputs with their registration hops. litestream exit 0 in 29.7 s (22 Jev windows live) / warm 8.8 s 0 live: one catalogue per FlagSet, registerConfigFlag called from 6 Runs, 75 inputs (115 before). repomap self 104.9 s, 36 inputs in 5 catalogues. freqtrade cold 430 s: its subcommands are unresolved calls (Python adapter gap), 0 commands. Headless look without page errors. |
+| Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. The 2026-09-28 cold run completed (430 s) with the orientation refused by context size. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 
 Artifact consistency, a green fixture, a saved reading and a successful single

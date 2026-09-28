@@ -1,5 +1,115 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Where an input takes effect: catalogues, the launch walk, per-call words, C tables and kept callables, peer inputs, outer inputs (e1, K1–K5, pass 2, u6; speed mode)
+
+- **Speed mode (owner):** every commit builds and vets; focused tests ran where
+  fast; known failures and owed tests are listed in the scratchpad
+  `impl/cleanup-todo.md` for the cleanup pass (fixture program indexes are
+  ProgramIndex 18; cproject's table-row test now also lists kept callables).
+- **e1:** `SymbolFacts.Seeds` (graph 20); a split file's seed is its own `c*`
+  row, never asked the helper or box question. redis-server's `main` is now a
+  one-declaration entry part the grouping named "main".
+- **K1/K2:** handler-less inputs form catalogues (GroupsIndex `DeclaredBy`,
+  `DeclaredOn`; derived `Catalogues`), keyed by the object they are declared on
+  (followed back from the receiver through outside calls that name nothing),
+  else by the declaring function. The reading: "Declared on/in F · one of N ·
+  called from C :l", "F also uses V" with V's other users folded by part, and
+  once "Where these take effect is not established." J1 joins a wordless
+  hand-over on a word entry's result of the same kind. An unjoined inputs
+  collection sits beside its component through an undrawn ELK edge (Q1).
+- **K3:** GroupsIndex derives the launch walk (seeds; Go init and package
+  variables; module bodies outside C) with found / unsure / could not look
+  inside / nothing per function, in the Inputs reading's fold "How these were
+  found" with the idiom lines (model); atlas carries `Unsure` and `Idioms`.
+  An input declared only inside an input's handler reach is its
+  sub-argument ("Words its handler checks"), never a tile. The overview
+  builder now re-derives GroupsIndex after dropping test subjects (its reach
+  and catalogue edge positions had named the unfiltered edges; litestream's
+  report panicked).
+- **K4:** `enters` gains `per_call` (a per-call round, `repomap.atlas.api.v8.call`)
+  and every literal is sent (`literals[:6]` lifted). Measured first
+  (`impl/k4probe/results.md`, 5 draws, ≈ $0.08): no Redis or litestream symbol
+  is answered per_call; FlagSet.Var near-tie → command, NewFlagSet command →
+  near-tie/none, 41 of 112 given rows grow and re-ask once.
+- **Pass 2 (C):** ProgramIndex 19 `Object.Rows` (a table's rows that store no
+  function; string arrays) and `ParameterStores`; facts 4 `Registrar` with
+  `registered_during` (no caps; ported from 187d6655). atlas_inputs asks each
+  kept callable (per registrar and callable) and each table once (Jev,
+  memoized). request's Includes gained "such as the callable the program's
+  own event loop runs when its listening socket has a connection to accept"
+  (measured: acceptHandler none → request 5/5; binds rows with every literal
+  unchanged). CONSTITUTION's registration sentence rewritten for the owner's
+  review (084ec957). C argument origin kinds were not added (the per-call item
+  shows the text; no symbol is per_call).
+- **K5:** a table row names the peer program's input only through the joints
+  peers question, and only where the programs are already joined; saved as
+  `Operation.Sends` (GroupsIndex 25), read as "Sent to/Sent by … · model match",
+  never an arrow. Blind peers now offer only entries with a known handler.
+  The launched-program → own-executable link is not built (a redesign).
+- **u6:** a dispatch site derives `Outer` (inputs reaching it and not
+  dispatched there, plus the registration hop from a handed callable no input
+  handles) and `Unexplained`; each outer input is one closed line naming what
+  it registers.
+- **Acceptance** (ordinary `--no-serve --no-open` runs on the default system
+  cache, keys by the sed recipe; no `--debug-dir`, no `cache clear`; binary
+  at 66a733a6/dd1cc001; renders at the final templates):
+  - **Redis 1.3.6**: exit 0 in 20.8 s with 0 live calls (the development
+    runs asked the new Jev and DeepSeek windows), warm 19.6 s with 0 live.
+    Entry parts: redis-server "main" (main alone), redis-cli "Command line
+    client", redis-benchmark "Benchmark client", redis-check-dump "Dump
+    checker"; no "entry not on the map". Inputs: redis-server 98 (95 command
+    rows + acceptHandler request, serverCron scheduled, the I/O thread
+    continuous), redis-cli 100 (6 options + 94 cmdTable requests),
+    redis-benchmark 11, check-dump 0. Catalogues: redis-cli "Declared in
+    parseOptions · one of 6 · called from main :513 · parseOptions also uses
+    config (5 functions in 1 part)", redis-benchmark parseOptions 11 (main
+    :509, config 12), "In cmdTable · one of 94 requests · looked up in
+    lookupCommand, called from cliSendCommand :311, main :522". Launch folds:
+    redis-cli main → parseOptions (6), main → lookupCommand (94); redis-server
+    main → initServer (2), main → loadAppendOnlyFile → lookupCommand (95),
+    spawnIOThread (1); strcmp calls with no word unsure (2). Kept callables:
+    serverCron scheduled, acceptHandler request, the rest none. K5: 91 of 94
+    cmdTable rows name redis-server's input of the same command (0 other
+    matches; zmerge, zmergeweighed, rewriteaof none); the redis-cli and
+    redis-benchmark arrows to redis-server stay one each. GET: dispatched from
+    call, "A request for get arrives at call from serverCron · registers
+    sendReplyToClient, sendBulkToSlave, readQueryFromClient" and "… from
+    acceptHandler · registers readQueryFromClient, sendReplyToClient", "Other
+    ways to call are not established." (the AOF replay at start); from
+    loadAppendOnlyFile not established; "Sent by redis-cli: get (cmdTable) ·
+    model match". No program launched.
+  - **litestream v24**: exit 0 in 29.7 s (22 atlas_api Jev windows live for
+    the uncapped literals and new criteria; core 2, joints 1, glossary 1,
+    orientation 1 DeepSeek), warm 8.8 s with 0 live. cmd/litestream 115 → 75
+    inputs (flag-set names now unsure, MCP argument names gone with
+    RequireString a near-tie, -txid and -level back), cmd/litestream-test
+    37 → 25. Catalogues per FlagSet ("Declared on
+    flag.NewFlagSet("litestream-restore", …) in RestoreCommand.Run · one of 12
+    · called from Main.Run :207"), registerConfigFlag (config, no-expand-env;
+    called from 6 Run methods). Launched: litestream ×9 and 2 not established
+    (cmd/litestream), ×3 and 1 (litestream-test), 1 (s3_mock).
+  - **repomap self snapshot** (refreshed to 66a733a6 in place,
+    `--target …::…/cmd/repomap`): exit 0 in 104.9 s (partly live: the
+    snapshot moved 30 commits). 36 inputs (32 commands, 4 requests) in 5
+    FlagSet catalogues; launched git ×4, go ×2, clj-kondo, python3, 2 named
+    at run time, 8 not established. fmt.Errorf's words question is a
+    near-tie: 1,609 unsure calls, now one folded line.
+  - **freqtrade** (cold): exit 0 in 430.4 s; Jev 776 requests (5.87 M input,
+    0.35 M output tokens), DeepSeek 202 (0.84 M input, 0.75 M of them cache
+    misses, 26 k output): about $0.25 + $0.23. The orientation request was
+    refused by context size at every packing (pre-existing). freqtrade main
+    158 inputs (133 requests, 21 interactions, 4 continuous) and **no
+    subcommand**: `add_parser`/`set_defaults` are unresolved calls (the Python
+    adapter does not type `self.parser.add_subparsers(...)`), so neither is an
+    outside symbol and J1 has nothing to join. Recorded as a PYTHON gap.
+  - **Headless look** (1440×900, loopback 8955, stopped): redis-cli -h, GET,
+    redis-cli get, litestream -txid and -config read as above, no page errors
+    (`impl/shots/`).
+  - **Cost of the sequence** (default cache records since 08:40Z plus direct
+    probes): Jev ≈ 9.0 M tokens (≈ $0.37) + probes ≈ 11.8 MB (≈ $0.13);
+    DeepSeek ≈ 3.69 M input (3.14 M misses) + 55 k output (≈ $0.9); about
+    $1.4 in all, a third of it the cold freqtrade run.
+
 ## 2026-09-28 — A seed of a split file is its own grouping row (e1)
 
 - `atlas.SymbolFacts.Seeds` (graph 20) names the targets whose execution
