@@ -359,7 +359,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   heading's bar and kind and its links. The path projects GroupsIndex's
   saved reach and dispatch sites; the page walks no code. It is, first, one
   box per dispatch site whose alternatives hold the handler, the first open:
-  "Dispatched from call · one of 94", holding the dispatch fact and the
+  "Dispatched from call · one of 94 handlers", holding the dispatch fact and the
   statement "How a request for get gets to call is not established.": how
   a request for the input arrives at the dispatch site from outside;
   Redis's get is
@@ -372,7 +372,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   site's own reading, with the declaration: "call is reached from these
   inputs:", each input a button to its reading with its calls to the site,
   then "Which of these, if any, leads to an input dispatched here is not
-  established.", or "No input reaches loadAppendOnlyFile by calls". An
+  established.", or "No input reaches loadAppendOnlyFile by calls". Every
+  count says what it counts, from the page data GroupsIndex's sites give:
+  a site's "one of N" counts its alternatives as handlers, or, when some
+  alternative handles no input, as functions with how many of them are
+  handlers; its inputs are counted as inputs ("N inputs dispatched here"),
+  and the site's reading names each handler several of them share ("X
+  handles 2 of these inputs: a, b"), which the dispatched input's line
+  shows on hover. An
   input whose own code reaches a site says so in its reading, as its
   handler's own call back into the site ("exec's handler itself calls call,
   where 95 inputs are dispatched:") with those calls; the two lines had
@@ -900,7 +907,10 @@ then lists its Connections as its arrow ends group them: one line per
 frame or participant at the other end and direction, incoming first, with
 the count of its calls and the parts they are made from, each opening to
 the same rows as the arrow's card; they replace the list of neighbours by
-name. In the column a name in those rows reads its declaration in its part,
+name. A line from inputs counts the handlers they are implemented in, with
+that unit ("← Inputs 12 handlers"; its card "12 handlers, into 3 of 5"),
+and inputs sharing a handler stand in its one row, each named ("a, b →
+handler"); no input is dropped from it. In the column a name in those rows reads its declaration in its part,
 as a click on its tile does, and a modifier-click still opens the code it
 linked to; a row's code is one explicit "Open code ↗" at its end, where the
 call is written, and a row wraps with its names whole. The page data names

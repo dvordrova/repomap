@@ -396,23 +396,27 @@ function select(n,navigate,source,focus){seen.push([n.id,navigate,source,focus,p
 // declaration in the report (getCommand and addReply had opened GitHub); a
 // modifier-click still opens its code.
 func TestAnInputsPathNamesItsDispatchThenItsOwnSteps(t *testing.T) {
-	code := systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')")
+	code := systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
+		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration")
 	runSystemJS(t, fakeElements+`
 const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
 const decl=(name,part)=>({name,href:'h/'+name,source:'redis.c:1',part});
-const path={dispatched:[{site:0,of:94,inputs:95,reached_from:['t1-exec']},{site:1,of:94,inputs:95}],registered_by:['t1-accept'],
+const path={dispatched:[{site:0,of:94,handlers:94,inputs:95,shared:[{handler:11,inputs:['t1-sinter','t1-smembers']}],reached_from:['t1-exec']},{site:1,of:94,handlers:94,inputs:95}],registered_by:['t1-accept'],
   parts:[{part:'n-strings',title:'String commands',depth:0},{part:'n-keys',title:'Keyspace',depth:2,entered:[[3,4,1]]},
     {part:'n-clients',title:'Client connections',depth:2,entered:[[3,5,0],[3,6,0],[3,7,0],[3,8,0],[3,9,0],[3,10,2]],others:3}],
   decls:[decl('call','n-clients'),decl('loadAppendOnlyFile','n-persist'),decl('getCommand','n-strings'),decl('getGenericCommand','n-strings'),decl('lookupKeyRead','n-keys'),
-    decl('addReply','n-clients'),decl('addReplyBulk','n-clients'),decl('addReplyLong','n-clients'),decl('addReplySds','n-clients'),decl('addReplyDouble','n-clients'),decl('shared','n-clients')]};
+    decl('addReply','n-clients'),decl('addReplyBulk','n-clients'),decl('addReplyLong','n-clients'),decl('addReplySds','n-clients'),decl('addReplyDouble','n-clients'),decl('shared','n-clients'),decl('sinterCommand','n-sets')]};
 const node=(id,title)=>({id,dataset:{title}});
-const parts={'n-strings':node('n-strings','String commands'),'n-clients':node('n-clients','Client connections')},inputs={'t1-exec':node('t1-exec','exec'),'t1-accept':node('t1-accept','accept')},chosen=[],read=[];
+const parts={'n-strings':node('n-strings','String commands'),'n-clients':node('n-clients','Client connections')},inputs={'t1-exec':node('t1-exec','exec'),'t1-accept':node('t1-accept','accept'),'t1-sinter':node('t1-sinter','sinter'),'t1-smembers':node('t1-smembers','smembers')},chosen=[],read=[];
 `+code+`
 const section=rmInputPathSection(path,'get',id=>parts[id]||null,id=>inputs[id]||null,part=>chosen.push(part.id),(part,key)=>read.push([part.id,key]));
 assert.equal(section.children[0].textContent,'Path');
 const boxes=section.all(e=>e.className==='system-shared-path');
-assert.deepEqual(boxes.map(b=>[b.tagName,!!b.open,b.children[0].textContent]),[['DETAILS',true,'Dispatched from call · one of 94'],['DETAILS',false,'Dispatched from loadAppendOnlyFile · one of 94']]);
-assert.deepEqual(boxes[0].children.slice(1).map(c=>c.textContent),['call → one of 94','How a request for get gets to call is not established.']);
+assert.deepEqual(boxes.map(b=>[b.tagName,!!b.open,b.children[0].textContent]),[['DETAILS',true,'Dispatched from call · one of 94 handlers'],['DETAILS',false,'Dispatched from loadAppendOnlyFile · one of 94 handlers']]);
+assert.deepEqual(boxes[0].children.slice(1).map(c=>c.textContent),['call → one of 94 handlers','How a request for get gets to call is not established.']);
+// Each count says what it counts: 94 handlers, 95 inputs, and why they differ.
+assert.equal(boxes[0].children[1].title,'95 inputs are dispatched here\nsinterCommand handles 2 of these inputs: sinter, smembers');
+assert.equal(rmSiteHandlers({of:94,handlers:90}),'one of 94 functions, 90 of them handlers','a site whose alternatives are not all handlers says so');
 assert.ok(!section.textContent.includes('exec'),'the inputs reaching call are its reading, not get\'s');
 assert.ok(!/Shared|through/.test(section.textContent),'no "Shared by … through" remains');
 section.find(e=>e.tagName==='BUTTON'&&e.textContent==='accept').listeners.click();
@@ -436,9 +440,9 @@ assert.deepEqual(chosen,['t1-accept','n-strings'],'a part on the path leads to i
 assert.equal(steps.find(e=>e.textContent==='Keyspace').tagName,'DIV','a part the map does not draw is only named');
 // exec is dispatched from call and its handler calls call again: the two
 // lines say different things and do not read as a contradiction.
-const exec=rmInputPathSection({dispatched:[{site:0,of:94,inputs:95}],reaches:[{site:0,inputs:95,calls:[[1,0,0]]}],decls:[decl('call','n-clients'),decl('execCommand','n-strings')]},
+const exec=rmInputPathSection({dispatched:[{site:0,of:94,handlers:94,inputs:95}],reaches:[{site:0,inputs:95,calls:[[1,0,0]]}],decls:[decl('call','n-clients'),decl('execCommand','n-strings')]},
   'exec',id=>parts[id]||null,id=>inputs[id]||null,()=>{},()=>{});
-assert.deepEqual(exec.all(e=>e.className==='system-shared-path')[0].children.slice(1).map(c=>c.textContent),['call → one of 94','How a request for exec gets to call is not established.']);
+assert.deepEqual(exec.all(e=>e.className==='system-shared-path')[0].children.slice(1).map(c=>c.textContent),['call → one of 94 handlers','How a request for exec gets to call is not established.']);
 assert.deepEqual(exec.find(e=>e.className==='system-path-reaches').children.map(c=>c.textContent),["exec's handler itself calls call, where 95 inputs are dispatched:",'execCommand → call']);
 `)
 }
@@ -449,21 +453,23 @@ assert.deepEqual(exec.find(e=>e.className==='system-path-reaches').children.map(
 // with the line that none of them is established as leading to an input
 // dispatched there; or that no input reaches it by calls.
 func TestADispatchSitesReadingListsTheInputsReachingIt(t *testing.T) {
-	code := systemJSPiece(t, "30-map.js", "function rmSiteReading(", "// Who calls a declaration and what it calls")
+	code := systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// Who calls a declaration and what it calls")
 	runSystemJS(t, fakeElements+`
-const readings={sites:[{site:0,of:94,inputs:95,reached_from:[{input:'t1-exec',calls:[[2,0,0]]},{input:'t1-lpush',calls:[[3,4,0],[4,0,1]]}]},{site:1,of:94,inputs:95}],
-  decls:[{name:'call',href:'h/call'},{name:'loadAppendOnlyFile',href:'h/load'},{name:'execCommand'},{name:'lpushCommand'},{name:'handleClientsWaitingListPush'}]};
+const readings={sites:[{site:0,of:94,handlers:94,inputs:95,shared:[{handler:5,inputs:['t1-sinter','t1-smembers']}],reached_from:[{input:'t1-exec',calls:[[2,0,0]]},{input:'t1-lpush',calls:[[3,4,0],[4,0,1]]}]},{site:1,of:94,handlers:94,inputs:95}],
+  decls:[{name:'call',href:'h/call'},{name:'loadAppendOnlyFile',href:'h/load'},{name:'execCommand'},{name:'lpushCommand'},{name:'handleClientsWaitingListPush'},{name:'sinterCommand'}]};
 const node={dataset:{dispatch:JSON.stringify(readings)}},chosen=[];
 const map={chooseOperation:id=>chosen.push(id)};
-document.getElementById=id=>({'t1-exec':{dataset:{title:'exec'}},'t1-lpush':{dataset:{title:'lpush'}}})[id]||null;
+document.getElementById=id=>({'t1-exec':{dataset:{title:'exec'}},'t1-lpush':{dataset:{title:'lpush'}},'t1-sinter':{dataset:{title:'sinter'}},'t1-smembers':{dataset:{title:'smembers'}}})[id]||null;
 `+code+`
 const box=rmSiteReading(map,node,'h/call');
-assert.deepEqual(box.children.map(c=>c.textContent),['Dispatch site · one of 94 · 95 inputs dispatched here','call is reached from these inputs:',
+// The site's counts say what they count, and why its 95 inputs outnumber
+// its 94 handlers.
+assert.deepEqual(box.children.map(c=>c.textContent),['Dispatch site · one of 94 handlers · 95 inputs dispatched here','sinterCommand handles 2 of these inputs: sinter, smembers','call is reached from these inputs:',
   'execexecCommand → call','lpushlpushCommand → handleClientsWaitingListPushhandleClientsWaitingListPush → call · possible',
   'Which of these, if any, leads to an input dispatched here is not established.']);
 box.find(e=>e.tagName==='BUTTON'&&e.textContent==='lpush').listeners.click();
 assert.deepEqual(chosen,['t1-lpush']);
-assert.deepEqual(rmSiteReading(map,node,'h/load').children.map(c=>c.textContent),['Dispatch site · one of 94 · 95 inputs dispatched here','No input reaches loadAppendOnlyFile by calls']);
+assert.deepEqual(rmSiteReading(map,node,'h/load').children.map(c=>c.textContent),['Dispatch site · one of 94 handlers · 95 inputs dispatched here','No input reaches loadAppendOnlyFile by calls']);
 assert.equal(rmSiteReading(map,node,'h/other').childElementCount,0,'another declaration has no site reading');
 `)
 }

@@ -4,7 +4,10 @@
 // written. A call the page data marks with a fold (a dispatch site calls one
 // of a set, or a declaration hands that whole set over) is one line per
 // caller and fold, with its callees under it by part. Nothing is counted
-// away: every call stands in a line or in a fold. Server runtime → Data type
+// away: every call stands in a line or in a fold. Inputs that share one
+// handler are one line naming each of them ("sinter, smembers →
+// sinterCommand"): the line counts the handler, and no input is dropped
+// from it. Server runtime → Data type
 // commands listed "call → xCommand" 77 times, then "cmdTable passes
 // callback xCommand" 77 times, and the answer sat at the bottom.
 //   relations: an arrow end's relations, each {from, to, calls, label, …}.
@@ -12,7 +15,7 @@
 //   are grouped under it (an input is not a part a call is made from);
 //   incoming: whether the calls come in from outside the frame.
 export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=false}={}){
-  const seen=new Set(),groups=new Map(),from=new Map(),into=new Map(),kinds=new Map();
+  const seen=new Map(),groups=new Map(),from=new Map(),into=new Map(),kinds=new Map();
   let total=0;
   const count=(map,id)=>map.set(id,(map.get(id)||0)+1);
   for(const relation of relations){
@@ -21,8 +24,13 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
     for(const call of calls){
       const words=String(call.label||'').match(/^(\S+) (\S+) (\S+)$/);
       const key=[fromID,intoID,words?call.label:`${call.label}|${call.at||''}|${call.name||''}`].join('|');
-      if(seen.has(key))continue;seen.add(key);total++;
       const kind=words?words[2]:call.name?'implemented in':'other';
+      if(seen.has(key)){
+        const row=seen.get(key),input=nameOf(relation.from);
+        if(kind==='implemented in'&&row&&!row.inputs.includes(input)){row.inputs.push(input);row.caller=row.inputs.join(', ');}
+        continue;
+      }
+      total++;
       count(kinds,['calls','passes_callback','reads','implemented in'].includes(kind)?kind:'other');
       if(fromID)count(from,fromID);
       count(into,intoID);
@@ -38,6 +46,7 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
         callerAt:words?end(relation.from,call.caller):null,calleeAt:words||call.name?end(intoID,call.callee):null,
         other:words||call.name?'':nameOf(incoming?relation.from:relation.to),
         otherHref:call.from||call.to||''};
+      seen.set(key,kind==='implemented in'?Object.assign(row,{inputs:[row.caller]}):null);
       if(call.fold&&words){
         const foldKey=`${row.caller}\0${call.fold}`;
         if(!group.folds.has(foldKey))group.folds.set(foldKey,{caller:row.caller,callerAt:row.callerAt,site:row.site,kind,fold:call.fold,of:call.of||0,one:!!call.one,same:call.same||'',count:0,parts:new Map()});
@@ -59,6 +68,16 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
         parts:[...fold.parts.values()].sort(byCount).map(part=>({...part,rows:part.rows.sort((a,b)=>a.callee.localeCompare(b.callee))}))})),
       pairs:[...group.pairs.values()].sort(byCount).map(pair=>({...pair,rows:pair.rows.sort(bySite)}))})),
   };
+}
+
+// What a card's counts count, by kind of call. An arrow from inputs counts
+// the handlers they are implemented in (inputs sharing one stand in its
+// line), so its total says handlers: "← Inputs 94" had stood beside
+// "Inputs 96" and "95 inputs dispatched here" with nothing telling them
+// apart.
+export const countWords={calls:'{0} calls',passes_callback:'{0} callbacks',reads:'{0} reads','implemented in':'{0} handlers',other:'{0} other connections'};
+export function countsHandlers(card){
+  return card.kinds.length>0&&card.kinds.every(([kind])=>kind==='implemented in');
 }
 
 // Rows stand in the order their call sites are written: file, then line.

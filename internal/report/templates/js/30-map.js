@@ -306,6 +306,19 @@ function rmInputPart(operation,id){
   if(!part||!(part.entered||[]).length&&!part.others)return null;
   return {entered:part.entered||[],others:part.others||0,decls:path.decls||[]};
 }
+// What a dispatch site's "one of N" counts: the handlers it chooses
+// between, or its functions and how many of them are handlers when some
+// are not (page_input_path.go).
+function rmSiteHandlers(site){
+  return site.handlers<site.of?rmT('one of {0} functions, {1} of them handlers',site.of,site.handlers):rmT('one of {0} handlers',site.of);
+}
+// Each handler several inputs dispatched at a site share, with those inputs:
+// why the site's inputs outnumber its handlers.
+function rmSharedHandlers(site,decls,title){
+  return (site.shared||[]).map(function(shared){
+    return rmT('{0} handles {1} of these inputs: {2}',(decls[shared.handler]||{}).name||'',shared.inputs.length,shared.inputs.map(title).join(', '));
+  });
+}
 // A dispatch site read with its declaration (page_input_path.go): how many
 // it chooses between and how many inputs are dispatched there, then the
 // inputs whose own code reaches it, each with its calls to it, or that no
@@ -320,7 +333,8 @@ function rmSiteReading(map,node,key){
   function name(index){var decl=decls[index]||{name:''},item=rmEl('span','',decl.name);if(decl.source)item.title=decl.source;return item;}
   (readings.sites||[]).forEach(function(site){
     var decl=decls[site.site];if(!decl||(decl.href||decl.open)!==key)return;
-    box.appendChild(rmEl('h6','',rmT('Dispatch site · one of {0} · {1} inputs dispatched here',site.of,site.inputs)));
+    box.appendChild(rmEl('h6','',rmT('Dispatch site · {0} · {1} inputs dispatched here',rmSiteHandlers(site),site.inputs)));
+    rmSharedHandlers(site,decls,function(id){return document.getElementById(id)?.dataset.title||id;}).forEach(function(line){box.appendChild(rmEl('p','meta',line));});
     if(!(site.reached_from||[]).length){box.appendChild(rmEl('p','meta',rmT('No input reaches {0} by calls',decl.name)));return;}
     box.appendChild(rmEl('p','',rmT('{0} is reached from these inputs:',decl.name)));
     site.reached_from.forEach(function(entry){

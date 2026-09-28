@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {callCard,reach} from './call-card.mjs';
+import {callCard,reach,countWords,countsHandlers} from './call-card.mjs';
 
 const names={persist:'Persistence',clients:'Client connections',data:'Data structures',strings:'Strings',
   generic:'Generic key commands',lists:'List commands',get:'get',inputs:'Inputs'};
@@ -39,6 +39,7 @@ test('a dispatch site and a set handed over whole are one line each',()=>{
   ],{nameOf});
   assert.equal(card.total,7);
   assert.deepEqual(card.kinds,[['calls',4],['passes_callback',3]]);
+  assert.equal(countsHandlers(card),false,'a card of calls counts calls');
   const clients=card.groups[0];
   assert.equal(clients.count,7);
   assert.deepEqual(clients.folds.map(f=>[f.caller,f.count,f.of,f.one,f.same]),[['call',3,94,true,''],['cmdTable',3,94,false,'call']]);
@@ -59,6 +60,22 @@ test('calls from inputs are grouped by the part they reach only',()=>{
   assert.deepEqual(card.groups[0].pairs[0].rows.map(r=>`${r.caller}>${r.callee}`),['get>getCommand','set>setCommand']);
   assert.deepEqual(card.kinds,[['implemented in',2]]);
   assert.deepEqual(card.from,[]);
+  assert.equal(countsHandlers(card),true);
+});
+
+// Two inputs with one handler (Redis's sinter and smembers, both
+// sinterCommand) had been one row naming sinter: smembers vanished and the
+// card counted "94 inputs" beside 96. The row names both inputs and the
+// card counts it as one handler.
+test('inputs sharing a handler are one row naming each input, counted as one handler',()=>{
+  const card=callCard([
+    {from:'sinter',to:'sets',calls:[{label:'implemented in',name:'sinterCommand',to:'d/sinterCommand'}]},
+    {from:'smembers',to:'sets',calls:[{label:'implemented in',name:'sinterCommand',to:'d/sinterCommand'}]},
+    {from:'sadd',to:'sets',calls:[{label:'implemented in',name:'saddCommand',to:'d/saddCommand'}]},
+  ],{nameOf,groupable:id=>false,incoming:true});
+  assert.equal(card.total,2,'the card counts handlers');
+  assert.equal(countsHandlers(card),true);assert.equal(countWords['implemented in'],'{0} handlers','its count says handlers');
+  assert.deepEqual(card.groups[0].pairs[0].rows.map(r=>`${r.caller}>${r.callee}`),['sadd>saddCommand','sinter, smembers>sinterCommand']);
 });
 
 test('a relation with no call of its own is read by its outside end and site',()=>{

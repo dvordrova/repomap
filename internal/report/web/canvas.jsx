@@ -16,7 +16,7 @@ import {HoverGate} from './hover.mjs';
 import {placeCard} from './card-place.mjs';
 import {InputTypes, scrollInventory} from './card-content.jsx';
 import {callCard} from './call-card.mjs';
-import {CallRows, cardCount, FrameConnections} from './call-card-view.jsx';
+import {CallRows, cardCount, cardTotal, FrameConnections} from './call-card-view.jsx';
 import '@xyflow/react/dist/style.css';
 import './canvas.css';
 
@@ -1220,7 +1220,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     return <FloatingCard cardKey={key} frame={frame} content={mine.map(([label])=>label.id).join(' ')} className="flow-part-summary"
       handle={()=>host.querySelector(`[data-badge="${CSS.escape(id)}"]`)?.getBoundingClientRect()||screenBox(node)}>
       {mine.map(([label,card])=><section key={label.id} className="flow-card-section">
-        <header><button type="button" onClick={going(label)}>{label.incoming?'←':'→'} {nameOf(label.outside)}</button><b>{card.total}</b></header>
+        <header><button type="button" onClick={going(label)}>{label.incoming?'←':'→'} {nameOf(label.outside)}</button><b>{cardTotal(card)}</b></header>
         <CallRows card={card} sticky={false} own={id}/></section>)}</FloatingCard>;
   }
   // A click on an arrow end, its chip or its arrowhead, reads its frame's

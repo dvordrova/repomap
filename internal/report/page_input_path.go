@@ -31,15 +31,66 @@ const (
 )
 
 // pageDispatched is a dispatch site whose alternatives hold the input's
-// handler: the input is dispatched there, one of Of. ReachedFrom are the
-// inputs whose reach holds the site's declaration; the input's reading does
-// not list them (a reader took them for its own route), the site's does.
+// handler: the input is dispatched there, one of Of. Handlers counts the
+// alternatives that are an input's handler and Shared the handlers that
+// several of the Inputs dispatched there share, so each count says what it
+// counts: Redis's call is one of 94 handlers, and 95 inputs are dispatched
+// there because sinterCommand handles sinter and smembers. ReachedFrom are
+// the inputs whose reach holds the site's declaration; the input's reading
+// does not list them (a reader took them for its own route), the site's
+// does.
 type pageDispatched struct {
-	Site        int      `json:"site"`
-	Of          int      `json:"of"`
-	Inputs      int      `json:"inputs"`
-	All         bool     `json:"all,omitempty"`
-	ReachedFrom []string `json:"reached_from,omitempty"`
+	Site        int                 `json:"site"`
+	Of          int                 `json:"of"`
+	Handlers    int                 `json:"handlers"`
+	Inputs      int                 `json:"inputs"`
+	Shared      []pageSharedHandler `json:"shared,omitempty"`
+	All         bool                `json:"all,omitempty"`
+	ReachedFrom []string            `json:"reached_from,omitempty"`
+}
+
+// pageSharedHandler is a handler of several inputs dispatched at one site,
+// with those inputs' nodes in operation order.
+type pageSharedHandler struct {
+	Handler int      `json:"handler"`
+	Inputs  []string `json:"inputs"`
+}
+
+// siteHandlers counts a dispatch site's alternatives that are an input's
+// handler and lists each handler several inputs dispatched there share.
+func siteHandlers(index *groupindex.Index, site groupindex.DispatchSite, decls *pathDecls, inputNode func(string) string) (int, []pageSharedHandler) {
+	handler := make(map[string]bool, len(index.Operations))
+	for _, operation := range index.Operations {
+		handler[operation.SubjectID] = true
+	}
+	count := 0
+	for _, alternative := range site.Alternatives {
+		if handler[alternative] {
+			count++
+		}
+	}
+	dispatched := make(map[string]bool, len(site.OperationIDs))
+	for _, id := range site.OperationIDs {
+		dispatched[id] = true
+	}
+	var order []string
+	inputs := map[string][]string{}
+	for _, operation := range index.Operations {
+		if !dispatched[operation.ID] {
+			continue
+		}
+		if _, seen := inputs[operation.SubjectID]; !seen {
+			order = append(order, operation.SubjectID)
+		}
+		inputs[operation.SubjectID] = append(inputs[operation.SubjectID], inputNode(operation.ID))
+	}
+	var shared []pageSharedHandler
+	for _, subject := range order {
+		if len(inputs[subject]) > 1 {
+			shared = append(shared, pageSharedHandler{Handler: decls.of(subject), Inputs: inputs[subject]})
+		}
+	}
+	return count, shared
 }
 
 // pageReaches is a dispatch site the input's own code reaches, with every
@@ -151,6 +202,7 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 		}
 		seen[site.FromSubjectID] = true
 		dispatched := pageDispatched{Site: decls.of(site.FromSubjectID), Of: len(site.Alternatives), Inputs: len(site.OperationIDs), All: len(site.OperationIDs) == len(index.Operations)}
+		dispatched.Handlers, dispatched.Shared = siteHandlers(index, site, decls, inputNode)
 		for _, reached := range site.ReachedFrom {
 			dispatched.ReachedFrom = append(dispatched.ReachedFrom, inputNode(reached.OperationID))
 		}
@@ -237,6 +289,9 @@ func (path *pageInputPath) renameNodes(rename func(string) string) {
 	}
 	for i := range path.Dispatched {
 		ids(path.Dispatched[i].ReachedFrom)
+		for j := range path.Dispatched[i].Shared {
+			ids(path.Dispatched[i].Shared[j].Inputs)
+		}
 	}
 	ids(path.Registers)
 	ids(path.RegisteredBy)
@@ -262,10 +317,12 @@ type pageSiteReadings struct {
 }
 
 type pageSiteReading struct {
-	Site        int             `json:"site"`
-	Of          int             `json:"of"`
-	Inputs      int             `json:"inputs"`
-	ReachedFrom []pageSiteInput `json:"reached_from,omitempty"`
+	Site        int                 `json:"site"`
+	Of          int                 `json:"of"`
+	Handlers    int                 `json:"handlers"`
+	Inputs      int                 `json:"inputs"`
+	Shared      []pageSharedHandler `json:"shared,omitempty"`
+	ReachedFrom []pageSiteInput     `json:"reached_from,omitempty"`
 }
 
 type pageSiteInput struct {
@@ -284,6 +341,7 @@ func (builder *pageBuilder) siteReadings(index *groupindex.Index, group groupind
 		}
 		seen[site.FromSubjectID] = true
 		reading := pageSiteReading{Site: decls.of(site.FromSubjectID), Of: len(site.Alternatives), Inputs: len(site.OperationIDs)}
+		reading.Handlers, reading.Shared = siteHandlers(index, site, decls, inputNode)
 		for _, reached := range site.ReachedFrom {
 			input := pageSiteInput{Input: inputNode(reached.OperationID), Calls: []pageCall{}}
 			for _, edge := range reached.Edges {
@@ -322,6 +380,11 @@ func remapSiteReadings(raw string, rename func(string) string) string {
 	for i := range readings.Sites {
 		for j := range readings.Sites[i].ReachedFrom {
 			readings.Sites[i].ReachedFrom[j].Input = rename(readings.Sites[i].ReachedFrom[j].Input)
+		}
+		for j := range readings.Sites[i].Shared {
+			for k := range readings.Sites[i].Shared[j].Inputs {
+				readings.Sites[i].Shared[j].Inputs[k] = rename(readings.Sites[i].Shared[j].Inputs[k])
+			}
 		}
 	}
 	encoded, err := json.Marshal(readings)

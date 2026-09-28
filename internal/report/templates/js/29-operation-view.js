@@ -136,8 +136,11 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
   }
   (path.dispatched||[]).forEach(function(site,index){
     var box=rmEl('details','system-shared-path'),site_name=(decls[site.site]||{}).name||'';box.open=index===0;
-    box.appendChild(rmEl('summary','',rmT('Dispatched from {0} · one of {1}',site_name,site.of)));
-    var at=rmEl('p','meta');at.append(name(site.site),document.createTextNode(' → '+rmT('one of {0}',site.of)));box.appendChild(at);
+    box.appendChild(rmEl('summary','',rmT('Dispatched from {0}',site_name)+' · '+rmSiteHandlers(site)));
+    var at=rmEl('p','meta');at.append(name(site.site),document.createTextNode(' → '+rmSiteHandlers(site)));box.appendChild(at);
+    // How many inputs are dispatched there and which handler serves
+    // several of them, where a reader compares the counts.
+    at.title=[rmT('{0} inputs are dispatched here',site.inputs)].concat(rmSharedHandlers(site,decls,function(id){return inputNode(id)?.dataset.title||'';})).join('\n');
     box.appendChild(rmEl('p','meta',rmT('How a request for {0} gets to {1} is not established.',title,site_name)));
     section.appendChild(box);
   });

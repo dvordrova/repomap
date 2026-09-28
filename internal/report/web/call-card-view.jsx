@@ -1,5 +1,5 @@
 import React from 'react';
-import {reach} from './call-card.mjs';
+import {reach, countWords, countsHandlers} from './call-card.mjs';
 
 const t=(...args)=>window.rmT(...args);
 const stop=event=>event.stopPropagation();
@@ -31,12 +31,16 @@ const verb=kind=>kind==='calls'||kind==='implemented in'?'→':kind.replace(/_/g
 // What a card's calls are, in one line: how many of each kind, then from
 // how many parts into how many of the frames at its ends.
 export function cardCount(card,fromTotal,intoTotal){
-  const words={calls:'{0} calls',passes_callback:'{0} callbacks',reads:'{0} reads','implemented in':'{0} inputs',other:'{0} other connections'};
-  const said=card.kinds.map(([kind,n])=>t(words[kind]||words.other,n));
+  const said=card.kinds.map(([kind,n])=>t(countWords[kind]||countWords.other,n));
   const from=card.from.length?reach(card.from.length,fromTotal):null,into=reach(card.into.length,intoTotal);
   const ends=[from&&(from.all?t('from all {0} parts',from.count):t('from {0} of {1} parts',from.count,from.of)),
     into&&(into.all?t('into all {0}',into.count):t('into {0} of {1}',into.count,into.of))].filter(Boolean).join(' ');
   return [said.join(', '),ends].filter(Boolean).join(', ');
+}
+
+// A card's total, with its unit where it counts handlers, not calls.
+export function cardTotal(card){
+  return countsHandlers(card)?t('{0} handlers',card.total):card.total;
 }
 
 // A fold says what its set is: one of the set a dispatch site calls, or the
@@ -89,7 +93,7 @@ export function FrameConnections({groups,open,choose=null}){
   return <section className="map-frame-connections">
     <h5>{t('Connections')}</h5>
     {groups.map(group=><details key={group.key} data-connection-key={group.key} open={group.key===open} data-reading-anchor={group.key===open?'':undefined}>
-      <summary><span className="map-connection-peer">{group.incoming?'←':'→'} {group.title}</span><b>{group.card.total}</b>
+      <summary><span className="map-connection-peer">{group.incoming?'←':'→'} {group.title}</span><b>{cardTotal(group.card)}</b>
         {group.card.from.length>0&&<small>{group.card.from.map(part=>`${part.name} ${part.count}`).join(' · ')}</small>}</summary>
       <CallRows card={group.card} sticky={false} choose={choose}/>
     </details>)}

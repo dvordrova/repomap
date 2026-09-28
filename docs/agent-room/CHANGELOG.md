@@ -1,5 +1,47 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Every count on an input's and a site's reading says what it counts (u1, u2)
+
+- Evidence: the blind GET check (`blind-get/answers.md`) met "one of 94",
+  "95 inputs dispatched here", "Inputs 96", "← Inputs 94" and "Incoming
+  request records · 95" with nothing telling them apart. On the Redis run
+  `20260928-050038-redis-1-3-6-d8547ea73628` they count: 94, the
+  alternatives of call's `c->cmd->proc`, every one a command handler; 95,
+  the inputs dispatched there (sinterCommand handles sinter and smembers);
+  96, redis-server's inputs (95 request records and IOThreadEntryPoint's
+  background work); "← Inputs 94", the handlers the inputs' arrow enters
+  (select's handler, selectCommand, is in no part, and sinter and smembers
+  share one row). No number changes.
+- **u1.** GET's reading says "How a request for get gets to call is not
+  established." (030dbc9e); the old key is in no template, vocabulary or
+  rendered report, and every input's box is written by the one
+  `rmInputPathSection`. Its test fails when the line is put back to the
+  old key (`ui-fixes/revert.log`).
+- **Change.** The page data of a dispatch site (`pageDispatched`,
+  `pageSiteReading`) carries `handlers`, the alternatives that are an
+  input's handler, and `shared`, each handler several of its inputs share
+  with those inputs (`siteHandlers`, from GroupsIndex's sites and
+  operations). GET's box reads "Dispatched from call · one of 94 handlers"
+  and "call → one of 94 handlers", its hover "95 inputs are dispatched
+  here / sinterCommand handles 2 of these inputs: sinter, smembers"; call's
+  own reading "Dispatch site · one of 94 handlers · 95 inputs dispatched
+  here" and "sinterCommand handles 2 of these inputs: sinter, smembers". A
+  site some of whose alternatives handle no input reads "one of N
+  functions, M of them handlers". The component's Connections line from
+  its inputs reads "← Inputs 94 handlers", the arrow's card "94 handlers,
+  into 12 of 21", and inputs sharing a handler are one row naming each
+  ("sinter, smembers → sinterCommand"): the row key had dropped smembers.
+  "Incoming request records · 95" and "Inputs 96" already said records and
+  inputs.
+- **Tests.** `TestADispatchSiteCountsItsHandlersApartFromItsInputs`, the
+  handler assertions in `TestAnInputsPathNamesItsDispatchWithoutARoute…`,
+  `TestAnInputsPathNamesItsDispatchThenItsOwnSteps`,
+  `TestADispatchSitesReadingListsTheInputsReachingIt` and
+  `call-card.test.mjs`'s shared-handler row; each fails on revert
+  (`ui-fixes/revert.log`).
+- `make test`: PASS. `make vet`: PASS. `make ui-test`: PASS (127). `make ui-visual-test`:
+  PASS (65 passed, 5 skipped).
+
 ## 2026-09-28 — Follow-ups f1–f3 and the exec wording accepted on Redis and litestream
 
 - Runs (`.bin/repomap <repo> --no-serve --no-open`, default system cache,

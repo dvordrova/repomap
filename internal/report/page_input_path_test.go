@@ -75,16 +75,16 @@ func TestAnInputsPathNamesItsDispatchWithoutARouteAndListsItsOwnSteps(t *testing
 	}
 	name := func(position int) string { return path.Decls[position].Name }
 	type dispatched struct {
-		site        string
-		of, inputs  int
-		all         bool
-		reachedFrom []string
+		site                 string
+		of, handlers, inputs int
+		all                  bool
+		reachedFrom          []string
 	}
 	var sites []dispatched
 	for _, site := range path.Dispatched {
-		sites = append(sites, dispatched{name(site.Site), site.Of, site.Inputs, site.All, site.ReachedFrom})
+		sites = append(sites, dispatched{name(site.Site), site.Of, site.Handlers, site.Inputs, site.All, site.ReachedFrom})
 	}
-	want := []dispatched{{"callCommand", 4, 4, true, []string{operationNodeID("server", "exec")}}, {"loadCommand", 4, 4, true, nil}}
+	want := []dispatched{{"callCommand", 4, 4, 4, true, []string{operationNodeID("server", "exec")}}, {"loadCommand", 4, 4, 4, true, nil}}
 	if !reflect.DeepEqual(sites, want) {
 		t.Fatalf("the dispatch sites of get:\n got %+v\nwant %+v", sites, want)
 	}
@@ -126,6 +126,35 @@ func TestAnInputsPathNamesItsDispatchWithoutARouteAndListsItsOwnSteps(t *testing
 			len(readings.Sites[0].ReachedFrom) != 1 || readings.Sites[0].ReachedFrom[0].Input != operationNodeID("server", "exec") {
 			t.Fatalf("call's reading: %s", node.Dispatch)
 		}
+	}
+}
+
+// A dispatch site's "one of N" counts its alternatives, and its inputs can
+// outnumber them: Redis's call is one of 94 handlers and 95 inputs are
+// dispatched there, because sinterCommand handles sinter and smembers. The
+// page data says how many alternatives are handlers and which handler
+// several of its inputs share, so each count can say what it counts.
+func TestADispatchSiteCountsItsHandlersApartFromItsInputs(t *testing.T) {
+	index := groupindex.Index{Operations: []groupindex.Operation{
+		{ID: "sinter", SubjectID: "sinterCommand"}, {ID: "sadd", SubjectID: "saddCommand"}, {ID: "smembers", SubjectID: "sinterCommand"}, {ID: "ping", SubjectID: "pingCommand"},
+	}}
+	site := groupindex.DispatchSite{FromSubjectID: "call", Alternatives: []string{"sinterCommand", "saddCommand", "freeClient"}, OperationIDs: []string{"sinter", "sadd", "smembers"}}
+	builder := pageBuilder{subjects: map[string]subjectRef{}}
+	decls := builder.pathDecls("server", func(string) string { return "" })
+	handlers, shared := siteHandlers(&index, site, decls, func(id string) string { return "node-" + id })
+	if handlers != 2 {
+		t.Fatalf("handlers among the alternatives = %d, want 2 (freeClient handles no input)", handlers)
+	}
+	if len(shared) != 1 || decls.list[shared[0].Handler].Name != "sinterCommand" || !equalStrings(shared[0].Inputs, []string{"node-sinter", "node-smembers"}) {
+		t.Fatalf("shared handlers = %+v (decls %+v)", shared, decls.list)
+	}
+	raw, err := json.Marshal(pageInputPath{Dispatched: []pageDispatched{{Shared: shared}}, Decls: decls.list})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var moved pageInputPath
+	if json.Unmarshal([]byte(remapInputPath(string(raw), func(id string) string { return "t1-" + id })), &moved) != nil || moved.Dispatched[0].Shared[0].Inputs[1] != "t1-node-smembers" {
+		t.Fatalf("a scoped map did not rename the shared handler's inputs: %+v", moved)
 	}
 }
 
