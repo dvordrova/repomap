@@ -22,13 +22,19 @@ func systemJSPiece(t *testing.T, name, start, end string) string {
 	}
 	return start + body
 }
+// jsPageDataStandIn reads a value a harness writes into an element's
+// dataset as JSON, where the page refers to it in its page data
+// (10-ui.js rmPage, page_data_table.go).
+const jsPageDataStandIn = `var rmPage={data:function(element,name){var value=element&&element.dataset?element.dataset[name]:undefined;return value===undefined||value===''?null:JSON.parse(value);},link:function(value){return value;}};
+`
+
 func runSystemJS(t *testing.T, script string) {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("Node required")
 	}
-	out, err := exec.CommandContext(t.Context(), node, "-e", "const assert=require('node:assert/strict');\n"+script).CombinedOutput()
+	out, err := exec.CommandContext(t.Context(), node, "-e", "const assert=require('node:assert/strict');\n"+jsPageDataStandIn+script).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}

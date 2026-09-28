@@ -65,7 +65,7 @@ function rmInputPath(n,byID){
 function rmKey(nodes,edges,category){
   var key=rmEl('span','flow-color-key');
   [['','Parts'],['entry','Entrypoints'],['core','Core'],['input','Inputs'],['external','External communication']].filter(function(item){return nodes.some(function(n){return ['core','entry'].includes(item[0])?!n.dataset.branch&&!n.dataset.activation&&n.dataset.lane===(item[0]==='entry'?'triggers':'core'):item[0]?category(n)===item[0]:!n.dataset.branch&&category(n)==='part'&&!['core','triggers'].includes(n.dataset.lane);});}).forEach(function(item){var label=rmEl('span',item[0]);label.append(rmEl('i'),document.createTextNode(rmT(item[1])));key.appendChild(label);});
-  var types=nodes.some(function(n){try{return JSON.parse(n.dataset.symbolCalls||'[]').some(function(link){return link[2]==='returns'||link[2]==='takes';});}catch(_){return false;}});
+  var types=nodes.some(function(n){try{return (rmPage.data(n,'symbolCalls')||[]).some(function(link){return link[2]==='returns'||link[2]==='takes';});}catch(_){return false;}});
   [[false,'calls',edges.some(function(e){return !e.possible;})],[true,'possible calls',edges.some(function(e){return e.possible;})],['types','returns or takes a type',types]].filter(function(item){return item[2];}).forEach(function(item){
     var label=rmEl('span','flow-key-stroke'+(item[0]==='types'?' flow-key-types':item[0]?' flow-key-possible':'')),svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
     svg.setAttribute('viewBox','0 0 30 10');svg.setAttribute('width','30');svg.setAttribute('height','10');svg.setAttribute('aria-hidden','true');
@@ -432,7 +432,7 @@ function rmCatalogInputClick(event,reveal){
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
   nodes.forEach(function(n){byID[n.id]=n;});
   map.querySelectorAll('[data-map-alias]').forEach(function(n){aliases[n.id]=n.dataset.mapAlias;});
-  var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).filter(function(e){return e.dataset.scope!=='static';}).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),init:e.classList.contains('map-edge-init'),calls:(function(){try{return JSON.parse(e.dataset.calls||'[]').map(function(call){if(!('callee' in call))call.callee=call.to||'';return call;});}catch(_){return [];}})(),label:e.querySelector('title')?.textContent||''};});
+  var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).filter(function(e){return e.dataset.scope!=='static';}).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),init:e.classList.contains('map-edge-init'),calls:(rmPage.data(e,'calls')||[]).map(function(call){if(!('callee' in call))call.callee=call.to||'';return call;}),label:e.querySelector('title')?.textContent||''};});
   var model=nodes.map(function(n){return {id:n.id,branch:n.dataset.branch,children:(n.dataset.children||'').split(/\s+/).filter(Boolean),activation:n.dataset.activation,inputOwner:n.dataset.inputOwner};});
   var projection=rmSystemProjection(model,rawEdges),scope='',operation=null,surface=null,ready=null;
   // Whether the camera may stand away from the pinned input's own tile: on its
@@ -551,7 +551,7 @@ function rmCatalogInputClick(event,reveal){
   function filterChanged(){searchValue=search.value;filterValue=filter.value;updateResults();emphasize();emit();}
   search.addEventListener('input',filterChanged);filter.addEventListener('change',filterChanged);
   nodes.forEach(function(n){n.addEventListener('click',function(e){e.preventDefault();e.stopImmediatePropagation();select(n,true);});});
-  var inputWrites=nodes.filter(function(n){return n.dataset.activation;}).map(function(n){return {input:n,writes:JSON.parse(n.dataset.writes||'[]')};});
+  var inputWrites=nodes.filter(function(n){return n.dataset.activation;}).map(function(n){return {input:n,writes:rmPage.data(n,'writes')||[]};});
   var writeReading=null;
   map.addEventListener('repomap:reading',function(){
     if(!writeReading||writeReading.card.hidden)return;
@@ -663,7 +663,7 @@ function rmCatalogInputClick(event,reveal){
   function readsHandler(n,card){
     var name=card.querySelector('.map-card-handler>a'),part=byID[projection.inputOwner[n.id]],key=n.dataset.handlerSource||n.dataset.handlerOpen;
     if(!name||!part||part.dataset.activation||!key)return;
-    var symbols=[];try{symbols=JSON.parse(part.dataset.symbols||'[]');}catch(_){}
+    var symbols=rmPage.data(part,'symbols')||[];
     if(!symbols.some(function(symbol){return symbol.href===key||symbol.open===key;}))return;
     name.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
@@ -697,7 +697,7 @@ function rmCatalogInputClick(event,reveal){
       var selectedMembers=new Set(projection.leaves(n.id));selectedMembers.add(n.id);
       var reaching=nodes.filter(function(candidate){if(!candidate.dataset.activation)return false;return Array.from(projection.selection('',candidate.id).active).some(function(id){return selectedMembers.has(id);});});
       var inputs=rmReachingInputs(n,reaching,owner,function(input){select(input,true,null,true);});
-      if(JSON.parse(n.dataset.concepts||'[]').length)inputs.appendChild(rmEl('p','meta',rmT('Reaching a part does not by itself establish a change to its entities.')));
+      if((rmPage.data(n,'concepts')||[]).length)inputs.appendChild(rmEl('p','meta',rmT('Reaching a part does not by itself establish a change to its entities.')));
       var partReading=card.querySelector('.map-part-reading');
       if(partReading)partReading.appendChild(inputs);
       else if(!n.dataset.branch||n.dataset.branch==='communication'){card.querySelector('.map-card-intro').after(inputs);}
@@ -748,10 +748,10 @@ function rmCatalogInputClick(event,reveal){
     }
     // An input's reading carries the Inputs blue, never core's purple.
     map.querySelector('.map-inspector')?.classList.toggle('map-reading-input',!!n.dataset.activation);
-    var inputPath=null;try{inputPath=n.dataset.inputPath?JSON.parse(n.dataset.inputPath):null;}catch(_){inputPath=null;}
-    var catalogue=null;try{catalogue=n.dataset.catalogue?JSON.parse(n.dataset.catalogue):null;}catch(_){catalogue=null;}
+    var inputPath=rmPage.data(n,'inputPath');
+    var catalogue=rmPage.data(n,'catalogue');
     if(n.dataset.branch==='inputs'&&n.dataset.launch){
-      var launch=null;try{launch=JSON.parse(n.dataset.launch);}catch(_){launch=null;}
+      var launch=rmPage.data(n,'launch');
       if(launch)card.querySelector('.map-card-intro').after(rmLaunchSection(launch,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);},readDeclaration,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;}));
     }
     if(n.dataset.activation&&n.dataset.declares){
@@ -821,7 +821,7 @@ function rmCatalogInputClick(event,reveal){
       // its component in its box on top; its records stay on the component's
       // page.
       card.querySelector('.map-card-actions')?.remove();
-      card.querySelector('.map-card-intro').after(rmCollectionView(map.readingContext(),n,JSON.parse(n.dataset.collection)));
+      card.querySelector('.map-card-intro').after(rmCollectionView(map.readingContext(),n,rmPage.data(n,'collection')));
     }else if(n.dataset.branch==='component'&&details){
       rmComponentReading(map,n,card,details,byID['system-inputs-'+n.dataset.owner]||null,pendingEntry===n.id);
     }else if(details){
@@ -848,7 +848,7 @@ function rmCatalogInputClick(event,reveal){
     var items=nodes.map(function(n){
       var component=n.dataset.activation||n.dataset.branch==='inputs'?componentsByOwner.get(n.dataset.owner):null;
       return {id:n.id,title:n.dataset.title,branch:n.dataset.branch,activation:n.dataset.activation,lane:n.dataset.lane,
-        summary:n.dataset.summary,symbols:(function(){try{return JSON.parse(n.dataset.symbols||'[]');}catch(_){return [];}})(),symbolCalls:(function(){try{return JSON.parse(n.dataset.symbolCalls||'[]');}catch(_){return [];}})(),subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
+        summary:n.dataset.summary,symbols:rmPage.data(n,'symbols')||[],symbolCalls:rmPage.data(n,'symbolCalls')||[],subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
         role:n.dataset.role,roleRef:n.dataset.roleRef,language:n.dataset.language,componentKind:n.dataset.componentKind,
         trace:n.dataset.activation?rmInputPath(n,byID):[],displayGroup:n.dataset.displayGroup||'',displayGroupTitle:n.dataset.displayGroupTitle||'',
         componentOwner:component?.id||'',componentName:component?.dataset.title||'',

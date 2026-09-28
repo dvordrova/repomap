@@ -44,7 +44,7 @@ func TestUnavailableSourcesKeepCodeMembersAndSelection(t *testing.T) {
 	reading := read("30-map.js")
 	snapshot := between(operations, "map.readingState=function(){", "  map.restoreReadingState=")
 	explain := between(reading, "map.explainSource=function(source){", "    map.showNode=")
-	harness := `
+	harness := jsPageDataStandIn + `
 const assert = require('node:assert/strict');
 function element(tag) {
   return {tag,children:[],dataset:{},attrs:{},events:{},textContent:'',

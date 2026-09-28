@@ -30,3 +30,37 @@ function rmScrollToReading(node) {
     window.scrollTo({top:Math.max(0,window.scrollY+node.getBoundingClientRect().top-inset-16),behavior:'instant'});
   });});
 }
+
+// The page's data (page_data_table.go): the values an element's attribute
+// refers to by index (data-reading="12"), each written once; the
+// declarations a reading names, once, by index in its "decls"; and the base
+// of the source links, once, a link inside the data starting with \u0001
+// and one in a key attribute with "@". rmPage.data(element, name) is the
+// value its dataset[name] refers to, parsed once, or null.
+var rmPage = (function () {
+  var page=null,values=new Map(),decls=new Map(),named={reading:1,inputPath:1,catalogue:1,launch:1};
+  function load(){
+    if(!page){var node=document.getElementById('rm-page-data');page=node?JSON.parse(node.textContent):{decls:[],values:[]};page.base=page.base||'';}
+    return page;
+  }
+  function expand(value){
+    if(typeof value==='string')return value.charCodeAt(0)===1?load().base+value.slice(1):value;
+    if(Array.isArray(value))return value.map(expand);
+    if(value&&typeof value==='object'){var out={};Object.keys(value).forEach(function(key){out[key]=expand(value[key]);});return out;}
+    return value;
+  }
+  function decl(index){if(!decls.has(index))decls.set(index,expand(load().decls[index]));return Object.assign({},decls.get(index));}
+  function data(element,name){
+    var ref=element&&element.dataset?element.dataset[name]:undefined;
+    if(ref===undefined||ref==='')return null;
+    var key=name+'\0'+ref;
+    if(!values.has(key)){
+      var value=expand(load().values[Number(ref)]);
+      if(named[name]&&value&&Array.isArray(value.decls))value.decls=value.decls.map(function(index){return typeof index==='number'?decl(index):index;});
+      values.set(key,value);
+    }
+    return values.get(key);
+  }
+  function link(value){return value&&value.charAt(0)==='@'&&load().base?load().base+value.slice(1):value;}
+  return {data:data,link:link};
+})();

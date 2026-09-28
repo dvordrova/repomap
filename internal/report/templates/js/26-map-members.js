@@ -20,7 +20,7 @@ var repomapMembers = (function () {
       }
       known.set(key, item); result.push(item);
     }
-    JSON.parse(node.dataset.concepts || '[]').forEach(add);
+    (rmPage.data(node,'concepts')||[]).forEach(add);
     var href = node.getAttribute('href') || '';
     var group = href[0] === '#' && document.getElementById(href.slice(1));
     // Code in this part is every declaration of the part, the model's keys
@@ -83,7 +83,7 @@ var repomapMembers = (function () {
   // holds (the kinds its tiles carry), and the files they are written in.
   function composition(node){
     var kinds={},counts={},files=[];
-    try{JSON.parse(node.dataset.symbols||'[]').forEach(function(symbol){if(symbol.href||symbol.open)kinds[symbol.href||symbol.open]=symbol.kind;});}catch(_){}
+    try{(rmPage.data(node,'symbols')||[]).forEach(function(symbol){if(symbol.href||symbol.open)kinds[symbol.href||symbol.open]=symbol.kind;});}catch(_){}
     items(node).forEach(function(item){
       var kind=kinds[item.source.Href||item.source.Open]||'';
       var word=kind==='function'||kind==='method'?'{0} functions':kind==='type'?'{0} types':kind==='variable'?'{0} variables':'{0} declarations';

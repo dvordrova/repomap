@@ -207,7 +207,12 @@ func executeProgramReport(data *ReportData, options RenderOptions, localRoots []
 	}
 	view.CSS = template.CSS(styles)
 	view.JS = template.JS(scripts)
-	pageTemplate, err := template.New("report").Funcs(pageTemplateFuncs(view.Language)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	// The source links' base is written once in the page data.
+	base := ""
+	if links := newPageLinks(data); links.static() {
+		base = links.permalink("", 0)
+	}
+	pageTemplate, err := template.New("report").Funcs(pageTemplateFuncsWith(view.Language, newPageData(base))).ParseFS(reportTemplateFS, "templates/html/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("report: parse embedded page templates: %w", err)
 	}
@@ -957,13 +962,21 @@ func decodeStrictReportJSON(reportJSON []byte) (ReportData, error) {
 }
 
 // pageTemplateFuncs are the functions every page template may call: t for
-// the static UI vocabulary and outboundGroups for the destination-grouped
-// communication catalogue.
+// the static UI vocabulary, outboundGroups for the destination-grouped
+// communication catalogue, and pagedata for the values the page's script
+// reads (page_data_table.go).
 func pageTemplateFuncs(language DisplayLanguage) template.FuncMap {
+	return pageTemplateFuncsWith(language, newPageData(""))
+}
+
+func pageTemplateFuncsWith(language DisplayLanguage, data *pageData) template.FuncMap {
 	return template.FuncMap{
 		"t":                func(key string, params ...any) (string, error) { return uiText(language, key, params...) },
 		"outboundGroups":   groupOutbound,
 		"operationsByFile": operationsByFile,
 		"hasFolds":         hasFolds,
+		"pagedata":         data.ref,
+		"pagedataLink":     data.attrLink,
+		"pagedataJSON":     data.JSON,
 	}
 }

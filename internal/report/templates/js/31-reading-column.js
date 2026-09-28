@@ -16,7 +16,7 @@ function rmGroupReading(node){
   if(!group||!group.dataset.reading)return null;
   if(!group.rmReading){
     // A declaration's key is left out where it is its link.
-    group.rmReading=JSON.parse(group.dataset.reading);
+    group.rmReading=rmPage.data(group,'reading');
     group.rmReading.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
   }
   return group.rmReading;
@@ -181,7 +181,7 @@ function rmDeclView(ctx,node,data,concept){
   var callers=side(own.callers,variable?'Used by':'Called by','in');if(callers)view.appendChild(callers);
   var name=rmEl('div','map-decl-name');
   var link=rmDeclName({name:decl.name,href:decl.href,open:decl.open},decl.name,null,decl.at);link.classList.add('map-decl-code');name.appendChild(link);
-  try{symbols=JSON.parse(node.dataset.symbols||'[]');}catch(_){symbols=[];}
+  symbols=rmPage.data(node,'symbols')||[];
   var symbol=symbols.find(function(s){return (s.href||s.open)===key&&s.kind!=='field';});
   if(symbol&&symbol.text)name.appendChild(rmEl('span','map-decl-signature',symbol.text));
   view.appendChild(name);
@@ -250,13 +250,13 @@ function rmCollectionView(ctx,node,collection){
     if(rmPendingKind===group.kind){section.dataset.readingAnchor='';rmPendingKind='';}
     heading.append(rmEl('span','',rmT(rmInputKindTitles[group.kind]||'Inputs')),rmEl('span','map-reading-peer-count',String(group.inputs.length)));
     rmLights(ctx,heading,group.inputs);section.appendChild(heading);
-    var first=group.catalogue&&ctx.nodeById(group.catalogue),catalogue=first&&first.dataset.catalogue?JSON.parse(first.dataset.catalogue):null;
+    var first=group.catalogue&&ctx.nodeById(group.catalogue),catalogue=first?rmPage.data(first,'catalogue'):null;
     if(catalogue)rmCatalogueLines(ctx,catalogue).forEach(function(line){section.appendChild(line);});
     // Matched by the model to another program's inputs of the same name:
     // one line, the model's.
     var matched=0,programs=[];
     group.inputs.forEach(function(id){
-      var input=ctx.nodeById(id),path=input&&input.dataset.inputPath?JSON.parse(input.dataset.inputPath):null;
+      var input=ctx.nodeById(id),path=input?rmPage.data(input,'inputPath'):null;
       if(path&&(path.sent_to||[]).length){matched++;path.sent_to.forEach(function(entry){if(programs.indexOf(entry.program)<0)programs.push(entry.program);});}
     });
     if(matched)section.appendChild(rmModelText('p','map-collection-matched',rmT('{0} matched to inputs of {1} by name',matched,programs.join(', '))));
@@ -323,7 +323,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   card.querySelector('.map-card-actions')?.remove();
   var after=intro.querySelector(':scope>.map-card-summary');
   function place(item){if(after)after.after(item);else intro.prepend(item);after=item;}
-  var entries=n.dataset.entries?JSON.parse(n.dataset.entries):[];
+  var entries=rmPage.data(n,'entries')||[];
   if(entries.length){
     var start=rmEl('p','map-component-entry');
     entries.forEach(function(entry,i){
@@ -339,7 +339,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   details.querySelectorAll(':scope>.component-intro>.component-entry').forEach(function(entry){
     var line=entry.cloneNode(true);if(anchorEntry)line.dataset.readingAnchor='';place(line);
   });
-  var collection=collectionNode&&collectionNode.dataset.collection?JSON.parse(collectionNode.dataset.collection):null;
+  var collection=collectionNode?rmPage.data(collectionNode,'collection'):null;
   if(collection&&collection.kinds.length){
     var inputs=rmEl('p','map-component-inputs');inputs.appendChild(rmEl('span','map-reading-label',rmT('Inputs')));
     collection.kinds.forEach(function(kind){

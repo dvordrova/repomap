@@ -25,7 +25,7 @@ func TestCatalogKeepsAllDestinationRecordsVisible(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing %q", end)
 	}
-	harness := `const assert=require('node:assert/strict');
+	harness := jsPageDataStandIn + `const assert=require('node:assert/strict');
 function matches(node,selector){
   return selector.split(',').some(function(simple){
     simple=simple.trim();

@@ -93,7 +93,7 @@
     var href=entry.source.getAttribute('href');
     for(var i=0;href&&i<entry.memberships.length;i++){
       var node=entry.memberships[i].node;if(!node)continue;
-      if(!symbolLists.has(node)){try{symbolLists.set(node,JSON.parse(node.dataset.symbols||'[]'));}catch(_){symbolLists.set(node,[]);}}
+      if(!symbolLists.has(node))symbolLists.set(node,rmPage.data(node,'symbols')||[]);
       var symbols=symbolLists.get(node),at=symbols.findIndex(function(symbol){return symbol.href===href&&symbol.kind!=='field';});
       if(at<0)continue;
       return {head:symbols[at].name+(symbols[at].text||''),fields:symbols.filter(function(symbol){return symbol.owner===at+1&&(symbol.kind==='field'||symbol.kind==='more');}).map(function(symbol){return symbol.name+(symbol.text||'');})};

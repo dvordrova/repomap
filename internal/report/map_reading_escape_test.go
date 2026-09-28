@@ -64,7 +64,7 @@ func TestMapReadingPreservesQuotedSourceAttributesAndNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness := `
+	harness := jsPageDataStandIn + `
 const fs = require('node:fs');
 const cases = JSON.parse(fs.readFileSync(0, 'utf8'));
 // Browser text-node serialization deliberately does not escape quotes. This

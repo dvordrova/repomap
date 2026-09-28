@@ -286,7 +286,7 @@
 // A declaration's name as its tile writes it: the name and what follows it
 // in a class box, "(c: redisClient *)" for a function, ": int" for a field.
 function rmDeclarationText(node,concept){
-  var symbols=[];try{symbols=JSON.parse(node.dataset.symbols||'[]');}catch(_){}
+  var symbols=rmPage.data(node,'symbols')||[];
   var href=concept.source&&concept.source.Href,symbol=href&&symbols.find(function(s){return s.href===href&&s.kind!=='field';});
   return symbol?symbol.name+(symbol.text||''):concept.name;
 }
@@ -301,7 +301,7 @@ function rmOpenCode(source){
 // entering the part from a part reached earlier, the other calls counted,
 // and the declarations they name. Null when the path does not enter it.
 function rmInputPart(operation,id){
-  var path=null;try{path=JSON.parse(operation.dataset.inputPath||'null');}catch(_){path=null;}
+  var path=rmPage.data(operation,'inputPath');
   var part=path&&(path.parts||[]).find(function(entry){return entry.part===id;});
   if(!part||!(part.entered||[]).length&&!part.others)return null;
   return {entered:part.entered||[],others:part.others||0,decls:path.decls||[]};
@@ -327,7 +327,7 @@ function rmSharedHandlers(site,decls,title){
 // reading, where a reader took it for GET's route.
 function rmSiteReading(map,node,key){
   var box=rmEl('div','map-concept-dispatch'),readings=null;
-  try{readings=JSON.parse(node.dataset.dispatch||'null');}catch(_){readings=null;}
+  readings=rmPage.data(node,'dispatch');
   if(!readings||!key)return box;
   var decls=readings.decls||[];
   function name(index){var decl=decls[index]||{name:''},item=rmEl('span','',decl.name);if(decl.source)item.title=decl.source;return item;}
@@ -362,7 +362,7 @@ function rmDeclarationRelations(map,node,key,nodes){
   if(group&&key)group.querySelectorAll('.conn[data-kind]').forEach(function(row){
     var d=row.dataset,peer=row.closest('.conn-group'),link=peer&&peer.querySelector('.conn-peer a'),label=peer&&peer.querySelector('.conn-peer .lbl');
     var part=peer?{href:link?link.getAttribute('href'):'',title:(link||label||{}).textContent||''}:{href:node.getAttribute('href')||'',title:node.dataset.title||'',own:true};
-    [['in',d.toDecl===key,d.fromDecl,d.fromName],['out',d.fromDecl===key,d.toDecl,d.toName]].forEach(function(end){
+    [['in',rmPage.link(d.toDecl)===key,rmPage.link(d.fromDecl),d.fromName],['out',rmPage.link(d.fromDecl)===key,rmPage.link(d.toDecl),d.toName]].forEach(function(end){
       if(!end[1])return;
       var parts=sides[end[0]],at=part.href||part.title;
       if(!parts.has(at))parts.set(at,{part:part,decls:new Map()});
@@ -539,7 +539,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';
       else if(node.dataset.noSource==='true') html += '<p><span title="'+escapeText(rmT('No source'))+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</span></p>';
       html += '</div>';
-      var concepts = map.exploreNode ? repomapMembers.items(node) : JSON.parse(node.dataset.concepts || '[]');
+      var concepts = map.exploreNode ? repomapMembers.items(node) : rmPage.data(node,'concepts') || [];
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);
       if (concepts.length && !reading) {
         html+='<div class="map-concepts" hidden><strong data-concept-name></strong><code class="map-concept-declaration" data-concept-declaration></code><div class="map-member-fields" data-concept-fields></div><p class="model" data-concept-explanation></p><p class="map-concept-source" data-concept-source></p><div data-concept-dispatch></div><div data-concept-relations></div></div>';
@@ -714,7 +714,7 @@ function rmDeclarationRelations(map,node,key,nodes){
     }
     map.explainSource=function(source){
       if(!inspectedNode)return;
-      var concepts=map.exploreNode?repomapMembers.items(inspectedNode):JSON.parse(inspectedNode.dataset.concepts||'[]');
+      var concepts=map.exploreNode?repomapMembers.items(inspectedNode):rmPage.data(inspectedNode,'concepts')||[];
       var index=concepts.findIndex(function(c){return repomapMembers.sourceKey(c.source)===(source.key||source.href||source.open);});
       if(index>=0)map.inspectConcept(index);
     };
