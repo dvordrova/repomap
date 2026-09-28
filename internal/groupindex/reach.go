@@ -241,6 +241,7 @@ func Derive(index *Index) {
 	graph.handOvers(index.Reach)
 	index.Dispatch = graph.dispatchSites(index.Reach)
 	index.Entries = entries(index)
+	index.Catalogues = catalogues(index)
 	graph.phases()
 }
 

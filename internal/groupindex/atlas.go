@@ -663,6 +663,17 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		v := subject.Interpretation
 		operations = append(operations, Operation{ID: subject.ID, SubjectID: subject.ID, GroupID: groupID, Kind: v.Activation, Name: v.Operation, Summary: v.OperationSummary, Source: "model", Location: *subject.Object.Location})
 	}
+	// An undecided declaration is named by its subject, and a handler-less
+	// input's declaring caller found: the program's object at the
+	// declaration's source key.
+	objectOfKey := make(map[string]string, len(program.Objects))
+	for _, object := range program.Objects {
+		if key := DeclarationKey(object); key != "" {
+			if _, seen := objectOfKey[key]; !seen {
+				objectOfKey[key] = object.ID
+			}
+		}
+	}
 	boundRequests := make(map[string]bool)
 	// An entry whose handler is not established is one input per kind,
 	// words as written and declaring caller: the same option declared at
@@ -693,7 +704,17 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			if !validText(boundary.Name) {
 				continue
 			}
-			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true}
+			declaredBy := boundary.ObjectID
+			if byID[declaredBy] == nil {
+				declaredBy = ""
+				if key := sourceRefs[boundary.ObjectID]; key != "" {
+					declaredBy = objectOfKey[key]
+				}
+			}
+			if byID[declaredBy] == nil {
+				declaredBy = ""
+			}
+			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy}
 			key := strings.Join(append([]string{kind, boundary.ObjectID}, boundary.Values...), "\x00")
 			if at, seen := declared[key]; seen {
 				if locationBefore(&location, &operations[at].Location) {
@@ -753,16 +774,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	sort.Slice(operations, func(i, j int) bool { return operationKey(operations[i]) < operationKey(operations[j]) })
 	for position := range operations {
 		operations[position].ID = compactOrdinal("o", position)
-	}
-	// An undecided declaration is named by its subject: the program's object
-	// at the declaration's source key.
-	objectOfKey := make(map[string]string, len(program.Objects))
-	for _, object := range program.Objects {
-		if key := DeclarationKey(object); key != "" {
-			if _, seen := objectOfKey[key]; !seen {
-				objectOfKey[key] = object.ID
-			}
-		}
 	}
 	offMap, err := projectOffMap(target, unreached, func(symbol atlas.Symbol) (string, bool) {
 		key := sourceRefs[symbol.ObjectID]

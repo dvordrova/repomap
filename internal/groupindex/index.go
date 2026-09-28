@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 21
+	Version          = 22
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -244,6 +244,10 @@ type Operation struct {
 	// is the part its call is written in, which declares it and is not
 	// claimed to implement it.
 	HandlerUnknown bool `json:"handler_unknown,omitempty"`
+	// DeclaredBy is, for an input whose handler is not established, the
+	// subject whose code declares it: the caller of the declaring call. It
+	// is where the input is parsed, never its handler.
+	DeclaredBy string `json:"declared_by,omitempty"`
 }
 
 // StructuralEdgeRole is a deterministic projection of exact ProgramIndex
@@ -330,6 +334,9 @@ type Index struct {
 	// Entries are the target's seeds, each with its part or its off-map
 	// reason (reach.go). Derived, never persisted.
 	Entries []Entry `json:"-"`
+	// Catalogues are the inputs whose handler is not established, grouped
+	// by what declares them (catalogue.go). Derived, never persisted.
+	Catalogues []Catalogue `json:"-"`
 }
 
 // OffMapTests is the off-map reason of a file of a part made only of test
@@ -822,6 +829,10 @@ func (index Index) Validate() error {
 		// An operation in a file off the map belongs to no group.
 		_, groupExists := groupsByID[operation.GroupID]
 		_, subjectExists := subjectsByID[operation.SubjectID]
+		_, declarerExists := subjectsByID[operation.DeclaredBy]
+		if operation.DeclaredBy != "" && (!operation.HandlerUnknown || !declarerExists) {
+			return fmt.Errorf("group index: operation %q is declared by %q, which is no subject or declares an input with a handler", operation.ID, operation.DeclaredBy)
+		}
 		if operation.GroupID != "" && !groupExists || operation.SubjectID != "" && !subjectExists || operation.HandlerUnknown && operation.SubjectID != "" || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validOptionalText(operation.Summary) ||
 			(operation.Source != "model" && operation.Source != "fact") || operation.Location.Path == "" || operation.Location.Line < 1 || operation.Location.Column < 1 {
 			return fmt.Errorf("group index: invalid operation %q", operation.ID)
