@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 19
+	Version          = 20
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -913,6 +913,9 @@ type RelationInput struct {
 	Patterns          []RelationPatternInput
 	PatternsObserved  int
 	SourceArgument    *PatternArgumentRefInput
+	// FieldPath is, on a reads or writes relation whose target is a field
+	// of a record, the field as the code reaches it (Relation.FieldPath).
+	FieldPath string
 }
 
 // Relation is one typed, locally resolved edge or uncertainty joint.
@@ -935,6 +938,15 @@ type Relation struct {
 	PatternsObserved  int               `json:"-"`
 	PatternsOmitted   int               `json:"patterns_omitted,omitempty"`
 	SourceArgumentID  string            `json:"source_argument_id,omitempty"`
+	// FieldPath is, on a reads or writes relation of a record's field, the
+	// field as the code reaches it: the root file-scope variable, or the
+	// record type holding the chain's first field when the root is any
+	// other value (a parameter, a local, a call's result), then each field
+	// of the chain, elements left out (server.masterhost, server.db.expires,
+	// redisDb.expires for db->expires). The target is the field itself, so
+	// the readers and writers of one field gather across functions whatever
+	// root each reaches it from.
+	FieldPath string `json:"field_path,omitempty"`
 }
 
 // CoverageInput retains adapter observations that could not all be represented
@@ -1307,6 +1319,7 @@ func New(input Input) (Index, error) {
 			WitnessesOmitted: value.WitnessesObserved - len(witnesses),
 			Patterns:         patterns, PatternsObserved: value.PatternsObserved,
 			PatternsOmitted: value.PatternsObserved - len(patterns),
+			FieldPath:       value.FieldPath,
 		}
 		if value.SourceArgument != nil {
 			if value.Kind != RelationPassesCallback || !validPatternArgumentRefInput(*value.SourceArgument) {
@@ -1465,6 +1478,13 @@ func (index Index) Validate() error {
 		for _, id := range relation.ToIDs {
 			if !hasObjectID(index.Objects, id) {
 				return fmt.Errorf("program index: relation %q has unknown target", relation.ID)
+			}
+		}
+		if relation.FieldPath != "" {
+			field, _ := objectWithID(index.Objects, relation.ToIDs[0])
+			owner, _ := objectWithID(index.Objects, field.OwnerID)
+			if field.Kind != ObjectVariable || owner.Kind != ObjectType {
+				return fmt.Errorf("program index: relation %q has a field path and no field", relation.ID)
 			}
 		}
 		for _, witness := range relation.Witnesses {
@@ -1986,6 +2006,9 @@ func validateRelationShape(value Relation) error {
 	}
 	if value.SourceArgumentID != "" && value.Kind != RelationPassesCallback {
 		return fmt.Errorf("program index: source argument is only valid for callback transfer")
+	}
+	if value.FieldPath != "" && (!validText(value.FieldPath) || value.Kind != RelationReads && value.Kind != RelationWrites || len(value.ToIDs) != 1) {
+		return fmt.Errorf("program index: a field path belongs to a read or write of one field")
 	}
 	if value.TargetsObserved <= 0 || value.TargetsObserved < len(value.ToIDs) ||
 		value.TargetsOmitted != value.TargetsObserved-len(value.ToIDs) ||

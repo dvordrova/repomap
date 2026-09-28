@@ -363,6 +363,18 @@ Missing equivalents, recorded rather than fabricated:
   than asked, while a Go variable, whose reads are never recorded, is always
   asked. The fixture's `lookupCommand`, called only by `DispatchCommand`,
   goes with it; `DispatchCommand`, which nothing calls, is not asked.
+- Go emits no field reads or writes either. The C adapter records each read
+  and write of a record's field as a `reads`/`writes` relation to the field
+  with its `field_path` (C, PROGRAM_INDEX); Python records a typed
+  receiver's attribute writes and reads (PYTHON). Go's field objects exist
+  (a struct's fields are variables its type contains), and SSA names every
+  access (`*ssa.FieldAddr` stored to or loaded from, `*ssa.Field`), but the
+  surface analysis keeps calls, external calls and hand-overs only: a field
+  index would be a new capture beside them, a map from the compiler's
+  `*types.Var` to the core object field IDs, positions of the selectors, and
+  the root and path of each chain through the adapter. Not added in the
+  2026-09-29 C field pass; recorded, not fabricated, and no Go fixture case
+  holds it.
 - A row storing two callables (`{Name: "get", Run: getCommand, Preload:
   preloadGet}`) keeps two bindings. No Go row is a registration, so the C
   rule that such a row is one input has nothing to apply to.

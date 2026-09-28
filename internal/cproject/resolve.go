@@ -501,6 +501,7 @@ func (w walker) walk(n *Node) {
 		}
 		switch n.Opcode {
 		case "=":
+			w.b.markField(n.Inner[0], fieldWrite)
 			w.b.assign(w, n.Inner[0], n.Inner[1])
 			// A variable that is itself the destination is written, not
 			// read; a member or an element of it is reached through it.
@@ -563,11 +564,28 @@ func (w walker) walk(n *Node) {
 			}
 		}
 		return
+	case "CompoundAssignOperator":
+		if len(n.Inner) == 2 {
+			w.b.markField(n.Inner[0], fieldWrite)
+		}
 	case "UnaryOperator":
 		// &fp hands the slot itself over: whoever receives the address may
 		// write any function into it.
 		if n.Opcode == "&" && len(n.Inner) == 1 {
 			w.b.escapeSlot(w, n.Inner[0], n.Begin.Site())
+		}
+		if (n.Opcode == "++" || n.Opcode == "--") && len(n.Inner) == 1 {
+			w.b.markField(n.Inner[0], fieldWrite)
+		}
+	case "MemberExpr":
+		if w.function != nil && !w.unevaluated {
+			w.b.fieldAccess(w, n)
+		} else {
+			delete(w.b.fieldRoles, n)
+		}
+		// The record a . member is taken from is passed through, not used.
+		if !n.IsArrow && len(n.Inner) > 0 {
+			w.b.markField(n.Inner[0], fieldStep)
 		}
 	case "InitListExpr":
 		if !w.inList {
@@ -629,6 +647,129 @@ func (b *builder) read(w walker, n *Node) {
 		}
 	}
 	b.reads = append(b.reads, r)
+}
+
+// fieldRole is what an expression does with one member it names.
+type fieldRole uint8
+
+const (
+	// fieldRead uses the member: its value, its address, an element of it,
+	// or the pointer it holds to reach a further field.
+	fieldRead fieldRole = iota
+	// fieldWrite is the destination of =, a compound assignment, ++ or --,
+	// or an element of an array member there.
+	fieldWrite
+	// fieldStep is a record the chain only passes through: the base of a .
+	// member, or an array member indexed there (server.db[j].key).
+	fieldStep
+)
+
+// markField gives the member an expression names, through parentheses and
+// the element of an array member, its role before the walk reaches it.
+func (b *builder) markField(n *Node, role fieldRole) {
+	for n != nil && n.Kind == "ParenExpr" && len(n.Inner) == 1 {
+		n = n.Inner[0]
+	}
+	if n == nil {
+		return
+	}
+	switch n.Kind {
+	case "MemberExpr":
+		b.fieldRoles[n] = role
+	case "ArraySubscriptExpr":
+		// An element of an array member is the member's own storage; an
+		// element of a pointer member is reached through the pointer the
+		// member holds, which is read.
+		if len(n.Inner) > 0 {
+			if base := n.Inner[0]; base.Kind == "ImplicitCastExpr" && base.CastKind == "ArrayToPointerDecay" && len(base.Inner) == 1 {
+				b.markField(base.Inner[0], role)
+			}
+		}
+	}
+}
+
+// A fieldAccess is a function body reading or writing a field of a
+// repository record, at the field's name as written.
+type fieldAccess struct {
+	from, field, path string
+	write             bool
+	site              Position
+	macro             *programindex.Witness
+}
+
+// fieldAccess records a member expression that reads or writes a field of a
+// repository record. A member of a platform or package record, or of an
+// anonymous record, is no repository field.
+func (b *builder) fieldAccess(w walker, n *Node) {
+	role := b.fieldRoles[n]
+	delete(b.fieldRoles, n)
+	field := w.scope.fields[n.ReferencedMemberDecl]
+	if role == fieldStep || field == nil || field.ref == "" || b.objects[field.ref] == nil || len(n.Inner) == 0 {
+		return
+	}
+	access := fieldAccess{from: w.owner, field: field.ref, path: b.fieldPath(w, n), write: role == fieldWrite, site: n.End.Site()}
+	if n.End.InMacroBody() {
+		if macro := TokenText(b.source(n.End.Expansion.File), n.End.Expansion); macro != "" {
+			verb := "a read"
+			if access.write {
+				verb = "a write"
+			}
+			access.macro = &programindex.Witness{Kind: "macro_expansion", Detail: fmt.Sprintf("%s expands to %s of %s", macro, verb, access.path), Location: location(n.End.Spelling)}
+		}
+	}
+	b.fieldAccesses = append(b.fieldAccesses, access)
+}
+
+// fieldPath is a member as the code reaches it: the file-scope variable the
+// chain starts from or, from any other value (a parameter, a local, a
+// call's result, a dereference), the record holding the chain's first
+// field, then each named field of the chain. Elements are left out:
+// server.db[j].key is server.db.key, c->db->expires redisClient.db.expires.
+func (b *builder) fieldPath(w walker, n *Node) string {
+	var names []string
+	var first *fieldInfo
+	root := n
+	for {
+		if root.Name != "" {
+			names = append(names, root.Name)
+		}
+		if field := w.scope.fields[root.ReferencedMemberDecl]; field != nil {
+			first = field
+		}
+		base := chainBase(root.Inner[0])
+		if base == nil || base.Kind != "MemberExpr" || len(base.Inner) == 0 {
+			if base != nil && base.Kind == "DeclRefExpr" && base.ReferencedDecl != nil && base.ReferencedDecl.Kind == "VarDecl" {
+				if variable := b.variableRef(w.scope, base.ReferencedDecl); variable != "" && b.objects[variable] != nil {
+					names = append(names, b.objects[variable].Name)
+					first = nil
+				}
+			}
+			break
+		}
+		root = base
+	}
+	if first != nil && first.record.name != "" {
+		names = append(names, first.record.name)
+	}
+	slices.Reverse(names)
+	return strings.Join(names, ".")
+}
+
+// chainBase is the value a member is taken from, through parentheses,
+// implicit conversions and elements.
+func chainBase(n *Node) *Node {
+	for n != nil {
+		switch n.Kind {
+		case "ParenExpr", "ImplicitCastExpr", "ArraySubscriptExpr":
+			if len(n.Inner) == 0 {
+				return n
+			}
+			n = n.Inner[0]
+		default:
+			return n
+		}
+	}
+	return nil
 }
 
 // initializer is a variable's initializing expression.

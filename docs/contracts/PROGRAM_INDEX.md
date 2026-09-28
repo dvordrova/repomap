@@ -24,7 +24,20 @@ ProgramIndex retains:
   only; there is no parallel `contains` relation. A `reads` relation names the
   declared variable a callable uses, one per source site, never a runtime
   value: Python, JS/TS, Clojure and C emit it (a C function body's file-scope
-  variables and tables, C), Go does not (GO);
+  variables and tables, C), Go does not (GO). A `writes` relation names a
+  field a callable writes, one per site: Python's attribute writes on a
+  typed receiver (PYTHON) and C's field writes (C). A read or write of a
+  record's field targets the field object, contained by its type, and C
+  gives it a `field_path`: the field as the code reaches it, from the
+  file-scope variable the chain starts at or, from any other value, the
+  record holding the chain's first field, then each named field with
+  elements left out (`server.masterhost`, `server.db.expires`, and
+  `redisDb.expires` for `db->expires`). The target gathers one field's
+  readers and writers across functions; the path is what each wrote.
+  Validation refuses a `field_path` on a relation that is no read or write
+  of one field of a type. Python leaves the path out (the written
+  expression is its witness's detail); Go, JS/TS and Clojure record no field
+  writes (GO, JSTS, CLOJURE);
 - complete witnesses and omission counts. A witness that names a
   declaration also carries its identity (`object_id`): the function a store
   put into the field or name an unresolved call reads (C

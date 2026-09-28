@@ -201,6 +201,13 @@ distinction before model input. The raw declaration, ProgramIndex and question
 evidence now retain that source distinction. Python already writes its class
 header; the cumulative boundary check confirms that it reaches question rows.
 
+A property read the compiler binds to a declared property is a `reads`
+relation to that property, as any declared value reference; an assignment
+to it is a destination and no relation. JS/TS therefore records no field
+writes and no `field_path`, where C records each field read and write with
+its path (C, PROGRAM_INDEX) and Python a typed receiver's attribute writes
+(PYTHON). Recorded, not added, in the 2026-09-29 C field pass.
+
 ## Native compiler compatibility
 
 The helper adapts the native TypeScript 7 AST predicate names and scanner

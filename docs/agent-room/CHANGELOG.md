@@ -1,5 +1,57 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — C field reads and writes (ProgramIndex 20)
+
+- **Why:** a benchmark reader's top request. The C adapter read a whole
+  variable (`reads server`) and folded writes into it, so the report could
+  only say "server is used by 116 functions in 16 parts".
+- **Facts (`internal/cproject`):** each member expression naming a field of
+  a repository record is one exact `reads` or `writes` relation to the field
+  object, sited at the field's name (`c_field_read` / `c_field_write`, a
+  `macro_expansion` witness for a macro body's field), with the new
+  `Relation.FieldPath`: the file-scope root variable, or the record of the
+  chain's first field for any other root, then the named fields
+  (`server.masterhost`, `server.db.expires`, `redisDb.expires`,
+  `redisClient.db.expires`). Written: the destination of `=`, compound
+  assignments, `++`/`--`, and an array member's element there. Read:
+  everything else, including the pointer a `->` or an indexed pointer
+  member is taken from. Passed through: the base of `.` and an array member
+  indexed on the way to a field. The whole-variable reads are unchanged.
+- **Carried:** ProgramIndex 20 validates a field path only on a read or
+  write of one field of a type; GroupsIndex relation-target edges carry it
+  (`StructuralEdge.FieldPath`, recompiled on hydrate, overlay unchanged);
+  the places graph keeps them as `SymbolFacts.Fields` (type place, field,
+  path, kind, site), apart from `uses`, which the role split reads, so no
+  model request changes. The report is untouched; its operation writes
+  already read `writes` edges to a type's field.
+- **Tests:** `TestIndexReadsAndWritesRecordFields` (every role, macro sites,
+  sizeof, platform and anonymous records),
+  `TestCFixtureReadsAndWritesRecordFields` (kvd's `server.shutdown` one
+  writer/one reader, `server.dbfile`, `kvEntry.value` through a local and as
+  `server.db.value`, GroupsIndex edges, places fields); the variable-read
+  tests skip field reads. The python-tutorial-game program indexes are
+  regenerated through the ordinary no-model run of the materialized fixture
+  (only version and seal differ; catalogs byte-identical).
+- **Other languages:** Python already reads and writes typed receivers'
+  fields as relations to the field object; it sets no field path and
+  follows no chain (PYTHON). Go records no field accesses: SSA has them,
+  but a capture beside the calls, the `*types.Var` → field ID map and the
+  paths are not small; recorded (GO). JS/TS reads declared properties and
+  writes nothing (JSTS); Clojure has no field declarations (CLOJURE).
+- **Redis no-model (redis-server):** 3,088 field accesses of 7,249
+  relations, 2.9 s. `server.replstate`: written by initServerConfig,
+  loadServerConfig, freeClient, syncWithMaster, slaveofCommand ×2; read by
+  serverCron and genRedisInfoString. `server.masterhost`: written by
+  initServerConfig, loadServerConfig, slaveofCommand ×2; read by
+  genRedisInfoString ×3, slaveofCommand ×4, syncWithMaster.
+  `redisDb.expires`: written only by initServer (`server.db.expires`); read
+  by deleteIfVolatile, deleteKey, emptyDb, expireIfNeeded, flushdbCommand
+  (`redisClient.db.expires`), freeMemoryIfNeeded, genRedisInfoString,
+  getExpire, removeExpire, serverCron, setExpire, tryResizeHashTables.
+- **Verified:** focused tests of cproject, programindex, groupindex, atlas,
+  facts, contracttest, run and report pass; `go vet` on the changed
+  packages. Saved ProgramIndex 19 runs no longer render.
+
 ## 2026-09-28 — The reading column as the owner chose it (variant A)
 
 - **Owner's choices** (designer's mocks in the scratchpad

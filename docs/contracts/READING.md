@@ -29,8 +29,13 @@ new description or selection requests.
   `passes_callback` and `decorates` relations name (a decorated declaration
   uses its decorator), each once with its kind and resolution, with or
   without a pattern, as local keys that never reach a provider; the calls
-  lifted for context keep only such relations that carry a pattern. A
-  registration's holder is the value
+  lifted for context keep only such relations that carry a pattern. A read
+  or write of a record's field (a relation with a `field_path`, C) is no
+  use: it is the declaration's `fields`, one per site with its kind, the
+  record type's place, the field's name and the path as the code reaches it
+  (`server.masterhost`), so the readers and writers of one field are the
+  declarations whose `fields` name the same type and field. Nothing the
+  model is asked reads them. A registration's holder is the value
   the call acts on, as `path:line:column` of the call that produced it,
   followed back through the calls outside the repository (a route put into a
   group made from a router is held by the router). A receiver that is a

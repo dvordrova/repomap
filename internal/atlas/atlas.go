@@ -247,6 +247,12 @@ type SymbolFacts struct {
 	// indexes, whether or not a relation carries a pattern. They are local
 	// keys, never provider prose.
 	Uses []SymbolUse `json:"uses,omitempty"`
+	// Fields are the fields of repository records this declaration reads
+	// or writes, one per site (ProgramIndex relations with a FieldPath).
+	// The readers and writers of one field are the declarations whose
+	// Fields name the same type place and field. They are local keys, never
+	// provider prose.
+	Fields []SymbolField `json:"fields,omitempty"`
 	// Candidate says the code chose this symbol as a possible key symbol of
 	// its file, so a symbol row is asked about it.
 	Candidate bool `json:"candidate"`
@@ -292,6 +298,39 @@ type SymbolUse struct {
 	PlaceID    string `json:"place_id"`
 	Kind       string `json:"kind"`
 	Resolution string `json:"resolution"`
+}
+
+// SymbolField is one read or write of a record's field: TypeID is the
+// record type's symbol place and Field the field's name, Path the field as
+// the code reaches it (server.masterhost, redisDb.expires), Kind `reads` or
+// `writes`, and LineNo and Column the field as written.
+type SymbolField struct {
+	TypeID string `json:"type_id"`
+	Field  string `json:"field"`
+	Path   string `json:"path"`
+	Kind   string `json:"kind"`
+	LineNo int    `json:"line_no"`
+	Column int    `json:"column,omitempty"`
+}
+
+// SymbolFieldLess orders field accesses by field, then by site.
+func SymbolFieldLess(left, right SymbolField) bool {
+	if left.TypeID != right.TypeID {
+		return placeIDLess(left.TypeID, right.TypeID)
+	}
+	if left.Field != right.Field {
+		return left.Field < right.Field
+	}
+	if left.LineNo != right.LineNo {
+		return left.LineNo < right.LineNo
+	}
+	if left.Column != right.Column {
+		return left.Column < right.Column
+	}
+	if left.Kind != right.Kind {
+		return left.Kind < right.Kind
+	}
+	return left.Path < right.Path
 }
 
 // SymbolUseLess orders uses by place, kind and resolution.
@@ -1026,6 +1065,11 @@ func compactGraphPlaceIDs(graph Graph) (Graph, error) {
 			}
 			sort.Slice(place.Symbol.Uses, func(i, j int) bool { return SymbolUseLess(place.Symbol.Uses[i], place.Symbol.Uses[j]) })
 			place.Symbol.Uses = slices.Compact(place.Symbol.Uses)
+			for field := range place.Symbol.Fields {
+				place.Symbol.Fields[field].TypeID = mapID(place.Symbol.Fields[field].TypeID)
+			}
+			sort.Slice(place.Symbol.Fields, func(i, j int) bool { return SymbolFieldLess(place.Symbol.Fields[i], place.Symbol.Fields[j]) })
+			place.Symbol.Fields = slices.Compact(place.Symbol.Fields)
 		}
 		if place.Boundary != nil {
 			place.Boundary.SubjectID = mapID(place.Boundary.SubjectID)
@@ -1368,6 +1412,12 @@ func validateGraph(graph Graph) error {
 			for _, use := range place.Symbol.Uses {
 				if seen[use.PlaceID] != PlaceSymbol || use.Kind == "" || use.Resolution == "" {
 					return fmt.Errorf("atlas: symbol %q uses unknown symbol place %q", place.ID, use.PlaceID)
+				}
+			}
+			for _, field := range place.Symbol.Fields {
+				if seen[field.TypeID] != PlaceSymbol || field.Field == "" || field.Path == "" || field.LineNo < 1 ||
+					field.Kind != "reads" && field.Kind != "writes" {
+					return fmt.Errorf("atlas: symbol %q has an invalid field access of %q", place.ID, field.Path)
 				}
 			}
 		}

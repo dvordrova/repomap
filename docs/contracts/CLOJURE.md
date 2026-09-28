@@ -140,6 +140,13 @@ recorded use of a macro stays a missing equivalent, not patched. The private
 check places it with `cheer`, and `cheer`, public and called by nothing, is
 not asked.
 
+A Clojure var read is a `reads` relation; a map's key is a keyword a
+function reads with a call (`(:dbs config)`), a record's field has no
+declaration the index names, and a value is not written in place (an
+atom's `swap!` is a call). So Clojure records no field read or write and no
+`field_path`, where C records each with its path (C, PROGRAM_INDEX);
+recorded in the 2026-09-29 C field pass, not fabricated.
+
 ## Calls that run when a namespace loads
 
 A call belongs to the scope in which it runs, in every language. The reader

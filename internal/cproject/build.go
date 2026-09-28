@@ -58,6 +58,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 		externalFunctions: map[string]string{}, externalVariables: map[string]string{}, functionByRef: map[string]*function{},
 		definedAt: map[string]Position{}, slots: map[string]*slot{}, stores: map[string][]*store{}, passedTo: map[string][]passedAt{},
 		imported: map[string]bool{}, importers: map[string]dependencies.Importer{}, escaped: map[string]bool{},
+		fieldRoles: map[*Node]fieldRole{},
 	}
 	for _, unit := range parsed.Units {
 		b.scopes = append(b.scopes, newUnitScope(unit))
@@ -72,6 +73,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 	b.emitCalls()
 	b.emitStores()
 	b.emitReads()
+	b.emitFieldAccesses()
 	b.emitImports()
 	b.markUnreachable()
 	input, err := b.input()
@@ -115,6 +117,11 @@ type builder struct {
 	bindings   []binding
 	constructs []construct
 	reads      []read
+	// fieldRoles are the members an enclosing expression has given a role
+	// the walk has not reached yet; fieldAccesses the fields bodies read
+	// and write.
+	fieldRoles    map[*Node]fieldRole
+	fieldAccesses []fieldAccess
 
 	imported  map[string]bool
 	importers map[string]dependencies.Importer
@@ -941,6 +948,32 @@ func (b *builder) emitReads() {
 		b.sequence++
 		b.relation(p.RelationInput{SourceRef: fmt.Sprintf("c:read:%d", b.sequence), Kind: p.RelationReads, FromRef: r.from,
 			ToRefs: []string{r.variable}, Resolution: p.ResolutionExact, Location: at, Witnesses: witnesses})
+	}
+}
+
+// emitFieldAccesses turns each place a function body reads or writes a field
+// of a repository record into a reads or writes relation, one per site,
+// exact: the field is the record's own, whatever value it is reached from.
+func (b *builder) emitFieldAccesses() {
+	seen := map[string]bool{}
+	for _, access := range b.fieldAccesses {
+		kind, witness, verb := p.RelationReads, "c_field_read", "read of "
+		if access.write {
+			kind, witness, verb = p.RelationWrites, "c_field_write", "write of "
+		}
+		key := access.from + "\x00" + access.field + "\x00" + string(kind) + "\x00" + positionKey(access.site)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		at := location(access.site)
+		witnesses := []p.Witness{{Kind: witness, Detail: verb + access.path, Location: at}}
+		if access.macro != nil {
+			witnesses = append(witnesses, *access.macro)
+		}
+		b.sequence++
+		b.relation(p.RelationInput{SourceRef: fmt.Sprintf("c:field:%d", b.sequence), Kind: kind, FromRef: access.from,
+			ToRefs: []string{access.field}, Resolution: p.ResolutionExact, Location: at, Witnesses: witnesses, FieldPath: access.path})
 	}
 }
 

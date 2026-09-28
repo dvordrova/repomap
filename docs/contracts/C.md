@@ -176,14 +176,44 @@ seed.
   nothing; a parameter, a local, a static local and a platform variable
   (`stderr`, `environ`) are no program variable. A file-scope initializer
   naming another variable (`&table`) is a link-time address, not a read.
-  Writes are not emitted: C has no `writes` relation, as Go, JS/TS and
-  Clojure have none. A field is read only as the file-scope variable that
-  holds or points to it (`server.port` reads `server`); a field reached
-  through a parameter or a local (`c->argv`) reads nothing, where Python
-  reads a typed receiver's field (PYTHON). That missing C field read is
-  recorded, not inferred. Redis's `findFuncName` reads
-  `staticsymbols.h`'s `symsTable`; the fixture's `printSymbols` reads
-  `staticsyms.h`'s.
+  Redis's `findFuncName` reads `staticsymbols.h`'s `symsTable`; the
+  fixture's `printSymbols` reads `staticsyms.h`'s.
+- A function body that names a field of a repository record reads or
+  writes that field: one exact `reads` or `writes` relation per site, whose
+  target is the field object (`redisDb.expires`, contained by its record
+  type) and whose `field_path` is the field as the code reaches it
+  (PROGRAM_INDEX): the file-scope variable the chain starts from, or, from
+  any other value (a parameter, a local, a call's result, a dereference),
+  the record holding the chain's first field, then each named field of the
+  chain with elements left out. So `server.masterhost = sdsnew(...)` in
+  Redis's `loadServerConfig` writes `server.masterhost`, `db->expires` in
+  `expireIfNeeded` reads `redisDb.expires`, `c->db->expires` reads
+  `redisClient.db` and `redisClient.db.expires`, and `server.db[j].expires`
+  reads `server.db.expires`; the readers and writers of one field gather by
+  its target whatever root each reaches it from. The site is the field's
+  name as written (`c_field_read` / `c_field_write` witnesses, "write of
+  server.masterhost"); a field a macro body names is sited at the macro use
+  with a `macro_expansion` witness (`dictSize(d)`'s `(d)->used`). The
+  destination of `=`, of a compound assignment and of `++`/`--`, and an
+  element of an array member there (`server.buf[0] = 'a'`), is written;
+  one fact stands for the site, though a compound assignment also reads
+  the old value. Everything else reads: the value, the address
+  (`&c->reply`), an element of a pointer member, whose pointer is read
+  (`c->argv[0] = o` reads `redisClient.argv`), and the pointer a `->`
+  member is taken from. A record a `.` member is taken from, and an array
+  member indexed on the way to an element's field (`server.db[j].key`), is
+  passed through and has no fact of its own. `sizeof` and `_Alignof`
+  operands read no field; a member of a platform or package record
+  (`act.sa_handler`) or of an anonymous struct or union has no repository
+  field object and no fact. The whole-variable read above stays: `server.port
+  = p` reads `server` and writes `server.port`. `TestIndexReadsAndWritesRecordFields`
+  checks each case; `TestCFixtureReadsAndWritesRecordFields` the fixture's:
+  kvd's `server.shutdown` has one writer, `onSignal`, and one reader,
+  `beforeSleep`; `server.dbfile` is written by `main` and `loadConfig` and
+  read by `bgsaveCommand`, as Redis's `server.masterhost` is written by
+  `initServerConfig`, `loadServerConfig` and `slaveofCommand`; and
+  `kvEntry.value` is written through `setCommand`'s local `e` and read
+  through `getCommand`'s and, as `server.db.value`, by `saveSnapshot`.
 - A call belongs to the function whose body runs it. C has no equivalent of
   a call a definition runs once (a Python decorator's arguments or defaults,
   a TypeScript decorator, Clojure metadata): there are no decorators or
@@ -483,7 +513,13 @@ tool's `main` reads `progname` in its error message and not where it assigns
 it, and kvd's reads reach GroupsIndex at their sites. The places graph keeps
 them as declarations' `uses` (READING): `TestCumulativeCMapOfParts` checks that
 `printSymbols` uses `symsTable` (a read), `keysCommand` hands `compareKeys` to
-`qsort` and `cmdTable` hands `getCommand` over. The role split's helper
+`qsort` and `cmdTable` hands `getCommand` over. Field reads and writes are
+no `uses`: a field is no declaration of its own. They reach GroupsIndex as
+relation-target edges with their `field_path` and the places graph as the
+declaration's `fields` (READING), keyed by the record type's place and the
+field's name, which `TestCFixtureReadsAndWritesRecordFields` checks for
+`onSignal`'s write of `server.shutdown`; the role split does not read them,
+so no model request changes with them. The role split's helper
 question (READING) shows `symsTable` with its reader, and the split check
 places `saveSnapshot` with `bgsaveCommand` and keeps `staticsyms.h` out of
 the box of `printSymbols`: the check takes its type `kvSymbol` for no

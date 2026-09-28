@@ -45,7 +45,8 @@ func TestIndexReadsFileScopeVariables(t *testing.T) {
 	x := indexProgram(t, map[string]string{"reads.c": readsSource}, "c:reads.c")
 	got := map[string][]string{}
 	for _, relation := range x.index.Relations {
-		if relation.Kind != programindex.RelationReads {
+		// A field's reads name the field (fields_test.go).
+		if relation.Kind != programindex.RelationReads || relation.FieldPath != "" {
 			continue
 		}
 		if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 || relation.Location == nil || len(relation.Witnesses) == 0 || relation.Witnesses[0].Kind != "c_variable_read" {
@@ -71,7 +72,8 @@ func TestIndexReadsFileScopeVariables(t *testing.T) {
 	}
 	// A read a macro body writes is sited at the macro use and says so.
 	portFn := x.object(t, "port", "reads.c")
-	read := x.relations(programindex.RelationReads, portFn.ID, "")[0]
+	reads := x.relations(programindex.RelationReads, portFn.ID, "")
+	read := reads[slices.IndexFunc(reads, func(r programindex.Relation) bool { return r.FieldPath == "" })]
 	if len(read.Witnesses) != 2 || read.Witnesses[1].Kind != "macro_expansion" || read.Witnesses[1].Detail != "PORT expands to a read of config" {
 		t.Fatalf("PORT: %+v", read.Witnesses)
 	}

@@ -199,6 +199,18 @@ Runner-configured test directories have no derived equivalent in Python
 read). The Python and Clojure contracts record both gaps. C has no runner
 facts at all.
 
+A record's field is read and written where functions name it, and one
+field's readers and writers gather by the field whatever each reaches it
+from (ProgramIndex `field_path`):
+
+| Language | A field's writers and readers |
+| --- | --- |
+| C | [kvd.c](c/kvd.c) `server.shutdown`: one writer, `onSignal`, and one reader, `beforeSleep`; `server.dbfile` written by `main` and `loadConfig`, read by `bgsaveCommand`; `kvEntry.value` written through `setCommand`'s local `e` and read as `server.db.value` by `saveSnapshot` |
+| Python | [models.py](python/src/fixture_app/models.py) `MutableCounter.count`: each write to the field object; no `field_path` (the written expression is the witness) and no chains |
+| Go | missing: no field reads or writes are captured (GO) |
+| TypeScript | missing: a property read is a declared value reference; no writes (JSTS) |
+| Clojure | missing: a map's keys are keywords and a record's fields no declarations (CLOJURE) |
+
 A C command table, a callback stored under a branch and a call through a
 function-pointer field have these equivalents:
 

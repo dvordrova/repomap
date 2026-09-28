@@ -320,6 +320,10 @@ type StructuralEdge struct {
 	SourceArgumentID string                              `json:"source_argument_id,omitempty"`
 	ValueResolution  programindex.PatternValueResolution `json:"value_resolution,omitempty"`
 	ValueSourceKind  programindex.PatternValueSourceKind `json:"value_source_kind,omitempty"`
+	// FieldPath is, on a relation target edge of a read or write of a
+	// record's field, the field as the code reaches it (ProgramIndex
+	// Relation.FieldPath): server.masterhost, redisDb.expires.
+	FieldPath string `json:"field_path,omitempty"`
 }
 
 // Index is the single sealed group-graph authority for one enriched
@@ -1388,7 +1392,7 @@ func compileStructuralEdges(index programindex.Index, retained map[string]struct
 				FromSubjectID: relation.FromID, ToSubjectID: targetID,
 				Role: EdgeRelationTarget, RelationID: relation.ID,
 				RelationKind: relation.Kind, Resolution: relation.Resolution,
-				Location: cloneLocation(relation.Location),
+				Location: cloneLocation(relation.Location), FieldPath: relation.FieldPath,
 			})
 		}
 		for _, pattern := range relation.Patterns {
@@ -1601,6 +1605,9 @@ func validateStructuralEdge(subjects map[string]Subject, edge StructuralEdge) er
 	}
 	if !validOptionalLocation(edge.Location) || edge.Location != nil && edge.Role != EdgeRelationTarget {
 		return fmt.Errorf("group index: invalid structural edge location")
+	}
+	if edge.FieldPath != "" && (edge.Role != EdgeRelationTarget || edge.RelationKind != programindex.RelationReads && edge.RelationKind != programindex.RelationWrites) {
+		return fmt.Errorf("group index: a field path belongs to a read or write of a field")
 	}
 	switch edge.Role {
 	case EdgeObjectOwner:

@@ -211,7 +211,14 @@ parameter merely named `self`, nested receiver expressions and dynamic `setattr`
 remain unresolved. A resolved field write is exact. No class is executed to infer the result.
 
 The cumulative MutableCounter fixture checks each write and its GroupsIndex
-source projection, with read-only and replaced-receiver controls. The current Go,
+source projection, with read-only and replaced-receiver controls. A resolved
+read or write targets the class's field object, so one field's readers and
+writers gather by their target, as C's do. Python sets no `field_path`
+(PROGRAM_INDEX): the written expression (`self.count`, `counter.count`) is
+the witness's detail, a receiver is always a typed value and never a
+module-level variable, so the path would always be `Class.field`, and a
+chain (`self.a.b = x`) stays unresolved, where C follows every field of a
+chain and names its root. The current Go,
 JS/TS and Clojure adapters do not emit comparable target-bound field-write
 relations; their mutation-tracing equivalent remains unavailable rather than
 being inferred from call or field-initializer evidence.

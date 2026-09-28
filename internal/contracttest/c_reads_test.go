@@ -22,7 +22,8 @@ func cReads(t *testing.T, index programindex.Index) map[string][]string {
 	}
 	reads := map[string][]string{}
 	for _, relation := range index.Relations {
-		if relation.Kind != programindex.RelationReads {
+		// A field's reads name the field (c_fields_test.go).
+		if relation.Kind != programindex.RelationReads || relation.FieldPath != "" {
 			continue
 		}
 		if relation.Resolution != programindex.ResolutionExact || len(relation.ToIDs) != 1 || relation.Location == nil {

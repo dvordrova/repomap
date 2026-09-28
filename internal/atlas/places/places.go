@@ -108,6 +108,7 @@ func Build(input Input) (atlas.Graph, error) {
 		symbolBindingRows: make(map[string]map[string]atlas.SymbolBinding),
 		symbolCallRows:    make(map[string]map[string]atlas.SymbolCall),
 		symbolUseRows:     make(map[string]map[atlas.SymbolUse]bool),
+		symbolFieldRows:   make(map[string]map[atlas.SymbolField]bool),
 		factSubjects:      make(map[string]string),
 		unreached:         make(map[string]map[string]struct{}),
 	}
@@ -149,6 +150,7 @@ func Build(input Input) (atlas.Graph, error) {
 		b.collectSymbolBindings(b.symbolBindingRows, target)
 		b.collectSymbolCalls(b.symbolCallRows, target)
 		b.collectSymbolUses(b.symbolUseRows, target)
+		b.collectSymbolFields(target)
 	}
 	b.releaseTargetObjects()
 	// A located seed may refer to a file supplied by a later target. Resolve
@@ -240,6 +242,7 @@ type builder struct {
 	symbolBindingRows map[string]map[string]atlas.SymbolBinding
 	symbolCallRows    map[string]map[string]atlas.SymbolCall
 	symbolUseRows     map[string]map[atlas.SymbolUse]bool // symbol place -> what it reads, hands over or is decorated by
+	symbolFieldRows   map[string]map[atlas.SymbolField]bool // symbol place -> the record fields it reads and writes
 	memberOwners      map[string]string                   // retained declaration -> native owner's symbol place
 	unreached         map[string]map[string]struct{}      // symbol place -> targets whose program never runs it
 	typeFields        map[string]typeField
@@ -1078,6 +1081,7 @@ func (b *builder) collectSymbols() {
 	bindings := b.symbolBindings()
 	callers := b.symbolCallers()
 	uses := b.symbolUses()
+	fields := b.symbolFields()
 	members := b.typeMembers()
 	for filePath, state := range b.files {
 		ranked := append([]atlas.Decl(nil), state.decls...)
@@ -1130,7 +1134,7 @@ func (b *builder) collectSymbols() {
 				ID: id, Kind: atlas.PlaceSymbol, Path: filePath,
 				LineNo: decl.LineNo, Column: decl.Column, Depth: state.depth, TargetIDs: sortedKeys(state.targets),
 				Parent: atlas.FileID(filePath), Given: truncateRunes(given, maxLineRunes),
-				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached, Seeds: seeds, Rows: b.tableRows[id]},
+				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Fields: fields[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached, Seeds: seeds, Rows: b.tableRows[id]},
 			})
 		}
 	}
@@ -1166,6 +1170,10 @@ func (b *builder) collectSymbols() {
 		if len(symbol.Uses) == 0 {
 			symbol.Uses = nil
 		}
+		symbol.Fields = slices.DeleteFunc(symbol.Fields, func(field atlas.SymbolField) bool { return !known[field.TypeID] })
+		if len(symbol.Fields) == 0 {
+			symbol.Fields = nil
+		}
 	}
 }
 
@@ -1199,6 +1207,43 @@ func (b *builder) collectSymbolUses(rows map[string]map[atlas.SymbolUse]bool, ta
 			rows[from][atlas.SymbolUse{PlaceID: id, Kind: string(relation.Kind), Resolution: string(relation.Resolution)}] = true
 		}
 	}
+}
+
+// collectSymbolFields keeps, for each lifted declaration, the record fields
+// its reads and writes name with a field path, at the field as written.
+// They stay apart from Uses: a field is no declaration of its own, and what
+// a declaration uses feeds the role split.
+func (b *builder) collectSymbolFields(target TargetInput) {
+	for _, relation := range target.Index.Relations {
+		if relation.FieldPath == "" || relation.Location == nil {
+			continue
+		}
+		from := b.symbolOf[relation.FromID]
+		field, known := b.byID[relation.ToIDs[0]]
+		if from == "" || !known {
+			continue
+		}
+		typeID := b.symbolOf[field.OwnerID]
+		if typeID == "" {
+			continue
+		}
+		if b.symbolFieldRows[from] == nil {
+			b.symbolFieldRows[from] = make(map[atlas.SymbolField]bool)
+		}
+		b.symbolFieldRows[from][atlas.SymbolField{TypeID: typeID, Field: field.Name, Path: relation.FieldPath, Kind: string(relation.Kind),
+			LineNo: relation.Location.Line, Column: relation.Location.Column}] = true
+	}
+}
+
+func (b *builder) symbolFields() map[string][]atlas.SymbolField {
+	result := make(map[string][]atlas.SymbolField, len(b.symbolFieldRows))
+	for id, set := range b.symbolFieldRows {
+		for field := range set {
+			result[id] = append(result[id], field)
+		}
+		sort.Slice(result[id], func(i, j int) bool { return atlas.SymbolFieldLess(result[id][i], result[id][j]) })
+	}
+	return result
 }
 
 func (b *builder) symbolUses() map[string][]atlas.SymbolUse {
