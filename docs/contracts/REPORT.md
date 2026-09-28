@@ -844,7 +844,9 @@ the reading column renders from that data is also printed as HTML: a part
 has no printed card (its reading, its code in this part, its connections
 and its source index were each written twice, in both parts' cards for a
 cross-part row), an input has no printed catalogue row or state changes,
-and the canvas has no static drawing. A part's page anchor (`#t1-g6`)
+the canvas has no static drawing, and a glossary term's files and lines
+are written from the data when "Files in which this term appears" is
+opened (litestream's 2.2 MB of printed links). A part's page anchor (`#t1-g6`)
 stays, an empty element naming its map node, so links to it read it. The
 data is written once in one `<script type="application/json"
 id="rm-page-data">` (`page_data_table.go`): each value, each declaration and

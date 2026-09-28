@@ -980,5 +980,10 @@ func pageTemplateFuncsWith(language DisplayLanguage, data *pageData) template.Fu
 		"pagedata":         data.ref,
 		"pagedataLink":     data.attrLink,
 		"pagedataJSON":     data.JSON,
+		// A glossary term's files, registered in the page data with the
+		// links' base they are written without.
+		"pagedataOccurrences": func(term pageGlossaryTerm) (string, error) {
+			return data.ref("occurrences", term.OccurrencesJSON(data.base))
+		},
 	}
 }

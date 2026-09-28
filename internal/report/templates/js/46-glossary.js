@@ -102,3 +102,31 @@
   });
   main.querySelectorAll('[data-map]').forEach(function(map){observer.observe(map,{childList:true,characterData:true,subtree:true});});
 })();
+
+// A term's files and lines are written from the page data when "Files in
+// which this term appears" is opened (page_glossary.go OccurrencesJSON), as
+// its own list or a copy of it in a term's card: litestream's glossary had
+// printed 2.2 MB of links.
+function rmGlossaryLocation(path,mode,entry){
+  var line=mode==='x'?entry.Line:entry,text=line>0?String(line):rmT('Whole file'),link;
+  if(mode==='h'||mode==='x'&&entry.Href){link=document.createElement('a');link.href=mode==='x'?entry.Href:rmPage.lineLink(path,line);link.target='_blank';}
+  else if(mode==='o'||mode==='x'&&entry.Open){link=document.createElement('a');link.href='#';link.dataset.open=mode==='x'?entry.Open:path+':'+Math.max(line,0)+':0';}
+  else{link=document.createElement('span');link.className='anchor';if(mode==='n'||mode==='x'&&entry.NoSource){link.dataset.noSource='true';link.title=rmT('No source');}}
+  link.textContent=text;
+  if(link.tagName==='A')link.setAttribute('aria-label',path+(line>0?':'+line:''));
+  return link;
+}
+function rmGlossaryFiles(box){
+  if(box.dataset.drawn)return;box.dataset.drawn='1';
+  (rmPage.data(box,'occurrences')||[]).forEach(function(file){
+    var item=document.createElement('details'),head=document.createElement('summary'),code=document.createElement('code'),meta=document.createElement('span'),places=document.createElement('div');
+    item.className='glossary-source-file';code.textContent=file[0];meta.className='meta';meta.textContent='· '+rmT('{0} locations',file[2].length);
+    head.append(code,document.createTextNode(' '),meta);places.className='glossary-source-locations';
+    file[2].forEach(function(entry){places.appendChild(rmGlossaryLocation(file[0],file[1],entry));});
+    item.append(head,places);box.appendChild(item);
+  });
+}
+document.addEventListener('toggle',function(event){
+  var box=event.target;
+  if(box&&box.matches&&box.matches('details.glossary-sources[data-occurrences]')&&box.open)rmGlossaryFiles(box);
+},true);

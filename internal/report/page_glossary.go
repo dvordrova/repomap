@@ -1,6 +1,7 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -63,6 +64,53 @@ func (term pageGlossaryTerm) SourceFiles() []pageGlossarySourceFile {
 		})
 	}
 	return files
+}
+
+// OccurrencesJSON is the term's files and lines as the page's data holds
+// them, the script writing each line's link when "Files in which this
+// term appears" is opened: [path, how its lines link, lines]. A file's lines
+// link to the static source ("h"), to the editor ("o"), nowhere ("") or
+// have no source ("n"); a
+// file whose links say otherwise keeps them whole (its anchors). A line 0
+// is the whole file. Litestream's glossary had printed 2.2 MB of links.
+func (term pageGlossaryTerm) OccurrencesJSON(base string) string {
+	var files [][]any
+	for _, file := range term.SourceFiles() {
+		lines := make([]int, len(file.Locations))
+		mode := ""
+		for i, location := range file.Locations {
+			lines[i] = location.Line
+			said := base + file.Path
+			if location.Line > 0 {
+				said += "#L" + strconv.Itoa(location.Line)
+			}
+			switch {
+			case location.Href != "" && base != "" && location.Href == said && (mode == "" && i == 0 || mode == "h"):
+				mode = "h"
+			case location.Href == "" && location.Open != "" && location.Open == file.Path+":"+strconv.Itoa(max(location.Line, 0))+":0" && (mode == "" && i == 0 || mode == "o"):
+				mode = "o"
+			case location.Href == "" && location.Open == "" && !location.NoSource && (i == 0 || mode == ""):
+				mode = ""
+			case location.Href == "" && location.Open == "" && location.NoSource && (i == 0 || mode == "n"):
+				mode = "n"
+			default:
+				mode = "x"
+			}
+			if mode == "x" {
+				break
+			}
+		}
+		if mode == "x" {
+			files = append(files, []any{file.Path, "x", file.Locations})
+			continue
+		}
+		files = append(files, []any{file.Path, mode, lines})
+	}
+	if len(files) == 0 {
+		return ""
+	}
+	raw, _ := json.Marshal(files)
+	return string(raw)
 }
 
 func collectGlossary(view *pageView) {

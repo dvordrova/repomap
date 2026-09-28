@@ -111,5 +111,8 @@ var rmPage = (function () {
     return values.get(key);
   }
   function link(value){return value&&value.charAt(0)==='@'&&load().base?load().base+value.slice(1):value;}
-  return {data:data,link:link};
+  // The static link to a file's line (0: the whole file), "" when the page
+  // has no static links.
+  function lineLink(path,line){var base=load().base;return base?base+path+(line>0?'#L'+line:''):'';}
+  return {data:data,link:link,lineLink:lineLink};
 })();

@@ -34,11 +34,6 @@ func TestGlossaryHTMLKeepsAnswerTermsAndSourceDistinctDefinitions(t *testing.T) 
 				if strings.Count(html.String(), `id="`+term.ID+`"`) != 1 {
 					t.Fatalf("term %s lost its separate address", term.ID)
 				}
-				for _, source := range term.Occurrences {
-					if strings.Count(html.String(), `href="`+source.Href+`"`) != 1 || !strings.Contains(html.String(), source.Text) {
-						t.Fatalf("term %s lost source %+v", term.ID, source)
-					}
-				}
 				for _, link := range append(term.Questions, term.Places...) {
 					if strings.Count(html.String(), `href="`+link.Href+`"`) != 1 {
 						t.Fatalf("term %s lost destination %s", term.ID, link.Href)
@@ -53,9 +48,8 @@ func TestGlossaryHTMLKeepsAnswerTermsAndSourceDistinctDefinitions(t *testing.T) 
 			if strings.Contains(html.String(), `class="term-mention"`) {
 				t.Fatal("glossary definitions contain nested inline term controls")
 			}
-			if strings.Count(html.String(), `<code>first.py</code>`) != 1 ||
-				strings.Count(html.String(), `<details class="glossary-source-file">`) != 2 ||
-				strings.Count(html.String(), `<details class="glossary-sources">`) != 2 ||
+			// A term's files are the page data's, written when opened.
+			if strings.Count(html.String(), `<details class="glossary-sources" data-occurrences="`) != 2 ||
 				strings.Contains(html.String(), `<p class="model glossary-explanation"><span`) {
 				t.Fatal("glossary repeats paths, expands its context by default, or prefixes the explanation with a badge")
 			}
@@ -108,5 +102,27 @@ repomapPreview.bind(trigger,card,()=>shown++,{pinOnClick:true,hoverDelay:600});
  trigger.fire('click');
  assert.equal(card.hidden,false,'a click pins it');
 })().catch(error=>{console.error(error);process.exit(1);});
+`)
+}
+
+// A term's files are written from the page data when their list is opened,
+// each file once with its lines, a line linking to its code: the static
+// list had printed litestream's 2.2 MB of links.
+func TestATermsFilesAreWrittenFromThePageDataWhenOpened(t *testing.T) {
+	base := "https://github.com/o/r/blob/abc/"
+	term := pageGlossaryTerm{Occurrences: []pageAnchor{
+		{Path: "b.go", Line: 21, Text: "b.go:21", Href: base + "b.go#L21"}, {Path: "a.sh", Line: 85, Text: "a.sh:85", Href: base + "a.sh#L85"},
+		{Path: "b.go", Line: 7, Text: "b.go:7", Href: base + "b.go#L7"}, {Path: "c.md", Text: "c.md", NoSource: true}}}
+	if got := term.OccurrencesJSON(base); got != `[["b.go","h",[7,21]],["a.sh","h",[85]],["c.md","n",[0]]]` {
+		t.Fatalf("occurrences = %s", got)
+	}
+	code := systemJSPiece(t, "46-glossary.js", "function rmGlossaryLocation(", "document.addEventListener('toggle'")
+	runSystemJS(t, readingViewElements+code+`
+rmPage.data=()=>JSON.parse('`+term.OccurrencesJSON(base)+`');rmPage.lineLink=(path,line)=>'`+base+`'+path+(line>0?'#L'+line:'');
+const box=new El('details');rmGlossaryFiles(box);rmGlossaryFiles(box);
+assert.equal(box.children.length,3,'each file once, drawn once');
+const links=box.children[0].all(c=>c.tagName==='A');
+assert.deepEqual(links.map(a=>[a.href,a.textContent,a['aria-label']]),[['`+base+`b.go#L7','7','b.go:7'],['`+base+`b.go#L21','21','b.go:21']]);
+assert.equal(box.children[2].all(c=>c.has('anchor'))[0].title,'No source');
 `)
 }
