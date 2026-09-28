@@ -1,8 +1,11 @@
 package report
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -11,10 +14,10 @@ import (
 // pageCatalogue is one catalogue of inputs whose handler is not established
 // (GroupsIndex Catalogue), as each member's reading shows it: where they are
 // declared (Declarer, or On, the object they are declared on), its members'
-// nodes in source order, where the declaring code is called from, and the
-// variables it also uses with every other declaration using them. It is one
-// JSON string shared by its members. Code lists; where these inputs take
-// effect is not established, and the reading says so once.
+// nodes by name, where the declaring code is called from, and the variables
+// it also uses with every other declaration using them. It is one JSON
+// string shared by its members. Code lists; where these inputs take effect
+// is not established, and the reading says so once.
 type pageCatalogue struct {
 	Declarer int  `json:"declarer"`
 	On       *int `json:"on,omitempty"`
@@ -66,6 +69,10 @@ func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf fu
 	order := map[string]int{}
 	declaredBy := map[string]string{}
 	at := 0
+	names := map[string]string{}
+	for _, operation := range index.Operations {
+		names[operation.ID] = builder.operationDisplayName(index.Target.ID, operation)
+	}
 	for _, catalogue := range index.Catalogues {
 		decls := builder.pathDecls(index.Target.ID, partOf)
 		result := pageCatalogue{Kind: catalogue.Kind, Declarer: -1}
@@ -98,7 +105,13 @@ func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf fu
 				name = text
 			}
 		}
-		for _, id := range catalogue.OperationIDs {
+		// Its members by name, whatever their case, as a reader looks for
+		// one ("Человек нормально ищет по алфавиту", owner 2026-09-28).
+		members := slices.Clone(catalogue.OperationIDs)
+		slices.SortStableFunc(members, func(a, b string) int {
+			return cmp.Or(strings.Compare(strings.ToLower(names[a]), strings.ToLower(names[b])), strings.Compare(names[a], names[b]))
+		})
+		for _, id := range members {
 			result.Members = append(result.Members, inputNode(id))
 		}
 		callOf := func(position int) pageCatalogueCall {

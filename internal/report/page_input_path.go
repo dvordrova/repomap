@@ -516,7 +516,7 @@ func (builder *pageBuilder) peerInputs(index *groupindex.Index, operation groupi
 			continue
 		}
 		if peer, ok := nameOf(other, send.OperationID); ok {
-			sentTo = append(sentTo, pagePeerInput{Program: section.ShortLabel, Input: operationNodeID(section.ID, peer.ID), Name: builder.operationDisplayName(other.Target.ID, peer), Label: send.Label})
+			sentTo = append(sentTo, pagePeerInput{Program: componentTitle(section, builder.sections), Input: operationNodeID(section.ID, peer.ID), Name: builder.operationDisplayName(other.Target.ID, peer), Label: send.Label})
 		}
 	}
 	for position := range builder.indexes {
@@ -531,7 +531,7 @@ func (builder *pageBuilder) peerInputs(index *groupindex.Index, operation groupi
 		for _, row := range other.Operations {
 			for _, send := range row.Sends {
 				if send.TargetID == index.Target.ID && send.OperationID == operation.ID {
-					sentBy = append(sentBy, pagePeerInput{Program: section.ShortLabel, Input: operationNodeID(section.ID, row.ID), Name: builder.operationDisplayName(other.Target.ID, row), In: declarer(other, row), Label: send.Label})
+					sentBy = append(sentBy, pagePeerInput{Program: componentTitle(section, builder.sections), Input: operationNodeID(section.ID, row.ID), Name: builder.operationDisplayName(other.Target.ID, row), In: declarer(other, row), Label: send.Label})
 				}
 			}
 		}

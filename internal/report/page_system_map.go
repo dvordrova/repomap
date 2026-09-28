@@ -51,7 +51,7 @@ func (view *pageView) SystemMap() *pageMap {
 			destinations["#"+id] = id
 		}
 		id := "system-component-" + section.ID
-		add(pageMapNode{ID: id, Owner: section.ID, Branch: "component", ItemKind: "Component", Href: "#" + section.ID, FullTitle: section.ShortLabel, Summary: section.Purpose, SummaryRef: section.PurposeRef, Role: section.Role, RoleRef: section.RoleRef, Language: section.Language, ComponentKind: section.Kind, SourceKind: "model", DetailsID: section.ID})
+		add(pageMapNode{ID: id, Owner: section.ID, Branch: "component", ItemKind: "Component", Href: "#" + section.ID, FullTitle: componentTitle(section, view.Sections), Entries: componentEntries(section), Summary: section.Purpose, SummaryRef: section.PurposeRef, Role: section.Role, RoleRef: section.RoleRef, Language: section.Language, ComponentKind: section.Kind, SourceKind: "model", DetailsID: section.ID})
 		destinations["#"+section.ID] = id
 	}
 	for _, section := range view.Sections {
@@ -403,8 +403,9 @@ func (view *pageView) SystemMap() *pageMap {
 			if section.Map != nil {
 				launch = section.Map.Launch
 			}
-			add(pageMapNode{ID: "system-inputs-" + section.ID, Owner: section.ID, Branch: "inputs", ItemKind: "Inputs", FullTitle: section.ShortLabel,
-				Children: strings.Join(children, " "), Href: "#" + section.ID + "-inbound", DetailsID: section.ID + "-inbound", Lane: "triggers", Launch: launch})
+			add(pageMapNode{ID: "system-inputs-" + section.ID, Owner: section.ID, Branch: "inputs", ItemKind: "Inputs", FullTitle: componentTitle(section, view.Sections),
+				Children: strings.Join(children, " "), Href: "#" + section.ID + "-inbound", DetailsID: section.ID + "-inbound", Lane: "triggers", Launch: launch,
+				Collection: inputCollection(children, func(id string) pageMapNode { return result.Nodes[positions[id]] })})
 		}
 	}
 	// Every input collection has its arrow into its own component: that the

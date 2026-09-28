@@ -42,7 +42,7 @@ func (builder *pageBuilder) nativeGroupConnections(index groupindex.Index, group
 			Label:    fromName + " " + strings.ReplaceAll(string(edge.RelationKind), "_", " ") + " " + toName,
 			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: fromAnchor, ToSource: toAnchor,
 			Kind: relationWord(string(edge.RelationKind), section.Language), FromName: fromName, ToName: toName, FromDecl: fromDecl, ToDecl: toAnchor,
-			fromSubject: edge.FromSubjectID, at: edge.Location})
+			fromSubject: edge.FromSubjectID, at: edge.Location, fromTarget: index.Target.ID, toTarget: index.Target.ID, toSubject: edge.ToSubjectID})
 	}
 	return rows
 }
@@ -141,7 +141,8 @@ func (builder *pageBuilder) internalGroupConnections(index groupindex.Index, gro
 		rows = append(rows, pageConnection{Native: true, EvidenceID: edge.RelationID + "\x00" + edge.ToSubjectID,
 			Label:    fromName + " " + strings.ReplaceAll(string(edge.RelationKind), "_", " ") + " " + toName,
 			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: fromAnchor, ToSource: toAnchor,
-			Kind: relationWord(string(edge.RelationKind), builder.targetLanguage(index.Target.ID)), FromName: fromName, ToName: toName, FromDecl: fromDecl, ToDecl: toAnchor})
+			Kind: relationWord(string(edge.RelationKind), builder.targetLanguage(index.Target.ID)), FromName: fromName, ToName: toName, FromDecl: fromDecl, ToDecl: toAnchor,
+			fromSubject: edge.FromSubjectID, fromTarget: index.Target.ID, toTarget: index.Target.ID, toSubject: edge.ToSubjectID})
 	}
 	return collapseConnections(rows)
 }

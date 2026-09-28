@@ -253,6 +253,12 @@ type pageMapNode struct {
 	// Declares lists the input nodes declared on the object this input's
 	// own call made (a subcommand's options), in source order.
 	Declares string
+	// Entries are, on a component, its program's entrypoints as its reading
+	// names them (componentEntries).
+	Entries string
+	// Collection is, on a component's Inputs collection, its reading
+	// (pageInputCollection): its inputs by catalogue and by kind, by name.
+	Collection string
 	// Launch is, on a component's Inputs collection, how its inputs were
 	// found (page_launch.go).
 	Launch string
@@ -2594,25 +2600,28 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		}
 	}
 	// A field whose type is not in this part says nothing here, and a type
-	// with dozens of fields shows the first few and how many more.
+	// with dozens of fields shows the first few and how many more. The
+	// fields past them keep their names and types, skipped by the tile: the
+	// row counting them is added after the list, so it takes no field's
+	// place (redisClient's ninth field, bulklen, had been that row and lost
+	// its type).
 	fields := map[int]int{}
+	var owners []int
 	for i := range symbols {
 		if symbols[i].Kind != "field" {
 			continue
 		}
+		if fields[symbols[i].Owner] == 0 {
+			owners = append(owners, symbols[i].Owner)
+		}
 		fields[symbols[i].Owner]++
-		switch {
-		case symbols[i].Owner == 0 || fields[symbols[i].Owner] > maxTileFields+1:
+		if symbols[i].Owner == 0 || fields[symbols[i].Owner] > maxTileFields {
 			symbols[i].Kind = "skip"
-		case fields[symbols[i].Owner] == maxTileFields+1:
-			symbols[i] = pageNodeSymbol{Kind: "more", Owner: symbols[i].Owner}
 		}
 	}
-	for owner, count := range fields {
-		for i := range symbols {
-			if symbols[i].Kind == "more" && symbols[i].Owner == owner {
-				symbols[i].Name = fmt.Sprintf("… +%d", count-maxTileFields)
-			}
+	for _, owner := range owners {
+		if count := fields[owner]; owner != 0 && count > maxTileFields {
+			symbols = append(symbols, pageNodeSymbol{Kind: "more", Owner: owner, Name: fmt.Sprintf("… +%d", count-maxTileFields)})
 		}
 	}
 	raw, err := json.Marshal(symbols)

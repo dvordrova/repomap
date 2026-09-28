@@ -325,6 +325,9 @@ type pageGroup struct {
 	// the frame on the map that draws it.
 	Zone     string
 	ZoneHref string
+	// Reading is the reading column's data for the part and each of its
+	// declarations (page_reading.go), sorted here.
+	Reading string
 }
 
 type pageChipRow struct {
@@ -437,6 +440,12 @@ type pageConnection struct {
 	// forward in. They are never shown.
 	fromSubject string
 	at          *programindex.Location
+	// fromTarget, toTarget and toSubject name the row's two declarations in
+	// their programs, so the reading column's data can say what kind of
+	// declaration each end is.
+	fromTarget, toTarget, toSubject string
+	// input says the other end (Href) is an input, not a part.
+	input bool
 }
 
 // buildSections creates one section per analyzed target and fills it from the
@@ -1054,6 +1063,7 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 	}
 	card.Connections = builder.groupConnections(index, group)
 	card.InternalConnections = builder.internalGroupConnections(index, group)
+	card.Reading = builder.groupReading(index, group, card)
 	return card
 }
 
@@ -1201,6 +1211,9 @@ func (builder *pageBuilder) groupConnections(
 			Possible:    connection.SupportResolution == programindex.PatternValuePossible,
 			fromSubject: connection.FromSubjectID,
 			at:          connection.FromLocation,
+			fromTarget:  connection.From.TargetID,
+			toTarget:    connection.To.TargetID,
+			toSubject:   connection.ToSubjectID,
 		}
 		if row.Title == "" {
 			row.Title = strings.ReplaceAll(connection.SemanticKind, "_", " ")
@@ -1220,6 +1233,7 @@ func (builder *pageBuilder) groupConnections(
 					for _, operation := range otherIndex.Operations {
 						if operationLocationKey(operation.Location) == operationLocationKey(*location) {
 							row.Href = "#" + operationNodeID(section.ID, operation.ID)
+							row.input = true
 							row.Title = builder.operationDisplayName(otherIndex.Target.ID, operation)
 							break
 						}
