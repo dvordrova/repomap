@@ -25,7 +25,7 @@ type roleDecl struct {
 	name, kind      string
 	line, end, code int
 	macro           bool
-	calls          []string // "path:name" of exact callees
+	calls           []string // "path:name" of exact callees
 	uses            []string // "kind path:name" of exact reads, hand-overs and decorators
 }
 
@@ -805,7 +805,7 @@ func TestTheHelperItemCarriesItsUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, want := range map[string]map[string]any{
-		"limits":    {"name": "limits", "kind": "variable", "file": "svc/server.go", "signature": "func()", "lines": 1.0, "read_by": []any{"svc/server.go:Store"}},
+		"limits":     {"name": "limits", "kind": "variable", "file": "svc/server.go", "signature": "func()", "lines": 1.0, "read_by": []any{"svc/server.go:Store"}},
 		"handlePing": {"name": "handlePing", "kind": "function", "file": "svc/server.go", "signature": "func()", "lines": 3.0, "handed_over_by": []any{"svc/server.go:routes"}},
 		"Route": {"name": "Route", "kind": "function", "file": "svc/server.go", "signature": "func()", "lines": 7.0,
 			"calls": []any{"svc/server.go:Store"}, "called_by": []any{"svc/server.go:Serve"}, "registered": []any{"HandleFunc /route"}},

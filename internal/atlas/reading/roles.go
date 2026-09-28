@@ -63,7 +63,11 @@ type roleUnit struct {
 	// call it, are decorated by it or read it; uses are the units it calls,
 	// is decorated by or reads. A hand-over is neither: a command table or a
 	// route registrar hands its handlers over without using them, and a read
-	// of a callable is a function value taken to be called later.
+	// of a callable is a function value taken to be called later. Nor is the
+	// other half of a hand-over, a call through the function value stored
+	// there (ProgramIndex `function_value` dispatch): adlist.c's listDup
+	// calls through the dup field createClient stored dupClientReplyValue
+	// in, and is no user of it.
 	users, uses map[string]bool
 	// registered are the words of each registration handing it, or one of
 	// its followers, over to be called later ("redisCommand get"): how the
@@ -269,7 +273,12 @@ func (r *reader) unitFacts(view *designView) *roleFacts {
 					if !ok || place.Symbol == nil || !contains(place.TargetIDs, view.targetID) {
 						continue
 					}
-					use(callee)
+					// A call through a stored function value uses the function,
+					// but its caller is no user: the call is the other half of
+					// the hand-over that stored it.
+					if call.Dispatch != programindex.DispatchFunctionValue {
+						use(callee)
+					}
 					to := unitOf(callee)
 					if toUnit := facts.units[to]; fromUnit != nil && toUnit != nil && to != from {
 						fromUnit.callees[to] = true

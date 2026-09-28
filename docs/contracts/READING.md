@@ -400,7 +400,17 @@ without a model), and code places what they leave open:
   route registrar hands its handler over without using it, and a read of a
   callable is a function value taken to be called later (JS/TS writes one
   where it hands a handler over), so no unit follows its table or
-  registrar. A *row* is a box of a split file or a whole file's row. Three
+  registrar. Nor is the other half of a hand-over a use: a call through the
+  function value a hand-over stored (ProgramIndex `function_value`
+  dispatch, exact when one store reaches it) runs the function without
+  being its user, so a callback never follows the code that runs what was
+  stored. Redis's adlist.c `listDup` calls `copy->dup(...)`, which
+  createClient's `listSetDupMethod` stored `dupClientReplyValue` in; the C
+  fixture's loop.c `loopMain` calls the `beforeSleep` kvd.c's `main`
+  stored, and kvd.c's `processCommand` the `preloadKey` its table row
+  holds: each stays with its own file's boxes (`TestCumulativeCMapOfParts`).
+  The call still counts as a use for the helper question, whose item lists
+  it in `called_by`. A *row* is a box of a split file or a whole file's row. Three
   rules run together to a fixed point, since what one places may settle
   another, each recorded in `rejected.jsonl` and `tables.md`:
   - A: a helper of a split file whose users, in any file, all stand in one

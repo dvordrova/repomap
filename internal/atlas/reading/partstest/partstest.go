@@ -354,7 +354,8 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 
 // checkUndecided holds every undecided unit of a split file to the code
 // rule on real facts: the declarations of its file that use it (call it,
-// are decorated by it, read it when it does not run; never a hand-over) are
+// are decorated by it, read it when it does not run; never a hand-over or a
+// call through the function value one stored) are
 // not all in one part, and when none uses it, what it uses in its file is
 // not all in one part either. The preset gives each box a part of its own.
 func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Map, undecided map[string]bool) {
@@ -388,7 +389,7 @@ func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Ma
 			continue
 		}
 		for _, call := range place.Symbol.Calls {
-			if call.Resolution == "exact" && (call.Kind == "calls" || call.Kind == "decorates") {
+			if call.Resolution == "exact" && (call.Kind == "calls" || call.Kind == "decorates") && call.Dispatch != "function_value" {
 				for _, callee := range call.CalleeIDs {
 					link(place.ID, callee)
 				}
@@ -454,7 +455,8 @@ func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Ma
 // asked twice, no helper is named, no unit is assigned twice, and a helper
 // of a split file whose users (the declarations of the program that call
 // it, are decorated by it or read it when it does not run; never a
-// hand-over) all stand in one part is in that part.
+// hand-over or a call through the function value one stored) all stand in
+// one part is in that part.
 func checkHelpers(t testing.TB, graph atlas.Graph, targetID string, checked Map, categorizer *recording, provider *preset) {
 	t.Helper()
 	hidden := map[string]bool{}
@@ -507,7 +509,7 @@ func checkHelpers(t testing.TB, graph atlas.Graph, targetID string, checked Map,
 			continue
 		}
 		for _, call := range place.Symbol.Calls {
-			if call.Resolution == "exact" && (call.Kind == "calls" || call.Kind == "decorates") {
+			if call.Resolution == "exact" && (call.Kind == "calls" || call.Kind == "decorates") && call.Dispatch != "function_value" {
 				for _, callee := range call.CalleeIDs {
 					link(place.ID, callee)
 				}

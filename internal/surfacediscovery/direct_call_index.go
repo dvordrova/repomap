@@ -575,7 +575,7 @@ func newDirectCallIndexBuilder(scenario Scenario, maxEdges int) *directCallIndex
 		state:   DirectCallIndexReady,
 		modules: make(map[string]DirectCallModule), nodes: make(map[string]DirectCallNode),
 		variables: make(map[string]DirectCallVariable),
-		edges: make(map[string]DirectCallEdge), functionNode: make(map[*ssa.Function]string),
+		edges:     make(map[string]DirectCallEdge), functionNode: make(map[*ssa.Function]string),
 		frontiers:     make(map[string]DirectCallNodeFrontier),
 		functionsSeen: make(map[*ssa.Function]struct{}),
 	}

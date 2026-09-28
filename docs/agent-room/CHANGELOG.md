@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Follow-up f2: a call through a stored function value is not a user for placement
+
+- Sanity check 3 (queue f2): Redis's adlist.c `listDup` calls
+  `copy->dup(node->value)`, resolved exact through its one recorded store
+  (createClient's `listSetDupMethod(c->reply, dupClientReplyValue)`), so
+  rule A counted listDup as `dupClientReplyValue`'s user and moved a
+  redis.c callback into adlist.c's "Core data structures" row.
+- A hand-over was already no user; the call through the value it stored is
+  the other half of the same hand-over. `unitFacts` now leaves a call with
+  ProgramIndex `function_value` dispatch out of `users`/`uses`, which rules
+  A, B and C read; it still sets `used` and stays in the helper item's
+  `called_by`, so the no-users rule and the helper question's requests are
+  unchanged. The split check (`partstest`) computes users the same way.
+- The C fixture has the same shape twice: kvd.c's `main` hands
+  `beforeSleep` to `loopSetBeforeSleep` and loop.c's `loopMain` calls
+  through that field; kvd.c's `processCommand` calls the `preloadKey` its
+  table row stores. `TestCumulativeCMapOfParts` checks that both helpers
+  are asked once more among kvd.c's boxes instead of following their
+  caller (beforeSleep had gone to loop.c's part), and that beforeSleep's
+  item still lists `loop.c:loopMain`. Revert check: counting the call as a
+  user again fails it.
+- gofmt of two files the f1 commits left unaligned (`roles_test.go`,
+  `direct_call_index.go`).
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Follow-up f1b: a Go package-level variable is the caller of its initializer's calls
 
 - Sanity check 3 (queue f1, Go): a call written in a package-level `var`

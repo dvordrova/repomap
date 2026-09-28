@@ -278,7 +278,9 @@ func onlyKey(keys map[groupKey]bool) groupKey {
 // settle runs the code rules to a fixed point, since what one places may
 // settle another. Users are callers, decorated declarations and readers of
 // what does not run; a hand-over never counts, so a handler never follows
-// its command table or registrar.
+// its command table or registrar, and neither does a call through the
+// function value a hand-over stored, so a callback never follows the code
+// that runs what was stored (listDup, dupClientReplyValue).
 //
 //   - A: a helper of a split file whose users, in any file, all stand in one
 //     row joins that row: a box of its file, a box of another split file or

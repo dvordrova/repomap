@@ -135,7 +135,7 @@ macro whatever the graph shows of its uses, as it does about a type: no
 recorded use is no proof of none (`TestCumulativeClojureMapOfParts` checks
 both marks and that `ensure!`, which `ensured-limit` uses, is asked). The
 recorded use of a macro stays a missing equivalent, not patched. The private
-`exclaim` at the end of
+`exclaim` near the end of
 `core.clj`, which only `cheer` calls, is the fixture's helper: the split
 check places it with `cheer`, and `cheer`, public and called by nothing, is
 not asked.

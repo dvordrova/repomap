@@ -514,6 +514,27 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 			t.Fatalf("%s was not asked once more", name)
 		}
 	}
+	// main hands beforeSleep to loopSetBeforeSleep, which stores it in the
+	// loop's field, and loop.c's loopMain calls through that field: one
+	// store, so the call is exact, as redis's listDup calls the
+	// dupClientReplyValue createClient stored. The call is the other half of
+	// the hand-over, so loopMain is no user of beforeSleep: the helper does
+	// not follow it into loop.c's part and is asked where it goes among
+	// kvd.c's boxes. So is preloadKey, which processCommand calls through
+	// the table row that hands it over.
+	sleep := split.Symbols[[2]string{"kvd.c", "beforeSleep"}]
+	loopMain := split.Symbols[[2]string{"loop.c", "loopMain"}]
+	if called := anyStrings(split.HelperItems[[2]string{"kvd.c", "beforeSleep"}]["called_by"]); !slices.Contains(called, "loop.c:loopMain") {
+		t.Fatalf("beforeSleep is asked with called_by %v", called)
+	}
+	for _, name := range []string{"beforeSleep", "preloadKey"} {
+		if !split.Helpers[[2]string{"kvd.c", name}] || recorded(split, "role_attached", name) || !recorded(split, "role_second_pass", name) {
+			t.Fatalf("%s, called only through a stored function value, was placed by that call (helper %v)", name, split.Helpers[[2]string{"kvd.c", name}])
+		}
+	}
+	if split.PartOf[sleep] != "" && split.PartOf[sleep] == split.PartOf[loopMain] {
+		t.Fatalf("beforeSleep went with loopMain into %q", split.PartOf[sleep])
+	}
 	// The split puts netConnect, which the server never runs, alone in a
 	// role part of net.c: that part leaves the server's map and is listed
 	// by its declaration.
