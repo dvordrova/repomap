@@ -25,7 +25,7 @@ What: What a person gives the program when starting it from a command line or a 
 
 Includes: an option, a flag, a positional argument, a subcommand or a task; a word the program checks among its command-line arguments; the names of the commands among which the program looks up what was typed; declaring an option or a subcommand with a command-line parser; a subcommand's handler
 
-Not for: the command line this program gives another program it starts, or the name of a program it looks up or starts (none); text the program prints, such as a usage line, a format or an error message (none); the program's own name (none); an environment variable (none); a command a client sends over a network connection (request)
+Not for: the command line this program gives another program it starts, or the name of a program it looks up or starts (none); the name a parser or an option set is given for its own messages (none); text the program prints, such as a usage line, a format or an error message (none); the program's own name (none); an environment variable (none); a command a client sends over a network connection (request)
 
 Examples:
 - declaring a --verbose flag with a parser
@@ -99,6 +99,17 @@ Not for: a handler of one route or command (request)
 
 Examples:
 - a function that checks the session before every handler
+
+## per_call
+
+What: The symbol takes whatever words it is given: the same function compares, matches or looks up words, and the words mean different things at different calls, so each call is decided on its own.
+
+Includes: a string comparison or a lookup that some calls make with what a person or a client gave the program and others with the program's own names, settings or data
+
+Not for: a symbol whose words are entries of one kind at every call (that kind); a symbol whose words are never entries at any call (none)
+
+Examples:
+- a string comparison function the program calls both on its command-line arguments and on names of its own
 
 ## none
 

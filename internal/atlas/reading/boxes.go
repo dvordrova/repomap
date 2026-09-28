@@ -989,12 +989,16 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 			symbol := apiName(*call.API)
 			role := r.api[symbol]
 			running := atlas.Place{Path: place.Path, TargetIDs: targets}
+			// A per_call symbol's call has its own answer.
+			enters, callUndecided := r.entersAt(role, place.Path, call.Line, call.Column)
 			// A word call to a symbol whose entry question was not decided,
 			// or a call to a symbol whose words are entries given no word,
 			// may declare an input: the launch walk says it is unsure.
 			if !inTest && !r.factClaims(place.Path, call.Line, call.Column) {
 				switch {
-				case role.enters == "" && r.undecidedEnters[symbol] && len(call.Values) > 0:
+				case role.perCall && callUndecided && len(call.Values) > 0:
+					r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordPerCallUndecided, "")
+				case !role.perCall && role.enters == "" && r.undecidedEnters[symbol] && len(call.Values) > 0:
 					r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordUndecided, "")
 				case role.enters != "" && len(call.Values) == 0:
 					r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordNoWords, role.enters)
@@ -1004,19 +1008,19 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 			// are an entry is that entry, unless a fact already names the
 			// call: its words are what the code wrote, and its handler is
 			// not established.
-			if role.enters != "" && len(call.Values) > 0 && !inTest && !r.factClaims(place.Path, call.Line, call.Column) {
+			if enters != "" && len(call.Values) > 0 && !inTest && !r.factClaims(place.Path, call.Line, call.Column) {
 				if len(lines.NameableWords(call.Values)) > 0 {
-					r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordEntry, role.enters)
+					r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordEntry, enters)
 					id := boundaryID(fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s\x00%s\x00%s", atlas.DirectionIn, place.ID, call.Line, call.Column, call.Kind, call.Name, call.Resolution))
-					r.boundaries[id] = &boundaryState{kind: role.enters, handlerUnknown: true, place: atlas.Place{
+					r.boundaries[id] = &boundaryState{kind: enters, handlerUnknown: true, place: atlas.Place{
 						ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: call.Line, Column: call.Column,
 						Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
 							Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, External: call.Name,
-							Values: slices.Clone(call.Values), Words: slices.Clone(call.Values), Direction: atlas.DirectionIn, GivenKind: role.enters}}}
+							Values: slices.Clone(call.Values), Words: slices.Clone(call.Values), Direction: atlas.DirectionIn, GivenKind: enters}}}
 					continue
 				}
-				r.noEntryWithoutWords(atlas.Place{ID: place.ID, Path: place.Path, LineNo: call.Line}, role.enters)
-				r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordNoWords, role.enters)
+				r.noEntryWithoutWords(atlas.Place{ID: place.ID, Path: place.Path, LineNo: call.Line}, enters)
+				r.recordWordCall(running, decl.ObjectID, call.Line, call.Column, symbol, wordNoWords, enters)
 			}
 			if role.talks == "" && !role.publishes {
 				continue

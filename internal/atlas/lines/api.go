@@ -24,6 +24,11 @@ const (
 	APIServes     = "serves"
 	APIMiddleware = "middleware"
 	APINone       = "none"
+	// APIPerCall is the enters answer that a symbol's words mean different
+	// things at different calls (a string comparison on argv here, on the
+	// program's own names there): each of its word calls is then asked on
+	// its own (APICall).
+	APIPerCall = "per_call"
 )
 
 //go:embed prompts/api.md
@@ -31,6 +36,9 @@ var apiPrompt string
 
 //go:embed prompts/entry_options.md
 var entryOptionsText string
+
+//go:embed prompts/api_call.md
+var apiCallPrompt string
 
 //go:embed prompts/api_publishes_options.md
 var apiPublishesOptionsText string
@@ -52,7 +60,7 @@ var programOptionsText string
 // repository becomes on our map reads one file: an option means the same
 // in each of them.
 var (
-	entryOptions        = mustOptions("prompts/entry_options.md", entryOptionsText, entryOptionNames())
+	entryOptions        = mustOptions("prompts/entry_options.md", entryOptionsText, append(entryOptionNames(), APIPerCall))
 	apiPublishesOptions = mustOptions("prompts/api_publishes_options.md", apiPublishesOptionsText, []string{APIServes, APINone})
 	apiTalksOptions     = mustOptions("prompts/api_talks_options.md", apiTalksOptionsText, TalksOptions())
 	programOptions      = mustOptions("prompts/program_options.md", programOptionsText, []string{programWord, ProgramNotNamed})
@@ -132,10 +140,33 @@ func APIGiven() table.Definition {
 	talks.Alone = true
 	def.Columns = []table.Column{
 		talks,
-		{Name: "enters", Kind: table.Choice, Options: EntersOptions(), Criteria: EntryCriteria(EntersOptions()...), Item: "outside_symbol", Alone: true,
+		{Name: "enters", Kind: table.Choice, Options: GivenOptions(), Criteria: EntryCriteria(GivenOptions()...), Item: "outside_symbol", Alone: true,
 			Ask: "What do the words a call to `outside_symbol` is given become on our map?"},
 	}
 	return def
+}
+
+// GivenOptions are what a symbol's words can become: an entry kind (not
+// the queue consumer talks decides), per_call when they mean different
+// things at different calls, or none.
+func GivenOptions() []string {
+	options := EntersOptions()
+	return append(options[:len(options)-1:len(options)-1], APIPerCall, APINone)
+}
+
+// APICall asks, of one call to a symbol answered per_call, what the words
+// that call gives become on our map (repomap.atlas.api.v8.call): the call as
+// written, the declaration it is in and who calls that, its words, where its
+// arguments come from and whether it runs at launch, inside an entry's code
+// or neither. Decided once per call site and remembered on its own.
+// Measured before code (2026-09-28, scratchpad impl/k4probe): no symbol of
+// Redis or litestream is answered per_call; on Redis's strcasecmp calls the
+// options of parseOptions are commands in 5 of 5 draws, and about half of
+// loadServerConfig's settings-file keys are commands too.
+func APICall() table.Definition {
+	return table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v8.call", System: apiCallPrompt, Classifier: true, Memoize: true,
+		Columns: []table.Column{{Name: "enters", Kind: table.Choice, Options: EntersOptions(), Criteria: EntryCriteria(EntersOptions()...), Item: "outside_call",
+			Ask: "What do the words this call gives `outside_call` become on our map?"}}}
 }
 
 func talksColumn() table.Column {

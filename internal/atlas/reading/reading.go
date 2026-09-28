@@ -137,13 +137,16 @@ type reader struct {
 	openFiles         map[string]bool // file place ID -> open, budget mode only
 	budget            bool
 
-	symbolLine map[string]cell     // symbol place ID -> model line
-	api        map[string]apiRole  // external symbol -> what it binds, publishes, talks to
+	symbolLine map[string]cell    // symbol place ID -> model line
+	api        map[string]apiRole // external symbol -> what it binds, publishes, talks to
 	// undecidedEnters are the outside symbols asked what their words become
 	// that got no decided answer; wordCalls what the reading made of each
 	// word call (launch.go).
 	undecidedEnters map[string]bool
 	wordCalls       []wordCallRecord
+	// callEnters are the per-call answers of per_call symbols, by call site
+	// (api_call.go).
+	callEnters map[sourceSite]string
 	keys       map[string][]string // file place ID -> key symbol IDs, by rank
 	// selectedKeys is every declaration the selection found worth a reader's
 	// attention; partKeys is what explains the part it stands in.

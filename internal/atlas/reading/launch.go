@@ -24,6 +24,9 @@ const (
 	wordEntry     = "entry"
 	wordUndecided = "undecided"
 	wordNoWords   = "no_words"
+	// wordPerCallUndecided is a call of a per_call symbol whose own
+	// question had no decided answer.
+	wordPerCallUndecided = "per_call_undecided"
 )
 
 func (r *reader) recordWordCall(place atlas.Place, objectID string, line, column int, symbol, outcome, kind string) {

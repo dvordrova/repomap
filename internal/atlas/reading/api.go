@@ -19,6 +19,9 @@ import (
 type apiRole struct {
 	binds, talks, enters  string
 	publishes, middleware bool
+	// perCall says the symbol's words mean different things at different
+	// calls: each call's own answer (api_call.go) is its entry.
+	perCall bool
 }
 
 // apiSymbol is what the code observed about one external symbol across the
@@ -250,12 +253,10 @@ func (r *reader) readAPI(ctx context.Context) error {
 			if usage := r.sourceText(files, path, line, column); usage != "" {
 				fields = append(fields, table.Field{Name: "usage", Value: usage})
 			}
+			// Every literal: an oversized row goes alone into its own window
+			// (FitClassifierWindows), never trimmed.
 			if len(s.literals) > 0 {
-				literals := s.literals
-				if len(literals) > 6 {
-					literals = literals[:6]
-				}
-				fields = append(fields, table.Field{Name: "literals", Value: literals})
+				fields = append(fields, table.Field{Name: "literals", Value: s.literals})
 			}
 			if received := s.receivedCalls(); len(received) > 0 {
 				fields = append(fields, table.Field{Name: "result_receives", Value: received})
@@ -331,6 +332,15 @@ func (r *reader) readAPI(ctx context.Context) error {
 			}
 		}
 	}
+	perCall := map[string]bool{}
+	for name, role := range r.api {
+		if role.perCall {
+			perCall[name] = true
+		}
+	}
+	if err := r.readCalls(ctx, perCall); err != nil {
+		return err
+	}
 	r.reportStage(lines.StageAPI)
 	return nil
 }
@@ -376,6 +386,8 @@ func apiRoleOf(answer table.Answer) apiRole {
 	}
 	switch enters := answer["enters"]; enters {
 	case "", lines.APINone:
+	case lines.APIPerCall:
+		role.perCall = true
 	default:
 		role.enters = enters
 	}
@@ -438,14 +450,18 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 		if len(words) == 0 {
 			words = b.Values
 		}
-		entry := b.Direction != atlas.DirectionIn && !b.Handed && role.enters != "" && len(words) > 0 && !r.testFile(state.place.Parent)
+		enters, undecided := r.entersAt(role, state.place.Path, state.place.LineNo, state.place.Column)
+		if undecided && b.Direction != atlas.DirectionIn && !b.Handed && len(words) > 0 && !r.testFile(state.place.Parent) {
+			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordPerCallUndecided, "")
+		}
+		entry := b.Direction != atlas.DirectionIn && !b.Handed && enters != "" && len(words) > 0 && !r.testFile(state.place.Parent)
 		if entry && len(lines.NameableWords(words)) == 0 {
-			r.noEntryWithoutWords(state.place, role.enters)
-			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordNoWords, role.enters)
+			r.noEntryWithoutWords(state.place, enters)
+			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordNoWords, enters)
 			entry = false
 		}
 		if entry {
-			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordEntry, role.enters)
+			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordEntry, enters)
 		}
 		switch {
 		case b.Direction == atlas.DirectionIn:
@@ -462,7 +478,7 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 			facts.Direction, facts.GivenKind = atlas.DirectionIn, role.binds
 			state.handlerUnknown = true
 		case entry:
-			facts.Direction, facts.GivenKind = atlas.DirectionIn, role.enters
+			facts.Direction, facts.GivenKind = atlas.DirectionIn, enters
 			facts.Words = append([]string(nil), words...)
 			state.handlerUnknown = true
 		case role.publishes:
