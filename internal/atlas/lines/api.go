@@ -24,11 +24,6 @@ const (
 	APIServes     = "serves"
 	APIMiddleware = "middleware"
 	APINone       = "none"
-	// APIPerCall is the enters answer that a symbol's words mean different
-	// things at different calls (a string comparison on argv here, on the
-	// program's own names there): each of its word calls is then asked on
-	// its own (APICall).
-	APIPerCall = "per_call"
 )
 
 //go:embed prompts/api.md
@@ -63,7 +58,7 @@ var programOptionsText string
 // repository becomes on our map reads one file: an option means the same
 // in each of them.
 var (
-	entryOptions        = mustOptions("prompts/entry_options.md", entryOptionsText, append(entryOptionNames(), APIPerCall))
+	entryOptions        = mustOptions("prompts/entry_options.md", entryOptionsText, entryOptionNames())
 	apiPublishesOptions = mustOptions("prompts/api_publishes_options.md", apiPublishesOptionsText, []string{APIServes, APINone})
 	apiTalksOptions     = mustOptions("prompts/api_talks_options.md", apiTalksOptionsText, TalksOptions())
 	programOptions      = mustOptions("prompts/program_options.md", programOptionsText, []string{programWord, ProgramNotNamed})
@@ -125,56 +120,29 @@ func API(handed bool) table.Definition {
 		}
 		return def
 	}
-	def.Columns = []table.Column{talksColumn()}
+	def.Columns = []table.Column{{Name: "talks", Kind: table.Choice, Options: TalksOptions(), Criteria: apiTalksOptions, Item: "outside_symbol",
+		Ask: "What does a call to `outside_symbol` do with other running programs?"}}
 	return def
 }
 
-// APIGiven asks a symbol whose calls give it words both what a call does
-// with other running programs and what the words it is given become on our
-// map (repomap.atlas.api.v8.given): flag.Bool("verbose", …) declares an
-// option, printf("%s\n", …) prints text. The two are independent (Alone):
-// a near-tie on one leaves the other standing. No outcome is offered in
-// both: taking messages from a queue is talks's, so enters offers no
-// queue_consumer and no middleware.
-func APIGiven() table.Definition {
-	def := API(false)
-	def.Contract += ".given"
-	talks := talksColumn()
-	talks.Alone = true
-	def.Columns = []table.Column{
-		talks,
-		{Name: "enters", Kind: table.Choice, Options: GivenOptions(), Criteria: EntryCriteria(GivenOptions()...), Item: "outside_symbol", Alone: true,
-			Ask: "What do the words a call to `outside_symbol` is given become on our map?"},
-	}
-	return def
-}
-
-// GivenOptions are what a symbol's words can become: an entry kind (not
-// the queue consumer talks decides), per_call when they mean different
-// things at different calls, or none.
-func GivenOptions() []string {
-	options := EntersOptions()
-	return append(options[:len(options)-1:len(options)-1], APIPerCall, APINone)
-}
-
-// APICall asks, of one call to a symbol answered per_call, what the words
-// that call gives become on our map (repomap.atlas.api.v8.call): the call as
-// written, the declaration it is in and who calls that, its words, where its
-// arguments come from and whether it runs at launch, inside an entry's code
-// or neither. Decided once per call site and remembered on its own.
-// Measured before code (2026-09-28, scratchpad impl/k4probe): no symbol of
-// Redis or litestream is answered per_call; on Redis's strcasecmp calls the
-// options of parseOptions are commands in 5 of 5 draws, and about half of
-// loadServerConfig's settings-file keys are commands too.
+// APICall asks, of one call outside tests that gives an outside symbol a
+// word, what the words that call is given become on our map
+// (repomap.atlas.enters.v1): flag.Bool("verbose", …) declares an option,
+// printf("%s\n", …) prints text, and one string comparison checks argv at
+// one call and the program's own names at another, so the answer belongs to
+// the call, not to its symbol. The item is the symbol and its declared
+// type, the call as written, the declaration it is written in, every word
+// it is given, where each of its arguments comes from and what a call to
+// the symbol does with other running programs when that is decided. Each
+// call is remembered on its own. The symbol's talks answer is decided
+// first: a call whose symbol talks to another program, or serves, is not
+// asked, since its words are that program's (one is not both). No outcome
+// is offered in both: taking messages from a queue is talks's, so enters
+// offers no queue_consumer and no middleware.
 func APICall() table.Definition {
-	return table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v8.call", System: apiCallPrompt, Classifier: true, Memoize: true,
+	return table.Definition{Stage: StageAPI, Contract: "repomap.atlas.enters.v1", System: apiCallPrompt, Classifier: true, Memoize: true,
 		Columns: []table.Column{{Name: "enters", Kind: table.Choice, Options: EntersOptions(), Criteria: EntryCriteria(EntersOptions()...), Item: "outside_call",
-			Ask: "What do the words this call gives `outside_call` become on our map?"}}}
-}
-
-func talksColumn() table.Column {
-	return table.Column{Name: "talks", Kind: table.Choice, Options: TalksOptions(), Criteria: apiTalksOptions, Item: "outside_symbol",
-		Ask: "What does a call to `outside_symbol` do with other running programs?"}
+			Ask: "What does the word or words this call is given become on our map?"}}}
 }
 
 // EntersOptions are what the words a call is given can become: an entry

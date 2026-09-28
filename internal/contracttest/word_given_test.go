@@ -23,12 +23,13 @@ import (
 )
 
 // askedSymbol is an outside symbol's row as the reading asks it: which
-// question set (binds for a handed callable, given for a symbol whose calls
-// give it words, talks otherwise) and what the row shows.
+// question set (binds for a handed callable, talks otherwise), what the row
+// shows, and the calls of it asked what their words become, as written.
 type askedSymbol struct {
 	question string
 	usage    string
 	received []string
+	calls    []string
 }
 
 // askedOutsideSymbols reads one program without a model up to its outside
@@ -66,6 +67,7 @@ func askedOutsideSymbols(t *testing.T, repository *corpus.Corpus, index programi
 		t.Fatalf("the outside symbols were not asked: %v %v", refs, err)
 	}
 	asked := map[string]askedSymbol{}
+	calls := map[string][]string{}
 	for _, ref := range refs {
 		var pointer struct{ File string }
 		raw, err := os.ReadFile(ref)
@@ -80,6 +82,7 @@ func askedOutsideSymbols(t *testing.T, repository *corpus.Corpus, index programi
 			Rows []struct {
 				Symbol         string   `json:"symbol"`
 				Usage          string   `json:"usage"`
+				Call           string   `json:"call"`
 				ResultReceives []string `json:"result_receives"`
 			}
 		}
@@ -95,36 +98,59 @@ func askedOutsideSymbols(t *testing.T, repository *corpus.Corpus, index programi
 			case "binds":
 				question = "binds"
 			case "enters":
-				question = "given"
+				question = "enters"
 			}
 		}
 		for _, row := range request.Rows {
+			if question == "enters" {
+				calls[row.Symbol] = append(calls[row.Symbol], row.Call)
+				continue
+			}
 			if previous, twice := asked[row.Symbol]; twice {
 				t.Fatalf("%s is asked in two questions: %s and %s", row.Symbol, previous.question, question)
 			}
 			asked[row.Symbol] = askedSymbol{question: question, usage: row.Usage, received: row.ResultReceives}
 		}
 	}
+	for symbol, written := range calls {
+		got, ok := asked[symbol]
+		if !ok || got.question != "talks" {
+			t.Fatalf("the calls of %s are asked what their words become beside %+v", symbol, got)
+		}
+		got.calls = written
+		asked[symbol] = got
+	}
 	return asked
 }
 
+// set is the symbol's question set: binds, talks, or given (talks, with its
+// word calls each asked what their words become).
+func (got askedSymbol) set() string {
+	if got.question == "talks" && len(got.calls) > 0 {
+		return "given"
+	}
+	return got.question
+}
+
+// expectAsked checks one symbol's question set, its usage (for given, among
+// its asked calls too) and what its call's result receives.
 func expectAsked(t *testing.T, asked map[string]askedSymbol, symbol, question, usage string, received ...string) {
 	t.Helper()
 	got, ok := asked[symbol]
-	if !ok || got.question != question || usage != "" && got.usage != usage || !slices.Equal(got.received, received) {
+	if !ok || got.set() != question || usage != "" && (got.usage != usage || question == "given" && !slices.Contains(got.calls, usage)) || !slices.Equal(got.received, received) {
 		t.Fatalf("%s is asked %+v, want %s with usage %q and result_receives %v", symbol, got, question, usage, received)
 	}
 }
 
-// Every language's calls that give an outside symbol words ask that symbol
-// what the words become, beside what the call does with other programs, in
-// one question set; a symbol handed a callable is asked what it becomes
-// instead, and no symbol is asked in two sets. The row shows the call as
-// written and what the code calls on the call's result. Missing
-// equivalents are held as they are, recorded in each language's contract:
-// Go's package-level variable initializer calls no outside symbol the
-// index records, and an npm package without its declarations names no
-// symbol, so neither is asked.
+// Every language's calls that give an outside symbol words are each asked
+// what their words become, beside what a call to the symbol does with
+// other programs; a symbol handed a callable is asked what it becomes
+// instead, and no symbol is asked in two sets. The symbol's row shows its
+// first word call as written and what the code calls on the call's result.
+// Missing equivalents are held as they are, recorded in each language's
+// contract: Go's package-level variable initializer calls no outside
+// symbol the index records, and an npm package without its declarations
+// names no symbol, so neither is asked.
 func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 	t.Run("c", func(t *testing.T) {
 		fixture := loadCFixture(t)

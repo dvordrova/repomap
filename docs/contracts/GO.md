@@ -190,12 +190,11 @@ variable (C's command table).
 ## Inputs a call's words declare, and what Go does not have yet
 
 A call of an outside symbol given words (`fs.String("config", "",
-"config path")`, `flag.NewFlagSet("tool-list", …)`) asks that symbol what
-the words become (READING, the `atlas_api` table's third set); the fixture
-asks `flag.String` at `internal/storefixture/destinations.go`. The answer is
-the symbol's: every word-given call of a symbol answered with an entry kind
-is an input whose handler is not established. Not recorded yet, and so
-asked nothing:
+"config path")`, `flag.NewFlagSet("tool-list", …)`) is asked on its own what
+the words become (READING, the `atlas_api` per-call question); the fixture
+asks `flag.String`'s call at `internal/storefixture/destinations.go`. The
+answer is the call's: a call answered with an entry kind is an input whose
+handler is not established. Not recorded yet, and so asked nothing:
 
 - a package-level variable's initializer calling an outside symbol
   (`var verbose = flag.Bool("verbose", …)` at the end of the same file):

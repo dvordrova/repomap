@@ -802,25 +802,44 @@ boundary. The roles are recorded on the atlas as `api`. A request, like
 every entry, is named from its registration's words (Operation ownership
 above).
 
-A symbol that is handed nothing but whose calls outside test files give it
-words (a literal: `flag.Bool("verbose", …)`, `strcmp(argv[1], "-h")`,
-`printf("%s\n", …)`) is asked in a third set (`repomap.atlas.api.v8.given`)
-two independent (`Alone`) questions: `talks`, as above, and `enters`, what
-the words a call to it is given become on our map: an entry kind but
-`queue_consumer` (taking messages is `talks`'s to say, so no outcome is
-offered in both), or `none`, from the one criteria file. Each symbol is in
-exactly one set. Its `usage` is its first call outside tests that gives it
-words, and every row may show `result_receives`: the calls the code makes
-on what a call to the symbol returns, counted (`add_argument ×1`), the code
-fact of a factory; what the symbol is stays the model's answer. An entry
-kind answered beside `serves` is refused alone (`cell_rejected`): a
-listener's answer stands and its words are no entry. The same holds beside
-every other answer but `none` (2026-09-28): the words a call passes to
-another program, one it starts or one it sends to, are that program's, so
-an entry kind beside `runs_program`, `client_request`, `db`, a queue or
-`sdk` is refused alone and the talks answer stands
-(`exec.CommandContext(ctx, "litestream", "restore", "-config", …)` is a
-launch, not ten command options).
+A symbol handed nothing is asked `talks` whatever its calls give it; its
+`usage` is its first call outside tests that gives it words (a literal:
+`flag.Bool("verbose", …)`, `strcmp(argv[1], "-h")`, `printf("%s\n", …)`),
+else its first call, and every row may show `result_receives`: the calls
+the code makes on what a call to the symbol returns, counted
+(`add_argument ×1`), the code fact of a factory; what the symbol is stays
+the model's answer. Each symbol is in exactly one of the two sets.
+
+Then each call outside test files that gives such a symbol at least one
+word is asked on its own what the word or words it is given become on our
+map (`repomap.atlas.enters.v1`, `enters`, Jev, `prompts/api_call.md`): an
+entry kind but `queue_consumer` (taking messages is `talks`'s to say, so
+no outcome is offered in both), or `none`, from the one criteria file. A
+symbol's calls differ: `strcmp(argv[i], "-h")` checks an option where
+`strcasecmp(c->name, "monitor")` compares the program's own names, and one
+answer read from one example call had made them the same. The item is the
+symbol and its declared type, the call as written (`lines.CallText`,
+comments dropped, never cut), the declaration it is written in with its
+signature, every literal it is given, where each argument comes from as the
+index records it, in words and without a position (a word, parameter #2 of
+a declaration, an element of a value, a field of a parameter, the result of
+calling X, code not followed), and the symbol's `talks` answer when it is
+decided. The talks answer is decided first and a call is asked only beside
+`none` or no decided answer: the words a call passes to another program,
+one it starts or one it sends to, are that program's, and a listener stays
+the listening side, so no call is both (`exec.CommandContext(ctx,
+"litestream", "restore", "-config", …)` is a launch, not ten command
+options). Not asked either: a call of a symbol handed a callable (`binds`
+decides what the hand-over becomes), and a call another fact already names
+at its line and column (a SQL statement a query call sends, a setting
+read, a table row or a kept callable); a registration of the symbol itself
+that hands nothing over is no other fact, and its call's answer decides
+it. A registration whose own call gives no word is not asked. The calls of
+one symbol share windows, in source order, with request-local row refs;
+each call is remembered on its own by what the item shows, never by its
+line or its program, so an edit elsewhere asks nothing again. A row too
+large for a request goes alone and a refusal leaves it unanswered; nothing
+is cut. An undecided call makes no entry and is unsure in the launch walk.
 
 A call to a `runs_program` symbol is one outgoing boundary of that kind,
 unless its receiver is the result of a call to a `runs_program` symbol
@@ -858,16 +877,15 @@ not linked to that component (the cross-program joints pair a call with
 another program's entry, and a program's own launch is no entry; not
 done, CHANGELOG).
 
-A symbol whose words are an entry makes that entry at every call outside
-test files that gives it words and that no fact boundary, in or out,
-already names at its line and column (a SQL statement a query call sends,
-a registration at the call): a model boundary, direction in, of the kind
-answered, whose `words` are the literals the call was given (never the
-call word or the caller's name) and whose handler is not established
-(`handler_unknown`). A call given words to a registration the code found
-(a literal on a value that holds callables, an address literal) becomes the
-same entry, with the words of the call at its site (a registration's own
-values keep only its address), and a
+A call whose words its answer makes an entry, and that no fact boundary,
+in or out, already names at its line and column, is that entry: a model
+boundary, direction in, of the kind answered, whose `words` are the
+literals the call was given (never the call word or the caller's name) and
+whose handler is not established (`handler_unknown`). A call given words to
+a registration the code found (a literal on a value that holds callables,
+an address literal) becomes the same entry by its own answer, with the
+words of the call at its site (a registration's own values keep only its
+address), and a
 value handed over without a callable (`Register("k6/x/dns", new(DNS))`)
 is an entry whose handler is not established too. Some code acts on such
 an entry; the facts do not say which yet, so none is taken for it: it is

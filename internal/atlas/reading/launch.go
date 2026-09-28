@@ -7,9 +7,10 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 )
 
-// wordCallRecord is one call outside tests giving words to, or calling without
-// words, an outside symbol asked what its words become, with what the
-// reading made of it: an entry of kind, or unsure (undecided, no_words).
+// wordCallRecord is one call outside tests giving words to an outside
+// symbol, or giving none to a symbol whose words are an entry at another
+// call, with what the reading made of it: an entry of kind, none, or
+// unsure (undecided, no_words).
 type wordCallRecord struct {
 	targets      []string
 	objectID     string
@@ -22,11 +23,9 @@ type wordCallRecord struct {
 
 const (
 	wordEntry     = "entry"
+	wordNone      = "none"
 	wordUndecided = "undecided"
 	wordNoWords   = "no_words"
-	// wordPerCallUndecided is a call of a per_call symbol whose own
-	// question had no decided answer.
-	wordPerCallUndecided = "per_call_undecided"
 )
 
 func (r *reader) recordWordCall(place atlas.Place, objectID string, line, column int, symbol, outcome, kind string) {
@@ -34,14 +33,17 @@ func (r *reader) recordWordCall(place atlas.Place, objectID string, line, column
 }
 
 // launchEvidence is a target's unsure calls and idioms, in source order.
+// An idiom is one outside symbol's word calls that made entries of one
+// kind, counted against every call of the symbol the reading recorded.
 func (r *reader) launchEvidence(targetID string) ([]atlas.UnsureCall, []atlas.Idiom) {
 	var unsure []atlas.UnsureCall
 	type idiom struct {
-		kind           string
-		entries, calls int
-		objects        []string
+		symbol, kind string
+		entries      int
+		objects      []string
 	}
-	idioms := map[string]*idiom{}
+	idioms := map[[2]string]*idiom{}
+	calls := map[string]int{}
 	seen := map[sourceSite]bool{}
 	for _, call := range r.wordCalls {
 		if !slices.Contains(call.targets, targetID) {
@@ -52,19 +54,17 @@ func (r *reader) launchEvidence(targetID string) ([]atlas.UnsureCall, []atlas.Id
 			continue
 		}
 		seen[site] = true
-		if call.outcome != wordEntry {
+		calls[call.symbol]++
+		switch call.outcome {
+		case wordUndecided, wordNoWords:
 			unsure = append(unsure, atlas.UnsureCall{ObjectID: call.objectID, Path: call.path, LineNo: call.line, Column: call.column, Symbol: call.symbol, Reason: call.outcome})
-		}
-		if call.kind == "" {
-			continue
-		}
-		at := idioms[call.symbol]
-		if at == nil {
-			at = &idiom{kind: call.kind}
-			idioms[call.symbol] = at
-		}
-		at.calls++
-		if call.outcome == wordEntry {
+		case wordEntry:
+			key := [2]string{call.symbol, call.kind}
+			at := idioms[key]
+			if at == nil {
+				at = &idiom{symbol: call.symbol, kind: call.kind}
+				idioms[key] = at
+			}
 			at.entries++
 			if call.objectID != "" && !slices.Contains(at.objects, call.objectID) {
 				at.objects = append(at.objects, call.objectID)
@@ -76,12 +76,14 @@ func (r *reader) launchEvidence(targetID string) ([]atlas.UnsureCall, []atlas.Id
 		return sourceSite{a.Path, a.LineNo, a.Column}.compare(sourceSite{b.Path, b.LineNo, b.Column}) < 0
 	})
 	var result []atlas.Idiom
-	for symbol, at := range idioms {
-		if at.entries == 0 {
-			continue
-		}
-		result = append(result, atlas.Idiom{Symbol: symbol, Kind: at.kind, Entries: at.entries, Calls: at.calls, ObjectIDs: at.objects})
+	for _, at := range idioms {
+		result = append(result, atlas.Idiom{Symbol: at.symbol, Kind: at.kind, Entries: at.entries, Calls: calls[at.symbol], ObjectIDs: at.objects})
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Symbol < result[j].Symbol })
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Symbol != result[j].Symbol {
+			return result[i].Symbol < result[j].Symbol
+		}
+		return result[i].Kind < result[j].Kind
+	})
 	return unsure, result
 }

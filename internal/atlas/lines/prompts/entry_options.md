@@ -100,17 +100,6 @@ Not for: a handler of one route or command (request)
 Examples:
 - a function that checks the session before every handler
 
-## per_call
-
-What: The symbol takes whatever words it is given: the same function compares, matches or looks up words, and the words mean different things at different calls, so each call is decided on its own.
-
-Includes: a string comparison or a lookup that some calls make with what a person or a client gave the program and others with the program's own names, settings or data
-
-Not for: a symbol whose words are entries of one kind at every call (that kind); a symbol whose words are never entries at any call (none)
-
-Examples:
-- a string comparison function the program calls both on its command-line arguments and on names of its own
-
 ## none
 
 What: No entry: a step of work already under way, the program's own work, data or output, or work run only on a signal, at exit or on a failure.

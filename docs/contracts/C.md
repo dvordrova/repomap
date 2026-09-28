@@ -339,16 +339,18 @@ method.
 
 ## Inputs a call's words declare, and what C does not have yet
 
-Every language asks an outside symbol whose calls give it words what the
-words become (READING, the `atlas_api` table's third set). In C that is a
+Every language asks each call that gives an outside symbol words what the
+words become (READING, the `atlas_api` per-call question). In C that is a
 call such as `strcmp(argv[i], "-h")` or `fprintf(stderr, "usage: …")`: the
-kvd fixture asks `strcmp` (`strcmp(argv[1], "--symbols")`), `fprintf`,
-`getenv` and the other word-given calls, and its preset answers none. The
-answer is the symbol's, so a `command` answer for `strcmp` makes every
-word-given `strcmp` call outside tests an input whose handler is not
-established; per-call words compared with the program's argument vector
-(S2b), tables of names (S3) and callables the repository's own functions
-keep (S1) are the next pass. Not recorded yet, and so asked nothing:
+kvd fixture asks `strcmp`'s call (`strcmp(argv[1], "--symbols")`),
+`fprintf`'s and the other word calls, and its preset answers none; a
+`getenv` call is a setting read the facts already name and is not asked.
+The answer is the call's, so `strcmp(argv[i], "-h")` can be an option
+while `strcasecmp(c->name, "monitor")` is not. The item shows where each
+argument comes from as the index records it, and C records `argv[i]` as
+code it did not follow (no argument-vector origin yet). Tables of names
+(S3) and callables the repository's own functions keep (S1) are asked in
+pass 2. Not recorded yet, and so asked nothing:
 
 - `switch` or `==` on an argument's characters (`case 'h':`);
 - an option string handed with the whole argument vector

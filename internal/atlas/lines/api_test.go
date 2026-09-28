@@ -12,7 +12,7 @@ import (
 
 // The talks question has no "other" to fall into.
 func TestTalksOffersNoOther(t *testing.T) {
-	for _, def := range []table.Definition{API(true), API(false), APIGiven()} {
+	for _, def := range []table.Definition{API(true), API(false), APICall()} {
 		for _, column := range def.Columns {
 			if column.Name == "talks" && slices.Contains(column.Options, "other") {
 				t.Fatalf("talks offers other: %v", column.Options)
@@ -27,7 +27,7 @@ func TestTalksOffersNoOther(t *testing.T) {
 // inet_aton "talks sdk" and accept "talks client_request" in some draws and
 // not in others.
 func TestEveryAPIOptionHasCriteriaAndEveryQuestionANone(t *testing.T) {
-	for _, def := range []table.Definition{API(true), API(false), APIGiven()} {
+	for _, def := range []table.Definition{API(true), API(false), APICall()} {
 		if !def.Classifier || !table.Closed(def) {
 			t.Fatalf("%s is not a closed question for the categorizer", def.Contract)
 		}
@@ -49,17 +49,21 @@ func TestEveryAPIOptionHasCriteriaAndEveryQuestionANone(t *testing.T) {
 // the task that says what the map wants.
 func TestAPIRequestSendsEveryCriterion(t *testing.T) {
 	window := table.Window{Rows: []table.Row{{ID: "sym1", Fields: []table.Field{{Name: "symbol", Value: "sys/socket.h.accept"}, {Name: "usage", Value: "fd = accept(s, &sa, &len);"}}}}}
-	for _, asked := range []table.Definition{API(true), API(false), APIGiven()} {
+	for _, asked := range []table.Definition{API(true), API(false), APICall()} {
 		def := table.ForClassifier(asked)
 		recorder := &criteriaRecorder{}
 		if _, err := table.ClassifierCall(recorder, def, window); err != nil {
 			t.Fatal(err)
 		}
-		if recorder.task != apiPrompt || len(recorder.questions) != len(def.Columns) {
+		task, item := apiPrompt, "outside_symbol"
+		if def.Contract == APICall().Contract {
+			task, item = apiCallPrompt, "outside_call"
+		}
+		if recorder.task != task || len(recorder.questions) != len(def.Columns) {
 			t.Fatalf("%s: task or questions: %d", def.Contract, len(recorder.questions))
 		}
 		for key, question := range recorder.questions {
-			if question.Name != "outside_symbol" || question.Item["symbol"] != "sys/socket.h.accept" {
+			if question.Name != item || question.Item["symbol"] != "sys/socket.h.accept" {
 				t.Fatalf("%s: the question does not hold the symbol: %+v", key, question)
 			}
 			for _, option := range question.Options {
@@ -146,24 +150,24 @@ func entryQuestions() []struct {
 	return []struct {
 		def    table.Definition
 		column string
-	}{{API(true), "binds"}, {APIGiven(), "enters"}}
+	}{{API(true), "binds"}, {APICall(), "enters"}}
 }
 
-// No outcome is decided in two columns of one row: a symbol whose calls
-// give it words is asked what they do with other programs and what the
-// words become, and the two share only none. Taking messages from a queue
-// is talks's to say; enters never offers it, nor middleware.
-func TestNoOutcomeIsOfferedInTwoColumns(t *testing.T) {
-	def := APIGiven()
-	if len(def.Columns) != 2 || def.Columns[0].Name != "talks" || def.Columns[1].Name != "enters" || !def.Columns[0].Alone || !def.Columns[1].Alone {
-		t.Fatalf("the word-given question is %+v", def.Columns)
+// No outcome is decided by two questions: a call's words are asked what
+// they become beside its symbol's talks answer, and the two share only
+// none. Taking messages from a queue is talks's to say; enters never
+// offers it, nor middleware.
+func TestNoOutcomeIsOfferedInTwoQuestions(t *testing.T) {
+	talks, enters := API(false).Columns[0], APICall().Columns[0]
+	if talks.Name != "talks" || enters.Name != "enters" {
+		t.Fatalf("the questions are %+v and %+v", talks, enters)
 	}
-	for _, option := range def.Columns[1].Options {
-		if option != APINone && slices.Contains(def.Columns[0].Options, option) {
+	for _, option := range enters.Options {
+		if option != APINone && slices.Contains(talks.Options, option) {
 			t.Fatalf("%s is offered by talks and enters", option)
 		}
 	}
-	if slices.Contains(def.Columns[1].Options, APIMiddleware) || !slices.Contains(def.Columns[1].Options, "command") {
-		t.Fatalf("enters offers %v", def.Columns[1].Options)
+	if slices.Contains(enters.Options, APIMiddleware) || !slices.Contains(enters.Options, "command") {
+		t.Fatalf("enters offers %v", enters.Options)
 	}
 }

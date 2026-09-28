@@ -373,8 +373,8 @@ type Index struct {
 }
 
 // UnsureCall is one call that may declare an input and was not decided:
-// Reason "undecided" (its symbol's entry question had no decided answer)
-// or "no_words" (it gives the symbol no word that can name an entry).
+// Reason "undecided" (its entry question had no decided answer) or
+// "no_words" (it gives the symbol no word that can name an entry).
 type UnsureCall struct {
 	SubjectID string                `json:"subject_id,omitempty"`
 	Location  programindex.Location `json:"location"`
@@ -383,7 +383,7 @@ type UnsureCall struct {
 }
 
 // Idiom is what one outside symbol's word calls made: Entries of its Calls
-// became inputs of Kind, declared in SubjectIDs. MODEL: its answer.
+// became inputs of Kind, declared in SubjectIDs. MODEL: each call's answer.
 type Idiom struct {
 	Symbol     string   `json:"symbol"`
 	Kind       string   `json:"kind"`
@@ -907,7 +907,7 @@ func (index Index) Validate() error {
 		}
 	}
 	for _, call := range index.Unsure {
-		if _, ok := subjectsByID[call.SubjectID]; call.SubjectID != "" && !ok || call.Location.Path == "" || call.Location.Line < 1 || !validText(call.Symbol) || call.Reason != "undecided" && call.Reason != "no_words" && call.Reason != "per_call_undecided" {
+		if _, ok := subjectsByID[call.SubjectID]; call.SubjectID != "" && !ok || call.Location.Path == "" || call.Location.Line < 1 || !validText(call.Symbol) || call.Reason != "undecided" && call.Reason != "no_words" {
 			return fmt.Errorf("group index: invalid unsure call at %s:%d", call.Location.Path, call.Location.Line)
 		}
 	}

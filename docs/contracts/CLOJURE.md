@@ -161,8 +161,8 @@ the module.
 
 ## Inputs a call's words declare, and what Clojure does not have yet
 
-A call of an outside var given a literal asks that var what the words
-become (READING, the `atlas_api` table's third set): the fixture asks
+A call of an outside var given a literal is asked on its own what the
+words become (READING, the `atlas_api` per-call question): the fixture asks
 `clojure.core/format` (`(format "create %s dir" dir)`) and
 `clojure.string/replace`. Not recorded yet:
 

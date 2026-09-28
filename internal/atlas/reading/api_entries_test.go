@@ -1,19 +1,25 @@
 package reading
 
 import (
+	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
 )
 
 // entriesReader reads the boundaries of main's calls in main.go and of one
-// call in main_test.go, dry, with the given roles.
-func entriesReader(t *testing.T, roles map[string]apiRole, facts []atlas.Place, calls ...atlas.SymbolCall) *reader {
+// call in main_test.go, dry, with the given roles, each word call outside
+// tests that no other fact names answered as enters says for "symbol:line",
+// else for its symbol ("" is asked and undecided).
+func entriesReader(t *testing.T, roles map[string]apiRole, enters map[string]string, facts []atlas.Place, calls ...atlas.SymbolCall) *reader {
 	t.Helper()
 	places := []atlas.Place{
 		{ID: "f1", Kind: atlas.PlaceFile, Path: "main.go", TargetIDs: []string{"t1"}, File: &atlas.FileFacts{}},
@@ -32,6 +38,26 @@ func entriesReader(t *testing.T, roles map[string]apiRole, facts []atlas.Place, 
 		r.places[place.ID] = place
 	}
 	r.api = roles
+	r.callEnters, r.entering = map[sourceSite]string{}, map[string]bool{}
+	claims := map[sourceSite][]atlas.Place{}
+	for _, fact := range facts {
+		claims[sourceSite{path: fact.Path, line: fact.LineNo}] = append(claims[sourceSite{path: fact.Path, line: fact.LineNo}], fact)
+	}
+	for _, place := range places {
+		if place.Symbol == nil || r.testFile(place.Parent) {
+			continue
+		}
+		for _, call := range place.Symbol.Calls {
+			answer, asked := enters[fmt.Sprintf("%s:%d", call.Name, call.Line)]
+			if !asked {
+				answer, asked = enters[call.Name]
+			}
+			if asked && len(call.Values) > 0 && !claimedByOtherFact(claims[sourceSite{path: place.Path, line: call.Line}], call.Name, call.Column) {
+				r.callEnters[sourceSite{place.Path, call.Line, call.Column}] = answer
+				r.entering[call.Name] = r.entering[call.Name] || answer != "" && answer != lines.APINone
+			}
+		}
+	}
 	// As Read counts them: boundaries the reading makes are numbered after
 	// the graph's.
 	r.nextBoundary = len(facts)
@@ -65,14 +91,15 @@ func made(r *reader) []string {
 	return result
 }
 
-// A call outside tests that gives words to a symbol whose words are an
-// entry is that entry: its handler is not established, its words are the ones
-// the call was given (never its call word or its caller's name), and it is
-// named by them as written when nothing chose among them. A single word
-// needs no choosing. Words none of which can name an entry (a format
-// ending in a line break) make no entry, and that is recorded; a test's
-// call makes none, and neither does a call a fact already names. A word
-// given to a registration the code found makes the same entry.
+// A call outside tests whose words its answer makes an entry is that
+// entry: its handler is not established, its words are the ones the call
+// was given (never its call word or its caller's name), and it is named by
+// them as written when nothing chose among them. A single word needs no
+// choosing. Words none of which can name an entry (a format ending in a
+// line break) make no entry, and that is recorded; a test's call makes
+// none, and neither does a call a fact already names. A word given to a
+// registration the code found makes the same entry. Each call is its own:
+// the call of the same symbol answered none makes nothing.
 func TestAWordGivenCallBecomesAnEntryWhoseHandlerIsNotEstablished(t *testing.T) {
 	query := atlas.Place{ID: "b1", Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 9, Column: 12, Parent: "f1", TargetIDs: []string{"t1"}, Given: "users",
 		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "t1", FactID: "a1"}}, ObjectID: "n1", Caller: "main", Values: []string{"users", "SELECT 1"}, Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryDB}}
@@ -84,17 +111,19 @@ func TestAWordGivenCallBecomesAnEntryWhoseHandlerIsNotEstablished(t *testing.T) 
 	socket := atlas.Place{ID: "b3", Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 13, Column: 18, Parent: "f1", TargetIDs: []string{"t1"}, Given: "flag.String",
 		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "t1", FactID: "a3"}}, ObjectID: "n1", Caller: "main", External: "flag.String",
 			Values: []string{"/var/run/x.sock"}, Words: []string{"String", "socket", "/var/run/x.sock", "control socket path"}, Direction: atlas.DirectionOut}}
-	r := entriesReader(t, map[string]apiRole{
-		"flag.Bool": {enters: atlas.BoundaryCommand}, "fmt.Printf": {enters: atlas.BoundaryCommand},
-		"database/sql.DB.QueryRow": {enters: atlas.BoundaryCommand}, "vendor/cli.Command.option": {enters: atlas.BoundaryCommand},
-		"flag.String": {enters: atlas.BoundaryCommand},
+	r := entriesReader(t, nil, map[string]string{
+		"flag.Bool": atlas.BoundaryCommand, "fmt.Printf": atlas.BoundaryCommand,
+		"database/sql.DB.QueryRow": atlas.BoundaryCommand, "vendor/cli.Command.option": atlas.BoundaryCommand,
+		"flag.String": atlas.BoundaryCommand, "strings.HasPrefix": lines.APINone,
 	}, []atlas.Place{query, option, socket},
 		wordCall("flag.Bool", 3, 18, "verbose", "log more"),
 		wordCall("flag.Bool", 4, 16, "quiet"),
 		wordCall("flag.Bool", 5, 16),
 		wordCall("fmt.Printf", 7, 2, "%s\n"),
 		wordCall("database/sql.DB.QueryRow", 9, 12, "SELECT 1"),
+		wordCall("vendor/cli.Command.option", 11, 3, "-p, --port <n>"),
 		wordCall("flag.String", 13, 18, "socket", "/var/run/x.sock", "control socket path"),
+		wordCall("strings.HasPrefix", 15, 5, "s3://"),
 	)
 	want := []string{
 		"main.go in command -p, --port <n> -p, --port <n> handler unknown",
@@ -124,25 +153,58 @@ func TestAWordGivenCallBecomesAnEntryWhoseHandlerIsNotEstablished(t *testing.T) 
 	}
 }
 
-// Words a call passes to another program are that program's: an entry
-// kind answered beside anything a call does with other programs but none
-// is refused, alone, and the talks answer stands. A listener stays the
-// listening side, a launch stays a launch (exec.CommandContext(ctx,
-// "litestream", "restore", …) is not a command of this program), and a
-// database call stays a database call. Beside none the entry stands.
-func TestAnEntryBesideWhatACallDoesWithOtherProgramsIsRefused(t *testing.T) {
-	for _, talks := range []string{lines.APIServes, atlas.BoundaryDB, atlas.BoundaryRunsProgram} {
-		stands := answerTestReader(t, nil, nil)
-		role := apiRoleOf(stands.talksStands("sym1", "os/exec.CommandContext", map[string]string{"talks": talks, "enters": atlas.BoundaryCommand}))
-		if role.enters != "" || len(stands.rejected) != 1 || stands.rejected[0].Kind != "cell_rejected" {
-			t.Fatalf("an entry beside %s: role %+v, rejected %+v", talks, role, stands.rejected)
-		}
-		if talks == lines.APIServes && !role.publishes || talks != lines.APIServes && role.talks != talks {
-			t.Fatalf("the %s answer did not stand: %+v", talks, role)
-		}
+// Words a call passes to another program are that program's, and a
+// listener stays the listening side: a word call whose symbol talks to
+// other programs or serves is never asked what its words become, so a
+// launch stays a launch (exec.CommandContext(ctx, "litestream", "restore",
+// …) is not a command of this program). Beside none, or no decided talks
+// answer, the call is asked, and the talks answer it was given travels
+// with it.
+func TestAWordCallBesideWhatItsSymbolDoesWithOtherProgramsIsNotAsked(t *testing.T) {
+	calls := []atlas.SymbolCall{
+		wordCall("os/exec.CommandContext", 3, 9, "litestream", "restore"),
+		wordCall("net.Listen", 4, 9, ":8080"),
+		wordCall("flag.Bool", 5, 9, "verbose"),
+		wordCall("strings.HasPrefix", 6, 9, "-"),
 	}
-	kept := answerTestReader(t, nil, nil)
-	if role := apiRoleOf(kept.talksStands("sym1", "flag.Bool", map[string]string{"talks": lines.APINone, "enters": atlas.BoundaryCommand})); role.enters != atlas.BoundaryCommand || len(kept.rejected) != 0 {
-		t.Fatalf("an entry beside none: role %+v, rejected %+v", role, kept.rejected)
+	places := apiGraph(calls...)
+	answers := &asking{verdicts: map[string]llm.Verdict{
+		"os/exec.CommandContext": typesafetest.Choose(atlas.BoundaryRunsProgram),
+		"net.Listen":             typesafetest.Choose(lines.APIServes),
+		"strings.HasPrefix":      {Choice: lines.APINone, Probabilities: map[string]float64{lines.APINone: 0.52, atlas.BoundarySDK: 0.48}},
+	}}
+	r := apiReader(t, t.TempDir(), places, answers.categorizer())
+	if err := r.readAPI(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(answers.calls)
+	if want := []string{"flag.Bool talks=none", "strings.HasPrefix talks="}; !slices.Equal(answers.calls, want) {
+		t.Fatalf("the calls asked what their words become = %v, want %v", answers.calls, want)
+	}
+}
+
+// Each call is decided on its own, and the launch walk's evidence reads
+// those answers: strcmp's "-h" is an option of this program and its
+// "monitor" is not, a call asked and not decided is unsure, and a call
+// giving no word to a symbol whose words are an entry at another call is
+// unsure too. The idiom counts every call of the symbol it recorded.
+func TestTheLaunchEvidenceReadsEachCallsOwnAnswer(t *testing.T) {
+	r := entriesReader(t, nil, map[string]string{
+		"string.h.strcmp:3": atlas.BoundaryCommand, "string.h.strcmp:4": lines.APINone, "string.h.strcmp:5": "",
+	}, nil,
+		wordCall("string.h.strcmp", 3, 5, "-h"),
+		wordCall("string.h.strcmp", 4, 5, "monitor"),
+		wordCall("string.h.strcmp", 5, 5, "quit"),
+		wordCall("string.h.strcmp", 6, 5),
+	)
+	if got, want := made(r), []string{"main.go in command -h -h handler unknown"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("boundaries = %q, want %q", got, want)
+	}
+	unsure, idioms := r.launchEvidence("t1")
+	if got := fmt.Sprint(unsure); got != "[{n1 main.go 5 5 string.h.strcmp undecided} {n1 main.go 6 5 string.h.strcmp no_words}]" {
+		t.Fatalf("unsure = %s", got)
+	}
+	if got := fmt.Sprint(idioms); got != "[{string.h.strcmp command 1 4 [n1]}]" {
+		t.Fatalf("idioms = %s", got)
 	}
 }

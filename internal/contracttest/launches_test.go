@@ -117,14 +117,15 @@ func expectLaunch(t *testing.T, asked map[string]askedSymbol, repository *corpus
 func expectAskedAs(t *testing.T, asked map[string]askedSymbol, symbol, question, usage string) {
 	t.Helper()
 	got, ok := asked[symbol]
-	if !ok || got.question != question || got.usage != usage {
+	if !ok || got.set() != question || got.usage != usage {
 		t.Fatalf("%s is asked %+v, want %s with usage %q", symbol, got, question, usage)
 	}
 }
 
 // Every language's call that starts another program is asked what it does
-// with other programs, beside what its words become, and shows the call as
-// written; the call gives the program question every word it writes, the
+// with other programs and shows the call as written; read without a model,
+// where that answer is not decided, each of its word calls is also asked
+// what its words become (given); the call gives the program question every word it writes, the
 // program's word among them. A call on what a launching call returned is
 // recorded as made on that call's result, which is how the reading keeps
 // one boundary per launch; in Go a command built on either branch of an

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"sort"
 	"strings"
 
@@ -16,12 +15,10 @@ import (
 )
 
 // apiRole is the model's reading of one external symbol; see atlas.APIRole.
+// What the words of its calls become is each call's own (api_call.go).
 type apiRole struct {
-	binds, talks, enters  string
+	binds, talks          string
 	publishes, middleware bool
-	// perCall says the symbol's words mean different things at different
-	// calls: each call's own answer (api_call.go) is its entry.
-	perCall bool
 }
 
 // apiSymbol is what the code observed about one external symbol across the
@@ -36,18 +33,15 @@ type apiSymbol struct {
 	// belongs to testing and is not asked about.
 	sites   int
 	holders map[string]bool
-	// usage is the first site: the call a reader would look at. A symbol
-	// only registrations name uses its first registration.
+	// usage is the first site: the call a reader would look at, for a
+	// symbol handed nothing the first that gives it words (a literal). A
+	// symbol only registrations name uses its first registration.
 	usagePath                            string
 	usageLine, usageColumn               int
 	registrationPath                     string
 	registrationLine, registrationColumn int
-	// wordCalls counts the calls outside test files that give the symbol
-	// words (a literal); wordUsage is the first of them, the usage of a
-	// symbol asked what its words become.
-	wordCalls                   int
-	wordUsagePath               string
-	wordUsageLine, wordUsageCol int
+	wordUsagePath                        string
+	wordUsageLine, wordUsageCol          int
 	// resultReceives counts, by name, the calls made on what a call to
 	// the symbol returns: parser.add_argument on ArgumentParser(...)'s
 	// result. The code states the fact; what it makes of the symbol is the
@@ -137,11 +131,8 @@ func (r *reader) apiSymbols() []*apiSymbol {
 			if s.usagePath == "" && call.Line > 0 {
 				s.usagePath, s.usageLine, s.usageColumn = place.Path, call.Line, call.Column
 			}
-			if !inTest && len(call.Values) > 0 && call.Line > 0 {
-				s.wordCalls++
-				if s.wordUsagePath == "" {
-					s.wordUsagePath, s.wordUsageLine, s.wordUsageCol = place.Path, call.Line, call.Column
-				}
+			if !inTest && len(call.Values) > 0 && call.Line > 0 && s.wordUsagePath == "" {
+				s.wordUsagePath, s.wordUsageLine, s.wordUsageCol = place.Path, call.Line, call.Column
 			}
 		}
 	}
@@ -171,7 +162,10 @@ func (r *reader) apiSymbols() []*apiSymbol {
 	}
 	result := make([]*apiSymbol, 0, len(byName))
 	for _, s := range byName {
-		if s.usagePath == "" {
+		switch {
+		case s.wordUsagePath != "" && !s.handsCallable:
+			s.usagePath, s.usageLine, s.usageColumn = s.wordUsagePath, s.wordUsageLine, s.wordUsageCol
+		case s.usagePath == "":
 			s.usagePath, s.usageLine, s.usageColumn = s.registrationPath, s.registrationLine, s.registrationColumn
 		}
 		if s.sites > 0 {
@@ -183,23 +177,22 @@ func (r *reader) apiSymbols() []*apiSymbol {
 }
 
 // sourceText is the call at a source position as the code wrote it
-// (lines.CallText), reading each file once.
-func (r *reader) sourceText(files map[string][]byte, path string, line, column int) string {
+// (lines.CallText), reading and lexing each file once.
+func (r *reader) sourceText(files map[string]*lines.CallFile, path string, line, column int) string {
 	if r.opts.ReadSource == nil || line < 1 {
 		return ""
 	}
-	content, read := files[path]
+	file, read := files[path]
 	if !read {
-		var err error
-		if content, err = r.opts.ReadSource(path); err != nil {
-			content = nil
+		if content, err := r.opts.ReadSource(path); err == nil {
+			file = lines.NewCallFile(content, path)
 		}
-		files[path] = content
+		files[path] = file
 	}
-	if content == nil {
+	if file == nil {
 		return ""
 	}
-	return lines.CallText(content, path, line, column)
+	return file.Text(line, column)
 }
 
 // apiSubject is the knowledge subject of an outside symbol's row: no
@@ -207,50 +200,41 @@ func (r *reader) sourceText(files map[string][]byte, path string, line, column i
 func apiSubject(symbol string) string { return "api:" + symbol }
 
 // readAPI asks the model what the external symbols do with what the
-// repository gives them, one row per symbol.
+// repository gives them, one row per symbol, then what the words each call
+// gives becomes (api_call.go).
 func (r *reader) readAPI(ctx context.Context) error {
 	r.api = make(map[string]apiRole)
 	symbols := r.apiSymbols()
-	// Three questions, asked at once, each symbol in exactly one: a symbol
-	// handed a callable is asked what the callable becomes; one whose calls
-	// give it words also what the words become; any other only what its
-	// call does with other running programs.
-	var handed, other, given []*apiSymbol
+	// Two questions, asked at once, each symbol in exactly one: a symbol
+	// handed a callable is asked what the callable becomes; any other what
+	// its call does with other running programs.
+	var handed, other []*apiSymbol
 	for _, s := range symbols {
-		switch {
-		case s.handsCallable:
+		if s.handsCallable {
 			handed = append(handed, s)
-		case s.wordCalls > 0:
-			given = append(given, s)
-		default:
+		} else {
 			other = append(other, s)
 		}
 	}
-	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d outside symbols: %d handed a callable, %d given words, %d given other values", len(symbols), len(handed), len(given), len(other)))
-	groups := [][]*apiSymbol{handed, other, given}
-	definitions := []table.Definition{lines.API(true), lines.API(false), lines.APIGiven()}
+	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d outside symbols: %d handed a callable, %d asked what their calls do with other programs", len(symbols), len(handed), len(other)))
+	groups := [][]*apiSymbol{handed, other}
+	definitions := []table.Definition{lines.API(true), lines.API(false)}
 	rows := make([][]table.Row, len(groups))
 	// Each round remembers every symbol's answer apart: a row is its own
 	// subject, keyed by its symbol, so a new call asks only its symbol.
 	subjects := make([]map[string]rowSubject, len(groups))
-	files := make(map[string][]byte)
+	files := make(map[string]*lines.CallFile)
 	for round, group := range groups {
 		rows[round] = make([]table.Row, 0, len(group))
 		subjects[round] = make(map[string]rowSubject, len(group))
 		for i, s := range group {
 			id := fmt.Sprintf("sym%d", i+1)
-			path, line, column := s.usagePath, s.usageLine, s.usageColumn
-			if round == 2 {
-				// Asked what its words become, a symbol shows a call that
-				// gives it words.
-				path, line, column = s.wordUsagePath, s.wordUsageLine, s.wordUsageCol
-			}
-			subjects[round][id] = rowSubject{id: apiSubject(s.name), path: path, line: line}
+			subjects[round][id] = rowSubject{id: apiSubject(s.name), path: s.usagePath, line: s.usageLine}
 			fields := []table.Field{{Name: "symbol", Value: s.name}}
 			if s.signature != "" {
 				fields = append(fields, table.Field{Name: "declared", Value: s.signature})
 			}
-			if usage := r.sourceText(files, path, line, column); usage != "" {
+			if usage := r.sourceText(files, s.usagePath, s.usageLine, s.usageColumn); usage != "" {
 				fields = append(fields, table.Field{Name: "usage", Value: usage})
 			}
 			// Every literal: an oversized row goes alone into its own window
@@ -267,40 +251,30 @@ func (r *reader) readAPI(ctx context.Context) error {
 			rows[round] = append(rows[round], table.Row{ID: id, Fields: fields})
 		}
 	}
-	// No round reads another. Each after the first runs on its own view,
-	// joined after the first; a failure of any cancels the others and the
-	// first failure is reported.
+	// The rounds read nothing of each other. The second runs on its own
+	// view, joined after the first; a failure of either cancels the other
+	// and the first failure is reported.
 	asking, cancel := context.WithCancel(ctx)
 	defer cancel()
-	views := make([]*reader, len(groups))
-	for round := range groups {
-		if round == 0 {
-			continue
-		}
-		views[round] = r.view(nil)
-		views[round].rowSubjects = subjects[round]
-	}
+	view := r.view(nil)
+	view.rowSubjects = subjects[1]
 	r.rowSubjects = subjects[0]
 	defer func() { r.rowSubjects = nil }()
 	answers := make([][]rowAnswer, len(groups))
 	failures := make([]error, len(groups))
 	done := make(chan struct{})
-	for round := 1; round < len(groups); round++ {
-		go func(round int) {
-			defer func() { done <- struct{}{} }()
-			answers[round], failures[round] = views[round].runTable(asking, definitions[round], round+1, rows[round])
-			if failures[round] != nil {
-				cancel()
-			}
-		}(round)
-	}
+	go func() {
+		defer close(done)
+		answers[1], failures[1] = view.runTable(asking, definitions[1], 2, rows[1])
+		if failures[1] != nil {
+			cancel()
+		}
+	}()
 	answers[0], failures[0] = r.runTable(asking, definitions[0], 1, rows[0])
 	if failures[0] != nil {
 		cancel()
 	}
-	for round := 1; round < len(groups); round++ {
-		<-done
-	}
+	<-done
 	for _, err := range failures {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return err
@@ -311,34 +285,23 @@ func (r *reader) readAPI(ctx context.Context) error {
 			return err
 		}
 	}
-	for round := 1; round < len(groups); round++ {
-		r.joinView(views[round])
-	}
-	r.undecidedEnters = make(map[string]bool)
+	r.joinView(view)
+	// The talks answer each symbol was given, none among them: a call's
+	// words are asked only beside none or no decided answer.
+	talks := map[string]string{}
 	for round, group := range groups {
 		for i, s := range group {
 			answer := answers[round][i].answer
-			// A symbol asked what its words become with no decided answer
-			// leaves each of its word calls unsure.
-			if round == 2 && (answer == nil || answer["enters"] == "") {
-				r.undecidedEnters[s.name] = true
-			}
 			if answer == nil {
 				continue
 			}
-			answer = r.talksStands(rows[round][i].ID, s.name, answer)
+			talks[s.name] = answer["talks"]
 			if role := apiRoleOf(answer); role != (apiRole{}) {
 				r.api[s.name] = role
 			}
 		}
 	}
-	perCall := map[string]bool{}
-	for name, role := range r.api {
-		if role.perCall {
-			perCall[name] = true
-		}
-	}
-	if err := r.readCalls(ctx, perCall); err != nil {
+	if err := r.readCalls(ctx, symbols, talks); err != nil {
 		return err
 	}
 	if err := r.readInputs(ctx); err != nil {
@@ -346,24 +309,6 @@ func (r *reader) readAPI(ctx context.Context) error {
 	}
 	r.reportStage(lines.StageAPI)
 	return nil
-}
-
-// talksStands refuses an entry kind answered beside any answer but none of
-// what the call does with other programs: a call that is the program's
-// listening side stays that, and the words a call passes to another
-// program, one it starts or one it sends to, are that program's, not an
-// entry of this one. Only the enters cell is refused, and journaled.
-func (r *reader) talksStands(rowID, symbol string, answer table.Answer) table.Answer {
-	talks := answer["talks"]
-	if talks == "" || talks == lines.APINone || answer["enters"] == "" || answer["enters"] == lines.APINone {
-		return answer
-	}
-	reason := fmt.Sprintf("cell %q: %s beside %s: the talks answer stands", "enters", answer["enters"], talks)
-	r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageAPI, Kind: "cell_rejected", Count: 1, Reason: reason, Samples: []string{rowID, symbol}})
-	fmt.Fprintf(&r.tables, "- Rejected %s (%s): %s\n", rowID, symbol, reason)
-	kept := maps.Clone(answer)
-	delete(kept, "enters")
-	return kept
 }
 
 // apiRoleOf restores one accepted api row's closed choices into the role the
@@ -387,13 +332,6 @@ func apiRoleOf(answer table.Answer) apiRole {
 	default:
 		role.talks = talks
 	}
-	switch enters := answer["enters"]; enters {
-	case "", lines.APINone:
-	case lines.APIPerCall:
-		role.perCall = true
-	default:
-		role.enters = enters
-	}
 	return role
 }
 
@@ -407,7 +345,7 @@ func (r *reader) apiRoles() []atlas.APIRole {
 	result := make([]atlas.APIRole, 0, len(names))
 	for _, name := range names {
 		role := r.api[name]
-		result = append(result, atlas.APIRole{Symbol: name, Binds: role.binds, Publishes: role.publishes, Talks: role.talks, Enters: role.enters, Middleware: role.middleware})
+		result = append(result, atlas.APIRole{Symbol: name, Binds: role.binds, Publishes: role.publishes, Talks: role.talks, Middleware: role.middleware})
 	}
 	return result
 }
@@ -445,27 +383,19 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 		// no row and no role.
 		role := r.api[b.External]
 		facts := *b
-		// A call given words, outside tests, to a symbol whose words are an
-		// entry is that entry (a symbol that talks to other programs never
-		// gives words an entry: talksStands refuses enters beside it). Its
-		// handler is not established.
+		// A registration handing nothing over, outside tests, whose call's
+		// answer says the words it is given are an entry is that entry
+		// (api_call.go: a call whose symbol talks to other programs is never
+		// asked). Its handler is not established.
 		words := callWords[sourceSite{state.place.Path, state.place.LineNo, state.place.Column}]
 		if len(words) == 0 {
 			words = b.Values
 		}
-		enters, undecided := r.entersAt(role, state.place.Path, state.place.LineNo, state.place.Column)
-		if undecided && b.Direction != atlas.DirectionIn && !b.Handed && len(words) > 0 && !r.testFile(state.place.Parent) {
-			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordPerCallUndecided, "")
+		enters := ""
+		if b.Direction != atlas.DirectionIn && !b.Handed && len(words) > 0 && !r.testFile(state.place.Parent) {
+			enters = r.readWordCall(state.place, id, b.ObjectID, state.place.LineNo, state.place.Column, b.External, words)
 		}
-		entry := b.Direction != atlas.DirectionIn && !b.Handed && enters != "" && len(words) > 0 && !r.testFile(state.place.Parent)
-		if entry && len(lines.NameableWords(words)) == 0 {
-			r.noEntryWithoutWords(state.place, enters)
-			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordNoWords, enters)
-			entry = false
-		}
-		if entry {
-			r.recordWordCall(state.place, b.ObjectID, state.place.LineNo, state.place.Column, b.External, wordEntry, enters)
-		}
+		entry := enters != ""
 		switch {
 		case b.Direction == atlas.DirectionIn:
 			if role.binds == "" {
@@ -507,6 +437,29 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 func (r *reader) testFile(fileID string) bool {
 	file := r.places[fileID]
 	return file.File != nil && file.File.Test
+}
+
+// readWordCall records what the reading made of one call outside tests
+// that gives words, by its own answer (api_call.go), and returns the entry
+// kind it is, or "": an entry of the kind answered, none, undecided (unsure),
+// or no entry when none of its words can name one (unsure). A call never
+// asked is nothing and not recorded.
+func (r *reader) readWordCall(running atlas.Place, sampleID, objectID string, line, column int, symbol string, words []string) string {
+	answer, asked := r.callEnters[sourceSite{running.Path, line, column}]
+	switch {
+	case !asked:
+	case answer == "":
+		r.recordWordCall(running, objectID, line, column, symbol, wordUndecided, "")
+	case answer == lines.APINone:
+		r.recordWordCall(running, objectID, line, column, symbol, wordNone, "")
+	case len(lines.NameableWords(words)) == 0:
+		r.noEntryWithoutWords(atlas.Place{ID: sampleID, Path: running.Path, LineNo: line}, answer)
+		r.recordWordCall(running, objectID, line, column, symbol, wordNoWords, "")
+	default:
+		r.recordWordCall(running, objectID, line, column, symbol, wordEntry, answer)
+		return answer
+	}
+	return ""
 }
 
 // noEntryWithoutWords records a call whose words would be an entry but

@@ -4,145 +4,74 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
-// Per-call entry questions (K4). A symbol answered per_call takes whatever
-// words it is given, and they mean different things at different calls:
-// each of its word calls outside tests is asked on its own (lines.APICall),
-// once per call site, and remembered per site. A symbol whose own answer
-// was undecided is never re-asked per call; its calls stay unsure. The
-// answer of a call is what an entry at that call is; a call left undecided
-// is unsure (launch.go).
+// What the words of one call become (lines.APICall). Every call outside
+// tests that gives an outside symbol a word is asked on its own, after its
+// symbol's talks answer: strcmp(argv[i], "-h") checks an option where
+// strcasecmp(c->name, "monitor") compares the program's own names, and one
+// symbol-level answer read from one example call made both the same. A call
+// is not asked when its symbol is handed a callable (binds decides what the
+// hand-over becomes), when its symbol talks to other programs or serves
+// (its words are that program's: one is not both), or when another fact
+// already names the call. The answer is remembered per call, by what the
+// call shows, never by its line; an undecided call is unsure (launch.go).
 
-// callLevels says, by symbol place, whether its code runs at launch (the
-// walk from the seeds and the load-time roots over exact and alternative
-// calls, never into a handler through alternatives) or inside an entry's
-// handler already found (a callable a registration hands to a symbol that
-// binds an entry), as the per-call item states it.
-func (r *reader) callLevels() map[string]string {
-	calls := map[string][]atlas.SymbolCall{}
+// readCalls asks what the words of each word call become and keeps each
+// answer by its site: the entry kind, none, or "" for a call asked and not
+// decided. talks holds each symbol's decided talks answer.
+func (r *reader) readCalls(ctx context.Context, symbols []*apiSymbol, talks map[string]string) error {
+	r.callEnters, r.entering = map[sourceSite]string{}, map[string]bool{}
+	handed := map[string]bool{}
+	for _, s := range symbols {
+		handed[s.name] = s.handsCallable
+	}
+	claims := map[sourceSite][]atlas.Place{}
+	for _, place := range r.opts.Graph.Places {
+		if place.Kind == atlas.PlaceBoundary && place.Boundary != nil && place.Boundary.Source != "model" {
+			line := sourceSite{path: place.Path, line: place.LineNo}
+			claims[line] = append(claims[line], place)
+		}
+	}
+	owners := map[sourcevalue.Anchor]string{}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol != nil {
-			calls[place.ID] = place.Symbol.Calls
-		}
-	}
-	handlers := map[string]bool{}
-	for _, place := range r.opts.Graph.Places {
-		b := place.Boundary
-		if b == nil || b.Source != "fact" || b.Direction != atlas.DirectionIn || b.SubjectID == "" || r.api[b.External].binds == "" {
-			continue
-		}
-		handlers[b.SubjectID] = true
-	}
-	walk := func(roots []string) map[string]bool {
-		seen := map[string]bool{}
-		queue := []string{}
-		for _, root := range roots {
-			if !seen[root] {
-				seen[root] = true
-				queue = append(queue, root)
+			owners[sourcevalue.Anchor{Path: place.Path, Line: place.LineNo, Column: place.Symbol.Decl.Column}] = place.Symbol.Decl.Name
+			if line := (sourcevalue.Anchor{Path: place.Path, Line: place.LineNo}); owners[line] == "" {
+				owners[line] = place.Symbol.Decl.Name
 			}
 		}
-		for len(queue) > 0 {
-			current := queue[0]
-			queue = queue[1:]
-			for _, call := range calls[current] {
-				if call.Kind != string(programindex.RelationCalls) || call.Resolution != "exact" && call.Resolution != "alternatives" {
-					continue
-				}
-				for _, callee := range call.CalleeIDs {
-					if call.Resolution == "alternatives" && handlers[callee] || seen[callee] {
-						continue
-					}
-					seen[callee] = true
-					queue = append(queue, callee)
-				}
-			}
-		}
-		return seen
 	}
-	roots := append([]string(nil), r.opts.Graph.SeedDecls...)
-	for _, place := range r.opts.Graph.Places {
-		if place.Symbol == nil {
-			continue
-		}
-		decl := place.Symbol.Decl
-		language := strings.ToLower(pathLanguage(place.Path))
-		if decl.Kind == "module" && language != "c" || language == "go" && decl.Kind == "function" && decl.Name == "init" {
-			roots = append(roots, place.ID)
-		}
+	type asked struct {
+		site   sourceSite
+		fields []table.Field
 	}
-	launch := walk(roots)
-	var handlerRoots []string
-	for id := range handlers {
-		handlerRoots = append(handlerRoots, id)
-	}
-	sort.Strings(handlerRoots)
-	inside := walk(handlerRoots)
-	levels := map[string]string{}
-	for id := range calls {
-		switch {
-		case launch[id]:
-			levels[id] = "runs while the program starts, reached from its entry"
-		case inside[id]:
-			levels[id] = "runs inside the code of an entry already found"
-		default:
-			levels[id] = "neither"
-		}
-	}
-	return levels
-}
-
-// pathLanguage is a source path's language family by its extension.
-func pathLanguage(path string) string {
-	switch {
-	case strings.HasSuffix(path, ".c") || strings.HasSuffix(path, ".h"):
-		return "c"
-	case strings.HasSuffix(path, ".go"):
-		return "go"
-	}
-	return ""
-}
-
-// readCalls asks every word call of the per_call symbols what its words
-// become, and keeps each decided answer by its site.
-func (r *reader) readCalls(ctx context.Context, symbols map[string]bool) error {
-	r.callEnters = map[sourceSite]string{}
-	if len(symbols) == 0 {
-		return nil
-	}
-	levels := r.callLevels()
-	files := map[string][]byte{}
-	var rows []table.Row
-	var sites []sourceSite
-	subjects := map[string]rowSubject{}
-	seen := map[sourceSite]bool{}
+	bySymbol := map[string][]asked{}
+	files := map[string]*lines.CallFile{}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil || r.testFile(place.Parent) {
 			continue
 		}
 		decl := place.Symbol.Decl
-		var callers []string
-		for _, caller := range place.Symbol.CalledBy {
-			callers = appendUnique(callers, caller.Name)
-		}
-		sort.Strings(callers)
 		for _, call := range place.Symbol.Calls {
 			if call.Kind != string(programindex.RelationInvokesExternal) || call.API == nil || call.Line < 1 || len(call.Values) == 0 {
 				continue
 			}
 			symbol := apiName(*call.API)
+			role := r.api[symbol]
 			site := sourceSite{place.Path, call.Line, call.Column}
-			if !symbols[symbol] || seen[site] {
+			if _, seen := r.callEnters[site]; seen || handed[symbol] || role.talks != "" || role.publishes || claimedByOtherFact(claims[sourceSite{path: site.path, line: site.line}], symbol, site.column) {
 				continue
 			}
-			seen[site] = true
+			r.callEnters[site] = ""
 			in := decl.Name
 			if decl.Signature != "" {
 				in += " " + decl.Signature
@@ -154,62 +83,159 @@ func (r *reader) readCalls(ctx context.Context, symbols map[string]bool) error {
 			if text := r.sourceText(files, place.Path, call.Line, call.Column); text != "" {
 				fields = append(fields, table.Field{Name: "call", Value: text})
 			}
-			fields = append(fields, table.Field{Name: "in", Value: in})
-			if len(callers) > 0 {
-				fields = append(fields, table.Field{Name: "called_by", Value: callers})
-			}
-			fields = append(fields, table.Field{Name: "literals", Value: call.Values})
+			fields = append(fields, table.Field{Name: "in", Value: in}, table.Field{Name: "literals", Value: call.Values})
 			var arguments []string
 			for _, argument := range call.SourceArguments {
-				if argument.Origin != nil {
-					arguments = append(arguments, argument.Origin.Kind+": "+argument.Origin.Text)
+				if argument.Origin == nil {
+					continue
 				}
+				at := strconv.Itoa(argument.Position)
+				if argument.Keyword != "" {
+					at = argument.Keyword
+				}
+				arguments = append(arguments, at+": "+originText(argument.Origin, owners))
 			}
 			if len(arguments) > 0 {
 				fields = append(fields, table.Field{Name: "arguments", Value: arguments})
 			}
-			fields = append(fields, table.Field{Name: "level", Value: levels[place.ID]})
-			id := fmt.Sprintf("call%d", len(rows)+1)
-			subjects[id] = rowSubject{id: fmt.Sprintf("apicall:%s@%s:%d:%d", symbol, place.Path, call.Line, call.Column), path: place.Path, line: call.Line}
-			rows = append(rows, table.Row{ID: id, Fields: fields})
-			sites = append(sites, site)
+			if answer := talks[symbol]; answer != "" {
+				fields = append(fields, table.Field{Name: "talks", Value: answer})
+			}
+			bySymbol[symbol] = append(bySymbol[symbol], asked{site: site, fields: fields})
 		}
 	}
-	if len(rows) == 0 {
+	if len(bySymbol) == 0 {
 		return nil
 	}
-	r.opts.Stage(lines.StageAPI, fmt.Sprintf("asking %d calls of %d symbols whose words differ by call what their words become", len(rows), len(symbols)))
+	// The calls of one symbol share windows, in source order; the row IDs
+	// are request-local and name no call.
+	names := make([]string, 0, len(bySymbol))
+	for name := range bySymbol {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var groups rowGroups
+	var sites []sourceSite
+	var symbolOf []string
+	subjects := map[string]rowSubject{}
+	for _, name := range names {
+		calls := bySymbol[name]
+		sort.Slice(calls, func(i, j int) bool { return calls[i].site.compare(calls[j].site) < 0 })
+		var rows []table.Row
+		for _, call := range calls {
+			id := fmt.Sprintf("call%d", len(sites)+1)
+			subjects[id] = rowSubject{id: fmt.Sprintf("apicall:%s@%s:%d:%d", name, call.site.path, call.site.line, call.site.column), path: call.site.path, line: call.site.line}
+			rows = append(rows, table.Row{ID: id, Fields: call.fields})
+			sites = append(sites, call.site)
+			symbolOf = append(symbolOf, name)
+		}
+		groups = append(groups, rowGroup{rows: rows})
+	}
+	r.opts.Stage(lines.StageAPI, fmt.Sprintf("asking %d calls of %d outside symbols what the words each is given become", len(sites), len(names)))
 	previous := r.rowSubjects
 	r.rowSubjects = subjects
 	defer func() { r.rowSubjects = previous }()
-	answers, err := r.runTable(ctx, lines.APICall(), 4, rows)
+	answers, err := r.runTableGroups(ctx, lines.APICall(), 3, groups, nil)
 	if err != nil {
 		return err
 	}
 	decided := 0
 	for i, site := range sites {
-		answer := answers[i].answer
-		if answer == nil || answer["enters"] == "" {
-			continue
+		if answer := answers[i].answer; answer != nil && answer["enters"] != "" {
+			r.callEnters[site] = answer["enters"]
+			decided++
+			if answer["enters"] != lines.APINone {
+				r.entering[symbolOf[i]] = true
+			}
 		}
-		r.callEnters[site] = answer["enters"]
-		decided++
 	}
-	fmt.Fprintf(&r.tables, "atlas_api per call: %d of %d calls decided\n\n", decided, len(rows))
+	fmt.Fprintf(&r.tables, "atlas_api calls: %d of %d calls decided\n\n", decided, len(sites))
 	return nil
 }
 
-// entersAt is what the words of the call at a site are for a symbol's role:
-// the symbol's entry kind, or for a per_call symbol the call's own answer
-// (none is no entry); undecided says a per_call symbol's call had no
-// decided answer.
-func (r *reader) entersAt(role apiRole, path string, line, column int) (kind string, undecided bool) {
-	if !role.perCall {
-		return role.enters, false
+// claimedByOtherFact reports a call another fact boundary already names at
+// its column, or at its whole line when the fact has none: a SQL statement
+// a query call sends, a setting read, a handed callable. A registration of
+// the symbol itself that hands nothing over and has no kind yet is no
+// other fact: its words are this call's, and this call's answer decides
+// them.
+func claimedByOtherFact(facts []atlas.Place, symbol string, column int) bool {
+	for _, fact := range facts {
+		b := fact.Boundary
+		if fact.Column != 0 && fact.Column != column {
+			continue
+		}
+		if b.Source == "fact" && b.External == symbol && b.GivenKind == "" && b.Registrar == nil && !b.Handed && b.Direction != atlas.DirectionIn {
+			continue
+		}
+		return true
 	}
-	answer, ok := r.callEnters[sourceSite{path, line, column}]
+	return false
+}
+
+// originText says where an argument's value comes from as the code records
+// it, in words and without a source position: a word as written, a
+// parameter or the receiver of a declaration, a field or an element of
+// another value, what a call returns, a join or a choice of values, or the
+// code that was not followed.
+func originText(value *sourcevalue.Value, owners map[sourcevalue.Anchor]string) string {
+	of := func(owner *sourcevalue.Anchor) string {
+		if owner == nil {
+			return ""
+		}
+		name := owners[*owner]
+		if name == "" {
+			name = owners[sourcevalue.Anchor{Path: owner.Path, Line: owner.Line}]
+		}
+		if name == "" {
+			return ""
+		}
+		return " of " + name
+	}
+	parts := func(separator string) string {
+		texts := make([]string, len(value.Parts))
+		for i := range value.Parts {
+			texts[i] = originText(&value.Parts[i], owners)
+		}
+		return strings.Join(texts, separator)
+	}
+	switch value.Kind {
+	case "literal":
+		return strconv.Quote(value.Text)
+	case "parameter":
+		return strings.TrimSpace(fmt.Sprintf("parameter #%d %s", value.Position, value.Text)) + of(value.Owner)
+	case "receiver":
+		return strings.TrimSpace("receiver "+value.Text) + of(value.Owner)
+	case "field":
+		return "field " + value.Text + " of " + parts("")
+	case "index":
+		return "element " + originText(&value.Parts[1], owners) + " of " + originText(&value.Parts[0], owners)
+	case "call_result":
+		return "result of calling " + value.Text
+	case "concat":
+		return "joined: " + parts(" + ")
+	case "alternatives":
+		return "one of: " + parts(" | ")
+	case "record":
+		return "record {" + parts(", ") + "}"
+	case "field_value":
+		return value.Text + ": " + parts("")
+	}
+	if value.Text == "" {
+		return "not followed"
+	}
+	return "not followed: " + value.Text
+}
+
+// entersAt is what the words of the call at a site became: the entry kind
+// its answer chose, or nothing. undecided says the call was asked and its
+// answer was not decided; a call never asked is neither.
+func (r *reader) entersAt(path string, line, column int) (kind string, undecided bool) {
+	answer, asked := r.callEnters[sourceSite{path, line, column}]
 	switch {
-	case !ok:
+	case !asked:
+		return "", false
+	case answer == "":
 		return "", true
 	case answer == lines.APINone:
 		return "", false

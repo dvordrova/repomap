@@ -139,14 +139,13 @@ type reader struct {
 
 	symbolLine map[string]cell    // symbol place ID -> model line
 	api        map[string]apiRole // external symbol -> what it binds, publishes, talks to
-	// undecidedEnters are the outside symbols asked what their words become
-	// that got no decided answer; wordCalls what the reading made of each
-	// word call (launch.go).
-	undecidedEnters map[string]bool
-	wordCalls       []wordCallRecord
-	// callEnters are the per-call answers of per_call symbols, by call site
-	// (api_call.go).
+	// callEnters are what the words of each asked call become, by call
+	// site: an entry kind, none, or "" undecided (api_call.go); entering
+	// the outside symbols some call of which is an entry. wordCalls are
+	// what the reading made of each word call (launch.go).
 	callEnters map[sourceSite]string
+	entering   map[string]bool
+	wordCalls  []wordCallRecord
 	// storedKinds and tableKinds are the decided kinds of the kept
 	// callables and the tables of names (inputs.go).
 	storedKinds, tableKinds map[string]string

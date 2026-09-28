@@ -1,5 +1,107 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — What a call's words become is asked of each call (speed mode)
+
+- **Problem (lead, owner "пробуй"):** `enters` was decided once per outside
+  symbol from one usage example, picked in pattern-ID order. After
+  cf32f195 litestream's `strings.HasPrefix` example became
+  `strings.HasPrefix(cmd, "-")`, Jev answered `command`, and 31 false
+  inputs appeared in cmd/litestream (`http://`, `s3://`, `arn:`, `10.` …).
+  One symbol's calls differ: `strcmp(argv[i], "-h")` is an option,
+  `strcasecmp(rc->name, "monitor")` and `strings.HasPrefix(url, "s3://")`
+  are not.
+- **Change:** every call outside tests that gives an outside symbol ≥1
+  literal is asked on its own (`lines.APICall`, `repomap.atlas.enters.v1`,
+  Jev, round 3 of `atlas_api`), after its symbol's `talks`. Item: symbol,
+  declared type, the call as written (`lines.CallText`), the enclosing
+  declaration with its signature, every literal, each argument's origin in
+  words without a position (`originText`: `"http://"`, `parameter #1 u of
+  isValidHeartbeatURL`, `field Bucket of receiver c`, `element … of …`,
+  `result of calling Error`, `not followed: argv[i]`), and `talks` when
+  decided. Rows are grouped per symbol (their own windows), in source
+  order, with request-local `callN` refs; each is memoized by its fields
+  only (no line, no program), so a moved call is not re-asked
+  (`TestAWordCallMovedByAnUnrelatedEditIsNotAskedAgain`). Not asked: a
+  call whose symbol's talks is anything but none or undecided (one is not
+  both; `talksStands` and its `cell_rejected` are gone), a call of a
+  symbol handed a callable, and a call another fact names at its
+  line/column (SQL, config reads such as `getenv`, route and dispatch
+  facts); a registration of the symbol itself that hands nothing over is
+  asked, and one whose own call gives no literal is not. Removed: the
+  `.given` set (`APIGiven`, `GivenOptions`), `per_call` (`APIPerCall`, its
+  criteria section, `callLevels`, `called_by`/`level` fields),
+  `apiRole.enters`/`perCall`, `atlas.APIRole.Enters` (atlas version 19),
+  `undecidedEnters`, `per_call_undecided`. Consumers read the per-call
+  answers: `applyAPIRoles` and `bindInterpretedBoundaries` through one
+  `readWordCall` (entry, none, undecided → unsure, unnameable → unsure);
+  a wordless call of a symbol some call of which is an entry is unsure
+  `no_words`; idioms are per symbol and kind, counted against every call
+  of the symbol recorded (`TestTheLaunchEvidenceReadsEachCallsOwnAnswer`).
+  Word-given symbols join the plain talks round; their `usage` stays the
+  first word call.
+- **CallText speed:** `lineOffset` and the block-comment lexer copied the
+  rest of the file per call (`string(src[i:])`): 190 ms per call on
+  redis.c, 6 ms after; `lines.CallFile` lexes a file once for all its
+  calls (the reader's `sourceText` caches it per stage).
+- **Measured first** (scratchpad `percall/`, exact bodies the reading
+  wrote, 3 draws, margin 0.10, ≈ $0.076): every `flag.FlagSet.*` call of
+  litestream (74) `command` 3/3 (leads 0.80–1.0); Redis `strcmp(argv[i],
+  "-x")` (17) `command` 3/3 (0.32–0.62); `strings.HasPrefix` none 31/33,
+  `command` for the two `"-"` checks (Main.Run, ParseFlags; leads
+  0.24–0.30); `fmt.Errorf` (151 of 601 sampled) none 3/3; Redis
+  `strcasecmp` (66) none 3/3 for 45, `command` 3/3 for 2
+  (loadServerConfig `daemonize`, `always`), the rest near-ties among
+  loadServerConfig's settings-file keys and DEBUG sub-words; `monitor`,
+  `quit`, `exit` none. Without the `talks` field 17 of 66 `strcasecmp`
+  calls leaned `command` (≥ 1 of 2 draws) against 4 with it: kept.
+- **Re-frozen** (sha256): `entry_options.md` `f404a49b8526508b976404fa242ce0f507c4fcc31b4fe456b1ef9f750b8c694d`
+  (only the `per_call` section removed); `api_call.md`
+  `1408380f1313973e06647a29d1106e103efc50c25a4c2a744752fd23e352d69c`;
+  ask enters "What does the word or words this call is given become on
+  our map?" `3de16719…18883`; `api.md` `35e07898…75d08` and ask talks
+  `f538b957…6f2f4` unchanged.
+- **Tests:** word-given (every language: talks plus each word call asked),
+  launches, C preset (`getenv` is a config fact, not asked), Echo preset
+  (the SQL-named call is not asked), entries, memo; the fixtures of all
+  five languages already hold word calls, no fixture changed.
+  `go build ./...`, `go vet` of atlas/..., contracttest, groupindex;
+  `go test` of atlas/..., contracttest, groupindex, report, run pass but
+  the known places TestFixturePlaces and contracttest
+  TestCumulativeClojureMapOfParts / TestCumulativeCMapOfParts (e1 seeds).
+  Full `make test`/UI tests not run.
+- **Acceptance** (`make build`, ordinary runs `--no-serve --no-open` on the
+  default system cache, keys by the sed recipe; renders in
+  `redis-r2/run/latest-{redis,litestream}.html`, byte-identical to the
+  runs' report.html; headless Chromium: the Inputs folds read
+  "string.h.strcasecmp: 6 of 65 word calls declare inputs (command)",
+  no page errors):
+  - **Redis** `20260928-112613`: exit 0 in 7 s; 314 per-call questions,
+    301 decided, 13 undecided (unsure); 29 atlas_api Jev requests; warm
+    6 s, 0 live. Inputs: redis-server 98 → 104 (+6 false: loadServerConfig
+    `save`, `verbose`, `daemonize`, `always`, `everysec`, `vm-page-size`
+    answered command; C records `argv[0]` of the split config line as
+    "not followed", so the item cannot say it is not the argument vector),
+    redis-cli 100 = 100, redis-benchmark 11 = 11, redis-check-dump 0.
+  - **litestream** `20260928-112717`: exit 0 in 14 s; 1,440 per-call
+    questions over 78 symbols, 1,425 decided, 15 undecided; 135 Jev
+    requests (95 talks rows of former word-given symbols re-asked once);
+    warm 9 s, 0 live, atlas equal but budget. cmd/litestream 106 → 77: the
+    31 false `strings.HasPrefix` inputs are gone; the two `"-"` checks stay
+    (as before); MCP argument names: `mcp.WithBoolean` if_db_not_exists /
+    if_replica_exists lost, `RequireString` parallelism and `WithString`
+    path gained (near-tie territory, as in K4). Every flag input stays;
+    cmd/litestream-test 25 = 25. Unsure: 46 → 19 and 6 → 0.
+  - **Cost:** Jev 164 requests, 10.4 MB, 2.79 M input tokens ≈ $0.12;
+    DeepSeek none (everything else cached).
+- **Owner items:** glossary stays 263 terms (cached, identical to
+  104647's; why 45 → 263 after cf32f195 was not cheap to find). azblob
+  DeleteBlob at abs/replica_client.go:303 is still "S3 storage": asked
+  alone in its boundaries window (r2-w2), the closed destination catalogue
+  offered `d23 S3 storage` and no Azure entry, and the model took it; the
+  :344 DeleteBlob, asked beside its Azure siblings, answered "other: Azure
+  Blob Storage". C argument origins (`argv[0]` of a split line) would stop
+  the six settings-file keys.
+
 ## 2026-09-28 — A command built on either branch is both launches' (speed mode)
 
 - **Problem (owner):** litestream's whole map had a "Program not established"

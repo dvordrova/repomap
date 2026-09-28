@@ -444,7 +444,7 @@ func TestEveryAskedAPICellChangesTheBoundaries(t *testing.T) {
 		}
 		return strings.Join(made, "; ")
 	}
-	for _, def := range []table.Definition{lines.API(true), lines.API(false), lines.APIGiven()} {
+	for _, def := range []table.Definition{lines.API(true), lines.API(false)} {
 		for _, column := range def.Columns {
 			read := false
 			for _, base := range []table.Answer{{}, {"binds": atlas.BoundaryRequest}} {

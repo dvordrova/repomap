@@ -31,7 +31,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 21
-	Version      = 18
+	Version      = 19
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -542,11 +542,9 @@ type APIRole struct {
 	Binds     string `json:"binds,omitempty"`
 	Publishes bool   `json:"publishes,omitempty"`
 	Talks     string `json:"talks,omitempty"`
-	// Enters is what the words a call to the symbol is given become: an
-	// entry kind the model chose, made at every call outside tests that
-	// gives the symbol words and that no fact already names.
-	Enters     string `json:"enters,omitempty"`
-	Middleware bool   `json:"middleware,omitempty"`
+	// What the words a call to the symbol is given become is each call's
+	// own answer, recorded as the entries it made and the unsure calls.
+	Middleware bool `json:"middleware,omitempty"`
 }
 
 // EntryKinds are what a handed callable can become; an entry has a named
@@ -589,19 +587,20 @@ type Target struct {
 	Symbols int `json:"symbols"`
 	// Unsure are the calls outside tests that may declare an input the
 	// reading could not decide: words given to an outside symbol whose
-	// entry question was not decided, or a call to a symbol whose words are
-	// entries given no word that can name one. Idioms are, by outside
-	// symbol whose words became entries, how many of its word calls did and
-	// in which declarations. Both are the launch walk's evidence (GroupsIndex
-	// Launch); neither is an input.
+	// call's entry question was not decided, or a call giving no word that
+	// can name one to a symbol whose words are an entry at another call.
+	// Idioms are, by outside symbol and entry kind, how many of its
+	// recorded calls made entries of that kind and in which declarations.
+	// Both are the launch walk's evidence (GroupsIndex Launch); neither is
+	// an input.
 	Unsure []UnsureCall `json:"unsure,omitempty"`
 	Idioms []Idiom      `json:"idioms,omitempty"`
 }
 
 // UnsureCall is one call that may declare an input and was not decided.
-// Reason is "undecided" (the symbol's entry question had no decided
-// answer) or "no_words" (none of the words the call is given can name an
-// entry, as `add_argument(*opt.cli)`).
+// Reason is "undecided" (the call's entry question had no decided answer)
+// or "no_words" (none of the words the call is given can name an entry,
+// as `add_argument(*opt.cli)`).
 type UnsureCall struct {
 	ObjectID string `json:"object_id"`
 	Path     string `json:"path"`
@@ -612,8 +611,8 @@ type UnsureCall struct {
 }
 
 // Idiom is what one outside symbol's word calls made in a target: Entries
-// of its Calls became entries of Kind, declared in ObjectIDs. MODEL: the
-// symbol's answer made them.
+// of its Calls became entries of Kind, declared in ObjectIDs. MODEL: each
+// call's answer made them.
 type Idiom struct {
 	Symbol    string   `json:"symbol"`
 	Kind      string   `json:"kind"`

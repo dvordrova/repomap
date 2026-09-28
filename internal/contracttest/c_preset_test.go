@@ -75,15 +75,19 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	if want := []string{"kvd.h.kvCommand.proc", "pthread.h.pthread_create", "signal.h.struct sigaction", "stdlib.h.qsort"}; !slices.Equal(handed, want) {
 		t.Fatalf("registrars asked what a callable becomes = %v, want %v", handed, want)
 	}
-	// Every symbol kvd's code gives words to is asked what they become,
+	// Every call kvd's code gives words to is asked what they become,
 	// strcmp's "--symbols" among them; answered none, they make no input.
+	// A getenv call is a setting read the facts already name: not asked.
 	preset.mu.Lock()
 	entered := slices.Clone(preset.entered)
 	preset.mu.Unlock()
-	for _, symbol := range []string{"string.h.strcmp", "stdio.h.fprintf", "stdlib.h.getenv"} {
+	for _, symbol := range []string{"string.h.strcmp", "stdio.h.fprintf"} {
 		if !slices.Contains(entered, symbol) {
 			t.Fatalf("%s was not asked what its words become: %v", symbol, entered)
 		}
+	}
+	if slices.Contains(entered, "stdlib.h.getenv") {
+		t.Fatalf("a setting read the facts name was asked what its words become: %v", entered)
 	}
 	// Before its entry is decided, a word a call gives an outside symbol
 	// registers nothing in another question: the role split's and the
@@ -405,8 +409,8 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 		case "publishes":
 			return typesafetest.Choose("none"), true
 		case "enters":
-			// strcmp compares a word, fprintf prints a format, getenv reads
-			// the environment: none of kvd's word-given calls is an entry.
+			// strcmp compares a word, fprintf prints a format: none of
+			// kvd's word calls is an entry.
 			preset.mu.Lock()
 			preset.entered = append(preset.entered, symbol)
 			preset.mu.Unlock()

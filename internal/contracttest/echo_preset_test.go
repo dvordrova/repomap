@@ -240,20 +240,16 @@ func readEchoPreset(t *testing.T, provider *echoPreset) (programindex.Index, fac
 }
 
 // The query call sqlc generated gives QueryRowContext its statement, and
-// the SQL fact already names that call: even a model that took those words
-// for a command makes no entry there (nor could the statement, whose line
-// breaks name nothing). The call stays the one database boundary it is,
-// and no input stands in users.sql.go.
+// the SQL fact already names that call: its words are not asked what they
+// become, so even a model that would take them for a command makes no
+// entry there (nor could the statement, whose line breaks name nothing).
+// The call stays the one database boundary it is, and no input stands in
+// users.sql.go.
 func TestNoEntryAtACallAFactAlreadyNames(t *testing.T) {
 	provider := &echoPreset{enters: map[string]string{"database/sql.DB.QueryRowContext": "command"}}
-	_, _, result, indexes := readEchoPreset(t, provider)
-	if !provider.askedEnters["database/sql.DB.QueryRowContext"] {
-		t.Fatalf("QueryRowContext's words were not asked about: %v", provider.askedEnters)
-	}
-	for _, role := range result.Atlas.API {
-		if role.Symbol == "database/sql.DB.QueryRowContext" && role.Enters != "command" {
-			t.Fatalf("the preset's answer did not reach the role: %+v", role)
-		}
+	_, _, _, indexes := readEchoPreset(t, provider)
+	if provider.askedEnters["database/sql.DB.QueryRowContext"] {
+		t.Fatalf("the words of a call the SQL fact names were asked about: %v", provider.askedEnters)
 	}
 	for _, operation := range indexes[0].Operations {
 		if operation.Location.Path == "internal/database/sqlc/users.sql.go" {

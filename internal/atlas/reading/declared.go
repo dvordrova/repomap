@@ -2,6 +2,7 @@ package reading
 
 import (
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
@@ -102,7 +103,7 @@ func producedAnchor(value *sourcevalue.Value) *sourcevalue.Anchor {
 // markDeclaredOn records, for every incoming boundary at a call, the object
 // its call is made on, and the call that made the object as written.
 func (r *reader) markDeclaredOn() {
-	files := map[string][]byte{}
+	files := map[string]*lines.CallFile{}
 	for _, state := range r.boundaries {
 		facts := state.place.Boundary
 		if facts == nil || facts.Direction != atlas.DirectionIn || state.place.LineNo < 1 {

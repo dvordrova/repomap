@@ -1,6 +1,7 @@
 package lines
 
 import (
+	"bytes"
 	"path"
 	"strings"
 )
@@ -17,17 +18,37 @@ import (
 // line is 1-based; column is the 1-based byte of the position on its line,
 // and 0 when the adapter recorded none (the line's first token).
 func CallText(src []byte, filePath string, line, column int) string {
+	return NewCallFile(src, filePath).Text(line, column)
+}
+
+// CallFile is one file lexed once, for the calls at many of its
+// positions: lexing a large file for each call took most of a reading.
+type CallFile struct {
+	reader *callReader // nil for a language with no lexer here
+}
+
+// NewCallFile lexes one file's source for CallText.
+func NewCallFile(src []byte, filePath string) *CallFile {
 	family, known := callFamilyOf(filePath)
-	if !known || line < 1 {
+	if !known {
+		return &CallFile{}
+	}
+	c := &callReader{src: src, family: family, breaks: newlineEndsStatement(filePath), goBlocks: strings.EqualFold(path.Ext(filePath), ".go")}
+	c.tokens = lexCall(src, family)
+	c.matches, c.parents = matchGroups(c.tokens)
+	return &CallFile{reader: c}
+}
+
+// Text is CallText at a position of the file.
+func (f *CallFile) Text(line, column int) string {
+	c := f.reader
+	if c == nil || line < 1 {
 		return ""
 	}
-	offset, ok := lineOffset(src, line, column)
+	offset, ok := lineOffset(c.src, line, column)
 	if !ok {
 		return ""
 	}
-	c := callReader{src: src, family: family, breaks: newlineEndsStatement(filePath), goBlocks: strings.EqualFold(path.Ext(filePath), ".go")}
-	c.tokens = lexCall(src, family)
-	c.matches, c.parents = matchGroups(c.tokens)
 	at := tokenAt(c.tokens, offset)
 	if at < 0 {
 		return ""
@@ -36,7 +57,7 @@ func CallText(src []byte, filePath string, line, column int) string {
 	if first < 0 || last < first {
 		return ""
 	}
-	return renderTokens(src, c.tokens, first, last)
+	return renderTokens(c.src, c.tokens, first, last)
 }
 
 // callReader holds one file's tokens while CallText finds a call in them.
@@ -91,14 +112,14 @@ func newlineEndsStatement(filePath string) bool {
 func lineOffset(src []byte, line, column int) (int, bool) {
 	start := 0
 	for current := 1; current < line; current++ {
-		next := strings.IndexByte(string(src[start:]), '\n')
+		next := bytes.IndexByte(src[start:], '\n')
 		if next < 0 {
 			return 0, false
 		}
 		start += next + 1
 	}
 	end := len(src)
-	if next := strings.IndexByte(string(src[start:]), '\n'); next >= 0 {
+	if next := bytes.IndexByte(src[start:], '\n'); next >= 0 {
 		end = start + next
 	}
 	if column < 1 {
@@ -148,13 +169,13 @@ func lexCall(src []byte, family callFamily) []callToken {
 			}
 			gap = true
 		case family == cLikeFamily && c == '/' && i+1 < len(src) && src[i+1] == '*':
-			end := strings.Index(string(src[i+2:]), "*/")
+			end := bytes.Index(src[i+2:], []byte("*/"))
 			if end < 0 {
 				end = len(src)
 			} else {
 				end += i + 4
 			}
-			if strings.Contains(string(src[i:end]), "\n") {
+			if bytes.IndexByte(src[i:end], '\n') >= 0 {
 				gapNewline = true
 			}
 			gap = true
@@ -226,7 +247,7 @@ func stringEnd(src []byte, start int, family callFamily) int {
 				i++
 				continue
 			}
-			if strings.HasPrefix(string(src[i:]), closing) {
+			if bytes.HasPrefix(src[i:], []byte(closing)) {
 				return i + 3
 			}
 		}

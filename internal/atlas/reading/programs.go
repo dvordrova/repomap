@@ -39,7 +39,7 @@ func (r *reader) readPrograms(ctx context.Context) error {
 	bySymbol := make(map[string][]table.Row)
 	var symbols []string
 	var order []asked
-	files := make(map[string][]byte)
+	files := make(map[string]*lines.CallFile)
 	unnamed := 0
 	for _, id := range ids {
 		state := r.boundaries[id]

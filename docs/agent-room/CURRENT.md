@@ -106,25 +106,29 @@ never entered into or read from a repository-wide unqualified map.
   with SQL statement structure (the shared `internal/sqltext` admission, not a
   leading verb; a table filled in by `%s` or a template hole still counts). Without a model there are
   candidates, not routes; the Echo preset test is the offline acceptance.
-  Since 2026-09-28 (inputs pass 1, every language) a symbol whose calls
-  give it words is also asked `enters`, what the words become, from the one
-  entry criteria file every entry question reads; a call given words to a
-  symbol whose words are an entry is that entry, unless a fact already
-  names the call. Such an entry, like a value handed over, has its handler
-  not established (`handler_unknown`): declared in its caller's part, with
-  no subject, reach or phase, no arrow into a part, named by its words. The
-  outside symbols' `usage` is the call as written, and each symbol's answer
-  is remembered on its own, an uncertain one as undecided. Every language
-  has this (S2a); C's words compared with the argument vector, tables of
-  names and callables its own functions keep wait for the owner's answer
-  on the constitution's registration sentence (pass 2); what each language
-  does not have yet is listed in its contract. The entry criteria, the api
-  prompt and the asks are frozen at their 2026-09-28 digests (CHANGELOG).
+  Since 2026-09-28 (inputs pass 1, every language; per call since the
+  per-call change) each call outside tests that gives an outside symbol a
+  word is asked `enters` on its own, what the words become
+  (`repomap.atlas.enters.v1`: the symbol, the call as written, its
+  declaration, every literal, where each argument comes from, the
+  symbol's talks answer), from the one entry criteria file every entry
+  question reads, after its symbol's `talks`; a call whose symbol talks to
+  other programs or serves, a call of a symbol handed a callable and a call
+  another fact names are not asked. A call answered an entry kind is that
+  entry. Such an entry, like a value handed over, has its handler not
+  established (`handler_unknown`): declared in its caller's part, with no
+  subject, reach or phase, no arrow into a part, named by its words. The
+  outside symbols' `usage` is the call as written; each symbol's answer and
+  each call's are remembered on their own by what they show (never a
+  line), an uncertain one as undecided. Every language has this (S2a);
+  what each language does not have yet is listed in its contract. The entry
+  criteria, the api prompts and the asks are frozen at their digests
+  (CHANGELOG; entry criteria re-frozen when `per_call` went).
   Since 2026-09-28 (runs another program) `talks` offers `runs_program`: a
   call that starts another program is one outgoing boundary per launching
   call (a call on its result folds into it), Jev chooses per call which of
-  its words names the program (`atlas_program`), and an entry kind beside
-  any talks answer but none is refused. dynamic_execution no longer names
+  its words names the program (`atlas_program`), and no call of a symbol
+  that talks to other programs is asked what its words become. dynamic_execution no longer names
   process launches (the constitution's example list still does: owner).
 - **Map of parts (2026-09-25, owner's proxy spec; the owner's open questions
   1–7 of that spec still stand):** one DeepSeek request per target groups the
@@ -360,9 +364,9 @@ never entered into or read from a repository-wide unqualified map.
   the seeds and load-time roots (Go init and package variables, module bodies
   outside C) with found / unsure / could not look inside / nothing per
   function, shown only in the Inputs reading's fold; words only an input's
-  handler checks are its sub-arguments, never tiles. `enters` gains
-  `per_call` (each word call then asked in its context; no Redis or
-  litestream symbol is answered so) and every literal is sent. C: a table's
+  handler checks are its sub-arguments, never tiles. `enters` is asked
+  of each word call on its own (no symbol-level answer, no `per_call`),
+  and every literal is sent. C: a table's
   rows that store no function and a callable the program's own function
   keeps are asked once each (atlas_inputs); an accepted table is one
   catalogue "looked up in" its readers; a table row names the peer program's
@@ -435,6 +439,7 @@ There are no old-format readers or manually rewritten seals.
 | litestream v24, inputs pass 1 (2026-09-28) | First run (c9ca55bd) exit 0 in 130 s (36 atlas_api Jev windows; boundaries, core, joints, publish, glossary and orientation re-asked once); at 28a57619 11 s with one boundaries window live (the re-worded registrations' names), warm 9 s with 0 live, report.json identical but for `timing`, render byte-identical. cmd/litestream 33 → 93 inputs (the 14 `X.Usage` commands and 3 errgroup goroutines leave by the merged criteria; its FlagSet options, flag-set names and 7 MCP tool names arrive with their handler not established, and `svc.Run`, re-asked with its call as usage, no longer serves, so the Windows service registration is an extension entry instead of a listener), cmd/litestream-test 6 → 34. Misses for the owner: `exec.CommandContext` answered `command` (12 calls launching `litestream` subprocesses, 10 inputs), `flag.NewFlagSet` `command` (20 flag-set names), `setuptools.Extension` `extension` (1); MCP tool names duplicate their AddTool inputs. Arrows at rest 16 = 16, 3 → 2. |
 | Runs another program (2026-09-28) | `runs_program` talks outcome, per-call `atlas_program` Jev question, entry refused beside any talks but none. Redis 17.7 s / warm 15.3 s 0 live, inputs unchanged; litestream 41.7 s / warm 8.3 s 0 live, launch inputs 11 → 0, `litestream` launched ×9 (cmd/litestream MCP) and ×3 (litestream-test), 4 launches not established; repomap self (`cmd/repomap`, cold) git ×4, go ×2, clj-kondo, python3, 2 named at run time, 8 not established. Own-executable links not done (joints pair two boundaries). Full make test/ui tests not run. |
 | Inputs: catalogues, launch, C tables, peers, outer inputs (2026-09-28, speed mode) | Default system cache, no `cache clear`, tests owed (scratchpad `impl/cleanup-todo.md`). Redis exit 0 in 20.8 s / warm 19.6 s, 0 live: redis-server's entry part holds main; redis-cli 6 options in parseOptions's catalogue and 94 cmdTable requests "looked up in lookupCommand, called from cliSendCommand :311, main :522", 91 of them naming redis-server's input (model match, no arrow); acceptHandler request and serverCron scheduled; GET names both as outer inputs with their registration hops. litestream exit 0 in 29.7 s (22 Jev windows live) / warm 8.8 s 0 live: one catalogue per FlagSet, registerConfigFlag called from 6 Runs, 75 inputs (115 before). repomap self 104.9 s, 36 inputs in 5 catalogues. freqtrade cold 430 s: its subcommands are unresolved calls (Python adapter gap), 0 commands. Headless look without page errors. |
+| `enters` per call (2026-09-28, speed mode) | Default system cache. Redis exit 0 in 7 s (314 per-call questions, 301 decided; 29 atlas_api Jev requests), warm 6 s 0 live: inputs server 98 → 104 (+6 settings-file keys of loadServerConfig answered command: C records `argv[0]` as not followed), cli 100, benchmark 11 unchanged. litestream exit 0 in 14 s (1,440 per-call questions, 1,425 decided; 135 requests), warm 9 s 0 live: cmd/litestream 106 → 77 (31 `strings.HasPrefix` words gone; `-` twice stays; MCP argument names ±2), cmd/litestream-test 25 unchanged, every flag kept. Jev ≈ $0.12 runs + $0.08 measurement. |
 | Launch on either branch (2026-09-28, speed mode) | Go φ → `alternatives` in edge order (a join expanded once per value); the launch fold takes a receiver all of whose alternatives are launches. litestream exit 0 in 1m48s on the default cache: cmd/litestream-test's CombinedOutput folds into both `litestream` launches (not established 1 → 0), cmd/litestream 2 and s3_mock 1 unchanged (no word). Re-asks drifted: `strings.HasPrefix` answered `command` (31 false inputs in cmd/litestream), azblob named "S3 storage", glossary 263 terms. Python and JSTS give `unknown` (missing equivalents). |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. The 2026-09-28 cold run completed (430 s) with the orientation refused by context size. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |

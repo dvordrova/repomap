@@ -33,7 +33,7 @@ func storedKey(b *atlas.BoundaryFacts) string {
 // readInputs asks the stored and table questions, each over its own rows.
 func (r *reader) readInputs(ctx context.Context) error {
 	r.storedKinds, r.tableKinds = map[string]string{}, map[string]string{}
-	files := map[string][]byte{}
+	files := map[string]*lines.CallFile{}
 	// Kept callables, grouped by registrar and callable.
 	var storedRows []table.Row
 	var storedKeys []string

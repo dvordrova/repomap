@@ -316,10 +316,10 @@ The original AST call site, result identity, positional/keyword arguments and ca
 
 ## Inputs a call's words declare, and what Python does not have yet
 
-A call of an outside symbol given words asks that symbol what they become
-(READING, the `atlas_api` table's third set), with `result_receives`, the
-calls made on what the call returns. The fixture's
-`src/fixture_app/tool_cli.py` asks `argparse.ArgumentParser`
+A call of an outside symbol given words is asked on its own what they
+become (READING, the `atlas_api` per-call question), beside its symbol's
+row with `result_receives`, the calls made on what the call returns. The
+fixture's `src/fixture_app/tool_cli.py` asks `argparse.ArgumentParser`
 (`add_argument ×1`, `add_subparsers ×1`), `add_argument`,
 `add_subparsers` (`add_parser ×1`) and `add_parser`; `set_defaults(func=…)`
 hands a callable and is asked what it becomes. A subcommand named by one

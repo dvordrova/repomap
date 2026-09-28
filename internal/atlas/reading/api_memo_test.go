@@ -78,25 +78,33 @@ func apiReader(t *testing.T, cache string, places []atlas.Place, categorizer llm
 }
 
 // asking records every api question the categorizer is asked, by symbol,
-// and answers talks from verdicts (none when a symbol has no verdict).
+// and answers a symbol's questions from verdicts (none when a symbol has
+// no verdict). A call asked what its words become is recorded in calls as
+// "symbol talks=answer" and answered none.
 type asking struct {
 	mu       sync.Mutex
 	usage    map[string]string
 	asked    []string
+	calls    []string
 	verdicts map[string]llm.Verdict
 }
 
 func (a *asking) categorizer() *typesafetest.Categorizer {
 	return &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
 		symbol, _ := question.Item["symbol"].(string)
-		usage, _ := question.Item["usage"].(string)
+		column := key[strings.LastIndex(key, "|")+1:]
 		a.mu.Lock()
 		defer a.mu.Unlock()
+		a.asked = append(a.asked, column+" "+symbol)
+		if column == "enters" {
+			talks, _ := question.Item["talks"].(string)
+			a.calls = append(a.calls, symbol+" talks="+talks)
+			return typesafetest.Choose(lines.APINone), true
+		}
 		if a.usage == nil {
 			a.usage = map[string]string{}
 		}
-		a.usage[symbol] = usage
-		a.asked = append(a.asked, key[strings.LastIndex(key, "|")+1:]+" "+symbol)
+		a.usage[symbol], _ = question.Item["usage"].(string)
 		if verdict, ok := a.verdicts[symbol]; ok {
 			return verdict, true
 		}
@@ -121,10 +129,10 @@ func TestAnOutsideSymbolsUsageIsItsCallNotItsLine(t *testing.T) {
 	}
 }
 
-// Each outside symbol's answer is remembered on its own, an uncertain one
-// among them: a warm reading of the same symbols asks the categorizer
-// nothing, and the symbol it could not decide stays undecided rather than
-// being drawn again.
+// Each outside symbol's answer, and each word call's, is remembered on its
+// own, an uncertain one among them: a warm reading of the same symbols
+// asks the categorizer nothing, and the symbol it could not decide stays
+// undecided rather than being drawn again.
 func TestAWarmAtlasAPIRereadMakesNoLiveCall(t *testing.T) {
 	cache := t.TempDir()
 	answers := &asking{verdicts: map[string]llm.Verdict{
@@ -151,14 +159,15 @@ func TestAWarmAtlasAPIRereadMakesNoLiveCall(t *testing.T) {
 	if fmt.Sprint(warm.apiRoles()) != fmt.Sprint(first.apiRoles()) {
 		t.Fatalf("the warm reading changed the roles: %+v, then %+v", first.apiRoles(), warm.apiRoles())
 	}
-	if use := warm.uses[lines.StageAPI]; use == nil || use.Reused != 3 || use.Live != 0 {
-		t.Fatalf("the warm reading did not reuse all three symbols: %+v", use)
+	// Three symbols and the two word calls beside no talking: accept serves.
+	if use := warm.uses[lines.StageAPI]; use == nil || use.Reused != 5 || use.Live != 0 {
+		t.Fatalf("the warm reading did not reuse all three symbols and two calls: %+v", use)
 	}
 }
 
-// A new call of a symbol not asked before asks that symbol alone: every
-// other symbol's answer is remembered by its own evidence, whatever row
-// its symbol takes in the next request.
+// A new call of a symbol not asked before asks that symbol and that call
+// alone: every other symbol's and call's answer is remembered by its own
+// evidence, whatever row it takes in the next request.
 func TestAtlasAPIAsksOnlyTheSymbolANewCallAdds(t *testing.T) {
 	cache := t.TempDir()
 	answers := &asking{}
@@ -175,6 +184,32 @@ func TestAtlasAPIAsksOnlyTheSymbolANewCallAdds(t *testing.T) {
 	slices.Sort(answers.asked)
 	if !slices.Equal(answers.asked, []string{"enters stdio.h.printf", "talks stdio.h.printf"}) {
 		t.Fatalf("a new call asked %v, want only its symbol", answers.asked)
+	}
+}
+
+// A call's answer is remembered by what the call shows, never by its line:
+// the same calls moved down by an edit above them ask nothing again.
+func TestAWordCallMovedByAnUnrelatedEditIsNotAskedAgain(t *testing.T) {
+	cache := t.TempDir()
+	answers := &asking{}
+	calls := []atlas.SymbolCall{apiCall(t, "string.h", "strcmp", "strcmp", "b"), apiCall(t, "stdio.h", "printf", "printf", "%s\n")}
+	if err := apiReader(t, cache, apiGraph(calls...), answers.categorizer()).readAPI(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(answers.calls) != 2 {
+		t.Fatalf("the word calls asked = %v, want both", answers.calls)
+	}
+	answers.asked = nil
+	for i := range calls {
+		calls[i].Line++
+	}
+	moved := apiReader(t, cache, apiGraph(calls...), answers.categorizer())
+	moved.opts.ReadSource = func(string) ([]byte, error) { return []byte("\n" + apiSource), nil }
+	if err := moved.readAPI(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(answers.asked) != 0 || len(moved.callEnters) != 2 {
+		t.Fatalf("moved calls asked %v, answered %v", answers.asked, moved.callEnters)
 	}
 }
 
