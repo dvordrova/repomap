@@ -1,6 +1,6 @@
 # Current product decision
 
-Status: active living ADR. Updated: 2026-09-28.
+Status: active living ADR. Updated: 2026-09-29.
 
 [CONSTITUTION](../CONSTITUTION.md) takes precedence. This page records the
 current decision and acceptance state; [AGENTS](../../AGENTS.md) routes work to
@@ -248,6 +248,15 @@ never entered into or read from a repository-wide unqualified map.
   the model's pipeline order (GroupsIndex containers carry no position; they
   sort by value), and a part's inside showing a dozen of hundreds of
   declarations.
+- **The page needs JavaScript (2026-09-29, owner decision "b"):** the page
+  is one self-contained HTML file whose data holds every answer, each fact
+  once; the script reads it. Nothing the reading column renders from the
+  data is printed again (no part cards, connection rows, source index,
+  input catalogue rows, state changes or static drawing; glossary files
+  written when opened); a `<noscript>` line says so. The page data is
+  written compactly and read back exactly (REPORT). A function reads as its
+  flow, its calls in written order grouped by part, helper calls behind one
+  toggle; an input opens at how a request reaches it (REPORT).
 - **Decoders (2026-09-26, owner: "валидаторы и строгие декодеры нам уже 30
   дней палки в колеса вставляют"):** the one-time identical-bytes resample is
   deleted; a decoder refuses only what is wrong, at the smallest scope, and an
@@ -453,6 +462,7 @@ There are no old-format readers or manually rewritten seals.
 | Repair pass after the speed-mode sequence (2026-09-28) | At 4fb25a6a: `make test`, `make vet`, `make ui-test` (131) and `make ui-visual-test` (63 passed, the 5 real-run specs skipped) pass; the Go runs used a `-overlay` restoring the Go SDK's `slices.go`, into which text had been typed (CHANGELOG). Fixture tests for every step of the inputs sequence, each rule's test failing when the rule is reverted (47 rules). Redis on the default cache: `make build` binary, exit 0 in 14.5 s and warm 6.7 s, 0 live calls both, report.json identical but for `timing` (and to the 12:57 run), one common manifest/report JSON and report.html for four programs; "could not look inside" now lists aeProcessEvents's calls through rfileProc/wfileProc. The C fixture on a scratch cache: cold 91 live calls in 24 s, warm 0 live in 3 s, `cache clear` exit 0, then 79 live again; the real models answer --symbols command, port and dbfilename settings, acceptHandler request, and misjudge staticsyms.h's symsTable rows as requests. The `REPOMAP_REAL_RUN` specs on that Redis run fail 2 of 3 (breadcrumb after a part click; two connection cards open at 1280×800), UI. |
 | C field reads and writes (2026-09-29) | ProgramIndex 20: each C read or write of a repository record's field is a `reads`/`writes` relation to the field with its `field_path` (C), carried as GroupsIndex edges and the places graph's `fields`; no model request reads them. No-model redis-server: 3,088 field accesses of 7,249 relations; `server.masterhost` written by initServerConfig, loadServerConfig and slaveofCommand ×2, read by genRedisInfoString ×3, slaveofCommand ×4 and syncWithMaster; `server.replstate` written by initServerConfig, loadServerConfig, freeClient, syncWithMaster and slaveofCommand ×2, read by serverCron and genRedisInfoString; `redisDb.expires` written only by initServer (as `server.db.expires`), read by 12 functions (deleteKey, expireIfNeeded, serverCron, …). Go, JS/TS and Clojure record no field writes (GO, JSTS, CLOJURE). Saved runs from ProgramIndex 19 no longer render. |
 | freqtrade subcommands, no model (2026-09-29) | A Python field stored once from a call carries it (PYTHON): `self.parser.add_subparsers(...)` is argparse's, all 34 `add_parser` subcommands are exact word-given calls, each joined by its result to the `set_defaults(func=…)` handing its handler over; an online run has not confirmed the inputs yet. |
+| Report batch, "b", compaction and flow (2026-09-29) | Runs at 68d6d4c5 on the default cache, rendered at 656e8a16: Redis exit 0 in 11 s (0 live), 28.96 → 4.27 MB; litestream v24 exit 0 in 74 s, 9.23 → 3.92 MB; freqtrade exit 0 in 319 s (orientation refused by context size), 46.54 → 9.30 MB; self-snap exit 0 in 124 s, 37.34 → 9.72 MB. `make test`, `make vet`, `make ui-test`, `make ui-visual-test` pass; headless walks without page errors (CHANGELOG). |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. The 2026-09-28 cold run completed (430 s) with the orientation refused by context size. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 

@@ -1,5 +1,66 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Report batch: reading fixes, the page needs JavaScript ("b"), compact page data, the flow
+
+- **Why:** the benchmark (`results-v2.md`), the blind judge and the owner's
+  screenshots (items 1–16), the owner-approved flow v2 (17), the owner's
+  page-size decision "b" of 2026-09-29 (18: the no-script requirement is
+  dropped, the page's data holds every answer and the page needs
+  JavaScript) and the page-data compaction (19).
+- **Reading (1–16):** plaques on the frame border; a declaration's code
+  link covers its lines and a relation links its own line, the author's
+  comment inline; a declaration two programs hold lists every program's
+  callers by program and says "Not called in …" (its tile quiet); a call
+  leaving its program is read from each program's own code ("redis-cli:
+  cliConnect → anetTcpConnect → anetTcpGenericConnect ⇢ redis-server:
+  acceptHandler → anetAccept"), an outside endpoint's "outgoing"; Main
+  flow at the top with clickable steps; navigation state (leave the input
+  path with Back, remembered folds, Expand all, counts landing on their
+  section, one level per pinch, whole framing); a part reads its contents
+  first, file by file, a fan-out caller in one line; the component's
+  outline and the home's programs table with the files each is built
+  from; unanalysed code named with language and lines (`test-redis.tcl`,
+  Tcl, 2 083 lines; facts v5); a directive's compared values nested under
+  it (redis-server 30 settings); requests before scheduled before
+  continuous; the registration as written and a dispatcher's filter; term
+  cards on a click or a 600 ms pause; junk commands gone (redis-server 0
+  commands); a zoomed part is the looked-at frame and the column follows.
+- **"b" (224bc749, 656e8a16):** no printed part cards, connection rows,
+  source index, input catalogue rows, state changes or static drawing; a
+  glossary term's files are written from the data when opened; one
+  `<noscript>` line. CONSTITUTION and REPORT state the rule once.
+- **Compaction (ca2f9386):** link its place says → 1, a declaration's code
+  link → its last line, a call's ends as declaration indices with its
+  words dropped when the names say them, a tile's declaration by index,
+  a reading's call kind by default, repeated parts once in `shared`; the
+  script reads every value back exactly (tested on GitHub and GitLab).
+- **Flow (f76ff625):** a function's calls in written order grouped by part,
+  opening in place, helper calls behind one toggle (helper mark and a part
+  most parts call, or the caller's own), library calls, declarations no
+  part holds kept with their flows; an input opens at how a request
+  reaches it (chains Go builds from the dispatch site's outer inputs),
+  other ways folded, what the handler does, who sends it.
+- **Sizes (the same saved runs rendered before "b" at 9658776e and at
+  656e8a16):** Redis 1.3.6 28.96 MB → 4.27 MB (rm-page-data 8.30 → 2.04 MB,
+  flows included); freqtrade 46.54 → 9.30 MB (11.41 → 5.89 MB); litestream
+  v24 9.23 → 3.92 MB (1.37 → 1.25 MB); repomap (self-snap) 37.34 → 9.72 MB
+  (9.49 → 7.24 MB). The earlier baselines before this batch were Redis
+  16.62 MB and freqtrade 54.33 MB (older runs).
+- **Final ordinary runs (68d6d4c5, default cache, no `--debug-dir`, no
+  `cache clear`):** Redis exit 0 in 11 s (0 live calls); litestream v24
+  exit 0 in 74 s (orientation and glossary asked again after facts v5);
+  freqtrade exit 0 in 319 s (atlas_api 201, boundaries 122 live; the
+  orientation refused by context size at every packing, as before);
+  self-snap exit 0 in 124 s. Rendered with 656e8a16 into
+  `latest-{redis,litestream,freqtrade,repomap}.html`; headless walks show
+  no page errors.
+- **Verified:** `make test` and `make vet` (package parallelism 2),
+  `make ui-test` (134), `make ui-visual-test` (64 passed, 6 real-run specs
+  skipped).
+- **Open:** `lookupKeyRead` stays in no part (a near-tie placement, the
+  owner's pending decision); the flow shows it as a plain name with its own
+  flow. JS/TS has no test holding a registration as written (JSTS).
+
 ## 2026-09-29 — Python fields stored once from a call (freqtrade's subcommands)
 
 - **Why:** freqtrade builds its subcommands on `self.parser =
