@@ -259,7 +259,15 @@ function rmDeclView(ctx,node,data,concept){
     own[pair[0]].forEach(function(at){var item=rmEl('li');item.appendChild(rmDeclName(data.decls[at],rmCallableName(data.decls[at]),ctx.goDecl(data.decls[at]),data.decls[at].at));list.appendChild(item);});
     line.appendChild(list);view.appendChild(line);
   });
-  var callees=side(own.callees,variable?'Uses':'Calls','out');if(callees)view.appendChild(callees);
+  // A function's calls read as its flow, in the order they are written
+  // (32-flow.js); what else it relates to stays by part.
+  var flowed=(own.flow||[]).length>0,callKinds={calls:1,passes_callback:1,executes:1,invokes_external:1};
+  if(flowed){
+    var flow=rmEl('section','map-reading-flow'),headline=rmEl('div','map-flow-headline');headline.appendChild(rmFlowToggle(null));
+    flow.append(headline,rmFlowTree(ctx,data,own));view.appendChild(flow);
+  }
+  var rest=flowed?(own.callees||[]).map(function(group){return Object.assign({},group,{decls:group.decls.filter(function(end){return !callKinds[end.kind];})});}).filter(function(group){return group.decls.length;}):own.callees;
+  var callees=side(rest,variable?'Uses':'Calls','out');if(callees)view.appendChild(callees);
   if((own.uses||[]).length){
     var uses=rmEl('section','map-reading-side');uses.appendChild(rmEl('h6','',rmT('Uses variables')));
     var list=rmEl('ul','map-reading-ends');
@@ -437,13 +445,17 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   // reading that declaration and showing it on the canvas.
   var flow=details.querySelector(':scope>.component-flow');
   if(flow){
-    var steps=section(rmT('Main flow'),flow.querySelectorAll(':scope>ol>li').length,Array.from(flow.querySelectorAll(':scope>.flow-title,:scope>p.meta,:scope>ol')),true,place);
+    var steps=section(rmT('Main flow'),0,Array.from(flow.querySelectorAll(':scope>.flow-title,:scope>p.meta,:scope>ol')),true,place);
+    // Each step opens in place to its code flow (32-flow.js), the model's
+    // sentence kept in its style above it.
+    var toggle=rmEl('div','map-flow-headline');toggle.appendChild(rmFlowToggle(null));steps.insertBefore(toggle,steps.children[1]||null);
     steps.querySelectorAll('li[data-step-part]').forEach(function(step){
       var part=ctx.nodeByHref(step.dataset.stepPart),code=step.querySelector('.flow-what>code');
       if(!part||!code)return;
       var name=rmEl('button','map-flow-step-name',code.textContent);name.type='button';
       name.addEventListener('click',function(){ctx.readDeclIn(part,rmPage.link(step.dataset.stepKey));});
       code.replaceChildren(name);
+      rmFlowStep(ctx,step,part,rmPage.link(step.dataset.stepKey));
     });
   }
   // Its areas and parts, each a name that reads it, with its description on

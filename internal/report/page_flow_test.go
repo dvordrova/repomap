@@ -1,0 +1,179 @@
+package report
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
+)
+
+// flowFixture is a small server: serverCron in its own part calls, in the
+// order they are written, a logger in a part most parts call, a resize of
+// its own part, a helper of its own part, a library's fork, a save helper
+// of another part, a lookup no part holds, and one of two handlers at a
+// dispatch site. The slice holds the calls out of their written order.
+func flowFixture() (*pageBuilder, groupindex.Index) {
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "redis.c", Line: line, Column: 5}
+	}
+	objects := map[string]*groupindex.ObjectFacts{}
+	helper := map[string]bool{"log": true, "closeClients": true, "save": true}
+	builder := &pageBuilder{subjects: map[string]subjectRef{}, groupTitles: map[groupindex.Endpoint]string{}, byProgram: map[string]*pageSection{"t1": {ID: "t1", ShortLabel: "redis-server"}},
+		links: pageLinks{repositoryURL: "https://github.com/o/r", blobPrefix: "/blob/", revision: "abc"}, data: &ReportData{ProgramPortfolio: &ProgramPortfolio{}}}
+	add := func(id, name string, line int) {
+		objects[id] = &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction, Location: at(line)}
+		subject := groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: objects[id]}
+		if helper[id] {
+			subject.Interpretation = &groupindex.Interpretation{Helper: true}
+		}
+		builder.subjects[subjectKey("t1", id)] = subjectRef{programTargetID: "t1", subject: subject}
+	}
+	for id, place := range map[string]struct {
+		name string
+		line int
+	}{"cron": {"serverCron", 1250}, "resize": {"tryResizeHashTables", 1180}, "closeClients": {"closeTimedoutClients", 1200}, "log": {"redisLog", 100},
+		"save": {"rdbSaveBackground", 3000}, "lookup": {"lookupKeyRead", 900}, "h1": {"getCommand", 4000}, "h2": {"setCommand", 4100}, "x4": {"dictFind", 50}} {
+		add(id, place.name, place.line)
+	}
+	builder.subjects[subjectKey("t1", "fork")] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: "fork", Kind: groupindex.SubjectObject,
+		Object: &groupindex.ObjectFacts{Name: "unistd.h.fork", Kind: programindex.ObjectExternalSymbol, External: &programindex.ExternalSymbol{PackagePath: "unistd.h", Name: "fork"}}}}
+	call := func(from, to string, line int, relation string, kind programindex.RelationKind, resolution programindex.Resolution) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationID: relation, RelationKind: kind, Resolution: resolution, Location: at(line)}
+	}
+	exact := func(from, to string, line int) groupindex.StructuralEdge {
+		return call(from, to, line, from+"-"+to+"-"+fmt.Sprint(line), programindex.RelationCalls, programindex.ResolutionExact)
+	}
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Groups: []groupindex.Group{
+		{ID: "g1", Title: "Server lifecycle and cron", MemberSubjectIDs: []string{"cron", "resize", "closeClients"}},
+		{ID: "g2", Title: "Server core state", MemberSubjectIDs: []string{"log"}},
+		{ID: "g3", Title: "Persistence", MemberSubjectIDs: []string{"save"}},
+		{ID: "g4", Title: "Core data structures", MemberSubjectIDs: []string{"x4"}},
+		{ID: "g5", Title: "String commands", MemberSubjectIDs: []string{"h1", "h2"}},
+		{ID: "g6", Title: "Debug", MemberSubjectIDs: []string{}},
+	}, StructuralEdges: []groupindex.StructuralEdge{
+		exact("cron", "save", 1322), exact("cron", "log", 1288), exact("cron", "resize", 1284), exact("cron", "log", 1273),
+		call("cron", "fork", 1300, "fork", programindex.RelationInvokesExternal, programindex.ResolutionExact),
+		exact("cron", "closeClients", 1297), exact("cron", "lookup", 1350),
+		call("cron", "h2", 1360, "dispatch", programindex.RelationCalls, programindex.ResolutionAlternatives),
+		call("cron", "h1", 1360, "dispatch", programindex.RelationCalls, programindex.ResolutionAlternatives),
+		exact("save", "log", 3010), exact("h1", "log", 4010), exact("x4", "log", 60),
+		exact("lookup", "log", 905), exact("lookup", "x4", 906),
+	}}
+	for _, group := range index.Groups {
+		builder.groupTitles[groupindex.Endpoint{TargetID: "t1", GroupID: group.ID}] = group.Title
+	}
+	builder.indexes = []groupindex.Index{index}
+	return builder, index
+}
+
+// A function's flow is its calls in the order they are written, each
+// callee once with every place it is called; a dispatch site is one call;
+// a library's call is named; a helper folds when its part is one most
+// parts call into or the caller's own, and stays when its part says what
+// it is for; a declaration no part holds keeps its call and its own flow.
+func TestAFunctionsFlowIsItsCallsInWrittenOrder(t *testing.T) {
+	builder, index := flowFixture()
+	raw := builder.groupReading(index, index.Groups[0], pageGroup{ID: "t1-g1", Title: index.Groups[0].Title})
+	var reading pageGroupReading
+	if err := json.Unmarshal([]byte(raw), &reading); err != nil {
+		t.Fatal(err)
+	}
+	flowOf := func(name string) []string {
+		for _, own := range reading.Own {
+			if reading.Decls[own.Decl].Name != name {
+				continue
+			}
+			var said []string
+			for _, call := range own.Flow {
+				line := ""
+				switch {
+				case call.Decl != nil:
+					line = reading.Decls[*call.Decl].Name
+					if reading.Decls[*call.Decl].Part == "" {
+						line += " (no part)"
+					}
+				case call.One != nil:
+					var names []string
+					for _, one := range call.One {
+						names = append(names, reading.Decls[one].Name)
+					}
+					line = "one of " + strings.Join(names, ", ")
+				default:
+					line = call.Name + " from " + call.Lib
+				}
+				if call.Helper {
+					line += " [helper]"
+				}
+				var sites []string
+				for _, site := range call.Sites {
+					sites = append(sites, strings.TrimPrefix(site.At, "redis.c:"))
+				}
+				said = append(said, line+" @"+strings.Join(sites, ","))
+			}
+			return said
+		}
+		return nil
+	}
+	want := []string{
+		"redisLog [helper] @1273,1288", "tryResizeHashTables @1284", "closeTimedoutClients [helper] @1297", "fork from unistd.h @1300",
+		"rdbSaveBackground @1322", "lookupKeyRead (no part) @1350", "one of setCommand, getCommand @1360",
+	}
+	if got := flowOf("serverCron"); !slices.Equal(got, want) {
+		t.Fatalf("serverCron's flow = %q\nwant %q", got, want)
+	}
+	// The declaration no part holds is read where it is called: no call is
+	// dropped (lookupKeyRead → lookupKey had been lost with it).
+	if got := flowOf("lookupKeyRead"); !slices.Equal(got, []string{"redisLog [helper] @905", "dictFind @906"}) {
+		t.Fatalf("lookupKeyRead's flow = %q", got)
+	}
+}
+
+// How a request reaches a dispatch site reads as chains in call order, one
+// per outer input by its shortest route through the callable it hands over,
+// requests first; the callable is marked with how it is handed over, and
+// another way names where it leaves the first: GET arrives from
+// acceptHandler through readQueryFromClient, and from serverCron through
+// syncWithMaster's createClient.
+func TestARequestsWaysInAreChainsInCallOrder(t *testing.T) {
+	names := []string{"acceptHandler", "serverCron", "syncWithMaster", "createClient", "readQueryFromClient", "freeClient", "processInputBuffer", "processCommand", "call"}
+	builder := &pageBuilder{subjects: map[string]subjectRef{}}
+	for _, name := range names {
+		builder.subjects[subjectKey("t1", name)] = subjectRef{subject: groupindex.Subject{ID: name, Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction}}}
+	}
+	var edges []groupindex.StructuralEdge
+	edge := func(from, to string) int {
+		edges = append(edges, groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls})
+		return len(edges) - 1
+	}
+	route := []int{edge("readQueryFromClient", "freeClient"), edge("readQueryFromClient", "processInputBuffer"), edge("processInputBuffer", "processCommand"),
+		edge("freeClient", "processInputBuffer"), edge("processCommand", "call")}
+	handOver := edge("createClient", "readQueryFromClient")
+	index := &groupindex.Index{Target: programindex.Target{ID: "t1"}, Operations: []groupindex.Operation{
+		{ID: "cron", Kind: "scheduled", SubjectID: "serverCron"}, {ID: "accept", Kind: "request", SubjectID: "acceptHandler"}}}
+	site := groupindex.DispatchSite{FromSubjectID: "call", Outer: []groupindex.OuterInput{
+		{OperationID: "cron", Registered: "readQueryFromClient", HandOver: handOver, Registering: []int{edge("serverCron", "syncWithMaster"), edge("syncWithMaster", "createClient")}, Edges: route},
+		{OperationID: "accept", Registered: "readQueryFromClient", HandOver: handOver, Registering: []int{edge("acceptHandler", "createClient")}, Edges: route},
+	}}
+	index.StructuralEdges = edges
+	decls := builder.pathDecls("t1", func(string) string { return "" })
+	ways := builder.waysIn(index, site, decls, func(id string) string { return "t1-" + id }, map[string]string{"t1-cron": "scheduled", "t1-accept": "request"})
+	markWaysFrom(ways)
+	said := func(list []int) string {
+		var out []string
+		for _, at := range list {
+			out = append(out, decls.list[at].Name)
+		}
+		return strings.Join(out, " → ")
+	}
+	if len(ways) != 2 || ways[0].Input != "t1-accept" || said(ways[0].Chain) != "acceptHandler → readQueryFromClient → processInputBuffer → processCommand → call" ||
+		ways[0].Hop != 1 || said(ways[0].By) != "acceptHandler → createClient" || ways[0].From != nil {
+		t.Fatalf("the first way is not the request's chain: %+v", ways)
+	}
+	if ways[1].Input != "t1-cron" || said(ways[1].By) != "serverCron → syncWithMaster → createClient" || ways[1].From == nil || decls.list[*ways[1].From].Name != "syncWithMaster" {
+		t.Fatalf("the other way does not name where it leaves the first: %+v", ways[1])
+	}
+}

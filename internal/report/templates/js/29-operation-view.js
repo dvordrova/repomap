@@ -89,7 +89,7 @@ function rmReachingInputs(n,reaching,owner,choose){
 // count of the other calls into it, the parts past the handler's own calls
 // folded under one line. No route is chosen and no line number is written. A name in a drawn part is read there (`read(part,key)`), as
 // its tile is; a modifier-click opens its code.
-function rmInputPathSection(path,title,partNode,inputNode,choose,read){
+function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown){
   var section=rmEl('section','system-input-path'),decls=path.decls||[];
   section.appendChild(rmEl('h5','',rmT('Path')));
   function name(index){
@@ -125,7 +125,9 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
     });
     return box;
   }
-  (path.dispatched||[]).forEach(function(site,index){
+  // The ways a request reaches a dispatch site read as chains above
+  // (32-flow.js); without them, each site stands here.
+  (path.ways&&path.ways.length?[]:path.dispatched||[]).forEach(function(site,index){
     var box=rmEl('details','system-shared-path'),site_name=(decls[site.site]||{}).name||'';box.open=index===0;
     box.appendChild(rmEl('summary','',rmT('Dispatched from {0}',site_name)+' · '+rmSiteHandlers(site)));
     // "one of 94 handlers" reads the dispatcher, whose reading lists them
@@ -187,7 +189,8 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
     return line;
   }
   (path.sent_to||[]).forEach(function(entry){section.appendChild(peer(entry,'Sent to {0} as'));});
-  (path.sent_by||[]).forEach(function(entry){section.appendChild(peer(entry,'Sent by {0}:'));});
+  // Who sends it is the flow's last line when the flow stands above.
+  if(!flowShown)(path.sent_by||[]).forEach(function(entry){section.appendChild(peer(entry,'Sent by {0}:'));});
   if((path.registered_by||[]).length)section.appendChild(inputs(path.registered_by,rmT('Registered by')));
   if((path.registers||[]).length)section.appendChild(inputs(path.registers,rmT('Registers')));
   // The part holding the handler names it; the parts its handler calls
@@ -752,10 +755,12 @@ function rmCatalogInputClick(event,reveal){
       card.querySelector('.map-card-intro').after(catalogueSection);
     }
     if(n.dataset.activation&&inputPath){
-      // A chosen input's reading opens at its path.
-      var pathSection=rmInputPathSection(inputPath,n.dataset.title,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(part){select(part,true,null,true);},readDeclaration);
-      pathSection.dataset.readingAnchor='';
+      // A chosen input's reading opens at how a request reaches it, then
+      // what its handler does (32-flow.js); its path by part follows.
+      var flowSection=rmInputFlowSection(map.readingContext(),inputPath,n.dataset.title,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);});
+      var pathSection=rmInputPathSection(inputPath,n.dataset.title,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(part){select(part,true,null,true);},readDeclaration,!!flowSection);
       card.querySelector('.map-card-intro').after(pathSection);
+      if(flowSection){pathSection.before(flowSection);flowSection.dataset.readingAnchor='';}else pathSection.dataset.readingAnchor='';
     }
     if(n.dataset.activation){
       // The program's Main flow, after where the input is dispatched from.

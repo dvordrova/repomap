@@ -172,8 +172,11 @@ type pageReadingOwner struct {
 	NotCalledIn string                 `json:"not_called_in,omitempty"`
 	Callees     []pageReadingPeerDecls `json:"callees,omitempty"`
 	Uses        []pageReadingEnd       `json:"uses,omitempty"`
-	Returns     []int                  `json:"returns,omitempty"`
-	Takes       []int                  `json:"takes,omitempty"`
+	// Flow is what a function calls, in the order its calls are written
+	// (page_flow.go).
+	Flow    []pageFlowCall `json:"flow,omitempty"`
+	Returns []int          `json:"returns,omitempty"`
+	Takes   []int          `json:"takes,omitempty"`
 }
 
 // pageReadingPeerDecls is one part's declarations at the other end of a
@@ -600,6 +603,50 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		owner.Callers = append(owner.Callers, groups...)
 		if notCalled {
 			owner.NotCalledIn = componentTitle(builder.byProgram[targetID], builder.sections)
+		}
+	}
+	// Each function's flow, and the flow of each declaration no part holds
+	// that one of them calls (lookupKeyRead), so a call opens in place
+	// wherever it goes and none is dropped.
+	subjectAt := map[int]string{}
+	declareSubject := func(id string) int {
+		ref, known := builder.subject(targetID, id)
+		if !known || ref.subject.Object == nil {
+			return -1
+		}
+		label, anchor := builder.subjectDisplay(ref.subject)
+		part, _ := partOf(targetID, id)
+		position := fromAnchor(label, anchor, kindOf(targetID, id), part)
+		if position >= 0 {
+			subjectAt[position] = id
+		}
+		return position
+	}
+	queue := append([]string(nil), ids...)
+	flowed := map[string]bool{}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if flowed[id] {
+			continue
+		}
+		flowed[id] = true
+		position := declareSubject(id)
+		if position < 0 {
+			continue
+		}
+		flow := builder.flowOf(&index, id, declareSubject)
+		if len(flow) == 0 {
+			continue
+		}
+		ownerOf(position).Flow = flow
+		for _, call := range flow {
+			if call.Decl == nil {
+				continue
+			}
+			if callee := subjectAt[*call.Decl]; callee != "" && reading.Decls[*call.Decl].Part == "" && kindOf(targetID, callee) == "function" {
+				queue = append(queue, callee)
+			}
 		}
 	}
 	slices.SortFunc(reading.Own, func(a, b pageReadingOwner) int { return cmp.Compare(a.Decl, b.Decl) })

@@ -148,3 +148,80 @@ assert.equal(view.children[1].className,'map-reading-not-called meta');
 assert.equal(view.children[1].textContent,'Not called in redis-benchmark');
 `)
 }
+
+// A function's reading lists its calls as its flow, in the order Go wrote
+// them, each run into one part under that part's box, with no caption
+// repeating its name ("serverCron calls, in order:"). Helper calls wait
+// behind "Show helper calls" unless every call of a step is one; a call
+// opens in place to its callee's flow, a call its ancestors make says it is
+// shown above, and a library's call is a plain row.
+func TestAFunctionsReadingIsItsFlow(t *testing.T) {
+	reading := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
+	flow := systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
+	runSystemJS(t, readingViewElements+reading+flow+`
+El.prototype.querySelector=function(s){return this.querySelectorAll(s)[0]||null;};
+El.prototype.closest=function(){return null;};
+El.prototype.insertBefore=function(c,ref){c.parent=this;const at=this.children.indexOf(ref);if(at<0)this.children.push(c);else this.children.splice(at,0,c);return c;};
+Object.defineProperty(El.prototype,'open',{get(){return !!this._open;},set(v){const was=!!this._open;this._open=!!v;if(was!==this._open&&this.listeners.toggle)this.listeners.toggle();}});
+nodes['#persist']={id:'persist',dataset:{title:'Persistence',summary:'Saves the dataset.'},getAttribute:()=>'#persist'};
+ctx.nodeById=()=>null;document.getElementById=()=>null;
+const d=data.decls;
+d.push(decl('redisLog','function','#core'),decl('rdbSave','function','#persist'),decl('lookupKeyRead','function',''));
+const log=d.length-3,save=d.length-2,lookup=d.length-1;
+data.own[0].flow=[{decl:log,helper:true,sites:[{at:'server.c:1273'},{at:'server.c:1288'}]},{decl:2,sites:[{at:'server.c:1284'}]},{name:'wait3',lib:'sys/wait.h',kind:'invokes_external',sites:[{at:'server.c:1304'}]},
+  {decl:save,sites:[{at:'server.c:1322'}]},{decl:save,kind:'passes_callback',sites:[{at:'server.c:1330'}]},{decl:lookup,sites:[{at:'server.c:1350'}]},{decl:0,sites:[{at:'server.c:1360'}]}];
+data.own.push({decl:save,flow:[{decl:log,helper:true,sites:[{at:'server.c:3010'}]}]});
+data.own.push({decl:lookup,flow:[{decl:1,sites:[{at:'server.c:905'}]}]});
+const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
+const said=view.textContent;
+assert.ok(!/serverCron calls|in order|steps|helpers|only helpers|not on the map|also from/.test(said),'no caption repeats its name and no meta word: '+said);
+const root=view.all(c=>c.has('map-flow-root'))[0];
+const rows=()=>root.all(c=>c.has('map-flow-row')&&!c.has('map-flow-helper')).map(c=>c.all(x=>x.has('map-reading-name')||x.has('map-flow-plain'))[0].textContent);
+assert.deepEqual(rows(),['beforeSleep()','wait3()','rdbSave()','rdbSave()','lookupKeyRead()','serverCron()'],'the calls in the order Go wrote them, helpers folded');
+assert.deepEqual(root.all(c=>c.has('map-part-box')).map(c=>c.textContent),['Server lifecycle and cron','Persistence','Server lifecycle and cron'],'each run into one part stands under its box');
+assert.ok(root.all(c=>c.has('map-flow-above')).length===1,'a call its ancestors make is shown above');
+assert.ok(!root.textContent.includes('redisLog'),'the helper call waits behind the toggle');
+// Opening rdbSave shows its only call, a helper, as its call.
+const saveRow=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('rdbSave()'))[0];
+saveRow.open=true;
+assert.ok(saveRow.all(c=>c.has('map-flow-row')).some(r=>r.textContent==='redisLog()'&&!r.has('map-flow-helper')),'a step whose every call is a helper shows them');
+// The declaration no part holds is a plain name that still opens.
+const lookupRow=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('lookupKeyRead()'))[0];
+assert.ok(lookupRow&&lookupRow.all(c=>c.has('map-flow-plain')).length>0,'a declaration no part holds keeps its call, a plain name');
+// The toggle shows the helper calls, the open ones staying open.
+rmFlowHelpers=true;root.rmRender();
+const shownHelpers=root.all(c=>c.has('map-flow-helper'));
+assert.ok(shownHelpers.length===1&&shownHelpers[0].textContent==='redisLog()','the toggle shows the helper call, lighter, in its place');
+assert.ok(root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('rdbSave()')&&c.open).length===1,'what was open stays open');
+`)
+}
+
+// An input's reading opens at how a request reaches it: the first way as
+// one chain, a line per part, the handler last in its part, the callable
+// handed over saying how on its hover; the other ways folded on one line
+// named by the part where each leaves the first, "+N" for the inputs that
+// run the site themselves; then who sends it, last.
+func TestAnInputsReadingOpensAtHowARequestReachesIt(t *testing.T) {
+	reading := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
+	flow := systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
+	runSystemJS(t, readingViewElements+reading+flow+`
+El.prototype.insertBefore=function(c,ref){c.parent=this;const at=this.children.indexOf(ref);if(at<0)this.children.push(c);else this.children.splice(at,0,c);return c;};
+El.prototype.closest=function(){return null;};
+nodes['#repl']={id:'repl',dataset:{title:'Replication'},getAttribute:()=>'#repl'};
+const byId={'n-core':nodes['#core'],'n-main':nodes['#main'],'n-repl':nodes['#repl'],'n-own':nodes['#own']};
+ctx.nodeById=id=>byId[id]||null;document.getElementById=()=>null;
+const p=(name,part)=>({name,part,href:'h#'+name});
+const path={decls:[p('acceptHandler','n-core'),p('readQueryFromClient','n-core'),p('call','n-core'),p('getCommand','n-own'),p('createClient','n-core'),p('serverCron','n-main'),p('syncWithMaster','n-repl')],
+  ways:[{input:'accept',chain:[0,1,2],hop:1,by:[0,4]},{input:'cron',chain:[5,1,2],hop:1,by:[5,6,4],from:6}],also:['exec','lpush'],
+  parts:[{depth:0,handler:3,part:'n-own'}],sent_by:[{program:'redis-cli',input:'cli-get',name:'get',in:'cmdTable'}]};
+const inputs={accept:{dataset:{title:'acceptHandler'}},cron:{dataset:{title:'serverCron'}},exec:{dataset:{title:'exec'}},lpush:{dataset:{title:'lpush'}},'cli-get':{dataset:{title:'get'}}};
+const section=rmInputFlowSection(ctx,path,'get',id=>inputs[id]||null,()=>{});
+const lines=section.children.map(c=>c.textContent);
+assert.equal(lines[0],'How a request reaches get:');
+assert.equal(lines[1],'Server core stateacceptHandler() → readQueryFromClient() → call()Server lifecycle and crongetCommand()','the first way, a line per part, the handler last');
+const hop=section.all(c=>c.textContent==='readQueryFromClient()'&&c.has('map-reading-name'))[0];
+assert.equal(hop.title,'Server core state\npassed as a callback by createClient, which acceptHandler calls');
+assert.ok(lines[2].startsWith('Other ways in: from Replication, +2'),'the other ways, folded, by where they leave the first: '+lines[2]);
+assert.equal(section.children.at(-1).textContent,'redis-cli sends get.','who sends it, last');
+`)
+}

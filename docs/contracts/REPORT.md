@@ -902,11 +902,56 @@ Server lifecycle and cron ↑"); who calls it ("Called by", "Used by" for a
 variable or a type), grouped by the part at the other end, its own part
 first; its name as the one link into its code with what its tile writes
 after it, then its file alone ("redis.c") and, when its author wrote one,
-"comment" whose hover or focus shows the comment as written, marked as
-the author's claim; the model's line when there is one; a type's every
+the comment as written, standing in the reading and marked as the
+author's claim; the model's line when there is one; a type's every
 field with its type and the functions of its part that return or take
-it; what it calls ("Calls", "Uses"), by part; and the variables it uses
-("Uses variables"), each with a hover naming the part holding it. The
+it; a function's flow; what else it relates to ("Calls", "Uses"), by
+part; and the variables it uses ("Uses variables"), each with a hover
+naming the part holding it.
+
+A function's flow (owner-approved 2026-09-29, the designer's flow v2;
+`page_flow.go`, `32-flow.js`) is what it calls in the order the calls are
+written: GroupsIndex's calls, callbacks, executions and library calls
+from the declaration, ordered by their first call site's file, line and
+column, each callee once with every place it is called, a dispatch site
+one call ("one of 94"). The flow carries no caption repeating the
+function's name and no count or meta word. Each run of calls into one
+part stands under that part's box (its description on hover, a click
+reads it); a library's call (`fork`, `wait3`) is a plain row naming its
+library on hover; a declaration no part holds (`lookupKeyRead`) is a
+plain name whose own flow still opens, carried in the reading that calls
+it, so no call is dropped. A twist, shown while a call that can open is
+pointed at or focused, opens that call in place to its callee's flow,
+grouped the same way; when all of those stay in its part no box repeats.
+A call one of its ancestors makes says "↑ shown above" instead. What a
+call hands over ("passed as a callback") and where it is written ("called
+at redis.c:1273 · 1288") are on its name's hover. A helper call folds
+behind one quiet toggle, "Show helper calls", that lights its rows when
+on: the callee is a declaration the helper question decided serves the
+work of others, and it stands in a part more than half of the program's
+other parts call into (decided from the calls, never by name: Server core
+state, Core data structures, Client I/O and command dispatch in
+redis-server) or in the caller's own part. A helper into any other part
+stays, since its part says what it is for, and a step whose every call is
+a helper shows them as its calls. What is open stays open across the
+toggle. A step of the component's Main flow opens in place to its code
+flow the same way, the model's sentence kept in its style above it.
+
+An input's reading opens at how a request reaches it: "How a request
+reaches get:", then the first way (GroupsIndex's outer inputs of the
+dispatch site running its handler, requests first, each by the shortest
+run from the callable it hands over, else by its own calls) as one chain
+in call order, a line per part, its handler last in its part
+("acceptHandler() → readQueryFromClient() → processInputBuffer() →
+processCommand() → call() / String commands getCommand()"); the callable
+handed over says so on its hover ("passed as a callback by createClient,
+which acceptHandler calls"). "Other ways in:" follows on one folded line,
+each way named by the part of the declaration where it leaves the first
+("from Replication"; another dispatch site by its own part) and "+N" for
+the inputs whose own code runs the site; opened, each way is its chain.
+Then what its handler does, its handler's flow, a single call opening by
+itself while its calls go one at a time; and last, one quiet line naming
+who sends it ("redis-cli sends get."), a model's match. The
 place each relation is written is on its name's hover; a relation other
 than a call keeps its own words. A dispatch site's reading follows. A
 variable read by a hundred functions folds each larger part to its line.

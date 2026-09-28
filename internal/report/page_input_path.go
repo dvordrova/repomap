@@ -164,7 +164,29 @@ type pageInputPath struct {
 	// model match; decision 14).
 	SentTo []pagePeerInput `json:"sent_to,omitempty"`
 	SentBy []pagePeerInput `json:"sent_by,omitempty"`
-	Decls  []pageDecl      `json:"decls,omitempty"`
+	// Ways are how a request reaches the dispatch site that runs the
+	// input's handler, as chains in call order (page_flow.go), the one
+	// the reading draws first; Also the inputs whose own code runs that
+	// site.
+	Ways  []pageWay  `json:"ways,omitempty"`
+	Also  []string   `json:"also,omitempty"`
+	Decls []pageDecl `json:"decls,omitempty"`
+}
+
+// pageWay is one way a request reaches a dispatch site: the input it
+// arrives from and the declarations it runs, that input's handler first and
+// the site last. A way through a callable handed over has it at Hop, and
+// By are the calls handing it over, from the input's handler to the
+// function passing it ("passed as a callback by createClient, which
+// acceptHandler calls"). Another way than the first names the
+// declaration where it leaves the first (From: syncWithMaster, in
+// Replication); another dispatch site's way is that site alone.
+type pageWay struct {
+	Input string `json:"input,omitempty"`
+	Chain []int  `json:"chain"`
+	Hop   int    `json:"hop,omitempty"`
+	By    []int  `json:"by,omitempty"`
+	From  *int   `json:"from,omitempty"`
 }
 
 // pagePeerInput is one input of another program a model match names: its
@@ -303,7 +325,20 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 		})
 		dispatched.Unexplained = site.Unexplained
 		path.Dispatched = append(path.Dispatched, dispatched)
+		path.Ways = append(path.Ways, builder.waysIn(index, site, decls, inputNode, kindOf)...)
+		if len(path.Dispatched) == 1 {
+			outer := map[string]bool{}
+			for _, way := range path.Ways {
+				outer[way.Input] = true
+			}
+			for _, reached := range site.ReachedFrom {
+				if id := inputNode(reached.OperationID); !outer[id] && id != inputNode(operation.ID) && !slices.Contains(path.Also, id) {
+					path.Also = append(path.Also, id)
+				}
+			}
+		}
 	}
+	markWaysFrom(path.Ways)
 	for _, site := range index.Dispatch {
 		for _, reached := range site.ReachedFrom {
 			if reached.OperationID != operation.ID {

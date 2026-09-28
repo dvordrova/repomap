@@ -478,3 +478,48 @@ details.map-reading-in>summary{display:flex;gap:8px;cursor:pointer;font-weight:6
 /* Another program's calls into a shared declaration are named by that program. */
 .map-reading-program{font-weight:600;font-size:12.5px;color:var(--ink);margin-right:4px}
 .map-reading-not-called{margin:4px 0 8px}
+/* A declaration's flow (32-flow.js): a row is a call, indentation means
+   "this calls", a part's box says what the calls under it are for. No
+   colour is added: names are links, the model's words italic, part boxes
+   drawn as the column draws them. */
+.map-reading-flow,.map-input-flow{margin:8px 0 12px}
+.map-flow-headline{display:flex;justify-content:flex-end;align-items:baseline;gap:8px;margin:0 0 4px}
+.map-flow-headline h5{margin:0 auto 0 0}
+.map-flow-toggle{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;font-weight:400}
+.map-flow-toggle input{margin:0;width:12px;height:12px;accent-color:var(--link)}
+.map-flow-group{margin:0 0 6px}
+.map-flow-group>.map-part-box{font-size:12px;line-height:1.3;padding:1px 7px;margin:0 0 1px}
+.map-flow-list .map-flow-list{margin:1px 0 3px;padding-left:14px;border-left:1px solid var(--line)}
+.map-flow-row,.flow-enabled .map-inspector details.map-flow-row{margin:0;padding:0;border:0;border-radius:4px}
+.map-flow-row>summary{list-style:none;cursor:pointer}
+.map-flow-row>summary::-webkit-details-marker{display:none}
+.map-flow-head{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:baseline;padding:0 2px 0 0;border-radius:4px;font:13px/20px var(--mono)}
+.map-flow-head:hover,.map-flow-head:focus-visible{background:var(--link-bg)}
+.map-flow-twist{width:14px;color:var(--muted);text-align:center;font:11px/20px system-ui}
+details.map-flow-row>summary:hover .map-flow-twist::before,details.map-flow-row>summary:focus-visible .map-flow-twist::before{content:"▸"}
+details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
+.map-flow-head .map-reading-name{font-size:13px}
+.map-flow-plain{color:var(--ink)}
+.map-flow-lib{font:13px/20px var(--mono);padding-left:14px;color:var(--muted)}
+.map-flow-lib .map-flow-plain{color:var(--muted)}
+.map-flow-helper .map-reading-name,.map-flow-helper .map-flow-plain{opacity:.55}
+.map-flow-above{font-family:system-ui;font-size:12px;margin-left:6px}
+.map-flow-one{color:var(--ink)}
+.map-flow-names{margin:2px 0 4px 14px;font:13px/20px var(--mono);overflow-wrap:anywhere}
+/* The way a request comes in: one chain, a line per part. */
+.map-input-flow>h5{margin:0 0 4px}
+.map-flow-chain{margin:0 0 8px;font:13px/21px var(--mono)}
+.map-flow-chain .map-flow-group{margin:0 0 2px}
+.map-flow-chain .map-part-box{font-family:system-ui;margin-right:6px}
+.map-flow-other-ways{margin:0 0 12px;font-size:12.5px;color:var(--muted)}
+.map-flow-other-ways>summary{cursor:pointer;line-height:1.9;color:var(--muted);font-weight:400}
+.map-flow-other-ways .map-part-box{font-size:11.5px;padding:0 6px}
+.map-flow-other-ways .map-flow-chain{margin:6px 0 6px 12px}
+.map-flow-does{margin:6px 0 0}
+.map-flow-sent,.flow-enabled .map-inspector .map-flow-sent{margin:12px 0 0;color:var(--muted);font-size:12.5px}
+/* The component's Main flow: each step opens in place to its code. */
+.map-flow-step-twist,.flow-enabled .map-inspector button.map-flow-step-twist,.map-card button.map-flow-step-twist{border:0;background:none;box-shadow:none;margin:0;padding:0;min-width:0;width:14px;height:20px;color:var(--muted);cursor:pointer;font:11px/20px system-ui;vertical-align:baseline}
+.map-flow-step-twist::before{content:"▸";visibility:hidden}
+li:hover>.map-flow-step-twist::before,.map-flow-step-twist:focus-visible::before{visibility:visible}
+.map-flow-step-open>.map-flow-step-twist::before{content:"▾";visibility:visible}
+.map-flow-step-code{margin:4px 0 6px 14px}
