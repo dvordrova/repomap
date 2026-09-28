@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -161,5 +162,44 @@ func TestTermQuestionCarriesEveryWrittenText(t *testing.T) {
 	fields := termFields(items, glossaryName{Name: "lock page", Rows: rows})
 	if len(fields) != 2 || len(fields[1].Value.([]string)) != 300 {
 		t.Fatalf("the question left texts out: %d fields", len(fields))
+	}
+}
+
+// A name's decision is remembered by the name and the texts that write it,
+// not by the window it was asked in: prose that adds a name asks that name
+// alone, and the names whose texts did not change are not asked again.
+func TestAGlossaryDecisionIsRememberedPerName(t *testing.T) {
+	prose := map[string]proseSource{
+		"a": {Texts: []string{"Each LTX file is shipped by the logger."}, Sources: []Source{{Path: "a.go", Line: 3}}, Origin: Origin{RequestSHA256: strings.Repeat("a", 64), Row: "r1"}},
+	}
+	var asked []string
+	categorizer := &typesafetest.Categorizer{Decide: func(_ string, question llm.Question) (llm.Verdict, bool) {
+		name, _ := question.Item["name"].(string)
+		asked = append(asked, name)
+		return typesafetest.Choose(TermDomainConcept), question.Name == "candidate"
+	}}
+	provider := &testProvider{}
+	provider.complete = func(prepared llm.Prepared) (llm.Completion, error) {
+		answer, _ := glossaryAnswer(inputUser(t, prepared), written("LTX file", "logger", "lock page"), func(name string) string { return "The meaning of " + name + "." })
+		return completed(answer)
+	}
+	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
+	run := func() {
+		c := NewCollector([]string{"a.go", "b.go"})
+		maps.Copy(c.pending, prose)
+		if err := c.Generate(t.Context(), executor, provider, categorizer, "A replication tool."); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run()
+	slices.Sort(asked)
+	if !slices.Equal(asked, []string{"LTX file", "logger"}) {
+		t.Fatalf("the first run asked %v", asked)
+	}
+	asked = nil
+	prose["b"] = proseSource{Texts: []string{"The lock page stays empty."}, Sources: []Source{{Path: "b.go", Line: 9}}, Origin: Origin{RequestSHA256: strings.Repeat("b", 64), Row: "r2"}}
+	run()
+	if !slices.Equal(asked, []string{"lock page"}) {
+		t.Fatalf("the second run asked %v, want the new name alone", asked)
 	}
 }
