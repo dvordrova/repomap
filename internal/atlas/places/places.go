@@ -468,7 +468,7 @@ func (b *builder) collectObjects(target TargetInput) {
 			continue
 		}
 		b.typeFields[key] = typeField{owner: id, member: atlas.TypeMember{Path: filePath, Decl: atlas.Decl{
-			ObjectID: scopedID, Name: object.Name, Kind: string(object.Kind), Signature: object.Signature, Aliases: aliasText(object.Aliases),
+			ObjectID: scopedID, Name: object.Name, Kind: string(object.Kind), Signature: object.Signature, Aliases: aliasText(object.Aliases), Types: typeAnchors(object.Types),
 			LineNo: object.Location.Line, Column: object.Location.Column, Exported: object.Visibility == programindex.VisibilityPublic,
 		}}}
 	}
@@ -2245,6 +2245,15 @@ func truncateRunes(text string, limit int) string {
 
 // aliasText renders a declaration's other-format names for a reader:
 // "json:count_label db:count".
+// typeAnchors are a field's type declarations as source anchors.
+func typeAnchors(locations []programindex.Location) []sourcevalue.Anchor {
+	var result []sourcevalue.Anchor
+	for _, location := range locations {
+		result = append(result, sourcevalue.Anchor{Path: location.Path, Line: location.Line, Column: location.Column})
+	}
+	return result
+}
+
 func aliasText(aliases []programindex.Alias) string {
 	parts := make([]string, 0, len(aliases))
 	for _, alias := range aliases {

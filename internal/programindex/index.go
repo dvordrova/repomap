@@ -398,6 +398,9 @@ type ObjectInput struct {
 	// or platform boundaries from presentation text or raw identity syntax.
 	External *ExternalSymbol
 	Aliases  []Alias
+	// Types are, for a variable (a field), where the repository types its
+	// declared type names are declared (`DBs []*DBConfig` names DBConfig).
+	Types []Location
 	// Parameters and Results are a callable's values in order; TypeRef names
 	// the repository type a value carries when the adapter resolved one.
 	Parameters []TypedNameInput
@@ -627,8 +630,11 @@ type Object struct {
 	Directory   string          `json:"directory,omitempty"`
 	External    *ExternalSymbol `json:"external,omitempty"`
 	Aliases     []Alias         `json:"aliases,omitempty"`
-	Parameters  []TypedName     `json:"parameters,omitempty"`
-	Results     []TypedName     `json:"results,omitempty"`
+	// Types are, for a variable, where the repository types its declared
+	// type names are declared (see ObjectInput.Types).
+	Types      []Location  `json:"types,omitempty"`
+	Parameters []TypedName `json:"parameters,omitempty"`
+	Results    []TypedName `json:"results,omitempty"`
 	// ParameterStores are the callable's own parameters it stores in a field
 	// or a module-level variable (see ParameterStore).
 	ParameterStores []ParameterStore `json:"parameter_stores,omitempty"`
@@ -1169,7 +1175,7 @@ func New(input Input) (Index, error) {
 			ID: id, SourceRef: value.SourceRef,
 			Kind: value.Kind, Name: value.Name, Visibility: value.Visibility,
 			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Unreachable: value.Unreachable, Macro: value.Macro, Directory: value.Directory,
-			External: cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases),
+			External: cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases), Types: slices.Clone(value.Types),
 			ParameterStores: canonicalParameterStores(value.ParameterStores), Rows: cloneRows(value.Rows),
 		}
 		index.Objects = append(index.Objects, object)
@@ -1366,6 +1372,7 @@ func (index Index) Snapshot() Index {
 		result.Objects[position].Location = cloneLocation(index.Objects[position].Location)
 		result.Objects[position].External = cloneExternalSymbol(index.Objects[position].External)
 		result.Objects[position].Aliases = slices.Clone(index.Objects[position].Aliases)
+		result.Objects[position].Types = slices.Clone(index.Objects[position].Types)
 		result.Objects[position].ParameterStores = canonicalParameterStores(index.Objects[position].ParameterStores)
 		result.Objects[position].Rows = cloneRows(index.Objects[position].Rows)
 	}
@@ -1910,7 +1917,7 @@ func validateObjectInput(value ObjectInput) error {
 	if !validText(value.SourceRef) || !value.Kind.Valid() || !validText(value.Name) ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerRef) ||
 		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
-		!validAliases(canonicalAliases(value.Aliases)) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
+		!validAliases(canonicalAliases(value.Aliases)) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
 		(value.Unreachable || value.Macro) && !callableKind(value.Kind) ||
 		!validParameterStores(value.Kind, canonicalParameterStores(value.ParameterStores)) || !validRows(value.Kind, value.Rows) {
 		return fmt.Errorf("program index: invalid object input")
@@ -1930,7 +1937,7 @@ func validateObject(value Object) error {
 	if !validCompactID(value.ID, "n") || !value.Kind.Valid() || !validText(value.Name) || !value.Visibility.Valid() ||
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerID) ||
 		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
-		!validAliases(value.Aliases) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
+		!validAliases(value.Aliases) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
 		(value.Unreachable || value.Macro) && !callableKind(value.Kind) ||
 		!validParameterStores(value.Kind, value.ParameterStores) || !validRows(value.Kind, value.Rows) {
 		return fmt.Errorf("program index: invalid object")
@@ -2895,6 +2902,22 @@ func validCodeLines(location *Location, endLine, codeLines int) bool {
 	default:
 		return true
 	}
+}
+
+// validTypeLocations holds a variable's type declarations: valid, each once.
+func validTypeLocations(kind ObjectKind, values []Location) bool {
+	if len(values) == 0 {
+		return true
+	}
+	if kind != ObjectVariable {
+		return false
+	}
+	for position, value := range values {
+		if !validLocation(value) || slices.Contains(values[:position], value) {
+			return false
+		}
+	}
+	return true
 }
 
 func validOptionalLocation(value *Location) bool {

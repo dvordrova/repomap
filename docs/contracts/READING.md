@@ -909,7 +909,9 @@ the tag as written (each key after its format's name, which is data: no
 library or format is named in code), and `structure_use`, what the facts
 show the structure is used for: each call of an outside symbol given a
 value of it, with the declaration making the call and the call as written,
-and each tagged field of another structure typed with it (GO). Every tagged
+and each field of another structure typed with it followed by that
+structure's own use ("the type of field DBs (yaml:"dbs") of Config, which
+is given to …"), by where the types are declared, never by name (GO). Every tagged
 field outside tests is one row; nothing is capped. A field answered
 `setting` is an entry whose handler is not established, at the field,
 named by the keys its tag names, declared by its structure, so the fields

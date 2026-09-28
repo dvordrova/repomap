@@ -306,9 +306,16 @@ func (projection *goProjection) projectObjects() error {
 			if err != nil {
 				return err
 			}
+			var fieldTypes []programindex.Location
+			for _, declared := range field.Types {
+				// A type declared outside the corpus is none of its types.
+				if location, err := projection.coreLocation(declared); err == nil {
+					fieldTypes = append(fieldTypes, *location)
+				}
+			}
 			if err := projection.addObject(programindex.ObjectInput{
 				SourceRef: field.ID, Kind: programindex.ObjectVariable, Name: field.Name,
-				Signature: shortSignature(field.Signature), Aliases: tagAliases(field.Tag), Visibility: visibility(field.Exported),
+				Signature: shortSignature(field.Signature), Aliases: tagAliases(field.Tag), Types: fieldTypes, Visibility: visibility(field.Exported),
 				OwnerRef: declaration.ID, ContainerRef: declaration.ID, Location: fieldLocation,
 			}); err != nil {
 				return err

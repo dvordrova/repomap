@@ -63,14 +63,22 @@ func settingsAt(t *testing.T, mark string) (int, int) {
 
 // A field whose tag names a key is asked on its own, with its structure, its
 // tag as written and what the facts show the structure is used for: the
-// outside call given a value of it, or the tagged field typed with it. The
+// outside call given a value of it, by where the types the argument's
+// value is of are declared (an error beside it names none), or the field
+// typed with it with that structure's own use. The
 // key of a field answered setting is an entry whose handler is not
 // established, declared by its structure, and on the one call decoding it;
 // a field answered none makes nothing.
 func TestATaggedFieldIsAskedWithItsStructureAndAnsweredSettingIsAnEntry(t *testing.T) {
-	member := func(mark, name, signature, aliases string) atlas.TypeMember {
+	// declared is where a structure is declared, as the adapter anchors a
+	// type a value or a field names.
+	declared := func(name string) []sourcevalue.Anchor {
+		line, column := settingsAt(t, "type "+name+" ")
+		return []sourcevalue.Anchor{{Path: "config.go", Line: line, Column: column}}
+	}
+	member := func(mark, name, signature, aliases string, types ...sourcevalue.Anchor) atlas.TypeMember {
 		line, column := settingsAt(t, mark)
-		return atlas.TypeMember{Path: "config.go", Decl: atlas.Decl{Name: name, Kind: "field", Signature: signature, Aliases: aliases, LineNo: line, Column: column}}
+		return atlas.TypeMember{Path: "config.go", Decl: atlas.Decl{Name: name, Kind: "field", Signature: signature, Aliases: aliases, Types: types, LineNo: line, Column: column}}
 	}
 	structure := func(id, name, object string, members ...atlas.TypeMember) atlas.Place {
 		line, column := settingsAt(t, "type "+name+" ")
@@ -90,7 +98,7 @@ func TestATaggedFieldIsAskedWithItsStructureAndAnsweredSettingIsAnEntry(t *testi
 	printLine, printColumn := settingsAt(t, "log.Print")
 	places := []atlas.Place{
 		{ID: "f1", Kind: atlas.PlaceFile, Path: "config.go", TargetIDs: []string{"t1"}, File: &atlas.FileFacts{}},
-		structure("s:config", "Config", "n:config", member("Addr string", "Addr", "Addr string", "yaml:addr"), member("DBs  []", "DBs", "DBs []*DBConfig", "yaml:dbs")),
+		structure("s:config", "Config", "n:config", member("Addr string", "Addr", "Addr string", "yaml:addr"), member("DBs  []", "DBs", "DBs []*DBConfig", "yaml:dbs", declared("DBConfig")...)),
 		structure("s:db", "DBConfig", "n:db", member("Path string", "Path", "Path string", "json:path yaml:path")),
 		structure("s:reply", "Reply", "n:reply", member("Count int", "Count", "Count int", "json:count")),
 		function("s:default", "DefaultConfig", "func() Config"),
@@ -100,18 +108,18 @@ func TestATaggedFieldIsAskedWithItsStructureAndAnsweredSettingIsAnEntry(t *testi
 				API: &atlas.CallAPI{Package: "gopkg.in/yaml.v2", Name: "Unmarshal"},
 				SourceArguments: []atlas.SourceArgument{
 					{Position: 1, Origin: &sourcevalue.Value{Kind: "parameter", Text: "buf"}},
-					{Position: 2, Origin: &sourcevalue.Value{Kind: "call_result", Text: "DefaultConfig", Anchor: &sourcevalue.Anchor{Path: "config.go", Line: defaultLine, Column: defaultColumn}}},
+					{Position: 2, Origin: &sourcevalue.Value{Kind: "call_result", Text: "DefaultConfig", Types: declared("Config"), Anchor: &sourcevalue.Anchor{Path: "config.go", Line: defaultLine, Column: defaultColumn}}},
 				}}),
 		function("s:reply-fn", "reply", "func(w io.Writer, n int)",
 			atlas.SymbolCall{Kind: string(programindex.RelationInvokesExternal), Name: "json.Encoder.Encode", Line: encodeLine, Column: encodeColumn,
 				API:             &atlas.CallAPI{Package: "encoding/json", Receiver: "*Encoder", Name: "Encode"},
-				SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "record", Type: "Reply", Anchor: &sourcevalue.Anchor{Path: "config.go", Line: recordLine, Column: recordColumn}}}}}),
+				SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "record", Types: declared("Reply"), Anchor: &sourcevalue.Anchor{Path: "config.go", Line: recordLine, Column: recordColumn}}}}}),
 		// The error ParseConfig returns beside the Config is no Config.
 		function("s:load", "load", "func(buf []byte) Config",
 			atlas.SymbolCall{Kind: string(programindex.RelationCalls), Name: "ParseConfig", Line: parseLine, Column: parseColumn, CalleeIDs: []string{"s:parse"}},
 			atlas.SymbolCall{Kind: string(programindex.RelationInvokesExternal), Name: "log.Print", Line: printLine, Column: printColumn,
 				API:             &atlas.CallAPI{Package: "log", Name: "Print"},
-				SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "call_result", Text: "ParseConfig", Position: 2, Anchor: &sourcevalue.Anchor{Path: "config.go", Line: parseLine, Column: parseColumn}}}}}),
+				SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "call_result", Text: "ParseConfig", Anchor: &sourcevalue.Anchor{Path: "config.go", Line: parseLine, Column: parseColumn}}}}}),
 	}
 	var mu sync.Mutex
 	asked := map[string]map[string]any{}
@@ -152,7 +160,7 @@ func TestATaggedFieldIsAskedWithItsStructureAndAnsweredSettingIsAnEntry(t *testi
 	if got, want := uses("Config.DBs"), []string{"given to gopkg.in/yaml.v2.Unmarshal in ParseConfig: yaml.Unmarshal(buf, &config)"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Config's use = %q, want %q", got, want)
 	}
-	if got, want := uses("DBConfig.Path"), []string{`the type of field DBs (yaml:"dbs") of Config`}; !reflect.DeepEqual(got, want) || asked["DBConfig.Path"]["tag"] != `json:"path" yaml:"path"` {
+	if got, want := uses("DBConfig.Path"), []string{`the type of field DBs (yaml:"dbs") of Config, which is given to gopkg.in/yaml.v2.Unmarshal in ParseConfig: yaml.Unmarshal(buf, &config)`}; !reflect.DeepEqual(got, want) || asked["DBConfig.Path"]["tag"] != `json:"path" yaml:"path"` {
 		t.Fatalf("DBConfig's use = %q (tag %v), want %q", got, asked["DBConfig.Path"]["tag"], want)
 	}
 	if got := uses("Reply.Count"); len(got) != 1 || !strings.HasPrefix(got[0], "given to encoding/json.Encoder.Encode in reply: ") {
@@ -187,23 +195,5 @@ func TestATaggedFieldIsAskedWithItsStructureAndAnsweredSettingIsAnEntry(t *testi
 	}
 	if b := settings["Config addr"].place.Boundary; b.ObjectID != "n:config" || settings["Config addr"].place.LineNo != 4 {
 		t.Fatalf("addr is declared by %s at line %d", b.ObjectID, settings["Config addr"].place.LineNo)
-	}
-}
-
-// Each result of a signature has its type, whether its results are named,
-// share one type or are not named at all.
-func TestResultTypesAreOnePerResult(t *testing.T) {
-	for signature, want := range map[string][]string{
-		"func(r io.Reader, expandEnv bool) (_ Config, err error)": {"Config", "error"},
-		"func() (a, b Config)":                    {"Config", "Config"},
-		"func() (Config, error)":                  {"Config", "error"},
-		"func() *Config":                          {"*Config"},
-		"func() (func(x int) error, chan int)":    {"func(x int) error", "chan int"},
-		"func(path string)":                       nil,
-		"func() (m map[string]Config, err error)": {"map[string]Config", "error"},
-	} {
-		if got := resultTypes(resultsOf(signature)); !reflect.DeepEqual(got, want) {
-			t.Errorf("%s: result types %q, want %q", signature, got, want)
-		}
 	}
 }

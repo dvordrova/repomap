@@ -18,31 +18,29 @@ type Anchor struct {
 // Parameter positions exclude the receiver and start at one. Owner identifies
 // the declaring callable, including an outer callable captured by a closure.
 // CallResult anchors the observed call; it does not assert what that call returns.
-// A call result's Position, when set, is which of the call's several results
-// the value is, from one. A record's Type is the named type it is of, as the
-// code names it without its package, when the adapter knows one.
+// Types, on the value an outside call's argument is given, are where the
+// repository types its static type names are declared (`&config` of type
+// *Config names Config; `[]DatabaseInfo` names DatabaseInfo), when the
+// adapter knows them.
 type Value struct {
 	// Initializer is an observed field assignment when the receiver instance
 	// cannot be followed. It remains a possible source, not a runtime value.
-	Initializer *Value  `json:"initializer,omitempty"`
-	Kind        string  `json:"kind"`
-	Text        string  `json:"text,omitempty"`
-	Position    int     `json:"position,omitempty"`
-	Type        string  `json:"type,omitempty"`
-	Anchor      *Anchor `json:"anchor,omitempty"`
-	Owner       *Anchor `json:"owner,omitempty"`
-	Parts       []Value `json:"parts,omitempty"`
+	Initializer *Value   `json:"initializer,omitempty"`
+	Kind        string   `json:"kind"`
+	Text        string   `json:"text,omitempty"`
+	Position    int      `json:"position,omitempty"`
+	Types       []Anchor `json:"types,omitempty"`
+	Anchor      *Anchor  `json:"anchor,omitempty"`
+	Owner       *Anchor  `json:"owner,omitempty"`
+	Parts       []Value  `json:"parts,omitempty"`
 }
 
 func Validate(value *Value) error {
 	if value == nil {
 		return nil
 	}
-	if !utf8.ValidString(value.Text) || !utf8.ValidString(value.Type) {
+	if !utf8.ValidString(value.Text) {
 		return fmt.Errorf("source value: invalid text")
-	}
-	if value.Type != "" && value.Kind != "record" {
-		return fmt.Errorf("source value: type outside record")
 	}
 	if value.Initializer != nil {
 		if value.Kind != "field" {
@@ -52,7 +50,11 @@ func Validate(value *Value) error {
 			return err
 		}
 	}
-	for _, anchor := range []*Anchor{value.Anchor, value.Owner} {
+	anchors := []*Anchor{value.Anchor, value.Owner}
+	for i := range value.Types {
+		anchors = append(anchors, &value.Types[i])
+	}
+	for _, anchor := range anchors {
 		if anchor != nil && (anchor.Path == "" || path.IsAbs(anchor.Path) || path.Clean(anchor.Path) != anchor.Path || strings.HasPrefix(anchor.Path, "../") || anchor.Line < 1 || anchor.Column < 0) {
 			return fmt.Errorf("source value: invalid source anchor")
 		}
@@ -81,7 +83,7 @@ func Validate(value *Value) error {
 			return fmt.Errorf("source value: invalid field value")
 		}
 	case "call_result":
-		if value.Anchor == nil || value.Position < 0 || len(value.Parts) != 0 {
+		if value.Anchor == nil || len(value.Parts) != 0 {
 			return fmt.Errorf("source value: invalid call result")
 		}
 	case "concat", "alternatives":
@@ -121,6 +123,7 @@ func Clone(value *Value) *Value {
 		owner := *value.Owner
 		result.Owner = &owner
 	}
+	result.Types = append([]Anchor(nil), value.Types...)
 	if value.Parts != nil {
 		result.Parts = make([]Value, len(value.Parts))
 		for i := range value.Parts {

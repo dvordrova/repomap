@@ -173,6 +173,9 @@ type Decl struct {
 	Signature string `json:"signature,omitempty"`
 	// Aliases are the declaration's names in other formats, "json:count_label".
 	Aliases string `json:"aliases,omitempty"`
+	// Types are, for a field, where the repository types its declared type
+	// names are declared (ProgramIndex Object.Types). Never sent to a model.
+	Types []sourcevalue.Anchor `json:"types,omitempty"`
 	// Doc is author documentation. File/callable rows use its first sentence;
 	// type context retains the existing bounded quote, including later effects.
 	Doc    string `json:"doc,omitempty"`

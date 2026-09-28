@@ -271,7 +271,7 @@ func (a *analyzer) captureCoreObjectFile(
 						owner := &input.Types[len(input.Types)-1]
 						owner.Fields = append(owner.Fields, gocoreobject.FieldDeclaration{
 							Name: field.Name(), Signature: signature, Tag: structure.Tag(position),
-							Exported: field.Exported(), Location: location,
+							Exported: field.Exported(), Location: location, Types: a.repositoryTypes(field.Type()),
 						})
 					}
 				}

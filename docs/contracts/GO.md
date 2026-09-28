@@ -218,21 +218,32 @@ code names a library or a format. The question shows the field and its
 type, its structure and file, the tag as written, and what the facts show
 the structure is used for: each call of an outside symbol given a value of
 it (with the declaration making the call and the call as written) and each
-tagged field of another structure typed with it. A value is of the
-structure when its source value is a `record` of that type (`Type`), a
-result of a repository call whose result at that position the signature
-declares of that type (`config, err := ReadConfigFile(…)`: `config` is,
-`err` is not), or the receiver of the structure's own method.
-litestream's `yaml.Unmarshal(buf, &config)`, where `config :=
-DefaultConfig()`, is the one call decoding `Config`; its nested structures
-show the tagged field typed with them. The echo fixture asks its four JSON
-payload fields (the reply's with `Context.JSON`) and its preset answers
-none (`TestEchoPresetReadingTurnsRegistrationsIntoOperations`); the reading
-test `TestATaggedFieldIsAskedWithItsStructureAndAnsweredSettingIsAnEntry`
+field of another structure typed with it, followed by that structure's own
+use. Both come from go/types, never from names matched as text: the value
+an outside call's argument is given records where the repository types its
+static type names are declared (the source value's `Types`: `&config` of
+type `*Config` names Config, `[]DatabaseInfo` names DatabaseInfo, an
+`error` beside it names none, `oss.NewClient(cfg)` with an `*oss.Config`
+names no repository type), and a field records the same for its declared
+type (ProgramIndex `Object.Types`: `DBs []*DBConfig` names DBConfig; the
+embedded `GetLevelsInfoResponse` of the cumulative fixture's
+`EmbeddedLevelsInfoResponse` names it,
+`TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract`). A named
+type is not looked into; pointers, slices, arrays, maps, channels, an
+unnamed structure's fields and a generic type's arguments are. litestream's
+`yaml.Unmarshal(buf, &config)` is the one call decoding `Config`; `DBConfig`
+reads "the type of field DBs (yaml:"dbs") of Config, which is given to
+gopkg.in/yaml.v2.Unmarshal …", and the CLI's JSON results read the
+`json.MarshalIndent` call they are printed with. The echo fixture asks its
+four JSON payload fields (the reply's with `Context.JSON`) and its preset
+answers none (`TestEchoPresetReadingTurnsRegistrationsIntoOperations`); the
+reading test `TestATaggedFieldIsAskedWithItsStructureAndAnsweredSettingIsAnEntry`
 holds the setting shape. Not recorded yet: a key a structure's
 `UnmarshalYAML`/`UnmarshalJSON` method reads itself, a map-typed field's
-keys, and an anonymous structure's fields (`var raw struct{…}`), which are
-no type's members.
+keys, an anonymous structure's fields (`var raw struct{…}`), which are no
+type's members, and a value handed through a repository helper typed `any`
+before an outside call (litestream's `writeJSON(w, resp)`: the call is
+given an interface and names no type).
 
 ## Programs a call starts
 

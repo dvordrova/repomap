@@ -2,7 +2,6 @@ package reading
 
 import (
 	"fmt"
-	"go/token"
 	"slices"
 	"sort"
 	"strings"
@@ -20,10 +19,10 @@ import (
 // names no library: `yaml`, `json`, `toml` are data as written. Each tagged
 // field outside tests is asked on its own (lines.Inputs("field")): the field
 // and its type, its structure, the tag as written and the structure's use as
-// the facts show it (a call outside the repository given a value of it: the
-// result a repository call returns of it, by the result's position, the
-// receiver of its own method, or a record of its type; the tagged field of
-// another structure typed with it). A field answered setting is an entry whose
+// the facts show it (a call outside the repository given a value of it, by
+// the static type of the value an argument is given; the tagged field of
+// another structure typed with it, with that structure's own use). A field
+// answered setting is an entry whose
 // handler is not established, declared by its structure and named by the
 // keys its tag writes; the structures of one program are one catalogue each,
 // declared on the one call that decodes them when the facts name exactly
@@ -80,11 +79,11 @@ func (r *reader) taggedFields() []taggedField {
 }
 
 // structureUse is what the facts show a structure is used for: the calls
-// outside the repository given a value of it, and the tagged fields of
-// other structures typed with it.
+// outside the repository given a value of it, and the fields of other
+// structures typed with it.
 type structureUse struct {
 	decodes []decodeCall
-	within  []string
+	within  []parentField
 }
 
 // decodeCall is one call outside the repository given a value of the
@@ -95,100 +94,67 @@ type decodeCall struct {
 	in     string
 }
 
+// parentField is a field of another structure whose type names this one,
+// with its tag as the question writes it when it names a key.
+type parentField struct {
+	owner  atlas.Place
+	member atlas.TypeMember
+	tag    string
+}
+
 // structureUses reads, by type place ID, what each tagged structure is used
-// for.
+// for. A call gives a value of a structure when the static type of an
+// argument's value names it (`&config` of type *Config, `[]DatabaseInfo`);
+// a field is typed with it when its declared type names it. Both are the
+// adapter's facts, where the named types are declared (Value.Types,
+// Decl.Types), never a name matched as text.
 func (r *reader) structureUses(fields []taggedField) map[string]*structureUse {
 	uses := map[string]*structureUse{}
-	byName := map[string][]string{}
+	tags := map[string]string{}
 	for _, field := range fields {
 		if uses[field.owner.ID] == nil {
 			uses[field.owner.ID] = &structureUse{}
-			name := field.owner.Symbol.Decl.Name
-			byName[name] = append(byName[name], field.owner.ID)
 		}
+		tags[field.owner.ID+"\x00"+field.member.Decl.Name] = field.tag
 	}
 	if len(uses) == 0 {
 		return uses
 	}
-	// Nested: the tagged field of another structure typed with it.
-	for _, field := range fields {
-		for _, name := range typeNames(field.member.Decl.Signature, field.member.Decl.Name) {
-			for _, id := range byName[name] {
-				if id != field.owner.ID {
-					line := fmt.Sprintf("the type of field %s (%s) of %s", field.member.Decl.Name, field.tag, field.owner.Symbol.Decl.Name)
-					if !slices.Contains(uses[id].within, line) {
-						uses[id].within = append(uses[id].within, line)
-					}
-				}
-			}
+	typeAt := map[sourcevalue.Anchor]string{}
+	for _, place := range r.opts.Graph.Places {
+		if uses[place.ID] != nil {
+			typeAt[sourcevalue.Anchor{Path: place.Path, Line: place.LineNo, Column: place.Column}] = place.ID
 		}
 	}
-	sites := r.callSites()
-	// returns are the type names of what the repository call at site
-	// returns: the result at position, from one, or every result.
-	returns := func(site sourceSite, position int) []string {
-		call := sites[site]
-		if call == nil || call.Kind != string(programindex.RelationCalls) {
-			return nil
+	for _, place := range r.opts.Graph.Places {
+		if uses[place.ID] == nil {
+			continue
 		}
-		var names []string
-		for _, id := range call.CalleeIDs {
-			if callee := r.places[id]; callee.Symbol != nil {
-				results := resultTypes(resultsOf(callee.Symbol.Decl.Signature))
-				switch {
-				case position == 0:
-					for _, result := range results {
-						names = append(names, typeNames(result, "")...)
-					}
-				case position <= len(results):
-					names = append(names, typeNames(results[position-1], "")...)
+		for _, member := range place.Symbol.Members {
+			for _, declared := range member.Decl.Types {
+				if id := typeAt[declared]; id != "" && id != place.ID {
+					uses[id].within = append(uses[id].within, parentField{owner: place, member: member, tag: tags[place.ID+"\x00"+member.Decl.Name]})
 				}
 			}
 		}
-		return names
 	}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil || r.testFile(place.Parent) {
 			continue
 		}
-		decl := place.Symbol.Decl
 		for _, call := range place.Symbol.Calls {
 			if call.Kind != string(programindex.RelationInvokesExternal) || call.API == nil || call.Line < 1 {
 				continue
 			}
-			var named []string
-			var visit func(value *sourcevalue.Value)
-			visit = func(value *sourcevalue.Value) {
-				if value == nil {
-					return
-				}
-				switch value.Kind {
-				case "call_result":
-					if value.Anchor != nil {
-						named = append(named, returns(sourceSite{value.Anchor.Path, value.Anchor.Line, value.Anchor.Column}, value.Position)...)
-					}
-				case "receiver":
-					if owner, _, method := strings.Cut(decl.Name, "."); method {
-						named = append(named, owner)
-					}
-				case "record":
-					if value.Type != "" {
-						named = append(named, value.Type)
-					}
-				case "alternatives":
-					for i := range value.Parts {
-						visit(&value.Parts[i])
-					}
-				}
-			}
-			for _, argument := range call.SourceArguments {
-				visit(argument.Origin)
-			}
 			site := sourceSite{place.Path, call.Line, call.Column}
-			for _, name := range named {
-				for _, id := range byName[name] {
-					if !slices.ContainsFunc(uses[id].decodes, func(d decodeCall) bool { return d.site == site }) {
-						uses[id].decodes = append(uses[id].decodes, decodeCall{site: site, symbol: apiName(*call.API), in: decl.Name})
+			for _, argument := range call.SourceArguments {
+				if argument.Origin == nil {
+					continue
+				}
+				for _, declared := range argument.Origin.Types {
+					id := typeAt[declared]
+					if id != "" && !slices.ContainsFunc(uses[id].decodes, func(d decodeCall) bool { return d.site == site }) {
+						uses[id].decodes = append(uses[id].decodes, decodeCall{site: site, symbol: apiName(*call.API), in: place.Symbol.Decl.Name})
 					}
 				}
 			}
@@ -200,92 +166,46 @@ func (r *reader) structureUses(fields []taggedField) map[string]*structureUse {
 	return uses
 }
 
-// resultsOf is the results part of a callable's signature, "func(r
-// io.Reader) (Config, error)" → "(Config, error)"; empty when it has none.
-func resultsOf(signature string) string {
-	start := strings.Index(signature, "(")
-	if start < 0 {
-		return ""
+// useLines are a structure's uses as the field question words them: each
+// call given a value of it, and each field of another structure typed with
+// it followed by that structure's own uses ("the type of field DBs
+// (yaml:"dbs") of Config, which is given to …"), each line once. seen holds
+// the structures already on the way, so a structure nested in itself ends.
+func (r *reader) useLines(uses map[string]*structureUse, id string, seen map[string]bool, files map[string]*lines.CallFile) []string {
+	use := uses[id]
+	if use == nil || seen[id] {
+		return nil
 	}
-	depth := 0
-	for i := start; i < len(signature); i++ {
-		switch signature[i] {
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth == 0 {
-				return signature[i+1:]
-			}
+	seen[id] = true
+	defer delete(seen, id)
+	var result []string
+	add := func(line string) {
+		if !slices.Contains(result, line) {
+			result = append(result, line)
 		}
 	}
-	return ""
-}
-
-// resultTypes are the types of a results part, one per result: "(_ Config,
-// err error)" → "Config", "error"; "(a, b Config)" → "Config", "Config";
-// " Config" → "Config".
-func resultTypes(results string) []string {
-	results = strings.TrimSpace(results)
-	if !strings.HasPrefix(results, "(") || !strings.HasSuffix(results, ")") {
-		if results == "" {
-			return nil
+	for _, decode := range use.decodes {
+		line := "given to " + decode.symbol + " in " + decode.in
+		if call := r.sourceText(files, decode.site.path, decode.site.line, decode.site.column); call != "" {
+			line += ": " + call
 		}
-		return []string{results}
+		add(line)
 	}
-	var parts []string
-	depth, start := 0, 1
-	for i := 1; i < len(results)-1; i++ {
-		switch results[i] {
-		case '(', '[', '{':
-			depth++
-		case ')', ']', '}':
-			depth--
-		case ',':
-			if depth == 0 {
-				parts = append(parts, strings.TrimSpace(results[start:i]))
-				start = i + 1
-			}
+	for _, parent := range use.within {
+		line := "the type of field " + parent.member.Decl.Name
+		if parent.tag != "" {
+			line += " (" + parent.tag + ")"
+		}
+		line += " of " + parent.owner.Symbol.Decl.Name
+		above := r.useLines(uses, parent.owner.ID, seen, files)
+		if len(above) == 0 {
+			add(line)
+		}
+		for _, next := range above {
+			add(line + ", which is " + next)
 		}
 	}
-	parts = append(parts, strings.TrimSpace(results[start:len(results)-1]))
-	// Named results write "name type"; a name alone takes the type of the
-	// next result that writes one.
-	named := slices.ContainsFunc(parts, func(part string) bool {
-		name, _, found := strings.Cut(part, " ")
-		return found && token.IsIdentifier(name) && !token.IsKeyword(name)
-	})
-	if !named {
-		return parts
-	}
-	types := make([]string, len(parts))
-	for i := len(parts) - 1; i >= 0; i-- {
-		if _, kind, found := strings.Cut(parts[i], " "); found {
-			types[i] = strings.TrimSpace(kind)
-		} else if i+1 < len(parts) {
-			types[i] = types[i+1]
-		}
-	}
-	return types
-}
-
-// typeNames are the type names a type expression writes, without package
-// qualifiers, pointers or containers: "[]*litestream.DBConfig" names
-// DBConfig. skip is a name that is no type (a field's own name leading its
-// signature).
-func typeNames(text, skip string) []string {
-	var names []string
-	for _, word := range strings.FieldsFunc(text, func(r rune) bool {
-		return !(r == '_' || r == '.' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r > 127)
-	}) {
-		if at := strings.LastIndex(word, "."); at >= 0 {
-			word = word[at+1:]
-		}
-		if word != "" && word != skip && !slices.Contains(names, word) {
-			names = append(names, word)
-		}
-	}
-	return names
+	return result
 }
 
 // fieldRows are the field question's rows: one per tagged field.
@@ -306,18 +226,7 @@ func (r *reader) fieldRows(fields []taggedField) ([]table.Row, map[string]rowSub
 			structure += " as " + owner.Signature
 		}
 		item := []table.Field{{Name: "field", Value: text}, {Name: "structure", Value: structure}, {Name: "tag", Value: field.tag}}
-		var used []string
-		if use := uses[field.owner.ID]; use != nil {
-			for _, decode := range use.decodes {
-				line := "given to " + decode.symbol + " in " + decode.in
-				if call := r.sourceText(files, decode.site.path, decode.site.line, decode.site.column); call != "" {
-					line += ": " + call
-				}
-				used = append(used, line)
-			}
-			used = append(used, use.within...)
-		}
-		if len(used) > 0 {
+		if used := r.useLines(uses, field.owner.ID, map[string]bool{}, files); len(used) > 0 {
 			item = append(item, table.Field{Name: "structure_use", Value: used})
 		}
 		id := fmt.Sprintf("field%d", len(rows)+1)

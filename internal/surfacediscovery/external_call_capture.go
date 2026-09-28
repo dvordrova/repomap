@@ -2,6 +2,7 @@ package surfacediscovery
 
 import (
 	"fmt"
+	"github.com/dvordrova/repomap/internal/gocoreobject"
 	"go/constant"
 	"go/types"
 	"slices"
@@ -278,10 +279,79 @@ func (a *analyzer) externalCallPattern(
 		if observed.Origin == nil && written != nil {
 			observed.Origin = sourcevalue.Clone(written[position])
 		}
+		if observed.Origin != nil {
+			typed := *observed.Origin
+			typed.Types = nil
+			for _, location := range a.repositoryTypes(argumentType(argument)) {
+				typed.Types = append(typed.Types, sourcevalue.Anchor{Path: location.Path, Line: location.Line, Column: location.Column})
+			}
+			observed.Origin = &typed
+		}
 		pattern.Arguments = append(pattern.Arguments, observed)
 	}
 	pattern.ResultValue = a.sourceReturn(common.StaticCallee())
 	return pattern
+}
+
+// argumentType is the static type of the value an argument is given: the
+// value's own type before it is converted to the parameter's interface
+// (`json.Marshal(result)` is given a StartStopResult, `yaml.Unmarshal(buf,
+// &config)` a *Config).
+func argumentType(value ssa.Value) types.Type {
+	for {
+		converted, ok := value.(*ssa.MakeInterface)
+		if !ok {
+			break
+		}
+		value = converted.X
+	}
+	if value == nil {
+		return nil
+	}
+	return value.Type()
+}
+
+// repositoryTypes are where the repository's named types a type names are
+// declared, each once, in the order the type writes them: the type itself,
+// or what a pointer, slice, array, map, channel or an unnamed structure's
+// fields hold, and a generic type's arguments. A named type is not looked
+// into: its own fields are declarations of their own.
+func (a *analyzer) repositoryTypes(value types.Type) []gocoreobject.Location {
+	var result []gocoreobject.Location
+	seen := map[types.Type]bool{}
+	var visit func(types.Type)
+	visit = func(value types.Type) {
+		if value == nil || seen[value] {
+			return
+		}
+		seen[value] = true
+		switch typed := types.Unalias(value).(type) {
+		case *types.Named:
+			if location, err := a.coreObjectLocation(typed.Obj().Pos()); err == nil && !slices.Contains(result, location) {
+				result = append(result, location)
+			}
+			for i := 0; i < typed.TypeArgs().Len(); i++ {
+				visit(typed.TypeArgs().At(i))
+			}
+		case *types.Pointer:
+			visit(typed.Elem())
+		case *types.Slice:
+			visit(typed.Elem())
+		case *types.Array:
+			visit(typed.Elem())
+		case *types.Map:
+			visit(typed.Key())
+			visit(typed.Elem())
+		case *types.Chan:
+			visit(typed.Elem())
+		case *types.Struct:
+			for i := 0; i < typed.NumFields(); i++ {
+				visit(typed.Field(i).Type())
+			}
+		}
+	}
+	visit(value)
+	return result
 }
 
 // externalCallSourceArguments restores source-level variadic elements when

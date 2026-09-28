@@ -3,6 +3,7 @@ package contracttest
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -205,13 +206,17 @@ func assertGoRepeatedAliasedImports(t *testing.T, authorities goFixtureAuthoriti
 func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, authorities goFixtureAuthorities, index programindex.Index) {
 	t.Helper()
 	const path = "internal/storefixture/level_responses.go"
+	// types are where the repository types a field's type names are
+	// declared: the embedded field names GetLevelsInfoResponse, a basic
+	// type names none.
 	want := map[string]struct {
 		name, signature, projected, aliases string
 		line, column                        int
+		types                               []programindex.Location
 	}{
-		"GetLevelsInfoResponse":      {"Count", "Count int", "Count int", "json:count", 5, 2},
-		"OtherLevelsInfoResponse":    {"Count", "Count string", "Count string", "json:count_label", 10, 2},
-		"EmbeddedLevelsInfoResponse": {"GetLevelsInfoResponse", "GetLevelsInfoResponse " + goFixtureRootPackage + "/internal/storefixture.GetLevelsInfoResponse", "GetLevelsInfoResponse storefixture.GetLevelsInfoResponse", "", 15, 2},
+		"GetLevelsInfoResponse":      {"Count", "Count int", "Count int", "json:count", 5, 2, nil},
+		"OtherLevelsInfoResponse":    {"Count", "Count string", "Count string", "json:count_label", 10, 2, nil},
+		"EmbeddedLevelsInfoResponse": {"GetLevelsInfoResponse", "GetLevelsInfoResponse " + goFixtureRootPackage + "/internal/storefixture.GetLevelsInfoResponse", "GetLevelsInfoResponse storefixture.GetLevelsInfoResponse", "", 15, 2, []programindex.Location{{Path: path, Line: 4, Column: 6}}},
 	}
 	for _, declaration := range authorities.core.Types {
 		if expected, ok := want[declaration.Name]; ok {
@@ -244,7 +249,7 @@ func assertGoResponseFieldDeclarations(t *testing.T, repository *corpus.Corpus, 
 		}
 		if expected, ok := want[owner.Name]; ok {
 			if fields[owner.Name].ID != "" || object.Kind != programindex.ObjectVariable || object.ContainerID != owner.ID ||
-				object.Name != expected.name || object.Signature != expected.projected || object.Location == nil ||
+				object.Name != expected.name || object.Signature != expected.projected || object.Location == nil || !reflect.DeepEqual(object.Types, expected.types) ||
 				object.Location.Path != path || object.Location.Line != expected.line || object.Location.Column != expected.column {
 				t.Fatalf("Go type %s projected field = %+v", owner.Name, object)
 			}

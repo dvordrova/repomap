@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"go/token"
 	"io/fs"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -111,6 +112,9 @@ type FieldDeclaration struct {
 	Tag      string   `json:"tag,omitempty"`
 	Exported bool     `json:"exported"`
 	Location Location `json:"location"`
+	// Types are where the repository types the field's type names are
+	// declared (`DBs []*DBConfig` names DBConfig).
+	Types []Location `json:"types,omitempty"`
 }
 
 type CallableDeclaration struct {
@@ -288,6 +292,9 @@ func (index Index) Snapshot() Index {
 	result.Types = append([]TypeDeclaration(nil), index.Types...)
 	for position := range result.Types {
 		result.Types[position].Fields = append([]FieldDeclaration(nil), result.Types[position].Fields...)
+		for field := range result.Types[position].Fields {
+			result.Types[position].Fields[field].Types = append([]Location(nil), result.Types[position].Fields[field].Types...)
+		}
 	}
 	result.Callables = append([]CallableDeclaration(nil), index.Callables...)
 	result.InterfaceImplementations = append([]InterfaceImplementation(nil), index.InterfaceImplementations...)
@@ -350,7 +357,7 @@ func (index Index) Validate() error {
 		typeIDs[declaration.ID] = struct{}{}
 		for position, field := range declaration.Fields {
 			if !validText(field.ID) || !validIdentifier(field.Name) || !validText(field.Signature) ||
-				!validLocation(field.Location) ||
+				!validLocation(field.Location) || slices.ContainsFunc(field.Types, func(location Location) bool { return !validLocation(location) }) ||
 				position > 0 && fieldKey(declaration.Fields[position-1]) >= fieldKey(field) {
 				return fmt.Errorf("go core object index: invalid field declaration")
 			}
