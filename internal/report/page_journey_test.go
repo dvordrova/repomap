@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -322,26 +321,6 @@ func TestInputWitnessToAFoldedOutsideCallLeadsToItsTile(t *testing.T) {
 	}
 	if !strings.Contains(input.CallPaths, `"system-t1-out-b1":`) || strings.Contains(input.CallPaths, "system-t1-out-b2") {
 		t.Fatalf("the witness names a tile the map does not draw: %s", input.CallPaths)
-	}
-}
-
-// "redis.c.redisCommand.proc get in getCommand" was the get input's whole
-// description: the registration's own words. The reading names the handler.
-func TestInputIsReadByItsHandlerNotItsRegistrationWords(t *testing.T) {
-	builder := pageBuilder{factsByID: map[string]facts.Fact{
-		"a1": {ID: "a1", Kind: facts.KindRegistration, Text: "redis.c.redisCommand.proc", Values: []string{"get"}, Symbol: "getCommand"},
-	}}
-	given := groupindex.Operation{FactID: "a1", Summary: "redis.c.redisCommand.proc get in getCommand"}
-	if got := builder.operationSummary(given); got != "" {
-		t.Fatalf("raw registration words shown: %q", got)
-	}
-	explained := groupindex.Operation{FactID: "a1", Summary: "Returns the string value stored at a key."}
-	if got := builder.operationSummary(explained); got != explained.Summary {
-		t.Fatalf("a model explanation was dropped: %q", got)
-	}
-	interpreted := groupindex.Operation{Summary: "redis.c.redisCommand.proc get in getCommand"}
-	if got := builder.operationSummary(interpreted); got != interpreted.Summary {
-		t.Fatalf("an operation without its registration fact lost its line: %q", got)
 	}
 }
 

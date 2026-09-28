@@ -1,5 +1,27 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Map model step 4, S4-3: an entry keeps a line only when the model wrote one (B19)
+
+- `atlas.Boundary.Line` now holds only a line the model wrote
+  (`boundaryState.written`); a fixed row without captions, which is not
+  sent, and a refused line leave it empty. The fact's given text stays the
+  joint request's context (`state.line`), so no model request byte
+  changes. Operation and outbound summaries are therefore empty unless the
+  model explained them: 95 of Redis's 96 summaries restated their
+  registration ("redis.c.redisCommand.proc get in getCommand").
+- The report's string comparison (`operationSummary`) is deleted; its
+  callers read `Operation.Summary`. The reading and Find already name the
+  handler; an outgoing row names its call, or its kind. `operationKey`
+  includes the summary, so `o*` ordinals may shift on the next run
+  (harmless: they are compact identities). Until S4-2's version bump, a
+  saved v18 run rendered by this code shows its given lines.
+- Tests: `TestInputIsReadByItsHandlerNotItsRegistrationWords` deleted (its
+  mechanism is gone); kvd's entries have no summary without captions (C
+  preset); a written line is kept and a refused or unasked one leaves none
+  (reading); an outgoing row without a line names its call or kind
+  (report). Each fails on revert (s43a–c).
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Map model step 4, S4-1: one reach, dispatch sites and phases, derived in GroupsIndex
 
 - Scope: S4-1 of `map-model/step4-plan.md` with the skeptic's corrections

@@ -621,16 +621,30 @@ func (r *reader) describeDeclarations(ctx context.Context, tables ...declaration
 }
 
 // boundaryState is one accepted fact or candidate awaiting its own review.
+// line is the joint request's context: the model's line, else the fact's
+// given text; written says the model wrote it, and only such a line is the
+// boundary's (writtenLine).
 type boundaryState struct {
-	uses  []atlas.DestinationUse
-	place atlas.Place
-	line  string
+	uses    []atlas.DestinationUse
+	place   atlas.Place
+	line    string
+	written bool
 	// name is an entry's chosen words, restored as written.
 	name        string
 	kind        string
 	destination string
 	address     string
 	basis       string
+}
+
+// writtenLine is the boundary's line: only one the model wrote. A fixed
+// fact's given text restates the registration ("redis.c.redisCommand.proc
+// get in getCommand"), which the entry's name and handler already say.
+func (state *boundaryState) writtenLine() string {
+	if !state.written {
+		return ""
+	}
+	return state.line
 }
 
 // readBoundaries is the one semantic owner of candidate runtime relationships.
@@ -805,10 +819,11 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				}
 				continue
 			}
-			// A cell refused alone keeps the fact's given line, the handler's
-			// own name and no destination or address.
+			// A cell refused alone leaves the boundary no line (the fact's
+			// given text stays the joints' context), the handler's own name
+			// and no destination or address.
 			if line, ok := answer["line"]; ok {
-				state.line = line
+				state.line, state.written = line, true
 			}
 			if cell, ok := answer["name"]; ok {
 				state.name = lines.EntryName(lines.EntryWords(state.place), cell)

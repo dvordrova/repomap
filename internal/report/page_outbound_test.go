@@ -362,3 +362,28 @@ func TestOutboundPeerBindingRequiresExactCallerAndCallLocation(t *testing.T) {
 		t.Fatalf("incorrect peer bindings: %+v", section.Outbound)
 	}
 }
+
+// An outgoing fact the model did not explain has no summary: the given
+// text restated the call. Its row still names something: its call, or else
+// its kind.
+func TestAnOutgoingFactWithoutALineIsNamedByItsCallOrItsKind(t *testing.T) {
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		row  pageOutbound
+		want string
+	}{
+		{pageOutbound{ID: "call", External: "net/http.Get", KindLabel: "Request", Source: "fact", Anchor: pageAnchor{Text: "client.go:9"}}, `<summary><code class="outbound-callable">Get</code>`},
+		{pageOutbound{ID: "kind", KindLabel: "Request", Source: "fact", Anchor: pageAnchor{Text: "client.go:9"}}, `<summary>Request <span class="meta">client.go:9</span>`},
+	} {
+		var out bytes.Buffer
+		if err := parsed.ExecuteTemplate(&out, "outbound-row", test.row); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), test.want) || strings.Contains(out.String(), `class="outbound-note"`) {
+			t.Fatalf("%s: %s", test.row.ID, out.String())
+		}
+	}
+}

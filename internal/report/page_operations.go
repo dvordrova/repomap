@@ -7,24 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
-
-// operationSummary is what an entry's reading says about it. A registration
-// the model did not explain keeps its own call words as its line, such as
-// "redis.c.redisCommand.proc get in getCommand": the fact said again in the
-// pipeline's form. The reading names the entry's handler instead, so such a
-// line is not shown; a model's explanation of the entry is.
-func (builder *pageBuilder) operationSummary(operation groupindex.Operation) string {
-	fact, ok := builder.factsByID[operation.FactID]
-	if ok && fact.Kind == facts.KindRegistration && fact.Text != "" &&
-		(operation.Summary == fact.Text || strings.HasPrefix(operation.Summary, fact.Text+" ")) {
-		return ""
-	}
-	return operation.Summary
-}
 
 // Reuse a declaration's accepted alias only when an operation repeats its
 // native name. A distinct action label or command/path has its own meaning.
@@ -315,7 +300,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		result.Nodes = append(result.Nodes, pageMapNode{
 			ID: id, Href: source.Href, Title: mapTitle(name), FullTitle: name,
 			InputOwner: owner,
-			Summary:    builder.operationSummary(operation), Activation: operation.Kind, Source: source, SourceKind: operation.Source,
+			Summary:    operation.Summary, Activation: operation.Kind, Source: source, SourceKind: operation.Source,
 			OperationGroup: groups[operation.GroupID].Title,
 			CallPaths:      builder.operationCallPaths(index.Target.ID, operation.SubjectID, firstInGroup, parents),
 			InputPath:      builder.inputPath(index, operation, reached, firstInGroup, parents, partOf),

@@ -556,3 +556,43 @@ func TestOnlyAHandedCallableAsksWhatItBecomes(t *testing.T) {
 		t.Fatalf("hands_callable = %v", handed)
 	}
 }
+
+// A fixed boundary keeps a line only when the model wrote one. A refused
+// line leaves it none; the fact's given text stays the joints' context.
+func TestAFixedBoundaryKeepsOnlyALineTheModelWrote(t *testing.T) {
+	fact := func(id, given string, line int) atlas.Place {
+		return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: "routes.ts", LineNo: line, Parent: "file:routes", Given: given,
+			Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "source:" + id}}, Direction: atlas.DirectionIn,
+				GivenKind: atlas.BoundaryRequest, Method: "GET", Values: []string{"/" + id}}}
+	}
+	written, refused := fact("written", "GET /written", 21), fact("refused", "GET /refused", 22)
+	provider := &mutatedTableProvider{}
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		for i, source := range input["rows"].([]any) {
+			if raw, _ := json.Marshal(source); strings.Contains(string(raw), "/written") {
+				rows[i]["line"] = "Returns what was written."
+			} else {
+				rows[i]["line"] = 42
+			}
+		}
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through = ""
+	r.opts.Graph.Places = []atlas.Place{written, refused}
+	r.places = map[string]atlas.Place{written.ID: written, refused.ID: refused}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.boundaries["written"].writtenLine(); got != "Returns what was written." {
+		t.Fatalf("the written line is %q", got)
+	}
+	if state := r.boundaries["refused"]; state.writtenLine() != "" || state.line != refused.Given {
+		t.Fatalf("a refused line: boundary line %q, joint context %q", state.writtenLine(), state.line)
+	}
+	unasked := &boundaryState{place: written, line: written.Given}
+	if unasked.writtenLine() != "" {
+		t.Fatal("an unasked row keeps its given text as its line")
+	}
+}

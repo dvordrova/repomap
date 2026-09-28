@@ -977,7 +977,7 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 			continue
 		}
 		card.Operations = append(card.Operations, pageGroupOperation{
-			Name: builder.operationDisplayName(index.Target.ID, operation), Kind: operation.Kind, Summary: builder.operationSummary(operation), Source: operation.Source,
+			Name: builder.operationDisplayName(index.Target.ID, operation), Kind: operation.Kind, Summary: operation.Summary, Source: operation.Source,
 			Href:   "#" + operationNodeID(sectionID, operation.ID),
 			Anchor: builder.links.anchor(operation.Location.Path, operation.Location.Line, operation.Location.Column),
 		})

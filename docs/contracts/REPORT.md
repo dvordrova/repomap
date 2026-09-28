@@ -331,9 +331,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   names its handler ("handled by getCommand"); the name reads that
   declaration in its part when the part lists it, and a modifier-click
   opens its code (it had opened GitHub above the same name in the path). A
-  registration the model did not explain keeps its own call words as its
-  line ("redis.c.redisCommand.proc get in getCommand"); that line is the fact
-  said again and is not shown, in the reading or in Find. A chosen input's
+  registration the model did not explain has no line: its given text
+  ("redis.c.redisCommand.proc get in getCommand") only said the fact again,
+  and the reading and Find name its handler. A chosen input's
   reading opens at its path (owner's choice 3c, 2026-09-27), drawn in the
   Inputs blue of its tile and collection, never core's purple: its
   heading's bar and kind and its links. The path is, first, for each

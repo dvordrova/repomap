@@ -85,6 +85,13 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	var got []input
 	for _, operation := range indexes[0].Operations {
 		got = append(got, input{kind: operation.Kind, name: operation.Name, handler: handlers[operation.SubjectID], source: operation.Source})
+		// Without captions no entry's line is written: the registration's
+		// given text ("kvd.h.kvCommand.proc get in getCommand") restates
+		// the row, so the entry has no line and its reading names its
+		// handler.
+		if operation.Summary != "" {
+			t.Fatalf("%s keeps a line no model wrote: %q", operation.Name, operation.Summary)
+		}
 	}
 	sort.Slice(got, func(i, j int) bool { return got[i].kind+got[i].name < got[j].kind+got[j].name })
 	want := []input{{kind: "continuous", name: "statsWorker", handler: "statsWorker", source: "fact"}}
