@@ -336,6 +336,29 @@ fixture cannot build without a module dependency. Python's `methods=["GET"]`
 and JavaScript's `{method: "GET"}` are no literals in the index and state no
 method.
 
+## Inputs a call's words declare, and what C does not have yet
+
+Every language asks an outside symbol whose calls give it words what the
+words become (READING, the `atlas_api` table's third set). In C that is a
+call such as `strcmp(argv[i], "-h")` or `fprintf(stderr, "usage: …")`: the
+kvd fixture asks `strcmp` (`strcmp(argv[1], "--symbols")`), `fprintf`,
+`getenv` and the other word-given calls, and its preset answers none. The
+answer is the symbol's, so a `command` answer for `strcmp` makes every
+word-given `strcmp` call outside tests an input whose handler is not
+established; per-call words compared with the program's argument vector
+(S2b), tables of names (S3) and callables the repository's own functions
+keep (S1) are the next pass. Not recorded yet, and so asked nothing:
+
+- `switch` or `==` on an argument's characters (`case 'h':`);
+- an option string handed with the whole argument vector
+  (`getopt_long(argc, argv, "hvc:o:", …)`), deferred and never asked;
+- a table of names declared inside a function (`long_opts` in `main`) or a
+  file-level one no call compares with;
+- an element of the argument vector handed to a repository function with no
+  literal beside it (a configuration file's path in `argv[1]`);
+- a registry filled element by element (`t[i].proc = fn`);
+- a comparison inside a `bsearch`/`qsort` comparator.
+
 ## Environment
 
 Install clang on the normal PATH: on macOS the Command Line Tools

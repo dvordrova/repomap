@@ -187,6 +187,28 @@ equivalent: a file-scope initializer holds constant expressions only, so no
 call is written there, and a function it names is a hand-over from the
 variable (C's command table).
 
+## Inputs a call's words declare, and what Go does not have yet
+
+A call of an outside symbol given words (`fs.String("config", "",
+"config path")`, `flag.NewFlagSet("tool-list", …)`) asks that symbol what
+the words become (READING, the `atlas_api` table's third set); the fixture
+asks `flag.String` at `internal/storefixture/destinations.go`. The answer is
+the symbol's: every word-given call of a symbol answered with an entry kind
+is an input whose handler is not established. Not recorded yet, and so
+asked nothing:
+
+- a package-level variable's initializer calling an outside symbol
+  (`var verbose = flag.Bool("verbose", …)` at the end of the same file):
+  the synthetic initializer's outside calls stay its unresolved frontier
+  (above), so the fixture's `flag.Bool` is not asked;
+- `os.Args` elements, `flag.Arg(i)` and `flag.Args()` carry no argument
+  vector origin, and `==`/`switch` on them is no fact (litestream's
+  subcommands are chosen by a `switch`, so its flags are inputs and its
+  subcommand names are not);
+- package-level composite tables of names and tables inside functions;
+- `handlers[name] = fn` registries;
+- a callable the repository's own function keeps (S1) is not enabled.
+
 ## Handler tables and stored callbacks
 
 These are the Go equivalents of the C adapter's command table, its callbacks

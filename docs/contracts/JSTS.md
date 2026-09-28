@@ -214,6 +214,26 @@ with TypeScript 7.0.2 while preparing the ordinary Webernetes acceptance run.
 
 Compiler-observed `setInterval`, worker construction, callbacks and native source expressions enter existing observations. Constructor/helper names do not prove a persistent responsibility. A periodic callback and a supported one-shot scheduled task remain distinct legitimate operation candidates; the initializer is not automatically that work. Explicit imports and compiler-resolved barrels retain original native identities; no export or target is inferred by name alone.
 
+## Inputs a call's words declare, and what JS/TS does not have yet
+
+A call of an outside symbol given words asks that symbol what they become
+(READING, the `atlas_api` table's third set), with `result_receives`. Only a
+symbol the compiler names is asked: a platform call (`new
+Worker("./market-worker.js", …)`, `console.log`) is, but an npm package
+whose declarations are not installed names none, so the fixture's
+`src/cli.ts` (`program.option("-p, --port <n>").action(run)` with
+`commander` in `package.json`) is asked nothing, as its express routes are
+not. Not recorded yet:
+
+- `process.argv` carries no argument vector origin, and `===` on it or on
+  `program.opts()` is no fact;
+- array-literal tables of names;
+- object and `Map` registries;
+- a callable the repository's own function keeps (S1) is not enabled;
+- in every language, a symbol handed a callable at any call is asked what
+  the callable becomes, so its word-only calls (`.command("init")` beside
+  `.action(fn)`) are not asked what their words become.
+
 ## Handler tables and stored callbacks
 
 These are the JS/TS equivalents of the C adapter's command table, its

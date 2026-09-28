@@ -159,6 +159,18 @@ a function (`(def app (wrap routes))`) also runs at load, but its calls still
 belong to the var, while Python gives a module-level assignment's calls to
 the module.
 
+## Inputs a call's words declare, and what Clojure does not have yet
+
+A call of an outside var given a literal asks that var what the words
+become (READING, the `atlas_api` table's third set): the fixture asks
+`clojure.core/format` (`(format "create %s dir" dir)`) and
+`clojure.string/replace`. Not recorded yet:
+
+- `-main`'s `& args` carry no argument vector origin;
+- `tools.cli` option vectors are vectors, not literals given to a call;
+- `case` on an argument;
+- `reset!`/`swap!` stores and registries kept in atoms.
+
 ## Test sources
 
 A namespace that requires `clojure.test` or `speclj.core` is a test source.

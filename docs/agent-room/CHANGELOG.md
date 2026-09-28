@@ -1,5 +1,96 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — What each language does not have yet, the wording frozen, and pass 1 accepted on Redis and litestream (inputs pass 1, D1)
+
+- **Missing equivalents recorded** in C.md, GO.md, PYTHON.md, JSTS.md and
+  CLOJURE.md ("Inputs a call's words declare, and what … does not have
+  yet"): per-call argument-vector words, `switch`/`==`, tables of names,
+  registries, S1 (C's in pass 2; not enabled elsewhere), and the two gaps
+  the fixtures showed: Go's package-level initializer calls no recorded
+  outside symbol (`flag.Bool`), and an npm package without its
+  declarations names no symbol (commander, express). CURRENT says every
+  language has S2a and C's S1/S2b/S3 wait for the owner (pass 2).
+- **Frozen** (no edits after this; a held-out check measures them):
+  - `prompts/entry_options.md` sha256 `6e10fd335c13c65cf429e57f007220861ad4656699f3dca5652792842ff47fa7`
+  - `prompts/api.md` `12f18dbda3e30db7045de59e4b0c19fa02ea65ff44253379237db82887e0d4b5`
+  - `prompts/api_talks_options.md` `a88e76d99d599c51b1954aa0380f48b99298fdd88b66d06803462d56f327894f`
+  - `prompts/api_publishes_options.md` `ceee0c0cebd56d56796f65afd8262e49ed2f80ea7ea73e75871ad64d3a9ceb63`
+  - asks (sha256 of the text): binds `cbfbc988…3192a`, publishes
+    `68645ee6…6cd5c`, talks `f538b957…6f2f4`, enters `62b3db34…7af29`
+    (`inputs/pass1/freeze.txt`). `inputs.md` does not exist yet (pass 2).
+- **Acceptance** (`inputs/pass1/`: base/, after-first/, after/, merge/,
+  walk/, cacheclear/, pass1-revert.log). Ordinary runs `.bin/repomap <repo>
+  --no-serve --no-open` on the default system cache, keys by the sed
+  recipe. Baseline at 1d31976f: Redis 6 s and litestream 8 s, 0 live.
+  - **Redis** (first run at c9ca55bd, A3 before the registration-words
+    fix: exit 0 in 23 s, 11 atlas_api Jev windows and 3 joint windows live
+    once; at 28a57619 18 s and 11 s, 0 live; report.json identical but for
+    `timing`; render byte-identical for both). Inputs: redis-server 96 =
+    96 (95 requests, 1 continuous); redis-cli 0 → 6 and redis-benchmark
+    0 → 11 command options, handler not established; redis-check-dump 0.
+    Enters answers: `strcmp` command (lead 0.64); the other 16 word-given
+    symbols none. Every one of `strcmp`'s 18 word-given calls compares
+    `argv[i]` in a `parseOptions` (the two `-h` sites of redis-cli's are
+    one input); `strcasecmp` (67 calls: config directives, `rc->name`
+    "monitor", command options) none, `printf` (80) none, `fprintf` none,
+    so no comparison or format symbol turns program data into an input.
+    GET's reading is byte-identical (`walk/get-before.txt`,
+    `get-after.txt`). In-view arrows at rest: redis-server 20 → 15 (its
+    own frame and its 2,543 saved connections are unchanged; the drop is
+    the neighbours' layout after redis-cli and redis-benchmark gained
+    input collections, `walk/rest/*.png`), redis-cli 4 = 4,
+    redis-benchmark 5 = 5, redis-check-dump 1 = 1. report.html 12,172,739
+    → 12,203,558.
+  - **litestream** (first run at c9ca55bd exit 0 in 130 s: 36 atlas_api
+    Jev windows, 7 boundaries, 2 core, 6 joints, 1 publish, 4 glossary and
+    1 orientation DeepSeek calls live once; at 28a57619 11 s with one
+    boundaries window live, the 8 re-worded registrations' names; warm 9 s,
+    0 live; report.json identical but for `timing`; render
+    byte-identical). Inputs: cmd/litestream 33 → 93 (lost: 14 `X.Usage`
+    commands and 3 errgroup goroutines, by the merged criteria; gained 69
+    command options and flag-set names and 7 MCP tool requests with their
+    handler not established, and `svc.Run`'s Windows service as an
+    extension: re-asked with its call as usage it no longer serves, so it
+    is an entry instead of a listener); cmd/litestream-test 6 → 34; the
+    python library target 0 → 1. Enters answers taken: `flag.FlagSet.*`
+    command (leads 0.20–0.68), `flag.NewFlagSet` command (0.46),
+    `mcp.NewTool` request (0.71), `os/exec.CommandContext` command (0.53),
+    `setuptools.Extension` extension (0.32); `net/http.Handle` and
+    `ServeMux.Handle` request (0.96) beside serves, refused (the listener
+    stands). Near-ties saved undecided: `RequireString`, `FlagSet.Var`,
+    `WithBoolean`, `Client.Post`, `NewRequestWithContext`. Symbols with
+    more than 50 word calls: `fmt.Errorf` 617, `fmt.Sprintf` 98,
+    `slog.Logger.Debug` 73, `slog.Info` 54, all none. Arrows at rest 16 =
+    16 and 3 → 2. report.html 10,720,273 → 12,324,904, mostly the
+    glossary drawn again live (47 → 81 terms).
+  - **Misses for the owner** (not fixed by wording; the freeze stands):
+    `exec.CommandContext` command makes 10 inputs of the `litestream`
+    command lines the MCP tools and the test tool launch;
+    `flag.NewFlagSet` command makes 20 inputs of flag-set names
+    (`litestream-list`, one per subcommand; the criteria call the
+    program's own name none); `setuptools.Extension` extension makes one;
+    an MCP tool is two inputs (its `NewTool` name and its `AddTool`
+    handler), and argparse's `add_parser` + `set_defaults` would be too.
+    Eight socket options were named by all their words
+    (`socket /var/run/litestream.sock control socket path`): the name
+    question returned no word.
+  - **Walk** (headless Chromium 1440×900, loopback server on 8931, stopped
+    after): `-h` reads "handler not established", "declared in Benchmark
+    client", `redis-benchmark.c:428`, Main flow; litestream's `config`,
+    `timeout` (7 inputs, one per subcommand) and `litestream_databases`
+    read the same way; no input tile of these has an arrow; no page
+    errors. Choosing such an input does not frame its tile (it has no
+    path); left for the UI.
+  - **`repomap cache clear`** on a scratch `--debug-dir` cache over the
+    kvd fixture only: cold 48 live (atlas_api 4 windows), warm 0 live
+    (46 api rows recalled, 0 windows), clear exit 0 (2.0 MB), then 46
+    live again (atlas_api 4 windows). The system cache was not cleared.
+  - **Cost**: Jev about 1.23 M input tokens of atlas_api (≈ $0.05) plus
+    the merge probe (≈ $0.02); DeepSeek about 0.39 M input and 0.04 M
+    output tokens (≈ $0.1–0.15), most of it litestream's orientation and
+    glossary.
+- `make test`: PASS. `make vet`: PASS (documentation only; no UI change).
+
 ## 2026-09-28 — A call given words becomes the entry its symbol makes of them (inputs pass 1, A3, S2a)
 
 - **The third question set** (`repomap.atlas.api.v7.given`): a symbol

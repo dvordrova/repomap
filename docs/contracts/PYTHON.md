@@ -314,6 +314,24 @@ implementation's docstring, comment and blank line leave it 3 code lines.
 
 The original AST call site, result identity, positional/keyword arguments and callback targets remain separate. `Thread(target=...)`, async-task and supported schedule registrations preserve their written activation evidence. A later `start`, `join` or liveness check on that same result does not invent a callback call. Lifespan setup and finite retry loops remain negative controls; final scheduled/continuous roles belong to [operation review](READING.md#operation-ownership).
 
+## Inputs a call's words declare, and what Python does not have yet
+
+A call of an outside symbol given words asks that symbol what they become
+(READING, the `atlas_api` table's third set), with `result_receives`, the
+calls made on what the call returns. The fixture's
+`src/fixture_app/tool_cli.py` asks `argparse.ArgumentParser`
+(`add_argument ×1`, `add_subparsers ×1`), `add_argument`,
+`add_subparsers` (`add_parser ×1`) and `add_parser`; `set_defaults(func=…)`
+hands a callable and is asked what it becomes. A subcommand named by one
+call and handled through another is two questions and, when both are
+accepted, two inputs; joining them is later work. Not recorded yet:
+
+- `sys.argv` carries no argument vector origin, and a comparison of
+  `sys.argv` or of a parsed argument (`args.cmd == "init"`) is no fact;
+- list and dict tables of names;
+- dict registries (`handlers[name] = fn`);
+- a callable the repository's own function keeps (S1) is not enabled.
+
 ## Test sources
 
 A resolved pytest table in `pyproject.toml` (`[tool.pytest]` or
