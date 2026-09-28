@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/atlas"
-	"github.com/dvordrova/repomap/internal/atlas/destinations"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
@@ -320,12 +319,14 @@ func EntryName(words []EntryWord, cell string) string {
 	return strings.Join(chosen, " ")
 }
 
-// DestinationOther prefixes a destination the catalogue does not list.
+// DestinationOther prefixes a destination the catalogue does not name.
 const DestinationOther = "other: "
 
+// destinationColumn chooses among the names the row's outside packages
+// were given (Destinations), or names a system none of them covers.
 func destinationColumn() table.Column {
 	return table.Column{Name: "destination", Kind: table.Choice, OptionsFrom: "destination_options", Free: DestinationOther, FreeMaxRunes: LabelRunes, Alone: true,
-		Note: "one d* ref from context.destination_catalog, or other: followed by the runtime system's short name; never a host, URL or address"}
+		Note: "the d* ref of the system this call reaches from context.destination_catalog, or other: and its short name when no entry names it"}
 }
 
 // addressColumn is asked only where the row carries address candidates: a
@@ -335,11 +336,6 @@ func destinationColumn() table.Column {
 func addressColumn() table.Column {
 	return table.Column{Name: "address", Kind: table.Choice, OptionsFrom: "address_options", WhenOptionsFrom: "address_options", Missing: "unknown", Alone: true,
 		Note: "one supplied a* address value, or unknown when no observed value identifies the destination"}
-}
-
-// DestinationFields are the window's closed list of runtime systems.
-func DestinationFields(catalog []destinations.Entry) []table.Field {
-	return []table.Field{{Name: "destination_catalog", Value: catalog}, {Name: "destination_options", Value: destinations.Refs(catalog)}}
 }
 
 // BoundaryAddress keeps the original supplied bytes and their source context.

@@ -161,6 +161,10 @@ func TestBoundaryPurposeReadsOnlyNativeImmediateCallersAndOwnAncestorDocuments(t
 	provider := &mutatedTableProvider{}
 	inspected := 0
 	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		// The outside package the call goes through is named first.
+		if input["table"] == lines.StageSystems {
+			return
+		}
 		inspected += len(rows)
 		if len(rows) != 1 {
 			t.Fatalf("caller contexts created extra boundaries: %d", len(rows))

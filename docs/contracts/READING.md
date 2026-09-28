@@ -924,6 +924,39 @@ chooses the destination and address of an outgoing one, never its existence
 or kind. The `listen_address` facts and the per-site `decision`, `kind` and
 `basis` cells, and the symbols' `outbound` selection, are gone.
 
+### Outside systems
+
+Which outside system an outgoing call reaches is asked once per outside
+package, never of a list kept in code (`repomap.atlas.systems.v1`, stage
+`atlas_systems`, the text model, since a name is text). The code groups the
+outgoing rows of the boundaries table by the outside package their call
+goes through, as the facts record it at the call's site (a Go import path,
+a Python or JavaScript module, a C header, a Clojure namespace); a row
+whose site names no call has no package. One row per package for the
+whole run: `package`, `dependency` (each module and version its targets'
+dependency catalogues record for it, when they do) and `calls`, every
+symbol of the package the program calls with one call of each as written
+(the first outside tests given a literal, else the first outside tests).
+The one cell, `system`, is a short name as a newcomer would say it, or
+`none` when calls through the package reach no one outside system (the
+operating system, the runtime, an in-process library, a general protocol
+that reaches whatever address it is given). The prompt asks for the
+system, not the library, in the vendor's usual product name, one name per
+system, and the system the calls choose when they choose one (a driver
+name, a URL scheme). Each package is remembered on its own (`Memoize`); the
+cell is a decision, kept without captions. An undecided package has no
+name.
+
+An outgoing row's catalogue is built from these names for the row's own
+targets (`lines.Destinations`): one `d*` entry per name (equal but for
+case is one), in name order, listing the `packages` that reach it. A
+package answered `none` gives no entry. The row chooses the entry of the
+system its call reaches, usually the one listing its `package`, or writes
+`other: ` and a name when its call reaches a system no entry names (a
+general HTTP client calling one known service). The report groups records
+by the stored name without its parenthetical qualifier, case-insensitively,
+and folds no text onto another name.
+
 An outbound call names the extracted tables among its values as `data_ids`.
 GroupsIndex derives no chains (paths from an operation to an outbound call)
 and no operation types any more: nothing read them once each input's reach,
@@ -992,7 +1025,7 @@ its cells in a request describes every cell and leaves which ones to write to
 advertised by fill", so a caption-less types request of an English name asks
 `line` alone and the model writes no `alias`.
 
-A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell. Fixed native boundaries request explanation rather than pointless existence/kind choices. A fixed incoming entry additionally requests its `name` among its `words` (Operation ownership), with or without `--captions`, and shows no `method` field; its rows share windows without an owner, since its handler's calls near a registration elsewhere say nothing about its name. Without captions a fixed row with no decision to make is not sent and has no line: `Boundary.Line` holds only a line the model wrote, and the fact's given text is only the joint request's context. An entry's and an outgoing fact's summary is therefore empty unless the model explained it (the reading and Find name the handler; an outgoing row names its call or its kind). Each fixed cell fails alone: a refused line leaves no line and a refused name leaves the handler's name. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the shared known-systems list (`internal/atlas/destinations`) annotated with the dependencies of the row's own targets, with `other: ` for a system outside it. A row's choices are thus the same whatever rows share its window (rows of other targets never share it), and a system of the same sort as a listed one (Azure Blob Storage beside S3 storage) is its own entry or `other: `, never the listed one; an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
+A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell. Fixed native boundaries request explanation rather than pointless existence/kind choices. A fixed incoming entry additionally requests its `name` among its `words` (Operation ownership), with or without `--captions`, and shows no `method` field; its rows share windows without an owner, since its handler's calls near a registration elsewhere say nothing about its name. Without captions a fixed row with no decision to make is not sent and has no line: `Boundary.Line` holds only a line the model wrote, and the fact's given text is only the joint request's context. An entry's and an outgoing fact's summary is therefore empty unless the model explained it (the reading and Find name the handler; an outgoing row names its call or its kind). Each fixed cell fails alone: a refused line leaves no line and a refused name leaves the handler's name. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the row's targets' catalogue of outside systems (Outside systems below), with `other: ` for a system no entry names; an outgoing row carries the outside `package` its call goes through when the code names the call at its site. A row's choices are thus the same whatever rows share its window (rows of other targets never share it); an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
 
 Boundary v5 names the candidate basis `dispatch` or `remote_client_instance`.
 The latter requires this call itself to create or configure the actual remote
@@ -1007,9 +1040,7 @@ The candidate prompt places the three `decision` choices beside their separate
 `invokes_external` describe source indexing or call direction, not a proven
 exchange with another process. Selected rows precede the complete shared owner
 context and destination catalogue. The catalogue offers names only; no entry
-establishes a call's runtime role. A service precedes the API it is compatible
-with, so DeepSeek's OpenAI-compatible endpoint is offered and folded as
-DeepSeek, not OpenAI. The response shape, closed choices, evidence
+establishes a call's runtime role. The response shape, closed choices, evidence
 and stage reasoning setting are unchanged. A tagged free value keeps its written
 name when whitespace around the colon varies (`other:Name`, `other : Name`);
 the tag and a nonempty name remain required. This formatting normalization does

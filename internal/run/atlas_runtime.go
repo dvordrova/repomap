@@ -98,7 +98,7 @@ func readRepositoryAtlas(
 		targets = append(targets, target)
 		meta := reading.TargetMeta{
 			ID: index.Target.ID, Language: index.Target.Language, Kind: index.Target.Kind,
-			Name: index.Target.Name, Root: root, Dependencies: externalDependencyPaths(catalog),
+			Name: index.Target.Name, Root: root, Dependencies: externalDependencies(catalog),
 		}
 		if target, ok := planned[run.SelectedTargetKey]; ok {
 			meta.SelectedRole = target.Placement
@@ -353,22 +353,22 @@ func orientAtlasRuns(
 	return nil
 }
 
-// externalDependencyPaths lists the package paths of a target's external
-// dependencies once each, in order: what the boundaries table annotates its
-// destination catalogue with.
-func externalDependencyPaths(catalog *dependencies.Catalog) []string {
+// externalDependencies lists a target's external dependencies once each,
+// by package path: the record the systems question shows beside an
+// outside package's calls.
+func externalDependencies(catalog *dependencies.Catalog) []reading.Dependency {
 	if catalog == nil {
 		return nil
 	}
 	seen := make(map[string]bool)
-	var paths []string
+	var result []reading.Dependency
 	for _, dependency := range catalog.Dependencies {
 		if dependency.Kind != dependencies.KindExternal || dependency.PackagePath == "" || seen[dependency.PackagePath] {
 			continue
 		}
 		seen[dependency.PackagePath] = true
-		paths = append(paths, dependency.PackagePath)
+		result = append(result, reading.Dependency{Package: dependency.PackagePath, Module: dependency.ModulePath, Version: dependency.ModuleVersion})
 	}
-	sort.Strings(paths)
-	return paths
+	sort.Slice(result, func(i, j int) bool { return result[i].Package < result[j].Package })
+	return result
 }

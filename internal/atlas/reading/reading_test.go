@@ -260,6 +260,7 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 			Kind        string   `json:"kind"`
 			Options     []string `json:"options"`
 			OptionsFrom string   `json:"options_from"`
+			Free        string   `json:"free_prefix"`
 		} `json:"fill"`
 		Context map[string]any   `json:"context"`
 		Rows    []map[string]any `json:"rows"`
@@ -305,6 +306,9 @@ func (provider *tableProvider) Complete(_ context.Context, prepared llm.Prepared
 				}
 				if len(options) > 0 {
 					answer[column.Name] = options[0]
+				} else if column.Free != "" {
+					// Nothing listed: the free value names its own.
+					answer[column.Name] = column.Free + "Text for " + key
 				}
 				if column.Name == "part" && provider.placeFor != nil {
 					answer[column.Name] = provider.placeFor(row)

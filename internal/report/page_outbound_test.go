@@ -226,7 +226,7 @@ func TestOutboundGroupsByDestinationWithSharedAddressAndPreview(t *testing.T) {
 		{ID: "f", NativeLabel: "GET https://metrics.example/push", KindLabel: "Request", Source: "fact"},
 	}
 	groups := groupOutbound(rows)
-	if len(groups) != 3 || groups[0].Destination != "PostgreSQL" || len(groups[0].Rows) != 3 || groups[1].Destination != "Kubernetes API server" || len(groups[1].Rows) != 2 || groups[2].NativeLabel != "GET https://metrics.example/push" {
+	if len(groups) != 3 || groups[0].Destination != "Postgres" || len(groups[0].Rows) != 3 || groups[1].Destination != "Kubernetes API server" || len(groups[1].Rows) != 2 || groups[2].NativeLabel != "GET https://metrics.example/push" {
 		t.Fatalf("groups by destination, most records first: %+v", groups)
 	}
 	if groups[0].Addresses != 2 || groups[0].Address != "" || groups[1].Addresses != 1 || groups[1].Address != "{env:KUBECONFIG}" {
@@ -260,22 +260,23 @@ func TestDisplayCallableDropsPlatformNotation(t *testing.T) {
 
 func TestOutboundGroupsNameOneSystemOnce(t *testing.T) {
 	rows := []pageOutbound{
-		{ID: "a", Destination: "RabbitMQ broker (morfeu.events exchange)", KindLabel: "Queue"},
-		{ID: "b", Destination: "AMQP broker (RabbitMQ)", KindLabel: "External communication"},
-		{ID: "c", Destination: "RabbitMQ broker (queue topology)", KindLabel: "External communication"},
+		{ID: "a", Destination: "RabbitMQ (morfeu.events exchange)", KindLabel: "Queue"},
+		{ID: "b", Destination: "rabbitmq", KindLabel: "External communication"},
+		{ID: "c", Destination: "RabbitMQ (queue topology)", KindLabel: "External communication"},
 		{ID: "d", Destination: "message broker", KindLabel: "Queue"},
-		{ID: "e", Destination: "Redis cache server", KindLabel: "SDK"},
-		{ID: "f", Destination: "Redis cache store", KindLabel: "Database"},
+		{ID: "e", Destination: "Redis", KindLabel: "SDK"},
+		{ID: "f", Destination: "Redis", KindLabel: "Database"},
 		{ID: "g", Destination: "remote PostgreSQL database", KindLabel: "Database"},
-		{ID: "h", Destination: "PostgreSQL database", KindLabel: "Database"},
-		{ID: "i", Destination: "Cache store (concrete implementation unresolved)", KindLabel: "Database"},
+		{ID: "h", Destination: "PostgreSQL", KindLabel: "Database"},
 	}
 	groups := groupOutbound(rows)
 	got := map[string]int{}
 	for _, group := range groups {
 		got[group.Destination] = len(group.Rows)
 	}
-	want := map[string]int{"RabbitMQ": 3, "message broker": 1, "Redis": 2, "PostgreSQL": 2, "Cache store": 1}
+	// Another wording is another group: no text is folded onto a name it
+	// merely contains.
+	want := map[string]int{"RabbitMQ": 3, "message broker": 1, "Redis": 2, "remote PostgreSQL database": 1, "PostgreSQL": 1}
 	if len(got) != len(want) {
 		t.Fatalf("groups: %v", got)
 	}
@@ -286,11 +287,6 @@ func TestOutboundGroupsNameOneSystemOnce(t *testing.T) {
 	}
 	if groups[0].Destination != "RabbitMQ" || groups[0].KindLabel != "External communication" {
 		t.Fatalf("mixed kinds under one system did not neutralise: %+v", groups[0])
-	}
-	for text, want := range map[string]string{"S3-compatible object storage (MinIO)": "S3 storage", "OTLP trace collector": "OpenTelemetry collector", "proxy service": "proxy service", "": ""} {
-		if got := canonicalDestination(text); got != want {
-			t.Fatalf("canonicalDestination(%q) = %q, want %q", text, got, want)
-		}
 	}
 }
 
@@ -408,7 +404,7 @@ func TestOutboundProgramsAreOneDestinationOnlyByTheirWord(t *testing.T) {
 		{ID: "b5", Kind: atlas.BoundaryRunsProgram, External: "os/exec.CommandContext", ProgramNotNamed: true, Values: []string{"--version"}, Source: "model"},
 		{ID: "b6", Kind: atlas.BoundaryRunsProgram, External: "os/exec.CommandContext", ProgramNotNamed: true, Values: []string{"-json"}, Source: "model"},
 		{ID: "b7", Kind: atlas.BoundaryRunsProgram, External: "os/exec.Command", Values: []string{}, Source: "model"},
-		{ID: "b8", Kind: atlas.BoundarySDK, External: "redis.Client.Get", Destination: "Redis cache server", Values: []string{"key"}, Source: "model"},
+		{ID: "b8", Kind: atlas.BoundarySDK, External: "redis.Client.Get", Destination: "Redis", Values: []string{"key"}, Source: "model"},
 	}}
 	section := &pageSection{ID: "tool", programTargetID: "tool"}
 	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}

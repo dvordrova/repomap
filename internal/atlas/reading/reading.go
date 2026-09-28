@@ -43,10 +43,19 @@ type TargetMeta struct {
 	Root         string   `json:"root"`
 	SelectedRole string   `json:"selected_role,omitempty"`
 	SharedCode   []string `json:"shared_code,omitempty"`
-	// Dependencies are the external packages the target imports, as the
-	// dependency catalogue names them. They annotate the closed list of
-	// runtime systems a boundary may name; none of them is a destination.
-	Dependencies []string `json:"dependencies,omitempty"`
+	// Dependencies are the external packages the target imports, as its
+	// dependency catalogue records them. The systems question shows an
+	// outside package's record beside its calls; none is a destination.
+	Dependencies []Dependency `json:"dependencies,omitempty"`
+}
+
+// Dependency is one external package a target imports: its path, and the
+// module that provides it with the module's version as the manifest
+// records them, when it does.
+type Dependency struct {
+	Package string `json:"package"`
+	Module  string `json:"module,omitempty"`
+	Version string `json:"version,omitempty"`
 }
 
 // Options is everything the reading needs.
@@ -723,9 +732,11 @@ func (r *reader) runTableGroups(ctx context.Context, def table.Definition, round
 // a table of prose alone asks nothing. An alias is not a caption: a table
 // asked of names that need one keeps it with or without captions (owner
 // decision 2026-09-26), and the other names never take it (withoutAlias).
+// Nor is the name of the system an outside package reaches: it is the one
+// decision the destinations are chosen among.
 func withoutCaptions(def table.Definition) table.Definition {
 	return narrowed(def, func(column table.Column) bool {
-		return column.Kind != table.Text || column.Name == lines.AliasColumn
+		return column.Kind != table.Text || column.Name == lines.AliasColumn || def.Stage == lines.StageSystems
 	})
 }
 

@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/dvordrova/repomap/internal/atlas"
-	"github.com/dvordrova/repomap/internal/atlas/destinations"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -643,6 +642,9 @@ type boundaryState struct {
 	// apiSymbol is the outside symbol a boundary the roles made calls, as
 	// the atlas_api table names it.
 	apiSymbol string
+	// outside is the outside package an outgoing boundary's call goes
+	// through, when the code names the call at its site.
+	outside string
 	// programNotNamed marks a call starting another program that none of
 	// its words names; destination then holds no program.
 	programNotNamed bool
@@ -709,6 +711,9 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		for _, call := range owner.Symbol.Calls {
 			if call.Line == state.place.LineNo && call.Column == state.place.Column {
 				state.uses = append(state.uses, tracer.Read(owner, call)...)
+				if call.API != nil {
+					state.outside = call.API.Package
+				}
 			}
 		}
 		state.uses = canonicalDestinationUses(state.uses)
@@ -789,10 +794,26 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			group.states = append(group.states, state)
 		}
 		sort.Strings(keys)
+		// The outside system each package the outgoing rows call through
+		// reaches is asked once, before any row chooses among the names.
+		var packages targetPackages
+		var names map[string]string
+		if outgoing {
+			packages = make(targetPackages)
+			for _, key := range keys {
+				for _, state := range byOwner[key].states {
+					packages.add(state)
+				}
+			}
+			var err error
+			if names, err = r.readSystems(ctx, packages.all()); err != nil {
+				return err
+			}
+		}
 		var groups rowGroups
 		var order []*boundaryState
 		addressValues := make(map[string][]lines.BoundaryAddress)
-		catalogs := make(map[string][]destinations.Entry)
+		catalogs := make(map[string][]lines.Destination)
 		for _, key := range keys {
 			group := byOwner[key]
 			ownerRef := ""
@@ -803,9 +824,9 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			}
 			var rows []table.Row
 			var rowLines []int
-			var catalog []destinations.Entry
+			var catalog []lines.Destination
 			if outgoing {
-				catalog = r.rowCatalog(group.states[0])
+				catalog = packages.catalog(group.states[0], names)
 			}
 			for _, state := range group.states {
 				addresses := lines.BoundaryAddresses(state.place, original...)
@@ -817,6 +838,9 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				// such a row has no address decision.
 				askAddress := outgoing && state.address == ""
 				row := lines.BoundaryRow(state.place, ownerRef, addresses, askAddress)
+				if outgoing && state.outside != "" {
+					row.Fields = append(row.Fields, table.Field{Name: "package", Value: state.outside})
+				}
 				if len(state.uses) > 0 {
 					row.Fields = append(row.Fields, table.Field{Name: "destination_chains", Value: destinationEvidence(state.uses)})
 				}
@@ -897,10 +921,8 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 }
 
 // destinationChoice reads a destination cell: the system a d* ref names in
-// the window's catalogue, or the text the model wrote after the free prefix.
-// A new atlas thus stores the canonical system name; the report folds only
-// older free text onto it.
-func destinationChoice(def table.Definition, catalog []destinations.Entry, cell string) string {
+// the row's catalogue, or the name the model wrote after the free prefix.
+func destinationChoice(def table.Definition, catalog []lines.Destination, cell string) string {
 	for _, column := range def.Columns {
 		if column.Name != "destination" {
 			continue
@@ -909,16 +931,49 @@ func destinationChoice(def table.Definition, catalog []destinations.Entry, cell 
 			return strings.TrimSpace(text)
 		}
 	}
-	return destinations.Value(catalog, cell)
+	return lines.DestinationValue(catalog, cell)
 }
 
-// rowCatalog is the closed list of runtime systems one outgoing row chooses
-// from: every known system, annotated with the dependencies of the row's
-// own targets. It depends on nothing a window's other rows bring, so two
-// calls into one outside system are offered the same choices wherever they
-// are packed.
-func (r *reader) rowCatalog(state *boundaryState) []destinations.Entry {
-	return destinations.Catalog(r.targetDependencies(rowTargets(state)))
+// targetPackages are, by target, the outside packages its outgoing rows
+// call through.
+type targetPackages map[string]map[string]bool
+
+func (packages targetPackages) add(state *boundaryState) {
+	if state.outside == "" {
+		return
+	}
+	for _, target := range rowTargets(state) {
+		if packages[target] == nil {
+			packages[target] = make(map[string]bool)
+		}
+		packages[target][state.outside] = true
+	}
+}
+
+// all lists every package once, sorted.
+func (packages targetPackages) all() []string {
+	var result []string
+	for _, byPackage := range packages {
+		for pkg := range byPackage {
+			result = append(result, pkg)
+		}
+	}
+	sort.Strings(result)
+	return slices.Compact(result)
+}
+
+// catalog is the closed list one outgoing row chooses from: the systems
+// the outside packages of its own targets reach (lines.Destinations). It
+// depends on nothing a window's other rows bring, so two calls through one
+// package are offered the same choices wherever they are packed.
+func (packages targetPackages) catalog(state *boundaryState, names map[string]string) []lines.Destination {
+	named := make(map[string]string)
+	for _, target := range rowTargets(state) {
+		for pkg := range packages[target] {
+			named[pkg] = names[pkg]
+		}
+	}
+	return lines.Destinations(named)
 }
 
 // rowTargets are the targets a row belongs to, sorted and once each.
@@ -926,30 +981,6 @@ func rowTargets(state *boundaryState) []string {
 	targets := slices.Clone(state.place.TargetIDs)
 	slices.Sort(targets)
 	return slices.Compact(targets)
-}
-
-// targetDependencies are the external packages imported by the given
-// targets, the evidence the destination catalogue is annotated with.
-func (r *reader) targetDependencies(targets []string) []string {
-	wanted := make(map[string]bool)
-	for _, id := range targets {
-		wanted[id] = true
-	}
-	seen := make(map[string]bool)
-	var result []string
-	for _, target := range r.opts.Targets {
-		if !wanted[target.ID] {
-			continue
-		}
-		for _, dependency := range target.Dependencies {
-			if !seen[dependency] {
-				seen[dependency] = true
-				result = append(result, dependency)
-			}
-		}
-	}
-	sort.Strings(result)
-	return result
 }
 
 // Native SubjectID names the shared compiler-located declaration even when

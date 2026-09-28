@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
-	"github.com/dvordrova/repomap/internal/atlas/destinations"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -487,12 +486,16 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 	return groups
 }
 
-// canonicalDestination is the group name for a destination text. A new
-// atlas already stores the closed system name the model chose; an older
-// atlas's free text ("RabbitMQ broker (queue topology)") is folded onto the
-// same vocabulary by the words it contains. Records keep their own wording.
+// canonicalDestination is the group name for a destination text: the name
+// the reading stored, without a parenthetical qualifier ("RabbitMQ broker
+// (queue topology)" is "RabbitMQ broker"). No text is folded onto another
+// name. Records keep their own wording.
 func canonicalDestination(text string) string {
-	return destinations.Canonical(text)
+	base := strings.TrimSpace(text)
+	if i := strings.Index(base, "("); i > 0 {
+		base = strings.TrimSpace(base[:i])
+	}
+	return base
 }
 
 func outboundKindLabel(kind string) string {

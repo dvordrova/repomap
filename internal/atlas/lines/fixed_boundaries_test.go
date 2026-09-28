@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
-	"github.com/dvordrova/repomap/internal/atlas/destinations"
 	"github.com/dvordrova/repomap/internal/atlas/table"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
@@ -148,7 +147,7 @@ func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *
 	place := func(id string, line int) atlas.Place {
 		return atlas.Place{ID: id, Path: "client.go", LineNo: line, Boundary: &atlas.BoundaryFacts{Direction: atlas.DirectionOut, Caller: "publish", External: "ch.Publish", Values: []string{"morfeu.events"}}}
 	}
-	catalog := destinations.Catalog([]string{"github.com/rabbitmq/amqp091-go"})
+	catalog := Destinations(map[string]string{"github.com/rabbitmq/amqp091-go": "RabbitMQ", "net/http": ""})
 	shared := append([]table.Field{BoundaryOwnerContext(BoundaryOwner("o1", owner, []int{40, 41}, nil))}, DestinationFields(catalog)...)
 	rows := []table.Row{
 		BoundaryRow(place("first", 40), "o1", BoundaryAddresses(place("first", 40), owner), true),
@@ -163,8 +162,8 @@ func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *
 	if strings.Count(request, `"Publishes events."`) != 1 || strings.Count(request, `"destination_catalog"`) != 1 || strings.Count(request, `"owner_ref": "o1"`) != 2 {
 		t.Fatalf("owner or catalogue not shared once per window:\n%s", request)
 	}
-	if !strings.Contains(request, `"dependencies":["github.com/rabbitmq/amqp091-go"]`) {
-		t.Fatalf("catalogue lost the target's dependency annotation:\n%s", request)
+	if !strings.Contains(request, `"destination_catalog": [{"ref":"d1","value":"RabbitMQ","packages":["github.com/rabbitmq/amqp091-go"]}]`) {
+		t.Fatalf("catalogue lost its named package or offered an unnamed one:\n%s", request)
 	}
 	result, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[
 		{"key":"first","line":"publishes catalog events to morfeu.events","destination":"d1","address":"a1"},
@@ -172,7 +171,7 @@ func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *
 	if err != nil || len(result.Rejections) != 0 {
 		t.Fatalf("closed destination refused: %+v / %v", result, err)
 	}
-	if result.Answers[0]["destination"] != "d1" || destinations.Value(catalog, result.Answers[0]["destination"]) != "RabbitMQ" || result.Answers[0]["address"] != "a1" {
+	if result.Answers[0]["destination"] != "d1" || DestinationValue(catalog, result.Answers[0]["destination"]) != "RabbitMQ" || result.Answers[0]["address"] != "a1" {
 		t.Fatalf("ref did not resolve to the listed system: %+v", result.Answers[0])
 	}
 	if free, ok := table.IsFree(def.Columns[1], result.Answers[1]["destination"]); !ok || free != "Twilio" {
@@ -200,7 +199,7 @@ func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) 
 			def := FixedBoundaries(outgoing)
 			var shared []table.Field
 			if outgoing {
-				shared = DestinationFields(destinations.Catalog(nil))
+				shared = DestinationFields(Destinations(map[string]string{"example.com/client": "Example service"}))
 			}
 			windows, err := table.WindowsWithContext(def, 1, shared, []table.Row{row})
 			if err != nil || len(windows) != 1 {

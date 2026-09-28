@@ -151,7 +151,7 @@ func TestConcurrentStagesKeepStepOrder(t *testing.T) {
 	}
 	position := func(stage string) int {
 		switch stage {
-		case lines.StagePublish:
+		case lines.StagePublish, lines.StageSystems:
 			stage = lines.StageBoundaries
 		case lines.StagePlacement, lines.StageDescribe, lines.StageRoleHelper, lines.StageRoleGate, lines.StageRoleBoxes, lines.StageRoleAssign:
 			stage = lines.StageZones
