@@ -137,3 +137,12 @@ func (index Index) validateOutbound(subjects map[string]Subject, groups map[stri
 	}
 	return nil
 }
+
+func appendUniqueString(values []string, value string) []string {
+	for _, known := range values {
+		if known == value {
+			return values
+		}
+	}
+	return append(values, value)
+}

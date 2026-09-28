@@ -173,19 +173,9 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 			names[subject.ID] = subject.Object.Name
 		}
 	}
-	var walked []string
-	for _, chain := range overlay.Chains {
-		if chain.OperationID == request.ID && chain.OutboundID == query.ID {
-			for _, id := range chain.SubjectIDs {
-				walked = append(walked, names[id])
-			}
-		}
-	}
-	if strings.Join(walked, " → ") != "GetUser → GetUser → GetByID → GetUser" {
-		t.Fatalf("route chain to the users table = %v (chains %+v)", walked, overlay.Chains)
-	}
-	// The route's reach holds its handler, the repository method and the
-	// sqlc query: the declarations its chain walks.
+	// The route's reach walks its handler, the service, the repository
+	// method and the sqlc query that sends the statement naming the users
+	// table: the whole way from the route to the database call.
 	flowtest.Check(t, index, overlay)
 	for position, operation := range overlay.Operations {
 		if operation.ID != request.ID {
@@ -197,32 +187,20 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 				located[subject.ID] = subject.Object.Name + "@" + subject.Object.Location.Path
 			}
 		}
-		reached := map[string]bool{}
+		reached := map[string]int{}
 		for _, subject := range overlay.Reach[position].Subjects {
-			reached[located[subject.SubjectID]] = true
+			reached[located[subject.SubjectID]] = subject.Depth + 1
 		}
-		for _, want := range []string{"GetUser@internal/users/handler/handler.go", "GetByID@internal/users/repository/postgres.go", "GetUser@internal/database/sqlc/users.sql.go"} {
-			if !reached[want] {
+		for _, want := range []string{"GetUser@internal/users/handler/handler.go", "GetUser@internal/users/service/service.go", "GetByID@internal/users/repository/postgres.go", "GetUser@internal/database/sqlc/users.sql.go"} {
+			if reached[want] == 0 {
 				t.Fatalf("the route does not reach %s: %v", want, reached)
 			}
 		}
-	}
-	typeNames := func(ids []string) []string {
-		var result []string
-		for _, id := range ids {
-			result = append(result, names[id])
-		}
-		return result
-	}
-	if !reflect.DeepEqual(typeNames(request.RequestTypeIDs), []string(nil)) || !reflect.DeepEqual(typeNames(request.ResponseTypeIDs), []string{"UserResponse"}) {
-		t.Fatalf("request/response types = %v / %v", typeNames(request.RequestTypeIDs), typeNames(request.ResponseTypeIDs))
-	}
-	for _, chain := range overlay.Chains {
-		if chain.OperationID == request.ID && chain.OutboundID == query.ID && !reflect.DeepEqual(typeNames(chain.TypeIDs), []string{"User", "User"}) {
-			t.Fatalf("types carried by the route chain = %v", typeNames(chain.TypeIDs))
+		if reached[located[query.SubjectID]] == 0 {
+			t.Fatalf("the route does not reach the call sending its statement (%s): %v", located[query.SubjectID], reached)
 		}
 	}
-	// Initialization is what main reaches by calls; runtime is the route's chain.
+	// Initialization is what main reaches by calls; runtime is the route's reach.
 	phases := map[string]string{}
 	for _, subject := range overlay.Subjects {
 		if subject.Phase != "" && subject.Object != nil && subject.Object.Location != nil {
@@ -237,23 +215,19 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 			t.Fatalf("phase of %s = %q, want %q (all: %v)", name, phases[name], want, phases)
 		}
 	}
-	// Chains are derived: the saved overlay has none, the hydrated index has them again.
+	// The reach is derived: the saved overlay carries none, and the decoded
+	// index derives the same one again.
 	encoded, err := groupindex.Encode(overlay)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), `"chains"`) {
-		t.Fatal("derived chains were persisted")
 	}
 	restored, err := groupindex.Decode(encoded, index)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(restored.Reach, overlay.Reach) || !reflect.DeepEqual(restored.Dispatch, overlay.Dispatch) {
-		t.Fatal("the decoded index derives another reach")
-	}
-	if len(restored.Chains) != len(overlay.Chains) || !reflect.DeepEqual(restored.Operations, overlay.Operations) || !reflect.DeepEqual(restored.Subjects, overlay.Subjects) {
-		t.Fatalf("hydrated chains = %d, projected %d; operations equal: %v", len(restored.Chains), len(overlay.Chains), reflect.DeepEqual(restored.Operations, overlay.Operations))
+	if !reflect.DeepEqual(restored.Reach, overlay.Reach) || !reflect.DeepEqual(restored.Dispatch, overlay.Dispatch) ||
+		!reflect.DeepEqual(restored.Operations, overlay.Operations) || !reflect.DeepEqual(restored.Subjects, overlay.Subjects) {
+		t.Fatal("the decoded index derives another reach, or other operations or subjects")
 	}
 }
 

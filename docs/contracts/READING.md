@@ -844,19 +844,15 @@ chooses the destination and address of an outgoing one, never its existence
 or kind. The `listen_address` facts and the per-site `decision`, `kind` and
 `basis` cells, and the symbols' `outbound` selection, are gone.
 
-GroupsIndex derives `chains` from the program index, its operations and its
-outbound calls: every path of exact or alternative calls from an operation's
-subject to a subject that makes an outbound call, at most eight subjects
-long, in reading order. An outbound call names the extracted tables among
-its values as `data_ids`. A chain carries the repository types its
-signatures name; an operation records the repository types its subject
-takes and the ones it hands to calls outside the repository (the value
-written into a response, found through the call that produced it). None of
-this is persisted; all of it is recomputed when an overlay is hydrated.
+An outbound call names the extracted tables among its values as `data_ids`.
+GroupsIndex derives no chains (paths from an operation to an outbound call)
+and no operation types any more: nothing read them once each input's reach,
+which holds every declaration its handler's calls lead to, is derived
+(below).
 
-No table asks what a declaration on a chain does with what passes through
-it (access, adapter, logic, passthrough): nothing reads such a role, and a
-decision without a reader is not asked.
+No table asks what a declaration on an input's path does with what passes
+through it (access, adapter, logic, passthrough): nothing reads such a role,
+and a decision without a reader is not asked.
 
 GroupsIndex derives, with one function (`groupindex.Derive`, called by
 `ProjectAtlas` after the joints are in, by `Hydrate` and by `Build`), what

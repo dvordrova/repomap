@@ -759,7 +759,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	data := projectData(program, target.Data)
 	outbound := projectOutbound(program, target, groupOfBox, sourceRefs)
 	joinOutboundData(outbound, data)
-	operationTypes(program, operations)
 	index := Index{
 		Version:            Version,
 		Role:               target.Role,
@@ -772,7 +771,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		Groups:             groups,
 		Operations:         operations,
 		Outbound:           outbound,
-		Chains:             projectChains(program, operations, outbound),
 		Containers:         containers,
 		StructuralEdges:    compileStructuralEdges(program, retained),
 		Connections:        connections,

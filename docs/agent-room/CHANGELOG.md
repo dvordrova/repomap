@@ -1,5 +1,22 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Map model step 4, S4-6: chains and operation types deleted
+
+- After S4-1 and S4-5 nothing read `Index.Chains` (only `applyPhases` and
+  `drawsInit` had) or `Operation.RequestTypeIDs`/`ResponseTypeIDs` (no
+  reader outside GroupsIndex). `chains.go` (`projectChains`, `Chain`,
+  `validateChains`, `carriedTypes`, `operationTypes`) is deleted, with the
+  fields and their calls in `projectTarget` and `Hydrate`;
+  `appendUniqueString` moves to `outbound.go`. Lead decision: YES (the
+  constitution's "remove more than you add").
+- The Echo preset's chain and type assertions become reach assertions: GET
+  /users/:id reaches the handler, the service, the repository's GetByID and
+  the sqlc GetUser sending the statement that names the users table; the
+  decoded index derives the same reach. It fails when the walk stops short
+  (s46a).
+- Render-neutral: the S4-4 Redis run renders byte-identical.
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Map model step 4, S4-5: GroupsIndex says which arrows are quiet
 
 - `Connection.Quiet` (derived, never persisted) = initialization or a call
