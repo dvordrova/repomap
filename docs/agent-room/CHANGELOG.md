@@ -1,5 +1,60 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — The glossary in three steps: names, one closed decision per name, explanations (speed mode)
+
+- **Problem:** litestream's glossary grew from 45 to 263 terms with no code
+  change. The one open request ("define the unfamiliar terms in these rows")
+  chose terms only by leaving others out, so each draw set the size: 3 of 8
+  live draws on the same window ran away (263, 288, one loop to the output
+  ceiling). About 4 in 5 of the extra names were general words, parts of the
+  code in plain words or paraphrases, and report.html grew by 3.3 MB.
+- **Change (84f54d94):** DeepSeek returns names only. Code keeps the names the
+  term lookup finds, folds case and plural spellings, and attaches every row
+  that writes each name. Jev then asks one closed question per name
+  (domain_concept / general_vocabulary / code_element, with criteria for
+  each). The item is the name plus every text that writes it, with no cap,
+  and the context is the orientation summary. The margin rule applies: a
+  near-tie is undecided and is remembered per name. DeepSeek explains only
+  the decided domain concepts, one closed t ref per name. The same name with
+  the same explanation is one definition. The reduce prompt now joins
+  same-name groups that mean the same concept, and sources are no longer a
+  condition for joining. `glossary_names.json` records every outcome. Tests:
+  `TestGlossaryExplainsOnlyDecidedDomainConcepts` (only a decided domain
+  concept is explained; a warm run asks neither model),
+  `TestGatheredNameFoldsSpellingsAndAttachesEveryRow`,
+  `TestTermQuestionCarriesEveryWrittenText`,
+  `TestReduceSameNameAndExplanationIsOneDefinition`, and the names and
+  explanation form tests.
+- **Measurement (saved windows `61235e8f…` / `40bf2f66…`, 5 draws each):**
+  - Old shape: 45–248 / 49–270 distinct terms; union 264 / 276; 42 / 34
+    terms in all five draws.
+  - New shape: 143–181 / 155–271 names; 54–58 / 47–61 accepted; union 62 /
+    74; 52 / 39 in all five.
+  - Flips between two decision passes: 13 of 207 and 28 of 344. Every flip
+    was between a decided option and undecided.
+- **Acceptance (default cache, binary 400e81aaf333 = 84f54d94 plus the other
+  streams' uncommitted atlas edits):**
+  - litestream 20260928-123801, exit 0: 149 names in 99 rows gave 55 entries
+    (was 263). Examples: LTX files, shadow WAL, TXID, lock page, storage
+    class, salt, generation, WAL segments. report.html went from 13.88 MB to
+    11.12 MB (the concepts section from 5.80 MB to 2.58 MB) and
+    glossary.json from 9.28 MB to 2.14 MB.
+  - redis 20260928-123821, exit 0: 64 names in 51 rows gave 24 entries (was
+    20). Examples: AOF, RDB, skiplist, LZF compression, opcodes. The
+    concepts section shrank by 168 KB. report.html grew from 13.77 MB to
+    14.68 MB because the map's `data-catalogue` grew by 0.89 MB; that is
+    the other streams' systems work, not the glossary.
+  - Warm reruns 20260928-124108 and -124121: 0 live calls in every stage,
+    and glossary.json is byte-identical.
+  - Misjudged by Jev: vacuum and lease were marked code_element, Google Cloud
+    Storage and SFTP undecided.
+- **Cost:** the measurement was DeepSeek 131 k in + 62 k out and Jev about
+  1.6 M tokens, ≈ $0.17. The glossary's live calls in the runs were under
+  $0.02. The redis cold run re-asked atlas stages that other commits had
+  invalidated, ≤ $0.19.
+- Speed mode: build and vet pass, as do the terminology, orientation and run
+  packages and the reading knowledge tests. No full `make test`.
+
 ## 2026-09-28 — Each outside system named once per package; the known-systems list is gone (speed mode)
 
 - **Problem (owner: yes, "промпт сразу поправь на норм"):** the
