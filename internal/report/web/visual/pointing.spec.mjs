@@ -25,11 +25,13 @@ const look=(page,id)=>page.locator(`.react-flow__node[data-id="${id}"]`).evaluat
     frame:style.getPropertyValue('--flow-frame-color').trim(),frameWidth:style.getPropertyValue('--flow-frame-width').trim()};
 });
 
-// Pointing at a part makes that part the subject: its own arrows darken, the
-// parts across them take the dark outline, and what is not involved recedes.
-// Lifted to its area, a pointed part had lit the whole area's arrows, and a
-// grey veil made the pointed parts look deader than their neighbours.
-test('a pointed part is the subject, dark itself, and the rest recedes',async({page},testInfo)=>{
+// Pointing at a part makes that part the subject: its own arrows darken and
+// the parts across them take the dark outline. Nothing else changes: moving
+// across Redis's Data type commands had receded every other part on each
+// tile and restored them in the gaps, and the area flickered. Lifted to its
+// area, a pointed part had lit the whole area's arrows, and a grey veil made
+// the pointed parts look deader than their neighbours.
+test('a pointed part is the subject, dark itself, and nothing recedes',async({page},testInfo)=>{
   await page.goto('/');
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
   await map.evaluate(map=>map.focusNode('routes'));
@@ -45,16 +47,16 @@ test('a pointed part is the subject, dark itself, and the rest recedes',async({p
   expect(auth.className,'the part across its dark arrow').toContain('flow-node-connected');
   expect(auth.opacity).toBe('1');
   const worker=await look(page,'worker');
-  expect(worker.className).toContain('flow-node-muted');
-  expect(worker.opacity,'a part the emphasis does not involve recedes').toBe('0.4');
+  expect(worker.className).not.toContain('flow-node-muted');
+  expect(worker.opacity,'a part the pointer does not connect stays as it is').toBe('1');
   const edges=await map.evaluate(map=>{
     const id=(from,to)=>map.visibleEdges.find(e=>e.from===from&&e.to===to).id;
     const at=edge=>{const g=document.querySelector(`[data-edge-ids~="${edge}"]`);return g&&{active:g.classList.contains('flow-edge-active'),opacity:getComputedStyle(g).opacity};};
     return {own:at(id('routes','auth')),sibling:at(id('queue','worker'))};
   });
   expect(edges.own.active).toBe(true);
-  expect(edges.sibling.opacity,'an arrow the emphasis does not involve recedes').toBe('0.4');
-  await testInfo.attach('journey-01 — The pointed part is dark, the rest recedes',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  expect(edges.sibling.opacity,'an arrow the pointer does not darken stays as it is').toBe('1');
+  await testInfo.attach('journey-01 — The pointed part is dark, the rest stays',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 
   // The area's title looks at the area: its frame darkens, its parts stay as they are.
   await pointAt(page,page.locator('[data-frame-title="requests"]>strong'));
@@ -307,7 +309,7 @@ test('a kept card whose frame closed does not freeze the map',async({page})=>{
 });
 
 // Frames that share one destination's text stand in one group under one
-// heading. The group is involved when one of its frames is: pointing at a
+// heading. The group is involved when one of its frames is: choosing a
 // system whose resolver is dark had left the group's frame receded around
 // it and its heading at full strength when nothing of it was involved.
 test('a group of frames sharing one destination recedes with them and stays with them',async({page})=>{
@@ -315,16 +317,21 @@ test('a group of frames sharing one destination recedes with them and stays with
   const map=page.locator('[data-map]');
   await page.goto('/?shared-destination');await expect(map).toHaveAttribute('data-fixture-ready','true');
   const heading=page.locator('[data-group-heading]'),group=page.locator('.react-flow__node[data-id^="display-group:"]');
+  const resolver=page.locator('.react-flow__node[data-id="dns-backend"]');
   await page.mouse.move(1430,890);
-  await pointAt(page,page.locator('[data-component-overview="backend"]'));
-  await expect(map).toHaveAttribute('data-subject','backend');
-  await expect(page.locator('.react-flow__node[data-id="dns-backend"]')).toHaveCSS('opacity','1');
+  await map.evaluate(map=>map.restoreReadingState({scope:'backend'}));
+  await expect(resolver).toHaveCSS('opacity','1');
   await expect(group,'the group of an involved frame stays').toHaveCSS('opacity','1');
   await expect(heading).toHaveCSS('opacity','1');
-  await pointAt(page,page.locator('[data-component-overview="api"]'));
-  await expect(map).toHaveAttribute('data-subject','api');
-  await expect(page.locator('.react-flow__node[data-id="dns-backend"]')).toHaveCSS('opacity','0.4');
+  await map.evaluate(map=>map.restoreReadingState({scope:'api'}));
+  await expect(resolver).toHaveCSS('opacity','0.4');
   await expect(group,'a group nothing involves recedes').toHaveCSS('opacity','0.4');
   await expect(heading,'and its heading with it').toHaveCSS('opacity','0.4');
+  // The pointer brings forward what it outlines and recedes nothing more.
+  await pointAt(page,page.locator('[data-component-overview="backend"]'));
+  await expect(map).toHaveAttribute('data-subject','backend');
+  await expect(resolver).toHaveCSS('opacity','1');
+  await expect(group).toHaveCSS('opacity','1');
+  await expect(heading).toHaveCSS('opacity','1');
   expect(errors).toEqual([]);
 });

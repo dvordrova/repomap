@@ -23,7 +23,7 @@ export function emphasis(view, hoverArea, leaves, edges, member=null) {
 
 // An arrow end looked at: the parts behind it (or behind its one number
 // pointed at) are the subject, outlined in place; the end's own arrows to
-// them are dark and their other ends are involved; the rest recedes.
+// them are dark and their other ends are involved.
 // `label` is a boundary group: {insides, edges, byNumber}.
 export function endEmphasis(label,only,edges){
   const focus=new Set(only===undefined?label.insides:label.byNumber?.get(only)?.ids||[]);
@@ -32,6 +32,19 @@ export function endEmphasis(label,only,edges){
     activeEdges.add(edge.id);participants.add(edge.from);participants.add(edge.to);
   }
   return {mode:'hover',subject:'',focus,participants,activeEdges};
+}
+
+// What recedes is the reader's own choice alone: `rest` is the emphasis with
+// nothing pointed at (a chosen part, frame or declaration, a pinned input
+// path, search results). The pointer, or an open arrow end (`shown`),
+// highlights and never recedes: its subjects and the parts across its dark
+// arrows come forward, a looked-at frame's own parts stay as they are, and
+// everything else stays as it is at rest. `inside(id)` is the id with what it
+// stands for: a frame's parts, a display group's frames.
+export function recedes(rest,shown,subjects,inside=id=>[id]){
+  if(rest.mode==='all')return ()=>false;
+  const lit=new Set([...subjects,...[...shown.participants].filter(id=>!shown.focus.has(id))]);
+  return id=>!inside(id).some(at=>rest.participants.has(at)||lit.has(at));
 }
 
 // Ancestors explain containment only. Never feed them back into the edge

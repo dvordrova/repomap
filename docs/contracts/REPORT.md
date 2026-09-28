@@ -237,20 +237,28 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the right without inserting another row or changing its text position. Dark arrows and outlined participants
   identify the currently emphasized connections: a participant takes the
   arrows' dark on its border, and the card open on the right keeps its
-  heavier outline. Emphasis recedes the rest instead of greying what is
-  pointed at: the subject takes the existing dark (a part its outline, a
-  frame its border at the arrows' 2.5px), the parts across its dark arrows
-  take the same outline, a pointed frame's own parts and the arrows between
-  them stay as they are, and every part, frame and arrow the emphasis does
-  not involve recedes to 40% opacity. Frames grouped under one destination's
+  heavier outline. Nothing pointed at is greyed: the subject takes the
+  existing dark (a part its outline, a frame its border at the arrows'
+  2.5px), the parts across its dark arrows take the same outline, and a
+  pointed frame's own parts and the arrows between them stay as they are.
+  Hover highlights and never dims (owner, 2026-09-28): only the reader's own
+  choice (a chosen part, frame or declaration, a pinned input path, search
+  results) recedes to 40% opacity every part, frame and arrow it does not
+  involve. The pointer, or an open arrow end, changes nothing else: what it
+  outlines and darkens comes forward, and every other part, frame and arrow
+  stays as it is with nothing pointed at, so crossing the gaps between tiles
+  flashes nothing. This replaces the rule that every emphasis, hover
+  included, receded what it did not involve: moving across Redis's Data type
+  commands receded every other part on each tile and restored them in the
+  gaps, and the area flickered. Frames grouped under one destination's
   text recede with their heading when none of them is involved and stay when
   one is. No veil or tile fill marks the pointed thing.
   Component frames retain their language, kind, role and purpose above their parts. Colour never replaces
   the visible type cues or independent fact/model provenance in the reading
   panel. Text has at least 4.5:1 contrast; meaningful frames and connections
   retain at least 3:1 contrast, including non-selected neighbours; only
-  what an emphasis does not involve recedes below it while that emphasis
-  lasts. A grayscale
+  what a chosen emphasis does not involve recedes below it while that
+  choice lasts. A grayscale
   screenshot and actual browser colour measurements cover this palette; they
   are not a claim of full WCAG conformance for the entire report.
   Equal destination names do not merge records.
@@ -271,9 +279,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   child's bounds inside the viewport do not count as visible content. A fully
   visible, legible part keeps the current camera when opened from a reading.
 
-- The drawing has exactly one reason for emphasis: search results, the part
-  or frame under the pointer, the pinned input path, or the selected part's
-  neighbours. A pointed part is the subject itself: only its own arrows
+- The drawing's dark arrows and outlines have exactly one reason: search
+  results, the part or frame under the pointer, the pinned input path, or
+  the selected part's neighbours. A pointed part is the subject itself: only its own arrows
   darken. A frame's title, border and empty space look at the frame, whose
   arrows crossing its border darken.
   A pinned input path is drawn from its saved reach (GroupsIndex, READING)
@@ -297,9 +305,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   only when every one of them is. The page's one figure, the system canvas,
   draws none of the static picture's arrows, so the no-script page shows
   parts and areas without arrows.
-  Hover temporarily replaces the drawing emphasis; it never unions another
-  area's edges into a pinned input path. Leaving the canvas restores that path
-  or selection. Reading an off-path part does not make it a path participant;
+  Hover temporarily replaces the dark emphasis; it never unions another
+  area's edges into a pinned input path. What the chosen path or selection
+  recedes stays receded under the pointer, except what the pointer
+  highlights. Leaving the canvas restores that path or selection. Reading an off-path part does not make it a path participant;
   the reading card explicitly says it is outside the saved input path. Search does
   not mix old selected or hovered connections into its matches.
   Ancestor frames retain a neutral outline while their descendant is in focus;
@@ -418,8 +427,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   2026-09-27); the numbers stay wherever an end joins some of the parts.
   While an end's card is open or kept open, the parts behind that end, or
   behind its one number pointed at, take the dark outline in place (a
-  closed frame hiding them takes it for them), the
-  end's own arrows are dark and whatever the end does not involve recedes;
+  closed frame hiding them takes it for them) and the
+  end's own arrows are dark; like the pointer, the end recedes nothing, and
   the parts at the arrow's other end stay as they are. A label stands where
   its arrow meets the frame it numbers: both directions of a pair of frames
   share one drawn route, and the end one direction took could be the other
@@ -614,11 +623,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Pointing at a declaration darkens only its own arrows: its links to the
   part's other declarations, and among the part's arrows those carrying a
   call into it (the call's callee is its source) or out of it (the call's
-  caller is its name); the declarations its links do not join recede. A
+  caller is its name); nothing recedes. A
   click on a tile chooses that declaration: the part is read with it named
   in the reading column (the existing `map.explainSource`), the tile keeps
-  the dark outline of what is read, its own arrows stay dark, and the camera
-  centres it at its reading scale. A modifier click still opens its code. A
+  the dark outline of what is read, its own arrows stay dark, the
+  declarations its links do not join recede while it stays chosen, and the
+  camera centres it at its reading scale. A modifier click still opens its code. A
   declaration the reading column names by its source (Find's code hit, a
   declaration chosen in the reading, a restored visit) is the one chosen on
   the canvas, and a newly named one is centred at its reading scale; a

@@ -6,7 +6,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
-import {emphasis, focusAncestors, endEmphasis} from './emphasis.mjs';
+import {emphasis, focusAncestors, endEmphasis, recedes} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport, detailLevel, pinchZoom, zoomBelow} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {inputGroupsByPart} from './overview.mjs';
@@ -54,8 +54,12 @@ function PartSymbols({symbols,calls,width,height,grid,member}){
   const x=column=>inset+column*(tileWidth+gap);
   // A method inside its type's tile needs no line to that type.
   const drawn=links.filter(([from,to])=>rows[from]&&rows[to]&&rows[from].block!==rows[to].block);
-  const near=new Set(hot<0?[]:drawn.filter(([from,to])=>from===hot||to===hot).flat().filter(value=>typeof value==='number'));
-  const tone=i=>hot>=0&&i!==hot&&!near.has(i)?'flow-symbol-dim':'';
+  // A declaration with those its links join. Pointing at one darkens its
+  // links and recedes nothing; a chosen one recedes what its links do not
+  // join, save what the pointer brings forward.
+  const joined=at=>new Set(at<0?[]:[at,...drawn.filter(([from,to])=>from===at||to===at).flat().filter(value=>typeof value==='number')]);
+  const lit=joined(hot),kept=joined(chosen);
+  const tone=i=>chosen>=0&&!kept.has(i)&&!lit.has(i)?'flow-symbol-dim':'';
   // A row reads as a line of a class box: the visibility sign, the name and,
   // in lighter type, what follows it — "(args): Result" or ": Type".
   const mixed=new Set(blocks.filter(block=>{const all=[block.head,...block.rows].filter(i=>symbols[i].kind!=='more');return all.some(i=>symbols[i].inner)&&all.some(i=>!symbols[i].inner);}).flatMap(block=>[block.head,...block.rows]));
@@ -88,8 +92,8 @@ function PartSymbols({symbols,calls,width,height,grid,member}){
           // within a column it bows out to the right of both rows.
           const start={x:x(a.column)+tileWidth,y:ay},end=forward?{x:x(b.column),y:by}:{x:x(b.column)+tileWidth,y:by};
           const bend=forward?Math.max(16,(end.x-start.x)/2):26;
-          const on=hot>=0&&(from===hot||to===hot);
-          return <path key={i} className={`flow-symbol-${kind||'calls'} ${hot<0?'':on?'flow-symbol-call-hot':'flow-symbol-call-dim'}`}
+          const on=hot>=0&&(from===hot||to===hot),receded=chosen>=0&&!on&&from!==chosen&&to!==chosen;
+          return <path key={i} className={`flow-symbol-${kind||'calls'} ${on?'flow-symbol-call-hot':receded?'flow-symbol-call-dim':''}`}
             d={`M${start.x} ${start.y}C${start.x+bend} ${start.y},${forward?end.x-bend:end.x+bend} ${end.y},${end.x} ${end.y}`} markerEnd={`url(#flow-symbol-arrow${on?'-hot':''})`}>
             <title>{`${symbols[from].name} ${kind||'calls'} ${symbols[to].name}`}</title></path>;
         })}
@@ -869,6 +873,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const [,setVersion]=useState(0);update=()=>setVersion(v=>v+1);
     const pointed=hoverMember&&hoverArea===hoverMember.part?hoverMember:!hoverArea&&memberChoice&&view.scope===memberChoice.part?memberChoice:null;
     const state=emphasis(view,hoverArea,leaves,layout.edges,memberFacts(pointed));
+    // What recedes is the reader's own choice, drawn with nothing pointed at;
+    // the pointer highlights and never recedes (emphasis.mjs).
+    const rest=hoverArea?emphasis(view,'',leaves,layout.edges,memberFacts(memberChoice&&view.scope===memberChoice.part?memberChoice:null)):state;
+    const recede=rest.mode==='all'?null:rest;
     const context=focusAncestors(state.focus,placed);
     const visible=id=>!closed(id);
     const drawing=layout;
@@ -919,9 +927,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const childOf=id=>{while(id&&placed.get(id)?.parentId!==area)id=placed.get(id)?.parentId;return id||'';};
     const members=!area?[]:wholeComponent?layout.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&childOf(n.id)).map(n=>n.id):leaves(area);
     const number=new Map(!area||!view.numbered?[]:wholeComponent?layout.nodes.filter(n=>n.parentId===area).map((n,i)=>[n.id,i+1]):members.map((id,i)=>[id,i+1]));
-    const dim=state.mode!=='all';
     const initVisible=(state.mode==='hover'&&byID.get(hoverArea)?.branch!=='component')||state.mode==='operation'||(state.mode==='selection'&&byID.get(view.scope)?.branch!=='component');
-    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,dim,boundaryBetween,initVisible,zoomedArea?new Set(leaves(zoomedArea)):null,state.focus);
+    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,recede,boundaryBetween,initVisible,zoomedArea?new Set(leaves(zoomedArea)):null);
     const matchingOf=routeIndex(routes);
     // The labels of a frame do not change with what is hovered inside it;
     // the numbers the hovered thing owns are set bold.
@@ -974,12 +981,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const cardLabels=[...lookedLabels,...[...headLabels.values()].filter(label=>visible(label.area)&&!lookedLabels.some(other=>other.id===label.id))];
     labelAreas=new Map(cardLabels.map(label=>[label.id,label.area]));
     // An arrow end whose card is open, or kept open, outlines in place the
-    // parts behind it, or behind its one number pointed at; its own arrows
-    // are dark and whatever it does not involve recedes (owner's 2a).
+    // parts behind it, or behind its one number pointed at, and its own
+    // arrows are dark (owner's 2a); like the pointer, it recedes nothing.
     const endLabel=cardLabels.find(label=>look.key===`label:${label.id}`)||[...pinnedLabels.keys()].reverse().map(id=>cardLabels.find(label=>label.id===id)).find(Boolean);
     const end=endLabel?endEmphasis(endLabel,look.key===`label:${endLabel.id}`?lookOnly:undefined,layout.edges):null;
     const shown=end||state;
-    const drawn=end?routeDrawing(drawing.edges,closed,end.activeEdges,true,boundaryBetween,initVisible,null,end.focus):routes;
+    const drawn=end?routeDrawing(drawing.edges,closed,end.activeEdges,recede,boundaryBetween,initVisible,null):routes;
     heads=drawnHeads(drawn);
     const shownContext=end?focusAncestors(end.focus,placed):context;
     // Far enough into one part to read its declarations.
@@ -999,17 +1006,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // An input group closed: its inputs are not readable yet, its name is.
     const closedGroup=id=>byID.get(id)?.branch==='inputs-part'&&!communicationsOpen.has(id);
     const shut=id=>scales.has(id)?!detailed.has(id):byID.get(id)?.branch==='component'?!openComponents.has(id):['communication','inputs','inputs-part'].includes(byID.get(id)?.branch)&&!communicationsOpen.has(id);
-    // Emphasis recedes the rest instead of greying what is pointed at. The
-    // subject is dark: a part's outline, a frame's border at the arrows'
+    // The subject is dark: a part's outline, a frame's border at the arrows'
     // 2.5px. The parts across its dark arrows take the same outline; a
-    // frame's own parts stay as they are. Whatever the emphasis does not
-    // involve recedes, its arrows with it.
+    // frame's own parts stay as they are.
     // A closed frame stands for the parts behind an end that it hides.
     const subjects=end?new Set([...end.focus].map(id=>closed(id)?.id||id)):state.mode==='search'?state.focus:new Set([state.subject].filter(Boolean));
-    // A display group (the frames sharing one destination's text) is
-    // involved when one of its frames is: its frame and heading stay with it.
-    const involved=id=>{const n=placed.get(id),item=byID.get(id);return shown.participants.has(id)||(item?.display?(item.tiles||[]).some(involved):!!n?.frame&&leaves(id).some(leaf=>shown.participants.has(leaf)));};
-    const muted=id=>(dim||!!end)&&!involved(id);
+    // A frame stands for its parts; a display group (the frames sharing one
+    // destination's text) for its frames: its frame and heading stay with them.
+    const standsFor=id=>{const n=placed.get(id),item=byID.get(id);return [id,...(item?.display?(item.tiles||[]).flatMap(standsFor):n?.frame?leaves(id):[])];};
+    const muted=recedes(rest,shown,subjects,standsFor);
     const nodes=drawing.nodes.map(n=>{
       const item=byID.get(n.id),focused=shown.focus.has(n.id);
       // A display group draws the box its heading's band leaves it.

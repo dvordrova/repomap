@@ -38,7 +38,8 @@
 .flow-node-reading .flow-area.flow-input-collection{--flow-frame-color:#243044;--flow-frame-width:3px}
 .flow-node-reading .flow-part{border-color:#243044;outline:3px solid #243044;outline-offset:-3px}
 .react-flow__node.flow-node-muted,.flow-node-muted.flow-area-title,.flow-node-muted.flow-group-heading,.flow-node-muted.flow-area-summary,.flow-node-muted.flow-component-overview,.flow-node-muted.flow-zoom-mark,.flow-edge.flow-edge-muted{opacity:.4}
-/* Emphasis recedes the rest; nothing pointed at is greyed. The part pointed
+/* Only the reader's choice recedes the rest; the pointer highlights and
+   recedes nothing, and nothing pointed at is greyed. The part pointed
    at, the parts an emphasised arrow joins, and a closed frame standing for
    the parts hidden in it, take the dark of that arrow on their border; a
    frame pointed at takes it on its frame, at the arrow's 2.5px. The card open
@@ -286,9 +287,9 @@
 .flow-area-summary>.flow-role-triggers{background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='26'%20height='18'%20viewBox='0%200%2026%2018'%3E%3Cpath%20d='M1.5%205.5H13V1.5L24.5%209L13%2016.5V12.5H1.5Z'%20fill='%23267267'%20stroke='%23eef8f4'%20stroke-width='3'%20stroke-linejoin='round'%20paint-order='stroke'/%3E%3C/svg%3E")}
 .flow-standalone-part>strong{padding-right:38px}
 .flow-area-summary>.flow-overview-compact>footer{justify-content:flex-end}.flow-area-summary .flow-number{position:static}.flow-standalone-part>.flow-part-zoom{top:3px}.flow-standalone-part>.flow-number{right:6px;bottom:4px}
-/* A declaration is chosen by a click: the reading names it and its tile
-   keeps the dark outline of what is read. Pointing at one leaves it as it is
-   and recedes the declarations its links do not join. */
+/* A declaration is chosen by a click: the reading names it, its tile keeps
+   the dark outline of what is read and the declarations its links do not
+   join recede. Pointing at one darkens its links and recedes nothing. */
 .flow-part-symbols [data-symbol]{cursor:pointer}
 .flow-part-symbols .flow-symbol-block .flow-symbol-chosen{box-shadow:inset 0 0 0 2px #243044}
 .flow-part-symbols .flow-symbol-block .flow-symbol-dim{opacity:.4}

@@ -4,6 +4,8 @@ import {routeDrawing} from './route-drawing.mjs';
 import {emphasis} from './emphasis.mjs';
 
 const point=(x,y)=>({x,y});
+// A chosen emphasis darkening these arrows and looking at no frame.
+const chosen=(...ids)=>({activeEdges:new Set(ids),focus:new Set()});
 const shared=[point(100,50),point(200,50)];
 const edges=()=>[
   {id:'first',from:'input-a',to:'part-a',relations:[{id:'relation-a',operations:['operation-a']}],segments:[
@@ -19,7 +21,7 @@ const edges=()=>[
 test('one shared route is drawn once while operation branches keep their exact selection',()=>{
   const original=edges(),before=structuredClone(original);
   const state=emphasis({operation:'operation-a',entry:'input-a'},'',()=>[],original);
-  const drawing=routeDrawing(original,()=>null,state.activeEdges,true);
+  const drawing=routeDrawing(original,()=>null,state.activeEdges,state);
   assert.equal(drawing.length,5);
   const common=drawing.find(route=>route.edgeIDs.length===2);
   assert.deepEqual(common.edgeIDs,['first','second']);
@@ -35,7 +37,7 @@ test('one shared route is drawn once while operation branches keep their exact s
 test('closed frames expose one shared outer arrow and hide both sets of inner routes',()=>{
   const source={id:'inputs',absolute:{x:0,y:0},width:100,height:100};
   const target={id:'component',absolute:{x:200,y:0},width:100,height:100};
-  const drawing=routeDrawing(edges(),id=>id.startsWith('input')?source:target,new Set(['first']),true);
+  const drawing=routeDrawing(edges(),id=>id.startsWith('input')?source:target,new Set(['first']),chosen('first'));
   assert.equal(drawing.length,1);
   assert.equal(drawing[0].path,'M 100 50 L 200 50');
   assert.deepEqual(drawing[0].edgeIDs,['first','second']);
@@ -46,7 +48,7 @@ test('closed frames expose one shared outer arrow and hide both sets of inner ro
 
 test('opening a participant never extends a cross-system arrow into its interior',()=>{
   const original=edges().map(edge=>({...edge,outerSegments:[shared]}));
-  const result=routeDrawing(original,()=>null,new Set(['first']),true);
+  const result=routeDrawing(original,()=>null,new Set(['first']));
   assert.equal(result.length,1);
   assert.equal(result[0].path,'M 100 50 L 200 50');
   assert.equal(result[0].arrow,true);
@@ -57,7 +59,7 @@ test('opening a participant never extends a cross-system arrow into its interior
 test('a shared outer route is not painted again for every original relation',()=>{
   const original=Array.from({length:102},(_,index)=>({id:`edge-${index}`,from:`input-${index}`,to:`part-${index}`,
     relations:[{id:`relation-${index}`}],segments:[shared]}));
-  const drawing=routeDrawing(original,()=>null,new Set(['edge-101']),true);
+  const drawing=routeDrawing(original,()=>null,new Set(['edge-101']));
   assert.equal(drawing.length,1);
   assert.equal(drawing[0].edgeIDs.length,102);
   assert.equal(drawing[0].on,true);
@@ -172,9 +174,9 @@ test('init routes are drawn only for a looked-at end',()=>{
   ];
   const none=routeDrawing(wiring,()=>null,new Set(),false,()=>null,false);
   assert.deepEqual(none.map(route=>route.id),['flow']);
-  const whole=routeDrawing(wiring,()=>null,new Set(['boot','flow']),true,()=>null,false);
+  const whole=routeDrawing(wiring,()=>null,new Set(['boot','flow']),chosen('boot','flow'),()=>null,false);
   assert.deepEqual(whole.map(route=>route.id),['flow']);
-  const looked=routeDrawing(wiring,()=>null,new Set(['boot']),true,()=>null,true);
+  const looked=routeDrawing(wiring,()=>null,new Set(['boot']),chosen('boot'),()=>null,true);
   assert.deepEqual(looked.map(route=>[route.id,route.init,route.dim]),[['boot',true,false],['flow',false,true]]);  // Zoomed into the area that holds bootstrap, with nothing hovered.
   const zoomed=routeDrawing(wiring,()=>null,new Set(),false,()=>null,false,new Set(['bootstrap']));
   assert.deepEqual(zoomed.map(route=>route.id),['boot','flow']);
@@ -182,9 +184,20 @@ test('init routes are drawn only for a looked-at end',()=>{
   assert.deepEqual(elsewhere.map(route=>route.id),['flow']);
 });
 
-test('an arrow between the looked-at frame\'s own parts stays while the rest recedes',()=>{
+test('an arrow between a chosen frame\'s own parts stays while the rest recedes',()=>{
   const edges=[{id:'inner',from:'a',to:'b',segments:[[{x:0,y:0},{x:10,y:0}]]},{id:'far',from:'c',to:'d',segments:[[{x:0,y:10},{x:10,y:10}]]}];
-  const routes=routeDrawing(edges,()=>null,new Set(),true,()=>null,false,null,new Set(['area','a','b']));
+  const routes=routeDrawing(edges,()=>null,new Set(),{activeEdges:new Set(),focus:new Set(['area','a','b'])});
   assert.equal(routes.find(route=>route.id==='inner').dim,false);
   assert.equal(routes.find(route=>route.id==='far').dim,true);
+});
+
+// The pointer darkens its own arrows and recedes none: with nothing chosen
+// every other arrow stays as it is, and under a choice an arrow the pointer
+// darkens comes forward while the choice's own arrow stays.
+test('the pointer\'s dark arrows never recede another arrow',()=>{
+  const edges=[{id:'pointed',from:'a',to:'b',segments:[[{x:0,y:0},{x:10,y:0}]]},{id:'other',from:'c',to:'d',segments:[[{x:0,y:10},{x:10,y:10}]]}];
+  const hovered=routeDrawing(edges,()=>null,new Set(['pointed']));
+  assert.deepEqual(hovered.map(route=>[route.id,route.on,route.dim]),[['pointed',true,false],['other',false,false]]);
+  const underChoice=routeDrawing(edges,()=>null,new Set(['pointed']),chosen('other'));
+  assert.deepEqual(underChoice.map(route=>[route.id,route.on,route.dim]),[['pointed',true,false],['other',false,false]]);
 });

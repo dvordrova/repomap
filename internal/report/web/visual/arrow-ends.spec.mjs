@@ -22,8 +22,8 @@ const end=(page,id)=>page.locator(`.flow-connection-label[data-connection-label=
 
 // An arrow end that joins every part of the frame says so once, "all",
 // instead of listing each number; an end that joins some keeps its numbers.
-// Its card open, the parts behind it are outlined in place and the rest
-// recedes (owner's 2a).
+// Its card open, the parts behind it are outlined in place (owner's 2a) and
+// nothing recedes.
 test('an end joining every part of its frame is one all mark that outlines them in place',async({page},testInfo)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/?both-parts');
@@ -46,7 +46,7 @@ test('an end joining every part of its frame is one all mark that outlines them 
   await expect(page.locator('.flow-arrow-card')).toBeVisible();
   for(const id of ['queue','worker'])await expect(page.locator(`.react-flow__node[data-id="${id}"]`),`${id} is behind the end`).toHaveClass(/flow-node-focus/);
   await expect(page.locator('.react-flow__node[data-id="routes"]'),'the other end stays').not.toHaveClass(/flow-node-muted|flow-node-focus/);
-  await expect(page.locator('.react-flow__node[data-id="auth"]'),'a part the end does not involve recedes').toHaveClass(/flow-node-muted/);
+  await expect(page.locator('.react-flow__node[data-id="auth"]'),'a part the end does not involve stays as it is').not.toHaveClass(/flow-node-muted/);
   await testInfo.attach('journey-02 — The parts behind the end outlined in place',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   expect(errors).toEqual([]);
 });

@@ -3,10 +3,11 @@ import {visibleSegments} from './semantic.mjs';
 // Several original relations can traverse one native ELK route. Paint that
 // shared stretch once, without replacing the original edges used for reading,
 // numbering and operation selection. Segment order follows source to target.
-// `inside`: the frame looked at with its parts. An arrow between its own
-// parts is no less involved than the dark ones leaving it: it stays as it
-// is while the rest recedes.
-export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=>null, initVisible=false, lookedAt=null, inside=null) {
+// `recede`: the reader's chosen emphasis (emphasis.mjs), or null. An arrow
+// it does not involve recedes unless the pointer darkens it; one between
+// the parts of the frame it looks at is no less involved than the dark ones
+// leaving it.
+export function routeDrawing(edges, closed, activeEdges, recede=null, boundary=()=>null, initVisible=false, lookedAt=null) {
   const drawing=new Map(),groups=new Map();
   for(const edge of edges){
     // Cross-system arrows belong to the outer map, even when one frame opens.
@@ -22,7 +23,7 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
     const visibleFrom=edge.outerFrom||from?.id||edge.from,visibleTo=edge.outerTo||to?.id||edge.to;
     const key=JSON.stringify([visibleFrom,visibleTo].sort());
     let group=groups.get(key);
-    if(!group){group={edge,paths,segments,ends:[visibleFrom,visibleTo],edgeIDs:[],directions:new Set(),on:false,near:false,own:false,possible:true,init:true};groups.set(key,group);}
+    if(!group){group={edge,paths,segments,ends:[visibleFrom,visibleTo],edgeIDs:[],directions:new Set(),on:false,near:false,kept:false,possible:true,init:true};groups.set(key,group);}
     // Prefer an exact native route, then its stable edge ID. Never choose an
     // empty clipped route or invent a replacement line between the endpoints.
     if((group.edge.possible&&!edge.possible)||!!group.edge.possible===!!edge.possible&&edge.id<group.edge.id){
@@ -31,9 +32,9 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
     group.edgeIDs.push(edge.id);group.directions.add(`${visibleFrom}\0${visibleTo}`);
     group.near ||= !!lookedAt&&(lookedAt.has(edge.from)||lookedAt.has(edge.to));
     group.on ||= activeEdges.has(edge.id);group.possible &&= !!edge.possible;group.init &&= !!edge.init;
-    group.own ||= !!inside&&inside.has(edge.from)&&inside.has(edge.to);
+    group.kept ||= !!recede&&(recede.activeEdges.has(edge.id)||recede.focus.has(edge.from)&&recede.focus.has(edge.to));
   }
-  for(const {edge,paths,segments,ends,edgeIDs,directions,on,near,own,possible,init} of groups.values()){
+  for(const {edge,paths,segments,ends,edgeIDs,directions,on,near,kept,possible,init} of groups.values()){
     const bidirectional=directions.size>1;
     paths.forEach((path,index)=>{
       const key=path;
@@ -41,13 +42,13 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
       if(!route){
         route={id:index?`${edge.id}-segment-${index}`:edge.id,from:edge.from,to:edge.to,
           path,points:segments[index],start:segments[index][0],end:segments[index].at(-1),
-          possible:true,init:true,edgeIDs:[],on:false,near:false,own:false,arrow:false,reverseArrow:false};
+          possible:true,init:true,edgeIDs:[],on:false,near:false,kept:false,arrow:false,reverseArrow:false};
         drawing.set(key,route);
       }
       for(const id of edgeIDs)if(!route.edgeIDs.includes(id))route.edgeIDs.push(id);
       route.on ||= on;
       route.near ||= near;
-      route.own ||= own;
+      route.kept ||= kept;
       route.possible &&= possible;
       route.init &&= init;
       route.arrow ||= index===paths.length-1;
@@ -60,5 +61,5 @@ export function routeDrawing(edges, closed, activeEdges, dim=false, boundary=()=
   // Initialization wiring is drawn only while one of its ends is the box or
   // area the reader looks at: init is init, and it would double every
   // runtime arrow. Selecting the whole component looks at nothing in particular.
-  return [...drawing.values()].filter(route=>!route.init||(initVisible&&route.on)||route.near).map(route=>({...route,dim:dim&&!route.on&&!route.own}));
+  return [...drawing.values()].filter(route=>!route.init||(initVisible&&route.on)||route.near).map(route=>({...route,dim:!!recede&&!route.on&&!route.kept}));
 }

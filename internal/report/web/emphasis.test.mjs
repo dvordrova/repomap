@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {emphasis,focusAncestors,endEmphasis} from './emphasis.mjs';
+import {emphasis,focusAncestors,endEmphasis,recedes} from './emphasis.mjs';
 
 const leaves=id=>id==='area'?['handler','paint']:id==='other'?['test']: [id];
 const edges=[
@@ -72,9 +72,9 @@ test('a declaration pointed at or chosen darkens only the arrows that carry its 
 });
 
 // An arrow end looked at outlines in place the parts behind it: they are the
-// subject, the end's own arrows to them are dark, the parts at the arrows'
-// other end stay, and the rest recedes. Its one number pointed at narrows
-// it to that number's parts.
+// subject, the end's own arrows to them are dark and the parts at the
+// arrows' other end stay. Its one number pointed at narrows it to that
+// number's parts.
 test('an arrow end looked at makes the parts behind it the subject',()=>{
   const edges=[{id:'e1',from:'runtime',to:'dict'},{id:'e2',from:'runtime',to:'sds'},{id:'e3',from:'dict',to:'sds'},{id:'e4',from:'cmds',to:'dict'}];
   const label={insides:['dict','sds'],edges:['e1','e2'],byNumber:new Map([[2,{ids:['dict']}],[5,{ids:['sds']}]])};
@@ -87,4 +87,27 @@ test('an arrow end looked at makes the parts behind it the subject',()=>{
   const one=endEmphasis(label,5,edges);
   assert.deepEqual([...one.focus],['sds']);
   assert.deepEqual([...one.activeEdges],['e2']);
+});
+
+// Moving the pointer across Redis's Data type commands dimmed every other
+// part on each tile and restored them in the gaps between tiles: the area
+// flickered. The pointer highlights and never recedes; only the reader's
+// choice does, and the pointer brings forward only what it highlights.
+test('the pointer recedes nothing; a choice recedes what it does not involve',()=>{
+  const inside=id=>[id,...(id==='area'||id==='other'?leaves(id):[])];
+  const pointing=emphasis(empty,'handler',leaves,edges);
+  const idle=recedes(emphasis(empty,'',leaves,edges),pointing,new Set(['handler']),inside);
+  for(const id of ['handler','paint','test','unrelated','area','other'])assert.equal(idle(id),false,`${id} stays as it is at rest`);
+  const view={...empty,scope:'paint',selected:new Set(['paint'])},rest=emphasis(view,'',leaves,edges);
+  const chosen=recedes(rest,rest,new Set(['paint']),inside);
+  assert.deepEqual(['handler','paint','test','unrelated'].filter(chosen),['unrelated']);
+  const {participants}=emphasis(view,'unrelated',leaves,edges);
+  assert.ok(participants.has('test'));
+  const pointed=recedes(rest,emphasis(view,'unrelated',leaves,edges),new Set(['unrelated']),inside);
+  assert.deepEqual(['handler','paint','test','unrelated'].filter(pointed),[],'the pointed part comes forward, nothing recedes further');
+  // A frame pointed at comes forward with the parts across its arrows; its
+  // own parts stay as the choice left them.
+  const far={...empty,scope:'unrelated',selected:new Set(['unrelated'])};
+  const framed=recedes(emphasis(far,'',leaves,edges),emphasis(far,'area',leaves,edges),new Set(['area']),inside);
+  assert.deepEqual(['area','handler','paint','test','unrelated'].filter(framed),['handler','paint']);
 });

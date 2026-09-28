@@ -1,5 +1,31 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Hover highlights and never dims (speed mode)
+
+- **Problem:** zoomed into Redis's Data type commands, moving the pointer
+  across the part tiles flickered the area: each tile receded every other
+  part and arrow to 40%, the gap between tiles (the area's own space)
+  restored them, the next tile receded them again.
+- **Change:** only the reader's own choice recedes (a chosen part, frame or
+  declaration, a pinned input path, search results). The pointer and an
+  open arrow end keep their highlight (the subject's dark outline, its dark
+  arrows, the outlined parts across them, the bold numbers) and bring
+  forward only what they highlight; everything else stays as it is with
+  nothing pointed at. `recedes` (emphasis.mjs) decides it from the choice
+  drawn with nothing pointed at; `routeDrawing` takes that choice instead
+  of a dim flag and the pointed frame's parts. Pointing at a declaration
+  no longer recedes the others; a chosen one does while chosen.
+- **Check (Playwright, 1440x900, Redis 20260928-125746 rendered):** redis-server
+  → Data type commands, pointer down Hash → String → Sorted set → Set in
+  6 px steps (67 samples). Before: every tile sample put the six other area
+  tiles at 0.4, the gaps at 1 (335 samples below their rest value).
+  After: the other area tiles 1 at every step, 0 samples below rest,
+  receded arrows 42 at every step (the chosen area's own, as at rest).
+- Tests: node `recedes` and route tests; pointing.spec's pointed-part test
+  now fails if the pointer recedes a part it does not connect; the
+  destination-group test chooses instead of pointing; arrow-ends.spec's
+  end recedes nothing.
+
 ## 2026-09-28 — Settings a structure's tags name: one Jev question per tagged field (speed mode)
 
 - **Problem:** litestream reads its YAML configuration through Go struct tags
