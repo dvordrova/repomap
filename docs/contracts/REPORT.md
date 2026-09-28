@@ -269,7 +269,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   at, and only in a target that serves something: a target with no operation
   and no chain does all its work from main, and Redis's benchmark, client and
   dump checker had drawn none of their arrows. A call that code reached from
-  an input makes across two parts is work, not wiring.
+  an input makes across two parts is work, not wiring. A call into a helper
+  (GroupsIndex's derived `ToHelper`: a declaration the helper question
+  decided serves the work of others) is quiet by the same mechanism and its
+  exception, even on an input's path, since every command handler calls its
+  reply helpers; a target none of whose arrows would stand at rest draws its
+  calls into helpers, so quieting them never empties a map.
   Hover temporarily replaces the drawing emphasis; it never unions another
   area's edges into a pinned input path. Leaving the canvas restores that path
   or selection. Reading an off-path part does not make it a path participant;

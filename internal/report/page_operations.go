@@ -468,6 +468,8 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 	}
 	// Matched connections are stored by their source target. The destination
 	// must read that same saved set to retain its incoming component stubs.
+	// helperOnly are the arrows quiet only because they call a helper.
+	var helperOnly []int
 	for _, connection := range builder.allConnections() {
 		if connection.From.TargetID != index.Target.ID && connection.To.TargetID != index.Target.ID {
 			continue
@@ -497,7 +499,17 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		if _, exists := byID[to]; !exists {
 			continue
 		}
-		edge := pageMapEdge{ConnectionID: connectionKey(connection.From.TargetID, connection.ID), From: from, To: to, Label: connection.Label, Summary: connection.Summary, Scope: "structure", Possible: !strings.HasPrefix(connection.SourceKind, "native_") || connection.SupportResolution != programindex.PatternValueExact, Init: connection.Phase == groupindex.PhaseInit && drawsInit(builder.graphIndex(connection.From.TargetID)) && !result.served[[2]string{from, to}]}
+		// Wiring, and a call into a helper, stand quiet until an end is
+		// looked at, by one mechanism with one exception: a target that
+		// serves nothing draws them. A call into a helper is quiet even on an
+		// input's path: every command handler calls its reply helpers.
+		serves := drawsInit(builder.graphIndex(connection.From.TargetID))
+		wiring := connection.Phase == groupindex.PhaseInit && serves && !result.served[[2]string{from, to}]
+		helper := connection.ToHelper && serves
+		if helper && !wiring {
+			helperOnly = append(helperOnly, len(result.Edges))
+		}
+		edge := pageMapEdge{ConnectionID: connectionKey(connection.From.TargetID, connection.ID), From: from, To: to, Label: connection.Label, Summary: connection.Summary, Scope: "structure", Possible: !strings.HasPrefix(connection.SourceKind, "native_") || connection.SupportResolution != programindex.PatternValueExact, Init: wiring || helper}
 		if connection.FromLocation != nil {
 			l := connection.FromLocation
 			edge.FromSource = builder.links.anchor(l.Path, l.Line, l.Column)
@@ -510,6 +522,13 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 			edge.Calls = []pageEdgeCall{*call}
 		}
 		result.Edges = append(result.Edges, edge)
+	}
+	// A program none of whose arrows would stand at rest draws its calls
+	// into helpers: quieting them must not empty its map.
+	if len(helperOnly) > 0 && allQuiet(result.Edges) {
+		for _, position := range helperOnly {
+			result.Edges[position].Init = false
+		}
 	}
 	addAreas := func(owner *groupindex.Index, remote bool) []string {
 		var areaIDs []string

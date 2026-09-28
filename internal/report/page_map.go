@@ -281,9 +281,9 @@ type pageMapEdge struct {
 	// Calls are the relations one drawn arrow stands for, each with its own
 	// places in the code: the call site and the declaration called.
 	Calls []pageEdgeCall
-	// Init marks an arrow every relation of which is initialization: the
-	// wiring before anything serves. The map draws it dashed, and only
-	// while one of its ends is the reader's selection.
+	// Init marks an arrow every relation of which is initialization (the
+	// wiring before anything serves) or a call into a helper. The map draws
+	// it dashed, and only while one of its ends is the reader's selection.
 	Init bool
 	// Lines is the label written beside the edge. It is empty when there is
 	// no room for it without covering another one; the whole label is on the
@@ -1285,6 +1285,7 @@ func mapEdges(
 	possible := make(map[pair]bool)
 	exact := make(map[pair]bool)
 	initOnly := make(map[pair]bool)
+	quietOnly := make(map[pair]bool)
 	var order []pair
 	for _, connection := range index.Connections {
 		if connection.From.TargetID != index.Target.ID || connection.To.TargetID != index.Target.ID {
@@ -1309,9 +1310,11 @@ func mapEdges(
 			order = append(order, key)
 			labels[key] = nil
 			initOnly[key] = true
+			quietOnly[key] = true
 		}
 		if connection.Phase != groupindex.PhaseInit {
 			initOnly[key] = false
+			quietOnly[key] = quietOnly[key] && connection.ToHelper
 		}
 		if !containsString(labels[key], connection.Label) && connection.Label != "" {
 			labels[key] = append(labels[key], connection.Label)
@@ -1321,6 +1324,16 @@ func mapEdges(
 		} else {
 			exact[key] = true
 		}
+	}
+	// Calls into helpers are quiet like wiring, unless that would leave no
+	// arrow standing at rest.
+	helpers := drawsInit(&index)
+	if helpers {
+		standing := false
+		for _, key := range order {
+			standing = standing || !quietOnly[key]
+		}
+		helpers = standing
 	}
 	router := newMapEdgeRouter(nodes, bottom)
 	result := make([]pageMapEdge, 0, len(order))
@@ -1334,7 +1347,7 @@ func mapEdges(
 			// uncertain call among several cannot make the whole arrow
 			// look uncertain.
 			Possible: possible[key] && !exact[key],
-			Init:     initOnly[key] && drawsInit(&index),
+			Init:     initOnly[key] && drawsInit(&index) || helpers && quietOnly[key],
 		}
 		if lines, atX, atY := router.placeLabel(edge.Label, labelX, labelY, room, minLeft); lines != nil {
 			edge.Lines, edge.LabelX, edge.LabelY = lines, atX, atY
@@ -2388,6 +2401,17 @@ func areaLane(index *groupindex.Index, container groupindex.Container) string {
 		return lane
 	}
 	return ""
+}
+
+// allQuiet says whether every part-to-part arrow of a map stands quiet at
+// rest.
+func allQuiet(edges []pageMapEdge) bool {
+	for _, edge := range edges {
+		if edge.Scope == "structure" && !edge.Init {
+			return false
+		}
+	}
+	return true
 }
 
 // drawsInit says whether a target's initialization arrows are told apart

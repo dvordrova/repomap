@@ -1,5 +1,27 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Quiet arrows into helpers like wiring, with wiring's exception
+
+- Scope: step C6 of `map-model/step3-plan.md`, first part, with
+  correction 7 (the owner accepted "quiet by helpers and init, the same
+  mechanism", map-model §4).
+- **Change.** A part-to-part arrow whose relations all go into helpers
+  (GroupsIndex's derived `ToHelper`) is drawn like initialization: only
+  while one of its ends is looked at, and only in a target that serves
+  something (`drawsInit`, the exception of 4a6892a4). Unlike wiring it is
+  quiet even on an input's path, since every command handler calls its
+  reply helpers. A target none of whose arrows would stand at rest draws
+  its calls into helpers: quieting them never empties a map (skeptic B6's
+  redis-cli case). The canvas's structure arrows and the no-script static
+  picture follow one rule. No web rebuild: the flag reuses `init`.
+- **Tests.** `TestACallIntoAHelperStandsQuiet`: in a serving program the
+  arrow into the reply helper is quiet on an input's path and the other
+  stands; a program that serves nothing, and one whose every arrow goes
+  into helpers, draw it; the static picture quiets the same arrows. No
+  helper quieting, no exception, quieting not gated by serving, helper
+  arrows subject to the input-path rule, and a static picture without
+  helpers each fail it (`step3/impl-revert-c4c6.log`).
+
 ## 2026-09-28 — GroupsIndex carries the helper mark, and an area's marks come from data
 
 - Scope: step C5 of `map-model/step3-plan.md` with correction 4 (skeptic
