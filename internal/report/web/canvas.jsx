@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {ReactFlow, Handle, Position, ViewportPortal, useViewport, useStore} from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import {connections, endPlaques} from './layout.mjs';
+import {connections, endPlaques, borderCrossing, plaqueCentre} from './layout.mjs';
 import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors, endEmphasis, recedes} from './emphasis.mjs';
@@ -48,6 +48,8 @@ function partGrid(data,box){
 // a head stood 17.5px, nearly three times the area, and covered the plaque
 // at the frame.
 const arrowHead=7,emphasisedHead=arrowHead*1.5/2.5;
+// An arrow end's plaque on screen: the former one-digit chip (canvas.css).
+const plaqueSize={width:23,height:20};
 function PartSymbols({symbols,calls,width,height,grid,member}){
   const {divisor,inner,tileWidth,blocks,rows,hidden}=grid,{inset,columnGap:gap}=tileRoom;
   const links=calls||[],hot=member?.hot??-1,chosen=member?.chosen??-1;
@@ -387,13 +389,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     openComponents=next.components;componentsOpen=!!openComponents.size;detailed=next.areas;communicationsOpen=next.communications;
     hoverArea='';hover.pause();update?.();
   }
-  // How far a point stands from a frame's border, inside or out.
-  function borderDistance(point,frame){
-    if(!point||!frame)return Infinity;
-    const {x,y}=frame.absolute,right=x+frame.width,bottom=y+frame.height;
-    const outside=Math.hypot(Math.max(x-point.x,0,point.x-right),Math.max(y-point.y,0,point.y-bottom));
-    return outside>0?outside:Math.min(point.x-x,right-point.x,point.y-y,bottom-point.y);
-  }
   function parentArea(id){while(id){if(byID.get(id)?.branch==='area')return id;id=placed.get(id)?.parentId;}return '';}
   function rootOf(id){while(placed.get(id)?.parentId)id=placed.get(id).parentId;return id;}
   // The frame a thing is read in: its area, or else the open component it
@@ -440,9 +435,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   function crossing(group,frame,matching){
     const root=rootOf(group.outside)!==rootOf(frame)?rootOf(frame):boundaryBetween(group.insides[0],group.outside)?.id||frame;
     const route=group.incoming?matching.at(-1):matching[0],box=placed.get(root);
-    const ends=[group.incoming?route?.end:route?.start,...matching.flatMap(route=>[route.end,route.start])].filter(Boolean);
-    const point=ends.map(end=>[end,borderDistance(end,box)]).reduce((best,next)=>next[1]<best[1]-.5?next:best,[ends[0],ends[0]?borderDistance(ends[0],box):0])[0];
-    return point&&box?{root,point,side:sideOf(point,box)}:null;
+    if(!box)return null;
+    // Where the drawn arrow crosses that border: its own route first.
+    const rect={x:box.absolute.x,y:box.absolute.y,width:box.width,height:box.height};
+    const point=[route,...matching].filter(Boolean).map(drawn=>borderCrossing(drawn.points||[],rect)).find(Boolean);
+    return point?{root,point,side:sideOf(point,box),obstacles:frameObstacles(root)}:null;
+  }
+  // What a plaque on a frame's border must not cover: the boxes the frame
+  // holds and the band its title stands in above them.
+  function frameObstacles(root){
+    const box=placed.get(root),inner=layout.nodes.filter(n=>n.parentId===root);
+    const boxes=inner.map(n=>({left:n.absolute.x,top:n.absolute.y,right:n.absolute.x+n.width,bottom:n.absolute.y+n.height}));
+    if(!boxes.length)return boxes;
+    return [{left:box.absolute.x,top:box.absolute.y,right:box.absolute.x+box.width,bottom:Math.min(...boxes.map(b=>b.top))},...boxes];
   }
   // Every connection of a frame that its drawn arrows show, where they meet
   // its border.
@@ -955,20 +960,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // A label stands where its arrow meets the frame it marks.
       const matching=matchingOf(group.edges),at=crossing(group,area,matching);
       if(!at)return [];
-      const outside=byID.get(group.outside),{root}=at;
-      // On the component's frame the label is as large as the headings of
-      // the areas and loose parts it stands for.
-      const frameScale=wholeComponent?Math.max(...layout.nodes.filter(n=>n.parentId===area).map(n=>groupHeadings.get(n.id)?.scale||standaloneHeadings.get(n.id)?.scale||0)):0;
-      // The scale a label stands at on its frame: the frame's own children's
-      // scale, a part's or half a closed area's heading.
-      const labelScale=frameScale||Math.max(...layout.nodes.filter(n=>n.parentId===root).map(n=>n.frame?(byID.get(n.id)?.summaryScale||1)/2:byID.get(n.id)?.contentScale||1),
-        ...group.insides.map(id=>byID.get(id)?.contentScale||1));
-      // A card is read together with the things the look is on, so it takes
-      // their scale, wherever its label stands: a label on the target's frame
-      // is large, and a card that large beside an area's parts would push the
-      // camera far back for nothing.
-      const readScale=wholeComponent?labelScale:Math.max(...members.map(id=>byID.get(id)?.contentScale||0),0)||labelScale;
-      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,...at,frameScale,labelScale,cardScale:readScale/labelScale,title:outside.name||outside.title}];
+      const outside=byID.get(group.outside);
+      return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,...at,title:outside.name||outside.title}];
     });
     endPlaques(labels,parts,id=>wholeComponent?childOf(id):id);
     const labelsShown=!!area&&visible(area)&&(detailed.has(area)||openComponents.has(area));
@@ -1212,14 +1205,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(callbacks.openConnection){closeCards();hover.remember(event.clientX,event.clientY);hover.pause();callbacks.openConnection(label.area,label.key);return;}
     if(pinnedLabels.has(label.id))closeCard(key);else{look.enter(key);pin(key);}
   }
-  // An arrow end's plaque stands just inside the point its arrow meets the
-  // frame. It opens its card once the pointer rests on it, and is dark while
-  // its card, or its twin's, is open or kept; a click reads the connection.
+  // An arrow end's plaque sits on the frame's border where its arrow meets
+  // it, at the one size of the former one-digit chip whatever the zoom, and
+  // steps out only as far as it must to cover nothing the frame holds
+  // (owner, 2026-09-28: scaled with the frame, they had grown into large
+  // grey pills over the parts). It opens its card once the pointer rests on
+  // it, and is dark while its card, or its twin's, is open or kept; a click
+  // reads the connection.
   function ConnectionLabel({label}){
     const {zoom}=useViewport();
     const key=`label:${label.id}`,ends=[label.id,label.twin];
-    const p=label.point,side={left:{dx:1,dy:0,tx:0,ty:-50},right:{dx:-1,dy:0,tx:-100,ty:-50},top:{dx:0,dy:1,tx:-50,ty:0},bottom:{dx:0,dy:-1,tx:-50,ty:-100}}[label.side];
-    const style={transform:`translate(${p.x+side.dx*6/zoom}px,${p.y+side.dy*6/zoom}px) scale(${label.labelScale}) translate(${side.tx}%,${side.ty}%)`,transformOrigin:'top left'};
+    const p=plaqueCentre(label.point,label.side,label.obstacles||[],{x:plaqueSize.width/2/zoom,y:plaqueSize.height/2/zoom});
+    const style={transform:`translate(${p.x}px,${p.y}px) scale(${1/zoom}) translate(-50%,-50%)`,transformOrigin:'top left'};
     return <div className="flow-connection-label flow-boundary-label nopan" style={style} data-connection-outside={label.outside} data-connection-label={label.id}
       onMouseEnter={event=>{const chip=event.currentTarget;aimAt(key,{rect:()=>chip.isConnected?chip.getBoundingClientRect():null,box:placed.get(label.root),side:label.side});}}
       onMouseLeave={event=>leaveHandle(key,event)}>

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {connections, endPlaques} from './layout.mjs';
+import {connections, endPlaques, borderCrossing, plaqueCentre} from './layout.mjs';
 import {prepareInteriors,layoutPrepared} from './split-layout.mjs';
 import {semanticLayout} from './semantic.mjs';
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -123,4 +123,21 @@ test('each arrow end is one plaque: all only when every part is behind it',()=>{
   assert.equal(labels[1].twin,'in:core');
   const alone=endPlaques([{id:'in:x',outside:'x',incoming:true,insides:['only'],edges:['e'],...at({x:0,y:0})}],new Set(['only']));
   assert.equal(alone[0].all,false,'a frame of one part has no all');
+});
+
+// Redis's plaques stood where an arrow ended on a part inside the frame
+// (redis-cli's on Command line client and over Dynamic strings): a plaque
+// sits where the drawn arrow crosses the frame's border.
+test('a plaque stands where its arrow crosses the frame border, clear of what the frame holds',()=>{
+  const frame={x:0,y:0,width:100,height:80};
+  assert.deepEqual(borderCrossing([{x:150,y:40},{x:60,y:40},{x:60,y:20}],frame),{x:100,y:40},'an arrow running on to a part inside meets the border once');
+  assert.deepEqual(borderCrossing([{x:20,y:30},{x:20,y:-40}],frame),{x:20,y:0},'leaving through the top');
+  assert.deepEqual(borderCrossing([{x:-50,y:10},{x:0,y:10}],frame),{x:0,y:10},'an end on the border is its crossing');
+  assert.equal(borderCrossing([{x:-50,y:10},{x:-10,y:10}],frame),null,'an arrow that never meets it');
+  // Centred on the border, it steps out only as far as a part inside needs.
+  const tiles=[{left:4,top:20,right:60,bottom:60}];
+  assert.deepEqual(plaqueCentre({x:0,y:40},'left',tiles,{x:11.5,y:10}),{x:-7.5,y:40},'pushed out until it clears the part');
+  assert.deepEqual(plaqueCentre({x:0,y:70},'left',tiles,{x:11.5,y:10}),{x:0,y:70},'nothing inside there: centred on the border');
+  assert.deepEqual(plaqueCentre({x:50,y:80},'bottom',tiles,{x:11.5,y:10}),{x:50,y:80});
+  assert.deepEqual(plaqueCentre({x:30,y:0},'top',[{left:0,top:0,right:100,bottom:18}],{x:11.5,y:10}),{x:30,y:-10},'clear of the title band');
 });

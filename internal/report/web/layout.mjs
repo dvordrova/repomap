@@ -30,3 +30,55 @@ export function endPlaques(labels, parts, partOf=id=>id) {
   for(const label of labels){const joined=new Set(label.insides.map(partOf));label.all=parts.size>1&&[...parts].every(id=>joined.has(id));}
   return labels;
 }
+
+// Where a drawn arrow crosses a frame's border (owner, 2026-09-28: an arrow
+// end's plaque sits on the border where its arrow meets it). The plaques
+// had stood at the end of the route nearest the border, which for an arrow
+// running on to a part inside was that part's edge: redis-cli's stood on
+// Command line client and over Dynamic strings. `points` is the drawn
+// polyline, `box` {x,y,width,height}. Of its crossings, the one nearest
+// the end inside the frame; an end on the border is one. Null when it
+// never meets the border.
+export function borderCrossing(points, box, eps=.5) {
+  const left=box.x,top=box.y,right=box.x+box.width,bottom=box.y+box.height;
+  const inside=p=>p.x>left+eps&&p.x<right-eps&&p.y>top+eps&&p.y<bottom-eps;
+  const onBorder=p=>!inside(p)&&p.x>=left-eps&&p.x<=right+eps&&p.y>=top-eps&&p.y<=bottom+eps;
+  const crossings=[];
+  points.forEach((a,i)=>{
+    if(onBorder(a)){crossings.push({x:a.x,y:a.y});return;}
+    const b=points[i+1];if(!b||inside(a)===inside(b)||onBorder(b))return;
+    // The segment passes the border once: the first border line it meets
+    // within the frame's span on the other axis, from the inside end.
+    const [from,to]=inside(a)?[a,b]:[b,a];
+    let best=null;
+    for(const [axis,value] of [['x',left],['x',right],['y',top],['y',bottom]]){
+      const span=to[axis]-from[axis];if(Math.abs(span)<1e-9)continue;
+      const t=(value-from[axis])/span;if(t<0||t>1)continue;
+      const p={x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t};
+      if(p.x<left-eps||p.x>right+eps||p.y<top-eps||p.y>bottom+eps)continue;
+      if(!best||t<best.t)best={t,p};
+    }
+    if(best)crossings.push(best.p);
+  });
+  if(!crossings.length)return null;
+  return inside(points.at(-1))&&!inside(points[0])?crossings.at(-1):crossings[0];
+}
+
+// Where an arrow end's plaque stands: centred on its border point, moved
+// out through its side just far enough to clear every box inside the frame
+// (its parts, its title's band), so it covers none of them (owner,
+// 2026-09-28: Redis's "all" covered the first letter of "Core
+// infrastructure"). `half` is the plaque's half size in the same units;
+// `obstacles` are {left,top,right,bottom}.
+export function plaqueCentre(point, side, obstacles, half) {
+  const centre={x:point.x,y:point.y};
+  for(const box of obstacles){
+    const left=centre.x-half.x,right=centre.x+half.x,top=centre.y-half.y,bottom=centre.y+half.y;
+    if(right<=box.left||left>=box.right||bottom<=box.top||top>=box.bottom)continue;
+    if(side==='left')centre.x-=right-box.left;
+    else if(side==='right')centre.x+=box.right-left;
+    else if(side==='top')centre.y-=bottom-box.top;
+    else centre.y+=box.bottom-top;
+  }
+  return centre;
+}

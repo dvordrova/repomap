@@ -148,22 +148,24 @@ test('external arrows end at the frame with its plaque beside them',async({page}
     const host=map.querySelector('.flow-root').getBoundingClientRect(),p=edge.outerSegments[0][0];
     return {x:host.x+m.e+p.x*m.a,y:host.y+m.f+p.y*m.d};
   });
+  // The plaque sits on the frame's border where its arrow meets it, the
+  // size of the former one-digit chip, and covers nothing the frame holds
+  // (owner, 2026-09-28).
   const markerBox=await label.locator('button').boundingBox(),rootBox=await page.locator('.react-flow__node[data-id="front"]').boundingBox();
-  expect(markerBox.x).toBeGreaterThanOrEqual(rootBox.x);
-  expect(markerBox.y).toBeGreaterThanOrEqual(rootBox.y);
-  expect(markerBox.x+markerBox.width).toBeLessThanOrEqual(rootBox.x+rootBox.width);
-  expect(markerBox.y+markerBox.height).toBeLessThanOrEqual(rootBox.y+rootBox.height);
-  expect(Math.abs(markerBox.y+markerBox.height/2-endpoint.y),'The inward plaque is centred on its native connection').toBeLessThan(.5);
-  const covered=await label.evaluate((element,segments)=>{
-    const box=element.getBoundingClientRect(),canvas=document.querySelector('.flow-root').getBoundingClientRect();
-    const m=new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.react-flow__viewport')).transform);
-    const screen=p=>({x:canvas.x+m.e+p.x*m.a,y:canvas.y+m.f+p.y*m.d});
-    return segments.some(points=>points.slice(1).some((p,i)=>{
-      const a=screen(points[i]),b=screen(p);
-      return Math.abs(a.x-b.x)<.1?a.x>box.left&&a.x<box.right&&Math.max(a.y,b.y)>box.top&&Math.min(a.y,b.y)<box.bottom:
-        a.y>box.top&&a.y<box.bottom&&Math.max(a.x,b.x)>box.left&&Math.min(a.x,b.x)<box.right;
-    }));
-  },external.outerSegments);
-  expect(covered,'The outer stroke must not erase the plaque beside it').toBe(false);
+  expect(Math.round(markerBox.width)).toBe(23);expect(Math.round(markerBox.height)).toBe(20);
+  const centre={x:markerBox.x+markerBox.width/2,y:markerBox.y+markerBox.height/2};
+  const border=Math.min(Math.abs(centre.x-rootBox.x),Math.abs(centre.x-rootBox.x-rootBox.width),Math.abs(centre.y-rootBox.y),Math.abs(centre.y-rootBox.y-rootBox.height));
+  expect(border,'The plaque stands on the frame border').toBeLessThanOrEqual(markerBox.width/2+.5);
+  expect(Math.abs(centre.y-endpoint.y),'The plaque is centred on its native connection').toBeLessThan(.5);
+  const inner=(await page.locator('.react-flow__node').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.id,box:n.getBoundingClientRect().toJSON()}))))
+    .filter(n=>n.id!=='front'&&n.box.left>=rootBox.x-.5&&n.box.top>=rootBox.y-.5&&n.box.right<=rootBox.x+rootBox.width+.5&&n.box.bottom<=rootBox.y+rootBox.height+.5);
+  expect(inner.length,'the frame holds boxes').toBeGreaterThan(0);
+  for(const node of inner){
+    const b=node.box,overlap=markerBox.x<b.right&&markerBox.x+markerBox.width>b.left&&markerBox.y<b.bottom&&markerBox.y+markerBox.height>b.top;
+    expect(overlap,`The plaque covers no part of the frame: ${node.id}`).toBe(false);
+  }
+  // Over the arrows: an arrowhead had covered the plaque's "all".
+  const [labelLayer,edgeLayer]=await label.evaluate(element=>[Number(getComputedStyle(element).zIndex),Math.max(0,...[...document.querySelectorAll('.react-flow__edges svg')].map(svg=>Number(getComputedStyle(svg).zIndex)||0))]);
+  expect(labelLayer,'The plaque stands over the arrows').toBeGreaterThan(edgeLayer);
   await testInfo.attach('journey-02 — Pan to the outer arrow · matching endpoint 2',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });
