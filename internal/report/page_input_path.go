@@ -3,6 +3,7 @@ package report
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -154,6 +155,13 @@ func (decls *pathDecls) of(subject string) int {
 		name, anchor := decls.builder.subjectDisplay(ref.subject)
 		if name != "" {
 			decl.Name = name
+		}
+		// A method is read with its type: RestoreCommand.Run, not one of
+		// fourteen Runs.
+		if object := ref.subject.Object; object != nil && object.Kind == programindex.ObjectMethod && object.OwnerID != "" && !strings.Contains(decl.Name, ".") {
+			if owner, ok := decls.builder.subject(decls.targetID, object.OwnerID); ok && owner.subject.Object != nil && owner.subject.Object.Name != "" {
+				decl.Name = strings.TrimPrefix(owner.subject.Object.Name, "*") + "." + decl.Name
+			}
 		}
 		if anchor != nil {
 			decl.Href, decl.Open, decl.Source, decl.NoSource = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource

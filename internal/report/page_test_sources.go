@@ -116,6 +116,10 @@ func (builder *pageBuilder) overviewBuilder() *pageBuilder {
 			}
 			return len(connection.Evidence) > 0
 		})
+		// What GroupsIndex derives (reach, dispatch sites, catalogues, the
+		// launch walk) names positions in the structural edges, which the
+		// overview has just filtered: derive it again over what it keeps.
+		groupindex.Derive(&view.indexes[i])
 	}
 	return &view
 }

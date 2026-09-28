@@ -77,7 +77,8 @@ func (graph *reachGraph) launch(reaches []Reach) Launch {
 			continue
 		}
 		switch {
-		case subject.Object.Kind == programindex.ObjectModule:
+		case subject.Object.Kind == programindex.ObjectModule && index.Target.Language != "c":
+			// A C file scope runs nothing at load; its static tables are data.
 			root(position)
 		case index.Target.Language == "go" && subject.Object.Kind == programindex.ObjectFunction && subject.Object.Name == "init":
 			root(position)

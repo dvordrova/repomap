@@ -16,17 +16,17 @@ import (
 // JSON string shared by its members. Code lists; where these inputs take
 // effect is not established, and the reading says so once.
 type pageCatalogue struct {
-	Declarer int                 `json:"declarer"`
-	On       *int                `json:"on,omitempty"`
+	Declarer int  `json:"declarer"`
+	On       *int `json:"on,omitempty"`
 	// OnInput is the input declared at the call that made the object, and
 	// OnHandler its handler when established (the members' L2).
-	OnInput   string `json:"on_input,omitempty"`
-	OnHandler *int   `json:"on_handler,omitempty"`
-	Kind     string              `json:"kind"`
-	Members  []string            `json:"members"`
-	Calls    []pageCatalogueCall `json:"calls,omitempty"`
-	Uses     []pageCatalogueUse  `json:"uses,omitempty"`
-	Decls    []pageDecl          `json:"decls"`
+	OnInput   string              `json:"on_input,omitempty"`
+	OnHandler *int                `json:"on_handler,omitempty"`
+	Kind      string              `json:"kind"`
+	Members   []string            `json:"members"`
+	Calls     []pageCatalogueCall `json:"calls,omitempty"`
+	Uses      []pageCatalogueUse  `json:"uses,omitempty"`
+	Decls     []pageDecl          `json:"decls"`
 }
 
 // pageCatalogueCall is one call into the declaring code: its caller and the
