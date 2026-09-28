@@ -217,8 +217,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   equal destination text never establishes this link. Both endpoint sources,
   operation membership and possible status survive the display projection.
   The frame is a display collection, not a newly inferred component. They use amber cards; ordinary parts and area
-  frames use neutral tones. Core parts use purple, entry parts green, inputs
+  frames use neutral tones. Core parts use rose, entry parts green, inputs
   blue and external communications amber; saved lanes supply those identities.
+  Each colour means one thing (owner, 2026-09-28): purple is a link and
+  nothing else, a key declaration is bold ink with no colour of its own, and
+  an input's name on the canvas is the inputs' blue.
   Core/entry cards use distinct diamond/arrow glyphs with the shared legend and
   accessible names, instead of repeating Core/Entrypoints above every title.
   The entry arrow is wider than the border it stands on and has a thin halo
@@ -226,7 +229,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   shaft. The legend draws the same arrow.
   An area's mark is its GroupsIndex container's (READING): the core mark
   when any part in it is the domain, the area holding the program's entry
-  included (owner, 2026-09-27: purple when any part is the domain); the
+  included (owner, 2026-09-27: marked when any part is the domain); the
   entry mark only on the area holding the program's entry (a declaration
   its execution starts from, a target seed) when no domain part stands in
   it; otherwise none, or the dependencies mark. Parts that only take
@@ -286,7 +289,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   automatically. Search and chosen destinations reveal their result at a
   readable scale, opening its enclosing frames in the fixed world. A hidden
   child's bounds inside the viewport do not count as visible content. A fully
-  visible, legible part keeps the current camera when opened from a reading.
+  visible, legible part keeps the current camera when opened from a reading;
+  so does a frame (a component, an area, an Inputs collection) that is drawn
+  and mostly in sight, and a declaration whose tile is drawn in sight (owner,
+  2026-09-28: the camera moves only to what is out of sight; otherwise the
+  canvas marks it).
 
 - The drawing's dark arrows and outlines have exactly one reason: search
   results, the part or frame under the pointer, the pinned input path, or
@@ -328,9 +335,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   drawn as a small card in the fill and border the canvas paints it with,
   its mark on its border, then the solid "calls" and dashed "possible
   calls" strokes the arrows are drawn with, and, when a part's tiles draw
-  one, the purple dashed link from a function to the type it returns or
+  one, the dotted slate link from a function to the type it returns or
   from a type to the function taking it ("returns or takes a type"), drawn
-  in the tiles' own purple and grey head. There is no folded prose legend
+  in the tiles' own slate and grey head. There is no folded prose legend
   under the map. The input context
   and leave-path action live in the reading card. An input chosen from
   Find, a link, a reading or its own tile on the canvas is entered as its
@@ -360,7 +367,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   ("kvd.h.kvCommand.proc get in getCommand") only restates the fact, and
   the reading and Find name its handler. A chosen input's
   reading opens at its path (owner's choice 3c, 2026-09-27), drawn in the
-  Inputs blue of its tile and collection, never core's purple: its
+  Inputs blue of its tile and collection, never core's rose: its
   heading's bar and kind and its links. The path projects GroupsIndex's
   saved reach and dispatch sites; the page walks no code. It is, first, one
   box per dispatch site whose alternatives hold the handler, the first open:
@@ -628,13 +635,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   caller is its name); nothing recedes. A
   click on a tile chooses that declaration: the part is read with it named
   in the reading column (the existing `map.explainSource`), the tile keeps
-  the dark outline of what is read, its own arrows stay dark, the
-  declarations its links do not join recede while it stays chosen, and the
-  camera centres it at its reading scale. A modifier click still opens its code. A
+  the dark outline of what is read, its own arrows stay dark, and the
+  declarations its links do not join recede while it stays chosen; the
+  camera stays on a tile in sight. A modifier click still opens its code. A
   declaration the reading column names by its source (Find's code hit, a
   declaration chosen in the reading, a restored visit) is the one chosen on
-  the canvas, and a newly named one is centred at its reading scale; a
-  restored visit keeps its camera. The page data gives each tile its file and the
+  the canvas, and a newly named one out of sight is centred at its reading
+  scale; a restored visit keeps its camera. The page data gives each tile its file and the
   same source link its reading uses, served or static.
 
   Root summaries prioritize saved area names over role, counts and purpose;
@@ -787,9 +794,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Fixed overview text scales with the viewport independently of graph props.
   Ordinary camera movement does not rebuild the graph or remeasure unchanged
   text. Only common detail-layer transitions update the displayed contents.
-  Selection and hover never change box positions or sizes. Normal part clicks
-  update the reading column without centering; explicit destination clicks and
-  Find move to their exact result.
+  Selection and hover never change box positions or sizes. The first click
+  reads and zoom is separate (owner, 2026-09-28): a click on a part, a
+  frame's title or a component's, a collection's or a destination's whole-map
+  card updates the reading column and marks it without moving the camera;
+  the magnifier, "+" and a double-click zoom. Explicit destination clicks
+  and Find move to their exact result when it is out of sight.
 
 - The hover area persists through gaps between its labels and clears on leaving
   the canvas, window blur, hidden document or clicking empty canvas. Hovering
@@ -826,86 +836,121 @@ never a single shortest path.
 
 The key lists only the kinds and strokes present in that map.
 
-Group readings put the description first, then the input's witness when an
-input is pinned, then what the part is made of, then incoming connections
-before outgoing connections. What a part is made of (owner's choice 3a,
-2026-09-27) is headed by
-its declarations counted by the kind its tiles carry ("Made of 18
-functions", "2 functions, 3 types") with the files they are written in
-once beside it, and lists every declaration of the part as a link into its
-code, the model's keys first and in bold as the part's tiles draw them,
-then the rest by name whatever their case, with no line number. The tiles
-keep the page's own order. An area's reading starts
-the same way under its description: "Made of 9 parts", then each part, a
-link to its reading, with its counts and files and its declarations as
-links, keys first and bold, the rest by name; a declaration is read in
-its part without moving the camera. An area's or a component's reading
-then lists its Connections as its arrow ends group them: one line per
-frame or participant at the other end and direction, incoming first, with
-the count of its calls and the parts they are made from, each opening to
-the same rows as the arrow's card; they replace the list of neighbours by
-name. A line from inputs counts the handlers they are implemented in, with
-that unit ("← Inputs 12 handlers"; its card "12 handlers, into 3 of 5"),
-and inputs sharing a handler stand in its one row, each named ("{a}, {b} →
-{handler}"); no input is dropped from it. Inputs taken in where their
-handler is not established count as inputs and share one row per place,
-named in order ("-a, -h declared in parseOptions"). In the column a name in those rows reads its declaration in its part,
-as a click on its tile does, and a modifier-click still opens the code it
-linked to; a row's code is one explicit "Open code ↗" at its end, where the
-call is written, and a row wraps with its names whole. The page data names
-the declarations at a call's two ends (`caller`, `callee`, keyed as the
+The reading column (owner's choices of 2026-09-28, the designer's variant A
+with his changes) renders page data Go prepared and sorted: the script
+sorts nothing and repairs nothing. Model text is told apart by its style
+alone (italic, a hover "written by the model") with no chip before it; a
+part named anywhere in the column stands in a small box drawn as the
+canvas draws that part (its frame, core's rose with its diamond, entry's
+green); lists are plain names, a model's key in bold, with no square or
+chip before a name. Every name the column reads is shown on the canvas too:
+a declaration's tile is chosen, a part, a component or an input is read
+and marked, the camera moving only when it is out of sight, and the
+address follows it (a new declaration in the same part is a new visit, so
+Back returns to the one read before). A modifier-click on a name opens
+its code.
+
+A part's reading (`pageGroupReading`, `data-reading` on its card) has its
+kind and the frame holding it, a link up, in its heading ("Part · Core
+infrastructure ↑"). "Called from" lists the parts calling into it, each
+in its box with its caller → callee pairs counted as the arrow's card
+counts them, and under each caller the declarations of this part it
+reaches, calls first and then the other relations in their own words
+("beforeSleep() passed as a callback"), each list by name; every input
+registered at the part is one neighbour, Inputs, counted by its inputs.
+Many callers fold each part to its line. Then the part's own box, the
+model's description, its files, and its declarations by kind, each kind
+its own heading and list by name whatever its case ("12 functions",
+"4 variables", types), the keys in bold. "Calls into" lists the parts it
+calls, each in its box with its callees by name and the variables it uses
+there. With an input pinned, the input's witness stands under the
+description ("Why it appears in {0}"); the inputs reaching the part and
+the calls within it close the reading, folded under their counts. The
+part's card below the map keeps its connection groups, Source details and
+source index with every original row, possible-call mark and source
+pair; the column does not repeat them. A model's sentence naming no two
+declarations stays on the card and on the arrow's card; the original native
+relation is in the reading even when the model supplied no sentence for
+that pair. Membership alone
+adds no relation; containment remains the source inventory. Distinct
+relation IDs preserve same-line call occurrences, and on the card
+connections share one heading per exact participant href and direction,
+with each distinct saved summary once.
+
+A declaration chosen in the reading, on its tile, from Find or from
+another declaration's reading has a reading of its own in place of its
+part's: its kind and its part, a link up, in the heading ("Function ·
+Server lifecycle and cron ↑"); who calls it ("Called by", "Used by" for a
+variable or a type), grouped by the part at the other end, its own part
+first; its name as the one link into its code with what its tile writes
+after it, then its file alone ("redis.c") and, when its author wrote one,
+"comment" whose hover or focus shows the comment as written, marked as
+the author's claim; the model's line when there is one; a type's every
+field with its type and the functions of its part that return or take
+it; what it calls ("Calls", "Uses"), by part; and the variables it uses
+("Uses variables"), each with a hover naming the part holding it. The
+place each relation is written is on its name's hover; a relation other
+than a call keeps its own words. A dispatch site's reading follows. A
+variable read by a hundred functions folds each larger part to its line.
+Choosing a name reads that declaration, so a chain such as
+readQueryFromClient → processInputBuffer → processCommand is followed one
+call at a time; equal names with different source locations remain
+separate. A declaration without a line says nothing about one.
+
+An area's reading starts under its description with "Made of 9 parts",
+each part a link to its reading with its counts and files and its
+declarations as links, keys first and bold, the rest by name; a
+declaration is read in its part without moving the camera. An area's or a
+component's reading then lists its Connections as its arrow ends group
+them: one line per frame or participant at the other end and direction,
+incoming first, with the count of its calls and the parts they are made
+from, each opening to the same rows as the arrow's card; they replace the
+list of neighbours by name. A click on an arrow end opens its connection
+alone. A line from inputs counts the handlers they are implemented in,
+with that unit ("← Inputs 12 handlers"; its card "12 handlers, into 3 of
+5"), and inputs sharing a handler stand in its one row, each named ("{a},
+{b} → {handler}"); no input is dropped from it. Inputs taken in where
+their handler is not established count as inputs and share one row per
+place, named in order ("-a, -h declared in parseOptions"). In the column a
+name in those rows reads its declaration in its part, as a click on its
+tile does, and a modifier-click still opens the code it linked to; a row's
+code is one explicit "Open code ↗" at its end, where the call is written,
+and a row wraps with its names whole. The page data names the
+declarations at a call's two ends (`caller`, `callee`, keyed as the
 reading keys a declaration) apart from where the call is written and where
-it lands. A name whose part lists no
-such declaration is only named. The canvas's own card keeps its links. An
-input collection is named Inputs there, as its
-canvas heading is. Each declaration is one line, as a tile is, a type's fields
-on a line under it, and a key type the model explained keeps its mark and
-its fields. The reading column does not repeat the source index, which
-is that list again by file and stays on the part's card. A type's fields stand inside its row, in the code
-list and the source index alike, never as peers of the part's functions. The original native relation is available even when the
-model supplied no sentence for that pair. Relations between declarations in
-the same part remain available under Connections within this part, with their
-original call/read sites, destination declarations and resolution. Membership
-alone adds no relation; containment remains the source inventory. Native code labels keep their own
-provenance; model summaries remain marked. Distinct relation IDs preserve
-same-line call occurrences. Selecting a peer pans to it; Back restores the
-camera and expanded source evidence. Connections share one heading per
-exact participant href and direction, with each distinct saved summary once.
-Source details retain every original row, possible-call mark and source pair.
-A relation row is said through one closed vocabulary of the report's UI
-messages, chosen by its kind and filled with the two declarations' names
-("main passes acceptHandler as a callback"), never the stored kind
-("passes_callback"); a C program's import is said as an include, and a
-joint between two programs names the declarations at both of its ends
-("{caller} connects to {callee}", not "integrates with").
-An arrow's card reads each of its calls as caller, relation and callee and
-links both names, so an arrow's call is those three words: the phrase's
-words when they stand between the names, the relation's kind when the
-phrase wraps the callee ("cmdTable passes callback delCommand"). A row
-the model wrote in its own words keeps them. Rows of one caller and one
-relation kind in one evidence list fold into one line with their count
-and callees, each row inside it with its sources. A list with folds has
-one "Open all" control
-that opens and closes them together. What a reader opens in the reading
-column (Source details, a fold, Open all, any disclosure) comes into view:
-the column scrolls by what it overflows at the column's foot, and no
-further than bringing its summary to the column's top; closing scrolls
-nothing, and a reading restored with its evidence open keeps its place.
-Inputs reaching this part is
-collapsed with its count. The reading column stands beside the map's
-controls and key as well as its canvas and takes their height, with the
-canvas keeping its own. Only
-the canvas's workspace sets that height; the static map a canvas failure
-leaves keeps the reading's own scrolling box. It
-has no "More details" step, "To explanation" or "To code" action, which
-moved to what was already on screen. Unknown destinations and different identities never merge by title. The reading
-states when no connection to another part exists in this report. That absence
-does not classify the declaration as unused or invent a connecting edge;
-internal relations and the complete source inventory remain available.
-The reading column uses these same grouped sections; the duplicate full-group link and vague
-All disclosure are removed. A new selection reads from its top. Returning to
-a part (Back, or the same part shown again) restores its expanded evidence
-and reading scroll as well as the canvas camera. Saved core/entry/dependency
+it lands. A name whose part lists no such declaration is only named. The
+canvas's own card keeps its links. An input collection is named Inputs
+there, as its canvas heading is. A relation row is said through one
+closed vocabulary of the report's UI messages, chosen by its kind and
+filled with the two declarations' names ("main passes acceptHandler as a
+callback"), never the stored kind ("passes_callback"); a C program's
+import is said as an include, and a joint between two programs names the
+declarations at both of its ends ("{caller} connects to {callee}", not
+"integrates with"). An arrow's card reads each of its calls as caller,
+relation and callee and links both names, so an arrow's call is those
+three words: the phrase's words when they stand between the names, the
+relation's kind when the phrase wraps the callee ("cmdTable passes
+callback delCommand"). A row the model wrote in its own words keeps them.
+Rows of one caller and one relation kind in one evidence list fold into
+one line with their count and callees, each row inside it with its
+sources. A list with folds has one "Open all" control that opens and
+closes them together. What a reader opens in the reading column (a fold,
+Open all, any disclosure) comes into view: the column scrolls by what it
+overflows at the column's foot, and no further than bringing its summary
+to the column's top; closing scrolls nothing, and a reading restored with
+its evidence open keeps its place. The reading column stands beside the
+map's controls and key as well as its canvas and takes their height, with
+the canvas keeping its own. Only the canvas's workspace sets that height;
+the static map a canvas failure leaves keeps the reading's own scrolling
+box. It has no "More details" step, "To explanation" or "To code" action,
+which moved to what was already on screen. Unknown destinations and
+different identities never merge by title. The reading states when no
+connection to another part exists in this report. That absence does not
+classify the declaration as unused or invent a connecting edge; internal
+relations and the complete source inventory remain available. A new
+selection reads from its top. Returning to a part (Back, or the same part
+shown again) restores its expanded evidence and reading scroll as well as
+the canvas camera. Saved core/entry/dependency
 lanes remain named in the map and reading; an import is not promoted into an
 external communication.
 
@@ -925,10 +970,13 @@ leaf groups across all lanes, excluding operations, frames and foreign nodes.
 Its link focuses the component on the common map. The separate core-lane code
 reference is labelled Core, and cannot imply an empty component map.
 
-When no item is selected, the reading column shows entrances to the complete
-saved question menu, run material, terminology, missing observations and author
-claims, plus the component purposes with original provenance and source links.
-It uses ordinary rendered content, not an additional model summary. Selecting
+When no item is selected, the reading column shows the repository summary,
+marked as the model's by its style alone, and entrances to the complete saved
+question menu, run material, terminology, missing observations and author
+claims. The components, their areas and inputs are on the canvas and are not
+listed again (owner, 2026-09-28); a target the run could not read is named
+there with why. It uses ordinary rendered content, not an additional model
+summary. Selecting
 an item replaces that home reading; closing details returns to its top. Answers
 and reference material continue below the same mounted canvas, and Back
 restores the camera and selected reading.
@@ -1048,7 +1096,7 @@ available without scripting.
 
 ## External communication and data
 
-Selecting a component on the common map opens its existing purpose, entrypoints and complete input catalogue in the panel. The "Entrypoints" link among its sections lands on the program's entry, from GroupsIndex's entries in the page data: the part holding every seed, the seed read there when it is one; when a seed stands in no part, or the seeds in two parts, the component's reading, opened at its entry line when it has one. Its original full-reference section remains available with the main flow, configuration, group cards, dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches, then the parts its program never runs, one row per file with the file, the part's name and its declarations there as source chips (GroupsIndex `unreachable`), and then, under "{0} symbols" and by file in line order, the other declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: kvcli lists `net.c`'s `netListen`, and does not listen on its map, and it lists its part of `loop.c` with that file's functions, a part it does not draw. A declaration is listed once: a part's row does not repeat among the symbols. Find lists each declaration of such a row as Code with no "In part" link and opens its row. Above the parts and symbols the list says, as the files' list does, that nothing this program runs reaches them and that this does not establish that the code is unused. Each declaration another program of the same report runs names those programs, "(run by kvd)", each linking to its component, in page order: kvcli lists `netListen` run by kvd, and kvd lists `netConnect` run by kvcli. This is page data joined from the saved ProgramIndex set, not a walk: a program runs a declaration when its index holds the same declaration (GroupsIndex's cross-program identity, `groupindex.DeclarationKey`: path, line, column, kind and name; never a name alone), does not mark it `unreachable`, and marks some other callable `unreachable`. An index that marks nothing (a library, a program other code can enter by any name, every adapter but C) proves nothing and names no program; a program that reaches every one of its callables is not named either. It stays a page join over the adapters' saved proofs; GroupsIndex's reach is the input handlers' and is per program. The list reuses the existing heading, the off-map row and the "{0} symbols" summary; no badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. Several call sites of one caller calling one callee are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
+Selecting a component on the common map reads it without moving the camera (owner, 2026-09-28). Its reading names it without the kind its label adds ("redis-server", its heading "Component · C executable"; the kind stays only when another component would read the same, and the canvas's cards name it so too), then its role and purpose, the model's by their style; its entrypoints, each one link by its name ("main()") that reads the program's seed in its part when it is that seed, a modifier-click opening its code; its inputs counted by kind ("96 requests · 5 commands · 37 settings"), each count lighting its tiles on the canvas while pointed at (or, while their collection is closed, its row of that kind), dimming nothing, and reading the collection when chosen; its Connections; then its Main flow, what its program never runs, its TODOs and its analysis coverage, each a list opening in place, and a link to its whole page, where its complete input catalogue stands. Its areas are on the canvas and are not listed again. An Inputs collection is read by its catalogues (`pageInputCollection`, `data-collection`): its component first, in its box, a link to its reading; then each catalogue under its kind's heading with its count, one line each for where its inputs are listed or declared, where they are looked up and what else the declaring code uses, the model's count of them matched to another program's inputs by name, and its inputs as a grid of names by name, each reading its input; then the inputs no catalogue holds, by kind; requests first. Their records, with each input's registration line, stay on the component's page. The "Entrypoints" link among its sections lands on the program's entry, from GroupsIndex's entries in the page data: the part holding every seed, the seed read there when it is one; when a seed stands in no part, or the seeds in two parts, the component's reading, opened at its entry line when it has one. Its original full-reference section remains available with the main flow, configuration, group cards, dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches, then the parts its program never runs, one row per file with the file, the part's name and its declarations there as source chips (GroupsIndex `unreachable`), and then, under "{0} symbols" and by file in line order, the other declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: kvcli lists `net.c`'s `netListen`, and does not listen on its map, and it lists its part of `loop.c` with that file's functions, a part it does not draw. A declaration is listed once: a part's row does not repeat among the symbols. Find lists each declaration of such a row as Code with no "In part" link and opens its row. Above the parts and symbols the list says, as the files' list does, that nothing this program runs reaches them and that this does not establish that the code is unused. Each declaration another program of the same report runs names those programs, "(run by kvd)", each linking to its component, in page order: kvcli lists `netListen` run by kvd, and kvd lists `netConnect` run by kvcli. This is page data joined from the saved ProgramIndex set, not a walk: a program runs a declaration when its index holds the same declaration (GroupsIndex's cross-program identity, `groupindex.DeclarationKey`: path, line, column, kind and name; never a name alone), does not mark it `unreachable`, and marks some other callable `unreachable`. An index that marks nothing (a library, a program other code can enter by any name, every adapter but C) proves nothing and names no program; a program that reaches every one of its callables is not named either. It stays a page join over the adapters' saved proofs; GroupsIndex's reach is the input handlers' and is per program. The list reuses the existing heading, the off-map row and the "{0} symbols" summary; no badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. Several call sites of one caller calling one callee are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
 
 An outbound kind is shown by the protocol-neutral label its kind has:
 `client_request` is "Request", never "HTTP", and the counts and headings of

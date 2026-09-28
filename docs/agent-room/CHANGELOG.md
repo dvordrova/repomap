@@ -1,5 +1,78 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — The reading column as the owner chose it (variant A)
+
+- **Owner's choices** (designer's mocks in the scratchpad
+  `designer-column/`, variant A for the declaration and the part, with his
+  changes): the report renders data Go prepared and sorted (no sorting in
+  JS), no canvas labels, the first click reads and zoom is separate, no
+  defensive fallbacks; lists are plain names, keys bold, no squares.
+- **Colours (d55729d3):** core parts and areas rose (`--core` #913b6d,
+  `--core-ink` #62284a, `--core-area` #fef4f9) with the diamond; purple is
+  `--link` only; key names bold ink; "returns or takes a type" dotted slate;
+  `.flow-input` blue; model text italic `--model`. Green prose and
+  navigation links unchanged (not agreed).
+- **Page data (8688748c):** `pageGroupReading` on each part's card
+  (`data-reading`): members by kind and name, keys, files, author comments,
+  every field of a type with its type; callers merged by caller (calls,
+  then callbacks), every input registered at the part as one Inputs
+  neighbour (Server core state had 95 neighbours `get`, `set`, …); callees
+  by part; per declaration its callers and callees grouped by the part each
+  end is a member of (a table row's end had taken the input's href), own
+  part first, and the variables it uses. `data-collection` on an Inputs
+  collection (catalogues and loose inputs by kind and name, requests
+  first), `data-entries` on a component, catalogue members by name,
+  component titles without "(executable)" unless another would read the
+  same. Bug (d): a tile's "… +N" row is appended after the list, so
+  redisClient's `bulklen` keeps its type.
+- **Column and canvas (b56962a8):** `31-reading-column.js` renders a part
+  (Called from → boxed title → italic description → files → "12 functions",
+  "4 variables", types → Calls into), a declaration (Called by by part →
+  the name as the one code link, file only, "comment" on hover/focus as the
+  author's claim → Calls → Uses variables, hover "A global variable of
+  {part}"), a component ("Component · C executable", `main()` one link,
+  inputs by kind lighting their tiles or the closed collection's row with
+  no dimming, Connections, then Main flow / Not reachable / TODOs /
+  Analysis coverage opening in place, and "Component details"), an Inputs
+  collection (component box first, catalogue lines, names by name) and a
+  home without the components list. Every name read in the column is shown
+  on the canvas and in the address: `readDeclaration` pushes a visit for a
+  declaration in the same part; the camera moves only to what is out of
+  sight (`memberInSight`, `frameInSight`). A click on a whole-map card or a
+  frame title reads without moving the camera; the magnifier zooms.
+  Bug (a): redis-cli's Inputs is read in place; its magnifier frames the
+  tiles readably. Bug (c): an arrow end opens its connection alone (a
+  remembered open connection had stayed open). Bug (e): the part's
+  description is marked by style.
+- **Specs:** bug (b) was the spec clicking the first part in page order,
+  off the canvas at 1440×900, which landed on its area: it now picks a part
+  in sight (3 crumbs). real-report enters the component by its magnifier;
+  the catalogue click spec uses the component's page; arrow-ends and
+  pointing follow the new camera rule (a tile in sight stays, one out of
+  sight is centred). New: `TestPartReadingListsMembersByNameAndCallersByCaller`,
+  `TestDeclarationReadingGroupsItsRelationsByPartOwnPartFirst`,
+  `TestATilesMoreRowTakesNoFieldsPlace`,
+  `TestInputCollectionListsItsInputsByKindAndName`,
+  `TestReadingColumnViewsFollowThePreparedData`, and the real spec
+  "a caller named in a declaration's reading becomes the canvas's chosen
+  tile" (tryResizeHashTables → serverCron: tile chosen, reading subject,
+  camera still, Back returns).
+- **Verified:** `go test ./internal/report/...`, `go vet`, `make ui-test`
+  (131), `make ui-visual-test` (63 passed, 6 real skipped), real specs with
+  `REPOMAP_REAL_RUN=~/Library/Caches/repomap/runs/20260928-151426-redis-1-3-6-2fcb7c42f2a5`
+  6/6 (the 2026-09-27 redis-r2 run no longer renders: ProgramIndex 19).
+  Rendered latest-redis (…151426), latest-litestream (…125752-litestream-v24),
+  latest-repomap (…093911-self-snap) and latest-freqtrade (…094118) into
+  `redis-r2/run/`; each loads with no page error and reads a part, a
+  declaration, a component and a collection. Screenshots `look/col-*.png`.
+- **Cost:** the reading data is 11% of the Redis and litestream pages
+  (1.8 of 15.8 MB; 1.4 of 12 MB) and 15–17% of repomap's and freqtrade's
+  (8.5 and 7.8 of 51 MB). Column width stays 320 px: at
+  384 px the first reveal's group titles fell below 12 px.
+- **Not done:** the designer's "About the repository" disclosures on home;
+  cross-part "returns/takes a type"; the single input's reading; the
+  Russian render was not checked in a browser.
+
 ## 2026-09-28 — Repair pass after the speed-mode sequence
 
 - **Failures at a2fab47a** (`make vet` green): places `TestFixturePlaces`,
