@@ -139,7 +139,13 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		}
 		if call.Kind == atlas.BoundaryRunsProgram {
 			row.Program, row.ProgramNotNamed = true, call.ProgramNotNamed
-			row.Words = append([]string(nil), call.Values...)
+			// A word that cannot stand on one line (a script handed to an
+			// interpreter) stays in the call at its source link.
+			for _, word := range call.Values {
+				if !strings.ContainsAny(word, "\n\r") {
+					row.Words = append(row.Words, word)
+				}
+			}
 		}
 		row.Callers = builder.outboundCallers(index, section.ID, call.SubjectID)
 		if ref, known := builder.subject(index.Target.ID, call.SubjectID); known && call.SubjectID != "" {

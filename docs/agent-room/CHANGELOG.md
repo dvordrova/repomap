@@ -113,6 +113,51 @@
   `86638d5f…27733`, `program_options.md` `7555b2a8…6f397`; asks talks
   `f538b957…6f2f4`, enters `62b3db34…7af29` (both unchanged), program
   `3ade7198…4d9f2`.
+- **Acceptance** (`runsprog/accept/`, ordinary runs `--no-serve --no-open`
+  on the default system cache, keys by the sed recipe; no `cache clear`):
+  - **Redis 1.3.6**: exit 0 in 17.7 s (11 atlas_api Jev windows live, 266 k
+    tokens), warm 15.3 s with 0 live; render byte-identical. Inputs 96 / 11
+    / 6 / 0, unchanged; no program launched (fork only).
+  - **litestream v24**: exit 0 in 41.7 s (65 atlas_api and 1 atlas_program
+    Jev windows; boundaries 4, core 2, joints 11, publish 1, glossary 1,
+    orientation 1 DeepSeek), warm 8.3 s with 0 live; render byte-identical.
+    The inputs at the `exec.CommandContext` sites: 11 → 0 (mcp.go ×8,
+    validate.go ×3). Launched programs: cmd/litestream `litestream` ×9 (its
+    MCP tools run its own binary), not established ×2 (replicate.go:376
+    `exec.CommandContext(ctx, args[0], …)` and :380 `c.cmd.Start()`, whose
+    receiver is a struct field, so it is not folded); cmd/litestream-test
+    `litestream` ×3 (`restore -config -o`, `restore -o`, `ltx`), not
+    established ×1 (validate.go:124 `CombinedOutput` on a command chosen in
+    an if/else, not folded); etc.s3_mock not established ×1
+    (`subprocess.run([...])`). No cross-component link (step 6 not done).
+    Inputs: cmd/litestream 93 → 115 (`FlagSet.Var` command, lead 0.50: +8
+    options; `CallToolRequest.RequireString` request, lead 0.15, a near-tie
+    in pass 1: +14 MCP tool argument names, a side effect of the wording
+    for the owner), cmd/litestream-test 34 → 37.
+  - **repomap self snapshot** (`git clone --depth 1` of 26ec3762, `--target
+    …::…/cmd/repomap`): exit 0 in 121 s, cold (the checkout name
+    `self-snap` shares no cache with `repomap`: about 8.8 M input tokens,
+    Jev role_helper 3.0 M and role_gate 0.5 M, DeepSeek symbols 3.0 M and
+    orientation 0.64 M, roughly $1.2). Launched programs: `git` ×4
+    (claims, freshness, gitfiles, snapshot), `go` ×2 (`go list -m -json`),
+    `clj-kondo` ×1, `python3` ×1 (`python3 -I -S -c <script>`), named at
+    run time ×2 (node for the JS helper, python for target discovery: a
+    path variable), not established ×8 (clang ×3 and make in cproject, the
+    configured extractors, the editor, the browser opener, gitfiles.go:32
+    Output on an unfolded receiver). 42 inputs (38 command options and
+    subcommands, 4 HTTP handlers), none at a launch; `exec.LookPath`'s
+    enters is a near-tie, so no `clang`/`node`/`code` input.
+  - **Walk** (headless Chromium 1440×900, loopback 8932, stopped): the
+    litestream component catalogue lists `litestream · 9`, `litestream ·
+    3` with `CommandContext litestream restore -config -o`, and each
+    not-established launch alone; cmd/litestream-test's connections read
+    "→ litestream 2 · Validate command" and "→ Program not established";
+    the canvas holds one frame per program with a `CommandContext` tile;
+    no page errors. A word that cannot stand on one line (the embedded
+    Python script) is left out of the record line after the self run.
+  - **Cost**: Jev ≈ 17 MB probe (≈ $0.19) + ≈ 6.3 M tokens of runs
+    (≈ $0.26); DeepSeek ≈ 4.5 M input tokens (≈ $1), almost all the cold
+    self snapshot.
 - Tests: `TestAnEntryBesideWhatACallDoesWithOtherProgramsIsRefused`,
   `TestACallThatStartsAProgramIsNamedByTheWordItsCallWrote` (litestream-
   shaped and `sh -c "git status"` through a Jev preset; the fold),
