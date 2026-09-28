@@ -675,6 +675,21 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 	}
 	boundRequests := make(map[string]bool)
+	// What each boundary's operation is declared on, and whether its call
+	// gives words of its own, by operation position (J1 below).
+	onOf := make(map[int]*DeclaredOn)
+	wordless := make(map[int]bool)
+	declaredOn := func(boundary atlas.Boundary) *DeclaredOn {
+		on := boundary.DeclaredOn
+		if on == nil || on.Path == "" || on.LineNo < 1 {
+			return nil
+		}
+		text := on.Text
+		if !validText(text) {
+			text = ""
+		}
+		return &DeclaredOn{Location: programindex.Location{Path: on.Path, Line: on.LineNo, Column: max(1, on.Column)}, Text: text}
+	}
 	// An entry whose handler is not established is one input per kind,
 	// words as written and declaring caller: the same option declared at
 	// two sites of one function is one option, and the first site stands
@@ -714,8 +729,12 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			if byID[declaredBy] == nil {
 				declaredBy = ""
 			}
-			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy}
+			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary)}
 			key := strings.Join(append([]string{kind, boundary.ObjectID}, boundary.Values...), "\x00")
+			if on := operation.DeclaredOn; on != nil {
+				// Two objects in one function are two declarations.
+				key += "\x00" + operationLocationKey(on.Location)
+			}
 			if at, seen := declared[key]; seen {
 				if locationBefore(&location, &operations[at].Location) {
 					operations[at] = operation
@@ -746,10 +765,51 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if subject := byID[subjectID]; name == "" && subject != nil && subject.Object != nil {
 			name = subject.Object.Name
 		}
+		onOf[len(operations)] = declaredOn(boundary)
+		wordless[len(operations)] = len(boundary.Values) == 0
 		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location})
 		if subjectID != "" {
 			boundRequests[subjectID] = true
 		}
+	}
+	// J1: a hand-over with no words of its own, made on what a word entry
+	// of the same kind produced (set_defaults(func=f) on add_parser("x")'s
+	// parser, .action(run) on .command("x")), is one input with that entry:
+	// named by its words, handled by the handed callable, at the entry's
+	// site. Kinds that differ stay two: code prefers neither.
+	entryAt := make(map[string]int)
+	for position, operation := range operations {
+		if operation.HandlerUnknown {
+			entryAt[operationLocationKey(operation.Location)] = position
+		}
+	}
+	joinedInto := make(map[int]bool)
+	dropped := make(map[int]bool)
+	for position, operation := range operations {
+		on := onOf[position]
+		if operation.HandlerUnknown || operation.SubjectID == "" || on == nil || !wordless[position] {
+			continue
+		}
+		at, ok := entryAt[operationLocationKey(on.Location)]
+		if !ok || joinedInto[at] || operations[at].Kind != operation.Kind {
+			continue
+		}
+		entry := &operations[at]
+		entry.SubjectID, entry.GroupID, entry.FactID, entry.Source = operation.SubjectID, operation.GroupID, operation.FactID, operation.Source
+		entry.HandlerUnknown, entry.DeclaredBy = false, ""
+		if entry.Summary == "" {
+			entry.Summary = operation.Summary
+		}
+		joinedInto[at], dropped[position] = true, true
+	}
+	if len(dropped) > 0 {
+		kept := operations[:0]
+		for position, operation := range operations {
+			if !dropped[position] {
+				kept = append(kept, operation)
+			}
+		}
+		operations = kept
 	}
 	// A declaration with an observed route already has an operation carrying
 	// that route's syntax. Keep its interpretation on the subject, without

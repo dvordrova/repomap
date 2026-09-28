@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 22
+	Version          = 23
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -248,6 +248,18 @@ type Operation struct {
 	// subject whose code declares it: the caller of the declaring call. It
 	// is where the input is parsed, never its handler.
 	DeclaredBy string `json:"declared_by,omitempty"`
+	// DeclaredOn is the object the input's call is made on (a parser, a
+	// flag set, a command object), at the call that made it, as written: a
+	// code fact the reading followed. Inputs declared on one object are
+	// one catalogue; an input declared at that call itself is what they are
+	// declared on.
+	DeclaredOn *DeclaredOn `json:"declared_on,omitempty"`
+}
+
+// DeclaredOn is the call that made the object an input is declared on.
+type DeclaredOn struct {
+	Location programindex.Location `json:"location"`
+	Text     string                `json:"text,omitempty"`
 }
 
 // StructuralEdgeRole is a deterministic projection of exact ProgramIndex
@@ -729,6 +741,12 @@ func (index Index) Snapshot() Index {
 	result.Data = cloneData(index.Data)
 	result.SharedCode = cloneStrings(index.SharedCode)
 	result.Operations = append([]Operation(nil), index.Operations...)
+	for i := range result.Operations {
+		if on := result.Operations[i].DeclaredOn; on != nil {
+			copied := *on
+			result.Operations[i].DeclaredOn = &copied
+		}
+	}
 	result.Outbound = append([]OutboundCall(nil), index.Outbound...)
 	for i := range result.Outbound {
 		result.Outbound[i].Values = cloneStrings(index.Outbound[i].Values)
@@ -829,6 +847,9 @@ func (index Index) Validate() error {
 		// An operation in a file off the map belongs to no group.
 		_, groupExists := groupsByID[operation.GroupID]
 		_, subjectExists := subjectsByID[operation.SubjectID]
+		if on := operation.DeclaredOn; on != nil && (on.Location.Path == "" || on.Location.Line < 1 || !validOptionalText(on.Text)) {
+			return fmt.Errorf("group index: operation %q is declared on an invalid object", operation.ID)
+		}
 		_, declarerExists := subjectsByID[operation.DeclaredBy]
 		if operation.DeclaredBy != "" && (!operation.HandlerUnknown || !declarerExists) {
 			return fmt.Errorf("group index: operation %q is declared by %q, which is no subject or declares an input with a handler", operation.ID, operation.DeclaredBy)

@@ -156,10 +156,11 @@ type reader struct {
 	nextZone            int
 	nextBoundary        int
 	nextJoint           int
-	boundaryIDs         map[string]string        // stable source identity -> compact boundary ID
-	boxes               map[string]*boxState     // box ID -> box
-	offMap              map[string][]offMapEntry // target -> what no part holds
-	mapFailure          map[string]string        // target -> why it has no map of parts
+	boundaryIDs         map[string]string                // stable source identity -> compact boundary ID
+	sites               map[sourceSite]*atlas.SymbolCall // every call of the graph by its site (declared.go)
+	boxes               map[string]*boxState             // box ID -> box
+	offMap              map[string][]offMapEntry         // target -> what no part holds
+	mapFailure          map[string]string                // target -> why it has no map of parts
 	zones               map[string][]*zoneState
 	arrows              map[string][]*arrowState
 	boundaries          map[string]*boundaryState
@@ -1261,6 +1262,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			Values: append([]string{}, facts.Values...), Name: state.name, Line: state.writtenLine(), FactID: factID,
 			Source: facts.Source, Destination: state.destination, Address: state.address, Basis: state.basis,
 			HandlerUnknown: state.handlerUnknown, ProgramNotNamed: state.programNotNamed,
+			DeclaredOn: state.on,
 		})
 	}
 	return target

@@ -2,6 +2,7 @@ package groupindex
 
 import (
 	"sort"
+	"strconv"
 
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -12,7 +13,7 @@ import (
 // readings. It is keyed by what declares the inputs: DeclaredOn, the object
 // a declaring call is made on (a parser, a flag set), when the facts name
 // one; otherwise DeclaredBy, the function whose code makes the declaring
-// calls. Code only groups and lists: where these inputs take effect is not
+// calls (kept beside On when one function declares them all). Code only groups and lists: where these inputs take effect is not
 // established by it.
 //
 // Calls are the calls into DeclaredBy (calls and executes, resolved exactly
@@ -23,12 +24,16 @@ import (
 //
 // Derived by Derive, never persisted.
 type Catalogue struct {
-	DeclaredOn   string
-	DeclaredBy   string
-	Kind         string
-	OperationIDs []string
-	Calls        []int
-	Uses         []CatalogueUse
+	// On is the object, when the facts name one, and OnOperationID the
+	// input declared at the call that made it, when there is one: its
+	// handler, if established, is where the members are handled from.
+	On            *DeclaredOn
+	OnOperationID string
+	DeclaredBy    string
+	Kind          string
+	OperationIDs  []string
+	Calls         []int
+	Uses          []CatalogueUse
 }
 
 // CatalogueUse is one variable the declaring code reads: Edges are the
@@ -57,15 +62,34 @@ func catalogues(index *Index) []Catalogue {
 	var result []Catalogue
 	at := map[key]int{}
 	for _, operation := range index.Operations {
-		if !operation.HandlerUnknown || operation.DeclaredBy == "" {
+		if !operation.HandlerUnknown || operation.DeclaredBy == "" && operation.DeclaredOn == nil {
 			continue
 		}
 		k := key{by: operation.DeclaredBy, kind: operation.Kind}
+		if operation.DeclaredOn != nil {
+			// One object is one catalogue, whichever function declares on it.
+			k = key{on: operationLocationKey(operation.DeclaredOn.Location), kind: operation.Kind}
+		}
 		position, seen := at[k]
 		if !seen {
 			position = len(result)
 			at[k] = position
-			result = append(result, Catalogue{DeclaredBy: operation.DeclaredBy, Kind: operation.Kind})
+			catalogue := Catalogue{DeclaredBy: operation.DeclaredBy, Kind: operation.Kind}
+			if on := operation.DeclaredOn; on != nil {
+				copied := *on
+				catalogue.On = &copied
+				for _, other := range index.Operations {
+					if operationLocationKey(other.Location) == k.on && other.ID != operation.ID {
+						catalogue.OnOperationID = other.ID
+						break
+					}
+				}
+			}
+			result = append(result, catalogue)
+		} else if result[position].DeclaredBy != operation.DeclaredBy {
+			// Declared on one object from several functions: no one
+			// function declares them.
+			result[position].DeclaredBy = ""
 		}
 		result[position].OperationIDs = append(result[position].OperationIDs, operation.ID)
 	}
@@ -138,4 +162,10 @@ func catalogues(index *Index) []Catalogue {
 		}
 	}
 	return result
+}
+
+// operationLocationKey is a source site as one key, column 1 standing for
+// none.
+func operationLocationKey(location programindex.Location) string {
+	return location.Path + "\x00" + strconv.Itoa(location.Line) + "\x00" + strconv.Itoa(max(1, location.Column))
 }

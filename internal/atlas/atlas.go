@@ -31,7 +31,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 20
-	Version      = 17
+	Version      = 18
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -741,6 +741,21 @@ type Boundary struct {
 	// that names the program, is then empty; both empty means the model
 	// did not decide which word names it.
 	ProgramNotNamed bool `json:"program_not_named,omitempty"`
+	// DeclaredOn is the object an incoming boundary's call is made on: the
+	// call that produced the value it acts on, followed back through the
+	// outside calls that name nothing, with that call as written. A code
+	// fact; nil when the value is a parameter, a variable or nothing a call
+	// produced.
+	DeclaredOn *DeclaredOn `json:"declared_on,omitempty"`
+}
+
+// DeclaredOn is the call that made the object an entry is declared on, at
+// its source site, as the code wrote it.
+type DeclaredOn struct {
+	Path   string `json:"path"`
+	LineNo int    `json:"line_no"`
+	Column int    `json:"column,omitempty"`
+	Text   string `json:"text,omitempty"`
 }
 
 // DestinationUse is one observed argument chain reaching a communication

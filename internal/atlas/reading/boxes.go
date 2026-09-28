@@ -645,6 +645,8 @@ type boundaryState struct {
 	// programNotNamed marks a call starting another program that none of
 	// its words names; destination then holds no program.
 	programNotNamed bool
+	// on is the object an incoming boundary's call is made on (declared.go).
+	on *atlas.DeclaredOn
 }
 
 // writtenLine is the boundary's line: only one the model wrote. A fixed
@@ -683,6 +685,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	}
 	publishes := r.applyAPIRoles()
 	publishes = append(publishes, r.bindInterpretedBoundaries()...)
+	r.markDeclaredOn()
 	if err := r.readPrograms(ctx); err != nil {
 		return err
 	}
