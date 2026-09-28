@@ -402,7 +402,12 @@ func TestRenderDerivesWhatTheRunDerived(t *testing.T) {
 		}
 		return index
 	}
-	svc := program("svc", true, []programindex.RelationInput{call("main-calls-handler", "oa", "ob", 4), call("handler-calls-client", "ob", "oc", 5)},
+	// The client also makes a call the code cannot follow: the launch,
+	// which reaches it from the seed, says so in the run and rendered.
+	unresolved := programindex.RelationInput{SourceRef: "client-calls-unknown", Kind: programindex.RelationCalls, FromRef: "oc",
+		Resolution: programindex.ResolutionUnresolved, TargetsObserved: 1, Location: at("svc/client/c.go", 6),
+		Witnesses: []programindex.Witness{{Kind: "call", Location: at("svc/client/c.go", 6)}}, WitnessesObserved: 1}
+	svc := program("svc", true, []programindex.RelationInput{call("main-calls-handler", "oa", "ob", 4), call("handler-calls-client", "ob", "oc", 5), unresolved},
 		"svc/main.go", "svc/api/h.go", "svc/client/c.go")
 	peer := program("peer", false, nil, "peer/server.go")
 	rebound := rebindTestTargets(t, svc, peer)
@@ -441,8 +446,17 @@ func TestRenderDerivesWhatTheRunDerived(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(index.Reach, hydrated.Reach) || !reflect.DeepEqual(index.Dispatch, hydrated.Dispatch) {
-			t.Fatalf("%s: the rendering derives another reach", index.Target.Name)
+		if !reflect.DeepEqual(index.Reach, hydrated.Reach) || !reflect.DeepEqual(index.Dispatch, hydrated.Dispatch) ||
+			!reflect.DeepEqual(index.Launch, hydrated.Launch) || !reflect.DeepEqual(index.Unresolved, hydrated.Unresolved) || !reflect.DeepEqual(index.Catalogues, hydrated.Catalogues) {
+			t.Fatalf("%s: the rendering derives another reach, launch or catalogues", index.Target.Name)
+		}
+		if closed := 0; index.Target.ID == svc.Target.ID {
+			for _, function := range hydrated.Launch.Functions {
+				closed += len(function.Closed)
+			}
+			if closed != 1 || len(hydrated.Unresolved) != 1 {
+				t.Fatalf("the rendered launch could not look inside %d calls of %d unresolved", closed, len(hydrated.Unresolved))
+			}
 		}
 		for position, subject := range index.Subjects {
 			if subject.Phase != hydrated.Subjects[position].Phase {

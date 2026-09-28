@@ -14,7 +14,7 @@ import (
 // For each function it reaches it says what the function holds: the
 // inputs it declares or registers (found), the calls that may declare one
 // the reading could not decide (unsure), the calls the code cannot follow
-// (could not look inside), or nothing, counted only. It is how the inputs
+// (could not look inside: its unresolved calls), or nothing, counted only. It is how the inputs
 // were found, never a gate: no input outside it is hidden.
 //
 // Nested are the handler-less inputs declared only inside an input's
@@ -30,7 +30,8 @@ type Launch struct {
 
 // LaunchFunction is one function the launch walk reaches: its depth from a
 // root, Via the structural edge that first reached it (-1 for a root), and
-// what it holds.
+// what it holds: Found its inputs, Unsure positions in Index.Unsure and
+// Closed positions in Index.Unresolved.
 type LaunchFunction struct {
 	SubjectID string
 	Depth     int
@@ -139,11 +140,8 @@ func (graph *reachGraph) launch(reaches []Reach) Launch {
 			result.Functions[function].Unsure = append(result.Functions[function].Unsure, position)
 		}
 	}
-	for position, edge := range index.StructuralEdges {
-		if edge.Role != EdgeRelationPattern || edge.Resolution != programindex.ResolutionUnresolved || edge.RelationKind != programindex.RelationCalls {
-			continue
-		}
-		if function, ok := at[edge.FromSubjectID]; ok {
+	for position, call := range index.Unresolved {
+		if function, ok := at[call.FromSubjectID]; ok {
 			result.Functions[function].Closed = append(result.Functions[function].Closed, position)
 		}
 	}

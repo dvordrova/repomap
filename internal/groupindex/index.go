@@ -370,6 +370,34 @@ type Index struct {
 	Unsure []UnsureCall `json:"unsure,omitempty"`
 	Idioms []Idiom      `json:"idioms,omitempty"`
 	Launch Launch       `json:"-"`
+	// Unresolved are the calls of the retained declarations that resolve to
+	// nothing (ProgramIndex `unresolved` calls), in relation order: the
+	// calls the code cannot follow. Compiled with the structural edges from
+	// the bound ProgramIndex, never persisted.
+	Unresolved []UnresolvedCall `json:"-"`
+}
+
+// UnresolvedCall is one call whose callee the ProgramIndex does not know.
+type UnresolvedCall struct {
+	RelationID    string
+	FromSubjectID string
+	Location      *programindex.Location
+}
+
+// compileUnresolvedCalls lists the unresolved calls made by retained
+// declarations.
+func compileUnresolvedCalls(program programindex.Index, retained map[string]struct{}) []UnresolvedCall {
+	var result []UnresolvedCall
+	for _, relation := range program.Relations {
+		if relation.Kind != programindex.RelationCalls || relation.Resolution != programindex.ResolutionUnresolved {
+			continue
+		}
+		if _, ok := retained[relation.FromID]; !ok {
+			continue
+		}
+		result = append(result, UnresolvedCall{RelationID: relation.ID, FromSubjectID: relation.FromID, Location: cloneLocation(relation.Location)})
+	}
+	return result
 }
 
 // UnsureCall is one call that may declare an input and was not decided:
@@ -630,6 +658,7 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 		Containers:         containers,
 		StructuralEdges:    structuralEdges,
 		Connections:        connections,
+		Unresolved:         compileUnresolvedCalls(program, allSubjectIDs),
 	}
 	Derive(&index)
 	seal, err := indexDigest(index)
@@ -783,6 +812,7 @@ func (index Index) Snapshot() Index {
 	result.SharedCode = cloneStrings(index.SharedCode)
 	result.Operations = append([]Operation(nil), index.Operations...)
 	result.Unsure = append([]UnsureCall(nil), index.Unsure...)
+	result.Unresolved = append([]UnresolvedCall(nil), index.Unresolved...)
 	result.Idioms = append([]Idiom(nil), index.Idioms...)
 	for i := range result.Idioms {
 		result.Idioms[i].SubjectIDs = cloneStrings(index.Idioms[i].SubjectIDs)
@@ -2358,6 +2388,7 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		Outbound: artifact.Outbound, Containers: artifact.Containers,
 		StructuralEdges: compileStructuralEdges(program, retained), Connections: slices.Clone(artifact.Connections),
 		OffMap: artifact.OffMap, MapFailure: artifact.MapFailure, Unsure: artifact.Unsure, Idioms: artifact.Idioms, SHA256: artifact.SHA256,
+		Unresolved: compileUnresolvedCalls(program, retained),
 	}
 	// Derive writes the connections' derived fields: on a copy, so hydrating
 	// never changes the overlay it reads.

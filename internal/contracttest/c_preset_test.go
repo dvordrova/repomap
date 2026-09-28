@@ -230,6 +230,21 @@ func checkKvdReach(t *testing.T, program programindex.Index, index groupindex.In
 			}
 		}
 	}
+	// The launch walks from main by the same rule: loopProcessEvents's calls
+	// through fe->rfileProc and fe->wfileProc, which resolve to nothing, are
+	// the calls the code cannot follow there, at their own lines.
+	closed := map[string][]int{}
+	for _, function := range index.Launch.Functions {
+		if function.Outcome() != "closed" {
+			continue
+		}
+		for _, position := range function.Closed {
+			closed[names[function.SubjectID]] = append(closed[names[function.SubjectID]], index.Unresolved[position].Location.Line)
+		}
+	}
+	if len(closed) != 1 || !slices.Equal(closed["loopProcessEvents"], []int{58, 59}) {
+		t.Fatalf("launch functions that could not be looked inside: %v", closed)
+	}
 	phases := map[string]string{}
 	for _, subject := range index.Subjects {
 		if subject.Object != nil && subject.Object.Location != nil {

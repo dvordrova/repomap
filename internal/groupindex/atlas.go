@@ -983,6 +983,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		MapFailure:         strings.TrimSpace(target.MapFailure),
 		Unsure:             unsure,
 		Idioms:             idioms,
+		Unresolved:         compileUnresolvedCalls(program, retained),
 	}
 	return projectedTarget{index: index, groupOfBox: groupOfBox, operationOf: operationOf}, nil
 }

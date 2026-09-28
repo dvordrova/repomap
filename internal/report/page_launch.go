@@ -112,10 +112,8 @@ func (builder *pageBuilder) launchReading(index *groupindex.Index, partOf func(s
 		case "closed":
 			closed := pageLaunchClosed{Function: decls.of(function.SubjectID)}
 			for _, position := range function.Closed {
-				edge := index.StructuralEdges[position]
 				site := pageSite{}
-				if ref, ok := builder.subject(index.Target.ID, edge.ToSubjectID); ok && ref.subject.Pattern != nil && ref.subject.Pattern.Location != nil {
-					location := ref.subject.Pattern.Location
+				if location := index.Unresolved[position].Location; location != nil {
 					anchor := builder.links.anchor(location.Path, location.Line, location.Column)
 					site = pageSite{Line: location.Line, Href: anchor.Href, Open: anchor.Open}
 				}
