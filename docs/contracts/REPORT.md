@@ -283,20 +283,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   reach it through code off the map. Other calls among the same parts stay
   ordinary arrows. On Redis GET draws 20 arrows where its single shortest
   witnesses drew 14; the neighbourhood of every call among its parts, which
-  this rejects, would be 43. Initialization arrows (a relation whose source only
-  the target's seeds reach, no input's handler: GroupsIndex's `init` phase,
-  READING) are drawn only while one of their ends is looked at, and only in a
-  target that serves something: a target with no operation and no chain does
-  all its work from main, and Redis's benchmark, client and dump checker had
-  drawn none of their arrows. A call that code reached from an input makes
-  across two parts is work, not wiring. The static zone picture reads the
-  same phases; the page's one figure, the system canvas, draws none of its
-  arrows, so the no-script page shows parts and areas without arrows. A call into a helper
-  (GroupsIndex's derived `ToHelper`: a declaration the helper question
-  decided serves the work of others) is quiet by the same mechanism and its
-  exception, even on an input's path, since every command handler calls its
-  reply helpers; a target none of whose arrows would stand at rest draws its
-  calls into helpers, so quieting them never empties a map.
+  this rejects, would be 43. GroupsIndex marks an arrow quiet
+  (`Connection.Quiet`, READING), and the canvas and the static zone picture
+  draw a quiet arrow only while one of its ends is looked at; the page
+  decides nothing of its own. Quiet is initialization (a relation whose
+  source only the target's seeds reach, no input's handler) or a call into
+  a helper (a declaration the helper question decided serves the work of
+  others; quiet even on an input's path, since every command handler calls
+  its reply helpers), and only in a target that serves something: Redis's
+  benchmark, client and dump checker had drawn none of their arrows. One
+  exception, defined once over each target's own connections: when every
+  one of them would be quiet, its calls into helpers are drawn, so quieting
+  them never empties a map. One arrow drawing several relations is quiet
+  only when every one of them is. The page's one figure, the system canvas,
+  draws none of the static picture's arrows, so the no-script page shows
+  parts and areas without arrows.
   Hover temporarily replaces the drawing emphasis; it never unions another
   area's edges into a pinned input path. Leaving the canvas restores that path
   or selection. Reading an off-path part does not make it a path participant;

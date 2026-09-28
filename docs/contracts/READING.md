@@ -901,6 +901,12 @@ ordinary run did.
   phase. The helper question's mark is persisted as the subject's
   interpretation (`helper`, GroupsIndex 18), and beside the phase each
   connection of the program into a helper subject is marked `ToHelper`.
+- **Quiet.** A connection is quiet (drawn only while one of its ends is
+  looked at) when it is `init` or `ToHelper`, in a program with a handled
+  input. When every connection of the program would be quiet, the ones
+  quiet only as calls into helpers are not, so quieting never empties a
+  map; initialization stays quiet. The report draws `Quiet` and nothing
+  else.
 
 Without `--captions` the model is asked for decisions alone: every prose cell
 (titles, lines, sentences, operation descriptions) keeps its fallback, and a

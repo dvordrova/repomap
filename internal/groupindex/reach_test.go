@@ -451,8 +451,8 @@ func TestRenderDerivesWhatTheRunDerived(t *testing.T) {
 		}
 		for position, connection := range index.Connections {
 			other := hydrated.Connections[position]
-			if connection.Phase != other.Phase || connection.ToHelper != other.ToHelper {
-				t.Fatalf("%s: connection %s is %q/%v in the run and %q/%v rendered", index.Target.Name, connection.ID, connection.Phase, connection.ToHelper, other.Phase, other.ToHelper)
+			if connection.Phase != other.Phase || connection.ToHelper != other.ToHelper || connection.Quiet != other.Quiet {
+				t.Fatalf("%s: connection %s is %q/%v/%v in the run and %q/%v/%v rendered", index.Target.Name, connection.ID, connection.Phase, connection.ToHelper, connection.Quiet, other.Phase, other.ToHelper, other.Quiet)
 			}
 			if connection.To.TargetID != index.Target.ID {
 				joint = true
@@ -464,5 +464,61 @@ func TestRenderDerivesWhatTheRunDerived(t *testing.T) {
 	}
 	if !joint {
 		t.Fatal("no joint was projected")
+	}
+}
+
+// Wiring and a call into a helper stand quiet in a program that serves
+// something, a call into a helper even on an input's path (every command
+// handler calls its reply helpers). A program that serves nothing quiets
+// nothing: Redis's client, benchmark and dump checker had drawn no arrow.
+// When every connection of a program would be quiet, its calls into helpers
+// are drawn, so quieting them never empties its map; wiring stays quiet.
+func TestAConnectionIntoAHelperIsQuietUnlessEveryArrowWouldBe(t *testing.T) {
+	build := func(serving bool, connections ...string) *reachGraphTest {
+		g := newReachGraphTest()
+		g.functions("main", "setup", "getCommand", "addReply", "lookupKey")
+		g.call("main", "setup")
+		g.call("getCommand", "addReply", "lookupKey")
+		g.index.Subjects[3].Interpretation = &Interpretation{Helper: true}
+		g.part("Launch", "main")
+		g.part("Setup", "setup")
+		g.part("Commands", "getCommand")
+		g.part("Replies", "addReply")
+		g.part("Keys", "lookupKey")
+		g.seed("main")
+		if serving {
+			g.input("get", "getCommand")
+		}
+		groups := map[string]string{"setup": "g2", "addReply": "g4", "lookupKey": "g5"}
+		for _, to := range connections {
+			from, fromGroup := "getCommand", "g3"
+			if to == "setup" {
+				from, fromGroup = "main", "g1"
+			}
+			g.index.Connections = append(g.index.Connections, Connection{ID: "x" + strconv.Itoa(len(g.index.Connections)+1),
+				From: Endpoint{TargetID: "t1", GroupID: fromGroup}, To: Endpoint{TargetID: "t1", GroupID: groups[to]}, FromSubjectID: g.ids[from], ToSubjectID: g.ids[to]})
+		}
+		g.derive()
+		return g
+	}
+	quiet := func(g *reachGraphTest) map[string]bool {
+		result := map[string]bool{}
+		for _, connection := range g.index.Connections {
+			result[g.names[connection.ToSubjectID]] = connection.Quiet
+		}
+		return result
+	}
+	for name, test := range map[string]struct {
+		g    *reachGraphTest
+		want map[string]bool
+	}{
+		"serving":                  {build(true, "setup", "addReply", "lookupKey"), map[string]bool{"setup": true, "addReply": true, "lookupKey": false}},
+		"serving nothing":          {build(false, "setup", "addReply", "lookupKey"), map[string]bool{"setup": false, "addReply": false, "lookupKey": false}},
+		"every arrow into helpers": {build(true, "addReply"), map[string]bool{"addReply": false}},
+		"wiring and helpers only":  {build(true, "setup", "addReply"), map[string]bool{"setup": true, "addReply": false}},
+	} {
+		if got := quiet(test.g); !reflect.DeepEqual(got, test.want) {
+			t.Fatalf("%s: quiet %v, want %v", name, got, test.want)
+		}
 	}
 }

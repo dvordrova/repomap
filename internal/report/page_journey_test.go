@@ -26,78 +26,41 @@ func structureEdges(t *testing.T, index groupindex.Index) (*pageMap, []pageMapEd
 	return got, edges
 }
 
-// Redis's benchmark, client and dump checker serve nothing: every call they
-// make is reached from main. Treating all of it as wiring hid every arrow of
-// those three programs.
-func TestProgramThatServesNothingDrawsTheArrowsItsMainReaches(t *testing.T) {
-	index := groupindex.Index{Target: programindex.Target{ID: "bench"}, Groups: []groupindex.Group{
-		{ID: "client", Title: "Benchmark client", MemberSubjectIDs: []string{"main"}},
-		{ID: "strings", Title: "Dynamic strings", MemberSubjectIDs: []string{"sdscat"}},
-	}, Connections: []groupindex.Connection{{ID: "x1", From: groupindex.Endpoint{TargetID: "bench", GroupID: "client"}, To: groupindex.Endpoint{TargetID: "bench", GroupID: "strings"}, FromSubjectID: "main", Label: "calls", Phase: groupindex.PhaseInit}}}
-	_, edges := structureEdges(t, index)
-	if len(edges) != 1 || edges[0].Init {
-		t.Fatalf("a program without inputs hid its main's work as wiring: %+v", edges)
-	}
-	index.Operations = []groupindex.Operation{{ID: "o1", SubjectID: "serve", GroupID: "client", Kind: "request", Name: "get"}}
-	_, edges = structureEdges(t, index)
-	if len(edges) != 1 || !edges[0].Init {
-		t.Fatalf("a serving program lost its wiring distinction: %+v", edges)
-	}
-}
-
-// A call into a helper stands quiet at rest like wiring, by the same
-// mechanism and its exception, even on an input's path: every command
-// handler calls its reply helpers, and those arrows had doubled redis-server's
-// map. A program that serves nothing draws them, and so does a program whose
-// every arrow goes into helpers: quieting them must not empty its map.
-func TestACallIntoAHelperStandsQuiet(t *testing.T) {
-	calls := func(from, to string) groupindex.StructuralEdge {
-		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact}
-	}
-	connection := func(id, to, subject string, helper bool) groupindex.Connection {
+// The canvas and the static picture draw quiet what GroupsIndex marks quiet
+// (Connection.Quiet: wiring and calls into helpers, with their exceptions)
+// and nothing else; a pair of parts stands quiet in the static picture only
+// when every connection it draws is.
+func TestTheMapQuietsWhatGroupsIndexMarksQuiet(t *testing.T) {
+	connection := func(id, to string, quiet bool) groupindex.Connection {
 		return groupindex.Connection{ID: id, From: groupindex.Endpoint{TargetID: "server", GroupID: "commands"}, To: groupindex.Endpoint{TargetID: "server", GroupID: to},
-			FromSubjectID: "getCommand", ToSubjectID: subject, Label: "calls", Phase: groupindex.PhaseRuntime, ToHelper: helper}
+			FromSubjectID: "getCommand", ToSubjectID: "x", Label: "calls " + id, Phase: groupindex.PhaseRuntime, Quiet: quiet}
 	}
 	index := groupindex.Index{Target: programindex.Target{ID: "server"}, Groups: []groupindex.Group{
 		{ID: "commands", Title: "String commands", MemberSubjectIDs: []string{"getCommand"}},
 		{ID: "reply", Title: "Client replies", MemberSubjectIDs: []string{"addReply"}},
 		{ID: "keys", Title: "Keyspace", MemberSubjectIDs: []string{"lookupKey"}},
-	}, Operations: []groupindex.Operation{{ID: "get", SubjectID: "getCommand", GroupID: "commands", Name: "get", Kind: "request"}},
-		StructuralEdges: []groupindex.StructuralEdge{calls("getCommand", "addReply"), calls("getCommand", "lookupKey")},
-		Connections:     []groupindex.Connection{connection("x1", "reply", "addReply", true), connection("x2", "keys", "lookupKey", false)}}
-	// quiet says, by the group each arrow points at, whether the canvas
-	// quiets it, and whether the static picture quiets the same arrows.
-	quiet := func(index groupindex.Index) (map[string]bool, map[string]bool) {
-		t.Helper()
-		_, edges := structureEdges(t, index)
-		canvas := map[string]bool{}
-		for _, edge := range edges {
-			canvas[edge.To[strings.LastIndex(edge.To, "-")+1:]] = edge.Init
-		}
-		nodes, endpointOf := map[string]*pageMapNode{}, map[string]string{}
-		for position, group := range index.Groups {
-			nodes[group.ID] = &pageMapNode{ID: group.ID, X: float64(position) * 300, Y: 40, Width: 200, Height: 60}
-			endpointOf[group.ID] = group.ID
-		}
-		static := map[string]bool{}
-		arrows, _, _ := mapEdges(index, nodes, endpointOf, 200)
-		for _, edge := range arrows {
-			static[edge.To] = edge.Init
-		}
-		return canvas, static
+		{ID: "memory", Title: "Memory", MemberSubjectIDs: []string{"zmalloc"}},
+	}, Connections: []groupindex.Connection{connection("x1", "reply", true), connection("x2", "keys", false), connection("x3", "memory", true), connection("x4", "memory", false)}}
+	_, edges := structureEdges(t, index)
+	canvas := map[string]bool{}
+	for _, edge := range edges {
+		canvas[edge.ConnectionID[strings.LastIndex(edge.ConnectionID, "/")+1:]] = edge.Init
 	}
-	for name, test := range map[string]struct {
-		index groupindex.Index
-		want  map[string]bool
-	}{
-		"serving":                  {index, map[string]bool{"reply": true, "keys": false}},
-		"serving nothing":          {func() groupindex.Index { i := index; i.Operations = nil; return i }(), map[string]bool{"reply": false, "keys": false}},
-		"every arrow into helpers": {func() groupindex.Index { i := index; i.Connections = i.Connections[:1]; return i }(), map[string]bool{"reply": false}},
-	} {
-		canvas, static := quiet(test.index)
-		if !maps.Equal(canvas, test.want) || !maps.Equal(static, test.want) {
-			t.Fatalf("%s: quiet on the canvas %v, in the static picture %v, want %v", name, canvas, static, test.want)
-		}
+	if want := map[string]bool{"x1": true, "x2": false, "x3": true, "x4": false}; !maps.Equal(canvas, want) {
+		t.Fatalf("quiet on the canvas %v, want %v", canvas, want)
+	}
+	nodes, endpointOf := map[string]*pageMapNode{}, map[string]string{}
+	for position, group := range index.Groups {
+		nodes[group.ID] = &pageMapNode{ID: group.ID, X: float64(position) * 300, Y: 40, Width: 200, Height: 60}
+		endpointOf[group.ID] = group.ID
+	}
+	static := map[string]bool{}
+	arrows, _, _ := mapEdges(index, nodes, endpointOf, 200)
+	for _, edge := range arrows {
+		static[edge.To] = edge.Init
+	}
+	if want := map[string]bool{"reply": true, "keys": false, "memory": false}; !maps.Equal(static, want) {
+		t.Fatalf("quiet in the static picture %v, want %v", static, want)
 	}
 }
 

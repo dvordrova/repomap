@@ -186,8 +186,8 @@ func Check(t testing.TB, program programindex.Index, index groupindex.Index) {
 	}
 	for position, connection := range index.Connections {
 		other := hydrated.Connections[position]
-		if connection.Phase != other.Phase || connection.ToHelper != other.ToHelper {
-			t.Fatalf("connection %s is %q/%v projected and %q/%v hydrated", connection.ID, connection.Phase, connection.ToHelper, other.Phase, other.ToHelper)
+		if connection.Phase != other.Phase || connection.ToHelper != other.ToHelper || connection.Quiet != other.Quiet {
+			t.Fatalf("connection %s is %q/%v/%v projected and %q/%v/%v hydrated", connection.ID, connection.Phase, connection.ToHelper, connection.Quiet, other.Phase, other.ToHelper, other.Quiet)
 		}
 	}
 }

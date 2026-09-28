@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Map model step 4, S4-5: GroupsIndex says which arrows are quiet
+
+- `Connection.Quiet` (derived, never persisted) = initialization or a call
+  into a helper, in a program with a handled input (C3's `serves`), with
+  C6's exception defined once, over the index's own connections: when every
+  one would be quiet, the calls into helpers are drawn and wiring stays
+  quiet. C6 had it twice with two scopes (`addMapStructure` over every
+  page connection touching the target, `mapEdges` over the target's pairs).
+- The report draws `Init: connection.Quiet` on the canvas, and a static
+  pair is quiet only when every connection it draws is; `drawsInit`,
+  `allQuiet` and the helper-only bookkeeping are deleted. Chains are no
+  longer read anywhere but `validateChains` (S4-6).
+- Render-neutral on Redis: the S4-4 run rendered with this code is
+  byte-identical to its report.html.
+- Tests: `TestProgramThatServesNothingDrawsTheArrowsItsMainReaches` deleted
+  (GroupsIndex's `TestAProgramThatServesNothingHasNoInitialization`, S4-1,
+  holds it); C6's `TestACallIntoAHelperStandsQuiet` becomes GroupsIndex's
+  `TestAConnectionIntoAHelperIsQuietUnlessEveryArrowWouldBe` (serving,
+  serving nothing, every arrow into helpers, wiring beside helpers) and the
+  report's `TestTheMapQuietsWhatGroupsIndexMarksQuiet` (the canvas and the
+  static pairs follow `Quiet`); the render/run and flowtest hydrate
+  comparisons include `Quiet`. Each fails on revert (s45a–e).
+- `make test`: PASS. `make vet`: PASS. `make ui-test`: PASS.
+  `make ui-visual-test`: PASS.
+
 ## 2026-09-28 — Map model step 4, S4-4: an input's path is its saved reach
 
 - The report walks no code: `buildOperationMap`'s BFS, `served`,

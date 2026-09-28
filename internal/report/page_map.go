@@ -1273,8 +1273,7 @@ func mapEdges(
 	labels := make(map[pair][]string)
 	possible := make(map[pair]bool)
 	exact := make(map[pair]bool)
-	initOnly := make(map[pair]bool)
-	quietOnly := make(map[pair]bool)
+	quiet := make(map[pair]bool)
 	var order []pair
 	for _, connection := range index.Connections {
 		if connection.From.TargetID != index.Target.ID || connection.To.TargetID != index.Target.ID {
@@ -1298,13 +1297,11 @@ func mapEdges(
 		if _, seen := labels[key]; !seen {
 			order = append(order, key)
 			labels[key] = nil
-			initOnly[key] = true
-			quietOnly[key] = true
+			quiet[key] = true
 		}
-		if connection.Phase != groupindex.PhaseInit {
-			initOnly[key] = false
-			quietOnly[key] = quietOnly[key] && connection.ToHelper
-		}
+		// A pair stands quiet only when every connection it draws does
+		// (GroupsIndex's Quiet).
+		quiet[key] = quiet[key] && connection.Quiet
 		if !containsString(labels[key], connection.Label) && connection.Label != "" {
 			labels[key] = append(labels[key], connection.Label)
 		}
@@ -1313,16 +1310,6 @@ func mapEdges(
 		} else {
 			exact[key] = true
 		}
-	}
-	// Calls into helpers are quiet like wiring, unless that would leave no
-	// arrow standing at rest.
-	helpers := drawsInit(&index)
-	if helpers {
-		standing := false
-		for _, key := range order {
-			standing = standing || !quietOnly[key]
-		}
-		helpers = standing
 	}
 	router := newMapEdgeRouter(nodes, bottom)
 	result := make([]pageMapEdge, 0, len(order))
@@ -1336,7 +1323,7 @@ func mapEdges(
 			// uncertain call among several cannot make the whole arrow
 			// look uncertain.
 			Possible: possible[key] && !exact[key],
-			Init:     initOnly[key] && drawsInit(&index) || helpers && quietOnly[key],
+			Init:     quiet[key],
 		}
 		if lines, atX, atY := router.placeLabel(edge.Label, labelX, labelY, room, minLeft); lines != nil {
 			edge.Lines, edge.LabelX, edge.LabelY = lines, atX, atY
@@ -2362,27 +2349,6 @@ func pageLane(lane groupindex.Lane, core bool) string {
 		return ""
 	}
 	return string(lane)
-}
-
-// allQuiet says whether every part-to-part arrow of a map stands quiet at
-// rest.
-func allQuiet(edges []pageMapEdge) bool {
-	for _, edge := range edges {
-		if edge.Scope == "structure" && !edge.Init {
-			return false
-		}
-	}
-	return true
-}
-
-// drawsInit says whether a target's initialization arrows are told apart
-// from its work. Initialization is the wiring before anything serves, so
-// it exists only beside a runtime: an operation or a chain. A program that
-// serves nothing (a command-line client, a benchmark, a file checker) does
-// all its work from main, and hiding those arrows as wiring left Redis's
-// three small programs with no arrows on the map.
-func drawsInit(index *groupindex.Index) bool {
-	return index != nil && (len(index.Operations) > 0 || len(index.Chains) > 0)
 }
 
 // pageEdgeCall is one relation behind an arrow: "caller calls callee" with

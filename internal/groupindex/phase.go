@@ -16,7 +16,8 @@ const (
 	PhaseBoth    = "both"
 )
 
-// phases derives the phases and the helper mark from the reaches.
+// phases derives the phases, the helper mark and the quiet flag from the
+// reaches.
 func (graph *reachGraph) phases() {
 	index := graph.index
 	runtime := make([]bool, len(index.Subjects))
@@ -68,9 +69,28 @@ func (graph *reachGraph) phases() {
 			helpers[subject.ID] = true
 		}
 	}
+	// A connection is quiet, drawn only while one of its ends is looked at,
+	// when it is wiring or a call into a helper in a program that serves
+	// something: a program with no handled input does all its work from its
+	// launch, and Redis's client, benchmark and dump checker had drawn none
+	// of their arrows. A call into a helper is quiet even on an input's
+	// path: every command handler calls its reply helpers. One exception,
+	// over the program's own connections: when every one of them would be
+	// quiet, its calls into helpers are drawn, so quieting them never empties
+	// its map.
+	everyQuiet := true
 	for position := range index.Connections {
 		connection := &index.Connections[position]
 		connection.Phase = phase(connection.FromSubjectID)
 		connection.ToHelper = connection.To.TargetID == index.Target.ID && helpers[connection.ToSubjectID]
+		connection.Quiet = serves && (connection.Phase == PhaseInit || connection.ToHelper)
+		everyQuiet = everyQuiet && connection.Quiet
+	}
+	if everyQuiet {
+		for position := range index.Connections {
+			if connection := &index.Connections[position]; connection.Phase != PhaseInit {
+				connection.Quiet = false
+			}
+		}
 	}
 }

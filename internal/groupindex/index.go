@@ -87,6 +87,11 @@ type Connection struct {
 	// program the helper question decided is a helper (its saved
 	// Interpretation.Helper). Derived with Phase, never persisted.
 	ToHelper bool `json:"-"`
+	// Quiet says the connection is drawn only while one of its ends is
+	// looked at: initialization or a call into a helper, in a program that
+	// serves something, unless every connection of the program would be
+	// quiet (phase.go). Derived, never persisted.
+	Quiet bool `json:"-"`
 }
 
 // SubjectEndpoint qualifies evidence by target so a cross-target connection
