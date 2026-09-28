@@ -13,6 +13,7 @@ func TestCanonicalFoldsFreeTextOntoOneSystemAndKeepsUnknownText(t *testing.T) {
 		"OTLP trace collector": "OpenTelemetry collector", "AWS S3 bucket": "S3 storage", "proxy service": "proxy service", "": "",
 		// DeepSeek serves an OpenAI-compatible API; the system called is DeepSeek.
 		"api.deepseek.com": "DeepSeek", "OpenAI-compatible DeepSeek chat API": "DeepSeek", "OpenAI API": "OpenAI",
+		"Azure Blob Storage container": "Azure Blob Storage", "Google Cloud Storage bucket": "Google Cloud Storage", "Google": "Google",
 	} {
 		if got := Canonical(text); got != want {
 			t.Fatalf("Canonical(%q) = %q, want %q", text, got, want)
@@ -31,13 +32,18 @@ func TestImpliedReadsDependencyPathsPastHostAndOrganisation(t *testing.T) {
 		"github.com/aws/aws-sdk-go-v2/service/sqs": "Amazon SQS", "github.com/aws/aws-sdk-go": "AWS", "cloud.google.com/go/pubsub": "Google Pub/Sub",
 		"github.com/google/go-github/v50/github": "GitHub", "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp": "OpenTelemetry collector",
 		"psycopg2": "PostgreSQL", "kafka-python": "Kafka", "@aws-sdk/client-s3": "S3 storage", "amqplib": "RabbitMQ",
+		// Each cloud's object store is its own system, whatever its SDK's
+		// path; a service named by several words may take one from the host.
+		"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob": "Azure Blob Storage", "@azure/storage-blob": "Azure Blob Storage", "azure.storage.blob": "Azure Blob Storage",
+		"cloud.google.com/go/storage": "Google Cloud Storage", "@google-cloud/storage": "Google Cloud Storage", "google.cloud.storage": "Google Cloud Storage",
+		"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss": "Alibaba Cloud OSS", "oss2": "Alibaba Cloud OSS",
 	} {
 		got, ok := Implied(dependency)
 		if !ok || got != want {
 			t.Fatalf("Implied(%q) = %q/%t, want %q", dependency, got, ok, want)
 		}
 	}
-	for _, dependency := range []string{"github.com/google/uuid", "go.uber.org/zap", "github.com/spf13/cobra", "requests", "axios", "google.golang.org/grpc", ""} {
+	for _, dependency := range []string{"github.com/google/uuid", "go.uber.org/zap", "github.com/spf13/cobra", "requests", "axios", "google.golang.org/grpc", "google.golang.org/api/iterator", "cloud.google.com/go/compute/metadata", "github.com/Azure/azure-sdk-for-go/sdk/azcore", ""} {
 		if got, ok := Implied(dependency); ok {
 			t.Fatalf("a library without a system implied %q: %q", got, dependency)
 		}

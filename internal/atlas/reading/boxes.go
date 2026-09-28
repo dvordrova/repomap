@@ -731,7 +731,8 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		// The rows of one declaration share one window: the declaration, its
 		// source context and the destination catalogue are sent once, and a
 		// row names the declaration by owner_ref. Rows without a declaration
-		// share a window without owners.
+		// share a window without owners. An outgoing row's catalogue is its
+		// own targets' (rowCatalog): rows of other targets never share it.
 		type ownerGroup struct {
 			owner  atlas.Place
 			states []*boundaryState
@@ -776,6 +777,9 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			if owner.Symbol != nil {
 				key = owner.ID
 			}
+			if outgoing {
+				key += "\x00" + strings.Join(rowTargets(state), "\x00")
+			}
 			group, known := byOwner[key]
 			if !known {
 				group = &ownerGroup{owner: owner}
@@ -801,7 +805,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			var rowLines []int
 			var catalog []destinations.Entry
 			if outgoing {
-				catalog = destinations.Catalog(r.targetDependencies(group.states))
+				catalog = r.rowCatalog(group.states[0])
 			}
 			for _, state := range group.states {
 				addresses := lines.BoundaryAddresses(state.place, original...)
@@ -908,14 +912,28 @@ func destinationChoice(def table.Definition, catalog []destinations.Entry, cell 
 	return destinations.Value(catalog, cell)
 }
 
-// targetDependencies are the external packages imported by the targets the
-// rows belong to, the evidence the destination catalogue is annotated with.
-func (r *reader) targetDependencies(states []*boundaryState) []string {
+// rowCatalog is the closed list of runtime systems one outgoing row chooses
+// from: every known system, annotated with the dependencies of the row's
+// own targets. It depends on nothing a window's other rows bring, so two
+// calls into one outside system are offered the same choices wherever they
+// are packed.
+func (r *reader) rowCatalog(state *boundaryState) []destinations.Entry {
+	return destinations.Catalog(r.targetDependencies(rowTargets(state)))
+}
+
+// rowTargets are the targets a row belongs to, sorted and once each.
+func rowTargets(state *boundaryState) []string {
+	targets := slices.Clone(state.place.TargetIDs)
+	slices.Sort(targets)
+	return slices.Compact(targets)
+}
+
+// targetDependencies are the external packages imported by the given
+// targets, the evidence the destination catalogue is annotated with.
+func (r *reader) targetDependencies(targets []string) []string {
 	wanted := make(map[string]bool)
-	for _, state := range states {
-		for _, id := range state.place.TargetIDs {
-			wanted[id] = true
-		}
+	for _, id := range targets {
+		wanted[id] = true
 	}
 	seen := make(map[string]bool)
 	var result []string

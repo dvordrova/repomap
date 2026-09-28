@@ -1,11 +1,18 @@
 package reading
 
 import (
+	"encoding/json"
+	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"sort"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/destinations"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
@@ -112,5 +119,103 @@ func TestDestinationChainsStayWithTheTargetsThatRunEveryStep(t *testing.T) {
 	}
 	if want := map[string][]string{"https://cli.example": {"cli"}, "https://master.example": {"server"}}; !reflect.DeepEqual(targets, want) {
 		t.Fatalf("addresses by target = %v, want %v", targets, want)
+	}
+}
+
+// Two calls into one outside system, asked in different windows beside
+// different neighbours, are offered one and the same destination choices:
+// litestream's lone Azure DeleteBlob, offered S3 and no Azure entry, was
+// named S3 while its siblings' window named Azure Blob Storage.
+func TestOneOutsideSystemIsOfferedTheSameDestinationsInEveryWindow(t *testing.T) {
+	const azblob = "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	deleteBlob := func(line int) atlas.SymbolCall {
+		return atlas.SymbolCall{Kind: "invokes_external", Name: "azblob.Client.DeleteBlob", Line: line, Column: 9, API: &atlas.CallAPI{Package: azblob, Receiver: "*Client", Name: "DeleteBlob"}}
+	}
+	getObject := atlas.SymbolCall{Kind: "invokes_external", Name: "s3.Client.GetObject", Line: 41, Column: 9, API: &atlas.CallAPI{Package: "github.com/aws/aws-sdk-go-v2/service/s3", Receiver: "*Client", Name: "GetObject"}}
+	symbol := func(id, path string, line int, calls ...atlas.SymbolCall) atlas.Place {
+		return atlas.Place{ID: "symbol:" + id, Kind: atlas.PlaceSymbol, Path: path, LineNo: line, Parent: "file:" + id, TargetIDs: []string{"service"},
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:" + id, Name: id}, Calls: calls}}
+	}
+	// A lone call in one declaration; another beside an S3 call in a second.
+	alone := symbol("DeleteLTXFiles", "abs/replica_client.go", 293, deleteBlob(303))
+	beside := symbol("DeleteAll", "abs/all.go", 30, deleteBlob(40), getObject)
+	// Facts without a declaration share a window only with rows of their
+	// own targets: an SFTP call of another target brings nothing to it.
+	fact := func(id, path, external, target string, line int) atlas.Place {
+		return atlas.Place{ID: id, Kind: atlas.PlaceBoundary, Path: path, LineNo: line, Parent: "file:" + id, TargetIDs: []string{target}, Given: external,
+			Boundary: &atlas.BoundaryFacts{Source: "external_call", Origins: []atlas.BoundaryOrigin{{TargetID: target, FactID: id}}, External: external, Direction: atlas.DirectionOut, GivenKind: atlas.BoundarySDK}}
+	}
+	upload := fact("fact:upload", "abs/upload.go", "azblob.Client.UploadStream", "service", 5)
+	remove := fact("fact:remove", "sftp/remove.go", "sftp.Client.Remove", "tool", 7)
+	graph := []atlas.Place{alone, beside, upload, remove}
+	offered := make(map[string]string)
+	windows := 0
+	var mu sync.Mutex
+	provider := &mutatedTableProvider{}
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		mu.Lock()
+		defer mu.Unlock()
+		windows++
+		catalog := string(mustJSON(input["context"].(map[string]any)["destination_catalog"]))
+		for i, source := range input["rows"].([]any) {
+			row := source.(map[string]any)
+			site := fmt.Sprintf("%v:%v", row["path"], row["line"])
+			offered[site] = catalog
+			rows[i]["line"], rows[i]["address"] = "deletes a blob", "unknown"
+			switch row["path"] {
+			case "sftp/remove.go":
+				// No offered entry fits: the model names the system.
+				rows[i]["destination"] = "other: SFTP server"
+			case "abs/all.go":
+				if row["line"] == float64(41) {
+					rows[i]["destination"] = destinationRef(input, "S3 storage")
+					continue
+				}
+				fallthrough
+			default:
+				rows[i]["destination"] = destinationRef(input, "Azure Blob Storage")
+			}
+		}
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through, r.opts.Graph.Places = "", graph
+	r.opts.Targets = []TargetMeta{{ID: "service", Dependencies: []string{azblob, "github.com/aws/aws-sdk-go-v2/service/s3"}}, {ID: "tool", Dependencies: []string{"github.com/pkg/sftp"}}}
+	r.places = map[string]atlas.Place{}
+	for _, place := range graph {
+		r.places[place.ID] = place
+	}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	r.api = map[string]apiRole{azblob + ".Client.DeleteBlob": {talks: atlas.BoundarySDK}, "github.com/aws/aws-sdk-go-v2/service/s3.Client.GetObject": {talks: atlas.BoundarySDK}}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	service := offered["abs/replica_client.go:303"]
+	if len(offered) != 5 || windows != 4 {
+		t.Fatalf("rows or windows lost: %d windows, %v", windows, offered)
+	}
+	for _, site := range []string{"abs/all.go:40", "abs/all.go:41", "abs/upload.go:5"} {
+		if offered[site] != service {
+			t.Fatalf("%s was offered other destinations than the lone call:\n%s\n%s", site, offered[site], service)
+		}
+	}
+	var entries []destinations.Entry
+	if err := json.Unmarshal([]byte(service), &entries); err != nil {
+		t.Fatal(err)
+	}
+	azure := slices.IndexFunc(entries, func(entry destinations.Entry) bool { return entry.Value == "Azure Blob Storage" })
+	if azure < 0 || !slices.Equal(entries[azure].Dependencies, []string{azblob}) {
+		t.Fatalf("the target's Azure Blob Storage is not offered with its dependency: %s", service)
+	}
+	if offered["sftp/remove.go:7"] == service || strings.Contains(offered["sftp/remove.go:7"], azblob) {
+		t.Fatalf("another target's row shares the service's annotated choices: %s", offered["sftp/remove.go:7"])
+	}
+	got := make(map[string]string)
+	for _, state := range r.boundaries {
+		got[fmt.Sprintf("%s:%d", state.place.Path, state.place.LineNo)] = state.destination
+	}
+	want := map[string]string{"abs/replica_client.go:303": "Azure Blob Storage", "abs/all.go:40": "Azure Blob Storage", "abs/all.go:41": "S3 storage", "abs/upload.go:5": "Azure Blob Storage", "sftp/remove.go:7": "SFTP server"}
+	if !maps.Equal(got, want) {
+		t.Fatalf("destinations = %v, want %v", got, want)
 	}
 }

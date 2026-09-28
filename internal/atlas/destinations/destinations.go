@@ -8,12 +8,14 @@ package destinations
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
 
 // system pairs a word found in a destination text, a dependency path or a
-// package name with the name the reader sees.
+// package name with the name the reader sees. A word of several words, such
+// as "google cloud storage", is found when each of them is.
 type system struct{ word, name string }
 
 // known lists the systems in priority order: a specific service before its
@@ -35,6 +37,11 @@ var known = []system{
 	{"cassandra", "Cassandra"}, {"gocql", "Cassandra"}, {"neo4j", "Neo4j"}, {"influxdb", "InfluxDB"},
 	{"dynamodb", "DynamoDB"}, {"bigquery", "BigQuery"}, {"firestore", "Firestore"},
 	{"minio", "S3 storage"}, {"s3", "S3 storage"},
+	// The other clouds' object stores are their own systems, not S3: a
+	// lone Azure DeleteBlob, offered S3 and no Azure entry, was named S3.
+	{"azblob", "Azure Blob Storage"}, {"azure blob", "Azure Blob Storage"},
+	{"gcs", "Google Cloud Storage"}, {"google cloud storage", "Google Cloud Storage"},
+	{"aliyun oss", "Alibaba Cloud OSS"}, {"alibabacloud oss", "Alibaba Cloud OSS"}, {"alibaba oss", "Alibaba Cloud OSS"}, {"oss2", "Alibaba Cloud OSS"},
 	{"etcd", "etcd"}, {"consul", "Consul"}, {"vault", "HashiCorp Vault"},
 	{"github", "GitHub"}, {"gitlab", "GitLab"}, {"google", "Google"}, {"aws", "AWS"}, {"boto3", "AWS"}, {"botocore", "AWS"},
 	{"slack", "Slack"}, {"telegram", "Telegram"}, {"discord", "Discord"},
@@ -82,7 +89,10 @@ func Canonical(text string) string {
 // Implied is the known system a dependency evidently reaches: the package
 // path's words after its host and hosting organisation. "github.com/google/
 // uuid" implies nothing; "github.com/google/go-github" implies GitHub;
-// "github.com/rabbitmq/amqp091-go" implies RabbitMQ.
+// "github.com/rabbitmq/amqp091-go" implies RabbitMQ. A host alone implies no
+// system, but a service named by several words may take one of them from
+// it: "cloud.google.com/go/storage" implies Google Cloud Storage, while
+// "google.golang.org/grpc" implies nothing.
 func Implied(dependency string) (string, bool) {
 	segments := strings.Split(strings.TrimSpace(dependency), "/")
 	if len(segments) > 1 && strings.Contains(segments[0], ".") {
@@ -91,7 +101,16 @@ func Implied(dependency string) (string, bool) {
 			segments = segments[1:]
 		}
 	}
-	return match(words(strings.Join(segments, "/")))
+	if name, ok := match(words(strings.Join(segments, "/"))); ok {
+		return name, true
+	}
+	all := words(dependency)
+	for _, system := range known {
+		if strings.Contains(system.word, " ") && system.found(all) {
+			return system.name, true
+		}
+	}
+	return "", false
 }
 
 // hostingOrganisations are path organisations that publish many unrelated
@@ -100,13 +119,24 @@ var hostingOrganisations = map[string]bool{"google": true, "github": true, "gitl
 
 func match(words []string) (string, bool) {
 	for _, system := range known {
-		for _, word := range words {
-			if word == system.word || len(system.word) >= 5 && strings.HasPrefix(word, system.word) {
-				return system.name, true
-			}
+		if system.found(words) {
+			return system.name, true
 		}
 	}
 	return "", false
+}
+
+// found says each of the system's words is among the text's words, as the
+// word itself or, from five letters, as its prefix.
+func (s system) found(words []string) bool {
+	for _, part := range strings.Fields(s.word) {
+		if !slices.ContainsFunc(words, func(word string) bool {
+			return word == part || len(part) >= 5 && strings.HasPrefix(word, part)
+		}) {
+			return false
+		}
+	}
+	return true
 }
 
 func words(text string) []string {

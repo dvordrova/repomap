@@ -33,6 +33,9 @@ Fill only the columns in `fill`:
   word names the entry.
 - `destination`, when requested: the `d*` ref of the runtime system the
   request reaches, from `context.destination_catalog`, or `other: ` and a
-  short system name; never a host, URL or key.
+  short system name; never a host, URL or key. An entry's `dependencies` are
+  the target's packages that reach that system. Choose an entry only for
+  that very system: another system of the same sort is `other: ` and its
+  own name.
 - `address`, when requested: one `a*` ref from `address_catalog` naming the
   request's destination, else `unknown`.
