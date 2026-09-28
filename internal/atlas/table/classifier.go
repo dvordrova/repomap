@@ -295,6 +295,8 @@ func ClassifierCall(c llm.Categorizer, def Definition, window Window) (llm.Call[
 					choice := llm.Option{Name: names.label[option], Meaning: names.criteria[option]}
 					if criteria, ok := column.Criteria[option]; ok {
 						choice.Criteria = &criteria
+					} else if column.EachCriteria != nil && !slices.Contains(column.Options, option) {
+						choice.Criteria = column.EachCriteria
 					}
 					question.Options = append(question.Options, choice)
 				}

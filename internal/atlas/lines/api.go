@@ -13,6 +13,7 @@ import (
 const (
 	StageAPI     = "atlas_api"
 	StagePublish = "atlas_publish"
+	StageProgram = "atlas_program"
 )
 
 // The closed options of the api questions that are not a boundary kind: a
@@ -40,6 +41,12 @@ var apiTalksOptionsText string
 //go:embed prompts/publish.md
 var publishPrompt string
 
+//go:embed prompts/program.md
+var programPrompt string
+
+//go:embed prompts/program_options.md
+var programOptionsText string
+
 // The criteria of every option of the api questions, read once from their
 // embedded Markdown. Every question that asks what something of the
 // repository becomes on our map reads one file: an option means the same
@@ -48,6 +55,7 @@ var (
 	entryOptions        = mustOptions("prompts/entry_options.md", entryOptionsText, entryOptionNames())
 	apiPublishesOptions = mustOptions("prompts/api_publishes_options.md", apiPublishesOptionsText, []string{APIServes, APINone})
 	apiTalksOptions     = mustOptions("prompts/api_talks_options.md", apiTalksOptionsText, TalksOptions())
+	programOptions      = mustOptions("prompts/program_options.md", programOptionsText, []string{programWord, ProgramNotNamed})
 )
 
 // entryOptionNames are every option an entry question may offer: the entry
@@ -93,7 +101,7 @@ func EntryCriteria(names ...string) map[string]llm.Criteria {
 // two, each for a stated reason: a flag set's usage printer is printed text
 // (none) and an errgroup's goroutine does one piece of work and ends (none).
 func API(handed bool) table.Definition {
-	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v7", System: apiPrompt, Classifier: true, Memoize: true}
+	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v8", System: apiPrompt, Classifier: true, Memoize: true}
 	if handed {
 		def.Contract += ".handed"
 		// The two decisions are independent: a near-tie on one leaves the
@@ -112,7 +120,7 @@ func API(handed bool) table.Definition {
 
 // APIGiven asks a symbol whose calls give it words both what a call does
 // with other running programs and what the words it is given become on our
-// map (repomap.atlas.api.v7.given): flag.Bool("verbose", …) declares an
+// map (repomap.atlas.api.v8.given): flag.Bool("verbose", …) declares an
 // option, printf("%s\n", …) prints text. The two are independent (Alone):
 // a near-tie on one leaves the other standing. No outcome is offered in
 // both: taking messages from a queue is talks's, so enters offers no
@@ -161,9 +169,60 @@ func Publish() table.Definition {
 
 // TalksOptions are what a call that hands nothing over can do with other
 // running programs: serve as the program's listening side, one of the
-// outgoing kinds, or none. There is no "other" to fall into.
+// outgoing kinds, start another program, or none. There is no "other" to
+// fall into.
 func TalksOptions() []string {
-	return []string{APIServes, atlas.BoundaryClientRequest, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK, APINone}
+	return []string{APIServes, atlas.BoundaryClientRequest, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK, atlas.BoundaryRunsProgram, APINone}
+}
+
+// ProgramNotNamed is the program answer that no word a call is given names
+// the program it starts: the program comes from a value the code computes.
+const ProgramNotNamed = "not_named"
+
+// programWord names the criteria every word a program question offers
+// carries: the words are the call's own, so one text says what choosing
+// any of them means.
+const programWord = "word"
+
+// Program asks, of each call that starts another program, which of the
+// words it is given names that program, or that none does
+// (repomap.atlas.program.v1). One row is one call: a symbol such as
+// exec.Command starts git at one site and make at another, so the answer
+// belongs to the call, not to the symbol. The options are the call's own
+// words (ProgramRow), every one of them, as written.
+func Program() table.Definition {
+	word := programOptions[programWord]
+	return table.Definition{Stage: StageProgram, Contract: "repomap.atlas.program.v1", System: programPrompt, Classifier: true, Memoize: true,
+		Columns: []table.Column{{Name: "program", Kind: table.Choice, Options: []string{ProgramNotNamed}, OptionsFrom: "words",
+			Criteria: map[string]llm.Criteria{ProgramNotNamed: programOptions[ProgramNotNamed]}, EachCriteria: &word, Item: "outside_symbol",
+			Ask: "Which word the call gives `outside_symbol` names the program it starts?"}}}
+}
+
+// ProgramRow is one call that starts another program: the outside symbol,
+// the call as written and every word it is given that can stand on one
+// line, each once, in the order the call writes them, as request-local
+// refs. It returns the words by ref, which restore the answer as written.
+func ProgramRow(id, symbol, usage string, values []string) (table.Row, map[string]string) {
+	fields := []table.Field{{Name: "symbol", Value: symbol}}
+	if usage != "" {
+		fields = append(fields, table.Field{Name: "usage", Value: usage})
+	}
+	byRef := make(map[string]string)
+	var words []map[string]any
+	seen := make(map[string]bool)
+	for _, word := range NameableWords(values) {
+		if seen[word] {
+			continue
+		}
+		seen[word] = true
+		ref := fmt.Sprintf("w%d", len(words)+1)
+		byRef[ref] = word
+		words = append(words, map[string]any{"ref": ref, "title": word})
+	}
+	if len(words) > 0 {
+		fields = append(fields, table.Field{Name: "words", Value: words})
+	}
+	return table.Row{ID: id, Fields: fields}, byRef
 }
 
 // mustOptions reads the criteria of exactly the named options. The text is

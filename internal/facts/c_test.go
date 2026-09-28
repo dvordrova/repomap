@@ -63,13 +63,9 @@ func TestCFacts(t *testing.T) {
 	for _, fact := range result.OfKind(KindDynamicExecution) {
 		byAnchor[fact.Anchor.String()] = fact
 	}
-	if system := byAnchor["kvd.c:5"]; system.Key != "system" || system.Symbol != "main" || system.Text != `system("rm -rf /tmp/kvd");` {
-		t.Fatalf("system %+v", system)
-	}
-	if popen := byAnchor["kvd.c:6"]; popen.Key != "popen" {
-		t.Fatalf("popen %+v", popen)
-	}
-	if len(byAnchor) != 2 {
+	// system and popen start another program (the reading's
+	// runs_program), and C evaluates no code: no dynamic execution.
+	if len(byAnchor) != 0 {
 		t.Fatalf("dynamic execution %+v", byAnchor)
 	}
 }

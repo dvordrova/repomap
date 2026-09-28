@@ -2,13 +2,13 @@
 
 We draw a map of a program for a newcomer who has never read its code.
 Around the program's own parts the map shows its entries, the ways work
-comes in: what other programs send to it, what people run or click, what
-timers and threads start. It also shows its outside systems: the other
-running programs it talks to, such as the servers it sends requests to, its
-databases, its message queues and the remote services it uses. The
-operating system, the language runtime and the libraries the program links
-are not outside systems: calling them is the program's own work in its own
-process.
+comes in to this program: what other programs send to it, what people run
+or click, what timers and threads start. It also shows its outside systems:
+the other running programs it talks to, such as the servers it sends
+requests to, its databases, its message queues and the remote services it
+uses, and the programs it starts. The operating system, the language
+runtime and the libraries the program links are not outside systems:
+calling them is the program's own work in its own process.
 
 Each question gives one symbol from outside the repository that the code
 calls or hands something to, or the field a row of one of the repository's

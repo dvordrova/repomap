@@ -269,9 +269,10 @@ Config reads, SQL statements and registrations are the language-neutral facts
 over those patterns: `getenv("KEY")` is a config read, an SQL literal passed to
 a library call is an SQL statement, and an external call that receives a
 repository function (`pthread_create`, `qsort`, `signal`) is a registration.
-In a C file, dynamic execution is `system` from `stdlib.h` and `popen` from
-`stdio.h` only: C has no builtin that runs code, so a repository function
-named `eval` or `exec` is the repository's own code. The database extractor
+A C file has no dynamic execution: C has no builtin that evaluates code, so
+a repository function named `eval` or `exec` is the repository's own code,
+and `system` and `popen` start another program, which the reading asks
+about (`runs_program`, READING) instead of the fact layer naming them. The database extractor
 does not read `.c` files, so C SQL literals give no table entities.
 
 C comments enter the ordinary claims layer. A `/* */` block or a run of `//`
@@ -358,6 +359,15 @@ keep (S1) are the next pass. Not recorded yet, and so asked nothing:
   literal beside it (a configuration file's path in `argv[1]`);
 - a registry filled element by element (`t[i].proc = fn`);
 - a comparison inside a `bsearch`/`qsort` comparator.
+
+
+## Programs a call starts
+
+`tools/dump.c` pipes its keys through `popen("sort -u", "w")`: one word,
+the whole command line, which the program question offers as written.
+kvd's `system(hook)` takes its command from `KVD_START_HOOK`: no word, so
+its program stays not established. `fork()` in `bgsaveCommand` runs this
+program's own code and is no launch.
 
 ## Environment
 

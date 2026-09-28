@@ -53,7 +53,7 @@
 {{define "outbound-address"}}{{if .Setting}}{{t .SettingLabel}} <code>{{.Setting}}</code>{{if .Suffix}}; {{t "append"}} <code>{{.Suffix}}</code>{{end}}{{else if .Text}}{{t "Address"}}: <code>{{.Text}}</code>{{else}}{{t "Address not determined"}}{{end}}{{end}}
 
 {{define "outbound-row"}}<li id="{{.ID}}" data-integration-record data-source-kind="{{.Source}}" data-communication-basis="{{.Basis}}">
-<details class="outbound-call"><summary>{{if .Line}}<code class="outbound-callable">{{.Line}}</code>{{if .Brief}} <span class="outbound-note" data-display-ref="{{.SummaryRef}}">{{.Brief}}</span>{{end}}{{else if .Brief}}<span class="outbound-note" data-display-ref="{{.SummaryRef}}">{{.Brief}}</span>{{else}}{{t .KindLabel}}{{end}} <span class="meta">{{.Anchor.Text}}</span></summary>
+<details class="outbound-call"><summary>{{if .Line}}<code class="outbound-callable">{{.Line}}</code>{{if .Brief}} <span class="outbound-note" data-display-ref="{{.SummaryRef}}">{{.Brief}}</span>{{else if .Words}} <span class="outbound-words">{{range $i, $word := .Words}}{{if $i}} {{end}}<code>{{$word}}</code>{{end}}</span>{{end}}{{else if .Brief}}<span class="outbound-note" data-display-ref="{{.SummaryRef}}">{{.Brief}}</span>{{else}}{{t .KindLabel}}{{end}} <span class="meta">{{.Anchor.Text}}</span></summary>
 <div class="outbound-call-body">
 {{if and .Summary .MoreThanBrief}}<p class="outbound-purpose"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span></p>{{end}}
 {{if or .Address (gt .DestinationCount 1)}}<div class="outbound-address">{{if gt .DestinationCount 1}}{{t "Destinations"}} · {{.DestinationCount}}{{else}}{{template "outbound-address" .AddressText}}{{end}}</div>{{end}}
@@ -63,7 +63,7 @@
 {{with .InformativeUses}}<p class="meta">{{t "Destination sources"}} · {{len .}}</p>{{range .}}<div class="outbound-chain">{{if .Method}}<code>{{.Method}}</code> · {{end}}{{if and (not .Address) .Frontier}}{{t "Address passes through"}} <code>{{.Frontier}}</code>{{else}}{{template "outbound-address" .AddressText}}{{end}}<ol class="plain">{{range .Steps}}<li><code>{{.Name}}</code> · {{template "anchor" .Anchor}}</li>{{end}}</ol></div>{{end}}{{end}}</div></details></li>{{end}}
 
 {{define "outbound-group"}}<li data-integration-item data-source-kind="{{.Source}}">
-<strong class="input-title">{{if .Destination}}{{.Destination}}{{else if .NativeLabel}}<code>{{.NativeLabel}}</code>{{else}}{{t .KindLabel}}{{end}} <span class="meta">· {{len .Rows}}</span></strong>
+<strong class="input-title">{{if .Program}}{{if .Destination}}<code>{{.Destination}}</code>{{else}}{{t .ProgramLabel}}{{end}}{{else if .Destination}}{{.Destination}}{{else if .NativeLabel}}<code>{{.NativeLabel}}</code>{{else}}{{t .KindLabel}}{{end}} <span class="meta">· {{len .Rows}}</span></strong>
 {{if or .Address (gt .Addresses 1)}}<div class="outbound-address">{{if gt .Addresses 1}}{{t "Destinations"}} · {{.Addresses}}{{else}}{{template "outbound-address" .AddressText}}{{end}}</div>{{end}}
 <div class="outbound-basis meta">{{t .KindLabel}}{{if .BasisLabel}} · {{t .BasisLabel}}{{end}}</div>
 <ul class="plain outbound-calls">{{range .Rows}}{{template "outbound-row" .}}{{end}}</ul></li>{{end}}

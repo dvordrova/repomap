@@ -319,7 +319,7 @@ func (r *reader) readAPI(ctx context.Context) error {
 			if answer == nil {
 				continue
 			}
-			answer = r.listenerStands(rows[round][i].ID, s.name, answer)
+			answer = r.talksStands(rows[round][i].ID, s.name, answer)
 			if role := apiRoleOf(answer); role != (apiRole{}) {
 				r.api[s.name] = role
 			}
@@ -329,14 +329,17 @@ func (r *reader) readAPI(ctx context.Context) error {
 	return nil
 }
 
-// listenerStands refuses an entry kind answered beside serves: a call that
-// is the program's listening side stays that, and its words do not make it
-// an entry as well. Only the enters cell is refused, and journaled.
-func (r *reader) listenerStands(rowID, symbol string, answer table.Answer) table.Answer {
-	if answer["talks"] != lines.APIServes || answer["enters"] == "" || answer["enters"] == lines.APINone {
+// talksStands refuses an entry kind answered beside any answer but none of
+// what the call does with other programs: a call that is the program's
+// listening side stays that, and the words a call passes to another
+// program, one it starts or one it sends to, are that program's, not an
+// entry of this one. Only the enters cell is refused, and journaled.
+func (r *reader) talksStands(rowID, symbol string, answer table.Answer) table.Answer {
+	talks := answer["talks"]
+	if talks == "" || talks == lines.APINone || answer["enters"] == "" || answer["enters"] == lines.APINone {
 		return answer
 	}
-	reason := fmt.Sprintf("cell %q: %s beside serves: the listener answer stands", "enters", answer["enters"])
+	reason := fmt.Sprintf("cell %q: %s beside %s: the talks answer stands", "enters", answer["enters"], talks)
 	r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageAPI, Kind: "cell_rejected", Count: 1, Reason: reason, Samples: []string{rowID, symbol}})
 	fmt.Fprintf(&r.tables, "- Rejected %s (%s): %s\n", rowID, symbol, reason)
 	kept := maps.Clone(answer)
@@ -422,9 +425,9 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 		role := r.api[b.External]
 		facts := *b
 		// A call given words, outside tests, to a symbol whose words are an
-		// entry is that entry, whatever else the symbol does at its other
-		// calls (the listening side never gives words an entry: a serves
-		// answer refuses enters). Its handler is not established.
+		// entry is that entry (a symbol that talks to other programs never
+		// gives words an entry: talksStands refuses enters beside it). Its
+		// handler is not established.
 		words := callWords[sourceSite{state.place.Path, state.place.LineNo, state.place.Column}]
 		if len(words) == 0 {
 			words = b.Values

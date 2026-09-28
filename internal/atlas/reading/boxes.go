@@ -639,6 +639,12 @@ type boundaryState struct {
 	// option a call declares, a value handed over. It stays where its call
 	// is written and binds to no part.
 	handlerUnknown bool
+	// apiSymbol is the outside symbol a boundary the roles made calls, as
+	// the atlas_api table names it.
+	apiSymbol string
+	// programNotNamed marks a call starting another program that none of
+	// its words names; destination then holds no program.
+	programNotNamed bool
 }
 
 // writtenLine is the boundary's line: only one the model wrote. A fixed
@@ -677,10 +683,15 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	}
 	publishes := r.applyAPIRoles()
 	publishes = append(publishes, r.bindInterpretedBoundaries()...)
+	if err := r.readPrograms(ctx); err != nil {
+		return err
+	}
 	tracer := NewDestinationReader(r.opts.Graph.Places)
 	for _, state := range r.boundaries {
 		facts := state.place.Boundary
-		if facts.Direction != atlas.DirectionOut {
+		// A started program has no address: the word naming it is its
+		// participant.
+		if facts.Direction != atlas.DirectionOut || state.kind == atlas.BoundaryRunsProgram {
 			continue
 		}
 		owner := boundaryOwner(facts, owners)
@@ -725,6 +736,11 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			// model's roles made has no words to be named by. An entry the
 			// words of a call make is named like any other.
 			if state == nil || state.place.Boundary.Source == "model" && state.place.Boundary.Direction == atlas.DirectionIn && len(lines.EntryWords(state.place)) == 0 {
+				continue
+			}
+			// A call starting another program has its one decision, which
+			// word names the program, in the program table.
+			if state.kind == atlas.BoundaryRunsProgram {
 				continue
 			}
 			facts := state.place.Boundary
@@ -935,6 +951,19 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 		r.boundaryIDs[source] = id
 		return id
 	}
+	// The outside symbol each call site calls: a call on what another call
+	// returned names that call by its site.
+	calledAt := make(map[sourceSite]string)
+	for _, place := range r.opts.Graph.Places {
+		if place.Symbol == nil {
+			continue
+		}
+		for _, call := range place.Symbol.Calls {
+			if call.Kind == string(programindex.RelationInvokesExternal) && call.API != nil && call.Line > 0 {
+				calledAt[sourceSite{place.Path, call.Line, call.Column}] = apiName(*call.API)
+			}
+		}
+	}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
 			continue
@@ -974,6 +1003,16 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 			if role.talks == "" && !role.publishes {
 				continue
 			}
+			// A call on what a call starting another program returned
+			// (cmd.Run() on exec.Command's command) starts, waits for or
+			// reads that same program: the call that named it is the one
+			// boundary.
+			if role.talks == atlas.BoundaryRunsProgram && call.ReceiverValue != nil && call.ReceiverValue.Kind == "call_result" && call.ReceiverValue.Anchor != nil {
+				anchor := call.ReceiverValue.Anchor
+				if r.api[calledAt[sourceSite{anchor.Path, anchor.Line, anchor.Column}]].talks == atlas.BoundaryRunsProgram {
+					continue
+				}
+			}
 			claimed := false
 			for _, existing := range r.boundaries {
 				p := existing.place
@@ -1006,7 +1045,7 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 				Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
 					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, CallerDoc: decl.Doc, External: call.Name,
 					Values: append([]string{}, call.Values...), Direction: direction, GivenKind: kind}}
-			state := &boundaryState{place: p, kind: kind}
+			state := &boundaryState{place: p, kind: kind, apiSymbol: apiName(*call.API)}
 			if role.publishes {
 				state.address = publishAddress(call.Values)
 				publishes = append(publishes, state)

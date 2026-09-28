@@ -191,6 +191,9 @@ func (view *pageView) SystemMap() *pageMap {
 			var children []string
 			name := group.Destination
 			if name == "" {
+				name = group.ProgramLabel
+			}
+			if name == "" {
 				name = group.NativeLabel
 			}
 			if name == "" {

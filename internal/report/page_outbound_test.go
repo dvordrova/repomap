@@ -5,6 +5,7 @@ import (
 	"fmt"
 	stdhtml "html"
 	"html/template"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -389,5 +390,46 @@ func TestAnOutgoingFactWithoutALineIsNamedByItsCallOrItsKind(t *testing.T) {
 		if !strings.Contains(out.String(), test.want) || strings.Contains(out.String(), `class="outbound-note"`) {
 			t.Fatalf("%s: %s", test.row.ID, out.String())
 		}
+	}
+}
+
+// A started program is one destination only with the very word its calls
+// wrote: equal words are one literal, a word in another case is another,
+// and a program's word is never folded onto a known system's name. A
+// program no word names is its own call's, labelled for what the reading
+// knows: named at run time, or not established. The record keeps every
+// word its call writes.
+func TestOutboundProgramsAreOneDestinationOnlyByTheirWord(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "tool"}, Outbound: []groupindex.OutboundCall{
+		{ID: "b1", Kind: atlas.BoundaryRunsProgram, External: "os/exec.CommandContext", Destination: "git", Values: []string{"git", "status"}, Source: "model"},
+		{ID: "b2", Kind: atlas.BoundaryRunsProgram, External: "os/exec.CommandContext", Destination: "git", Values: []string{"git", "log", "-n"}, Source: "model"},
+		{ID: "b3", Kind: atlas.BoundaryRunsProgram, External: "os/exec.Command", Destination: "Git", Values: []string{"Git"}, Source: "model"},
+		{ID: "b4", Kind: atlas.BoundaryRunsProgram, External: "stdlib.h.system", Destination: "redis-server", Values: []string{"redis-server"}, Source: "model"},
+		{ID: "b5", Kind: atlas.BoundaryRunsProgram, External: "os/exec.CommandContext", ProgramNotNamed: true, Values: []string{"--version"}, Source: "model"},
+		{ID: "b6", Kind: atlas.BoundaryRunsProgram, External: "os/exec.CommandContext", ProgramNotNamed: true, Values: []string{"-json"}, Source: "model"},
+		{ID: "b7", Kind: atlas.BoundaryRunsProgram, External: "os/exec.Command", Values: []string{}, Source: "model"},
+		{ID: "b8", Kind: atlas.BoundarySDK, External: "redis.Client.Get", Destination: "Redis cache server", Values: []string{"key"}, Source: "model"},
+	}}
+	section := &pageSection{ID: "tool", programTargetID: "tool"}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
+	builder.fillSectionOutbound(section)
+	if row := section.Outbound[1]; !row.Program || row.KindLabel != "Runs a program" || !slices.Equal(row.Words, []string{"git", "log", "-n"}) || section.Outbound[7].Program {
+		t.Fatalf("a started program's record lost its kind or its words: %+v", section.Outbound)
+	}
+	got := map[string]int{}
+	for _, group := range groupOutbound(section.Outbound) {
+		name := group.Destination
+		if name == "" {
+			name = group.ProgramLabel
+		}
+		got[name]++
+		if group.Program && group.Destination != "" {
+			got[name+" rows"] = len(group.Rows)
+		}
+	}
+	want := map[string]int{"git": 1, "git rows": 2, "Git": 1, "Git rows": 1, "redis-server": 1, "redis-server rows": 1,
+		"A program named at run time": 2, "Program not established": 1, "Redis": 1}
+	if !maps.Equal(got, want) {
+		t.Fatalf("program destinations = %v\nwant %v", got, want)
 	}
 }

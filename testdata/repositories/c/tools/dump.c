@@ -28,7 +28,11 @@ int main(int argc, char **argv) {
         sbAppend(&keys, "\n", 1);
     }
     fclose(fp);
-    fputs(keys.buf, stdout);
+    /* Another program sorts the keys: the one word popen is given is the
+     * whole command line it runs. */
+    FILE *sorted = popen("sort -u", "w");
+    fputs(keys.buf, sorted != NULL ? sorted : stdout);
+    if (sorted != NULL) pclose(sorted);
     sbFree(&keys);
     return 0;
 }

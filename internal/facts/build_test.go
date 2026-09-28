@@ -362,17 +362,13 @@ func TestBuildDynamicExecution(t *testing.T) {
 		exec.Resolution != ResolutionExact {
 		t.Fatalf("exec = %+v", exec)
 	}
-	if run := byAnchor["svc/field.py:4"]; run.Key != "subprocess.run" {
-		t.Fatalf("subprocess.run = %+v", run)
-	}
-	if system := byAnchor["svc/field.py:5"]; system.Key != "os.system" {
-		t.Fatalf("os.system = %+v", system)
-	}
 	if fn := byAnchor["svc/ui.tsx:2"]; fn.Key != "new Function" {
 		t.Fatalf("new Function = %+v", fn)
 	}
-	// json.loads reads data; pattern.exec matches text. Neither runs code.
-	for _, quiet := range []string{"svc/field.py:6", "svc/ui.tsx:1"} {
+	// subprocess.run and os.system start another program, which the
+	// reading asks about (runs_program); json.loads reads data;
+	// pattern.exec matches text. None runs code in this process.
+	for _, quiet := range []string{"svc/field.py:4", "svc/field.py:5", "svc/field.py:6", "svc/ui.tsx:1"} {
 		if fact, found := byAnchor[quiet]; found {
 			t.Fatalf("unexpected dynamic execution at %s: %+v", quiet, fact)
 		}

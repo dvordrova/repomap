@@ -332,6 +332,16 @@ accepted, two inputs; joining them is later work. Not recorded yet:
 - dict registries (`handlers[name] = fn`);
 - a callable the repository's own function keeps (S1) is not enabled.
 
+## Programs a call starts
+
+`revision` in `tool_cli.py` runs `subprocess.run(["git", "rev-parse",
+"HEAD"], check=True, capture_output=True)`: asked `talks` with the call as
+written, the reading's `runs_program` (READING). Not recorded yet: the
+strings inside a list or tuple literal are no call words (a call's words
+are its literal arguments), so this call gives the program question no
+word, is not asked, and its program stays not established. `os.system`
+and `subprocess.Popen` given a string are asked like any word-given call.
+
 ## Test sources
 
 A resolved pytest table in `pyproject.toml` (`[tool.pytest]` or

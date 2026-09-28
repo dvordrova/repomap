@@ -747,10 +747,15 @@ extension entry exists only through `binds`): a registration that hands
 nothing names the declaration making the call. The
 symbols handed a callable and the others are two tables asked at once.
 
-`state.task` (`prompts/api.md`) says what the map wants: a program's entries
-and its outside systems, the other running programs it talks to; the
-operating system, the runtime and linked libraries are the program's own
-work. Every question is one closed choice, and every option, `none`
+`state.task` (`prompts/api.md`) says what the map wants: a program's entries,
+the ways work comes in to this program, and its outside systems, the other
+running programs it talks to and the programs it starts; the operating
+system, the runtime and linked libraries are the program's own work. An
+entry is what this program receives: `command` is not for the command line
+this program gives another program it starts, or the name of a program it
+looks up or starts (2026-09-28, runs another program; a wider direction
+sentence in the task and in `request`/`none` flipped Redis's command table
+from `request` to `none` in the measurement and was not adopted, CHANGELOG). Every question is one closed choice, and every option, `none`
 included, carries its criteria (what it is, what it includes, what it is
 not for, examples) from embedded Markdown beside the stage. Every question
 that asks what something of the repository becomes on our map reads one
@@ -777,10 +782,15 @@ leaves the other standing. Every other symbol is asked one `talks`
 question: `serves` (the program's own listening side: listening on or
 binding an address, running the server, starting a consumer, and accepting
 a connection another program opened to it), `client_request`, `db`,
-`queue_producer`, `queue_consumer`, `sdk`, or `none`, no communication
-(converting an address already in hand, building or configuring a client
-without calling it, reading a result already received, files, threads,
-signals, an open connection's reads and writes). `db` includes building the
+`queue_producer`, `queue_consumer`, `sdk`, `runs_program` (the call starts
+another program as a separate process, or names the program and the
+arguments of the command a later call on its result starts: a shell
+command line, an executable by name or path, a pipe to a command; not a
+thread, a fork of this program running its own code, code evaluated in
+this process, or looking up where a program is installed), or `none`, no
+communication (converting an address already in hand, building or
+configuring a client without calling it, reading a result already
+received, files, threads, signals, an open connection's reads and writes). `db` includes building the
 query a database library runs. `client_request` is the
 outgoing side of `request` and, like it, names no protocol (owner,
 2026-09-27): an HTTP request, an RPC and a raw socket `connect` are one
@@ -794,7 +804,7 @@ above).
 
 A symbol that is handed nothing but whose calls outside test files give it
 words (a literal: `flag.Bool("verbose", …)`, `strcmp(argv[1], "-h")`,
-`printf("%s\n", …)`) is asked in a third set (`repomap.atlas.api.v7.given`)
+`printf("%s\n", …)`) is asked in a third set (`repomap.atlas.api.v8.given`)
 two independent (`Alone`) questions: `talks`, as above, and `enters`, what
 the words a call to it is given become on our map: an entry kind but
 `queue_consumer` (taking messages is `talks`'s to say, so no outcome is
@@ -804,7 +814,43 @@ words, and every row may show `result_receives`: the calls the code makes
 on what a call to the symbol returns, counted (`add_argument ×1`), the code
 fact of a factory; what the symbol is stays the model's answer. An entry
 kind answered beside `serves` is refused alone (`cell_rejected`): a
-listener's answer stands and its words are no entry.
+listener's answer stands and its words are no entry. The same holds beside
+every other answer but `none` (2026-09-28): the words a call passes to
+another program, one it starts or one it sends to, are that program's, so
+an entry kind beside `runs_program`, `client_request`, `db`, a queue or
+`sdk` is refused alone and the talks answer stands
+(`exec.CommandContext(ctx, "litestream", "restore", "-config", …)` is a
+launch, not ten command options).
+
+A call to a `runs_program` symbol is one outgoing boundary of that kind,
+unless its receiver is the result of a call to a `runs_program` symbol
+(`cmd.Run()`, `exec.Command(…).Output()`, a `call_result` receiver
+anchored at the launching call): that call starts, waits for or reads the
+same program, so the call that named it is the one boundary. Which
+program it starts is asked of each such call on its own
+(`repomap.atlas.program.v1`, stage `atlas_program`, Jev): a symbol such as
+`exec.Command` starts git at one site and make at another. The item is the
+symbol, the call as written (`usage`) and `words`, every word the call is
+given that can stand on one line, each once, in the call's order, as
+request-local refs whose option names are the words themselves; the
+options are those words and `not_named` (no word names it: the program
+comes from a variable, a setting, a lookup or the input). Every word
+carries one set of criteria (`prompts/program_options.md`, `word`; the
+table's `EachCriteria`): the program that does the work, which through a
+shell, an interpreter, a package runner, a launcher or a privilege tool is
+the command it is told to run. The rows of one symbol share windows, each
+exact row is remembered on its own (`Memoize`), and an undecided answer
+stays undecided. A call given no word is not asked, and its program stays
+not established: an index records a call's literal arguments, and a
+program named inside a list (`subprocess.run(["git", …])`) is no such
+word, so no word is no evidence that none names it. The boundary's
+destination is the chosen word as written (`atlas.Boundary.Destination`);
+`ProgramNotNamed` marks `not_named`; both empty is not established. Such a
+boundary is not sent to the boundaries table: it has no address, no
+catalogue destination and no line. A program the report builds itself is
+not linked to that component (the cross-program joints pair a call with
+another program's entry, and a program's own launch is no entry; not
+done, CHANGELOG).
 
 A symbol whose words are an entry makes that entry at every call outside
 test files that gives it words and that no fact boundary, in or out,
@@ -830,7 +876,7 @@ as written and declaring caller: the same option written twice in one
 function is one input at its first site; the same word in another caller
 is another. A name that cannot stand refuses that entry alone.
 
-The table asks only the decisions the boundaries read (`repomap.atlas.api.v7`).
+The table asks only the decisions the boundaries read (`repomap.atlas.api.v8`).
 `reads_input`, `writes_output`, `auth`, `config` and `validates` were asked
 of every symbol, stored in `atlas.json` and read by nothing; a window of
 them flipped between runs (owner decision 2026-09-26). A decision without a

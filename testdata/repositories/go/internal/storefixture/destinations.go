@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"net/http"
+	"os/exec"
 )
 
 // DestinationRequest is a shared transport adapter, not a separate service.
@@ -86,3 +87,16 @@ var verbose = flag.Bool("verbose", false, "log every destination request")
 
 // Verbose reports the option.
 func Verbose() bool { return *verbose }
+
+// Revision starts another program, git, with its subcommand and reads what
+// it prints: the call names the program by its first word, and Output on
+// the command it built is that same program, not another one.
+func Revision(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "HEAD").Output()
+	return string(out), err
+}
+
+// RunHook starts the program a setting names: no word of the call names it.
+func RunHook(hook string, args ...string) error {
+	return exec.Command(hook, args...).Run()
+}

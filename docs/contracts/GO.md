@@ -209,6 +209,15 @@ asked nothing:
 - `handlers[name] = fn` registries;
 - a callable the repository's own function keeps (S1) is not enabled.
 
+## Programs a call starts
+
+`Revision` in `internal/storefixture/destinations.go` runs
+`exec.CommandContext(ctx, "git", "rev-parse", "HEAD").Output()`: the
+launching call gives the words `git`, `rev-parse`, `HEAD`, and `Output` is
+made on its `call_result`, so the reading keeps one boundary (READING).
+`RunHook`'s `exec.Command(hook, args...).Run()` gives no word: its program
+stays not established.
+
 ## Handler tables and stored callbacks
 
 These are the Go equivalents of the C adapter's command table, its callbacks

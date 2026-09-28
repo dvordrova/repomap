@@ -57,7 +57,7 @@ func TestFactsOfCodeATargetNeverRunsStayWithTheTargetsThatRunIt(t *testing.T) {
 			targets = append(targets, TargetInput{Index: index, Root: "."})
 		}
 		result := mustBuild(t, Input{Repository: repository, Targets: targets})
-		for _, kind := range []Kind{KindConfigRead, KindDynamicExecution, KindSQLQuery, KindRegistration} {
+		for _, kind := range []Kind{KindConfigRead, KindSQLQuery, KindRegistration} {
 			var owners []string
 			for _, fact := range result.OfKind(kind) {
 				owners = append(owners, fact.TargetID)

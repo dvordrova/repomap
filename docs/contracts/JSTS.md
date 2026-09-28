@@ -234,6 +234,15 @@ not. Not recorded yet:
   the callable becomes, so its word-only calls (`.command("init")` beside
   `.action(fn)`) are not asked what their words become.
 
+## Programs a call starts
+
+`revision` in `src/cli.ts` calls `spawn("git", ["rev-parse", "HEAD"], …)`
+from `node:child_process`. The fixture installs no `@types/node`, so the
+compiler names no symbol and nothing is asked: a missing equivalent,
+recorded, like the npm packages above. With Node's declarations the call
+would be asked `talks`; its arguments array, like Python's list, would
+still give no words beyond `"git"`.
+
 ## Handler tables and stored callbacks
 
 These are the JS/TS equivalents of the C adapter's command table, its

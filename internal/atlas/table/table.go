@@ -103,6 +103,10 @@ type Column struct {
 	// The catalogue then reaches the model only as the options and their
 	// criteria, never again in the shared context.
 	CriteriaFrom string `json:"-"`
+	// EachCriteria are a decision model's terms for every option the
+	// OptionsFrom catalogue offers, when the catalogue's entries are the
+	// row's own values (a call's words) that one text defines alike.
+	EachCriteria *llm.Criteria `json:"-"`
 }
 
 // Definition is one table: its stage name, window size, prompt and columns.
@@ -733,13 +737,14 @@ func questionsDigest(def Definition) (string, error) {
 		Options      []string                `json:"options,omitempty"`
 		Criteria     map[string]llm.Criteria `json:"criteria,omitempty"`
 		CriteriaFrom string                  `json:"criteria_from,omitempty"`
+		EachCriteria *llm.Criteria           `json:"each_criteria,omitempty"`
 	}
 	var questions []question
 	for _, column := range def.Columns {
-		if column.Ask == "" && column.Item == "" && len(column.Criteria) == 0 && column.CriteriaFrom == "" {
+		if column.Ask == "" && column.Item == "" && len(column.Criteria) == 0 && column.CriteriaFrom == "" && column.EachCriteria == nil {
 			continue
 		}
-		questions = append(questions, question{Column: column.Name, Ask: column.Ask, Item: column.Item, Options: column.Options, Criteria: column.Criteria, CriteriaFrom: column.CriteriaFrom})
+		questions = append(questions, question{Column: column.Name, Ask: column.Ask, Item: column.Item, Options: column.Options, Criteria: column.Criteria, CriteriaFrom: column.CriteriaFrom, EachCriteria: column.EachCriteria})
 	}
 	if len(questions) == 0 {
 		return "", nil

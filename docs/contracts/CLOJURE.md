@@ -171,6 +171,13 @@ become (READING, the `atlas_api` table's third set): the fixture asks
 - `case` on an argument;
 - `reset!`/`swap!` stores and registries kept in atoms.
 
+
+## Programs a call starts
+
+`revision` in `src/example/core.clj` calls `(shell/sh "git" "rev-parse"
+"HEAD")`: `clojure.java.shell.sh` is asked with the form as written and
+gives the words `git`, `rev-parse`, `HEAD`.
+
 ## Test sources
 
 A namespace that requires `clojure.test` or `speclj.core` is a test source.

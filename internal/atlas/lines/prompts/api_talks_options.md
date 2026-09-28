@@ -85,13 +85,27 @@ Examples:
 - indexing a document in a search engine
 - looking up the addresses of a host name
 
+## runs_program
+
+What: The call names another program, with its arguments, to run as a separate process: it starts that program, or builds the command a later call on its result starts.
+
+Includes: running a command line through a shell; starting an executable given by its name or its path, with its arguments; replacing this process with another program; opening a pipe to or from a command it names; building a command from a program and its arguments
+
+Not for: a call on a command an earlier call built and named, which starts it, waits for it, reads its output or connects its pipes without naming a program itself (none); starting a thread, a goroutine or a task inside this program (none); forking a copy of this program that goes on running its own code (none); evaluating or compiling code inside this program's own process (none); looking up where a program is installed without starting it (none); sending a request to a program that is already running (client_request)
+
+Examples:
+- running a version-control tool's command line and reading its output
+- starting a compiler with the files it should build
+- running a command line through the system shell
+- building a command from a program name and its arguments, then running it
+
 ## none
 
-What: The call talks to no other running program: it is the program's own work in its own process, with its own files, memory, threads, processes, signals and clock.
+What: The call talks to no other program and starts none: it is the program's own work in its own process, with its own files, memory, threads, signals and clock.
 
-Includes: converting, parsing, formatting or validating values, an address, a port or a host name already in hand among them; building or configuring an object, a client, a request or a name without sending it; reading the body, the status, the fields or the id of a response, a result or a job an earlier call returned; creating a socket, setting its options, reading or writing a connection that is already open, closing one; handing a value to the host program or runtime this code runs inside; files, logging, memory, threads, processes, signals, time and random numbers
+Includes: converting, parsing, formatting or validating values, an address, a port or a host name already in hand among them; building or configuring an object, a client, a request or a name without sending it; reading the body, the status, the fields or the id of a response, a result or a job an earlier call returned; creating a socket, setting its options, reading or writing a connection that is already open, closing one; handing a value to the host program or runtime this code runs inside; files, logging, memory, threads, signals, time and random numbers; forking a copy of this program that goes on running its own code; evaluating code inside this program's own process; starting, waiting for, reading the output of or stopping a command an earlier call built and named, when this call names no program itself
 
-Not for: a call that itself sends to, reads from or opens a connection to another running program, or makes this program reachable by one
+Not for: a call that itself sends to, reads from or opens a connection to another running program, or makes this program reachable by one; a call that starts another program, or names the program and the arguments of the command that starts it (runs_program)
 
 Examples:
 - parsing an IP address from a string, or writing one back as text

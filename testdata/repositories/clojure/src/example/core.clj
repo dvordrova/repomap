@@ -1,5 +1,5 @@
 (ns example.core
-  (:require [example.service :as service] [clojure.string :as str] [example.facade :as facade]) (:import (java.util ArrayList)))
+  (:require [example.service :as service] [clojure.string :as str] [example.facade :as facade] [clojure.java.shell :as shell]) (:import (java.util ArrayList)))
 
 (defn -main [& names]
   (service/deliver! "greeting.txt" (service/greet (first names))))
@@ -138,3 +138,7 @@
 ;; its caller, as a Go package-level variable is the caller of its
 ;; initializer's calls.
 (def default-greeting (service/greet "default"))
+
+;; Starts another program, git: the words of its command line are git's.
+(defn revision []
+  (:out (shell/sh "git" "rev-parse" "HEAD")))

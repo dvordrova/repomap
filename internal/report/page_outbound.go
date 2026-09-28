@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/destinations"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
@@ -36,6 +37,25 @@ type pageOutbound struct {
 	// "PodInterface.Patch" and "DeploymentInterface.Patch", not "Patch, Patch".
 	LineWithType bool
 	Anchor       pageAnchor
+	// Program marks a call that starts another program; Words are every
+	// word the call writes, as written, and Destination the one that names
+	// the program. ProgramNotNamed says none of them names it.
+	Program         bool
+	ProgramNotNamed bool
+	Words           []string
+}
+
+// ProgramLabel names a started program no word of its call names: one
+// whose name the code computes, or one the model did not decide.
+func (row pageOutbound) ProgramLabel() string {
+	switch {
+	case !row.Program || row.Destination != "":
+		return ""
+	case row.ProgramNotNamed:
+		return "A program named at run time"
+	default:
+		return "Program not established"
+	}
 }
 
 type pageOutboundUse struct {
@@ -116,6 +136,10 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 			Destination: call.Destination, Summary: call.Summary,
 			Address: call.Address, External: displayCallable(call.External), Basis: call.Basis, Source: call.Source, Method: call.Method,
 			Anchor: builder.links.anchor(call.Location.Path, call.Location.Line, call.Location.Column),
+		}
+		if call.Kind == atlas.BoundaryRunsProgram {
+			row.Program, row.ProgramNotNamed = true, call.ProgramNotNamed
+			row.Words = append([]string(nil), call.Values...)
 		}
 		row.Callers = builder.outboundCallers(index, section.ID, call.SubjectID)
 		if ref, known := builder.subject(index.Target.ID, call.SubjectID); known && call.SubjectID != "" {
@@ -233,8 +257,12 @@ func (builder *pageBuilder) outboundCallers(index *groupindex.Index, sectionID, 
 type pageOutboundGroup struct {
 	Destination, NativeLabel, KindLabel string
 	Basis, Source, Address              string
-	Addresses                           int
-	Rows                                []pageOutbound
+	// Program marks the programs a component starts: Destination is the
+	// word naming one as written, ProgramLabel stands for one no word names.
+	Program      bool
+	ProgramLabel string
+	Addresses    int
+	Rows         []pageOutbound
 }
 
 func (group pageOutboundGroup) BasisLabel() string {
@@ -364,9 +392,12 @@ func leadSentence(text string, limit int) string {
 }
 
 // groupOutbound groups records by their destination text (case-insensitive),
-// or by native label or kind when the model named no destination. Groups
-// with more records come first; equal counts keep record order. Grouping is
-// a rendering step over translated rows, so it changes no saved data.
+// or by native label or kind when the model named no destination. A started
+// program is one destination only with the very word its calls wrote: equal
+// words are one literal, and a program no word names is its call's own.
+// Groups with more records come first; equal counts keep record order.
+// Grouping is a rendering step over translated rows, so it changes no saved
+// data.
 func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 	var groups []pageOutboundGroup
 	position := make(map[string]int)
@@ -374,6 +405,10 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 		key := "k\x00" + row.KindLabel
 		destination := canonicalDestination(row.Destination)
 		switch {
+		case row.Program && row.Destination != "":
+			key, destination = "p\x00"+row.Destination, row.Destination
+		case row.Program:
+			key = "o\x00" + row.ID
 		case destination != "":
 			key = "d\x00" + strings.ToLower(destination)
 		case row.NativeLabel != "":
@@ -384,7 +419,7 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 			at = len(groups)
 			position[key] = at
 			groups = append(groups, pageOutboundGroup{Destination: destination, NativeLabel: row.NativeLabel,
-				KindLabel: row.KindLabel, Basis: row.Basis, Source: row.Source})
+				KindLabel: row.KindLabel, Basis: row.Basis, Source: row.Source, Program: row.Program, ProgramLabel: row.ProgramLabel()})
 		}
 		group := &groups[at]
 		if group.KindLabel != row.KindLabel {
@@ -464,6 +499,8 @@ func outboundKindLabel(kind string) string {
 		return "Queue"
 	case "sdk":
 		return "SDK"
+	case atlas.BoundaryRunsProgram:
+		return "Runs a program"
 	default:
 		return "External communication"
 	}

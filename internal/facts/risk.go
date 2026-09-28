@@ -13,32 +13,19 @@ type dynamicRule struct {
 	origins []string
 }
 
+// dynamicRules are the calls that run code inside this program's own
+// process that the source does not show: code evaluated from a string, a
+// function built from one, a value deserialized into code. Starting
+// another program is no such call: the reading asks which calls do
+// (atlas.BoundaryRunsProgram) and names the program they start, so no
+// library's launching names are kept here. C has no builtin that
+// evaluates code, so a C file has none.
 var dynamicRules = map[string]dynamicRule{
-	"exec":         {},
-	"eval":         {},
-	"system":       {origins: []string{"os"}},
-	"popen":        {origins: []string{"os", "subprocess"}},
-	"run":          {origins: []string{"subprocess"}},
-	"call":         {origins: []string{"subprocess"}},
-	"check_output": {origins: []string{"subprocess"}},
-	"check_call":   {origins: []string{"subprocess"}},
-	"loads":        {origins: []string{"pickle", "yaml", "marshal"}},
-	"load":         {origins: []string{"pickle", "yaml", "marshal"}},
-	"Function":     {},
-	"execSync":     {origins: []string{"child_process"}},
-	"execFile":     {origins: []string{"child_process"}},
-	"execFileSync": {origins: []string{"child_process"}},
-	"spawn":        {origins: []string{"child_process"}},
-	"spawnSync":    {origins: []string{"child_process"}},
-}
-
-// cDynamicRules are the libc functions that hand a command line to the shell,
-// with the headers that declare them. C has no builtin that runs code, so in
-// a C file nothing else counts: a repository function named eval or exec is
-// the repository's own code.
-var cDynamicRules = map[string][]string{
-	"system": {"stdlib.h"},
-	"popen":  {"stdio.h"},
+	"exec":     {},
+	"eval":     {},
+	"loads":    {origins: []string{"pickle", "yaml", "marshal"}},
+	"load":     {origins: []string{"pickle", "yaml", "marshal"}},
+	"Function": {},
 }
 
 func (b *builder) addDynamicExecution(target *targetContext) {
@@ -77,25 +64,16 @@ func (b *builder) addDynamicExecutionFact(target *targetContext, anchor Anchor, 
 }
 
 // dynamicLabel applies the closed rule for one selector. A bare exec in
-// JavaScript is a RegExp method, so there it needs a child_process origin;
-// "Function" counts only as the constructor form.
+// JavaScript is a RegExp method, and "Function" counts only as the
+// constructor form. A C file evaluates no code.
 func dynamicLabel(target *targetContext, relation programindex.Relation, pattern programindex.RelationPattern, anchor Anchor, line string) (string, bool) {
-	origins := target.externalOrigins(relation, pattern)
 	if isCFile(anchor.Path) {
-		headers, ok := cDynamicRules[pattern.Selector]
-		if !ok {
-			return "", false
-		}
-		if _, found := originPackage(origins, headers...); !found {
-			return "", false
-		}
-		return pattern.Selector, true
+		return "", false
 	}
 	rule, ok := dynamicRules[pattern.Selector]
 	if !ok {
 		return "", false
 	}
-	javascript := isJavaScriptFile(anchor.Path)
 	switch pattern.Selector {
 	case "Function":
 		if !strings.Contains(line, "new Function") {
@@ -103,17 +81,14 @@ func dynamicLabel(target *targetContext, relation programindex.Relation, pattern
 		}
 		return "new Function", true
 	case "exec":
-		if javascript {
-			rule = dynamicRule{origins: []string{"child_process"}}
+		if isJavaScriptFile(anchor.Path) {
+			return "", false
 		}
 	}
 	if rule.origins == nil {
-		if pkg, found := originPackage(origins, "subprocess", "os", "child_process", "pickle", "yaml", "marshal"); found {
-			return pkg + "." + pattern.Selector, true
-		}
 		return pattern.Selector, true
 	}
-	pkg, found := originPackage(origins, rule.origins...)
+	pkg, found := originPackage(target.externalOrigins(relation, pattern), rule.origins...)
 	if !found {
 		return "", false
 	}

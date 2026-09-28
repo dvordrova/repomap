@@ -1,5 +1,129 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — A call that starts another program is an outward boundary named by its word (runs another program)
+
+- **Measured before code** (`runsprog/`: probe.py, analyze-A.txt,
+  analyze-final.txt, variants.jsonl, program-probe*.json): the saved
+  atlas_api questions of the newest Redis (070208, 50 windows) and
+  litestream-v24 (070341, 170) runs and the dry questions of a repomap
+  self enumeration (`--no-model --target …cmd/repomap`, 536 symbols: 29
+  handed, 77 given, 430 other), jev-1.13.0, margin 0.10: one draw of all
+  2,029 questions under the first draft, then variants on the questions
+  that moved, then three draws of the 63 symbols that changed, carry an
+  entry or were answered runs_program under the final wording, plus five
+  control draws of Redis's entries. About 17.0 MB sent (≈ 4.4 M tokens,
+  ≈ $0.19).
+  - **Harm found and avoided:** the task's direction sentence ("an entry is
+    what this program receives; words it gives another program it starts,
+    or sends to another program, are not its entries") in `api.md` and in
+    `request`'s Not for / `none`'s Includes flipped Redis's command table
+    (`redis.c.redisCommand.proc`, 95 requests) from `request` (control
+    leads 0.21–0.38) to `none` (0.60 in 5 of 5 draws with the entry-file
+    sentences; near-ties with the api.md sentence alone). Not adopted. The
+    final wording: `api.md` says entries come in "to this program" and
+    outside systems include "the programs it starts"; `command` is not for
+    "the command line this program gives another program it starts, or the
+    name of a program it looks up or starts". Redis's table stays
+    `request` in 13 of 13 draws (leads 0.10–0.32; one at 0.10), `strcmp`
+    `command`.
+  - **What changes:** `exec.CommandContext`, `exec.Command` and
+    `subprocess.run` talks none → `runs_program` (1.00 in every draw);
+    `Cmd.Run`/`Output`/`CombinedOutput`/`Start` none → `runs_program`
+    (leads 0.14–0.64), folded by code (below); `exec.CommandContext`'s
+    enters stays `command` (0.24–0.30) and is refused beside the launch;
+    self `exec.LookPath` enters `command` (0.20–0.32) → undecided (no
+    `clang`/`node`/`code` inputs). Near-margin talks shifts in litestream
+    under every wording: promhttp.Handler none(0.12) → serves (0.10–0.14,
+    2 of 3), sftp `clientConn.Close` undecided → client_request, nats
+    ObjectStore Get/Put and azblob.NewClient undecided → sdk, sftp
+    File.Seek and Server.Shutdown undecided → none. Every other accepted
+    entry kept its kind: pthread_create continuous, AddTool/HandleFunc/
+    Handle request, the three smithy middlewares, svc.Run extension,
+    flag.FlagSet.* command (leads rose), NewTool request,
+    setuptools.Extension extension, self's flag and ServeMux entries.
+  - **Program question** (10 calls, 3 draws, then 4 with the package-runner
+    wording): litestream → `litestream` 1.00, `git` → git, `go list …` →
+    go, `system("make -n")` → `make -n`, a path variable → not_named,
+    `sh -c "git status"` → `git status` (0.49–0.60), `python -m pip` →
+    pip (0.36–0.45), `sudo apt-get` → apt-get, `npx eslint` → eslint.
+- **Talks `runs_program`** (`api_talks_options.md`): the call starts
+  another program as a separate process, or names the program and the
+  arguments of the command a later call on its result starts; not a
+  thread, a fork of this program running its own code, code evaluated in
+  this process, a lookup of where a program is installed. `none` no longer
+  lists processes. `repomap.atlas.api.v8`.
+- **Contradiction**: an entry kind beside any talks answer but none
+  (serves, runs_program, client_request, db, queues, sdk) is refused alone,
+  `cell_rejected`, and the talks answer stands (`talksStands`, was
+  `listenerStands`).
+- **One boundary per launch**: every call to a runs_program symbol is an
+  outgoing `runs_program` boundary unless its receiver is the
+  `call_result` of a call to a runs_program symbol (Go's `cmd.Run()` on
+  `exec.Command`'s command). Not sent to the boundaries table (no address,
+  catalogue destination or line).
+- **`atlas_program`** (`repomap.atlas.program.v1`, Jev, `Memoize`): one row
+  per launching call — symbol, the call as written, `words` (every
+  nameable word, each once, in call order, as w-refs whose option names
+  are the words); options the words and `not_named`; every word carries
+  the `word` criteria (`table.Column.EachCriteria`, in the memo's
+  questions digest). Rows grouped per symbol. A call with no word is not
+  asked and stays not established (a program in a list literal is no call
+  word). `Boundary.Destination` = the chosen word as written,
+  `ProgramNotNamed` for not_named; atlas 17, GroupsIndex 21.
+- **Report**: KindLabel "Runs a program"; a program is one destination
+  only by its exact word (never canonicalized), not-named ("A program
+  named at run time") and undecided ("Program not established") are their
+  call's own; a record's line is the callable and every word its call
+  writes. Russian UI strings added.
+- **Own executables (step 6) not done**: the cross-program joints
+  (`atlas_joints`, decision 14) pair an outgoing boundary with an incoming
+  boundary of another target; a program's own launch is no boundary
+  (seeds are declarations) and targets carry no executable name (Go is
+  named by import path, Python by module, JS by package; only C's make
+  names are executables). Offering "this launch names target X" needs an
+  executable name per adapter and a new joint side plus a joints-prompt
+  change: a redesign. Nothing links by equal strings.
+- **`literals[:6]`** (reading/api.go): the program question sends each
+  call's own words whole. The cap still cuts the symbol-level `literals`
+  field of every atlas_api row (all three sets); removing it re-asks every
+  symbol with more than six distinct literals and grows rows such as
+  `fmt.Errorf` (617 word calls in litestream). Left for a measured change.
+  (`places` also dedups a call's literals; lines.sideValue bounds joint
+  values by maxValues.)
+- **dynamic_execution**: `system`, `popen`, subprocess's `run`/`call`/
+  `check_output`/`check_call`, child_process's `execSync`/`execFile`/
+  `execFileSync`/`spawn`/`spawnSync` and JavaScript's `exec` are gone
+  from `internal/facts/risk.go`, and C files have no dynamic execution.
+  Kept: `exec` and `eval` (code evaluated in this process), `new
+  Function`, and pickle/yaml/marshal `loads`/`load` (deserialization runs
+  code in-process). The CONSTITUTION's facts sentence still lists
+  `subprocess` and `os.system` as dynamic execution examples: for the
+  owner.
+- **Fixtures**: Go `Revision` (`exec.CommandContext(ctx, "git",
+  "rev-parse", "HEAD").Output()`) and `RunHook` (`exec.Command(hook,
+  args...).Run()`); C `tools/dump.c` `popen("sort -u", "w")` beside kvd's
+  `system(hook)`; Clojure `(shell/sh "git" "rev-parse" "HEAD")`; Python
+  `subprocess.run(["git", …])` (asked talks; list words are no call words,
+  recorded in PYTHON.md); JS `spawn("git", …)` from `node:child_process`
+  (no declarations, not asked, recorded in JSTS.md). Go fixture lines
+  after the new import moved by one (http_registrations_test).
+- **Frozen** (sha256): `entry_options.md` `e2c9adf4…533b3`, `api.md`
+  `35e07898…75d08`, `api_talks_options.md` `11c063c7…76c7f`,
+  `api_publishes_options.md` `ceee0c0c…ceb63` (unchanged), `program.md`
+  `86638d5f…27733`, `program_options.md` `7555b2a8…6f397`; asks talks
+  `f538b957…6f2f4`, enters `62b3db34…7af29` (both unchanged), program
+  `3ade7198…4d9f2`.
+- Tests: `TestAnEntryBesideWhatACallDoesWithOtherProgramsIsRefused`,
+  `TestACallThatStartsAProgramIsNamedByTheWordItsCallWrote` (litestream-
+  shaped and `sh -c "git status"` through a Jev preset; the fold),
+  `TestEveryLanguageAsksItsLaunchingCallsWithTheirWords`,
+  `TestOutboundProgramsAreOneDestinationOnlyByTheirWord`. Revert checks
+  skipped at the owner's request.
+- `go build ./...`, `go vet` on the changed packages and `go test` of
+  contracttest, atlas/..., report, facts and groupindex pass. Full `make
+  test`, `make ui-test` and `make ui-visual-test` were not run (owner:
+  speed over green commits).
+
 ## 2026-09-28 — What each language does not have yet, the wording frozen, and pass 1 accepted on Redis and litestream (inputs pass 1, D1)
 
 - **Missing equivalents recorded** in C.md, GO.md, PYTHON.md, JSTS.md and

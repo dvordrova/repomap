@@ -31,7 +31,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 19
-	Version      = 16
+	Version      = 17
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -732,6 +732,11 @@ type Boundary struct {
 	// over. Caller declares it; the code that acts on it is not a fact yet,
 	// so it binds to no part.
 	HandlerUnknown bool `json:"handler_unknown,omitempty"`
+	// ProgramNotNamed marks a call that starts another program named by
+	// none of its words (BoundaryRunsProgram). Its Destination, the word
+	// that names the program, is then empty; both empty means the model
+	// did not decide which word names it.
+	ProgramNotNamed bool `json:"program_not_named,omitempty"`
 }
 
 // DestinationUse is one observed argument chain reaching a communication
@@ -1554,7 +1559,12 @@ const (
 	BoundaryQueueProducer = "queue_producer"
 	BoundaryQueueConsumer = "queue_consumer"
 	BoundarySDK           = "sdk"
-	BoundaryConfig        = "config"
+	// BoundaryRunsProgram is another program this one starts as a separate
+	// process, at the call that names it with its arguments. The program is
+	// the word the model chose among that call's words, as written, or none
+	// when the program comes from a value the code computes.
+	BoundaryRunsProgram = "runs_program"
+	BoundaryConfig      = "config"
 	// BoundaryScheduled is work a timer or scheduler activates; BoundaryInteraction
 	// a user's action in an interface; BoundaryExtension a hook the host
 	// program registers with a runtime or plugin system.
@@ -1585,7 +1595,7 @@ func BoundaryKinds() []string {
 	return []string{
 		BoundaryClientRequest, BoundaryRequest, BoundaryDB, BoundaryQueueProducer,
 		BoundaryQueueConsumer, BoundaryScheduled, BoundaryContinuous, BoundaryInteraction, BoundaryExtension,
-		BoundaryCommand, BoundarySDK, BoundaryConfig, BoundaryOther,
+		BoundaryCommand, BoundarySDK, BoundaryRunsProgram, BoundaryConfig, BoundaryOther,
 	}
 }
 
@@ -1599,7 +1609,7 @@ func IncomingBoundaryKinds() []string {
 // communication kinds the group index keeps. A route or a configuration
 // read is never the kind of a call this component makes.
 func OutgoingBoundaryKinds() []string {
-	return []string{BoundaryClientRequest, BoundaryDB, BoundaryQueueProducer, BoundaryQueueConsumer, BoundarySDK, BoundaryOther}
+	return []string{BoundaryClientRequest, BoundaryDB, BoundaryQueueProducer, BoundaryQueueConsumer, BoundarySDK, BoundaryRunsProgram, BoundaryOther}
 }
 
 func ValidRole(role string) bool {

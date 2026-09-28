@@ -31,6 +31,9 @@ type OutboundCall struct {
 	Summary  string                `json:"summary,omitempty"`
 	Source   string                `json:"source"`
 	Location programindex.Location `json:"location"`
+	// ProgramNotNamed marks a started program none of its call's words
+	// names (atlas.BoundaryRunsProgram); a named one is its Destination.
+	ProgramNotNamed bool `json:"program_not_named,omitempty"`
 }
 
 func projectOutbound(program programindex.Index, target atlas.Target, groups map[string]string, sourceRefs map[string]string) []OutboundCall {
@@ -77,7 +80,8 @@ func projectOutbound(program programindex.Index, target atlas.Target, groups map
 			FactID: boundary.FactID, Kind: boundary.Kind, External: boundary.External,
 			Destination: boundary.Destination, Address: boundary.Address, Basis: boundary.Basis,
 			Method: boundary.Method, Values: cloneStrings(boundary.Values), Summary: boundary.Line, Source: source,
-			Location: programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)},
+			Location:        programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)},
+			ProgramNotNamed: boundary.ProgramNotNamed,
 		})
 	}
 	sort.Slice(calls, func(i, j int) bool { return calls[i].ID < calls[j].ID })
@@ -126,6 +130,7 @@ func (index Index) validateOutbound(subjects map[string]Subject, groups map[stri
 		_, groupExists := groups[call.GroupID]
 		if !validText(call.ID) || !communicationKind(call.Kind) ||
 			call.Basis != "" && call.Basis != "dispatch" && call.Basis != "configuration" ||
+			call.ProgramNotNamed && (call.Kind != atlas.BoundaryRunsProgram || call.Destination != "") ||
 			call.SubjectID != "" && !subjectExists || call.GroupID != "" && !groupExists ||
 			(call.Source != "fact" && call.Source != "model") ||
 			call.Location.Path == "" || call.Location.Line < 1 || call.Location.Column < 1 {

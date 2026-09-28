@@ -124,22 +124,25 @@ func TestAWordGivenCallBecomesAnEntryWhoseHandlerIsNotEstablished(t *testing.T) 
 	}
 }
 
-// A symbol that talks to a database and whose words are an entry is both,
-// call by call: a call given words is the entry, one given none is the
-// database call. A listener's answer stands: an entry kind beside serves
-// is refused, alone, and the symbol stays the listening side.
-func TestTheEntryWinsOverTalksOnlyAtACallGivenWords(t *testing.T) {
-	r := entriesReader(t, map[string]apiRole{"vendor/kv.Client.Do": {talks: atlas.BoundaryDB, enters: atlas.BoundaryCommand}}, nil,
-		wordCall("vendor/kv.Client.Do", 3, 5, "flush"),
-		wordCall("vendor/kv.Client.Do", 4, 5),
-	)
-	want := []string{"main.go in command flush flush handler unknown", "main.go out db   handled"}
-	if got := made(r); !reflect.DeepEqual(got, want) {
-		t.Fatalf("boundaries = %q\nwant %q", got, want)
+// Words a call passes to another program are that program's: an entry
+// kind answered beside anything a call does with other programs but none
+// is refused, alone, and the talks answer stands. A listener stays the
+// listening side, a launch stays a launch (exec.CommandContext(ctx,
+// "litestream", "restore", …) is not a command of this program), and a
+// database call stays a database call. Beside none the entry stands.
+func TestAnEntryBesideWhatACallDoesWithOtherProgramsIsRefused(t *testing.T) {
+	for _, talks := range []string{lines.APIServes, atlas.BoundaryDB, atlas.BoundaryRunsProgram} {
+		stands := answerTestReader(t, nil, nil)
+		role := apiRoleOf(stands.talksStands("sym1", "os/exec.CommandContext", map[string]string{"talks": talks, "enters": atlas.BoundaryCommand}))
+		if role.enters != "" || len(stands.rejected) != 1 || stands.rejected[0].Kind != "cell_rejected" {
+			t.Fatalf("an entry beside %s: role %+v, rejected %+v", talks, role, stands.rejected)
+		}
+		if talks == lines.APIServes && !role.publishes || talks != lines.APIServes && role.talks != talks {
+			t.Fatalf("the %s answer did not stand: %+v", talks, role)
+		}
 	}
-	stands := answerTestReader(t, nil, nil)
-	role := apiRoleOf(stands.listenerStands("sym1", "vendor/net.Listen", map[string]string{"talks": lines.APIServes, "enters": atlas.BoundaryRequest}))
-	if !role.publishes || role.enters != "" || len(stands.rejected) != 1 || stands.rejected[0].Kind != "cell_rejected" {
-		t.Fatalf("an entry beside serves: role %+v, rejected %+v", role, stands.rejected)
+	kept := answerTestReader(t, nil, nil)
+	if role := apiRoleOf(kept.talksStands("sym1", "flag.Bool", map[string]string{"talks": lines.APINone, "enters": atlas.BoundaryCommand})); role.enters != atlas.BoundaryCommand || len(kept.rejected) != 0 {
+		t.Fatalf("an entry beside none: role %+v, rejected %+v", role, kept.rejected)
 	}
 }
