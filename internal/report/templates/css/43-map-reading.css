@@ -427,6 +427,14 @@ details.map-reading-peer[open]>summary::before{content:'▾'}
 .map-reading-field-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 12px;margin:0 0 12px;font:13px/1.45 var(--mono)}
 .map-reading-field-grid dt,.map-reading-field-grid dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .map-reading-field-grid dd{color:var(--muted)}
+.map-reading-field-grid .map-field-uses-row,.map-reading-field-grid .map-field-path{grid-column:1/-1}
+.map-reading-field-grid .map-field-uses-row{margin:0 0 6px 12px;color:inherit;font-family:system-ui}
+.map-field-side{margin:1px 0;font-size:12.5px;line-height:1.5}
+.map-field-side-head{margin-right:6px;color:var(--muted);font-weight:600}
+.map-field-part{margin-right:8px}
+.map-field-part>.map-part-box{font-size:11.5px;padding:0 6px;margin-right:4px}
+.map-field-part>.map-reading-name{margin-right:5px}
+.map-reading-writes{margin:0 0 12px;font-size:13px;overflow-wrap:anywhere}
 /* A collection's names flow in their order with no holes: a grid with
    long names spanning two cells left gaps where the eye lost the order. */
 .flow-enabled .map-inspector .map-collection-names{list-style:none;margin:6px 0 12px;padding:0;display:flex;flex-wrap:wrap;gap:3px 14px}

@@ -292,6 +292,9 @@ type pageBuilder struct {
 	// declarationEnds is the last line of each declaration by its place
 	// (path, line, column), from every program's index, built once.
 	declarationEnds map[string]int
+	// fieldsByTarget are each program's reads and writes of record fields
+	// (page_field_uses.go), built once.
+	fieldsByTarget map[string]*pageFieldFacts
 }
 
 // subjectKey is the only identity used by the report projection. Subject IDs

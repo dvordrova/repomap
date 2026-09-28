@@ -180,6 +180,88 @@ func TestDeclarationReadingGroupsItsRelationsByPartOwnPartFirst(t *testing.T) {
 	}
 }
 
+// Who changes a field and who reads it (owner, 2026-09-29): a record
+// type's reading lists each field it declares with the functions writing
+// and reading it by part, own part first, by every path the code reaches
+// it by; a global variable's lists each field as the code reaches it
+// through the variable, written by a function that reads the variable
+// itself; a function's names the fields it writes, in the order it first
+// writes them, each with the type declaring it. No site is kept.
+func TestFieldsListTheirWritersAndReadersByPart(t *testing.T) {
+	b, index, part, anchors := readingFixture(t)
+	add := func(id, name string, kind programindex.ObjectKind, line int, owner string) {
+		b.subjects[subjectKey("t1", id)] = subjectRef{subject: groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: name, Kind: kind, OwnerID: owner,
+			Location: &programindex.Location{Path: "server.go", Line: line, Column: 1}}}}
+		anchors[id] = b.links.anchorPointer("server.go", line, 1)
+	}
+	add("srv", "redisServer", programindex.ObjectType, 500, "module")
+	add("f-dirty", "dirty", programindex.ObjectVariable, 501, "srv")
+	add("f-hz", "hz", programindex.ObjectVariable, 502, "srv")
+	edge := func(from, to, kind, path string, line int) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationKind(kind),
+			Resolution: programindex.ResolutionExact, FieldPath: path, Location: &programindex.Location{Path: "server.go", Line: line, Column: 5}}
+	}
+	index.StructuralEdges = []groupindex.StructuralEdge{
+		edge("cron", "state", "reads", "", 21),
+		edge("cron", "f-hz", "writes", "server.hz", 22),
+		edge("cron", "f-dirty", "writes", "server.dirty", 23),
+		edge("cron", "f-dirty", "writes", "server.dirty", 24),
+		edge("cron", "f-fd", "writes", "redisClient.fd", 25),
+		edge("init", "f-fd", "reads", "redisClient.fd", 31),
+		edge("events", "f-fd", "reads", "redisClient.fd", 301),
+		edge("events", "state", "reads", "", 302),
+		edge("events", "f-dirty", "reads", "server.dirty", 303),
+		// daemonize reaches a dirty of another server: it never reads ours.
+		edge("daemonize", "f-dirty", "reads", "server.dirty", 211),
+	}
+	b.indexes[0] = index
+	reading := decodeReading(t, b.groupReading(index, part, pageGroup{ID: "t1-g14", Title: part.Title}))
+	at := func(name string) int {
+		return slices.IndexFunc(reading.Decls, func(decl pageReadingDecl) bool { return decl.Name == name })
+	}
+	own := func(name string) pageReadingOwner {
+		found := slices.IndexFunc(reading.Own, func(owner pageReadingOwner) bool { return owner.Decl == at(name) })
+		if found < 0 {
+			t.Fatalf("%s has no reading of its own", name)
+		}
+		return reading.Own[found]
+	}
+	said := func(rows []pageReadingFieldUse) []string {
+		var result []string
+		for _, row := range rows {
+			for _, side := range []struct {
+				word   string
+				groups []pageReadingNames
+			}{{"written", row.Written}, {"read", row.Read}} {
+				for _, group := range side.groups {
+					var names []string
+					for _, decl := range group.Decls {
+						names = append(names, reading.Decls[decl].Name)
+					}
+					result = append(result, row.Name+" "+side.word+" "+group.Part+" "+strings.Join(names, ","))
+				}
+			}
+		}
+		return result
+	}
+	if got, want := said(own("redisClient").Fields), []string{"fd written #t1-g14 serverCron", "fd read #t1-g14 initServer", "fd read #t1-g6 processTimeEvents"}; !slices.Equal(got, want) {
+		t.Fatalf("redisClient's fields: %q, want %q", got, want)
+	}
+	if got, want := said(own("server").Fields), []string{"server.dirty written #t1-g14 serverCron", "server.dirty read #t1-g6 processTimeEvents", "server.hz written #t1-g14 serverCron"}; !slices.Equal(got, want) {
+		t.Fatalf("server's fields: %q, want %q", got, want)
+	}
+	var writes []string
+	for _, write := range own("serverCron").Writes {
+		if write.Decl == nil {
+			t.Fatalf("%s names no type", write.Path)
+		}
+		writes = append(writes, write.Path+" "+reading.Decls[*write.Decl].Name)
+	}
+	if want := []string{"server.hz redisServer", "server.dirty redisServer", "redisClient.fd redisClient"}; !slices.Equal(writes, want) {
+		t.Fatalf("serverCron writes %q, want %q", writes, want)
+	}
+}
+
 // A type with more fields than its tile shows keeps them all in the page
 // data: the tile's "… +N" row is added after the list and takes no field's
 // place. redisClient's ninth field, bulklen, had been that row.

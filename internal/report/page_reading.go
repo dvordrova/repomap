@@ -27,7 +27,9 @@ import (
 //   - Own is, for each declaration of the part, who calls it and what it
 //     calls, grouped by the part at the other end (its own part first), and
 //     the variables it uses. A type also names the functions of its part
-//     that return or take it.
+//     that return or take it. A record type and a global variable list
+//     their fields with who writes and reads each, and a function the
+//     fields it writes (page_field_uses.go).
 //
 // It is read from the part's own relation rows (Connections and
 // InternalConnections) and its members: a relation the part does not list
@@ -177,6 +179,11 @@ type pageReadingOwner struct {
 	Flow    []pageFlowCall `json:"flow,omitempty"`
 	Returns []int          `json:"returns,omitempty"`
 	Takes   []int          `json:"takes,omitempty"`
+	// Fields are a record type's fields, or a global variable's fields as
+	// the code reaches them through it, each with its writers and readers;
+	// Writes the fields a function writes.
+	Fields []pageReadingFieldUse `json:"fields,omitempty"`
+	Writes []pageReadingWrite    `json:"writes,omitempty"`
 }
 
 // pageReadingPeerDecls is one part's declarations at the other end of a
@@ -268,6 +275,8 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 	lists := map[string][]int{}
 	types := map[string]int{}
 	functions := map[string]int{}
+	variables := map[string]int{}
+	fieldsOf := map[string][]string{}
 	var fields []string
 	for _, id := range group.MemberSubjectIDs {
 		ref, known := builder.subject(targetID, id)
@@ -317,6 +326,9 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		if kind == "function" {
 			functions[id] = position
 		}
+		if kind == "variable" {
+			variables[id] = position
+		}
 	}
 	for _, id := range fields {
 		ref, _ := builder.subject(targetID, id)
@@ -328,6 +340,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		field := pageReadingField{Name: label, Type: strings.TrimSpace(strings.TrimPrefix(symbolText(ref.subject.Object, label), ":")),
 			Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, At: anchor.Text}
 		reading.Decls[owner].Fields = append(reading.Decls[owner].Fields, field)
+		fieldsOf[ref.subject.Object.OwnerID] = append(fieldsOf[ref.subject.Object.OwnerID], id)
 	}
 	slices.Sort(reading.Files)
 	for _, kind := range []string{"function", "type", "variable"} {
@@ -649,6 +662,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			}
 		}
 	}
+	builder.fieldReadings(&index, own, types, variables, functions, fieldsOf, declareSubject, partOf, ownerOf, byName)
 	slices.SortFunc(reading.Own, func(a, b pageReadingOwner) int { return cmp.Compare(a.Decl, b.Decl) })
 	if len(reading.Decls) == 0 {
 		return ""

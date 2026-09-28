@@ -133,6 +133,28 @@ function rmCallerLine(ctx,data,line){
 }
 // A heading with its count: "12 functions".
 function rmCountHeading(tag,key,count){return rmEl(tag,'map-reading-count',rmT(key,count));}
+// Who changes a field and who reads it (owner, 2026-09-29;
+// page_field_uses.go): "Written by", then "Read by", each its functions by
+// the part they stand in, in the part's box; a long side folds under its
+// count. No line numbers: a name reads its declaration.
+function rmFieldUses(ctx,data,use){
+  var box=rmEl('div','map-field-uses');
+  [['written','Written by'],['read','Read by']].forEach(function(pair){
+    var groups=use[pair[0]]||[];if(!groups.length)return;
+    var count=groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=count>12;
+    var side=rmEl(long?'details':'div','map-field-side'),head=rmEl(long?'summary':'span','map-field-side-head',rmT(pair[1]));
+    if(long)head.appendChild(rmEl('span','map-reading-peer-count',String(count)));
+    side.appendChild(head);
+    groups.forEach(function(group){
+      var line=rmEl('span','map-field-part');
+      if(group.part||group.title)line.appendChild(rmPartBox(ctx,group.part,group.title));
+      group.decls.forEach(function(at){var decl=data.decls[at];line.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl,null)));});
+      side.appendChild(line);
+    });
+    box.appendChild(side);
+  });
+  return box;
+}
 
 // A part's reading (owner, 2026-09-28): the part in its box, the model's
 // description and its files; what it is made of first, its declarations by
@@ -243,14 +265,34 @@ function rmDeclView(ctx,node,data,concept){
     view.appendChild(comment);
   }
   if(explanation&&explanation.text)view.appendChild(rmModelText('p','map-decl-explanation',explanation.text,explanation.ref));
+  // A function's writes: "Writes: server.masterhost, …", each reading the
+  // type that declares the field.
+  if((own.writes||[]).length){
+    var writes=rmEl('p','map-reading-writes');writes.appendChild(rmEl('span','map-reading-label',rmT('Writes:')));
+    own.writes.forEach(function(write,i){
+      writes.append(document.createTextNode(i?', ':' '));
+      var type=write.decl===undefined?null:data.decls[write.decl];
+      writes.appendChild(type?rmDeclName(type,write.path,ctx.goDecl(type),type.at):rmEl('span','',write.path));
+    });
+    view.appendChild(writes);
+  }
+  // A record type's fields, each with who writes and reads it; a global
+  // variable's fields as the code reaches them through it.
+  var uses={};(own.fields||[]).forEach(function(use){uses[use.name]=use;});
+  function usesRow(grid,use){if(!use)return;var row=rmEl('dd','map-field-uses-row');row.appendChild(rmFieldUses(ctx,data,use));grid.appendChild(row);}
   if(decl.fields&&decl.fields.length){
     var fields=rmEl('section','map-reading-fields');fields.appendChild(rmCountHeading('h6','{0} fields',decl.fields.length));
     var grid=rmEl('dl','map-reading-field-grid');
     decl.fields.forEach(function(field){
       var term=rmEl('dt');term.appendChild(rmDeclName({href:field.href,open:field.open,name:field.name},field.name,null,field.at));
-      grid.append(term,rmEl('dd','',field.type||''));
+      grid.append(term,rmEl('dd','',field.type||''));usesRow(grid,uses[field.name]);
     });
     fields.appendChild(grid);view.appendChild(fields);
+  }else if(decl.kind==='variable'&&(own.fields||[]).length){
+    var paths=rmEl('section','map-reading-fields');paths.appendChild(rmCountHeading('h6','{0} fields',own.fields.length));
+    var list=rmEl('dl','map-reading-field-grid');
+    own.fields.forEach(function(use){list.appendChild(rmEl('dt','map-field-path',use.name));usesRow(list,use);});
+    paths.appendChild(list);view.appendChild(paths);
   }
   [['returns','Returned by'],['takes','Taken by']].forEach(function(pair){
     if(!(own[pair[0]]||[]).length)return;

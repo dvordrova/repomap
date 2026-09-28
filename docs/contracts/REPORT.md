@@ -911,6 +911,27 @@ it; a function's flow; what else it relates to ("Calls", "Uses"), by
 part; and the variables it uses ("Uses variables"), each with a hover
 naming the part holding it.
 
+Who changes a field and who reads it (owner, 2026-09-29) is read from the
+program's exact reads and writes of record fields (`page_field_uses.go`):
+a C relation with its `field_path`, a Python typed receiver's field and a
+JS/TS declared property, whose words are then `Type.field`. A record
+type's reading gives each of its fields, under its row in the fields
+grid, "Written by" and "Read by": the functions writing and reading it by
+any path, each side grouped by the part they stand in, in the part's box,
+its own part first, then the part naming most, each by name and each
+once. A global variable's reading lists, in the source order of each
+path's first field, the fields as the code reaches them through it
+(`server.masterhost`, `server.db.expires`: a path whose root is its name,
+made by a function that reads the variable itself) with the same two
+sides. A function's reading has one line "Writes: server.masterhost, …",
+the fields it writes in the order it first writes them, each name reading
+the type that declares the field. No line numbers ("человек будет видеть
+код"); a side of more than twelve names folds under its count. Each list
+is one value of its part's reading (`fields`, `writes` on the
+declaration's own entry, names by declaration index), written once; a
+list two readings repeat is written once in `shared`. Go records no field
+access (GO), so a Go type lists none.
+
 A declaration two programs of the report hold is one declaration by
 exact identity (`groupindex.DeclarationKey`: path, line, column, kind and
 name; never a name alone; `page_shared_code.go`). Its "Called by" lists,

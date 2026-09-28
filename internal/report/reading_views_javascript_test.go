@@ -149,6 +149,34 @@ assert.equal(view.children[1].textContent,'Not called in redis-benchmark');
 `)
 }
 
+// Who changes a field and who reads it: a type's field reads "Written by"
+// and "Read by" under it, each side its functions in their part's box; a
+// global variable lists its fields as the code reaches them through it;
+// a function says "Writes:" with each field reading the type declaring it.
+// No line numbers.
+func TestAFieldsReadingNamesItsWritersAndReaders(t *testing.T) {
+	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
+	runSystemJS(t, readingViewElements+code+`
+data.decls.push(decl('redisClient','type','#own',{fields:[{name:'fd',type:'int',href:'h#fd',at:'server.c:91'},{name:'argc',type:'int',href:'h#argc',at:'server.c:92'}]}));
+const client=data.decls.length-1;
+data.own.push({decl:client,fields:[{name:'fd',written:[{part:'#own',title:'Server lifecycle and cron',decls:[0]}],read:[{part:'#own',title:'Server lifecycle and cron',decls:[1]},{part:'#main',title:'main',decls:[3]}]}]});
+data.own.push({decl:6,fields:[{name:'shared.crlf',written:[{part:'#own',title:'Server lifecycle and cron',decls:[1]}]}]});
+data.own[0].writes=[{path:'redisClient.fd',decl:client},{path:'server.hz'}];
+const type=rmDeclView(ctx,nodes['#own'],data,{name:'redisClient',source:{Href:'h#redisClient',Text:'server.c:90'}});
+const grid=type.all(c=>c.has('map-reading-field-grid'))[0];
+assert.deepEqual(grid.children.map(c=>c.className+': '+c.textContent),[
+ ': fd',': int','map-field-uses-row: Written byServer lifecycle and cronserverCron()Read byServer lifecycle and croninitServer()mainmain()',': argc',': int']);
+assert.ok(!/:\d/.test(grid.textContent),'no line numbers');
+const shared=rmDeclView(ctx,nodes['#own'],data,{name:'shared',source:{Href:'h#shared',Text:'server.c:5'}});
+assert.equal(shared.all(c=>c.has('map-reading-fields'))[0].textContent,'1 fieldsshared.crlfWritten byServer lifecycle and croninitServer()');
+const cron=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
+const writes=cron.all(c=>c.has('map-reading-writes'))[0];
+assert.equal(writes.textContent,'Writes: redisClient.fd, server.hz');
+const reads=read.length;writes.all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
+assert.deepEqual(read.slice(reads),['redisClient'],'a written field reads the type declaring it');
+`)
+}
+
 // A function's reading lists its calls as its flow, in the order Go wrote
 // them, each run into one part under that part's box, with no caption
 // repeating its name ("serverCron calls, in order:"). Helper calls wait
