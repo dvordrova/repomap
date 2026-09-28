@@ -1,5 +1,90 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Map model step 3 accepted: helpers placed by code, measured on Redis, pykrx and litestream
+
+- Scope: step C8 of `map-model/step3-plan.md`: the acceptance of step 3
+  (C1–C6 and the rule B fix), with the owner decisions of 2026-09-28 in
+  CURRENT. CURRENT's format line is corrected to the code: atlas 15 and
+  GroupsIndex 18 (it said 14 and 17); ProgramIndex 18, places graph 19 and
+  reading input 18 were right. The map model's step 6 DNS deletion is void:
+  the owner kept one DNS group with three arrows.
+- **Runs.** `.bin/repomap <repo> --no-serve --no-open` on the default
+  system response cache, never `--debug-dir` and never `cache clear` (the
+  owner's cache): the C4 cold runs (`step3/c4c6/<repo>/run-c4-cold.log`,
+  `measure-c4-cold.txt`) and the runs after the rule B fix
+  (`step3/ruleb/`), whose helper, gate and assignment answers are the saved
+  ones. Every run exit 0 with its complete artifact chain; warm reruns make
+  0 live calls. `measure.py` reads the artifacts only.
+- **Redis 1.3.6** (four programs; final run `20260928-021324`, 25 s):
+  - helper question: 654 declarations asked in 46 per-file Jev requests,
+    420 helpers; 74 declarations nothing uses are no helpers by code.
+    redis-server: 479 asked, 284 helper, 174 responsibility, 21 near-ties;
+    leads ≥0.40 400, 0.20–0.40 39, 0.10–0.20 19, <0.10 21.
+    processCommand 1.00, serverCron 1.00, syncWithMaster 0.93, rdbSave 0.92
+    and call 0.60 are responsibility; lookupCommand is a helper at 0.90
+    (redis-cli's at 0.88), symsTable at 0.91, freeMemoryIfNeeded at 0.53,
+    setGenericCommand at 0.11; genRedisInfoString is a near-tie (0.07).
+    `main` is not asked: nothing uses it.
+  - redis.c, the one file of 15 the gate splits: 18 boxes, none empty,
+    lone or only helpers. Rule A places 82 helpers with their users; rule B
+    joins staticsymbols.h, lzf_c.c and lzf_d.c (pqsort.c stays whole,
+    blocked by `_pqsort`); rule C places 1 open unit; the second pass asks
+    62 shared helpers and places 58. 19 units stay undecided: 4 second-pass
+    near-ties (redisFunctionSym, oom, createHashObject, createZsetObject),
+    13 helpers blocked by an open user and never asked, and 2 that are no
+    helpers (selectCommand, main).
+  - parts: redis-server 21 (0 lone, 0 made only of helpers, 4 areas),
+    redis-benchmark 6, redis-check-dump 3, redis-cli 5 (4 drawn). At rest the
+    system map draws 7 arrows, the redis-server map 19 (6 two-headed), its
+    runtime area 10 (7 two-headed); redis-cli 4. Headless walk without page
+    errors.
+- **pykrx** (`--target python:.:library:library`, cold 31 s): 188 asked
+  in 24 Jev requests, 50 helper, 113 responsibility, 15 none of these, 10
+  near-ties; 107 no helpers by code, among them the dispatchers
+  get_market_cap, get_index_ohlcv and get_etf_isin; the four shared
+  helpers are helpers (get_market_ticker_name 0.78,
+  get_nearest_business_day_in_a_week 0.97, market_valid_check 0.98,
+  resample_ohlcv 0.92), and datetime2string 1.00. 6 of 24 files split into
+  43 boxes; rule A places 5, the second pass asks 7 and places 6; 4 units
+  (8 declarations) undecided. 12 parts, 0 lone, 0 made only of helpers;
+  the grouping put the boxes of each of the 6 split files back into one
+  part (reported, not "fixed", as the plan said).
+- **litestream v24** (Go, cold 2m6s; 58 helper and 52 gate Jev requests
+  over six targets, 48 and 43 of them for cmd/litestream): cmd/litestream
+  293 asked, 181 helper, 102 responsibility, 10 near-ties; main.go splits
+  into 3 boxes; rule A places 20, rule B none, the second pass asks 14 and
+  places 12; 2 units (IsSQLiteDatabase, txidVar; 4 declarations)
+  undecided. 12 parts (11 drawn), 0 lone; `replica_url.go`, 24 helpers used
+  from several rows, is a part made only of helpers. The map draws 16
+  arrows at rest, 18 in all. cmd/litestream-test's main.go splits into 2
+  boxes; that target keeps 2 one-unit parts (main.go's Version command box
+  and shrink.go).
+- **Known misses and open items.**
+  - pykrx `get_market_ohlcv` is a helper (lead 0.23): its only user is
+    its file's `__main__` demo. Tied to the owner's open question "a
+    library's public API as entries (an `export` seed kind)".
+  - redis-server's `main` is undecided in the first pass (Process
+    daemonization and crash handling 0.54 against Server lifecycle and cron
+    0.46); nothing in redis.c uses it and what it uses spans boxes, so rule
+    C leaves it and redis-server has no entry part. Step 4's entry work
+    will show an off-map seed explicitly.
+  - 13 helpers of redis.c stay undecided because a user was still open
+    when the second pass asked: setDictType, zsetDictType,
+    resetServerSaveParams, zslCreateNode, zslCreate, zslFreeNode,
+    initClientMultiState, freeClientMultiState, vmMarkPageFree,
+    vmMarkPagesFree, vmFreePage, vmReadObjectFromSwap, vmGenericLoadObject.
+  - `dupClientReplyValue` (redis.c) stands in adlist.c's row, "Core data
+    structures", by rule A: its only user is `listDup`, whose call
+    `copy->dup(node->value)` (adlist.c:229) is an exact relation, a
+    `function_value` dispatch resolved through its one recorded store,
+    createClient's `listSetDupMethod` at redis.c:2451 (the same site also
+    keeps an unresolved twin). It is not an alternatives relation, so the
+    rule counts it as any exact call.
+  - pqsort.c stays whole on a near-tie (`_pqsort`, 0.49 against 0.48);
+    the grouping still draws it in the Sorting part.
+  - Not done in this step: a repomap self-run's extra helper requests and
+    the two extra cold draws per repository for margin statistics.
+
 ## 2026-09-28 — A whole file joins its users' box only when it is a file of helpers
 
 - Scope: the lead's fix to C4's rule B after the litestream run, before

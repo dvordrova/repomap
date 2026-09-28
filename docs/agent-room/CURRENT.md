@@ -136,13 +136,33 @@ never entered into or read from a repository-wide unqualified map.
   declaration the assignment leaves open goes, by code, to the box where
   every declaration of its file that calls it, is decorated by it or reads
   it went (never a hand-over), else where everything it uses went; the
-  neighbours' second question is deleted. Since 2026-09-28 Jev also asks
-  once per unit whether it is a helper (a function or variable nothing in
-  the program uses is none by code and not asked); a helper is never named
-  or assigned, code places it with its users (a whole file every
-  declaration of which, its types included, is a helper joins its users'
-  box), and only a helper its users share between
-  rows, or one nothing uses, is asked the assignment once more.
+  neighbours' second question is deleted. Since 2026-09-28 (map model
+  step 3) Jev also asks once per unit whether it is a helper, the code of a
+  responsibility or none of these, with no `exported` field: a function,
+  method, lambda or variable nothing in the program uses is none by code
+  and not asked, while types and module bodies always are; only a decided
+  helper is one. A helper is never named or assigned: code places it with
+  its users (callers, decorated units, readers; never a hand-over), a
+  whole file every declaration of which, its types included, is a helper
+  joins its users' box, and only a helper its users share between rows, or
+  one nothing uses, is asked the assignment once more in a second pass of
+  its own (a near-tie leaves it undecided). The atlas symbol and GroupsIndex
+  carry the helper mark; an arrow into helpers is quiet like
+  initialization, with its exception (a program all of whose arrows would
+  be quiet draws them); an area is purple when any part in it is the
+  domain, the entry area included; a part's tiles stand keys, then types,
+  then the rest.
+- **Owner decisions of 2026-09-28 (map model step 3):** ask once whether a
+  declaration is a helper, with the no-users rule and no `exported`; shared
+  helpers go to a second pass; arrows into helpers are quiet like
+  initialization, with its exception; an area is purple when any part in
+  it is the domain (the green entry mark only for an entry area with no
+  domain part); types stand right after keys among a part's tiles; the
+  amber DNS group stays (one DNS resolver box with three arrows, the
+  planned deletion is void); rule B reads the map model literally, a
+  library file is a file of helpers. Still open for the owner: a library's
+  public API as entries (an `export` seed kind), which would make an entry
+  never a helper by code.
 - **Map reading on the canvas (2026-09-25):** a part's description stands
   on its box under its name, a closed area's line on the area's box in the
   whole lines it leaves; a loose part beside areas is drawn at a peer's size.
@@ -279,8 +299,8 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 18, places graph 19, reading input 18, atlas 14,
-GroupsIndex 17, dependency catalog 2, extraction artifact 2, facts 3, claims 2
+This wave uses ProgramIndex 18, places graph 19, reading input 18, atlas 15,
+GroupsIndex 18, dependency catalog 2, extraction artifact 2, facts 3, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
 dependencies. Accepted extractor nodes use `u*`; arbitrary public-protocol IDs
@@ -308,7 +328,9 @@ There are no old-format readers or manually rewritten seals.
 | repomap self-run, no `--target` (2026-09-25) | `.bin/repomap .` cold, report server ready: 58.2 / 57.2 / 66.2 s over three consecutive runs (two targets), each reaching the glossary at 46–47 s; `make test`, `make vet` pass; one browser walkthrough (map, glossary page, part card connections). The remaining spread is model output: glossary draws of 37–90 terms took 7–17 s, enumerating draws (165–618 terms) 23–60 s plus a reduce pass; a design proposal that loops to its 8,192-token allowance is refused and leaves that target's map as file inventory. |
 | Decoders relaxed, ordinary self-run (2026-09-26) | `.bin/repomap .` at f819f4be on a checkout named `repomap`, own cold cache: exit 0 in 108.0 s (an enumerating glossary draw took 48 s; the previous run's took 15 s). CLI 53 parts in 8 areas, UI 5 drawn parts and 1 test-only part, no map failure, 0 data rows; the refusals left are rules that keep the report true (invented guidance refs, unsourced glossary terms, Jev core roles under the floor, the oversized symbols window). Warm rerun exit 0 in 25.1 s; `cache clear` removed 47 MB; `make test`, `make vet`, `make build` pass; Playwright walk without page errors. The 2026-09-25 map-of-parts run (36 and 61 parts in two draws) is in the journal. |
 | Redis 1.3.6, C (2026-09-27) | `c/integrate` binary: four programs from `make -n`; cold ordinary run exit 0 in 27–38 s, warm rerun 3 s with 0 live calls and a report.json identical but for `timing`; `cache clear` exit 0; `make test`, `make vet` pass. redis-server lists 97 command requests and one continuous thread. Open: the accept handler and serverCron (handed to Redis's own event loop), redis.c drawn as one "Core server" part until the role split lands, outside boxes repeated per component on the system map. |
-| Redis 1.3.6, map of parts over units (2026-09-28) | Split before grouping (steps C1–C3): cold ordinary run exit 0 in 38 s, warm rerun 6 s with 0 live calls and a report.json identical but for `timing`; `make test`, `make vet` pass. redis.c splits into 25 boxes (none empty, two of one unit), the code rule places 2 of 7 open units, 5 stay undecided; redis-server draws 29 parts in 5 areas, 3 of them one unit (Static symbols among them); no parts row refused. `cache clear` was not run on the owner's system cache. Open: the helper question and its placement rules (C4), the report's quiet helper arrows and area marks (C5, C6). |
+| Redis 1.3.6, map model step 3 (2026-09-28) | Helper question, code placement and second pass, quiet helper arrows, area marks, tile order (C4–C6 and the rule B fix), on the default system response cache: ordinary run exit 0 (the C4 cold run 33 s; the final run 25 s with one live parts request), warm rerun 6 s with 0 live calls; `make test`, `make vet` pass. The helper question asks 654 declarations of the four programs in 46 per-file Jev requests and takes 420 for helpers; redis-server: 479 asked, 284 helpers, 21 near-ties, 20 taken out as used by nothing; processCommand, serverCron, rdbSave, syncWithMaster and call are responsibility, lookupCommand a helper. redis.c splits into 18 boxes (none empty, lone or only helpers); code places 82 helpers with their users, joins staticsymbols.h, lzf_c.c and lzf_d.c to their users' boxes (pqsort.c stays whole: `_pqsort` is a near-tie) and places 1 open unit; the second pass asks 62 shared helpers and places 58; 19 units stay undecided, 13 of them helpers blocked by an open user and `main` among the rest (0.54 against 0.46), so redis-server has no entry part yet. 21 parts, 0 lone. At rest the redis-server map draws 19 arrows (6 two-headed) and its runtime area 10 (7 two-headed); headless walk without page errors. `cache clear` was not run on the owner's system cache. |
+| pykrx library target, map model step 3 (2026-09-28) | `--target python:.:library:library`, exit 0 (cold 31 s, rerun 3 s with 0 live calls): 188 declarations asked in 24 Jev requests, 50 helpers, 107 taken out as used by nothing; the other three dispatchers (`get_market_cap`, `get_index_ohlcv`, `get_etf_isin`) are out by the no-users rule. 6 of 24 files split into 43 boxes, and the grouping put each split file's boxes back into one part; 12 parts, 0 lone, 4 units (8 declarations) undecided. Known miss: `get_market_ohlcv`, used only by its file's `__main__` demo, is a helper (lead 0.23), tied to the owner's open question on a library's public API as entries. |
+| litestream v24 `cmd/litestream`, Go, map model step 3 (2026-09-28) | Ordinary run exit 0 (cold 2m6s with 58 helper and 52 gate Jev requests over six targets; after the rule B fix 65 s), warm rerun 7 s with 0 live calls. main.go splits into 3 boxes; the six storage backends stay out of its box (each `ReplicaClient` type is responsibility) and stand with file and s3 in one "Replica clients" part; 12 parts (11 drawn), 0 lone, 2 units (4 declarations) undecided; `replica_url.go` is a part made only of helpers. The map draws 16 arrows at rest, 18 in all. cmd/litestream-test keeps 2 one-unit parts (a box of its split main.go and shrink.go). |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 
