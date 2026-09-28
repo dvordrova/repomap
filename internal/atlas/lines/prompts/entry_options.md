@@ -10,7 +10,7 @@ same criteria for an option.
 
 What: Work another running program sends, where its connection or message first reaches this program, whatever the protocol.
 
-Includes: the handler each new connection another program opens gets; a handler of one route, RPC method or protocol command a client names; a table row pairing such a command with its function
+Includes: the handler each new connection another program opens gets, such as the callable the program's own event loop runs when its listening socket has a connection to accept; a handler of one route, RPC method or protocol command a client names; a table row pairing such a command with its function
 
 Not for: opening or binding the listening socket (none); reading from or writing to a connection an earlier entry accepted or this program opened (none); a command a person types (command); code run around every handler (middleware)
 
