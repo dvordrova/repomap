@@ -29,8 +29,8 @@ new description or selection requests.
   `passes_callback` and `decorates` relations name (a decorated declaration
   uses its decorator), each once with its kind and resolution, with or
   without a pattern, as local keys that never reach a provider; the calls
-  lifted for context keep only such relations that carry a pattern (pykrx
-  keeps 24 of its 88 exact decorations there). A registration's holder is the value
+  lifted for context keep only such relations that carry a pattern. A
+  registration's holder is the value
   the call acts on, as `path:line:column` of the call that produced it,
   followed back through the calls outside the repository (a route put into a
   group made from a router is held by the router). A receiver that is a
@@ -41,8 +41,7 @@ new description or selection requests.
   meeting) adds no value of its own, so a router a recursive helper hands to
   itself is still held by what its outside caller passed, while a second
   value handed round leaves it without a holder; following never recurses
-  without end (etcd's `executeTxn` and `node.Repr` pass their logger and
-  clock to themselves). Go, Python and TypeScript fixtures cover it; Clojure
+  without end. Go, Python and TypeScript fixtures cover it; Clojure
   records no parameter values, and C calls have no receiver, so neither has
   a registration to follow. Native boundary places share only exact
   source observations: path, line, column, kind, method, literal values,
@@ -319,16 +318,9 @@ without a model), and code places what they leave open:
   `ClassifierMargin`) is a helper; responsibility, none of these, a
   near-tie, an unanswered row or a refused window leave the unit named and
   assigned as before. There is no second ask, and a refusal never fails the
-  target. A helper carries the atlas symbol's `helper` mark. Measured before
-  adoption (steps 0b and 0c): redis-server's main, processCommand, call,
-  rdbSave, syncWithMaster, serverCron and its 94 registered handlers are no
-  helpers, symsTable is one at 0.85–0.91 once its item names its reader,
-  and the library files keep their marks; pykrx's library target has 49–50
-  helpers among 188 asked units, 78.9% of leads 0.40 or more. Known miss:
-  pykrx's `get_market_ohlcv`, whose only user is its file's `__main__`
-  demo, comes out helper (0.17–0.35); a library's public API as entries is
-  the owner's open question, not a rule here. The question and the gate
-  run at once.
+  target. A helper carries the atlas symbol's `helper` mark. A library's
+  public API as entries is the owner's open question, not a rule here. The
+  question and the gate run at once.
 - *Candidates* of the gate are the unit-bearing files of the target that
   are neither test nor generated code and hold at least two units (one unit
   cannot go in two boxes). No size, count or threshold decides it. A file
@@ -346,20 +338,8 @@ without a model), and code places what they leave open:
   output and helpers of one responsibility are one box even when each has
   names of its own, and a helper or two is never a group. Only "several
   boxes" leading by `ClassifierMargin` goes on; a file nearer the cut stays
-  whole. Measured over every candidate of redis-1.3.6, pykrx, litestream
-  and repomap (377 files, 2 draws, then 5 draws of the 13 nearest the cut):
-  redis.c 0.97–0.98, pykrx's stock_api.py 0.74–0.79, litestream's main.go
-  0.69–0.76; redis-cli.c 0.15–0.21, redis-check-dump.c 0.22–0.30,
-  redis-benchmark.c 0.38–0.48. 13 files split in every draw; two pykrx
-  query files (`etx/wrap.py`, `bond/core.py`, 0.49–0.60) and repomap's
-  `llm/api.go` (0.46–0.55) still land either side of the cut. The first criteria, which counted groups "with their own vocabulary
-  of names" as several boxes, had shown no flip on the 11 files first
-  measured, but on the whole set split redis-cli.c, redis-benchmark.c and
-  repomap's render.go, table.go and api.go in every draw (redis-cli.c's
-  `main` then became a box of its own) and flipped redis-check-dump.c.
-  Known limit: a Go file's methods on a type declared in another file
-  follow that type and are not in the item, so repomap's design.go shows
-  only its types and helpers and still goes in several boxes (0.86–0.90).
+  whole. Known limit: a Go file's methods on a type declared in another
+  file follow that type and are not in the item.
 - *The naming* (`atlas_role_boxes`, DeepSeek, `prompts/design_boxes.md`
   after `role_map.md`) names the boxes the file's code goes in:
   `{"boxes":[{"name","holds"}]}` over every unit that is no helper, whole
@@ -385,7 +365,7 @@ without a model), and code places what they leave open:
   `declaration` is its name, kind, signature, methods, same-file calls and
   callers, `calls_elsewhere` ("path:name") and `registered`: the words of
   each registration that hands the unit or one of its followers over (a
-  command table row's `redisCommand get`, a route's `GET /users/:id`),
+  command table row's `kvCommand get`, a route's `GET /users/:id`),
   each once. Each box is an option whose criteria are its `holds`. The
   task says that a box which receives, looks up or runs every command,
   request or job holds that machinery, and one command's code goes in the
@@ -404,11 +384,10 @@ without a model), and code places what they leave open:
   function value a hand-over stored (ProgramIndex `function_value`
   dispatch, exact when one store reaches it) runs the function without
   being its user, so a callback never follows the code that runs what was
-  stored. Redis's adlist.c `listDup` calls `copy->dup(...)`, which
-  createClient's `listSetDupMethod` stored `dupClientReplyValue` in; the C
-  fixture's loop.c `loopMain` calls the `beforeSleep` kvd.c's `main`
-  stored, and kvd.c's `processCommand` the `preloadKey` its table row
-  holds: each stays with its own file's boxes (`TestCumulativeCMapOfParts`).
+  stored. The C fixture's loop.c `loopMain` calls the `beforeSleep` kvd.c's
+  `main` stored, and kvd.c's `processCommand` the `preloadKey` its table
+  row holds: each stays with its own file's boxes
+  (`TestCumulativeCMapOfParts`).
   The call still counts as a use for the helper question, whose item lists
   it in `called_by`. A *row* is a box of a split file or a whole file's row. Three
   rules run together to a fixed point, since what one places may settle
@@ -477,45 +456,14 @@ order: only an edited file's own requests change, and a call into a file
 from elsewhere changes only that file's naming (and so, when the boxes
 change, its assignment) and the helper questions of the files whose items
 name the call.
-Measured on the saved V0WFR boxes (3 identical draws, 118 Jev calls in all
-with the gate, $0.067): redis.c 8–11 of 342 units undecided, 1 decided
-choice flipped; pykrx 2–4 of 87, litestream 1–2 of 46, none flipped. The
-map's rule that a helper goes in the box it serves most is inert in the
+The map's rule that a helper goes in the box it serves most is inert in the
 assignment: a helper-only box's `holds` names its helper and Jev puts it
-there (redis "Logging" = redisLog, litestream's value-parsing and flag
-boxes); no code rule empties such a box.
+there; no code rule empties such a box.
 
-The registrations and the sentence on the box that runs every command were
-measured before adoption (2026-09-27) on the saved assignment requests of
-the owner-proxy's redis.c (339 units, 20 boxes) and pykrx's 7 split files
-(187 units), 3 draws each. Before, 12 redis.c units landed differently
-between draws, setCommand among them (String commands 0.36 against Set
-commands 0.34), and getCommand and appendCommand went in Command dispatch
-(getCommand at 0.94–0.96). After, no unit landed differently; getCommand,
-setCommand, appendCommand and echoCommand went in String commands and
-pingCommand in Server administration commands in every draw. The task's
-sentence alone or the registrations alone left getCommand in Command
-dispatch. A unit the assignment decides is not asked again:
-getGenericCommand, called only by string commands, stays in Command
-dispatch (0.66–0.67 against String commands at 0.16–0.17).
+A unit the assignment decides is not asked again.
 
-Where pingCommand goes depends on the boxes the naming gives redis.c
-(measured 2026-09-27, 3 draws per task on each saved naming). With a box for
-server administration commands (the owner-proxy's naming) it goes there.
-Three fresh namings had no box for connection or server commands, and on
-each this task puts pingCommand in String commands. On one of them, whose
-Client connection handling box also holds command dispatch, the task
-without the sentence put it in Client connection handling in 2 of 3 draws
-(0.42–0.46, the third a near-tie); the sentence moves it to String commands
-(0.46–0.58, 6 of 6 draws). On another, the task without the sentence put it
-in String commands too (0.45–0.56). A wording that keeps a command whose work
-is the connection with the box that runs commands put pingCommand back in
-Client connection handling there, but left it undecided on the owner-proxy's
-naming, so it was not adopted: PING's box is the naming's to give. On the
-naming whose two boxes both claim command dispatch, processCommand is a
-near-tie between them in 5 of 6 draws (the task without the sentence chose
-Client connection handling at 0.69–0.76). On litestream's two split files
-(54 units, no registration in them), no decided unit landed differently.
+The task has no wording that keeps a command whose work is the connection
+with the box that runs commands: that command's box is the naming's to give.
 
 Each language's map-of-parts fixture test builds its graph with the fact
 layer, as an ordinary run does, and its split check (`partstest.CheckSplit`)
@@ -573,9 +521,9 @@ split file:
   every other part stands in the middle, or with the dependencies when it
   only calls out. The atlas side stays the reading's column fact: a box
   that takes requests or listens stands "in" there without being the
-  program's entry. A seed no part holds (Redis's `main`, a near-tie of the
-  parts answer) makes no entry part; GroupsIndex keeps it with its off-map
-  reason (`Entries`), and the code never picks a part for it.
+  program's entry. A seed no part holds makes no entry part; GroupsIndex
+  keeps it with its off-map reason (`Entries`), and the code never picks a
+  part for it.
 - A boundary takes its subject's part. An input that hands a declaration
   over (a command table row, a route) stands only in that declaration's
   part: when the declaration is undecided, or in a file off the map, the
@@ -613,9 +561,9 @@ there (PROGRAM_INDEX); its types, fields and variables run nothing of their
 own and follow it. It keeps its membership in the atlas, is not described,
 not grouped into areas, not asked for a core role or keys, and leaves that
 program's canvas with its arrows; GroupsIndex lists its declarations off the
-map by file with its name (reason `unreachable`, REPORT). redis-cli links
-`adlist.c` and never calls one of its thirteen functions, so its "Linked
-list" left its map. A part holding one declaration the program may run
+map by file with its name (reason `unreachable`, REPORT). kvcli links
+`loop.c` and never calls one of its functions, so its part of `loop.c`
+leaves its map. A part holding one declaration the program may run
 stays; a part of types alone proves nothing and stays. Only the C adapter
 proves `unreachable`, so no other language's part leaves a map this way (GO,
 PYTHON, JSTS, CLOJURE). Accepted parts and areas are born as short `p*` and
@@ -634,9 +582,7 @@ after its parts and placement. Core, keys, arrows and orientation read the
 part lines. Descriptions, like the parts names, are asked in every model
 run, with or without `--captions`. Each `atlas_core` row and each
 `atlas_keys` context carries `declarations`: the names of every declaration
-the part holds, in ID order, never cut to a count (the first twelve were
-sent until 2026-09-26, while the keys prompt called the list everything the
-part holds).
+the part holds, in ID order, never cut to a count.
 
 **Areas.** When a target has at least three drawn parts that are not test
 code, one `atlas_areas` request (`prompts/design_areas.md`) lists them with
@@ -673,7 +619,7 @@ An entry is named the same way whatever its protocol (owner, 2026-09-27:
 gRPC, UDP, TCP and WebSocket are assembled at the surface from one thing).
 Its registration's `words` are what the code wrote there, as written: the call
 word, every literal in order and the address its mount prefixes compose
-(`GET` and `/users/:id` of `e.GET("/users/:id", h)`; `redisCommand` and `get`
+(`GET` and `/users/:id` of `e.GET("/users/:id", h)`; `kvCommand` and `get`
 of a command table's `{"get", getCommand, ...}` row). The incoming boundaries
 table asks each entry `name`, a sequence of closed `w*` refs over those words;
 code restores the chosen words verbatim, joined by one space in the order the
@@ -693,11 +639,8 @@ in source order: the call written first (file, line, column); among the
 functions one call reaches through a field or a name, the one the code stored
 there first (a witness naming the function by identity, places `stores`: the
 command table's first row); then the one declared first. The alphabet is not
-neutral: it favours names that begin early, and Redis's dispatcher read
-"calls String commands: appendCommand, decrCommand, decrbyCommand", hiding
-get and set behind `append`. Declaration order alone still hid `get` when the
-part held `ping` and `echo`, which redis.c defines first; the table's rows are
-the author's own order of the commands (`get`, `set`, `setnx`). Source order
+neutral: it favours names that begin early. The table's rows are the
+author's own order of the commands (kvd.c's `get`, `set`, `del`). Source order
 is the order a reader meets the code in and says nothing about spelling; the
 arrow row's witnesses are ranked the same way. A call through a function
 value writes a field or a variable (`proc`); its witness names the function
@@ -707,9 +650,9 @@ the field.
 A part's arrows are its declarations' own relations (GroupsIndex
 `native_*` connections). One target is exact; several alternatives are
 possible, drawn dashed. A declaration's read of a variable or table is one
-of them (`native_reads`): Redis's Introspection and debugging part reads
-Debug symbols through `findFuncName reads symsTable`, and each command part
-reads the parts holding `server` and `shared`. A call left unresolved because its field or name was
+of them (`native_reads`): the C fixture's part holding kvd.c's
+`printSymbols` reads staticsyms.h's part through `printSymbols reads
+symsTable`. A call left unresolved because its field or name was
 stored under a branch draws the same possible arrow to each declaration its
 store witnesses name by identity (C `fe->rfileProc`, Go `readyLoop.read`,
 Python `handler`); the relation stays unresolved and its witnesses stay
@@ -717,11 +660,8 @@ witnesses. A call whose stores name nothing draws nothing. The reading saw
 no call there, so such a connection never borrows the sentence the pair's
 exact calls were given: it takes the fallback over the names its stores
 wrote, most often named first, each once, a tie in the same source order of
-calls, stores and declarations ("Event loop calls Client connection
-handling: readQueryFromClient, acceptHandler, sendReplyToClient.": the
-`rfileProc` call comes before the `wfileProc` one, and redis.c stores
-`readQueryFromClient` before `acceptHandler`),
-and a part's card shows that sentence beside the pair's own.
+calls, stores and declarations, and a part's card shows that sentence
+beside the pair's own.
 
 The current operation table asks only `self` or `none` for this declaration. Immediate caller declarations and distinct sites are evidence, never an assignment destination. `none` transfers nothing. Only a complete `self` decision publishes the declaration’s activation, name and description. A real independently launched notification/metrics consumer may be `self` while its AddLogHook/PreRun/constructor/lifespan launcher is `none`. Synchronous helpers within the same responsibility are not separate work. Listener blocking alone is not a worker. Cron, persistent consumers and source-supported one-shot delayed work remain legitimate. Registration, callback and control evidence are interpreted by the model; projection never invents a semantic promotion. Native HTTP registration refs restore their original path and method verbatim; free text does not replace a known route. A `label` row whose `name` comes back empty, null or missing keeps the model's own `description` as its label (first sentence, at most 60 runes) and records `name_from: description`; an empty description still refuses the row.
 
@@ -766,10 +706,9 @@ remain model decisions with `self`/`none`, not local middleware classification.
   outgoing boundaries, its listener, its registrations, the configuration it
   reads and the code it runs are not that program's communication or inputs,
   and a destination chain through it is not that program's either. The
-  shared `anet.c` gives redis-server the listener `anetTcpServer` and
-  `anetAccept`; redis-cli and redis-benchmark, which link it and never reach
-  them, list them under their component's "Not reachable from the
-  entrypoints" (REPORT), where a reader finds what is not shown. Facts do
+  shared `net.c` gives kvd the listener `netListen`; kvcli, which links it
+  and never reaches it, lists it under its component's "Not reachable from
+  the entrypoints" (REPORT), where a reader finds what is not shown. Facts do
   the same per target: a registration, SQL statement, configuration read or
   code-running call in code a target never runs is the fact of the targets
   that run it. Every other adapter proves nothing, so an unresolved Go
@@ -786,12 +725,11 @@ its package declares it), `usage` (the first line that calls it), its
 A symbol is a symbol outside the repository, or, for the rows of a
 repository table (owner decision D1), the field those rows store a callable
 in, named by the file declaring the row's record type, the type and the
-field (`redis.c.redisCommand.proc`); its usage is its first row.
+field (`kvd.h.kvCommand.proc`); its usage is its first row.
 `hands_callable` holds only when a registration handed a callable over, or
 a value the repository built (`Register("k6/x/dns", new(DNS))`, whose
 extension entry exists only through `binds`): a registration that hands
-nothing names the declaration making the call, and `fopen("/dev/null")` was
-once asked what a callable becomes and answered a request handler. The
+nothing names the declaration making the call. The
 symbols handed a callable and the others are two tables asked at once.
 
 `state.task` (`prompts/api.md`) says what the map wants: a program's entries
@@ -837,35 +775,8 @@ them flipped between runs (owner decision 2026-09-26). A decision without a
 reader is not asked and keeps no dormant field. When a reader for one
 arrives, it returns as its own question with an explicit `none` option.
 
-Measured 2026-09-27 on the saved requests of redis 1.3.6 (129 symbols),
-xk6-dns (47) and microblog (117), 3 draws each, as wrong answers / symbols
-whose answer changed between draws. The v5 text-model table, whose cells
-were optional notes with no answer for "talks to nothing" and none that
-fitted `accept`: 7/1, 18/12 and 9/2 (inet_aton `talks sdk` 3 of 3, accept
-`client_request` 3 of 3; five saved v5 Redis runs had given inet_aton sdk
-in 3, bind `publishes` in 2 and accept `client_request` in 2). The same
-options and criteria written into the text model's prompt: 2/1 (`select`
-serves in 2 of 3; one earlier wording, 3 of 3), 0/0 and 12/0. Jev with
-them: 0/0, 3/2 and 6/2, and 3 and 3 answers explicitly unanswered.
-inet_aton, inet_ntoa, accept, listen, bind, connect, gethostbyname, fopen,
-open, sigaction, pthread_create, k6's `modules.Register`, Flask's `route`,
-`requests.post`, miekg's `ExchangeContext`, k6's `DialContext` and
-`LookupHost` were right in every Jev draw of four rounds of wording. What
-Jev still misses is named by chained Python names (`requests.post.json` as
-`client_request`, `alembic.op.f` as `db`), k6's `metrics.PushIfNotDone`,
-which sends a sample on the host's channel (never `none` in 12 Jev draws
-over four wordings: `sdk` at about 0.4 against `none` at about 0.2 in 8,
-unanswered in 4; the text table had said `queue_producer` in 2 of 3), so an
-xk6-dns map can show a "k6 metrics" outside system, and the construction of
-a `net.Resolver`, whose usage line is a field line of its literal
-(`client_request` or unanswered). Two task wordings that weigh `declared`
-first, one adding that a value handed on through a channel stays in the
-process, left PushIfNotDone `sdk` 3 of 3 or unanswered 3 of 3 and made more
-microblog answers change between draws (3 draws each, 2026-09-27). Flask's `errorhandler` is now `none` or unanswered
-where the text model said `request`: `request` and `none` both stay near
-0.4. Building a SQLAlchemy `select` is `db`, the program's question to its
-database. The 2026-09-25 probe that kept this table on the text model asked
-Jev optional yes-only columns without criteria.
+Building a SQLAlchemy `select` is `db`, the program's question to its
+database.
 
 The roles make the boundaries; no call site is asked whether it is one. A
 registration handing a callable to a `binds` symbol is that entry, with the
@@ -918,8 +829,7 @@ ordinary run did.
   only; a handler off the map enters its first parts itself.
 - **Hand-overs.** A declaration of the reach that runs (not one only read)
   handing another input's handler over registers that input
-  (`HandsOver`/`HandedOverBy`): Redis's `spawnIOThread`, reached by twelve
-  inputs, registers `IOThreadEntryPoint`. A table read registers nothing.
+  (`HandsOver`/`HandedOverBy`). A table read registers nothing.
 - **Dispatch sites** are the relations resolved as alternatives with at least
   two targets, in source order. A site names the inputs whose handler is one
   of its alternatives and, only when it dispatches one, the inputs whose reach
@@ -948,10 +858,9 @@ name, with or without `--captions` (below). A prompt whose table keeps some of
 its cells in a request describes every cell and leaves which ones to write to
 `fill`: the symbols, types, targets and joints prompts ask for "the cells
 advertised by fill", so a caption-less types request of an English name asks
-`line` alone and the model writes no `alias` (it wrote one on 82 of 82 rows,
-all discarded, while the prompt demanded two cells).
+`line` alone and the model writes no `alias`.
 
-A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell (27 Freqtrade rows were refused for it). Fixed native boundaries request explanation rather than pointless existence/kind choices. A fixed incoming entry additionally requests its `name` among its `words` (Operation ownership), with or without `--captions`, and shows no `method` field; its rows share windows without an owner, since its handler's calls near a registration elsewhere say nothing about its name (one window per handler cost Redis 98 requests for 97 names). Without captions a fixed row with no decision to make is not sent and has no line: `Boundary.Line` holds only a line the model wrote, and the fact's given text is only the joint request's context. An entry's and an outgoing fact's summary is therefore empty unless the model explained it (the reading and Find name the handler; an outgoing row names its call or its kind). Each fixed cell fails alone: a refused line leaves no line and a refused name leaves the handler's name. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the shared known-systems list (`internal/atlas/destinations`) annotated with the target's dependencies, with `other: ` for a system outside it; an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
+A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell. Fixed native boundaries request explanation rather than pointless existence/kind choices. A fixed incoming entry additionally requests its `name` among its `words` (Operation ownership), with or without `--captions`, and shows no `method` field; its rows share windows without an owner, since its handler's calls near a registration elsewhere say nothing about its name. Without captions a fixed row with no decision to make is not sent and has no line: `Boundary.Line` holds only a line the model wrote, and the fact's given text is only the joint request's context. An entry's and an outgoing fact's summary is therefore empty unless the model explained it (the reading and Find name the handler; an outgoing row names its call or its kind). Each fixed cell fails alone: a refused line leaves no line and a refused name leaves the handler's name. Fixed outgoing facts additionally request a destination and closed original address ref; their native kind and dispatch basis cannot be changed by model cells. Refused prose preserves the native fact. Candidate runtime communication still requires the existing accepted semantic decision. A selected observation must establish the external mechanism or explicit remote configuration; internal delegation is evidence of delegation. Boundary source context carries each original call site to its owning declaration, including safe receiver/source arguments, native API and same-line columns. Calls remain individually anchored; grouping by a shared name or counting Do sites cannot establish the number of systems. The address catalogue lists only literals that can be addresses (no format templates, nothing from formatting, logging, time or string packages) and is sent only for outgoing rows whose address the code does not know; `destination` is a closed choice from the shared known-systems list (`internal/atlas/destinations`) annotated with the target's dependencies, with `other: ` for a system outside it; an owner's calls near the line and its source context are sent once per window and rows reference them. A native outbound fact without a column claims every selected call on its path and line, so the same call is not reviewed a second time as a candidate; a fact with a known column claims only that call.
 
 Boundary v5 names the candidate basis `dispatch` or `remote_client_instance`.
 The latter requires this call itself to create or configure the actual remote
@@ -1215,10 +1124,8 @@ including a selection against an explicit empty list, is refused. Only explicit
 provider context/output/response resource refusals authorize lossless partition
 of complete evidence rows; there is no ordinary row-count or 64KiB planning cap
 for this cube. A window asks at most eight questions over its complete rows:
-the saved Freqtrade window that asked 64 questions over 460 code rows (4,661
-anchors) got four back, the same rows with eight questions got eight, and the
-same 64 questions over document rows got 64 — density of decisions per response,
-not key names, loses answers. Windows over the same rows share a request prefix;
+density of decisions per response, not key names, loses answers. Windows over
+the same rows share a request prefix;
 the first of them runs before its siblings so the provider's prefix cache serves
 the rest. A question the model left out, or named only with missing or null
 selections, is asked once more over the same rows with the other omitted
@@ -1241,8 +1148,7 @@ callee IDs, and collapse exact local callees into `local_calls`. Calls whose
 rendered evidence is identical apart from their line are one entry whose
 `lines` list every site in call order, a line twice when it holds two such
 calls; expanding each entry over its lines gives back every call with its own
-evidence. The `canvas.spec.mjs` selection row, refused for its size on every
-run, falls from 550 entries and 70,906 B of calls to 245 entries and 31,046 B.
+evidence.
 Boundary rows render origin trees two levels deep without anchors. Every
 rendered evidence value is defined in the evidence vocabulary attached to the
 symbol prompts; a contract test fails on a value the prompt does not name.
@@ -1389,7 +1295,7 @@ the former 2 MiB limit and its size-triggered claim/member/fact removal are gone
 The stage caches on its stage identity, prompt version, and input digests through
 the shared executor.
 
-The orientation request includes source-backed member evidence, not only accepted captions. A group member (`n4` of `t1`) is the declaration place whose object is qualified by its program (`t1.n4`, atlas `ScopedObjectID`); looked up by the bare member ID, no member found its place and every request went without member evidence, and Redis's main flow put `loadServerConfig` before the `initServerConfig` main calls first. A member's calls are listed in the order they are written in it, so a bounded list keeps the first calls written, not the first of the graph's order (redis-server `main`'s `fprintf`, `exit` and `time`). Original declaration kinds, calls, source arguments and owned fields can qualify member behavior. A launcher/router, implementation mechanism, callback and remote destination remain distinct roles. Parent heading context labels the scope of author claims. No missing source relation is supplied by a prose explanation.
+The orientation request includes source-backed member evidence, not only accepted captions. A group member (`n4` of `t1`) is the declaration place whose object is qualified by its program (`t1.n4`, atlas `ScopedObjectID`). A member's calls are listed in the order they are written in it, so a bounded list keeps the first calls written, not the first of the graph's order. Original declaration kinds, calls, source arguments and owned fields can qualify member behavior. A launcher/router, implementation mechanism, callback and remote destination remain distinct roles. Parent heading context labels the scope of author claims. No missing source relation is supplied by a prose explanation.
 A launch fact supports an entry point, not a complete invocation. Run recipes
 check supplied member observations and author instructions for required
 arguments and prerequisites; known required values may use explicit placeholders.

@@ -163,7 +163,8 @@ never entered into or read from a repository-wide unqualified map.
   them, hand-overs from running code, the phases (runtime is any input's
   reach, init what only the seeds reach) and which arrows are quiet; the
   report walks no code. A pinned input draws every call into a part from a
-  part reached earlier and counts the rest (depth layering, accepted); its
+  part reached earlier and counts the rest (depth layering, a lead decision
+  awaiting the owner, below); its
   reading says where it is dispatched from and that how a request for it
   gets to the site is not established, and apart what its handler itself
   calls there; the site's own reading lists the inputs reaching it. An
@@ -178,17 +179,41 @@ never entered into or read from a repository-wide unqualified map.
   The second pass repeats rounds until no waiting helper qualifies; a
   helper no round could ask is off the map as `blocked`, apart from
   `undecided`.
-- **Owner decisions of 2026-09-28 (map model step 3):** ask once whether a
-  declaration is a helper, with the no-users rule and no `exported`; shared
-  helpers go to a second pass; arrows into helpers are quiet like
-  initialization, with its exception; an area is purple when any part in
-  it is the domain (the green entry mark only for an entry area with no
-  domain part); types stand right after keys among a part's tiles; the
-  amber DNS group stays (one DNS resolver box with three arrows, the
-  planned deletion is void); rule B reads the map model literally, a
-  library file is a file of helpers. Still open for the owner: a library's
-  public API as entries (an `export` seed kind), which would make an entry
-  never a helper by code.
+- **Owner decisions of 2026-09-27/28 (map model step 3)**, what the owner
+  said: ask once whether a declaration is a helper; shared helpers go to a
+  second pass (his "a"); arrows into helpers are quiet like
+  initialization; an area is purple when any part inside it is the domain;
+  types stand right after keys among a part's tiles; the amber DNS group
+  stays (one DNS resolver box with three arrows, the planned deletion is
+  void); files are split into role boxes before the units are grouped into
+  parts; no utils part. Still open for the owner: a library's public API
+  as entries (an `export` seed kind), which would make an entry never a
+  helper by code.
+- **Lead decisions awaiting the owner's review (2026-09-28)**, taken by
+  default and shipped, each his to keep or undo:
+  - rule B read literally as "a file of helpers": a whole file joins its
+    users' box only when every unit it declares, its types included, is a
+    decided helper (Redis: staticsymbols.h, lzf_c.c and lzf_d.c join;
+    pqsort.c stays whole);
+  - the all-quiet exception: when every arrow of a program would be quiet,
+    its calls into helpers are drawn, so quieting never empties a map;
+  - depth layering in an input's path: every call into a part from a part
+    reached earlier is drawn and listed, the others counted;
+  - the "init" label covers the launch and the main loop (aeMain,
+    serverCron), everything only the seeds reach, not startup alone;
+  - a seed no part holds is named in the component's reading column (and
+    its "Not on the map" list) with its off-map reason, not on the canvas;
+  - S4-6 deleted GroupsIndex's chains and operation types, which nothing
+    read after step 4;
+  - C4 (the helper question) shipped despite its one known miss, pykrx's
+    `get_market_ohlcv` (its only user its file's `__main__` demo) answered
+    helper;
+  - the no-users rule with `recordedUses`: a declaration nothing uses is
+    none by code and not asked only for a kind whose uses its adapter
+    records; other kinds are asked like types;
+  - u5's depth-1 fold: an input's path opens the parts its handler calls
+    directly and folds every deeper part under "Reaches {n} more parts
+    deeper" (for GET the open part holds getGenericCommand alone).
 - **Map reading on the canvas (2026-09-25):** a part's description stands
   on its box under its name, a closed area's line on the area's box in the
   whole lines it leaves; a loose part beside areas is drawn at a peer's size.

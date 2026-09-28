@@ -1,5 +1,895 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Moved from REPORT and READING: run measurements and Redis narratives (f4)
+
+- **CURRENT.** The "Owner decisions of 2026-09-28" bullet is split: the
+  owner decisions keep what the owner said (the helper question asked
+  once, shared helpers in a second pass, helper arrows quiet like init, an
+  area purple when any part inside is the domain, types after keys, the
+  DNS group stays, split before grouping, no utils part); a new "Lead
+  decisions awaiting the owner's review" lists rule B read as "a file of
+  helpers", the all-quiet exception, depth layering in input paths (step
+  4's "accepted" now says so), the "init" label covering launch and the
+  main loop, an off-map seed named in the column, S4-6 deleting chains,
+  C4 shipped despite the one pykrx miss, the no-users rule with
+  `recordedUses` and u5's depth-1 fold.
+- **Contracts.** Redis mentions (case-insensitive lines): REPORT 49 → 0,
+  READING 31 → 1. The one left is READING's "The probe's six saved
+  grouping answers over units (Redis and pykrx, three draws each,
+  `testdata/units-replay`)": it names the checked-in replay files
+  (`internal/atlas/reading/testdata/units-replay/redis-d{1,2,3}.json`) that
+  `TestSavedUnitsAnswersKeepEveryUnit` requires, not a run. Every sentence
+  of the two contracts with "must" or "never" at 170d212f still stands,
+  word for word or with only a run's narrative taken out of it (a diff
+  read of the 14 that changed: 6 in REPORT, 8 in READING). The
+  input-reading paragraph merged with this day's u2, u5 and u7 rules; its
+  example "Dispatched from call · one of 94 handlers" became kvd's
+  "Dispatched from processCommand · one of 6 handlers" (kvd.c's
+  `cmd->proc`, six command handlers). "HEAD" in the quotes below is
+  e8b4361c, where they were taken from.
+- `make test`: PASS. `make vet`: PASS (documentation only; no UI change).
+- `REPORT.md`, § External communication and data (77d821aa): the
+  Entrypoints link's history moved; its rule kept.
+
+  > It had landed on the inputs, where a reader looking for the program's start found none.
+
+- `docs/contracts/REPORT.md` and `docs/contracts/READING.md` state rules.
+  The run measurements, pixel observations from runs, histories of how the
+  page used to look and the narratives of analysed repositories (Redis 1.3.6
+  above all; also pykrx, litestream, Freqtrade, microblog, etcd, xk6-dns
+  and the repomap self-run) that had gathered in them are kept here
+  verbatim, one bullet per passage with its section. The rules they
+  illustrated stay in the contracts with the same meaning. Where a Redis
+  example was replaced, the new one comes from the C fixture
+  (`testdata/repositories/c`: kvd, kvcli, `net.c`, `loop.c`,
+  `staticsyms.h`) and was checked against its tests
+  (`internal/contracttest/c_*_test.go`, `map_of_parts_test.go`,
+  `internal/run/repository_target_c_test.go`), or from the UI vocabulary's
+  own placeholders (`internal/report/ui_vocabulary.go`).
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 52–54):
+  Redis example replaced by kvcli's part of `loop.c` (the C fixture's client
+  links the event loop and never calls it).
+
+  > is not a group, draws no arrow and leaves that program's canvas; redis-cli's
+  > "Linked list", whose thirteen adlist functions redis-cli links and never
+  > calls, is not drawn.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 126–129):
+  location-row example `redis-server` replaced by `kvd`; the history of the
+  heading and the window sizes it was measured at moved.
+
+  > row ("Inputs · redis-server (executable)"). Headed with its component's
+  > name, Redis's collection had read as a second redis-server beside the
+  > programs. It stands attached to its component, in the layer next to it
+  > with its arrow straight into it (measured at 1440×900 and 1280×800).
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 139–144):
+  Redis's opened-collection history and tile counts moved; the rules on
+  loose inputs and tile kinds kept.
+
+  > areas open to their parts. Opened with the collection, Redis's 95 inputs
+  > had stood as a wall of 5px tiles under 5px group names. An input with no owner stays loose after the groups, and a collection
+  > whose inputs share one part keeps them loose. A tile names its kind only
+  > when it is not the collection's most common kind: "Request" on 97 of Redis's
+  > 98 tiles repeated the collection's own summary. The groups are display
+  > containment, not architectural areas; they add no relation.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 157–162):
+  Redis's shared "TCP endpoint" history and the three "DNS resolver" frames
+  moved; the rule now says the grouped frames stand side by side.
+
+  > equal destination text proves no identity. One "TCP endpoint" box had taken
+  > arrows from all three Redis programs, though for redis-cli that endpoint is
+  > redis-server and for redis-server its master. Frames of different
+  > components that name the same destination stand together in one display
+  > group, an amber frame around them in the outer layout, so the three "DNS
+  > resolver" frames stand side by side instead of scattered. The group is no
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 168–169):
+  Redis's repeated "DNS resolver" headings (history) moved.
+
+  > zoom marks, one per program, each hit by its own program's arrow. Three
+  > "DNS resolver" headings side by side had said one thing three times.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 177–182):
+  where Redis's arrows ran and the repeated tile titles (history) moved.
+
+  > tiles when arrows run down and after them when they run right; above the
+  > tiles, Redis's three arrows ran through it. Like closed summaries it is
+  > laid out at the whole-map camera and zooms with the map; once the tiles
+  > open it reads at their open frames' title size and the open tiles stay
+  > plain under it, so the destination is named once in every state. Titled
+  > one by one, Redis's three open DNS tiles said "DNS resolver" three times.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 187–188):
+  the entered-tile history moved.
+
+  > the scale its calls are drawn at: framed alone, an entered tile had read
+  > only "gethostbyname" with the heading below the camera. The tiles stay
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 192–196):
+  Redis's DNS tile sizes and mark ratios at two window sizes (measurements)
+  moved.
+
+  > with it, so it opens with no room of its own below them. Stretched to the
+  > mark's proportion and grown to its 50 by 44 pixels, each of Redis's DNS
+  > tiles opened half empty below its one call; kept at its calls' own box
+  > without growing, its mark was drawn at 0.64 of the size of the TCP
+  > endpoint's beside it on a 1440×900 first screen and at 0.41 on 1280×720.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 212–214):
+  the earlier cut entry arrow (history) moved.
+
+  > shaft; cut from a 14px square, its shaft ran along the border in the
+  > border's colour and only a small head read. The legend draws the same
+  > arrow.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 221–229):
+  Redis's Networking/Core infrastructure history and the 17-of-29 count
+  moved; `redis-server's main` generalised to "a `main` undecided between
+  two parts".
+
+  > requests or listen do not make their area the entry: Networking's
+  > listen/bind boundary had drawn Redis's "Core infrastructure" as a second
+  > entry area beside Server runtime. The same holds for a part: only the
+  > part holding the program's launch point has the entry mark; a part that
+  > only takes requests or listens has none, and its inputs' blue arrows say
+  > where the outside calls in (17 of redis-server's 29 parts had been
+  > green). The component reference's "Input responsibilities" list holds
+  > only that part. A launch point
+  > no part holds (redis-server's `main`, undecided between two parts) makes
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 246–248):
+  the grey-veil history moved.
+
+  > one is. No veil or tile fill marks the pointed thing: a grey veil on the
+  > pointed area's parts and a grey fill on the pointed declaration had made
+  > them look deader than their outlined neighbours.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 279–280):
+  the Data type commands history moved.
+
+  > arrows crossing its border darken. Lifted to its area, a part pointed at
+  > in Data type commands had lit all of the area's arrows.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 288–290):
+  Redis's GET arrow counts (20, 14, 43) moved.
+
+  > ordinary arrows. On Redis GET draws 20 arrows where its single shortest
+  > witnesses drew 14; the neighbourhood of every call among its parts, which
+  > this rejects, would be 43. GroupsIndex marks an arrow quiet
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 297–298):
+  Redis's benchmark, client and dump checker history moved.
+
+  > its reply helpers), and only in a target that serves something: Redis's
+  > benchmark, client and dump checker had drawn none of their arrows. One
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 320–323):
+  the earlier key glyph colours (history) moved.
+
+  > in the tiles' own purple and grey head. Its glyphs had been painted in
+  > the marks' dark colours, so Redis's pale green and purple cards matched
+  > nothing in it, and no line was keyed; its tiles' purple dashed links
+  > went unexplained. There is no folded prose legend
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 334–341):
+  Redis's GET camera narrative moved.
+
+  > outlined in the dark of the path's arrows. Framing its tile had shown GET
+  > as one of 98 tiles with no arrow in sight, and centring String commands
+  > showed four of its nine dark arrows and none of the parts they reach, drawn
+  > like every other part. In Redis the handler's first step, Client
+  > connections and replies, stands farther from String commands than the
+  > canvas holds at a readable scale: the camera frames String commands,
+  > Object and key store, Server configuration and Sorted set commands, six of
+  > the nine dark arrows, and leans toward it. An
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 346–347):
+  Redis's GET/SET example and counts moved.
+
+  > takes, the group it stands in, never the whole collection: GET among
+  > String commands' fourteen inputs, SET beside it, not a wall of 95. A group
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 353–392):
+  the GitHub-link histories, Redis's
+  get/exec/loadAppendOnlyFile/spawnIOThread narrative and the old
+  contradictory lines moved; the dispatch strings now use the C fixture
+  (kvd's `processCommand`, one of 6 command functions, reached from no
+  input) and the vocabulary's placeholders `{site}`, `{input}`, `{n}`; the
+  given text is kvd's `kvd.h.kvCommand.proc get in getCommand`.
+
+  > opens its code (it had opened GitHub above the same name in the path). A
+  > registration the model did not explain has no line: its given text
+  > ("redis.c.redisCommand.proc get in getCommand") only said the fact again,
+  > and the reading and Find name its handler. A chosen input's
+  > reading opens at its path (owner's choice 3c, 2026-09-27), drawn in the
+  > Inputs blue of its tile and collection, never core's purple: its
+  > heading's bar and kind and its links. The path projects GroupsIndex's
+  > saved reach and dispatch sites; the page walks no code. It is, first, one
+  > box per dispatch site whose alternatives hold the handler, the first open:
+  > "Dispatched from call · one of 94", holding the dispatch fact and the
+  > statement "How a request for get gets to call is not established.": how
+  > a request for the input arrives at the dispatch site from outside;
+  > Redis's get is
+  > dispatched from call and from loadAppendOnlyFile. No route to the site is
+  > drawn: the shortest static chain from the program's entry, Redis's main →
+  > aeMain → beforeSleep → call, had been offered to a benchmark reader as
+  > GET's path. The inputs whose own code reaches a site (exec, lpush,
+  > rpoplpush, rpush and slaveof reach call) are not listed in a dispatched
+  > input's reading, where a reader takes them for its route; they are the
+  > site's own reading, with the declaration: "call is reached from these
+  > inputs:", each input a button to its reading with its calls to the site,
+  > then "Which of these, if any, leads to an input dispatched here is not
+  > established.", or "No input reaches loadAppendOnlyFile by calls". An
+  > input whose own code reaches a site says so in its reading, as its
+  > handler's own call back into the site ("exec's handler itself calls call,
+  > where 95 inputs are dispatched:") with those calls; the two lines had
+  > read "How exec reaches call is not established." beside "Reaches call",
+  > which contradicted each other on their face. An input a
+  > running declaration of another input's reach hands over reads "Registered
+  > by" with those inputs (Redis's IOThreadEntryPoint, handed over by
+  > spawnIOThread); the other reads "Registers". Then the parts the input
+  > enters, nearest the handler first: each part's name (a link to its
+  > reading when the map draws it), every call entering it from a part
+  > reached earlier, the first five and the rest folded under "+N", and "{n}
+  > other calls into it on this path". A call is its two declarations' names,
+  > with no line number, a read or a possible call marked as elsewhere; a
+  > name in a drawn part reads that declaration there, as a click on its tile
+  > does, and a modifier-click opens its code; a name in a part the map does
+  > not draw is only named. getCommand and addReply had opened GitHub for a
+  > reader following GET's path. The words "Shared by" and "through" are gone.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 397–400):
+  the late-drawn line history (26 px, monitorCommand) moved.
+
+  > never from what the pointer is over: drawn from the canvas's emphasis it
+  > came a frame late and again each time the pointer left the canvas for the
+  > column, pushing Introspection and debugging's list 26 px down under a
+  > reader's click, and monitorCommand was read for pingCommand. Nothing in
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 409–412):
+  Redis's component-numbering history moved.
+
+  > does: read by its areas alone, the component's own space was in no frame,
+  > and on Redis, where entering redis-server opens four components, its
+  > numbers stood only while an area was pointed at and vanished as the
+  > pointer crossed that space to reach them. A closed component numbers
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 435–437):
+  the Data type commands / Server runtime history moved.
+
+  > frame's, so Data type commands' incoming numbers stood on Server
+  > runtime's border, in the gap where the pointer looks at the whole
+  > component, and could not be reached. The two directions' labels then
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 444–445):
+  the folded-legend history moved ("had room" now reads "has room").
+
+  > the key, where the row had room: folded into a legend at the bottom of a
+  > 900 px window, no reader of Redis's map found it.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 460–461):
+  the tester's arrowhead history on Redis moved.
+
+  > no card. On Redis the tester's rests on arrowheads opened nothing, and a
+  > click there fell through to the frame underneath and moved the camera.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 466–467):
+  the card-over-the-head history moved.
+
+  > border: placed outside the frame alone, the card opened over the head the
+  > pointer rested on.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 471–472):
+  the 291-call card at 10 px beside Redis's Core infrastructure
+  (observation) moved.
+
+  > changes: drawn at the parts' scale, a card of 291 calls read at 10 px
+  > beside Redis's Core infrastructure. Beside a frame it takes the room
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 479–482):
+  the re-targeting history moved (the kept sentence was re-wrapped).
+
+  > chip the pointer has not left at all. Re-targeting on every pointer move had
+  > closed the card on the way to it, and with the pointer on it, as soon as
+  > it stood outside the frame. A click on a part's number or on a card keeps
+  > the card open; a click on an arrow end, its chip or its arrowhead, reads,
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 506–512):
+  Redis's `call`/`c->cmd->proc`/94/77 example replaced by kvd's
+  `processCommand`, `cmd->proc`, six command functions and `cmdTable`; the
+  Server runtime history moved.
+
+  > (Redis's call reaches `c->cmd->proc`, one of 94 command functions), and
+  > the calls of a declaration that hands every member of such a set over by
+  > another relation (cmdTable passes all 94 as callbacks); each caller's
+  > marked calls are one line, "call → one of 94 · 77 here", "cmdTable passes
+  > callback the same 94 as call · 77 here", with the callees under it by part,
+  > each part opening to their names. Server runtime → Data type commands had
+  > listed both 77 times, one row each. Which calls belong to a set, and how
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 519–522):
+  the Server runtime → Core infrastructure history moved.
+
+  > that number's parts, and the chip's own edge widens it again: narrowed by
+  > every number crossed on the way, Server runtime → Core infrastructure's
+  > card only ever showed the calls of whichever number the pointer met
+  > last.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 543–551):
+  the ELK bend counts, the refused entry-side layout and its 14-window
+  measurements moved; the rule (one edge per pair, the pair's first) kept.
+
+  > a pair of ends share one drawn route, so ELK lays out one edge per pair:
+  > laid out twice, each such pair made ELK reverse one arrow into a
+  > wrap-around, and Server runtime's 21 arrows among six parts had 68 bends.
+  > That edge is the pair's first. Laid out instead from the program's entry
+  > side (a `triggers` part) toward the other, Redis's Server runtime was
+  > measured at 14 window sizes and refused: 84 bends became 70 at four sizes,
+  > 54 became 70 or the routes ran 9% longer at eight, and at 1440×900 the
+  > area took a one-row layout that entered cut in half. Which of ELK's layouts
+  > the area takes, and how it wraps, moved more than the pair's direction.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 556–563):
+  Redis's Persistence/Server runtime pixel history moved.
+
+  > fewest detours around the area); then the squarer box. Wrapping had run
+  > Persistence's one arrow around the area and drawn Server runtime 1300 px
+  > wide in a 1214 px canvas. Its parts keep their own size,
+  > the size of the loose parts beside it, so an area is as large as what it
+  > holds: laid out with the whole component and shrunk to a peer's width,
+  > Redis's Server runtime stood as a staircase of postage stamps under a
+  > full-size title. Each area wraps its drawing and heading without reserving a
+  > second member-list height. A closed group
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 582–595):
+  Redis's Debug symbols pixel measurements, the proxy's window and the
+  measured alternatives moved; "This is measured and left." now reads "This
+  is left.".
+
+  > theirs when their boxes are larger: Redis's Debug symbols read 10 px beside
+  > 14.8 to 17.1 px area titles (about 11 px beside 15.7 px in the proxy's
+  > window). This is measured and left. The camera caps every closed heading
+  > at a scale the whole map sets, so matching the cap needs the interiors laid
+  > out again once the whole map is placed. Growing the box in the one layout
+  > until its heading fits at its smallest area's heading scale reads 14.9 px
+  > there, but the part fills that box once the areas open: beside two areas
+  > of fourteen parts it filled 1036 by 739 px beside 260 by 88 px parts (400
+  > by 200 px as its card), and Redis's Debug symbols 244 by 143 px beside 128
+  > by 61 px parts (196 by 98 px). Once the areas open it is their parts' peer:
+  > the same card at the same scale, filling its box, so its title reads at
+  > their parts' size. Kept at the summary scale, Redis's Debug symbols read
+  > 41 px beside 17 px parts. A component without areas keeps its direct
+  > parts' fitted headings.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 621–623):
+  the Data type commands 18px history moved.
+
+  > number stands in room its card already leaves. A rule reserving a row
+  > under the title for that number had dropped every description of Redis's
+  > Data type commands 18px whenever the pointer crossed the area's border.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 638–655):
+  Redis's scattered linked-list tiles, the 190px cut names, the Data
+  structures tile counts, the repomap self-run's hidden keys and Redis's
+  Persistence history moved.
+
+  > the file is a hint, and Redis's linked-list functions had stood scattered
+  > among the dictionary's. They
+  > stack in that order within their column and a column too tall spills into
+  > the next. A tile is as wide as the longest name among the part's
+  > declarations, so no name is cut, and the columns share the card's width;
+  > cut to 190px, Redis's names read "_dictStringCopyHTKe…". The tiles are
+  > drawn at a quarter of the card's scale, or smaller when a quarter does not
+  > hold them all whole, however many the part holds: nothing is counted away
+  > and no scale is too small to search, and a large part is a larger
+  > drawing to pan (at 1440×900 Data structures had drawn 40 tiles and
+  > counted 63 away as "+63"). The
+  > part's name stands over them at the same screen size at any such scale.
+  > Placed by link column first, the repomap self-run's parts hid 88 of their
+  > 256 keys while drawing declarations listed after them. The zoom button
+  > enters at the scale the declarations read at, their own 13px: the part
+  > whole when it fits there, else its head and first column a margin from
+  > the canvas's top left. Fitted to the canvas, Redis's Persistence had
+  > opened at its title's scale with no declaration drawn. A drag over the
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 670–672):
+  the Redis tile-click history moved.
+
+  > restored visit keeps its camera. Clicked, Redis's tiles had opened GitHub
+  > in a new tab or bubbled to the part already selected, and a Find code hit
+  > had stopped at the part. The page data gives each tile its file and the
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 678–690):
+  the wheel and pinch histories (including Redis's readers) moved.
+
+  > past the inventory's end the wheel stays with it, where the next notch
+  > had scrolled the page and the one after moved the map under a still
+  > pointer. Anywhere else on the canvas, its location row over the map
+  > included, an ordinary wheel moves the map and never scrolls the page;
+  > over that row it had scrolled the page while a pixel lower it moved the
+  > map. One pinch
+  > (ctrl+wheel) crosses at most one level boundary, the zoom where the
+  > level changes, and stops short of the next, going on or back; a pause
+  > of about a third of a second ends it and the next pinch crosses the next.
+  > The levels are the whole map, then one per open hierarchy depth, then a
+  > part's tiles in sight; two layers that open at one zoom are one
+  > boundary. A pinch of eight ctrl+wheel ticks had carried Redis's readers
+  > from the whole map past the areas into a part's tiles. The zoom a tick
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 708–709):
+  the warning-red history moved.
+
+  > like theirs, in the muted text colour: in the warning red it read as an
+  > error, and the key's dashed stroke says what it is. All original endpoint IDs and sources remain on it;
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 734–739):
+  Redis's Server runtime heading sizes and microblog's /explore
+  (observations) moved.
+
+  > first part at that scale. Fitted at its layer's floor instead, Redis's
+  > Server runtime stood at 8px headings at 1440×900 and 4 to 7px at 1280×800. Entering a frame or an input's path
+  > opens what it enters: those frames stay open through the camera move's own
+  > zooms, so they arrive open although the camera stands smaller than a
+  > closed layer needs to open by itself. Closed on the way, microblog's
+  > /explore stood on the closed Web routes summary with its title at 45 px.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 757–759):
+  the lost-last-letter history moved.
+
+  > included: measured over the participants alone, the camera stood smaller
+  > than the fit, and every heading reserved to the pixel lost its last
+  > letter.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 770–773):
+  the measured-wider history moved (the kept sentence was re-wrapped).
+
+  > less its zoom button's room beside a part's title: measured wider, a line
+  > counted whole broke again in the browser and left its last word alone on
+  > a line. A part's description is not broken into lines on the page; the
+  > browser wraps it in that column, and its lines counted there only size
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 784–785):
+  Redis's 1280×720 first screen (observation) moved.
+
+  > Drawn into the short box, Redis's 1280×720 first screen cut "TCP
+  > endpoint" below its frame and "Background" out of its input list.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 830–831):
+  the emphasised arrowhead pixel sizes moved.
+
+  > declarations. Drawn in the thicker line's stroke widths, an emphasised
+  > head stood 17.5px beside 10.5px and covered the number at the frame.
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 854–855):
+  the Command dispatch margin history moved.
+
+  > a screen margin below the top. The margin is screen pixels: taken as world
+  > units at a close-up zoom it put Command dispatch under the canvas edge. A
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 871–872):
+  the Selecting GET history moved.
+
+  > reached through a matched input after them. Selecting GET had lit every call
+  > among fourteen parts and listed them starting with Strings. Call depth is a
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 882–894):
+  the Command dispatch, Client connections, List commands and Replication
+  histories moved.
+
+  > before outgoing connections: Command dispatch had listed some 5,000 characters of
+  > connections before its code, and Client connections and replies the
+  > nineteen parts it calls, mostly utilities, before the fourteen that call
+  > it. What a part is made of (owner's choice 3a, 2026-09-27) is headed by
+  > its declarations counted by the kind its tiles carry ("Made of 18
+  > functions", "2 functions, 3 types") with the files they are written in
+  > once beside it, and lists every declaration of the part as a link into its
+  > code, the model's keys first and in bold as the part's tiles draw them,
+  > then the rest by name whatever their case, with no line number: by file
+  > and line, List commands' eighteen functions read as a column of line
+  > numbers. The tiles keep the page's own order. It had listed only the keys
+  > under a heading that said all, and Replication's showed
+  > replicationFeedSlaves and not syncWithMaster. An area's reading starts
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 909–917):
+  redis-cli's anet.c joint locations, the anetTcpGeneri… history and the
+  bordered-box history moved.
+
+  > it lands: redis-cli's joint is written at anet.c:158 and lands at
+  > anet.c:256, inside anetAccept declared at 248. A name whose part lists no
+  > such declaration is only named. The canvas's own card keeps its links:
+  > Redis's "anetTcpGeneri…" in the column had opened GitHub for a reader who
+  > meant to read it. An input collection is named Inputs there, as its
+  > canvas heading is. Each declaration is one line, as a tile is, a type's fields
+  > on a line under it, and a key type the model explained keeps its mark and
+  > its fields: a bordered box each had put Client connections' callers some
+  > 1,700 px further down the reading. The reading column does not repeat the source index, which
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 931–944):
+  `initServer passes acceptHandler as a callback` replaced by kvd's `main
+  passes acceptHandler as a callback`; the joint example
+  `anetTcpGenericConnect connects to anetAccept` replaced by the vocabulary
+  form `{caller} connects to {callee}`; the joint-card and full-sentence
+  histories and the 97-row count moved.
+
+  > ("initServer passes acceptHandler as a callback"), never the stored kind
+  > ("passes_callback"); a C program's import is said as an include, and a
+  > joint between two programs names the declarations at both of its ends
+  > ("anetTcpGenericConnect connects to anetAccept", not "integrates with").
+  > An arrow's card reads each of its calls as caller, relation and callee and
+  > links both names, so an arrow's call is those three words: the phrase's
+  > words when they stand between the names (the joint's card had shown only
+  > "anet.c:158"), the relation's kind when the phrase wraps the callee
+  > ("cmdTable passes callback delCommand"; the full sentence showed neither
+  > name). A row the model wrote
+  > in its own words keeps them. Rows of one caller and one relation kind in
+  > one evidence list fold into one line with their count and callees, each
+  > row inside it with its sources: Client connections and replies listed
+  > "cmdTable calls …" 97 times. A list with folds has one "Open all" control
+
+- `REPORT.md`, § Projection and first-screen overview (HEAD lines 950–955):
+  Redis's Source details history and the 695/610 px measurement moved.
+
+  > Redis's "Source details · 11" under Persistence opened at the column's foot
+  > with three of its five lines below it, and Open all put four there.
+  > Inputs reaching this part is
+  > collapsed with its count. The reading column stands beside the map's
+  > controls and key as well as its canvas and takes their height, with the
+  > canvas keeping its own: 695 px of a 1440×900 window instead of 610. Only
+
+- `REPORT.md`, § Reader context (HEAD lines 980–982): the Redis command-row
+  click history moved.
+
+  > a modifier-click still opens the code. Nothing is matched by name. On
+  > Redis's 95 command rows a click on flushdb or flushdbCommand had opened
+  > GitHub.
+
+- `REPORT.md`, § Reader context (HEAD lines 1007–1016): the Show whole map
+  and zoom-out histories (Redis's readers) moved.
+
+  > and any input path stay, as a reader zooming out to look around expects;
+  > clearing them had sent that reader back to the start. The "−" beside it
+  > steps out one level, as a zoom mark steps in one, and, as Show whole map
+  > does, moves only the camera: from a part's tiles to the frame holding
+  > that part, from an open area to its component, from an open component to
+  > the whole map. The camera takes the frame as entering it would, and no
+  > closer than the zoom at which the level it leaves closes; at the whole
+  > map it zooms out by a fifth. Zooming
+  > out by a fifth at every level, it had left Redis's readers where they
+  > were, and they pressed Show whole map up to nine times in a question. "+"
+
+- `REPORT.md`, § Reader context (HEAD lines 1022–1029): the toolbar example
+  `get · redis-server (executable) / Server runtime / Replication ·
+  syncCommand` replaced by `get · kvd (executable) / {area} / {part} ·
+  getCommand`; the one-link history moved.
+
+  > ("get · redis-server (executable) / Server runtime / Replication ·
+  > syncCommand"). Each segment is its own link that goes up to its level,
+  > the reading and the camera together: a component or area is read and
+  > framed as entering it frames it, the part is read and entered without the
+  > declaration, the declaration is read in its part with its tile centred,
+  > the input is entered as its path. With nothing read it names the System
+  > map. It had been one link that only read the current reading again: Redis's
+  > readers clicked "Server runtime" in it and stayed on syncCommand's tiles.
+
+- `REPORT.md`, § Reader context (HEAD lines 1044–1045): the TODOs link
+  history moved.
+
+  > the list the heading heads: the TODOs link landed on its heading at the
+  > foot of the page with "10 markers in 6 files" still closed under it.
+
+- `REPORT.md`, § Reader context (HEAD line 1079): the listCreate history
+  moved.
+
+  > programs compile it: adlist.c's listCreate had been three results. It shows
+
+- `REPORT.md`, § Reader context (HEAD lines 1106–1109): the chain example
+  `processInputBuffer → processCommand → call` replaced by kvd's
+  `readQueryFromClient → processInputBuffer → processCommand`; the "No
+  explanation saved" history moved.
+
+  > same part, so a chain such as processInputBuffer → processCommand → call is
+  > followed one call at a time. A declaration without a line says nothing
+  > about one: "No explanation saved" had answered a click on every tile but
+  > the keys. Equal names with different source locations remain separate.
+
+- `REPORT.md`, § External communication and data (HEAD line 1115): the
+  redis-cli/redis-server examples replaced by kvcli (`net.c`'s `netListen`,
+  its part of `loop.c`) and kvd (`netConnect` run by kvcli); the "unused
+  helpers" and redis-benchmark start histories moved; the last rule now
+  reads "Several call sites of one caller calling one callee are one step
+  and the next distinct connection takes the freed place.".
+
+  > Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: redis-cli lists `anet.c`'s `anetTcpServer` and `anetAccept`, and neither listens nor accepts on its map, and it lists "adlist.c · Linked list" with its thirteen functions and "adlist.h · Linked list" with its types, a part it no longer draws.
+  >
+  > Each declaration another program of the same report runs names those programs, "(run by redis-benchmark)", each linking to its component, in page order: redis-server lists `aeStop` run by redis-benchmark and `anetRead`/`anetWrite` run by redis-cli, where a newcomer had read "unused helpers" and skipped redis-cli's whole network I/O.
+  >
+  > In the connections' stored order, grouped by the part they reach, redis-benchmark's start read "main calls aeMain" before the `aeCreateEventLoop` main calls thirty lines earlier; three call sites of `main` calling `aeMain` are one step and the next distinct connection takes the freed place.
+
+- `REPORT.md`, § Three layers of truth (HEAD lines 1323–1324): Redis's Tcl
+  suite narrative moved.
+
+  > files" (Redis's 204-test Tcl suite is no file any adapter recognizes, and
+  > a newcomer told readers to skip it). Routes, client requests and the portals between targets are
+
+- `REPORT.md`, § Three layers of truth (HEAD line 1334): Freqtrade's
+  orientation request sizes per rung (measurement) moved.
+
+  > rung (Freqtrade: 1.74 → 1.18 → 0.92 MB). A refusal by size or context, local from a
+
+- `READING.md`, § Selection and captions (HEAD lines 32–33): pykrx's
+  decoration count (measurement) moved.
+
+  > lifted for context keep only such relations that carry a pattern (pykrx
+  > keeps 24 of its 88 exact decorations there). A registration's holder is the value
+
+- `READING.md`, § Selection and captions (HEAD lines 44–45): etcd's
+  recursive logger and clock example moved; the Go, Python and TypeScript
+  fixtures cover the rule.
+
+  > without end (etcd's `executeTxn` and `node.Repr` pass their logger and
+  > clock to themselves). Go, Python and TypeScript fixtures cover it; Clojure
+
+- `READING.md`, § Architectural responsibilities / A file in several boxes
+  (the role split) (HEAD lines 322–331): the pre-adoption helper
+  measurements on redis-server and pykrx and pykrx's known miss moved; the
+  owner's open question and the concurrency rule kept.
+
+  > target. A helper carries the atlas symbol's `helper` mark. Measured before
+  > adoption (steps 0b and 0c): redis-server's main, processCommand, call,
+  > rdbSave, syncWithMaster, serverCron and its 94 registered handlers are no
+  > helpers, symsTable is one at 0.85–0.91 once its item names its reader,
+  > and the library files keep their marks; pykrx's library target has 49–50
+  > helpers among 188 asked units, 78.9% of leads 0.40 or more. Known miss:
+  > pykrx's `get_market_ohlcv`, whose only user is its file's `__main__`
+  > demo, comes out helper (0.17–0.35); a library's public API as entries is
+  > the owner's open question, not a rule here. The question and the gate
+  > run at once.
+
+- `READING.md`, § Architectural responsibilities / A file in several boxes
+  (the role split) (HEAD lines 349–362): the gate measurements over
+  redis-1.3.6, pykrx, litestream and repomap, the first criteria's history
+  and repomap's design.go measurement moved; the known limit kept without
+  its example.
+
+  > whole. Measured over every candidate of redis-1.3.6, pykrx, litestream
+  > and repomap (377 files, 2 draws, then 5 draws of the 13 nearest the cut):
+  > redis.c 0.97–0.98, pykrx's stock_api.py 0.74–0.79, litestream's main.go
+  > 0.69–0.76; redis-cli.c 0.15–0.21, redis-check-dump.c 0.22–0.30,
+  > redis-benchmark.c 0.38–0.48. 13 files split in every draw; two pykrx
+  > query files (`etx/wrap.py`, `bond/core.py`, 0.49–0.60) and repomap's
+  > `llm/api.go` (0.46–0.55) still land either side of the cut. The first criteria, which counted groups "with their own vocabulary
+  > of names" as several boxes, had shown no flip on the 11 files first
+  > measured, but on the whole set split redis-cli.c, redis-benchmark.c and
+  > repomap's render.go, table.go and api.go in every draw (redis-cli.c's
+  > `main` then became a box of its own) and flipped redis-check-dump.c.
+  > Known limit: a Go file's methods on a type declared in another file
+  > follow that type and are not in the item, so repomap's design.go shows
+  > only its types and helpers and still goes in several boxes (0.86–0.90).
+
+- `READING.md`, § Architectural responsibilities / A file in several boxes
+  (the role split) (HEAD line 388): the registration words `redisCommand
+  get` replaced by the C fixture's `kvCommand get`.
+
+  > command table row's `redisCommand get`, a route's `GET /users/:id`),
+
+- `READING.md`, § Architectural responsibilities / A file in several boxes
+  (the role split) (HEAD lines 407–411): Redis's
+  `listDup`/`dupClientReplyValue` example removed; the C fixture's example
+  it stood beside kept.
+
+  > stored. Redis's adlist.c `listDup` calls `copy->dup(...)`, which
+  > createClient's `listSetDupMethod` stored `dupClientReplyValue` in; the C
+  > fixture's loop.c `loopMain` calls the `beforeSleep` kvd.c's `main`
+  > stored, and kvd.c's `processCommand` the `preloadKey` its table row
+  > holds: each stays with its own file's boxes (`TestCumulativeCMapOfParts`).
+
+- `READING.md`, § Architectural responsibilities / A file in several boxes
+  (the role split) (HEAD lines 480–486): the V0WFR measurement and
+  Redis/litestream box examples moved; the rule kept.
+
+  > Measured on the saved V0WFR boxes (3 identical draws, 118 Jev calls in all
+  > with the gate, $0.067): redis.c 8–11 of 342 units undecided, 1 decided
+  > choice flipped; pykrx 2–4 of 87, litestream 1–2 of 46, none flipped. The
+  > map's rule that a helper goes in the box it serves most is inert in the
+  > assignment: a helper-only box's `holds` names its helper and Jev puts it
+  > there (redis "Logging" = redisLog, litestream's value-parsing and flag
+  > boxes); no code rule empties such a box.
+
+- `READING.md`, § Architectural responsibilities / A file in several boxes
+  (the role split) (HEAD lines 488–500): the registration and task-sentence
+  measurements on the owner-proxy's redis.c and pykrx moved; the rule "A
+  unit the assignment decides is not asked again." kept.
+
+  > The registrations and the sentence on the box that runs every command were
+  > measured before adoption (2026-09-27) on the saved assignment requests of
+  > the owner-proxy's redis.c (339 units, 20 boxes) and pykrx's 7 split files
+  > (187 units), 3 draws each. Before, 12 redis.c units landed differently
+  > between draws, setCommand among them (String commands 0.36 against Set
+  > commands 0.34), and getCommand and appendCommand went in Command dispatch
+  > (getCommand at 0.94–0.96). After, no unit landed differently; getCommand,
+  > setCommand, appendCommand and echoCommand went in String commands and
+  > pingCommand in Server administration commands in every draw. The task's
+  > sentence alone or the registrations alone left getCommand in Command
+  > dispatch. A unit the assignment decides is not asked again:
+  > getGenericCommand, called only by string commands, stays in Command
+  > dispatch (0.66–0.67 against String commands at 0.16–0.17).
+
+- `READING.md`, § Architectural responsibilities / A file in several boxes
+  (the role split) (HEAD lines 502–518): the pingCommand measurements moved;
+  the conclusion is kept as a rule: "The task has no wording that keeps a
+  command whose work is the connection with the box that runs commands: that
+  command's box is the naming's to give.".
+
+  > Where pingCommand goes depends on the boxes the naming gives redis.c
+  > (measured 2026-09-27, 3 draws per task on each saved naming). With a box for
+  > server administration commands (the owner-proxy's naming) it goes there.
+  > Three fresh namings had no box for connection or server commands, and on
+  > each this task puts pingCommand in String commands. On one of them, whose
+  > Client connection handling box also holds command dispatch, the task
+  > without the sentence put it in Client connection handling in 2 of 3 draws
+  > (0.42–0.46, the third a near-tie); the sentence moves it to String commands
+  > (0.46–0.58, 6 of 6 draws). On another, the task without the sentence put it
+  > in String commands too (0.45–0.56). A wording that keeps a command whose work
+  > is the connection with the box that runs commands put pingCommand back in
+  > Client connection handling there, but left it undecided on the owner-proxy's
+  > naming, so it was not adopted: PING's box is the naming's to give. On the
+  > naming whose two boxes both claim command dispatch, processCommand is a
+  > near-tie between them in 5 of 6 draws (the task without the sentence chose
+  > Client connection handling at 0.69–0.76). On litestream's two split files
+  > (54 units, no registration in them), no decided unit landed differently.
+
+- `READING.md`, § Architectural responsibilities / One rule for every file
+  (HEAD lines 576–578): the Redis `main` example removed.
+
+  > program's entry. A seed no part holds (Redis's `main`, a near-tie of the
+  > parts answer) makes no entry part; GroupsIndex keeps it with its off-map
+  > reason (`Entries`), and the code never picks a part for it.
+
+- `READING.md`, § Architectural responsibilities / Membership and the
+  off-map record (HEAD lines 616–618): redis-cli's adlist.c example replaced
+  by kvcli's `loop.c`.
+
+  > map by file with its name (reason `unreachable`, REPORT). redis-cli links
+  > `adlist.c` and never calls one of its thirteen functions, so its "Linked
+  > list" left its map. A part holding one declaration the program may run
+
+- `READING.md`, § Architectural responsibilities / Descriptions (HEAD lines
+  637–639): the history of the first twelve names moved.
+
+  > the part holds, in ID order, never cut to a count (the first twelve were
+  > sent until 2026-09-26, while the keys prompt called the list everything the
+  > part holds).
+
+- `READING.md`, § Operation ownership (HEAD line 676): the words
+  `redisCommand` replaced by the C fixture's `kvCommand`.
+
+  > (`GET` and `/users/:id` of `e.GET("/users/:id", h)`; `redisCommand` and `get`
+
+- `READING.md`, § Operation ownership (HEAD lines 696–700): Redis's
+  dispatcher sentence and the declaration-order history moved; the table
+  order example is kvd.c's `get`, `set`, `del`.
+
+  > neutral: it favours names that begin early, and Redis's dispatcher read
+  > "calls String commands: appendCommand, decrCommand, decrbyCommand", hiding
+  > get and set behind `append`. Declaration order alone still hid `get` when the
+  > part held `ping` and `echo`, which redis.c defines first; the table's rows are
+  > the author's own order of the commands (`get`, `set`, `setnx`). Source order
+
+- `READING.md`, § Operation ownership (HEAD lines 710–712): Redis's
+  `findFuncName reads symsTable` example replaced by the C fixture's
+  `printSymbols reads symsTable`.
+
+  > of them (`native_reads`): Redis's Introspection and debugging part reads
+  > Debug symbols through `findFuncName reads symsTable`, and each command part
+  > reads the parts holding `server` and `shared`. A call left unresolved because its field or name was
+
+- `READING.md`, § Operation ownership (HEAD lines 720–723): Redis's Event
+  loop fallback sentence example removed.
+
+  > calls, stores and declarations ("Event loop calls Client connection
+  > handling: readQueryFromClient, acceptHandler, sendReplyToClient.": the
+  > `rfileProc` call comes before the `wfileProc` one, and redis.c stores
+  > `readQueryFromClient` before `acceptHandler`),
+
+- `READING.md`, § Boundaries (HEAD lines 769–772): Redis's anet.c example
+  replaced by the C fixture's `net.c` (kvd listens with `netListen`; kvcli
+  links it and never reaches it).
+
+  > shared `anet.c` gives redis-server the listener `anetTcpServer` and
+  > `anetAccept`; redis-cli and redis-benchmark, which link it and never reach
+  > them, list them under their component's "Not reachable from the
+  > entrypoints" (REPORT), where a reader finds what is not shown. Facts do
+
+- `READING.md`, § External symbols: the `atlas_api` table (HEAD line 789):
+  `redis.c.redisCommand.proc` replaced by the C fixture's
+  `kvd.h.kvCommand.proc`.
+
+  > field (`redis.c.redisCommand.proc`); its usage is its first row.
+
+- `READING.md`, § External symbols: the `atlas_api` table (HEAD lines
+  793–794): the fopen("/dev/null") history moved.
+
+  > nothing names the declaration making the call, and `fopen("/dev/null")` was
+  > once asked what a callable becomes and answered a request handler. The
+
+- `READING.md`, § External symbols: the `atlas_api` table (HEAD lines
+  840–868): the atlas_api measurements on redis 1.3.6, xk6-dns and
+  microblog, Jev's known misses, the Flask observation and the 2026-09-25
+  probe moved; the SQLAlchemy sentence kept.
+
+  > Measured 2026-09-27 on the saved requests of redis 1.3.6 (129 symbols),
+  > xk6-dns (47) and microblog (117), 3 draws each, as wrong answers / symbols
+  > whose answer changed between draws. The v5 text-model table, whose cells
+  > were optional notes with no answer for "talks to nothing" and none that
+  > fitted `accept`: 7/1, 18/12 and 9/2 (inet_aton `talks sdk` 3 of 3, accept
+  > `client_request` 3 of 3; five saved v5 Redis runs had given inet_aton sdk
+  > in 3, bind `publishes` in 2 and accept `client_request` in 2). The same
+  > options and criteria written into the text model's prompt: 2/1 (`select`
+  > serves in 2 of 3; one earlier wording, 3 of 3), 0/0 and 12/0. Jev with
+  > them: 0/0, 3/2 and 6/2, and 3 and 3 answers explicitly unanswered.
+  > inet_aton, inet_ntoa, accept, listen, bind, connect, gethostbyname, fopen,
+  > open, sigaction, pthread_create, k6's `modules.Register`, Flask's `route`,
+  > `requests.post`, miekg's `ExchangeContext`, k6's `DialContext` and
+  > `LookupHost` were right in every Jev draw of four rounds of wording. What
+  > Jev still misses is named by chained Python names (`requests.post.json` as
+  > `client_request`, `alembic.op.f` as `db`), k6's `metrics.PushIfNotDone`,
+  > which sends a sample on the host's channel (never `none` in 12 Jev draws
+  > over four wordings: `sdk` at about 0.4 against `none` at about 0.2 in 8,
+  > unanswered in 4; the text table had said `queue_producer` in 2 of 3), so an
+  > xk6-dns map can show a "k6 metrics" outside system, and the construction of
+  > a `net.Resolver`, whose usage line is a field line of its literal
+  > (`client_request` or unanswered). Two task wordings that weigh `declared`
+  > first, one adding that a value handed on through a channel stays in the
+  > process, left PushIfNotDone `sdk` 3 of 3 or unanswered 3 of 3 and made more
+  > microblog answers change between draws (3 draws each, 2026-09-27). Flask's `errorhandler` is now `none` or unanswered
+  > where the text model said `request`: `request` and `none` both stay near
+  > 0.4. Building a SQLAlchemy `select` is `db`, the program's question to its
+  > database. The 2026-09-25 probe that kept this table on the text model asked
+  > Jev optional yes-only columns without criteria.
+
+- `READING.md`, § External symbols: the `atlas_api` table (HEAD lines
+  921–922): Redis's spawnIOThread example removed.
+
+  > (`HandsOver`/`HandedOverBy`): Redis's `spawnIOThread`, reached by twelve
+  > inputs, registers `IOThreadEntryPoint`. A table read registers nothing.
+
+- `READING.md`, § External symbols: the `atlas_api` table (HEAD lines
+  951–952): the 82-of-82 alias history moved.
+
+  > `line` alone and the model writes no `alias` (it wrote one on 82 of 82 rows,
+  > all discarded, while the prompt demanded two cells).
+
+- `READING.md`, § External symbols: the `atlas_api` table (HEAD line 954):
+  Freqtrade's refused-row count and Redis's request count moved.
+
+  > A row whose only address option is `unknown` accepts any address answer as `unknown`: nothing else can be chosen there, and the model tends to copy the observed path into that cell (27 Freqtrade rows were refused for it).
+  >
+  > A fixed incoming entry additionally requests its `name` among its `words` (Operation ownership), with or without `--captions`, and shows no `method` field; its rows share windows without an owner, since its handler's calls near a registration elsewhere say nothing about its name (one window per handler cost Redis 98 requests for 97 names).
+
+- `READING.md`, § Questions and Learn (HEAD lines 1218–1221): the saved
+  Freqtrade window measurements moved; the rule and its reason kept.
+
+  > the saved Freqtrade window that asked 64 questions over 460 code rows (4,661
+  > anchors) got four back, the same rows with eight questions got eight, and the
+  > same 64 questions over document rows got 64 — density of decisions per response,
+  > not key names, loses answers. Windows over the same rows share a request prefix;
+
+- `READING.md`, § Questions and Learn (HEAD lines 1244–1245): the
+  canvas.spec.mjs size measurement moved.
+
+  > evidence. The `canvas.spec.mjs` selection row, refused for its size on every
+  > run, falls from 550 entries and 70,906 B of calls to 245 entries and 31,046 B.
+
+- `READING.md`, § Orientation (HEAD line 1392): the bare-member-ID history,
+  Redis's main flow and its `main` example moved.
+
+  > A group member (`n4` of `t1`) is the declaration place whose object is qualified by its program (`t1.n4`, atlas `ScopedObjectID`); looked up by the bare member ID, no member found its place and every request went without member evidence, and Redis's main flow put `loadServerConfig` before the `initServerConfig` main calls first.
+  >
+  > A member's calls are listed in the order they are written in it, so a bounded list keeps the first calls written, not the first of the graph's order (redis-server `main`'s `fprintf`, `exit` and `time`).
+
 ## 2026-09-28 — An input's reading links to its program's Main flow (u7); the UI fixes u1–u7 walked
 
 - The blind GET check found the Main flow ("A client command from socket

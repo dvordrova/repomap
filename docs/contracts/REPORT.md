@@ -49,9 +49,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   that holds the table. A part
   made only of test code is a fact (every file is a `TestSources` file): it is
   not a group and leaves the canvas. So is a part its program never runs: it
-  is not a group, draws no arrow and leaves that program's canvas; redis-cli's
-  "Linked list", whose thirteen adlist functions redis-cli links and never
-  calls, is not drawn.
+  is not a group, draws no arrow and leaves that program's canvas; kvcli's
+  part of `loop.c`, the event loop it links and never calls, is not drawn.
 
 - The component card lists, after its link to its parts on the system map
   and before its main flow, the compact inventories **Tests** (test-only
@@ -123,10 +122,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   display frame per component owner, outside the component. Its heading is
   "Inputs", the word the colour key uses for them; its component is named by
   its arrow into it, in its zoom mark's accessible name and in the location
-  row ("Inputs · redis-server (executable)"). Headed with its component's
-  name, Redis's collection had read as a second redis-server beside the
-  programs. It stands attached to its component, in the layer next to it
-  with its arrow straight into it (measured at 1440×900 and 1280×800).
+  row ("Inputs · kvd (executable)"). It stands attached to its component,
+  in the layer next to it with its arrow straight into it.
   Its distant summary
   shows the actual catalogue types (requests, commands, background work,
   interactions, other operations); zoom reveals the original named input nodes.
@@ -136,12 +133,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   part. The collection opens to its groups first, each closed and named as
   a closed area is, with a zoom mark that enters it; a group opens to its
   inputs when their headings read (14px to open, 12px to stay open), as
-  areas open to their parts. Opened with the collection, Redis's 95 inputs
-  had stood as a wall of 5px tiles under 5px group names. An input with no owner stays loose after the groups, and a collection
-  whose inputs share one part keeps them loose. A tile names its kind only
-  when it is not the collection's most common kind: "Request" on 97 of Redis's
-  98 tiles repeated the collection's own summary. The groups are display
-  containment, not architectural areas; they add no relation.
+  areas open to their parts. An input with no owner stays loose after the
+  groups, and a collection whose inputs share one part keeps them loose. A
+  tile names its kind only when it is not the collection's most common
+  kind. The groups are display containment, not architectural areas; they
+  add no relation.
   No synthetic type nodes or runtime relations are added. Bound inputs keep
   their exact identity and existing directed implementation relation; they are
   not replaced by their part or duplicated inside it. An unbound operation or
@@ -154,19 +150,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   tile; every caller keeps its line and source on the arrow, and an input's
   path into any of those calls leads to that tile). Every frame and
   tile belongs to its component, and only that component's arrows reach it:
-  equal destination text proves no identity. One "TCP endpoint" box had taken
-  arrows from all three Redis programs, though for redis-cli that endpoint is
-  redis-server and for redis-server its master. Frames of different
+  equal destination text proves no identity. Frames of different
   components that name the same destination stand together in one display
-  group, an amber frame around them in the outer layout, so the three "DNS
-  resolver" frames stand side by side instead of scattered. The group is no
+  group, an amber frame around them in the outer layout, so they stand side
+  by side instead of scattered. The group is no
   participant: it has no reading, selection or hover, ends no arrow and adds
   no relation; each frame in it keeps its own program's arrow.
   When every frame in the group spells its destination alike, the page data
   gives the group that text (`DisplayGroupTitle`) and the group's frame
   carries it once; its frames stand as small plain amber tiles with their
-  zoom marks, one per program, each hit by its own program's arrow. Three
-  "DNS resolver" headings side by side had said one thing three times.
+  zoom marks, one per program, each hit by its own program's arrow.
   The text is what all the frames name, not the name of a merged
   participant: each frame keeps its title in its reading, search and
   accessible name, and different spellings grouped regardless of case keep
@@ -174,26 +167,20 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   programs: a program's name inside an amber frame would read as an outside
   participant, and the arrow already says whose tile it is. The heading
   stands in a band on the side of the group no arrow enters, under the
-  tiles when arrows run down and after them when they run right; above the
-  tiles, Redis's three arrows ran through it. Like closed summaries it is
-  laid out at the whole-map camera and zooms with the map; once the tiles
+  tiles when arrows run down and after them when they run right. Like
+  closed summaries it is laid out at the whole-map camera and zooms with
+  the map; once the tiles
   open it reads at their open frames' title size and the open tiles stay
-  plain under it, so the destination is named once in every state. Titled
-  one by one, Redis's three open DNS tiles said "DNS resolver" three times.
+  plain under it, so the destination is named once in every state.
   The band is the heading's room and shrinks with it: an open group's frame
   wraps its tiles and their heading, and the room its closed heading takes
   at the whole-map camera stays outside the frame. Entering any tile of the
   group opens every tile of it and frames the group, heading included, at
-  the scale its calls are drawn at: framed alone, an entered tile had read
-  only "gethostbyname" with the heading below the camera. The tiles stay
+  the scale its calls are drawn at. The tiles stay
   separate records, each hit by its own program's arrow; the group still
   ends no arrow and is not read or chosen. A plain tile keeps its open calls' proportion: at the whole-map
   fit it grows whole until its zoom mark has its room, and its calls grow
-  with it, so it opens with no room of its own below them. Stretched to the
-  mark's proportion and grown to its 50 by 44 pixels, each of Redis's DNS
-  tiles opened half empty below its one call; kept at its calls' own box
-  without growing, its mark was drawn at 0.64 of the size of the TCP
-  endpoint's beside it on a 1440×900 first screen and at 0.41 on 1280×720.
+  with it, so it opens with no room of its own below them.
   Every record stays in its own component's catalogue, and records of
   different symbols stay separate tiles.
   When a saved connection identifies one already displayed peer in another
@@ -209,24 +196,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   accessible names, instead of repeating Core/Entrypoints above every title.
   The entry arrow is wider than the border it stands on and has a thin halo
   in its card's colour, so the border stops at it and its shaft reads as a
-  shaft; cut from a 14px square, its shaft ran along the border in the
-  border's colour and only a small head read. The legend draws the same
-  arrow.
+  shaft. The legend draws the same arrow.
   An area's mark is its GroupsIndex container's (READING): the core mark
   when any part in it is the domain, the area holding the program's entry
   included (owner, 2026-09-27: purple when any part is the domain); the
   entry mark only on the area holding the program's entry (a declaration
   its execution starts from, a target seed) when no domain part stands in
   it; otherwise none, or the dependencies mark. Parts that only take
-  requests or listen do not make their area the entry: Networking's
-  listen/bind boundary had drawn Redis's "Core infrastructure" as a second
-  entry area beside Server runtime. The same holds for a part: only the
-  part holding the program's launch point has the entry mark; a part that
-  only takes requests or listens has none, and its inputs' blue arrows say
-  where the outside calls in (17 of redis-server's 29 parts had been
-  green). The component reference's "Input responsibilities" list holds
-  only that part. A launch point
-  no part holds (redis-server's `main`, undecided between two parts) makes
+  requests or listen do not make their area the entry. The same holds for a
+  part: only the part holding the program's launch point has the entry
+  mark; a part that only takes requests or listens has none, and its
+  inputs' blue arrows say where the outside calls in. The component
+  reference's "Input responsibilities" list holds only that part. A launch
+  point no part holds (such as a `main` undecided between two parts) makes
   no entry part and no label on the canvas; the component's heading and
   reading and its "Not on the map" list name it as the program's entry
   with its off-map reason, the heading and reading by its name and its
@@ -244,9 +226,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   them stay as they are, and every part, frame and arrow the emphasis does
   not involve recedes to 40% opacity. Frames grouped under one destination's
   text recede with their heading when none of them is involved and stay when
-  one is. No veil or tile fill marks the pointed thing: a grey veil on the
-  pointed area's parts and a grey fill on the pointed declaration had made
-  them look deader than their outlined neighbours.
+  one is. No veil or tile fill marks the pointed thing.
   Component frames retain their language, kind, role and purpose above their parts. Colour never replaces
   the visible type cues or independent fact/model provenance in the reading
   panel. Text has at least 4.5:1 contrast; meaningful frames and connections
@@ -277,8 +257,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   or frame under the pointer, the pinned input path, or the selected part's
   neighbours. A pointed part is the subject itself: only its own arrows
   darken. A frame's title, border and empty space look at the frame, whose
-  arrows crossing its border darken. Lifted to its area, a part pointed at
-  in Data type commands had lit all of the area's arrows.
+  arrows crossing its border darken.
   A pinned input path is drawn from its saved reach (GroupsIndex, READING)
   with the existing dark emphasis: one arrow for every pair of parts where a
   call (or read) of the reach enters a part from a part reached earlier, at
@@ -286,17 +265,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   reading and the others are counted. An arrow is dashed only when none of
   its calls is exact. A caller off the map stands for the earlier parts that
   reach it through code off the map. Other calls among the same parts stay
-  ordinary arrows. On Redis GET draws 20 arrows where its single shortest
-  witnesses drew 14; the neighbourhood of every call among its parts, which
-  this rejects, would be 43. GroupsIndex marks an arrow quiet
+  ordinary arrows. GroupsIndex marks an arrow quiet
   (`Connection.Quiet`, READING), and the canvas and the static zone picture
   draw a quiet arrow only while one of its ends is looked at; the page
   decides nothing of its own. Quiet is initialization (a relation whose
   source only the target's seeds reach, no input's handler) or a call into
   a helper (a declaration the helper question decided serves the work of
   others; quiet even on an input's path, since every command handler calls
-  its reply helpers), and only in a target that serves something: Redis's
-  benchmark, client and dump checker had drawn none of their arrows. One
+  its reply helpers), and only in a target that serves something. One
   exception, defined once over each target's own connections: when every
   one of them would be quiet, its calls into helpers are drawn, so quieting
   them never empties a map. One arrow drawing several relations is quiet
@@ -318,10 +294,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   calls" strokes the arrows are drawn with, and, when a part's tiles draw
   one, the purple dashed link from a function to the type it returns or
   from a type to the function taking it ("returns or takes a type"), drawn
-  in the tiles' own purple and grey head. Its glyphs had been painted in
-  the marks' dark colours, so Redis's pale green and purple cards matched
-  nothing in it, and no line was keyed; its tiles' purple dashed links
-  went unexplained. There is no folded prose legend
+  in the tiles' own purple and grey head. There is no folded prose legend
   under the map. The input context
   and leave-path action live in the reading card. An input chosen from
   Find, a link, a reading or its own tile on the canvas is entered as its
@@ -332,66 +305,52 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   does not fit, the camera stays at that scale and leans toward it, keeping
   what it took inside, so the dark arrows leaving the frame show the way.
   The path's parts, and a closed frame standing for parts hidden in it, are
-  outlined in the dark of the path's arrows. Framing its tile had shown GET
-  as one of 98 tiles with no arrow in sight, and centring String commands
-  showed four of its nine dark arrows and none of the parts they reach, drawn
-  like every other part. In Redis the handler's first step, Client
-  connections and replies, stands farther from String commands than the
-  canvas holds at a readable scale: the camera frames String commands,
-  Object and key store, Server configuration and Sorted set commands, six of
-  the nine dark arrows, and leans toward it. An
+  outlined in the dark of the path's arrows. An
   input without a trace is entered as its tile, and such a tile clicked on
   the canvas keeps the camera. "Show input" stands in the reading card while
   the camera may be away from the input's tile (on its path, or on a part
   read since) and frames that tile among the inputs its handler's part
-  takes, the group it stands in, never the whole collection: GET among
-  String commands' fourteen inputs, SET beside it, not a wall of 95. A group
+  takes, the group it stands in, never the whole collection. A group
   larger than a readable camera is entered at the tile. Once the tile is
   framed there is nothing to return to; choosing the tile again returns to
   the path. An input's reading
   names its handler ("handled by getCommand"); the name reads that
   declaration in its part when the part lists it, and a modifier-click
-  opens its code (it had opened GitHub above the same name in the path). A
+  opens its code. A
   registration the model did not explain has no line: its given text
-  ("redis.c.redisCommand.proc get in getCommand") only said the fact again,
-  and the reading and Find name its handler. A chosen input's
+  ("kvd.h.kvCommand.proc get in getCommand") only restates the fact, and
+  the reading and Find name its handler. A chosen input's
   reading opens at its path (owner's choice 3c, 2026-09-27), drawn in the
   Inputs blue of its tile and collection, never core's purple: its
   heading's bar and kind and its links. The path projects GroupsIndex's
   saved reach and dispatch sites; the page walks no code. It is, first, one
   box per dispatch site whose alternatives hold the handler, the first open:
-  "Dispatched from call · one of 94 handlers", holding the dispatch fact and the
-  statement "How a request for get gets to call is not established.": how
-  a request for the input arrives at the dispatch site from outside;
-  Redis's get is
-  dispatched from call and from loadAppendOnlyFile. No route to the site is
-  drawn: the shortest static chain from the program's entry, Redis's main →
-  aeMain → beforeSleep → call, had been offered to a benchmark reader as
-  GET's path. After the boxes the reading links to its program's Main
-  flow (the component's flow section), with the flow's title as the model
+  "Dispatched from processCommand · one of 6 handlers", holding the
+  dispatch fact and the statement "How a request for get gets to
+  processCommand is not established.": how a request for the input
+  arrives at the dispatch site from outside. No route to the site is
+  drawn. After the boxes the reading links to its program's Main flow
+  (the component's flow section), with the flow's title as the model
   wrote it, kept as model text; a component with no flow section gives no
-  link. The inputs whose own code reaches a site (exec, lpush,
-  rpoplpush, rpush and slaveof reach call) are not listed in a dispatched
-  input's reading, where a reader takes them for its route; they are the
-  site's own reading, with the declaration: "call is reached from these
+  link. The inputs whose own code reaches a site are not listed in a
+  dispatched input's reading, where a reader takes them for its route;
+  they are the
+  site's own reading, with the declaration: "{site} is reached from these
   inputs:", each input a button to its reading with its calls to the site,
   then "Which of these, if any, leads to an input dispatched here is not
-  established.", or "No input reaches loadAppendOnlyFile by calls". Every
+  established.", or "No input reaches processCommand by calls". Every
   count says what it counts, from the page data GroupsIndex's sites give:
   a site's "one of N" counts its alternatives as handlers, or, when some
   alternative handles no input, as functions with how many of them are
   handlers; its inputs are counted as inputs ("N inputs dispatched here"),
-  and the site's reading names each handler several of them share ("X
-  handles 2 of these inputs: a, b"), which the dispatched input's line
-  shows on hover. An
+  and the site's reading names each handler several of them share
+  ("{handler} handles 2 of these inputs: {a}, {b}"), which the dispatched
+  input's line shows on hover. An
   input whose own code reaches a site says so in its reading, as its
-  handler's own call back into the site ("exec's handler itself calls call,
-  where 95 inputs are dispatched:") with those calls; the two lines had
-  read "How exec reaches call is not established." beside "Reaches call",
-  which contradicted each other on their face. An input a
+  handler's own call back into the site ("{input}'s handler itself calls
+  {site}, where {n} inputs are dispatched:") with those calls. An input a
   running declaration of another input's reach hands over reads "Registered
-  by" with those inputs (Redis's IOThreadEntryPoint, handed over by
-  spawnIOThread); the other reads "Registers". Then the parts the input
+  by" with those inputs; the other reads "Registers". Then the parts the input
   enters, nearest the handler first: each part's name (a link to its
   reading when the map draws it), the handler under the part holding it
   ("handled by getCommand"), every call entering it from a part reached
@@ -406,16 +365,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   with no line number, a read or a possible call marked as elsewhere; a
   name in a drawn part reads that declaration there, as a click on its tile
   does, and a modifier-click opens its code; a name in a part the map does
-  not draw is only named. getCommand and addReply had opened GitHub for a
-  reader following GET's path. The words "Shared by" and "through" are gone.
+  not draw is only named. The words "Shared by" and "through" are gone.
   The list of the parts on the path is left for an input without one.
   A part read while an input is pinned says "Outside this input path" in
   its heading when neither it nor a part inside it is an end of the path's
   arrows. The line is drawn with the reading, from the reading's own state,
-  never from what the pointer is over: drawn from the canvas's emphasis it
-  came a frame late and again each time the pointer left the canvas for the
-  column, pushing Introspection and debugging's list 26 px down under a
-  reader's click, and monitorCommand was read for pingCommand. Nothing in
+  never from what the pointer is over. Nothing in
   the column moves after it is shown except by the reader's own action. An
   up-chevron in
   the reading card's own header closes details, preserving camera and any pinned
@@ -424,10 +379,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - Hovering an area or a part inside it labels its inner parts with local
   numbers. Pointing anywhere in an open component, its own space, border or
   title included, numbers it with its areas and loose parts, as choosing it
-  does: read by its areas alone, the component's own space was in no frame,
-  and on Redis, where entering redis-server opens four components, its
-  numbers stood only while an area was pointed at and vanished as the
-  pointer crossed that space to reach them. A closed component numbers
+  does. A closed component numbers
   nothing and does not take the numbers from an open one beside it.
   One outside participant and direction form one label with every
   exact inner endpoint number (for example `2 · 3`). Different outside
@@ -450,17 +402,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the parts at the arrow's other end stay as they are. A label stands where
   its arrow meets the frame it numbers: both directions of a pair of frames
   share one drawn route, and the end one direction took could be the other
-  frame's, so Data type commands' incoming numbers stood on Server
-  runtime's border, in the gap where the pointer looks at the whole
-  component, and could not be reached. The two directions' labels then
+  frame's. The two directions' labels then
   meet the frame at one point and stand either side of it along the border.
   An open area numbers its parts and an open component its areas and loose
   parts, with those numbers on the frame's border. When an area or component
   in the map holds anything, one line says that the numbers on an area's or
   component's border are the numbered parts inside that the arrow connects,
   not an execution order, and that "all" is every part inside. It stands visible beside the map's controls, above
-  the key, where the row had room: folded into a legend at the bottom of a
-  900 px window, no reader of Redis's map found it.
+  the key, where the row has room.
 
 - A card (a label's calls, or everything a numbered part is joined to outside
   its frame) opens on intent: the pointer rests on its handle for about a
@@ -475,29 +424,24 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   inputs or a loose part stands for the outgoing connection of the frame at
   the arrow's other end; a head beside a chip of the numbered frame opens
   that chip's card. A head of an arrow between two parts of one frame has
-  no card. On Redis the tester's rests on arrowheads opened nothing, and a
-  click there fell through to the frame underneath and moved the camera.
+  no card.
   It stands flush with its handle, outside the frame being read so it covers
   none of that frame's parts, and clear of the handle itself, on the side
   with room, and wholly inside the canvas; a label's card goes out through
   the border its label stands on. An arrowhead stands outside its frame's
-  border: placed outside the frame alone, the card opened over the head the
-  pointer rested on.
+  border.
   With no room outside the frame it stands beside its handle toward the
   roomier side. It stands in the map's coordinates and moves with it, but
   at the screen's own type size, and is placed again when the zoom
-  changes: drawn at the parts' scale, a card of 291 calls read at 10 px
-  beside Redis's Core infrastructure. Beside a frame it takes the room
+  changes. Beside a frame it takes the room
   there is, from 300 to 500 px wide, so that it stands outside the frame;
   with less room it keeps its 500 px and stands beside its handle. While a card is open or kept open, the frame being read stays: the way to
   the card crosses other parts, frames and empty canvas without changing
   the emphasis or the labels. Leaving the handle, the pointer is safe inside
   the triangle between where it left and the card: the card lasts and no
   other handle on the way takes it; from an arrowhead onto its own card or
-  chip the pointer has not left at all. Re-targeting on every pointer move had
-  closed the card on the way to it, and with the pointer on it, as soon as
-  it stood outside the frame. A click on a part's number or on a card keeps
-  the card open; a click on an arrow end, its chip or its arrowhead, reads,
+  chip the pointer has not left at all. A click on a part's number or on a
+  card keeps the card open; a click on an arrow end, its chip or its arrowhead, reads,
   in the column, the frame whose connection it is, scrolled to that frame's
   Connections with that connection open, and leaves the camera where it is
   (owner's choice 3b, 2026-09-27).
@@ -521,23 +465,20 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   card also shows on top an index of the parts at each end with their
   counts; a part at the calling end leads to its calls. The page data marks
   the calls of a dispatch site whose adapter retained several alternatives
-  (Redis's call reaches `c->cmd->proc`, one of 94 command functions), and
-  the calls of a declaration that hands every member of such a set over by
-  another relation (cmdTable passes all 94 as callbacks); each caller's
-  marked calls are one line, "call → one of 94 · 77 here", "cmdTable passes
-  callback the same 94 as call · 77 here", with the callees under it by part,
-  each part opening to their names. Server runtime → Data type commands had
-  listed both 77 times, one row each. Which calls belong to a set, and how
+  (kvd's processCommand reaches `cmd->proc`, one of six command functions),
+  and the calls of a declaration that hands every member of such a set over
+  by another relation (cmdTable passes all six as callbacks); each caller's
+  marked calls are one line (on an arrow into a part holding four of them,
+  "processCommand → one of 6 · 4 here", "cmdTable passes callback the same 6
+  as processCommand · 4 here"), with the callees under it by part, each part
+  opening to their names. Which calls belong to a set, and how
   many the set holds, is decided in Go from the relations' retained targets;
   the browser only counts what stands behind the arrow. A caller calling
   every member itself, or handing over part of a set, keeps its rows. A
   part's number opens the same rows, per label, without the index and
   without a heading for the part's own calls. A label's card first opens on
   the whole end; a number pointed at once the card is open narrows it to
-  that number's parts, and the chip's own edge widens it again: narrowed by
-  every number crossed on the way, Server runtime → Core infrastructure's
-  card only ever showed the calls of whichever number the pointer met
-  last.
+  that number's parts, and the chip's own edge widens it again.
 
 - ELK prepares native area interiors, then places each component's ready
   immediate child rectangles in a flat graph. These children retain their
@@ -558,27 +499,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   are display geometry, not new semantic relations. Each area's interior is
   laid out alone, from the arrows between its own parts; arrows between areas
   are the component's bundles between ready rectangles. The two directions of
-  a pair of ends share one drawn route, so ELK lays out one edge per pair:
-  laid out twice, each such pair made ELK reverse one arrow into a
-  wrap-around, and Server runtime's 21 arrows among six parts had 68 bends.
-  That edge is the pair's first. Laid out instead from the program's entry
-  side (a `triggers` part) toward the other, Redis's Server runtime was
-  measured at 14 window sizes and refused: 84 bends became 70 at four sizes,
-  54 became 70 or the routes ran 9% longer at eight, and at 1440×900 the
-  area took a one-row layout that entered cut in half. Which of ELK's layouts
-  the area takes, and how it wraps, moved more than the pair's direction.
+  a pair of ends share one drawn route, so ELK lays out one edge per pair.
+  That edge is the pair's first.
   Each area takes, of ELK's directions (rightward, downward) with and without
   wrapping a long chain into rows toward the canvas proportion, the layout
   that fits the initial canvas while its 17px part headings stay at the 12px
   their layer stays open at; then the one whose routes run shortest (the
-  fewest detours around the area); then the squarer box. Wrapping had run
-  Persistence's one arrow around the area and drawn Server runtime 1300 px
-  wide in a 1214 px canvas. Its parts keep their own size,
-  the size of the loose parts beside it, so an area is as large as what it
-  holds: laid out with the whole component and shrunk to a peer's width,
-  Redis's Server runtime stood as a staircase of postage stamps under a
-  full-size title. Each area wraps its drawing and heading without reserving a
-  second member-list height. A closed group
+  fewest detours around the area); then the squarer box. Its parts keep
+  their own size, the size of the loose parts beside it, so an area is as
+  large as what it holds. Each area wraps its drawing and heading without
+  reserving a second member-list height. A closed group
   shows its name and nested-content hint, then directly reveals its actual
   objects at the next common layer. There is no intermediate member-list view.
   An architectural area always holds at least two parts: reading draws no area
@@ -597,20 +527,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   first-reveal heading fit and column width as neighbouring groups, without
   promising hidden children. Its box is its own card's, whatever the areas
   beside it hold, so on the component overview its title reads smaller than
-  theirs when their boxes are larger: Redis's Debug symbols read 10 px beside
-  14.8 to 17.1 px area titles (about 11 px beside 15.7 px in the proxy's
-  window). This is measured and left. The camera caps every closed heading
-  at a scale the whole map sets, so matching the cap needs the interiors laid
-  out again once the whole map is placed. Growing the box in the one layout
-  until its heading fits at its smallest area's heading scale reads 14.9 px
-  there, but the part fills that box once the areas open: beside two areas
-  of fourteen parts it filled 1036 by 739 px beside 260 by 88 px parts (400
-  by 200 px as its card), and Redis's Debug symbols 244 by 143 px beside 128
-  by 61 px parts (196 by 98 px). Once the areas open it is their parts' peer:
-  the same card at the same scale, filling its box, so its title reads at
-  their parts' size. Kept at the summary scale, Redis's Debug symbols read
-  41 px beside 17 px parts. A component without areas keeps its direct
-  parts' fitted headings.
+  theirs when their boxes are larger. This is left. The camera caps every
+  closed heading at a scale the whole map sets, so matching the cap needs
+  the interiors laid out again once the whole map is placed. Once the areas
+  open it is their parts' peer: the same card at the same scale, filling
+  its box, so its title reads at their parts' size. A component without
+  areas keeps its direct parts' fitted headings.
   Input collections remain outside the component at every scale.
 
   Detail is synchronized by hierarchy depth. The whole-map layer shows targets,
@@ -636,9 +558,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   overlay adds no second, magnified border. Hover and selection change outline
   paint only, never border geometry, padding, title position or wrapping.
   Nothing inside a card moves when an area is looked at or chosen: a part's
-  number stands in room its card already leaves. A rule reserving a row
-  under the title for that number had dropped every description of Redis's
-  Data type commands 18px whenever the pointer crossed the area's border.
+  number stands in room its card already leaves.
   Closed frames display a subtle outlined child element with a question mark
   as their nested-content hint. The accessible action and the card both enter
   its contents. A toolbar hint explains zooming and dragging. Leaf cards and
@@ -653,24 +573,20 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   declaration is listed and each file's declarations in the order the page
   lists them: the model's keys first, then the types, then the rest, so a
   part's data stands before the code that works on it (owner, 2026-09-28);
-  the file is a hint, and Redis's linked-list functions had stood scattered
-  among the dictionary's. They
+  the file is a hint. They
   stack in that order within their column and a column too tall spills into
   the next. A tile is as wide as the longest name among the part's
-  declarations, so no name is cut, and the columns share the card's width;
-  cut to 190px, Redis's names read "_dictStringCopyHTKe…". The tiles are
+  declarations, so no name is cut, and the columns share the card's width.
+  The tiles are
   drawn at a quarter of the card's scale, or smaller when a quarter does not
   hold them all whole, however many the part holds: nothing is counted away
   and no scale is too small to search, and a large part is a larger
-  drawing to pan (at 1440×900 Data structures had drawn 40 tiles and
-  counted 63 away as "+63"). The
+  drawing to pan. The
   part's name stands over them at the same screen size at any such scale.
-  Placed by link column first, the repomap self-run's parts hid 88 of their
-  256 keys while drawing declarations listed after them. The zoom button
+  The zoom button
   enters at the scale the declarations read at, their own 13px: the part
   whole when it fits there, else its head and first column a margin from
-  the canvas's top left. Fitted to the canvas, Redis's Persistence had
-  opened at its title's scale with no declaration drawn. A drag over the
+  the canvas's top left. A drag over the
   declarations pans the map, as a drag over the part does; a drag that
   moved chooses nothing.
 
@@ -685,27 +601,21 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   declaration the reading column names by its source (Find's code hit, a
   declaration chosen in the reading, a restored visit) is the one chosen on
   the canvas, and a newly named one is centred at its reading scale; a
-  restored visit keeps its camera. Clicked, Redis's tiles had opened GitHub
-  in a new tab or bubbled to the part already selected, and a Find code hit
-  had stopped at the part. The page data gives each tile its file and the
+  restored visit keeps its camera. The page data gives each tile its file and the
   same source link its reading uses, served or static.
 
   Root summaries prioritize saved area names over role, counts and purpose;
   complete dense inventories scroll without dropping entries. Ordinary wheel
   scrolls an overflowing inventory, while pinch passes through to the map;
-  past the inventory's end the wheel stays with it, where the next notch
-  had scrolled the page and the one after moved the map under a still
-  pointer. Anywhere else on the canvas, its location row over the map
-  included, an ordinary wheel moves the map and never scrolls the page;
-  over that row it had scrolled the page while a pixel lower it moved the
-  map. One pinch
+  past the inventory's end the wheel stays with it. Anywhere else on the
+  canvas, its location row over the map included, an ordinary wheel moves
+  the map and never scrolls the page. One pinch
   (ctrl+wheel) crosses at most one level boundary, the zoom where the
   level changes, and stops short of the next, going on or back; a pause
   of about a third of a second ends it and the next pinch crosses the next.
   The levels are the whole map, then one per open hierarchy depth, then a
   part's tiles in sight; two layers that open at one zoom are one
-  boundary. A pinch of eight ctrl+wheel ticks had carried Redis's readers
-  from the whole map past the areas into a part's tiles. The zoom a tick
+  boundary. The zoom a tick
   asks for is React Flow's own; only a tick that would cross a second
   boundary is held at the last zoom short of it.
   Secondary purpose text uses remaining complete lines, with the full text in
@@ -723,8 +633,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   left unresolved whose store witnesses name its candidates is possible
   toward each of them (READING, Operation ownership), the same dashed arrow
   alternatives draw, and its rows read "possible" in the source details
-  like theirs, in the muted text colour: in the warning red it read as an
-  error, and the key's dashed stroke says what it is. All original endpoint IDs and sources remain on it;
+  like theirs, in the muted text colour; the key's dashed stroke says what
+  it is. All original endpoint IDs and sources remain on it;
   the drawing does not invent another relation. Number badges sit inside the
   frame, centred at the native connection point, and match the associated
   inner part badge in appearance and scale. They preserve every matching number. They do
@@ -749,12 +659,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   focused area that fits the canvas at a zoom where its parts' headings stay
   about twelve pixels (and its layer open) is fitted whole, never wider than
   the visible canvas; only an area too large even so is entered at its
-  first part at that scale. Fitted at its layer's floor instead, Redis's
-  Server runtime stood at 8px headings at 1440×900 and 4 to 7px at 1280×800. Entering a frame or an input's path
+  first part at that scale. Entering a frame or an input's path
   opens what it enters: those frames stay open through the camera move's own
   zooms, so they arrive open although the camera stands smaller than a
-  closed layer needs to open by itself. Closed on the way, microblog's
-  /explore stood on the closed Web routes summary with its title at 45 px.
+  closed layer needs to open by itself.
   The minimum camera scale permits the complete root bounds even in a short
   window. The initial world choice accounts for readable root-header widths and heights,
   not only its bounding rectangle. After placing the native area interiors,
@@ -772,9 +680,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   heading can continue below its zoom mark instead of breaking a name midway.
   The fit that sizes those reserves frames exactly what the whole-map camera
   frames, a display group's frame with its padding and heading band
-  included: measured over the participants alone, the camera stood smaller
-  than the fit, and every heading reserved to the pixel lost its last
-  letter.
+  included.
   A title wraps only between words, the way the browser wraps it: closing
   punctuation stays with the word before it and an opening bracket with the
   word after it, so no line starts with ")" or is ")" alone. A word breaks
@@ -785,10 +691,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   its longest word shrinks its type until that word fits instead of breaking
   it; a part's title leaves room for its zoom button. Card text is measured
   at the card's real text column, its width less its border and padding, and
-  less its zoom button's room beside a part's title: measured wider, a line
-  counted whole broke again in the browser and left its last word alone on
-  a line. A part's description is not broken into lines on the page; the
-  browser wraps it in that column, and its lines counted there only size
+  less its zoom button's room beside a part's title. A part's description
+  is not broken into lines on the page; the browser wraps it in that column, and its lines counted there only size
   the card, at most three, the third cut with an ellipsis. The description
   is held to that column's width, so a browser drawing the border thinner
   than its width cannot fit whole a line the count broke and leave the card
@@ -799,8 +703,6 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   gives the mark its ordinary size, as a small group keeps a smaller complete
   label; a frame too narrow for its text at full size keeps that smaller
   summary instead of standing blank beside a display group's plain tiles.
-  Drawn into the short box, Redis's 1280×720 first screen cut "TCP
-  endpoint" below its frame and "Background" out of its input list.
   External width minima allow that arrangement; height reserves the actual
   wrapped heading and nested-content hint with their insets, without an unrelated floor.
   Orientation comparison uses those measured minima before world size.
@@ -845,8 +747,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   bends. React Flow owns pan/zoom and camera restoration.
   Emphasis darkens and thickens a line, never its head: every arrowhead is
   an ordinary one's size, as is every head of a link between a part's
-  declarations. Drawn in the thicker line's stroke widths, an emphasised
-  head stood 17.5px beside 10.5px and covered the number at the frame.
+  declarations.
   Connections retain their screen stroke, casing, dash and arrowhead sizes
   through React Flow’s ancestor transform. Frame outlines use inset paint so
   browser minimum-border rounding cannot turn a fractional world stroke into
@@ -869,8 +770,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   prose width. The initial view is the whole-map summary; reset centers the selected
   item at readable scale (or the topmost part when nothing is selected). A
   part is centred in the canvas; a part taller than the canvas shows its head
-  a screen margin below the top. The margin is screen pixels: taken as world
-  units at a close-up zoom it put Command dispatch under the canvas edge. A
+  a screen margin below the top. The margin is screen pixels. A
   regenerated layout invalidates old camera coordinates and reveals the selected
   item instead. A navigation, click or camera move cannot trigger a different
   hover emphasis under a stationary pointer; real pointer movement resumes hover.
@@ -886,8 +786,7 @@ part reached earlier explains that part; imports and part membership alone do
 not establish a path. The path is not a neighbourhood: its arrows are those
 entering calls' part pairs, and its reading lists the parts by call depth from
 the handler, then by the first declaration reached in each, with a part
-reached through a matched input after them. Selecting GET had lit every call
-among fourteen parts and listed them starting with Strings. Call depth is a
+reached through a matched input after them. Call depth is a
 static measure, not a recorded execution order. All original structural
 relations remain available. With GET pinned, a part's card says "Why it
 appears in get" with the calls entering it and the count of the others,
@@ -897,19 +796,14 @@ The key lists only the kinds and strokes present in that map.
 
 Group readings put the description first, then the input's witness when an
 input is pinned, then what the part is made of, then incoming connections
-before outgoing connections: Command dispatch had listed some 5,000 characters of
-connections before its code, and Client connections and replies the
-nineteen parts it calls, mostly utilities, before the fourteen that call
-it. What a part is made of (owner's choice 3a, 2026-09-27) is headed by
+before outgoing connections. What a part is made of (owner's choice 3a,
+2026-09-27) is headed by
 its declarations counted by the kind its tiles carry ("Made of 18
 functions", "2 functions, 3 types") with the files they are written in
 once beside it, and lists every declaration of the part as a link into its
 code, the model's keys first and in bold as the part's tiles draw them,
-then the rest by name whatever their case, with no line number: by file
-and line, List commands' eighteen functions read as a column of line
-numbers. The tiles keep the page's own order. It had listed only the keys
-under a heading that said all, and Replication's showed
-replicationFeedSlaves and not syncWithMaster. An area's reading starts
+then the rest by name whatever their case, with no line number. The tiles
+keep the page's own order. An area's reading starts
 the same way under its description: "Made of 9 parts", then each part, a
 link to its reading, with its counts and files and its declarations as
 links, keys first and bold, the rest by name; a declaration is read in
@@ -920,22 +814,19 @@ the count of its calls and the parts they are made from, each opening to
 the same rows as the arrow's card; they replace the list of neighbours by
 name. A line from inputs counts the handlers they are implemented in, with
 that unit ("← Inputs 12 handlers"; its card "12 handlers, into 3 of 5"),
-and inputs sharing a handler stand in its one row, each named ("a, b →
-handler"); no input is dropped from it. In the column a name in those rows reads its declaration in its part,
+and inputs sharing a handler stand in its one row, each named ("{a}, {b} →
+{handler}"); no input is dropped from it. In the column a name in those rows reads its declaration in its part,
 as a click on its tile does, and a modifier-click still opens the code it
 linked to; a row's code is one explicit "Open code ↗" at its end, where the
 call is written, and a row wraps with its names whole. The page data names
 the declarations at a call's two ends (`caller`, `callee`, keyed as the
 reading keys a declaration) apart from where the call is written and where
-it lands: redis-cli's joint is written at anet.c:158 and lands at
-anet.c:256, inside anetAccept declared at 248. A name whose part lists no
-such declaration is only named. The canvas's own card keeps its links:
-Redis's "anetTcpGeneri…" in the column had opened GitHub for a reader who
-meant to read it. An input collection is named Inputs there, as its
+it lands. A name whose part lists no
+such declaration is only named. The canvas's own card keeps its links. An
+input collection is named Inputs there, as its
 canvas heading is. Each declaration is one line, as a tile is, a type's fields
 on a line under it, and a key type the model explained keeps its mark and
-its fields: a bordered box each had put Client connections' callers some
-1,700 px further down the reading. The reading column does not repeat the source index, which
+its fields. The reading column does not repeat the source index, which
 is that list again by file and stays on the part's card. A type's fields stand inside its row, in the code
 list and the source index alike, never as peers of the part's functions. The original native relation is available even when the
 model supplied no sentence for that pair. Relations between declarations in
@@ -949,31 +840,27 @@ exact participant href and direction, with each distinct saved summary once.
 Source details retain every original row, possible-call mark and source pair.
 A relation row is said through one closed vocabulary of the report's UI
 messages, chosen by its kind and filled with the two declarations' names
-("initServer passes acceptHandler as a callback"), never the stored kind
+("main passes acceptHandler as a callback"), never the stored kind
 ("passes_callback"); a C program's import is said as an include, and a
 joint between two programs names the declarations at both of its ends
-("anetTcpGenericConnect connects to anetAccept", not "integrates with").
+("{caller} connects to {callee}", not "integrates with").
 An arrow's card reads each of its calls as caller, relation and callee and
 links both names, so an arrow's call is those three words: the phrase's
-words when they stand between the names (the joint's card had shown only
-"anet.c:158"), the relation's kind when the phrase wraps the callee
-("cmdTable passes callback delCommand"; the full sentence showed neither
-name). A row the model wrote
-in its own words keeps them. Rows of one caller and one relation kind in
-one evidence list fold into one line with their count and callees, each
-row inside it with its sources: Client connections and replies listed
-"cmdTable calls …" 97 times. A list with folds has one "Open all" control
+words when they stand between the names, the relation's kind when the
+phrase wraps the callee ("cmdTable passes callback delCommand"). A row
+the model wrote in its own words keeps them. Rows of one caller and one
+relation kind in one evidence list fold into one line with their count
+and callees, each row inside it with its sources. A list with folds has
+one "Open all" control
 that opens and closes them together. What a reader opens in the reading
 column (Source details, a fold, Open all, any disclosure) comes into view:
 the column scrolls by what it overflows at the column's foot, and no
 further than bringing its summary to the column's top; closing scrolls
 nothing, and a reading restored with its evidence open keeps its place.
-Redis's "Source details · 11" under Persistence opened at the column's foot
-with three of its five lines below it, and Open all put four there.
 Inputs reaching this part is
 collapsed with its count. The reading column stands beside the map's
 controls and key as well as its canvas and takes their height, with the
-canvas keeping its own: 695 px of a 1440×900 window instead of 610. Only
+canvas keeping its own. Only
 the canvas's workspace sets that height; the static map a canvas failure
 leaves keeps the reading's own scrolling box. It
 has no "More details" step, "To explanation" or "To code" action, which
@@ -998,9 +885,7 @@ An input's row names the input by where it is registered and its handler
 by its code; when the row's own link to the input (its "To explanation",
 or its title's anchor) names one input, a plain click on the name or the
 handler reads that input in the report, in the column and on the map, and
-a modifier-click still opens the code. Nothing is matched by name. On
-Redis's 95 command rows a click on flushdb or flushdbCommand had opened
-GitHub.
+a modifier-click still opens the code. Nothing is matched by name.
 This does not expand or change the canvas. The Parts count uses the same local
 leaf groups across all lanes, excluding operations, frames and foreign nodes.
 Its link focuses the component on the common map. The separate core-lane code
@@ -1025,29 +910,26 @@ header contains Questions, the component list and one visible Find field.
 All is the list's default and runs the whole-map action, clearing selection,
 input context and the visible Find query after recording the new visit. Show
 whole map above the canvas moves only the camera: the reading, its emphasis
-and any input path stay, as a reader zooming out to look around expects;
-clearing them had sent that reader back to the start. The "−" beside it
+and any input path stay, as a reader zooming out to look around expects.
+The "−" beside it
 steps out one level, as a zoom mark steps in one, and, as Show whole map
 does, moves only the camera: from a part's tiles to the frame holding
 that part, from an open area to its component, from an open component to
 the whole map. The camera takes the frame as entering it would, and no
 closer than the zoom at which the level it leaves closes; at the whole
-map it zooms out by a fifth. Zooming
-out by a fifth at every level, it had left Redis's readers where they
-were, and they pressed Show whole map up to nine times in a question. "+"
+map it zooms out by a fifth. "+"
 zooms in by a quarter. Component choices and Back restore their
 matching selection and camera.
 
 The toolbar retains the current question and the exact component/area/part
 path, with the pinned input before it and the declaration read after it
-("get · redis-server (executable) / Server runtime / Replication ·
-syncCommand"). Each segment is its own link that goes up to its level,
+("get · kvd (executable) / {area} / {part} · getCommand"). Each segment
+is its own link that goes up to its level,
 the reading and the camera together: a component or area is read and
 framed as entering it frames it, the part is read and entered without the
 declaration, the declaration is read in its part with its tile centred,
 the input is entered as its path. With nothing read it names the System
-map. It had been one link that only read the current reading again: Redis's
-readers clicked "Server runtime" in it and stayed on syncCommand's tiles.
+map.
 Browser Back/Forward, a source-details side trip and reload preserve the
 question, selected operation, exact code selection, map search/filter and viewport. The completed initial overview camera is saved
 even with no selection or hash, and restoring an empty selection clears the
@@ -1062,8 +944,7 @@ repository material open below that mounted canvas, and each has a direct
 return to it. Component sidebar links expose the existing flow, configuration,
 data, core, dependencies, dynamic execution, coverage and TODO sections when
 present. A link to a section's heading opens the sections holding it and
-the list the heading heads: the TODOs link landed on its heading at the
-foot of the page with "10 markers in 6 files" still closed under it.
+the list the heading heads.
 The redundant single-component entrance is not generated alongside
 the common canvas. The repository summary and useful links remain, with no
 "Understand this repository" or visible "Starting points" label.
@@ -1097,7 +978,7 @@ Exact code-name matches precede matches buried in answer prose. A result says
 what it is: an outside call or its destination is External communication (with
 its own filter), never a Part; an input collection is Inputs; a component is
 listed once. A declaration is one result by its file and line, however many
-programs compile it: adlist.c's listCreate had been three results. It shows
+programs compile it. It shows
 the declaration as its tile does (a type with its fields) and its file and
 line, and has one "In program / part →" link per program that holds it,
 reading it there; a program that leaves it off its map links to the list
@@ -1124,16 +1005,16 @@ rows its part already lists (each a fact with the line it is written on),
 grouped by the part at the other end, one line per declaration with every
 place the call is written. A relation other than a call keeps its own
 words. Choosing a line reads that declaration, in place when it is in the
-same part, so a chain such as processInputBuffer → processCommand → call is
-followed one call at a time. A declaration without a line says nothing
-about one: "No explanation saved" had answered a click on every tile but
-the keys. Equal names with different source locations remain separate.
+same part, so a chain such as readQueryFromClient → processInputBuffer →
+processCommand is followed one call at a time. A declaration without a
+line says nothing about one. Equal names with different source locations
+remain separate.
 Original source links and full target evidence retain their order and are
 available without scripting.
 
 ## External communication and data
 
-Selecting a component on the common map opens its existing purpose, entrypoints and complete input catalogue in the panel. The "Entrypoints" link among its sections lands on the program's entry, from GroupsIndex's entries in the page data: the part holding every seed, the seed read there when it is one; when a seed stands in no part, or the seeds in two parts, the component's reading, opened at its entry line when it has one. It had landed on the inputs, where a reader looking for the program's start found none. Its original full-reference section remains available with the main flow, configuration, group cards, dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches, then the parts its program never runs, one row per file with the file, the part's name and its declarations there as source chips (GroupsIndex `unreachable`), and then, under "{0} symbols" and by file in line order, the other declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: redis-cli lists `anet.c`'s `anetTcpServer` and `anetAccept`, and neither listens nor accepts on its map, and it lists "adlist.c · Linked list" with its thirteen functions and "adlist.h · Linked list" with its types, a part it no longer draws. A declaration is listed once: a part's row does not repeat among the symbols. Find lists each declaration of such a row as Code with no "In part" link and opens its row. Above the parts and symbols the list says, as the files' list does, that nothing this program runs reaches them and that this does not establish that the code is unused. Each declaration another program of the same report runs names those programs, "(run by redis-benchmark)", each linking to its component, in page order: redis-server lists `aeStop` run by redis-benchmark and `anetRead`/`anetWrite` run by redis-cli, where a newcomer had read "unused helpers" and skipped redis-cli's whole network I/O. This is page data joined from the saved ProgramIndex set, not a walk: a program runs a declaration when its index holds the same declaration (GroupsIndex's cross-program identity, `groupindex.DeclarationKey`: path, line, column, kind and name; never a name alone), does not mark it `unreachable`, and marks some other callable `unreachable`. An index that marks nothing (a library, a program other code can enter by any name, every adapter but C) proves nothing and names no program; a program that reaches every one of its callables is not named either. It stays a page join over the adapters' saved proofs; GroupsIndex's reach is the input handlers' and is per program. The list reuses the existing heading, the off-map row and the "{0} symbols" summary; no badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. In the connections' stored order, grouped by the part they reach, redis-benchmark's start read "main calls aeMain" before the `aeCreateEventLoop` main calls thirty lines earlier; three call sites of `main` calling `aeMain` are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
+Selecting a component on the common map opens its existing purpose, entrypoints and complete input catalogue in the panel. The "Entrypoints" link among its sections lands on the program's entry, from GroupsIndex's entries in the page data: the part holding every seed, the seed read there when it is one; when a seed stands in no part, or the seeds in two parts, the component's reading, opened at its entry line when it has one. Its original full-reference section remains available with the main flow, configuration, group cards, dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches, then the parts its program never runs, one row per file with the file, the part's name and its declarations there as source chips (GroupsIndex `unreachable`), and then, under "{0} symbols" and by file in line order, the other declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: kvcli lists `net.c`'s `netListen`, and does not listen on its map, and it lists its part of `loop.c` with that file's functions, a part it does not draw. A declaration is listed once: a part's row does not repeat among the symbols. Find lists each declaration of such a row as Code with no "In part" link and opens its row. Above the parts and symbols the list says, as the files' list does, that nothing this program runs reaches them and that this does not establish that the code is unused. Each declaration another program of the same report runs names those programs, "(run by kvd)", each linking to its component, in page order: kvcli lists `netListen` run by kvd, and kvd lists `netConnect` run by kvcli. This is page data joined from the saved ProgramIndex set, not a walk: a program runs a declaration when its index holds the same declaration (GroupsIndex's cross-program identity, `groupindex.DeclarationKey`: path, line, column, kind and name; never a name alone), does not mark it `unreachable`, and marks some other callable `unreachable`. An index that marks nothing (a library, a program other code can enter by any name, every adapter but C) proves nothing and names no program; a program that reaches every one of its callables is not named either. It stays a page join over the adapters' saved proofs; GroupsIndex's reach is the input handlers' and is per program. The list reuses the existing heading, the off-map row and the "{0} symbols" summary; no badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. Several call sites of one caller calling one callee are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
 
 An outbound kind is shown by the protocol-neutral label its kind has:
 `client_request` is "Request", never "HTTP", and the counts and headings of
@@ -1341,8 +1222,7 @@ failed, is rendered by the server through the same `RenderServedPage`.
   manifest rows, TODO markers, imports, dead modules, negatives, and
   dependencies. A negative says only what it knows: missing tests read "No
   recognized test files found in the inspected paths", never "No test
-  files" (Redis's 204-test Tcl suite is no file any adapter recognizes, and
-  a newcomer told readers to skip it). Routes, client requests and the portals between targets are
+  files". Routes, client requests and the portals between targets are
   not facts: they are registrations the reading stage classified, read from
   the GroupsIndex operations and outbound rows and joined on literals in the
   report. `claims.json` holds quotes with their
@@ -1352,7 +1232,7 @@ failed, is rendered by the server through the same `RenderServedPage`.
   group with 6 calls and 6 callers of observation per listed member, then 20
   members with 3 and 3, then 12 members without observations; `member_count`
   is always the real size and the facts and claims are complete at every
-  rung (Freqtrade: 1.74 → 1.18 → 0.92 MB). A refusal by size or context, local from a
+  rung. A refusal by size or context, local from a
   declared context window or remote, moves to the next rung; when the last
   is refused the report is published with an empty orientation, the refusal
   in `rejected.jsonl` and an `unavailable` state in the console. Unknown or incompatible set refs are recorded and removed;
