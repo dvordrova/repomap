@@ -78,3 +78,11 @@ func DestinationReturnedStore() {
 	client := DestinationSingleStoreAfterCall()
 	_, _ = http.Get(client.Base)
 }
+
+// verbose is a command-line option the package declares where it is
+// initialized: flag.Bool is given the option's words, as flag.String is in
+// DestinationApplication.
+var verbose = flag.Bool("verbose", false, "log every destination request")
+
+// Verbose reports the option.
+func Verbose() bool { return *verbose }

@@ -31,7 +31,7 @@ const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
 	GraphVersion = 19
-	Version      = 15
+	Version      = 16
 
 	GraphFilename    = "places.json"
 	ArtifactFilename = "atlas.json"
@@ -491,10 +491,14 @@ type Atlas struct {
 // Each cell is empty when the symbol does not do that. It holds only the
 // decisions the boundaries read.
 type APIRole struct {
-	Symbol     string `json:"symbol"`
-	Binds      string `json:"binds,omitempty"`
-	Publishes  bool   `json:"publishes,omitempty"`
-	Talks      string `json:"talks,omitempty"`
+	Symbol    string `json:"symbol"`
+	Binds     string `json:"binds,omitempty"`
+	Publishes bool   `json:"publishes,omitempty"`
+	Talks     string `json:"talks,omitempty"`
+	// Enters is what the words a call to the symbol is given become: an
+	// entry kind the model chose, made at every call outside tests that
+	// gives the symbol words and that no fact already names.
+	Enters     string `json:"enters,omitempty"`
 	Middleware bool   `json:"middleware,omitempty"`
 }
 
@@ -723,6 +727,11 @@ type Boundary struct {
 	// Line is MODEL.
 	Line   string `json:"line"`
 	FactID string `json:"fact_id,omitempty"`
+	// HandlerUnknown marks an entry whose handler is not established: the
+	// words a call is given (an option a parser declares) or a value handed
+	// over. Caller declares it; the code that acts on it is not a fact yet,
+	// so it binds to no part.
+	HandlerUnknown bool `json:"handler_unknown,omitempty"`
 }
 
 // DestinationUse is one observed argument chain reaching a communication

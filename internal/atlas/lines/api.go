@@ -106,11 +106,45 @@ func API(handed bool) table.Definition {
 		}
 		return def
 	}
+	def.Columns = []table.Column{talksColumn()}
+	return def
+}
+
+// APIGiven asks a symbol whose calls give it words both what a call does
+// with other running programs and what the words it is given become on our
+// map (repomap.atlas.api.v7.given): flag.Bool("verbose", …) declares an
+// option, printf("%s\n", …) prints text. The two are independent (Alone):
+// a near-tie on one leaves the other standing. No outcome is offered in
+// both: taking messages from a queue is talks's, so enters offers no
+// queue_consumer and no middleware.
+func APIGiven() table.Definition {
+	def := API(false)
+	def.Contract += ".given"
+	talks := talksColumn()
+	talks.Alone = true
 	def.Columns = []table.Column{
-		{Name: "talks", Kind: table.Choice, Options: TalksOptions(), Criteria: apiTalksOptions, Item: "outside_symbol",
-			Ask: "What does a call to `outside_symbol` do with other running programs?"},
+		talks,
+		{Name: "enters", Kind: table.Choice, Options: EntersOptions(), Criteria: EntryCriteria(EntersOptions()...), Item: "outside_symbol", Alone: true,
+			Ask: "What do the words a call to `outside_symbol` is given become on our map?"},
 	}
 	return def
+}
+
+func talksColumn() table.Column {
+	return table.Column{Name: "talks", Kind: table.Choice, Options: TalksOptions(), Criteria: apiTalksOptions, Item: "outside_symbol",
+		Ask: "What does a call to `outside_symbol` do with other running programs?"}
+}
+
+// EntersOptions are what the words a call is given can become: an entry
+// kind, except the queue consumer talks decides, or none.
+func EntersOptions() []string {
+	var options []string
+	for _, kind := range atlas.EntryKinds() {
+		if kind != atlas.BoundaryQueueConsumer {
+			options = append(options, kind)
+		}
+	}
+	return append(options, APINone)
 }
 
 // Publish asks which holder a publishing call serves when the code could not

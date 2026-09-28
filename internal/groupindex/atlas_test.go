@@ -438,3 +438,66 @@ func TestOnlyThePartHoldingALaunchPointIsTheEntry(t *testing.T) {
 		t.Fatalf("areas %v, want %v", areas, want)
 	}
 }
+
+// An entry whose handler is not established (the words a call is given, an
+// option a parser declares) is an input with no subject, no reach and no
+// phase, in the part its call is written in, which is not claimed to
+// implement it. It is named
+// by its words, never by the caller declaring it. The same option written
+// at two sites of one caller is one input at its first site; the same word
+// in another caller is another input. A model's entry is an input like a
+// fact's, and a name that cannot stand refuses that entry alone.
+func TestAModelEntryWhoseHandlerIsNotEstablishedIsAnInput(t *testing.T) {
+	p := atlasTestProgram(t, "server", "api/handler.go")
+	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "c", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
+		Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, MemberIDs: []string{p.Objects[0].ID},
+			Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}}}}}
+	option := func(id, caller string, line, column int, name string, values ...string) atlas.Boundary {
+		return atlas.Boundary{ID: id, ObjectID: caller, BoxID: "api", Path: "api/handler.go", LineNo: line, Column: column, Caller: "FA",
+			Direction: atlas.DirectionIn, Kind: atlas.BoundaryCommand, Values: values, Name: name, Source: "model", HandlerUnknown: true}
+	}
+	target.Boundaries = []atlas.Boundary{
+		option("b1", p.Objects[0].ID, 9, 5, "-h", "-h"),
+		option("b2", p.Objects[0].ID, 4, 5, "-h", "-h"),
+		option("b3", "another caller", 12, 5, "-h", "-h"),
+		option("b4", p.Objects[0].ID, 14, 5, "--verbose log more", "--verbose", "log more"),
+		option("b5", p.Objects[0].ID, 16, 5, "usage:\n", "usage:\n"),
+	}
+	indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, atlas.Atlas{Version: atlas.Version, Repository: "test", Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := indexes[0]
+	var got []string
+	for _, operation := range index.Operations {
+		if operation.SubjectID != "" || !operation.HandlerUnknown || operation.GroupID == "" || operation.Source != "model" {
+			t.Fatalf("an entry whose handler is not established is bound to a declaration or no part: %+v", operation)
+		}
+		got = append(got, operation.Kind+" "+operation.Name+" @"+strconv.Itoa(operation.Location.Line))
+	}
+	sort.Strings(got)
+	if want := []string{"command --verbose log more @14", "command -h @12", "command -h @4"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("operations = %v, want %v", got, want)
+	}
+	if len(index.Reach) != len(index.Operations) {
+		t.Fatalf("reach = %d for %d operations", len(index.Reach), len(index.Operations))
+	}
+	for _, reach := range index.Reach {
+		if len(reach.Subjects) != 0 {
+			t.Fatalf("an entry whose handler is not established reaches code: %+v", reach)
+		}
+	}
+	for _, subject := range index.Subjects {
+		if subject.Phase != "" {
+			t.Fatalf("an entry whose handler is not established gave %s a phase: %s", subject.ID, subject.Phase)
+		}
+	}
+	encoded, err := Encode(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := Decode(encoded, p)
+	if err != nil || !reflect.DeepEqual(restored.Operations, index.Operations) {
+		t.Fatalf("the saved index lost an entry whose handler is not established: %v", err)
+	}
+}

@@ -626,7 +626,10 @@ code restores the chosen words verbatim, joined by one space in the order the
 model wrote them, as the atlas boundary's `name`. A word that cannot stand in
 a one-line name as written (a control character, space around it) is not
 offered and never trimmed into one. GroupsIndex names the operation by that
-name, or, with no accepted choice, by its handler's native name; it never
+name, or, with no accepted choice, by its handler's native name; an entry
+whose handler is not established (below) is named by its one word without
+a question, and with several and no accepted choice by all its nameable
+words as written, in order, never by the caller that declares it; it never
 composes a name from a fact's method and values, and no code tells a verb, a
 path, a command or a topic apart. Nothing is asked when the registration wrote
 no word. A declaration whose native route already is its operation is not an
@@ -788,6 +791,44 @@ decision explicitly unanswered, and a symbol without a role makes no
 boundary. The roles are recorded on the atlas as `api`. A request, like
 every entry, is named from its registration's words (Operation ownership
 above).
+
+A symbol that is handed nothing but whose calls outside test files give it
+words (a literal: `flag.Bool("verbose", …)`, `strcmp(argv[1], "-h")`,
+`printf("%s\n", …)`) is asked in a third set (`repomap.atlas.api.v7.given`)
+two independent (`Alone`) questions: `talks`, as above, and `enters`, what
+the words a call to it is given become on our map: an entry kind but
+`queue_consumer` (taking messages is `talks`'s to say, so no outcome is
+offered in both), or `none`, from the one criteria file. Each symbol is in
+exactly one set. Its `usage` is its first call outside tests that gives it
+words, and every row may show `result_receives`: the calls the code makes
+on what a call to the symbol returns, counted (`add_argument ×1`), the code
+fact of a factory; what the symbol is stays the model's answer. An entry
+kind answered beside `serves` is refused alone (`cell_rejected`): a
+listener's answer stands and its words are no entry.
+
+A symbol whose words are an entry makes that entry at every call outside
+test files that gives it words and that no fact boundary, in or out,
+already names at its line and column (a SQL statement a query call sends,
+a registration at the call): a model boundary, direction in, of the kind
+answered, whose `words` are the literals the call was given (never the
+call word or the caller's name) and whose handler is not established
+(`handler_unknown`). A call given words to a registration the code found
+(a literal on a value that holds callables, an address literal) becomes the
+same entry, with the words of the call at its site (a registration's own
+values keep only its address), and a
+value handed over without a callable (`Register("k6/x/dns", new(DNS))`)
+is an entry whose handler is not established too. Some code acts on such
+an entry; the facts do not say which yet, so none is taken for it: it is
+declared where its call is written, in its caller's part, and binds to no
+part. It has no subject, no reach and no phase in GroupsIndex; it does not
+make its caller a key's entry, its part the side work comes in at or a
+core part's entry, and gives no address to a holder's entries. A call none
+of whose words can name an entry (a format ending in a line break) makes
+no entry, recorded as `entry_unnamed`, and is read as any other call. A
+call in a test file makes none. GroupsIndex keeps one input per kind, words
+as written and declaring caller: the same option written twice in one
+function is one input at its first site; the same word in another caller
+is another. A name that cannot stand refuses that entry alone.
 
 The table asks only the decisions the boundaries read (`repomap.atlas.api.v7`).
 `reads_input`, `writes_output`, `auth`, `config` and `validates` were asked

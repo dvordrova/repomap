@@ -106,6 +106,15 @@ never entered into or read from a repository-wide unqualified map.
   with SQL statement structure (the shared `internal/sqltext` admission, not a
   leading verb; a table filled in by `%s` or a template hole still counts). Without a model there are
   candidates, not routes; the Echo preset test is the offline acceptance.
+  Since 2026-09-28 (inputs pass 1, every language) a symbol whose calls
+  give it words is also asked `enters`, what the words become, from the one
+  entry criteria file every entry question reads; a call given words to a
+  symbol whose words are an entry is that entry, unless a fact already
+  names the call. Such an entry, like a value handed over, has its handler
+  not established (`handler_unknown`): declared in its caller's part, with
+  no subject, reach or phase, no arrow into a part, named by its words. The
+  outside symbols' `usage` is the call as written, and each symbol's answer
+  is remembered on its own, an uncertain one as undecided.
 - **Map of parts (2026-09-25, owner's proxy spec; the owner's open questions
   1–7 of that spec still stand):** one DeepSeek request per target groups the
   target's units into named parts from code structure only (paths, names,
@@ -350,8 +359,8 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 18, places graph 19, reading input 18, atlas 15,
-GroupsIndex 19, dependency catalog 2, extraction artifact 2, facts 3, claims 2
+This wave uses ProgramIndex 18, places graph 19, reading input 18, atlas 16,
+GroupsIndex 20, dependency catalog 2, extraction artifact 2, facts 3, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
 dependencies. Accepted extractor nodes use `u*`; arbitrary public-protocol IDs

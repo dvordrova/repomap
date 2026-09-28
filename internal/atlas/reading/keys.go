@@ -114,7 +114,9 @@ func (r *reader) keyFields(targetID string, part *boxState, id string, title map
 	for _, key := range sortedKeys(r.boundaries) {
 		state := r.boundaries[key]
 		b := state.place.Boundary
-		if state.kind == atlas.BoundaryConfig || state.kind == atlas.BoundaryListenAddress || b.SubjectID != decl.ObjectID && b.ObjectID != decl.ObjectID {
+		// An entry whose handler is not established makes no declaration
+		// an entry.
+		if state.kind == atlas.BoundaryConfig || state.kind == atlas.BoundaryListenAddress || state.handlerUnknown || b.SubjectID != decl.ObjectID && b.ObjectID != decl.ObjectID {
 			continue
 		}
 		if b.Direction == atlas.DirectionIn {

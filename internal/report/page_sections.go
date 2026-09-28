@@ -1041,7 +1041,9 @@ func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, 
 	card.Inventory = rows
 	card.Highlights = keysFirst(rows)
 	for _, operation := range index.Operations {
-		if operation.GroupID != group.ID {
+		// A part lists what it implements; an input whose handler is not
+		// established is only declared there.
+		if operation.GroupID != group.ID || operation.HandlerUnknown {
 			continue
 		}
 		card.Operations = append(card.Operations, pageGroupOperation{

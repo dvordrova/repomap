@@ -75,6 +75,30 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	if want := []string{"kvd.h.kvCommand.proc", "pthread.h.pthread_create", "signal.h.struct sigaction", "stdlib.h.qsort"}; !slices.Equal(handed, want) {
 		t.Fatalf("registrars asked what a callable becomes = %v, want %v", handed, want)
 	}
+	// Every symbol kvd's code gives words to is asked what they become,
+	// strcmp's "--symbols" among them; answered none, they make no input.
+	preset.mu.Lock()
+	entered := slices.Clone(preset.entered)
+	preset.mu.Unlock()
+	for _, symbol := range []string{"string.h.strcmp", "stdio.h.fprintf", "stdlib.h.getenv"} {
+		if !slices.Contains(entered, symbol) {
+			t.Fatalf("%s was not asked what its words become: %v", symbol, entered)
+		}
+	}
+	// Before its entry is decided, a word a call gives an outside symbol
+	// registers nothing in another question: the role split's and the
+	// helper question's items list only the words of registrations.
+	preset.mu.Lock()
+	leaked := slices.Clone(preset.leaked)
+	preset.mu.Unlock()
+	if len(leaked) > 0 {
+		t.Fatalf("an undecided word reached other questions: %v", leaked)
+	}
+	for _, row := range result.Rejected {
+		if row.Stage == "atlas_api" {
+			t.Fatalf("an outside symbol's question was refused: %+v", row)
+		}
+	}
 	handlers := map[string]string{}
 	for _, object := range index.Objects {
 		if object.Kind == programindex.ObjectFunction && object.Location != nil && object.Location.Path == "kvd.c" {
@@ -228,6 +252,13 @@ type kvdPreset struct {
 	roles         map[string]map[string]string
 	mu            sync.Mutex
 	handed, named []string
+	// entered are the symbols asked what the words their calls are given
+	// become; each is answered none, as a reader would for kvd's calls.
+	entered []string
+	// leaked are the questions whose item lists, among what registers a
+	// declaration, a word a call gives an outside symbol before its entry
+	// was decided.
+	leaked []string
 	// unnamed counts rows of the incoming boundaries table that had no words
 	// to name them by: without captions such a row has nothing to decide.
 	unnamed int
@@ -351,7 +382,13 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 	return &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
 		symbol, _ := question.Item["symbol"].(string)
 		usage, _ := question.Item["usage"].(string)
-		switch column := key[strings.LastIndex(key, "|")+1:]; column {
+		column := key[strings.LastIndex(key, "|")+1:]
+		if registered, _ := json.Marshal(question.Item["registered"]); strings.Contains(string(registered), "--symbols") {
+			preset.mu.Lock()
+			preset.leaked = append(preset.leaked, key)
+			preset.mu.Unlock()
+		}
+		switch column {
 		case "binds":
 			preset.mu.Lock()
 			preset.handed = append(preset.handed, symbol)
@@ -366,6 +403,13 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 			}
 			return typesafetest.Choose("none"), true
 		case "publishes":
+			return typesafetest.Choose("none"), true
+		case "enters":
+			// strcmp compares a word, fprintf prints a format, getenv reads
+			// the environment: none of kvd's word-given calls is an entry.
+			preset.mu.Lock()
+			preset.entered = append(preset.entered, symbol)
+			preset.mu.Unlock()
 			return typesafetest.Choose("none"), true
 		case "talks":
 			if value := preset.roles[symbol]["talks"]; value != "" {

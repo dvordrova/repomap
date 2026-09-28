@@ -53,8 +53,10 @@ func (r *reader) readCore(ctx context.Context) error {
 				if state.kind == atlas.BoundaryConfig || !contains(state.place.TargetIDs, target.ID) || r.boundaryBox(target.ID, state.place) != part.id {
 					continue
 				}
-				if state.kind == atlas.BoundaryListenAddress {
-					// Where the program listens is not a request entering.
+				if state.kind == atlas.BoundaryListenAddress || state.handlerUnknown {
+					// Where the program listens is not a request entering,
+					// and an entry whose handler is not established enters
+					// no part.
 					continue
 				}
 				if state.place.Boundary.Direction == atlas.DirectionIn {

@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 19
+	Version          = 20
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -238,6 +238,12 @@ type Operation struct {
 	Summary  string                `json:"summary"`
 	Source   string                `json:"source"`
 	Location programindex.Location `json:"location"`
+	// HandlerUnknown marks an input whose handler is not established: an
+	// option a call declares, a value handed over. Some code acts on it; the
+	// facts do not say which yet. It has no subject and no reach; its group
+	// is the part its call is written in, which declares it and is not
+	// claimed to implement it.
+	HandlerUnknown bool `json:"handler_unknown,omitempty"`
 }
 
 // StructuralEdgeRole is a deterministic projection of exact ProgramIndex
@@ -816,7 +822,7 @@ func (index Index) Validate() error {
 		// An operation in a file off the map belongs to no group.
 		_, groupExists := groupsByID[operation.GroupID]
 		_, subjectExists := subjectsByID[operation.SubjectID]
-		if operation.GroupID != "" && !groupExists || operation.SubjectID != "" && !subjectExists || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validOptionalText(operation.Summary) ||
+		if operation.GroupID != "" && !groupExists || operation.SubjectID != "" && !subjectExists || operation.HandlerUnknown && operation.SubjectID != "" || operation.ID != compactOrdinal("o", i) || !validText(operation.Name) || !validOptionalText(operation.Summary) ||
 			(operation.Source != "model" && operation.Source != "fact") || operation.Location.Path == "" || operation.Location.Line < 1 || operation.Location.Column < 1 {
 			return fmt.Errorf("group index: invalid operation %q", operation.ID)
 		}

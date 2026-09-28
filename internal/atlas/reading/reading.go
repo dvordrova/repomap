@@ -1260,6 +1260,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			Caller: facts.Caller, Direction: facts.Direction, Kind: state.kind, External: facts.External, Method: facts.Method,
 			Values: append([]string{}, facts.Values...), Name: state.name, Line: state.writtenLine(), FactID: factID,
 			Source: facts.Source, Destination: state.destination, Address: state.address, Basis: state.basis,
+			HandlerUnknown: state.handlerUnknown,
 		})
 	}
 	return target

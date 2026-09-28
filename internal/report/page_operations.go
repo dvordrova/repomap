@@ -138,9 +138,12 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 	for i, operation := range ops {
 		id := operationNodeID(section.ID, operation.ID)
 		reach := reachOf[operation.ID]
-		// An operation in a file off the map has no part to stand beside.
+		// An operation in a file off the map has no part to stand beside,
+		// and one whose handler is not established is claimed to be
+		// implemented in no part: the part its call is written in declares
+		// it.
 		owner := ""
-		if operation.GroupID != "" {
+		if operation.GroupID != "" && !operation.HandlerUnknown {
 			owner = mapNodeID(operation.GroupID)
 		}
 		near := map[string]bool{}
@@ -255,7 +258,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			Lane:           "triggers", X: mapPadding, Y: 40 + float64(i)*84, Width: mapNodeWidth, Height: 68,
 			Neighbours: strings.Join(nearIDs, " "), Degree: len(near), Members: 1,
 			Trace:   strings.Join(trace, " "),
-			Handler: handler, HandlerSource: handlerSource,
+			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown,
 		})
 	}
 	ordered := append([]groupindex.Group(nil), index.Groups...)
@@ -305,7 +308,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 				handledBy[id] = call
 			}
 		}
-		if operation.GroupID != "" {
+		if operation.GroupID != "" && !operation.HandlerUnknown {
 			usage[pathEdge{id, mapNodeID(operation.GroupID), operation.Source == "model", "implemented in", ""}] = []string{id}
 		}
 		for edge := range paths[id] {

@@ -34,7 +34,7 @@ func (builder *pageBuilder) portalLinks() []portalLink {
 			}
 		}
 		for _, operation := range index.Operations {
-			if fact, ok := builder.registrationFact(operation.FactID); ok && operation.Kind == "request" {
+			if fact, ok := builder.registrationFact(operation.FactID); ok && operation.Kind == "request" && !operation.HandlerUnknown {
 				routes = append(routes, registrationRole{fact: fact, method: fact.Method})
 			}
 		}

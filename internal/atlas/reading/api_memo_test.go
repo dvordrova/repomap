@@ -172,7 +172,8 @@ func TestAtlasAPIAsksOnlyTheSymbolANewCallAdds(t *testing.T) {
 	if err := apiReader(t, cache, after, answers.categorizer()).readAPI(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(answers.asked, []string{"talks stdio.h.printf"}) {
+	slices.Sort(answers.asked)
+	if !slices.Equal(answers.asked, []string{"enters stdio.h.printf", "talks stdio.h.printf"}) {
 		t.Fatalf("a new call asked %v, want only its symbol", answers.asked)
 	}
 }

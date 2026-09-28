@@ -238,6 +238,10 @@ type pageMapNode struct {
 	Trace         string
 	Handler       string
 	HandlerSource pageAnchor
+	// HandlerUnknown marks an input whose handler is not established: its
+	// reading says the part its call is written in declares it and that its
+	// handler is not established, and no arrow binds it there.
+	HandlerUnknown bool
 	// InputPath is an input's reading of its saved reach
 	// (page_input_path.go): where it is dispatched from, the sites it
 	// reaches, and the parts it enters with their calls.

@@ -14,7 +14,9 @@ func (builder *pageBuilder) fillSectionOperations(section *pageSection) {
 	var routeFacts []facts.Fact
 	if index := builder.graphIndex(section.programTargetID); index != nil {
 		for _, operation := range index.Operations {
-			if fact, ok := builder.factsByID[operation.FactID]; ok && section.FactsAvailable && operation.Kind == "request" && fact.Kind == facts.KindRegistration {
+			// An input whose handler is not established is no route of a
+			// handler.
+			if fact, ok := builder.factsByID[operation.FactID]; ok && section.FactsAvailable && operation.Kind == "request" && fact.Kind == facts.KindRegistration && !operation.HandlerUnknown {
 				row, seen := byFact[fact.ID]
 				if !seen {
 					row = builder.registrationRow(fact, "")

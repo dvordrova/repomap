@@ -16,7 +16,8 @@ own tables stores a callable in, named by the file that declares the row's
 record type, the type and the field. `symbol` is its name, `declared` its
 type as its package declares it, `usage` one call of it as the repository
 wrote it, or the row or statement that stores such a callable, `literals`
-what the code gives it, and
-`hands_callable` holds when the repository passes one of its own callables,
-or a value it built, to it. The question asks what a call to the symbol is
-on our map; decide from the symbol and its call alone.
+the words the code gives it, `result_receives` the calls the code makes on
+what a call to it returns, each with how many times, and `hands_callable`
+holds when the repository passes one of its own callables, or a value it
+built, to it. The question asks what a call to the symbol, or the words it
+is given, are on our map; decide from the symbol and its call alone.

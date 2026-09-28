@@ -2,19 +2,22 @@ package reading
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/modeldiag"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 // apiRole is the model's reading of one external symbol; see atlas.APIRole.
 type apiRole struct {
-	binds, talks          string
+	binds, talks, enters  string
 	publishes, middleware bool
 }
 
@@ -36,6 +39,32 @@ type apiSymbol struct {
 	usageLine, usageColumn               int
 	registrationPath                     string
 	registrationLine, registrationColumn int
+	// wordCalls counts the calls outside test files that give the symbol
+	// words (a literal); wordUsage is the first of them, the usage of a
+	// symbol asked what its words become.
+	wordCalls                   int
+	wordUsagePath               string
+	wordUsageLine, wordUsageCol int
+	// resultReceives counts, by name, the calls made on what a call to
+	// the symbol returns: parser.add_argument on ArgumentParser(...)'s
+	// result. The code states the fact; what it makes of the symbol is the
+	// model's.
+	resultReceives map[string]int
+}
+
+// receivedCalls is resultReceives as a row shows it: "add_argument ×2",
+// by name.
+func (s *apiSymbol) receivedCalls() []string {
+	names := make([]string, 0, len(s.resultReceives))
+	for name := range s.resultReceives {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		result = append(result, fmt.Sprintf("%s ×%d", name, s.resultReceives[name]))
+	}
+	return result
 }
 
 func apiName(api atlas.CallAPI) string {
@@ -51,6 +80,7 @@ func apiName(api atlas.CallAPI) string {
 // the calls of every declaration.
 func (r *reader) apiSymbols() []*apiSymbol {
 	byName := make(map[string]*apiSymbol)
+	callAt := make(map[sourceSite]*apiSymbol)
 	symbol := func(name string) *apiSymbol {
 		if byName[name] == nil {
 			byName[name] = &apiSymbol{name: name, holders: make(map[string]bool)}
@@ -91,6 +121,9 @@ func (r *reader) apiSymbols() []*apiSymbol {
 				continue
 			}
 			s := symbol(apiName(*call.API))
+			if call.Line > 0 {
+				callAt[sourceSite{place.Path, call.Line, call.Column}] = s
+			}
 			if !inTest {
 				s.sites++
 			}
@@ -101,6 +134,36 @@ func (r *reader) apiSymbols() []*apiSymbol {
 			if s.usagePath == "" && call.Line > 0 {
 				s.usagePath, s.usageLine, s.usageColumn = place.Path, call.Line, call.Column
 			}
+			if !inTest && len(call.Values) > 0 && call.Line > 0 {
+				s.wordCalls++
+				if s.wordUsagePath == "" {
+					s.wordUsagePath, s.wordUsageLine, s.wordUsageCol = place.Path, call.Line, call.Column
+				}
+			}
+		}
+	}
+	// What a call's result receives: the calls outside test files whose
+	// receiver is the result of another outside symbol's call.
+	for _, place := range r.opts.Graph.Places {
+		if place.Symbol == nil {
+			continue
+		}
+		if file := r.places[place.Parent]; file.File != nil && file.File.Test {
+			continue
+		}
+		for _, call := range place.Symbol.Calls {
+			receiver := call.ReceiverValue
+			if call.Kind != string(programindex.RelationInvokesExternal) || call.API == nil || receiver == nil || receiver.Kind != "call_result" || receiver.Anchor == nil {
+				continue
+			}
+			producer := callAt[sourceSite{receiver.Anchor.Path, receiver.Anchor.Line, receiver.Anchor.Column}]
+			if producer == nil {
+				continue
+			}
+			if producer.resultReceives == nil {
+				producer.resultReceives = make(map[string]int)
+			}
+			producer.resultReceives[call.API.Name]++
 		}
 	}
 	result := make([]*apiSymbol, 0, len(byName))
@@ -145,16 +208,24 @@ func apiSubject(symbol string) string { return "api:" + symbol }
 func (r *reader) readAPI(ctx context.Context) error {
 	r.api = make(map[string]apiRole)
 	symbols := r.apiSymbols()
-	var handed, other []*apiSymbol
+	// Three questions, asked at once, each symbol in exactly one: a symbol
+	// handed a callable is asked what the callable becomes; one whose calls
+	// give it words also what the words become; any other only what its
+	// call does with other running programs.
+	var handed, other, given []*apiSymbol
 	for _, s := range symbols {
-		if s.handsCallable {
+		switch {
+		case s.handsCallable:
 			handed = append(handed, s)
-		} else {
+		case s.wordCalls > 0:
+			given = append(given, s)
+		default:
 			other = append(other, s)
 		}
 	}
-	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d outside symbols: %d handed a callable, %d given values", len(symbols), len(handed), len(other)))
-	groups := [][]*apiSymbol{handed, other}
+	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d outside symbols: %d handed a callable, %d given words, %d given other values", len(symbols), len(handed), len(given), len(other)))
+	groups := [][]*apiSymbol{handed, other, given}
+	definitions := []table.Definition{lines.API(true), lines.API(false), lines.APIGiven()}
 	rows := make([][]table.Row, len(groups))
 	// Each round remembers every symbol's answer apart: a row is its own
 	// subject, keyed by its symbol, so a new call asks only its symbol.
@@ -165,12 +236,18 @@ func (r *reader) readAPI(ctx context.Context) error {
 		subjects[round] = make(map[string]rowSubject, len(group))
 		for i, s := range group {
 			id := fmt.Sprintf("sym%d", i+1)
-			subjects[round][id] = rowSubject{id: apiSubject(s.name), path: s.usagePath, line: s.usageLine}
+			path, line, column := s.usagePath, s.usageLine, s.usageColumn
+			if round == 2 {
+				// Asked what its words become, a symbol shows a call that
+				// gives it words.
+				path, line, column = s.wordUsagePath, s.wordUsageLine, s.wordUsageCol
+			}
+			subjects[round][id] = rowSubject{id: apiSubject(s.name), path: path, line: line}
 			fields := []table.Field{{Name: "symbol", Value: s.name}}
 			if s.signature != "" {
 				fields = append(fields, table.Field{Name: "declared", Value: s.signature})
 			}
-			if usage := r.sourceText(files, s.usagePath, s.usageLine, s.usageColumn); usage != "" {
+			if usage := r.sourceText(files, path, line, column); usage != "" {
 				fields = append(fields, table.Field{Name: "usage", Value: usage})
 			}
 			if len(s.literals) > 0 {
@@ -180,46 +257,69 @@ func (r *reader) readAPI(ctx context.Context) error {
 				}
 				fields = append(fields, table.Field{Name: "literals", Value: literals})
 			}
+			if received := s.receivedCalls(); len(received) > 0 {
+				fields = append(fields, table.Field{Name: "result_receives", Value: received})
+			}
 			if s.handsCallable {
 				fields = append(fields, table.Field{Name: "hands_callable", Value: true})
 			}
 			rows[round] = append(rows[round], table.Row{ID: id, Fields: fields})
 		}
 	}
-	// The handed and the other symbols are asked at once: neither round
-	// reads the other. The second runs on its own view, joined after the
-	// first; a failure of the first cancels the second and is reported.
+	// No round reads another. Each after the first runs on its own view,
+	// joined after the first; a failure of any cancels the others and the
+	// first failure is reported.
 	asking, cancel := context.WithCancel(ctx)
 	defer cancel()
-	second := r.view(nil)
-	second.rowSubjects = subjects[1]
+	views := make([]*reader, len(groups))
+	for round := range groups {
+		if round == 0 {
+			continue
+		}
+		views[round] = r.view(nil)
+		views[round].rowSubjects = subjects[round]
+	}
 	r.rowSubjects = subjects[0]
 	defer func() { r.rowSubjects = nil }()
-	var secondAnswers []rowAnswer
-	var secondErr error
-	secondDone := make(chan struct{})
-	go func() {
-		defer close(secondDone)
-		secondAnswers, secondErr = second.runTable(asking, lines.API(false), 2, rows[1])
-	}()
-	firstAnswers, err := r.runTable(asking, lines.API(true), 1, rows[0])
-	if err != nil {
+	answers := make([][]rowAnswer, len(groups))
+	failures := make([]error, len(groups))
+	done := make(chan struct{})
+	for round := 1; round < len(groups); round++ {
+		go func(round int) {
+			defer func() { done <- struct{}{} }()
+			answers[round], failures[round] = views[round].runTable(asking, definitions[round], round+1, rows[round])
+			if failures[round] != nil {
+				cancel()
+			}
+		}(round)
+	}
+	answers[0], failures[0] = r.runTable(asking, definitions[0], 1, rows[0])
+	if failures[0] != nil {
 		cancel()
 	}
-	<-secondDone
-	if err != nil {
-		return err
+	for round := 1; round < len(groups); round++ {
+		<-done
 	}
-	if secondErr != nil {
-		return secondErr
+	for _, err := range failures {
+		if err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
 	}
-	r.joinView(second)
-	for round, answers := range [][]rowAnswer{firstAnswers, secondAnswers} {
-		for i, s := range groups[round] {
-			answer := answers[i].answer
+	for _, err := range failures {
+		if err != nil {
+			return err
+		}
+	}
+	for round := 1; round < len(groups); round++ {
+		r.joinView(views[round])
+	}
+	for round, group := range groups {
+		for i, s := range group {
+			answer := answers[round][i].answer
 			if answer == nil {
 				continue
 			}
+			answer = r.listenerStands(rows[round][i].ID, s.name, answer)
 			if role := apiRoleOf(answer); role != (apiRole{}) {
 				r.api[s.name] = role
 			}
@@ -227,6 +327,21 @@ func (r *reader) readAPI(ctx context.Context) error {
 	}
 	r.reportStage(lines.StageAPI)
 	return nil
+}
+
+// listenerStands refuses an entry kind answered beside serves: a call that
+// is the program's listening side stays that, and its words do not make it
+// an entry as well. Only the enters cell is refused, and journaled.
+func (r *reader) listenerStands(rowID, symbol string, answer table.Answer) table.Answer {
+	if answer["talks"] != lines.APIServes || answer["enters"] == "" || answer["enters"] == lines.APINone {
+		return answer
+	}
+	reason := fmt.Sprintf("cell %q: %s beside serves: the listener answer stands", "enters", answer["enters"])
+	r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageAPI, Kind: "cell_rejected", Count: 1, Reason: reason, Samples: []string{rowID, symbol}})
+	fmt.Fprintf(&r.tables, "- Rejected %s (%s): %s\n", rowID, symbol, reason)
+	kept := maps.Clone(answer)
+	delete(kept, "enters")
+	return kept
 }
 
 // apiRoleOf restores one accepted api row's closed choices into the role the
@@ -250,6 +365,11 @@ func apiRoleOf(answer table.Answer) apiRole {
 	default:
 		role.talks = talks
 	}
+	switch enters := answer["enters"]; enters {
+	case "", lines.APINone:
+	default:
+		role.enters = enters
+	}
 	return role
 }
 
@@ -263,7 +383,7 @@ func (r *reader) apiRoles() []atlas.APIRole {
 	result := make([]atlas.APIRole, 0, len(names))
 	for _, name := range names {
 		role := r.api[name]
-		result = append(result, atlas.APIRole{Symbol: name, Binds: role.binds, Publishes: role.publishes, Talks: role.talks, Middleware: role.middleware})
+		result = append(result, atlas.APIRole{Symbol: name, Binds: role.binds, Publishes: role.publishes, Talks: role.talks, Enters: role.enters, Middleware: role.middleware})
 	}
 	return result
 }
@@ -277,6 +397,20 @@ func (r *reader) apiRoles() []atlas.APIRole {
 // same one.
 func (r *reader) applyAPIRoles() []*boundaryState {
 	var publishes []*boundaryState
+	// The words a registration's call was given, as the call wrote them: a
+	// registration's values keep only its address when it has one
+	// (fs.String("socket", "/var/run/x.sock", …) keeps the path).
+	callWords := make(map[sourceSite][]string)
+	for _, place := range r.opts.Graph.Places {
+		if place.Symbol == nil {
+			continue
+		}
+		for _, call := range place.Symbol.Calls {
+			if len(call.Values) > 0 {
+				callWords[sourceSite{place.Path, call.Line, call.Column}] = call.Values
+			}
+		}
+	}
 	for _, id := range sortedKeys(r.boundaries) {
 		state := r.boundaries[id]
 		b := state.place.Boundary
@@ -287,6 +421,19 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 		// no row and no role.
 		role := r.api[b.External]
 		facts := *b
+		// A call given words, outside tests, to a symbol whose words are an
+		// entry is that entry, whatever else the symbol does at its other
+		// calls (the listening side never gives words an entry: a serves
+		// answer refuses enters). Its handler is not established.
+		words := callWords[sourceSite{state.place.Path, state.place.LineNo, state.place.Column}]
+		if len(words) == 0 {
+			words = b.Values
+		}
+		entry := b.Direction != atlas.DirectionIn && !b.Handed && role.enters != "" && len(words) > 0 && !r.testFile(state.place.Parent)
+		if entry && len(lines.NameableWords(words)) == 0 {
+			r.noEntryWithoutWords(state.place, role.enters)
+			entry = false
+		}
 		switch {
 		case b.Direction == atlas.DirectionIn:
 			if role.binds == "" {
@@ -296,8 +443,15 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 			facts.GivenKind = role.binds
 		case b.Handed && role.binds != "" && !role.publishes && role.talks == "":
 			// A value handed to a binding symbol (Register("k6/x/dns",
-			// new(DNS))) is an entry without a named callable.
+			// new(DNS))) is an entry without a named callable: its handler
+			// is not established, and the caller registering it is not taken
+			// for it.
 			facts.Direction, facts.GivenKind = atlas.DirectionIn, role.binds
+			state.handlerUnknown = true
+		case entry:
+			facts.Direction, facts.GivenKind = atlas.DirectionIn, role.enters
+			facts.Words = append([]string(nil), words...)
+			state.handlerUnknown = true
 		case role.publishes:
 			facts.Direction, facts.GivenKind = atlas.DirectionIn, atlas.BoundaryListenAddress
 		case role.talks != "":
@@ -315,6 +469,21 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 		r.places[id] = state.place
 	}
 	return publishes
+}
+
+// testFile reports a file place of test code.
+func (r *reader) testFile(fileID string) bool {
+	file := r.places[fileID]
+	return file.File != nil && file.File.Test
+}
+
+// noEntryWithoutWords records a call whose words would be an entry but
+// none of which can name one (a format with a line break): no entry is
+// made and no other name is invented for it.
+func (r *reader) noEntryWithoutWords(place atlas.Place, kind string) {
+	reason := fmt.Sprintf("no %s entry at %s:%d: none of the words it is given can name it", kind, place.Path, place.LineNo)
+	r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageBoundaries, Kind: "entry_unnamed", Count: 1, Reason: reason, Samples: []string{place.ID}})
+	fmt.Fprintf(&r.tables, "- %s\n", reason)
 }
 
 // publishAddress is the literal among a publishing call's values that reads
@@ -345,7 +514,7 @@ func (r *reader) joinPublishes(ctx context.Context, publishes []*boundaryState) 
 	for _, id := range sortedKeys(r.boundaries) {
 		state := r.boundaries[id]
 		b := state.place.Boundary
-		if b.Source != "fact" || b.Direction != atlas.DirectionIn || b.ObjectID == "" || b.Holder == "" {
+		if b.Source != "fact" || b.Direction != atlas.DirectionIn || b.ObjectID == "" || b.Holder == "" || state.handlerUnknown {
 			continue
 		}
 		if byHolder[b.Holder] == nil {

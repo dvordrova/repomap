@@ -635,6 +635,10 @@ type boundaryState struct {
 	destination string
 	address     string
 	basis       string
+	// handlerUnknown marks an entry whose handler is not established: an
+	// option a call declares, a value handed over. It stays where its call
+	// is written and binds to no part.
+	handlerUnknown bool
 }
 
 // writtenLine is the boundary's line: only one the model wrote. A fixed
@@ -717,9 +721,10 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		var keys []string
 		for _, id := range ids {
 			state := r.boundaries[id]
-			// A candidate an earlier mode refused is gone; an accepted
-			// operation already owns its incoming interpretation.
-			if state == nil || state.place.Boundary.Source == "model" && state.place.Boundary.Direction == atlas.DirectionIn {
+			// A candidate an earlier mode refused is gone; a listener the
+			// model's roles made has no words to be named by. An entry the
+			// words of a call make is named like any other.
+			if state == nil || state.place.Boundary.Source == "model" && state.place.Boundary.Direction == atlas.DirectionIn && len(lines.EntryWords(state.place)) == 0 {
 				continue
 			}
 			facts := state.place.Boundary
@@ -730,8 +735,9 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			r.places[id] = state.place
 			// Without captions an incoming row asks only its entry's name:
 			// a row with no words to name it by asks nothing and keeps its
-			// given line.
-			if !outgoing && r.opts.NoCaptions && len(lines.EntryWords(state.place)) == 0 {
+			// given line, and an entry whose handler is not established,
+			// with one word, is named by that word.
+			if words := lines.EntryWords(state.place); !outgoing && r.opts.NoCaptions && (len(words) == 0 || state.handlerUnknown && len(words) == 1) {
 				continue
 			}
 			owner := boundaryOwner(facts, owners)
@@ -850,6 +856,14 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			}
 		}
 	}
+	// An entry whose handler is not established has no handler to be named
+	// by: with no word chosen, its name is all its words as written, in
+	// order.
+	for _, state := range r.boundaries {
+		if state.handlerUnknown && state.name == "" {
+			state.name = strings.Join(lines.NameableWords(state.place.Boundary.Words), " ")
+		}
+	}
 	r.reportStage(lines.StageBoundaries)
 	return r.joinPublishes(ctx, publishes)
 }
@@ -932,6 +946,7 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 			continue
 		}
 		decl := place.Symbol.Decl
+		inTest := r.testFile(place.Parent)
 		for _, call := range place.Symbol.Calls {
 			// A call to a symbol that talks to another system is that
 			// outgoing boundary at every site; a call to a symbol that
@@ -940,6 +955,22 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 				continue
 			}
 			role := r.api[apiName(*call.API)]
+			// A call outside tests that gives words to a symbol whose words
+			// are an entry is that entry, unless a fact already names the
+			// call: its words are what the code wrote, and its handler is
+			// not established.
+			if role.enters != "" && len(call.Values) > 0 && !inTest && !r.factClaims(place.Path, call.Line, call.Column) {
+				if len(lines.NameableWords(call.Values)) > 0 {
+					id := boundaryID(fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s\x00%s\x00%s", atlas.DirectionIn, place.ID, call.Line, call.Column, call.Kind, call.Name, call.Resolution))
+					r.boundaries[id] = &boundaryState{kind: role.enters, handlerUnknown: true, place: atlas.Place{
+						ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: call.Line, Column: call.Column,
+						Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
+							Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, External: call.Name,
+							Values: slices.Clone(call.Values), Words: slices.Clone(call.Values), Direction: atlas.DirectionIn, GivenKind: role.enters}}}
+					continue
+				}
+				r.noEntryWithoutWords(atlas.Place{ID: place.ID, Path: place.Path, LineNo: call.Line}, role.enters)
+			}
 			if role.talks == "" && !role.publishes {
 				continue
 			}
@@ -986,6 +1017,19 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 	return publishes
 }
 
+// factClaims reports a call a fact boundary already names, in or out: the
+// SQL statement a query call sends, a registration at the call. A fact with
+// a column names exactly its call, one without a column its whole line.
+func (r *reader) factClaims(path string, line, column int) bool {
+	for _, existing := range r.boundaries {
+		p := existing.place
+		if p.Boundary.Source != "model" && p.Path == path && p.LineNo == line && (p.Column == 0 || p.Column == column) {
+			return true
+		}
+	}
+	return false
+}
+
 // runningTargets are the targets holding a place whose program may run it:
 // for a declaration, every target but those that proved it unreached.
 func runningTargets(place atlas.Place) []string {
@@ -1025,8 +1069,10 @@ func (r *reader) side(owner *boxState, targetID string) string {
 			continue
 		}
 		// Configuration describes how this code is parameterized. Reading an
-		// environment key does not make the entire module an integration.
-		if state.kind == "config" {
+		// environment key does not make the entire module an integration,
+		// and an option its code declares does not make it the side work
+		// comes in at: that entry is bound to no part.
+		if state.kind == "config" || state.handlerUnknown {
 			continue
 		}
 		if state.place.Boundary.Direction == atlas.DirectionIn {

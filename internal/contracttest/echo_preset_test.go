@@ -30,27 +30,8 @@ import (
 // pipeline names Echo, sqlc or PostgreSQL; the route, the database read and the
 // configuration key reach the overlay from the shapes of the calls alone.
 func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
-	t.Setenv("CGO_ENABLED", "0")
-	t.Setenv("GOTOOLCHAIN", "local")
-	t.Setenv("GOWORK", "off")
-	repositoryPath, repository := materializeRepository(t, filepath.Join("testdata", "echo-sqlc-service"))
-	authorities := analyzeGoFixture(t, repositoryPath, repository, "example.com/echo-sqlc-service/cmd/api", "echo")
-	input, err := goadapter.BuildInput(repository, authorities.target, authorities.origins, authorities.direct, authorities.external, authorities.core, authorities.dynamic, authorities.tests)
-	if err != nil {
-		t.Fatal(err)
-	}
-	index, err := programindex.New(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	extracted, err := extractors.Run(context.Background(), repositoryPath, repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	layer, err := facts.Build(facts.Input{Repository: repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}, Extractions: extracted.Extractions})
-	if err != nil {
-		t.Fatal(err)
-	}
+	provider := &echoPreset{}
+	index, layer, result, indexes := readEchoPreset(t, provider)
 	registrations := map[string]facts.Fact{}
 	for _, fact := range layer.OfKind(facts.KindRegistration) {
 		registrations[fact.Key+" "+fact.Path] = fact
@@ -61,39 +42,6 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	}
 	if queries := layer.OfKind(facts.KindSQLQuery); len(queries) != 1 || queries[0].Key != "users" || queries[0].Symbol != "GetUser" {
 		t.Fatalf("sql queries = %+v", queries)
-	}
-	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index, Root: "."}}, Facts: layer})
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := &echoPreset{}
-	result, err := reading.Read(context.Background(), reading.Options{
-		Graph: graph, Repository: "echo", Revision: "test",
-		Targets:  []reading.TargetMeta{{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}},
-		Executor: llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}},
-		Provider: provider, Categorizer: provider.categorizer(), OwnerRunDir: t.TempDir(),
-		ReadSource: func(path string) ([]byte, error) {
-			id, ok := repository.ID(path)
-			if !ok {
-				return nil, fmt.Errorf("%s is not in the corpus", path)
-			}
-			content, err := repository.ReadFileAll(id)
-			if err != nil {
-				return nil, err
-			}
-			return content.Bytes, nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertNoSourceBodies(t, repository, provider.requests)
-	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{index.Target.ID: index}, result.Atlas)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(indexes) != 1 {
-		t.Fatalf("indexes = %d", len(indexes))
 	}
 	overlay := indexes[0]
 	handler := methodOf(t, index, "Handler", "GetUser")
@@ -231,6 +179,101 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	}
 }
 
+// readEchoPreset reads the Echo service's cmd/api end to end with a preset
+// in place of the model and projects its GroupsIndex.
+func readEchoPreset(t *testing.T, provider *echoPreset) (programindex.Index, facts.Result, reading.Result, []groupindex.Index) {
+	t.Helper()
+	t.Setenv("CGO_ENABLED", "0")
+	t.Setenv("GOTOOLCHAIN", "local")
+	t.Setenv("GOWORK", "off")
+	repositoryPath, repository := materializeRepository(t, filepath.Join("testdata", "echo-sqlc-service"))
+	authorities := analyzeGoFixture(t, repositoryPath, repository, "example.com/echo-sqlc-service/cmd/api", "echo")
+	input, err := goadapter.BuildInput(repository, authorities.target, authorities.origins, authorities.direct, authorities.external, authorities.core, authorities.dynamic, authorities.tests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := programindex.New(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extracted, err := extractors.Run(context.Background(), repositoryPath, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layer, err := facts.Build(facts.Input{Repository: repository, Targets: []facts.TargetInput{{Index: index, Root: "."}}, Extractions: extracted.Extractions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := places.Build(places.Input{Repository: repository, Targets: []places.TargetInput{{Index: index, Root: "."}}, Facts: layer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := reading.Read(context.Background(), reading.Options{
+		Graph: graph, Repository: "echo", Revision: "test",
+		Targets:  []reading.TargetMeta{{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}},
+		Executor: llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}},
+		Provider: provider, Categorizer: provider.categorizer(), OwnerRunDir: t.TempDir(),
+		ReadSource: func(path string) ([]byte, error) {
+			id, ok := repository.ID(path)
+			if !ok {
+				return nil, fmt.Errorf("%s is not in the corpus", path)
+			}
+			content, err := repository.ReadFileAll(id)
+			if err != nil {
+				return nil, err
+			}
+			return content.Bytes, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNoSourceBodies(t, repository, provider.requests)
+	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{index.Target.ID: index}, result.Atlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(indexes) != 1 {
+		t.Fatalf("indexes = %d", len(indexes))
+	}
+	return index, layer, result, indexes
+}
+
+// The query call sqlc generated gives QueryRowContext its statement, and
+// the SQL fact already names that call: even a model that took those words
+// for a command makes no entry there (nor could the statement, whose line
+// breaks name nothing). The call stays the one database boundary it is,
+// and no input stands in users.sql.go.
+func TestNoEntryAtACallAFactAlreadyNames(t *testing.T) {
+	provider := &echoPreset{enters: map[string]string{"database/sql.DB.QueryRowContext": "command"}}
+	_, _, result, indexes := readEchoPreset(t, provider)
+	if !provider.askedEnters["database/sql.DB.QueryRowContext"] {
+		t.Fatalf("QueryRowContext's words were not asked about: %v", provider.askedEnters)
+	}
+	for _, role := range result.Atlas.API {
+		if role.Symbol == "database/sql.DB.QueryRowContext" && role.Enters != "command" {
+			t.Fatalf("the preset's answer did not reach the role: %+v", role)
+		}
+	}
+	for _, operation := range indexes[0].Operations {
+		if operation.Location.Path == "internal/database/sqlc/users.sql.go" {
+			t.Fatalf("an input stands at the query call: %+v", operation)
+		}
+	}
+	at := 0
+	for _, call := range indexes[0].Outbound {
+		if call.Location.Path == "internal/database/sqlc/users.sql.go" && call.Location.Line == 13 {
+			if call.Kind != "db" {
+				t.Fatalf("the query call is %s", call.Kind)
+			}
+			at++
+		}
+	}
+	if at != 1 {
+		t.Fatalf("%d boundaries at the query call, want the one database boundary", at)
+	}
+}
+
 func methodOf(t *testing.T, index programindex.Index, owner, name string) programindex.Object {
 	t.Helper()
 	owners := make(map[string]string, len(index.Objects))
@@ -268,6 +311,10 @@ type echoPreset struct {
 	sawRegistration, sawSQL, sawDomainPart bool
 	mu                                     sync.Mutex
 	requests                               [][]byte
+	// enters answers what the words given to these symbols become; every
+	// other symbol's are none. askedEnters are the symbols asked.
+	enters      map[string]string
+	askedEnters map[string]bool
 }
 
 func (*echoPreset) State() []byte { return []byte(`{"provider":"echo-preset"}`) }
@@ -390,6 +437,17 @@ func (preset *echoPreset) categorizer() *typesafetest.Categorizer {
 			return typesafetest.Choose("serves"), true
 		case column == "talks" && symbol == "database/sql.Open":
 			return typesafetest.Choose("db"), true
+		case column == "enters":
+			mu.Lock()
+			if preset.askedEnters == nil {
+				preset.askedEnters = map[string]bool{}
+			}
+			preset.askedEnters[symbol] = true
+			mu.Unlock()
+			if answer := preset.enters[symbol]; answer != "" {
+				return typesafetest.Choose(answer), true
+			}
+			return typesafetest.Choose("none"), true
 		case column == "binds" || column == "publishes" || column == "talks":
 			return typesafetest.Choose("none"), true
 		}

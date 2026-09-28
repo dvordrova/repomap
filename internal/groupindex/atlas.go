@@ -664,6 +664,11 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		operations = append(operations, Operation{ID: subject.ID, SubjectID: subject.ID, GroupID: groupID, Kind: v.Activation, Name: v.Operation, Summary: v.OperationSummary, Source: "model", Location: *subject.Object.Location})
 	}
 	boundRequests := make(map[string]bool)
+	// An entry whose handler is not established is one input per kind,
+	// words as written and declaring caller: the same option declared at
+	// two sites of one function is one option, and the first site stands
+	// for it.
+	declared := make(map[string]int)
 	for _, boundary := range target.Boundaries {
 		kind := OperationKind(boundary.Kind)
 		if boundary.Direction != atlas.DirectionIn || kind == "" {
@@ -675,14 +680,30 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if groupID == "" && boundary.BoxID != "" {
 			continue
 		}
-		// A request interpreted on a declaration is already an operation.
-		// Keep the boundary for matching without drawing the same action twice.
-		if boundary.Source == "model" && boundary.Direction == atlas.DirectionIn {
-			continue
-		}
 		source := "model"
 		if boundary.FactID != "" {
 			source = "fact"
+		}
+		location := programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)}
+		if boundary.HandlerUnknown {
+			// Its handler is not established, so it has no subject and no
+			// reach: the caller that declares it is not taken for its code.
+			// It is named by its words, never by that caller; a name that
+			// cannot stand refuses this entry alone.
+			if !validText(boundary.Name) {
+				continue
+			}
+			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true}
+			key := strings.Join(append([]string{kind, boundary.ObjectID}, boundary.Values...), "\x00")
+			if at, seen := declared[key]; seen {
+				if locationBefore(&location, &operations[at].Location) {
+					operations[at] = operation
+				}
+				continue
+			}
+			declared[key] = len(operations)
+			operations = append(operations, operation)
+			continue
 		}
 		subjectID := boundary.ObjectID
 		if byID[subjectID] == nil {
@@ -704,7 +725,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if subject := byID[subjectID]; name == "" && subject != nil && subject.Object != nil {
 			name = subject.Object.Name
 		}
-		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)}})
+		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location})
 		if subjectID != "" {
 			boundRequests[subjectID] = true
 		}

@@ -422,6 +422,7 @@ func closedDecisionsWith(verdicts map[string]llm.Verdict) *typesafetest.Categori
 		"explains": typesafetest.Yes(0.9), "role": typesafetest.Choose(lines.PartDomain), "key_symbol": typesafetest.Choose("yes"),
 		"boxes": typesafetest.Choose(lines.RoleOneBox), "helper": typesafetest.Choose(lines.RoleHelperOwnJob),
 		"binds": typesafetest.Choose(lines.APIMiddleware), "publishes": typesafetest.Choose(lines.APINone), "talks": typesafetest.Choose(lines.APIServes),
+		"enters": typesafetest.Choose(lines.APINone),
 	}
 	maps.Copy(decided, verdicts)
 	return &typesafetest.Categorizer{Decide: typesafetest.ByColumn(decided)}

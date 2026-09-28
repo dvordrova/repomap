@@ -279,6 +279,18 @@ func EntryWords(place atlas.Place) []EntryWord {
 	return words
 }
 
+// NameableWords are the words, as written and in order, that can stand in
+// a one-line name: the name of an entry no word was chosen for.
+func NameableWords(values []string) []string {
+	var words []string
+	for _, value := range values {
+		if nameable(value) {
+			words = append(words, value)
+		}
+	}
+	return words
+}
+
 func nameable(value string) bool {
 	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) {
 		return false

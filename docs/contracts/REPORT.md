@@ -134,7 +134,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   a closed area is, with a zoom mark that enters it; a group opens to its
   inputs when their headings read (14px to open, 12px to stay open), as
   areas open to their parts. An input with no owner stays loose after the
-  groups, and a collection whose inputs share one part keeps them loose. A
+  groups, and a collection whose inputs share one part keeps them loose. An
+  input whose handler is not established (GroupsIndex `handler_unknown`: an
+  option a call declares, a value handed over) has no owner: it stands
+  loose, no arrow binds it to a part, its part's card does not list it among
+  its operations, and a request of that kind is no route and joins no
+  portal. A
   tile names its kind only when it is not the collection's most common
   kind. The groups are display containment, not architectural areas; they
   add no relation.
@@ -316,7 +321,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the path. An input's reading
   names its handler ("handled by getCommand"); the name reads that
   declaration in its part when the part lists it, and a modifier-click
-  opens its code. A
+  opens its code. An input whose handler is not established says so
+  ("handler not established") and where it is declared: "declared in" the
+  part its call is written in, and the call's source link; some code acts
+  on it, and the facts do not say which yet. A
   registration the model did not explain has no line: its given text
   ("kvd.h.kvCommand.proc get in getCommand") only restates the fact, and
   the reading and Find name its handler. A chosen input's

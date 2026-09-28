@@ -1,5 +1,83 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — A call given words becomes the entry its symbol makes of them (inputs pass 1, A3, S2a)
+
+- **The third question set** (`repomap.atlas.api.v7.given`): a symbol
+  handed nothing whose calls outside tests give it words is asked `talks`
+  and `enters` (both `Alone`); `enters` offers the entry kinds but
+  `queue_consumer`, and `none`, from the one criteria file (correction 3:
+  no outcome in both columns). Its `usage` is its first word-giving call.
+  Every row may carry `result_receives`, the calls made on the symbol's
+  result, counted (Python and JS receivers are `call_result`s anchored at
+  the producing call; Go, C and Clojure record none in the fixtures). An
+  entry kind beside `serves` is refused alone (`cell_rejected`): the
+  listener answer stands.
+- **Entries** (correction 4, renamed by the owner's remark: the handler is
+  *not established*, `handler_unknown`, never "no handler"): a word-giving
+  call outside tests, to a symbol whose words are an entry, that no fact
+  boundary (in or out) names at its line and column, becomes a model
+  boundary, direction in, words = the call's literals; a registration the
+  code found that hands nothing but words, and a value handed without a
+  callable, become the same kind of entry. A registration's own values
+  keep only its address when a literal is one, so its entry takes the
+  words of the call at its site (`fs.String("socket",
+  "/var/run/litestream.sock", …)` had been named by the socket path in the
+  first litestream run). No subject, reach or phase;
+  keys, the part side, core's entry counts and a holder's address skip
+  it. Named by its one word in code, else asked; with no accepted word, by
+  all its nameable words as written (never the caller). No nameable word:
+  no entry, `entry_unnamed` journaled. GroupsIndex 20 keeps model entries
+  (the dead skip at the old l.678-682 is gone), marks `handler_unknown`,
+  gives it the declaring part's group and dedupes by (kind, words,
+  caller) at the first site; an invalid name refuses that entry alone.
+  Atlas 16 (`Boundary.HandlerUnknown`, `APIRole.Enters`).
+- **Report**: such an input has no `InputOwner` and no "implemented in"
+  arrow, stands loose in its collection, is not listed on its part's card,
+  is no route and joins no portal; its reading says "handler not
+  established" and "declared in {part}" (en/ru).
+- **Fixtures**: Python `src/fixture_app/tool_cli.py` (argparse parser,
+  option, subparsers, `add_parser("init")` + `set_defaults(func=run_init)`),
+  JS `src/cli.ts` with `commander` in package.json, Go package-level
+  `var verbose = flag.Bool(…)` at the end of storefixture/destinations.go;
+  Clojure reuses `(format "create %s dir" dir)`. Measured with
+  `TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion` (dry reading of
+  each fixture's requests):
+  - C: `strcmp(argv[1], "--symbols")` given; pthread_create binds; accept
+    talks.
+  - Go: `flag.String("price-endpoint", …)` given. **Gap**: the
+    package-level `flag.Bool` is not asked — the external call index does
+    not record a package-level initializer's outside calls (f1b did it for
+    repository calls only). Recorded, not fabricated.
+  - Python: ArgumentParser (`add_argument ×1`, `add_subparsers ×1`),
+    add_argument, add_subparsers (`add_parser ×1`), add_parser
+    (`set_defaults ×1`) all given; `set_defaults(func=run_init)` binds.
+    **Result**: a subcommand named by one call and handled through another
+    is two questions, and two inputs if both are accepted.
+  - JS: platform calls given (`new Worker("./market-worker.js", …)`).
+    **Gap**: an npm package without its declarations names no symbol, so
+    commander's `.option("-p, --port <n>")` (a registration fact) and every
+    express route in the fixture are asked nothing. Recorded.
+  - Clojure: `(format "create %s dir" dir)` given.
+  - No symbol is asked in two question sets (the helper fails otherwise).
+- **Undecided words** (correction 8): model entries are made in the
+  reading after the api answers, and a word-giving registration is
+  direction out in the graph, so roles.go's `registered` never holds an
+  undecided word; the kvd preset asserts no `registered` item carries
+  `--symbols`.
+- Tests (each fails on revert or mutation, `inputs/pass1-revert.log`):
+  `TestNoOutcomeIsOfferedInTwoColumns`,
+  `TestAWordGivenCallBecomesAnEntryWhoseHandlerIsNotEstablished`,
+  `TestTheEntryWinsOverTalksOnlyAtACallGivenWords`,
+  `TestAModelEntryWhoseHandlerIsNotEstablishedIsAnInput` (dedupe of two
+  "-h" sites), `TestNoEntryAtACallAFactAlreadyNames` (echo, the skeptic's:
+  one db boundary at QueryRowContext, no input in users.sql.go; its
+  statement is also unnameable, so the claim itself is pinned by the
+  reading test's `SELECT 1`), `TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion`,
+  `TestAnInputWhoseHandlerIsNotEstablishedBindsToNoPart`; the kvd preset
+  now answers `enters` and asserts which symbols were asked.
+- `make test`: PASS. `make vet`: PASS. `make ui-test`: PASS (127).
+  `make ui-visual-test`: PASS (65 passed, 5 skipped).
+
 ## 2026-09-28 — An outside symbol's call as written, and each symbol's answer remembered (inputs pass 1, A2)
 
 - **Usage is the call** (queue item c, trusted inputs): `lines.CallText`

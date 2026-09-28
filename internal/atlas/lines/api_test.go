@@ -12,8 +12,8 @@ import (
 
 // The talks question has no "other" to fall into.
 func TestTalksOffersNoOther(t *testing.T) {
-	for _, def := range []struct{ handed bool }{{true}, {false}} {
-		for _, column := range API(def.handed).Columns {
+	for _, def := range []table.Definition{API(true), API(false), APIGiven()} {
+		for _, column := range def.Columns {
 			if column.Name == "talks" && slices.Contains(column.Options, "other") {
 				t.Fatalf("talks offers other: %v", column.Options)
 			}
@@ -27,8 +27,7 @@ func TestTalksOffersNoOther(t *testing.T) {
 // inet_aton "talks sdk" and accept "talks client_request" in some draws and
 // not in others.
 func TestEveryAPIOptionHasCriteriaAndEveryQuestionANone(t *testing.T) {
-	for _, handed := range []bool{true, false} {
-		def := API(handed)
+	for _, def := range []table.Definition{API(true), API(false), APIGiven()} {
 		if !def.Classifier || !table.Closed(def) {
 			t.Fatalf("%s is not a closed question for the categorizer", def.Contract)
 		}
@@ -50,8 +49,8 @@ func TestEveryAPIOptionHasCriteriaAndEveryQuestionANone(t *testing.T) {
 // the task that says what the map wants.
 func TestAPIRequestSendsEveryCriterion(t *testing.T) {
 	window := table.Window{Rows: []table.Row{{ID: "sym1", Fields: []table.Field{{Name: "symbol", Value: "sys/socket.h.accept"}, {Name: "usage", Value: "fd = accept(s, &sa, &len);"}}}}}
-	for _, handed := range []bool{true, false} {
-		def := table.ForClassifier(API(handed))
+	for _, asked := range []table.Definition{API(true), API(false), APIGiven()} {
+		def := table.ForClassifier(asked)
 		recorder := &criteriaRecorder{}
 		if _, err := table.ClassifierCall(recorder, def, window); err != nil {
 			t.Fatal(err)
@@ -147,5 +146,24 @@ func entryQuestions() []struct {
 	return []struct {
 		def    table.Definition
 		column string
-	}{{API(true), "binds"}}
+	}{{API(true), "binds"}, {APIGiven(), "enters"}}
+}
+
+// No outcome is decided in two columns of one row: a symbol whose calls
+// give it words is asked what they do with other programs and what the
+// words become, and the two share only none. Taking messages from a queue
+// is talks's to say; enters never offers it, nor middleware.
+func TestNoOutcomeIsOfferedInTwoColumns(t *testing.T) {
+	def := APIGiven()
+	if len(def.Columns) != 2 || def.Columns[0].Name != "talks" || def.Columns[1].Name != "enters" || !def.Columns[0].Alone || !def.Columns[1].Alone {
+		t.Fatalf("the word-given question is %+v", def.Columns)
+	}
+	for _, option := range def.Columns[1].Options {
+		if option != APINone && slices.Contains(def.Columns[0].Options, option) {
+			t.Fatalf("%s is offered by talks and enters", option)
+		}
+	}
+	if slices.Contains(def.Columns[1].Options, APIMiddleware) || !slices.Contains(def.Columns[1].Options, "command") {
+		t.Fatalf("enters offers %v", def.Columns[1].Options)
+	}
 }
