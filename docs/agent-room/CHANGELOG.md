@@ -1,5 +1,69 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Repair pass after the speed-mode sequence
+
+- **Failures at a2fab47a** (`make vet` green): places `TestFixturePlaces`,
+  facts `TestFixturePythonTutorialGame` and
+  `TestFixtureAnchorsResolveInTheRepository` (the saved python-tutorial-game
+  program indexes were ProgramIndex 18), contracttest
+  `TestCumulativeClojureMapOfParts` and `TestCumulativeCMapOfParts` (the
+  parts preset took e1's seed row for no role part). The indexes are
+  regenerated through the ordinary no-model run of the materialized
+  fixture (same objects and relations, dependency catalogs byte-identical);
+  the places test's SHA-256 of the whole graph, a pin every change
+  rewrote, is deleted for a seeds check; the preset takes every box row of
+  the parts request for a role part and checks a seed is never asked,
+  never assigned a box and is its own row.
+- **Bugs the new tests found and fixed:** the launch walk's "could not look
+  inside" read pattern edges no projected GroupsIndex has (only objects
+  are retained; Go's unresolved calls carry no pattern), so it never
+  showed: GroupsIndex compiles each retained declaration's unresolved
+  calls from the bound ProgramIndex (`Index.Unresolved`, in memory) and
+  Redis's reading now lists aeProcessEvents's calls through
+  rfileProc/wfileProc. Rule C took a seed's row for no row, so a unit only
+  the seed used stayed undecided (Go cmd/app's Subscribe). A catalogue
+  joint naming a boundary whose operation was folded into another lost its
+  peer; folded boundaries now name the operation standing for them.
+- **Fixtures** (table in testdata/repositories/README.md): C kvd reads a
+  configuration file (`loadConfig`, `splitLine`) and kvcli has `--raw`
+  beside a `bgsave` comparison; Go `internal/storefixture/tool_cli.go`
+  (per-call EqualFold, two flag sets, `ServerConfig` settings); Python
+  `init.add_argument("--force")`; Clojure `shouted?`/`default-row?`. The
+  kvd preset and a new inputs preset read the fixtures end to end, answer
+  every question (a refused window fails the test) and hold e1, per-call
+  words and C argument origins, K1/K2 catalogues, J1, settings, pass 2
+  (kept callables with `registered_during`, tables), K5 peers (an
+  unmatched row names none, no arrow), u6 outer inputs, the launch, named
+  launches and the systems question. Missing equivalents are recorded in
+  GO, PYTHON, JSTS, CLOJURE and C; the three-step glossary has no language
+  fixture (terminology tests, plus a per-name memo test).
+- **Revert checks:** 47 rules, each reverted in place and its test run:
+  all 47 fail (scratchpad `repair/revert.log`). One revert (setting left
+  out of the entry kinds) only breaks the criteria file at init and is not
+  counted.
+- **Defensive checks removed:** GroupsIndex outer.go's position lookups
+  and launch.go's empty-subject check; the report's launch-chain cap of 64
+  (a deeper chain lost its root) and hop hand-over check; places' row
+  literal checks (ProgramIndex validates rows); the reading's running-
+  target fallbacks and boundary-ID map inits; systems.go's re-sort of
+  sorted packages; gatherNames' empty-row check; the projection's joint
+  target lookup and its filters of unsure calls, idioms and declared-on
+  sites, now validated by atlas.Validate (a site's text is checked where
+  the reading writes it). Kept, with reasons in the report: Destinations'
+  unnamed-package filter (its contract), the enclosing-callable DeclaredBy
+  of handler-bound inputs and the unsure subject fallback (need the
+  calling object carried on the atlas boundary), the alias text parse
+  (needs structured aliases, a graph format change).
+- **Acceptance:** `make test`, `make vet`, `make ui-test`, `make
+  ui-visual-test` and `make build` pass; Go ran with `-overlay` restoring
+  `~/sdk/go1.27.0/src/slices/slices.go`, into which UI notes had been
+  typed at 18:42 (saved in the scratchpad `repair/owner-note-in-go-sdk-
+  slices.txt`; the file is left as found). Redis on the default cache exit
+  0 in 14.5 s and warm 6.7 s, 0 live calls, report.json identical but for
+  `timing`. The C fixture on a scratch `--debug-dir`: cold 91 live in 24 s,
+  warm 0 live, `cache clear` exit 0, rerun 79 live. `REPOMAP_REAL_RUN`
+  specs on Redis: 2 of 3 fail (UI, open).
+
 ## 2026-09-28 — One outside call written once is one tile (owner's decision a; speed mode)
 
 - **Problem:** Redis's DNS resolver stood three times, one frame per program,

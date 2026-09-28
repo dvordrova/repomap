@@ -356,20 +356,21 @@ never entered into or read from a repository-wide unqualified map.
   retain their consuming contract and require fresh ordinary acceptance. Data
   links use existing exact model/callable ownership; an unresolved endpoint or
   unowned SQL literal cannot acquire a database flow in the report.
-- **Where an input takes effect (consilium 2026-09-28, speed mode, owner
-  answers Q1 and Q2 yes; tests owed to the cleanup pass):** a seed of a split
-  file is its own grouping row, so an executable's `main` is on the map
-  (e1). Inputs without a handed function form catalogues keyed by the
+- **Where an input takes effect (consilium 2026-09-28, owner answers Q1 and
+  Q2 yes; built in speed mode, tested in the repair pass):** a seed of a
+  split file is its own grouping row, so an executable's `main` is on the
+  map (e1), and a unit only the seed uses joins that row. Inputs without a handed function form catalogues keyed by the
   object they are declared on (the call that made it, followed through
   outside calls that name nothing), else by the declaring function (L3); the
   reading says "Declared on/in", "called from", "F also uses V" (never
   "takes effect") and once "Where these take effect is not established." A
   wordless hand-over on a word entry's own result of the same kind is one
-  input with it (J1). A collection no arrow joins stays beside its component
-  through an undrawn layout edge. GroupsIndex derives the launch walk from
-  the seeds and load-time roots (Go init and package variables, module bodies
-  outside C) with found / unsure / could not look inside / nothing per
-  function, shown only in the Inputs reading's fold; words only an input's
+  input with it (J1). Such an input draws the ordinary Inputs arrow into the
+  part where its code takes it in (declared in, looked up in). GroupsIndex
+  derives the launch walk from the seeds and load-time roots (Go init and
+  package variables, module bodies outside C) with found / unsure / could not
+  look inside (the function's unresolved calls) / nothing per function,
+  shown only in the Inputs reading's fold; words only an input's
   handler checks are its sub-arguments, never tiles. `enters` is asked
   of each word call on its own (no symbol-level answer, no `per_call`),
   and every literal is sent. C: a table's
@@ -405,7 +406,7 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 19, places graph 21, reading input 18, atlas 18,
+This wave uses ProgramIndex 19, places graph 21, reading input 19, atlas 19,
 GroupsIndex 25, dependency catalog 2, extraction artifact 2, facts 4, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
@@ -449,6 +450,7 @@ There are no old-format readers or manually rewritten seals.
 | Launch on either branch (2026-09-28, speed mode) | Go φ → `alternatives` in edge order (a join expanded once per value); the launch fold takes a receiver all of whose alternatives are launches. litestream exit 0 in 1m48s on the default cache: cmd/litestream-test's CombinedOutput folds into both `litestream` launches (not established 1 → 0), cmd/litestream 2 and s3_mock 1 unchanged (no word). Re-asks drifted: `strings.HasPrefix` answered `command` (31 false inputs in cmd/litestream), azblob named "S3 storage", glossary 263 terms. Python and JSTS give `unknown` (missing equivalents). |
 | Glossary in three steps (2026-09-28, speed mode) | At 84f54d94 on the default cache: litestream 149 names → 55 entries (263 before), report.html 13.88 → 11.12 MB; Redis 64 names → 24 entries (20 before), its concepts section −168 KB. Warm reruns and the bc41d667 runs 0 live, glossary.json byte-identical. On the saved windows, 5 draws: 54–61 accepted per draw against 45–270 terms of the one open request. Jev misjudged vacuum and lease (code element), Google Cloud Storage and SFTP (undecided). |
 | Settings from struct tags (2026-09-28, speed mode) | At 2e1ac061 on the default cache: each Go field whose tag names a key is asked `setting`/`none` (Jev) with its structure's use from go/types type declarations. litestream 200 fields: 96/96 YAML setting, 102/104 JSON none; Config's 17 declared on `yaml.Unmarshal(buf, &config)`. Redis: redis-server 37 settings, redis-cli 6 and redis-benchmark 11 options stay commands. No DeepSeek call; Jev < $0.01. |
+| Repair pass after the speed-mode sequence (2026-09-28) | At 4fb25a6a: `make test`, `make vet`, `make ui-test` (131) and `make ui-visual-test` (63 passed, the 5 real-run specs skipped) pass; the Go runs used a `-overlay` restoring the Go SDK's `slices.go`, into which text had been typed (CHANGELOG). Fixture tests for every step of the inputs sequence, each rule's test failing when the rule is reverted (47 rules). Redis on the default cache: `make build` binary, exit 0 in 14.5 s and warm 6.7 s, 0 live calls both, report.json identical but for `timing` (and to the 12:57 run), one common manifest/report JSON and report.html for four programs; "could not look inside" now lists aeProcessEvents's calls through rfileProc/wfileProc. The C fixture on a scratch cache: cold 91 live calls in 24 s, warm 0 live in 3 s, `cache clear` exit 0, then 79 live again; the real models answer --symbols command, port and dbfilename settings, acceptHandler request, and misjudge staticsyms.h's symsTable rows as requests. The `REPOMAP_REAL_RUN` specs on that Redis run fail 2 of 3 (breadcrumb after a part click; two connection cards open at 1280×800), UI. |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. The 2026-09-28 cold run completed (430 s) with the orientation refused by context size. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 
