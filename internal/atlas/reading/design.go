@@ -340,6 +340,9 @@ func (view *designView) groupingUnits(split *unitSplit, outcome *designOutcome) 
 			for _, id := range roles.undecided {
 				outcome.unitReason[id] = atlas.OffMapUndecided
 			}
+			for _, id := range roles.blocked {
+				outcome.unitReason[id] = atlas.OffMapBlocked
+			}
 			continue
 		}
 		if _, joined := split.attachedFiles[file.id]; joined {

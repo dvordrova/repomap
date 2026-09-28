@@ -209,13 +209,23 @@ type placement struct {
 	byHelperUsers, byUsers, byUses map[string][]string
 	joined                         map[string][]string
 	secondAsked, secondPlaced      map[string][]string
+	// asked are the helpers the second pass asked, in any round, and rounds
+	// what each of its rounds asked and placed, in round order.
+	asked  map[string]bool
+	rounds []passRound
+}
+
+// passRound is one round of the second pass: the helpers it asked and how
+// many of them its answers placed.
+type passRound struct {
+	asked, placed int
 }
 
 func newPlacement(facts *roleFacts, helpers map[string]bool) *placement {
 	return &placement{facts: facts, helpers: helpers, split: map[string]*splitFile{},
 		attached: map[string]groupKey{}, attachedFiles: map[string]groupKey{},
 		byHelperUsers: map[string][]string{}, byUsers: map[string][]string{}, byUses: map[string][]string{},
-		joined: map[string][]string{}, secondAsked: map[string][]string{}, secondPlaced: map[string][]string{}}
+		joined: map[string][]string{}, secondAsked: map[string][]string{}, secondPlaced: map[string][]string{}, asked: map[string]bool{}}
 }
 
 // resolve follows a whole file's row to the box the file joined.
@@ -406,12 +416,30 @@ func (p *placement) settle() {
 	}
 }
 
-// secondPass asks the assignment once more, in a round of its own, about
+// secondPass asks the assignment once more, after code has settled, about
 // the helpers of split files code left open that their users share between
 // rows or that nothing uses, with every named box of their file as the
-// options; a helper whose users are still open is not asked. Code then
-// settles again. A near-tie leaves the helper undecided.
+// options, and code then settles again. A helper with a user still open is
+// not asked yet: once its users have rows, code places it (rule A, when they
+// share one) or a further round asks it (when they stand in two or more).
+// Rounds repeat until none qualifies, which ends, since each unit is asked
+// at most once. Each round is a round of windows of its own, the k-th at
+// len(targets)·k + round, after every target's first pass and each other's,
+// so no window overwrites another. A near-tie leaves the helper undecided; a
+// helper never asked because a unit that uses it never got a row is
+// blocked.
 func (r *reader) secondPass(ctx context.Context, round int, p *placement) error {
+	for pass := 1; ; pass++ {
+		asked, err := r.passRound(ctx, round, pass, p)
+		if err != nil || !asked {
+			return err
+		}
+	}
+}
+
+// passRound asks the pass-th round of the second pass and settles; it says
+// whether any helper qualified.
+func (r *reader) passRound(ctx context.Context, round, pass int, p *placement) (bool, error) {
 	var files []*splitFile
 	var asked [][]*roleUnit
 	var groups rowGroups
@@ -422,7 +450,7 @@ func (r *reader) secondPass(ctx context.Context, round int, p *placement) error 
 		}
 		var rest []*roleUnit
 		for _, unit := range file.units {
-			if !p.helpers[unit.id] || !p.open(unit.id) {
+			if !p.helpers[unit.id] || !p.open(unit.id) || p.asked[unit.id] {
 				continue
 			}
 			if keys, _ := p.keysOf(unit.users); len(unit.users) == 0 || len(keys) >= 2 {
@@ -441,30 +469,41 @@ func (r *reader) secondPass(ctx context.Context, round int, p *placement) error 
 		groups = append(groups, file.assignGroup(split.boxes, func(unit *roleUnit) bool { return chosen[unit.id] }))
 	}
 	if len(groups) == 0 {
-		return nil
+		return false, nil
 	}
 	target := r.opts.Targets[round-1]
-	r.opts.Stage(lines.StageRoleAssign, fmt.Sprintf("%s: asking once more where %d helpers go that their users share or nothing uses", target.Name, groups.count()))
-	// The second pass has a round of its own after every target's first, so
-	// its windows never overwrite the first pass's.
-	answers, err := r.runTableGroups(ctx, lines.RoleAssign(), len(r.opts.Targets)+round, groups, nil)
-	if err != nil {
-		return err
+	if pass == 1 {
+		r.opts.Stage(lines.StageRoleAssign, fmt.Sprintf("%s: asking once more where %d helpers go that their users share or nothing uses", target.Name, groups.count()))
+	} else {
+		r.opts.Stage(lines.StageRoleAssign, fmt.Sprintf("%s: asking where %d helpers go whose users got their boxes in round %d", target.Name, groups.count(), pass-1))
 	}
-	at := 0
+	answers, err := r.runTableGroups(ctx, lines.RoleAssign(), len(r.opts.Targets)*pass+round, groups, nil)
+	if err != nil {
+		return false, err
+	}
+	at, placed := 0, 0
 	for f, split := range files {
 		id := split.file.file.id
 		for _, unit := range asked[f] {
+			p.asked[unit.id] = true
 			p.secondAsked[id] = append(p.secondAsked[id], unit.name)
 			if box := boxChoice(answers[at].answer, split.boxes); box >= 0 {
 				split.box[unit.id] = box
 				p.secondPlaced[id] = append(p.secondPlaced[id], unit.name)
+				placed++
 			}
 			at++
 		}
 	}
+	p.rounds = append(p.rounds, passRound{asked: at, placed: placed})
 	p.settle()
-	return nil
+	return true, nil
+}
+
+// blocked says whether a unit is a helper code left open that the second
+// pass never asked: a unit that uses it never got a row.
+func (p *placement) blocked(id string) bool {
+	return p.helpers[id] && p.open(id) && !p.asked[id]
 }
 
 // recordPlacement records, by file, what each code rule and the second pass
@@ -486,6 +525,13 @@ func (r *reader) recordPlacement(targetID string, p *placement) {
 		if asked := p.secondAsked[id]; len(asked) > 0 {
 			note("role_second_pass", asked, fmt.Sprintf("helpers their users share between boxes or nothing uses, asked once more: %d placed", len(p.secondPlaced[id])), "asked once more")
 		}
+	}
+	if len(p.rounds) > 0 {
+		r.tables.WriteString("role second pass:")
+		for i, round := range p.rounds {
+			fmt.Fprintf(&r.tables, " round %d asked %d, placed %d;", i+1, round.asked, round.placed)
+		}
+		r.tables.WriteString("\n\n")
 	}
 }
 

@@ -471,6 +471,7 @@ var russianUI = map[string]string{
 	"Listed in two parts":                   "Отнесён сразу к двум частям",
 	"No declarations of its own":            "Нет собственных объявлений",
 	"In no part of its file":                "Ни в одной из частей своего файла",
+	"Used by code in no part":               "Используется кодом, не попавшим ни в одну часть",
 	"No map of parts":                       "Карты частей нет",
 	"No description":                        "Нет описания",
 	"The map of parts is unavailable: {0}":  "Карта частей недоступна: {0}",

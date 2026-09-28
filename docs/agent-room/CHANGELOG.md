@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Follow-up f3: blocked helpers are asked once their users have boxes
+
+- Sanity check 3 (queue f3): the second pass ran once, and a helper with a
+  user still open was not asked, so a helper whose user only the second
+  pass placed stayed undecided only because of that order (13 of redis.c's
+  19 undecided units at 08f6a3ce were such helpers, never asked).
+- The second pass now repeats: after each round code settles, rule A places
+  a waiting helper whose users now share one row, and a helper whose users
+  now stand in two or more rows is asked in a further round. A unit is
+  still asked the assignment at most once, so the rounds end. The k-th
+  round writes its own windows (`len(targets)·k + round`); `tables.md`
+  counts each round's asked and placed.
+- A helper never asked because a unit that uses it never got a row is now
+  off the map under its own closed reason, `blocked` (`role_blocked`),
+  apart from `undecided` (a question asked without a decision). The atlas,
+  GroupsIndex and the report accept it; the report reads "Used by code in
+  no part" ("Используется кодом, не попавшим ни в одну часть").
+- Tests: `TestABlockedHelperIsAskedOnceItsUsersHaveBoxes` (inner waits on
+  outer, which round 1 places, and is asked in round 2 in windows `r5`;
+  leaf waits on a near-tie and is blocked); the split check and
+  `projectSplit` accept `blocked` entries (the Go fixture's
+  command_table.go has three). Revert checks: one round only, or blocked
+  recorded as undecided, fail the test.
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Follow-up f2: a call through a stored function value is not a user for placement
 
 - Sanity check 3 (queue f2): Redis's adlist.c `listDup` calls

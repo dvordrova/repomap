@@ -603,6 +603,10 @@ const (
 	// boxes that no box of that file took. The file itself is on the map
 	// through its other declarations.
 	OffMapUndecided = "undecided"
+	// OffMapBlocked: helpers of a file whose code goes in several boxes that
+	// no box took because a declaration that uses them never got one, so
+	// code could not place them and no question was asked about them.
+	OffMapBlocked = "blocked"
 
 	// MapFailureRefused: every window of the parts answer was refused.
 	MapFailureRefused = "refused"
@@ -613,7 +617,7 @@ const (
 // ValidOffMapReason reports one of the closed off-map reasons.
 func ValidOffMapReason(reason string) bool {
 	switch reason {
-	case OffMapLeftOut, OffMapConflict, OffMapNoUnits, OffMapFailure, OffMapUndecided:
+	case OffMapLeftOut, OffMapConflict, OffMapNoUnits, OffMapFailure, OffMapUndecided, OffMapBlocked:
 		return true
 	default:
 		return false

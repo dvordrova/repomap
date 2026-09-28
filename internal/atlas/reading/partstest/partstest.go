@@ -277,7 +277,7 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 	}
 	undecided := map[string]bool{}
 	for _, entry := range checked.Target.OffMap {
-		if entry.Reason != atlas.OffMapUndecided {
+		if entry.Reason != atlas.OffMapUndecided && entry.Reason != atlas.OffMapBlocked {
 			continue
 		}
 		if !checked.Split[entry.File.Path] {
@@ -426,7 +426,7 @@ func checkUndecided(t testing.TB, graph atlas.Graph, targetID string, checked Ma
 	// An undecided entry lists a unit with its followers; their users and
 	// uses are the unit's.
 	for _, entry := range checked.Target.OffMap {
-		if entry.Reason != atlas.OffMapUndecided {
+		if entry.Reason != atlas.OffMapUndecided && entry.Reason != atlas.OffMapBlocked {
 			continue
 		}
 		unitUsers, unitUses := map[string]bool{}, map[string]bool{}

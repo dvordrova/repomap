@@ -26,13 +26,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   parts. The atlas's explicit off-map record lists, per target, every file (or
   stray declaration) no drawn part holds with its reason (`left_out`,
   `conflict`, `no_units` for a file that declares nothing, `map_failure`,
-  `undecided` for a split file's declarations no box of it took), keeping
+  `undecided` for a split file's declarations no box of it took after a
+  question, `blocked` for its helpers no question reached because a
+  declaration that uses them got no box), keeping
   its file line, captions and keys. Stray declarations in a file a part
   holds name the file's part (`box_id`) when it has one; their file stays
   on the map. A file whose code several parts hold (READING, the role split)
   is on the map through them. GroupsIndex (since v17) lists the declarations off
   the map in a file a part still holds by their subjects (`subject_ids`),
-  under their own reason (`undecided`, or `left_out`/`conflict` for a box
+  under their own reason (`undecided`, `blocked`, or `left_out`/`conflict` for a box
   or a stray method), never as a file off the map; a file no part holds is
   listed whole. GroupsIndex carries that record as `off_map`, adds the files of
   parts made only of test code under the reason `tests` with their part's
@@ -55,7 +57,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   and before its main flow, the compact inventories **Tests** (test-only
   parts' files, with their part) and **Not on the map** (every other off-map
   file, with its reason; a split file's row shows its undecided
-  declarations as source chips and reads "In no part of its file"), five
+  declarations as source chips and reads "In no part of its file", and its
+  blocked helpers in a row of their own that reads "Used by code in no
+  part"), five
   rows each and
   `All N` for the rest. Find lists each of those undecided declarations as
   Code with Open code and no "In part" link; its result opens that row, scrolled below the sticky toolbar as every

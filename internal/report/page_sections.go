@@ -114,6 +114,7 @@ var offMapReasons = map[string]string{
 	"no_units":    "No declarations of its own",
 	"map_failure": "No map of parts",
 	"undecided":   "In no part of its file",
+	"blocked":     "Used by code in no part",
 }
 
 // mapFailureReasons are the reader's words for why there is no map at all.

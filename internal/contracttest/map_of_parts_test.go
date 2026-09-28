@@ -185,35 +185,37 @@ func projectSplit(t *testing.T, index programindex.Index, split partstest.Map) g
 	checkUnreachedParts(t, index, indexes[0])
 	for _, file := range indexes[0].OffMap {
 		// A split file is on the map through its role parts; only its
-		// undecided declarations, or those of a role part the program never
-		// runs, are listed off it.
-		if split.Split[file.Path] && (file.Reason != groupindex.OffMapUndecided && file.Reason != groupindex.OffMapUnreachable || len(file.SubjectIDs) == 0) {
+		// undecided or blocked declarations, or those of a role part the
+		// program never runs, are listed off it.
+		listed := file.Reason == groupindex.OffMapUndecided || file.Reason == groupindex.OffMapBlocked
+		if split.Split[file.Path] && (!listed && file.Reason != groupindex.OffMapUnreachable || len(file.SubjectIDs) == 0) {
 			t.Fatalf("the split file %s is listed off the map: %+v", file.Path, file)
 		}
-		if file.Reason != groupindex.OffMapUndecided {
+		if !listed {
 			continue
 		}
 		undecided++
-		// Each undecided declaration is named by its subject in that file,
-		// so the card can link it to its source.
+		// Each undecided or blocked declaration is named by its subject in
+		// that file, under its own reason, so the card can link it to its
+		// source.
 		var want int
 		for _, entry := range split.Target.OffMap {
-			if entry.Reason == atlas.OffMapUndecided && entry.File.Path == file.Path {
+			if entry.Reason == file.Reason && entry.File.Path == file.Path {
 				want += len(entry.File.Symbols)
 			}
 		}
 		if len(file.SubjectIDs) != want {
-			t.Fatalf("%s lists %d undecided subjects for %d declarations", file.Path, len(file.SubjectIDs), want)
+			t.Fatalf("%s lists %d %s subjects for %d declarations", file.Path, len(file.SubjectIDs), file.Reason, want)
 		}
 		for _, id := range file.SubjectIDs {
 			if object := subjects[id].Object; object == nil || object.Location == nil || object.Location.Path != file.Path {
-				t.Fatalf("the undecided subject %s of %s is not a declaration of that file", id, file.Path)
+				t.Fatalf("the %s subject %s of %s is not a declaration of that file", file.Reason, id, file.Path)
 			}
 		}
 	}
 	for _, entry := range split.Target.OffMap {
-		if entry.Reason == atlas.OffMapUndecided && undecided == 0 {
-			t.Fatalf("undecided declarations of %s are not listed", entry.File.Path)
+		if (entry.Reason == atlas.OffMapUndecided || entry.Reason == atlas.OffMapBlocked) && undecided == 0 {
+			t.Fatalf("%s declarations of %s are not listed", entry.Reason, entry.File.Path)
 		}
 	}
 	return indexes[0]

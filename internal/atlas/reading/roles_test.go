@@ -863,6 +863,78 @@ func inLanguage(opts Options, language string) Options {
 	return opts
 }
 
+// The second pass repeats until no helper qualifies. A helper a user of
+// which is still open is not asked: inner, which outer and Route call, waits
+// while outer, which main and Store.Put share, is open. The first round
+// puts outer in Storage, so inner's users stand in Storage and Routing, and
+// a second round, in windows of its own, asks it once. leaf, which only
+// stuck calls, waits for stuck, a near-tie of the first round, and is never
+// asked: it is off the map as blocked, stuck as undecided. No helper is
+// asked twice.
+func TestABlockedHelperIsAskedOnceItsUsersHaveBoxes(t *testing.T) {
+	graph := roleGraph(t, func(files map[string][]roleDecl) {
+		server := files["svc/server.go"]
+		for i := range server {
+			switch server[i].name {
+			case "main", "Store.Put":
+				server[i].calls = append(server[i].calls, "svc/server.go:outer", "svc/server.go:stuck")
+			case "Route":
+				server[i].calls = append(server[i].calls, "svc/server.go:inner")
+			}
+		}
+		files["svc/server.go"] = append(server,
+			roleDecl{name: "outer", kind: "function", line: 66, end: 68, code: 2, calls: []string{"svc/server.go:inner"}},
+			roleDecl{name: "inner", kind: "function", line: 70, end: 72, code: 2},
+			roleDecl{name: "stuck", kind: "function", line: 74, end: 76, code: 2, calls: []string{"svc/server.go:leaf"}},
+			roleDecl{name: "leaf", kind: "function", line: 78, end: 80, code: 2},
+		)
+	})
+	provider, jev := defaultRoleProvider(), helperJev("outer", "inner", "stuck", "leaf")
+	jev.boxOf["outer"], jev.boxOf["inner"] = "Storage", "Routing"
+	opts := roleOptions(t, graph, provider, jev, "")
+	result, err := Read(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"outer", "inner", "stuck"} {
+		if count := slices.Index(jev.assigned, name); count < 0 || slices.Contains(jev.assigned[count+1:], name) {
+			t.Fatalf("%s was not asked exactly once: %v", name, jev.assigned)
+		}
+	}
+	if slices.Contains(jev.assigned, "leaf") {
+		t.Fatalf("leaf, whose one user never got a box, was asked: %v", jev.assigned)
+	}
+	svc := targetOf(t, result, "svc")
+	parts := partsByTitle(svc)
+	if !slices.Contains(membersOf(parts["Routing"]), "inner") || !slices.Contains(membersOf(parts["Storage"]), "outer") {
+		t.Fatalf("Routing holds %v, Storage %v", membersOf(parts["Routing"]), membersOf(parts["Storage"]))
+	}
+	reasons := map[string]string{}
+	for _, entry := range svc.OffMap {
+		for _, symbol := range entry.File.Symbols {
+			reasons[symbol.Name] = entry.Reason
+		}
+	}
+	if reasons["leaf"] != atlas.OffMapBlocked || reasons["stuck"] != atlas.OffMapUndecided {
+		t.Fatalf("off the map: %v", reasons)
+	}
+	if !slices.ContainsFunc(result.Rejected, func(row modeldiag.Row) bool {
+		return row.Kind == "role_blocked" && slices.Equal(row.Samples, []string{"leaf"})
+	}) {
+		t.Fatal("the blocked helper is not recorded")
+	}
+	// Two targets: svc's first pass is round 1, its second pass rounds 3
+	// and 5.
+	for _, name := range []string{"atlas_role_assign-r3-w0.request.ref.json", "atlas_role_assign-r5-w0.request.ref.json"} {
+		if _, err := os.Stat(filepath.Join(opts.OwnerRunDir, atlas.TablesDir, name)); err != nil {
+			t.Fatalf("no %s: %v", name, err)
+		}
+	}
+}
+
 // Only a decided "helper" is a helper: a near-tie (0.52 against 0.48) leaves
 // the declaration named and assigned as before, with no mark.
 func TestAnUncertainHelperAnswerIsNoHelper(t *testing.T) {

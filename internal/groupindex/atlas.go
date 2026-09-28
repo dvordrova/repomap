@@ -809,7 +809,7 @@ func projectOffMap(target atlas.Target, unreached map[string][]programindex.Obje
 	}
 	for _, entry := range target.OffMap {
 		path := atlasPath(entry.File.Path)
-		if entry.Reason != atlas.OffMapUndecided && (!held[path] || len(entry.File.Symbols) == 0) {
+		if entry.Reason != atlas.OffMapUndecided && entry.Reason != atlas.OffMapBlocked && (!held[path] || len(entry.File.Symbols) == 0) {
 			add(OffMapFile{Path: path, Reason: entry.Reason})
 			continue
 		}

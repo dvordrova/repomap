@@ -436,11 +436,21 @@ without a model), and code places what they leave open:
   settled, about the helpers of split files still open whose users stand
   in two or more rows or that nothing uses, with every named box of their
   file as the options and the same item; a helper with a user still open is
-  not asked. It is a round of its own (the round after every target's
-  first: `len(targets)+round`), so its windows never overwrite the first
-  pass's, and it decodes like the first (a near-tie leaves the helper
-  undecided). Code then settles again. A unit is asked the assignment at
-  most once (`role_second_pass`).
+  not asked yet. It decodes like the first (a near-tie leaves the helper
+  undecided), and code then settles again. Once a waiting helper's users
+  have rows, rule A places it when they share one; when they stand in two
+  or more, a further round asks it, and rounds repeat until none
+  qualifies, which ends since each unit is asked the assignment at most
+  once (`role_second_pass`; `tables.md` counts each round's asked and
+  placed). The k-th round is a round of windows of its own
+  (`len(targets)·k + round`: after every target's first pass and each
+  earlier round), so no window overwrites another. A helper never asked
+  because a unit that uses it never got a row (its users still open to the
+  end, such as a near-tie of the round before) is *blocked*, not
+  undecided (`role_blocked`): it waited on its users, no question left it
+  open. `TestABlockedHelperIsAskedOnceItsUsersHaveBoxes` holds both: a
+  helper waiting on a helper the first round places is asked in a second
+  round, one waiting on a near-tie is blocked.
 
 A file is split only when the assignment puts units that are no helpers in
 at least two boxes (code only places a unit in a box that already holds
@@ -452,8 +462,8 @@ there from other files, and takes the part the answer gives it; the answer
 may put two boxes of one file in one part. A box holding none is no row
 (`role_box_empty`); `tables.md` counts the boxes holding only helpers. An undecided
 unit, with its followers, goes to the off-map record under the closed
-reason `undecided` (`role_undecided`) while its file stays on the map
-through its boxes. Parts take their IDs in answer order; nothing is split
+reason `undecided` (`role_undecided`), a blocked helper under `blocked`
+(`role_blocked`), while its file stays on the map through its boxes. Parts take their IDs in answer order; nothing is split
 under a map failure or without a model. A file shared by two targets is
 split per target, since `callers_elsewhere` is per target; it may split
 differently in each and costs a naming in each. Every outcome is recorded in

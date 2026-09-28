@@ -351,8 +351,13 @@ type OffMapFile struct {
 	SubjectIDs []string `json:"subject_ids,omitempty"`
 }
 
-// OffMapUndecided is the reason of a split file's declarations no box took.
+// OffMapUndecided is the reason of a split file's declarations no box took
+// though a question was asked about them.
 const OffMapUndecided = "undecided"
+
+// OffMapBlocked is the reason of a split file's helpers no box took because
+// a declaration that uses them never got one, so none was asked about.
+const OffMapBlocked = "blocked"
 
 // GroupProposal is one already-restored grouping row. Key exists only to join
 // request-local connection proposals; it is never persisted as authority.
@@ -2135,12 +2140,12 @@ func validateOffMap(files []OffMapFile, failure string, subjects map[string]Subj
 	}
 	for position, file := range files {
 		switch file.Reason {
-		case "left_out", "conflict", "no_units", "map_failure", OffMapTests, OffMapUndecided, OffMapUnreachable:
+		case "left_out", "conflict", "no_units", "map_failure", OffMapTests, OffMapUndecided, OffMapBlocked, OffMapUnreachable:
 		default:
 			return fmt.Errorf("group index: invalid off-map reason %q", file.Reason)
 		}
 		named := file.Reason == OffMapTests || file.Reason == OffMapUnreachable
-		listed := file.Reason == OffMapUndecided || file.Reason == OffMapUnreachable
+		listed := file.Reason == OffMapUndecided || file.Reason == OffMapBlocked || file.Reason == OffMapUnreachable
 		either := file.Reason == "left_out" || file.Reason == "conflict"
 		if !validText(file.Path) || strings.HasPrefix(file.Path, "/") || !validOptionalText(file.Part) || (file.Part != "") != named ||
 			(len(file.SubjectIDs) > 0) != listed && !either {

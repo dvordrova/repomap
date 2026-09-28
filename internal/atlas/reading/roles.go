@@ -99,12 +99,15 @@ type roleBox struct {
 }
 
 // roleSplit is one file whose code goes in several boxes: the boxes in
-// naming order, the file's own units each holds, and the units no box took.
+// naming order, the file's own units each holds, and the units no box took:
+// undecided, those a question asked without a decision (a near-tie, an
+// unanswered row, a refused window), and blocked, the helpers never asked
+// because a unit that uses them never got a row.
 type roleSplit struct {
-	file      *designFile
-	boxes     []roleBox
-	holds     [][]string
-	undecided []string
+	file               *designFile
+	boxes              []roleBox
+	holds              [][]string
+	undecided, blocked []string
 }
 
 // roleFacts are the units of a target's files that are neither test nor
@@ -751,7 +754,12 @@ func (r *reader) readRoles(ctx context.Context, view *designView, round int) (*u
 				split.holds[box] = append(split.holds[box], unit.id)
 				continue
 			}
-			if _, placed := place.attached[unit.id]; !placed {
+			if _, placed := place.attached[unit.id]; placed {
+				continue
+			}
+			if place.blocked(unit.id) {
+				split.blocked = append(split.blocked, unit.id)
+			} else {
 				split.undecided = append(split.undecided, unit.id)
 			}
 		}
@@ -780,15 +788,20 @@ func (r *reader) readRoles(ctx context.Context, view *designView, round int) (*u
 			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageRoleAssign, Target: view.targetID, Kind: "role_box_empty", Count: len(empty), Samples: empty,
 				Reason: path + ": named boxes no declaration went in; not drawn"})
 		}
-		if len(split.undecided) > 0 {
+		offMap := func(kind string, ids []string, reason string) {
+			if len(ids) == 0 {
+				return
+			}
 			var names []string
-			for _, id := range split.undecided {
+			for _, id := range ids {
 				names = append(names, file.byID[id].name)
 			}
-			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageRoleAssign, Target: view.targetID, Kind: "role_undecided", Count: len(names), Samples: names,
-				Reason: path + ": declarations no box took; off the map as undecided"})
+			r.rejected = append(r.rejected, modeldiag.Row{Stage: lines.StageRoleAssign, Target: view.targetID, Kind: kind, Count: len(names), Samples: names, Reason: path + ": " + reason})
+			fmt.Fprintf(&r.tables, "%s: %s: %s\n", path, reason, strings.Join(names, " "))
 		}
-		fmt.Fprintf(&r.tables, "%s: split into %d boxes, %d undecided, %d named boxes empty, %d holding only helpers\n", path, holding, len(split.undecided), len(empty), helperOnly)
+		offMap("role_undecided", split.undecided, "declarations no box took; off the map as undecided")
+		offMap("role_blocked", split.blocked, "helpers never asked, since a declaration that uses them never got a box; off the map as blocked")
+		fmt.Fprintf(&r.tables, "%s: split into %d boxes, %d undecided, %d blocked, %d named boxes empty, %d holding only helpers\n", path, holding, len(split.undecided), len(split.blocked), len(empty), helperOnly)
 		for i, box := range state.boxes {
 			var names []string
 			for _, id := range split.holds[i] {
