@@ -24,3 +24,24 @@ test('the closed input collection lists existing catalogue types without duplica
   assert.match(html,/Incoming requests/);assert.match(html,/Background work/);assert.match(html,/User interactions/);
   assert.doesNotMatch(html,/Same label|data-input-id/,'named inputs are the original graph children, not summary duplicates');
 });
+
+// A call that leaves its program reads from each program's own code, not
+// only the shared anet pair (owner, 2026-09-28).
+test('a call between programs names each side from its own code, and an outside call says it is outgoing',async()=>{
+  globalThis.window={rmT:(key,...values)=>values.reduce((s,v,i)=>s.replace(`{${i}}`,v),key)};
+  const view=await build({entryPoints:[new URL('./call-card-view.jsx',import.meta.url).pathname],bundle:true,write:false,format:'cjs',packages:'external',jsx:'transform'});
+  const loaded={exports:{}};
+  new Function('require','module','exports',view.outputFiles[0].text)(createRequire(import.meta.url),loaded,loaded.exports);
+  const {CallRows}=loaded.exports;
+  const {callCard}=await import('./call-card.mjs');
+  const step=(name,part)=>({name,key:'k#'+name,part});
+  const card=callCard([
+    {from:'cli',to:'server',calls:[{label:'anetTcpGenericConnect connects_to anetAccept',from:'a#158',at:'anet.c:158',
+      sides:[{program:'redis-cli',path:[step('cliConnect','cli'),step('anetTcpConnect','net'),step('anetTcpGenericConnect','net')]},{program:'redis-server',path:[step('acceptHandler','srv'),step('anetAccept','snet')]}]}]},
+    {from:'net',to:'tcp',calls:[{label:'anetTcpGenericConnect calls socket.h.connect',from:'a#128',to:'a#158',at:'anet.c:158',
+      sides:[{program:'redis-server',path:[step('syncWithMaster','repl'),step('anetTcpConnect','net'),step('anetTcpGenericConnect','net')]}]}]},
+  ],{nameOf:id=>id});
+  const text=renderToStaticMarkup(React.createElement(CallRows,{card})).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
+  assert.match(text,/redis-cli: cliConnect → anetTcpConnect → anetTcpGenericConnect ⇢ redis-server: acceptHandler → anetAccept/);
+  assert.match(text,/redis-server: syncWithMaster → anetTcpConnect → anetTcpGenericConnect → socket\.h\.connect outgoing/);
+});

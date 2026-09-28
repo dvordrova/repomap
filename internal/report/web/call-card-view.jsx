@@ -80,6 +80,7 @@ export function CallRows({card,sticky=true,choose=null}){
             if(!row.at&&!row.otherHref&&(row.other===pair.name||row.other===group.name))return null;
             return <p key={i} className="flow-card-row flow-card-other">{choose?<span>{row.other}</span>:<Link href={row.otherHref}>{row.other}</Link>}{row.at&&<em>{row.at}</em>}{choose&&<OpenCode href={row.otherHref} title={row.at}/>}</p>;
           }
+          if(row.sides)return <SidesRow key={i} row={row} choose={choose}/>;
           const again=i>0&&pair.rows[i-1].caller===row.caller&&pair.rows[i-1].kind!=='other';
           return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.inputs?row.caller:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
             {verb(row.kind)&&<i>{verb(row.kind)}</i>}{row.callee&&<Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>}{choose&&<OpenCode href={row.site||row.calleeHref} title={row.at}/>}</p>;
@@ -87,6 +88,21 @@ export function CallRows({card,sticky=true,choose=null}){
       </div>)}
     </section>)}
   </div>;
+}
+
+// A call that leaves its program reads from each program's own code: "redis-cli:
+// cliConnect → anetTcpConnect → anetTcpGenericConnect ⇢ redis-server:
+// acceptHandler → anetAccept"; a call to an outside endpoint is the
+// program's one side, then what it calls, outgoing.
+function SidesRow({row,choose}){
+  const [first]=row.sides;
+  return <p className="flow-card-row flow-card-sides">
+    {row.sides.map((side,s)=><React.Fragment key={s}>{s>0&&<i className="flow-card-joint">⇢</i>}<b className="flow-card-program">{side.program}:</b>
+      {side.path.map((step,k)=><React.Fragment key={k}>{k>0&&<i>→</i>}<Name at={step.part&&step.key?{part:step.part,key:step.key}:null} href={k===side.path.length-1&&s===0?row.site:''} choose={choose}>{step.name}</Name></React.Fragment>)}
+    </React.Fragment>)}
+    {row.sides.length===1&&first&&<><i>→</i><span>{row.callee}</span><em>{t('outgoing')}</em></>}
+    {choose&&<OpenCode href={row.site||row.calleeHref} title={row.at}/>}
+  </p>;
 }
 
 // A frame's connections in the reading column: one line per frame or

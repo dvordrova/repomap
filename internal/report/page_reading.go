@@ -169,11 +169,11 @@ type pageReadingOwner struct {
 	// NotCalledIn names this program when its adapter proved it never runs
 	// the declaration (owner, 2026-09-28: "not called in redis-benchmark"),
 	// while other programs of the report call it.
-	NotCalledIn string `json:"not_called_in,omitempty"`
-	Callees []pageReadingPeerDecls `json:"callees,omitempty"`
-	Uses    []pageReadingEnd       `json:"uses,omitempty"`
-	Returns []int                  `json:"returns,omitempty"`
-	Takes   []int                  `json:"takes,omitempty"`
+	NotCalledIn string                 `json:"not_called_in,omitempty"`
+	Callees     []pageReadingPeerDecls `json:"callees,omitempty"`
+	Uses        []pageReadingEnd       `json:"uses,omitempty"`
+	Returns     []int                  `json:"returns,omitempty"`
+	Takes       []int                  `json:"takes,omitempty"`
 }
 
 // pageReadingPeerDecls is one part's declarations at the other end of a

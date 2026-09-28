@@ -58,7 +58,10 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
         callee:words?words[3]:call.name||'',calleeHref:words||call.name?call.to||'':'',
         callerAt:words?end(relation.from,call.caller):null,calleeAt:words||call.name?end(intoID,call.callee):null,
         other:words||call.name?'':nameOf(incoming?relation.from:relation.to),
-        otherHref:call.from||call.to||''};
+        otherHref:call.from||call.to||'',
+        // A call that leaves its program: each program's side of it, from
+        // its own code (page_shared_code.go).
+        sides:call.sides||null};
       seen.set(key,!words&&(call.name||member)?Object.assign(row,{inputs:[row.caller]}):null);
       if(call.fold&&words){
         const foldKey=`${row.caller}\0${call.fold}`;

@@ -349,7 +349,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 					}
 				}
 			}
-			if call.Name != "" && !slices.Contains(takenCalls[key], call) {
+			if call.Name != "" && !slices.ContainsFunc(takenCalls[key], call.same) {
 				takenCalls[key] = append(takenCalls[key], call)
 			}
 		}

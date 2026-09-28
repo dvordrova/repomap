@@ -3,6 +3,7 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -2411,7 +2412,15 @@ type pageEdgeCall struct {
 	// that end is no declaration of the report.
 	Caller string `json:"caller,omitempty"`
 	Callee string `json:"callee,omitempty"`
+	// Sides say, for a call that leaves its program, each program's side
+	// (page_shared_code.go): two for a call from one program into another,
+	// one for a call to an outside endpoint, which the program makes
+	// outgoing.
+	Sides []pageCallSide `json:"sides,omitempty"`
 }
+
+// same says whether two calls are one.
+func (call pageEdgeCall) same(other pageEdgeCall) bool { return reflect.DeepEqual(call, other) }
 
 // MarshalJSON writes a call as the page's script reads it: the callee is
 // left out when it is where the call lands (To), as it is for nearly every

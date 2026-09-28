@@ -109,3 +109,112 @@ func (builder *pageBuilder) callersElsewhere(targetID, subjectID string) []calle
 func callsInto(kind programindex.RelationKind) bool {
 	return kind == programindex.RelationCalls || kind == programindex.RelationExecutes
 }
+
+// own says whether a declaration is its program's own code: no other
+// program of the report holds it.
+func (join *sharedCode) own(targetID, subjectID string) bool {
+	key := join.keys[subjectKey(targetID, subjectID)]
+	return key == "" || len(join.holders[key]) < 2
+}
+
+// ownPath is the shortest run of calls, in one program, from the nearest
+// declaration of its own code to subjectID, each declaration once: in
+// redis-cli the connect written in shared anet.c is reached from
+// cliConnect → anetTcpConnect → anetTcpGenericConnect. A caller its
+// program never runs is on no path, and calls are taken in the order
+// the program's index holds them. A declaration of the program's own code
+// is its own path; nil when no own code of the program calls it.
+func (builder *pageBuilder) ownPath(targetID, subjectID string) []string {
+	join := builder.sharedJoin()
+	if subjectID == "" || join.own(targetID, subjectID) {
+		return []string{subjectID}
+	}
+	index := builder.graphIndex(targetID)
+	if index == nil {
+		return nil
+	}
+	callers := map[string][]string{}
+	for _, edge := range index.StructuralEdges {
+		if edge.Role == groupindex.EdgeRelationTarget && callsInto(edge.RelationKind) && edge.FromSubjectID != edge.ToSubjectID &&
+			!join.unreachable[subjectKey(targetID, edge.FromSubjectID)] {
+			callers[edge.ToSubjectID] = append(callers[edge.ToSubjectID], edge.FromSubjectID)
+		}
+	}
+	next := map[string]string{subjectID: ""}
+	queue := []string{subjectID}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, caller := range callers[current] {
+			if _, seen := next[caller]; seen {
+				continue
+			}
+			next[caller] = current
+			if join.own(targetID, caller) {
+				path := []string{caller}
+				for at := current; at != ""; at = next[at] {
+					path = append(path, at)
+				}
+				return path
+			}
+			queue = append(queue, caller)
+		}
+	}
+	return nil
+}
+
+// pageCallSide is one program's side of a call that leaves it: the
+// program, and the run of calls from the nearest function of its own code
+// to the declaration the call is written in or lands in, each with the
+// part it is read in. A call between two programs has two sides
+// ("redis-cli: cliConnect → anetTcpConnect → anetTcpGenericConnect ⇢
+// redis-server: acceptHandler → anetAccept"), a call to an outside
+// endpoint one: the shared anet pair alone had named neither program.
+type pageCallSide struct {
+	Program string         `json:"program"`
+	Path    []pageSideStep `json:"path"`
+}
+
+type pageSideStep struct {
+	Name string `json:"name"`
+	// Key is the declaration as the page's script keys it, Part the map
+	// node of the part it is read in; either is empty when the report has
+	// none.
+	Key  string `json:"key,omitempty"`
+	Part string `json:"part,omitempty"`
+}
+
+// callSide is a program's side of a call made or taken by subjectID; nil
+// when the declaration is none the report names.
+func (builder *pageBuilder) callSide(targetID, subjectID string) *pageCallSide {
+	section := builder.byProgram[targetID]
+	if section == nil {
+		return nil
+	}
+	path := builder.ownPath(targetID, subjectID)
+	if path == nil {
+		// No own code of the program calls it: the declaration stands alone.
+		path = []string{subjectID}
+	}
+	side := &pageCallSide{Program: section.ShortLabel}
+	var groupOf map[string]string
+	if index := builder.graphIndex(targetID); index != nil {
+		groupOf = builder.edgesBetweenGroups(*index).groupOf
+	}
+	for _, id := range path {
+		ref, known := builder.subject(targetID, id)
+		if !known {
+			return nil
+		}
+		name, anchor := builder.subjectDisplay(ref.subject)
+		if name == "" {
+			return nil
+		}
+		step := pageSideStep{Name: name, Key: declarationKey(anchor)}
+		if group := groupOf[id]; group != "" {
+			step.Part = targetMapNodeID(targetID, mapNodeID(group))
+		}
+		side.Path = append(side.Path, step)
+	}
+	return side
+}

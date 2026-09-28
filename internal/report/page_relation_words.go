@@ -236,6 +236,13 @@ func (builder *pageBuilder) connectionCall(connection groupindex.Connection) *pa
 	if location := connection.ToLocation; location != nil {
 		call.To = builder.links.anchor(location.Path, location.Line, location.Column).Href
 	}
+	// A joint between two programs names each program's side of it.
+	if connection.SourceKind == "integration" && connection.From.TargetID != connection.To.TargetID {
+		from, to := builder.callSide(connection.From.TargetID, connection.FromSubjectID), builder.callSide(connection.To.TargetID, connection.ToSubjectID)
+		if from != nil && to != nil {
+			call.Sides = []pageCallSide{*from, *to}
+		}
+	}
 	builder.foldCall(call, connection)
 	return call
 }

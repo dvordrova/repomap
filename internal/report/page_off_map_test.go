@@ -294,3 +294,67 @@ func TestASharedDeclarationListsTheCallsEveryProgramMakesIntoIt(t *testing.T) {
 		t.Fatal("a program's unreachable proof is not read per program")
 	}
 }
+
+// A call leaving its program is read from the nearest function of that
+// program's own code: shared anet.c is held by both programs, so redis-cli's
+// connect reads from cliConnect and redis-server's accept from
+// acceptHandler. A caller its program never runs is on no path, and a
+// declaration of the program's own code is its own path.
+func TestACallLeavingItsProgramReadsFromItsOwnCode(t *testing.T) {
+	at := func(path string, line int) *programindex.Location {
+		return &programindex.Location{Path: path, Line: line, Column: 5}
+	}
+	function := func(id, name, path string, line int, unreachable bool) programindex.Object {
+		return programindex.Object{ID: id, Kind: programindex.ObjectFunction, Name: name, Location: at(path, line), Unreachable: unreachable}
+	}
+	call := func(from, to string) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget,
+			RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact}
+	}
+	anet := []programindex.Object{function("a1", "anetTcpConnect", "anet.c", 170, false), function("a2", "anetTcpGenericConnect", "anet.c", 128, false), function("a3", "anetAccept", "anet.c", 248, false)}
+	portfolio := &ProgramPortfolio{Entries: []programindex.Index{
+		{Target: programindex.Target{ID: "t1"}, Objects: append(slices.Clone(anet), function("s1", "acceptHandler", "redis.c", 2551, false), function("s2", "syncWithMaster", "redis.c", 5000, false))},
+		{Target: programindex.Target{ID: "t2"}, Objects: append(slices.Clone(anet), function("c1", "cliConnect", "redis-cli.c", 174, false), function("c2", "cliDead", "redis-cli.c", 90, true))},
+	}}
+	builder := &pageBuilder{links: pageLinks{repositoryURL: "https://github.com/o/r", blobPrefix: "/blob/", revision: "abc"}, data: &ReportData{ProgramPortfolio: portfolio}, byProgram: map[string]*pageSection{}, subjects: map[string]subjectRef{}, groupEdges: map[string]*groupEdges{}, indexes: []groupindex.Index{
+		{Target: programindex.Target{ID: "t1"}, StructuralEdges: []groupindex.StructuralEdge{call("s1", "a3"), call("s2", "a1"), call("a1", "a2")},
+			Groups: []groupindex.Group{{ID: "g1", MemberSubjectIDs: []string{"s1", "s2"}}, {ID: "g2", MemberSubjectIDs: []string{"a1", "a2", "a3"}}}},
+		{Target: programindex.Target{ID: "t2"}, StructuralEdges: []groupindex.StructuralEdge{call("c2", "a2"), call("a1", "a2"), call("c1", "a1")}},
+	}}
+	for i, name := range []string{"redis-server", "redis-cli"} {
+		section := &pageSection{ID: fmt.Sprintf("t%d", i+1), programTargetID: fmt.Sprintf("t%d", i+1), ShortLabel: name}
+		builder.sections = append(builder.sections, section)
+		builder.byProgram[section.programTargetID] = section
+	}
+	for _, index := range portfolio.Entries {
+		for _, object := range index.Objects {
+			builder.subjects[subjectKey(index.Target.ID, object.ID)] = subjectRef{programTargetID: index.Target.ID,
+				subject: groupindex.Subject{ID: object.ID, Object: &groupindex.ObjectFacts{Name: object.Name, Kind: object.Kind, Location: object.Location}}}
+		}
+	}
+	said := func(side *pageCallSide) string {
+		if side == nil {
+			return "<none>"
+		}
+		var names []string
+		for _, step := range side.Path {
+			names = append(names, step.Name)
+		}
+		return side.Program + ": " + strings.Join(names, " → ")
+	}
+	for _, check := range []struct{ target, subject, want string }{
+		{"t2", "a2", "redis-cli: cliConnect → anetTcpConnect → anetTcpGenericConnect"},
+		{"t1", "a3", "redis-server: acceptHandler → anetAccept"},
+		{"t1", "a2", "redis-server: syncWithMaster → anetTcpConnect → anetTcpGenericConnect"},
+		{"t1", "s1", "redis-server: acceptHandler"},
+		// Nothing of redis-cli's own code calls its anetAccept.
+		{"t2", "a3", "redis-cli: anetAccept"},
+	} {
+		if got := said(builder.callSide(check.target, check.subject)); got != check.want {
+			t.Errorf("side of %s %s = %q, want %q", check.target, check.subject, got, check.want)
+		}
+	}
+	if side := builder.callSide("t1", "a2"); side.Path[0].Part != "n-t1-g1" || side.Path[2].Part != "n-t1-g2" || side.Path[0].Key != "https://github.com/o/r/blob/abc/redis.c#L5000" {
+		t.Fatalf("a side's steps do not name the part each is read in: %+v", side.Path)
+	}
+}

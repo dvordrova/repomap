@@ -22,8 +22,11 @@ type pageOutbound struct {
 	DestinationCount int
 	Uses             []pageOutboundUse
 	Callers          []pageConnection
-	// Caller is the declaration the outside call is written in.
+	// Caller is the declaration the outside call is written in; Side the
+	// program's own code reaching it (page_shared_code.go), which says the
+	// program connects out.
 	Caller                      string
+	Side                        *pageCallSide
 	CallerAnchor                pageAnchor
 	ID                          string
 	Destination, DestinationRef string
@@ -153,6 +156,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 			if anchor != nil {
 				row.CallerAnchor = *anchor
 			}
+			row.Side = builder.callSide(index.Target.ID, call.SubjectID)
 		}
 		var inputs []string
 		for _, connection := range index.Connections {

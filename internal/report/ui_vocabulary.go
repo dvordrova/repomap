@@ -43,6 +43,8 @@ var russianUI = map[string]string{
 	"Its values":                           "Его значения",
 	"parsed at":                            "разбирается в",
 	"Not called in {0}":                    "Не вызывается в {0}",
+	"outgoing":                             "исходящий",
+	"{0} connects out from":                "{0} подключается наружу из",
 	"Areas and parts":                      "Области и части",
 	"Built from":                           "Собрана из",
 	"Entry":                                "Вход",

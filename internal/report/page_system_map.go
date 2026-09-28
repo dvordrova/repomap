@@ -267,6 +267,9 @@ func (view *pageView) SystemMap() *pageMap {
 					edge := pageMapEdge{From: from, To: tile, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
 					if row.Caller != "" && row.External != "" && !strings.ContainsAny(row.Caller+row.External, " \t") {
 						edge.Calls = []pageEdgeCall{{Label: row.Caller + " calls " + row.External, From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text, Caller: declarationKey(&row.CallerAnchor)}}
+						if row.Side != nil {
+							edge.Calls[0].Sides = []pageCallSide{*row.Side}
+						}
 					}
 					result.Edges = append(result.Edges, edge)
 				}
@@ -505,7 +508,7 @@ func collapseSystemMapEdges(edges []pageMapEdge) []pageMapEdge {
 		}
 		merged := &result[position]
 		for _, call := range edgeCalls(edge) {
-			if !slices.Contains(merged.Calls, call) {
+			if !slices.ContainsFunc(merged.Calls, call.same) {
 				merged.Calls = append(merged.Calls, call)
 			}
 		}
