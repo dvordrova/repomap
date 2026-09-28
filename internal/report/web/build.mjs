@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { readFile, writeFile, readdir } from 'node:fs/promises';
+import { gzipSync } from 'node:zlib';
 
 // Checked-in output is part of the Go module. Neither go build nor go install
 // invokes this build, accesses npm, or requires Node on the reader's machine.
@@ -10,9 +11,12 @@ const result = await build({
   // Only the browser build uses a real worker. Node tests retain elk.bundled
   // and execute the same native layout engine without browser globals.
   alias: {'elkjs/lib/elk.bundled.js':'./elk-browser.mjs'},
+  // The worker's 1.6 MB of source is embedded gzipped and in base64: a
+  // third of the page's script had been this one text (elk-browser.mjs
+  // unpacks it inside the worker).
   plugins: [{name:'embedded-elk-worker', setup(build) {
     build.onLoad({filter:/elk-worker\.min\.js$/}, async ({path})=>({
-      contents:await readFile(path,'utf8'), loader:'text',
+      contents:gzipSync(await readFile(path),{level:9}).toString('base64'), loader:'text',
     }));
   }}],
 });

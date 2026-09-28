@@ -524,7 +524,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       // An input is read by its handler: the declaration its registration
       // hands over, a link into the code.
       if (node.dataset.handler && node.dataset.handler !== titleOf(node)) {
-        var handler = node.dataset.handlerSource ? '<a target="_blank" rel="noopener" href="'+escapeText(node.dataset.handlerSource)+'">'+escapeText(node.dataset.handler)+'</a>'
+        var handler = node.dataset.handlerSource ? '<a target="_blank" href="'+escapeText(node.dataset.handlerSource)+'">'+escapeText(node.dataset.handler)+'</a>'
           : node.dataset.handlerOpen ? '<a href="#" data-open="'+escapeText(node.dataset.handlerOpen)+'">'+escapeText(node.dataset.handler)+'</a>'
           : '<span'+(node.dataset.handlerNoSource==='true'?' title="'+escapeText(rmT('No source'))+'"':'')+'>'+escapeText(node.dataset.handler)+'</span>';
         html += '<p class="map-card-handler">' + rmT.html('handled by') + ' ' + handler + '</p>';
@@ -535,7 +535,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       if (node.dataset.handlerUnknown==='true' && !node.dataset.catalogue) html += '<p class="map-card-handler">' + rmT.html('handler not established') + '</p>';
       if (node.dataset.operationGroup && !node.dataset.catalogue) html += '<span class="map-card-meta">' + (node.dataset.handlerUnknown==='true' ? rmT.html('declared in') + ' ' : '') + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
-      if(source) html += '<p><a target="_blank" rel="noopener" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
+      if(source) html += '<p><a target="_blank" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
       else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';
       else if(node.dataset.noSource==='true') html += '<p><span title="'+escapeText(rmT('No source'))+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</span></p>';
       html += '</div>';
@@ -564,7 +564,7 @@ function rmDeclarationRelations(map,node,key,nodes){
           var caller = witness.decls[entry[0]] || {name:''}, callee = witness.decls[entry[1]] || {name:''};
           var mark = entry[2]&4 ? 'possible integration' : entry[2]&2 ? (entry[2]&1 ? 'possible read' : 'read') : entry[2]&1 ? 'possible call' : '';
           html += '<li>'+(mark?("<span class=\"possible\">"+rmT.html(mark)+"</span> "):'')+escapeText(caller.name)+' → <strong>'+escapeText(callee.name)+'</strong><br>';
-          if (callee.href) html += '<a target="_blank" rel="noopener" href="'+escapeText(callee.href)+'">'+escapeText(callee.source)+'</a>';
+          if (callee.href) html += '<a target="_blank" href="'+escapeText(callee.href)+'">'+escapeText(callee.source)+'</a>';
           else if (callee.open) html += '<a href="#" data-open="'+escapeText(callee.open)+'">'+escapeText(callee.source)+'</a>';
           else if (callee.no_source) html += '<span title="'+escapeText(rmT('No source'))+'">'+escapeText(callee.source)+'</span>';
           else html += escapeText(callee.source||'');

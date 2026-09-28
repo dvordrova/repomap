@@ -70,6 +70,20 @@ type pageReadingDecl struct {
 	Fields []pageReadingField `json:"fields,omitempty"`
 }
 
+// MarshalJSON leaves the key out when it is the declaration's link, as it
+// is on a static page; the script takes the link for it.
+func (decl pageReadingDecl) MarshalJSON() ([]byte, error) {
+	type plain pageReadingDecl
+	written := struct {
+		plain
+		Key *string `json:"key,omitempty"`
+	}{plain: plain(decl)}
+	if decl.Key != decl.Href {
+		written.Key = &decl.Key
+	}
+	return json.Marshal(written)
+}
+
 // pageReadingField is one field of a type with the type it holds: every
 // field, where a tile shows the first few.
 type pageReadingField struct {

@@ -4,7 +4,7 @@ import {reach, countWords, countsHandlers, countsInputs} from './call-card.mjs';
 const t=(...args)=>window.rmT(...args);
 const stop=event=>event.stopPropagation();
 function Link({href,title,children}){
-  return href?<a href={href} title={title||undefined} target="_blank" rel="noopener" onClick={stop}>{children}</a>:<span title={title||undefined}>{children}</span>;
+  return href?<a href={href} title={title||undefined} target="_blank" onClick={stop}>{children}</a>:<span title={title||undefined}>{children}</span>;
 }
 const modified=event=>event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||event.button!==0;
 // A declaration's name in the reading column reads that declaration in the
@@ -16,13 +16,13 @@ function Name({at,href,title,choose,children}){
   if(!choose)return <Link href={href} title={title}>{children}</Link>;
   if(!at||!choose.can(at.part,at.key))return <span title={title||undefined}>{children}</span>;
   const read=event=>{event.stopPropagation();if(href&&modified(event))return;event.preventDefault();choose.go(at.part,at.key);};
-  return href?<a href={href} title={title||undefined} target="_blank" rel="noopener" onClick={read}>{children}</a>
+  return href?<a href={href} title={title||undefined} target="_blank" onClick={read}>{children}</a>
     :<button type="button" className="flow-card-name" title={title||undefined} onClick={read}>{children}</button>;
 }
 // Once names read declarations, a row's code is its own explicit link:
 // where the call is written.
 function OpenCode({href,title}){
-  return href?<a className="flow-card-code" href={href} title={title||undefined} target="_blank" rel="noopener" onClick={stop}>{t('Open code ↗')}</a>:null;
+  return href?<a className="flow-card-code" href={href} title={title||undefined} target="_blank" onClick={stop}>{t('Open code ↗')}</a>:null;
 }
 // The words between a caller and its callee: an arrow for a call, the
 // relation's own words for anything else ("passes callback"). Inputs taken

@@ -11,7 +11,8 @@ button.term-mention{display:inline;font:inherit;line-height:inherit;color:inheri
 .glossary-source-file{margin:.5rem 0}
 .glossary-source-file summary code{overflow-wrap:anywhere}
 .glossary-source-locations{display:flex;flex-wrap:wrap;gap:.4rem .75rem;padding:.6rem 0 .5rem 1rem}
-.glossary-source-locations .anchor{font-size:inherit}
+/* A term's line links stand bare, one per place, in the anchors' type. */
+.glossary-source-locations>*{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:inherit;white-space:nowrap}
 .glossary-entry-content .plain{margin:.25rem 0}
 .glossary-entry-content li{margin:.3rem 0}
 .term-popup{z-index:55;width:31rem;max-width:calc(100vw - 24px);max-height:min(42rem,calc(100vh - 24px));padding:1rem 1.15rem;border-color:color-mix(in srgb,var(--accent) 25%,var(--line));box-shadow:0 12px 40px #172b2a24}

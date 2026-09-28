@@ -14,7 +14,11 @@
 function rmGroupReading(node){
   var group=document.getElementById((node.getAttribute('href')||'').slice(1));
   if(!group||!group.dataset.reading)return null;
-  if(!group.rmReading)group.rmReading=JSON.parse(group.dataset.reading);
+  if(!group.rmReading){
+    // A declaration's key is left out where it is its link.
+    group.rmReading=JSON.parse(group.dataset.reading);
+    group.rmReading.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
+  }
   return group.rmReading;
 }
 // What a relation other than a call says of its end: of a callee ("passed

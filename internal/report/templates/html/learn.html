@@ -42,7 +42,7 @@
 {{if .GlossaryPartialComparison}}<p class="meta glossary-comparison-note">{{t "Some explanations were not compared together; similar entries may remain separate."}}</p>{{end}}
 <label class="concept-search" hidden>{{t "Find a term"}} <input type="search" aria-label="{{t "Find a term"}}" placeholder="{{t "Name or description"}}"></label>
 <p class="concept-count" role="status"></p><div class="concept-results">
-{{range .Glossary}}<details id="{{.ID}}" class="learn-concept" data-term-name="{{.Name}}" data-term-original="{{.OriginalName}}" data-term-code="{{.Code}}"><summary>{{.Name}}{{if ne .Name .OriginalName}} <span class="meta">· {{.OriginalName}}</span>{{end}} <span class="badge">{{t "(via model)"}}</span>{{if .Code}}{{with .Sources}} <span class="concept-source-context meta">· {{(index . 0).Text}}</span>{{end}}{{end}}</summary>
+{{range .Glossary}}<details id="{{.ID}}" class="learn-concept" data-term-name="{{.Name}}" data-term-original="{{.OriginalName}}"><summary>{{.Name}}{{if ne .Name .OriginalName}} <span class="meta">· {{.OriginalName}}</span>{{end}} <span class="badge">{{t "(via model)"}}</span>{{if .Code}}{{with .Sources}} <span class="concept-source-context meta">· {{(index . 0).Text}}</span>{{end}}{{end}}</summary>
 <div class="glossary-entry-content"><p class="model glossary-explanation">{{.Explanation}}</p>
 {{if .Questions}}<details class="glossary-questions"><summary>{{t "Questions"}} <span class="meta">· {{len .Questions}}</span></summary><ul class="plain">{{range .Questions}}<li><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ul></details>{{end}}
 {{if .Places}}<div class="glossary-places"><h3>{{t "On the map"}}</h3><ul class="plain">{{range .Places}}<li><a href="{{.Href}}">{{t "Explore {0} →" .Title}}</a></li>{{end}}</ul></div>{{end}}
@@ -53,6 +53,6 @@
 </section>{{end}}
 {{end}}
 
-{{define "glossary-location"}}<span>{{if .Href}}<a class="anchor" href="{{.Href}}" target="_blank" rel="noopener" aria-label="{{.Path}}{{if .Line}}:{{.Line}}{{end}}">{{if .Line}}{{.Text}}{{else}}{{t "Whole file"}}{{end}}</a>{{else if .Open}}<a class="anchor" href="#" data-open="{{.Open}}" aria-label="{{.Path}}{{if .Line}}:{{.Line}}{{end}}">{{if .Line}}{{.Text}}{{else}}{{t "Whole file"}}{{end}}</a>{{else}}<span class="anchor"{{if .NoSource}} data-no-source="true" title="{{t "No source"}}"{{end}}>{{if .Line}}{{.Text}}{{else}}{{t "Whole file"}}{{end}}</span>{{end}}</span>{{end}}
+{{define "glossary-location"}}{{if .Href}}<a href="{{.Href}}" target="_blank" aria-label="{{.Path}}{{if .Line}}:{{.Line}}{{end}}">{{if .Line}}{{.Text}}{{else}}{{t "Whole file"}}{{end}}</a>{{else if .Open}}<a href="#" data-open="{{.Open}}" aria-label="{{.Path}}{{if .Line}}:{{.Line}}{{end}}">{{if .Line}}{{.Text}}{{else}}{{t "Whole file"}}{{end}}</a>{{else}}<span class="anchor"{{if .NoSource}} data-no-source="true" title="{{t "No source"}}"{{end}}>{{if .Line}}{{.Text}}{{else}}{{t "Whole file"}}{{end}}</span>{{end}}{{end}}
 
 {{define "concept-explanation.html"}}<p class="model"><span data-display-ref="{{.ExplanationRef}}">{{.Explanation}}</span><span class="model-sources"> {{template "anchor" .Source}}</span></p>{{end}}

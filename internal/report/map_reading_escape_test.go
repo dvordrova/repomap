@@ -145,7 +145,7 @@ process.stdout.write(JSON.stringify(cases.map(render)));
 		}
 		for _, link := range links {
 			if cases[i].Source != "" {
-				if len(link) != 3 || link["href"] != cases[i].Source || link["target"] != "_blank" || link["rel"] != "noopener" {
+				if len(link) != 2 || link["href"] != cases[i].Source || link["target"] != "_blank" {
 					t.Fatalf("variant %d changed the source URL or attributes: %+v", i, link)
 				}
 			} else if len(link) != 2 || link["href"] != "#" || link["data-open"] != cases[i].Open {

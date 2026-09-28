@@ -2408,6 +2408,24 @@ type pageEdgeCall struct {
 	Callee string `json:"callee,omitempty"`
 }
 
+// MarshalJSON writes a call as the page's script reads it: the callee is
+// left out when it is where the call lands (To), as it is for nearly every
+// call, and the script takes To for it; an empty callee beside a To is
+// written as "". Redis's arrows had carried each callee twice.
+func (call pageEdgeCall) MarshalJSON() ([]byte, error) {
+	type plain pageEdgeCall
+	written := struct {
+		plain
+		Callee *string `json:"callee,omitempty"`
+	}{plain: plain(call)}
+	if call.Callee != call.To || call.To == "" {
+		if call.Callee != "" || call.To != "" {
+			written.Callee = &call.Callee
+		}
+	}
+	return json.Marshal(written)
+}
+
 // CallsJSON is the arrow's relations for the page's script.
 func (edge pageMapEdge) CallsJSON() string {
 	calls := edgeCalls(edge)

@@ -67,7 +67,7 @@ var repomapMembers = (function () {
   function displayName(item){return item.alias&&item.alias!==item.name?item.alias+' · '+item.name:item.name;}
   function sourceLink(source) {
     var link=document.createElement(source.Href||source.Open?'a':'span');link.textContent=source.Text;
-    if(source.Href){link.href=source.Href;link.target='_blank';link.rel='noopener';}
+    if(source.Href){link.href=source.Href;link.target='_blank';}
     else if(source.Open){link.href='#';link.dataset.open=source.Open;}
     else if(source.NoSource)link.title=rmT('No source');
     return link;
