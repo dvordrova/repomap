@@ -3,9 +3,7 @@ package report
 import (
 	"bytes"
 	"encoding/json"
-	"encoding/xml"
 	"html/template"
-	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -108,68 +106,5 @@ func TestMapConceptCarriesItsExplanationRefThroughDisplayAssembly(t *testing.T) 
 	original.ExplanationRef = page.catalog.Entries[0].Ref
 	if concepts[0] != original {
 		t.Fatalf("display assembly lost the ref or changed native concept data: %+v", concepts[0])
-	}
-}
-
-func TestModelProseRefsExcludeTheSourcePreviewHost(t *testing.T) {
-	group := pageGroup{ID: "part", Summary: "A <bank>.", SummaryRef: "t1", Highlights: []pageChipRow{{Path: "parser.go", Members: []pageChip{{
-		Name: "Parser", Line: 12, Summary: "Reads a <bank>.", SummaryRef: "t2", Anchor: pageAnchor{Text: "parser.go:12", Href: "/source/parser.go#L12"},
-	}}}}}
-	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var html bytes.Buffer
-	if err := parsed.ExecuteTemplate(&html, "group", group); err != nil {
-		t.Fatal(err)
-	}
-	// This fragment is also valid XML. Inspect its element boundaries, rather
-	// than requiring a particular layout around the prose and its citations.
-	decoder := xml.NewDecoder(bytes.NewReader(html.Bytes()))
-	depth, refDepth := 0, 0
-	var ref string
-	var prose strings.Builder
-	got := make(map[string]string)
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		switch token := token.(type) {
-		case xml.StartElement:
-			depth++
-			var nextRef, class string
-			for _, attribute := range token.Attr {
-				switch attribute.Name.Local {
-				case "data-display-ref":
-					nextRef = attribute.Value
-				case "class":
-					class = attribute.Value
-				}
-			}
-			if nextRef != "" {
-				if strings.Contains(" "+class+" ", " model ") || ref != "" {
-					t.Fatal("a prose ref includes the model host where the source-preview script appends controls")
-				}
-				ref, refDepth = nextRef, depth
-			}
-		case xml.CharData:
-			if ref != "" {
-				prose.Write(token)
-			}
-		case xml.EndElement:
-			if depth == refDepth && ref != "" {
-				got[ref] = prose.String()
-				ref = ""
-				prose.Reset()
-			}
-			depth--
-		}
-	}
-	if !reflect.DeepEqual(got, map[string]string{"t1": "A <bank>.", "t2": "Reads a <bank>."}) {
-		t.Fatalf("prose slots include source labels or lost their original text: %+v", got)
 	}
 }

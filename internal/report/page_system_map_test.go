@@ -150,9 +150,20 @@ func TestPageHydratesEqualTargetLocalSubjectIDsFromTheirOwner(t *testing.T) {
 		t.Fatalf("sections received a second identity namespace: %q, %q", view.Sections[0].ID, view.Sections[1].ID)
 	}
 	for position, want := range []struct{ name, path string }{{"APIHandler", "cmd/api/main.go"}, {"CLICommand", "cmd/users/main.go"}} {
-		rows := view.Sections[position].Core[0].Inventory
-		if len(rows) != 1 || rows[0].Path != want.path || len(rows[0].Members) != 1 || rows[0].Members[0].Name != want.name {
-			t.Fatalf("section %d borrowed another target's subject: %#v", position, rows)
+		// The part's tiles name the declaration its own target holds.
+		var tiles []pageNodeSymbol
+		for _, node := range view.Sections[position].Map.Nodes {
+			if node.Symbols == "" {
+				continue
+			}
+			var symbols []pageNodeSymbol
+			if err := json.Unmarshal([]byte(node.Symbols), &symbols); err != nil {
+				t.Fatal(err)
+			}
+			tiles = append(tiles, symbols...)
+		}
+		if len(tiles) != 1 || tiles[0].Name != want.name || tiles[0].Path != want.path {
+			t.Fatalf("section %d borrowed another target's subject: %+v", position, tiles)
 		}
 	}
 }

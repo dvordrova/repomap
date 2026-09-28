@@ -152,7 +152,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 		t.Fatal(err)
 	}
 	html := stdhtml.UnescapeString(out.String())
-	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "настройка клиента", "вызов в коде", `data-open="client.go:21:17"`, "가격조회.Get", address, "GET /prices"} {
+	for _, text := range []string{`data-integration-count="3"`, "Куда обращается сервис", "Получает свежие рыночные цены.", "настройка клиента", "вызов в коде", `data-open="client.go:21:17"`, "가격조회.Get", address} {
 		if !strings.Contains(html, text) {
 			t.Fatalf("first-screen inventory lost %q", text)
 		}

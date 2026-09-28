@@ -126,7 +126,7 @@ assert.equal(content.scrollTop,0,'Close all scrolls nothing');
 // pushing the list 26 px under the reader's click: monitorCommand was read
 // for pingCommand. It is a fact of the reading, drawn with the reading.
 func TestAPartOffThePinnedInputSaysSoWithItsReading(t *testing.T) {
-	projection := systemJSPiece(t, "29-operation-view.js", "function rmSystemProjection(", "// A part's reading goes description")
+	projection := systemJSPiece(t, "29-operation-view.js", "function rmSystemProjection(", "// An input chosen from Find, a link")
 	mark := systemJSPiece(t, "29-operation-view.js", "  function markOutside(n){", "  // A declaration named in the reading")
 	runSystemJS(t, fakeElements+projection+`
 const nodes=[{id:'server',children:['runtime']},{id:'runtime',children:['clients','strings','debug']},{id:'clients'},{id:'strings'},{id:'debug'},{id:'get',activation:'request'}];
@@ -280,18 +280,17 @@ assert.equal(none.children[0].textContent,'Inputs reaching this communication ·
 func TestCodeInThisPartKeepsAKeyTypesMarkAndFields(t *testing.T) {
 	code := systemJSPiece(t, "26-map-members.js", "var repomapMembers = (function () {", "\n})();") + "\n})();"
 	runSystemJS(t, `
-const chip=(name,href)=>({textContent:name,dataset:{},getAttribute:k=>k==='href'?href:null,cloneNode(){return {textContent:name,querySelectorAll:()=>[]};},closest:()=>null,querySelector:()=>null});
-const field=(name,href)=>({dataset:{},querySelector:s=>s==='.chip'?chip(name,href):null});
-const row=(name,href,key,fields)=>({dataset:{alias:'',key:String(key)},querySelector:s=>s===':scope>strong>.chip'&&key||s===':scope>.chip'&&!key?chip(name,href):s.startsWith(':scope>.anchor')?{textContent:'redis.c:1'}:null,
-  querySelectorAll:s=>s===':scope>.symbol-fields>li'?fields.map(f=>field(f,href+'#'+f)):[]});
-const rows=[row('redisClient','h#303',true,['fd','db']),row('createClient','h#2440',false,[])];
-const group={querySelectorAll:s=>s==='.group-highlights .key-symbol'?rows:[]};
-const document={getElementById:id=>id==='clients'?group:null};
-const node={dataset:{concepts:JSON.stringify([{name:'redisClient',explanation:'One connected client.',source:{Href:'h#303',Text:'redis.c:303'}}])},getAttribute:()=>'#clients'};
+const reading={decls:[{name:'createClient',key:'h#2440',href:'h#2440',at:'redis.c:2440',kind:'function'},{name:'redisClient',key:'h#303',href:'h#303',at:'redis.c:303',kind:'type',bold:true,fields:[{name:'fd',href:'h#303#fd',at:'redis.c:304'},{name:'db',href:'h#303#db',at:'redis.c:305'}]}],
+  members:[{kind:'function',decls:[0]},{kind:'type',decls:[1]}]};
+function rmGroupReading(){return reading;}
+const node={dataset:{concepts:'c',explained:'e'},getAttribute:()=>'#clients'};
+rmPage.data=(n,name)=>name==='concepts'?[{name:'redisClient',explanation:'One connected client.',source:{Href:'h#303',Text:'redis.c:303'}}]:
+  name==='explained'?[{name:'createClient',alias:'Client factory',explanation:'Makes a client.',source:{Href:'h#2440',Text:'redis.c:2440'}}]:null;
 `+code+`
 const items=repomapMembers.items(node);
 assert.deepEqual(items.map(i=>[i.name,!!i.key,(i.fields||[]).map(f=>f.name)]),[['redisClient',true,['fd','db']],['createClient',false,[]]]);
 assert.equal(items[0].explanation,'One connected client.','the model line stays');
+assert.deepEqual([items[1].alias,items[1].explanation,items[1].source.Path,items[1].source.Line],['Client factory','Makes a client.','redis.c',2440],'a declaration keeps the model\'s alias and line, and its place');
 `)
 }
 

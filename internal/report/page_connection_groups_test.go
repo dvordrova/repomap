@@ -1,10 +1,6 @@
 package report
 
 import (
-	"bytes"
-	"html/template"
-	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -31,22 +27,6 @@ func TestInternalCallRemainsReadableAfterItsDeclarationsShareAPart(t *testing.T)
 	}
 	if rows[0].FromSource.Path != "index.tsx" || rows[0].FromSource.Line != 19 || rows[0].EvidenceID == rows[1].EvidenceID || rows[0].ToSource.Path != "metrics.ts" || rows[0].ToSource.Line != 3 {
 		t.Fatalf("original call sites and destination declaration changed: %+v", rows)
-	}
-	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := parsed.ExecuteTemplate(&out, "group", pageGroup{ID: part.ID, Title: part.Title, InternalConnections: rows}); err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"Connections within this part · 2", "src/index calls reportWebVitals", "index.tsx:19", "metrics.ts:3"} {
-		if !strings.Contains(out.String(), want) {
-			t.Fatalf("static reading lost %q: %s", want, out.String())
-		}
-	}
-	if strings.Contains(out.String(), "Connected to") || strings.Contains(out.String(), `class="model"><span`) {
-		t.Fatal("native internal calls became a self-navigation or model statement")
 	}
 }
 
@@ -85,18 +65,6 @@ func TestConnectionReadingGroupsPreserveIdentityDirectionAndEvidence(t *testing.
 		{Href: "#other-rules", Title: "Rules", Arrow: "→", Label: "call 1"},
 		{Title: "Unresolved", Arrow: "→", Label: "unknown 1"},
 		{Title: "Unresolved", Arrow: "→", Label: "unknown 2"},
-	}
-	groups := (pageGroup{Connections: rows}).ConnectionGroups()
-	// Who reaches the part is read before what it reaches.
-	if len(groups) != 5 || groups[0].Arrow != "←" || len(groups[1].Summaries) != 1 || len(groups[1].Rows) != 2 {
-		t.Fatalf("unexpected reading groups: %#v", groups)
-	}
-	var restored []pageConnection
-	for _, group := range groups {
-		restored = append(restored, group.Rows...)
-	}
-	if !reflect.DeepEqual(restored, []pageConnection{rows[2], rows[0], rows[1], rows[3], rows[4], rows[5]}) {
-		t.Fatal("reading lost original rows, provenance or endpoints")
 	}
 	if got := collapseConnections([]pageConnection{rows[0], {Href: "#other", Title: rows[0].Title, Arrow: rows[0].Arrow, Label: rows[0].Label, Summary: rows[0].Summary, FromSource: rows[0].FromSource}}); len(got) != 2 {
 		t.Fatal("equal labels merged different participants before reading")

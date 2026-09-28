@@ -492,7 +492,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       var out = [];
       for (var e = 0; e < edges.length; e++) {
         var edge = edges[e];
-        var label = (edge.querySelector('title') || {}).textContent || '';
+        var label = edge.dataset.label || '';
         var from = edge.getAttribute('data-from'), to = edge.getAttribute('data-to');
         if (from === id && byId[to]) out.push('\u2192 ' + (label ? label + ' \u00b7 ' : '') + titleOf(byId[to]));
         else if (to === id && byId[from]) out.push('\u2190 ' + titleOf(byId[from]) + (label ? ' \u00b7 ' + label : ''));

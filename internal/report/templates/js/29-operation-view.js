@@ -31,15 +31,6 @@ function rmSystemProjection(nodes, edges) {
   }
   return {visible:visible,areas:areas,representatives:representatives,parents:parents,inputOwner:inputOwner,leaves:leaves,selection:selection,outside:outside};
 }
-// A part's reading goes description, the code to open, then its
-// connections: Command dispatch listed some 5,000 characters of connections
-// before "Code in this part". The input's witness, when one is pinned, stays
-// right under the description it explains.
-function rmReadingOrder(card){
-  var at=card.querySelector(':scope>.map-card-intro');if(!at)return;
-  [':scope>.call-path',':scope>.map-concepts',':scope>.map-all-members'].map(function(selector){return card.querySelector(selector);}).filter(Boolean)
-    .forEach(function(section){at.after(section);at=section;});
-}
 // An input chosen from Find, a link, a reading or its own tile is entered as
 // its path: the canvas frames the part holding its handler and the path's
 // parts nearest it, the trace dark from there, while the reading column
@@ -436,7 +427,7 @@ function rmCatalogInputClick(event,reveal){
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
   nodes.forEach(function(n){byID[n.id]=n;});
   map.querySelectorAll('[data-map-alias]').forEach(function(n){aliases[n.id]=n.dataset.mapAlias;});
-  var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).filter(function(e){return e.dataset.scope!=='static';}).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),init:e.classList.contains('map-edge-init'),calls:(rmPage.data(e,'calls')||[]).map(function(call){if(!('callee' in call))call.callee=call.to||'';return call;}),label:e.querySelector('title')?.textContent||''};});
+  var rawEdges=Array.from(svg.querySelectorAll('.map-edge')).filter(function(e){return e.dataset.scope!=='static';}).map(function(e){return {from:e.dataset.from,to:e.dataset.to,scope:e.dataset.scope,summary:e.dataset.summary,summaryRef:e.dataset.summaryRef,labelRef:e.dataset.labelRef,fromSource:e.dataset.fromSource,fromText:e.dataset.fromText,fromNoSource:e.dataset.fromNoSource==='true',toSource:e.dataset.toSource,toText:e.dataset.toText,toNoSource:e.dataset.toNoSource==='true',operations:(e.dataset.operations||'').split(/\s+/).filter(Boolean),possible:e.classList.contains('map-edge-possible'),init:e.classList.contains('map-edge-init'),calls:(rmPage.data(e,'calls')||[]).map(function(call){if(!('callee' in call))call.callee=call.to||'';return call;}),label:e.dataset.label||''};});
   var model=nodes.map(function(n){return {id:n.id,branch:n.dataset.branch,children:(n.dataset.children||'').split(/\s+/).filter(Boolean),activation:n.dataset.activation,inputOwner:n.dataset.inputOwner};});
   var projection=rmSystemProjection(model,rawEdges),scope='',operation=null,surface=null,ready=null;
   // Whether the camera may stand away from the pinned input's own tile: on its
@@ -568,7 +559,10 @@ function rmCatalogInputClick(event,reveal){
     var rows=inputWrites.flatMap(function(row){return row.writes.filter(function(write){return n.dataset.activation?row.input===n:entityKeys.has(repomapMembers.sourceKey(write.entity))&&(!selectedKey||repomapMembers.sourceKey(write.entity)===selectedKey);}).map(function(write){return {input:row.input,write:write};});});
     card.querySelector('.system-entity-writes')?.remove();
     if(!rows.length)return;
-    var section=rmEl('section','system-entity-writes');section.appendChild(rmEl('h5','',rmT('State changes')));
+    // Folded under its count, after what the part is made of: 97 inputs'
+    // writes into one type had stood above the part's own reading.
+    var section=rmEl('details','system-entity-writes'),head=rmEl('summary');head.append(rmEl('span','',rmT('State changes')),rmEl('span','map-reading-peer-count',String(rows.length)));
+    section.appendChild(head);section.open=rows.length<=rmShortSection;
     section.appendChild(rmEl('p','meta',rmT('Writes reachable in code; a call path does not prove they execute on every run.')));
     var entities=new Map();rows.forEach(function(row){var key=repomapMembers.sourceKey(row.write.entity);if(!entities.has(key))entities.set(key,[]);entities.get(key).push(row);});
     entities.forEach(function(changes){
@@ -594,7 +588,8 @@ function rmCatalogInputClick(event,reveal){
         });section.appendChild(fields);
       });
     });
-    card.querySelector('.map-card-intro').after(section);
+    var partReading=!n.dataset.activation&&card.querySelector('.map-part-reading');
+    if(partReading)partReading.appendChild(section);else card.querySelector('.map-card-intro').after(section);
   }
   function nodeByHref(href){return href?nodes.find(function(n){return n.getAttribute('href')===href||'#'+n.id===href;})||null:null;}
   // What the reading column reads with (31-reading-column.js): every name
@@ -713,27 +708,14 @@ function rmCatalogInputClick(event,reveal){
       var proof=card.querySelector(':scope>.call-path');
       if(proof){(partReading.querySelector(':scope>.map-card-summary')||partReading.querySelector(':scope>.map-part-title')).after(proof);proof.open=true;}
       card.querySelector('.map-card-evidence')?.remove();
-      group?.querySelectorAll(':scope>.group-internal-connections').forEach(function(section){
-        var copy=section.cloneNode(true);copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});partReading.appendChild(copy);
-      });
       return;
     }
     if(!n.dataset.branch&&!n.dataset.activation&&group?.classList.contains('group')){
-      // The grouped connection reading replaces only the duplicated inventory.
-      // The selected input's source-backed call path is a different explanation.
+      // A part naming no declaration has no reading: its arrows' cards
+      // are its connections.
       var witness=card.querySelector('.call-path');
       if(witness){card.querySelector('.map-card-intro').after(witness);witness.open=true;}
       card.querySelector('.map-card-evidence')?.remove();
-      // Code in this part lists every declaration; the source index is that
-      // list again, by file, and stays on the part's own card.
-      group.querySelectorAll(':scope>.group-connections,:scope>.group-internal-connections,:scope>.group-inventory:not(:has(.inventory-file))').forEach(function(section){
-        var copy=section.cloneNode(true);copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});
-        copy.querySelectorAll('.conn-peer a').forEach(function(link){
-          var href=link.getAttribute('href'),peer=nodes.find(function(candidate){return candidate.getAttribute('href')===href||'#'+candidate.id===href;});
-          if(peer)link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(peer,true,null,true);});
-        });if(copy.classList.contains('group-connections'))card.querySelector('.map-card-intro').after(copy);else card.appendChild(copy);
-      });
-      rmReadingOrder(card);
       return;
     }
     if(n.dataset.branch==='communication'){

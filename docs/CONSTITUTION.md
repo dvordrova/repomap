@@ -46,7 +46,9 @@ reach the screen.
   column of equally weighted headings does not satisfy this purpose.
 * The canvas is the primary entrance. It must lead to the complete saved
   explanations, questions and sources; the drawing alone is not the report.
-  The static HTML retains all of that reading without scripting.
+  The page's data holds every answer, and the page needs JavaScript to read
+  it (owner decision 2026-09-29): nothing the reading column renders from
+  that data is printed a second time as HTML.
 * Not a place for the model to write essays. One line per group purpose, one
   sentence per connection, anchors everywhere.
 
@@ -136,7 +138,7 @@ separate stage outputs.
   a Russian report such as `report.etcd.ru.html`. Canonical analysis, IDs,
   topology, code names, source excerpts and source links keep their original
   values. The localized static HTML and server-rendered report use the same
-  saved display translation; JavaScript is not required to obtain translation.
+  saved display translation, applied before the page is written.
   A declaration may additionally carry a short English Alias supplied by its
   existing interpretation request. The alias stays English in every report
   language and appears beside the native code name; neither replaces the source
@@ -156,9 +158,9 @@ separate stage outputs.
   tooltip positions. Equal spellings may offer separate dictionary definitions;
   a lookup does not establish the meaning of a particular use. Optional
   terminology errors do not invalidate an accepted main answer or translation;
-  a refused glossary merge keeps its original accepted definitions separate. Static
-  glossary entries remain readable without scripting; JavaScript may reveal
-  those same definitions beside the bound words. This adds no semantic graph,
+  a refused glossary merge keeps its original accepted definitions separate. The
+  glossary's entries and the definitions revealed beside the bound words are
+  the same saved definitions. This adds no semantic graph,
   per-term request or provider call during saved rendering.
 * The report opens with a short system explanation and one common system map,
   with search and the complete saved question menu. These share the same
@@ -176,8 +178,8 @@ separate stage outputs.
   the selected reading. The outside participant remains named; direction and
   source inspection survive. These local numbers never claim execution order.
   Internal arrows and the existing directed layout remain intact. Question, operation, source selection and viewport survive navigation
-  and return from full details. With scripting disabled, all original sections
-  and source links remain available.
+  and return from full details. Every original section and source link stays
+  reachable from the page.
   Answers, component reference and repository material open as reading sections
   below the mounted common canvas. The selected reading stays in the sidebar.
   The introductory labels "Understand this repository" and "Starting points"
@@ -252,10 +254,11 @@ separate stage outputs.
   selector, outcome, target contract, and raw selector strings like
   `python:backend:guard:main`.
 * One page with sections, not many routes. Script size is not the constraint
-  the owner cares about — "288 KB is very little" (2026-09-03) — but every
-  answer must still be in the HTML: scripting may add preview and emphasis and
-  nothing else, so the page reads with scripting off. The bundled interactive
-  canvas is a display of the same saved content, not another analysis engine.
+  the owner cares about — "288 KB is very little" (2026-09-03). The page's
+  data holds every answer, each fact once, and the page needs JavaScript to
+  read it (owner decision 2026-09-29, "b": the static no-script copy of the
+  reading had made Redis's page 29 MB). The bundled interactive canvas is a
+  display of the same saved content, not another analysis engine.
 * The templates are one file per region of the page and one file per style or
   script layer, under `internal/report/templates/{html,css,js}`, concatenated
   in filename order. Adding a region or a layer is a new file and no Go change,

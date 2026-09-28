@@ -1,10 +1,7 @@
-// The cubes are views of the key code already printed in each group. They
-// neither extend the analysis graph nor attach group relations to a member.
+// A part's code as the page data lists it (its reading, page_reading.go).
+// It neither extends the analysis graph nor attaches relations to a member.
 var repomapMembers = (function () {
   var inventories = new WeakMap();
-  // A chip links to all of a declaration's lines (#L10-L20, GitLab
-  // #L10-20); the page keys the declaration by its first (#L10).
-  function chipKey(chip) { return (chip.getAttribute('href')||'').replace(/(#L\d+)-L?\d+$/, '$1'); }
   function sourceKey(source) { return source.Href || source.Open || (source.NoSource ? (source.Path ? JSON.stringify([source.Path,source.Line||0]) : source.Text) : ''); }
   function items(node) {
     if (inventories.has(node)) return inventories.get(node);
@@ -24,46 +21,29 @@ var repomapMembers = (function () {
       known.set(key, item); result.push(item);
     }
     (rmPage.data(node,'concepts')||[]).forEach(add);
-    var href = node.getAttribute('href') || '';
-    var group = href[0] === '#' && document.getElementById(href.slice(1));
-    // Code in this part is every declaration of the part, the model's keys
-    // first and marked as keys, as its tiles draw them.
-    if (group) group.querySelectorAll('.group-highlights .key-symbol').forEach(function (row) {
-      var chip = row.querySelector(':scope>strong>.chip') || row.querySelector(':scope>.chip');
-      if (!chip) return;
-      var name = chip.cloneNode(true); name.querySelectorAll('.ln').forEach(function (n) { n.remove(); });
-      var prose = row.querySelector(':scope>.model [data-display-ref]');
-      var anchor = row.querySelector(':scope>.anchor,:scope>.model>.model-sources>.anchor');
-      var item = {name:name.textContent.trim(), alias:row.dataset.alias||'', key:row.dataset.key==='true', explanation:prose ? prose.textContent : '', explanation_ref:prose?.dataset.displayRef||'', source:{
-        Href:chip.dataset.open ? '' : chipKey(chip), Open:chip.dataset.open || '', NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, function(){return chip.closest('.key-file')?.querySelector('.path')?.textContent;}), Line:Number(chip.dataset.sourceLine)||0,
-        Text:anchor ? anchor.textContent : (chip.closest('.key-file').querySelector('.path').textContent + (chip.querySelector('.ln')?.textContent || ''))
-      }};
-      item.fields = Array.from(row.querySelectorAll(':scope>.symbol-fields>li')).map(function(field){var fieldChip=field.querySelector('.chip');return fieldChip&&inventoryItem(field,fieldChip,function(){return item.source.Path;});}).filter(Boolean);
-      add(item);
-    });
-    // A part without interpreted highlights still has its original source
-    // index. Showing those declarations is useful; inventing an explanation
-    // or another intermediate group would not be.
-    // A type's fields stay inside its row: they are read with the type, not
-    // listed as peers of the part's functions.
-    if(group&&!result.length)group.querySelectorAll('.symbol-index > li').forEach(function(row){
-      var chip=row.querySelector(':scope>.chip');if(!chip)return;
-      var item=inventoryItem(row,chip,function(){return row.closest('.inventory-file')?.querySelector('summary')?.textContent.split(' · ')[0];});
-      item.fields=Array.from(row.querySelectorAll(':scope>.symbol-fields>li')).map(function(field){var fieldChip=field.querySelector('.chip');return fieldChip&&inventoryItem(field,fieldChip,function(){return item.source.Path;});}).filter(Boolean);
-      add(item);
-    });
+    // Code in this part is every declaration of the part's reading (page
+    // data), by kind and name as Go ordered them, a key marked, with the
+    // model's line or alias where it wrote one; a type with its fields.
+    var reading = typeof rmGroupReading === 'function' ? rmGroupReading(node) : null;
+    if (reading) {
+      var explained = new Map((rmPage.data(node,'explained')||[]).map(function (said) { return [sourceKey(said.source), said]; }));
+      (reading.members||[]).forEach(function (kind) { kind.decls.forEach(function (index) {
+        var decl = reading.decls[index], source = placeSource(decl.href, decl.open, decl.no_source, decl.at || decl.name), said = explained.get(sourceKey(source));
+        add({name:decl.name, alias:said ? said.alias || '' : '', key:!!decl.bold, explanation:said ? said.explanation || '' : '', explanation_ref:said ? said.explanation_ref || '' : '', source:source,
+          fields:(decl.fields||[]).map(function (field) { return {name:field.name, alias:'', explanation:'', source:placeSource(field.href, field.open, field.no_source, field.at || field.name)}; })});
+      }); });
+    }
     inventories.set(node, result); return result;
   }
-  function inventoryItem(row,chip,heading){
-    var name=chip.cloneNode(true);name.querySelectorAll('.ln').forEach(function(n){n.remove();});
-    return {name:name.textContent.trim(),alias:row.dataset.alias||'',explanation:'',source:{Href:chip.dataset.open?'':chipKey(chip),Open:chip.dataset.open||'',NoSource:chip.dataset.noSource==='true', Path:pathOf(chip, heading), Line:Number(chip.dataset.sourceLine)||0,Text:chip.dataset.sourceText||chip.getAttribute('title')||name.textContent.trim()}};
+  // A declaration's source as the reading column links it: its first line,
+  // its editor action, or its place when it has neither.
+  function placeSource(href, open, noSource, at) {
+    var place = /^(.*):(\d+)$/.exec(at || '');
+    return {Href:href || '', Open:open || '', NoSource:!!noSource, Path:place ? place[1] : '', Line:place ? Number(place[2]) : 0, Text:at || ''};
   }
   function size(node) {
     return {w:360,h:112 + Math.min(items(node).length,5)*66 + (items(node).length>5?32:0)};
   }
-  // A member's file: the chip's own attribute, else the file heading it
-  // sits under, else its title without the line suffix.
-  function pathOf(chip,heading){if(chip.dataset.sourcePath)return chip.dataset.sourcePath;var text=typeof heading==='function'?(chip.closest?heading():''):heading;return (text||'').trim()||(chip.getAttribute('title')||'').replace(/:\d+(:\d+)?$/,'');}
   function label(node,item) {
     return displayName(item)+(items(node).some(function(other){return other!==item&&other.name===item.name;})?' · '+item.source.Text:'');
   }

@@ -112,7 +112,7 @@ func TestOperationLabelsKeepEnglishNamesAndExactDeclarationAliases(t *testing.T)
 			}
 			section.InputsCount = len(cases)
 			section.InboundCount = len(section.Requests)
-			for _, templateName := range []string{"input-catalog", "map.html"} {
+			for _, templateName := range []string{"map.html"} {
 				var out bytes.Buffer
 				var view any = section
 				if templateName == "map.html" {

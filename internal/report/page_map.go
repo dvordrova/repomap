@@ -200,6 +200,10 @@ type pageMapNode struct {
 	// Symbols and the kind, one of calls, returns, takes.
 	SymbolCalls string
 	Concepts    string
+	// Explained are the part's declarations the model wrote a line or an
+	// alias for, as concepts: the reading column says them with the
+	// declaration (page data; the part's card is not printed).
+	Explained string
 	// Dispatch holds the dispatch sites declared in this part, read with
 	// their declaration (page_input_path.go).
 	Dispatch  string
@@ -578,6 +582,34 @@ func (builder *pageBuilder) groupConcepts(targetID string, group groupindex.Grou
 		return concepts[i].Name < concepts[j].Name
 	})
 	raw, _ := json.Marshal(concepts)
+	return string(raw)
+}
+
+// groupExplained are the part's declarations with the model's line or
+// alias, in member order, keyed by their source as the page's script keys
+// a declaration.
+func (builder *pageBuilder) groupExplained(targetID string, group groupindex.Group) string {
+	var explained []pageMapConcept
+	for _, id := range group.MemberSubjectIDs {
+		ref, known := builder.subject(targetID, id)
+		if !known || ref.subject.Object == nil || ref.subject.Interpretation == nil {
+			continue
+		}
+		interpretation := ref.subject.Interpretation
+		if interpretation.Line == "" && interpretation.Alias == "" {
+			continue
+		}
+		name, anchor := builder.subjectDisplay(ref.subject)
+		if name == "" || anchor == nil {
+			continue
+		}
+		explained = append(explained, pageMapConcept{Name: name, Alias: interpretation.Alias, Kind: string(ref.subject.Object.Kind),
+			Explanation: interpretation.Line, Source: *anchor})
+	}
+	if len(explained) == 0 {
+		return ""
+	}
+	raw, _ := json.Marshal(explained)
 	return string(raw)
 }
 
@@ -2438,6 +2470,18 @@ func (call pageEdgeCall) MarshalJSON() ([]byte, error) {
 		}
 	}
 	return json.Marshal(written)
+}
+
+// Relation is the words of an arrow whose calls say the rest: an input's
+// arrow into the part it is implemented, declared or looked up in. The
+// words of the calls themselves are theirs (data-calls); Redis's arrows
+// had repeated every call's words in one joined label, 174 KB.
+func (edge pageMapEdge) Relation() string {
+	switch edge.Label {
+	case "implemented in", "declared in", "looked up in":
+		return edge.Label
+	}
+	return ""
 }
 
 // CallsJSON is the arrow's relations for the page's script.

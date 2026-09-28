@@ -1,7 +1,6 @@
 package report
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -146,52 +145,3 @@ func (builder *pageBuilder) internalGroupConnections(index groupindex.Index, gro
 	}
 	return collapseConnections(rows)
 }
-
-// ConnectionGroups is a reading view of the existing connections, computed
-// after translation. Equal participant IDs and direction share one heading;
-// every original row, source pair and possible-call flag remains inside it.
-func (group pageGroup) ConnectionGroups() []pageConnectionGroup {
-	var result []pageConnectionGroup
-	positions := map[string]int{}
-	for _, row := range group.Connections {
-		key := row.Arrow + "\x00" + row.Href
-		position, found := positions[key]
-		if !found || row.Href == "" {
-			position = len(result)
-			positions[key] = position
-			result = append(result, pageConnectionGroup{Arrow: row.Arrow, Title: row.Title, OtherTarget: row.OtherTarget, Href: row.Href})
-		}
-		item := &result[position]
-		item.Rows = append(item.Rows, row)
-		if row.Summary != "" {
-			found := false
-			for _, summary := range item.Summaries {
-				if summary.Text == row.Summary {
-					found = true
-					break
-				}
-			}
-			if !found {
-				item.Summaries = append(item.Summaries, pageConnectionSummary{Text: row.Summary, Ref: row.SummaryRef})
-			}
-		}
-	}
-	// Who reaches the part comes before what it reaches: Client connections
-	// and replies listed nineteen parts it calls, mostly utilities, before
-	// the fourteen that call it.
-	sort.SliceStable(result, func(i, j int) bool {
-		if result[i].Arrow != result[j].Arrow {
-			return result[i].Arrow == "←"
-		}
-		return result[i].Title < result[j].Title
-	})
-	return result
-}
-
-type pageConnectionGroup struct {
-	Arrow, Title, OtherTarget, Href string
-	Summaries                       []pageConnectionSummary
-	Rows                            []pageConnection
-}
-
-type pageConnectionSummary struct{ Text, Ref string }

@@ -60,7 +60,7 @@ func TestReportRenderingIsEnglishOnly(t *testing.T) {
 	}
 	for _, want := range []string{
 		`<html lang="en">`,
-		`JavaScript is optional here`,
+		`This report needs JavaScript`,
 		`id="rm-report-app-js"`,
 	} {
 		if !strings.Contains(string(html), want) {

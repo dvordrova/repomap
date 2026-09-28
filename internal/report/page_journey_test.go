@@ -380,17 +380,6 @@ func TestTypeFieldsStayInsideTheirTypeInTheCodeList(t *testing.T) {
 	}
 }
 
-func TestPartReadingPutsItsCodeBeforeItsConnections(t *testing.T) {
-	script := systemJSPiece(t, "29-operation-view.js", "function rmReadingOrder(", "(function(){")
-	runSystemJS(t, script+`
-function element(name){return {name,after(other){const list=card.children;list.splice(list.indexOf(other),1);list.splice(list.indexOf(this)+1,0,other);}};}
-const card={children:['map-card-intro','group-connections','call-path','system-reaching-inputs','map-concepts','map-all-members','group-internal-connections'].map(element),
- querySelector(selector){const name=selector.replace(':scope>.','');return this.children.find(child=>child.name===name)||null;}};
-rmReadingOrder(card);
-assert.deepEqual(card.children.map(child=>child.name),['map-card-intro','call-path','map-concepts','map-all-members','group-connections','system-reaching-inputs','group-internal-connections']);
-`)
-}
-
 func TestChosenInputIsEnteredAsItsPath(t *testing.T) {
 	entrance := systemJSPiece(t, "29-operation-view.js", "function rmInputPath(", "(function(){")
 	selectCode := systemJSPiece(t, "29-operation-view.js", "async function select(", "  function reset(")

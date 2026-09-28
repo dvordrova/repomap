@@ -16,27 +16,27 @@ const entries=[],codeEntries=new Map(),components={server:'redis-server',bench:'
 function add(entry){entries.push(entry);}
 function rmT(text){return text;}
 function modelText(){return '';}
-const document={documentElement:{lang:'en'}};
+const sections={server:{id:'server'},bench:{id:'bench'},cli:{id:'cli'}};
+function el(tag){return {tagName:tag.toUpperCase(),children:[],dataset:{},className:'',appendChild(c){this.children.push(c);return c;},
+  get textContent(){return this.own!==undefined?this.own:this.children.map(c=>c.textContent).join('');},set textContent(v){this.own=v;},
+  getAttribute(name){return name==='href'?this.href||null:null;},querySelector(selector){return selector==='.ln'?this.children.find(c=>c.className==='ln')||null:null;}};}
+const document={documentElement:{lang:'en'},getElementById:id=>sections[id]||null,createElement:el,createTextNode:text=>({textContent:text})};
 const map={};
 const symbols=JSON.stringify([{name:'listCreate',kind:'function',href:'h/adlist.c#L41',text:'(): list *'},{name:'list',kind:'type',href:'h/adlist.h#L47'},{name:'head',kind:'field',owner:2,text:': listNode *'},{name:'tail',kind:'field',owner:2,text:': listNode *'}]);
-const node=(title)=>({dataset:{title,symbols},closest:()=>map});
+const node=(title,owner)=>({dataset:{title,symbols,owner},closest:()=>map});
+const item=(name,path,line)=>({name,source:{Href:'h/'+path+'#L'+line,Path:path,Line:line},fields:[]});
+groupNodes.gs=node('Data structures','server');groupNodes.gb=node('Linked list','bench');
+const members=new Map([[groupNodes.gs,[item('listCreate','adlist.c',41),item('list','adlist.h',47)]],[groupNodes.gb,[item('listCreate','adlist.c',41)]]]);
+const repomapMembers={items:n=>members.get(n)||[]};
 const chip=(text,href)=>({textContent:text,tagName:'A',getAttribute:name=>name==='href'?href:null,dataset:{},querySelector:()=>null});
-const section=id=>({id});
-function inventory(sectionID,groupID,path,chips){
-  const s=section(sectionID),group={id:groupID,closest:()=>s};
-  return {closest:()=>group,querySelector:()=>({textContent:path+' · '+chips.length+' symbols'}),
-    querySelectorAll:()=>chips.map(c=>({querySelector:selector=>selector==='.chip'?c:null,querySelectorAll:()=>[]}))};
-}
-groupNodes.gs=node('Data structures');groupNodes.gb=node('Linked list');
-const files=[inventory('server','gs','adlist.c',[chip('listCreate:41','h/adlist.c#L41')]),inventory('bench','gb','adlist.c',[chip('listCreate:41','h/adlist.c#L41')]),
-  inventory('server','gs','adlist.h',[chip('list:47','h/adlist.h#L47')])];
+const section=id=>sections[id];
 function offMap(sectionID,path,text,list){
   const row={dataset:{path},querySelectorAll:()=>[]},s=section(sectionID),c=chip(text,'h/'+path);
   c.closest=selector=>selector==='[data-off-map-file]'?row:selector==='[data-report-page]'?s:selector==='.unreached-parts'?(list==='unreached'?{}:null):null;
   return c;
 }
 const off=[offMap('cli','adlist.c','listCreate:41','unreached'),offMap('server','redis.c','saveparam:301','catalog')];
-document.querySelectorAll=selector=>selector==='.group .inventory-file'?files:off;
+document.querySelectorAll=selector=>off;
 `+code+`
 assert.equal(entries.length,3,'one result per declaration, not per program');
 const create=entries.find(e=>e.title==='listCreate:41');

@@ -1,8 +1,6 @@
 package report
 
 import (
-	"bytes"
-	"html/template"
 	"reflect"
 	"slices"
 	"strings"
@@ -47,77 +45,6 @@ func TestPartsCatalogueCountsLocalMapGroupsAcrossLanes(t *testing.T) {
 	}
 }
 
-func TestInputCatalogueJoinsExactFactsAndRetainsUngroupedRoutes(t *testing.T) {
-	location := programindex.Location{Path: "server.go", Line: 10, Column: 1}
-	index := groupindex.Index{Target: programindex.Target{ID: "program"}, Operations: []groupindex.Operation{
-		{ID: "bound", FactID: "route-a", Kind: "request", Source: "fact", Name: "GET /a", Location: location},
-		// Another membership is the same observation, not a second route.
-		{ID: "bound-also", FactID: "route-a", Kind: "request", Source: "fact", Name: "GET /a", Location: location},
-		{ID: "model", Kind: "request", Source: "model", Name: "GET /a", Location: location},
-		{ID: "worker", Kind: "continuous", Source: "model", Name: "Process messages", Location: location},
-	}}
-	layer := &facts.Result{Facts: []facts.Fact{
-		{ID: "route-a", TargetID: "facts", Kind: facts.KindRegistration, Method: "GET", Path: "/a", Anchor: &facts.Anchor{Path: "server.go", Line: 10}},
-		{ID: "orphan", TargetID: "facts", Kind: facts.KindRegistration, Method: "POST", Path: "/outside-map", Anchor: &facts.Anchor{Path: "server.go", Line: 22}},
-		{ID: "other-target", TargetID: "other", Kind: facts.KindRegistration, Method: "GET", Path: "/a"},
-	}}
-	builder := pageBuilder{data: &ReportData{Facts: layer}, factsByID: layer.ByID(), indexes: []groupindex.Index{index}, links: pageLinks{sourceIDs: map[string]string{"server.go": "source"}}}
-	section := &pageSection{ID: "section", programTargetID: "program", factsTargetID: "facts", FactsAvailable: true}
-	builder.fillSectionOperations(section)
-	if len(section.RouteGroups) != 1 || section.RouteGroups[0].Paths != 1 {
-		t.Fatalf("route lost, duplicated, or borrowed from another target: %+v", section.RouteGroups)
-	}
-	if len(section.Requests) != 1 || section.Requests[0].Source != "model" || section.Requests[0].Href != "#"+operationNodeID("section", "model") {
-		t.Fatalf("name or source position replaced exact fact identity: %+v", section.Requests)
-	}
-	if len(section.Activities) != 1 || section.Activities[0].Kind != "continuous" {
-		t.Fatalf("background activity lost: %+v", section.Activities)
-	}
-	if got := section.RouteGroups[0].Rows[0].Paths[0].OperationHrefs; !slices.Equal(got, []string{"#" + operationNodeID("section", "bound"), "#" + operationNodeID("section", "bound-also")}) {
-		t.Fatalf("route did not retain every exact operation membership: %v", got)
-	}
-	// One accepted registration and one unmatched interpretation produce two
-	// request records. The factual HTTP summary counts the registration once.
-	section.InboundCount, section.InputsCount = 2, 3
-	builder.sections = []*pageSection{section}
-	builder.byFacts = map[string]*pageSection{"facts": section}
-	card := builder.factsCard(facts.Target{ID: "facts"})
-	boundaries := builder.boundaryCounts()
-	if section.NativeRouteCount() != 1 || card.Routes != 1 || card.Counts != "1 route" || len(boundaries) != 1 || boundaries[0].Routes != 1 {
-		t.Fatalf("request interpretations inflated native HTTP counts: section=%d card=%+v boundaries=%+v", section.NativeRouteCount(), card, boundaries)
-	}
-	for _, language := range []DisplayLanguage{English, Russian} {
-		parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var rendered bytes.Buffer
-		if err := parsed.ExecuteTemplate(&rendered, "input-catalog", section); err != nil {
-			t.Fatal(err)
-		}
-		for _, counted := range []struct {
-			label string
-			count string
-		}{{"Incoming request records", "2"}, {"Registrations in source", "1"}, {"Handlers without a matched route", "1"}} {
-			label, err := uiText(language, counted.label)
-			if err != nil || !strings.Contains(rendered.String(), label+" · "+counted.count) {
-				t.Fatalf("%s catalogue lost the distinction %s/%s: %s", language, counted.label, counted.count, rendered.String())
-			}
-		}
-		for _, kept := range []string{"/a", "#" + operationNodeID("section", "bound"), "#" + operationNodeID("section", "bound-also"), "#" + operationNodeID("section", "model"), `data-source-kind="model"`} {
-			if !strings.Contains(rendered.String(), kept) {
-				t.Fatalf("display count correction discarded original record/link %q", kept)
-			}
-		}
-	}
-	// Model-only reading must not suppress requests or borrow all repository facts.
-	section = &pageSection{ID: "section", programTargetID: "program"}
-	builder.fillSectionOperations(section)
-	if section.NativeRouteCount() != 0 || len(section.RouteGroups) != 0 || len(section.Requests) != 3 {
-		t.Fatalf("model-only catalogue fabricated facts: %+v", section)
-	}
-}
-
 func TestInputActivityGroupsRetainOriginalKindsAndDisplayBindings(t *testing.T) {
 	section := &pageSection{Activities: []pageGroupOperation{
 		{Name: "worker", Kind: "continuous", SummaryRef: "worker-ref", Source: "model"},
@@ -142,28 +69,6 @@ func TestInputActivityGroupsRetainOriginalKindsAndDisplayBindings(t *testing.T) 
 func TestRecipeNeverPromotesAnEntrypointToDocumentedCommand(t *testing.T) {
 	if got := recipeBasis([]string{"entry"}, map[string]facts.Fact{"entry": {Kind: facts.KindEntrypoint}}); got != "Inferred from an entrypoint" {
 		t.Fatalf("recipe basis = %q", got)
-	}
-}
-
-// A registration that states no method, such as a command a client sends by
-// name, is listed by its name alone: an empty method badge would read as a
-// method the code never wrote. A route keeps its method beside its path.
-func TestRegistrationCatalogueShowsOnlyAStatedMethod(t *testing.T) {
-	section := &pageSection{ID: "section", InboundCount: 2, InputsCount: 2, RouteGroups: []pageRouteGroup{
-		{Method: "", Paths: 1, Rows: []pageRouteRow{{Symbol: "getCommand", Paths: []pageRoutePath{{Path: "get", Anchor: &pageAnchor{Path: "server.c", Line: 12, Href: "#get", Text: "server.c:12"}}}}}},
-		{Method: "GET", Paths: 1, Rows: []pageRouteRow{{Symbol: "listUsers", Paths: []pageRoutePath{{Path: "/users", Anchor: &pageAnchor{Path: "api.go", Line: 7, Href: "#users", Text: "api.go:7"}}}}}},
-	}}
-	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rendered bytes.Buffer
-	if err := parsed.ExecuteTemplate(&rendered, "input-catalog", section); err != nil {
-		t.Fatal(err)
-	}
-	html := rendered.String()
-	if strings.Contains(html, `<span class="method"></span>`) || strings.Count(html, `<span class="method">GET</span>`) != 1 || !strings.Contains(html, "get") || !strings.Contains(html, "/users") {
-		t.Fatalf("registration catalogue: %s", html)
 	}
 }
 

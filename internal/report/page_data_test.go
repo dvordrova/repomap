@@ -113,17 +113,4 @@ func TestDataCatalogueLinksQueryOperationsAndScopedTablesBothWays(t *testing.T) 
 	if len(section.Requests[0].Data) != 2 || len(section.RouteGroups[0].Rows[0].Paths[0].Data) != 2 {
 		t.Fatal("first-screen operations lost query/table links")
 	}
-	parsed, err := template.New("report").Funcs(pageTemplateFuncs(Russian)).ParseFS(reportTemplateFS, "templates/html/*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var html bytes.Buffer
-	if err := parsed.ExecuteTemplate(&html, "operation-row", section.Requests[0]); err != nil {
-		t.Fatal(err)
-	}
-	for _, expected := range []string{"Данные", `href="#` + dataRowID("service", "y3") + `"`, `href="#` + dataRowID("service", "y1") + `"`} {
-		if !strings.Contains(html.String(), expected) {
-			t.Fatalf("input row lacks %q", expected)
-		}
-	}
 }

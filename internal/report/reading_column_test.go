@@ -1,8 +1,6 @@
 package report
 
 import (
-	"bytes"
-	"html/template"
 	"regexp"
 	"strings"
 	"testing"
@@ -10,19 +8,6 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
-
-func renderGroupFragment(t *testing.T, language DisplayLanguage, group pageGroup) string {
-	t.Helper()
-	parsed, err := template.New("report").Funcs(pageTemplateFuncs(language)).ParseFS(reportTemplateFS, "templates/html/*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := parsed.ExecuteTemplate(&out, "group", group); err != nil {
-		t.Fatal(err)
-	}
-	return out.String()
-}
 
 // The reading printed a relation's kind as it was stored: "initServer
 // passes_callback acceptHandler" beside "initServer passes callback
@@ -76,22 +61,6 @@ func TestRelationRowsAreSaidInOneVocabulary(t *testing.T) {
 		{ID: "x3", From: here, To: groupindex.Endpoint{TargetID: "server", GroupID: "lists"}, Label: "redis.c imports adlist.h", SourceKind: "native_imports", FromSubjectID: "main", ToSubjectID: "header"},
 	}}
 	builder.indexes = []groupindex.Index{server}
-	card := pageGroup{ID: "runtime", Title: "Server runtime", Connections: builder.groupConnections(server, groupindex.Group{ID: "runtime"})}
-	english := renderGroupFragment(t, English, card)
-	for _, want := range []string{"initServer passes acceptHandler as a callback", "anetTcpGenericConnect connects to anetAccept", "redis.c includes adlist.h"} {
-		if !strings.Contains(english, want) {
-			t.Fatalf("a relation is not said in the vocabulary %q:\n%s", want, english)
-		}
-	}
-	shown := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(english, " ")
-	for _, raw := range []string{"passes_callback", "integrates with", "imports adlist.h"} {
-		if strings.Contains(shown, raw) {
-			t.Fatalf("a stored word %q is shown raw:\n%s", raw, english)
-		}
-	}
-	if russian := renderGroupFragment(t, Russian, card); !strings.Contains(russian, "initServer передаёт acceptHandler как обратный вызов") {
-		t.Fatalf("the relation's words are not the report's translated words:\n%s", russian)
-	}
 	// The arrow's card reads a call as caller, relation and callee, three
 	// words with the relation's underscores read as spaces, and links the
 	// two names; a longer sentence showed neither name, and cmdTable's
@@ -107,36 +76,6 @@ func TestRelationRowsAreSaidInOneVocabulary(t *testing.T) {
 		if parts == nil || parts[1] != want[0] || strings.ReplaceAll(parts[2], "_", " ") != want[1] || parts[3] != want[2] {
 			t.Fatalf("the arrow's card cannot read %q as %v", call.Label, want)
 		}
-	}
-}
-
-// Client connections and replies listed "cmdTable calls …" ninety-seven
-// times, one row each, and the answer a reader wanted sat below them. Rows
-// of one caller and one relation kind fold into one line with its count;
-// every row stays inside it, and a list with folds can open them all.
-func TestEvidenceListsFoldOneCallerAndKindIntoOneLine(t *testing.T) {
-	anchor := func(path string, line int) *pageAnchor {
-		return &pageAnchor{Path: path, Line: line, Href: "https://example.test/" + path + "#L" + strings.Repeat("1", line%3+1), Text: path}
-	}
-	row := func(from, kind, to string, line int) pageConnection {
-		return pageConnection{Native: true, Kind: kind, FromName: from, ToName: to, FromDecl: anchor("redis.c", 700), ToDecl: anchor("redis.c", line), FromSource: anchor("redis.c", line), Label: from + " " + kind + " " + to}
-	}
-	rows := []pageConnection{row("cmdTable", "calls", "getCommand", 3700), row("processCommand", "calls", "call", 2100), row("cmdTable", "calls", "setCommand", 3750),
-		row("cmdTable", "passes_callback", "getCommand", 3700), row("cmdTable", "calls", "getCommand", 3701)}
-	folds := foldRelationRows(rows)
-	if len(folds) != 3 || len(folds[0].Rows) != 3 || folds[0].Callees() != "getCommand, setCommand" || folds[1].Folded() || folds[2].Folded() {
-		t.Fatalf("rows are not folded by caller and kind: %+v", folds)
-	}
-	html := renderGroupFragment(t, English, pageGroup{ID: "clients", Title: "Clients", InternalConnections: rows})
-	if !strings.Contains(html, `<details class="conn-fold"><summary>cmdTable calls getCommand, setCommand · 3</summary>`) {
-		t.Fatalf("the fold is not one line with its count:\n%s", html)
-	}
-	if strings.Count(html, `class="conn"`) != len(rows) || strings.Count(html, "data-open-all") != 1 {
-		t.Fatalf("a folded row was lost, or the list cannot open its folds at once:\n%s", html)
-	}
-	single := renderGroupFragment(t, English, pageGroup{ID: "clients", Title: "Clients", InternalConnections: rows[1:2]})
-	if strings.Contains(single, "conn-fold") || strings.Contains(single, "data-open-all") {
-		t.Fatalf("a list with nothing folded offers to open folds:\n%s", single)
 	}
 }
 
@@ -159,12 +98,6 @@ func TestRelationRowsNameTheDeclarationsAtTheirEnds(t *testing.T) {
 	_, command := builder.subjectDisplay(builder.subjects["command"].subject)
 	if len(rows) != 1 || rows[0].FromKey() != input.Href || rows[0].ToKey() != command.Href || rows[0].FromSource.Line != 2353 {
 		t.Fatalf("the row does not name its declarations apart from its call site: %+v", rows)
-	}
-	html := renderGroupFragment(t, English, pageGroup{ID: "clients", Title: "Clients", InternalConnections: rows})
-	for _, want := range []string{`data-kind="calls"`, `data-from-decl="` + input.Href + `"`, `data-to-decl="` + command.Href + `"`, `data-from-name="processInputBuffer"`} {
-		if !strings.Contains(html, want) {
-			t.Fatalf("the row's ends are not in the page: %s\n%s", want, html)
-		}
 	}
 	// A declaration without a link is keyed by its place, as the script keys it.
 	if got := declarationKey(&pageAnchor{Path: `a "b".c`, Line: 7, NoSource: true}); got != `["a \"b\".c",7]` {
@@ -215,29 +148,6 @@ func TestReadingOffersNoButtonsThatPointAtWhatIsVisible(t *testing.T) {
 		if _, present := russianUI[gone]; present {
 			t.Errorf("the reading still has the words %q", gone)
 		}
-	}
-}
-
-// Code in this part listed only the model's keys under a heading that said
-// all of it: Replication's showed replicationFeedSlaves and not
-// syncWithMaster. It lists every declaration, the keys first and bold, as
-// the part's tiles draw them.
-func TestCodeInThisPartListsEveryDeclarationKeysFirst(t *testing.T) {
-	chip := func(name string, line int, key bool) pageChip {
-		return pageChip{Name: name, Line: line, Key: key, Anchor: pageAnchor{Path: "redis.c", Line: line, Text: "redis.c:" + string(rune('0'+line%10))}}
-	}
-	rows := []pageChipRow{{Path: "anet.c", Members: []pageChip{chip("anetAccept", 250, false)}}, {Path: "redis.c", Members: []pageChip{chip("syncWithMaster", 7216, false), chip("replicationFeedSlaves", 2234, true)}}}
-	ordered := keysFirst(rows)
-	if ordered[0].Path != "redis.c" || ordered[0].Members[0].Name != "replicationFeedSlaves" || ordered[0].Members[1].Name != "syncWithMaster" || ordered[1].Members[0].Name != "anetAccept" {
-		t.Fatalf("the keys do not come first: %+v", ordered)
-	}
-	if rows[1].Members[0].Name != "syncWithMaster" {
-		t.Fatal("ordering the code list reordered the source index")
-	}
-	html := renderGroupFragment(t, English, pageGroup{ID: "replication", Title: "Replication", Highlights: ordered})
-	if !regexp.MustCompile(`data-key="true"><strong><span class="chip"[^>]*>replicationFeedSlaves`).MatchString(html) ||
-		!regexp.MustCompile(`class="key-symbol" data-alias=""><span class="chip"[^>]*>syncWithMaster`).MatchString(html) {
-		t.Fatalf("every declaration is not listed, or a key is not marked as the tiles mark it:\n%s", html)
 	}
 }
 

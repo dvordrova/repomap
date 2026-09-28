@@ -25,12 +25,12 @@ func TestRussianUIExistsBeforeBrowserScripts(t *testing.T) {
 	if !ok {
 		t.Fatal("report has no UI vocabulary for browser labels")
 	}
-	for _, want := range []string{`<html lang="ru">`, `aria-label="Репозиторий"`, `aria-label="Главная"`, `aria-label="Компоненты"`, `<option value="">Все</option>`, `>Об этом запуске</h2>`, "JavaScript необязателен."} {
+	for _, want := range []string{`<html lang="ru">`, `aria-label="Репозиторий"`, `aria-label="Главная"`, `aria-label="Компоненты"`, `<option value="">Все</option>`, `>Об этом запуске</h2>`, "Отчёту нужен JavaScript"} {
 		if !strings.Contains(static, want) {
 			t.Fatalf("static Russian HTML omits %q", want)
 		}
 	}
-	for _, unwanted := range []string{`>Home</a>`, `>Components · `, `>About this run</h2>`, "JavaScript is optional here."} {
+	for _, unwanted := range []string{`>Home</a>`, `>Components · `, `>About this run</h2>`, "This report needs JavaScript"} {
 		if strings.Contains(static, unwanted) {
 			t.Fatalf("static Russian HTML keeps untranslated UI %q", unwanted)
 		}

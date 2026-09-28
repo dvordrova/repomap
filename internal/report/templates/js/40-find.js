@@ -62,13 +62,21 @@
     if(!entry.sections.includes(section.id))entry.sections.push(section.id);
     if(!entry.memberships.some(function(m){return m.program===membership.program&&(m.node||m.destination)===(membership.node||membership.destination);}))entry.memberships.push(membership);
   }
-  document.querySelectorAll('.group .inventory-file').forEach(function(file){
-    var group=file.closest('.group'),node=groupNodes[group.id],section=group.closest('section'),path=file.querySelector('summary').textContent.split(' · ')[0];
-    file.querySelectorAll('.symbol-index li').forEach(function(row){
-      var chip=row.querySelector('.chip');if(!chip)return;
-      var entry=codeEntry(path,chip,row,modelText(row.querySelector(':scope>.model')));
-      if(node)belongs(entry,section,{node:node,map:node.closest('[data-map-explorer]'),program:programOf(section),title:programOf(section)+' / '+node.dataset.title});
-      else if(!entry.sections.includes(section.id))entry.sections.push(section.id);
+  // A part's code, from the page data (26-map-members.js): the chip a
+  // result opens is written from its source, name and line.
+  function sourceChip(item){
+    var chip=document.createElement(item.source.Href||item.source.Open?'a':'span');chip.className='chip';
+    if(item.source.Href){chip.href=item.source.Href;chip.target='_blank';}else if(item.source.Open){chip.href='#';chip.dataset.open=item.source.Open;}
+    chip.appendChild(document.createTextNode(item.name));
+    var line=document.createElement('span');line.className='ln';line.textContent=':'+item.source.Line;chip.appendChild(line);
+    return chip;
+  }
+  Object.keys(groupNodes).forEach(function(id){
+    var node=groupNodes[id],section=document.getElementById(node.dataset.owner)||node.closest('section');if(!section)return;
+    repomapMembers.items(node).forEach(function(item){
+      var entry=codeEntry(item.source.Path,sourceChip(item),null,item.explanation||'');
+      entry.fields=entry.fields||(item.fields||[]).map(function(field){return field.name;});
+      belongs(entry,section,{node:node,map:node.closest('[data-map-explorer]'),program:programOf(section),title:programOf(section)+' / '+node.dataset.title});
     });
   });
   // A declaration no part holds, such as one no box of its split file took
@@ -98,7 +106,7 @@
       if(at<0)continue;
       return {head:symbols[at].name+(symbols[at].text||''),fields:symbols.filter(function(symbol){return symbol.owner===at+1&&(symbol.kind==='field'||symbol.kind==='more');}).map(function(symbol){return symbol.name+(symbol.text||'');})};
     }
-    var fields=entry.destination?Array.from(entry.destination.querySelectorAll(':scope>.symbol-fields>li>.chip')).map(function(chip){return chip.firstChild.textContent;}):[];
+    var fields=entry.fields||(entry.destination?Array.from(entry.destination.querySelectorAll(':scope>.symbol-fields>li>.chip')).map(function(chip){return chip.firstChild.textContent;}):[]);
     return {head:entry.title.replace(/:\d+$/,''),fields:fields};
   }
   function sectionsFor(node,selector){

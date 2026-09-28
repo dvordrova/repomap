@@ -25,7 +25,7 @@ function rmCrumbs(container,segments,fallback){
   mapContext.className='reading-map-context';mapContext.hidden=true;var crumbSegments=[];locationLine.append(readingIntent,locationName,mapContext);
   var returnLinks=document.createElement('nav');returnLinks.className='reading-return';returnLinks.hidden=true;locationLine.appendChild(returnLinks);
   var returnLink=document.createElement('a'),termLink=document.createElement('a'),mapLink=document.createElement('a'),searchLink=document.createElement('button');mapLink.dataset.readingMapReturn='';searchLink.type='button';searchLink.dataset.readingFind='';returnLinks.append(returnLink,termLink,mapLink,searchLink);
-  var detailGroup=null,sectionTitle='';
+  var sectionTitle='';
   function measureToolbar(){document.documentElement.style.setProperty('--toolbar-height',getComputedStyle(toolbar).position==='sticky'?toolbar.getBoundingClientRect().height+'px':'0px');}
   new ResizeObserver(measureToolbar).observe(toolbar);measureToolbar();
   var current=home, question=null, term=null, searchIntent='',restoring=false;
@@ -108,12 +108,10 @@ function rmCrumbs(container,segments,fallback){
     var place=current===home?(repositorySelection||''):(current.dataset.componentName||current.querySelector('h2')?.textContent||'');
     if(current===questionPage&&question)place=rmT('Question {0} of {1}',guides.indexOf(question)+1,guides.length);
     else if(term&&current===enclosing(term))place=term.querySelector('summary').textContent;
-    var detailTitle=detailGroup&&detailGroup.querySelector('.group-head h4').cloneNode(true);
-    if(detailTitle)detailTitle.querySelectorAll('button,.model-sources').forEach(function(n){n.remove();});
-    locationName.textContent=place+(detailTitle?' · '+rmT('Full details: {0}',detailTitle.textContent):sectionTitle?' · '+sectionTitle:'');
+    locationName.textContent=place+(sectionTitle?' · '+sectionTitle:'');
     readingIntent.textContent=question?question.querySelector('.reading-question').textContent:searchIntent?rmT('Search: {0}',searchIntent):'';
     readingIntent.hidden=!readingIntent.textContent;
-    var map=!detailGroup&&current.querySelector('[data-map-explorer]');
+    var map=current.querySelector('[data-map-explorer]');
     mapContext.hidden=!map;
     if(map){crumbSegments=map.explorationPath?.()||[];rmCrumbs(mapContext,crumbSegments,{href:'#'+mapDestination(map).id,title:map.explorationLabel()});}
     syncComponentChoice();
@@ -135,7 +133,7 @@ function rmCrumbs(container,segments,fallback){
     if(nextTerm)term=nextTerm;
     else if(node.id==='concepts')term=null;
     revealConcept(node);
-    current=page;body.dataset.readingPage=page.id;detailGroup=node.closest('.group');
+    current=page;body.dataset.readingPage=page.id;
     sectionTitle=node.matches?.('h3,h4')?node.textContent:node.matches?.('.component-coverage')?node.querySelector('summary').textContent:'';
     // The map stays mounted above every reading. Answers, reference material
     // and component details are sections below it, never another map page.
@@ -172,8 +170,8 @@ function rmCrumbs(container,segments,fallback){
   document.addEventListener('repomap:visit',function(){remember();history.pushState(readingState(),'',location.href);});
   // Layout commits the explorer's operation and scope. Hidden maps and the
   // inspector's temporary hover subject must not replace this reading context.
-  document.addEventListener('repomap:layout',function(e){if(!detailGroup&&enclosing(e.target)===current)showLocation();},true);
-  document.addEventListener('repomap:reading',function(e){if(!detailGroup&&enclosing(e.target)===current){showLocation();remember();}},true);
+  document.addEventListener('repomap:layout',function(e){if(enclosing(e.target)===current)showLocation();},true);
+  document.addEventListener('repomap:reading',function(e){if(enclosing(e.target)===current){showLocation();remember();}},true);
   document.addEventListener('repomap:viewport',function(e){syncComponentChoice();if(enclosing(e.target)===current)remember();},true);
   document.addEventListener('click',function(e){
     var findAction=e.target.closest('[data-reading-find]');

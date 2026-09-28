@@ -320,16 +320,16 @@ type pageFlowStep struct {
 // pageGroup is one responsibility card. Members are grouped by file so the
 // path is printed once and each chip carries only its line.
 type pageGroup struct {
-	SummaryRef          string
-	ID                  string
+	SummaryRef string
+	ID         string
+	// NodeID is the part's node on the map: its anchor on the page stands
+	// for it there.
+	NodeID              string
 	Members             int
 	Share               int
 	Title               string
 	Summary             string
-	Highlights          []pageChipRow
-	Inventory           []pageChipRow
 	Operations          []pageGroupOperation
-	Externals           []pageExternal
 	Connections         []pageConnection
 	InternalConnections []pageConnection
 	// Zone is the part this group is in, when it is in one, and ZoneHref
@@ -373,29 +373,6 @@ type pageChip struct {
 	Entry bool
 	// objectID is the listed subject, the target's own object.
 	objectID string
-}
-
-// keysFirst is a part's complete code list read the way its tiles are: the
-// files holding a key first, and in each file its keys first, in bold. Code
-// in this part had listed only the keys: Replication's showed
-// replicationFeedSlaves and not syncWithMaster.
-func keysFirst(rows []pageChipRow) []pageChipRow {
-	hasKey := func(row pageChipRow) bool {
-		for _, member := range row.Members {
-			if member.Key {
-				return true
-			}
-		}
-		return false
-	}
-	ordered := make([]pageChipRow, len(rows))
-	for i, row := range rows {
-		row.Members = slices.Clone(row.Members)
-		sort.SliceStable(row.Members, func(i, j int) bool { return row.Members[i].Key && !row.Members[j].Key })
-		ordered[i] = row
-	}
-	sort.SliceStable(ordered, func(i, j int) bool { return hasKey(ordered[i]) && !hasKey(ordered[j]) })
-	return ordered
 }
 
 // SymbolCount counts a file's declarations, a type's fields with them.
@@ -1052,15 +1029,11 @@ func (builder *pageBuilder) graphIndex(programTargetID string) *groupindex.Index
 
 func (builder *pageBuilder) groupCard(sectionID string, index groupindex.Index, group groupindex.Group) pageGroup {
 	card := pageGroup{
-		ID: groupAnchorID(sectionID, group.ID), Title: group.Title,
+		ID: groupAnchorID(sectionID, group.ID), NodeID: targetMapNodeID(index.Target.ID, mapNodeID(group.ID)), Title: group.Title,
 		// A summary that is the title again is the title said twice.
 		Summary: dropEcho(group.Summary, group.Title),
 		Members: len(group.MemberSubjectIDs), Share: laneShare(index, group),
 	}
-	rows, externals := builder.memberChips(index.Target.ID, group.MemberSubjectIDs)
-	card.Externals = externals
-	card.Inventory = rows
-	card.Highlights = keysFirst(rows)
 	for _, operation := range index.Operations {
 		// A part lists what it implements; an input whose handler is not
 		// established is only declared there.

@@ -195,7 +195,7 @@ type PreparedPage struct {
 }
 
 type displayConcepts struct {
-	node   *pageMapNode
+	field  *string
 	values []pageMapConcept
 }
 
@@ -631,17 +631,6 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 				add("label", &group.Title)
 				group.SummaryRef = add("summary", &group.Summary)
 				add("label", &group.Zone)
-				for _, chips := range [][]pageChipRow{group.Highlights, group.Inventory} {
-					for j := range chips {
-						for k := range chips[j].Members {
-							chips[j].Members[k].SummaryRef = add("explanation", &chips[j].Members[k].Summary)
-							for f := range chips[j].Members[k].Fields {
-								field := &chips[j].Members[k].Fields[f]
-								field.SummaryRef = add("explanation", &field.Summary)
-							}
-						}
-					}
-				}
 				for j := range group.Operations {
 					// Source identifies the route name's origin. Its purpose is
 					// still display prose, including on an extracted boundary.
@@ -683,9 +672,12 @@ func (page *PreparedPage) collectDisplayTexts(data *ReportData, noModel bool) er
 			if node.Branch == "" {
 				add("label", &node.Subtitle)
 			}
-			if node.Concepts != "" {
-				entry := displayConcepts{node: node}
-				if err := json.Unmarshal([]byte(node.Concepts), &entry.values); err != nil {
+			for _, field := range []*string{&node.Concepts, &node.Explained} {
+				if *field == "" {
+					continue
+				}
+				entry := displayConcepts{field: field}
+				if err := json.Unmarshal([]byte(*field), &entry.values); err != nil {
 					return fmt.Errorf("report: invalid concept display data: %w", err)
 				}
 				for j := range entry.values {
@@ -777,7 +769,7 @@ func (page *PreparedPage) applyDisplay(options RenderOptions) error {
 		if err != nil {
 			return err
 		}
-		entry.node.Concepts = string(raw)
+		*entry.field = string(raw)
 	}
 	for _, section := range page.view.Sections {
 		if section.Map == nil {

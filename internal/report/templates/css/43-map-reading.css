@@ -210,6 +210,7 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-canvas .map-card-hint{display:none}
 .system-neighbours{display:grid;gap:5px;margin:12px 0}.system-neighbours button{font:13px var(--sans);color:var(--accent);text-align:left;background:var(--soft);border:1px solid var(--line);padding:7px;border-radius:5px;cursor:pointer}
 .system-entity-writes{border-top:1px solid var(--line);margin:16px 0;padding-top:12px}
+.system-entity-writes>summary{display:flex;gap:8px;cursor:pointer;font-weight:600;font-size:14px}
 .system-entity-writes h6{font-size:14px;margin:14px 0 8px}.system-entity-writes li{margin:8px 0}
 .system-write-input{font:inherit;text-align:left;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--soft);cursor:pointer}
 @media(max-width:900px){.system-canvas .map-workspace{grid-template-columns:minmax(0,1fr) 280px}}
