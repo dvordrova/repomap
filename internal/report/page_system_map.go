@@ -1,10 +1,12 @@
 package report
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -186,6 +188,23 @@ func (view *pageView) SystemMap() *pageMap {
 	// redis-server its master. Frames of different programs that name the
 	// same destination only stand together in one display group, a frame
 	// around them on the map that is no participant and holds no arrow.
+	// One call written once is one tile (owner's decision a, 2026-09-28):
+	// programs built from the same code make the same outside call at the
+	// same saved location, so a call of the same destination and symbol at
+	// the same path and line stands once, in the first program's frame, with
+	// an arrow from each program making it. Redis's three programs each drew
+	// a "DNS resolver" frame holding gethostbyname: all three call it at
+	// anet.c:146, the clients at anet.c:115 too. The call's location is the
+	// identity, never its text. A
+	// program's tile of one symbol holds every place it calls it from, so
+	// the tile is another program's when any of those places stands there.
+	sharedTiles := map[string]string{}
+	callSite := func(destination string, row pageOutbound) string {
+		if row.Anchor.Path == "" || row.Anchor.Line <= 0 || row.External == "" {
+			return ""
+		}
+		return strings.Join([]string{strings.ToLower(destination), row.Anchor.Path, strconv.Itoa(row.Anchor.Line), row.External}, "\x00")
+	}
 	groupFrames := map[string][]int{}
 	var groupKeys []string
 	foldedTiles := map[string]string{}
@@ -207,6 +226,11 @@ func (view *pageView) SystemMap() *pageMap {
 			// made from stays a line of the arrow: which function asks.
 			tileOf := make(map[string]string)
 			for _, row := range group.Rows {
+				if shared := sharedTiles[callSite(name, row)]; shared != "" && localOutbound["system-"+row.ID] == "" && tileOf[row.External] == "" {
+					tileOf[row.External] = shared
+				}
+			}
+			for _, row := range group.Rows {
 				id := "system-" + row.ID
 				if localOutbound[id] != "" {
 					continue
@@ -216,6 +240,9 @@ func (view *pageView) SystemMap() *pageMap {
 					symbol = row.ID
 				}
 				tile, folded := tileOf[symbol]
+				if site := callSite(name, row); site != "" && sharedTiles[site] == "" {
+					sharedTiles[site] = cmp.Or(tile, id)
+				}
 				if !folded {
 					tile = id
 					tileOf[symbol] = id

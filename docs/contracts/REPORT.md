@@ -168,7 +168,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   tile; every caller keeps its line and source on the arrow, and an input's
   path into any of those calls leads to that tile). Every frame and
   tile belongs to its component, and only that component's arrows reach it:
-  equal destination text proves no identity. Frames of different
+  equal destination text proves no identity. One call written once is the
+  exception (owner's decision a, 2026-09-28): components built from the same
+  code make the same outside call at the same saved location, so a tile of
+  the same destination and symbol whose calls include one at the same path
+  and line as another component's tile is that tile, in the first
+  component's frame, with an arrow from each component making the call; the
+  other components' records lead to it. Redis's redis-server, redis-cli and
+  redis-benchmark had drawn three "DNS resolver" frames, each holding
+  gethostbyname at anet.c:146 (and anet.c:115). Only the saved location
+  decides it, never a name. Frames of different
   components that name the same destination stand together in one display
   group, an amber frame around them in the outer layout, so they stand side
   by side instead of scattered. The group is no

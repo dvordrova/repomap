@@ -2,8 +2,10 @@ package report
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -175,33 +177,75 @@ func TestInputPathIsTheWitnessTraceOrderedByCallDepth(t *testing.T) {
 // for redis-cli that endpoint is redis-server and for redis-server its
 // master: equal destination text proves no identity. Each program keeps its
 // own destination frame, tile and arrow; frames naming the same destination
-// only share a display group.
+// only share a display group. One call written once is one tile (owner's
+// decision a): Redis's three programs each drew a "DNS resolver" frame with
+// gethostbyname, called at anet.c:146 by all three and at anet.c:115 by
+// redis-benchmark and redis-cli; it stands once, with an arrow from each
+// program.
 func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	part := func(target string) *pageMap {
 		m := &pageMap{Nodes: []pageMapNode{{ID: "n-g1", FullTitle: "Networking"}}}
 		scopeTargetMapIDs(m, target)
 		return m
 	}
-	resolve := func(target string) pageOutbound {
-		return pageOutbound{ID: target + "-out-b108", Destination: "DNS resolver", External: "netdb.h.gethostbyname", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "anet.c:115"}}
+	resolve := func(target, path string, line int) pageOutbound {
+		return pageOutbound{ID: target + "-out-b108", Destination: "DNS resolver", External: "netdb.h.gethostbyname", MapGroup: "g1", Source: "model",
+			Anchor: pageAnchor{Path: path, Line: line, Text: fmt.Sprintf("%s:%d", path, line)}}
 	}
-	view := pageView{Sections: []*pageSection{
-		{ID: "t1", programTargetID: "t1", ShortLabel: "redis-server", Map: part("t1"), Outbound: []pageOutbound{resolve("t1"),
-			{ID: "t1-out-b120", Destination: "Master", External: "sys/socket.h.connect", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "replication.c:40"}}}},
-		{ID: "t2", programTargetID: "t2", ShortLabel: "redis-benchmark", Map: part("t2"), Outbound: []pageOutbound{resolve("t2")}},
-		{ID: "t4", programTargetID: "t4", ShortLabel: "redis-cli", Map: part("t4"), Outbound: []pageOutbound{resolve("t4")}},
-	}}
-	got := view.SystemMap()
-	frames := map[string]pageMapNode{}
-	tiles := map[string]pageMapNode{}
-	for _, node := range got.Nodes {
-		switch {
-		case node.Branch == "communication":
-			frames[node.ID] = node
-		case node.ItemKind == "External communication":
-			tiles[node.ID] = node
+	view := func(server pageOutbound, benchmark, cli []pageOutbound) pageView {
+		return pageView{Sections: []*pageSection{
+			{ID: "t1", programTargetID: "t1", ShortLabel: "redis-server", Map: part("t1"), Outbound: []pageOutbound{server,
+				{ID: "t1-out-b120", Destination: "Master", External: "sys/socket.h.connect", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "replication.c:40"}}}},
+			{ID: "t2", programTargetID: "t2", ShortLabel: "redis-benchmark", Map: part("t2"), Outbound: benchmark},
+			{ID: "t4", programTargetID: "t4", ShortLabel: "redis-cli", Map: part("t4"), Outbound: cli},
+		}}
+	}
+	both := func(target string) []pageOutbound {
+		second := resolve(target, "anet.c", 146)
+		second.ID = target + "-out-b109"
+		return []pageOutbound{resolve(target, "anet.c", 115), second}
+	}
+	drawn := func(m *pageMap) (map[string]pageMapNode, map[string]pageMapNode) {
+		frames, tiles := map[string]pageMapNode{}, map[string]pageMapNode{}
+		for _, node := range m.Nodes {
+			switch {
+			case node.Branch == "communication":
+				frames[node.ID] = node
+			case node.ItemKind == "External communication":
+				tiles[node.ID] = node
+			}
 		}
+		return frames, tiles
 	}
+	callers := func(m *pageMap, tile string) map[string]bool {
+		from := map[string]bool{}
+		for _, edge := range m.Edges {
+			if edge.To == tile {
+				from[edge.From] = true
+			}
+		}
+		return from
+	}
+
+	// A call site in common: one frame, one tile, an arrow from each program.
+	shared := view(resolve("t1", "anet.c", 146), both("t2"), both("t4"))
+	got := shared.SystemMap()
+	frames, tiles := drawn(got)
+	frame, tile := frames["system-t1-out-b108-destination"], tiles["system-t1-out-b108"]
+	if frame.Owner != "t1" || frame.Children != tile.ID || frame.DisplayGroup != "" || len(frames) != 2 || len(tiles) != 2 {
+		t.Fatalf("one call written once is not one tile: frames %v tiles %v", frames, tiles)
+	}
+	if want := []string{"system-t2-out-b108", "system-t2-out-b109", "system-t4-out-b108", "system-t4-out-b109"}; !slices.Equal(tile.Aliases, want) {
+		t.Fatalf("the other programs' records do not lead to the tile: %v", tile.Aliases)
+	}
+	if from := callers(got, tile.ID); len(from) != 3 || !from[targetMapNodeID("t2", "n-g1")] || !from[targetMapNodeID("t4", "n-g1")] {
+		t.Fatalf("the arrows to the shared tile come from %v", from)
+	}
+
+	// Different call sites: each program keeps its own frame, tile and arrow.
+	apart := view(resolve("t1", "anet.c", 115), []pageOutbound{resolve("t2", "benchmark.c", 20)}, []pageOutbound{resolve("t4", "cli.c", 30)})
+	got = apart.SystemMap()
+	frames, tiles = drawn(got)
 	groups := map[string]bool{}
 	for _, target := range []string{"t1", "t2", "t4"} {
 		frame, tile := frames["system-"+target+"-out-b108-destination"], tiles["system-"+target+"-out-b108"]
@@ -209,14 +253,8 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 			t.Fatalf("program %s lost its own destination: frame %+v tile %+v", target, frame, tile)
 		}
 		groups[frame.DisplayGroup] = true
-		callers := map[string]bool{}
-		for _, edge := range got.Edges {
-			if edge.To == tile.ID {
-				callers[edge.From] = true
-			}
-		}
-		if len(callers) != 1 || !callers[targetMapNodeID(target, "n-g1")] {
-			t.Fatalf("the arrows to %s's tile come from %v", target, callers)
+		if from := callers(got, tile.ID); len(from) != 1 || !from[targetMapNodeID(target, "n-g1")] {
+			t.Fatalf("the arrows to %s's tile come from %v", target, from)
 		}
 	}
 	if len(groups) != 1 || groups[""] {
@@ -231,15 +269,15 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	// The first screen showed "DNS resolver" three times side by side: the
 	// page gives the group that text once, for its frame to carry, and each
 	// frame keeps its own title for its reading.
-	var drawn bytes.Buffer
+	var page bytes.Buffer
 	parsed, err := template.New("map").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/map.html", "templates/html/partials.html")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := parsed.ExecuteTemplate(&drawn, "map.html", got); err != nil {
+	if err := parsed.ExecuteTemplate(&page, "map.html", got); err != nil {
 		t.Fatal(err)
 	}
-	if carried := strings.Count(drawn.String(), `data-display-group-title="DNS resolver"`); carried != 3 {
+	if carried := strings.Count(page.String(), `data-display-group-title="DNS resolver"`); carried != 3 {
 		t.Fatalf("%d frames tell the page their group carries their destination text", carried)
 	}
 	for _, target := range []string{"t1", "t2", "t4"} {
@@ -249,9 +287,9 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	}
 	// Grouped without regard to letter case, "DNS Resolver" and "DNS resolver"
 	// stand together but are not one text: each frame keeps its own heading.
-	view.Sections[2].Outbound[0].Destination = "DNS Resolver"
+	apart.Sections[2].Outbound[0].Destination = "DNS Resolver"
 	together := 0
-	for _, node := range view.SystemMap().Nodes {
+	for _, node := range apart.SystemMap().Nodes {
 		if node.Branch == "communication" && node.DisplayGroup != "" {
 			together++
 			if node.DisplayGroupTitle != "" {

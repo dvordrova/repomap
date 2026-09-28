@@ -1,5 +1,26 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — One outside call written once is one tile (owner's decision a; speed mode)
+
+- **Problem:** Redis's DNS resolver stood three times, one frame per program,
+  each with one gethostbyname tile, though all three programs compile the
+  same call in anet.c.
+- **Change (page_system_map.go):** a program's outside tile of one
+  destination and symbol is another program's tile when any of its calls is
+  at the same saved path and line (`pageOutbound.Anchor`, from the call's
+  saved location); it stands once, in the first program's frame, with an
+  arrow from each program, and the other programs' records are its
+  aliases. No name decides it.
+- **Redis (render of 20260928-125746):** one DNS resolver frame, one
+  gethostbyname tile (redis-server's anet.c:146; redis-benchmark and
+  redis-cli call it at anet.c:115 and :146), arrows from redis-server's
+  Event loop and networking, redis-benchmark's Benchmark client and
+  redis-cli's Command line client; no display group left. TCP endpoint
+  stays redis-server's alone (the clients' connect has a local peer).
+- Tests: the destination test covers the shared call site in the Redis
+  shape (fails without the change: three frames) and keeps the distinct
+  call sites' own frames and display group.
+
 ## 2026-09-28 — One plaque per arrow end, no digits (owner's 2a finished; speed mode)
 
 - **Problem:** the owner still saw digits everywhere on Redis: a "1" on
