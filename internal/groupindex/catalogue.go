@@ -34,6 +34,19 @@ type Catalogue struct {
 	OperationIDs  []string
 	Calls         []int
 	Uses          []CatalogueUse
+	// Readers are, for inputs a table declares (DeclaredBy a variable),
+	// the functions that read the table exactly (look up in it), each with
+	// its reads and the calls into it, in subject order.
+	Readers []CatalogueReader
+}
+
+// CatalogueReader is one function reading a table of inputs: Edges are its
+// reads of the table, Calls the calls into it (calls and executes, exact or
+// alternatives), in source order.
+type CatalogueReader struct {
+	SubjectID string
+	Edges     []int
+	Calls     []int
 }
 
 // CatalogueUse is one variable the declaring code reads: Edges are the
@@ -109,6 +122,10 @@ func catalogues(index *Index) []Catalogue {
 		if catalogue.DeclaredBy == "" {
 			continue
 		}
+		if kindOf(catalogue.DeclaredBy) == programindex.ObjectVariable {
+			catalogue.Readers = tableReaders(index, catalogue.DeclaredBy, kindOf, positionOf)
+			continue
+		}
 		uses := map[string]int{}
 		for edgePosition, edge := range index.StructuralEdges {
 			if edge.Role != EdgeRelationTarget {
@@ -168,4 +185,44 @@ func catalogues(index *Index) []Catalogue {
 // none.
 func operationLocationKey(location programindex.Location) string {
 	return location.Path + "\x00" + strconv.Itoa(location.Line) + "\x00" + strconv.Itoa(max(1, location.Column))
+}
+
+// tableReaders are the functions reading a table exactly, with the calls
+// into each.
+func tableReaders(index *Index, table string, kindOf func(string) programindex.ObjectKind, positionOf map[string]int) []CatalogueReader {
+	at := map[string]int{}
+	var readers []CatalogueReader
+	for position, edge := range index.StructuralEdges {
+		if edge.Role != EdgeRelationTarget || edge.RelationKind != programindex.RelationReads || edge.Resolution != programindex.ResolutionExact || edge.ToSubjectID != table {
+			continue
+		}
+		switch kindOf(edge.FromSubjectID) {
+		case programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectLambda, programindex.ObjectModule:
+		default:
+			continue
+		}
+		reader, seen := at[edge.FromSubjectID]
+		if !seen {
+			reader = len(readers)
+			at[edge.FromSubjectID] = reader
+			readers = append(readers, CatalogueReader{SubjectID: edge.FromSubjectID})
+		}
+		readers[reader].Edges = append(readers[reader].Edges, position)
+	}
+	for position, edge := range index.StructuralEdges {
+		reader, ok := at[edge.ToSubjectID]
+		if !ok || edge.Role != EdgeRelationTarget || edge.RelationKind != programindex.RelationCalls && edge.RelationKind != programindex.RelationExecutes ||
+			edge.Resolution != programindex.ResolutionExact && edge.Resolution != programindex.ResolutionAlternatives {
+			continue
+		}
+		readers[reader].Calls = append(readers[reader].Calls, position)
+	}
+	for i := range readers {
+		calls := readers[i].Calls
+		sort.SliceStable(calls, func(a, b int) bool {
+			return locationBefore(index.StructuralEdges[calls[a]].Location, index.StructuralEdges[calls[b]].Location)
+		})
+	}
+	sort.SliceStable(readers, func(i, j int) bool { return positionOf[readers[i].SubjectID] < positionOf[readers[j].SubjectID] })
+	return readers
 }

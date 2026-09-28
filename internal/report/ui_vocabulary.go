@@ -470,6 +470,8 @@ var russianUI = map[string]string{
 	"Reaches {0} more parts deeper":                                    "Глубже — ещё частей: {0}",
 	"Declared in {0}":                                                  "Объявлено в {0}",
 	"Declared on {0}":                                                  "Объявлено на {0}",
+	"In {0}":                                                           "В {0}",
+	"looked up in {0}":                                                 "ищется в {0}",
 	"Words its handler checks":                                         "Слова, которые проверяет его обработчик",
 	"How these were found":                                             "Как они найдены",
 	"{0}: {1} of {2} word calls declare inputs ({3}), in":              "{0}: {1} из {2} вызовов со словами объявляют входы ({3}), в",

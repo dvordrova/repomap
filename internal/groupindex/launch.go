@@ -106,8 +106,30 @@ func (graph *reachGraph) launch(reaches []Reach) Launch {
 		at[index.Subjects[position].ID] = len(result.Functions)
 		result.Functions = append(result.Functions, LaunchFunction{SubjectID: index.Subjects[position].ID, Depth: depth[position], Via: via[position]})
 	}
+	// A table's inputs are found where the launch looks them up: the first
+	// launch function that reads the table.
+	readBy := map[string]int{}
+	for _, edge := range index.StructuralEdges {
+		if edge.Role != EdgeRelationTarget || edge.RelationKind != programindex.RelationReads || edge.Resolution != programindex.ResolutionExact {
+			continue
+		}
+		function, ok := at[edge.FromSubjectID]
+		if !ok {
+			continue
+		}
+		if previous, seen := readBy[edge.ToSubjectID]; !seen || function < previous {
+			readBy[edge.ToSubjectID] = function
+		}
+	}
 	for _, operation := range index.Operations {
-		if position, ok := at[operation.DeclaredBy]; ok && operation.DeclaredBy != "" {
+		if operation.DeclaredBy == "" {
+			continue
+		}
+		position, ok := at[operation.DeclaredBy]
+		if !ok {
+			position, ok = readBy[operation.DeclaredBy]
+		}
+		if ok {
 			result.Functions[position].Found = append(result.Functions[position].Found, operation.ID)
 		}
 	}

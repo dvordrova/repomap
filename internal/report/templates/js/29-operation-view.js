@@ -218,7 +218,7 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   else if(catalogue.on!=null)on=name(catalogue.on);
   if(on&&catalogue.declarer>=0)head.append.apply(head,inline('Declared on {0} in {1}',on,name(catalogue.declarer)));
   else if(on)head.append.apply(head,inline('Declared on {0}',on));
-  else if(catalogue.declarer>=0)head.append.apply(head,inline('Declared in {0}',name(catalogue.declarer)));
+  else if(catalogue.declarer>=0)head.append.apply(head,inline(catalogue.table?'In {0}':'Declared in {0}',name(catalogue.declarer)));
   var members=catalogue.members||[];
   if(members.length>=2){
     var of=({command:'one of {0} commands',request:'one of {0} requests'})[catalogue.kind]||'one of {0} inputs';
@@ -230,16 +230,22 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
       var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});head.append(b);
     });
   }
-  if((catalogue.calls||[]).length){
+  function callers(calls){
     var from=document.createElement('span');
-    catalogue.calls.forEach(function(call,i){
+    calls.forEach(function(call,i){
       if(i)from.append(document.createTextNode(', '));
       from.append(name(call.caller));
       if(call.line){var at=call.href?repomapMembers.sourceLink({Href:call.href,Open:call.open,Text:':'+call.line}):rmEl('span','',':'+call.line);from.append(document.createTextNode(' '),at);}
       if(call.possible)from.append(rmEl('span','possible',' · '+rmT('possible')));
     });
-    head.append(document.createTextNode(' · '));head.append.apply(head,inline('called from {0}',from));
+    return from;
   }
+  if((catalogue.calls||[]).length){head.append(document.createTextNode(' · '));head.append.apply(head,inline('called from {0}',callers(catalogue.calls)));}
+  // A table's rows are looked up where the table is read.
+  (catalogue.readers||[]).forEach(function(reader){
+    head.append(document.createTextNode(' · '));head.append.apply(head,inline('looked up in {0}',name(reader.reader)));
+    if((reader.calls||[]).length){head.append(document.createTextNode(', '));head.append.apply(head,inline('called from {0}',callers(reader.calls)));}
+  });
   section.appendChild(head);
   if(onInput&&catalogue.on_handler!=null)section.appendChild(line('system-catalogue-handled','{0} is handled by {1}',onInput.dataset.title,name(catalogue.on_handler)));
   (catalogue.uses||[]).forEach(function(use){
