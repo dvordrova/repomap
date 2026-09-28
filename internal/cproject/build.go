@@ -126,6 +126,9 @@ type function struct {
 	node     *Node
 	scope    *unitScope
 	location *p.Location
+	// locals indexes the body for following its local variables
+	// (locals.go), built at the first read that needs it.
+	locals *functionLocals
 }
 
 type table struct {

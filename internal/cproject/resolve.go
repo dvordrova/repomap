@@ -1179,31 +1179,65 @@ func writtenName(n *Node) string {
 }
 
 // origin is an argument's source expression: a literal, a parameter of the
-// function, the result of a call written there, or its text.
+// function, the result of a call written there, an element or a field of
+// another value, a local's value where it is read (locals.go), or its text.
 func (b *builder) origin(w walker, argument *Node) *sourcevalue.Value {
-	site := argument.Begin.Site()
-	anchor := sourceAnchor(site)
-	if anchor == nil {
+	if sourceAnchor(argument.Begin.Site()) == nil {
 		return nil
 	}
-	text := strings.ToValidUTF8(b.text(argument), "�")
-	if _, value, ok := stringLiteral(argument); ok {
+	return b.originOf(w, argument, map[string]bool{})
+}
+
+// originOf is the source expression of any value: argument's parts are
+// recorded the same way. active holds the locals being followed.
+func (b *builder) originOf(w walker, n *Node, active map[string]bool) *sourcevalue.Value {
+	anchor := sourceAnchor(n.Begin.Site())
+	text := strings.ToValidUTF8(b.text(n), "�")
+	if _, value, ok := stringLiteral(n); ok {
 		return &sourcevalue.Value{Kind: "literal", Text: value, Anchor: anchor}
 	}
-	if p := parameterRef(argument); p != nil && w.function != nil {
+	if p := parameterRef(n); p != nil && w.function != nil {
 		if param, ok := w.scope.params[p.ReferencedDecl.ID]; ok && param.function == w.function.ref && w.function.location != nil {
 			owner := sourceAnchor(Position{File: w.function.location.Path, Line: w.function.location.Line, Col: w.function.location.Column})
 			return &sourcevalue.Value{Kind: "parameter", Text: param.name, Position: param.position, Owner: owner, Anchor: anchor}
 		}
 	}
-	if inner := unwrapValue(argument); inner != nil && inner.Kind == "CallExpr" && len(inner.Inner) > 0 {
-		callee := inner.Inner[0]
-		start := callee.Begin
-		if named := designator(callee); named != nil {
-			start = named.Begin
+	inner := unwrapValue(n)
+	if inner == nil {
+		return &sourcevalue.Value{Kind: "unknown", Text: text, Anchor: anchor}
+	}
+	switch inner.Kind {
+	case "IntegerLiteral", "CharacterLiteral", "FloatingLiteral":
+		// A number or a character as written; a macro's body wrote the
+		// one a macro name expands to, which stays that name.
+		if written := b.written(inner); written != "" && !inner.Begin.InMacroBody() {
+			return &sourcevalue.Value{Kind: "literal", Text: written, Anchor: anchor}
 		}
-		if at := sourceAnchor(start.Site()); at != nil {
-			return &sourcevalue.Value{Kind: "call_result", Text: text, Anchor: at}
+	case "CallExpr":
+		if len(inner.Inner) > 0 {
+			callee := inner.Inner[0]
+			start := callee.Begin
+			if named := designator(callee); named != nil {
+				start = named.Begin
+			}
+			if at := sourceAnchor(start.Site()); at != nil {
+				return &sourcevalue.Value{Kind: "call_result", Text: text, Anchor: at}
+			}
+		}
+	case "ArraySubscriptExpr":
+		// argv[0]: index 0 of what argv holds.
+		if len(inner.Inner) == 2 {
+			return &sourcevalue.Value{Kind: "index", Text: b.written(inner), Anchor: anchor,
+				Parts: []sourcevalue.Value{*b.originOf(w, inner.Inner[0], active), *b.originOf(w, inner.Inner[1], active)}}
+		}
+	case "MemberExpr":
+		// c->argv, s.name: the field of what the base holds.
+		if len(inner.Inner) == 1 && inner.Name != "" {
+			return &sourcevalue.Value{Kind: "field", Text: inner.Name, Anchor: anchor, Parts: []sourcevalue.Value{*b.originOf(w, inner.Inner[0], active)}}
+		}
+	case "DeclRefExpr":
+		if value := b.followLocal(w, inner, active); value != nil {
+			return value
 		}
 	}
 	return &sourcevalue.Value{Kind: "unknown", Text: text, Anchor: anchor}

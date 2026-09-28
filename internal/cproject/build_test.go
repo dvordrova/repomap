@@ -577,7 +577,9 @@ func TestTableRowsReachPlacesAsRegistrations(t *testing.T) {
 	slices.Sort(registrations)
 	// The row a function builds in its own body, and kvcli's row without a
 	// function, are not registrations; getCommand kept as a number is not.
-	want := []string{"kvCommand [get] -> getCommand", "kvCommand [ping] -> pingCommand", "kvCommand [set] -> setCommand", "qsort [] -> compare", "struct sigaction [] -> crash"}
+	// A callable a repository function keeps for later (loopTimer,
+	// loopWatch) is one, its registrar the keeping function (pass 2).
+	want := []string{"kvCommand [get] -> getCommand", "kvCommand [ping] -> pingCommand", "kvCommand [set] -> setCommand", "loopTimer [] -> tick", "loopWatch [] -> readClient", "loopWatch [] -> writeClient", "qsort [] -> compare", "struct sigaction [] -> crash"}
 	if !reflect.DeepEqual(registrations, want) {
 		t.Fatalf("registrations:\n got %q\nwant %q", registrations, want)
 	}

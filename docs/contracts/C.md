@@ -347,8 +347,36 @@ kvd fixture asks `strcmp`'s call (`strcmp(argv[1], "--symbols")`),
 `getenv` call is a setting read the facts already name and is not asked.
 The answer is the call's, so `strcmp(argv[i], "-h")` can be an option
 while `strcasecmp(c->name, "monitor")` is not. The item shows where each
-argument comes from as the index records it, and C records `argv[i]` as
-code it did not follow (no argument-vector origin yet). Tables of names
+argument comes from as the index records it (`internal/cproject`
+`originOf`, `locals.go`):
+
+- a string, number or character literal as written (a number a macro
+  name expands to stays that name, not followed);
+- a parameter of the function, by position and name;
+- the result of a call written there, with the call as written;
+- `index` for an element, `argv[i]`: the text as written, then the origin
+  of what is indexed and of the index;
+- `field` for a member, `c->argv`: the field's name, then the origin of
+  the value it is read from;
+- a local variable followed to the writes that reach the read in the same
+  function, the rule the Go, Python and JS adapters apply to their locals:
+  the nearest write every path to the read passes through (its initializer,
+  or a write its code always evaluates before the read, with no label a
+  jump could enter by between them), with every write that can come between
+  it and the read and every later write of a loop holding the read but not
+  that write; one value is that value, several are `alternatives`, each
+  once, in source order, as the Go adapter records a join. With no such
+  write the writes before the read stand beside the value of a path that
+  writes none, which is not followed. A static local, an array and a local
+  whose address the function takes are not followed; `x += 1` and `x++`
+  are writes whose value is not followed.
+
+So Redis's `strcasecmp(argv[0], "timeout")` in `loadServerConfig` reads
+element 0 of the result of `sdssplitlen(line, …)`, a line of the file it
+reads, and `strcmp(argv[i], "-h")` in redis-cli's `parseOptions` element
+`one of: 1 | i++` of parameter #2 `argv`. The cproject test
+`TestArgumentOriginsFollowElementsFieldsAndLocals` holds the four shapes;
+the kvd fixture does not read a configuration file yet (cleanup). Tables of names
 (S3) and callables the repository's own functions keep (S1) are asked in
 pass 2. Not recorded yet, and so asked nothing:
 
