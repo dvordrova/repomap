@@ -199,10 +199,13 @@ func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 			t.Fatal(err)
 		}
 		asked := askedOutsideSymbols(t, repository, index)
-		expectAsked(t, asked, "argparse.ArgumentParser", "given", `argparse.ArgumentParser("tool")`, "add_argument ×1", "add_subparsers ×1")
+		// ServiceCommands' parser and subcommands are fields stored once from
+		// argparse's calls, so the calls on them count beside the locals';
+		// RebuiltParser's add_argument, on a parser stored twice, does not.
+		expectAsked(t, asked, "argparse.ArgumentParser", "given", `argparse.ArgumentParser("tool")`, "add_argument ×1", "add_subparsers ×2")
 		expectAsked(t, asked, "argparse.ArgumentParser.add_argument", "given", `parser.add_argument("-v", "--verbose", action="store_true")`)
-		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers", "given", `parser.add_subparsers(dest="cmd")`, "add_parser ×1")
-		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers.add_parser", "given", `commands.add_parser("init")`, "add_argument ×1", "set_defaults ×1")
+		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers", "given", `parser.add_subparsers(dest="cmd")`, "add_parser ×2")
+		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers.add_parser", "given", `commands.add_parser("init")`, "add_argument ×1", "set_defaults ×2")
 		// The subcommand's handler is handed over by another call: a second
 		// question; when both are accepted, one input (J1,
 		// TestCumulativePythonInputsJoinAndCatalogue).

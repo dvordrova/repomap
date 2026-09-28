@@ -248,6 +248,12 @@ class Analyzer:
         self.field_write_counts = {}
         self.field_type_origins = {}
         self.field_type_writes = set()
+        # Every store of a class's field or class attribute, by (class
+        # qname, name): the stored value when it is the one value of a plain
+        # assignment, else None. field_call_origins caches what a field
+        # stored once from an outside call carries (field_call_origin).
+        self.field_stores = {}
+        self.field_call_origins = {}
         self.module_scopes = {}
         self.relations = []
         self.relations_by_key = {}
@@ -876,9 +882,33 @@ class Collector(ast.NodeVisitor):
             for value in target.elts:
                 self._target_reads(value)
 
+    def record_field_store(self, target, value=None):
+        # A store of an instance field (self.name in a method) or of a class
+        # attribute in the class body. value is the assigned expression of a
+        # plain one-target instance assignment, None for any other store
+        # (augmented, deleted, unpacked, a loop or with target, and every
+        # class attribute: a dataclass's field(...), a model's Column(...) or
+        # a default is not what an instance holds).
+        if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "self" and self.scope.class_ref:
+            key = (self.scope.class_qname, target.attr)
+        elif isinstance(target, ast.Name) and self.scope.kind == "type":
+            key, value = (self.scope.qname, target.id), None
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                self.record_field_store(element)
+            return
+        elif isinstance(target, ast.Starred):
+            self.record_field_store(target.value)
+            return
+        else:
+            return
+        self.analyzer.field_stores.setdefault(key, []).append((value, self.scope))
+
     def visit_Assign(self, node):
         alias_binding = self.callable_alias_binding(node.value)
         self.visit(node.value)
+        for target in node.targets:
+            self.record_field_store(target, node.value if len(node.targets) == 1 else None)
         for target in node.targets:
             self._target_reads(target)
             if self.scope.kind == "type" and isinstance(target, ast.Name):
@@ -905,6 +935,7 @@ class Collector(ast.NodeVisitor):
         alias_binding = self.callable_alias_binding(node.value) if node.value is not None else None
         if node.value is not None:
             self.visit(node.value)
+            self.record_field_store(node.target, node.value)
         self._target_reads(node.target)
         if isinstance(node.target, ast.Name):
             signature = node.target.id + ": " + ast.unparse(node.annotation)
@@ -937,6 +968,7 @@ class Collector(ast.NodeVisitor):
         self.visit(node.iter)
         self.conditional_depth += 1
         self._target_reads(node.target)
+        self.record_field_store(node.target)
         self.bind_targets(node.target, True)
         for statement in node.body + node.orelse:
             self.visit(statement)
@@ -947,10 +979,12 @@ class Collector(ast.NodeVisitor):
     def visit_AugAssign(self, node):
         if isinstance(node.target, ast.Name):
             self.record_export(node.target.id)
+        self.record_field_store(node.target)
         self.generic_visit(node)
 
     def visit_Delete(self, node):
         for target in node.targets:
+            self.record_field_store(target)
             for child in ast.walk(target):
                 if isinstance(child, ast.Name):
                     self.record_export(child.id)
@@ -959,6 +993,7 @@ class Collector(ast.NodeVisitor):
     def visit_With(self, node):
         for item in node.items:
             if item.optional_vars is not None:
+                self.record_field_store(item.optional_vars)
                 for target in ast.walk(item.optional_vars):
                     if isinstance(target, ast.Name):
                         self.record_export(target.id)
@@ -1268,6 +1303,12 @@ class RelationVisitor(ast.NodeVisitor):
                     if owner_ref:
                         owner_name = self.analyzer.object_qname(owner_ref)
                         ref = self.analyzer.objects_by_qname.get(owner_name + "." + ".".join(parts[1:]), "")
+                    else:
+                        # self.parser.add_subparsers is the outside call's
+                        # own member when the field holds one call's result.
+                        origin = self.field_call_origin(self.scope.class_qname, parts[0])
+                        if origin:
+                            return "external", self.analyzer.ensure_external(self.object(origin)["name"] + "." + ".".join(parts[1:]))
                 return ("local", ref) if ref else ("unknown", "")
             if isinstance(current, ast.Name):
                 binding = self.scope.binding(current.id)
@@ -1514,6 +1555,57 @@ class RelationVisitor(ast.NodeVisitor):
                 return self.iterable_element_type(self.analyzer.variable_annotations.get(ref))
         return ""
 
+    def field_call_origin(self, class_qname, name):
+        # A class's field stored exactly once, by a plain assignment of an
+        # outside call's result (self.parser = argparse.ArgumentParser(...)
+        # in __init__ or any method), holds that result wherever the class
+        # reads it: its origin is the outside symbol the call names. A second
+        # store of any kind (a class attribute, an augmented or deleted
+        # field, another assignment) or a value no outside call produced
+        # leaves it unknown. The call is resolved in the scope that makes
+        # it, whichever method this visitor is in.
+        # A call on a local name resolves through that name's source-ordered
+        # binding, so only a found origin or a disqualifying store is kept;
+        # a store still being resolved is none (self.a = self.a.copy()).
+        key = (class_qname, name)
+        cache = self.analyzer.field_call_origins
+        if cache.get(key) is not None:
+            return cache[key]
+        stores = self.analyzer.field_stores.get(key, [])
+        if len(stores) != 1 or not isinstance(stores[0][0], ast.Call):
+            cache[key] = ""
+            return ""
+        if key in cache:
+            return ""
+        cache[key] = None
+        value, scope = stores[0]
+        previous, self.scope = self.scope, scope
+        try:
+            authority, ref = self.resolved_call_target(value.func)
+        finally:
+            self.scope = previous
+            del cache[key]
+        candidate = self.object(ref) if ref else None
+        if authority == "external" and candidate and candidate["kind"] == "external_symbol":
+            cache[key] = ref
+            return ref
+        return ""
+
+    def self_field_call(self, node):
+        # The call a class's field (self.name) is stored from, when it is
+        # the field's one store and a plain assignment.
+        if not (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self" and self.scope.class_qname):
+            return None
+        stores = self.analyzer.field_stores.get((self.scope.class_qname, node.attr), [])
+        if len(stores) == 1 and isinstance(stores[0][0], ast.Call):
+            return stores[0][0]
+        return None
+
+    def self_field_origin(self, node):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self" and self.scope.class_qname:
+            return self.field_call_origin(self.scope.class_qname, node.attr)
+        return ""
+
     def pattern_receiver(self, callee):
         if not isinstance(callee, ast.Attribute):
             return {}
@@ -1523,7 +1615,11 @@ class RelationVisitor(ast.NodeVisitor):
         binding = self.pattern_binding(callee.value.id) if isinstance(callee.value, ast.Name) else None
         if binding is None:
             authority, ref = self.resolve(callee.value)
-            return {"receiver_ref": ref} if authority == "local" and ref else {}
+            result = {"receiver_ref": ref} if authority == "local" and ref else {}
+            origin = self.self_field_origin(callee.value)
+            if origin:
+                result.update({"receiver_origin_refs": [origin], "receiver_origin_resolution": "exact", "receiver_origins_observed": 1})
+            return result
         result = {
             "receiver_origins_observed": binding.get("origins_observed", 0),
         }
@@ -1645,6 +1741,12 @@ class RelationVisitor(ast.NodeVisitor):
             return {"kind": "call_result", "text": safe_expression_name(node.func),
                     "anchor": callee_location(self.module["path"], node.func)}
         if isinstance(node, ast.Attribute):
+            # A field its class stores once, from a call, holds that call's
+            # result, as a local name bound to a call does.
+            stored = self.self_field_call(node)
+            if stored is not None:
+                return {"kind": "call_result", "text": safe_expression_name(stored.func),
+                        "anchor": callee_location(self.module["path"], stored.func)}
             return {"kind": "field", "text": node.attr, "anchor": anchor,
                     "parts": [self.source_value(node.value)]}
         if isinstance(node, ast.Subscript):

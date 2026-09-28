@@ -327,26 +327,54 @@ A call of an outside symbol given words is asked on its own what they
 become (READING, the `atlas_api` per-call question), beside its symbol's
 row with `result_receives`, the calls made on what the call returns. The
 fixture's `src/fixture_app/tool_cli.py` asks `argparse.ArgumentParser`
-(`add_argument ×1`, `add_subparsers ×1`), `add_argument`,
-`add_subparsers` (`add_parser ×1`) and `add_parser`; `set_defaults(func=…)`
-hands a callable and is asked what it becomes. A subcommand named by one
+(`add_argument ×1`, `add_subparsers ×2`), `add_argument`,
+`add_subparsers` (`add_parser ×2`) and `add_parser` (`set_defaults ×2`);
+`set_defaults(func=…)` hands a callable and is asked what it becomes. A subcommand named by one
 call and handled through another is one input (READING, J1): `init`,
 named by `commands.add_parser("init")`, is handled by `run_init`, which
 `init.set_defaults(func=run_init)` hands over on that call's own result.
 The inputs an object's calls declare are one catalogue of that object:
 `--verbose` is declared on `argparse.ArgumentParser("tool")` and `--force`
 on init's own parser, whose catalogue names `init` as what its members are
-declared on (`TestCumulativePythonInputsJoinAndCatalogue`). Not recorded
-yet:
+declared on (`TestCumulativePythonInputsJoinAndCatalogue`).
+
+A class's field stored exactly once, by a plain assignment of a call's
+result in `__init__` or any method (`self.parser =
+argparse.ArgumentParser("service")`), holds that result wherever the class
+reads it, whichever method comes first in the file: a call on it
+(`self.parser.add_subparsers(...)`) is the outside call's own member
+(`argparse.ArgumentParser.add_subparsers`) with the field as its receiver
+and the outside symbol as the receiver's origin, and the field's source
+value is the storing call's result, as a local name bound to a call's
+result is. So `ServiceCommands` in `tool_cli.py` keeps its parser and its
+subcommand collection in fields, and `serve`, named by
+`self._subparsers.add_parser("serve")`, is one input handled by
+`run_serve`, declared on `self.parser.add_subparsers(dest="cmd")`
+(`TestCumulativePythonFieldStoredOnceFromACallKeepsItsOrigin`,
+`TestCumulativePythonInputsJoinAndCatalogue`). A second store of any kind
+leaves the field unknown: another assignment, an augmented, deleted,
+unpacked, loop or `with` target, and any class attribute of that name (a
+dataclass's `field(default_factory=set)` or a model's `Column(...)` is not
+what an instance holds). `RebuiltParser` stores its parser twice, and its
+`self.parser.add_argument("--again")` stays unresolved and is no input. A
+field stored once from a repository class's constructor keeps the existing
+typed-field rule (receiver fields, above). freqtrade's `Arguments` stores
+`self.parser = ArgumentParser(...)` once, in `_build_subcommands`: its
+`subparsers = self.parser.add_subparsers(...)` is argparse's, and each of
+its 34 subcommands (`trade`, `backtesting`, …) is an `add_parser` call
+given words whose result receives the `set_defaults(func=…)` that hands its
+handler over. Go and TypeScript fields carry the compiler's declared type,
+so a call on a field resolves by type already; Clojure keeps no fields
+(CLOJURE). Not recorded yet:
 
 - `sys.argv` carries no argument vector origin, and a comparison of
   `sys.argv` or of a parsed argument (`args.cmd == "init"`) is no fact: an
   operator is no call, so the per-call contrast of an option comparison
   with a comparison of data (C's `strcasecmp(argv[1], "--raw")` beside
   `strcasecmp(cmd->name, "bgsave")`) has no Python equivalent;
-- a parser held in an attribute (`self.parser.add_subparsers(...)`, as
-  freqtrade's): the attribute has no recorded type, so the calls made on
-  it name no outside symbol and are never asked;
+- a field stored more than once, or from anything but a call (a
+  parameter, another field), carries no origin, and a chain through a
+  field of a field (`self.a.b.c()`) stays unresolved;
 - list and dict tables of names;
 - dict registries (`handlers[name] = fn`);
 - a callable the repository's own function keeps (S1) is not enabled;

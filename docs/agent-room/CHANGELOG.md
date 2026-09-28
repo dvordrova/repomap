@@ -1,5 +1,52 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Python fields stored once from a call (freqtrade's subcommands)
+
+- **Why:** freqtrade builds its subcommands on `self.parser =
+  ArgumentParser(...)`; `self.parser.add_subparsers(...)` was untyped, so
+  `add_parser` and `set_defaults` on its result were unresolved, never
+  asked, and J1 had nothing to join (0 commands in the 2026-09-28 run).
+- **Adapter (`parser.py`):** the collector records every store of a class's
+  field (`self.name` in a method) and of a class attribute; a field stored
+  exactly once by a plain assignment of a call carries that call: a call on
+  it resolves to the outside call's member (`argparse.ArgumentParser.
+  add_subparsers`) with the field as receiver and the outside symbol as
+  receiver origin, and the field's source value is the storing call's
+  result, as a local name's is. The call is resolved in the scope that
+  makes it, so method order does not matter. Any second store (another
+  assignment, augmented, deleted, unpacked, loop or `with` target, any
+  class attribute such as a dataclass `field(...)`) leaves it unknown; the
+  first cut took a dataclass's `field(default_factory=set)` for the value
+  (`dataclasses.field.add` on the tutorial game) and class attributes now
+  only disqualify.
+- **Fixture:** `tool_cli.py`'s `ServiceCommands` (parser in `__init__`,
+  subparsers in `build`, `serve` → `run_serve`) and `RebuiltParser` (stored
+  twice, `add_argument("--again")` unresolved).
+  `TestCumulativePythonFieldStoredOnceFromACallKeepsItsOrigin` checks the
+  targets, receivers, origins and producers; the inputs preset reads `serve`
+  as one command with its handler, declared on
+  `self.parser.add_subparsers(dest="cmd")`; the word-given counts rise to
+  `add_subparsers ×2`, `add_parser ×2`, `set_defaults ×2`. The
+  python-tutorial-game backend index is regenerated (objects and relations
+  unchanged; its scenario digest follows the parser).
+- **freqtrade no-model (`python:.:script:freqtrade`, 60 s):**
+  `self.parser.add_subparsers` is exact argparse; all 34 `add_parser` calls
+  (`trade`, `create-userdir`, …, `backtesting`, `hyperopt`, `webserver`,
+  `recursive-analysis`) are exact and asked per call with their words
+  (atlas_api r3), and each one's result receives its `set_defaults(func=…)`,
+  which hands its handler over (`trade` → start_trading, `backtesting` →
+  start_backtesting, `list-pairs` → start_list_markets through `partial`);
+  the add_parser row lists `set_defaults ×33` (the reassigned
+  `convert_trade_data_cmd` local keeps no source origin). Registration
+  facts hold both calls at the parser of line 380.
+- **Equivalents:** Go and TypeScript fields carry the compiler's type;
+  Clojure has no fields. Recorded in PYTHON and the fixture README.
+- **Verified:** pythonprogramindex, facts, atlas, groupindex, run, report,
+  programindex and pythontarget pass; contracttest passes but for
+  `TestCumulativeGoMapOfParts` and `TestCumulativeGoExecutableSeedIsItsOwnRow`,
+  which fail on the report agent's uncommitted `internal/atlas/reading/helpers.go`
+  (they passed at 950d3064 and read no Python).
+
 ## 2026-09-29 — C field reads and writes (ProgramIndex 20)
 
 - **Why:** a benchmark reader's top request. The C adapter read a whole

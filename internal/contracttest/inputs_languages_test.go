@@ -210,6 +210,11 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 		{kind: "command", name: "-v", declaredBy: "build_parser", on: `argparse.ArgumentParser("tool")`, at: "src/fixture_app/tool_cli.py:22"},
 		{kind: "command", name: "init", declaredBy: "build_parser", on: `parser.add_subparsers(dest="cmd")`, handler: "run_init", at: "src/fixture_app/tool_cli.py:24"},
 		{kind: "command", name: "--force", declaredBy: "build_parser", on: `commands.add_parser("init")`, at: "src/fixture_app/tool_cli.py:26"},
+		// ServiceCommands keeps its parser and subcommands in fields, each
+		// stored once from argparse's call: serve joins its handler as init
+		// does. RebuiltParser stores its parser twice, so --again, on either
+		// parser, is no input.
+		{kind: "command", name: "serve", declaredBy: "build", on: `self.parser.add_subparsers(dest="cmd")`, handler: "run_serve", at: "src/fixture_app/tool_cli.py:54"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tool_cli.py's inputs:\n%+v\nwant\n%+v", got, want)
