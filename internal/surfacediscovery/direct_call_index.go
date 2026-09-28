@@ -22,7 +22,10 @@ const (
 	// compiler witnesses remain only in WitnessCount; there is no per-edge
 	// pattern sample or truncation. The retained edges remain only actual static
 	// calls; callback execution is not inferred from an argument binding.
-	DirectCallIndexVersion = 14
+	// Version 15 adds Variables: a call written in a package-level variable's
+	// initializer is an edge whose caller is that variable, where it had been
+	// left out with the synthetic package initializer that evaluates it.
+	DirectCallIndexVersion = 15
 )
 
 type DirectCallIndexState string
@@ -102,6 +105,24 @@ type DirectCallNode struct {
 	Body        DirectCallBodyRange `json:"body"`
 }
 
+// DirectCallVariable is a package-level variable whose initializer calls a
+// repository function. Go evaluates the initializer in the package's
+// synthetic initializer, which declares nothing, so the variable is the
+// caller of the calls written there (GO). Declaration is its name, Body its
+// whole specification, Signature its type.
+type DirectCallVariable struct {
+	ID          string              `json:"id"`
+	Symbol      Symbol              `json:"symbol"`
+	Signature   string              `json:"signature,omitempty"`
+	Package     string              `json:"package"`
+	Exported    bool                `json:"exported"`
+	ModuleID    string              `json:"module_id"`
+	ScenarioID  string              `json:"scenario_id"`
+	Declaration Location            `json:"declaration"`
+	Body        DirectCallBodyRange `json:"body"`
+	CodeLines   int                 `json:"code_lines"`
+}
+
 // DirectCallEdge is one exact source-level repository call relation. Calls
 // with the same endpoints and invocation mode compact into one edge. Every
 // source-distinct neutral call pattern is retained while WitnessCount separately
@@ -140,6 +161,7 @@ type DirectCallIndexCoverage struct {
 	ModulesIndexed               int `json:"modules_indexed"`
 	NodesConsidered              int `json:"nodes_considered"`
 	NodesIndexed                 int `json:"nodes_indexed"`
+	VariablesIndexed             int `json:"variables_indexed"`
 	UniqueEdgesConsidered        int `json:"unique_edges_considered"`
 	EdgesIndexed                 int `json:"edges_indexed"`
 	DirectStaticWitnessesIndexed int `json:"direct_static_witnesses_indexed"`
@@ -241,6 +263,7 @@ type DirectCallIndex struct {
 	Scope        DirectCallIndexScope        `json:"scope,omitempty"`
 	Modules      []DirectCallModule          `json:"modules"`
 	Nodes        []DirectCallNode            `json:"nodes"`
+	Variables    []DirectCallVariable        `json:"variables"`
 	Edges        []DirectCallEdge            `json:"edges"`
 	Frontiers    []DirectCallNodeFrontier    `json:"frontiers"`
 	Coverage     DirectCallIndexCoverage     `json:"coverage"`
@@ -264,6 +287,7 @@ func (index DirectCallIndex) Snapshot() DirectCallIndex {
 	for position := range snapshot.Nodes {
 		snapshot.Nodes[position] = copyDirectCallNode(snapshot.Nodes[position])
 	}
+	snapshot.Variables = cloneDirectCallSlice(index.Variables)
 	snapshot.Edges = cloneDirectCallSlice(index.Edges)
 	for position := range snapshot.Edges {
 		snapshot.Edges[position] = copyDirectCallEdge(snapshot.Edges[position])
@@ -357,8 +381,8 @@ func (index DirectCallIndex) Validate() error {
 		if !index.ClosedReason.Valid() {
 			return fmt.Errorf("direct call index: unavailable index has invalid closed reason %q", index.ClosedReason)
 		}
-		if len(index.Modules) != 0 || len(index.Nodes) != 0 || len(index.Edges) != 0 || len(index.Frontiers) != 0 ||
-			index.Coverage.ModulesIndexed != 0 || index.Coverage.NodesIndexed != 0 ||
+		if len(index.Modules) != 0 || len(index.Nodes) != 0 || len(index.Variables) != 0 || len(index.Edges) != 0 || len(index.Frontiers) != 0 ||
+			index.Coverage.ModulesIndexed != 0 || index.Coverage.NodesIndexed != 0 || index.Coverage.VariablesIndexed != 0 ||
 			index.Coverage.EdgesIndexed != 0 {
 			return fmt.Errorf("direct call index: unavailable index retained a partial graph")
 		}
@@ -370,6 +394,7 @@ func (index DirectCallIndex) Validate() error {
 	}
 	if index.Coverage.ModulesIndexed != len(index.Modules) ||
 		index.Coverage.NodesIndexed != len(index.Nodes) ||
+		index.Coverage.VariablesIndexed != len(index.Variables) ||
 		index.Coverage.EdgesIndexed != len(index.Edges) {
 		return fmt.Errorf("direct call index: coverage does not match graph")
 	}
@@ -421,6 +446,31 @@ func (index DirectCallIndex) Validate() error {
 		nodes[node.ID] = node
 	}
 
+	callers := make(map[string]struct{}, len(nodes)+len(index.Variables))
+	for id := range nodes {
+		callers[id] = struct{}{}
+	}
+	previous = ""
+	for _, variable := range index.Variables {
+		key := directCallVariableKey(variable)
+		if previous != "" && key <= previous {
+			return fmt.Errorf("direct call index: variables are not unique canonical order")
+		}
+		previous = key
+		if _, ok := modules[variable.ModuleID]; !ok || variable.ScenarioID != index.Scenario.ID ||
+			variable.Package == "" || variable.Symbol.ID == "" || variable.Symbol.Name == "" || variable.Symbol.Package != variable.Package ||
+			variable.Symbol.Location != variable.Declaration || variable.CodeLines < 0 ||
+			!validRepositoryDirectCallLocation(variable.Declaration) ||
+			!validDirectCallBody(variable.Declaration, variable.Body) ||
+			variable.ID != stableDirectCallVariableID(variable) {
+			return fmt.Errorf("direct call index: invalid variable %q", variable.ID)
+		}
+		if _, duplicate := callers[variable.ID]; duplicate {
+			return fmt.Errorf("direct call index: duplicate caller %q", variable.ID)
+		}
+		callers[variable.ID] = struct{}{}
+	}
+
 	edges := make(map[string]struct{}, len(index.Edges))
 	previous = ""
 	for _, edge := range index.Edges {
@@ -429,7 +479,7 @@ func (index DirectCallIndex) Validate() error {
 			return fmt.Errorf("direct call index: edges are not unique canonical order")
 		}
 		previous = key
-		if _, ok := nodes[edge.CallerID]; !ok {
+		if _, ok := callers[edge.CallerID]; !ok {
 			return fmt.Errorf("direct call index: edge %q has unknown caller", edge.ID)
 		}
 		if _, ok := nodes[edge.CalleeID]; !ok {
@@ -508,6 +558,7 @@ type directCallIndexBuilder struct {
 	closedReason  DirectCallIndexClosedReason
 	modules       map[string]DirectCallModule
 	nodes         map[string]DirectCallNode
+	variables     map[string]DirectCallVariable
 	edges         map[string]DirectCallEdge
 	frontiers     map[string]DirectCallNodeFrontier
 	functionNode  map[*ssa.Function]string
@@ -523,6 +574,7 @@ func newDirectCallIndexBuilder(scenario Scenario, maxEdges int) *directCallIndex
 		scenario: scenario, maxEdges: maxEdges,
 		state:   DirectCallIndexReady,
 		modules: make(map[string]DirectCallModule), nodes: make(map[string]DirectCallNode),
+		variables: make(map[string]DirectCallVariable),
 		edges: make(map[string]DirectCallEdge), functionNode: make(map[*ssa.Function]string),
 		frontiers:     make(map[string]DirectCallNodeFrontier),
 		functionsSeen: make(map[*ssa.Function]struct{}),
@@ -547,6 +599,7 @@ func (builder *directCallIndexBuilder) close(reason DirectCallIndexClosedReason)
 	// this path.
 	builder.modules = nil
 	builder.nodes = nil
+	builder.variables = nil
 	builder.edges = nil
 	builder.frontiers = nil
 	builder.functionNode = nil
@@ -634,10 +687,42 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 		builder.coverage.InvalidEndpointCallsExcluded++
 		return
 	}
+	builder.addEdge(a, call, callerID, calleeID)
+}
+
+// recordInitializerCall records a call the synthetic package initializer
+// makes while evaluating variable's initializer, with the variable as its
+// caller. It reports whether the call became an edge.
+func (builder *directCallIndexBuilder) recordInitializerCall(a *analyzer, call ssa.CallInstruction, variable DirectCallVariable, module DirectCallModule) bool {
+	if builder == nil || call == nil || builder.state != DirectCallIndexReady {
+		return false
+	}
+	builder.coverage.CallInstructionsConsidered++
+	callee := call.Common().StaticCallee()
+	calleeID, calleeOK := builder.recordFunction(a, callee)
+	if builder.state != DirectCallIndexReady {
+		return false
+	}
+	if !calleeOK {
+		builder.coverage.InvalidEndpointCallsExcluded++
+		return false
+	}
+	if !builder.addEdge(a, call, variable.ID, calleeID) || builder.state != DirectCallIndexReady {
+		return false
+	}
+	builder.variables[variable.ID] = variable
+	builder.modules[module.ID] = module
+	return true
+}
+
+// addEdge adds one exact call from callerID to calleeID at the call's
+// position, compacting it into the existing edge of the same endpoints and
+// invocation. It reports whether the index holds the edge.
+func (builder *directCallIndexBuilder) addEdge(a *analyzer, call ssa.CallInstruction, callerID, calleeID string) bool {
 	callsite := a.location(call.Pos())
 	if !validRepositoryDirectCallLocation(callsite) {
 		builder.coverage.InvalidCallsitesExcluded++
-		return
+		return false
 	}
 	edge := DirectCallEdge{
 		CallerID: callerID, CalleeID: calleeID, ScenarioID: builder.scenario.ID,
@@ -660,15 +745,16 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 		existing.PatternsObserved = len(existing.Patterns)
 		builder.edges[edge.ID] = existing
 		builder.coverage.DirectStaticWitnessesIndexed++
-		return
+		return true
 	}
 	builder.coverage.UniqueEdgesConsidered++
 	if builder.maxEdges > 0 && len(builder.edges) >= builder.maxEdges {
 		builder.close(DirectCallIndexClosedEdgeLimit)
-		return
+		return false
 	}
 	builder.edges[edge.ID] = edge
 	builder.coverage.DirectStaticWitnessesIndexed++
+	return true
 }
 
 func appendDirectCallPattern(
@@ -727,7 +813,7 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 	index := DirectCallIndex{
 		Version: DirectCallIndexVersion, State: builder.state, ClosedReason: builder.closedReason,
 		Scenario: builder.scenario, Scope: builder.scope, Coverage: builder.coverage,
-		Modules: []DirectCallModule{}, Nodes: []DirectCallNode{}, Edges: []DirectCallEdge{},
+		Modules: []DirectCallModule{}, Nodes: []DirectCallNode{}, Variables: []DirectCallVariable{}, Edges: []DirectCallEdge{},
 		Frontiers: []DirectCallNodeFrontier{},
 	}
 	if builder.state == DirectCallIndexReady {
@@ -736,6 +822,9 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 		}
 		for _, node := range builder.nodes {
 			index.Nodes = append(index.Nodes, node)
+		}
+		for _, variable := range builder.variables {
+			index.Variables = append(index.Variables, variable)
 		}
 		for _, edge := range builder.edges {
 			index.Edges = append(index.Edges, copyDirectCallEdge(edge))
@@ -749,6 +838,9 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 		sort.Slice(index.Nodes, func(i, j int) bool {
 			return directCallNodeKey(index.Nodes[i]) < directCallNodeKey(index.Nodes[j])
 		})
+		sort.Slice(index.Variables, func(i, j int) bool {
+			return directCallVariableKey(index.Variables[i]) < directCallVariableKey(index.Variables[j])
+		})
 		sort.Slice(index.Edges, func(i, j int) bool {
 			return directCallEdgeKey(index.Edges[i]) < directCallEdgeKey(index.Edges[j])
 		})
@@ -757,10 +849,12 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 		})
 		index.Coverage.ModulesIndexed = len(index.Modules)
 		index.Coverage.NodesIndexed = len(index.Nodes)
+		index.Coverage.VariablesIndexed = len(index.Variables)
 		index.Coverage.EdgesIndexed = len(index.Edges)
 	} else {
 		index.Coverage.ModulesIndexed = 0
 		index.Coverage.NodesIndexed = 0
+		index.Coverage.VariablesIndexed = 0
 		index.Coverage.EdgesIndexed = 0
 	}
 	index.SHA256, _ = directCallIndexSHA256(index)
@@ -883,6 +977,13 @@ func stableDirectCallNodeID(node DirectCallNode) string {
 	)
 }
 
+func stableDirectCallVariableID(variable DirectCallVariable) string {
+	return stableDirectCallID(
+		"direct-variable", variable.ModuleID, variable.ScenarioID, variable.Symbol.ID,
+		locationKey(variable.Declaration),
+	)
+}
+
 func stableDirectCallEdgeID(edge DirectCallEdge) string {
 	return stableDirectCallID(
 		"direct-edge", edge.ScenarioID, edge.CallerID, edge.CalleeID, string(edge.Invocation),
@@ -909,6 +1010,12 @@ func directCallModuleKey(module DirectCallModule) string {
 func directCallNodeKey(node DirectCallNode) string {
 	return strings.Join([]string{
 		node.ModuleID, node.Package, node.Symbol.ID, locationKey(node.Declaration), node.ID,
+	}, "\x00")
+}
+
+func directCallVariableKey(variable DirectCallVariable) string {
+	return strings.Join([]string{
+		variable.ModuleID, variable.Package, variable.Symbol.ID, locationKey(variable.Declaration), variable.ID,
 	}, "\x00")
 }
 

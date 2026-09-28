@@ -517,7 +517,9 @@ part. Each fixture checks a case: C's saveSnapshot goes with bgsaveCommand,
 and staticsyms.h, whose symsTable only printSymbols reads, keeps a part of
 its own, since the check takes its type kvSymbol for no helper; Go's
 lookupCommand goes with DispatchCommand, which nothing calls and so is not
-asked, and the command table's handlers are asked once more; Python's
+asked, the command table's handlers are asked once more, and
+namedCommands, which only defaultCommands' initializer calls (GO), goes
+with it; Python's
 format_score keeps exports.py whole; TypeScript's handledOrderIds goes with
 recordOrder; Clojure's private exclaim goes with cheer, and its macro
 ensure! is asked. The words

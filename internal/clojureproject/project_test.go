@@ -167,7 +167,9 @@ func TestNativeCumulativeProject(t *testing.T) {
 	// A var's metadata and a defn's attr-maps, before or after its arities,
 	// run once when the namespace loads, as a Python decorator's arguments run
 	// where the function is defined: their calls belong to the namespace,
-	// while the calls in the function's body stay the function's.
+	// while the calls in the function's body stay the function's. A call in a
+	// def's value is the var's (default-greeting), as a Go package-level
+	// variable is the caller of its initializer's calls.
 	first := 0
 	for _, object := range index.Objects {
 		if object.Name == "example.core/routed-by-meta" {
@@ -185,6 +187,7 @@ func TestNativeCumulativeProject(t *testing.T) {
 	slices.Sort(loaded)
 	wantLoaded := []string{
 		"example.core attr", "example.core def", "example.core meta", "example.core multi", "example.core once", "example.core tail",
+		"example.core/default-greeting default",
 		"example.core/routed-by-attr-map row", "example.core/routed-by-attr-map row", "example.core/routed-by-meta row",
 	}
 	if first == 0 || !slices.Equal(loaded, wantLoaded) {

@@ -155,6 +155,38 @@ unchanged. A real cumulative Python extraction across four target views and
 generic contrasting cases cover this correction. It changes affected graph
 and exact-request hashes, independently of the byte-preserving loading change.
 
+## Calls in package-level variable initializers
+
+Go evaluates a package-level variable's initializer in the package's
+synthetic initializer, which declares nothing, so a call written there
+(`var schemaChanges = map[...]...{v: {addNewField(...)}}`) had no caller the
+index could name and its callee looked unused. The direct-call index (version
+15) now records each exact repository call the synthetic initializer makes
+inside a package-level `var` specification's value as an edge whose caller is
+that variable (`DirectCallVariable`: its name, type, exported state and whole
+specification), at the call's own position. ProgramIndex projects the
+variable as a `variable` of its package and the call as an ordinary exact
+`calls` relation; the places graph lifts a package-level variable that owns a
+call as a declaration, as it lifts a module body that owns one. A
+specification of several names with one value gives the call to its first
+name; a blank `var _ = f()` is the variable `_`. A call the synthetic
+initializer makes outside any variable's value (an `init` function, an
+imported package's initializer) is the runtime's own order and stays out, and
+a call of an outside package there stays the package's unresolved
+`synthetic_caller` frontier. The cumulative fixture's
+`internal/storefixture/command_table.go` checks it: `defaultCommands` calls
+`namedCommands` at line 164 (`TestCumulativeGoMapOfParts`), so
+`namedCommands` has a user and goes with `defaultCommands` as a helper.
+
+Native equivalents: a Python module-level assignment's call and a JS/TS
+top-level `const` initializer's call are the module body's
+(`src/fixture_app/cli.py:44`, `src/route-mounts.ts:3`), and a Clojure `def`
+value's call is the var's, like Go's (`default-greeting` at the end of
+`src/example/core.clj`); each fixture checks its call's owner. C has no
+equivalent: a file-scope initializer holds constant expressions only, so no
+call is written there, and a function it names is a hand-over from the
+variable (C's command table).
+
 ## Handler tables and stored callbacks
 
 These are the Go equivalents of the C adapter's command table, its callbacks
@@ -226,15 +258,15 @@ Missing equivalents, recorded rather than fabricated:
   hand-overs only: `TestCumulativeGoMapOfParts` checks that
   `command_table.go`'s `commandTable` hands `getCommand` over and that
   `registerRouteDefinition` hands `http.HandleFunc` the closure
-  `requireRouteToken` returns. A call written in a package-level `var`
-  initializer, and a function value stored in a package variable, table or
-  slice (`getCluster = srv.GetCluster`, `append(filters, filterNoPut)`),
-  leave no relation at all, so the function has no use there; recorded,
-  not patched. The role split's helper question (READING) therefore never
-  shows a Go declaration's `read_by`, and a function used only in those
-  ways has no user, so it is no helper by code rather than asked. The
-  fixture's `lookupCommand`, called only by `DispatchCommand`, goes with it;
-  `DispatchCommand`, which nothing calls, is not asked.
+  `requireRouteToken` returns. A function value stored in a package
+  variable, table or slice (`getCluster = srv.GetCluster`,
+  `append(filters, filterNoPut)`) leaves no relation at all, so the function
+  has no use there; recorded, not patched. The role split's helper question
+  (READING) therefore never shows a Go declaration's `read_by`; a function
+  used only as such a value has no user, so it is no helper by code rather
+  than asked, while a Go variable, whose reads are never recorded, is always
+  asked. The fixture's `lookupCommand`, called only by `DispatchCommand`,
+  goes with it; `DispatchCommand`, which nothing calls, is not asked.
 - A row storing two callables (`{Name: "get", Run: getCommand, Preload:
   preloadGet}`) keeps two bindings. No Go row is a registration, so the C
   rule that such a row is one input has nothing to apply to.

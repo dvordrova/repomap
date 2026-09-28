@@ -348,7 +348,10 @@ func (b *builder) useTargetObjects(index programindex.Index) {
 		// A module body can call or read another part directly. It needs its
 		// own closed grouping choice; a file's declarations are not its caller.
 		moduleBody := object.Kind == programindex.ObjectModule && object.Name != "" && executionOwners[object.ID]
-		if !declaration(object, b.byID) && !moduleBody && !(object.Kind == programindex.ObjectFunction && callbacks[object.ID]) {
+		// A Go package-level variable whose initializer calls is the caller
+		// of those calls (GO), a declaration like a module body.
+		packageVariable := object.Kind == programindex.ObjectVariable && executionOwners[object.ID] && b.byID[object.ContainerID].Kind == programindex.ObjectPackage
+		if !declaration(object, b.byID) && !moduleBody && !packageVariable && !(object.Kind == programindex.ObjectFunction && callbacks[object.ID]) {
 			continue
 		}
 		name := object.Name

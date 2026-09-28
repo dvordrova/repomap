@@ -123,6 +123,22 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 			t.Fatalf("the Go declaration %v carries read_by", key)
 		}
 	}
+	// A call written in a package-level variable's initializer is the
+	// variable's (GO): defaultCommands calls namedCommands at its own line,
+	// so namedCommands, which nothing else calls, has a user and is asked,
+	// a helper that goes with defaultCommands by code. defaultCommands, a
+	// Go variable whose reads Go does not record, is asked like a type.
+	adaptertest.AssertExecutionScope(t, index, graph, commands, 164, programindex.ObjectVariable)
+	named, defaults := split.Symbols[[2]string{commands, "namedCommands"}], split.Symbols[[2]string{commands, "defaultCommands"}]
+	if got := anyStrings(split.HelperItems[[2]string{commands, "namedCommands"}]["called_by"]); !slices.Equal(got, []string{commands + ":defaultCommands"}) {
+		t.Fatalf("namedCommands is asked with called_by %v", got)
+	}
+	if _, asked := split.HelperItems[[2]string{commands, "defaultCommands"}]; !asked {
+		t.Fatal("defaultCommands, a Go variable, was not asked the helper question")
+	}
+	if !split.Helpers[[2]string{commands, "namedCommands"}] || split.PartOf[named] == "" || split.PartOf[named] != split.PartOf[defaults] {
+		t.Fatalf("namedCommands in %q, defaultCommands in %q", split.PartOf[named], split.PartOf[defaults])
+	}
 	projectSplit(t, index, split)
 }
 

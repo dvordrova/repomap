@@ -343,6 +343,9 @@ func TestCumulativeJSTSRepositoryCompilerAndProgramIndexContract(t *testing.T) {
 	}
 	adaptertest.AssertExecutionScope(t, index, graph, "src/server.ts", 77, programindex.ObjectModule)
 	adaptertest.AssertExecutionScope(t, index, graph, "src/market-worker.js", 5, programindex.ObjectModule)
+	// A top-level const initializer's call is the module's, the equivalent
+	// of a Go package-level variable's initializer (GO).
+	adaptertest.AssertExecutionScope(t, index, graph, "src/route-mounts.ts", 3, programindex.ObjectModule)
 	assertCumulativeJSTSTypeMembers(t, result, index, lines.QuestionRows(graph))
 	assertCumulativeJSTSTypeHeaders(t, result, index, lines.QuestionRows(graph))
 	adaptertest.AssertDeclarationSignatures(t, graph, "src/type-members.ts", map[string]string{

@@ -157,3 +157,10 @@ func RunNamedLoop(readable bool) []string {
 		loop.cleared.String(),
 	}
 }
+
+// A call written in a package-level variable's initializer runs when the
+// package loads, in the synthetic initializer that declares nothing: the
+// variable is its caller (GO), so namedCommands has a user.
+var defaultCommands = namedCommands("get", "set")
+
+func namedCommands(names ...string) []string { return names }

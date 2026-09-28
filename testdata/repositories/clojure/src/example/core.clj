@@ -133,3 +133,8 @@
 (defn- exclaim [s] (str s "!"))
 
 (defn cheer [name] (exclaim name))
+
+;; A call written in a def's value runs when the namespace loads; the var is
+;; its caller, as a Go package-level variable is the caller of its
+;; initializer's calls.
+(def default-greeting (service/greet "default"))

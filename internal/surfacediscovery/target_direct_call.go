@@ -1,6 +1,9 @@
 package surfacediscovery
 
 import (
+	"go/ast"
+	"go/token"
+	"go/types"
 	"sort"
 	"strconv"
 
@@ -43,7 +46,11 @@ func (a *analyzer) recordTargetDirectCallEdges() error {
 			roots = append(roots, function)
 		}
 	}
-	if len(roots) == 0 {
+	initialized := a.recordInitializerCalls()
+	if a.directCallIndex.state != DirectCallIndexReady {
+		return nil
+	}
+	if len(roots) == 0 && len(initialized) == 0 {
 		return nil
 	}
 	type queuedFunction struct {
@@ -55,6 +62,14 @@ func (a *analyzer) recordTargetDirectCallEdges() error {
 	for _, root := range roots {
 		distance[root] = 0
 		queue = append(queue, queuedFunction{function: root})
+	}
+	// What a package-level variable's initializer calls runs when the
+	// package loads, one call away from nothing the program declares.
+	for _, callee := range initialized {
+		if _, found := distance[callee]; !found {
+			distance[callee] = 1
+			queue = append(queue, queuedFunction{function: callee, depth: 1})
+		}
 	}
 	for len(queue) > 0 && a.directCallIndex.state == DirectCallIndexReady {
 		if err := a.ctx.Err(); err != nil {
@@ -250,4 +265,136 @@ func targetDirectCalls(a *analyzer, function *ssa.Function) []ssa.CallInstructio
 		return leftTarget < rightTarget
 	})
 	return result
+}
+
+// initializerSpec is one value of a package-level variable specification:
+// the source range of its initializer expression and the variable it
+// initializes.
+type initializerSpec struct {
+	start, end token.Pos
+	name       *ast.Ident
+	spec       *ast.ValueSpec
+}
+
+// recordInitializerCalls records every exact repository call written in a
+// package-level variable's initializer, with that variable as its caller
+// (GO): Go evaluates those initializers in the package's synthetic
+// initializer, which declares nothing, so the call had no caller the index
+// could name. A call the synthetic initializer makes outside any variable's
+// initializer (an init function, an imported package's initializer) is the
+// runtime's own order, not code written there, and stays out. It returns
+// the callees, in order.
+func (a *analyzer) recordInitializerCalls() []*ssa.Function {
+	var callees []*ssa.Function
+	for _, function := range a.orderedFunctions() {
+		if function == nil || function.Synthetic != "package initializer" || function.Blocks == nil || !a.isRepositoryFunction(function) {
+			continue
+		}
+		packagePath := functionPackagePath(function)
+		facts := a.packageFacts[packagePath]
+		if facts == nil || facts.Module == nil || facts.Module.Path == "" || !a.modulePaths[facts.Module.Path] || facts.TypesInfo == nil {
+			continue
+		}
+		moduleDirectory, ok := repositoryPackageModuleDirectory(a.root, facts)
+		if !ok {
+			continue
+		}
+		module := DirectCallModule{Path: facts.Module.Path, Directory: moduleDirectory}
+		module.ID = stableDirectCallID("direct-module", module.Path, module.Directory)
+		specs := initializerSpecs(facts.Syntax)
+		for _, block := range function.Blocks {
+			for _, instruction := range block.Instrs {
+				call, ok := instruction.(ssa.CallInstruction)
+				if !ok || call.Common() == nil || call.Common().IsInvoke() {
+					continue
+				}
+				callee := call.Common().StaticCallee()
+				if callee == nil || !a.repositoryDirectStaticCall(call, callee) {
+					continue
+				}
+				spec, ok := specAt(specs, call.Pos())
+				if !ok {
+					continue
+				}
+				variable, ok := a.initializerVariable(packagePath, facts.TypesInfo, spec, module.ID)
+				if !ok {
+					continue
+				}
+				if a.directCallIndex.recordInitializerCall(a, call, variable, module) {
+					if origin := callee.Origin(); origin != nil {
+						callee = origin
+					}
+					callees = append(callees, callee)
+				}
+				if a.directCallIndex.state != DirectCallIndexReady {
+					return callees
+				}
+			}
+		}
+	}
+	return callees
+}
+
+// initializerSpecs lists the initializer values of every package-level
+// variable of files. A specification of several names with one value (a
+// call returning several results) gives it to its first name.
+func initializerSpecs(files []*ast.File) []initializerSpec {
+	var specs []initializerSpec
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			general, ok := decl.(*ast.GenDecl)
+			if !ok || general.Tok != token.VAR {
+				continue
+			}
+			for _, raw := range general.Specs {
+				spec, ok := raw.(*ast.ValueSpec)
+				if !ok || len(spec.Names) == 0 {
+					continue
+				}
+				for i, value := range spec.Values {
+					name := spec.Names[0]
+					if len(spec.Values) == len(spec.Names) {
+						name = spec.Names[i]
+					}
+					specs = append(specs, initializerSpec{start: value.Pos(), end: value.End(), name: name, spec: spec})
+				}
+			}
+		}
+	}
+	return specs
+}
+
+// specAt is the initializer value whose source range holds position.
+func specAt(specs []initializerSpec, position token.Pos) (initializerSpec, bool) {
+	if !position.IsValid() {
+		return initializerSpec{}, false
+	}
+	for _, spec := range specs {
+		if spec.start <= position && position < spec.end {
+			return spec, true
+		}
+	}
+	return initializerSpec{}, false
+}
+
+// initializerVariable is the variable an initializer value initializes, as
+// the index names a caller: its name, type, exported state and the source
+// range of its whole specification.
+func (a *analyzer) initializerVariable(packagePath string, info *types.Info, spec initializerSpec, moduleID string) (DirectCallVariable, bool) {
+	declaration := a.location(spec.name.Pos())
+	variable := DirectCallVariable{
+		Symbol:  Symbol{ID: packagePath + "." + spec.name.Name, Package: packagePath, Name: spec.name.Name, Location: declaration},
+		Package: packagePath, Exported: ast.IsExported(spec.name.Name), ModuleID: moduleID, ScenarioID: a.directCallIndex.scenario.ID,
+		Declaration: declaration,
+		Body:        DirectCallBodyRange{Start: a.location(spec.spec.Pos()), End: a.location(spec.spec.End())},
+		CodeLines:   a.codeLines(spec.spec.Pos(), spec.spec.End()),
+	}
+	if object := info.Defs[spec.name]; object != nil {
+		variable.Signature = types.TypeString(object.Type(), packageQualifier)
+	}
+	if !validRepositoryDirectCallLocation(declaration) || declaration.Column <= 0 || !validDirectCallBody(declaration, variable.Body) {
+		return DirectCallVariable{}, false
+	}
+	variable.ID = stableDirectCallVariableID(variable)
+	return variable, true
 }

@@ -36,6 +36,9 @@ func TestClojureFixtureInventoryAndNativeGraph(t *testing.T) {
 	assertClojureAnonymousArgumentCall(t, index)
 	assertClojureReferAllKeepsTheNamespacesOwnVar(t, index)
 	adaptertest.AssertExecutionScope(t, index, graph, "src/example/core.clj", 19, programindex.ObjectModule)
+	// A call in a def's value is the var's, as a Go package-level variable
+	// owns its initializer's calls (GO).
+	adaptertest.AssertExecutionScope(t, index, graph, "src/example/core.clj", 140, programindex.ObjectVariable)
 	adaptertest.AssertSQLQueryFacts(t, index, "src/example/core.clj", map[string]string{"SELECT id FROM direct_rows": "direct_rows", "DROP TABLE IF EXISTS %s": "", "SELECT 0 AS a": ""}, "create %s dir")
 	assertOneStatementPerCall(t, index)
 	// (-> path (str/replace "/" "-") (str/replace "/" "-"))

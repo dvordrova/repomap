@@ -401,6 +401,9 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 		t.Fatalf("build Python atlas: %v", err)
 	}
 	adaptertest.AssertExecutionScope(t, index, graph, "src/fixture_app/events.py", 13, programindex.ObjectModule)
+	// A module-level assignment's call is the module body's, the equivalent
+	// of a Go package-level variable's initializer (GO).
+	adaptertest.AssertExecutionScope(t, index, graph, "src/fixture_app/cli.py", 44, programindex.ObjectModule)
 	adaptertest.AssertCallControls(t, index, graph, "src/fixture_app/events.py", "process_pending_jobs", map[int][]adaptertest.Control{
 		33: nil,
 		35: {{Line: 34, Kind: "while body with constant true condition"}},

@@ -1,5 +1,45 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Follow-up f1b: a Go package-level variable is the caller of its initializer's calls
+
+- Sanity check 3 (queue f1, Go): a call written in a package-level `var`
+  initializer left no relation, because Go evaluates it in the synthetic
+  package initializer, which the direct-call index excludes. etcd's
+  `addNewField`, called only in `var schemaChanges = …`, looked unused.
+- The direct-call index (version 15) records each exact repository call the
+  synthetic initializer makes inside a package-level variable's value as an
+  edge whose caller is that variable (`DirectCallVariable`: name, type,
+  exported state, whole specification, code lines), at the call's own
+  position. The Go adapter projects the variable as a `variable` of its
+  package and the call as an ordinary exact `calls` relation; the places
+  graph lifts a package-level variable that owns a call as a declaration,
+  as it lifts a module body. Calls the synthetic initializer makes outside
+  a variable's value (init functions, imported initializers) stay out;
+  outside-package calls there stay the package's `synthetic_caller`
+  frontier.
+- Fixture: `internal/storefixture/command_table.go`'s `defaultCommands =
+  namedCommands("get", "set")` (line 164). `TestCumulativeGoMapOfParts`
+  checks the call's owner, that `namedCommands` is asked with
+  `called_by: defaultCommands` and goes with it as a helper, and that
+  `defaultCommands`, a Go variable, is asked.
+- Native equivalents, each now checked at its call's owner: Python
+  `local_router = LocalRouter()` (module body, `cli.py:44`), TypeScript
+  `const root = express()` (module, `route-mounts.ts:3`), Clojure
+  `(def default-greeting (service/greet "default"))` (the var, new at the
+  end of `core.clj`; `TestNativeCumulativeProject` lists its load-time
+  call). C has none: a file-scope initializer holds constant expressions
+  only.
+- etcd server library, no-model probe (`followups/etcd-probe`):
+  `addNewField` ← `calls exact` from the variable `schemaChanges`
+  (`schema.go:132`); two package variables own calls (`schemaChanges`,
+  `flagsline`). `GetCluster` (`getCluster = srv.GetCluster`) and
+  `filterNoPut`/`filterNoDelete` (`append(filters, filterNoPut)` inside
+  `FiltersFromRequest`) are function values, not calls, and still have no
+  relation: GO's recorded gap, unchanged.
+- Revert checks: no initializer call recorded, or places not lifting the
+  variable, fail `TestCumulativeGoMapOfParts`.
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Follow-up f1a: the no-users rule asks a kind whose uses are not recorded
 
 - Sanity check 3 (queue f1): "nothing uses it" turned a fact gap into

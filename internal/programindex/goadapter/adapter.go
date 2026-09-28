@@ -400,6 +400,28 @@ func (projection *goProjection) projectObjects() error {
 		projection.directNodeObjectRefs[node.ID] = node.ID
 	}
 
+	// A package-level variable whose initializer calls repository code is
+	// the caller of those calls (GO): a declaration of its package.
+	for _, variable := range projection.direct.Variables {
+		packageRef, err := projection.packageRef(variable.Package)
+		if err != nil {
+			return err
+		}
+		location, err := projection.surfaceLocation(variable.Declaration)
+		if err != nil {
+			return err
+		}
+		if err := projection.addObject(programindex.ObjectInput{
+			SourceRef: variable.ID, Kind: programindex.ObjectVariable, Name: variable.Symbol.Name,
+			Signature:  shortSignature(variable.Signature),
+			Visibility: visibility(variable.Exported), OwnerRef: packageRef, ContainerRef: packageRef,
+			Location: location, EndLine: variable.Body.End.Line, CodeLines: variable.CodeLines,
+		}); err != nil {
+			return err
+		}
+		projection.directNodeObjectRefs[variable.ID] = variable.ID
+	}
+
 	for _, family := range projection.external.Families {
 		key := externalTargetKey(family.Target)
 		if _, exists := projection.externalRefs[key]; exists {
@@ -1526,6 +1548,11 @@ func validateAuthority(
 			return fmt.Errorf("Go program index adapter: direct node %q is outside core packages", node.ID)
 		}
 		directNodes[node.ID] = node
+	}
+	for _, variable := range direct.Variables {
+		if _, ok := corePackages[packageKey(variable.ModuleID, variable.Package)]; !ok {
+			return fmt.Errorf("Go program index adapter: direct variable %q is outside core packages", variable.ID)
+		}
 	}
 	if len(dynamic.Functions) != len(directNodes) {
 		return fmt.Errorf("Go program index adapter: dynamic function inventory does not match direct nodes")
