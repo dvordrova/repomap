@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -998,6 +999,14 @@ func (b *builder) input() (p.Input, error) {
 		}
 	}
 	target := p.TargetInput{Language: "c", Kind: string(program.Kind), Name: program.Name, Selector: program.Selector, AnchorFileRef: program.AnchorFileRef}
+	// The executable a link line writes is named by its output (Makefile:49
+	// links redis-server); a program built by hand from its main unit has
+	// no name the build gives it.
+	for _, observation := range program.Evidence {
+		if observation.Kind == "c_link" && program.Kind == ProgramExecutable && observation.Fields["output"] != "" {
+			target.Executables = append(target.Executables, path.Base(observation.Fields["output"]))
+		}
+	}
 	if main := b.parsed.Main; main != nil {
 		fn := b.mainFunction()
 		if fn == nil {

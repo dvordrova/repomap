@@ -1231,6 +1231,7 @@ func (projection *goProjection) targetInput() (programindex.TargetInput, error) 
 	}
 	switch projection.target.Kind {
 	case analysistarget.KindExecutablePackage:
+		input.Executables = []string{executableName(projection.target.PackagePath)}
 		exactRoots, err := analysistarget.BindExactRoots(projection.target, &projection.direct)
 		if err != nil {
 			return programindex.TargetInput{}, fmt.Errorf("Go program index adapter: bind exact roots: %w", err)
@@ -1293,6 +1294,18 @@ func (projection *goProjection) targetInput() (programindex.TargetInput, error) 
 		)
 	}
 	return input, nil
+}
+
+// executableName is the name `go build` and `go install` give a main
+// package's executable: the last element of its import path, or the one
+// before a major version suffix (example.com/tool/v2 is tool).
+func executableName(importPath string) string {
+	name := path.Base(importPath)
+	if version := strings.TrimPrefix(name, "v"); name != importPath && len(version) > 0 && version != name && strings.Trim(version, "0123456789") == "" &&
+		version[0] != '0' && version != "1" {
+		return path.Base(path.Dir(importPath))
+	}
+	return name
 }
 
 func (projection *goProjection) libraryPackageSourceRef(packagePath string) (corpus.FileID, error) {

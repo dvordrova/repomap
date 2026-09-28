@@ -104,6 +104,14 @@ func TestCFixtureIndexesTheServer(t *testing.T) {
 		index.Target.Seeds[0].ObjectID != main.ID || index.Target.Seeds[0].Kind != programindex.SeedCallable {
 		t.Fatalf("target: %+v", index.Target)
 	}
+	// The Makefile's link line names the executable kvd; tools/dump.c, built
+	// by hand from its main unit, has no name the build gives it.
+	if !slices.Equal(index.Target.Executables, []string{"kvd"}) {
+		t.Fatalf("kvd's executables: %v", index.Target.Executables)
+	}
+	if dump := buildCIndex(t, fixture, "c:tools/dump.c"); len(dump.Target.Executables) != 0 {
+		t.Fatalf("tools/dump.c's executables: %v", dump.Target.Executables)
+	}
 
 	// Identity: a static is internal and named by its file, so the two oom
 	// functions stay apart; a header's static inline is one declaration

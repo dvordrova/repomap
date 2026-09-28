@@ -431,9 +431,14 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			seedRefs[ref] = struct{}{}
 		}
 	}
+	// Each package.json bin command is an executable the package installs.
+	var executables []string
+	for _, binary := range result.Project.Binaries {
+		executables = append(executables, binary.Command)
+	}
 	return programindex.Input{
 		ScenarioSHA256: scenarioSHA, SourceSHA256: result.SourceSHA256,
-		Target:  programindex.TargetInput{Language: result.Project.Language, Kind: TargetKind(result), Name: result.Project.Name, Selector: result.Project.Selector, Sources: targetSources(result), TestSources: testSources(result), AnchorFileRef: result.Project.ManifestFileRef, Seeds: seeds},
+		Target:  programindex.TargetInput{Language: result.Project.Language, Kind: TargetKind(result), Name: result.Project.Name, Selector: result.Project.Selector, Sources: targetSources(result), TestSources: testSources(result), AnchorFileRef: result.Project.ManifestFileRef, Seeds: seeds, Executables: executables},
 		Objects: objects, Relations: relations, Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: len(objects), RelationsObserved: len(relations)},
 	}
 }

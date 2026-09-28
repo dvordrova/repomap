@@ -1,6 +1,7 @@
 package report
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -45,6 +46,36 @@ type pageOutbound struct {
 	Program         bool
 	ProgramNotNamed bool
 	Words           []string
+	// Runs are this repository's programs whose executable is named what
+	// the started program is (programsNamed): equal names are the code
+	// fact, "runs litestream" is cmd/litestream.
+	Runs []pageRunsProgram
+}
+
+// pageRunsProgram is one program of the report a started program's name
+// names: its component's section and title.
+type pageRunsProgram struct {
+	Section, Href, Title string
+}
+
+// programsNamed are the report's programs whose build gives their
+// executable this name (ProgramIndex target executables: C's link output,
+// a Go main package's directory, a Python console_script, a package.json
+// bin command), in the report's order. Only equal names join; nothing is
+// matched loosely.
+func (builder *pageBuilder) programsNamed(name string) []pageRunsProgram {
+	if name == "" {
+		return nil
+	}
+	var programs []pageRunsProgram
+	for _, section := range builder.sections {
+		index := builder.graphIndex(section.programTargetID)
+		if index == nil || !slices.Contains(index.Target.Executables, name) {
+			continue
+		}
+		programs = append(programs, pageRunsProgram{Section: section.ID, Href: "#" + section.ID, Title: componentTitle(section, builder.sections)})
+	}
+	return programs
 }
 
 // ProgramLabel names a started program no word of its call names: one
@@ -141,6 +172,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		}
 		if call.Kind == atlas.BoundaryRunsProgram {
 			row.Program, row.ProgramNotNamed = true, call.ProgramNotNamed
+			row.Runs = builder.programsNamed(call.Destination)
 			// A word that cannot stand on one line (a script handed to an
 			// interpreter) stays in the call at its source link.
 			for _, word := range call.Values {

@@ -43,7 +43,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   surface never invents a bin-wrapper-to-source relation: its entry refs stay
   empty, while an exact canonical `dev` or `start` script with one
   helper-selected source may independently seed that source only after CLI
-  product authority exists.
+  product authority exists. Each such bin command is one of the target's
+  `executables` (PROGRAM_INDEX), the name a started program joins by; the
+  cumulative fixture declares no bin, so
+  `TestPackageBinaryCreatesCLIProductAndRuntimeScriptCreatesSeparateSeed`
+  holds it (a missing fixture equivalent).
   Compiler/type-resolved declarations and exact external imports are the only
   call-target authority. Every ProgramIndex external symbol carries its exact
   raw package origin plus an adapter-derived `package` or `platform` authority

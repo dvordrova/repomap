@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 20
+	Version          = 21
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -225,6 +225,12 @@ type TargetInput struct {
 	// Libraries may leave the set empty; a later semantic cube can then choose
 	// from public objects without pretending they are launch roots.
 	Seeds []TargetSeedInput
+	// Executables are the names the repository's build gives this
+	// program's executable, a build fact of its adapter: C's linked program
+	// (the Makefile target), a Go main package's directory, a Python
+	// console_script, package.json bin commands. Empty when the build names
+	// none.
+	Executables []string
 }
 
 // Target is one exact selected program scope. It remains independent of a
@@ -241,6 +247,9 @@ type Target struct {
 	Sources       []TargetSource `json:"sources"`
 	AnchorFileRef string         `json:"anchor_file_ref"`
 	Seeds         []TargetSeed   `json:"seeds"`
+	// Executables are the names the build gives the program's executable
+	// (TargetInput.Executables), sorted and each once.
+	Executables []string `json:"executables,omitempty"`
 }
 
 // Snapshot returns a consumer-owned copy of the selected target boundary.
@@ -249,6 +258,7 @@ func (target Target) Snapshot() Target {
 	result.TestSources = slices.Clone(target.TestSources)
 	result.Sources = cloneTargetSources(target.Sources)
 	result.Seeds = cloneTargetSeeds(target.Seeds)
+	result.Executables = slices.Clone(target.Executables)
 	return result
 }
 
@@ -1154,6 +1164,11 @@ func New(input Input) (Index, error) {
 	}
 	sort.Strings(index.Target.TestSources)
 	index.Target.TestSources = slices.Compact(index.Target.TestSources)
+	if len(input.Target.Executables) > 0 {
+		index.Target.Executables = slices.Clone(input.Target.Executables)
+		sort.Strings(index.Target.Executables)
+		index.Target.Executables = slices.Compact(index.Target.Executables)
+	}
 	if err := validateTargetShape(index.Target); err != nil {
 		return Index{}, err
 	}
@@ -1898,6 +1913,11 @@ func validateTargetShape(target Target) error {
 	for position, source := range target.TestSources {
 		if !validPath(source) || position > 0 && target.TestSources[position-1] >= source {
 			return fmt.Errorf("program index: invalid or noncanonical test sources")
+		}
+	}
+	for position, name := range target.Executables {
+		if !validText(name) || strings.ContainsAny(name, "/\\ \t\r\n") || position > 0 && target.Executables[position-1] >= name {
+			return fmt.Errorf("program index: invalid or noncanonical executables")
 		}
 	}
 	pathsByRef := make(map[string]string, len(target.Sources))

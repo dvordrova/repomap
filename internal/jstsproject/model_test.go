@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -296,6 +297,10 @@ func TestPackageBinaryCreatesCLIProductAndRuntimeScriptCreatesSeparateSeed(t *te
 	}
 	if TargetKind(sealed) != "application" || index.Target.Kind != "application" {
 		t.Fatalf("CLI target kind = %q / %q", TargetKind(sealed), index.Target.Kind)
+	}
+	// Each package.json bin command is an executable the package installs.
+	if !slices.Equal(index.Target.Executables, []string{"sample"}) {
+		t.Fatalf("CLI executables = %v", index.Target.Executables)
 	}
 	cliCount := 0
 	for _, surface := range sealed.Surfaces {

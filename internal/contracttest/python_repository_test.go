@@ -3,6 +3,7 @@ package contracttest
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 
@@ -380,6 +381,10 @@ func TestCumulativePythonRepositoryDiscoveryAndProgramIndexContract(t *testing.T
 	assertProgramIndexRoundTrip(t, index)
 	if index.Target.Language != "python" || index.Target.Selector != pythonFixtureSelector {
 		t.Fatalf("Python ProgramIndex target = %#v", index.Target)
+	}
+	// pyproject.toml's [project.scripts] installs repomap-fixture.
+	if !slices.Equal(index.Target.Executables, []string{"repomap-fixture"}) {
+		t.Fatalf("Python executables = %v", index.Target.Executables)
 	}
 	if len(index.Target.Seeds) != 1 || index.Target.Seeds[0].Kind != programindex.SeedCallable {
 		t.Fatalf("Python script target seeds = %#v, want one exact callable seed", index.Target.Seeds)

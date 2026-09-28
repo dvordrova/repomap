@@ -15,6 +15,15 @@ its sealed `program-index-set.json` binding.
 ProgramIndex retains:
 
 - exact target scope and seeds;
+- the names the repository's build gives the target's executable (ProgramIndex
+  21, `target.executables`, sorted and each once; a build fact of its
+  adapter, empty when the build names none): C's link-line output
+  (`redis-server`; a program built by hand from its main unit has none), a Go
+  main package's `go build` name (its import path's last element, the one
+  before a major version suffix), a Python console or GUI script
+  (`repomap-fixture`), each package.json `bin` command. Clojure names none;
+  its deps.edn aliases are not executables. The report joins a started
+  program to this repository's program by equal name (REPORT);
 - objects and their compact target-local identities;
 - adapter-observed package/module directories, independent of source locations;
 - exact, alternatives, and unresolved relation authority as distinct states;

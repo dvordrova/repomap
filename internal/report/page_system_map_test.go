@@ -480,6 +480,63 @@ func TestSystemOutboundWithoutOneExactPeerRemainsExternal(t *testing.T) {
 	}
 }
 
+// A started program this repository builds is that program (equal names
+// are the code fact: litestream-test starts litestream, the executable
+// cmd/litestream's main package builds): its call's arrow goes from the
+// launching part into that program's component and no outside tile stands
+// for it, while its record reads "Runs this repository's program" with a
+// link to the component. A program starting itself keeps its tile.
+func TestAStartedProgramThisRepositoryBuildsIsThatProgram(t *testing.T) {
+	programs := []groupindex.Index{
+		{Target: programindex.Target{ID: "t1", Executables: []string{"litestream"}}},
+		{Target: programindex.Target{ID: "t2", Executables: []string{"litestream-test"}}},
+	}
+	b := &pageBuilder{indexes: programs, sections: []*pageSection{{ID: "cmd-litestream", ShortLabel: "cmd/litestream", programTargetID: "t1"}, {ID: "cmd-test", ShortLabel: "cmd/litestream-test", programTargetID: "t2"}}}
+	if got := b.programsNamed("litestream"); len(got) != 1 || got[0].Section != "cmd-litestream" || got[0].Href != "#cmd-litestream" || got[0].Title != "cmd/litestream" {
+		t.Fatalf("litestream names %+v", got)
+	}
+	for _, name := range []string{"Litestream", "litestream.exe", "lite", ""} {
+		if got := b.programsNamed(name); len(got) != 0 {
+			t.Fatalf("%q names %+v: only an equal name joins", name, got)
+		}
+	}
+	runs := b.programsNamed("litestream")
+	launch := pageOutbound{ID: "cmd-test-out-b1", Program: true, Destination: "litestream", Runs: runs, KindLabel: outboundKindLabel("runs_program"), Source: "fact",
+		Caller: "runRestore", External: "os/exec.CommandContext", Anchor: pageAnchor{Text: "main.go:40", Href: "main.go#L40"}, MapGroup: "g3"}
+	self := pageOutbound{ID: "cmd-litestream-out-b2", Program: true, Destination: "litestream", Runs: runs, KindLabel: outboundKindLabel("runs_program"), Source: "fact",
+		Anchor: pageAnchor{Text: "mcp.go:12", Href: "mcp.go#L12"}, MapGroup: "g5"}
+	view := pageView{Sections: []*pageSection{
+		{ID: "cmd-litestream", programTargetID: "t1", Outbound: []pageOutbound{self}, Map: &pageMap{Nodes: []pageMapNode{{ID: "n-t1-g5", FullTitle: "MCP server"}}}},
+		{ID: "cmd-test", programTargetID: "t2", Outbound: []pageOutbound{launch}, Map: &pageMap{Nodes: []pageMapNode{{ID: "n-t2-g3", FullTitle: "Restore checks"}}}},
+	}}
+	got := view.SystemMap()
+	tiles := map[string]bool{}
+	for _, node := range got.Nodes {
+		if node.ItemKind == "External communication" {
+			tiles[node.ID] = true
+		}
+	}
+	if tiles["system-cmd-test-out-b1"] || !tiles["system-cmd-litestream-out-b2"] {
+		t.Fatalf("tiles %v: the launch of another program of the repository has none, a program starting itself keeps its own", tiles)
+	}
+	if !slices.ContainsFunc(got.Edges, func(edge pageMapEdge) bool {
+		return edge.From == "n-t2-g3" && edge.To == "system-component-cmd-litestream" && edge.FromSource == launch.Anchor && len(edge.Calls) == 1 && edge.Calls[0].Label == "runRestore calls os/exec.CommandContext"
+	}) {
+		t.Fatalf("no arrow from the launching part into cmd/litestream: %+v", got.Edges)
+	}
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var html bytes.Buffer
+	if err := parsed.ExecuteTemplate(&html, "outbound-row", launch); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(html.String(), `Runs this repository&#39;s program <a class="outbound-caller-part" href="#cmd-litestream">cmd/litestream</a>`) {
+		t.Fatalf("the record does not name the program it runs:\n%s", html.String())
+	}
+}
+
 // The areas answer lists areas in its own order, usually along the pipeline.
 // Nothing asks the model for an order and nothing checks one; code only keeps
 // it. The atlas zones arrive in that order and the page lists them in it

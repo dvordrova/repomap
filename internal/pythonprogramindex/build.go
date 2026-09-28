@@ -923,9 +923,21 @@ func projectTarget(
 	if len(sources) == 0 {
 		return programindex.TargetInput{}, fmt.Errorf("python program index: target has no exact source refs")
 	}
+	// A console or GUI script a project declares is the executable its
+	// installation writes, by that name.
+	var executables []string
+	for _, basis := range target.Basis {
+		switch basis.Kind {
+		case pythontarget.BasisPEP621Script, pythontarget.BasisPEP621GUIScript, pythontarget.BasisPoetryScript, pythontarget.BasisSetupCFGScript,
+			pythontarget.BasisSetupCFGGUIScript, pythontarget.BasisSetupPYScript, pythontarget.BasisSetupPYGUIScript:
+			if basis.Label != "" && kind == "executable" {
+				executables = append(executables, basis.Label)
+			}
+		}
+	}
 	return programindex.TargetInput{
 		Language: "python", Kind: kind, Name: target.DisplayName, Selector: target.Selector,
-		Sources: sources, AnchorFileRef: string(target.AnchorFileRef), Seeds: seeds,
+		Sources: sources, AnchorFileRef: string(target.AnchorFileRef), Seeds: seeds, Executables: executables,
 	}, nil
 }
 

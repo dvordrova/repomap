@@ -235,6 +235,29 @@ func (view *pageView) SystemMap() *pageMap {
 				if localOutbound[id] != "" {
 					continue
 				}
+				// A started program this repository builds is that program:
+				// the call's arrow goes into its component, and no outside
+				// tile stands for it. A program starting itself keeps its tile,
+				// whose reading names it.
+				if from := targetMapNodeID(section.programTargetID, mapNodeID(row.MapGroup)); row.MapGroup != "" && len(row.Runs) > 0 {
+					_, drawn := positions[from]
+					joined := false
+					for _, program := range row.Runs {
+						to, known := positions["system-component-"+program.Section]
+						if !drawn || !known || program.Section == section.ID {
+							continue
+						}
+						edge := pageMapEdge{From: from, To: result.Nodes[to].ID, Scope: "structure", Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
+						if row.Caller != "" && row.External != "" && !strings.ContainsAny(row.Caller+row.External, " \t") {
+							edge.Calls = []pageEdgeCall{{Label: row.Caller + " calls " + row.External, From: row.CallerAnchor.Href, To: row.Anchor.Href, At: row.Anchor.Text, Caller: declarationKey(&row.CallerAnchor)}}
+						}
+						result.Edges = append(result.Edges, edge)
+						joined = true
+					}
+					if joined {
+						continue
+					}
+				}
 				symbol := row.External
 				if symbol == "" {
 					symbol = row.ID

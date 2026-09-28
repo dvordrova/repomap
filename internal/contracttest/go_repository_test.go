@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,6 +73,10 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	assertProgramIndexRoundTrip(t, index)
 	if index.Target.Language != "go" || index.Target.Selector == "" || index.Target.Name != goFixtureAppPackage {
 		t.Fatalf("Go ProgramIndex target = %#v", index.Target)
+	}
+	// go build names cmd/app's executable app: the main package's directory.
+	if !slices.Equal(index.Target.Executables, []string{"app"}) {
+		t.Fatalf("Go executables = %v, want [app]", index.Target.Executables)
 	}
 	if !programIndexHasObject(index, programindex.ObjectMethod, "recreateStore") {
 		t.Fatal("Go ProgramIndex omitted unused private method recreateStore")
@@ -1443,7 +1448,7 @@ func assertPublishedRootImportRemainsExternal(
 		t.Fatalf("published root import is absent from external-call authority: %#v", authorities.external.Families)
 	}
 	if index.Target.Language != "go" || index.Target.Name != goFixturePublishedExamplePackage ||
-		index.Target.Selector != goFixturePublishedExamplePackage {
+		index.Target.Selector != goFixturePublishedExamplePackage || !slices.Equal(index.Target.Executables, []string{"cumulative-go-published-example"}) {
 		t.Fatalf("nested-module ProgramIndex target = %#v", index.Target)
 	}
 	foundExternalObject := false

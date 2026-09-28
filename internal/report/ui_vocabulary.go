@@ -71,6 +71,7 @@ var russianUI = map[string]string{
 	"Written by":                                   "Кто записывает",
 	"Read by":                                      "Кто читает",
 	"Writes:":                                      "Записывает:",
+	"Runs this repository's program":               "Запускает программу этого репозитория",
 	"{0} fields":                                   "полей: {0}",
 	"The author's comment in the code":             "Комментарий автора в коде",
 	"A global variable of {0}":                     "Глобальная переменная части {0}",
