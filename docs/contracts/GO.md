@@ -208,6 +208,32 @@ handler is not established. Not recorded yet, and so asked nothing:
 - `handlers[name] = fn` registries;
 - a callable the repository's own function keeps (S1) is not enabled.
 
+### Settings a structure's tags name
+
+A field whose struct tag names a key (the object aliases below,
+`yaml:"dbs"`) is asked on its own what that key is (READING, the
+`atlas_inputs` field question): a setting of the program's configuration
+file, or none. The tag's format name is data as written; nothing in the
+code names a library or a format. The question shows the field and its
+type, its structure and file, the tag as written, and what the facts show
+the structure is used for: each call of an outside symbol given a value of
+it (with the declaration making the call and the call as written) and each
+tagged field of another structure typed with it. A value is of the
+structure when its source value is a `record` of that type (`Type`), a
+result of a repository call whose result at that position the signature
+declares of that type (`config, err := ReadConfigFile(…)`: `config` is,
+`err` is not), or the receiver of the structure's own method.
+litestream's `yaml.Unmarshal(buf, &config)`, where `config :=
+DefaultConfig()`, is the one call decoding `Config`; its nested structures
+show the tagged field typed with them. The echo fixture asks its four JSON
+payload fields (the reply's with `Context.JSON`) and its preset answers
+none (`TestEchoPresetReadingTurnsRegistrationsIntoOperations`); the reading
+test `TestATaggedFieldIsAskedWithItsStructureAndAnsweredSettingIsAnEntry`
+holds the setting shape. Not recorded yet: a key a structure's
+`UnmarshalYAML`/`UnmarshalJSON` method reads itself, a map-typed field's
+keys, and an anonymous structure's fields (`var raw struct{…}`), which are
+no type's members.
+
 ## Programs a call starts
 
 `Revision` in `internal/storefixture/destinations.go` runs

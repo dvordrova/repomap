@@ -95,6 +95,17 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if len(result.Atlas.API) != 3 {
 		t.Fatalf("api roles = %+v", result.Atlas.API)
 	}
+	// Each field whose tag names a key is asked on its own, the reply's
+	// with the call it is given to; keys of data the service stores and
+	// replies with are no settings.
+	if len(provider.askedFields) != 4 || provider.askedFields["UserResponse.ID"] != "given to github.com/labstack/echo/v4.Context.JSON in Handler.GetUser: ctx.JSON(http.StatusOK, handler.converter.ToResponse(user))" {
+		t.Fatalf("tagged fields asked: %q", provider.askedFields)
+	}
+	for _, operation := range overlay.Operations {
+		if operation.Kind == "setting" {
+			t.Fatalf("a key of data became a setting: %+v", operation)
+		}
+	}
 	// The extracted schema reaches the overlay, the statement names its table
 	// and the route walks handler → service → repository → query to it.
 	var users string
@@ -311,6 +322,9 @@ type echoPreset struct {
 	// other symbol's are none. askedEnters are the symbols asked.
 	enters      map[string]string
 	askedEnters map[string]bool
+	// askedFields are the tagged fields asked what their key becomes, by
+	// structure and field, with the structure's use.
+	askedFields map[string]string
 }
 
 func (*echoPreset) State() []byte { return []byte(`{"provider":"echo-preset"}`) }
@@ -445,6 +459,22 @@ func (preset *echoPreset) categorizer() *typesafetest.Categorizer {
 			}
 			return typesafetest.Choose("none"), true
 		case column == "binds" || column == "publishes" || column == "talks":
+			return typesafetest.Choose("none"), true
+		case column == "becomes" && question.Item["tag"] != nil:
+			structure, _ := question.Item["structure"].(string)
+			field, _ := question.Item["field"].(string)
+			name, _, _ := strings.Cut(structure, ",")
+			var use []string
+			lines, _ := question.Item["structure_use"].([]any)
+			for _, line := range lines {
+				use = append(use, line.(string))
+			}
+			mu.Lock()
+			if preset.askedFields == nil {
+				preset.askedFields = map[string]string{}
+			}
+			preset.askedFields[name+"."+strings.Fields(field)[0]] = strings.Join(use, "; ")
+			mu.Unlock()
 			return typesafetest.Choose("none"), true
 		}
 		if !strings.HasSuffix(key, "|role") {

@@ -123,7 +123,14 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 			return &sourcevalue.Value{Kind: "call_result", Text: name, Anchor: anchor}
 		}
 	case *ssa.Extract:
-		return a.sourceValue(v.Tuple, active, readAt)
+		// One of the results of a call returning several: which one.
+		extracted := a.sourceValue(v.Tuple, active, readAt)
+		if extracted != nil && extracted.Kind == "call_result" {
+			copied := *extracted
+			copied.Position = v.Index + 1
+			return &copied
+		}
+		return extracted
 	case *ssa.ChangeType:
 		return a.sourceValue(v.X, active, readAt)
 	case *ssa.Convert:
@@ -169,6 +176,11 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 		if pointer, ok := v.Type().Underlying().(*types.Pointer); ok {
 			if structure, ok := pointer.Elem().Underlying().(*types.Struct); ok {
 				result := &sourcevalue.Value{Kind: "record", Anchor: unknown.Anchor}
+				// The named type the record is of, as the code names it,
+				// without its package; an unnamed structure has none.
+				if named, ok := types.Unalias(pointer.Elem()).(*types.Named); ok {
+					result.Type = named.Obj().Name()
+				}
 				for i := 0; i < structure.NumFields(); i++ {
 					if stores := fields[i]; len(stores) > 0 {
 						result.Parts = append(result.Parts, sourcevalue.Value{Kind: "field_value", Text: structure.Field(i).Name(), Parts: []sourcevalue.Value{*a.initialStoreValue(v, stores, readAt, active)}})

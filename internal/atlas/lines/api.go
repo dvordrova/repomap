@@ -145,6 +145,13 @@ func APICall() table.Definition {
 			Ask: "What does the word or words this call is given become on our map?"}}}
 }
 
+// FieldOptions are what the key a field's tag names can become: a setting
+// of the program's configuration file, or none (a key of data it parses or
+// sends).
+func FieldOptions() []string {
+	return []string{atlas.BoundarySetting, APINone}
+}
+
 // EntersOptions are what the words a call is given can become: an entry
 // kind, except the queue consumer talks decides, or none.
 func EntersOptions() []string {
@@ -257,7 +264,9 @@ const StageInputs = "atlas_inputs"
 // hands to its own function that keeps it (the entry kinds, middleware or
 // none, as the handed-callable question offers); "table", a table of names
 // the repository declares (the entry kinds but the queue consumer, or
-// none). One row per candidate; an undecided answer makes no entry.
+// none); "field", a field of a repository structure whose tag names a key
+// (setting or none). One row per candidate; an undecided answer makes no
+// entry.
 func Inputs(form string) table.Definition {
 	def := table.Definition{Stage: StageInputs, Contract: "repomap.atlas.inputs.v1." + form, System: inputsPrompt, Classifier: true, Memoize: true}
 	switch form {
@@ -267,6 +276,9 @@ func Inputs(form string) table.Definition {
 	case "table":
 		def.Columns = []table.Column{{Name: "becomes", Kind: table.Choice, Options: EntersOptions(), Criteria: EntryCriteria(EntersOptions()...), Item: "candidate",
 			Ask: "What do the rows of the table in `candidate` become on our map?"}}
+	case "field":
+		def.Columns = []table.Column{{Name: "becomes", Kind: table.Choice, Options: FieldOptions(), Criteria: EntryCriteria(FieldOptions()...), Item: "candidate",
+			Ask: "What does the key the tag of the field in `candidate` names become on our map?"}}
 	default:
 		panic("lines: no inputs form " + form)
 	}

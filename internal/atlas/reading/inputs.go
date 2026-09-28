@@ -14,10 +14,11 @@ import (
 
 // Inputs the repository's own code declares (pass 2, C): a callable a
 // repository function keeps for later (a registration fact with a
-// Registrar), and a table of names that stores no callable (a symbol's
-// Rows). Neither has an outside symbol whose role decides it, so each is
-// asked once (lines.Inputs): a kept callable per registrar and callable, a
-// table per table. An accepted kept callable is an entry with its handler;
+// Registrar), a table of names that stores no callable (a symbol's Rows),
+// and a field whose tag names a key (settings.go). None has an outside
+// symbol whose role decides it, so each is asked once (lines.Inputs): a
+// kept callable per registrar and callable, a table per table, a field per
+// field. An accepted kept callable is an entry with its handler;
 // an accepted table makes each of its rows an entry whose handler is not
 // established, declared by the table, one catalogue. None, middleware and
 // an undecided answer make nothing; the classifier's rejected rows and a
@@ -142,10 +143,13 @@ func (r *reader) readInputs(ctx context.Context) error {
 		tableRows = append(tableRows, table.Row{ID: rowID, Fields: item})
 		tableIDs = append(tableIDs, place.ID)
 	}
-	if len(storedRows)+len(tableRows) == 0 {
+	// Fields whose tags name keys (settings.go).
+	fields := r.taggedFields()
+	fieldRows, fieldSubjects := r.fieldRows(fields)
+	if len(storedRows)+len(tableRows)+len(fieldRows) == 0 {
 		return nil
 	}
-	r.opts.Stage(lines.StageInputs, fmt.Sprintf("asking what %d callables the repository's own functions keep and %d tables of names become", len(storedRows), len(tableRows)))
+	r.opts.Stage(lines.StageInputs, fmt.Sprintf("asking what %d callables the repository's own functions keep, %d tables of names and %d tagged fields become", len(storedRows), len(tableRows), len(fieldRows)))
 	previous := r.rowSubjects
 	defer func() { r.rowSubjects = previous }()
 	if len(storedRows) > 0 {
@@ -172,7 +176,20 @@ func (r *reader) readInputs(ctx context.Context) error {
 			}
 		}
 	}
-	fmt.Fprintf(&r.tables, "atlas_inputs: %d of %d kept callables and %d of %d tables decided\n\n", len(r.storedKinds), len(storedRows), len(r.tableKinds), len(tableRows))
+	tables := len(r.tableKinds)
+	if len(fieldRows) > 0 {
+		r.rowSubjects = fieldSubjects
+		answers, err := r.runTable(ctx, lines.Inputs("field"), 3, fieldRows)
+		if err != nil {
+			return err
+		}
+		for i, field := range fields {
+			if answer := answers[i].answer; answer != nil && answer["becomes"] != "" {
+				r.tableKinds[fieldKey(field)] = answer["becomes"]
+			}
+		}
+	}
+	fmt.Fprintf(&r.tables, "atlas_inputs: %d of %d kept callables, %d of %d tables and %d of %d tagged fields decided\n\n", len(r.storedKinds), len(storedRows), tables, len(tableRows), len(r.tableKinds)-tables, len(fieldRows))
 	r.reportStage(lines.StageInputs)
 	return nil
 }
@@ -199,8 +216,10 @@ func (r *reader) applyStored() {
 }
 
 // bindTableRows makes each row of an accepted table an entry whose handler
-// is not established, at its first word, declared by the table.
+// is not established, at its first word, declared by the table, and each
+// field answered setting one, declared by its structure (settings.go).
 func (r *reader) bindTableRows() {
+	defer r.bindSettingFields()
 	if r.boundaryIDs == nil {
 		r.boundaryIDs = make(map[string]string)
 	}

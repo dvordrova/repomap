@@ -252,7 +252,17 @@ Go a control-flow join's incoming values in edge order (GO.md), and in C
 the writes of a local that reach a read (C.md; Python and JSTS read a local
 assigned on both branches as `unknown`, a recorded missing equivalent). C
 records literals, parameters, call results, `index` (`argv[0]`), `field`
-(`c->argv`) and followed locals; the rest is `unknown` with its text. The existing atlas
+(`c->argv`) and followed locals; the rest is `unknown` with its text. Go
+records which result of a call returning several a value is (a
+`call_result`'s `Position`, from one: `config, err := f()` reads `err` as
+result 2) and the named type a `record` is of (`Type`, without its
+package; an unnamed structure has none). Python, JSTS, Clojure and C record
+neither, missing equivalents: no result position for Python's `a, b =
+f()`, JS destructuring or Clojure's destructuring `let` (C has one result),
+and no type for their records (a Python constructor call is a call result,
+a JS object literal and a Clojure map name none, and C records no
+initializer). Neither reaches a provider body: the compact projection
+keeps a value's kind and text only. The existing atlas
 calls carry them locally. Compact caption/selection rows retain native API identity through their owning projection; question and boundary evidence retain safe source arguments, receivers, results and native API identity without internal IDs. Destination reading follows those native sites within retained owners,
 preserves separate uses and correlated arguments, and stops explicitly at
 unknown values or cycles. Flag/environment expressions are not deployed values;

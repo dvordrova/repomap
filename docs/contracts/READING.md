@@ -900,6 +900,24 @@ as written and declaring caller: the same option written twice in one
 function is one input at its first site; the same word in another caller
 is another. A name that cannot stand refuses that entry alone.
 
+A field of a repository structure whose tag names a key (Go's object
+aliases, `yaml:"dbs"`) is asked on its own what that key is
+(`repomap.atlas.inputs.v1.field`, stage `atlas_inputs`, Jev, `Memoize`):
+`setting`, a key a person writes in the program's configuration file, or
+`none`. The item is the field and its type, its structure with its file,
+the tag as written (each key after its format's name, which is data: no
+library or format is named in code), and `structure_use`, what the facts
+show the structure is used for: each call of an outside symbol given a
+value of it, with the declaration making the call and the call as written,
+and each tagged field of another structure typed with it (GO). Every tagged
+field outside tests is one row; nothing is capped. A field answered
+`setting` is an entry whose handler is not established, at the field,
+named by the keys its tag names, declared by its structure, so the fields
+of one structure are one catalogue; when the facts name exactly one call
+decoding the structure, the entry is also declared on that call (`Declared
+on yaml.Unmarshal(buf, &config) in Config`). `none` and an undecided answer
+make nothing.
+
 The table asks only the decisions the boundaries read (`repomap.atlas.api.v8`).
 `reads_input`, `writes_output`, `auth`, `config` and `validates` were asked
 of every symbol, stored in `atlas.json` and read by nothing; a window of

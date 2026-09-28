@@ -232,7 +232,11 @@ not. Not recorded yet:
 - a callable the repository's own function keeps (S1) is not enabled;
 - in every language, a symbol handed a callable at any call is asked what
   the callable becomes, so its word-only calls (`.command("init")` beside
-  `.action(fn)`) are not asked what their words become.
+  `.action(fn)`) are not asked what their words become;
+- settings a structure names (GO, the tagged-field question): an interface
+  or type a parsed configuration file is cast to names its keys by its
+  property names, with no tag and no alias, so no property is asked what
+  its key is.
 
 ## Programs a call starts
 

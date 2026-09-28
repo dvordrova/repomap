@@ -169,7 +169,11 @@ words become (READING, the `atlas_api` per-call question): the fixture asks
 - `-main`'s `& args` carry no argument vector origin;
 - `tools.cli` option vectors are vectors, not literals given to a call;
 - `case` on an argument;
-- `reset!`/`swap!` stores and registries kept in atoms.
+- `reset!`/`swap!` stores and registries kept in atoms;
+- settings a structure names (GO, the tagged-field question): an EDN
+  configuration's keys are keywords a function reads (`(:dbs config)`,
+  `{:keys [dbs]}`), declared by no structure, so nothing is asked what a
+  key is.
 
 
 ## Programs a call starts

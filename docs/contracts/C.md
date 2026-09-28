@@ -388,7 +388,11 @@ pass 2. Not recorded yet, and so asked nothing:
 - an element of the argument vector handed to a repository function with no
   literal beside it (a configuration file's path in `argv[1]`);
 - a registry filled element by element (`t[i].proc = fn`);
-- a comparison inside a `bsearch`/`qsort` comparator.
+- a comparison inside a `bsearch`/`qsort` comparator;
+- settings a structure names (GO, the tagged-field question): a C structure
+  has no tags, so its fields name no key. A configuration directive is a
+  word a call compares (`strcasecmp(argv[0], "timeout")` in Redis's
+  `loadServerConfig`, asked per call above) or a row of a table of names.
 
 
 ## Programs a call starts

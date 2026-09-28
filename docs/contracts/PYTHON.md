@@ -330,7 +330,12 @@ accepted, two inputs; joining them is later work. Not recorded yet:
   `sys.argv` or of a parsed argument (`args.cmd == "init"`) is no fact;
 - list and dict tables of names;
 - dict registries (`handlers[name] = fn`);
-- a callable the repository's own function keeps (S1) is not enabled.
+- a callable the repository's own function keeps (S1) is not enabled;
+- settings a structure names (GO, the tagged-field question): a dataclass,
+  a typed dict or a model class a configuration file is decoded into names
+  its keys by its field names, and a field's key alias is a call argument
+  (`Field(alias="dbs")`), not an object alias; the adapter records neither
+  as a key, so no Python field is asked what its key is.
 
 ## Programs a call starts
 
