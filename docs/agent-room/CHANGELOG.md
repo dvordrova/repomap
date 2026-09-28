@@ -1,5 +1,47 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Settings a structure's tags name: one Jev question per tagged field (speed mode)
+
+- **Problem:** litestream reads its YAML configuration through Go struct tags
+  (`yaml:"dbs"`, 96 fields) and none was an input; the C half (Redis's
+  `loadServerConfig` directives) came with f6e77401's argument origins.
+- **Change (0550b9cb, 2e1ac061):** each field whose tag names a key is asked
+  on its own (`repomap.atlas.inputs.v1.field`, Jev, memoized): `setting` or
+  `none`, with the field and type, its structure and file, the tag as
+  written and `structure_use`: the outside calls given a value of it and the
+  fields of other structures typed with it, followed by their own use. The
+  Go adapter records the fact from go/types, never a name: where the
+  repository types an argument value's static type names are declared
+  (`Value.Types`) and the same for a field's declared type
+  (`Object.Types` → `Decl.Types`). Name matching had made `Config` "given to
+  oss.NewClient(cfg)" (an `*oss.Config`) and left the CLI's JSON results
+  without a use, so 13 of their keys became settings. A `setting` answer is
+  an entry whose handler is not established, declared by its structure (one
+  catalogue each) and on the one call decoding it when there is one.
+- **Acceptance (default cache, binary ea762bb7f76d at 2e1ac061):** Redis exit
+  0 in 6 s, 0 live calls: redis-server 37 settings (the 30 `loadServerConfig`
+  directives, timeout, port, bind, save, dir, loglevel, … vm-max-threads, and
+  7 values it compares: debug, verbose, notice, warning, always, everysec,
+  no), 96 requests, 5 commands; redis-cli's 6 and redis-benchmark's 11
+  options stay commands. litestream exit 0 in 9 s, 4 live atlas_inputs Jev
+  requests (390 KB with one atlas_symbols request): 200 tagged fields asked,
+  200 decided; all 96 YAML fields are settings, 102 of 104 JSON fields none
+  (RestorePlanFile's min_txid and max_txid, reached only through RestorePlan,
+  stay setting); cmd/litestream has 110 settings (96 + 2 + 12 per-call words,
+  replica URL query keys and `fmt.Sprintf` field paths). Catalogues: Config's
+  17 "Declared on yaml.Unmarshal(buf, &config) in Config", ReplicaSettings
+  46, DBConfig 17, SocketConfig 3, LoggingConfig 4.
+- **Cost:** no DeepSeek call in the acceptance runs; Jev ≈ 0.1 M tokens,
+  under $0.01 (the earlier field passes during the work, 200 + 73 rows, the
+  same order).
+- **Not done:** a value handed through a repository helper typed `any`
+  (`writeJSON(w, resp)`) shows no use; `UnmarshalYAML` methods, map keys and
+  anonymous structures' fields are not asked; Python, JSTS, Clojure and C
+  have no tagged-field equivalent (recorded in their contracts).
+- Speed mode: build, vet and the reading, lines, surfacediscovery,
+  programindex, goadapter, gocoreobject, groupindex, report and contracttest
+  packages pass but the known failures; no full `make test`.
+
 ## 2026-09-28 — The glossary in three steps: names, one closed decision per name, explanations (speed mode)
 
 - **Problem:** litestream's glossary grew from 45 to 263 terms with no code
