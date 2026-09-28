@@ -1,5 +1,87 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — Map model step 4 accepted: one reach in GroupsIndex, measured on Redis and litestream
+
+- Scope: S4-7 of `map-model/step4-plan.md`: the acceptance of S4-1–S4-6 at
+  08f6a3ce (binary `eabdce27…`), with the skeptic's additions and the lead's
+  corrections (the reached-from list only in the site's reading; an entry
+  off the map named in the reading, no canvas label). Receipts:
+  `step4/impl/` (base, accept, walk-redis, shots, measure-*.txt,
+  impl-revert.log).
+- **Runs** (`.bin/repomap <repo> --no-serve --no-open`, default system
+  cache, no `--debug-dir`, no `cache clear`): Redis exit 0 in 6 s with 0
+  live calls (the S4-4 run had asked orientation and the glossary once each
+  after the lanes changed), warm 5 s, 0 live; litestream exit 0 in 24 s
+  with orientation and glossary asked once live, warm 7 s, 0 live. Both
+  warm reruns' report.json are identical but for `timing`, and `repomap
+  render` of all four runs is byte-identical to report.html.
+- **Step 0 baseline** (75da4f82, same cache): `repomap render` was
+  byte-identical too (the joint-phase gap is invisible on these runs, as the
+  skeptic said; only `TestRenderDerivesWhatTheRunDerived` shows it).
+  `Derive`: Redis 13 ms; metabase's 497 MB program index with 3,000
+  synthetic high-fan-out inputs 1.35 s, 272 MB allocated, 71 MB retained.
+- **Redis measurements** (before → after): report.html 12,555,599 →
+  12,268,850 bytes; `data-call-paths` 992,292 → 0; `data-input-path`
+  472,245 → 831,348 (median 5,099 → 8,547, max 20,498); `data-dispatch`
+  4,084 (two parts); groups-index.json 1,524,786 → 1,520,300. Entry parts:
+  redis-server 10 → 0 (main undecided off the map; its reading names it),
+  the three small programs 1 each; no area is the entry. Entry summaries
+  restating the registration 96 → 0. call is reached from exec, lpush,
+  rpoplpush, rpush and slaveof; loadAppendOnlyFile from debug (Go and the
+  independent Python recomputation agree). Dark part-pair arrows: GET 12 →
+  15 (13 parts), SET 6 → 6, exec 17 → 11 (C1), debug 17 → 13; all inputs
+  955 → 1,026. Served-equivalence: 0 pairs missing. Canvas arrows at rest:
+  redis-server 19 = 19, redis-cli 4 = 4, redis-benchmark 5 = 5,
+  redis-check-dump 1 = 1.
+- **litestream** (cmd/litestream, Go): entry parts 5 → 1 (Command entry
+  point; its area stays the entry), cmd/litestream-test 6 → 1; 33 entry and
+  16 outgoing summaries that restated their facts → 0 (the SQL text stays in
+  the Data section); no dispatch site. Arrows at rest 16 = 16 and 2 → 3.
+  report.html 10,029,196 → 10,709,603: the live glossary answer added five
+  terms (+796,536 bytes of glossary), `data-call-paths` −160,964,
+  `data-input-path` +37,649.
+- **No-script map**, before and after: the page's one figure, the system
+  canvas, shows its 151 (Redis) and 204 (litestream) nodes and none of its
+  239 and 198 arrows without scripting, and carries no static arrow; the
+  static zone picture's changed quiet flags (B3) reach no rendered figure.
+- **Orientation's main flow**: Redis keeps its seven steps (acceptHandler …
+  sendReplyToClient) in new words; litestream adds the Windows service
+  step. python-tutorial-game (dogfood, 75da4f82 against HEAD, both on the
+  default cache): the re-asked flow now runs from the level menu to
+  run_level and no longer ends at SimulationField's animation, a different
+  model answer after the lanes changed; SimulationField.animate stays an
+  input with its reading, and post /api/level/run's reading lists the parts
+  it enters with their calls and 12 state changes with their callers.
+- **GET before → after** (`get-before.txt`, `get-after.txt`): "Shared by
+  95 inputs, through call" / "The path by which an input reaches call is
+  not established." / an 18-step witness tree → "Dispatched from call · one
+  of 94" / "How get reaches call is not established." / "Dispatched from
+  loadAppendOnlyFile · one of 94" / String commands; Command dispatch
+  getCommand → getGenericCommand; Client connection handling
+  getGenericCommand → addReply, → addReplyBulk, 1 other; Generic key
+  commands getGenericCommand → lookupKeyReadOrReply; Server core state
+  getGenericCommand → shared · read, 96 others; Core data structures five
+  calls, +31, 47 others; … down to Sorted set commands at depth 9.
+- **Walk** (headless Chromium, 1440×900, loopback server): Find → get opens
+  its reading at the open "Dispatched from call" box with no route and no
+  reached-from inputs; call's own reading lists slaveof, exec, lpush,
+  rpoplpush, rpush with their calls; a plain click on getCommand reads it
+  (0 new tabs), a modifier-click opens its code (1); "Why it appears in
+  get" on Command dispatch lists getCommand → getGenericCommand; a part off
+  the path says "Outside this input path"; a reload with GET pinned keeps
+  the same reading; IOThreadEntryPoint reads "Registered by bgrewriteaof,
+  slaveof, sync, bgsave, debug, flushall, save, shutdown, lpush, rpoplpush,
+  rpush"; redis-server's reading says "The program's entry is not on the
+  map: main:9124 · In no part of its file"; no page errors.
+- **Open for the owner**: an input that re-enters its own dispatch site
+  (exec calls call) reads both "How exec reaches call is not established."
+  and "Reaches call … execCommand → call"; the label "init" covers the
+  launch and the main loop (aeMain, serverCron), not only startup; a seed
+  left undecided (redis-server's main) leaves the program with no entry part
+  on the canvas; a library still shows no entry part (an `export` seed kind
+  is the open question).
+- `make test`: PASS. `make vet`: PASS.
+
 ## 2026-09-28 — Map model step 4, S4-6: chains and operation types deleted
 
 - After S4-1 and S4-5 nothing read `Index.Chains` (only `applyPhases` and
