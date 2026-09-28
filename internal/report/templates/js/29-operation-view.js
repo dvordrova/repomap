@@ -346,10 +346,18 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
   });
   if((launch.unsure||[]).length){
     box.appendChild(rmEl('h6','',rmT('Unsure')));
-    launch.unsure.forEach(function(call){
-      var row=rmEl('div','system-path-step');
-      row.append(name(call.function),document.createTextNode(' '+rmT(call.reason==='no_words'?'calls {0} with words the code computes':'calls {0} with words; whether they are inputs is not decided',call.symbol)+' '),site(call.line,call.href,call.open));
-      box.appendChild(row);
+    // One line per symbol and reason, its calls folded under it: every
+    // call listed, none dropped.
+    var groups=new Map();
+    launch.unsure.forEach(function(call){var key=call.symbol+'\u0000'+call.reason;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(call);});
+    groups.forEach(function(calls){
+      var first=calls[0],text=rmT(first.reason==='no_words'?'calls {0} with words the code computes':'calls {0} with words; whether they are inputs is not decided',first.symbol);
+      if(calls.length===1){
+        var row=rmEl('div','system-path-step');row.append(name(first.function),document.createTextNode(' '+text+' '),site(first.line,first.href,first.open));box.appendChild(row);return;
+      }
+      var fold=rmEl('details','system-path-more');fold.appendChild(rmEl('summary','',first.symbol+' · '+rmT('{0} calls',calls.length)+' · '+text));
+      calls.forEach(function(call){var row=rmEl('div','system-path-step');row.append(name(call.function),document.createTextNode(' '),site(call.line,call.href,call.open));fold.appendChild(row);});
+      box.appendChild(fold);
     });
   }
   if((launch.closed||[]).length){
