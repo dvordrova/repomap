@@ -868,6 +868,11 @@ func (b *builder) initList(w walker, list *Node, table string) {
 		for _, child := range list.Inner {
 			if inner := unwrapValue(child); inner != nil && inner.Kind == "InitListExpr" {
 				b.initList(w, inner, table)
+			} else if literal, value, ok := stringLiteral(child); ok && table != "" && b.objects[table] != nil {
+				// An array of strings: each element is a row of one word.
+				if at := location(literal.Begin.Site()); at != nil {
+					b.objects[table].Rows = append(b.objects[table].Rows, programindex.TableRow{Literals: []programindex.RowLiteral{{Value: value, Location: at}}})
+				}
 			} else if d := designator(child); d != nil && table != "" {
 				into := b.slot("var:"+table, "variable "+b.objects[table].Name, "", 0)
 				if st := b.store(w, into, child, d.Begin.Site()); st != nil && b.functionByRef[st.fn] != nil {
@@ -918,6 +923,20 @@ func (b *builder) initList(w walker, list *Node, table string) {
 	}
 	if len(row.stored) > 0 {
 		b.rows = append(b.rows, row)
+		return
+	}
+	// A row of a module-level table that writes words and stores no
+	// callable (a name looked up at run time) is kept on its table.
+	if row.table != "" && len(row.literals) > 0 && b.objects[row.table] != nil {
+		var literals []programindex.RowLiteral
+		for _, literal := range row.literals {
+			if at := location(literal.site); at != nil {
+				literals = append(literals, programindex.RowLiteral{Field: literal.field, Value: literal.value, Location: at})
+			}
+		}
+		if len(literals) > 0 {
+			b.objects[row.table].Rows = append(b.objects[row.table].Rows, programindex.TableRow{Literals: literals})
+		}
 	}
 }
 

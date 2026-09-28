@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 18
+	Version          = 19
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -402,6 +402,124 @@ type ObjectInput struct {
 	// the repository type a value carries when the adapter resolved one.
 	Parameters []TypedNameInput
 	Results    []TypedNameInput
+	// ParameterStores are the stores of the callable's own parameters into a
+	// field or a module-level variable.
+	ParameterStores []ParameterStore
+	// Rows are, for a module-level table variable, the rows of its
+	// initializer that write string literals and store no repository
+	// callable (a row that stores one is a registration, D1).
+	Rows []TableRow
+}
+
+// ParameterStore is a callable storing one of its own parameters, as it
+// received it, in a field of a record or object, or in a module-level
+// variable. Parameter is the parameter's one-based position as a call site
+// counts its arguments (a method's receiver excluded), Name its declared
+// name, Slot the field or variable as the code names it (`Type.field`, or the
+// variable's name) and Location the store. A store into a local variable, of
+// a value computed from the parameter, or into a container's element is none.
+// It states the structure only: what the stored value is later used for is
+// not decided here.
+type ParameterStore struct {
+	Parameter int       `json:"parameter"`
+	Name      string    `json:"name,omitempty"`
+	Slot      string    `json:"slot"`
+	Location  *Location `json:"location"`
+}
+
+// TableRow is one row of a module-level table that writes string literals
+// and stores no repository callable: {"get", 2, REDIS_CMD_INLINE}, or one
+// element of an array of strings. Literals are its string literals in
+// order, each with the field it fills ("" for an array element) and where.
+type TableRow struct {
+	Literals []RowLiteral `json:"literals"`
+}
+
+// RowLiteral is one string literal a table row writes.
+type RowLiteral struct {
+	Field    string    `json:"field,omitempty"`
+	Value    string    `json:"value"`
+	Location *Location `json:"location"`
+}
+
+func canonicalParameterStores(values []ParameterStore) []ParameterStore {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]ParameterStore, 0, len(values))
+	for _, value := range values {
+		value.Location = cloneLocation(value.Location)
+		result = append(result, value)
+	}
+	sort.Slice(result, func(i, j int) bool { return compareParameterStores(result[i], result[j]) < 0 })
+	return slices.CompactFunc(result, func(a, b ParameterStore) bool { return compareParameterStores(a, b) == 0 })
+}
+
+func compareParameterStores(a, b ParameterStore) int {
+	if a.Parameter != b.Parameter {
+		return a.Parameter - b.Parameter
+	}
+	if a.Slot != b.Slot {
+		return strings.Compare(a.Slot, b.Slot)
+	}
+	if a.Name != b.Name {
+		return strings.Compare(a.Name, b.Name)
+	}
+	switch {
+	case a.Location == nil || b.Location == nil:
+		return 0
+	case a.Location.Path != b.Location.Path:
+		return strings.Compare(a.Location.Path, b.Location.Path)
+	case a.Location.Line != b.Location.Line:
+		return a.Location.Line - b.Location.Line
+	default:
+		return a.Location.Column - b.Location.Column
+	}
+}
+
+func validParameterStores(kind ObjectKind, values []ParameterStore) bool {
+	if len(values) > 0 && !callableKind(kind) && kind != ObjectType {
+		return false
+	}
+	for position, value := range values {
+		if value.Parameter < 1 || !validOptionalText(value.Name) || !validText(value.Slot) || value.Location == nil || !validLocation(*value.Location) ||
+			position > 0 && compareParameterStores(values[position-1], value) >= 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneRows(values []TableRow) []TableRow {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]TableRow, len(values))
+	for i, row := range values {
+		result[i].Literals = make([]RowLiteral, len(row.Literals))
+		for j, literal := range row.Literals {
+			literal.Location = cloneLocation(literal.Location)
+			result[i].Literals[j] = literal
+		}
+	}
+	return result
+}
+
+func validRows(kind ObjectKind, values []TableRow) bool {
+	if len(values) > 0 && kind != ObjectVariable {
+		return false
+	}
+	for _, row := range values {
+		if len(row.Literals) == 0 {
+			return false
+		}
+		for _, literal := range row.Literals {
+			if !utf8.ValidString(literal.Value) || strings.ContainsRune(literal.Value, 0) || !validOptionalText(literal.Field) || literal.Location == nil || !validLocation(*literal.Location) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // TypedNameInput is one value of a callable's signature as an adapter hands
@@ -511,6 +629,12 @@ type Object struct {
 	Aliases     []Alias         `json:"aliases,omitempty"`
 	Parameters  []TypedName     `json:"parameters,omitempty"`
 	Results     []TypedName     `json:"results,omitempty"`
+	// ParameterStores are the callable's own parameters it stores in a field
+	// or a module-level variable (see ParameterStore).
+	ParameterStores []ParameterStore `json:"parameter_stores,omitempty"`
+	// Rows are a table variable's rows that write words and store no
+	// repository callable (see TableRow).
+	Rows []TableRow `json:"rows,omitempty"`
 }
 
 // Witness preserves one bounded local fact supporting a relation. Kind and
@@ -1046,6 +1170,7 @@ func New(input Input) (Index, error) {
 			Kind: value.Kind, Name: value.Name, Visibility: value.Visibility,
 			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Unreachable: value.Unreachable, Macro: value.Macro, Directory: value.Directory,
 			External: cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases),
+			ParameterStores: canonicalParameterStores(value.ParameterStores), Rows: cloneRows(value.Rows),
 		}
 		index.Objects = append(index.Objects, object)
 	}
@@ -1241,6 +1366,8 @@ func (index Index) Snapshot() Index {
 		result.Objects[position].Location = cloneLocation(index.Objects[position].Location)
 		result.Objects[position].External = cloneExternalSymbol(index.Objects[position].External)
 		result.Objects[position].Aliases = slices.Clone(index.Objects[position].Aliases)
+		result.Objects[position].ParameterStores = canonicalParameterStores(index.Objects[position].ParameterStores)
+		result.Objects[position].Rows = cloneRows(index.Objects[position].Rows)
 	}
 	result.Relations = make([]Relation, len(index.Relations))
 	copy(result.Relations, index.Relations)
@@ -1784,7 +1911,8 @@ func validateObjectInput(value ObjectInput) error {
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerRef) ||
 		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
 		!validAliases(canonicalAliases(value.Aliases)) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
-		(value.Unreachable || value.Macro) && !callableKind(value.Kind) {
+		(value.Unreachable || value.Macro) && !callableKind(value.Kind) ||
+		!validParameterStores(value.Kind, canonicalParameterStores(value.ParameterStores)) || !validRows(value.Kind, value.Rows) {
 		return fmt.Errorf("program index: invalid object input")
 	}
 	for _, typed := range append(append([]TypedNameInput(nil), value.Parameters...), value.Results...) {
@@ -1803,7 +1931,8 @@ func validateObject(value Object) error {
 		!validOptionalText(value.Signature) || !validOptionalText(value.OwnerID) ||
 		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
 		!validAliases(value.Aliases) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
-		(value.Unreachable || value.Macro) && !callableKind(value.Kind) {
+		(value.Unreachable || value.Macro) && !callableKind(value.Kind) ||
+		!validParameterStores(value.Kind, value.ParameterStores) || !validRows(value.Kind, value.Rows) {
 		return fmt.Errorf("program index: invalid object")
 	}
 	for _, typed := range append(append([]TypedName(nil), value.Parameters...), value.Results...) {

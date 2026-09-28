@@ -68,6 +68,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 	}
 	b.walkAll()
 	b.findEscapes()
+	b.recordParameterStores()
 	b.emitCalls()
 	b.emitStores()
 	b.emitReads()
@@ -719,6 +720,32 @@ func resolution(targets []string) p.Resolution {
 		return p.ResolutionExact
 	default:
 		return p.ResolutionAlternatives
+	}
+}
+
+// recordParameterStores gives each function the stores of its own
+// parameters, as it received them, into a field (an array of records
+// included) or a module-level variable: what a call handing that function a
+// callable joins to (PROGRAM_INDEX). A local variable holds nothing beyond
+// the call, and a parameter handed on to another function's parameter is not
+// stored.
+func (b *builder) recordParameterStores() {
+	for _, key := range b.slotOrder() {
+		if !strings.HasPrefix(key, "field:") && !strings.HasPrefix(key, "var:") {
+			continue
+		}
+		for _, st := range b.stores[key] {
+			fn := b.objects[st.in]
+			at := location(st.site)
+			if st.param == 0 || fn == nil || !fn.Kind.Callable() || at == nil {
+				continue
+			}
+			name := ""
+			if st.param <= len(fn.Parameters) {
+				name = fn.Parameters[st.param-1].Name
+			}
+			fn.ParameterStores = append(fn.ParameterStores, p.ParameterStore{Parameter: st.param, Name: name, Slot: strings.TrimPrefix(st.slot.name, "variable "), Location: at})
+		}
 	}
 }
 
