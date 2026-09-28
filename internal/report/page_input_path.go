@@ -111,6 +111,9 @@ type pageInputPart struct {
 	Depth   int        `json:"depth"`
 	Entered []pageCall `json:"entered,omitempty"`
 	Others  int        `json:"others,omitempty"`
+	// Handler names the input's handler in the part holding it, the one
+	// part the reach enters at depth 0, so its heading is not left empty.
+	Handler *int `json:"handler,omitempty"`
 }
 
 // pageInputPath is an input's reading of its reach (GroupsIndex's Reach and
@@ -236,6 +239,10 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 	}
 	for _, group := range reach.Groups {
 		part := pageInputPart{Part: nodeOf(group.GroupID), Title: titles[group.GroupID], Depth: group.Depth, Others: group.Others}
+		if group.Depth == 0 {
+			handler := decls.of(operation.SubjectID)
+			part.Handler = &handler
+		}
 		for _, witness := range group.Entered {
 			part.Entered = appendCall(part.Entered, decls.call(index.StructuralEdges[witness.Edge]))
 		}

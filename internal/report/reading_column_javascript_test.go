@@ -402,7 +402,7 @@ func TestAnInputsPathNamesItsDispatchThenItsOwnSteps(t *testing.T) {
 const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
 const decl=(name,part)=>({name,href:'h/'+name,source:'redis.c:1',part});
 const path={dispatched:[{site:0,of:94,handlers:94,inputs:95,shared:[{handler:11,inputs:['t1-sinter','t1-smembers']}],reached_from:['t1-exec']},{site:1,of:94,handlers:94,inputs:95}],registered_by:['t1-accept'],
-  parts:[{part:'n-strings',title:'String commands',depth:0},{part:'n-keys',title:'Keyspace',depth:2,entered:[[3,4,1]]},
+  parts:[{part:'n-strings',title:'String commands',depth:0,handler:2},{part:'n-dispatch',title:'Command dispatch',depth:1,entered:[[2,3,0]]},{part:'n-keys',title:'Keyspace',depth:2,entered:[[3,4,1]]},
     {part:'n-clients',title:'Client connections',depth:2,entered:[[3,5,0],[3,6,0],[3,7,0],[3,8,0],[3,9,0],[3,10,2]],others:3}],
   decls:[decl('call','n-clients'),decl('loadAppendOnlyFile','n-persist'),decl('getCommand','n-strings'),decl('getGenericCommand','n-strings'),decl('lookupKeyRead','n-keys'),
     decl('addReply','n-clients'),decl('addReplyBulk','n-clients'),decl('addReplyLong','n-clients'),decl('addReplySds','n-clients'),decl('addReplyDouble','n-clients'),decl('shared','n-clients'),decl('sinterCommand','n-sets')]};
@@ -422,10 +422,16 @@ assert.ok(!/Shared|through/.test(section.textContent),'no "Shared by … through
 section.find(e=>e.tagName==='BUTTON'&&e.textContent==='accept').listeners.click();
 assert.deepEqual(chosen,['t1-accept'],'the input registering get leads to its reading');
 const steps=section.children.at(-1);
-const lines=steps.children.map(c=>c.className==='system-path-part'?'['+c.textContent+']':c.textContent);
-assert.deepEqual(lines,['[String commands]','[Keyspace]','getGenericCommand → lookupKeyRead · possible','[Client connections]',
+const line=c=>c.className==='system-path-part'?'['+c.textContent+']':c.textContent;
+// The handler's own part names it; the parts its handler calls directly
+// stand open, the parts reached deeper are folded under one line.
+assert.deepEqual(steps.children.filter(c=>c.className!=='system-path-deeper').map(line),['[String commands]','handled by getCommand','[Command dispatch]','getCommand → getGenericCommand']);
+const deeper=steps.children.find(c=>c.className==='system-path-deeper');
+assert.equal(deeper.tagName,'DETAILS');assert.ok(!deeper.open,'the deeper parts start folded');
+assert.equal(deeper.children[0].textContent,'Reaches 2 more parts deeper');
+assert.deepEqual(deeper.children.slice(1).map(line),['[Keyspace]','getGenericCommand → lookupKeyRead · possible','[Client connections]',
   'getGenericCommand → addReply','getGenericCommand → addReplyBulk','getGenericCommand → addReplyLong','getGenericCommand → addReplySds','getGenericCommand → addReplyDouble',
-  '+1getGenericCommand → shared · read','3 other calls into it on this path']);
+  '+1getGenericCommand → shared · read','3 more calls into this part come from other code on this path']);
 assert.ok(!section.textContent.includes('redis.c'),'no line number is shown');
 const name=text=>steps.find(e=>e.tagName!=='DIV'&&e.textContent===text);
 const click=(element,extra={})=>{let prevented=false;element.listeners.click({button:0,preventDefault(){prevented=true;},stopPropagation(){},...extra});return prevented;};
@@ -444,6 +450,40 @@ const exec=rmInputPathSection({dispatched:[{site:0,of:94,handlers:94,inputs:95}]
   'exec',id=>parts[id]||null,id=>inputs[id]||null,()=>{},()=>{});
 assert.deepEqual(exec.all(e=>e.className==='system-shared-path')[0].children.slice(1).map(c=>c.textContent),['call → one of 94 handlers','How a request for exec gets to call is not established.']);
 assert.deepEqual(exec.find(e=>e.className==='system-path-reaches').children.map(c=>c.textContent),["exec's handler itself calls call, where 95 inputs are dispatched:",'execCommand → call']);
+`)
+}
+
+// GET's path had listed thirteen parts, down to VM swap-in's
+// rdbLoadObject → zslInsert, with the few calls that answer "what does GET
+// do" buried. The parts its handler calls directly (depth 1) stand open and
+// every deeper part is folded under one line, with all its calls. The fold
+// is structural: by depth alone, never by how many calls a part holds or
+// how long a chain is, so no route is chosen; a path with no deeper part
+// has no fold.
+func TestAnInputsPathFoldsThePartsPastItsHandlersOwnCallsByDepthAlone(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
+		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration")
+	runSystemJS(t, fakeElements+`
+const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
+const decls=['h','a','b','c','d','e','f','g','x','y'].map(name=>({name}));
+const many=[[0,1,0],[0,2,0],[0,3,0],[0,4,0],[0,5,0],[0,6,0],[0,7,0]];
+`+code+`
+const parts=path=>rmInputPathSection(path,'in',()=>null,()=>null,()=>{},()=>{}).children.at(-1);
+const titles=box=>box.children.filter(c=>c.className==='system-path-part').map(c=>c.textContent);
+// A depth-1 part with seven calls stays open; a depth-2 part with one call,
+// and a depth-3 part, are folded, whatever their size.
+let steps=parts({decls,parts:[{part:'p0',title:'Own',depth:0,handler:0},{part:'p1',title:'Wide',depth:1,entered:many},{part:'p2',title:'Near deep',depth:2,entered:[[1,8,0]]},{part:'p3',title:'Deeper',depth:3,entered:[[8,9,0]],others:4}]});
+assert.deepEqual(titles(steps),['Own','Wide']);
+const fold=steps.children.find(c=>c.className==='system-path-deeper');
+assert.deepEqual([fold.children[0].textContent,...titles(fold)],['Reaches 2 more parts deeper','Near deep','Deeper']);
+assert.ok(fold.textContent.includes('a → x')&&fold.textContent.includes('x → y')&&fold.textContent.includes('4 more calls into this part'),'the folded parts keep every call and count');
+// Order is the path's: a part the page data lists late at depth 1 (an
+// outside call the handler makes) still stands open, before the fold.
+steps=parts({decls,parts:[{part:'p0',title:'Own',depth:0,handler:0},{part:'p2',title:'Deep',depth:2,entered:[[1,8,0]]},{part:'out',title:'Outside',depth:1,entered:[[0,9,0]]}]});
+assert.deepEqual(titles(steps),['Own','Outside']);assert.equal(steps.children.at(-1).className,'system-path-deeper');
+// Nothing deeper: no fold.
+steps=parts({decls,parts:[{part:'p0',title:'Own',depth:0,handler:0},{part:'p1',title:'Wide',depth:1,entered:many}]});
+assert.equal(steps.children.find(c=>c.className==='system-path-deeper'),undefined);
 `)
 }
 

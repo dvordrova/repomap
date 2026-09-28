@@ -95,8 +95,8 @@ function rmReachingInputs(n,reaching,owner,choose){
 // them; the inputs it registers or is registered by; then the parts it
 // enters, nearest the handler first, each with every call entering it from
 // a part reached earlier (five, the rest folded under their count) and a
-// count of the other calls into it. No route is chosen and no line number
-// is written. A name in a drawn part is read there (`read(part,key)`), as
+// count of the other calls into it, the parts past the handler's own calls
+// folded under one line. No route is chosen and no line number is written. A name in a drawn part is read there (`read(part,key)`), as
 // its tile is; a modifier-click opens its code.
 function rmInputPathSection(path,title,partNode,inputNode,choose,read){
   var section=rmEl('section','system-input-path'),decls=path.decls||[];
@@ -151,14 +151,27 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read){
   });
   if((path.registered_by||[]).length)section.appendChild(inputs(path.registered_by,rmT('Registered by')));
   if((path.registers||[]).length)section.appendChild(inputs(path.registers,rmT('Registers')));
-  var parts=rmEl('div','system-path-steps');
-  (path.parts||[]).forEach(function(part){
+  // The part holding the handler names it; the parts its handler calls
+  // directly (depth 1) stand open, and the parts reached deeper are folded
+  // under one line that opens them as they are. The fold is by depth alone,
+  // the handler's own calls against the rest: it chooses no route and
+  // drops no call. GET had listed thirteen parts down to VM swap-in's
+  // rdbLoadObject → zslInsert.
+  var parts=rmEl('div','system-path-steps'),all=path.parts||[];
+  function step(part,into){
     var node=partNode(part.part),head=rmEl(node?'button':'div','system-path-part',node?node.dataset.title:part.title||'');
     if(node){head.type='button';head.addEventListener('click',function(){choose(node);});}
-    parts.appendChild(head);
-    calls(part.entered||[],parts);
-    if(part.others)parts.appendChild(rmEl('p','meta',rmT('{0} other calls into it on this path',part.others)));
-  });
+    into.appendChild(head);
+    if(part.handler!=null){var own=rmEl('div','system-path-step');own.append(rmEl('span','meta',rmT('handled by')+' '),name(part.handler));into.appendChild(own);}
+    calls(part.entered||[],into);
+    if(part.others)into.appendChild(rmEl('p','meta',rmT('{0} more calls into this part come from other code on this path',part.others)));
+  }
+  var deep=all.filter(function(part){return part.depth>1;});
+  all.filter(function(part){return !(part.depth>1);}).forEach(function(part){step(part,parts);});
+  if(deep.length){
+    var deeper=rmEl('details','system-path-deeper');deeper.appendChild(rmEl('summary','',rmT('Reaches {0} more parts deeper',deep.length)));
+    deep.forEach(function(part){step(part,deeper);});parts.appendChild(deeper);
+  }
   if(parts.childElementCount)section.appendChild(parts);
   return section;
 }

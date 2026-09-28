@@ -1,5 +1,39 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — An input's path opens at its handler's own calls; deeper parts fold (u5)
+
+- The blind GET check found GET's Path listing every part GET's code can
+  reach, thirteen parts down to VM swap-in's `rdbLoadObject →
+  zslInsert`, an empty "String commands" heading, and "getGenericCommand
+  → shared · read / 96 other calls into it on this path", read as calls
+  getGenericCommand makes.
+- **Change.** The part holding the handler (the one part the reach enters
+  at depth 0) carries the handler in the page data (`pageInputPart.Handler`)
+  and reads "String commands / handled by getCommand". The parts the
+  handler calls directly (depth 1) stand open; every part reached deeper
+  is folded under one line, "Reaches 11 more parts deeper", which opens
+  them as they were, every call and count kept. The fold is by depth
+  alone, the handler's own calls against the rest: no route is chosen and
+  nothing is dropped. The count of the other calls into a part reads
+  "{n} more calls into this part come from other code on this path", in
+  the path and in a part's "Why it appears in" alike (Russian likewise).
+  A lead decision awaiting the owner (CURRENT).
+- **What GET shows now** (Redis run `20260928-050038`): Dispatched from
+  call · one of 94 handlers; String commands, handled by getCommand;
+  Command dispatch, getCommand → getGenericCommand; "Reaches 11 more parts
+  deeper". GET's own work (getGenericCommand → lookupKeyReadOrReply,
+  addReply, addReplyBulk, shared) is at depth 2, one click away: the
+  handler calls only getGenericCommand.
+- **Tests.** `TestAnInputsPathFoldsThePartsPastItsHandlersOwnCallsByDepthAlone`
+  (a depth-1 part of seven calls stays open while a depth-2 part of one
+  call folds; a depth-1 part listed late still stands before the fold; no
+  deeper part, no fold; folded parts keep every call and count), the
+  handler and fold assertions in `TestAnInputsPathNamesItsDispatchThenItsOwnSteps`
+  and the handler part in `TestAnInputsPathNamesItsDispatchWithoutARoute…`;
+  each fails on revert (`ui-fixes/revert.log`).
+- `make test`: PASS. `make vet`: PASS. `make ui-test`: PASS (127). `make ui-visual-test`:
+  PASS (65 passed, 5 skipped).
+
 ## 2026-09-28 — The Entrypoints link lands on the program's entry (u4)
 
 - The blind GET check clicked "Entrypoints 1" under "Code, entrypoints and

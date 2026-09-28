@@ -356,7 +356,8 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-path-steps{font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .system-path-step{overflow-wrap:anywhere}
 .system-path-step>.system-path-code{font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;white-space:nowrap}
-.system-path-step>.possible{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:12px}
+.system-path-step>.meta,.system-path-step>.possible{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:12px}
 .map-card .system-path-part{display:block;margin-top:6px;padding:0;border:0;border-radius:0;background:none;font:600 12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;color:#204a7b}
 .map-card button.system-path-part{cursor:pointer}.map-card button.system-path-part:hover{text-decoration:underline}
 .system-path-steps a,.map-area-members a{text-decoration:none}.system-path-steps a:hover,.map-area-members a:hover{text-decoration:underline}
+.system-path-deeper>summary{margin-top:6px;cursor:pointer;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--muted)}

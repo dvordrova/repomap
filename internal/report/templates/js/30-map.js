@@ -554,7 +554,7 @@ function rmDeclarationRelations(map,node,key,nodes){
           html += '</li>';
         });
         html += '</ol>';
-        if (witness.others) html += '<p class="meta">'+rmT.html('{0} other calls into it on this path',witness.others)+'</p>';
+        if (witness.others) html += '<p class="meta">'+rmT.html('{0} more calls into this part come from other code on this path',witness.others)+'</p>';
         html += '</details>';
       }
       var step = map.traceIndex ? map.traceIndex(node) : -1;

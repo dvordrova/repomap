@@ -390,9 +390,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   by" with those inputs (Redis's IOThreadEntryPoint, handed over by
   spawnIOThread); the other reads "Registers". Then the parts the input
   enters, nearest the handler first: each part's name (a link to its
-  reading when the map draws it), every call entering it from a part
-  reached earlier, the first five and the rest folded under "+N", and "{n}
-  other calls into it on this path". A call is its two declarations' names,
+  reading when the map draws it), the handler under the part holding it
+  ("handled by getCommand"), every call entering it from a part reached
+  earlier, the first five and the rest folded under "+N", and "{n} more
+  calls into this part come from other code on this path": calls into it
+  along the path from parts reached no earlier, none of them the
+  handler's. The parts the handler calls directly (depth 1) stand open;
+  every part reached deeper is folded under one line, "Reaches {n} more
+  parts deeper", which opens them as they are. The fold is by depth
+  alone, the handler's own calls against the rest: it chooses no route
+  and drops no call. A call is its two declarations' names,
   with no line number, a read or a possible call marked as elsewhere; a
   name in a drawn part reads that declaration there, as a click on its tile
   does, and a modifier-click opens its code; a name in a part the map does

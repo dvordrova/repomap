@@ -104,6 +104,12 @@ func TestAnInputsPathNamesItsDispatchWithoutARouteAndListsItsOwnSteps(t *testing
 	if want := []string{"String commands d0", "Keyspace d2 getGenericCommand>lookupCommand", "Client connections d2 getGenericCommand>replyCommand"}; !reflect.DeepEqual(parts, want) {
 		t.Fatalf("parts\n got %v\nwant %v", parts, want)
 	}
+	// The part holding the handler names it; no other part does.
+	for i, part := range path.Parts {
+		if (part.Handler != nil) != (i == 0) || i == 0 && name(*part.Handler) != "getCommand" {
+			t.Fatalf("part %q names the handler as %v", part.Title, part.Handler)
+		}
+	}
 	// exec's own code calls call: its reading says so, with that call.
 	var exec pageInputPath
 	if err := json.Unmarshal([]byte(readings["execCommand"]), &exec); err != nil || len(exec.Reaches) != 1 || exec.Decls[exec.Reaches[0].Site].Name != "callCommand" ||
