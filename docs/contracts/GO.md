@@ -218,6 +218,15 @@ Missing equivalents, recorded rather than fabricated:
   Python, JS/TS, Clojure and C emit one per read site (C's `printSymbols`
   reads `symsTable`, as Redis's `findFuncName` does), so a Go table or global
   has no users in the fact graph and the map places it by its file alone.
+  A Go declaration's `uses` in the places graph (READING) therefore hold
+  hand-overs only: `TestCumulativeGoMapOfParts` checks that
+  `command_table.go`'s `commandTable` hands `getCommand` over and that
+  `registerRouteDefinition` hands `http.HandleFunc` the closure
+  `requireRouteToken` returns. A call written in a package-level `var`
+  initializer, and a function value stored in a package variable, table or
+  slice (`getCluster = srv.GetCluster`, `append(filters, filterNoPut)`),
+  leave no relation at all, so the function has no use there; recorded,
+  not patched.
 - A row storing two callables (`{Name: "get", Run: getCommand, Preload:
   preloadGet}`) keeps two bindings. No Go row is a registration, so the C
   rule that such a row is one input has nothing to apply to.

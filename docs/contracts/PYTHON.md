@@ -185,6 +185,12 @@ outer value. Unbound with/except/match targets stay unresolved. Replaced or
 untyped receivers do not acquire field authority. The cumulative examples test
 these controls and preserve read locations through GroupsIndex.
 
+The places graph keeps these reads, with every exact decoration, as the
+declaration's `uses` (READING): `TestCumulativePythonMapOfParts` checks that
+`read_level_data` uses `levels.py`'s `READ_VALUES` and `READ_LIMIT`, and that
+`traced_level` uses `traced`, a decorator written as a bare name, which
+leaves no pattern and so no lifted call.
+
 Clojure already emits comparable native var reads; its cumulative example now
 checks an imported var and a shadowing local. JS/TS emits its compiler-bound
 declared value references (JSTS), and C a function's reads of file-scope

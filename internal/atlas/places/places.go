@@ -105,6 +105,7 @@ func Build(input Input) (atlas.Graph, error) {
 		symbolCallerRows:  make(map[string]map[string]atlas.SymbolCaller),
 		symbolBindingRows: make(map[string]map[string]atlas.SymbolBinding),
 		symbolCallRows:    make(map[string]map[string]atlas.SymbolCall),
+		symbolUseRows:     make(map[string]map[atlas.SymbolUse]bool),
 		factSubjects:      make(map[string]string),
 		unreached:         make(map[string]map[string]struct{}),
 	}
@@ -145,6 +146,7 @@ func Build(input Input) (atlas.Graph, error) {
 		b.collectSymbolCallers(b.symbolCallerRows, target)
 		b.collectSymbolBindings(b.symbolBindingRows, target)
 		b.collectSymbolCalls(b.symbolCallRows, target)
+		b.collectSymbolUses(b.symbolUseRows, target)
 	}
 	b.releaseTargetObjects()
 	// A located seed may refer to a file supplied by a later target. Resolve
@@ -233,6 +235,7 @@ type builder struct {
 	symbolCallerRows  map[string]map[string]atlas.SymbolCaller
 	symbolBindingRows map[string]map[string]atlas.SymbolBinding
 	symbolCallRows    map[string]map[string]atlas.SymbolCall
+	symbolUseRows     map[string]map[atlas.SymbolUse]bool // symbol place -> what it reads, hands over or is decorated by
 	memberOwners      map[string]string              // retained declaration -> native owner's symbol place
 	unreached         map[string]map[string]struct{} // symbol place -> targets whose program never runs it
 	typeFields        map[string]typeField
@@ -1049,6 +1052,7 @@ func (b *builder) collectSymbols() {
 	calls := b.symbolCalls()
 	bindings := b.symbolBindings()
 	callers := b.symbolCallers()
+	uses := b.symbolUses()
 	members := b.typeMembers()
 	for filePath, state := range b.files {
 		ranked := append([]atlas.Decl(nil), state.decls...)
@@ -1095,7 +1099,7 @@ func (b *builder) collectSymbols() {
 				ID: id, Kind: atlas.PlaceSymbol, Path: filePath,
 				LineNo: decl.LineNo, Column: decl.Column, Depth: state.depth, TargetIDs: sortedKeys(state.targets),
 				Parent: atlas.FileID(filePath), Given: truncateRunes(given, maxLineRunes),
-				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached},
+				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached},
 			})
 		}
 	}
@@ -1127,7 +1131,54 @@ func (b *builder) collectSymbols() {
 				symbol.CalledBy[j].PlaceID = ""
 			}
 		}
+		symbol.Uses = slices.DeleteFunc(symbol.Uses, func(use atlas.SymbolUse) bool { return !known[use.PlaceID] })
+		if len(symbol.Uses) == 0 {
+			symbol.Uses = nil
+		}
 	}
+}
+
+// collectSymbolUses keeps, for each lifted declaration, the declarations its
+// exact or alternatives `reads`, `passes_callback` and `decorates` relations
+// name: what it reads, what it hands over to be called later and, for a
+// decorated declaration, its decorator. Unlike the calls lifted for context,
+// these need no pattern, so a decoration written without arguments counts.
+func (b *builder) collectSymbolUses(rows map[string]map[atlas.SymbolUse]bool, target TargetInput) {
+	for _, relation := range target.Index.Relations {
+		switch relation.Kind {
+		case programindex.RelationReads, programindex.RelationPassesCallback, programindex.RelationDecorates:
+		default:
+			continue
+		}
+		if relation.Resolution != programindex.ResolutionExact && relation.Resolution != programindex.ResolutionAlternatives {
+			continue
+		}
+		from := b.symbolOf[relation.FromID]
+		if from == "" {
+			continue
+		}
+		for _, to := range relation.ToIDs {
+			id := b.symbolOf[to]
+			if id == "" || id == from {
+				continue
+			}
+			if rows[from] == nil {
+				rows[from] = make(map[atlas.SymbolUse]bool)
+			}
+			rows[from][atlas.SymbolUse{PlaceID: id, Kind: string(relation.Kind), Resolution: string(relation.Resolution)}] = true
+		}
+	}
+}
+
+func (b *builder) symbolUses() map[string][]atlas.SymbolUse {
+	result := make(map[string][]atlas.SymbolUse, len(b.symbolUseRows))
+	for id, set := range b.symbolUseRows {
+		for use := range set {
+			result[id] = append(result[id], use)
+		}
+		sort.Slice(result[id], func(i, j int) bool { return atlas.SymbolUseLess(result[id][i], result[id][j]) })
+	}
+	return result
 }
 
 // typeMembers follows native ownership, including declarations in other files.

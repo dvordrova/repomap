@@ -30,7 +30,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 18
+	GraphVersion = 19
 	Version      = 14
 
 	GraphFilename    = "places.json"
@@ -233,6 +233,12 @@ type SymbolFacts struct {
 	Calls    []SymbolCall    `json:"calls,omitempty"`
 	Bindings []SymbolBinding `json:"bindings,omitempty"`
 	CalledBy []SymbolCaller  `json:"called_by,omitempty"`
+	// Uses are the other declarations this one reads, hands over to be
+	// called later, or is decorated by: the exact and alternatives `reads`,
+	// `passes_callback` and `decorates` relations of the targets' program
+	// indexes, whether or not a relation carries a pattern. They are local
+	// keys, never provider prose.
+	Uses []SymbolUse `json:"uses,omitempty"`
 	// Candidate says the code chose this symbol as a possible key symbol of
 	// its file, so a symbol row is asked about it.
 	Candidate bool `json:"candidate"`
@@ -247,6 +253,27 @@ type SymbolFacts struct {
 type TypeMember struct {
 	Path string `json:"path"`
 	Decl Decl   `json:"decl"`
+}
+
+// SymbolUse is one use of another declaration: PlaceID is its symbol place,
+// Kind the ProgramIndex relation (`reads`, `passes_callback` or
+// `decorates`, where the decorated declaration uses its decorator) and
+// Resolution `exact` or `alternatives`.
+type SymbolUse struct {
+	PlaceID    string `json:"place_id"`
+	Kind       string `json:"kind"`
+	Resolution string `json:"resolution"`
+}
+
+// SymbolUseLess orders uses by place, kind and resolution.
+func SymbolUseLess(left, right SymbolUse) bool {
+	if left.PlaceID != right.PlaceID {
+		return placeIDLess(left.PlaceID, right.PlaceID)
+	}
+	if left.Kind != right.Kind {
+		return left.Kind < right.Kind
+	}
+	return left.Resolution < right.Resolution
 }
 
 type SymbolCall struct {
@@ -861,6 +888,11 @@ func compactGraphPlaceIDs(graph Graph) (Graph, error) {
 			for caller := range place.Symbol.CalledBy {
 				place.Symbol.CalledBy[caller].PlaceID = mapID(place.Symbol.CalledBy[caller].PlaceID)
 			}
+			for use := range place.Symbol.Uses {
+				place.Symbol.Uses[use].PlaceID = mapID(place.Symbol.Uses[use].PlaceID)
+			}
+			sort.Slice(place.Symbol.Uses, func(i, j int) bool { return SymbolUseLess(place.Symbol.Uses[i], place.Symbol.Uses[j]) })
+			place.Symbol.Uses = slices.Compact(place.Symbol.Uses)
 		}
 		if place.Boundary != nil {
 			place.Boundary.SubjectID = mapID(place.Boundary.SubjectID)
@@ -1193,6 +1225,11 @@ func validateGraph(graph Graph) error {
 			for _, caller := range place.Symbol.CalledBy {
 				if caller.PlaceID != "" && seen[caller.PlaceID] != PlaceSymbol {
 					return fmt.Errorf("atlas: symbol %q has unknown caller place %q", place.ID, caller.PlaceID)
+				}
+			}
+			for _, use := range place.Symbol.Uses {
+				if seen[use.PlaceID] != PlaceSymbol || use.Kind == "" || use.Resolution == "" {
+					return fmt.Errorf("atlas: symbol %q uses unknown symbol place %q", place.ID, use.PlaceID)
 				}
 			}
 		}

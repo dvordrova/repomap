@@ -24,7 +24,13 @@ new description or selection requests.
   their docstrings, every eligible callable, type, module body and module-level
   value without a per-file rank cutoff, the boundaries
   (registrations with their holder, SQL statements and configuration reads),
-  the file-to-file edges and the seeds. A registration's holder is the value
+  the file-to-file edges and the seeds. Each declaration carries its `uses`:
+  the declarations its program index's exact or alternatives `reads`,
+  `passes_callback` and `decorates` relations name (a decorated declaration
+  uses its decorator), each once with its kind and resolution, with or
+  without a pattern, as local keys that never reach a provider; the calls
+  lifted for context keep only such relations that carry a pattern (pykrx
+  keeps 24 of its 88 exact decorations there). A registration's holder is the value
   the call acts on, as `path:line:column` of the call that produced it,
   followed back through the calls outside the repository (a route put into a
   group made from a router is held by the router). A receiver that is a

@@ -111,7 +111,11 @@ decorator, the enclosing scope (usually the module) for a class decorator. A
 parameter decorator (`@Inject(...)`) decorates nothing the method is handed
 over by; its call runs when the class is defined and belongs to the class, not
 to the method. A parameter default runs on each call and stays the function's.
-`LevelController` in `src/server.ts` checks each case. A JavaScript file
+`LevelController` in `src/server.ts` checks each case. The places graph keeps
+a declaration's reads, hand-overs and decorations as its `uses` (READING);
+`TestCumulativeJSTSMapOfParts` checks that `recordOrder` uses the module's
+`handledOrderIds`. A callable named as a value is also a read of it: the
+function handed to a registration is both read and handed over. A JavaScript file
 follows the same walk; `src/market-worker.js` holds no decorator, since Node
 runs no decorator syntax.
 

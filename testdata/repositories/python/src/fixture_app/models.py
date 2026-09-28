@@ -238,3 +238,15 @@ class LevelRoutes:
     @routed(route_path("level"))
     def load_level(self, suffix=route_path("suffix")):
         return route_path(suffix)
+
+
+# A decorator written as a bare name applies with no call of its own: the
+# places graph keeps the decoration as a use of the decorated declaration,
+# as pykrx's @dataframe_empty_handler decorates its query functions.
+def traced(declaration):
+    return declaration
+
+
+@traced
+def traced_level(key):
+    return key

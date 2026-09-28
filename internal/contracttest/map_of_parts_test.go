@@ -45,6 +45,14 @@ func TestCumulativeGoMapOfParts(t *testing.T) {
 	adaptertest.AssertDeclarationCodeLines(t, graph, "internal/localstore/ledger.go", map[string][]int{
 		"Ledger": {1}, "Ledger.Keys": {1}, "init": {4, 1},
 	})
+	// The graph records what a declaration hands over: the command table's
+	// rows hand getCommand over, and registerRouteDefinition hands the
+	// closure requireRouteToken returns to http.HandleFunc. Go emits no
+	// reads (GO), so no Go declaration records one.
+	adaptertest.AssertDeclarationUses(t, graph,
+		adaptertest.DeclarationUse{FromPath: "internal/storefixture/command_table.go", From: "commandTable", Kind: "passes_callback", ToPath: "internal/storefixture/command_table.go", To: "getCommand"},
+		adaptertest.DeclarationUse{FromPath: "internal/storefixture/http_registrations.go", From: "registerRouteDefinition", Kind: "passes_callback", ToPath: "internal/storefixture/http_registrations.go", To: "requireRouteToken$1"},
+	)
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "library", Name: index.Target.Name, Root: "."}, root)
 	ledger := checked.Symbols[[2]string{"internal/localstore/ledger.go", "Ledger"}]
 	appendMethod := checked.Symbols[[2]string{"internal/localstore/ledger_append.go", "Ledger.Append"}]
@@ -245,6 +253,13 @@ func TestCumulativePythonMapOfParts(t *testing.T) {
 	adaptertest.AssertDeclarationCodeLines(t, graph, "src/fixture_app/generic_types.py", map[string][]int{
 		"pick": {1, 1, 3}, "first": {2},
 	})
+	// The graph records what a declaration reads, across files, and what
+	// decorates it, a bare decorator name included.
+	adaptertest.AssertDeclarationUses(t, graph,
+		adaptertest.DeclarationUse{FromPath: "src/fixture_app/models.py", From: "read_level_data", Kind: "reads", ToPath: "src/fixture_app/levels.py", To: "READ_VALUES"},
+		adaptertest.DeclarationUse{FromPath: "src/fixture_app/models.py", From: "read_level_data", Kind: "reads", ToPath: "src/fixture_app/levels.py", To: "READ_LIMIT"},
+		adaptertest.DeclarationUse{FromPath: "src/fixture_app/models.py", From: "traced_level", Kind: "decorates", ToPath: "src/fixture_app/models.py", To: "traced"},
+	)
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root)
 	// A function nested in another takes its parent's part.
 	outer := checked.Symbols[[2]string{"src/fixture_app/http_registrations.py", "register_route"}]
@@ -284,6 +299,12 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	adaptertest.AssertDeclarationCodeLines(t, graph, "src/example/core.clj", map[string][]int{
 		"example.core/shout": {1, 4}, "example.core/loud-greeting": {2},
 	})
+	// The graph records what a function reads in another namespace and the
+	// function it hands to clojure.core/map.
+	adaptertest.AssertDeclarationUses(t, graph,
+		adaptertest.DeclarationUse{FromPath: "src/example/core.clj", From: "example.core/read-limit", Kind: "reads", ToPath: "src/example/service.cljc", To: "example.service/source-limit"},
+		adaptertest.DeclarationUse{FromPath: "src/example/core.clj", From: "example.core/greet-many", Kind: "passes_callback", ToPath: "src/example/service.cljc", To: "example.service/greet"},
+	)
 	meta := reading.TargetMeta{ID: index.Target.ID, Language: "clojure", Kind: "executable", Name: index.Target.Name, Root: "."}
 	partstest.Check(t, graph, meta, root)
 	// Split, core.clj is the seed file: its -main keeps the entry.
@@ -312,6 +333,15 @@ func TestCumulativeCMapOfParts(t *testing.T) {
 	adaptertest.AssertDeclarationCodeLines(t, graph, "kvd.c", map[string][]int{
 		"bgsaveCommand": {17}, "processCommand": {13},
 	})
+	// The graph records what a declaration reads or hands over: printSymbols
+	// reads staticsyms.h's symsTable, as redis.c's findFuncName does;
+	// keysCommand hands compareKeys to qsort; the command table's rows hand
+	// getCommand over.
+	adaptertest.AssertDeclarationUses(t, graph,
+		adaptertest.DeclarationUse{FromPath: "kvd.c", From: "printSymbols", Kind: "reads", ToPath: "staticsyms.h", To: "symsTable"},
+		adaptertest.DeclarationUse{FromPath: "kvd.c", From: "keysCommand", Kind: "passes_callback", ToPath: "kvd.c", To: "compareKeys"},
+		adaptertest.DeclarationUse{FromPath: "kvd.c", From: "cmdTable", Kind: "passes_callback", ToPath: "kvd.c", To: "getCommand"},
+	)
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}, fixture.root)
 	for _, declaration := range [][2]string{{"kvd.c", "main"}, {"loop_poll.c", "loopApiPoll"}, {"strbuf.h", "sbAvail"}, {"kvd.h", "kvClient"}} {
 		if checked.Symbols[declaration] == "" {

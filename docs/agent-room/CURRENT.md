@@ -1,6 +1,6 @@
 # Current product decision
 
-Status: active living ADR. Updated: 2026-09-27.
+Status: active living ADR. Updated: 2026-09-28.
 
 [CONSTITUTION](../CONSTITUTION.md) takes precedence. This page records the
 current decision and acceptance state; [AGENTS](../../AGENTS.md) routes work to
@@ -265,8 +265,8 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 17, places graph 16, reading input 18, atlas 11,
-GroupsIndex 13, dependency catalog 2, extraction artifact 2, facts 3, claims 2
+This wave uses ProgramIndex 18, places graph 19, reading input 18, atlas 14,
+GroupsIndex 16, dependency catalog 2, extraction artifact 2, facts 3, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
 dependencies. Accepted extractor nodes use `u*`; arbitrary public-protocol IDs

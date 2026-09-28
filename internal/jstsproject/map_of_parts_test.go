@@ -54,6 +54,11 @@ func TestCumulativeJSTSMapOfParts(t *testing.T) {
 	adaptertest.AssertDeclarationCodeLines(t, graph, "src/type-members.ts", map[string][]int{
 		"pick": {1, 1, 3}, "firstOf": {3},
 	})
+	// The graph records what a declaration reads: recordOrder reads the
+	// module's handledOrderIds.
+	adaptertest.AssertDeclarationUses(t, graph,
+		adaptertest.DeclarationUse{FromPath: "src/server.ts", From: "recordOrder", Kind: "reads", ToPath: "src/server.ts", To: "handledOrderIds"},
+	)
 	checked := partstest.Check(t, graph, reading.TargetMeta{ID: index.Target.ID, Language: "typescript", Kind: "application", Name: index.Target.Name, Root: "."}, root)
 	parent := checked.Symbols[[2]string{"src/platform.ts", "SimulationField"}]
 	var child string

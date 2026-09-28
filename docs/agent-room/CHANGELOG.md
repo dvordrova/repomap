@@ -1,5 +1,36 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — The places graph records what a declaration reads, hands over or is decorated by
+
+- Scope: step C1 of `map-model/step3-plan.md`. `places.json` carried no reads:
+  places lifts only pattern-bearing relations besides calls, executes and
+  outside invocations, so in the 20:55 Redis run `findFuncName` had no entry
+  for `symsTable`, and pykrx kept 24 of its 88 exact decorations.
+- **Change.** `SymbolFacts.Uses` (places graph 18 → 19): for each lifted
+  declaration, the declarations its program index's exact or alternatives
+  `reads`, `passes_callback` and `decorates` relations name, with or without
+  a pattern, each once with kind and resolution. Sealing maps them to compact
+  `s*` IDs like the callers; a use of a place that is not a declaration is
+  refused. Local keys only; no provider request reads them yet.
+- **Fixture expectations** (`adaptertest.AssertDeclarationUses`): C
+  `printSymbols` reads `symsTable`, `keysCommand` hands `compareKeys` to
+  `qsort`, `cmdTable` hands `getCommand` over; Python `read_level_data` reads
+  `READ_VALUES` and `READ_LIMIT` across files and the new bare-decorator case
+  `traced_level` uses `traced` (appended to models.py); TS `recordOrder` reads
+  `handledOrderIds`; Clojure `read-limit` reads `service/source-limit` and
+  `greet-many` hands `service/greet` to `map`; Go `commandTable` hands
+  `getCommand` over and `registerRouteDefinition` hands `http.HandleFunc` the
+  closure `requireRouteToken` returns. Recorded, not patched: Go emits no
+  reads, and a call in a package `var` initializer or a function value stored
+  in a package variable leaves no relation (GO); a Clojure macro use leaves
+  none (CLOJURE). JS/TS also reads a function it names as a value, so a
+  registered handler is both read and handed over by its registrar.
+- **Revert check** (`step3/impl-revert.log`): with the wiring, remap and
+  validation reverted, the five fixture assertions and
+  `TestSealedGraphKeepsEachUseOnce` fail.
+- CURRENT's format line now names the code's versions: ProgramIndex 18,
+  places 19, reading input 18, atlas 14, GroupsIndex 16 (it said 17/16/18/11/13).
+
 ## 2026-09-28 — A Python module's own names after its star imports resolve
 
 - Scope: gap (a) of the pykrx investigation (`map-model/step3/pykrx-api.md`,

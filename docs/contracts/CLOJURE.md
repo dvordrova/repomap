@@ -116,7 +116,12 @@ the function that wrote it: `(ensure! (read-limit))` in `ensured-limit`
 skipped, so the use of `ensure!` itself leaves no relation, and the
 `(fail! ...)` its syntax-quoted body writes is a read of `fail!` by the macro.
 The C adapter records a call written through a macro at its use, as a call of
-the function its expansion calls; that equivalent is missing here.
+the function its expansion calls; that equivalent is missing here, and a
+macro's own use leaves no relation, so the places graph records no use of a
+macro (READING). The graph's `uses` hold var reads and hand-overs:
+`TestCumulativeClojureMapOfParts` checks that `read-limit` uses
+`example.service/source-limit` and `greet-many` hands `example.service/greet`
+to `clojure.core/map`.
 
 ## Calls that run when a namespace loads
 
