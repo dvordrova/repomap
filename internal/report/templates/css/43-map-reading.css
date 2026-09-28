@@ -364,7 +364,8 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .system-input-flow{margin:8px 0;font-size:14px}.system-input-flow>.map-details-link{margin:0}.system-input-flow>.flow-title{margin:2px 0 0}
 .system-catalogue{margin:14px 0;font-size:13px;line-height:1.55}.system-catalogue>p{margin:6px 0;overflow-wrap:anywhere}
 .system-catalogue a{text-decoration:none}.system-catalogue a:hover{text-decoration:underline}
-.system-catalogue-member{font:inherit;color:var(--accent);background:none;border:0;padding:0;cursor:pointer}.system-catalogue-member:hover{text-decoration:underline}
+.map-card button.system-catalogue-member{font:inherit;color:var(--accent);background:none;border:0;border-radius:0;padding:0;margin:0;cursor:pointer}.map-card button.system-catalogue-member:hover{text-decoration:underline}
+.map-card .system-catalogue b,.map-card .system-launch b{display:inline;margin:0}
 .system-catalogue-users>summary{cursor:pointer;color:var(--muted,inherit)}
 .system-launch{margin:14px 0;font-size:13px;line-height:1.55}.system-launch>summary{cursor:pointer;font-weight:600}
 .system-launch>h6{margin:10px 0 4px}.system-launch .system-path-step{overflow-wrap:anywhere;margin:3px 0}
