@@ -42,12 +42,12 @@ func TestMapRevealRecordsDestinationBeforeLayout(t *testing.T) {
 	resumeCode := systemJSPiece(t, "29-operation-view.js", "map.resumeExploration=function(){", "  map.readingState=")
 	entranceCode := systemJSPiece(t, "29-operation-view.js", "function rmInputPath(", "(function(){")
 	runSystemJS(t, entranceCode+`
-let surface=null,scope='a',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',numbered=true,savedAddress;
+let surface=null,scope='a',operation=null,inputAway=false,selectionRevision=0,searchValue='',filterValue='',savedAddress;
 const a={id:'a',dataset:{}},b={id:'b',dataset:{}},op={id:'op',dataset:{activation:'command'}},byID={a,b,op};
 let finish;const ready=new Promise(resolve=>finish=resolve),search={},filter={};
 const map={explorerMember:{owner:'a',key:'source-a'},captureViewport(){return {scale:1,left:20,top:40};},
  showNode(n){this.shown=n.id;},clearInspection(){this.shown=null;},explainSource(s){this.explorerMember=s;},inspectConcept(){this.explorerMember=null;},restoreViewport(v){this.viewport=v;}};
-let emphasisCount=0;function emphasize(){emphasisCount++;}function updateResults(){}function emit(){}function focusNode(){}function syncStyle(){}
+let emphasisCount=0;function emphasize(){emphasisCount++;}function updateResults(){}function emit(){}function focusNode(){}
 function address(n){savedAddress={id:n.id,state:map.readingState()};}
 `+selectCode+resumeCode+stateCode+`
 (async()=>{
@@ -56,10 +56,9 @@ function address(n){savedAddress={id:n.id,state:map.readingState()};}
  assert.equal(savedAddress.id,'b');assert.equal(savedAddress.state.scope,'b');assert.equal(savedAddress.state.source,null);
  assert.equal(savedAddress.state.search,'');assert.equal(savedAddress.state.filter,'','a chosen destination closes the catalogue and its unrelated highlights');
  assert.equal(search.value,'');assert.equal(filter.value,'');
- const restored=map.restoreReadingState({scope:'a',operation:'op',numbered:false,source:{key:'source-a'},viewport:{scale:1.2,left:32,top:65}});
+ const restored=map.restoreReadingState({scope:'a',operation:'op',source:{key:'source-a'},viewport:{scale:1.2,left:32,top:65}});
  finish();await Promise.all([pending,restored]);
  assert.equal(map.shown,'a');assert.equal(map.explorerMember.key,'source-a');assert.equal(map.readingState().operation,'op');assert.equal(map.viewport.left,32);
- assert.equal(map.readingState().numbered,false,'connection style survives return');
  const beforeClick=emphasisCount;await select(b,true);assert.equal(map.readingState().operation,'op','part selection preserves operation');
  assert.equal(emphasisCount-beforeClick,1,'one click updates selection once');
  await map.restoreReadingState({scope:'',operation:'',viewport:{overview:true,x:16,y:16,zoom:.6}});

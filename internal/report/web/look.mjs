@@ -1,5 +1,5 @@
 // What the reader is looking at, for the whole map. One thing at a time has
-// the look: a badge, a label, whatever a later layer adds. The rules are the
+// the look: an arrow end's plaque, whatever a later layer adds. The rules are the
 // same for all of them and live here, not in each component:
 //   - a look opens on intent: the pointer rests on its handle for `dwell`
 //     milliseconds, so a pointer crossing a handle on its way elsewhere opens

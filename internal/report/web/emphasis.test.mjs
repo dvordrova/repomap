@@ -73,20 +73,16 @@ test('a declaration pointed at or chosen darkens only the arrows that carry its 
 
 // An arrow end looked at outlines in place the parts behind it: they are the
 // subject, the end's own arrows to them are dark and the parts at the
-// arrows' other end stay. Its one number pointed at narrows it to that
-// number's parts.
+// arrows' other end stay.
 test('an arrow end looked at makes the parts behind it the subject',()=>{
   const edges=[{id:'e1',from:'runtime',to:'dict'},{id:'e2',from:'runtime',to:'sds'},{id:'e3',from:'dict',to:'sds'},{id:'e4',from:'cmds',to:'dict'}];
-  const label={insides:['dict','sds'],edges:['e1','e2'],byNumber:new Map([[2,{ids:['dict']}],[5,{ids:['sds']}]])};
-  const whole=endEmphasis(label,undefined,edges);
+  const label={insides:['dict','sds'],edges:['e1','e2']};
+  const whole=endEmphasis(label,edges);
   assert.deepEqual([...whole.focus],['dict','sds']);
   assert.deepEqual([...whole.activeEdges].sort(),['e1','e2'],'only the end\'s own arrows are dark');
   assert.ok(whole.participants.has('runtime'),'the other end is involved');
   assert.ok(!whole.participants.has('cmds'),'another frame\'s arrow into the same part is not');
   assert.equal(whole.mode,'hover');
-  const one=endEmphasis(label,5,edges);
-  assert.deepEqual([...one.focus],['sds']);
-  assert.deepEqual([...one.activeEdges],['e2']);
 });
 
 // Moving the pointer across Redis's Data type commands dimmed every other

@@ -21,12 +21,11 @@ export function emphasis(view, hoverArea, leaves, edges, member=null) {
   return {mode,subject,focus,participants,activeEdges};
 }
 
-// An arrow end looked at: the parts behind it (or behind its one number
-// pointed at) are the subject, outlined in place; the end's own arrows to
-// them are dark and their other ends are involved.
-// `label` is a boundary group: {insides, edges, byNumber}.
-export function endEmphasis(label,only,edges){
-  const focus=new Set(only===undefined?label.insides:label.byNumber?.get(only)?.ids||[]);
+// An arrow end looked at: the parts behind it are the subject, outlined in
+// place; the end's own arrows to them are dark and their other ends are
+// involved. `label` is a boundary group: {insides, edges}.
+export function endEmphasis(label,edges){
+  const focus=new Set(label.insides);
   const own=new Set(label.edges),activeEdges=new Set(),participants=new Set(focus);
   for(const edge of edges)if(own.has(edge.id)&&(focus.has(edge.from)||focus.has(edge.to))){
     activeEdges.add(edge.id);participants.add(edge.from);participants.add(edge.to);

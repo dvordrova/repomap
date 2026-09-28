@@ -5,13 +5,13 @@ import {placeCard} from './card-place.mjs';
 const canvas={left:0,top:0,right:1000,bottom:600};
 const inside=(at,size)=>at.x>=canvas.left+8&&at.y>=canvas.top+8&&at.x+size.width<=canvas.right-8&&at.y+size.height<=canvas.bottom-8;
 
-// The designer's 07c: Set commands' number in Data type commands, the area
-// at the canvas's left. Its card goes out of the area on the right, level
-// with the number, and covers none of the area's parts.
-test('a part number\'s card stands outside its frame, level with the number',()=>{
+// The designer's 07c: a handle in Data type commands, the area at the
+// canvas's left, with no side. Its card goes out of the area on the right,
+// level with the handle, and covers none of the area's parts.
+test('a card with no side stands outside its frame on the roomier side, level with its handle',()=>{
   const size={width:360,height:280};
   const at=placeCard({handle:{left:470,top:350,right:490,bottom:366},frame:{left:40,top:100,right:520,bottom:580},canvas,size});
-  assert.deepEqual(at,{x:528,y:86},"its bottom level with the number: there is no room below");
+  assert.deepEqual(at,{x:528,y:86},"its bottom level with the handle: there is no room below");
   assert.ok(inside(at,size));
 });
 

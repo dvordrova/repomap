@@ -274,7 +274,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   participants and connected inputs; selecting a participant retains the input
   and its original source-backed call-path explanation. A grouped connection
   reading never replaces that explanation. No first part or operation is chosen
-  automatically. Search and numbered destinations reveal their result at a
+  automatically. Search and chosen destinations reveal their result at a
   readable scale, opening its enclosing frames in the fixed world. A hidden
   child's bounds inside the viewport do not count as visible content. A fully
   visible, legible part keeps the current camera when opened from a reading.
@@ -406,54 +406,51 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the reading card's own header closes details, preserving camera and any pinned
   input path; leaving that path remains a separate action.
 
-- Hovering an area or a part inside it labels its inner parts with local
-  numbers. Pointing anywhere in an open component, its own space, border or
-  title included, numbers it with its areas and loose parts, as choosing it
-  does. A closed component numbers
-  nothing and does not take the numbers from an open one beside it.
-  One outside participant and direction form one label with every
-  exact inner endpoint number (for example `2 · 3`). Different outside
-  identities and opposite directions remain separate. Resting on that label
-  opens its card: all original relations, sources and possible-call marks
-  behind it; selected details and their links stay present. Clicking its
-  number pans to the named outside participant. Connection endpoints use compact number badges; their outside names remain
-  available to assistive navigation and the reading column.
+- The frame being looked at marks its arrow ends: hovering an area or a
+  part inside it marks the area's, and pointing anywhere in an open
+  component, its own space, border or title included, marks the
+  component's, as choosing it does. A closed component marks nothing and
+  does not take the marks of an open one beside it. Nothing on the map is
+  a digit (owner's choice 2a, finished 2026-09-28): there are no part
+  number badges, no digit chips, no key line explaining numbers and no
+  numbered/arrows switch. The digits named members in member order and
+  changed with the pointer, and the owner saw them everywhere.
+  Each arrow end on the looked-at frame has one small plaque where its
+  arrow meets the frame. It reads "all" only when the parts behind the end
+  are every part of that frame (an area's parts, or a component's areas
+  and loose parts), and only for a frame of more than one part; otherwise
+  it is a plain handle with no text, the size and colour of the former
+  one-digit chip. One outside participant stands behind one plaque on a
+  side: both directions between the frame and it, a two-headed arrow or
+  two opposite arrows, share the incoming direction's plaque, which stands
+  for the parts behind both (two "all" plaques side by side read as two
+  things). Different outside identities remain separate. Resting on a
+  plaque opens its card (the incoming direction's when it stands for two,
+  whose "go the other way" link opens the other); selected details and
+  their links stay present. The plaque's accessible name is the outside
+  participant; the reading column lists it too.
   A line has no click target or native tooltip; its arrowhead does (below).
-  These numbers
-  identify parts, never execution order. The toolbar has no connection-style
-  selector; the same real endpoints remain connected across zoom levels.
-  An end that joins every numbered part of the frame says so once, "all",
-  in the same chip, instead of listing every number (owner's choice 2a,
-  2026-09-27); the numbers stay wherever an end joins some of the parts.
-  While an end's card is open or kept open, the parts behind that end, or
-  behind its one number pointed at, take the dark outline in place (a
-  closed frame hiding them takes it for them) and the
-  end's own arrows are dark; like the pointer, the end recedes nothing, and
-  the parts at the arrow's other end stay as they are. A label stands where
-  its arrow meets the frame it numbers: both directions of a pair of frames
-  share one drawn route, and the end one direction took could be the other
-  frame's. The two directions' labels then
-  meet the frame at one point and stand either side of it along the border.
-  An open area numbers its parts and an open component its areas and loose
-  parts, with those numbers on the frame's border. When an area or component
-  in the map holds anything, one line says that the numbers on an area's or
-  component's border are the numbered parts inside that the arrow connects,
-  not an execution order, and that "all" is every part inside. It stands visible beside the map's controls, above
-  the key, where the row has room.
+  The same real endpoints remain connected across zoom levels.
+  While an end's card is open or kept open, the parts behind that end take
+  the dark outline in place (a closed frame hiding them takes it for them),
+  the end's own arrows are dark and its plaque is dark; like the pointer,
+  the end recedes nothing, and the parts at the arrow's other end stay as
+  they are. A plaque stands where its arrow meets the frame it marks: both
+  directions of a pair of frames share one drawn route, and the end one
+  direction took could be the other frame's.
 
-- A card (a label's calls, or everything a numbered part is joined to outside
-  its frame) opens on intent: the pointer rests on its handle for about a
+- A card (a label's calls) opens on intent: the pointer rests on its handle for about a
   tenth of a second, so a handle crossed on the way elsewhere opens nothing.
-  A connection has two handles, its chip and its arrowhead. Every drawn
+  A connection has two handles, its plaque and its arrowhead. Every drawn
   arrowhead of an arrow meeting an area's or a component's border is one,
-  at every level and whether or not that frame is the numbered one: the
+  at every level and whether or not that frame is the looked-at one: the
   head's own few pixels on empty canvas, found from the drawn route, with
-  nothing drawn for them and no competition with a title, number or
+  nothing drawn for them and no competition with a title, plaque or
   summary under the pointer. A head stands for the incoming connection of
   the area or component it points into; a head on a destination, the
   inputs or a loose part stands for the outgoing connection of the frame at
-  the arrow's other end; a head beside a chip of the numbered frame opens
-  that chip's card. A head of an arrow between two parts of one frame has
+  the arrow's other end; a head beside a plaque of the looked-at frame
+  opens the card of its own direction. A head of an arrow between two parts of one frame has
   no card.
   It stands flush with its handle, outside the frame being read so it covers
   none of that frame's parts, and clear of the handle itself, on the side
@@ -470,8 +467,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the emphasis or the labels. Leaving the handle, the pointer is safe inside
   the triangle between where it left and the card: the card lasts and no
   other handle on the way takes it; from an arrowhead onto its own card or
-  chip the pointer has not left at all. A click on a part's number or on a
-  card keeps the card open; a click on an arrow end, its chip or its arrowhead, reads,
+  plaque the pointer has not left at all. A click on a card keeps the card
+  open; a click on an arrow end, its plaque or its arrowhead, reads,
   in the column, the frame whose connection it is, scrolled to that frame's
   Connections with that connection open, and leaves the camera where it is
   (owner's choice 3b, 2026-09-27).
@@ -505,10 +502,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   many the set holds, is decided in Go from the relations' retained targets;
   the browser only counts what stands behind the arrow. A caller calling
   every member itself, or handing over part of a set, keeps its rows. A
-  part's number opens the same rows, per label, without the index and
-  without a heading for the part's own calls. A label's card first opens on
-  the whole end; a number pointed at once the card is open narrows it to
-  that number's parts, and the chip's own edge widens it again.
+  label's card always shows the whole end.
 
 - ELK prepares native area interiors, then places each component's ready
   immediate child rectangles in a flat graph. These children retain their
@@ -522,8 +516,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   one fixed world before setting the viewport. Outer arrows stop at the
   participant frames even while their contents are open; continuations from
   boundary ports to inner parts are not painted. At the outer participant's
-  boundary, compact numbers correspond to the explored area's actual inner parts;
-  shared participant/direction labels retain every matching number and source.
+  boundary, a plaque stands for the explored area's actual inner parts behind
+  it; shared participant labels retain every matching part and source.
   The original endpoints, possible status and source relations remain available for
   reading and operation paths. Aggregated outside strokes are drawn once; they
   are display geometry, not new semantic relations. Each area's interior is
@@ -587,8 +581,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   it. The native frame paints the outline at both detail levels; the title
   overlay adds no second, magnified border. Hover and selection change outline
   paint only, never border geometry, padding, title position or wrapping.
-  Nothing inside a card moves when an area is looked at or chosen: a part's
-  number stands in room its card already leaves.
+  Nothing inside a card moves when an area is looked at or chosen.
   Closed frames display a subtle outlined child element with a question mark
   as their nested-content hint. The accessible action and the card both enter
   its contents. A toolbar hint explains zooming and dragging. Leaf cards and
@@ -666,10 +659,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   alternatives draw, and its rows read "possible" in the source details
   like theirs, in the muted text colour; the key's dashed stroke says what
   it is. All original endpoint IDs and sources remain on it;
-  the drawing does not invent another relation. Number badges sit inside the
-  frame, centred at the native connection point, and match the associated
-  inner part badge in appearance and scale. They preserve every matching number. They do
-  not encode execution order. Floating-point offsets cannot create diagonal
+  the drawing does not invent another relation. Plaques sit just inside the
+  frame, centred on the native connection point.
+  They do not encode execution order. Floating-point offsets cannot create diagonal
   clipping segments. React Flow receives the known native measured dimensions
   of nodes on every presentation update so that handle recalculation cannot
   temporarily remove the arrows between animation frames.
@@ -742,7 +734,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   purpose remains in the reading column. External frames reserve summary space.
   The fixed world places frames, parts, complete input cards, component
   purposes and grouped labels. Routes inside one group retain actual part-to-part
-  endpoints; routes between groups and participants stop at their boundaries. ELK chooses the actual endpoints. Number badges sit just inside those
+  endpoints; routes between groups and participants stop at their boundaries. ELK chooses the actual endpoints. Plaques sit just inside those
   native endpoints without moving them. There is no additional boundary route planner, A* layer, custom marker
   packing or replacement path. Ordinary and natively unzipped outer layers are
   compared in both directions with free endpoints and with the prepared native
@@ -760,7 +752,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   cards, text and native routes; the prepared drawing remains unchanged. This is a bounded
   initial sizing correction, not another orientation search or a zoom-time layout.
   Unzipping is not forced on small maps. Cross-participant labels reserve no
-  interior space: their number badges belong to the outer endpoints, so their
+  interior space: their plaques belong to the outer endpoints, so their
   former title corridors cannot push real contents away from a pinch target.
   Each component compares ordinary and natively unzipped placement of its
   ready child rectangles against its own measured summary aspect. Every

@@ -439,17 +439,12 @@ function rmCatalogInputClick(event,reveal){
   // path's start, or on a part read since.
   var inputAway=false;
   var searchValue='',filterValue='',selectionRevision=0;
-  var numbered=true;
   map.querySelector('[data-operation-controls]')?.remove();
   var bar=rmEl('div','system-controls'),search=rmEl('input','system-search'),filter=rmEl('select','system-filter'),clear=rmEl('button','',rmT('Clear selection'));
   search.type='search';search.placeholder=rmT('Find');search.setAttribute('aria-label',rmT('Find'));clear.type='button';
   [['','Everything'],['component','Components'],['part','Parts'],['input','Inputs'],['external','External communication']].forEach(function(item){var option=rmEl('option','',rmT(item[1]));option.value=item[0];filter.appendChild(option);});filter.setAttribute('aria-label',rmT('Show on map'));
   bar.append(search);map.prepend(bar);bar.appendChild(map.querySelector('[data-map-controls]'));
-  var numbers=map.querySelector('[data-map-numbers]');if(numbers){numbers.classList.add('flow-key-numbers');bar.prepend(numbers);}
   if(map.hasAttribute('data-system-map'))search.hidden=true;
-  var styleChoice=rmEl('button','',rmT('Connection labels'));styleChoice.type='button';styleChoice.setAttribute('aria-pressed','true');
-  function syncStyle(){styleChoice.textContent=rmT(numbered?'Connection labels':'Arrows');styleChoice.setAttribute('aria-pressed',String(numbered));map.classList.toggle('system-numbered',numbered);}
-  styleChoice.addEventListener('click',function(){numbered=!numbered;syncStyle();emphasize();emit();});syncStyle();
   var results=rmEl('div','system-results');results.hidden=true;bar.after(results);
   var colorKey=rmKey(nodes,rawEdges,category);
   var caption=rmEl('div','system-selection');caption.setAttribute('aria-live','polite');results.after(caption);
@@ -472,7 +467,7 @@ function rmCatalogInputClick(event,reveal){
   function emphasize(){
     var state=projection.selection(scope,operation?.id),has=!!scope||!!operation||!!searchValue||!!filterValue;
     var matched=new Set();if(searchValue||filterValue)nodes.filter(matches).forEach(function(n){projection.leaves(n.id).forEach(function(id){matched.add(id);});});
-    surface?.update({scope:scope,operation:operation?.id||'',entry:state.entry,selected:state.selected,matched:matched,searching:!!searchValue||!!filterValue,numbered:numbered});
+    surface?.update({scope:scope,operation:operation?.id||'',entry:state.entry,selected:state.selected,matched:matched,searching:!!searchValue||!!filterValue});
     map.classList.toggle('system-has-selection',has);clear.disabled=!scope&&!operation;
     renderCaption();
     map.explorerScope=scope;map.explorerOperation=operation;map.inspectedOperation=operation;map.dataset.operationPinned=operation?'true':'false';
@@ -850,8 +845,8 @@ function rmCatalogInputClick(event,reveal){
     return select(n,true,null,segment.kind==='input'?true:'center');
   };
   map.resumeExploration=function(){var n=byID[scope]||operation;if(n)map.showNode(n);else map.clearInspection?.();};
-  map.readingState=function(){return {scope:scope,operation:operation?.id||'',away:inputAway,search:searchValue,filter:filterValue,numbered:numbered,source:map.explorerMember||null,viewport:map.captureViewport?.()||null};};
-  map.restoreReadingState=async function(saved){if(!saved)return;var ticket=++selectionRevision;map.readingRestoring=true;try{scope=byID[saved.scope]?saved.scope:'';operation=byID[saved.operation]||null;inputAway=!!operation&&!!saved.away;search.value=searchValue=saved.search||'';filter.value=filterValue=saved.filter||'';numbered=saved.numbered!==false;syncStyle();updateResults();await ready;if(ticket!==selectionRevision)return;emphasize();map.resumeExploration();if(saved.source)map.explainSource(saved.source);else map.inspectConcept?.(-1);if(saved.viewport)map.restoreViewport(saved.viewport);}finally{if(ticket===selectionRevision){map.readingRestoring=false;emit();}}};
+  map.readingState=function(){return {scope:scope,operation:operation?.id||'',away:inputAway,search:searchValue,filter:filterValue,source:map.explorerMember||null,viewport:map.captureViewport?.()||null};};
+  map.restoreReadingState=async function(saved){if(!saved)return;var ticket=++selectionRevision;map.readingRestoring=true;try{scope=byID[saved.scope]?saved.scope:'';operation=byID[saved.operation]||null;inputAway=!!operation&&!!saved.away;search.value=searchValue=saved.search||'';filter.value=filterValue=saved.filter||'';updateResults();await ready;if(ticket!==selectionRevision)return;emphasize();map.resumeExploration();if(saved.source)map.explainSource(saved.source);else map.inspectConcept?.(-1);if(saved.viewport)map.restoreViewport(saved.viewport);}finally{if(ticket===selectionRevision){map.readingRestoring=false;emit();}}};
   map.revealNode=async function(n,allUses,source){n=byID[aliases[n?.id]]||byID[n?.dataset?.mapAlias]||byID[n?.id];if(!n)return;if(allUses)operation=null;if(await select(n,true,source,true))rmScrollToReading(map);};
   map.findNode=function(n,source){return map.revealNode(n,true,source);};
   function mapped(node){if(!node)return null;if(byID[node.id])return byID[node.id];if(aliases[node.id])return byID[aliases[node.id]];if(node.dataset.mapAlias)return byID[node.dataset.mapAlias];return byID['system-component-'+node.id]||byID['system-component-'+node.id.replace(/-(parts|inbound|external)$/,'')];}

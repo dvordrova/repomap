@@ -261,7 +261,6 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 /* The tiles' own links between declarations (canvas.css): purple dashed, grey head. */
 .flow-key-types svg path:first-child{stroke:#755299;stroke-dasharray:5 4}
 .flow-key-types svg path+path{fill:#7b8aa0}
-.system-controls>.flow-key-numbers{flex:1 1 0;min-width:0;margin:0;font-size:12px;line-height:16px;color:#536176}
 .map-note:empty{display:none}
 
 /* A declaration's own reading, under its part's description. */

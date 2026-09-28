@@ -1,5 +1,5 @@
 // Where a floating card stands, in screen pixels. A card explains its handle
-// (a part's number, a label on a frame's border), so it stands flush with
+// (a plaque on a frame's border, an arrowhead), so it stands flush with
 // it; it stands outside the frame being read, so it covers none of that
 // frame's parts; on the side with room; and wholly inside the canvas. Placed
 // by the canvas halves alone, Redis's cards covered the parts they were
@@ -8,7 +8,7 @@
 //   handle may stand outside its frame, as an arrowhead does.
 //   size: {width,height} of the card on screen.
 //   side: the frame side a label stands on ('left', 'right', 'top',
-//   'bottom'); its card goes out through that side. A part's number has none.
+//   'bottom'); its card goes out through that side, else the roomier one.
 export function placeCard({handle,frame,canvas,size,side='',gap=8,margin=8}){
   const {width,height}=size,room={left:canvas.left+margin,top:canvas.top+margin,right:canvas.right-margin,bottom:canvas.bottom-margin};
   // An arrowhead stands outside its frame's border: the card clears it too,

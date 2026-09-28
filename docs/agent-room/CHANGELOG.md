@@ -1,5 +1,27 @@
 # Implementation and acceptance journal
 
+## 2026-09-28 — One plaque per arrow end, no digits (owner's 2a finished; speed mode)
+
+- **Problem:** the owner still saw digits everywhere on Redis: a "1" on
+  redis-server → TCP endpoint, stacks like "1 3 6 8 10" on Data type
+  commands' border, part badges 2, 7, 6 on the tiles, and two "all" chips
+  side by side for one two-headed arrow.
+- **Change:** part number badges (and the part card they opened), digit
+  chips, the key's numbers line and the unused numbered/arrows switch are
+  gone. Each arrow end on the looked-at frame has one plaque: "all" when
+  the parts behind it are every part of the frame (of more than one part),
+  else a plain handle the size and colour of the former one-digit chip.
+  Both directions to one outside frame on a side share the incoming
+  direction's plaque, which stands for both (`endPlaques`, layout.mjs); its
+  card is the incoming one with the existing "go the other way" link.
+  Resting on or opening a plaque outlines the parts behind it and recedes
+  nothing. Per-number narrowing of a card is gone with the digits.
+- Tests: node `endPlaques` test (one plaque per pair, "all" only for every
+  part); layout and emphasis tests lose their numbers; the legend-line Go
+  test now checks the line is gone; the badge-card Playwright tests are
+  deleted and the chip-text ones expect "all" or an empty handle (edited,
+  not run: the owner asked for no browser walks).
+
 ## 2026-09-28 — Hover highlights and never dims (speed mode)
 
 - **Problem:** zoomed into Redis's Data type commands, moving the pointer

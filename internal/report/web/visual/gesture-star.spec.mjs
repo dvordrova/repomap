@@ -116,7 +116,7 @@ test('one target and twenty external systems have readable overview cards',async
   await testInfo.attach('journey-02 — Pinch reveals the target interior without its zoom button',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });
 
-test('external arrows end at the frame with the matching inner component numbers',async({page},testInfo)=>{
+test('external arrows end at the frame with its plaque beside them',async({page},testInfo)=>{
   await page.goto('/');
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
   await page.locator('[data-zoom-into="front"]').click();
@@ -129,12 +129,11 @@ test('external arrows end at the frame with the matching inner component numbers
   await page.locator('[data-frame-title="editing"]>strong').hover();
   await expect(map).toHaveAttribute('data-subject','editing');
   const label=page.locator('.flow-boundary-label[data-connection-outside="api"]');
-  await expect(label).toHaveText('2');
-  await expect(page.locator('.react-flow__node[data-id="submission"] .flow-number')).toHaveText('2');
+  await expect(label,'an end joining some of the parts is a plain handle').toHaveText('');
   const external=await map.evaluate(map=>map.visibleEdges.find(e=>e.from==='submission'&&e.to==='post'));
   const drawn=await page.locator(`[data-edge-ids~="${external.id}"] path:not(.flow-edge-casing)`).getAttribute('d');
   expect(drawn).toBe(external.outerSegments.map(points=>points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')).join(' '));
-  await testInfo.attach('journey-01 — Submission is component 2 · external lines stay outside',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  await testInfo.attach('journey-01 — External lines stay outside',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   // The outer frame can extend beyond this close area view. Pan to its native
   // endpoint without changing scale or relying on an offscreen DOM assertion.
   const marker=await label.boundingBox(),canvas=await page.locator('.flow-root').boundingBox();
@@ -143,7 +142,6 @@ test('external arrows end at the frame with the matching inner component numbers
     x:viewport.x+canvas.x+canvas.width/2-marker.x-marker.width/2,
     y:viewport.y+canvas.y+canvas.height/2-marker.y-marker.height/2}});
   await expect(label).toBeInViewport();
-  await expect(label).toHaveText('2');
   const endpoint=await map.evaluate(map=>{
     const edge=map.visibleEdges.find(e=>e.from==='submission'&&e.to==='post');
     const m=new DOMMatrixReadOnly(getComputedStyle(map.querySelector('.react-flow__viewport')).transform);
@@ -155,11 +153,7 @@ test('external arrows end at the frame with the matching inner component numbers
   expect(markerBox.y).toBeGreaterThanOrEqual(rootBox.y);
   expect(markerBox.x+markerBox.width).toBeLessThanOrEqual(rootBox.x+rootBox.width);
   expect(markerBox.y+markerBox.height).toBeLessThanOrEqual(rootBox.y+rootBox.height);
-  expect(Math.abs(markerBox.y+markerBox.height/2-endpoint.y),'The inward number is centred on its native connection').toBeLessThan(.5);
-  // The number at the frame reads at the inner badge's size; each number in
-  // it has its own room to point at, so its width is not the badge's.
-  const innerNumber=await page.locator('.react-flow__node[data-id="submission"] .flow-number').boundingBox();
-  expect(markerBox.height).toBeCloseTo(innerNumber.height,1);
+  expect(Math.abs(markerBox.y+markerBox.height/2-endpoint.y),'The inward plaque is centred on its native connection').toBeLessThan(.5);
   const covered=await label.evaluate((element,segments)=>{
     const box=element.getBoundingClientRect(),canvas=document.querySelector('.flow-root').getBoundingClientRect();
     const m=new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.react-flow__viewport')).transform);
@@ -170,6 +164,6 @@ test('external arrows end at the frame with the matching inner component numbers
         a.y>box.top&&a.y<box.bottom&&Math.max(a.x,b.x)>box.left&&Math.min(a.x,b.x)<box.right;
     }));
   },external.outerSegments);
-  expect(covered,'The outer stroke must not erase the number printed beside it').toBe(false);
+  expect(covered,'The outer stroke must not erase the plaque beside it').toBe(false);
   await testInfo.attach('journey-02 — Pan to the outer arrow · matching endpoint 2',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });

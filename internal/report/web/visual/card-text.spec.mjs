@@ -10,13 +10,13 @@ const cardText=page=>page.evaluate(()=>[...document.querySelectorAll('.react-flo
     const title=el.querySelector(':scope>strong'),description=el.querySelector(':scope>.flow-description');
     return {id:el.parentElement.dataset.id,height:el.offsetHeight,title:title.textContent,titleTops:tops(title),
       description:description?.textContent||'',descriptionTops:description?tops(description):[],
-      descriptionLines:description?description.offsetHeight/18:0,numbered:!!el.querySelector('.flow-number')};
+      descriptionLines:description?description.offsetHeight/18:0};
   }));
 const tops=cards=>cards.map(({id,titleTops,descriptionTops})=>({id,titleTops,descriptionTops}));
 
 // The owner's Data type commands: with the pointer inside the area every
-// description dropped 18px under a number badge's reserved row, and "and"
-// stood alone on a line of Set commands.
+// description dropped 18px under a reserved row, and "and" stood alone on a
+// line of Set commands.
 test('nothing inside a card moves when an area is looked at or chosen, and text keeps its measured lines',async({page},testInfo)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/?described');
@@ -35,7 +35,6 @@ test('nothing inside a card moves when an area is looked at or chosen, and text 
   }
   await expect(page.locator('.react-flow__node[data-id="auth"]')).toBeVisible();
   await page.mouse.move(1430,890);
-  await expect(page.locator('.react-flow__node[data-id="auth"] .flow-number')).toHaveCount(0);
   const apart=await cardText(page);
   expect(apart.filter(card=>card.description).length).toBeGreaterThan(3);
   await testInfo.attach('journey-01 — Parts with the pointer outside their area',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
@@ -50,15 +49,12 @@ test('nothing inside a card moves when an area is looked at or chosen, and text 
   }
 
   await page.locator('.react-flow__node[data-id="auth"]').hover();
-  await expect(page.locator('.react-flow__node[data-id="auth"] .flow-number')).toBeVisible();
   const looked=await cardText(page);
-  expect(looked.filter(card=>card.numbered).length).toBeGreaterThan(1);
   expect(tops(looked),'the pointer in an area moves no text in its cards').toEqual(tops(apart));
   await testInfo.attach('journey-02 — The same parts while their area is looked at',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 
   await page.locator('[data-frame-title="requests"]>strong').click();
   await page.mouse.move(1430,890);
-  await expect(page.locator('.react-flow__node[data-id="auth"] .flow-number')).toBeVisible();
   expect(tops(await cardText(page)),'choosing the area moves no text in its cards').toEqual(tops(apart));
   await testInfo.attach('journey-03 — The same parts with their area chosen',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   expect(errors).toEqual([]);

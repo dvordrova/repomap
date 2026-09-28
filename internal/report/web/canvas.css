@@ -58,14 +58,13 @@
 .flow-edge-active path{stroke:#34445b;stroke-width:calc(2.5px / var(--flow-zoom,1))}
 .flow-edge-active .flow-edge-casing{stroke:#fbfcfe;stroke-width:calc(6px / var(--flow-zoom,1))}
 .flow-defs{position:absolute;width:0;height:0}
-.flow-number{position:absolute;right:8px;bottom:8px}
 .flow-connection-label{position:absolute;pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:#fbfcfe;border-radius:5px;padding:3px;box-sizing:border-box}
-.flow-connection-label>span{font-size:12px;line-height:16px;white-space:pre-line;text-align:center;cursor:default;color:#39455a;overflow-wrap:anywhere}
 .flow-enabled .flow-connection-label button{padding:3px 9px;background:#e8edf4;border:1px solid #52647d;border-radius:6px;font-size:13px;line-height:18px;cursor:pointer;color:#243044}
 .flow-boundary-label{padding:0;background:transparent;z-index:6}
 /* The pointer on an arrowhead, its connection's handle: nothing is drawn. */
 .flow-on-end .react-flow__pane{cursor:pointer}
-.flow-number,.flow-enabled .flow-boundary-label button{background:#e8edf4;border:1px solid #52647d;border-radius:7px;padding:1px 7px;font:400 12px/16px system-ui;color:#243044}
+/* An arrow end's plaque: "all", or a plain handle the size of a one-digit chip. */
+.flow-enabled .flow-boundary-label button{min-width:29px;height:20px;background:#e8edf4;border:1px solid #52647d;border-radius:7px;padding:1px 10px;font:400 12px/16px system-ui;color:#243044}
 .flow-connection-label button:hover{background:#d4dce6}
 .flow-enabled .system-selection{min-height:32px;margin:8px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .flow-enabled .system-path-note{font-size:13px}
@@ -135,7 +134,6 @@
 .flow-location{height:30px;box-sizing:border-box;padding:6px 10px;font:600 12px/18px system-ui;color:#536176;background:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .flow-area-summary{position:absolute;pointer-events:auto;cursor:pointer}
 .flow-area-summary>.flow-overview-compact{display:flex;flex-direction:column;box-sizing:border-box;height:100%;padding:6px;border:0;outline:0;background:transparent;overflow:hidden}
-.flow-area-summary>.flow-overview-compact>footer{flex:none;display:flex;align-items:center;justify-content:space-between;height:22px;margin-top:4px}
 .flow-area-summary .flow-overview-compact>strong{flex:1 1 auto;min-height:0;overflow:hidden;font:600 12px/16px system-ui;padding-right:44px;overflow-wrap:normal}
 .flow-standalone-part{padding:6px;gap:0}
 .flow-standalone-part>strong{font:600 12px/16px system-ui;overflow-wrap:normal}
@@ -173,7 +171,6 @@
 .map-input-context button{font-size:12px;padding:4px 7px;margin-top:6px}
 .find-result-summary{font-size:13px!important;line-height:1.45!important;color:#536176;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:6px 0 0}
 @keyframes flow-reveal{from{opacity:.2}to{opacity:1}}
-.flow-label-upright button{white-space:pre;line-height:15px;padding:3px 6px}
 .flow-calls-place{position:absolute;z-index:5}
 .flow-calls-place::before{content:'';position:absolute;inset:-8px;z-index:-1}
 /* A call card is read at the screen's own type size, beside parts many
@@ -197,7 +194,7 @@
 .flow-card-index li{display:flex;justify-content:space-between;gap:8px;white-space:nowrap}
 .flow-card-index li>*:first-child{overflow:hidden;text-overflow:ellipsis}
 .flow-connection-calls .flow-card-index button{color:#4f3aa3}
-.flow-card-index b,.flow-card-group b,.flow-card-pair b,.flow-card-section>header b,.flow-card-fold-parts b{font-weight:400;color:#66758a;font-variant-numeric:tabular-nums}
+.flow-card-index b,.flow-card-group b,.flow-card-pair b,.flow-card-fold-parts b{font-weight:400;color:#66758a;font-variant-numeric:tabular-nums}
 .flow-card-groups h4,.flow-card-groups h5{margin:0;display:flex;justify-content:space-between;align-items:baseline;gap:12px;background:#fff}
 .flow-card-group{padding:10px 16px 3px;font:600 14px/19px system-ui;color:#39455a}
 .flow-card-pair{padding:4px 16px 2px 28px;font:500 12.5px/18px system-ui;color:#536176}
@@ -222,13 +219,6 @@
 .flow-card-fold-parts summary>span::before{content:'▸';display:inline-block;width:13px;color:#66758a;font-size:10px}
 .flow-card-fold-parts details[open]>summary>span::before{content:'▾'}
 .flow-card-fold-parts p{margin:0 0 4px 13px;font:400 12.5px/19px ui-monospace,SFMono-Regular,Menlo,monospace;word-spacing:6px}
-.flow-card-section+.flow-card-section{border-top:1px solid #d5dce6}
-.flow-card-section>header{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;gap:12px;padding:10px 44px 4px 16px;background:#fff;font:650 15px/20px system-ui}
-.flow-connection-calls .flow-card-section>header button{color:#4f3aa3}.flow-connection-calls .flow-card-section>header button:hover{text-decoration:underline}
-.flow-connection-label button b{font-weight:400}.flow-connection-label button i{font-style:normal}
-.flow-connection-label button b.flow-number-active{font-weight:800}
-.flow-label-upright button b{display:block}
-.flow-number{cursor:pointer;pointer-events:auto}.flow-number-pinned{background:#243044!important;color:#fff!important}
 .flow-part.flow-part-deep{padding:0;overflow:hidden;border-width:1px}
 .flow-part.flow-part-deep>strong{display:block;font:650 7px/10px system-ui;padding:5px 8px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .flow-part-symbols{position:absolute;left:0;overflow:hidden;pointer-events:auto}
@@ -274,19 +264,13 @@
    their arrows. Kept open, it has a ✕ that stays at its top as its list
    scrolls, and so does the heading of the calls being read. */
 .flow-floating-card{left:0;top:0;z-index:5000;pointer-events:auto}
-/* A number can be pointed at, and says so: it answers the pointer, and the one
-   whose card is open stays dark, so the card is never an orphan. */
-.flow-connection-label button b{cursor:pointer;padding:0 3px;border-radius:4px}
-.flow-connection-label button b:hover{background:#c3cedb}
-.flow-connection-label button b.flow-number-open{background:#243044;color:#fff}
-.flow-number:hover{background:#c3cedb}
 
-/* The marks stand in the same places on every card: the zoom mark top right, the number bottom right, the role mark on the top border, in the middle. */
+/* The marks stand in the same places on every card: the zoom mark top right, the role mark on the top border, in the middle. */
 .flow-role-symbol{position:absolute;left:50%;top:0;width:14px;height:14px;transform:translate(-50%,-50%);z-index:1}
 .flow-role-triggers{width:26px;height:18px}
 .flow-area-summary>.flow-role-triggers{background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='26'%20height='18'%20viewBox='0%200%2026%2018'%3E%3Cpath%20d='M1.5%205.5H13V1.5L24.5%209L13%2016.5V12.5H1.5Z'%20fill='%23267267'%20stroke='%23eef8f4'%20stroke-width='3'%20stroke-linejoin='round'%20paint-order='stroke'/%3E%3C/svg%3E")}
 .flow-standalone-part>strong{padding-right:38px}
-.flow-area-summary>.flow-overview-compact>footer{justify-content:flex-end}.flow-area-summary .flow-number{position:static}.flow-standalone-part>.flow-part-zoom{top:3px}.flow-standalone-part>.flow-number{right:6px;bottom:4px}
+.flow-standalone-part>.flow-part-zoom{top:3px}
 /* A declaration is chosen by a click: the reading names it, its tile keeps
    the dark outline of what is read and the declarations its links do not
    join recede. Pointing at one darkens its links and recedes nothing. */

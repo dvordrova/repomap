@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {connections} from './layout.mjs';
+import {connections, endPlaques} from './layout.mjs';
 import {prepareInteriors,layoutPrepared} from './split-layout.mjs';
 import {semanticLayout} from './semantic.mjs';
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -83,16 +83,15 @@ test('the ordinary composed layout routes the real endpoints, retaining every or
   assert.equal(result.edges.find(e=>e.from==='caller'&&e.to==='handler').relations.length,2,'repeated calls keep both sources');
 });
 
-test('grouped destinations keep direction, actual inner numbers and all sources',async()=>{
+test('grouped destinations keep direction, the actual inner parts and all sources',async()=>{
   const {layout:result}=await semanticLayout(items,relations,areas,1200,700);
   const groups=connections('right',['handler','data'],result.edges);
   const incoming=groups.find(g=>g.outside==='caller'&&g.incoming);
-  assert.deepEqual(incoming.numbers,[1,2]);assert.equal(incoming.relations.length,3);
+  assert.deepEqual(incoming.insides.sort(),['data','handler']);assert.equal(incoming.relations.length,3);
   const outgoing=groups.find(g=>g.outside==='caller'&&!g.incoming);
-  assert.deepEqual(outgoing.numbers,[2]);assert.equal(outgoing.relations[0].possible,true);
+  assert.deepEqual(outgoing.insides,['data']);assert.equal(outgoing.relations[0].possible,true);
   assert.equal(result.labels.length,4,'one boundary label per participant and direction on each side');
-  for(const label of result.labels)assert.ok(Number.isFinite(label.point.x)&&Number.isFinite(label.point.y),'numbers use the native boundary endpoint');
-  assert.deepEqual(result.labels.find(l=>l.area==='right'&&l.incoming).numbers,[1,2]);
+  for(const label of result.labels)assert.ok(Number.isFinite(label.point.x)&&Number.isFinite(label.point.y),'labels use the native boundary endpoint');
 });
 
 
@@ -108,4 +107,20 @@ test('a root leaf reserves its measured readable label dimensions before routing
   assert.ok(input.width/scale>=420-1e-7&&input.height/scale>=180-1e-7,'composition preserves the complete minimum after uniform scaling');
   assert.equal(input.parentId,undefined);
   assert.deepEqual(result.edges[0].relations,[original]);
+});
+
+// Redis's Data type commands showed two "all" chips side by side for its
+// two-headed arrow to Core infrastructure, and digits on every other end.
+test('each arrow end is one plaque: all only when every part is behind it',()=>{
+  const at=(point,side='left')=>({root:'area',side,point});
+  const labels=endPlaques([
+    {id:'in:core',outside:'core',incoming:true,insides:['hash'],edges:['a'],...at({x:0,y:10})},
+    {id:'out:core',outside:'core',incoming:false,insides:['set','list'],edges:['b'],...at({x:0,y:30})},
+    {id:'out:admin',outside:'admin',incoming:false,insides:['list'],edges:['c'],...at({x:100,y:20},'right')},
+  ],new Set(['hash','set','list']));
+  assert.deepEqual(labels.filter(label=>!label.hidden).map(label=>[label.id,label.all]),[['in:core',true],['out:admin',false]],'one plaque on the side the pair shares');
+  assert.deepEqual(labels[0].insides.sort(),['hash','list','set']);assert.deepEqual(labels[0].edges,['a','b']);
+  assert.equal(labels[1].twin,'in:core');
+  const alone=endPlaques([{id:'in:x',outside:'x',incoming:true,insides:['only'],edges:['e'],...at({x:0,y:0})}],new Set(['only']));
+  assert.equal(alone[0].all,false,'a frame of one part has no all');
 });

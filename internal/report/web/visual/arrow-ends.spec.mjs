@@ -20,10 +20,9 @@ async function pointAt(page,locator){
 }
 const end=(page,id)=>page.locator(`.flow-connection-label[data-connection-label="${id}"]`);
 
-// An arrow end that joins every part of the frame says so once, "all",
-// instead of listing each number; an end that joins some keeps its numbers.
-// Its card open, the parts behind it are outlined in place (owner's 2a) and
-// nothing recedes.
+// An arrow end is one plaque (owner's 2a): "all" when it joins every part of
+// the frame, else a plain handle with no digit. Its card open, the parts
+// behind it are outlined in place and nothing recedes.
 test('an end joining every part of its frame is one all mark that outlines them in place',async({page},testInfo)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/?both-parts');
@@ -38,7 +37,7 @@ test('an end joining every part of its frame is one all mark that outlines them 
   await expect(all).toHaveText('all');
   await pointAt(page,page.locator('[data-frame-title="requests"]>strong'));
   await expect(map).toHaveAttribute('data-subject','requests');
-  await expect(end(page,'boundary:requests:out:execution'),'an end joining one of two parts keeps its number').toHaveText('1');
+  await expect(end(page,'boundary:requests:out:execution'),'an end joining one of two parts is a plain handle').toHaveText('');
   await pointAt(page,page.locator('[data-frame-title="execution"]>strong'));
   await expect(map).toHaveAttribute('data-subject','execution');
   await testInfo.attach('journey-01 — One all mark where every part is behind the end',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
@@ -137,13 +136,13 @@ async function ontoCard(page){
 }
 
 // Redis's geometry: entering one component opens its neighbour too, and
-// the component's numbers stand on its own border. Chosen, it numbers its
-// areas; the pointer crosses its space from an area to a number and the
-// number is still there, its card opens and the pointer reaches the card.
+// the component's arrow ends stand on its own border. Chosen, it marks its
+// ends; the pointer crosses its space from an area to a plaque and the
+// plaque is still there, its card opens and the pointer reaches the card.
 // Read by its areas alone, the component's own space was in no frame: its
-// numbers vanished on the way, and with two components open none stood at
-// all (the tester's 44–47).
-test('a component beside another keeps its numbers while the pointer crosses it to them',async({page},testInfo)=>{
+// ends vanished on the way, and with two components open none stood at all
+// (the tester's 44–47).
+test('a component beside another keeps its plaques while the pointer crosses it to them',async({page},testInfo)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/?symbols');
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
@@ -152,17 +151,17 @@ test('a component beside another keeps its numbers while the pointer crosses it 
   expect((await map.evaluate(map=>map.captureViewport())).openComponents,'entering the backend opens the front too').toEqual(['front','backend']);
   await page.mouse.move(1430,890);
   const chip=end(page,'boundary:backend:in:api');
-  await expect(chip,'the chosen component numbers its areas on its border').toHaveText('1');
+  await expect(chip,'the chosen component marks the end on its border, one area behind it').toHaveText('');
   const at=await chip.boundingBox().then(box=>({x:box.x+box.width/2,y:box.y+box.height/2}));
-  // Pointed at, an open area numbers its own parts instead; on the way out
-  // of it the component's numbers stand again.
+  // Pointed at, an open area marks its own ends instead; on the way out of
+  // it the component's plaques stand again.
   await pointAt(page,page.locator('[data-frame-title="requests"]>strong'));
   await expect(map).toHaveAttribute('data-subject','requests');
   await restAt(page,at);
   const card=page.locator('.flow-arrow-card');
   await expect(card).toBeVisible();
   await expect(card.locator('.flow-card-title')).toHaveText('Backend API→Job processing service');
-  await testInfo.attach('journey-01 — The component\'s number reached across its space',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  await testInfo.attach('journey-01 — The component\'s plaque reached across its space',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   await ontoCard(page);
   const camera=await map.evaluate(map=>map.captureViewport());
   await chip.locator('button').click();

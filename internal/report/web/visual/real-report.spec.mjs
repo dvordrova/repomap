@@ -65,8 +65,8 @@ for(const [width,height] of [[1440,900],[1280,800]])test(`every arrow end and ch
   await settle(map);await page.mouse.move(corner.x,corner.y);
   const chips=await page.locator('.flow-connection-label').evaluateAll((labels,canvas)=>labels.map(l=>({id:l.dataset.connectionLabel,box:l.getBoundingClientRect().toJSON()}))
     .filter(({box})=>box.x>canvas.x&&box.y>canvas.y&&box.x+box.width<canvas.x+canvas.width&&box.y+box.height<canvas.y+canvas.height),canvas);
-  expect(chips.length,'the entered component numbers its areas on its border').toBeGreaterThan(0);
-  // From inside one of its areas across the component to each number.
+  expect(chips.length,'the entered component marks its arrow ends on its border').toBeGreaterThan(0);
+  // From inside one of its areas across the component to each plaque.
   const area=await page.locator(`[data-summary-area],[data-frame-title]:not([data-frame-title="${component}"])`).evaluateAll((nodes,canvas)=>nodes.map(n=>n.getBoundingClientRect().toJSON())
     .find(b=>b.x>canvas.x&&b.y>canvas.y&&b.x+b.width<canvas.x+canvas.width&&b.y+b.height<canvas.y+canvas.height),canvas);
   const inside={x:area.x+Math.min(40,area.width/2),y:area.y+Math.min(20,area.height/2)};

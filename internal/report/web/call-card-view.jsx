@@ -60,13 +60,12 @@ function foldWords(fold){
 // under headings that stay at the top while the list scrolls. A caller is
 // written once for its run of calls; a fold is one line, its callees by
 // part under it, each part opening to their names.
-// A part's own card leaves out the heading of calls made from the part
-// itself (`own`), and a relation with no call of its own that would only
-// name the heading above it again says nothing more.
-export function CallRows({card,sticky=true,own='',choose=null}){
+// A relation with no call of its own that would only name the heading above
+// it again says nothing more.
+export function CallRows({card,sticky=true,choose=null}){
   return <div className={`flow-card-groups ${sticky?'flow-card-sticky':''} ${choose?'flow-card-reading':''}`}>
     {card.groups.map(group=><section key={group.id||'-'} data-call-group={group.id}>
-      {group.id&&group.id!==own&&<h4 className="flow-card-group"><span>{group.name}</span><b>{group.count}</b></h4>}
+      {group.id&&<h4 className="flow-card-group"><span>{group.name}</span><b>{group.count}</b></h4>}
       {group.folds.map(fold=><div key={fold.caller+fold.fold} className="flow-card-fold">
         <p className="flow-card-row"><Name at={fold.callerAt} href={fold.site} choose={choose}>{fold.caller}</Name><i>{verb(fold.kind)}</i><span className="flow-card-say">{foldWords(fold)}</span>{choose&&<OpenCode href={fold.site}/>}</p>
         <div className="flow-card-fold-parts">{fold.parts.map(part=><details key={part.id} onClick={stop}>

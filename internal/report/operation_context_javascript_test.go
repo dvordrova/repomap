@@ -94,7 +94,7 @@ func TestInputSearchHighlightsTheExactEntrance(t *testing.T) {
 	runSystemJS(t, projection+`
 const nodes=[{id:'part'},{id:'input',activation:'command',inputOwner:'part'}];
 const projection=rmSystemProjection(nodes,[{from:'input',to:'part',label:'implemented in',operations:['input']}]);
-const scope='',operation=null,searchValue='run',filterValue='',numbered=true;
+const scope='',operation=null,searchValue='run',filterValue='';
 let update;const surface={update:value=>update=value},map={classList:{toggle(){}},dataset:{}},clear={};
 const matches=n=>n.id==='input';function renderCaption(){}
 `+emphasize+`
