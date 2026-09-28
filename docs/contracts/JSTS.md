@@ -226,7 +226,15 @@ whose declarations are not installed names none, so the fixture's
 not. Not recorded yet:
 
 - `process.argv` carries no argument vector origin, and `===` on it or on
-  `program.opts()` is no fact;
+  `program.opts()` is no fact; `process.argv.includes("--watch")` names no
+  symbol without Node's declarations (below), so the per-call contrast of
+  an option comparison with a comparison of data has no fixture
+  equivalent;
+- the object an input is declared on (K2) and the join of a word entry
+  with the hand-over made on its result (J1): commander's
+  `program.command("init").action(initProject)` is that shape, but with
+  its declarations not installed nothing of it is asked, so the fixture
+  has neither;
 - array-literal tables of names;
 - object and `Map` registries;
 - a callable the repository's own function keeps (S1) is not enabled;

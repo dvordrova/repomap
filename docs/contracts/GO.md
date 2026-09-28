@@ -194,7 +194,16 @@ A call of an outside symbol given words (`fs.String("config", "",
 the words become (READING, the `atlas_api` per-call question); the fixture
 asks `flag.String`'s call at `internal/storefixture/destinations.go`. The
 answer is the call's: a call answered with an entry kind is an input whose
-handler is not established. Not recorded yet, and so asked nothing:
+handler is not established. `internal/storefixture/tool_cli.go`'s
+`ToolCommand` holds the per-call contrast and the objects inputs are
+declared on (`TestCumulativeGoInputsAreAskedPerCallAndCatalogued`):
+`strings.EqualFold(os.Args[1], "check")` and `strings.EqualFold(level,
+"default")` are asked apart, and `port` and `strict`, declared on the flag
+sets `flag.NewFlagSet("serve", …)` and `flag.NewFlagSet("check", …)`
+make, are two catalogues of one function. J1, a word entry joined with the
+hand-over made on its own result, has no Go equivalent: the standard
+library has no call naming an entry whose result another call hands a
+handler to. Not recorded yet, and so asked nothing:
 
 - a package-level variable's initializer calling an outside symbol
   (`var verbose = flag.Bool("verbose", …)` at the end of the same file):
@@ -238,7 +247,10 @@ gopkg.in/yaml.v2.Unmarshal …", and the CLI's JSON results read the
 four JSON payload fields (the reply's with `Context.JSON`) and its preset
 answers none (`TestEchoPresetReadingTurnsRegistrationsIntoOperations`); the
 reading test `TestATaggedFieldIsAskedWithItsStructureAndAnsweredSettingIsAnEntry`
-holds the setting shape. Not recorded yet: a key a structure's
+holds the setting shape, and the cumulative fixture holds it on real facts:
+`ServerConfig`'s `listen` and `data_dir`, decoded by `json.Unmarshal(raw,
+&config)` in `LoadServerConfig`, are settings declared on that call, while
+the response structures' fields are asked and answered none. Not recorded yet: a key a structure's
 `UnmarshalYAML`/`UnmarshalJSON` method reads itself, a map-typed field's
 keys, an anonymous structure's fields (`var raw struct{…}`), which are no
 type's members, and a value handed through a repository helper typed `any`

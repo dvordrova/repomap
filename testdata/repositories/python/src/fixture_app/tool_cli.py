@@ -3,7 +3,9 @@
 The parser, the subcommand collection and the subcommand's parser are each
 the result of a call to argparse; the calls made on those results are the
 code's own fact (`result_receives`). `init` is named by add_parser and
-handled through set_defaults, two calls that each hand argparse something.
+handled through set_defaults, two calls that each hand argparse something,
+one input. `--force` is declared on init's own parser, `--verbose` on the
+tool's.
 `revision` starts another program, git: the words of its command line are
 git's, not this tool's options.
 """
@@ -21,6 +23,7 @@ def build_parser():
     commands = parser.add_subparsers(dest="cmd")
     init = commands.add_parser("init")
     init.set_defaults(func=run_init)
+    init.add_argument("--force", action="store_true")
     return parser
 
 

@@ -142,3 +142,8 @@
 ;; Starts another program, git: the words of its command line are git's.
 (defn revision []
   (:out (shell/sh "git" "rev-parse" "HEAD")))
+
+;; --shout is an option of the command line: the first argument is compared
+;; with it. The same comparison of a row's own name with a word is data.
+(defn shouted? [args] (= (first args) "--shout"))
+(defn default-row? [row] (= (:name row) "default"))

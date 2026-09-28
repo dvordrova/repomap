@@ -163,8 +163,15 @@ the module.
 
 A call of an outside var given a literal is asked on its own what the
 words become (READING, the `atlas_api` per-call question): the fixture asks
-`clojure.core/format` (`(format "create %s dir" dir)`) and
-`clojure.string/replace`. Not recorded yet:
+`clojure.core/format` (`(format "create %s dir" dir)`),
+`clojure.string/replace`, and `clojure.core/=` twice, `shouted?`'s
+`(= (first args) "--shout")` and `default-row?`'s `(= (:name row)
+"default")`, each on its own (`TestCumulativeClojureInputsAreAskedPerCall`).
+The object an input is declared on and J1 have no Clojure equivalent: the
+adapter records no call results as origins. A value chosen on either
+branch is an `if` expression, not a reassigned local, and the adapter
+records no value for it, so the Go join of both launches (`alternatives`)
+has no Clojure equivalent either. Not recorded yet:
 
 - `-main`'s `& args` carry no argument vector origin;
 - `tools.cli` option vectors are vectors, not literals given to a call;

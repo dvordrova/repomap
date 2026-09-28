@@ -323,11 +323,23 @@ fixture's `src/fixture_app/tool_cli.py` asks `argparse.ArgumentParser`
 (`add_argument ×1`, `add_subparsers ×1`), `add_argument`,
 `add_subparsers` (`add_parser ×1`) and `add_parser`; `set_defaults(func=…)`
 hands a callable and is asked what it becomes. A subcommand named by one
-call and handled through another is two questions and, when both are
-accepted, two inputs; joining them is later work. Not recorded yet:
+call and handled through another is one input (READING, J1): `init`,
+named by `commands.add_parser("init")`, is handled by `run_init`, which
+`init.set_defaults(func=run_init)` hands over on that call's own result.
+The inputs an object's calls declare are one catalogue of that object:
+`--verbose` is declared on `argparse.ArgumentParser("tool")` and `--force`
+on init's own parser, whose catalogue names `init` as what its members are
+declared on (`TestCumulativePythonInputsJoinAndCatalogue`). Not recorded
+yet:
 
 - `sys.argv` carries no argument vector origin, and a comparison of
-  `sys.argv` or of a parsed argument (`args.cmd == "init"`) is no fact;
+  `sys.argv` or of a parsed argument (`args.cmd == "init"`) is no fact: an
+  operator is no call, so the per-call contrast of an option comparison
+  with a comparison of data (C's `strcasecmp(argv[1], "--raw")` beside
+  `strcasecmp(cmd->name, "bgsave")`) has no Python equivalent;
+- a parser held in an attribute (`self.parser.add_subparsers(...)`, as
+  freqtrade's): the attribute has no recorded type, so the calls made on
+  it name no outside symbol and are never asked;
 - list and dict tables of names;
 - dict registries (`handlers[name] = fn`);
 - a callable the repository's own function keeps (S1) is not enabled;

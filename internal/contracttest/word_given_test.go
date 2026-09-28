@@ -202,9 +202,10 @@ func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 		expectAsked(t, asked, "argparse.ArgumentParser", "given", `argparse.ArgumentParser("tool")`, "add_argument ×1", "add_subparsers ×1")
 		expectAsked(t, asked, "argparse.ArgumentParser.add_argument", "given", `parser.add_argument("-v", "--verbose", action="store_true")`)
 		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers", "given", `parser.add_subparsers(dest="cmd")`, "add_parser ×1")
-		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers.add_parser", "given", `commands.add_parser("init")`, "set_defaults ×1")
+		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers.add_parser", "given", `commands.add_parser("init")`, "add_argument ×1", "set_defaults ×1")
 		// The subcommand's handler is handed over by another call: a second
-		// question, and a second input if both are accepted (recorded).
+		// question; when both are accepted, one input (J1,
+		// TestCumulativePythonInputsJoinAndCatalogue).
 		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers.add_parser.set_defaults", "binds", "init.set_defaults(func=run_init)")
 	})
 	t.Run("jsts", func(t *testing.T) {
