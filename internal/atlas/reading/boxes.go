@@ -683,8 +683,10 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		}
 		r.boundaries[place.ID] = state
 	}
+	r.applyStored()
 	publishes := r.applyAPIRoles()
 	publishes = append(publishes, r.bindInterpretedBoundaries()...)
+	r.bindTableRows()
 	r.markDeclaredOn()
 	if err := r.readPrograms(ctx); err != nil {
 		return err

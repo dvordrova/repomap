@@ -147,7 +147,10 @@ type reader struct {
 	// callEnters are the per-call answers of per_call symbols, by call site
 	// (api_call.go).
 	callEnters map[sourceSite]string
-	keys       map[string][]string // file place ID -> key symbol IDs, by rank
+	// storedKinds and tableKinds are the decided kinds of the kept
+	// callables and the tables of names (inputs.go).
+	storedKinds, tableKinds map[string]string
+	keys                    map[string][]string // file place ID -> key symbol IDs, by rank
 	// selectedKeys is every declaration the selection found worth a reader's
 	// attention; partKeys is what explains the part it stands in.
 	selectedKeys, partKeys, keysDecided map[string]bool

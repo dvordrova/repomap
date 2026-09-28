@@ -40,6 +40,9 @@ var entryOptionsText string
 //go:embed prompts/api_call.md
 var apiCallPrompt string
 
+//go:embed prompts/inputs.md
+var inputsPrompt string
+
 //go:embed prompts/api_publishes_options.md
 var apiPublishesOptionsText string
 
@@ -274,4 +277,30 @@ func mustOptions(file, text string, names []string) map[string]llm.Criteria {
 		}
 	}
 	return options
+}
+
+// StageInputs asks what the repository's own registrations and tables
+// are: a callable a repository function keeps for later, and a table of
+// names (pass 2, C).
+const StageInputs = "atlas_inputs"
+
+// Inputs asks one closed question of each candidate of a form
+// (repomap.atlas.inputs.v1.<form>): "stored", a callable the repository
+// hands to its own function that keeps it (the entry kinds, middleware or
+// none, as the handed-callable question offers); "table", a table of names
+// the repository declares (the entry kinds but the queue consumer, or
+// none). One row per candidate; an undecided answer makes no entry.
+func Inputs(form string) table.Definition {
+	def := table.Definition{Stage: StageInputs, Contract: "repomap.atlas.inputs.v1." + form, System: inputsPrompt, Classifier: true, Memoize: true}
+	switch form {
+	case "stored":
+		def.Columns = []table.Column{{Name: "becomes", Kind: table.Choice, Options: entryOptionNames(), Criteria: EntryCriteria(entryOptionNames()...), Item: "candidate",
+			Ask: "What does the repository's callable in `candidate`, which the repository's own function keeps for later, become on our map?"}}
+	case "table":
+		def.Columns = []table.Column{{Name: "becomes", Kind: table.Choice, Options: EntersOptions(), Criteria: EntryCriteria(EntersOptions()...), Item: "candidate",
+			Ask: "What do the rows of the table in `candidate` become on our map?"}}
+	default:
+		panic("lines: no inputs form " + form)
+	}
+	return def
 }

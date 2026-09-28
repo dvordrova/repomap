@@ -195,7 +195,7 @@ func (r *reader) unitFacts(view *designView) *roleFacts {
 	// a command table row or a route, carries the words the code wrote there.
 	for _, place := range r.opts.Graph.Places {
 		boundary := place.Boundary
-		if boundary == nil || boundary.Direction != atlas.DirectionIn || len(boundary.Words) == 0 || !contains(place.TargetIDs, view.targetID) {
+		if boundary == nil || boundary.Registrar != nil || boundary.Direction != atlas.DirectionIn || len(boundary.Words) == 0 || !contains(place.TargetIDs, view.targetID) {
 			continue
 		}
 		subject := boundary.SubjectID

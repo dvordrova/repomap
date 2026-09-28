@@ -341,6 +341,9 @@ func (r *reader) readAPI(ctx context.Context) error {
 	if err := r.readCalls(ctx, perCall); err != nil {
 		return err
 	}
+	if err := r.readInputs(ctx); err != nil {
+		return err
+	}
 	r.reportStage(lines.StageAPI)
 	return nil
 }

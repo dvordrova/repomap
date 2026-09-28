@@ -185,6 +185,7 @@ func (r *reader) join(view *reader, chain []string) {
 		case lines.StageAPI:
 			r.api = view.api
 			r.undecidedEnters, r.callEnters = view.undecidedEnters, view.callEnters
+			r.storedKinds, r.tableKinds = view.storedKinds, view.tableKinds
 		case lines.StageBoundaries:
 			r.places, r.boundaries = view.places, view.boundaries
 			r.nextBoundary, r.boundaryIDs = view.nextBoundary, view.boundaryIDs

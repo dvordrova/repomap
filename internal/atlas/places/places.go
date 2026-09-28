@@ -100,6 +100,7 @@ func Build(input Input) (atlas.Graph, error) {
 		seeds:             make(map[string]struct{}),
 		seedDecls:         make(map[string]struct{}),
 		seedTargets:       make(map[string]map[string]struct{}),
+		tableRows:         make(map[string][]atlas.TableRow),
 		targetOf:          make(map[string]map[string]struct{}),
 		bounds:            make(map[boundaryKey]*boundaryState),
 		workspace:         make(map[string]struct{}),
@@ -231,6 +232,7 @@ type builder struct {
 	seeds             map[string]struct{}
 	seedDecls         map[string]struct{}            // symbol places of seed declarations
 	seedTargets       map[string]map[string]struct{} // symbol place -> targets it is the seed of
+	tableRows         map[string][]atlas.TableRow    // symbol place of a table variable -> its word rows
 	targetOf          map[string]map[string]struct{}
 	bounds            map[boundaryKey]*boundaryState
 	symbols           []atlas.Place
@@ -364,6 +366,22 @@ func (b *builder) useTargetObjects(index programindex.Index) {
 		}
 		// A file two targets index carries each declaration in both indexes.
 		b.symbolOf[object.ID] = atlas.SymbolID(filePath, object.Location.Line, name)
+		if len(object.Rows) > 0 && b.tableRows[b.symbolOf[object.ID]] == nil {
+			var rows []atlas.TableRow
+			for _, row := range object.Rows {
+				var literals []atlas.RowLiteral
+				for _, literal := range row.Literals {
+					if literal.Location == nil {
+						continue
+					}
+					literals = append(literals, atlas.RowLiteral{Field: literal.Field, Value: literal.Value, LineNo: literal.Location.Line, Column: literal.Location.Column})
+				}
+				if len(literals) > 0 {
+					rows = append(rows, atlas.TableRow{Literals: literals})
+				}
+			}
+			b.tableRows[b.symbolOf[object.ID]] = rows
+		}
 	}
 }
 
@@ -1115,7 +1133,7 @@ func (b *builder) collectSymbols() {
 				ID: id, Kind: atlas.PlaceSymbol, Path: filePath,
 				LineNo: decl.LineNo, Column: decl.Column, Depth: state.depth, TargetIDs: sortedKeys(state.targets),
 				Parent: atlas.FileID(filePath), Given: truncateRunes(given, maxLineRunes),
-				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached, Seeds: seeds},
+				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached, Seeds: seeds, Rows: b.tableRows[id]},
 			})
 		}
 	}
@@ -1675,6 +1693,7 @@ func (b *builder) collectBoundaries() {
 		}
 		var direction, kind, method, external, holder string
 		var values, words []string
+		var kept *atlas.RegistrarFacts
 		switch fact.Kind {
 		case facts.KindRegistration:
 			// The shape is the fact; its kind is the model's to decide. A
@@ -1688,6 +1707,14 @@ func (b *builder) collectBoundaries() {
 			words = registrationWords(fact)
 			if fact.Holder != nil {
 				holder = fmt.Sprintf("%s:%d:%d", fact.Holder.Path, fact.Holder.Line, fact.Holder.Column)
+			}
+			if registrar := fact.Registrar; registrar != nil {
+				kept = &atlas.RegistrarFacts{Name: registrar.Name, Path: registrar.Path, Signature: registrar.Signature, Slots: slices.Clone(registrar.Slots)}
+				for _, during := range registrar.During {
+					kept.During = append(kept.During, atlas.DuringFacts{Seed: during.Seed, HandedTo: during.HandedTo, Handlers: slices.Clone(during.Handlers), Through: slices.Clone(during.Through)})
+				}
+				// The literals are the call's; the registrar's name is no word.
+				words = slices.Clone(fact.Values)
 			}
 		case facts.KindSQLQuery:
 			direction, kind = atlas.DirectionOut, atlas.BoundaryDB
@@ -1733,6 +1760,7 @@ func (b *builder) collectBoundaries() {
 				Source: "fact", Origins: []atlas.BoundaryOrigin{origin}, ObjectID: objectID, SubjectID: b.factSubjects[objectID],
 				Caller: caller, CallerDoc: callerDoc, External: external, Method: method, Values: values, Words: words,
 				Holder: holder, Handed: fact.Kind == facts.KindRegistration && fact.Handed, Direction: direction, GivenKind: kind,
+				Registrar: kept,
 			},
 		}}
 	}

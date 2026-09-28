@@ -30,7 +30,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 20
+	GraphVersion = 21
 	Version      = 18
 
 	GraphFilename    = "places.json"
@@ -251,10 +251,27 @@ type SymbolFacts struct {
 	// proved their program never runs it (ProgramIndex `unreachable`): what
 	// it calls out to or registers is not those targets'.
 	Unreached []string `json:"unreached,omitempty"`
+	// Rows are, for a module-level table variable, the rows its initializer
+	// writes words in and stores no repository callable (ProgramIndex
+	// TableRow): names the program may look what it was given up in.
+	Rows []TableRow `json:"rows,omitempty"`
 	// Seeds are the targets whose execution begins at this declaration
 	// (ProgramIndex target seeds): each is the entry of its program, so its
 	// file's grouping gives it a row of its own.
 	Seeds []string `json:"seeds,omitempty"`
+}
+
+// TableRow is one row of a table variable: its string literals in order.
+type TableRow struct {
+	Literals []RowLiteral `json:"literals"`
+}
+
+// RowLiteral is one string literal a row writes, with the field it fills.
+type RowLiteral struct {
+	Field  string `json:"field,omitempty"`
+	Value  string `json:"value"`
+	LineNo int    `json:"line_no"`
+	Column int    `json:"column,omitempty"`
 }
 
 type TypeMember struct {
@@ -408,6 +425,32 @@ type BoundaryFacts struct {
 	// GivenKind is the kind the code already knows from facts; empty when the
 	// model has to say.
 	GivenKind string `json:"given_kind,omitempty"`
+	// Registrar is, for a callable handed to the repository's own function
+	// that keeps it for later (a registration fact's Registrar), that
+	// function and what runs when the call is made. The reading asks what
+	// the kept callable becomes (atlas_inputs stored); no outside symbol's
+	// role decides it.
+	Registrar *RegistrarFacts `json:"registrar,omitempty"`
+}
+
+// RegistrarFacts is the repository function a callable is handed to and
+// kept by, as a registration fact records it. Local evidence for the
+// stored question; its names are code structure.
+type RegistrarFacts struct {
+	Name      string        `json:"name"`
+	Path      string        `json:"path"`
+	Signature string        `json:"signature,omitempty"`
+	Slots     []string      `json:"slots"`
+	During    []DuringFacts `json:"during,omitempty"`
+}
+
+// DuringFacts is one way a registering call is reached (facts
+// RegisteredDuring).
+type DuringFacts struct {
+	Seed     string   `json:"seed,omitempty"`
+	HandedTo string   `json:"handed_to,omitempty"`
+	Handlers []string `json:"handlers,omitempty"`
+	Through  []string `json:"through,omitempty"`
 }
 
 // BoundaryOrigin binds a shared source observation to an original target fact.

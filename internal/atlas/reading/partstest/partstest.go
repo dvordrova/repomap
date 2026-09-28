@@ -253,7 +253,7 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 	// shows its words with that file's declarations.
 	for _, place := range graph.Places {
 		boundary := place.Boundary
-		if boundary == nil || boundary.Direction != atlas.DirectionIn || len(boundary.Words) == 0 || !slices.Contains(place.TargetIDs, targetID) {
+		if boundary == nil || boundary.Registrar != nil || boundary.Direction != atlas.DirectionIn || len(boundary.Words) == 0 || !slices.Contains(place.TargetIDs, targetID) {
 			continue
 		}
 		subject := placeByID(graph, boundary.SubjectID)
