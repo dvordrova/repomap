@@ -421,18 +421,6 @@ func (builder *requestBuilder) scopeFacts(index groupindex.Index, writer *rowWri
 	return rows
 }
 
-func qualifiedSubjectRefLess(left, right string) bool {
-	leftTarget, leftSubject, leftOK := strings.Cut(left, ".")
-	rightTarget, rightSubject, rightOK := strings.Cut(right, ".")
-	if !leftOK || !rightOK {
-		return left < right
-	}
-	if leftTarget != rightTarget {
-		return programindex.TargetIDLess(leftTarget, rightTarget)
-	}
-	return groupindex.SubjectIDLess(leftSubject, rightSubject)
-}
-
 func (builder *requestBuilder) targets() []targetWire {
 	rows := make([]targetWire, 0, len(builder.input.Facts.Targets))
 	for _, target := range builder.input.Facts.Targets {
