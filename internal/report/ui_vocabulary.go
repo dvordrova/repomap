@@ -54,6 +54,8 @@ var russianUI = map[string]string{
 	"This report needs JavaScript: every answer is in this file's data, and its script reads it.": "Отчёту нужен JavaScript: все ответы — в данных этого файла, их читает его скрипт.",
 	"Dispatch site":                         "Место выбора",
 	"This run could not read these targets": "Эти цели этот запуск прочитать не смог",
+	"anonymous function in {0}":             "анонимная функция в {0}",
+	"Its calls":                             "Обращения",
 	"+ helpers":                             "+ вспомогательные",
 	"one of these":                          "одна из этих",
 	"request handlers":                      "обработчики запросов",

@@ -263,6 +263,10 @@ type pageMapNode struct {
 	// holding every call whose destination no record names: the canvas
 	// draws it as the last, muted chip.
 	Unestablished bool
+	// Test marks a part all of whose declarations are written in the
+	// program's test sources (ProgramTarget TestSources): the column reads
+	// its connections last, folded (testOnly).
+	Test bool
 }
 
 type pageMapEdge struct {
@@ -414,6 +418,7 @@ func (builder *pageBuilder) buildZoneMap(section *pageSection, index *groupindex
 			X:       mapPadding + float64(column)*(mapNodeWidth+mapColumnGap),
 			Y:       mapPadding + mapLaneLabelSpace + entry.y,
 			Width:   mapNodeWidth, Height: mapNodeHeight,
+			Test:    builder.testOnly(section.programTargetID, group),
 		}
 		if entry.container != nil {
 			growFrame(frames, index, entry.container, node)
@@ -2316,4 +2321,33 @@ func sharedNamespace(symbols []pageNodeSymbol) string {
 		}
 	}
 	return namespace
+}
+
+// testOnly says every declaration of a part with a place is written in its
+// program's test sources (ProgramTarget TestSources), and one is.
+func (builder *pageBuilder) testOnly(targetID string, group groupindex.Group) bool {
+	if builder.data == nil || builder.data.ProgramPortfolio == nil {
+		return false
+	}
+	var tests map[string]bool
+	for _, entry := range builder.data.ProgramPortfolio.Entries {
+		if entry.Target.ID == targetID {
+			tests = map[string]bool{}
+			for _, path := range entry.Target.TestSources {
+				tests[path] = true
+			}
+		}
+	}
+	placed := false
+	for _, id := range group.MemberSubjectIDs {
+		ref, known := builder.subject(targetID, id)
+		if !known || ref.subject.Object == nil || ref.subject.Object.Location == nil {
+			continue
+		}
+		if !tests[ref.subject.Object.Location.Path] {
+			return false
+		}
+		placed = true
+	}
+	return placed
 }

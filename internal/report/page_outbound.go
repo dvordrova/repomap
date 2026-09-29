@@ -236,6 +236,16 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 			value := pageOutboundUse{Address: use.Address, Frontier: use.Frontier, Unread: use.Unread, Method: use.Method}
 			for _, step := range use.Steps {
 				name := step.Name
+				// A declaration reads by its report name: a method with its
+				// type, a callable written inline as a reader names it, never
+				// Run$1 (owner, 2026-09-29).
+				if step.SubjectID != "" {
+					if ref, known := builder.subject(index.Target.ID, step.SubjectID); known && ref.subject.Object != nil {
+						if said, _ := builder.subjectDisplay(ref.subject); said != "" {
+							name = builder.withType(index.Target.ID, ref.subject, said)
+						}
+					}
+				}
 				// Existing operation subjects already own their interpreted
 				// names. Matching the original declaration binds this source
 				// chain to that operation without inventing another label.

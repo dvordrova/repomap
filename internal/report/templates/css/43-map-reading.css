@@ -578,3 +578,25 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-name-piece{white-space:nowrap}
 .map-reading-flow>.map-flow-headline{justify-content:space-between}.map-reading-flow>.map-flow-headline>h6{margin:0;font:600 12px/1.4 system-ui;color:var(--muted);letter-spacing:.02em}
 .map-related-operations>button{display:block;margin:2px 0}
+/* A name piece longer than its line ends in "…", the whole name on hover
+   (rmDotBreaks); names never break inside a piece. */
+.map-name-long{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+.map-inspector-content .map-name-piece{overflow-wrap:normal;word-break:normal}
+/* An Inputs kind once, each catalogue's declaring code a quiet line over its
+   inputs; a sentence-like input name in the reading's own type. */
+.map-collection-catalogue{margin:4px 0 10px}
+.map-collection-where{font-size:12px;color:var(--muted)}.map-collection-where p.map-collection-line{margin:0 0 2px;font-size:12px}
+.map-collection-where .map-reading-name{font-size:12px}
+.flow-enabled .map-inspector .map-collection-names button.map-collection-prose{font:13px/1.5 system-ui}
+/* An Outside frame's destinations and a destination's calls, one to a line. */
+.system-communication-reading{margin:10px 0}
+.flow-enabled .map-inspector button.system-destination{border:0;background:none;padding:0;margin:0;font:13px/1.6 var(--mono);color:var(--link);cursor:pointer;text-align:left;box-shadow:none;min-width:0;height:auto}
+.system-destination:hover{text-decoration:underline}
+details.system-destination-calls>summary{cursor:pointer;font:600 12px/1.4 system-ui;color:var(--muted);letter-spacing:.02em;margin:6px 0 4px}
+.map-card .outbound-chain ol{list-style:none;padding-left:0;margin:2px 0}
+/* A program with no narrated flow: what its entry's part reaches, one line
+   each; facts, not the model's words. */
+.flow-reaches{font-style:normal}.flow-reaches>.flow-reach{display:block}
+details.map-connections-apart{border-top:1px solid var(--line);padding:6px 0}
+details.map-connections-apart>summary{cursor:pointer;font:600 12px/1.4 system-ui;color:var(--muted)}
+.map-collection-where details>summary{font:600 12px/1.4 system-ui;color:var(--muted);cursor:pointer}

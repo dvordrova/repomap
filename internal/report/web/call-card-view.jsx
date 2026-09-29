@@ -5,7 +5,11 @@ const t=(...args)=>window.rmT(...args);
 const stop=event=>event.stopPropagation();
 // A name breaks only after a dot, never inside a word ("sql.Tx.Rollbac k";
 // 43-map-reading.css makes it a unit).
-const dotted=text=>typeof text==='string'&&text.includes('.')?text.split(/(?<=\.)/).map((piece,i)=><React.Fragment key={i}>{i>0&&<wbr/>}{piece}</React.Fragment>):text;
+// A callable written inline reads "anonymous function in
+// ReplicateCommand.Run" (GroupsIndex names it "ReplicateCommand.Run
+// (inline)").
+const inline=text=>{const said=typeof text==='string'&&/^(.+) \(inline\)$/.exec(text);return said?t('anonymous function in {0}',said[1]):text;};
+const dotted=text=>{text=inline(text);return typeof text==='string'&&text.includes('.')?text.split(/(?<=\.)/).map((piece,i)=><React.Fragment key={i}>{i>0&&<wbr/>}{piece}</React.Fragment>):text;};
 function Link({href,title,children}){
   children=dotted(children);
   return href?<a href={href} title={title||undefined} target="_blank" onClick={stop}>{children}</a>:<span title={title||undefined}>{children}</span>;
@@ -116,13 +120,19 @@ function SidesRow({row,choose}){
 // parts they are made from, opening to the same rows as its card. Of one
 // part (`single`) the line names the parts at the other end instead:
 // "→ Core infrastructure · Network sockets 2 · Dynamic strings 1".
+// The ends written only in tests (`apart`) stand last, under one closed
+// "Tests" (owner, 2026-09-30: an area's connections had opened on a test
+// fixture's forty rows).
 export function FrameConnections({groups,open,choose=null,single=false}){
-  return <section className="map-frame-connections">
-    <h5>{t('Connections')}</h5>
-    {groups.map(group=><details key={group.key} data-connection-key={group.key} open={group.key===open} data-reading-anchor={group.key===open?'':undefined}>
+  const line=group=><details key={group.key} data-connection-key={group.key} open={group.key===open} data-reading-anchor={group.key===open?'':undefined}>
       <summary><span className="map-connection-peer">{group.incoming?'←':'→'} {group.title}</span><b>{cardTotal(group.card)}</b>
         {(single&&!group.incoming?group.card.into:group.card.from).length>0&&<small>{(single&&!group.incoming?group.card.into:group.card.from).map(part=>`${part.name} ${part.count}`).join(' · ')}</small>}</summary>
       <CallRows card={group.card} choose={choose}/>
-    </details>)}
+    </details>;
+  const apart=groups.filter(group=>group.apart);
+  return <section className="map-frame-connections">
+    <h5>{t('Connections')}</h5>
+    {groups.filter(group=>!group.apart).map(line)}
+    {apart.length>0&&<details className="map-connections-apart" open={apart.some(group=>group.key===open)}><summary>{t('Tests')}</summary>{apart.map(line)}</details>}
   </section>;
 }

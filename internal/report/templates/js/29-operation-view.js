@@ -38,6 +38,14 @@ function rmSystemProjection(nodes, edges) {
 // collection stands outside its component, and no one camera shows the tile
 // and the parts it reaches readably. The path is the drawn parts of its
 // saved trace; an input without one is entered as its tile.
+// A part written only in its program's tests (data-test), or a frame all of
+// whose parts are.
+function rmTestOnly(n,byID,seen){
+  if(!n)return false;if(n.dataset.test==='true')return true;
+  var children=(n.dataset.children||'').split(/\s+/).filter(Boolean);seen=seen||new Set();
+  if(!children.length||seen.has(n.id))return false;seen.add(n.id);
+  return children.every(function(id){return rmTestOnly(byID[id],byID,seen);});
+}
 function rmInputPath(n,byID){
   if(!n?.dataset?.activation)return [];
   return (n.dataset.inputTrace||'').split(/\s+/).filter(function(id){return byID[id]&&!byID[id].dataset.activation;});
@@ -98,7 +106,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   section.appendChild(rmEl('h5','',rmT('Path')));
   function name(index){
     var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
-    var link=at?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
+    var link=at?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);rmDotBreaks(link);
     if(decl.source)link.title=decl.source;
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
@@ -182,7 +190,7 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   function words(list,title,cls){
     var box=rmEl('div',cls);box.appendChild(rmEl('p','map-reading-label',rmT(title)));
     var names=rmEl('ul','map-reading-ends');
-    list.forEach(function(word){var item=rmEl('li'),link=word.href||word.open?repomapMembers.sourceLink({Href:word.href,Open:word.open,Text:word.name,NoSource:word.no_source}):rmEl('span','',word.name);link.classList.add('map-reading-name');if(word.source)link.title=word.source;item.appendChild(link);names.appendChild(item);});
+    list.forEach(function(word){var item=rmEl('li'),link=word.href||word.open?repomapMembers.sourceLink({Href:word.href,Open:word.open,Text:word.name,NoSource:word.no_source}):rmEl('span','',word.name);rmDotBreaks(link);link.classList.add('map-reading-name');if(word.source)link.title=word.source;item.appendChild(link);names.appendChild(item);});
     box.appendChild(names);return box;
   }
   if((path.checks||[]).length)section.appendChild(words(path.checks,path.values?'Its values':'Words its handler checks','system-path-checks'));
@@ -235,7 +243,7 @@ function rmSettingWrites(sets,partNode,read){
   var line=rmEl('ul','map-reading-ends');box.appendChild(line);
   sets.forEach(function(set){
     var key=set.href||set.open,at=key&&partNode(set.part);
-    var link=key?repomapMembers.sourceLink({Href:set.code||set.href,Open:set.open,Text:set.name,NoSource:set.no_source}):rmEl('span','',set.name);
+    var link=key?repomapMembers.sourceLink({Href:set.code||set.href,Open:set.open,Text:set.name,NoSource:set.no_source}):rmEl('span','',set.name);rmDotBreaks(link);
     link.classList.add('map-reading-name');if(set.source)link.title=set.source;
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
@@ -254,7 +262,7 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   var section=rmEl('section','system-catalogue'),decls=catalogue.decls||[];
   function name(index){
     var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
-    var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
+    var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);rmDotBreaks(link);
     if(decl.source)link.title=decl.source;
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
@@ -366,7 +374,7 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
   box.appendChild(rmEl('summary','',rmT('How these were found')));
   function name(index){
     var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
-    var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);
+    var link=key?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:decl.name,NoSource:decl.no_source}):rmEl('span','',decl.name);rmDotBreaks(link);
     if(decl.source)link.title=decl.source;
     if(at)link.addEventListener('click',function(event){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
@@ -658,8 +666,8 @@ function rmEntryLanding(link,nodes,component){
       if(keys.length){
         var members=rmEl('ul','map-area-members');
         keys.forEach(function(item){
-          var li=rmEl('li'),link=repomapMembers.sourceLink(item.source);link.textContent=repomapMembers.displayName(item);link.className='map-member-key';
-          link.title=[item.source.Text,item.source.NoSource?rmT('No source'):''].filter(Boolean).join('\n');
+          var li=rmEl('li'),link=repomapMembers.sourceLink(item.source);link.textContent=repomapMembers.displayName(item);link.className='map-member-key';rmDotBreaks(link);
+          link.title=[link.title,item.source.Text,item.source.NoSource?rmT('No source'):''].filter(Boolean).join('\n');
           link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(part,true,{href:item.source.Href,open:item.source.Open,key:repomapMembers.sourceKey(item.source)},false);});
           li.appendChild(link);members.appendChild(li);
         });
@@ -716,7 +724,7 @@ function rmEntryLanding(link,nodes,component){
     var frameConnections=null,partConnections=card.querySelector('.map-part-reading');
     if(n.dataset.branch==='area'||n.dataset.branch==='component'||partConnections){
       frameConnections=rmEl('div','map-frame-connections-holder');
-      if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'',function(part,key){readDeclaration(byID[part],key);},function(id){var input=byID[id];if(input&&input.dataset.activation)select(input,true,null,true);})){
+      if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'',function(part,key){readDeclaration(byID[part],key);},function(id){var input=byID[id];if(input&&input.dataset.activation)select(input,true,null,true);},function(id){return rmTestOnly(byID[id],byID);})){
         if(partConnections)partConnections.insertBefore(frameConnections,partConnections.querySelector(':scope>.map-reading-in')||partConnections.querySelector(':scope>.map-reading-out'));
         else (card.querySelector('.map-area-composition')||card.querySelector('.map-card-intro'))?.after(frameConnections);
       }else frameConnections=null;
@@ -750,15 +758,39 @@ function rmEntryLanding(link,nodes,component){
       card.querySelector('.map-card-evidence')?.remove();
       return;
     }
-    if(n.dataset.branch==='communication'){
+    // A program's Outside frame is read by its destinations, one to a line,
+    // each reading its own, then where its calls are made from; a
+    // destination by where its calls are made from, by part, and its calls
+    // under one closed "Calls", each reading its record (owner, 2026-09-30:
+    // freqtrade's Outside had opened every one of its records, 59,592 px).
+    // Nothing is counted.
+    if(n.dataset.branch==='outside'||n.dataset.branch==='communication'){
       card.querySelector('.map-card-actions')?.remove();
       card.querySelector('.map-related-operations')?.remove();
-      var calls=rmEl('section','system-communication-records');
-      (n.dataset.children||'').split(/\s+/).filter(Boolean).forEach(function(id){
-        var child=byID[id];if(!child)return;var item=rmEl('article');
-        var jump=rmEl('button','',child.dataset.title);jump.type='button';jump.addEventListener('click',function(){select(child,true,null,true);});
-        item.appendChild(jump);if(child.dataset.summary)item.appendChild(rmEl('p','',child.dataset.summary));calls.appendChild(item);
-      });card.querySelector('.map-card-intro').after(calls);
+      var kids=function(frame){return (frame.dataset.children||'').split(/\s+/).map(function(id){return byID[id];}).filter(Boolean);};
+      var ends=kids(n),records=n.dataset.branch==='outside'?ends.flatMap(function(end){return end.dataset.branch==='communication'?kids(end):[end];}):ends;
+      var told=rmEl('div','system-communication-reading');
+      var from=rmReachedFrom(map.readingContext(),rmMergeReached(records.map(function(record){return rmPage.data(record,'reached');})));
+      // One line per name: a destination's calls made alike from several
+      // places read as one, reading the first.
+      var names=function(list){
+        var ul=rmEl('ul','map-reading-ends'),said=new Set();
+        list.forEach(function(end){
+          if(said.has(end.dataset.title))return;said.add(end.dataset.title);
+          var li=rmEl('li'),jump=rmDotBreaks(rmEl('button','system-destination',end.dataset.title));jump.type='button';
+          if(end.dataset.summary)jump.title=[jump.title,end.dataset.summary].filter(Boolean).join('\n');
+          jump.addEventListener('click',function(){select(end,true,null,true);});li.appendChild(jump);ul.appendChild(li);
+        });
+        return ul;
+      };
+      if(n.dataset.branch==='outside'){
+        var where=rmEl('section','map-reading-side system-destinations');where.append(rmEl('h6','',rmT('Destinations')),names(ends));told.appendChild(where);
+        if(from)told.appendChild(from);
+      }else{
+        if(from)told.appendChild(from);
+        var fold=rmEl('details','map-reading-side system-destination-calls');fold.append(rmEl('summary','',rmT('Its calls')),names(ends));told.appendChild(fold);
+      }
+      card.querySelector('.map-card-intro').after(told);
     }
     if(n.dataset.itemKind==='External communication'){
       var proof=card.querySelector('.call-path');if(proof){card.querySelector('.map-card-intro').after(proof);proof.open=true;}
@@ -848,7 +880,7 @@ function rmEntryLanding(link,nodes,component){
       var peerName=(byID[id].dataset.owner!==n.dataset.owner&&owner(byID[id])?owner(byID[id])+' / ':'')+(destination&&destination.dataset.title!==byID[id].dataset.title?destination.dataset.title+' · ':'')+byID[id].dataset.title;
       var b=rmEl('button','',(outgoing?'→ ':'← ')+peerName);b.type='button';b.addEventListener('click',function(){select(byID[id],true,null,true);});relations.appendChild(b);
     });
-    if(relations.childElementCount&&!frameConnections)card.querySelector('.map-card-intro').appendChild(relations);
+    if(relations.childElementCount&&!frameConnections&&n.dataset.branch!=='outside'&&n.dataset.branch!=='communication')card.querySelector('.map-card-intro').appendChild(relations);
     var details=document.getElementById(n.dataset.detailsId);
     if(n.dataset.branch==='inputs'&&n.dataset.collection){
       // An Inputs collection is read by its catalogues (31-reading-column.js),
@@ -858,7 +890,7 @@ function rmEntryLanding(link,nodes,component){
       card.querySelector('.map-card-intro').after(rmCollectionView(map.readingContext(),n,rmPage.data(n,'collection')));
     }else if(n.dataset.branch==='component'&&details){
       rmComponentReading(map,n,card,details,byID['system-inputs-'+n.dataset.owner]||null,pendingEntry===n.id);
-    }else if(details){
+    }else if(details&&n.dataset.branch!=='outside'){
       var content=details;
       if(content){
         var copy=content.cloneNode(true);copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});

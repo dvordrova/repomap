@@ -423,7 +423,7 @@ assert.ok(!view.textContent.includes('Uses variables'));
 // Background work at the first of its scheduled and continuous sections
 // (owner, 2026-09-29: Settings had opened the reading at its 96 requests).
 func TestAKindChosenOpensItsCollectionAtItsSection(t *testing.T) {
-	code := systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "// Where a catalogue's inputs are declared") + "\nvar rmPendingKind='';\n"
+	code := nameBreaksJS(t) + systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "// Where a catalogue's inputs are declared") + "\nvar rmPendingKind='';\n"
 	runSystemJS(t, readingViewElements+code+`
 const inputs={a:{dataset:{title:'get'}},b:{dataset:{title:'dir'}},c:{dataset:{title:'IOThreadEntryPoint'}},d:{dataset:{title:'serverCron'}}};
 const node={dataset:{owner:'t1',collection:JSON.stringify({groups:[{kind:'request',inputs:['a']},{kind:'setting',inputs:['b']},{kind:'continuous',inputs:['c']},{kind:'scheduled',inputs:['d']}]})}};

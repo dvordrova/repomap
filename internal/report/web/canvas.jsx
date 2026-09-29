@@ -1408,8 +1408,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // `choose(part,key)` reads a declaration in the report: a name in the
   // column's rows is chosen when the part it names lists that declaration
   // among its own tiles.
-  function mountConnections(container,id,open='',choose=null,readInput=null){
-    const groups=frameConnections(id);
+  // `apart(id)` says a frame at the other end is read last, folded: the
+  // column passes the parts written only in tests.
+  function mountConnections(container,id,open='',choose=null,readInput=null,apart=null){
+    const groups=frameConnections(id).map(group=>apart&&apart(group.outside)?{...group,apart:true}:group).sort((a,b)=>(a.apart?1:0)-(b.apart?1:0));
     if(!groups.length)return false;
     for(const [element,root] of mounted)if(!element.isConnected){root.unmount();mounted.delete(element);}
     const root=mounted.get(container)||createRoot(container);mounted.set(container,root);

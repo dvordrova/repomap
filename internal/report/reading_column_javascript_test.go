@@ -5,7 +5,7 @@ import "testing"
 // A tiny element for the reading's script: enough of the DOM to build a
 // list and read it back as text, without a browser.
 const fakeElements = `
-class El{constructor(tag){this.tagName=String(tag).toUpperCase();this.children=[];this.className='';this.own='';this.listeners={};this.dataset={};this.hidden=false;}
+class El{constructor(tag){this.tagName=String(tag).toUpperCase();this.children=[];this.className='';this.own='';this.listeners={};this.dataset={};this.hidden=false;const self=this;this.classList={add(c){self.className=(self.className+' '+c).trim();},contains(c){return self.className.split(' ').includes(c);}};}
  appendChild(c){this.children.push(c);return c;} append(...c){this.children.push(...c);} replaceChildren(...c){this.children=c;this.own='';}
  get childElementCount(){return this.children.filter(c=>c instanceof El).length;}
  addEventListener(k,f){this.listeners[k]=f;} setAttribute(k,v){this[k]=v;}
@@ -19,6 +19,12 @@ const document={createElement:tag=>new El(tag),createElementNS:(ns,tag)=>new El(
 function rmEl(tag,cls,value){const item=document.createElement(tag);if(cls)item.className=cls;if(value!==undefined)item.textContent=value;return item;}
 function rmT(key,...values){return values.reduce((s,v,i)=>s.replace('{'+i+'}',v),key);}
 `
+
+// nameBreaksJS is the column's name writer (rmDotBreaks), which every list
+// of names in the column uses.
+func nameBreaksJS(t *testing.T) string {
+	return systemJSPiece(t, "31-reading-column.js", "var rmLongPiece=", "// One end of a relation: its name")
+}
 
 // A chosen declaration had no reading of its own: the panel said "No
 // explanation saved", and who calls it and what it calls sat in the part's
@@ -258,7 +264,8 @@ box.chooseComponent('unknown');assert.equal(component.value,'');
 // nothing (owner, 2026-09-29: no digits in the column), and each still
 // opens its input.
 func TestInputsReachingAPartAreFolded(t *testing.T) {
-	code := systemJSPiece(t, "29-operation-view.js", "function rmReachingInputs(", "(function(){document.querySelectorAll('[data-map-explorer]')")
+	code := systemJSPiece(t, "31-reading-column.js", "var rmInputKindTitles=", "function rmCollectionView(") +
+		systemJSPiece(t, "29-operation-view.js", "function rmReachingInputs(", "(function(){document.querySelectorAll('[data-map-explorer]')")
 	runSystemJS(t, fakeElements+code+`
 const get={dataset:{activation:'request',title:'get'}},cron={dataset:{activation:'continuous',title:'serverCron'}};
 let chosen=null;
@@ -342,7 +349,7 @@ assert.deepEqual(repomapMembers.composition(node),{total:6,counts:'4 functions, 
 // several to a line had been a wall); a part leads to its reading and a key
 // to its own, in its part, without moving the camera.
 func TestAnAreasCompositionListsItsPartsAndTheirKeys(t *testing.T) {
-	code := systemJSPiece(t, "29-operation-view.js", "  function areaComposition(", "  map.addEventListener('repomap:inspect'")
+	code := nameBreaksJS(t) + systemJSPiece(t, "29-operation-view.js", "  function areaComposition(", "  map.addEventListener('repomap:inspect'")
 	runSystemJS(t, fakeElements+`
 const part=(id,title,branch,summary)=>({id,dataset:{title,branch:branch||'',summary:summary||''}});
 const byID={a:part('a','Compression','','Compresses dumps.'),b:part('b','Data structures'),c:part('c','Nested','area')};
@@ -397,7 +404,7 @@ function select(n,navigate,source,focus){seen.push([n.id,navigate,source,focus,p
 // declaration in the report (getCommand and addReply had opened GitHub); a
 // modifier-click still opens its code.
 func TestAnInputsPathNamesItsDispatchThenItsOwnSteps(t *testing.T) {
-	code := systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
+	code := nameBreaksJS(t) + systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
 		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration")
 	runSystemJS(t, fakeElements+`
 const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
@@ -467,7 +474,7 @@ assert.ok(own&&own.all(e=>e.className==='system-path-step').map(c=>c.textContent
 // how long a chain is, so no route is chosen; a path with no deeper part
 // has no fold.
 func TestAnInputsPathFoldsThePartsPastItsHandlersOwnCallsByDepthAlone(t *testing.T) {
-	code := systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
+	code := nameBreaksJS(t) + systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
 		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration")
 	runSystemJS(t, fakeElements+`
 const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};

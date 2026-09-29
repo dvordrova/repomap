@@ -1,0 +1,97 @@
+package report
+
+import (
+	"testing"
+
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
+)
+
+// A name in the column breaks only after a dot or a slash, words at their
+// spaces, never inside a word, at an underscore or at a hyphen; a piece too
+// long for its line is marked to end in "…" with the whole name on hover;
+// a callable written inline reads as an anonymous function in its home.
+func TestAColumnNameBreaksOnlyAfterItsDotsAndSlashes(t *testing.T) {
+	runSystemJS(t, readingViewElements+nameBreaksJS(t)+`
+const pieces=e=>e.children.filter(c=>c.has&&c.has('map-name-piece')).map(c=>c.textContent);
+const a=rmDotBreaks(rmEl('a','','FreqtradeBot.process_open_trade_positions'));
+assert.deepEqual(pieces(a),['FreqtradeBot.','process_open_trade_positions'],'a break only after the dot');
+assert.ok(a.children.find(c=>c.has&&c.has('map-name-long')),'a piece longer than its line is marked to end in …');
+assert.equal(a.title,'FreqtradeBot.process_open_trade_positions','the whole name on its hover');
+const b=rmDotBreaks(rmEl('b','','build_helpers/create_command_partials.py:'));
+assert.deepEqual(pieces(b),['build_helpers/','create_command_partials.','py:']);
+const c=rmDotBreaks(rmEl('span','','redis-benchmark'));
+assert.deepEqual(pieces(c),['redis-benchmark'],'no break at a hyphen');
+const d=rmDotBreaks(rmEl('span','','InfoCommand.Run (inline)'));
+assert.equal(d.textContent,'anonymous function in InfoCommand.Run','an inline callable is an anonymous function in its home');
+assert.ok(d.children.some(x=>!x.has&&/^\s+$/.test(x.textContent)),'words break at their spaces');
+assert.equal(rmInlineText('main → Run (inline)'),'main → anonymous function in Run');
+`)
+}
+
+// An Inputs reading names each kind once, however many catalogues declare
+// inputs of it (litestream's had read "Incoming requests" eight times), each
+// catalogue's inputs under it; an input named by a sentence is prose.
+func TestAnInputsReadingNamesEachKindOnce(t *testing.T) {
+	code := nameBreaksJS(t) + systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "// Where a catalogue's inputs are declared") + "\nvar rmPendingKind='';\n"
+	runSystemJS(t, readingViewElements+code+`
+const inputs={a:{dataset:{title:'/metrics'}},b:{dataset:{title:'/'}},c:{dataset:{title:'Number of months to fetch data for'}},d:{dataset:{title:'sync-interval'}}};
+const node={dataset:{owner:'t1',collection:JSON.stringify({groups:[{kind:'request',inputs:['a']},{kind:'request',inputs:['b','c']},{kind:'setting',inputs:['d']}]})}};
+const context={nodeById:id=>inputs[id]||null,nodeByHref:()=>null,light(){},readNode(){}};
+const view=rmCollectionView(context,node,rmPage.data(node,'collection'));
+const kinds=view.children.filter(c=>c.has&&c.has('map-collection-group'));
+assert.deepEqual(kinds.map(k=>k.dataset.kind),['request','setting'],'each kind once');
+assert.deepEqual(kinds[0].all(c=>c.has('map-collection-catalogue')).length,2,'its catalogues under it');
+const buttons=view.all(c=>c.tagName==='BUTTON');
+assert.deepEqual(buttons.filter(b=>b.has('map-collection-prose')).map(b=>b.textContent),['Number of months to fetch data for'],'a sentence is prose, a path or a flag is code');
+`)
+}
+
+// The callers of a destination's calls read as one "Called from": each
+// record's reach joined by program and part, each caller once.
+func TestADestinationsCallersAreJoinedByPart(t *testing.T) {
+	code := systemJSPiece(t, "31-reading-column.js", "// Where several outside calls are reached from", "// An outside call's record as the column reads it")
+	runSystemJS(t, readingViewElements+code+`
+const d=(name,part)=>({name,href:'h#'+name,part});
+const one={decls:[d('rdbSave','#p'),d('syncWithMaster','#r')],groups:[{part:'#p',title:'Persistence',decls:[{decl:0,kind:'calls'}]},{part:'#r',title:'Replication',decls:[{decl:1,kind:'calls'}]}]};
+const two={decls:[d('rdbSave','#p'),d('rdbLoad','#p')],groups:[{part:'#p',title:'Persistence',decls:[{decl:0,kind:'calls'},{decl:1,kind:'calls'}]}]};
+const joined=rmMergeReached([one,null,two]);
+assert.deepEqual(joined.groups.map(g=>[g.title,g.decls.map(e=>joined.decls[e.decl].name)]),[['Persistence',['rdbSave','rdbLoad']],['Replication',['syncWithMaster']]]);
+assert.equal(rmMergeReached([null,{decls:[],groups:[]}]),null,'no callers, no list');
+`)
+}
+
+// A part written only in its program's tests, or a frame of such parts,
+// reads its connections last (29-operation-view.js rmTestOnly).
+func TestAFrameOfTestPartsIsTestOnly(t *testing.T) {
+	code := systemJSPiece(t, "29-operation-view.js", "function rmTestOnly(", "function rmInputPath(")
+	runSystemJS(t, code+`
+const node=(id,test,children)=>({id,dataset:{test:test?'true':'',children:children||''}});
+const byID={a:node('a',true),b:node('b',true),c:node('c',false),tests:node('tests',false,'a b'),mixed:node('mixed',false,'a c')};
+assert.equal(rmTestOnly(byID.a,byID),true);
+assert.equal(rmTestOnly(byID.tests,byID),true,'an area all of whose parts are tests');
+assert.equal(rmTestOnly(byID.mixed,byID),false);
+assert.equal(rmTestOnly(byID.c,byID),false);
+assert.equal(rmTestOnly(undefined,byID),false);
+`)
+}
+
+// A part is test-only when every declaration with a place is written in
+// its program's test sources (ProgramTarget TestSources).
+func TestAPartOfTestSourcesIsTestOnly(t *testing.T) {
+	at := func(path string) *programindex.Location { return &programindex.Location{Path: path, Line: 1, Column: 1} }
+	builder := &pageBuilder{subjects: map[string]subjectRef{}, data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{
+		{Target: programindex.Target{ID: "t1", TestSources: []string{"tests/conftest.py", "tests/test_bot.py"}}}}}}}
+	for id, path := range map[string]string{"n1": "tests/conftest.py", "n2": "tests/test_bot.py", "n3": "freqtrade/bot.py"} {
+		builder.subjects[subjectKey("t1", id)] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectFunction, Location: at(path)}}}
+	}
+	if !builder.testOnly("t1", groupindex.Group{MemberSubjectIDs: []string{"n1", "n2"}}) {
+		t.Fatal("a part of test sources is not test-only")
+	}
+	if builder.testOnly("t1", groupindex.Group{MemberSubjectIDs: []string{"n1", "n3"}}) {
+		t.Fatal("a part with product code is test-only")
+	}
+	if builder.testOnly("t1", groupindex.Group{MemberSubjectIDs: []string{"missing"}}) {
+		t.Fatal("a part with no placed declaration is test-only")
+	}
+}

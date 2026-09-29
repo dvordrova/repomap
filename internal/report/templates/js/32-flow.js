@@ -48,7 +48,7 @@ function rmFlowName(ctx,decl,call){
   var text=rmCallableName(decl),title=rmFlowTitle(ctx,decl,call);
   if(call.macro&&call.decl!==undefined){text=call.macro;title=[rmT('{0} expands to a call of {1}',call.macro,decl.name),title].filter(Boolean).join('\n');}
   // A declaration no part holds is a plain name.
-  if(!decl.part){var plain=rmDotBreaks(rmEl('span','map-reading-name map-flow-plain',text));plain.title=title;return plain;}
+  if(!decl.part){var plain=rmDotBreaks(rmEl('span','map-reading-name map-flow-plain',text));plain.title=[plain.title,title].filter(Boolean).join('\n');return plain;}
   var name=rmDeclName(decl,text,ctx.goDecl(decl),title);
   var part=rmFlowPart(ctx,decl.part);
   if(part){name.addEventListener('mouseenter',function(){ctx.light([part.id]);});name.addEventListener('mouseleave',function(){ctx.light([]);});}
@@ -138,7 +138,7 @@ function rmFlowList(ctx,data,own,opts){
     outside.forEach(function(call){
       var name=call.macro||call.name||'';if(!name||names.indexOf(name)>=0)return;
       line.appendChild(document.createTextNode(names.length?', ':' '));names.push(name);
-      var said=rmDotBreaks(rmEl('span','map-flow-plain',name));said.title=[call.lib,call.macro?rmT('a macro'):''].filter(Boolean).join('\n');line.appendChild(said);
+      var said=rmDotBreaks(rmEl('span','map-flow-plain',name));said.title=[said.title,call.lib,call.macro?rmT('a macro'):''].filter(Boolean).join('\n');line.appendChild(said);
       // A program the code does not name is no outside system: its call
       // says so here (page_outbound.go unnamedLaunch).
       if(call.launch)line.appendChild(rmEl('span','map-flow-launch',' ('+rmT('starts a program the code does not name')+')'));

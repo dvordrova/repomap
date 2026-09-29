@@ -51,7 +51,8 @@ function rmDeclName(decl,text,go,title,bold,code){
   link.classList.add('map-reading-name');rmDotBreaks(link);
   if(decl.key)link.dataset.declKey=decl.key;
   if(bold&&decl.bold)link.classList.add('map-reading-key');
-  if(title)link.title=title;
+  // A clipped name keeps its whole spelling on its hover, above the rest.
+  if(title)link.title=link.title&&link.title!==title?link.title+'\n'+title:title;
   if(go)link.addEventListener('click',function(event){
     if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
     event.preventDefault();event.stopPropagation();go(decl);
@@ -88,14 +89,31 @@ function rmEndTitle(ctx,decl){
   return node?node.dataset.title:'';
 }
 // A name as the column writes it: it breaks only after a dot or a slash,
-// never inside a word or at a hyphen (litestream's "sql.Tx.Rollbac k",
-// othello's "awaiting-" / "computer?", "redis-" / "benchmark.c"); in a
-// flow's row a single word longer than the row ends in "…"
-// (43-map-reading.css).
+// never inside a word, at an underscore or at a hyphen (litestream's
+// "sql.Tx.Rollbac k", freqtrade's "process_open_trade / _positions",
+// "redis-" / "benchmark.c"); a piece longer than its line ends in "…", the
+// whole name on its hover (43-map-reading.css). A callable written inline
+// reads "anonymous function in ReplicateCommand.Run" (GroupsIndex names it
+// "ReplicateCommand.Run (inline)").
+var rmLongPiece=24;
+function rmInlineText(text){return String(text).replace(/([^\s→(]+) \(inline\)/g,function(_,home){return rmT('anonymous function in {0}',home);});}
 function rmDotBreaks(element){
-  var text=element.textContent;if(!/[.\/-]/.test(text))return element;
+  var said=element.textContent,text=rmInlineText(said),inline=text!==said;
+  if(!/[.\/-]/.test(text)&&text.length<=rmLongPiece){if(inline)element.textContent=text;return element;}
   element.textContent='';
-  text.split(/(?<=[.\/])/).forEach(function(piece,i){if(i)element.appendChild(document.createElement('wbr'));element.appendChild(rmEl('span','map-name-piece',piece));});
+  var long=false;
+  // Words break at their spaces; a name within them only after its dots
+  // and slashes.
+  text.split(/(\s+)/).forEach(function(word){
+    if(!word)return;
+    if(/^\s+$/.test(word)){element.appendChild(document.createTextNode(word));return;}
+    word.split(/(?<=[.\/])/).forEach(function(piece,i){
+      if(i)element.appendChild(document.createElement('wbr'));
+      var span=rmEl('span','map-name-piece',piece);if(piece.length>rmLongPiece){span.classList.add('map-name-long');long=true;}
+      element.appendChild(span);
+    });
+  });
+  if(long&&!element.title)element.title=text;
   return element;
 }
 // One end of a relation: its name, and what the relation says of it when it
@@ -188,12 +206,33 @@ function rmReachedFrom(ctx,data){
   section.appendChild(heading);
   data.groups.forEach(function(group){
     var box=rmEl('div','map-reading-peer'),head=rmEl('div','map-reading-peer-head');
-    if(group.program)head.appendChild(rmEl('span','map-reading-program',group.program+':'));
+    if(group.program)head.appendChild(rmDotBreaks(rmEl('span','map-reading-program',group.program+':')));
     head.appendChild(rmPartBox(ctx,group.part,group.title));box.appendChild(head);
     var list=rmEl('ul','map-reading-ends');group.decls.forEach(function(end){list.appendChild(rmEndItem(ctx,data,end,'in'));});
     box.appendChild(list);section.appendChild(box);
   });
   return section;
+}
+// Where several outside calls are reached from, as one "Called from": each
+// record's `reached` (page data) joined by program and part, each caller
+// once.
+function rmMergeReached(list){
+  var decls=[],at=new Map(),groups=[],byPart=new Map();
+  list.forEach(function(data){
+    if(!data||!(data.groups||[]).length)return;
+    data.groups.forEach(function(group){
+      var key=(group.program||'')+'\u0000'+(group.part||group.title||''),into=byPart.get(key);
+      if(!into){into={part:group.part,title:group.title,program:group.program,decls:[]};byPart.set(key,into);groups.push(into);}
+      group.decls.forEach(function(end){
+        var decl=data.decls[end.decl];if(!decl)return;
+        var id=decl.key||decl.href||decl.open||decl.name;
+        if(!at.has(id)){at.set(id,decls.length);decls.push(decl);}
+        var position=at.get(id);
+        if(!into.decls.some(function(other){return other.decl===position;}))into.decls.push(Object.assign({},end,{decl:position}));
+      });
+    });
+  });
+  return groups.length?{decls:decls,groups:groups}:null;
 }
 // An outside call's record as the column reads it (owner, 2026-09-29), from
 // its row on the component's page (target.html "outbound-row"): what the
@@ -234,6 +273,10 @@ function rmOutboundRecord(record,reached,title,said){
   });
   if(reached)parts.splice(after<0?0:after,0,reached);
   body.replaceChildren.apply(body,parts);
+  // Where the call is made from reads its callables as the column names
+  // them; how many address sources there are is not counted.
+  body.querySelectorAll('.outbound-side code').forEach(function(code){code.textContent=rmInlineText(code.textContent);});
+  body.querySelectorAll(':scope>p.meta').forEach(function(meta){meta.textContent=meta.textContent.replace(/\s*·\s*\d+\s*$/,'');});
   body.querySelectorAll('.outbound-chain').forEach(function(chain){
     var steps=kid(chain,tag('OL'));if(!steps)return;
     Array.prototype.slice.call(steps.children).forEach(function(step){
@@ -358,7 +401,7 @@ function rmDeclView(ctx,node,data,concept){
       var fold=total>30&&group.decls.length>5,box=rmEl(fold?'details':'div','map-reading-peer'),head=rmEl(fold?'summary':'div','map-reading-peer-head');
       // Another program's calls into a declaration both hold are named by
       // that program: "redis-cli: [Command line client] cliConnect()".
-      if(group.program)head.appendChild(rmEl('span','map-reading-program',group.program+':'));
+      if(group.program)head.appendChild(rmDotBreaks(rmEl('span','map-reading-program',group.program+':')));
       head.appendChild(rmPartBox(ctx,group.part,group.title));box.appendChild(head);
       var list=rmEl('ul','map-reading-ends');group.decls.forEach(function(end){list.appendChild(rmEndItem(ctx,data,end,which,variable));});
       box.appendChild(list);section.appendChild(box);
@@ -449,41 +492,56 @@ function rmCollectionView(ctx,node,collection){
   var view=rmEl('div','map-collection-reading');
   var component=ctx.nodeById('system-component-'+node.dataset.owner);
   if(component){var head=rmEl('div','map-part-title');head.appendChild(rmPartBox(ctx,component.getAttribute('href'),component.dataset.title));head.firstChild.classList.add('map-part-box-component');view.appendChild(head);}
-  collection.groups.forEach(function(group){
+  // One section per kind, in the order the kinds come (owner, 2026-09-30:
+  // litestream's inputs had read "Incoming requests" once per declaring
+  // function, eight times); each catalogue of it under a quiet line saying
+  // where its inputs are declared, then its inputs.
+  var kinds=[];collection.groups.forEach(function(group){if(kinds.indexOf(group.kind)<0)kinds.push(group.kind);});
+  kinds.forEach(function(kind){
+    var groups=collection.groups.filter(function(group){return group.kind===kind;}),all=[].concat.apply([],groups.map(function(group){return group.inputs;}));
     var section=rmEl('section','map-collection-group'),heading=rmEl('h6','map-reading-count');
-    // "37 settings" in the component's reading, or Settings in the
+    // A kind chosen in the component's reading, or Settings in the
     // collection's frame, lands on its own section: Background work on the
     // first of its scheduled and continuous sections.
-    section.dataset.kind=group.kind;
-    if(rmPendingKind&&[].concat(rmPendingKind).indexOf(group.kind)>=0){section.dataset.readingAnchor='';rmPendingKind='';}
-    var kindTitle=rmEl('span','',rmT(rmInputKindTitles[group.kind]||'Inputs')),kindMark=globalThis.rmKindMark?.(group.kind);
-    if(kindMark)kindTitle.prepend(kindMark);
-    heading.appendChild(kindTitle);
-    rmLights(ctx,heading,group.inputs);section.appendChild(heading);
-    var first=group.catalogue&&ctx.nodeById(group.catalogue),catalogue=first?rmPage.data(first,'catalogue'):null;
-    if(catalogue)rmCatalogueLines(ctx,catalogue).forEach(function(line){section.appendChild(line);});
-    // Matched by the model to another program's inputs of the same name:
-    // one line, the model's.
-    var matched=0,programs=[];
-    group.inputs.forEach(function(id){
-      var input=ctx.nodeById(id),path=input?rmPage.data(input,'inputPath'):null;
-      if(path&&(path.sent_to||[]).length){matched++;path.sent_to.forEach(function(entry){if(programs.indexOf(entry.program)<0)programs.push(entry.program);});}
+    section.dataset.kind=kind;
+    if(rmPendingKind&&[].concat(rmPendingKind).indexOf(kind)>=0){section.dataset.readingAnchor='';rmPendingKind='';}
+    heading.appendChild(rmEl('span','',rmT(rmInputKindTitles[kind]||'Inputs')));
+    rmLights(ctx,heading,all);section.appendChild(heading);
+    groups.forEach(function(group){
+      var box=rmEl('div','map-collection-catalogue');
+      var first=group.catalogue&&ctx.nodeById(group.catalogue),catalogue=first?rmPage.data(first,'catalogue'):null;
+      if(catalogue){var where=rmEl('div','map-collection-where');rmCatalogueLines(ctx,catalogue).forEach(function(line){where.appendChild(line);});box.appendChild(where);}
+      // Matched by the model to another program's inputs of the same name:
+      // one line, the model's.
+      var matched=0,programs=[];
+      group.inputs.forEach(function(id){
+        var input=ctx.nodeById(id),path=input?rmPage.data(input,'inputPath'):null;
+        if(path&&(path.sent_to||[]).length){matched++;path.sent_to.forEach(function(entry){if(programs.indexOf(entry.program)<0)programs.push(entry.program);});}
+      });
+      if(matched)box.appendChild(rmModelText('p','map-collection-matched',rmT('Matched to inputs of {0} by name',programs.join(', '))));
+      var names=rmEl('ul','map-collection-names');
+      group.inputs.forEach(function(id){
+        var input=ctx.nodeById(id);if(!input)return;
+        // A directive with its values: "appendfsync: always | everysec | no".
+        var path=rmPage.data(input,'inputPath'),values=path&&path.values?(path.checks||[]).map(function(check){return check.name;}):[];
+        var title=input.dataset.title+(values.length?': '+values.join(' | '):'');
+        var item=rmEl('li'),button=rmDotBreaks(rmEl('button','',title));button.type='button';
+        // A name that is a sentence (a query parameter's description) is
+        // prose, not code.
+        if(rmProse(input.dataset.title))button.classList.add('map-collection-prose');
+        button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);names.appendChild(item);
+      });
+      box.appendChild(names);section.appendChild(box);
     });
-    if(matched)section.appendChild(rmModelText('p','map-collection-matched',rmT('Matched to inputs of {0} by name',programs.join(', '))));
-    var names=rmEl('ul','map-collection-names');
-    group.inputs.forEach(function(id){
-      var input=ctx.nodeById(id);if(!input)return;
-      // A directive with its values: "appendfsync: always | everysec | no".
-      var path=rmPage.data(input,'inputPath'),values=path&&path.values?(path.checks||[]).map(function(check){return check.name;}):[];
-      var item=rmEl('li'),button=rmEl('button','',input.dataset.title+(values.length?': '+values.join(' | '):''));button.type='button';
-      button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);names.appendChild(item);
-    });
-    section.appendChild(names);view.appendChild(section);
+    view.appendChild(section);
   });
   if(collection.groups.some(function(group){return group.catalogue;}))view.appendChild(rmEl('p','meta',rmT('Where these take effect is not established.')));
   rmPendingKind='';
   return view;
 }
+// A name of three words or more with no path, brace, dot or underscore in
+// it is a sentence ("Number of months to fetch data for").
+function rmProse(text){return /\S\s+\S+\s+\S/.test(text||'')&&!/[\/{}._$\\]/.test(text);}
 // Pointing at inputs in the column lights their tiles on the canvas, and
 // nothing recedes.
 function rmLights(ctx,element,ids){
@@ -679,6 +737,11 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     // client").
     var entryTwists=steps.querySelectorAll('ol.fact>li>.map-flow-step-twist');
     if(entryTwists.length===1)entryTwists[0].click();
+    // Its calls standing open, the entry's line of what its part reaches says
+    // them again and goes (owner, 2026-09-30: redis-cli's had run on as
+    // "cliConnect calls anetTcpConnect Network sockets · …"); with several
+    // entries each reach stands on a line of its own.
+    if(entryTwists.length===1)steps.querySelectorAll('ol.fact .flow-reaches').forEach(function(line){line.remove();});
     // A registered callable's step names where it is registered and what
     // runs it, each name reading its declaration.
     rmStepChainNames(ctx,steps);
@@ -738,7 +801,7 @@ function rmProgramsTable(ctx,holder,components,connections){
   var table=rmEl('dl','system-programs-list');
   function line(label,content){if(!content)return;table.append(rmEl('dt','',rmT(label)),content);}
   components.forEach(function(n){
-    var head=rmEl('dt','system-program-name'),name=rmEl('button','',n.dataset.title);name.type='button';
+    var head=rmEl('dt','system-program-name'),name=rmDotBreaks(rmEl('button','',n.dataset.title));name.type='button';
     name.addEventListener('click',function(){ctx.readNode(n);});head.appendChild(name);table.appendChild(head);
     var about=rmEl('dd','system-program-about');
     if(n.dataset.role)about.appendChild(rmModelText('span','',n.dataset.role,n.dataset.roleRef));
