@@ -58,9 +58,14 @@ func TestNativeCumulativeProject(t *testing.T) {
 	if len(index.Target.Seeds) != 1 {
 		t.Fatalf("seeds: %+v", index.Target.Seeds)
 	}
-	if len(index.Target.TestSources) != 1 || index.Target.TestSources[0] != "test/example/service_test.clj" {
+	// service_test.clj imports clojure.test; fixtures.clj imports no test
+	// framework and is a test source because the :test alias runs the test
+	// runner over its directory.
+	if !slices.Equal(index.Target.TestSources, []string{"test/example/fixtures.clj", "test/example/service_test.clj"}) {
 		t.Fatalf("tests: %v", index.Target.TestSources)
 	}
+	assertKeywordArguments(t, index, objects)
+	assertFutureStartsItsBody(t, index, objects)
 	foundCall, foundLiteral, foundShadow := false, false, false
 	foundCallback, foundJava, foundReader := false, false, false
 	foundUnderscore, foundMacroArgument := false, false
@@ -214,6 +219,148 @@ func TestNativeCumulativeProject(t *testing.T) {
 	b, _ := p.Encode(second)
 	if string(a) != string(b) {
 		t.Fatal("native graph changed on identical warm input")
+	}
+}
+
+// (q/sketch :title "Greeter" :draw draw-greeting :key-pressed on-key) and
+// (ws/websocket "ws://…" {:on-message receive-greeting :on-close close-feed}):
+// trailing keyword/value pairs and a trailing map are the call's keyword
+// arguments, and each function handed under a keyword is a callback bound
+// to that keyword.
+func assertKeywordArguments(t *testing.T, index p.Index, objects map[string]p.Object) {
+	t.Helper()
+	want := map[string][]string{
+		"quil.core/sketch":         {"draw example.core/draw-greeting", "key-pressed example.core/on-key", "title \"Greeter\""},
+		"hato.websocket/websocket": {"1 \"ws://localhost:8080/feed\"", "on-close example.core/close-feed", "on-message example.core/receive-greeting"},
+	}
+	got := map[string][]string{}
+	for _, relation := range index.Relations {
+		for _, pattern := range relation.Patterns {
+			if _, wanted := want[pattern.Selector]; !wanted {
+				continue
+			}
+			for _, argument := range pattern.Arguments {
+				key := argument.Keyword
+				if key == "" {
+					key = fmt.Sprint(argument.Position)
+				}
+				value := fmt.Sprintf("%q", argument.Value)
+				if len(argument.ObjectIDs) == 1 {
+					value = objects[argument.ObjectIDs[0]].Name
+				}
+				got[pattern.Selector] = append(got[pattern.Selector], key+" "+value)
+			}
+		}
+	}
+	for selector := range want {
+		slices.Sort(got[selector])
+		if !slices.Equal(got[selector], want[selector]) {
+			t.Fatalf("%s arguments:\n have %q\n want %q", selector, got[selector], want[selector])
+		}
+	}
+	handed := map[string]string{}
+	for _, relation := range index.Relations {
+		if relation.Kind == p.RelationPassesCallback && relation.SourceArgumentID != "" && len(relation.ToIDs) == 1 {
+			handed[objects[relation.ToIDs[0]].Name] = relation.SourceArgumentID
+		}
+	}
+	for _, name := range []string{"example.core/on-key", "example.core/draw-greeting", "example.core/receive-greeting", "example.core/close-feed"} {
+		if handed[name] == "" {
+			t.Fatalf("%s is handed over with no source argument: %v", name, handed)
+		}
+	}
+}
+
+// (future (greet-many names)) in warm-greetings: the body's call starts on a
+// thread of its own (goroutine), and the future's use is a call of
+// clojure.core/future given that call's result.
+func assertFutureStartsItsBody(t *testing.T, index p.Index, objects map[string]p.Object) {
+	t.Helper()
+	var started, future []string
+	for _, relation := range index.Relations {
+		if objects[relation.FromID].Name != "example.core/warm-greetings" {
+			continue
+		}
+		for _, to := range relation.ToIDs {
+			switch name := objects[to].Name; {
+			case relation.Invocation == p.InvocationGoroutine:
+				started = append(started, string(relation.Kind)+" "+name)
+			case name == "clojure.core/future":
+				for _, pattern := range relation.Patterns {
+					for _, argument := range pattern.Arguments {
+						future = append(future, argument.Origin.Kind+" "+argument.Origin.Text)
+					}
+				}
+			}
+		}
+	}
+	if !slices.Equal(started, []string{"calls example.core/greet-many"}) || !slices.Equal(future, []string{"call_result (greet-many names)"}) {
+		t.Fatalf("future: started %q, handed %q", started, future)
+	}
+}
+
+// The shadow-cljs.edn's :app build is a program of its own: the .cljs
+// source and the :cljs branch of the .cljc sources, started from its
+// :init-fn, with the browser's globals as its platform.
+func TestShadowBuildIsAClojureScriptProgram(t *testing.T) {
+	root, err := filepath.Abs("../../testdata/repositories/clojure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := corpus.Open(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	builds, err := ScoutShadow(repository)
+	if err != nil || len(builds) != 1 {
+		t.Fatalf("builds: %v %v", builds, err)
+	}
+	build := builds[0]
+	var files []string
+	for _, file := range build.Files {
+		files = append(files, file.Path)
+	}
+	if build.Selector != "clojure:shadow-cljs.edn:app" || build.Name != "app" || build.Platform != "cljs" ||
+		!slices.Equal(files, []string{"src/example/service.cljc", "src/example/web.cljs"}) || build.Validate() != nil {
+		t.Fatalf("build: %+v", build)
+	}
+	result, err := Build(t.Context(), root, repository, build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := p.New(result.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects := map[string]p.Object{}
+	for _, object := range index.Objects {
+		objects[object.ID] = object
+	}
+	if len(index.Target.Seeds) != 1 || objects[index.Target.Seeds[0].ObjectID].Name != "example.web/init" || index.Target.Kind != "executable" {
+		t.Fatalf("target: %+v", index.Target)
+	}
+	var outside []string
+	for _, relation := range index.Relations {
+		for _, to := range relation.ToIDs {
+			if external := objects[to].External; external != nil && external.PackagePath != "clojure.string" && external.PackagePath != "cljs.core" && relation.Kind != p.RelationImports {
+				outside = append(outside, fmt.Sprintf("%s %s/%s %s", objects[relation.FromID].Name, external.PackagePath, external.Name, external.AuthorityKind))
+			}
+		}
+	}
+	slices.Sort(outside)
+	want := []string{
+		"example.service/platform js/Date.now platform",
+		"example.web/init js/setInterval platform",
+		"example.web/refresh! js/console.log platform",
+	}
+	if !slices.Equal(outside, want) {
+		t.Fatalf("outside calls:\n have %q\n want %q", outside, want)
+	}
+	for _, object := range index.Objects {
+		if object.External != nil && object.External.PackagePath == "java.lang.System" {
+			t.Fatal("the JVM branch leaked into the ClojureScript build")
+		}
 	}
 }
 

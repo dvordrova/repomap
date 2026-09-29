@@ -22,10 +22,15 @@ type Result struct {
 func project(repository *corpus.Corpus, target Target, a analysis) (*Result, error) {
 	canonicalAnalysis(&a)
 	raw, _ := json.Marshal(a)
+	kind := "package"
+	if target.Platform == "cljs" {
+		kind = "executable"
+	}
 	input := p.Input{ScenarioSHA256: target.CorpusSHA256, SourceSHA256: fmt.Sprintf("%x", sha256.Sum256(raw)), Target: p.TargetInput{
-		Language: "clojure", Kind: "package", Name: target.Name, Selector: target.Selector, AnchorFileRef: target.ManifestFileRef,
+		Language: "clojure", Kind: kind, Name: target.Name, Selector: target.Selector, AnchorFileRef: target.ManifestFileRef,
 		Sources: []p.TargetSource{{FileRef: target.ManifestFileRef, Path: target.ManifestPath}},
 	}}
+	cljs := target.Platform == "cljs"
 	sources := map[string]source{}
 	codeLines := map[string]map[int]bool{}
 	for _, file := range target.Files {
@@ -36,7 +41,15 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		sources[file.Path] = newSource(data.Bytes)
 		codeLines[file.Path] = sources[file.Path].codeLines()
 	}
-	valid := func(s site) bool { _, ok := sources[s.Filename]; return ok && s.Lang != "cljs" && s.Row > 0 }
+	// The JVM view reads a .cljc file's :clj branch, a shadow-cljs build its
+	// :cljs branch; a .clj or .cljs file has one.
+	valid := func(s site) bool {
+		_, ok := sources[s.Filename]
+		if cljs {
+			return ok && s.Lang != "clj" && s.Row > 0
+		}
+		return ok && s.Lang != "cljs" && s.Row > 0
+	}
 	location := func(s site) *p.Location { return &p.Location{Path: s.Filename, Line: s.Row, Column: s.Col} }
 	objects := map[string]p.ObjectInput{}
 	namespaces := map[string][]string{}
@@ -138,10 +151,30 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		case "clojure.core/def", "clojure.core/defonce", "clojure.core/defmulti":
 			loaded[ref] = sources[d.Filename].loadedHeaders(d.site, false)
 		}
-		if d.Name == "-main" && kind == p.ObjectFunction {
+		if d.Name == "-main" && kind == p.ObjectFunction && !cljs {
 			fileRef, _ := repository.ID(d.Filename)
 			input.Target.Sources = append(input.Target.Sources, p.TargetSource{FileRef: string(fileRef), Path: d.Filename})
 			input.Target.Seeds = append(input.Target.Seeds, p.TargetSeedInput{ObjectRef: ref, Kind: p.SeedCallable, Location: location(d.site)})
+		}
+	}
+	// A shadow-cljs build starts from what it names: a module's :init-fn or
+	// a node script's :main is a function it calls, a module's :entries a
+	// namespace it loads. A name the view declares nowhere starts nothing.
+	for _, entry := range target.Entries {
+		refs, seed := vars[entry.Symbol], p.SeedCallable
+		if !strings.Contains(entry.Symbol, "/") {
+			refs, seed = namespaces[entry.Symbol], p.SeedModule
+		}
+		for _, ref := range refs {
+			object := objects[ref]
+			if seed == p.SeedCallable && object.Kind != p.ObjectFunction || object.Location == nil {
+				continue
+			}
+			fileRef, _ := repository.ID(object.Location.Path)
+			if !slices.ContainsFunc(input.Target.Sources, func(source p.TargetSource) bool { return source.Path == object.Location.Path }) {
+				input.Target.Sources = append(input.Target.Sources, p.TargetSource{FileRef: string(fileRef), Path: object.Location.Path})
+			}
+			input.Target.Seeds = append(input.Target.Seeds, p.TargetSeedInput{ObjectRef: ref, Kind: seed, Location: object.Location})
 		}
 	}
 	ownerAt := func(at site) string {
@@ -170,7 +203,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		}
 		ref := "external:" + ns + "/" + name
 		authority := p.ExternalAuthorityPackage
-		if coreNamespace(ns) || platformClass(ns) {
+		if coreNamespace(ns) || platformClass(ns) || cljs && cljsPlatformNamespace(ns) {
 			authority = p.ExternalAuthorityPlatform
 		}
 		objects[ref] = p.ObjectInput{SourceRef: ref, Kind: p.ObjectExternalSymbol, Name: ns + "/" + name, Visibility: p.VisibilityUnknown,
@@ -180,6 +213,14 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 	resolve := func(ns, name string) []string {
 		if refs := vars[ns+"/"+name]; len(refs) > 0 {
 			return slices.Clone(refs)
+		}
+		// A JavaScript global (js/setTimeout) is the browser's own: clj-kondo
+		// writes it as a name with no namespace.
+		if global, ok := strings.CutPrefix(name, "js/"); ok && ns == "" && cljs {
+			if ref, ok := external("js", global); ok {
+				return []string{ref}
+			}
+			return nil
 		}
 		// A missing local var is unresolved; importing a namespace does not prove
 		// that an otherwise unknown member exists in that repository namespace.
@@ -211,6 +252,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		}
 		return args
 	}
+	started := map[site]bool{}
 	for _, u := range a.Usages {
 		if !valid(u.site) {
 			continue
@@ -228,6 +270,28 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 				}
 			}
 		}
+		// A future runs its body on a thread of its own: each call written as
+		// a form of its body starts there (goroutine, the word every adapter
+		// shares with Go's `go f()`), and the future's own use is a call of
+		// clojure.core/future handed those calls, as asyncio.create_task is
+		// handed a coroutine (facts, started.go). No other macro use leaves a
+		// relation.
+		if u.Macro && u.To == "clojure.core" && u.Name == "future" && !cljs && owner != "" {
+			args := argumentsOf(u.site)
+			for i := range args {
+				if origin := args[i].Origin; origin != nil && origin.Anchor != nil && strings.HasPrefix(origin.Text, "(") {
+					origin.Kind = "call_result"
+					started[site{Filename: origin.Anchor.Path, Row: origin.Anchor.Line, Col: origin.Anchor.Column}] = true
+				}
+			}
+			var targets []string
+			if ref, ok := external(u.To, u.Name); ok {
+				targets = []string{ref}
+			}
+			pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("call:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: u.To + "/" + u.Name, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
+			addRelation(p.RelationInvokesExternal, owner, targets, u.site, "", &pattern)
+			continue
+		}
 		// Definition operators belong to namespace evaluation, not to their newly
 		// declared function bodies. They are native compile-time forms, not calls.
 		if u.Macro {
@@ -239,7 +303,13 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			continue
 		}
 		args := argumentsOf(u.site)
-		pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("call:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: u.To + "/" + u.Name, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
+		// A name clj-kondo resolves to no namespace (js/setTimeout) is the
+		// selector as written.
+		selector := u.To + "/" + u.Name
+		if u.To == "" {
+			selector = u.Name
+		}
+		pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("call:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: selector, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
 		kind := p.RelationCalls
 		if len(targets) == 1 && objects[targets[0]].Kind == p.ObjectExternalSymbol {
 			kind = p.RelationInvokesExternal
@@ -302,6 +372,16 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			addRelation(p.RelationCalls, ownerAt(u.site), nil, u.site, p.DispatchFunctionValue, &pattern)
 		}
 	}
+	for i := range input.Relations {
+		relation := &input.Relations[i]
+		if relation.Kind != p.RelationCalls && relation.Kind != p.RelationInvokesExternal || len(relation.Patterns) == 0 || relation.Patterns[0].Location == nil {
+			continue
+		}
+		at := relation.Patterns[0].Location
+		if started[site{Filename: at.Path, Row: at.Line, Col: at.Column}] {
+			relation.Invocation = p.InvocationGoroutine
+		}
+	}
 	var importers []dependencies.Importer
 	importerRefs := map[string]string{}
 	for file, ref := range fileModules {
@@ -333,7 +413,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 				continue
 			}
 			targets = []string{ref}
-			if coreNamespace(u.To) {
+			if coreNamespace(u.To) || cljs && cljsPlatformNamespace(u.To) {
 				kind = dependencies.KindStdlib
 				module = ""
 			}
@@ -343,7 +423,7 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			deps = append(deps, dependencies.Dependency{Language: "clojure", Kind: kind, Name: u.To, ModulePath: module, PackagePath: u.To, RepositoryPath: directory, ImporterRefs: []string{importerRefs[u.Filename]}})
 		}
 		// Native imports, not directory names, identify test-framework source files.
-		if u.To == "clojure.test" || u.To == "speclj.core" {
+		if u.To == "clojure.test" || u.To == "speclj.core" || u.To == "cljs.test" {
 			input.Target.TestSources = append(input.Target.TestSources, u.Filename)
 		}
 	}
@@ -401,11 +481,20 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 				}
 				at := arg.Origin.Anchor
 				addRelation(p.RelationPassesCallback, call.FromRef, slices.Clone(arg.ObjectRefs), site{Filename: at.Path, Row: at.Line, Col: at.Column}, "", nil)
-				input.Relations[len(input.Relations)-1].SourceArgument = &p.PatternArgumentRefInput{RelationSourceRef: call.SourceRef, PatternSourceRef: pattern.SourceRef, Position: arg.Position}
+				input.Relations[len(input.Relations)-1].SourceArgument = &p.PatternArgumentRefInput{RelationSourceRef: call.SourceRef, PatternSourceRef: pattern.SourceRef, Position: arg.Position, Keyword: arg.Keyword}
 			}
 		}
 	}
 
+	// A directory the build description runs as tests holds test code only:
+	// its specs, and the helpers they share (spec_helper.clj) too.
+	for _, file := range target.Files {
+		for _, dir := range target.TestDirs {
+			if strings.HasPrefix(file.Path, dir+"/") {
+				input.Target.TestSources = append(input.Target.TestSources, file.Path)
+			}
+		}
+	}
 	slices.Sort(input.Target.TestSources)
 	input.Target.TestSources = slices.Compact(input.Target.TestSources)
 	for _, obj := range objects {
@@ -428,6 +517,17 @@ func coreNamespace(ns string) bool {
 		return true
 	}
 	return false
+}
+
+// These namespaces ship with ClojureScript itself, and the Closure Library
+// and JavaScript globals (js/...) are the browser platform a build runs on.
+func cljsPlatformNamespace(ns string) bool {
+	switch ns {
+	case "js", "goog", "cljs.core", "cljs.reader", "cljs.pprint", "cljs.test", "cljs.repl", "cljs.spec.alpha", "cljs.spec.gen.alpha",
+		"clojure.string", "clojure.set", "clojure.walk", "clojure.data", "clojure.zip", "clojure.edn", "clojure.reflect", "clojure.core.reducers":
+		return true
+	}
+	return strings.HasPrefix(ns, "goog.")
 }
 
 // Native parallel scheduling and process-local binding IDs are not identities.

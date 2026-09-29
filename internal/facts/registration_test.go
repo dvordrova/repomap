@@ -262,6 +262,28 @@ func TestRegistrationsComeFromCallShapesNotFrameworkNames(t *testing.T) {
 			},
 		},
 		{
+			// websocket.WebSocketApp(url, on_message=on_message,
+			// on_close=on_close), (ws/websocket url {:on-message f
+			// :on-close g}): the call names no one handler, so each keyword
+			// entry registers its own, named by its keyword, at the address.
+			name: "an outside call handed two callables under keywords registers each under its keyword",
+			build: func(s *synthetic) {
+				s.object("main", programindex.ObjectFunction, "open_feed", "main.go", 5, "")
+				s.object("message", programindex.ObjectFunction, "on_message", "main.go", 20, "")
+				s.object("close", programindex.ObjectFunction, "on_close", "main.go", 30, "")
+				s.external("app", "websocket", "WebSocketApp", programindex.ExternalAuthorityPackage)
+				s.relate("new", programindex.RelationInvokesExternal, "main", []string{"app"}, loc("main.go", 7),
+					pattern("p", programindex.PatternCall, "WebSocketApp", loc("main.go", 7), nil, literal(1, "wss://stream.example/prices"),
+						dynamicKeyword("on_message", "message"), dynamicKeyword("on_close", "close")))
+				s.callbackKeyword("cb-message", "main", "message", "new", "p", "on_message")
+				s.callbackKeyword("cb-close", "main", "close", "new", "p", "on_close")
+			},
+			want: []want{
+				{key: "WebSocketApp", path: "wss://stream.example/prices", symbol: "on_message", values: []string{"wss://stream.example/prices"}, registrar: "websocket.WebSocketApp.on_message", resolution: ResolutionExact},
+				{key: "WebSocketApp", path: "wss://stream.example/prices", symbol: "on_close", values: []string{"wss://stream.example/prices"}, registrar: "websocket.WebSocketApp.on_close", resolution: ResolutionExact},
+			},
+		},
+		{
 			name: "two possible callbacks name no handler",
 			build: func(s *synthetic) {
 				s.object("main", programindex.ObjectFunction, "main", "server.go", 1, "")

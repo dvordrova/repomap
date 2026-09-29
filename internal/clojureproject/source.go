@@ -175,11 +175,13 @@ func (s source) arguments(at site) []programindex.PatternArgumentInput {
 		return nil
 	}
 	children := nodes[0].children[1:]
+	text := func(node form) string { return string(s.text[start+node.start : start+node.end]) }
+	positional, keywords := keywordArguments(children, text)
 	result := make([]programindex.PatternArgumentInput, 0, len(children))
-	for i, node := range children {
-		value := string(s.text[start+node.start : start+node.end])
+	argument := func(node form) programindex.PatternArgumentInput {
+		value := text(node)
 		loc := s.location(at.Filename, start+node.start)
-		arg := programindex.PatternArgumentInput{Position: i + 1, Kind: programindex.PatternDynamic,
+		arg := programindex.PatternArgumentInput{Kind: programindex.PatternDynamic,
 			Origin: &sourcevalue.Value{Kind: "unknown", Text: value, Anchor: &sourcevalue.Anchor{Path: loc.Path, Line: loc.Line, Column: loc.Column}}}
 		if literal, err := clojureString(value); err == nil && strings.HasPrefix(value, "\"") {
 			arg.Kind = programindex.PatternLiteralString
@@ -187,9 +189,63 @@ func (s source) arguments(at site) []programindex.PatternArgumentInput {
 			arg.Origin.Kind = "literal"
 			arg.Origin.Text = literal
 		}
+		return arg
+	}
+	for i, node := range positional {
+		arg := argument(node)
+		arg.Position = i + 1
+		result = append(result, arg)
+	}
+	for _, pair := range keywords {
+		arg := argument(pair[1])
+		arg.Keyword = text(pair[0])[1:]
 		result = append(result, arg)
 	}
 	return result
+}
+
+// keywordArguments splits a call's argument forms into its positional
+// arguments and its keyword arguments, as Clojure passes them to a function
+// taking `& {:keys [...]}`: the trailing keyword/value pairs
+// (`(q/sketch :title "Othello" :key-pressed on-key)`) or, since Clojure
+// 1.11 the same arguments, a trailing map literal (`(serve app {:port 8080})`).
+// Each keyword is a plain keyword written once; a repeated or
+// auto-resolved (`::k`) keyword leaves every argument positional.
+func keywordArguments(children []form, text func(form) string) ([]form, [][2]form) {
+	keyword := func(node form) bool {
+		value := text(node)
+		return len(node.children) == 0 && len(value) > 1 && value[0] == ':' && value[1] != ':' && programindex.ValidName(value[1:])
+	}
+	pairs := func(nodes []form) ([][2]form, bool) {
+		seen := map[string]bool{}
+		var result [][2]form
+		for i := 0; i+1 < len(nodes); i += 2 {
+			if !keyword(nodes[i]) || seen[text(nodes[i])] {
+				return nil, false
+			}
+			seen[text(nodes[i])] = true
+			result = append(result, [2]form{nodes[i], nodes[i+1]})
+		}
+		return result, len(result) > 0 && len(nodes)%2 == 0
+	}
+	// The pairs run back from the last argument while each pair starts with
+	// a keyword.
+	first := len(children)
+	for first >= 2 && keyword(children[first-2]) {
+		first -= 2
+	}
+	if first < len(children) {
+		if found, ok := pairs(children[first:]); ok {
+			return children[:first], found
+		}
+		return children, nil
+	}
+	if last := len(children) - 1; last >= 0 && strings.HasPrefix(text(children[last]), "{") {
+		if found, ok := pairs(children[last].children); ok {
+			return children[:last], found
+		}
+	}
+	return children, nil
 }
 
 // loadedHeaders are the rune spans of a definition form that its namespace

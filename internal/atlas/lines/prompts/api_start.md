@@ -8,8 +8,9 @@ writes in its configuration file.
 
 Each question gives one statement in the repository that starts one of the
 repository's own functions to run on its own, beside the code that started
-it: a Go `go` statement, or a coroutine handed to a call that runs it as a
-task, such as asyncio.create_task. `statement` is the statement as the
+it: a Go `go` statement, a coroutine handed to a call that runs it as a
+task, such as asyncio.create_task, or a Clojure `future` whose body calls
+it on a thread of its own. `statement` is the statement as the
 repository wrote it, a function body written in it included; `in` the
 declaration the statement is written in, with its signature; `starts` the
 function it starts, with its signature; `calls` what that function calls

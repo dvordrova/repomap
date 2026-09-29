@@ -1,5 +1,5 @@
 (ns example.core
-  (:require [example.service :as service] [clojure.string :as str] [example.facade :as facade] [clojure.java.shell :as shell]) (:import (java.util ArrayList)))
+  (:require [example.service :as service] [clojure.string :as str] [example.facade :as facade] [clojure.java.shell :as shell] [quil.core :as q] [hato.websocket :as ws]) (:import (java.util ArrayList)))
 
 (defn -main [& names]
   (service/deliver! "greeting.txt" (service/greet (first names))))
@@ -157,3 +157,24 @@
     "serve" :serve
     ("check" "verify") :check
     :usage))
+
+;; Keyword arguments hand functions over under their keywords: the sketch is
+;; given two of the repository's functions, and each is a registration of its
+;; own, named by its keyword, as Quil's draw and key handlers are.
+(defn on-key [state event] (assoc state :key (:key event)))
+(defn draw-greeting [state] (str "Hello " (:name state)))
+(defn start-sketch! []
+  (q/sketch :title "Greeter" :draw draw-greeting :key-pressed on-key))
+
+;; A trailing map passes the same keyword arguments (Clojure 1.11): each
+;; handler the websocket is given is a registration of its own, at the
+;; websocket's address.
+(defn receive-greeting [message] (str/upper-case message))
+(defn close-feed [status] status)
+(defn open-feed! []
+  (ws/websocket "ws://localhost:8080/feed" {:on-message receive-greeting :on-close close-feed}))
+
+;; A future runs its body on a thread of its own: the call it holds is
+;; started there, as Go's go statement starts one.
+(defn warm-greetings [names]
+  (future (greet-many names)))

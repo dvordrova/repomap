@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/clojureproject"
 )
 
 type manifestRow struct {
@@ -18,7 +20,7 @@ var pinnedVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-
 
 func isManifestName(name string) bool {
 	switch name {
-	case "package.json", "Pipfile", "pyproject.toml", "go.mod":
+	case "package.json", "Pipfile", "pyproject.toml", "go.mod", "deps.edn", "project.clj", "shadow-cljs.edn":
 		return true
 	}
 	return strings.HasPrefix(name, "requirements") && strings.HasSuffix(name, ".txt")
@@ -60,7 +62,7 @@ func (b *builder) addManifestRows(filePath string) {
 		b.diagnose("manifest_unreadable", filePath+": "+err.Error())
 		return
 	}
-	targetID := b.targetForPath(filePath)
+	targetID := b.manifestOwner(filePath)
 	root := b.rootForTarget(targetID)
 	for _, row := range rows {
 		if row.key == "" {
@@ -78,6 +80,21 @@ func (b *builder) addManifestRows(filePath string) {
 			Value:    clipText(row.value),
 		}, row.key, row.value)
 	}
+}
+
+// manifestOwner is the target a manifest's rows hold for: the target under
+// whose root it lies, and among targets sharing that root the one whose own
+// manifest it is (a shadow-cljs.edn beside the deps.edn of the JVM program
+// is the ClojureScript build's).
+func (b *builder) manifestOwner(filePath string) string {
+	owner := b.targetForPath(filePath)
+	root := b.rootForTarget(owner)
+	for _, target := range b.targets {
+		if target.target.Manifest == filePath && target.root == root && owner != "" {
+			return target.target.ID
+		}
+	}
+	return owner
 }
 
 func (b *builder) rootForTarget(targetID string) string {
@@ -121,6 +138,14 @@ func parseManifest(name string, lines []string) ([]manifestRow, error) {
 		return parsePyproject(lines), nil
 	case name == "go.mod":
 		return parseGoMod(lines), nil
+	case name == "deps.edn" || name == "project.clj" || name == "shadow-cljs.edn":
+		var rows []manifestRow
+		for _, row := range clojureproject.ReadManifest(name, []byte(strings.Join(lines, "\n"))).Rows(name) {
+			if row.Line > 0 {
+				rows = append(rows, manifestRow{key: row.Key, value: row.Value, line: row.Line})
+			}
+		}
+		return rows, nil
 	default:
 		return parseRequirements(lines), nil
 	}

@@ -7,12 +7,13 @@ import (
 
 // A started callable is the one exception, beside table rows, to a call of
 // the repository's own function being delegation: a call written with the
-// shared invocation word goroutine (Go's `go f()`) or async_task (a
-// coroutine handed to another call, asyncio.create_task(f())) does not run
-// its callee in place, it hands it over to run on its own. With one exact
-// repository callee it is a registration handing that callee over. Its word
-// is the statement that starts it, `go`, or the call the coroutine is
-// handed to as written; its literals are the started call's own. No outside
+// shared invocation word goroutine (Go's `go f()`, a call in a Clojure
+// future's body) or async_task (a coroutine handed to another call,
+// asyncio.create_task(f())) does not run its callee in place, it hands it
+// over to run on its own. With one exact repository callee it is a
+// registration handing that callee over. Its word is the call it is handed
+// to as written (create_task, clojure.core/future), or else the statement
+// that starts it, `go`; its literals are the started call's own. No outside
 // symbol receives it, so no symbol's role decides it: the reading asks each
 // statement on its own what the started work is.
 
@@ -62,16 +63,19 @@ func (reader *startReader) shapes(relation programindex.Relation) []registration
 	}
 	var shapes []registrationShape
 	for _, pattern := range relation.Patterns {
-		word := "go"
-		if relation.Invocation == programindex.InvocationAsyncTask {
-			// A coroutine is started by the call it is handed to; one
-			// handed to none is only created.
-			if pattern.Location == nil {
-				continue
-			}
-			if word = reader.startingCalls[sourcevalue.Anchor{Path: pattern.Location.Path, Line: pattern.Location.Line, Column: pattern.Location.Column}]; word == "" {
-				continue
-			}
+		// A call is started by the call it is handed to (a coroutine by
+		// asyncio.create_task, a Clojure future's body by the future); a
+		// coroutine handed to none is only created, and a goroutine handed
+		// to none is started by its go statement.
+		word := ""
+		if pattern.Location != nil {
+			word = reader.startingCalls[sourcevalue.Anchor{Path: pattern.Location.Path, Line: pattern.Location.Line, Column: pattern.Location.Column}]
+		}
+		if word == "" && relation.Invocation == programindex.InvocationAsyncTask {
+			continue
+		}
+		if word == "" {
+			word = "go"
 		}
 		handler := reader.handler(callee, pattern.Location)
 		shape := registrationShape{relation: relation, pattern: pattern, word: word, handlerName: handler.Name, handlerID: handler.ID,

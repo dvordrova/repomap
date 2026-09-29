@@ -45,7 +45,12 @@ func (b *builder) addRegistrations(target *targetContext) {
 			if target.ownsReceiver(pattern) {
 				continue
 			}
-			shapes = append(shapes, target.registrationShape(relation, pattern, originsByValue, values))
+			shape := target.registrationShape(relation, pattern, originsByValue, values)
+			if handed := target.keywordHandoffs(shape); len(handed) > 0 {
+				shapes = append(shapes, handed...)
+				continue
+			}
+			shapes = append(shapes, shape)
 		}
 	}
 	shapes = oneShapePerTableRow(target, shapes)
@@ -179,6 +184,72 @@ type registrationShape struct {
 	// invocation is the shared invocation word of a call that starts its
 	// repository callee to run on its own (started.go).
 	invocation string
+	// keyword is the keyword a call hands its callable over under, when it
+	// hands several (keywordHandoffs), and at where that entry is written.
+	keyword string
+	at      *Anchor
+}
+
+// keywordHandoffs are the registrations of a call handing several repository
+// callables over, each under a keyword of its own: Quil's (q/sketch :setup
+// setup :key-pressed on-key), a map of handlers given to a server, a struct
+// of an outside type with two function fields, a Python call with two
+// callable keyword arguments. The call alone names no one handler, so each
+// keyword entry is one registration: its handler is that callable, its
+// registrar the call's symbol with the keyword, as a table row's registrar is
+// its record type with the field (quil.core.sketch.key-pressed), and its
+// place where the entry is written. A callable handed by position beside
+// them stays with none; a call handing one callable keeps its one
+// registration.
+func (target *targetContext) keywordHandoffs(shape registrationShape) []registrationShape {
+	if shape.handlerID != "" || shape.relation.Kind == programindex.RelationDecorates {
+		return nil
+	}
+	callables := make(map[string]bool)
+	var result []registrationShape
+	for _, argument := range shape.pattern.Arguments {
+		id := target.argumentCallable(argument)
+		if id == "" {
+			continue
+		}
+		callables[id] = true
+		if argument.Keyword == "" {
+			continue
+		}
+		object, _ := target.object(id)
+		handed := shape
+		handed.literals = append([]string(nil), shape.literals...)
+		handed.handlerName, handed.handlerID, handed.handed, handed.keyword = object.Name, object.ID, true, argument.Keyword
+		if shape.originKnown {
+			handed.origin = shape.origin + "." + argument.Keyword
+		}
+		if at := argument.Origin; at != nil && at.Anchor != nil {
+			handed.at = &Anchor{Path: at.Anchor.Path, Line: at.Anchor.Line, Column: at.Anchor.Column}
+		}
+		result = append(result, handed)
+	}
+	if len(callables) < 2 {
+		return nil
+	}
+	return result
+}
+
+// argumentCallable is the one repository callable an argument hands over:
+// the callback the adapter recorded for it, or the one callable it names.
+func (target *targetContext) argumentCallable(argument programindex.PatternArgument) string {
+	if handlerID, observed := target.callbacks[argument.ID]; observed {
+		if object, ok := target.object(handlerID); ok && isCallable(object) {
+			return handlerID
+		}
+		return ""
+	}
+	if len(argument.ObjectIDs) != 1 || argument.ObjectsOmitted != 0 {
+		return ""
+	}
+	if object, ok := target.object(argument.ObjectIDs[0]); ok && isCallable(object) {
+		return object.ID
+	}
+	return ""
 }
 
 // registrationShape reads what a call outside the repository is given: its
@@ -537,6 +608,9 @@ func isHTTPVerb(value string) bool {
 // paths; a registration without an address is one fact.
 func (b *builder) addRegistration(target *targetContext, shape registrationShape, prefixes []routePrefix, values *routeValueReader) {
 	anchor := target.patternAnchor(shape.relation, shape.pattern)
+	if shape.at != nil {
+		anchor = shape.at
+	}
 	if anchor == nil {
 		return
 	}
@@ -572,7 +646,7 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 	}
 	_, ownerID := target.enclosingSymbol(shape.relation.FromID)
 	for _, address := range addresses {
-		if !b.once(strings.Join([]string{string(KindRegistration), target.target.ID, anchor.String(), strconv.Itoa(anchor.Column), shape.word, address.path}, "\x00")) {
+		if !b.once(strings.Join([]string{string(KindRegistration), target.target.ID, anchor.String(), strconv.Itoa(anchor.Column), shape.word, shape.keyword, address.path}, "\x00")) {
 			continue
 		}
 		resolution := ResolutionExact

@@ -11,22 +11,34 @@
     },
     {
       "id": "f3",
-      "path": "src/example/core.clj"
+      "path": "shadow-cljs.edn"
     },
     {
       "id": "f4",
-      "path": "src/example/facade.clj"
+      "path": "src/example/core.clj"
     },
     {
       "id": "f5",
-      "path": "src/example/rates.clj"
+      "path": "src/example/facade.clj"
     },
     {
       "id": "f6",
-      "path": "src/example/service.cljc"
+      "path": "src/example/rates.clj"
     },
     {
       "id": "f7",
+      "path": "src/example/service.cljc"
+    },
+    {
+      "id": "f8",
+      "path": "src/example/web.cljs"
+    },
+    {
+      "id": "f9",
+      "path": "test/example/fixtures.clj"
+    },
+    {
+      "id": "f10",
       "path": "test/example/service_test.clj"
     }
   ]

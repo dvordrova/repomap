@@ -12,7 +12,7 @@ func (b *builder) addNegatives() {
 		return
 	}
 	paths := b.input.Repository.VisiblePaths()
-	if !hasAny(paths, isTestPath) {
+	if !hasAny(paths, isTestPath) && !b.hasTestSources() {
 		b.addNegative(NegativeNoTests, "no recognized test files found in inspected paths", nil)
 	}
 	if !hasAny(paths, isDockerPath) {
@@ -33,6 +33,17 @@ func (b *builder) addNegatives() {
 	if !hasAny(paths, isLinterConfigPath) {
 		b.addNegative(NegativeNoLinter, "no recognized linter or formatter configuration found in inspected paths", nil)
 	}
+}
+
+// hasTestSources reports a target whose adapter marked test sources: a
+// Clojure spec directory a test alias runs has no test-shaped file names.
+func (b *builder) hasTestSources() bool {
+	for _, target := range b.targets {
+		if len(target.input.Index.Target.TestSources) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *builder) addNegative(name, detail string, anchor *Anchor) {
