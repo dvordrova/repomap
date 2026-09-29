@@ -101,6 +101,8 @@ func Build(input Input) (atlas.Graph, error) {
 		seedDecls:         make(map[string]struct{}),
 		seedTargets:       make(map[string]map[string]struct{}),
 		tableRows:         make(map[string][]atlas.TableRow),
+		tableReadRows:     make(map[string]map[atlas.TableRead]bool),
+		comparisons:       make(map[string][]atlas.Comparison),
 		targetOf:          make(map[string]map[string]struct{}),
 		bounds:            make(map[boundaryKey]*boundaryState),
 		workspace:         make(map[string]struct{}),
@@ -151,6 +153,7 @@ func Build(input Input) (atlas.Graph, error) {
 		b.collectSymbolCalls(b.symbolCallRows, target)
 		b.collectSymbolUses(b.symbolUseRows, target)
 		b.collectSymbolFields(target)
+		b.collectTableReads(target)
 	}
 	b.releaseTargetObjects()
 	// A located seed may refer to a file supplied by a later target. Resolve
@@ -235,6 +238,8 @@ type builder struct {
 	seedDecls         map[string]struct{}            // symbol places of seed declarations
 	seedTargets       map[string]map[string]struct{} // symbol place -> targets it is the seed of
 	tableRows         map[string][]atlas.TableRow    // symbol place of a table variable -> its word rows
+	tableReadRows     map[string]map[atlas.TableRead]bool
+	comparisons       map[string][]atlas.Comparison // symbol place -> the values it compares with several words
 	targetOf          map[string]map[string]struct{}
 	bounds            map[boundaryKey]*boundaryState
 	symbols           []atlas.Place
@@ -381,6 +386,9 @@ func (b *builder) useTargetObjects(index programindex.Index) {
 				rows = append(rows, atlas.TableRow{Literals: literals})
 			}
 			b.tableRows[b.symbolOf[object.ID]] = rows
+		}
+		if len(object.Comparisons) > 0 && b.comparisons[b.symbolOf[object.ID]] == nil {
+			b.comparisons[b.symbolOf[object.ID]] = atlasComparisons(object.Comparisons)
 		}
 	}
 }
@@ -1134,7 +1142,8 @@ func (b *builder) collectSymbols() {
 				ID: id, Kind: atlas.PlaceSymbol, Path: filePath,
 				LineNo: decl.LineNo, Column: decl.Column, Depth: state.depth, TargetIDs: sortedKeys(state.targets),
 				Parent: atlas.FileID(filePath), Given: truncateRunes(given, maxLineRunes),
-				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Fields: fields[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached, Seeds: seeds, Rows: b.tableRows[id]},
+				Symbol: &atlas.SymbolFacts{Decl: decl, Members: members[id], Calls: calls[id], Bindings: bindings[id], CalledBy: callers[id], Uses: uses[id], Fields: fields[id], Candidate: !state.generated, Rank: rank + 1, Unreached: unreached, Seeds: seeds, Rows: b.tableRows[id],
+					ReadAt: b.tableReads(id), Comparisons: b.comparisons[id]},
 			})
 		}
 	}
@@ -1243,6 +1252,71 @@ func (b *builder) collectSymbolFields(target TargetInput) {
 		b.symbolFieldRows[from][atlas.SymbolField{TypeID: typeID, Field: field.Name, Path: relation.FieldPath, Kind: string(relation.Kind),
 			LineNo: relation.Location.Line, Column: relation.Location.Column}] = true
 	}
+}
+
+// atlasComparisons are an object's comparisons as the places graph keeps
+// them; ProgramIndex validates each one located, with located cases.
+func atlasComparisons(values []programindex.Comparison) []atlas.Comparison {
+	result := make([]atlas.Comparison, 0, len(values))
+	for _, value := range values {
+		comparison := atlas.Comparison{Value: value.Value, Origin: sourcevalue.Clone(value.Origin), LineNo: value.Location.Line, Column: value.Location.Column}
+		for _, item := range value.Cases {
+			written := atlas.ComparisonCase{Form: string(item.Form), Words: slices.Clone(item.Words), LineNo: item.Location.Line, Column: item.Location.Column}
+			if item.Branch != nil {
+				written.BranchLine, written.BranchEnd = item.Branch.Line, item.Branch.EndLine
+			}
+			comparison.Cases = append(comparison.Cases, written)
+		}
+		result = append(result, comparison)
+	}
+	return result
+}
+
+// collectTableReads keeps, for each table (an object with rows), every
+// located read of it by a lifted declaration, one per site.
+func (b *builder) collectTableReads(target TargetInput) {
+	for _, relation := range target.Index.Relations {
+		if relation.Kind != programindex.RelationReads || relation.Location == nil {
+			continue
+		}
+		reader := b.symbolOf[relation.FromID]
+		if reader == "" {
+			continue
+		}
+		for _, to := range relation.ToIDs {
+			table := b.symbolOf[to]
+			if table == "" || len(b.byID[to].Rows) == 0 {
+				continue
+			}
+			if b.tableReadRows[table] == nil {
+				b.tableReadRows[table] = make(map[atlas.TableRead]bool)
+			}
+			b.tableReadRows[table][atlas.TableRead{ReaderID: reader, LineNo: relation.Location.Line, Column: relation.Location.Column}] = true
+		}
+	}
+}
+
+// tableReads are a table's reads in reader, line and column order.
+func (b *builder) tableReads(id string) []atlas.TableRead {
+	set := b.tableReadRows[id]
+	if len(set) == 0 {
+		return nil
+	}
+	result := make([]atlas.TableRead, 0, len(set))
+	for read := range set {
+		result = append(result, read)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		a, c := result[i], result[j]
+		if a.ReaderID != c.ReaderID {
+			return a.ReaderID < c.ReaderID
+		}
+		if a.LineNo != c.LineNo {
+			return a.LineNo < c.LineNo
+		}
+		return a.Column < c.Column
+	})
+	return result
 }
 
 func (b *builder) symbolFields() map[string][]atlas.SymbolField {

@@ -32,7 +32,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 22
+	GraphVersion = 23
 	Version      = 19
 
 	GraphFilename    = "places.json"
@@ -267,6 +267,15 @@ type SymbolFacts struct {
 	// writes words in and stores no repository callable (ProgramIndex
 	// TableRow): names the program may look what it was given up in.
 	Rows []TableRow `json:"rows,omitempty"`
+	// ReadAt are, for a table (Rows), each read of it by a declaration, one
+	// per site (ProgramIndex `reads` relations): the reader's symbol place
+	// and the site. The reader's CalledBy says who calls it. Local keys,
+	// never provider prose until a question asks how a table is read.
+	ReadAt []TableRead `json:"read_at,omitempty"`
+	// Comparisons are the values this declaration compares with two or more
+	// different words in two or more cases (ProgramIndex Comparison): a
+	// switch's or match's cases, an if/elif chain on one value.
+	Comparisons []Comparison `json:"comparisons,omitempty"`
 	// Seeds are the targets whose execution begins at this declaration
 	// (ProgramIndex target seeds): each is the entry of its program, so its
 	// file's grouping gives it a row of its own.
@@ -276,6 +285,38 @@ type SymbolFacts struct {
 // TableRow is one row of a table variable: its string literals in order.
 type TableRow struct {
 	Literals []RowLiteral `json:"literals"`
+}
+
+// TableRead is one read of a table: ReaderID is the reading declaration's
+// symbol place, LineNo and Column the read as written.
+type TableRead struct {
+	ReaderID string `json:"reader_id"`
+	LineNo   int    `json:"line_no"`
+	Column   int    `json:"column,omitempty"`
+}
+
+// Comparison is one value a declaration compares with several words, in
+// its declaration's file (ProgramIndex Comparison): Value as written,
+// Origin where its value comes from, LineNo and Column its first word, and
+// its cases in source order.
+type Comparison struct {
+	Value  string             `json:"value"`
+	Origin *sourcevalue.Value `json:"origin,omitempty"`
+	LineNo int                `json:"line_no"`
+	Column int                `json:"column,omitempty"`
+	Cases  []ComparisonCase   `json:"cases"`
+}
+
+// ComparisonCase is one case of a comparison: Form "case" or "equals", the
+// words it compares with, its first word's position, and BranchLine through
+// BranchEnd, the lines it selects, when known.
+type ComparisonCase struct {
+	Form       string   `json:"form"`
+	Words      []string `json:"words"`
+	LineNo     int      `json:"line_no"`
+	Column     int      `json:"column,omitempty"`
+	BranchLine int      `json:"branch_line,omitempty"`
+	BranchEnd  int      `json:"branch_end,omitempty"`
 }
 
 // RowLiteral is one string literal a row writes, with the field it fills.

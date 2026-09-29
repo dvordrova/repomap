@@ -11,7 +11,8 @@ import (
 // a reader looks for slaveof and what it sets, and the setting had read as
 // the variables its declaring code uses): the lines the comparison naming
 // it guards (the C adapter's pattern Branch, `strcasecmp(argv[0],"slaveof")`
-// guarding its block), and the exact field writes the declaring function
+// guarding its block, or a comparison's case: ProgramIndex Comparison), and
+// the exact field writes the declaring function
 // makes on those lines, in the order they are written, each field once,
 // each reading the type declaring it. Exact lines only: without a branch
 // the setting names none.
@@ -48,7 +49,9 @@ func (builder *pageBuilder) settingSets(index *groupindex.Index, operation group
 }
 
 // branchAt is the branch a declaring function's call at a place guards, from
-// its program's index: the pattern written exactly there.
+// its program's index: the pattern written exactly there, or the case of one
+// of the function's comparisons whose first word is written there (a
+// switch's case body, the block an if/elif condition guards).
 func (builder *pageBuilder) branchAt(programTargetID, fromID string, at programindex.Location) *programindex.LineRange {
 	if builder.data == nil || builder.data.ProgramPortfolio == nil {
 		return nil
@@ -56,6 +59,18 @@ func (builder *pageBuilder) branchAt(programTargetID, fromID string, at programi
 	for _, entry := range builder.data.ProgramPortfolio.Entries {
 		if entry.Target.ID != programTargetID {
 			continue
+		}
+		for _, object := range entry.Objects {
+			if object.ID != fromID {
+				continue
+			}
+			for _, comparison := range object.Comparisons {
+				for _, item := range comparison.Cases {
+					if item.Branch != nil && item.Location != nil && *item.Location == at {
+						return item.Branch
+					}
+				}
+			}
 		}
 		for _, relation := range entry.Relations {
 			if relation.FromID != fromID {

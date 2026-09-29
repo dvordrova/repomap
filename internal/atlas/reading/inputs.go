@@ -34,6 +34,9 @@ func storedKey(b *atlas.BoundaryFacts) string {
 // readInputs asks the stored and table questions, each over its own rows.
 func (r *reader) readInputs(ctx context.Context) error {
 	r.storedKinds, r.tableKinds = map[string]string{}, map[string]string{}
+	if err := r.readComparisons(ctx); err != nil {
+		return err
+	}
 	files := map[string]*lines.CallFile{}
 	// Kept callables, grouped by registrar and callable.
 	var storedRows []table.Row
@@ -216,10 +219,12 @@ func (r *reader) applyStored() {
 }
 
 // bindTableRows makes each row of an accepted table an entry whose handler
-// is not established, at its first word, declared by the table, and each
-// field answered setting one, declared by its structure (settings.go).
+// is not established, at its first word, declared by the table, each case
+// of an accepted comparison one (dispatch.go), and each field answered
+// setting one, declared by its structure (settings.go).
 func (r *reader) bindTableRows() {
 	defer r.bindSettingFields()
+	r.bindComparisons()
 	for _, place := range r.opts.Graph.Places {
 		kind := r.tableKinds[place.ID]
 		if place.Symbol == nil || kind == "" || kind == lines.APINone {
