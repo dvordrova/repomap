@@ -136,10 +136,10 @@ test('the magnifier enters at the declarations\' reading scale with every name w
 });
 
 // A declaration is chosen on its tile: pointing darkens only its own arrows,
-// a click reads its part with it named and centres it, and a declaration the
-// reading names elsewhere (Find, a restored visit) is the one chosen and
-// centred. A click had opened the code in a new tab, or bubbled to the part
-// already selected and changed nothing.
+// a click reads its part with it named, and a declaration the reading names
+// elsewhere (Find, a restored visit) is the one chosen and, out of sight,
+// shown with its whole part. A click had opened the code in a new tab, or
+// bubbled to the part already selected and changed nothing.
 test('a tile points at and chooses its own declaration',async({page},testInfo)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const map=page.locator('[data-map]');
@@ -164,7 +164,9 @@ test('a tile points at and chooses its own declaration',async({page},testInfo)=>
   await expect.poll(()=>darkArrows(map)).toEqual(['queue>worker']);
   await testInfo.attach('journey-01 — processJob chosen in place',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   // The reading names another declaration, as Find does: in sight, it is
-  // marked where it stands; out of sight, it is centred.
+  // marked where it stands; out of sight, it is shown with its part, the
+  // part that fits framed whole and centred (owner, 2026-09-29: a name
+  // chosen in the column had zoomed to the tile's own size).
   await map.evaluate(map=>{map.explorerMember={owner:'worker',name:'save',key:'#worker.go-30',href:'#worker.go-30'};map.dispatchEvent(new Event('repomap:reading'));});
   await settle(map);
   await expect(tileOf(part,'save')).toHaveClass(/flow-symbol-chosen/);
@@ -174,9 +176,12 @@ test('a tile points at and chooses its own declaration',async({page},testInfo)=>
   await map.evaluate(map=>{map.explorerMember={owner:'worker',name:'processJob',key:'#worker.go-3',href:'#worker.go-3'};map.dispatchEvent(new Event('repomap:reading'));});
   await settle(map);
   await expect(tileOf(part,'processJob')).toHaveClass(/flow-symbol-chosen/);
-  const found=await tileOf(part,'processJob').boundingBox();
-  expect(Math.abs(found.x+found.width/2-canvas.x-canvas.width/2)).toBeLessThan(2);
-  expect(Math.abs(found.y+found.height/2-canvas.y-canvas.height/2)).toBeLessThan(2);
+  const found=await tileOf(part,'processJob').boundingBox(),whole=await part.boundingBox();
+  const inside=box=>box.x>=canvas.x-.5&&box.y>=canvas.y-.5&&box.x+box.width<=canvas.x+canvas.width+.5&&box.y+box.height<=canvas.y+canvas.height+.5;
+  expect(inside(found),'the chosen tile is in sight').toBe(true);
+  expect(inside(whole),'its part stands whole').toBe(true);
+  expect(Math.abs(whole.x+whole.width/2-canvas.x-canvas.width/2)).toBeLessThan(2);
+  expect(Math.abs(whole.y+whole.height/2-canvas.y-canvas.height/2)).toBeLessThan(2);
   expect(errors).toEqual([]);
 });
 

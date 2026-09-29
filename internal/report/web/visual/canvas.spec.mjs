@@ -161,7 +161,7 @@ test('overview keeps two systems and five external participants readable',async(
 
 test('dense internal inventory keeps whole-map headings and zoom controls readable',async({page},testInfo)=>{
   // This journey includes initial compound layout, screenshots, scrolling both
-  // complete inventories, opening a part and returning. Keep the same total
+  // complete inventories, reading a part and returning. Keep the same total
   // budget as the two-level zoom journey; individual assertions stay bounded.
   test.setTimeout(60000);
   await page.addInitScript(()=>{
@@ -210,10 +210,14 @@ test('dense internal inventory keeps whole-map headings and zoom controls readab
     await assertInsideCanvas(page,area,'The final area stays reachable in its frame',{text:true,container:`.react-flow__node[data-id="${id}"]`});
   }
   await testInfo.attach('journey-02 — Scroll to the final entries',{body:await workspace.screenshot(),contentType:'image/png'});
+  // An area named on the card reads in the column and the camera stays
+  // (owner, 2026-09-29: the card's area names had moved it).
+  const overview=await page.locator('[data-map]').evaluate(map=>map.captureViewport());
   await page.locator('[data-overview-area="backend-workflow-40-part"]').click();
   await expect(page.locator('[data-reading-title]')).toHaveText('Additional workflow 40');
-  await assertInsideCanvas(page,page.locator('.react-flow__node[data-id="backend-workflow-40-part"]'),'The final workflow opens its actual part');
-  await testInfo.attach('journey-03 — Open the final workflow and its part',{body:await workspace.screenshot(),contentType:'image/png'});
+  expect(await page.locator('[data-map]').evaluate(map=>map.captureViewport()),'Reading an area keeps the camera').toEqual(overview);
+  await expect(page.locator('.flow-location')).toHaveText('System map');
+  await testInfo.attach('journey-03 — Read the final workflow in place',{body:await workspace.screenshot(),contentType:'image/png'});
   await showWholeMap(page);
   await assertOverviewReadable(page,{allowInventoryScroll:true});
   expect(await worldGeometry(page),'Dense overview return keeps the same fixed world').toEqual(geometry);
