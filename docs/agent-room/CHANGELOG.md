@@ -1,5 +1,90 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Python: inherited self calls and fields, what a call produces, partial
+
+- **Why:** the claim audit's root-cause pass (external-data, workers) found
+  freqtrade's ccxt client, Telegram bot and Discord sender lost in the Python
+  adapter: 260+ `self.*` calls unresolved, `self._api.*` with no outside
+  symbol, `Application.builder().token().build()` stopping after `builder`,
+  `partial(self._force_enter, …)` handing nothing to `CommandHandler`, and
+  Webhook's address never showing Discord's store.
+- **Change (6fd2ee33, PYTHON "Inherited members and fields" and "What a
+  call produces"):**
+  - `self.helper()` is the method the class declares or inherits along its
+    chain of single repository bases (the contract already promised it).
+  - A field stored once holds the outside type its store gives it: an
+    outside call, a repository factory's declared outside return type
+    (`_init_ccxt(...) -> ccxt.Exchange`), a parameter annotated with an
+    outside class (`ExchangeWS(…, ccxt_object: ccxt.Exchange)`), or the
+    outside call an untyped factory's one return statement returns (P4,
+    exact only; PYTHON's "untyped factory returns gain no receiver
+    authority" was agent caution from 09-11, rewritten under the owner's
+    09-16 anti-hedging rule). A subclass sees its base's field; a store in a
+    class deriving from the reader is a second store. `typing.Any`/`Self`,
+    unions and coroutine functions give no outside class.
+  - A call on a call's result is a member of what that call produces,
+    chains included; the same holds for a name bound once to such a call.
+  - `functools.partial(f, …)` given as an argument hands `f` over.
+  - A base-class method's `self.<field>` source value lists the `__init__`
+    store of each class deriving from it as `alternatives`; destination
+    reading (`storedValue`) follows each.
+  - **Bug:** an `import X` written after another module imported `X` bound
+    `X` as a repository name, so `X.attr` resolved only where an earlier
+    module had resolved the same attribute. Alone it adds 220 freqtrade
+    outside symbols (numpy 41, asyncio 33, torch 30, pandas 16, ccxt 15, …)
+    and was what kept `ccxt.Exchange` unresolved in `exchange.py`.
+- **Chains counted first (no-model ProgramIndex, outside symbols):**
+  freqtrade 777 → 1,219 (+442; 308 invoked outside tests): import fix +220,
+  inherited/factory/parameter fields and `self` calls +83, a call on a
+  direct call result +96, longer chains +43 (sqlalchemy 13, telegram 12,
+  pandas 8, pathlib 4, …). Restricting chains to expression statements
+  would have kept 3 of the 43; pandas chains add 8, not hundreds, so chains
+  stay unrestricted. python-tutorial-game: 21 → 21, objects and relations
+  unchanged (index regenerated for its scenario digest).
+- **freqtrade no-model (`python:.:script:freqtrade`, before 176e8535 /
+  after 6fd2ee33):**
+  - `self.*` calls outside tests: exact 1,327 → 1,634, unresolved 1,319 →
+    1,012; one-attribute `self.m()` unresolved 272 → 99 (71 members of an
+    outside or unknown base or of a call result, 20 callable fields, 6
+    classes with several bases).
+  - ccxt: 6 → 110 calls; `ccxt.Exchange.*` 0 → 104 (63 members, 11 files;
+    54 outside exchange.py: 8 subclasses, exchange_ws through the annotated
+    parameter).
+  - telegram.py:249 `.token` and `.build` are
+    `telegram.ext.Application.builder.token(.build)`; :2185
+    `self._app.bot.send_message` is `…build.bot.send_message`; 11 calls on
+    `…build.*` (add_handler ×2, send_message ×2, initialize, start,
+    updater.start_polling, …).
+  - discord.py:60 `self._send_msg(payload)` → `Webhook._send_msg`
+    (webhook.py:114); webhook.py:129/131/133 `requests.post(self._url…)`
+    take webhook.py:34 and discord.py:20 as alternatives.
+  - `partial` hands over 9 callables (7 outside tests): telegram.py:276/279
+    `_force_enter` to `CommandHandler`, arguments.py:481/490
+    `start_convert_data` and :585/594 `start_list_markets` to
+    `set_defaults`, exchange_ws.py:174 `_continuous_stopped` to
+    `add_done_callback`.
+- **Fixtures:** python `inherited_clients.py` and `outside_results.py`
+  (`TestCumulativePythonSelfCallsAndFieldsFollowTheBaseChain`,
+  `TestCumulativePythonBaseReadTakesEachSubclassStore`,
+  `TestCumulativePythonCallsOnCallResultsAndPartial`); events.py's
+  direct-result and chained `subscribe` expectations now resolve. Go and
+  TypeScript already type these through their compilers (workers.go/ts,
+  `router.HandleFunc(...).Methods`, `createConsumer().on().on()`); JS
+  `bind`, Clojure `partial` and TypeScript's subclass stores are recorded
+  missing equivalents (JSTS, CLOJURE); C has no classes.
+- **Ordinary run** (6fd2ee33 binary, default cache, `--no-serve
+  --no-open`, run 20260929-132755): exit 0 in 972 s, 355 live calls, 618
+  cached: atlas_boundaries 115 (one provider call took 10 min), atlas_api
+  78, atlas_role_helper 53 (287 cached), glossary 28, atlas_symbols 27,
+  atlas_keys 17, atlas_areas 9, atlas_describe 7, atlas_joints 7,
+  atlas_core 6, atlas_role_assign 2, orientation 2, atlas_publish,
+  atlas_role_gate, atlas_systems and atlas_zones 1 each. Its ProgramIndex
+  gives the same numbers as the no-model run; report.json names
+  `ccxt.Exchange` 126 times and `…build.bot.send_message` 4 times.
+  rejected.jsonl 264 → 402 rows: glossary 28 → 142, atlas_api 0 → 22 (78
+  new windows), atlas_role_helper 218 → 222.
+- **Verified:** `make test`, `make vet` (package parallelism 2), `make build`.
+
 ## 2026-09-29 — Follow-ups of the REPORT and READING trims
 
 - **Dead catalogue click (b200c8f4):** `rmCatalogInputClick` and its capture
