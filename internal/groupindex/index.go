@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Version          = 25
+	Version          = 26
 	ArtifactFilename = "groups-index.json"
 )
 
@@ -798,11 +798,7 @@ func WithOutbound(index Index, outbound []OutboundCall) (Index, error) {
 		return Index{}, err
 	}
 	result := index.Snapshot()
-	result.Outbound = append([]OutboundCall(nil), outbound...)
-	for position := range result.Outbound {
-		result.Outbound[position].Values = cloneStrings(outbound[position].Values)
-		result.Outbound[position].Uses = cloneDestinationUses(outbound[position].Uses)
-	}
+	result.Outbound = cloneOutbound(outbound)
 	result.SHA256 = ""
 	seal, err := indexDigest(result)
 	if err != nil {
@@ -835,11 +831,7 @@ func (index Index) Snapshot() Index {
 			result.Operations[i].DeclaredOn = &copied
 		}
 	}
-	result.Outbound = append([]OutboundCall(nil), index.Outbound...)
-	for i := range result.Outbound {
-		result.Outbound[i].Values = cloneStrings(index.Outbound[i].Values)
-		result.Outbound[i].Uses = cloneDestinationUses(index.Outbound[i].Uses)
-	}
+	result.Outbound = cloneOutbound(index.Outbound)
 	result.Target = index.Target.Snapshot()
 	result.Subjects = make([]Subject, len(index.Subjects))
 	for position, subject := range index.Subjects {

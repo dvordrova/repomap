@@ -981,6 +981,26 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	data := projectData(program, target.Data)
 	outbound := projectOutbound(program, target, groupOfBox, sourceRefs)
 	joinOutboundData(outbound, data)
+	// Each outgoing call is reached from the callers outside its part, a
+	// path starting inside it at a seed or an input's handler.
+	entries := make(map[string]bool, len(seeds)+len(operations))
+	for id := range seeds {
+		entries[id] = true
+	}
+	for _, operation := range operations {
+		if operation.SubjectID != "" && !operation.HandlerUnknown {
+			entries[operation.SubjectID] = true
+		}
+	}
+	reached := newReachedFrom(program, func(id string) string {
+		if box := drawn[id]; box != nil {
+			return groupOfBox[box.ID]
+		}
+		return ""
+	}, entries)
+	for position := range outbound {
+		outbound[position].ReachedFrom = reached.of(outbound[position].SubjectID)
+	}
 	index := Index{
 		Version:            Version,
 		Role:               target.Role,

@@ -34,6 +34,9 @@ type OutboundCall struct {
 	// ProgramNotNamed marks a started program none of its call's words
 	// names (atlas.BoundaryRunsProgram); a named one is its Destination.
 	ProgramNotNamed bool `json:"program_not_named,omitempty"`
+	// ReachedFrom are the callers outside the call's part the program
+	// reaches it from (outbound_reached.go).
+	ReachedFrom []OutboundCaller `json:"reached_from,omitempty"`
 }
 
 func projectOutbound(program programindex.Index, target atlas.Target, groups map[string]string, sourceRefs map[string]string) []OutboundCall {
@@ -135,6 +138,9 @@ func (index Index) validateOutbound(subjects map[string]Subject, groups map[stri
 			(call.Source != "fact" && call.Source != "model") ||
 			call.Location.Path == "" || call.Location.Line < 1 || call.Location.Column < 1 {
 			return fmt.Errorf("group index: invalid outbound call %q", call.ID)
+		}
+		if err := validateOutboundCallers(call, subjects, groups); err != nil {
+			return err
 		}
 		if i > 0 && index.Outbound[i-1].ID >= call.ID {
 			return fmt.Errorf("group index: outbound calls are not canonical")
