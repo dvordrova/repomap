@@ -43,3 +43,26 @@ func ToolCommand(args []string, level string) (int, bool) {
 	_ = serve.Parse(args)
 	return *port, strings.EqualFold(level, "default")
 }
+
+// toolCommand is one subcommand of a tool, as litestream writes each of its
+// commands: Usage prints the command's flags when they are wrong.
+type toolCommand struct {
+	name string
+}
+
+func (c *toolCommand) Usage() {}
+
+// Run hands the command's usage printer to its flag set by storing it in the
+// flag set's field. The store names that field, flag.FlagSet.Usage, declared
+// func(): what the stored callable becomes is asked of the field, not of the
+// flag set.
+func (c *toolCommand) Run(args []string) error {
+	fs := flag.NewFlagSet(c.name, flag.ContinueOnError)
+	fs.Usage = c.Usage
+	return fs.Parse(args)
+}
+
+// RunTool runs the tool's one command.
+func RunTool(args []string) error {
+	return (&toolCommand{name: "tool"}).Run(args)
+}

@@ -31,7 +31,7 @@ key selection to reach the report.
   pattern. A callable also uses, exactly, each repository type one of its
   parameters carries (`takes`, from the parameter's `type_id`: C, Go, Python
   annotations, TS/JS declared types; Clojure has none). A read or write of a
-  record's field (a relation with a `field_path`, C) is no use but one of the
+  record's field (a relation with a `field_path`, C and Go) is no use but one of the
   declaration's `fields`, one per site: kind, the record type's place, the
   field name and the path as the code reaches it (`server.masterhost`); a
   field's readers and writers are the declarations whose `fields` name that

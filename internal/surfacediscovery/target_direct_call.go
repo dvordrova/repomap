@@ -118,6 +118,9 @@ func (a *analyzer) recordTargetDirectCallEdges() error {
 		if !ok || a.directCallIndex.state != DirectCallIndexReady {
 			continue
 		}
+		// The fields a body reads and writes are recorded where its calls
+		// are: an explicit depth narrows both alike.
+		a.recordFieldAccesses(current.function, callerID)
 		for _, candidate := range a.callableBindings.exactCandidates(callerID) {
 			if candidate != nil && candidate.Origin() != nil {
 				candidate = candidate.Origin()

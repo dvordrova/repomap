@@ -389,7 +389,7 @@ writers gather by their target, as C's do. Python sets no `field_path`
 the witness's detail, a receiver is always a typed value and never a
 module-level variable, so the path would always be `Class.field`, and a
 chain (`self.a.b = x`) stays unresolved, where C follows every field of a
-chain and names its root. The current Go,
+chain and names its root, as Go does (GO). The current
 JS/TS and Clojure adapters do not emit comparable target-bound field-write
 relations; their mutation-tracing equivalent remains unavailable rather than
 being inferred from call or field-initializer evidence.

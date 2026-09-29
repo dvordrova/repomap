@@ -235,8 +235,19 @@ from (ProgramIndex `field_path`):
 | --- | --- |
 | C | [kvd.c](c/kvd.c) `server.shutdown`: one writer, `onSignal`, and one reader, `beforeSleep`; `server.dbfile` written by `main` and `loadConfig`, read by `bgsaveCommand`; `kvEntry.value` written through `setCommand`'s local `e` and read as `server.db.value` by `saveSnapshot` |
 | Python | [models.py](python/src/fixture_app/models.py) `MutableCounter.count`: each write to the field object; no `field_path` (the written expression is the witness) and no chains |
-| Go | missing: no field reads or writes are captured (GO) |
+| Go | [server_state.go](go/internal/storefixture/server_state.go) `serverState.shutdown`: one writer, `onStateSignal`, and one reader, `stateBeforeSleep`; `serverState.dbfile` written by `StartStateServer` and `loadStateConfig`, read by `saveStateSnapshot`; `stateEntry.value` written through `setState`'s local `e` and read as `serverState.db.value` by `saveStateSnapshot` |
 | TypeScript | missing: a property read is a declared value reference; no writes (JSTS) |
+| Clojure | missing: a map's keys are keywords and a record's fields no declarations (CLOJURE) |
+
+A callable stored into the field of an outside value the code holds is
+handed to that field, named with its declared type:
+
+| Language | Store into an outside value's field |
+| --- | --- |
+| Go | [tool_cli.go](go/internal/storefixture/tool_cli.go) `fs.Usage = c.Usage` hands `toolCommand.Usage` to `flag.FlagSet.Usage` (`func()`); [server_state.go](go/internal/storefixture/server_state.go) `srv.Handler = mux` hands `stateStatus` to `net/http.Server.Handler` (`http.Handler`); a composite literal still constructs its type (`testing.InternalTest`) |
+| C | [kvd.c](c/kvd.c) `act.sa_handler = onSignal` is handed to `struct sigaction`, the record rather than its field: a recorded difference (GO) |
+| Python | missing: an attribute write binds only a repository class's field (PYTHON), so a callable stored on an outside object's attribute hands nothing over |
+| TypeScript | missing: a property assignment is a destination and no relation (JSTS) |
 | Clojure | missing: a map's keys are keywords and a record's fields no declarations (CLOJURE) |
 
 A C command table, a callback stored under a branch and a call through a

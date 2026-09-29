@@ -19,7 +19,10 @@ import (
 	"unicode/utf8"
 )
 
-const Version = 9
+// Version 10 adds Slot.Assigned: a callable binding written as an
+// assignment to a field of a value the code holds (fs.Usage = c.Usage),
+// apart from a composite literal's element.
+const Version = 10
 
 type Scenario struct {
 	ID     string   `json:"id"`
@@ -148,7 +151,10 @@ type StaticTarget struct {
 // passed, DeclaredType+Method identify one method carried by that argument;
 // callable bindings use
 // ContainerType+Field+DeclaredType and may retain the resolved callable
-// signature when SSA exposes it.
+// signature when SSA exposes it. Assigned marks a callable binding the code
+// writes as an assignment to the field of a value it holds (fs.Usage =
+// c.Usage, srv.Handler = mux), not as an element of a composite literal
+// (&cobra.Command{RunE: run}) that builds the value.
 type Slot struct {
 	ContainerType string `json:"container_type,omitempty"`
 	DeclaredType  string `json:"declared_type,omitempty"`
@@ -156,6 +162,7 @@ type Slot struct {
 	Method        string `json:"method,omitempty"`
 	Signature     string `json:"signature,omitempty"`
 	Parameter     int    `json:"parameter,omitempty"`
+	Assigned      bool   `json:"assigned,omitempty"`
 }
 
 // ReceiverField is a literal assignment to another field of the same SSA
@@ -406,6 +413,9 @@ func validateHandoff(handoff Handoff, functions map[string]struct{}) error {
 	}
 	if err := validateKindShape(handoff, functions); err != nil {
 		return err
+	}
+	if handoff.Slot.Assigned && handoff.Kind != CallableBinding {
+		return fmt.Errorf("Go dynamic handoff index: only a callable binding is assigned")
 	}
 	for i, field := range handoff.ReceiverFields {
 		if handoff.Kind != CallableBinding || !validIdentifier(field.Field) || field.Field == handoff.Slot.Field ||

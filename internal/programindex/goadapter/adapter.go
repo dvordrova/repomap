@@ -86,6 +86,7 @@ func BuildInput(
 		repositoryPackages:   make(map[string]bool),
 		constructs:           make(map[string]int),
 		typeRefs:             make(map[string]string),
+		fieldRefs:            make(map[string]string),
 		typeLocations:        make(map[string]*programindex.Location),
 		methodRefs:           make(map[string]map[string]string),
 		methodLocations:      make(map[string]*programindex.Location),
@@ -249,6 +250,7 @@ type goProjection struct {
 	// two callables bound into one literal share it.
 	constructs           map[string]int
 	typeRefs             map[string]string
+	fieldRefs            map[string]string // struct fields by type key and field name
 	typeLocations        map[string]*programindex.Location
 	methodRefs           map[string]map[string]string
 	methodLocations      map[string]*programindex.Location
@@ -320,6 +322,7 @@ func (projection *goProjection) projectObjects() error {
 			}); err != nil {
 				return err
 			}
+			projection.fieldRefs[fieldKey(declaration.Package, declaration.Name, field.Name)] = field.ID
 		}
 	}
 
@@ -586,6 +589,9 @@ func (projection *goProjection) projectRelations() error {
 			Patterns: patterns, PatternsObserved: edge.PatternsObserved,
 		})
 	}
+	if err := projection.projectFieldAccesses(); err != nil {
+		return err
+	}
 	dynamicRepresented, err := projection.projectDynamicHandoffs()
 	if err != nil {
 		return err
@@ -723,6 +729,39 @@ func (projection *goProjection) projectRelations() error {
 			fromRef, programindex.RelationInvokesExternal, "invalid_caller", "go_invalid_external_caller",
 			frontier.InvalidCallerWitnessesExcluded,
 		)
+	}
+	return nil
+}
+
+// projectFieldAccesses turns each read and write of a repository struct's
+// field a node's body names into a reads or writes relation, one per site,
+// exact, whose target is the field object and whose field_path is the field
+// as the code reaches it (GO, PROGRAM_INDEX).
+func (projection *goProjection) projectFieldAccesses() error {
+	for _, access := range projection.direct.FieldAccesses {
+		fromRef, ok := projection.directNodeObjectRefs[access.CallerID]
+		if !ok {
+			return fmt.Errorf("Go program index adapter: field access has no projected caller %q", access.CallerID)
+		}
+		fieldRef, ok := projection.fieldRefs[fieldKey(access.Package, access.Type, access.Field)]
+		if !ok {
+			return fmt.Errorf("Go program index adapter: field access names %s.%s.%s, absent from core objects", access.Package, access.Type, access.Field)
+		}
+		location, err := projection.surfaceLocation(access.Site)
+		if err != nil {
+			return err
+		}
+		kind, witness, verb := programindex.RelationReads, "go_field_read", "read of "
+		if access.Write {
+			kind, witness, verb = programindex.RelationWrites, "go_field_write", "write of "
+		}
+		projection.relations = append(projection.relations, programindex.RelationInput{
+			SourceRef: stableRef("go-field-access", access.CallerID, fieldRef, string(kind), locationDetail(access.Site)),
+			Kind:      kind, FromRef: fromRef, ToRefs: []string{fieldRef}, Resolution: programindex.ResolutionExact,
+			Location: location, TargetsObserved: 1,
+			Witnesses:         []programindex.Witness{{Kind: witness, Detail: verb + access.Path, Location: location}},
+			WitnessesObserved: 1, FieldPath: access.Path,
+		})
 	}
 	return nil
 }
@@ -1043,6 +1082,13 @@ func (projection *goProjection) projectDynamicHandoffs() (
 // invocation; the string literals stored beside the callable are its keyword
 // arguments and the bound field is the argument the callback crosses by. A
 // value of a repository type is no construction outside the repository.
+//
+// A callable the code assigns to the field of a value it already holds
+// (fs.Usage = c.Usage, srv.Handler = mux) constructs nothing: the store
+// hands it to that outside field, which the relation names with its declared
+// type (flag.FlagSet.Usage, func()), as a C table row names its record's
+// field. One store is one relation; the literals the same value received
+// stay its keyword arguments.
 func (projection *goProjection) constructRegistration(
 	handoff godynamichandoff.Handoff, fromRef string, toRefs []string,
 	resolution programindex.Resolution, location *programindex.Location,
@@ -1052,9 +1098,14 @@ func (projection *goProjection) constructRegistration(
 		return nil, nil
 	}
 	target := surfacediscovery.ExternalCallTarget{PackagePath: packagePath, Name: typeName}
+	selector, invocation, witness, signature := typeName, programindex.InvocationConstruct, "go_composite_literal", ""
+	if handoff.Slot.Assigned {
+		target = surfacediscovery.ExternalCallTarget{PackagePath: packagePath, Receiver: typeName, Name: handoff.Slot.Field}
+		selector, invocation, witness, signature = handoff.Slot.Field, "", "go_field_store", shortSignature(handoff.Slot.DeclaredType)
+	}
 	typeRef, exists := projection.externalRefs[externalTargetKey(target)]
 	if !exists {
-		typeRef = stableRef("go-external-symbol", packagePath, "", typeName)
+		typeRef = stableRef("go-external-symbol", packagePath, target.Receiver, target.Name)
 		projection.externalRefs[externalTargetKey(target)] = typeRef
 		authority := projection.externalAuthorities[packagePath]
 		if authority == "" {
@@ -1062,8 +1113,8 @@ func (projection *goProjection) constructRegistration(
 		}
 		if err := projection.addObject(programindex.ObjectInput{
 			SourceRef: typeRef, Kind: programindex.ObjectExternalSymbol, Name: externalTargetName(target),
-			Visibility: visibility(token.IsExported(typeName)),
-			External:   &programindex.ExternalSymbol{AuthorityKind: authority, PackagePath: packagePath, Name: typeName},
+			Visibility: visibility(token.IsExported(target.Name)), Signature: signature,
+			External: &programindex.ExternalSymbol{AuthorityKind: authority, PackagePath: packagePath, Receiver: target.Receiver, Name: target.Name},
 		}); err != nil {
 			return nil, err
 		}
@@ -1079,8 +1130,11 @@ func (projection *goProjection) constructRegistration(
 	for _, field := range fields {
 		keyParts = append(keyParts, field.Field, field.Literal, field.Location.Path, strconv.Itoa(field.Location.Line), strconv.Itoa(field.Location.Column))
 	}
-	if len(fields) == 0 {
+	if len(fields) == 0 || handoff.Slot.Assigned {
 		keyParts = append(keyParts, handoff.Callsite.Path, strconv.Itoa(handoff.Callsite.Line), strconv.Itoa(handoff.Callsite.Column))
+	}
+	if handoff.Slot.Assigned {
+		keyParts = append(keyParts, "assigned", handoff.Slot.Field)
 	}
 	key := strings.Join(keyParts, "\x00")
 	bound := programindex.PatternArgumentInput{
@@ -1101,11 +1155,11 @@ func (projection *goProjection) constructRegistration(
 		projection.constructs[key] = position
 		projection.relations = append(projection.relations, programindex.RelationInput{
 			SourceRef: relationRef, Kind: programindex.RelationInvokesExternal, FromRef: fromRef, ToRefs: []string{typeRef},
-			Resolution: programindex.ResolutionExact, Invocation: programindex.InvocationConstruct, Location: location, TargetsObserved: 1,
-			Witnesses:         []programindex.Witness{{Kind: "go_composite_literal", Detail: handoff.Slot.ContainerType, Location: location}},
+			Resolution: programindex.ResolutionExact, Invocation: invocation, Location: location, TargetsObserved: 1,
+			Witnesses:         []programindex.Witness{{Kind: witness, Detail: externalTargetName(target), Location: location}},
 			WitnessesObserved: 1,
 			Patterns: []programindex.RelationPatternInput{{
-				SourceRef: patternRef, Form: programindex.PatternCall, Selector: typeName, Location: location,
+				SourceRef: patternRef, Form: programindex.PatternCall, Selector: selector, Location: location,
 				Arguments: arguments, ArgumentsObserved: len(arguments),
 			}},
 			PatternsObserved: 1,
@@ -1671,6 +1725,10 @@ func packageKey(moduleID, packagePath string) string {
 
 func typeKey(packagePath, name string) string {
 	return packagePath + "\x00" + name
+}
+
+func fieldKey(packagePath, typeName, field string) string {
+	return typeKey(packagePath, typeName) + "\x00" + field
 }
 
 func externalTargetKey(target surfacediscovery.ExternalCallTarget) string {

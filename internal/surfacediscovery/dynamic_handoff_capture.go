@@ -167,6 +167,9 @@ func (capture *dynamicHandoffCapture) observeCallableBinding(a *analyzer, store 
 				DeclaredType:  types.TypeString(field.Type(), packageQualifier),
 				Field:         field.Name(),
 				Signature:     signature,
+				// A selector names the field: an assignment to a value the
+				// code holds, not an element of the literal building it.
+				Assigned: a.fieldSelections().namedField(fieldAddress) != nil,
 			},
 			Resolution:           resolution,
 			Candidates:           candidates,

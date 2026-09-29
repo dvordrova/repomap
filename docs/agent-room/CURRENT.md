@@ -302,9 +302,12 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
 - **Field readers and writers (2026-09-29):** a record type's reading gives
   each field "Written by" and "Read by", the functions by part; a function's
   says "Writes: …" once and "Reads: …" once, in place of "Uses variables"; no
-  column list prints a line number. The facts come from C field paths, Python
-  typed receivers and JS/TS declared properties
-  ([Report](../contracts/REPORT.md)).
+  column list prints a line number. The facts come from C and Go field paths,
+  Python typed receivers and JS/TS declared properties
+  ([Report](../contracts/REPORT.md), [Go](../contracts/GO.md)). A Go callable
+  stored into an outside value's field (`fs.Usage = c.Usage`) is handed to
+  that field, `flag.FlagSet.Usage` with its declared type, not to the type
+  (2026-09-29, [Go](../contracts/GO.md)).
 - **Benchmark v3 and v4 fixes (2026-09-29):** a flow's helper calls are named
   on one muted line under their step, and a call into the caller's own part
   is its work; a macro's call reads as the macro, a compiler builtin as no

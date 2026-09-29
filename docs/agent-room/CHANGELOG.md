@@ -1,5 +1,65 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Go field reads and writes; an outside field store names the field
+
+- **Why:** Go recorded no field access (GO's gap after the C field pass,
+  950d3064), so litestream had no settings "uses" layer and no field walk;
+  and `fs.Usage = c.Usage` was projected as a construction of `flag.FlagSet`,
+  so the model was asked what a callable handed to `flag.FlagSet` becomes and
+  answered `command` for litestream's `X.Usage` rows.
+- **Field reads and writes (GO "Field reads and writes"):** every selector
+  in a function body naming a field of a package-level struct of the
+  target's packages is one exact `reads`/`writes` relation to the field
+  object, sited at the field's name, with the C adapter's `field_path` rules:
+  the package variable the chain starts from, else the struct type declaring
+  the chain's first named field, then each named field, elements,
+  dereferences and implicit embedded steps left out. `=`, compound
+  assignments, `++`/`--`, a range clause's `=` and an array element there
+  write; a struct value a further field is taken from, and an array indexed
+  on the way to one, passes through; everything else reads.
+  `DirectCallIndex.FieldAccesses` (version 16) records them in the BFS where
+  a node's calls are recorded; role and path come from the SSA function's
+  typed syntax, since SSA lifts locals (`e.key` came out as
+  `serverState.db.key`) and computes `x.f`'s address twice for `x.f += v`.
+  The adapter joins each to the core field object. No ProgramIndex format
+  change; places keep them as `fields`, so no model request changes.
+- **Outside field store (fix 6):** `godynamichandoff.Slot.Assigned`
+  (version 10) marks a callable binding whose field a selector names. Such a
+  store into an outside value's field projects to the outside field
+  (`flag.FlagSet.Usage`, signature `func()`; `net/http.Server.Handler`,
+  `http.Handler`), no invocation, a `go_field_store` witness, one relation per
+  store, word = the field. The registration fact, the places call API and the
+  reading's `outside_symbol`/`declared` follow. A composite literal still
+  constructs its type (`testing.InternalTest`, `&cobra.Command{…}`). C still
+  names `act.sa_handler = onSignal` by `struct sigaction`; Python and JS/TS
+  hand nothing over by such a store (README table).
+- **Fixture:** `internal/storefixture/server_state.go` (kvd's server state
+  in Go), `tool_cli.go`'s `toolCommand.Run` (`fs.Usage = c.Usage`) and
+  `ServeStateStatus` (`srv.Handler = mux`), appended to tool_cli.go and in
+  the new file so no pinned line moves; `go.files.json` gains the new file.
+  `assertGoFieldAccesses` and `assertGoOutsideFieldStores` in
+  `TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract`; the store
+  check fails with the assignment test disabled.
+- **litestream v24, no model:** cmd/litestream (exit 0, 8 s) 2,843 field
+  accesses (2,277 reads, 566 writes); `Store.dbs` written by
+  `Store.RegisterDB` (`s.dbs = append(s.dbs, db)`, store.go:313) and
+  `Store.UnregisterDB` (store.go:345), read at 16 sites by 13 methods
+  (`NewStore`'s `&Store{dbs: dbs}` is a literal, no write);
+  `DB.MonitorInterval` written by `NewDBFromConfig` (main.go:751) and
+  `ReplicateCommand.Run` (replicate.go:284), read by `DB.Open` and
+  `DB.monitor` (twice). cmd/litestream-test (exit 0, 4 s) 240 field
+  accesses (179 reads, 61 writes). Registrations of `fs.Usage = c.Usage`
+  now name `flag.FlagSet.Usage` (declared `func()`): 14 in cmd/litestream,
+  6 in cmd/litestream-test; none names `flag.FlagSet`.
+- **Contracts:** GO (new "Field reads and writes", the store paragraph in
+  "Receiver fields and bindings", missing equivalents), PROGRAM_INDEX,
+  READING, REPORT, PYTHON (cross-reference), CURRENT, testdata README.
+- `make test` (package parallelism 2): every package passes but
+  `internal/extractors`'
+  `TestCumulativeDataPreservesORMOwnershipUnknownScopesAndSQLSources` (go
+  and jsts: "SQL declarations=2"), from the test SQL 4b0e4394 added to the
+  go and jsts fixtures' test files, outside this change. `make vet`: PASS.
+
 ## 2026-09-29 — Where an outgoing call is reached from (claim audit fix A)
 
 - **Why:** an outgoing call written in a shared helper named only its caller

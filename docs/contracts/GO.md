@@ -141,6 +141,27 @@ stored beside the callable as keyword arguments and the bound field as the
 keyword argument the `passes_callback` crosses by. Go constructs where other
 languages call a constructor, and the facts stage reads both as one
 registration shape. A value of a repository type is no such construction.
+A callable the code assigns to the field of an outside value it already holds
+(`fs.Usage = c.Usage`, `srv.Handler = mux`) constructs nothing: the dynamic
+handoff marks the binding `assigned` (a selector names the field, where a
+composite literal's element has none), and the relation names that field as
+an outside symbol with the field's declared type as its signature,
+`flag.FlagSet.Usage` (`func()`) and `net/http.Server.Handler`
+(`http.Handler`), with no invocation, a `go_field_store` witness and one
+relation per store; its pattern's word is the field and its keyword
+arguments are the literals the same value received and the bound field. The
+registration fact and the reading's outside symbol are then the field, as a
+C table row names its record's field (`kvd.h.kvCommand.proc`), so the model
+is asked what a callable stored in `flag.FlagSet.Usage` becomes, not what
+one handed to `flag.FlagSet` does. `tool_cli.go`'s `toolCommand.Run` and
+`server_state.go`'s `ServeStateStatus` are the fixture's cases
+(`assertGoOutsideFieldStores`);
+litestream's 20 `fs.Usage = c.Usage` stores (14 in cmd/litestream, 6 in
+cmd/litestream-test) name `flag.FlagSet.Usage`. The C adapter still names a
+store into a platform record by the record (`act.sa_handler = onSignal` is
+handed to `struct sigaction`, C), and Python and JS/TS have no store of a
+callable into an outside object's attribute as a registration: a recorded
+difference, not an equivalent.
 The own callback sees its object's fields; a neighbouring caller's registration
 retains just the binding shape and source, so a shared error helper does not
 inherit every command's help text. Canonical sealing, independent copies,
@@ -320,8 +341,9 @@ Missing equivalents, recorded rather than fabricated:
 
 - GroupsIndex derives no dispatch site on the fixture: `DispatchCommand`'s
   looked-up row call stays unresolved (below), so no input is dispatched from
-  it, and with no `reads` relation no input's reach enters a part by a read
-  (READING, reach). The Echo preset checks the route's reach.
+  it, and only a field read (Field reads and writes, below) enters a part by
+  a read: a package-level variable's read is none (READING, reach). The Echo
+  preset checks the route's reach.
 - No Go function is proven `unreachable` (the C adapter's per-program fact,
   PROGRAM_INDEX). The SSA call graph and its dynamic-call candidates do not
   see every way a function runs: reflection (`reflect.Value.Call`,
@@ -363,18 +385,13 @@ Missing equivalents, recorded rather than fabricated:
   than asked, while a Go variable, whose reads are never recorded, is always
   asked. The fixture's `lookupCommand`, called only by `DispatchCommand`,
   goes with it; `DispatchCommand`, which nothing calls, is not asked.
-- Go emits no field reads or writes either. The C adapter records each read
-  and write of a record's field as a `reads`/`writes` relation to the field
-  with its `field_path` (C, PROGRAM_INDEX); Python records a typed
-  receiver's attribute writes and reads (PYTHON). Go's field objects exist
-  (a struct's fields are variables its type contains), and SSA names every
-  access (`*ssa.FieldAddr` stored to or loaded from, `*ssa.Field`), but the
-  surface analysis keeps calls, external calls and hand-overs only: a field
-  index would be a new capture beside them, a map from the compiler's
-  `*types.Var` to the core object field IDs, positions of the selectors, and
-  the root and path of each chain through the adapter. Not added in the
-  2026-09-29 C field pass; recorded, not fabricated, and no Go fixture case
-  holds it.
+- A field a composite literal's element sets (`&Store{dbs: dbs}`) is no
+  write, as a C designated initializer is none: only a selector names a field
+  (Field reads and writes, below). A selector in a package-level variable's
+  initializer is in no function body and reads nothing, where the calls
+  written there have the variable as their caller. A method of an unexported
+  type no code calls or converts is not in the SSA program's functions, so,
+  like its calls, its field accesses are not recorded.
 - A row storing two callables (`{Name: "get", Run: getCommand, Preload:
   preloadGet}`) keeps two bindings. No Go row is a registration, so the C
   rule that such a row is one input has nothing to apply to.
@@ -389,6 +406,63 @@ Missing equivalents, recorded rather than fabricated:
 - A handler that a parameter store joins is a witness at that store
   (`readyLoop.register`), where the C adapter places it at the argument of each
   call that passes it (`X stored in S by F under a condition`).
+
+## Field reads and writes
+
+A function body that names a field of a struct type declared at package
+level in one of the target's packages reads or writes that field: one exact
+`reads` or `writes` relation per site, whose target is the field object
+(contained by its type) and whose `field_path` is the field as the code
+reaches it (PROGRAM_INDEX), with the C adapter's rules (C). The path starts
+with the package variable the chain starts from (`serverState.shutdown`,
+another package's `config.Default.Port` as `Default.Port`) or, from any other
+value (a parameter, a local, a call's result, a map or range element), with
+the struct type declaring the chain's first named field (`stateEntry.value`
+for `e.value`, `Store.dbs` for `s.dbs`), then each named field; elements,
+dereferences and implicit steps through an embedded field are left out
+(`serverState.db[j].value` is `serverState.db.value`). The site is the
+field's name as written, with a `go_field_read` or `go_field_write` witness
+("write of serverState.shutdown"). The destination of `=`, of a compound
+assignment, of `++`/`--` and of a range clause's `=`, and an element of an
+array field there, is written, one fact per site. A struct value a further
+field is taken from, and an array field indexed on the way to one, is passed
+through and has no fact; everything else reads: the value, the address
+(`&serverState.db[j]`), a method called on it (`s.mu.Lock()`), and the
+pointer, slice or map it holds to reach an element or a further field
+(`c.argv[1]` reads `stateClient.argv`). A field of an outside type
+(`fs.Usage`) or of a type declared inside a function has no repository field
+object and no fact.
+
+The surface analysis records them where it records a node's calls, so an
+explicit `--depth` narrows both alike (`DirectCallIndex.FieldAccesses`,
+version 16): the SSA function owns the body, a closure its own, and what each
+selector does and the path it reaches the field by are read from the body's
+typed syntax, as the C adapter reads clang's. SSA lifts a local into the value
+it holds (`e := &serverState.db[n]; e.key = k` would be reached as
+`serverState.db.key`) and computes `x.f`'s address twice for `x.f += v`, so
+neither the chain as written nor one fact per site survives in it. The
+adapter joins each access to the core object field by package, type and
+field name. The places graph keeps them as the declaration's `fields` and the
+report's readings list each field's writers and readers (READING, REPORT);
+the role split does not read them, so no model request changes with them.
+GroupsIndex reach takes a field read as a terminal read (READING, reach).
+
+The cumulative fixture's `internal/storefixture/server_state.go` is kvd's
+server state in Go (`assertGoFieldAccesses`): `serverState.shutdown` has one
+writer, `onStateSignal`, and one reader, `stateBeforeSleep`;
+`serverState.dbfile` is written by `StartStateServer` and `loadStateConfig`
+and read by `saveStateSnapshot`; `stateEntry.value` is written through
+`setState`'s local `e`, read through `getState`'s and, as
+`serverState.db.value`, by `saveStateSnapshot`; `serverState.dirty++` and
+`serverState.stats.hits += 1` write (`stats` passed through);
+`stateFind` reads `serverState.db` only where it takes an entry's address;
+`toolCommand.Run` reads its receiver's `toolCommand.name`. litestream's
+cmd/litestream (no model) records 2,843 field accesses (2,277 reads, 566
+writes): `Store.dbs` written by `Store.RegisterDB` and `Store.UnregisterDB`
+(`s.dbs = append(s.dbs, db)`; `NewStore`'s `&Store{dbs: dbs}` is a literal)
+and read at 16 sites by 13 methods; `DB.MonitorInterval` written by
+`NewDBFromConfig` and `ReplicateCommand.Run`, read by `DB.Open` and
+`DB.monitor`.
 
 ## Owned declarations
 

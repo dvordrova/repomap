@@ -11,8 +11,8 @@ import (
 
 // The reader's question "who changes X, and who reads it?" (owner,
 // 2026-09-29) is answered from the program's reads and writes of record
-// fields (ProgramIndex relations with a FieldPath, C; a typed receiver's
-// field, Python; a declared property, JS/TS): a record type's reading lists
+// fields (ProgramIndex relations with a FieldPath, C and Go; a typed
+// receiver's field, Python; a declared property, JS/TS): a record type's reading lists
 // its fields, a global variable's the fields the code reaches through it
 // (server.masterhost), each with the functions writing and reading it by
 // part, and a function's reading the fields it writes and the fields and

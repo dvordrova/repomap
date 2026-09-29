@@ -63,6 +63,10 @@ type analyzer struct {
 	// codeLineFiles holds, per repository source file, the lines holding a
 	// token outside comments.
 	codeLineFiles map[string]map[int]bool
+
+	// fields knows which selectors name a field as written and which
+	// struct declarations of the target's packages hold each field.
+	fields *fieldSelections
 }
 
 // AnalyzeContextWithInput loads one sealed target boundary and projects all

@@ -720,10 +720,10 @@ being read, so a chain is followed one call at a time; equal names with differen
 separate.
 
 Who writes and reads a field (owner, 2026-09-29) comes from the program's
-exact reads and writes of record fields (`page_field_uses.go`): a C relation
-with its `field_path`, a Python typed receiver's field and a JS/TS declared
-property, whose words are `Type.field`. Go records no field access (GO), so a
-Go type lists none. A record type's reading gives under each field's row
+exact reads and writes of record fields (`page_field_uses.go`): a C or Go
+relation with its `field_path` (C, GO), a Python typed receiver's field and a
+JS/TS declared property, whose words are `Type.field`. A record type's
+reading gives under each field's row
 "Written by" and "Read by": the functions writing and reading it by any
 path, each side grouped by part in the part's box, own part first, then the
 part naming most, each name once. A global variable's reading lists the

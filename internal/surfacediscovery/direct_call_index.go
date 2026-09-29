@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go/token"
 	"go/types"
 	"io/fs"
 	"path/filepath"
@@ -25,7 +26,9 @@ const (
 	// Version 15 adds Variables: a call written in a package-level variable's
 	// initializer is an edge whose caller is that variable, where it had been
 	// left out with the synthetic package initializer that evaluates it.
-	DirectCallIndexVersion = 15
+	// Version 16 adds FieldAccesses: each read and write of a repository
+	// struct's field a node's body names, with the path the code reaches it by.
+	DirectCallIndexVersion = 16
 )
 
 type DirectCallIndexState string
@@ -140,6 +143,25 @@ type DirectCallEdge struct {
 	PatternsOmitted        int                   `json:"patterns_omitted"`
 }
 
+// DirectCallFieldAccess is one read or write of a field of a struct type
+// declared at package level in one of the target's packages, by a node's
+// body, at the field's name as written (GO). Package, Type and Field name the
+// field's declaration; Path is the field as the code reaches it: the package
+// variable the chain starts from or, from any other value, the struct type
+// declaring the chain's first named field, then each named field, elements
+// left out (serverState.db.value, stateEntry.value for e.value). Write marks
+// the destination of an assignment, of ++ and --, or an element of an array
+// field there; every other use reads.
+type DirectCallFieldAccess struct {
+	CallerID string   `json:"caller_id"`
+	Package  string   `json:"package"`
+	Type     string   `json:"type"`
+	Field    string   `json:"field"`
+	Path     string   `json:"path"`
+	Write    bool     `json:"write,omitempty"`
+	Site     Location `json:"site"`
+}
+
 // DirectCallNodeFrontier is closed per-caller accounting for call
 // instructions that cannot become exact repository-local DirectCallEdges.
 // It deliberately retains neither a guessed target nor another source
@@ -165,6 +187,7 @@ type DirectCallIndexCoverage struct {
 	UniqueEdgesConsidered        int `json:"unique_edges_considered"`
 	EdgesIndexed                 int `json:"edges_indexed"`
 	DirectStaticWitnessesIndexed int `json:"direct_static_witnesses_indexed"`
+	FieldAccessesIndexed         int `json:"field_accesses_indexed,omitempty"`
 	SyntheticFunctionsExcluded   int `json:"synthetic_functions_excluded"`
 	InvalidFunctionsExcluded     int `json:"invalid_functions_excluded"`
 	DynamicInvokesExcluded       int `json:"dynamic_invokes_excluded"`
@@ -266,8 +289,11 @@ type DirectCallIndex struct {
 	Variables    []DirectCallVariable        `json:"variables"`
 	Edges        []DirectCallEdge            `json:"edges"`
 	Frontiers    []DirectCallNodeFrontier    `json:"frontiers"`
-	Coverage     DirectCallIndexCoverage     `json:"coverage"`
-	SHA256       string                      `json:"sha256"`
+	// FieldAccesses follow the edges: a node's field accesses are recorded
+	// where its calls are, so an explicit depth narrows both alike.
+	FieldAccesses []DirectCallFieldAccess `json:"field_accesses,omitempty"`
+	Coverage      DirectCallIndexCoverage `json:"coverage"`
+	SHA256        string                  `json:"sha256"`
 
 	nodeLookup map[string]int
 }
@@ -293,6 +319,7 @@ func (index DirectCallIndex) Snapshot() DirectCallIndex {
 		snapshot.Edges[position] = copyDirectCallEdge(snapshot.Edges[position])
 	}
 	snapshot.Frontiers = cloneDirectCallSlice(index.Frontiers)
+	snapshot.FieldAccesses = cloneDirectCallSlice(index.FieldAccesses)
 	snapshot.initializeNodeLookup()
 	return snapshot
 }
@@ -382,8 +409,9 @@ func (index DirectCallIndex) Validate() error {
 			return fmt.Errorf("direct call index: unavailable index has invalid closed reason %q", index.ClosedReason)
 		}
 		if len(index.Modules) != 0 || len(index.Nodes) != 0 || len(index.Variables) != 0 || len(index.Edges) != 0 || len(index.Frontiers) != 0 ||
+			len(index.FieldAccesses) != 0 ||
 			index.Coverage.ModulesIndexed != 0 || index.Coverage.NodesIndexed != 0 || index.Coverage.VariablesIndexed != 0 ||
-			index.Coverage.EdgesIndexed != 0 {
+			index.Coverage.EdgesIndexed != 0 || index.Coverage.FieldAccessesIndexed != 0 {
 			return fmt.Errorf("direct call index: unavailable index retained a partial graph")
 		}
 	} else if index.ClosedReason != "" {
@@ -395,7 +423,8 @@ func (index DirectCallIndex) Validate() error {
 	if index.Coverage.ModulesIndexed != len(index.Modules) ||
 		index.Coverage.NodesIndexed != len(index.Nodes) ||
 		index.Coverage.VariablesIndexed != len(index.Variables) ||
-		index.Coverage.EdgesIndexed != len(index.Edges) {
+		index.Coverage.EdgesIndexed != len(index.Edges) ||
+		index.Coverage.FieldAccessesIndexed != len(index.FieldAccesses) {
 		return fmt.Errorf("direct call index: coverage does not match graph")
 	}
 
@@ -505,6 +534,23 @@ func (index DirectCallIndex) Validate() error {
 	}
 
 	previous = ""
+	for _, access := range index.FieldAccesses {
+		key := directCallFieldAccessKey(access)
+		if previous != "" && key <= previous {
+			return fmt.Errorf("direct call index: field accesses are not unique canonical order")
+		}
+		previous = key
+		if _, ok := nodes[access.CallerID]; !ok {
+			return fmt.Errorf("direct call index: field access has unknown caller %q", access.CallerID)
+		}
+		if !validDirectCallTargetIdentity(access.Package) || !token.IsIdentifier(access.Type) || !token.IsIdentifier(access.Field) ||
+			access.Path == "" || strings.TrimSpace(access.Path) != access.Path ||
+			!validRepositoryDirectCallLocation(access.Site) || access.Site.Column <= 0 {
+			return fmt.Errorf("direct call index: invalid field access of %s.%s by %q", access.Type, access.Field, access.CallerID)
+		}
+	}
+
+	previous = ""
 	dynamicInvokes := 0
 	nonStaticCalls := 0
 	externalCallees := 0
@@ -561,6 +607,7 @@ type directCallIndexBuilder struct {
 	variables     map[string]DirectCallVariable
 	edges         map[string]DirectCallEdge
 	frontiers     map[string]DirectCallNodeFrontier
+	fieldAccesses map[string]DirectCallFieldAccess
 	functionNode  map[*ssa.Function]string
 	functionsSeen map[*ssa.Function]struct{}
 	coverage      DirectCallIndexCoverage
@@ -577,6 +624,7 @@ func newDirectCallIndexBuilder(scenario Scenario, maxEdges int) *directCallIndex
 		variables: make(map[string]DirectCallVariable),
 		edges:     make(map[string]DirectCallEdge), functionNode: make(map[*ssa.Function]string),
 		frontiers:     make(map[string]DirectCallNodeFrontier),
+		fieldAccesses: make(map[string]DirectCallFieldAccess),
 		functionsSeen: make(map[*ssa.Function]struct{}),
 	}
 }
@@ -602,8 +650,22 @@ func (builder *directCallIndexBuilder) close(reason DirectCallIndexClosedReason)
 	builder.variables = nil
 	builder.edges = nil
 	builder.frontiers = nil
+	builder.fieldAccesses = nil
 	builder.functionNode = nil
 	return
+}
+
+// recordFieldAccess keeps one field access per caller, field and site; a site
+// recorded as written stays written.
+func (builder *directCallIndexBuilder) recordFieldAccess(access DirectCallFieldAccess) {
+	if builder == nil || builder.state != DirectCallIndexReady {
+		return
+	}
+	key := strings.Join([]string{access.CallerID, locationKey(access.Site), access.Package, access.Type, access.Field}, "\x00")
+	if previous, exists := builder.fieldAccesses[key]; exists {
+		access.Write = access.Write || previous.Write
+	}
+	builder.fieldAccesses[key] = access
 }
 
 func (builder *directCallIndexBuilder) recordFunction(a *analyzer, function *ssa.Function) (string, bool) {
@@ -832,6 +894,12 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 		for _, frontier := range builder.frontiers {
 			index.Frontiers = append(index.Frontiers, frontier)
 		}
+		for _, access := range builder.fieldAccesses {
+			index.FieldAccesses = append(index.FieldAccesses, access)
+		}
+		sort.Slice(index.FieldAccesses, func(i, j int) bool {
+			return directCallFieldAccessKey(index.FieldAccesses[i]) < directCallFieldAccessKey(index.FieldAccesses[j])
+		})
 		sort.Slice(index.Modules, func(i, j int) bool {
 			return directCallModuleKey(index.Modules[i]) < directCallModuleKey(index.Modules[j])
 		})
@@ -851,11 +919,13 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 		index.Coverage.NodesIndexed = len(index.Nodes)
 		index.Coverage.VariablesIndexed = len(index.Variables)
 		index.Coverage.EdgesIndexed = len(index.Edges)
+		index.Coverage.FieldAccessesIndexed = len(index.FieldAccesses)
 	} else {
 		index.Coverage.ModulesIndexed = 0
 		index.Coverage.NodesIndexed = 0
 		index.Coverage.VariablesIndexed = 0
 		index.Coverage.EdgesIndexed = 0
+		index.Coverage.FieldAccessesIndexed = 0
 	}
 	index.SHA256, _ = directCallIndexSHA256(index)
 	index.initializeNodeLookup()
@@ -1023,6 +1093,14 @@ func directCallEdgeKey(edge DirectCallEdge) string {
 	return strings.Join([]string{
 		edge.CallerID, edge.CalleeID, string(edge.Invocation),
 		locationKey(edge.RepresentativeCallsite), edge.ID,
+	}, "\x00")
+}
+
+// directCallFieldAccessKey orders field accesses by caller, then by site.
+func directCallFieldAccessKey(access DirectCallFieldAccess) string {
+	return strings.Join([]string{
+		access.CallerID, access.Site.Path, fmt.Sprintf("%09d:%09d", access.Site.Line, access.Site.Column),
+		access.Package, access.Type, access.Field,
 	}, "\x00")
 }
 
