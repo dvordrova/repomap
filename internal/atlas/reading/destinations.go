@@ -372,17 +372,42 @@ func (d *DestinationReader) parameterCallers(value *sourcevalue.Value, use desti
 				}
 			}
 		}
-		return selected
+		return bindingCalls(selected)
 	}
 	var callers []destinationCall
 	for _, id := range ownerIDs {
 		callers = append(callers, d.callers[id]...)
 	}
-	// Constructors can bind formals without a synthetic edge to __init__.
+	// A construction binds its constructor's formals by its result's owner.
 	if value.Owner != nil {
 		callers = append(callers, d.parameterCalls[*value.Owner]...)
 	}
-	return callers
+	return bindingCalls(callers)
+}
+
+// bindingCalls keeps one caller per source site. Two calls written at one
+// site are one call: a Python construction is the class's call, with its
+// arguments, and the call of the __init__ it runs, recorded without them.
+// Where one of them records arguments, the other passes nothing of its own.
+func bindingCalls(callers []destinationCall) []destinationCall {
+	type site struct {
+		place        string
+		line, column int
+	}
+	withArguments := make(map[site]bool)
+	for _, caller := range callers {
+		if len(caller.call.SourceArguments) > 0 {
+			withArguments[site{caller.place.ID, caller.call.Line, caller.call.Column}] = true
+		}
+	}
+	result := make([]destinationCall, 0, len(callers))
+	for _, caller := range callers {
+		if len(caller.call.SourceArguments) == 0 && withArguments[site{caller.place.ID, caller.call.Line, caller.call.Column}] {
+			continue
+		}
+		result = append(result, caller)
+	}
+	return result
 }
 
 func (d *DestinationReader) valueOwners(owner *sourcevalue.Anchor) []atlas.Place {

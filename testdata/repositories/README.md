@@ -165,6 +165,20 @@ no such row. `apply-each` calls an anonymous function literal's argument
 (`#(% 1)`), a local clj-kondo gives no name; the call keeps `%` as written.
 Every other language names its parameters.
 
+A worker is built and run the way freqtrade's trade command runs its
+`Worker`: constructed, then a method called on the name holding it, one it
+inherits included:
+
+| Language | Source example | Construction | Call on the result |
+| --- | --- | --- | --- |
+| Python | [workers.py](python/src/fixture_app/workers.py) | `Worker(name, 2)` calls the class (`construct`) and its `__init__`; `QuietWorker(name)` runs the inherited `BaseWorker.__init__`; `Plain()` the class alone | `worker.run()` is `BaseWorker.run` after `worker = None`; `chosen`, stored twice, stays unresolved |
+| TypeScript | [workers.ts](jsts/src/workers.ts) | `new Worker(name, 2)` calls `Worker.constructor`, `new QuietWorker(name)` `BaseWorker.constructor`; `new Plain()`, with no constructor, stays unresolved | the declared type's method, `BaseWorker.run` inherited |
+| Go | [workers.go](go/internal/storefixture/workers.go) | none runs: `NewWorker` is an ordinary call and the struct literal no call | `worker.Run()` is the promoted `baseWorker.Run` |
+
+Clojure has no equivalent: a record's constructor is an ordinary function
+and a protocol call on it stays unresolved. C has no constructor; its
+`construct` is a record a table row or a field store builds.
+
 A registration on a router parameter is held by what the function's callers
 pass. One caller hands the same router to a helper that passes it on to the
 leaf, to a branch helper that also hands it to itself, and to a spare helper

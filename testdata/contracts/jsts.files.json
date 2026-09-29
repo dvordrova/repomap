@@ -203,18 +203,22 @@
     },
     {
       "id": "f51",
-      "path": "src/workspace-origins-js.js"
+      "path": "src/workers.ts"
     },
     {
       "id": "f52",
-      "path": "src/workspace-origins.ts"
+      "path": "src/workspace-origins-js.js"
     },
     {
       "id": "f53",
-      "path": "tsconfig.json"
+      "path": "src/workspace-origins.ts"
     },
     {
       "id": "f54",
+      "path": "tsconfig.json"
+    },
+    {
+      "id": "f55",
       "path": "vitest.config.ts"
     }
   ]

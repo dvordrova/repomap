@@ -165,6 +165,56 @@ retain their existing compiler-resolved method identities, with untyped JS/TS
 controls remaining unresolved. Clojure has no corresponding generic receiver
 type evidence in its current adapter; Java instance dispatch remains unresolved.
 
+## Constructing a repository class
+
+A call of a repository class (`Worker(args)`) constructs an instance. It is
+a `calls` relation to the class with the `construct` invocation, keeping its
+pattern: arguments, result and the record its `__init__` fields make, as
+before. It also runs the class's `__init__`: a second exact `calls`
+relation at the same site, also `construct`, to the `__init__` the class
+declares or inherits along a chain of single repository bases
+(`QuietWorker(name)` runs `BaseWorker.__init__`), witnessed as
+`constructor` and with no pattern of its own. The arguments stay on the
+class's call, so the facts stage still reads the instance as the class's
+(its own and inherited members), and destination reading binds the
+constructor's formals from that call (PROGRAM_INDEX). A class with several
+bases, whose order the runtime decides, or a chain that reaches a base
+outside the repository or unknown before an `__init__`, names no
+`__init__`; a class with none anywhere in the chain (`Plain()`) is the
+class call alone. A metaclass or `__new__` is not read, and no class is
+executed.
+
+A name bound to that call's result holds the instance, source-ordered like
+every local binding: a call on it (`worker.run()`) is the method the class
+declares or inherits along the same chain, exact (`BaseWorker.run`). The
+inherited lookup serves every receiver whose class the adapter knows,
+including a directly annotated parameter and a factory's declared return
+type. A store of `None` does not count: None has no method, so a call on the
+name is made on its other value; freqtrade's `start_trading` writes
+`worker = None` before `worker = Worker(args)`, and `worker.run()` is
+`Worker.run`. A second store of
+anything else leaves the class unknown and the call unresolved, as before.
+The cumulative fixture's `src/fixture_app/workers.py` checks each case
+(`TestCumulativePythonConstructorCallsRunInitAndTypeTheirName`).
+
+Native equivalents:
+
+- TypeScript: `new` is a `construct` call of the constructor the compiler
+  resolves, the class's own or the one it inherits, and a call on the
+  result is its declared type's method, inherited ones included
+  (`src/workers.ts`, `TestCumulativeJSTSConstructorCallsReachTheirConstructor`).
+  A class with no constructor anywhere gives the compiler no declaration:
+  `new Plain()` stays an unresolved `construct` call, where Python calls
+  the class (a recorded difference).
+- Go runs no constructor: `NewWorker` is an ordinary exact call, a struct
+  literal is no call, and a method promoted from an embedded struct is exact
+  (`internal/storefixture/workers.go`, `assertGoConstructedWorker`).
+- Clojure: a record's constructor (`->Worker`) is an ordinary function and a
+  protocol call on the record is protocol dispatch, unresolved (CLOJURE); no
+  equivalent.
+- C has no constructors; its `construct` is a record a table row or a field
+  store builds (C), and no code runs for it.
+
 ## Variable reads and attribute writes
 
 Underscore is an ordinary Python parameter/local name. Its declaration,

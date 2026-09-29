@@ -101,6 +101,7 @@ func TestCumulativeGoRepositoryDiscoveryAndProgramIndexContract(t *testing.T) {
 	})
 	adaptertest.AssertConcreteParameterMethod(t, index, "internal/storefixture/data_sources.go")
 	assertGoTypedIteration(t, index)
+	assertGoConstructedWorker(t, index)
 	assertGoLocalHTTPNameFacts(t, index)
 	assertGoExternalEventAndStoragePatterns(t, index)
 	assertGoChainedCallAndCallbackTraversal(t, index)
@@ -1522,6 +1523,39 @@ func assertGoTypedIteration(t *testing.T, index programindex.Index) {
 		}
 	}
 	t.Fatal("typed slice iteration lost its original method call")
+}
+
+// workers.go is Python's workers.py in Go: NewWorker is an ordinary exact
+// call (Go runs no constructor, and a struct literal is no call), and the
+// calls on its result are its type's methods, the promoted baseWorker.Run
+// included, each exact.
+func assertGoConstructedWorker(t *testing.T, index programindex.Index) {
+	t.Helper()
+	const path = "internal/storefixture/workers.go"
+	caller := programIndexObjectNamed(t, index, programindex.ObjectFunction, "StartWorker", path)
+	objects := map[string]programindex.Object{}
+	for _, object := range index.Objects {
+		objects[object.ID] = object
+	}
+	var got []string
+	for _, relation := range index.Relations {
+		if relation.FromID != caller.ID || relation.Kind != programindex.RelationCalls {
+			continue
+		}
+		row := string(relation.Resolution) + " " + relation.Invocation
+		for _, id := range relation.ToIDs {
+			row += " "
+			if callee := objects[id]; callee.Kind == programindex.ObjectMethod {
+				row += objects[callee.OwnerID].Name + "."
+			}
+			row += objects[id].Name
+		}
+		got = append(got, row)
+	}
+	slices.Sort(got)
+	if want := []string{"exact  NewWorker", "exact  Worker.Step", "exact  baseWorker.Run"}; !slices.Equal(got, want) {
+		t.Fatalf("StartWorker calls %q, want %q", got, want)
+	}
 }
 
 // A repository interface field holding *sql.DB makes the call through it one

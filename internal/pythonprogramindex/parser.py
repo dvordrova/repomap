@@ -178,6 +178,13 @@ def relative_module(current, is_package, level, module):
     return ".".join(parts)
 
 
+def origins_invalidated(binding):
+    # Whether a name's source-ordered binding no longer establishes the
+    # class of its value: a store other than None preceded it. A binding
+    # that records nothing about None stores falls back to its value rule.
+    return binding.get("origin_invalidated", binding.get("value_invalidated", False))
+
+
 class Scope:
     def __init__(self, ref, qname, kind, parent=None, class_ref="", class_qname=""):
         self.ref = ref
@@ -254,6 +261,10 @@ class Analyzer:
         # stored once from an outside call carries (field_call_origin).
         self.field_stores = {}
         self.field_call_origins = {}
+        # Each class's written bases with the scope and module that define
+        # it, and the repository classes they resolve to there (class_bases).
+        self.class_definitions = {}
+        self.class_base_refs = {}
         self.module_scopes = {}
         self.relations = []
         self.relations_by_key = {}
@@ -830,6 +841,7 @@ class Collector(ast.NodeVisitor):
         parent.bindings[node.name] = {"kind": "object", "ref": ref}
         self.record_declaration(node.name, parent.bindings[node.name], node)
         self.analyzer.node_refs[id(node)] = ref
+        self.analyzer.class_definitions[ref] = (list(node.bases), parent, self.module)
         for value in list(node.decorator_list) + list(node.bases) + [keyword.value for keyword in node.keywords]:
             self.visit(value)
         for parameter in getattr(node, "type_params", []):
@@ -1318,12 +1330,16 @@ class RelationVisitor(ast.NodeVisitor):
                     return self.imported_attribute(binding["module"], parts, binding.get("external", False))
                 value_binding = self.pattern_binding(current.id)
                 typed_parameter = value_binding and value_binding.get("annotation_origin") and len(parts) == 1
-                origins = value_binding.get("origin_refs", []) if value_binding and (not value_binding.get("value_invalidated") or typed_parameter) else []
+                origins = value_binding.get("origin_refs", []) if value_binding and (not origins_invalidated(value_binding) or typed_parameter) else []
                 if len(origins) == 1:
                     owner_ref = self.produced_class(origins[0])
                     if owner_ref:
                         qname = self.analyzer.object_qname(owner_ref)
-                        target = self.analyzer.objects_by_qname.get(qname + "." + ".".join(parts), "")
+                        # A method the class inherits is its member too.
+                        if len(parts) == 1:
+                            target = self.class_member(owner_ref, parts[0])
+                        else:
+                            target = self.analyzer.objects_by_qname.get(qname + "." + ".".join(parts), "")
                         if target:
                             return "local", target
                 base_kind, base_ref = self.resolve(current)
@@ -1407,6 +1423,17 @@ class RelationVisitor(ast.NodeVisitor):
         previous = current.get(node.id)
         reassigned = previous is not None and previous.get("binding_observed", False)
         invalidated = reassigned or bool(previous and previous.get("value_invalidated", False))
+        # The class a call on the name reaches ignores the name's stores of
+        # None: None has no member to call, so a call on the name is made on
+        # its other value (`worker = None` before `worker = Worker(args)`).
+        # A second store of anything else leaves the class unknown.
+        none = origin.get("none", False)
+        if none:
+            none_only = previous is None or previous.get("none_only", False)
+            origin_invalidated = previous is not None and origins_invalidated(previous)
+        else:
+            none_only = False
+            origin_invalidated = previous is not None and (not previous.get("none_only", False) or origins_invalidated(previous))
         value_candidate = None
         if not invalidated and initializer is not None and ref:
             value_candidate = dict(initializer)
@@ -1422,6 +1449,8 @@ class RelationVisitor(ast.NodeVisitor):
             "origins_observed": origin.get("observed", 0),
             "binding_observed": True,
             "value_invalidated": invalidated,
+            "origin_invalidated": origin_invalidated,
+            "none_only": none_only,
             "value_candidate": value_candidate,
             "source_origin": source_origin if not invalidated else None,
         }
@@ -1449,6 +1478,8 @@ class RelationVisitor(ast.NodeVisitor):
         }
 
     def assignment_origin(self, value):
+        if isinstance(value, ast.Constant) and value.value is None:
+            return {"observed": 0, "none": True}
         if not isinstance(value, ast.Call):
             return {"observed": 0}
         resolution, refs = self.pattern_resolution(self.resolved_call_target(value.func))
@@ -1496,6 +1527,50 @@ class RelationVisitor(ast.NodeVisitor):
             # An explicit return annotation offers a possible receiver class;
             # it never proves exact runtime dispatch or a final field value.
             return type_ref
+        return ""
+
+    def class_bases(self, class_ref):
+        # What a class's written bases resolve to where the class is
+        # defined, one (authority, ref) per base; a subscripted base
+        # (Box[V]) is its class. Cached; a cycle through bases gives none.
+        cache = self.analyzer.class_base_refs
+        if class_ref in cache:
+            return cache[class_ref] or []
+        definition = self.analyzer.class_definitions.get(class_ref)
+        if definition is None:
+            return []
+        cache[class_ref] = None
+        bases, scope, module = definition
+        previous = self.scope, self.module
+        self.scope, self.module = scope, module
+        try:
+            resolved = [self.resolve(base.value if isinstance(base, ast.Subscript) else base) for base in bases]
+        finally:
+            self.scope, self.module = previous
+        cache[class_ref] = resolved
+        return resolved
+
+    def class_member(self, class_ref, name, kinds=None):
+        # The member of this name a class declares, or inherits along a
+        # chain of single repository bases: the first class of the chain
+        # that declares it. A class with several bases (whose order the
+        # runtime decides), or a base outside the repository or unknown,
+        # ends the chain with no member.
+        seen = set()
+        while class_ref and class_ref not in seen:
+            seen.add(class_ref)
+            ref = self.analyzer.objects_by_qname.get(self.analyzer.object_qname(class_ref) + "." + name, "")
+            if ref:
+                member = self.object(ref)
+                return ref if member and (kinds is None or member["kind"] in kinds) else ""
+            bases = self.class_bases(class_ref)
+            if len(bases) != 1:
+                return ""
+            authority, base_ref = bases[0]
+            base = self.object(base_ref) if base_ref else None
+            if authority != "local" or base is None or base["kind"] != "type":
+                return ""
+            class_ref = base_ref
         return ""
 
     def iterable_element_type(self, annotation):
@@ -2265,12 +2340,25 @@ class RelationVisitor(ast.NodeVisitor):
             called = self.object(resolved[1]) if resolved[1] else None
             if consumer and called and called.get("signature", "").startswith("async "):
                 invocation = "async_task"
+            # Calling a repository class constructs an instance: the call
+            # stays the class's, with its arguments and result, and it also
+            # runs the class's __init__, its own or the one it inherits.
+            constructed = resolved[0] == "local" and called is not None and called["kind"] == "type"
+            if constructed:
+                invocation = "construct"
             call_relation_ref = self.emit_resolved(
                 kind, self.scope.ref, resolved, node, "callsite", name, invocation,
                 exact_authorities=("literal",), source_expression=source_expression,
                 witness_callee=node.func, pattern=pattern, patterns_observed=patterns_observed,
                 extra_witnesses=self.stored_function_witnesses(node.func) if not resolved[1] else (),
             )
+            initializer = self.class_member(resolved[1], "__init__", ("method",)) if constructed else ""
+            if initializer:
+                self.analyzer.add_relation(
+                    "calls", self.scope.ref, [initializer], "exact", node, "constructor",
+                    name, invocation="construct", targets_observed=1,
+                    source_expression=source_expression, witness_callee=node.func,
+                )
 
         arguments = [(argument, position, "") for position, argument in enumerate(node.args, 1)]
         arguments.extend((value.value, 0, value.arg or "") for value in node.keywords)
@@ -2424,7 +2512,7 @@ class RelationVisitor(ast.NodeVisitor):
                 scope = scope.parent
         elif origin.get("kind") in ("parameter", "call_result") or (self.pattern_binding(receiver.id) or {}).get("iteration_origin"):
             binding = self.pattern_binding(receiver.id)
-            if binding and (binding.get("annotation_origin") or not binding.get("value_invalidated")):
+            if binding and (binding.get("annotation_origin") or not origins_invalidated(binding)):
                 refs = binding.get("origin_refs", [])
                 if len(refs) == 1:
                     owner_ref = self.produced_class(refs[0])

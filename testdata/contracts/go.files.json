@@ -99,34 +99,38 @@
     },
     {
       "id": "f25",
-      "path": "internal/testhelper/helper.go"
+      "path": "internal/storefixture/workers.go"
     },
     {
       "id": "f26",
-      "path": "internal/testhelper/helper_test.go"
+      "path": "internal/testhelper/helper.go"
     },
     {
       "id": "f27",
-      "path": "pkg/servicecfg/settings.go"
+      "path": "internal/testhelper/helper_test.go"
     },
     {
       "id": "f28",
-      "path": "root.go"
+      "path": "pkg/servicecfg/settings.go"
     },
     {
       "id": "f29",
-      "path": "root_external_test.go"
+      "path": "root.go"
     },
     {
       "id": "f30",
-      "path": "root_optional_test.go"
+      "path": "root_external_test.go"
     },
     {
       "id": "f31",
-      "path": "root_test.go"
+      "path": "root_optional_test.go"
     },
     {
       "id": "f32",
+      "path": "root_test.go"
+    },
+    {
+      "id": "f33",
       "path": "testonly/api_test.go"
     }
   ]

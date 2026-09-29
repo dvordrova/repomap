@@ -294,7 +294,10 @@ quota silently drops a chain. Existing boundaries expose these anchored uses;
 imports, request builders and local timers do not become communication locally.
 
 Destination reading traverses those existing native calls and retained owners,
-keeping each call site's arguments correlated. One helper may yield several
+keeping each call site's arguments correlated. Two calls recorded at one
+site are one call: a Python construction is the class's call, with its
+arguments, and the call of the `__init__` it runs, recorded without them
+(PYTHON), so the class's call binds the constructor's formals. One helper may yield several
 source-linked destination uses; no hop or caller quota silently truncates them.
 Cycles, unresolved factory results and dynamic field values retain a frontier
 and its source. Flag/environment expressions identify configuration, not a
