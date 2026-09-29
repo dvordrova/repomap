@@ -77,7 +77,7 @@ function rmReachingInputs(n,reaching,owner,choose){
   var inputs=rmEl('details','system-reaching-inputs');inputs.appendChild(rmEl('summary','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')));
   if(reaching.length){
     var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
-    types.forEach(function(choices,type){var typeHeading=rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',setting:'Settings',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')),typeMark=globalThis.rmKindMark?.(type);if(typeMark)typeHeading.prepend(typeMark);inputs.appendChild(typeHeading);var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
+    types.forEach(function(choices,type){var typeHeading=rmEl('h6','',rmT(rmInputKindTitles[type]||'Kind not established')),typeMark=globalThis.rmKindMark?.(type);if(typeMark)typeHeading.prepend(typeMark);inputs.appendChild(typeHeading);var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
   }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
   return inputs;
 }

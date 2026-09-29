@@ -440,7 +440,11 @@ function rmDeclView(ctx,node,data,concept){
 // catalogue holds, by kind. A name reads its input.
 // A component's language as its reading names it.
 var rmLanguageNames={c:'C',go:'Go',python:'Python',javascript:'JavaScript',typescript:'TypeScript',clojure:'Clojure'};
-var rmInputKindTitles={request:'Incoming requests',command:'Commands',setting:'Settings',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'};
+// An operation's kind as the reading names it: every kind GroupsIndex gives
+// (groupindex.OperationKind), an extension point and a queue consumer
+// included; an entry whose kind the reading did not establish (entry) says
+// so, never "Inputs" (litestream's vfs had read "Inputs: … · Inputs").
+var rmInputKindTitles={request:'Incoming requests',command:'Commands',setting:'Settings',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work',consumer:'Queue consumers',extension:'Extension points',entry:'Kind not established'};
 function rmCollectionView(ctx,node,collection){
   var view=rmEl('div','map-collection-reading');
   var component=ctx.nodeById('system-component-'+node.dataset.owner);

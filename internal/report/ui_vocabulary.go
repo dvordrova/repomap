@@ -177,6 +177,9 @@ var russianUI = map[string]string{
 	"Setting":                                 "Настройка",
 	"UI action":                               "Действие UI",
 	"Scheduled tasks":                         "Задачи по расписанию",
+	"Queue consumers":                         "Потребители очередей",
+	"Extension points":                        "Точки расширения",
+	"Kind not established":                    "Вид не установлен",
 	"Scheduled task":                          "Задача по расписанию",
 	"Background activity":                     "Фоновая работа",
 
