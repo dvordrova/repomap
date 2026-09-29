@@ -1,5 +1,62 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Python class calls construct and run __init__; a name bound to one types its calls
+
+- **Why:** orientation stage 2 scopes the main flow by Reach, and freqtrade's
+  stopped at `start_trading`: `worker = Worker(args)` (trade_commands.py:24)
+  resolved to the type with no `construct` invocation and no `__init__`
+  edge, and `worker.run()` (line 25) was unresolved, so Worker.run and
+  everything under it were in no set. Go, JS/TS and C already emit
+  `construct`.
+- **Change (19daee7c):** a call of a repository class is a `construct` call
+  of the class (keeping its pattern, result record and the facts stage's
+  class reading) plus an exact `construct` call of the `__init__` the class
+  declares or inherits along a chain of single repository bases
+  (`constructor` witness, no pattern). A name bound to the result types a
+  call on it through the same chain, inherited methods included; a store of
+  `None` does not count (None has no method), a second other store still
+  leaves it unknown. Destination reading takes the two calls at one site as
+  one: the class call's arguments bind the constructor's formals.
+- **Fixture:** python `workers.py` (own, inherited and absent `__init__`,
+  the None store, a name stored twice) with
+  `TestCumulativePythonConstructorCallsRunInitAndTypeTheirName`; jsts
+  `workers.ts` (`TestCumulativeJSTSConstructorCallsReachTheirConstructor`:
+  the compiler already resolves own and inherited constructors and methods;
+  `new Plain()` with no constructor stays an unresolved construct call) and
+  go `workers.go` (`assertGoConstructedWorker`: NewWorker is an ordinary
+  call, the promoted `baseWorker.Run` exact) as equivalents, both already
+  handled; Clojure (constructor functions, protocol dispatch unresolved) and
+  C have none. Inventories updated; the tutorial-game backend index is
+  regenerated through a no-model run (10 class calls gain `construct`, no
+  `__init__` edge: its classes are dataclasses).
+- **freqtrade no-model (`python:.:script:freqtrade`, 54 s):** line 24 is
+  `calls exact construct → Worker` and `calls exact construct →
+  Worker.__init__` (worker.py:31); line 25 `worker.run()` is `Worker.run`
+  (worker.py:76), line 29 `worker.exit()` `Worker.exit`; in `Worker._init`,
+  `FreqtradeBot(self._config)` reaches `FreqtradeBot.__init__`.
+- **Ordinary run** (`make build` binary, default cache, `--no-serve
+  --no-open`): exit 0 in 304 s, 179 live calls, 661 cached (atlas_describe
+  37, atlas_keys 31, atlas_symbols 26, glossary 26, atlas_boundaries 23,
+  atlas_areas 17, atlas_core 6, atlas_role_helper 6, atlas_role_assign 2,
+  atlas_zones 2, atlas_api 1, atlas_role_gate 1, orientation 1). The
+  orientation was accepted (10 roles, 3 run steps, 8 flow steps, 1 row
+  rejected). The re-asked parts answer drew freqtrade's map in 42 parts
+  (22 before; 19,195 grouped members either way).
+- **Stage-2 measurement** (`measure.go`, same ten run dirs): Reach(o32
+  "trade") is 377 callables (at most 131 before, below the old top eight)
+  and holds start_trading, Worker.__init__, Worker.run, Worker._worker,
+  Worker._throttle and FreqtradeBot.__init__. FreqtradeBot.process is still
+  in no set: `_worker` hands `self._process_running` to
+  `_throttle(func=…)`, which calls `func(*args, **kwargs)`, a callback
+  handed over (never followed) and a call through a parameter (unresolved in
+  Python). t1 launch+reach 1,117 → 1,365 callables, 6,931 → 8,816 calls,
+  callsOnly 3,126,652 → 3,992,405 chars; all ten targets 1,215 → 1,464
+  callables, 7,575 → 9,487 calls, callsOnly 3,400,801 → 4,276,530 chars
+  (~0.97M → ~1.22M tokens at 3.5). hyperopt's reach 296 → 407, backtesting
+  282 → 383.
+- **Verified:** `make test`, `make vet` (package parallelism 2), `make
+  build`.
+
 ## 2026-09-29 — A call's stores no longer reach provider bodies
 
 - **Why:** `atlas.SymbolCall.Stores` (where the code first stored each
