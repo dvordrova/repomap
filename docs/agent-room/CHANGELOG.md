@@ -1,5 +1,33 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — REPORT trimmed back to a contract: 19,550 → 16,026 words
+
+- **Why:** REPORT grew from 7,920 to 19,550 words in 2.5 days, with run
+  stories, repeated rules and layout mechanics. AGENTS.md: contracts hold the
+  rules; run evidence is here.
+- **Removed:** history ("had", "no longer", Redis/litestream stories, run
+  counts) down to "(owner, date)" tags; repeated statements merged (map key,
+  declaration reading, input reading, name links and no line numbers, one
+  Main flow link, translation windows and failures, source links and
+  serving); mechanics the code states (ELK candidates and passes, measured
+  dimensions, React Flow internals, the page-data field encoding, CSS sizes,
+  colours and timings); the UI iteration text AGENTS.md and DEVELOPMENT.md
+  already state; the term-lookup rules TERMINOLOGY states.
+- **Newer rule kept where passages disagreed:** a declaration's name is its
+  code link and its file stands alone (no "Open code ↗" with file:line); an
+  input's reading opens at how a request reaches it, the dispatch-site boxes
+  only when no way is known; the page writes no static picture; question
+  answers and their evidence are HTML while every column reading is page
+  data; the catalogue input row's "To explanation" click is gone (no
+  catalogue row is printed).
+- **Checks:** an independent reviewer compared all 169 original paragraphs
+  with the draft and against the code; its seven findings (one caller per
+  call, a card-closing click doing nothing else, reading a name in its own
+  part, a test-only part is a fact, the served report's only addition, the
+  page-data read-back test, three layout prohibitions) are restored. Headings
+  and anchors are unchanged. Short of the 30% aimed at: what remains is
+  reader-visible rules.
+
 ## 2026-09-29 — Report tests reduced to what they protect (260acd7f)
 
 - **Why:** an independent critic found tests in internal/report pinning
