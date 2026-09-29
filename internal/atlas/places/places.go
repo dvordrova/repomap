@@ -266,8 +266,10 @@ type builder struct {
 	workspace map[string]struct{}
 
 	// scriptImports are, by script program, the files its code imports
-	// (collectScriptImports).
+	// (collectScriptImports); entryImports, by any other program, the files
+	// its entry files' code imports, the entry files included.
 	scriptImports map[string]map[string]bool
+	entryImports  map[string]map[string]bool
 }
 
 type typeField struct {
@@ -501,17 +503,30 @@ func (b *builder) collectObjects(target TargetInput) {
 
 // collectScriptImports records, for a script program, the files its code
 // imports from its own file (ProgramIndex ImportedFiles), tests left out:
-// what it holds in its directory beside its file (claimByRoot).
+// what it holds in its directory beside its file (claimByRoot). For any
+// other program it records the files its entry files' code imports, which
+// alone may take a file in a script's directory the script does not import.
 func (b *builder) collectScriptImports(target TargetInput) {
-	script := target.Index.Target.ScriptFile()
-	if !target.Script || script == "" {
-		return
-	}
 	tests := make(map[string]bool, len(target.Index.Target.TestSources))
 	for _, test := range target.Index.Target.TestSources {
 		tests[test] = true
 	}
 	imported := make(map[string]bool)
+	script := target.Index.Target.ScriptFile()
+	if !target.Script || script == "" {
+		entries := make([]string, 0, len(target.Index.Target.Sources))
+		for _, source := range target.Index.Target.Sources {
+			entries = append(entries, source.Path)
+		}
+		for _, file := range target.Index.ImportedFilesFrom(entries, tests) {
+			imported[atlasPath(file)] = true
+		}
+		if b.entryImports == nil {
+			b.entryImports = make(map[string]map[string]bool)
+		}
+		b.entryImports[target.Index.Target.ID] = imported
+		return
+	}
 	for _, file := range target.Index.ImportedFiles(script, tests) {
 		imported[atlasPath(file)] = true
 	}
@@ -531,8 +546,12 @@ func (b *builder) collectScriptImports(target TargetInput) {
 // own that every program built from that file shares, and in its directory
 // only the files its code imports: freqtrade's three build_helpers scripts
 // had each held the directory's five files, and scripts/rest_client.py the
-// file of ws_client.py beside it. Its directory's other files go to
-// whatever other root holds them.
+// file of ws_client.py beside it. The deepest root covering a file decides
+// it: a file in a script's directory that no script there imports is no
+// program's, not the file of a shallower root's program, unless that
+// program's entry imports it (freqtrade's build_helpers/pre_commit_update.py
+// and binance_update_lev_tiers.py, CI scripts no program imports, had
+// fallen to freqtrade through the root distribution it absorbed).
 func (b *builder) claimByRoot() {
 	type root struct {
 		targetID string
@@ -566,17 +585,21 @@ func (b *builder) claimByRoot() {
 		}
 	}
 	for filePath, state := range b.files {
-		owners, depth := make(map[string]struct{}), -1
+		owners, depth, excluded := make(map[string]struct{}), -1, -1
 		for _, r := range roots {
 			if _, indexed := state.targets[r.targetID]; !indexed {
 				continue
 			}
-			if r.path != "." && filePath != r.path && !strings.HasPrefix(filePath, r.path+"/") || r.only != nil && !r.only[filePath] {
+			if r.path != "." && filePath != r.path && !strings.HasPrefix(filePath, r.path+"/") {
 				continue
 			}
 			d := strings.Count(r.path, "/") + 1
 			if r.path == "." {
 				d = 0
+			}
+			if r.only != nil && !r.only[filePath] {
+				excluded = max(excluded, d)
+				continue
 			}
 			if d > depth {
 				owners, depth = make(map[string]struct{}), d
@@ -584,6 +607,19 @@ func (b *builder) claimByRoot() {
 			if d == depth {
 				owners[r.targetID] = struct{}{}
 			}
+		}
+		// Only a shallower root that would take the file gives it up: a
+		// file only a script's root covers keeps every program indexing it
+		// (a repository-root manage.py's apps, reached only by strings).
+		if depth >= 0 && excluded > depth {
+			owners = make(map[string]struct{})
+			for targetID := range state.targets {
+				if b.entryImports[targetID][filePath] {
+					owners[targetID] = struct{}{}
+				}
+			}
+			state.targets = owners
+			continue
 		}
 		if len(owners) > 0 {
 			state.targets = owners

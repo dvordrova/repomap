@@ -31,6 +31,17 @@ type DestinationReader struct {
 	// undecided, when set, hears of each outside call whose result a walk
 	// reached and whose symbol has no decided argument (readArguments).
 	undecided func(symbol string, at atlas.Place, call atlas.SymbolCall)
+	// objects, when set, goes on from a field a walk cannot follow to the
+	// outside call with a decided argument that made the object it is a
+	// field of (destination_objects.go). talks is, by outside symbol, its
+	// talks answer: an object an outside call answered another kind made is
+	// no exchange's. exchanges indexes, once, where each call's result is
+	// handed (Exchange).
+	objects   bool
+	talks     map[string]string
+	exchanges *exchangeIndex
+	// order is the places walked, in graph order.
+	order []string
 }
 
 // DestinationChoices are what the reading decided that a walk reads.
@@ -41,6 +52,9 @@ type DestinationReader struct {
 type DestinationChoices struct {
 	Arguments map[string]ArgumentChoice
 	Options   map[sourcevalue.Anchor]string
+	// Talks is, by outside symbol, its talks answer: an object an outside
+	// call answered another kind made is no exchange's (Exchange).
+	Talks map[string]string
 }
 
 // ArgumentChoice is which value of a call names what it reaches: its
@@ -142,6 +156,9 @@ type destinationCall struct {
 type destinationPath struct {
 	atlas.DestinationUse
 	choices map[string]int
+	// kind is the talks answer of the call the walk began at: an object
+	// made by an outside call answered another kind is not what it reaches.
+	kind string
 }
 
 // A walk never passes through test code: a test is testing, not the
@@ -151,7 +168,7 @@ type destinationPath struct {
 // webhook calls walked only into them, and the page dropped the calls
 // whose every walk ran through a test.
 func NewDestinationReader(places []atlas.Place, choices DestinationChoices) *DestinationReader {
-	d := &DestinationReader{places: make(map[string]atlas.Place), callers: make(map[string][]destinationCall), callSites: make(map[sourcevalue.Anchor][]destinationCall), owners: make(map[sourcevalue.Anchor][]atlas.Place), ownerLines: make(map[sourcevalue.Anchor][]atlas.Place), parameterCalls: make(map[sourcevalue.Anchor][]destinationCall), environment: make(map[sourcevalue.Anchor]string), choices: choices}
+	d := &DestinationReader{places: make(map[string]atlas.Place), callers: make(map[string][]destinationCall), callSites: make(map[sourcevalue.Anchor][]destinationCall), owners: make(map[sourcevalue.Anchor][]atlas.Place), ownerLines: make(map[sourcevalue.Anchor][]atlas.Place), parameterCalls: make(map[sourcevalue.Anchor][]destinationCall), environment: make(map[sourcevalue.Anchor]string), choices: choices, talks: choices.Talks}
 	tests := make(map[string]bool)
 	for _, place := range places {
 		if place.Kind == atlas.PlaceFile && place.File != nil && place.File.Test {
@@ -166,6 +183,7 @@ func NewDestinationReader(places []atlas.Place, choices DestinationChoices) *Des
 			continue
 		}
 		d.places[place.ID] = place
+		d.order = append(d.order, place.ID)
 		owner := sourcevalue.Anchor{Path: place.Path, Line: place.LineNo, Column: place.Symbol.Decl.Column}
 		d.owners[owner] = append(d.owners[owner], place)
 		owner.Column = 0
@@ -191,6 +209,9 @@ func NewDestinationReader(places []atlas.Place, choices DestinationChoices) *Des
 func (d *DestinationReader) Read(place atlas.Place, call atlas.SymbolCall) []atlas.DestinationUse {
 	step := destinationStep(place, call)
 	initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningTargets(place)...), Steps: []atlas.DestinationStep{step}}}
+	if call.API != nil {
+		initial.kind = d.talks[apiName(*call.API)]
+	}
 	if value := d.chosen(call); value != nil {
 		return publishDestinationPaths(d.value(value, place, initial, make(map[string]bool)))
 	}
@@ -553,7 +574,15 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 		owners := d.valueOwners(receiver.Owner)
 		if len(owners) == 1 {
 			chosen := d.chosenCallers(use, []string{owners[0].ID}, receiver.Owner)
-			callers := d.callers[owners[0].ID]
+			// A call resolved to alternatives is made on an object of one of
+			// several classes (an element of RPCManager's registered
+			// handlers): which object's field it is, it cannot say.
+			var callers []destinationCall
+			for _, call := range d.callers[owners[0].ID] {
+				if call.call.Resolution != "alternatives" {
+					callers = append(callers, call)
+				}
+			}
 			if len(chosen) > 0 {
 				callers = nil
 				for anchor := range chosen {
@@ -627,6 +656,16 @@ func (d *DestinationReader) field(receiver *sourcevalue.Value, name string, owne
 			}
 		}
 		return result
+	}
+	// A field of an object the walk cannot follow is part of that object:
+	// what the outside call with a decided argument that made the object
+	// reaches, when one did (Trade.session.bind, of the session made from
+	// create_engine(db_url)). An object no decided call made gives nothing:
+	// two values read from one configuration stay apart.
+	if d.objects {
+		if found := d.object(receiver, owner, use, false, active); len(found) > 0 {
+			return found
+		}
 	}
 	use.Frontier = sourceValueExpression(receiver) + "." + name
 	if receiver.Anchor != nil {

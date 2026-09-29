@@ -94,6 +94,12 @@ func Validate(value *Value) error {
 		if value.Text == "" || len(value.Parts) != 1 {
 			return fmt.Errorf("source value: invalid field")
 		}
+	case "entered":
+		// What entering a context manager gives (`with X as name`), a value
+		// of its one part, the manager's value; not the manager itself.
+		if len(value.Parts) != 1 {
+			return fmt.Errorf("source value: invalid entered value")
+		}
 	case "index":
 		if len(value.Parts) != 2 {
 			return fmt.Errorf("source value: invalid index")

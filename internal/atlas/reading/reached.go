@@ -16,10 +16,14 @@ import (
 // call, exact calls are followed backwards only through callers in its own
 // file; each path ends at the first caller in another file, or, where the
 // callers run out inside the file, at a seed or an input's handler, and is
-// otherwise dropped. Callers in test files and callers none of the row's
-// programs runs are skipped; a cycle stops where it closes, and there is no
-// depth cap. A code fact: no model decides it. targets are the programs
-// asked about, each destination being one program's (destinationMember).
+// otherwise dropped. A declaration no exact call reaches is reached through
+// the calls resolved to alternatives among which it stands (freqtrade's
+// Webhook.send_msg, called only by RPCManager.send_msg's loop over its
+// registered handlers). Callers in test files and callers none of the
+// row's programs runs are skipped; a cycle stops where it closes, and there
+// is no depth cap. A code fact: no model decides it. targets are the
+// programs asked about, each destination being one program's
+// (destinationMember).
 func (r *reader) reachedFrom(targets []string, owner atlas.Place, handlers map[string]bool) []string {
 	if owner.Symbol == nil {
 		return nil
@@ -31,16 +35,11 @@ func (r *reader) reachedFrom(targets []string, owner atlas.Place, handlers map[s
 	for len(stack) > 0 {
 		current := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		callers := 0
-		for _, caller := range current.Symbol.CalledBy {
-			if caller.Kind != "calls" || caller.Resolution != "exact" || caller.PlaceID == "" || caller.PlaceID == current.ID || r.testPath(caller.Path) {
-				continue
-			}
-			place := r.places[caller.PlaceID]
-			if place.Symbol == nil || r.testFile(place.Parent) || len(intersectTargets(targets, runningTargets(place))) == 0 {
-				continue
-			}
-			callers++
+		callers := r.runningCallers(targets, current, "exact")
+		if len(callers) == 0 {
+			callers = r.runningCallers(targets, current, "alternatives")
+		}
+		for _, place := range callers {
 			if place.Path != owner.Path {
 				result = append(result, name(place))
 				continue
@@ -50,12 +49,29 @@ func (r *reader) reachedFrom(targets []string, owner atlas.Place, handlers map[s
 				stack = append(stack, place)
 			}
 		}
-		if callers == 0 && current.ID != owner.ID && (len(current.Symbol.Seeds) > 0 || handlers[current.ID]) {
+		if len(callers) == 0 && current.ID != owner.ID && (len(current.Symbol.Seeds) > 0 || handlers[current.ID]) {
 			result = append(result, name(current))
 		}
 	}
 	slices.Sort(result)
 	return slices.Compact(result)
+}
+
+// runningCallers are the declarations calling current by calls of one
+// resolution, outside tests, that one of targets runs.
+func (r *reader) runningCallers(targets []string, current atlas.Place, resolution string) []atlas.Place {
+	var result []atlas.Place
+	for _, caller := range current.Symbol.CalledBy {
+		if caller.Kind != "calls" || caller.Resolution != resolution || caller.PlaceID == "" || caller.PlaceID == current.ID || r.testPath(caller.Path) {
+			continue
+		}
+		place := r.places[caller.PlaceID]
+		if place.Symbol == nil || r.testFile(place.Parent) || len(intersectTargets(targets, runningTargets(place))) == 0 {
+			continue
+		}
+		result = append(result, place)
+	}
+	return result
 }
 
 // entryHandlers are the declarations handling the program's entries, by

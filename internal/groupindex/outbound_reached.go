@@ -15,11 +15,16 @@ import (
 // It is the first caller in another part, with Location where it calls
 // into the call's part, or, where the callers run out inside that part, the
 // seed or input handler the path starts at, with no Location. GroupID is
-// the caller's part; empty for a caller no drawn part holds.
+// the caller's part; empty for a caller no drawn part holds. Possible
+// marks a caller reached through a call resolved to several alternatives
+// (freqtrade's RPCManager.send_msg calling each registered handler's
+// send_msg): it may reach the call, and is followed only where a
+// declaration has no exact caller.
 type OutboundCaller struct {
 	SubjectID string                 `json:"subject_id"`
 	GroupID   string                 `json:"group_id,omitempty"`
 	Location  *programindex.Location `json:"location,omitempty"`
+	Possible  bool                   `json:"possible,omitempty"`
 }
 
 // reachedFrom walks, per program, the exact calls into an outgoing call's
@@ -30,11 +35,16 @@ type OutboundCaller struct {
 // handler; otherwise it is dropped, so a helper nothing uses (anet.c's
 // anetTcpNonBlockConnect) names nobody. Callers in the program's test
 // sources, and callers its adapter proved it never runs, call nothing
-// here. A cycle stops where it closes; there is no depth cap.
+// here. A declaration no exact call reaches is reached through the calls
+// resolved to alternatives among which it stands, and every caller found
+// past that step is possible (Webhook.send_msg, called only by the loop
+// over RPCManager's registered handlers). A cycle stops where it closes;
+// there is no depth cap.
 type reachedFrom struct {
-	callers map[string][]reachedCall
-	groupOf func(string) string
-	entries map[string]bool
+	callers  map[string][]reachedCall
+	possible map[string][]reachedCall
+	groupOf  func(string) string
+	entries  map[string]bool
 }
 
 type reachedCall struct {
@@ -52,8 +62,9 @@ func newReachedFrom(program programindex.Index, groupOf func(string) string, ent
 		objects[object.ID] = object
 	}
 	callers := make(map[string][]reachedCall)
+	possible := make(map[string][]reachedCall)
 	for _, relation := range program.Relations {
-		if relation.Kind != programindex.RelationCalls || relation.Resolution != programindex.ResolutionExact {
+		if relation.Kind != programindex.RelationCalls || relation.Resolution != programindex.ResolutionExact && relation.Resolution != programindex.ResolutionAlternatives {
 			continue
 		}
 		caller, known := objects[relation.FromID]
@@ -61,13 +72,17 @@ func newReachedFrom(program programindex.Index, groupOf func(string) string, ent
 			relation.Location != nil && tests[atlasPath(relation.Location.Path)] {
 			continue
 		}
+		into := callers
+		if relation.Resolution == programindex.ResolutionAlternatives {
+			into = possible
+		}
 		for _, to := range relation.ToIDs {
 			if to != relation.FromID {
-				callers[to] = append(callers[to], reachedCall{from: relation.FromID, location: relation.Location})
+				into[to] = append(into[to], reachedCall{from: relation.FromID, location: relation.Location})
 			}
 		}
 	}
-	return &reachedFrom{callers: callers, groupOf: groupOf, entries: entries}
+	return &reachedFrom{callers: callers, possible: possible, groupOf: groupOf, entries: entries}
 }
 
 // of is the callers an outgoing call made in subjectID is reached from, in
@@ -77,29 +92,46 @@ func (walk *reachedFrom) of(subjectID string) []OutboundCaller {
 	if subjectID == "" || own == "" {
 		return nil
 	}
+	type step struct {
+		id       string
+		possible bool
+	}
 	var result []OutboundCaller
+	// seen holds each declaration walked, true once walked exactly: a
+	// declaration first reached as possible is walked again when an exact
+	// path reaches it.
 	seen := map[string]bool{subjectID: true}
-	stack := []string{subjectID}
+	stack := []step{{id: subjectID}}
 	for len(stack) > 0 {
 		current := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		calls := walk.callers[current]
-		if len(calls) == 0 && current != subjectID && walk.entries[current] {
-			result = append(result, OutboundCaller{SubjectID: current, GroupID: own})
+		calls, possible := walk.callers[current.id], current.possible
+		if len(calls) == 0 {
+			calls, possible = walk.possible[current.id], true
+		}
+		if len(calls) == 0 && current.id != subjectID && walk.entries[current.id] {
+			result = append(result, OutboundCaller{SubjectID: current.id, GroupID: own, Possible: current.possible})
 		}
 		for _, call := range calls {
 			if group := walk.groupOf(call.from); group != own {
-				result = append(result, OutboundCaller{SubjectID: call.from, GroupID: group, Location: cloneLocation(call.location)})
+				result = append(result, OutboundCaller{SubjectID: call.from, GroupID: group, Location: cloneLocation(call.location), Possible: possible})
 				continue
 			}
-			if !seen[call.from] {
-				seen[call.from] = true
-				stack = append(stack, call.from)
+			if exact, walked := seen[call.from]; !walked || !possible && !exact {
+				seen[call.from] = !possible
+				stack = append(stack, step{id: call.from, possible: possible})
 			}
 		}
 	}
 	slices.SortFunc(result, compareOutboundCallers)
-	return slices.CompactFunc(result, func(a, b OutboundCaller) bool { return compareOutboundCallers(a, b) == 0 })
+	return slices.CompactFunc(result, func(a, b OutboundCaller) bool { return sameOutboundCaller(a, b) })
+}
+
+// sameOutboundCaller reports one caller at one site, reached exactly or
+// not: sorted, the exact one comes first and stands for both.
+func sameOutboundCaller(a, b OutboundCaller) bool {
+	a.Possible, b.Possible = false, false
+	return compareOutboundCallers(a, b) == 0
 }
 
 // compareOutboundCallers orders callers by part, then call site (a path's
@@ -121,6 +153,11 @@ func compareOutboundCallers(a, b OutboundCaller) int {
 		return 1
 	case a.SubjectID != b.SubjectID:
 		if subjectIDLess(a.SubjectID, b.SubjectID) {
+			return -1
+		}
+		return 1
+	case a.Possible != b.Possible:
+		if b.Possible {
 			return -1
 		}
 		return 1

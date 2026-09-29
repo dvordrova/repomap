@@ -625,7 +625,11 @@ func (r *reader) describeDeclarations(ctx context.Context, tables ...declaration
 // given text; written says the model wrote it, and only such a line is the
 // boundary's (writtenLine).
 type boundaryState struct {
-	uses    []atlas.DestinationUse
+	uses []atlas.DestinationUse
+	// through is where an outgoing row's exchange ends (exchangeThrough):
+	// its destination key and its destination's ends, where uses are the
+	// row's own walk, its address and its chain.
+	through []atlas.DestinationUse
 	place   atlas.Place
 	line    string
 	written bool
@@ -722,7 +726,11 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	if err := r.readPrograms(ctx); err != nil {
 		return err
 	}
-	tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: r.optionNames()})
+	talks := make(map[string]string, len(r.api))
+	for symbol, role := range r.api {
+		talks[symbol] = role.talks
+	}
+	tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: r.optionNames(), Talks: talks})
 	for _, state := range r.boundaries {
 		facts := state.place.Boundary
 		// A started program has no address: the word naming it is its
@@ -736,12 +744,13 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		}
 		for _, call := range owner.Symbol.Calls {
 			if call.Line == state.place.LineNo && call.Column == state.place.Column {
-				state.uses = append(state.uses, tracer.Read(owner, call)...)
 				// The row's own call is the one its external names or, for a
 				// fact naming none (an SQL text on db.Exec), the call at its
 				// site whose symbol talks to something: the fact claimed
 				// that call's boundary (bindInterpretedBoundaries).
+				state.uses = append(state.uses, tracer.Read(owner, call)...)
 				if callsExternal(call, facts.External) || facts.External == "" && r.talksOut(call) {
+					state.through = append(state.through, r.exchangeThrough(tracer, owner, call, state.kind)...)
 					state.outside, state.reaching = call.API.Package, true
 				}
 			}
@@ -755,12 +764,14 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			for _, call := range owner.Symbol.Calls {
 				if r.talksOut(call) && handsResultOf(call, site) {
 					state.uses = tracer.Read(owner, call)
+					state.through = r.exchangeThrough(tracer, owner, call, state.kind)
 					state.outside, state.reaching = call.API.Package, true
 					break
 				}
 			}
 		}
 		state.uses = canonicalDestinationUses(state.uses)
+		state.through = canonicalDestinationUses(state.through)
 		if len(state.uses) == 1 && state.uses[0].Address != "" {
 			state.address = state.uses[0].Address
 		}
@@ -964,6 +975,53 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	}
 	r.reportStage(lines.StageBoundaries)
 	return r.joinPublishes(ctx, publishes)
+}
+
+// exchangeThrough is where a row's exchange ends: what decides its
+// destination key and the destination's ends, never its own address or
+// chain (One destination, one name). A call made on what a call of its
+// kind returned continues that call's exchange (one exchange, one
+// boundary: `inspector.get_columns("trades")` on `inspect(engine)`), so it
+// ends where the call that began the exchange ends. A walk ending at a
+// field of an object an outside call with a decided argument made goes on
+// through that call (Trade.session.bind). A call whose symbol decides no
+// argument names what it reaches (an ORM's select, text or update) ends
+// where the object it is sent through ends (DestinationReader.Exchange),
+// when an outside call made that object; else at its own name.
+func (r *reader) exchangeThrough(tracer *DestinationReader, place atlas.Place, call atlas.SymbolCall, kind string) []atlas.DestinationUse {
+	own := destinationStep(place, call)
+	begun := false
+	for seen := map[sourcevalue.Anchor]bool{}; ; {
+		receiver := call.ReceiverValue
+		if receiver == nil || receiver.Kind != "call_result" || receiver.Anchor == nil || seen[*receiver.Anchor] {
+			break
+		}
+		seen[*receiver.Anchor] = true
+		found := false
+		for _, candidate := range tracer.callSites[*receiver.Anchor] {
+			if candidate.call.API != nil && r.api[apiName(*candidate.call.API)].talks == kind {
+				place, call, found, begun = candidate.place, candidate.call, true, true
+				break
+			}
+		}
+		if !found {
+			break
+		}
+	}
+	tracer.objects = true
+	defer func() { tracer.objects = false }()
+	uses := tracer.Read(place, call)
+	if tracer.chosen(call) == nil {
+		if through := tracer.Exchange(place, call, kind); len(through) > 0 {
+			uses = through
+		}
+	}
+	if begun {
+		for i := range uses {
+			uses[i].Steps = append([]atlas.DestinationStep{own}, uses[i].Steps...)
+		}
+	}
+	return uses
 }
 
 // destinationChoice reads a destination cell: the system a d* ref names in
@@ -1256,16 +1314,30 @@ func (r *reader) sameExchange(value *sourcevalue.Value, kind string, calledAt ma
 // statement handed to execute), so the call receiving it is the one
 // boundary. A call made on such a result is handed on with it
 // (func.sum(...).label(...) in select(...) takes func.sum along), and so is
-// the chain it continues. Only a value handed whole counts: a field of a
-// result, or a result formatted into another value, is not the call's own.
+// the chain it continues, through a call on it that has no talks answer of
+// its own (func.count(...).label(...), whose label was never answered, took
+// func.count along only once this was so): the call it is made on is still
+// the part. A call answered another kind ends the chain, whatever carries
+// it (requests.get(...).json() in select(...) keeps the request its own).
+// Only a value handed whole counts: a field of a result, or a result
+// formatted into another value, is not the call's own.
 func (r *reader) handedOnExchanges(calledAt map[sourceSite]string, callAt map[sourceSite]atlas.SymbolCall) map[sourceSite]bool {
 	handed := make(map[sourceSite]bool)
+	type visit struct {
+		site sourceSite
+		kind string
+	}
+	visited := make(map[visit]bool)
 	var hand func(site sourceSite, kind string)
 	hand = func(site sourceSite, kind string) {
-		if handed[site] || r.api[calledAt[site]].talks != kind {
+		talks := r.api[calledAt[site]].talks
+		if visited[visit{site, kind}] || talks != "" && talks != kind {
 			return
 		}
-		handed[site] = true
+		visited[visit{site, kind}] = true
+		if talks == kind {
+			handed[site] = true
+		}
 		if receiver := callAt[site].ReceiverValue; receiver != nil && receiver.Kind == "call_result" && receiver.Anchor != nil {
 			hand(sourceSite{receiver.Anchor.Path, receiver.Anchor.Line, receiver.Anchor.Column}, kind)
 		}

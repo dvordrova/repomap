@@ -32,11 +32,13 @@ func TestOutboundCallIsReachedFromTheFirstCallersOutsideItsPart(t *testing.T) {
 		{"cli", "cliConnect", "cli.c", 5, false},
 		{"stale", "staleConnect", "cli.c", 20, true},
 		{"test", "testConnect", "anet_test.c", 5, false},
+		{"send", "anetSend", "anet.c", 70, false},
+		{"loop", "sendLoop", "replication.c", 20, false},
 	}
 	calls := [][2]string{
 		{"connect", "generic"}, {"nonblock", "generic"}, {"retry", "connect"}, {"connect", "retry"},
 		{"netmain", "connect"}, {"sync", "connect"}, {"cli", "connect"}, {"cli", "connect"},
-		{"stale", "connect"}, {"test", "connect"},
+		{"stale", "connect"}, {"test", "connect"}, {"send", "generic"},
 	}
 	var inputs []programindex.ObjectInput
 	for _, item := range objects {
@@ -55,6 +57,13 @@ func TestOutboundCallIsReachedFromTheFirstCallersOutsideItsPart(t *testing.T) {
 			Resolution: programindex.ResolutionExact, TargetsObserved: 1, Location: site,
 			Witnesses: []programindex.Witness{{Kind: "call", Location: site}}, WitnessesObserved: 1})
 	}
+	// sendLoop calls each registered sender through one call resolved to
+	// alternatives: anetSend, which no exact call reaches, is reached from
+	// it, possibly; syncWithMaster, reached exactly, is not walked past it.
+	loopSite := &programindex.Location{Path: "replication.c", Line: 22, Column: 3}
+	relations = append(relations, programindex.RelationInput{SourceRef: "alt", Kind: programindex.RelationCalls, FromRef: "loop", ToRefs: []string{"send", "sync"},
+		Resolution: programindex.ResolutionAlternatives, TargetsObserved: 2, Location: loopSite,
+		Witnesses: []programindex.Witness{{Kind: "call", Location: loopSite}}, WitnessesObserved: 1})
 	program, err := programindex.New(programindex.Input{
 		ScenarioSHA256: strings.Repeat("a", 64), SourceSHA256: strings.Repeat("b", 64),
 		Target: programindex.TargetInput{
@@ -79,11 +88,13 @@ func TestOutboundCallIsReachedFromTheFirstCallersOutsideItsPart(t *testing.T) {
 		}
 		return ids
 	}
-	file := func(path string) []atlas.File { return []atlas.File{{Path: path, Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}} }
+	file := func(path string) []atlas.File {
+		return []atlas.File{{Path: path, Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}}
+	}
 	target := atlas.Target{ID: program.Target.ID, Name: program.Target.Name, Language: "c", Kind: "executable", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
 		Boxes: []atlas.Box{
-			{ID: "net", Dir: ".", Title: "Networking", Side: atlas.SideOut, MemberIDs: members("anetGenericConnect", "anetConnect", "anetNonBlockConnect", "anetRetry", "anetMain"), Files: file("anet.c")},
-			{ID: "replication", Dir: ".", Title: "Replication", Side: atlas.SideMid, MemberIDs: members("syncWithMaster"), Files: file("replication.c")},
+			{ID: "net", Dir: ".", Title: "Networking", Side: atlas.SideOut, MemberIDs: members("anetGenericConnect", "anetConnect", "anetNonBlockConnect", "anetRetry", "anetMain", "anetSend"), Files: file("anet.c")},
+			{ID: "replication", Dir: ".", Title: "Replication", Side: atlas.SideMid, MemberIDs: members("syncWithMaster", "sendLoop"), Files: file("replication.c")},
 			{ID: "cli", Dir: ".", Title: "Command line", Side: atlas.SideIn, MemberIDs: members("cliConnect", "staleConnect"), Files: file("cli.c")},
 			{ID: "tests", Dir: ".", Title: "Tests", Side: atlas.SideMid, ForTests: true, MemberIDs: members("testConnect"), Files: file("anet_test.c")},
 		},
@@ -115,11 +126,15 @@ func TestOutboundCallIsReachedFromTheFirstCallersOutsideItsPart(t *testing.T) {
 		if caller.Location != nil {
 			site = caller.Location.Path
 		}
+		if caller.Possible {
+			site += ", possible"
+		}
 		got = append(got, titles[caller.GroupID]+": "+names[caller.SubjectID]+" at "+site)
 	}
 	slices.Sort(got)
 	// cliConnect calls anetConnect from two places: two sites, one caller.
-	want := []string{"Command line: cliConnect at cli.c", "Command line: cliConnect at cli.c", "Networking: anetMain at no site", "Replication: syncWithMaster at replication.c"}
+	want := []string{"Command line: cliConnect at cli.c", "Command line: cliConnect at cli.c", "Networking: anetMain at no site",
+		"Replication: sendLoop at replication.c, possible", "Replication: syncWithMaster at replication.c"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("the connect is reached from %v, want %v", got, want)
 	}

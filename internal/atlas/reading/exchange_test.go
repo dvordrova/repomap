@@ -18,8 +18,13 @@ import (
 // call of the same kind returned continues its exchange (.filter on
 // select's statement), and a call whose result a call of the same kind is
 // handed whole is part of that call's (func.count in select, and
-// func.sum with the .label made on it). A call of another kind stays its
-// own boundary, and so does a value handed only as a field of a result.
+// func.sum with the .label made on it). A call made on such a part that
+// has no talks answer of its own hands the part on too (freqtrade's
+// func.count(...).label("count") in select(...), where func.count.label
+// was never answered, had kept func.count a boundary). A call of another
+// kind stays its own boundary, even when handed through such a call
+// (requests.get(...).json() in select(...)), and so does a value handed
+// only as a field of a result.
 func TestOneExchangeWithASystemIsOneBoundary(t *testing.T) {
 	site := func(line, column int) *sourcevalue.Anchor {
 		return &sourcevalue.Anchor{Path: "main.c", Line: line, Column: column}
@@ -49,7 +54,17 @@ func TestOneExchangeWithASystemIsOneBoundary(t *testing.T) {
 	get := call("requests.get", 7, 10)
 	nested := call("requests.post", 7, 30)
 	nested.SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "field", Text: "url", Parts: []sourcevalue.Value{*result(7, 10)}}}}
-	places := apiGraph(count, selectCount, filter, sum, label, selectSum, post, get, nested)
+	unanswered := call("sqlalchemy.count", 9, 20)
+	unansweredLabel := call("sqlalchemy.count.label", 9, 40)
+	unansweredLabel.ReceiverValue = result(9, 20)
+	selectUnanswered := call("sqlalchemy.select", 9, 10)
+	selectUnanswered.SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: result(9, 40)}}
+	fetched := call("requests.get", 11, 30)
+	decoded := call("requests.Response.json", 11, 50)
+	decoded.ReceiverValue = result(11, 30)
+	selectFetched := call("sqlalchemy.select", 11, 10)
+	selectFetched.SourceArguments = []atlas.SourceArgument{{Position: 1, Origin: result(11, 50)}}
+	places := apiGraph(count, selectCount, filter, sum, label, selectSum, post, get, nested, unanswered, unansweredLabel, selectUnanswered, fetched, decoded, selectFetched)
 	r := apiReader(t, t.TempDir(), places, nil)
 	for _, symbol := range []string{"sqlalchemy.count", "sqlalchemy.select", "sqlalchemy.filter", "sqlalchemy.sum", "sqlalchemy.label"} {
 		r.api[symbol] = apiRole{talks: atlas.BoundaryDB}
@@ -62,7 +77,7 @@ func TestOneExchangeWithASystemIsOneBoundary(t *testing.T) {
 		got = append(got, state.apiSymbol+" "+state.kind)
 	}
 	sort.Strings(got)
-	want := []string{"requests.get client_request", "requests.post client_request", "requests.post client_request", "sqlalchemy.select db", "sqlalchemy.select db"}
+	want := []string{"requests.get client_request", "requests.get client_request", "requests.post client_request", "requests.post client_request", "sqlalchemy.select db", "sqlalchemy.select db", "sqlalchemy.select db", "sqlalchemy.select db"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("boundaries = %q\nwant %q", got, want)
 	}

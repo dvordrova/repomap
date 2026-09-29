@@ -1020,8 +1020,14 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 // BuiltFrom): a script's file and what its code imports (ProgramTarget
 // ScriptFile; it shares its project's index, whose files are the whole
 // project's: freqtrade's build_helpers scripts read "Built from 373
-// files"), a C program's link line, else the files its index declares
-// things in, tests left out.
+// files"); a Python program whose build declares packages (Target
+// Libraries), its entry files and what their code imports, a literal
+// importlib import included, with every file of those packages
+// (freqtrade's console script read the same 373 files, the project's build
+// helpers, scripts and client among them); a C program's link line; else
+// the files its index declares things in (a Python program declaring no
+// package may load its code by strings, as a Django project does). Tests
+// are left out.
 func (builder *pageBuilder) builtFrom(programTargetID string) []string {
 	if builder.data == nil || builder.data.ProgramPortfolio == nil {
 		return nil
@@ -1045,6 +1051,26 @@ func (builder *pageBuilder) builtFrom(programTargetID string) []string {
 		if script := entry.Target.ScriptFile(); script != "" {
 			return entry.ImportedFiles(script, tests)
 		}
+		if entry.Target.Language == "python" && len(entry.Target.Libraries) > 0 {
+			var sources []string
+			for _, source := range entry.Target.Sources {
+				sources = append(sources, source.Path)
+			}
+			imported := map[string]bool{}
+			for _, file := range entry.ImportedFilesFrom(sources, tests) {
+				imported[file] = true
+			}
+			for _, object := range entry.Objects {
+				if object.Location == nil || tests[object.Location.Path] {
+					continue
+				}
+				if imported[object.Location.Path] || (object.Kind == programindex.ObjectModule || object.Kind == programindex.ObjectPackage) && packagedIn(object.Name, entry.Target.Libraries) {
+					add(object.Location.Path)
+				}
+			}
+			sort.Strings(files)
+			return files
+		}
 		if entry.Target.Language == "c" {
 			for _, source := range entry.Target.Sources {
 				if strings.HasSuffix(source.Path, ".c") {
@@ -1062,6 +1088,17 @@ func (builder *pageBuilder) builtFrom(programTargetID string) []string {
 		return files
 	}
 	return nil
+}
+
+// packagedIn reports a dotted module name that is one of packages or inside
+// one of them.
+func packagedIn(module string, packages []string) bool {
+	for _, name := range packages {
+		if module == name || strings.HasPrefix(module, name+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // subjectDisplay names one GroupsIndex subject and anchors it when it has a

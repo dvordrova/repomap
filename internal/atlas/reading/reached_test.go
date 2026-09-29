@@ -53,4 +53,20 @@ func TestAnOutgoingCallIsNamedWithWhereItsProgramsReachItFrom(t *testing.T) {
 	if got := r.reachedFrom(row("server"), r.places["generic"], map[string]bool{"nonblock": true}); !slices.Equal(got, []string{"netNonBlockConnect", "syncWithMaster"}) {
 		t.Fatalf("with a handler inside the file, the server reaches connect from %v", got)
 	}
+	// A function no exact call reaches is reached through a call resolved
+	// to alternatives among which it stands (freqtrade's Webhook.send_msg,
+	// called only by the loop over the registered handlers), and only then:
+	// the exact callers of netConnect keep the loop out.
+	possible := func(id, path string) atlas.SymbolCaller {
+		return atlas.SymbolCaller{PlaceID: id, Path: path, Kind: "calls", Resolution: "alternatives"}
+	}
+	r.places["nonblock"] = symbol("nonblock", "net.c", "netNonBlockConnect", "int netNonBlockConnect(char *host, int port)", both, possible("loop", "server.c"))
+	r.places["connect"] = symbol("connect", "net.c", "netConnect", "int netConnect(char *host, int port)", both, caller("sync", "server.c"), caller("cli", "client.c"), caller("check", "net_test.c"), possible("loop", "server.c"))
+	r.places["loop"] = symbol("loop", "server.c", "sendToAll", "void sendToAll(void)", []string{"server"})
+	if got := r.reachedFrom(row("server"), r.places["generic"], nil); !slices.Equal(got, []string{"sendToAll", "syncWithMaster"}) {
+		t.Fatalf("with a loop over alternatives, the server reaches connect from %v", got)
+	}
+	if got := r.reachedFrom(row("server"), r.places["connect"], nil); !slices.Equal(got, []string{"syncWithMaster"}) {
+		t.Fatalf("an exactly called function is reached from %v", got)
+	}
 }

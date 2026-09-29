@@ -49,6 +49,27 @@ func TestAScriptProgramIsItsFileAndWhatItImports(t *testing.T) {
 	if got := builder.builtFrom("t1"); len(got) != 5 {
 		t.Fatalf("the named program is built from %q", got)
 	}
+	// A Python program shares its project's index too: it is built from
+	// its entry files, what their code imports and the packages its build
+	// declares, never the project's build helpers or tests.
+	named := func(id, name, path string) programindex.Object {
+		return programindex.Object{ID: id, Kind: programindex.ObjectModule, Name: name, Location: &programindex.Location{Path: path, Line: 1, Column: 1}}
+	}
+	console := programindex.Index{
+		Target: programindex.Target{ID: "t1", Language: "python", Kind: "executable", Name: "freqtrade", Executables: []string{"freqtrade"}, Libraries: []string{"freqtrade"},
+			Sources:     []programindex.TargetSource{{FileRef: "f2", Path: "freqtrade/main.py"}, {FileRef: "f9", Path: "pyproject.toml"}},
+			TestSources: []string{"tests/test_arguments.py"}},
+		Objects: []programindex.Object{
+			named("n1", "freqtrade.main", "freqtrade/main.py"), named("n2", "freqtrade.templates.sample", "freqtrade/templates/sample.py"),
+			named("n3", "helpers.version", "helpers/version.py"), named("n4", "build_helpers.create_command_partials", "build_helpers/create_command_partials.py"),
+			named("n5", "tests.test_arguments", "tests/test_arguments.py"),
+		},
+		Relations: []programindex.Relation{imports("e1", "n1", "freqtrade/main.py", "n3"), imports("e2", "n5", "tests/test_arguments.py", "n4")},
+	}
+	builder = pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{Entries: []programindex.Index{console}}}}
+	if got, want := builder.builtFrom("t1"), []string{"freqtrade/main.py", "freqtrade/templates/sample.py", "helpers/version.py"}; !slices.Equal(got, want) {
+		t.Fatalf("the console script is built from %q, want %q", got, want)
+	}
 	client := programindex.Target{ID: "t4", Kind: "executable", Name: "freqtrade-client", Executables: []string{"freqtrade-client"},
 		Sources: []programindex.TargetSource{{FileRef: "f3", Path: "ft_client/freqtrade_client/ft_client.py"}, {FileRef: "f4", Path: "ft_client/pyproject.toml"}}}
 	extract := programindex.Target{ID: "t3", Kind: "executable", Name: "build_helpers.extract_config_json_schema",

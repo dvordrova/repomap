@@ -26,6 +26,13 @@ func (target Target) ScriptFile() string {
 // records no imports (Go names packages, not files) gives from alone.
 // Sorted, each once.
 func (index Index) ImportedFiles(from string, skip map[string]bool) []string {
+	return index.ImportedFilesFrom([]string{from}, skip)
+}
+
+// ImportedFilesFrom are the files the code of each of from imports, followed
+// through each imported file's own imports, from included (ImportedFiles),
+// read in one pass over the index.
+func (index Index) ImportedFilesFrom(from []string, skip map[string]bool) []string {
 	located := make(map[string]string, len(index.Objects))
 	for _, object := range index.Objects {
 		if object.Location != nil {
@@ -45,8 +52,14 @@ func (index Index) ImportedFiles(from string, skip map[string]bool) []string {
 			imports[written] = append(imports[written], relation)
 		}
 	}
-	files := map[string]bool{from: true}
-	queue := []string{from}
+	files := make(map[string]bool, len(from))
+	var queue []string
+	for _, file := range from {
+		if !files[file] {
+			files[file] = true
+			queue = append(queue, file)
+		}
+	}
 	for len(queue) > 0 {
 		file := queue[0]
 		queue = queue[1:]

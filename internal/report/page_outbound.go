@@ -337,6 +337,9 @@ type pageReachedName struct {
 	decl                 pageReadingDecl
 	part, title, program string
 	site                 pageAnchor
+	// possible marks a caller reached through a call resolved to
+	// alternatives (GroupsIndex OutboundCaller.Possible).
+	possible bool
 }
 
 // outboundReached names the callers a call is reached from, in the saved
@@ -354,7 +357,7 @@ func (builder *pageBuilder) outboundReached(index *groupindex.Index, section *pa
 		if label == "" || key == "" {
 			continue
 		}
-		name := pageReachedName{program: program}
+		name := pageReachedName{program: program, possible: caller.Possible}
 		if caller.GroupID != "" {
 			name.part = "#" + groupAnchorID(section.ID, caller.GroupID)
 			name.title = builder.groupTitles[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: caller.GroupID}]
@@ -411,7 +414,7 @@ func reachedReading(rows []pageOutbound) string {
 				group = len(reading.Groups)
 				reading.Groups = append(reading.Groups, pageReadingPeerDecls{Part: name.part, Title: name.title, Program: program})
 			}
-			end := pageReadingEnd{Decl: position, Kind: string(programindex.RelationCalls)}
+			end := pageReadingEnd{Decl: position, Kind: string(programindex.RelationCalls), Possible: name.possible}
 			if name.site.Text != "" {
 				end.sites = []pageAnchor{name.site}
 			}

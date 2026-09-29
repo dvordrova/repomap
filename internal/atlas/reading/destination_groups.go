@@ -34,7 +34,7 @@ func destinationKey(member destinationMember) string {
 	state := member.state
 	var ends []string
 	if state.reaching {
-		for _, use := range state.uses {
+		for _, use := range state.exchangeEnds() {
 			if slices.Contains(use.TargetIDs, member.target) {
 				ends = append(ends, destinationEnd(use))
 			}
@@ -45,6 +45,15 @@ func destinationKey(member destinationMember) string {
 	}
 	slices.Sort(ends)
 	return member.target + "\x02" + strings.Join(slices.Compact(ends), "\x01")
+}
+
+// exchangeEnds are the walks a row's destination is keyed and named by:
+// where its exchange ends (boundaryState.through), else its own walk.
+func (state *boundaryState) exchangeEnds() []atlas.DestinationUse {
+	if len(state.through) > 0 {
+		return state.through
+	}
+	return state.uses
 }
 
 // destinationEnd is where one walk ends. An absolute URL is its scheme and
@@ -271,7 +280,7 @@ func (r *reader) destinationRow(id string, members []destinationMember, owners m
 		// The walk of a call that reaches nothing says nothing of where the
 		// row goes, and a walk another program makes says nothing of where
 		// it goes in this one.
-		for _, use := range state.uses {
+		for _, use := range state.exchangeEnds() {
 			if !state.reaching {
 				break
 			}
