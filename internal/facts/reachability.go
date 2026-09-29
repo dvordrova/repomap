@@ -11,7 +11,8 @@ import (
 // A file is dead when no entrypoint of any target reaches it through the
 // relations the program graph records between files. A file that declares
 // only types and values has no code to run and is never judged: the graph
-// carries no edge for naming a type in a signature.
+// carries no edge for naming a type in a signature. Nor is a test source,
+// which its test runner runs.
 
 // addReachability emits this target's file-level import facts and records its
 // file edges, seeds and judgeable files for the repository-wide verdict.
@@ -80,13 +81,21 @@ func (b *builder) addDeadModules() {
 		return
 	}
 	reached := reach(b.reach.roots, b.reach.edges)
+	// A test source runs under its test runner, not from an entrypoint: its
+	// program never reaches it, and that says nothing about dead code.
+	tests := make(map[string]bool)
+	for _, target := range b.targets {
+		for _, source := range target.input.Index.Target.TestSources {
+			tests[source] = true
+		}
+	}
 	files := make([]string, 0, len(b.reach.owner))
 	for filePath := range b.reach.owner {
 		files = append(files, filePath)
 	}
 	sort.Strings(files)
 	for _, filePath := range files {
-		if _, ok := reached[filePath]; ok || !b.reach.executable[filePath] || isDeclarationFile(filePath) {
+		if _, ok := reached[filePath]; ok || !b.reach.executable[filePath] || isDeclarationFile(filePath) || tests[filePath] {
 			continue
 		}
 		target := b.reach.owner[filePath]

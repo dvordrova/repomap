@@ -58,6 +58,13 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 	if slices.Sort(registrations); !slices.Equal(registrations, want) {
 		t.Fatalf("registrations:\n have %q\n want %q", registrations, want)
 	}
+	// The tests the :test alias runs are no dead code: no entrypoint
+	// reaches them, their runner runs them.
+	for _, fact := range layer.OfKind(facts.KindDeadModule) {
+		if strings.HasPrefix(fact.Path, "test/") {
+			t.Fatalf("a test source is judged dead: %s", fact.Path)
+		}
+	}
 	// The run recipe's evidence: every alias's main options, quoted with
 	// the line that writes the alias.
 	var manifest []string
@@ -100,6 +107,25 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 	slices.Sort(bound)
 	if want := []string{"hato.websocket.websocket.on-close", "hato.websocket.websocket.on-message", "quil.core.sketch.draw", "quil.core.sketch.key-pressed"}; !slices.Equal(bound, want) {
 		t.Fatalf("keyword entries asked what their callable becomes: %q, want %q", bound, want)
+	}
+	// Each keyword entry is named from its words, the keyword first:
+	// on-key's entry offers key-pressed, not only the call's word.
+	var named []string
+	for column, items := range preset.asked {
+		if !strings.HasSuffix(column, ".name") {
+			continue
+		}
+		for _, item := range items {
+			if external, _ := item["external"].(string); external == "quil.core.sketch.key-pressed" {
+				for _, word := range item["words"].([]any) {
+					value, _ := word.(map[string]any)["value"].(string)
+					named = append(named, value)
+				}
+			}
+		}
+	}
+	if want := []string{"quil.core/sketch", "key-pressed", "Greeter"}; !slices.Equal(named, want) {
+		t.Fatalf("key-pressed's entry is named from %q, want %q", named, want)
 	}
 	var inputs []string
 	for _, row := range inputRows(projected, core) {

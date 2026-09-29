@@ -218,7 +218,9 @@ func (target *targetContext) keywordHandoffs(shape registrationShape) []registra
 		}
 		object, _ := target.object(id)
 		handed := shape
-		handed.literals = append([]string(nil), shape.literals...)
+		// The keyword is the word the code wrote for this entry, first
+		// among the call's words: the reading names the entry from them.
+		handed.literals = append([]string{argument.Keyword}, shape.literals...)
 		handed.handlerName, handed.handlerID, handed.handed, handed.keyword = object.Name, object.ID, true, argument.Keyword
 		if shape.originKnown {
 			handed.origin = shape.origin + "." + argument.Keyword

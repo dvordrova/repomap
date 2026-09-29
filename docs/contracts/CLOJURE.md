@@ -104,9 +104,10 @@ callback bound to that keyword. A run of pairs goes back from the last
 argument while each pair starts with a plain keyword; a repeated or
 auto-resolved (`::k`) keyword leaves every argument positional. The facts pass
 reads an outside call handed several repository functions under keywords as
-one registration per keyword (PROGRAM_INDEX, the facts pass): othello's
-`quil.core.sketch.key-pressed` hands `host/on-key` over at
-`src/othello/ui/sketch.clj:45`. `TestKeywordArguments`,
+one registration per keyword (PROGRAM_INDEX, the facts pass), the keyword
+its first word: othello's `quil.core.sketch.key-pressed` hands `host/on-key`
+over at `src/othello/ui/sketch.clj:45` with the words `quil.core/sketch`,
+`key-pressed`, `Othello`. `TestKeywordArguments`,
 `assertKeywordArguments` and `TestCumulativeClojureKeywordHandoffsAndFutures`
 check both forms. A Python call's keyword arguments and a Go struct's fields
 are keyword arguments natively; a synthetic facts case
