@@ -603,9 +603,11 @@ package declares it), `usage` (its first call as written), its `literals`, and
 `hands_callable`, which holds only when a registration handed over a
 repository callable or a value the repository built (`Register("k6/x/dns",
 new(DNS))`, whose extension entry exists only through `binds`); a registration
-handing nothing names the declaration making the call. The symbols handed a
-callable and the others are two tables asked at once; each symbol is in
-exactly one. `usage` is the call at the adapter's position, whole: receiver
+handing nothing names the declaration making the call. Three tables are
+asked at once, each symbol in exactly one: a handed symbol the code calls is
+asked `binds` and `talks`, a handed symbol no call names (a table row's
+field) `binds` alone, and every other symbol `talks`. `usage` is the call at
+the adapter's position, whole: receiver
 chain, name and arguments through the closing parenthesis, comments dropped,
 whitespace folded, never the numbered source line; a table row or a Clojure
 form that is no call gives that row or form, an assignment its statement.
@@ -622,19 +624,35 @@ examples) from embedded Markdown beside the stage. Every question asking what
 something of the repository becomes on our map reads one criteria file,
 `prompts/entry_options.md`, so an option means the same wherever offered; its
 examples are generic and name no repository the questions were measured on.
+Since 2026-09-29 it says whose input is whose: a `request` arrives over a
+connection to this program and is never what this program sends; a
+`command` is what a person types or passes to this program, words typed into
+a client included (owner decision 2026-09-29: they are that client's
+commands); an `interaction` is input from a window or a screen this program
+draws, while a press or a message another program's interface delivers over
+a connection is a `request` and a button this program puts into a message it
+sends is `none`; a value a key may take is no `setting`.
 
 A handed symbol is asked `binds`, what the callable becomes: an entry kind
 (`request`, `command`, `interaction`, `scheduled`, `continuous`,
 `queue_consumer`, `extension`, `setting`), `middleware` or `none` (criteria in
 `prompts/entry_options.md`); a symbol that runs the callable in place, wraps
-or stores it is `none`. It is also asked `publishes`: `serves` or `none`
-(`prompts/api_publishes_options.md`). The two are independent (`Alone`): a
-near-tie on one leaves the other standing.
+or stores it is `none`. A handed symbol the code calls is also asked `talks`,
+the question every other symbol is asked, in the place of the retired
+`publishes` (whose `serves` is talks's): litestream's `ssh.Dial`, handed a
+configuration with a callback in it, was only asked whether it serves and
+never what it dials (2026-09-29). The two are independent (`Alone`): a
+near-tie on one leaves the other standing. A handed symbol no call names has
+no call for `talks` to decide.
 
 Every other symbol is asked one `talks` question, whatever its calls give it:
 `serves` (the program's own listening side), `client_request`, `db`,
-`queue_producer`, `queue_consumer`, `sdk`, `runs_program` or `none` (criteria
-in `prompts/api_talks_options.md`). `client_request` is the outgoing side of
+`queue_producer`, `queue_consumer`, `sdk`, `runs_program`, `file` or `none`
+(criteria in `prompts/api_talks_options.md`). `file` is a call that reaches a
+file or a directory of the machine by a path it is given (opening, creating,
+renaming, removing, listing); a file is no outside system, so its calls make
+no boundary and are not asked what their words become, and which argument
+names the path is asked (What a call reaches, below). `client_request` is the outgoing side of
 `request` and, like it, names no protocol (owner, 2026-09-27): a report never
 calls a TCP connection HTTP. A `talks` symbol's `usage` is its first call
 outside tests that gives it words (a literal), else its first call; a row may
@@ -647,7 +665,8 @@ the middleware role (the symbol binds and publishes nothing), `none` no role;
 an answer under the margin leaves its decision explicitly unanswered, and a
 symbol without a role makes no boundary. The roles are recorded on the atlas
 as `api`. The table asks only the decisions the boundaries read
-(`repomap.atlas.api.v8`; owner decision 2026-09-26): a decision without a
+(`repomap.atlas.api.v9`, `.handed`, `.handed.uncalled`; owner decision
+2026-09-26): a decision without a
 reader is not asked and keeps no dormant field (no `reads_input`,
 `writes_output`, `auth`, `config` or `validates`, and no role of a declaration
 on an input's path such as access, adapter, logic or passthrough); a reader's
@@ -662,7 +681,8 @@ type, the call as written (comments dropped, never cut), its enclosing
 declaration with signature, every literal it is given, where each argument
 comes from in words without a position (a word, parameter #2 of a declaration,
 an element of a value, a field of a parameter, the result of calling X, code
-not followed), and the symbol's decided `talks` answer. A call is asked only
+not followed), the key it may be a value of (`compared_after`, below), and
+the symbol's decided `talks` answer. A call is asked only
 beside `talks` `none` or no decided answer: words passed to a program started
 or sent to are that program's, and a listener stays the listening side, so no
 call is both. Nor is a call asked of a symbol handed a callable (`binds`
@@ -725,9 +745,17 @@ Redis's `loadServerConfig` compares `argv[0]` with "appendfsync", then
 with three values. A value with no entry before it stays an entry. GroupsIndex
 nests a value under its entry (`Operation.ValueOf`, `Launch.Nested`,
 `Reach.SubArguments`); it is no catalogue member or tile, and the entry's and
-the Inputs readings list it ("appendfsync: always | everysec | no"). The
-model's answer that a word is a setting stands; which entry it belongs to is
-the code's. Every incoming boundary keeps its registration as written at its
+the Inputs readings list it ("appendfsync: always | everysec | no"). Which
+entry a value belongs to is the code's, and so is whether it is asked: a word
+call comparing a literal element of a value, after a call written before it
+in the same declaration compared a lower element of that value (its key),
+shows that key as written (`compared_after`) and waits for the key's answer;
+when the key is an entry, the call is its value, of its kind, and is not
+asked (the step before decided it); otherwise it is asked on its own
+(`key_values.go`). The criteria keep a value a key may take out of the
+settings, so a value asked on its own, or a value no key comes before, is
+`none`; Redis's `strcasecmp(argv[1],"debug")` drew setting and none at
+0.49/0.46 with its key shown, and is no longer asked. Every incoming boundary keeps its registration as written at its
 site (`atlas.Boundary.Written`, folded to one line, a command table row with
 its arity and flags), which the input's reading shows; no request carries it.
 
@@ -776,8 +804,21 @@ declaration (one catalogue); a case none of whose words can is
 comparison is not yet one of the launch walk's unsure calls. A case's
 `branch` is the lines a setting reads its written fields from (REPORT).
 litestream's `Main.Run` switch is one question whose 17 cases hold its 14
-subcommands. A table's reads (places `read_at`: the reader and the line)
-travel with the table for its question.
+subcommands.
+
+**Tables of names.** A table of names (places `rows`) is asked once
+(`repomap.atlas.inputs.v1.table`, stage `atlas_inputs`, Jev, `Memoize`) what
+its rows become: the call question's options and criteria. The item is the
+table, its declared type, `file` (the file declaring it), every row's words
+and `read_by`: each declaration reading it outside tests by name and
+signature, each line reading it as written (`reads`, places `read_at`) and
+its callers outside tests by name and signature, each with its lines calling
+the reader as written (`called_by`). How a table is read and who hands its
+reader what say what its rows are: redis-cli's `cmdTable`, read by
+`lookupCommand`, which `cliSendCommand` calls with `argv[0]`, was request
+0.96 with its readers' names alone, request 0.81 with the reading lines and
+callers, and is command 0.83–0.88 with its file; DEBUG's `strencoding`, read
+into a reply, went from command 0.55 to none 0.88–0.93.
 
 **Settings in tagged fields.** A repository structure field whose tag names a
 key (Go's object aliases, `yaml:"dbs"`) is asked on its own what that key is
@@ -859,6 +900,32 @@ around the colon (`other:Name`, `other : Name`); the tag and a nonempty name
 remain required, and this normalization chooses no destination. The report
 groups records by the stored name without its parenthetical qualifier,
 case-insensitively, and folds no text onto another name.
+
+**What a call reaches.** Which value of a call names what it reaches is
+the model's one decision per outside symbol, never a list of packages in
+code (`repomap.atlas.argument.v1`, column `argument`, stage `atlas_api`,
+Jev, `Memoize` under `apiargument:<symbol>`, `prompts/api_argument.md`).
+It is asked of each symbol whose `talks` answer reaches something by what
+its call is given: `client_request`, `db`, `queue_producer`,
+`queue_consumer`, `sdk` or `file` (`serves` has its address among its
+words and `runs_program` its own question). The item is the symbol, its
+declared type, one call as written, its `talks` answer and `arguments`:
+each argument by position (with the parameter's name when the declared type
+gives it) or keyword, and the receiver, as request-local refs, each with
+where the call's value comes from; the options are those refs and `none`,
+every ref with one set of criteria. The walk (`DestinationReader`) follows
+the chosen value at every call of the symbol, by position, keyword or the
+parameter's name. Where it meets what another outside call returned: a
+call whose words an answer made a command-line option gives `{--name}`, a
+call the facts name as an environment read `{env:KEY}`, a symbol with a
+decided argument goes on through that argument, and any other stops the
+walk at its call; a symbol not yet asked is asked the same question in a
+next round with `result_given_to` (the reaching symbols given its result),
+until a walk meets no symbol not yet asked: `http.NewRequestWithContext`'s
+request handed to `Client.Do` is asked and answers `url`. A `file`
+symbol's calls are walked the same way and logged as `atlas_files` lines in
+`tables.md`; the data files a program keeps are not projected from them yet.
+A method a request builder states is no longer read from its arguments.
 
 An outbound call names the extracted tables among its values as `data_ids`.
 It also names where its program reaches it from (`reached_from`, a code
@@ -946,7 +1013,14 @@ addresses (no format templates, nothing from formatting, logging, time or
 string packages), sent only for outgoing rows whose address code does not
 know; `destination` chooses from the row's targets' catalogue (above); an
 outgoing row carries its call's outside `package` when code names the call at
-its site. A row's choices are the same whatever rows share its window (other
+its site, and `reached_from`: the declarations its programs reach the call
+from, by name and signature: GroupsIndex's `reached_from` as the reading
+computes it before the parts are drawn (a file stands for its part: exact callers are followed back
+through the call's own file to the first caller in another file, or to a
+seed or an input's handler where they run out; test callers and callers the
+row's programs never run are skipped), so a connect written in a network
+helper is named by what reaches it (a replica's primary, a client's
+server), not "TCP endpoint". A row's choices are the same whatever rows share its window (other
 targets' rows never do); an owner's calls near the line and its source context
 are sent once per window and rows reference them. Boundary source context
 carries each original call site to its owning declaration, with safe

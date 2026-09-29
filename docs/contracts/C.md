@@ -394,8 +394,9 @@ through the reader it registers (GroupsIndex outer inputs).
 
 A file-scope table whose rows write string literals and store no repository
 callable (ProgramIndex `Rows`) is asked once (`atlas_inputs` table) with its
-rows and the functions reading it: kvcli's `cmdTable`, read by
-`lookupCommand`, makes six commands whose handler is not established, one
+rows, its file and the functions reading it, each with its reading lines
+and its callers' calling lines as written: kvcli's `cmdTable`, read by
+`lookupCommand`, which `main` calls with `argv[first]`, makes six commands whose handler is not established, one
 catalogue declared by the table and looked up in `lookupCommand`; kvd's
 `symsTable` is answered none. When kvcli has a confirmed integration into
 kvd (its `connect` to kvd's listening socket), each row is asked which of
@@ -418,7 +419,12 @@ call such as `strcmp(argv[i], "-h")` or `fprintf(stderr, "usage: …")`: the
 kvd fixture asks `strcmp(argv[1], "--symbols")` in `main`, which its preset
 answers command, `loadConfig`'s `strcasecmp(argv[0], "port")` and
 `strcasecmp(argv[0], "dbfilename")`, answered setting, and `fprintf`'s and
-the other word calls, answered none; a `getenv` call is a setting read the
+the other word calls, answered none; `persist`'s values `never` and
+`always`, compared with `argv[1]` after `argv[0]` was compared with
+`persist` (answered setting), are its values and are not asked (READING,
+a key's values; Go, Python and JavaScript compare a line's words with
+operators, one comparison question each, so the rule has no equivalent
+there); a `getenv` call is a setting read the
 facts already name and is not asked. The answer is the call's, so
 kvcli's `strcasecmp(argv[1], "--raw")` is an option while its
 `strcasecmp(cmd->name, "bgsave")` is not. The item shows where each

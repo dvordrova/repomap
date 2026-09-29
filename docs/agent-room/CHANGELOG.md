@@ -1,5 +1,87 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — One batch of items and criteria: how a table is read, whose interface, a key's values, talks of handed symbols, `file` and which argument, where a call is reached from
+
+- **Why:** claim-audit rootcause `commands-kinds.md` fixes 2 and 7 and fix
+  1's criterion, `external-data.md` T, F1 and A's second half, in one batch
+  because each change re-buys cached answers (84e48166).
+- **Tables of names (fix 2):** the item gains `file` and `read_by` entries
+  with the reader's signature, its reading lines as written (places
+  `read_at`, whose reader IDs the graph's ID compaction now maps) and its
+  callers outside tests with their calling lines. The file was the missing
+  fact: with lines and callers alone redis-cli's `cmdTable` stayed request
+  0.73–0.81.
+- **Criteria (`entry_options.md`):** request never what this program sends;
+  command includes what a person types or passes, words typed into a client
+  included (owner 2026-09-29); interaction only from a window or screen this
+  program draws, a press another program delivers is a request, a button
+  this program sends is none (fix 7); a value a key may take is none.
+- **A key's values:** a word call comparing a later literal element of a
+  value than the call before it in the same declaration shows that key
+  (`compared_after`) and waits; when the key is an entry the call is its
+  value and is not asked (Redis's loglevel values drew 0.49/0.46 even with
+  the key shown), else it is asked in a second round.
+- **T:** a handed symbol the code calls is asked `talks` instead of
+  `publishes` (`repomap.atlas.api.v9.handed`); a handed symbol no call names
+  (a table row's field) is asked `binds` alone (`.handed.uncalled`), since
+  talks drew `db` for `redis.c.redisCommand.proc` with no call to decide.
+- **F1:** `talks` offers `file` (no boundary, calls not asked `enters`).
+  The per-package list in `destinationArgument` (net/http, requests, httpx,
+  aiohttp, axios, ky, got, otlp, os.Getenv, flag.String) is deleted: each
+  symbol whose talks is an outgoing kind or `file` is asked which argument
+  or receiver names what it reaches (`repomap.atlas.argument.v1`), and a
+  symbol whose result a chosen argument carries is asked in a next round
+  (`result_given_to`). An option's declaration gives `{--name}` from the
+  call's `command` answer, an environment read `{env:KEY}` from its fact.
+  File calls' paths are logged as `atlas_files` in `tables.md`, not yet
+  projected; a request builder's method is no longer read.
+- **A:** each outgoing boundary row carries `reached_from`, its programs'
+  first callers outside the call's file (or a seed or input handler), by
+  name and signature; the destination prompt names a system by what it is
+  to the program.
+- **Probe:** 3 draws per row through Jev (`jev-1.13.0`), rows built by the
+  ordinary builders (`readAPI`) over the saved places of Redis
+  `20260929-140032`, freqtrade `140146` and litestream `143047`, other
+  questions answered from the saved answers (`<scratchpad>/b3probe`).
+  Margin is the lowest top-minus-runner-up of the three.
+
+  | Row | Before | After (3 draws) | Margin |
+  | --- | --- | --- | --- |
+  | redis-cli `cmdTable` table | request 0.96 | command 0.88, 0.83, 0.84 | 0.69 |
+  | server `cmdTable` (`redis.c.redisCommand.proc`) binds | request | request 0.78, 0.80, 0.78 | 0.65 |
+  | DEBUG `strencoding` table | command 0.55 | none 0.88, 0.91, 0.89 | 0.76 |
+  | `symsTable` table (control) | none 0.62 | none 0.78, 0.80, 0.81 | 0.57 |
+  | loglevel key `argv[0]` (control) | setting | setting 0.89, 0.88, 0.90 | 0.76 |
+  | loglevel value `argv[1],"debug"` | setting 0.66–0.81 | not asked (value of loglevel); asked alone 0.49/0.46 | — |
+  | `strcasecmp(server.logfile,"stdout")` | setting 0.52 | none 0.63, 0.66, 0.66 | 0.26 |
+  | `CallbackQueryHandler` binds | interaction 0.68 | request 0.80, 0.78, 0.80 | 0.63 |
+  | `CallbackQueryHandler` talks | (publishes none) | none 0.97–0.98 | 0.96 |
+  | `CommandHandler` binds | request 0.93 | request 0.92, 0.92, 0.87 | 0.76 |
+  | `InlineKeyboardButton` "Cancel" enters | interaction | none 0.87, 0.86, 0.87 | 0.74 |
+  | `InlineKeyboardButton` `force_exit__{…}` enters | interaction | none 0.81, 0.86, 0.85 | 0.66 |
+  | litestream `ssh.Dial` talks | never asked (publishes none) | client_request 1.00 ×3 | 1.00 |
+  | `ssh.Dial` binds | none | none 0.93 ×3 | 0.88 |
+  | Redis `fopen` talks / argument | none / — | file 1.00 / argument 1 1.00 | 1.00 |
+  | Redis `connect` talks / argument | client_request / — | client_request 1.00 / argument 2 (`&sa`) 0.95–0.96 | 0.91 |
+  | freqtrade `pathlib.Path.open` talks / argument | none / — | file 0.98–0.99 / receiver 0.99 | 0.96 |
+  | litestream `os.Create` talks / argument | none / — | file 1.00 / argument 1: name 1.00 | 0.98 |
+  | `http.Client.Do` / `NewRequestWithContext` argument | list | argument 1: req 1.00 / argument 3: url 0.99 | 0.98 |
+
+- **Question counts (rows the new builders make over the saved places):**
+  talks re-asked for every called symbol (Redis 128, freqtrade 773,
+  litestream 601, handed ones included); `publishes` gone (4, 39, 23);
+  `argument` new (Redis 3 in the probe, where of the file symbols only
+  `fopen` was answered file; freqtrade 88; litestream 75; plus the symbols
+  whose results a chosen argument carries); `enters` fewer by the file
+  symbols' calls and a key's values (Redis 307 → 282 with the comparisons
+  and sub-arguments of the day).
+- **Fixtures and tests:** kvcli's table item (file, reads, callers'
+  lines), kvd's persist values not asked, the connect's destination asked
+  with main and repl; reading tests for the argument rounds, the builder
+  walk, key values and reached-from; the Go, Python and JS/TS destination
+  chains read with preset decisions.
+- **Contracts:** READING, EXECUTION, PROGRAM_INDEX, C.
+
 ## 2026-09-29 — Started functions asked per statement (G1); words a handler compares with what it was handed are its sub-arguments (fix 4, K3)
 
 - **Why:** litestream's workers were never asked: each monitor is started by
