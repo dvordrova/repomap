@@ -236,11 +236,15 @@ func runRepositoryOrientation(
 			details = append(details, fmt.Sprintf("ignored response items: %d; accepted overview text is kept", len(rejected)))
 		}
 		for _, row := range rejected {
+			if row.Section == "flow_request" {
+				// The overview stands; the report opens its entry's calls.
+				details = append(details, "the main flow request was refused by size or context: "+row.Reason)
+			}
 			if row.Section == "request" {
-				// No rung of the packing ladder fit: the report is published
-				// without a summary, roles, run recipe or main flow.
+				// The overview did not fit: the report is published without
+				// a summary, roles, run recipe or main flow.
 				state = "unavailable"
-				details = []string{"the orientation request was refused by size or context at every packing: " + row.Reason, "the report is published without a written summary, roles, run recipe and main flow"}
+				details = []string{"the orientation request was refused by size or context: " + row.Reason, "the report is published without a written summary, roles, run recipe and main flow"}
 				break
 			}
 		}

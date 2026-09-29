@@ -10,13 +10,13 @@ import (
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
-// Member evidence carries origins in their request form. Morfeu's request
-// spent 90 KB of 280 KB on source_arguments, receiver_value and result_value
-// trees up to nine levels deep, an anchor and owner on every node, and the
-// answer used five nodes of 118. A synthetic member with one such call must
-// reach the wire with the first three levels, no anchors, and well under
-// half the bytes of the graph's complete form.
-func TestOrientationMemberEvidenceCarriesCompactOrigins(t *testing.T) {
+// Member rows carry origins in their request form. Morfeu's request spent
+// 90 KB of 280 KB on source_arguments, receiver_value and result_value trees
+// up to nine levels deep, an anchor and owner on every node, and the answer
+// used five nodes of 118. A synthetic member with one such call must reach
+// the wire with the first three levels, no anchors, and well under half the
+// bytes of the graph's complete form.
+func TestOrientationMemberRowsCarryCompactOrigins(t *testing.T) {
 	fixture := newFixture(t)
 	anchor := func(line int) *sourcevalue.Anchor {
 		return &sourcevalue.Anchor{Path: "alpha/main.go", Line: line, Column: 7}
@@ -36,29 +36,26 @@ func TestOrientationMemberEvidenceCarriesCompactOrigins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wire, _, err := buildRequest(fixture.input)
+	wire, _, err := buildOverview(fixture.input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(wire.MemberEvidence) != 1 {
-		t.Fatalf("member evidence count = %d", len(wire.MemberEvidence))
-	}
-	raw, err := json.Marshal(wire.MemberEvidence[0].Evidence)
+	raw, err := json.Marshal(wire.Seeds[0].Calls)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"text":"level0"`, `"text":"level1"`, `"text":"level2"`, `"receiver_value":{"kind":"parameter","text":"client"}`, `"result_value":{"kind":"call_result"}`, `"column":9`} {
+	for _, want := range []string{`"level0"`, `"level1"`, `"level2"`, `"receiver":["parameter","client"]`, `"result":["call_result",""]`} {
 		if !strings.Contains(string(raw), want) {
-			t.Fatalf("member evidence lost %s: %s", want, raw)
+			t.Fatalf("the seed row lost %s: %s", want, raw)
 		}
 	}
 	for _, forbidden := range []string{`"anchor"`, `"owner"`, "level3", "level9"} {
 		if strings.Contains(string(raw), forbidden) {
-			t.Fatalf("member evidence carries %s: %s", forbidden, raw)
+			t.Fatalf("the seed row carries %s: %s", forbidden, raw)
 		}
 	}
 	if len(raw) >= len(full)/2 {
-		t.Fatalf("member evidence is %d bytes against %d for the graph form", len(raw), len(full))
+		t.Fatalf("the seed row is %d bytes against %d for the graph form", len(raw), len(full))
 	}
 	if after, _ := json.Marshal(main.Symbol.Calls); string(after) != string(full) {
 		t.Fatal("building the request changed the graph's complete origins")

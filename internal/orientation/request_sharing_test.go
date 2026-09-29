@@ -14,16 +14,16 @@ import (
 
 // freqtrade's build_helpers module is t2.n1, t3.n59 and t4.n16, and its one
 // merged place keeps t1's numbering (t1.n1781). Looked up by their own
-// qualified ids, t2 and t3 found no place and went without evidence.
+// qualified ids, t2 and t3 found no place and went without their calls.
 func TestAMergedDeclarationPlaceGivesEachOwningTargetItsEvidence(t *testing.T) {
 	location := &programindex.Location{Path: "build_helpers/tool.py", Line: 10, Column: 1}
-	index := func(targetID, subjectID string, grouped bool) groupindex.Index {
+	index := func(targetID, subjectID string, seed bool) groupindex.Index {
 		value := groupindex.Index{Target: programindex.Target{ID: targetID}, Subjects: []groupindex.Subject{{
 			ID: subjectID, Kind: groupindex.SubjectObject,
 			Object: &groupindex.ObjectFacts{Name: "main", Kind: programindex.ObjectFunction, Location: location},
 		}}}
-		if grouped {
-			value.Groups = []groupindex.Group{{ID: "g1", Title: "Tool", Summary: "Runs the tool.", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{subjectID}}}
+		if seed {
+			value.Target.Seeds = []programindex.TargetSeed{{ObjectID: subjectID}}
 		}
 		return value
 	}
@@ -36,17 +36,23 @@ func TestAMergedDeclarationPlaceGivesEachOwningTargetItsEvidence(t *testing.T) {
 				Calls: []atlas.SymbolCall{{Name: "update_tiers", Kind: "calls", Line: 11, Column: 5}}},
 		}}},
 	}
-	wire, _, err := buildRequest(input)
+	wire, _, err := buildOverview(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := make(map[string]bool)
-	for _, row := range wire.MemberEvidence {
-		raw, _ := json.Marshal(row.Evidence)
+	for _, row := range wire.Seeds {
+		raw, _ := json.Marshal(row.Calls)
 		got[row.Ref] = strings.Contains(string(raw), "update_tiers")
 	}
 	if want := map[string]bool{"t2.n1": true, "t3.n59": true}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("member evidence = %v, want %v", got, want)
+		t.Fatalf("seed rows = %v, want %v", got, want)
+	}
+	for _, target := range []string{"t2", "t3"} {
+		flow, _, _, err := buildFlow(input, target)
+		if err != nil || len(flow.Members) != 1 || len(flow.Members[0].Calls) != 1 {
+			t.Fatalf("%s's flow lost the merged declaration's calls: %+v, %v", target, flow.Members, err)
+		}
 	}
 }
 
@@ -74,7 +80,7 @@ func TestASharedFactIsOneRowAndEachTargetKeepsItsOwnID(t *testing.T) {
 			own[fact.TargetID] = fact.ID
 		}
 	}
-	wire, cat, err := buildRequest(fixture.input)
+	wire, cat, err := buildOverview(fixture.input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,22 +105,17 @@ func TestASharedFactIsOneRowAndEachTargetKeepsItsOwnID(t *testing.T) {
 	ref := shared[0].Ref
 	raw := encodeResponse(t, map[string]any{
 		"summary": "Alpha and Beta parse a trade command.", "summary_refs": []string{ref},
-		"roles": []any{map[string]any{"target": beta, "role": "Command line", "purpose": "Parses trade.", "refs": []string{ref}}},
+		"roles":      []any{map[string]any{"target": beta, "role": "Command line", "purpose": "Parses trade.", "refs": []string{ref}}},
 		"run_recipe": []any{map[string]any{"target": beta, "command": "python cli.py trade", "refs": []string{ref, fixture.refs(t).fact("entrypoint")}}},
-		"main_flow": map[string]any{"title": "Trade", "steps": []any{
-			map[string]any{"target": beta, "ref": ref, "explanation": "Beta registers trade."},
-			map[string]any{"target": alpha, "ref": ref, "explanation": "Alpha registers trade."},
-		}},
 	})
-	result, err := normalize(raw, cat)
+	result, err := normalizeOverview(raw, cat)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(result.summaryRefs, []string{own[alpha]}) ||
 		len(result.roles) != 1 || !reflect.DeepEqual(result.roles[0].FactIDs, []string{own[beta]}) ||
-		len(result.recipe) != 1 || result.recipe[0].FactIDs[0] != own[beta] ||
-		len(result.flow.Steps) != 2 || result.flow.Steps[0].FactID != own[beta] || result.flow.Steps[1].FactID != own[alpha] {
-		t.Fatalf("restored ids: summary %v roles %+v recipe %+v flow %+v; own %v", result.summaryRefs, result.roles, result.recipe, result.flow.Steps, own)
+		len(result.recipe) != 1 || result.recipe[0].FactIDs[0] != own[beta] {
+		t.Fatalf("restored ids: summary %v roles %+v recipe %+v; own %v", result.summaryRefs, result.roles, result.recipe, own)
 	}
 }
 

@@ -20,6 +20,9 @@ const (
 	sectionRunRecipe = "run_recipe"
 	sectionMainFlow  = "main_flow"
 	sectionRequest   = "request"
+	// sectionFlowRequest journals a flow request the provider could not
+	// hold; the overview stands.
+	sectionFlowRequest = "flow_request"
 
 	classFact    = 'f'
 	classClaim   = 'c'
@@ -27,11 +30,11 @@ const (
 )
 
 type modelResponse struct {
-	Summary     string            `json:"summary"`
-	SummaryRefs refList           `json:"summary_refs"`
-	Roles       []json.RawMessage `json:"roles"`
-	RunRecipe   []json.RawMessage `json:"run_recipe"`
-	MainFlow    flowResponse      `json:"main_flow"`
+	Summary        string            `json:"summary"`
+	SummaryRefs    refList           `json:"summary_refs"`
+	Roles          []json.RawMessage `json:"roles"`
+	RunRecipe      []json.RawMessage `json:"run_recipe"`
+	MainFlowTarget string            `json:"main_flow_target"`
 }
 
 type flowResponse struct {
@@ -76,7 +79,6 @@ func (refs *refList) UnmarshalJSON(raw []byte) error {
 }
 
 type flowStepResponse struct {
-	Target      string `json:"target"`
 	Ref         string `json:"ref"`
 	Explanation string `json:"explanation"`
 }
@@ -88,6 +90,7 @@ type normalized struct {
 	summaryRefs    []string
 	roles          []Role
 	recipe         []RecipeStep
+	flowTarget     string // the target id the Main flow is asked for
 	flow           MainFlow
 	rejected       []RejectedRow
 	ambiguousRoles map[string]bool
@@ -113,15 +116,15 @@ type resolvedRef struct {
 	subject subjectEntry
 }
 
-// normalize is the pure decoder: strict JSON in, exact ids out. A broken row
-// is refused with its raw JSON and a reason; the response as a whole fails
-// only when it is not the requested JSON shape.
-func normalize(raw []byte, cat catalog) (normalized, error) {
+// normalizeOverview is the overview's pure decoder: strict JSON in, exact
+// ids out. A broken row is refused with its raw JSON and a reason; the
+// response as a whole fails only when it is not the requested JSON shape.
+func normalizeOverview(raw []byte, cat catalog) (normalized, error) {
 	fields, err := decodeResponse(raw)
 	if err != nil {
 		return normalized{}, err
 	}
-	result := normalized{rejected: []RejectedRow{}, accepted: make(map[string]bool), roleRows: make(map[string][]string)}
+	result := newNormalized()
 	var response modelResponse
 	summaryOK := result.decodeField(sectionSummary, "summary", fields, &response.Summary)
 	refsOK := result.decodeField(sectionSummary, "summary_refs", fields, &response.SummaryRefs)
@@ -138,16 +141,63 @@ func normalize(raw []byte, cat catalog) (normalized, error) {
 			result.acceptRecipe(row, cat, fmt.Sprintf("run_recipe[%d]", i))
 		}
 	}
-	var flow map[string]json.RawMessage
-	if result.decodeField(sectionMainFlow, "main_flow", fields, &flow) {
-		result.decodeField(sectionMainFlow, "title", flow, &response.MainFlow.Title)
-		result.decodeField(sectionMainFlow, "steps", flow, &response.MainFlow.Steps)
-		result.acceptFlow(response.MainFlow, cat)
+	if result.decodeField(sectionMainFlow, "main_flow_target", fields, &response.MainFlowTarget) {
+		result.acceptFlowTarget(fields["main_flow_target"], response.MainFlowTarget, cat)
 	}
+	return result.done()
+}
+
+// normalizeFlow is the flow's pure decoder. The answer is a main_flow
+// object; the same title and steps written without it are the same answer.
+// Every step names the one target the request shows.
+func normalizeFlow(raw []byte, cat catalog, targetRef string) (normalized, error) {
+	fields, err := decodeResponse(raw)
+	if err != nil {
+		return normalized{}, err
+	}
+	if wrapped, present := fields["main_flow"]; present {
+		var inner map[string]json.RawMessage
+		if json.Unmarshal(wrapped, &inner) != nil || inner == nil {
+			result := newNormalized()
+			result.reject(sectionMainFlow, wrapped, "main_flow has an invalid shape")
+			return result.done()
+		}
+		fields = inner
+	}
+	result := newNormalized()
+	var flow flowResponse
+	result.decodeField(sectionMainFlow, "title", fields, &flow.Title)
+	result.decodeField(sectionMainFlow, "steps", fields, &flow.Steps)
+	result.acceptFlow(flow, cat, targetRef)
+	return result.done()
+}
+
+func newNormalized() normalized {
+	return normalized{rejected: []RejectedRow{}, accepted: make(map[string]bool), roleRows: make(map[string][]string)}
+}
+
+// done refuses a response whose every row was refused.
+func (result normalized) done() (normalized, error) {
 	if len(result.rejected) > 0 && len(result.accepted) == 0 {
 		return result, &noOutputError{rejected: result.rejected}
 	}
 	return result, nil
+}
+
+// acceptFlowTarget keeps the one target the Main flow is asked for. None is
+// a legitimate answer: no flow is asked.
+func (result *normalized) acceptFlowTarget(raw json.RawMessage, ref string, cat catalog) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return
+	}
+	targetID, known := cat.targets[ref]
+	if !known {
+		result.reject(sectionMainFlow, raw, fmt.Sprintf("unknown main_flow_target %q", ref))
+		return
+	}
+	result.flowTarget = targetID
+	result.accepted["main_flow_target"] = true
 }
 
 // noOutputError refuses a response in which every row was refused. It keeps
@@ -378,10 +428,10 @@ func citesRunEvidence(refs []resolvedRef) bool {
 	return false
 }
 
-func (result *normalized) acceptFlow(flow flowResponse, cat catalog) {
+func (result *normalized) acceptFlow(flow flowResponse, cat catalog, targetRef string) {
 	flow.Title = strings.Join(strings.Fields(flow.Title), " ")
 	for i, raw := range flow.Steps {
-		result.acceptFlowStep(raw, cat, fmt.Sprintf("main_flow.steps[%d]", i))
+		result.acceptFlowStep(raw, cat, targetRef, fmt.Sprintf("main_flow.steps[%d]", i))
 	}
 	if flow.Title == "" {
 		return
@@ -398,38 +448,28 @@ func (result *normalized) acceptFlow(flow flowResponse, cat catalog) {
 	}
 }
 
-func (result *normalized) acceptFlowStep(raw json.RawMessage, cat catalog, slot string) {
+func (result *normalized) acceptFlowStep(raw json.RawMessage, cat catalog, targetRef, slot string) {
 	var row flowStepResponse
 	if err := decodeStrict(raw, &row); err != nil {
 		result.reject(sectionMainFlow, raw, "row does not match the requested shape: "+err.Error())
 		return
 	}
 	row.Explanation = strings.TrimSpace(row.Explanation)
-	row.Target = strings.TrimSpace(row.Target)
-	targetID, known := cat.targets[row.Target]
-	if !known {
-		result.reject(sectionMainFlow, raw, fmt.Sprintf("unknown target ref %q", row.Target))
-		return
-	}
 	if !validSentence(row.Explanation) {
 		result.reject(sectionMainFlow, raw, sentenceReason("explanation"))
 		return
 	}
-	refs, _, err := cat.resolve([]string{row.Ref}, row.Target, classFact, classSubject)
+	refs, _, err := cat.resolve([]string{strings.TrimSpace(row.Ref)}, targetRef, classFact, classSubject)
 	if err != nil {
 		result.reject(sectionMainFlow, raw, err.Error())
 		return
 	}
 	ref := refs[0]
-	step := FlowStep{TargetID: targetID, Explanation: row.Explanation}
+	step := FlowStep{TargetID: cat.targets[targetRef], Explanation: row.Explanation}
 	switch ref.class {
 	case classFact:
 		step.FactID = ref.id
 	case classSubject:
-		if ref.subject.targetRef != row.Target {
-			result.reject(sectionMainFlow, raw, fmt.Sprintf("member %q does not belong to target %q", row.Ref, row.Target))
-			return
-		}
 		step.SubjectID = ref.id
 	}
 	result.flow.Steps = append(result.flow.Steps, step)

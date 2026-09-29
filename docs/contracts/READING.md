@@ -1535,8 +1535,11 @@ whose failure is still the reported cause and publishes nothing of the report.
 ## Orientation
 
 `orientation` is one model-assisted stage over facts, claims, and the complete
-matched GroupsIndex set. It returns one repository summary, one role per
-target, a run recipe, and one main flow. The model selects request-local refs
+matched GroupsIndex set, asked twice with one embedded prompt and one response
+shape each. The overview returns one repository summary, one role per target,
+a run recipe and a closed-ref `main_flow_target`; the flow request then returns
+the main flow's title and steps over that target's flow scope. No target, or an
+unknown one (refused), asks no flow. The model selects request-local refs
 from the exact advertised artifact identities: `t*` targets, `a*` facts, `h*`
 claims and target-qualified graph subjects such as `t1.n22`. Groups likewise use
 qualified existing IDs such as `t1.g3`. Go does not allocate a second numbering
@@ -1563,15 +1566,31 @@ whitespace. Unparseable responses, and responses whose every row was refused,
 yield the legitimate empty orientation and are not cached; the latter journal
 each row's own reason. Optional terms follow accepted sections and rows on live and cached
 responses. Rejection never aborts the run and no replacement is invented.
-Preparation keeps the complete facts and author claims against the actual provider envelope.
-Fact rows identical but for their ref and target are one row with a `targets` list and the first target's fact id as its ref; a role, recipe step or flow step naming one of those targets keeps that target's own fact id.
+The overview carries the complete facts, claims and connections, the groups
+with title, summary and `member_count` but no member lists, and each seed's
+complete row. The flow request carries the chosen target, its facts anchored
+inside the scope (the innermost declaration holding the anchor is a member; a
+module holds its file) and one complete row per member. The scope is Launch ∪
+every input's Reach ∪, transitively, every repository callable a member hands
+over (`passes_callback`) or registers (a registration fact's owner and
+object), with what that one runs; only this evidence scope follows a hand-over,
+GroupsIndex Reach does not. Members come in reading order: the seed walk
+breadth first, the rest of the launch walk, then each input's reach in
+operation order; a handed-over callable and what it runs follow the member
+handing it over. A row lists every call in written order as a lossless tuple
+(`name@line -> callee | …`, its non-default kind/invocation/dispatch/resolution
+words, then args, receiver, result, values that say more than the literal
+arguments, arguments, api, detail and evidence refs); only the call's and its
+callee's columns and canonical ids stay local, and no `called_by` is sent. A
+flow request the provider cannot hold is journaled under `flow_request` and the
+overview stands. Nothing is sampled, windowed or reduced.
+Fact rows identical but for their ref and target are one row with a `targets` list and the first target's fact id as its ref; a role or recipe step naming one of those targets keeps that target's own fact id.
 Connections are one row per from, to and kind with every distinct label and every sentence that differs from its label.
-The member ladder (40, 20, then 12 members per group by string-sorted id; 6 calls and 6 callers per member, then 3 and 3, then none) is current behaviour and a known violation of "never sample", to be replaced by an entry-forward scope.
 The answer allowance is 16,384 tokens: 117 accepted orientation exchanges answered in at most 1,260 output tokens (median 848).
 The stage caches on its stage identity, prompt version, and input digests through
 the shared executor.
 
-The orientation request includes source-backed member evidence, not only accepted captions. A listed member's evidence is that of the declaration place with its `groupindex.DeclarationKey` (path, line, column, kind, name): a place merged across programs keeps one program's object id (freqtrade's `t1.n1781` for t2–t4's `build_helpers` module), so a lookup by the member's own `t3.n59` left 9 of 10 targets without evidence. A member's calls are listed in the order they are written in it, so a bounded list keeps the first calls written, not the first of the graph's order. Original declaration kinds, calls, source arguments and owned fields can qualify member behavior. A launcher/router, implementation mechanism, callback and remote destination remain distinct roles. Parent heading context labels the scope of author claims. No missing source relation is supplied by a prose explanation.
+A member row is that of the declaration place with its `groupindex.DeclarationKey` (path, line, column, kind, name): a place merged across programs keeps one program's object id (freqtrade's `t1.n1781` for t2–t4's `build_helpers` module), so a lookup by the member's own `t3.n59` left 9 of 10 targets without evidence. A member's calls are listed in the order they are written in it. Original declaration kinds, calls, source arguments and owned fields can qualify member behavior. A launcher/router, implementation mechanism, callback and remote destination remain distinct roles. Parent heading context labels the scope of author claims. No missing source relation is supplied by a prose explanation.
 A launch fact supports an entry point, not a complete invocation. Run recipes
 check supplied member observations and author instructions for required
 arguments and prerequisites; known required values may use explicit placeholders.

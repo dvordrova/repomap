@@ -27,10 +27,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   authoritative. Composite input is
   repartitioned when its prepared request does not fit. A real provider
   envelope failure is terminal unless the owning stage defines a lossless
-  repartition; it never authorizes truncation or partial publication.
-  Orientation's member ladder (40/20/12 members per group by string-sorted
-  id, 6+6 calls) is current behaviour and a known violation of this, to be
-  replaced by an entry-forward scope. Only
+  repartition; it never authorizes truncation or partial publication. Only
   such a provider envelope, a representation overflow, canonical
   identity/path/format validation, or an explicit user narrowing option may
   remain terminal. Every printed console event starts with

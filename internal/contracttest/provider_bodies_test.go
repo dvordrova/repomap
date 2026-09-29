@@ -19,7 +19,8 @@ import (
 // kept callables carry the stores that reach each function: local keys that
 // name the function by its canonical place ID. Every body a run of kvd sends
 // (the reading's tables, Jev's questions and the orientation) names code by
-// path, line and name, never by an ID or a host path. Redis's orientation
+// path, line and name, never by an ID or a host path (the orientation's
+// overview and flow alike). Redis's orientation
 // once sent "callee_id":"sym:redis.c:1398:beforeSleep".
 func TestProviderBodiesCarryNoCanonicalIDsOrHostPaths(t *testing.T) {
 	fixture := loadCFixture(t)
@@ -67,7 +68,7 @@ func TestProviderBodiesCarryNoCanonicalIDsOrHostPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	asked := &capturedOrientation{}
+	asked := &capturedOrientation{flowTarget: server.Target.ID}
 	if _, _, err := orientation.Run(t.Context(), llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}}, asked,
 		orientation.Input{RepositoryName: "kvd", Facts: layer, Claims: noClaims, Groups: indexes, Graph: graph}); err != nil {
 		t.Fatal(err)
@@ -78,7 +79,11 @@ func TestProviderBodiesCarryNoCanonicalIDsOrHostPaths(t *testing.T) {
 	if len(bodies) == 0 || categorizer.Calls() == 0 {
 		t.Fatalf("the reading sent %d bodies, %d to Jev", len(bodies), categorizer.Calls())
 	}
-	bodies = append(bodies, asked.request(t))
+	orientationBodies := asked.bodies(t)
+	if len(orientationBodies) != 2 {
+		t.Fatalf("the orientation sent %d bodies, want the overview and the flow", len(orientationBodies))
+	}
+	bodies = append(bodies, orientationBodies...)
 	assertNoLocalIdentities(t, bodies, fixture.root, repositoryRoot(t))
 }
 

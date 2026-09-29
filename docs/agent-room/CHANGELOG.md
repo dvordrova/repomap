@@ -1,5 +1,60 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Orientation stage 2: an overview, then the main flow over one target's entry-forward scope
+
+- **Why:** the 40/20/12 member ladder sampled group members and cut each to
+  6 calls and 6 callers (a known violation of "never sample"), and the flow
+  cites members (22 of 22 accepted steps) while summary, roles and recipe
+  cite facts and claims.
+- **Change:** two requests, one prompt and response shape each. The
+  overview (`overview-prompt.md`) keeps facts, claims, connections, groups
+  without member lists, and each seed's complete row; it answers summary,
+  roles, recipe and a closed-ref `main_flow_target`. The flow
+  (`flow-prompt.md`) gets that target, its facts anchored inside the scope,
+  and one complete tuple row per member of Launch ∪ Reach ∪ hand-overs
+  (`scope.go`, `rows.go`). The ladder, `MaxAdvertised*`, `MaxEvidence*`,
+  `lines.EvidenceLimits`/`CallableEvidenceWithin` and their tests are gone. A
+  refused flow request is journaled under `flow_request`; the overview
+  stands. Requests are written without HTML escaping (`->`, not `\u003e`).
+  The flow answer is `{"main_flow":{title,steps}}` so the glossary reads its
+  slots as before.
+- **Hand-over (owner's scope extension):** the scope also takes, transitively,
+  every repository callable a member hands over (`passes_callback` edge) or
+  registers (registration fact owner → object), placed after the member
+  handing it over. Python, Go, JS/TS, C and Clojure all emit
+  `passes_callback`; registration owners come from the facts layer, so no
+  language lacks the hand-over. Effect:
+  freqtrade t1 +190 members (Worker._process_running, FreqtradeBot.process),
+  Redis t1 +11 (readQueryFromClient), litestream t1 +32, self t1 +1,882.
+- **Tuple row is lossless:** `api` is kept (`[package, receiver, name,
+  signature]`): 646 of litestream's 661 api calls carry a signature and 271 a
+  package path a call name does not; `values` are left out only when they
+  equal the literal arguments' texts. `TestAMemberRowReadsBackEveryCallLosslessly`;
+  on saved runs every flow row read back to its calls: Redis 543 rows / 3,657
+  calls, litestream 494 / 3,749, freqtrade 1,618 / 10,410, self 4,338 / 27,024.
+- **Measured** (real builders on the newest runs; tokens at freqtrade
+  stage-1's 3.45 chars/token; budget 1,032,192):
+
+| run | overview chars / ~tok | flow t1 members (handed over) / calls / facts | flow t1 chars / ~tok |
+| --- | --- | --- | --- |
+| freqtrade 085251 | 1,207,423 / 349,977 | 1,789 (190) / 9,739 / 474 | 2,453,798 / 711,245 |
+| Redis 081258 | 224,468 / 65,063 | 421 (11) / 2,887 / 20 | 533,247 / 154,564 |
+| litestream 071907 | 381,020 / 110,440 | 447 (32) / 3,299 / 140 | 843,627 / 244,529 |
+| self-snap 072058 | 1,267,280 / 367,327 | 3,960 (1,882) / 18,741 / 831 | 5,410,586 / 1,568,285 |
+
+  Every other target's flow is smaller. self t1 does not fit (893,020
+  without its hand-overs) and is recorded only. freqtrade t1's order: main #0,
+  start_trading #1269 (427 module bodies run at load before any input),
+  Worker.run #1272, Worker._worker #1276, Worker._process_running #1278
+  (handed over), FreqtradeBot.process #1280.
+- **Tests:** `TestCFixtureMainFlowScopeFollowsWhatMainHandsOver` (kvd: every
+  launch and reach callable listed, main first, acceptHandler →
+  readQueryFromClient → processInputBuffer → processCommand in order, every
+  member with all its calls; it fails when the closure stops at the first
+  hand-over), kvd's main seed row with all 17 calls, provider bodies of both
+  requests without local identities, flow refusal, no flow without a known
+  target.
+
 ## 2026-09-29 — a cached answer read is marked as used
 
 - Owner: the paid `.llm-cache` answers may never be read again; mark the ones a run reads. `readAcceptedCache` now sets the record and its request/response payloads to the read time (`markCacheUse`, internal/llm/cache.go); a failed touch is ignored. `TestACachedAnswerReadIsMarkedAsUsed` fails without it. After a few days, `find ~/Library/Caches/repomap/runs/.llm-cache -mtime +N` lists answers no run used. Same day: 608 old run dirs (22.5 GB) deleted from the default runs dir at the owner's "да"; .llm-cache (6.5 GB) and today's runs from 07:00 kept.

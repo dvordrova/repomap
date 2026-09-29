@@ -358,14 +358,13 @@ never entered into or read from a repository-wide unqualified map.
   An exact request already in the air is asked once and its twins read that
   answer, so targets sharing a part get one description and a warm rerun
   makes no live call.
-- **Orientation stage 1 (2026-09-29):** members find their evidence through
-  the merged place's declaration key; identical facts are one row with a
-  `targets` list; connections are one row per from/to/kind with every label
-  and sentence; the answer allowance is 16,384. freqtrade's orientation,
-  empty since 09-28, is accepted at rung 1 (576,861 input tokens, was
-  1,202,242 and refused at every rung); Redis, litestream and self-snap are
-  accepted at rung 1 too. The 40/20/12 member ladder remains, a known
-  violation of "never sample", until an entry-forward scope replaces it.
+- **Orientation stage 2 (2026-09-29):** an overview (facts, claims,
+  connections, groups without members, seed rows) answers summary, roles,
+  recipe and `main_flow_target`; a second request asks that target's main
+  flow over Launch ∪ Reach ∪ hand-overs, every member complete as a lossless
+  tuple row in reading order. The member ladder is gone. freqtrade's flow
+  request is ~711K tokens, Redis ~155K, litestream ~245K; self-snap's
+  (~1.57M) is journaled under `flow_request` while its overview stands.
 - **Glossary:** only accepted prose enters a separate p-ref generation/reduction
   pass. Generation is three steps, each one decision (owner, 2026-09-28):
   DeepSeek lists names, Jev decides per name domain concept / general

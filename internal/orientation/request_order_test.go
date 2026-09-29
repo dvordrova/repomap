@@ -8,7 +8,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/groupindex"
 )
 
@@ -25,15 +24,10 @@ func TestQualifiedCompactRefsUseNaturalOrder(t *testing.T) {
 // listed indexes, groups, members or connections.
 func TestRequestBytesDoNotDependOnGroupMemberOrConnectionOrder(t *testing.T) {
 	fixture := newFixture(t)
-	subject := fixture.objectID("alpha", "inbound")
-	fixture.input.Graph = atlas.Graph{Places: []atlas.Place{{ID: "local-place-main", Kind: atlas.PlaceSymbol, Path: "alpha/main.go", LineNo: 1,
-		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: subject, Name: "Serve"}, Calls: []atlas.SymbolCall{{Name: "Apply", Kind: "calls", Line: 2, Column: 2}}}}}}
-	canonical, _, err := encodeRequest(fixture.input, packingLadder[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(canonical, []byte(`"member_evidence"`)) {
-		t.Fatal("fixture carries no member evidence to order")
+	canonical := encodeOverview(t, fixture.input)
+	canonicalFlow, _ := encodeFlow(t, fixture.input, fixture.targetID("alpha"))
+	if !bytes.Contains(canonical, []byte(`"Apply@10`)) || !bytes.Contains(canonicalFlow, []byte(`"Apply@10`)) {
+		t.Fatal("fixture carries no member calls to order")
 	}
 	shuffled := fixture.input
 	shuffled.Groups = append([]groupindex.Index(nil), fixture.input.Groups...)
@@ -50,17 +44,16 @@ func TestRequestBytesDoNotDependOnGroupMemberOrConnectionOrder(t *testing.T) {
 		index.Connections = append([]groupindex.Connection(nil), index.Connections...)
 		slices.Reverse(index.Connections)
 	}
-	reordered, _, err := encodeRequest(shuffled, packingLadder[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(canonical, reordered) {
+	if reordered := encodeOverview(t, shuffled); !bytes.Equal(canonical, reordered) {
 		t.Fatalf("request bytes follow the caller's order:\n%s\n%s", canonical, reordered)
+	}
+	if reordered, _ := encodeFlow(t, shuffled, fixture.targetID("alpha")); !bytes.Equal(canonicalFlow, reordered) {
+		t.Fatalf("flow bytes follow the caller's order:\n%s\n%s", canonicalFlow, reordered)
 	}
 }
 
 // A presentation change must not invent a second request-local identity for
-// an already built group or its members.
+// an already built group.
 func TestGroupLaneChangeKeepsEveryOtherRefInPlace(t *testing.T) {
 	fixture := newFixture(t)
 	before := decodeRequest(t, fixture.input)
@@ -89,9 +82,6 @@ func TestGroupLaneChangeKeepsEveryOtherRefInPlace(t *testing.T) {
 	if !reflect.DeepEqual(groupRefsByTitle(before), groupRefsByTitle(after)) {
 		t.Fatalf("group refs moved with one lane:\n%v\n%v", groupRefsByTitle(before), groupRefsByTitle(after))
 	}
-	if !reflect.DeepEqual(memberRefsByLabel(before), memberRefsByLabel(after)) {
-		t.Fatalf("member refs moved with one lane:\n%v\n%v", memberRefsByLabel(before), memberRefsByLabel(after))
-	}
 	changed := 0
 	for i := range before.Groups {
 		if before.Groups[i].Lane == after.Groups[i].Lane {
@@ -107,33 +97,19 @@ func TestGroupLaneChangeKeepsEveryOtherRefInPlace(t *testing.T) {
 	}
 }
 
-func decodeRequest(t *testing.T, input Input) request {
+func decodeRequest(t *testing.T, input Input) overviewRequest {
 	t.Helper()
-	wire, _, err := encodeRequest(input, packingLadder[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded request
-	if err := json.Unmarshal(wire, &decoded); err != nil {
+	var decoded overviewRequest
+	if err := json.Unmarshal(encodeOverview(t, input), &decoded); err != nil {
 		t.Fatal(err)
 	}
 	return decoded
 }
 
-func groupRefsByTitle(wire request) map[string]string {
+func groupRefsByTitle(wire overviewRequest) map[string]string {
 	refs := make(map[string]string, len(wire.Groups))
 	for _, group := range wire.Groups {
 		refs[group.Target+" "+group.Title] = group.Ref
-	}
-	return refs
-}
-
-func memberRefsByLabel(wire request) map[string]string {
-	refs := make(map[string]string)
-	for _, group := range wire.Groups {
-		for _, member := range group.Members {
-			refs[group.Target+" "+member.Name+" "+member.Anchor] = member.Ref
-		}
 	}
 	return refs
 }

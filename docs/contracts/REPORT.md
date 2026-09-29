@@ -1573,22 +1573,17 @@ failed, is rendered by the server through the same `RenderServedPage`.
   report. `claims.json` holds quotes with their
   source path, date and age. `orientation.json` holds the model's repository
   summary, roles, run recipe, and main flow; every row cites fact, claim, or
-  subject ids. The orientation request walks a packing ladder: 40 members per
-  group with 6 calls and 6 callers of observation per listed member, then 20
-  members with 3 and 3, then 12 members without observations; `member_count`
-  is always the real size and the facts and claims are complete at every
-  rung. A refusal by size or context, local from a
-  declared context window or remote, moves to the next rung; when the last
-  is refused the report is published with an empty orientation, the refusal
-  in `rejected.jsonl` and an `unavailable` state in the console. Unknown or incompatible set refs are recorded and removed;
+  subject ids. The orientation asks an overview, then the main flow of the
+  target it names (READING § Orientation). When the overview is refused by
+  size or context the report is published with an empty orientation, the
+  refusal in `rejected.jsonl` and an `unavailable` state in the console; a
+  refused flow request is journaled under `flow_request`, the overview
+  stands, and the report opens its entry's calls. Unknown or incompatible set refs are recorded and removed;
   repeated refs are deduplicated. A row with no required evidence, an invalid
   scalar choice or conflicting interpretation goes to `rejected.jsonl`
   with its raw output and reason. Independent sections and rows survive a bad
   neighbour. Complete prose is preserved; short labels normalize whitespace.
-  The member ladder (40/20/12 members per group by string-sorted id, 6+6
-  calls) is current behaviour and a known violation of "never sample", to be
-  replaced by an entry-forward scope. Validation annotates and never aborts
-  the run.
+  Validation annotates and never aborts the run.
 
 ## UI iteration and review
 

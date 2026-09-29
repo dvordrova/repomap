@@ -561,7 +561,7 @@ func resultTextByRow(result any, sourceRows map[string]bool) map[string][]string
 		// Repository-guidance entry files use one file_ref per row.
 		_, files := value["files"].([]any)
 		orientation := false
-		for _, field := range []string{"summary_refs", "roles", "run_recipe", "main_flow"} {
+		for _, field := range []string{"summary_refs", "roles", "run_recipe", "main_flow", "main_flow_target"} {
 			if _, found := value[field]; found {
 				orientation = true
 			}
@@ -584,6 +584,9 @@ func resultTextByRow(result any, sourceRows map[string]bool) map[string][]string
 						walk(flow["title"], "main_flow.title", true)
 						walkSlots(flow["steps"], "main_flow.steps")
 					}
+					continue
+				case "main_flow_target":
+					// A target ref, not prose.
 					continue
 				}
 			}

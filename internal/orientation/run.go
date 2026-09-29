@@ -1,6 +1,7 @@
 package orientation
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	_ "embed"
@@ -22,10 +23,10 @@ const (
 	// StageName labels rejected rows and the cache state of this stage.
 	StageName = "orientation"
 
-	executionContract     = "repomap.orientation.v1"
-	preparationVersion    = 4
-	promptVersion         = 8
-	responseSchemaVersion = 1
+	executionContract     = "repomap.orientation.v2"
+	preparationVersion    = 5
+	promptVersion         = 9
+	responseSchemaVersion = 2
 	// maxOutputTokens is measured: 117 accepted orientation exchanges
 	// answered in at most 1,260 output tokens (median 848). The shared
 	// 128,000 reservation took that much of the 1,048,576-token window from
@@ -33,11 +34,19 @@ const (
 	maxOutputTokens = 16384
 )
 
-//go:embed prompt.md
-var promptText string
-
-//go:embed response-example.json
-var responseExample string
+// The stage asks twice, one decision each: the overview (summary, roles,
+// run recipe and which target's Main flow to read), then that Main flow over
+// the target's flow scope.
+var (
+	//go:embed overview-prompt.md
+	overviewPrompt string
+	//go:embed overview-response-example.json
+	overviewExample string
+	//go:embed flow-prompt.md
+	flowPrompt string
+	//go:embed flow-response-example.json
+	flowExample string
+)
 
 // Input is everything the stage may show the model. Groups is the complete
 // matched GroupsIndex set, one index per analyzed target.
@@ -47,19 +56,15 @@ type Input struct {
 	Claims         claims.Result
 	Groups         []groupindex.Index
 	// Graph is the already-built source graph used by atlas reading. Only
-	// advertised members' observations enter the orientation request.
+	// the seeds' and the flow scope's rows enter the orientation requests.
 	Graph atlas.Graph
 }
 
-type preparedRequest struct {
-	wire    []byte
-	catalog catalog
-}
-
-// Run makes exactly one model call, validates every returned row against the
-// advertised catalog, restores accepted refs to exact ids, and seals the
-// result against the inputs. Rejected rows are returned, never repaired, and
-// never abort the run.
+// Run makes the overview call and, when it names a target, the flow call; it
+// validates every returned row against the request's catalogue, restores
+// accepted refs to exact ids, and seals the result against the inputs.
+// Rejected rows are returned, never repaired, and never abort the run. A
+// flow request or answer that fails leaves the overview standing.
 func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, input Input) (Result, []RejectedRow, error) {
 	if err := validateInput(input); err != nil {
 		return Result{}, nil, fmt.Errorf("orientation: input: %w", err)
@@ -72,76 +77,44 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	if provider == nil {
 		return Result{}, nil, fmt.Errorf("orientation: provider is nil")
 	}
-	// Each rung of the packing ladder is one complete request. A refusal by
-	// size or context, local or remote, moves to the next rung; the last
-	// refusal leaves an empty orientation.
-	var prepared preparedRequest
-	var outcome llm.Outcome[normalized]
-	var err error
-	var lastResource *llm.ResourceLimitError
-	for rung, bounds := range packingLadder {
-		prepared, err = prepareRequest(provider, input, bounds)
+	overview, cat, err := buildOverview(input)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	wire, err := encodeWire(overview)
+	if err != nil {
+		return Result{}, nil, fmt.Errorf("orientation: encode request: %w", err)
+	}
+	outcome, err := ask(ctx, executor, provider, input, digests, wire, "overview", overviewPrompt, overviewExample,
+		func(raw []byte) (normalized, error) { return normalizeOverview(raw, cat) })
+	if err != nil {
+		rejected, refused := refusal(ctx, err, outcome, sectionRequest, len(wire))
+		if !refused {
+			return Result{}, nil, fmt.Errorf("orientation: model call: %w", err)
+		}
+		result, sealErr := Empty(input.Facts.SHA256, input.Claims.SHA256, digests, len(rejected))
+		return result, rejected, sealErr
+	}
+	accepted := outcome.Value
+	rejected := accepted.rejected
+	var flow MainFlow
+	if accepted.flowTarget != "" {
+		steps, flowRejected, err := askFlow(ctx, executor, provider, input, digests, accepted.flowTarget)
 		if err != nil {
-			if resource, refused := refusedByResources(err); refused {
-				lastResource = resource
-				continue
-			}
 			return Result{}, nil, err
 		}
-		outcome, err = llm.ExecuteJSON(ctx, executor, provider, llm.Call[normalized]{
-			State: cubeState(input, digests, prepared.wire),
-			Prompt: llm.Prompt{
-				System: strings.TrimSpace(promptText), User: string(prepared.wire), ResponseFormatJSON: true, ResponseExample: responseExample,
-			},
-			Limits: limits(),
-			DecodeValidate: func(raw []byte) (normalized, error) {
-				return normalize(raw, prepared.catalog)
-			},
-		})
-		if resource, refused := refusedByResources(err); refused && ctx.Err() == nil && rung+1 < len(packingLadder) {
-			lastResource = resource
-			continue
-		}
-		lastResource = nil
-		break
+		flow = steps
+		rejected = append(rejected, flowRejected...)
 	}
-	if lastResource != nil {
-		return emptyAfterRefusal(input, digests, len(prepared.wire), lastResource, fmt.Errorf("orientation: every packing was refused: %w", lastResource))
-	}
-	if err != nil {
-		// A rejected model response supplies no orientation, but the facts
-		// and report remain useful. Local and transport errors retain their
-		// existing error path. A response whose every row was refused journals
-		// each row's own reason; it is still not cached.
-		var none *noOutputError
-		if errors.As(err, &none) && ctx.Err() == nil {
-			rejected := append([]RejectedRow(nil), none.rejected...)
-			result, sealErr := Empty(input.Facts.SHA256, input.Claims.SHA256, digests, len(rejected))
-			return result, rejected, sealErr
-		}
-		for _, refusal := range outcome.ResponseRejections {
-			if refusal.Kind == "response_validation" && ctx.Err() == nil {
-				raw, _ := json.Marshal(string(outcome.Response))
-				rejected := []RejectedRow{{Stage: StageName, Section: "response", Raw: raw, Reason: err.Error()}}
-				result, sealErr := Empty(input.Facts.SHA256, input.Claims.SHA256, digests, len(rejected))
-				return result, rejected, sealErr
-			}
-		}
-		if resource, refused := refusedByResources(err); refused && ctx.Err() == nil {
-			return emptyAfterRefusal(input, digests, len(prepared.wire), resource, err)
-		}
-		return Result{}, nil, fmt.Errorf("orientation: model call: %w", err)
-	}
-	rejected := outcome.Value.rejected
 	result, err := Seal(Result{
 		FactsSHA256:   input.Facts.SHA256,
 		ClaimsSHA256:  input.Claims.SHA256,
 		GroupsSHA256s: digests,
-		Summary:       outcome.Value.summary,
-		SummaryRefs:   outcome.Value.summaryRefs,
-		Roles:         outcome.Value.roles,
-		RunRecipe:     outcome.Value.recipe,
-		MainFlow:      outcome.Value.flow,
+		Summary:       accepted.summary,
+		SummaryRefs:   accepted.summaryRefs,
+		Roles:         accepted.roles,
+		RunRecipe:     accepted.recipe,
+		MainFlow:      flow,
 		RejectedCount: len(rejected),
 	})
 	if err != nil {
@@ -150,28 +123,86 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	return result, rejected, nil
 }
 
-// refusedByResources reports a preparation or provider refusal by size or
-// context window.
-func refusedByResources(err error) (*llm.ResourceLimitError, bool) {
-	var resource *llm.ResourceLimitError
-	if errors.As(err, &resource) {
-		return resource, true
+// askFlow asks for the Main flow over one target's flow scope. A request the
+// provider cannot hold is journaled under flow_request, one whose rows are
+// all refused journals each; either leaves no flow.
+func askFlow(ctx context.Context, executor llm.Executor, provider llm.Provider, input Input, digests []string, targetID string) (MainFlow, []RejectedRow, error) {
+	request, cat, _, err := buildFlow(input, targetID)
+	if err != nil {
+		return MainFlow{}, nil, err
 	}
-	return nil, false
+	wire, err := encodeWire(request)
+	if err != nil {
+		return MainFlow{}, nil, fmt.Errorf("orientation: encode flow request: %w", err)
+	}
+	outcome, err := ask(ctx, executor, provider, input, digests, wire, "flow", flowPrompt, flowExample,
+		func(raw []byte) (normalized, error) { return normalizeFlow(raw, cat, request.Target.Ref) })
+	if err != nil {
+		rejected, refused := refusal(ctx, err, outcome, sectionFlowRequest, len(wire))
+		if !refused {
+			return MainFlow{}, nil, fmt.Errorf("orientation: flow model call: %w", err)
+		}
+		return MainFlow{}, rejected, nil
+	}
+	return outcome.Value.flow, outcome.Value.rejected, nil
 }
 
-// emptyAfterRefusal keeps the run: a request the provider cannot hold in one
-// window leaves an empty orientation with the refusal journaled, while the
-// facts, atlas and report stay useful. A 35-minute Freqtrade run lost its
-// whole report to this refusal before (20260911-045158).
-func emptyAfterRefusal(input Input, digests []string, requestBytes int, resource *llm.ResourceLimitError, err error) (Result, []RejectedRow, error) {
-	raw, _ := json.Marshal(struct {
-		RequestBytes int    `json:"request_bytes,omitempty"`
-		Resource     string `json:"resource"`
-	}{requestBytes, fmt.Sprint(resource.Kind)})
-	rejected := []RejectedRow{{Stage: StageName, Section: "request", Raw: raw, Reason: err.Error()}}
-	result, sealErr := Empty(input.Facts.SHA256, input.Claims.SHA256, digests, len(rejected))
-	return result, rejected, sealErr
+// encodeWire writes a request as the model reads it: a call's "->" and a
+// "<lambda>" stay as written, not \u003e and \u003c.
+func encodeWire(request any) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(request); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
+}
+
+// ask is one cube call: the prepared request must fit the provider's
+// envelope, and the answer is the decoder's.
+func ask(ctx context.Context, executor llm.Executor, provider llm.Provider, input Input, digests []string, wire []byte,
+	part, system, example string, decode func([]byte) (normalized, error)) (llm.Outcome[normalized], error) {
+	prompt := llm.Prompt{System: strings.TrimSpace(system), User: string(wire), ResponseFormatJSON: true, ResponseExample: example}
+	if err := requestFits(provider, prompt); err != nil {
+		return llm.Outcome[normalized]{}, fmt.Errorf("orientation: provider request preparation: %w", err)
+	}
+	return llm.ExecuteJSON(ctx, executor, provider, llm.Call[normalized]{
+		State:          cubeState(input, digests, part, wire),
+		Prompt:         prompt,
+		Limits:         limits(),
+		DecodeValidate: decode,
+	})
+}
+
+// refusal turns a failed call into journaled rows when the failure is the
+// model's answer or the provider's size or context refusal: a response whose
+// every row was refused journals each row's own reason, one that is not the
+// requested JSON one row, and a size refusal one row under section. Local
+// and transport errors keep their error path.
+func refusal(ctx context.Context, err error, outcome llm.Outcome[normalized], section string, requestBytes int) ([]RejectedRow, bool) {
+	if ctx.Err() != nil {
+		return nil, false
+	}
+	var none *noOutputError
+	if errors.As(err, &none) {
+		return append([]RejectedRow(nil), none.rejected...), true
+	}
+	for _, refused := range outcome.ResponseRejections {
+		if refused.Kind == "response_validation" {
+			raw, _ := json.Marshal(string(outcome.Response))
+			return []RejectedRow{{Stage: StageName, Section: "response", Raw: raw, Reason: err.Error()}}, true
+		}
+	}
+	var resource *llm.ResourceLimitError
+	if errors.As(err, &resource) {
+		raw, _ := json.Marshal(struct {
+			RequestBytes int    `json:"request_bytes,omitempty"`
+			Resource     string `json:"resource"`
+		}{requestBytes, fmt.Sprint(resource.Kind)})
+		return []RejectedRow{{Stage: StageName, Section: section, Raw: raw, Reason: err.Error()}}, true
+	}
+	return nil, false
 }
 
 func validateInput(input Input) error {
@@ -204,40 +235,11 @@ func groupDigests(indexes []groupindex.Index) []string {
 	return digests
 }
 
-// prepareRequest retains the stage's complete facts and claims at every rung
-// of the packing ladder; a rung bounds only the listed members and their
-// observations, and member_count stays the real size. Only the actual
-// prepared provider envelope, or a declared context window, can refuse it.
-func prepareRequest(provider llm.Provider, input Input, bounds packing) (preparedRequest, error) {
-	wire, cat, err := encodeRequest(input, bounds)
-	if err != nil {
-		return preparedRequest{}, err
-	}
-	if err := requestFits(provider, wire); err != nil {
-		return preparedRequest{}, fmt.Errorf("orientation: provider request preparation: %w", err)
-	}
-	return preparedRequest{wire: wire, catalog: cat}, nil
-}
-
-func encodeRequest(input Input, bounds packing) ([]byte, catalog, error) {
-	wire, cat, err := buildRequestWith(input, bounds)
-	if err != nil {
-		return nil, catalog{}, err
-	}
-	encoded, err := json.Marshal(wire)
-	if err != nil {
-		return nil, catalog{}, fmt.Errorf("orientation: encode request: %w", err)
-	}
-	return encoded, cat, nil
-}
-
 // requestFits returns nil when the provider accepts the request, a
 // *llm.ResourceLimitError when it is too large, and any other error as is.
-func requestFits(provider llm.Provider, wire []byte) error {
+func requestFits(provider llm.Provider, prompt llm.Prompt) error {
 	bounds := limits()
-	prepared, err := llm.Prepare(provider, llm.Prompt{
-		System: strings.TrimSpace(promptText), User: string(wire), ResponseFormatJSON: true, ResponseExample: responseExample,
-	}, bounds)
+	prepared, err := llm.Prepare(provider, prompt, bounds)
 	if err != nil {
 		return err
 	}
@@ -250,10 +252,11 @@ func requestFits(provider llm.Provider, wire []byte) error {
 	return nil
 }
 
-func cubeState(input Input, groupDigests []string, wire []byte) []byte {
+func cubeState(input Input, groupDigests []string, part string, wire []byte) []byte {
 	requestDigest := sha256.Sum256(wire)
 	state, _ := json.Marshal(struct {
 		Contract              string   `json:"contract"`
+		Part                  string   `json:"part"`
 		PreparationVersion    int      `json:"preparation_version"`
 		PromptVersion         int      `json:"prompt_version"`
 		ResponseSchemaVersion int      `json:"response_schema_version"`
@@ -262,7 +265,7 @@ func cubeState(input Input, groupDigests []string, wire []byte) []byte {
 		GroupsSHA256s         []string `json:"groups_sha256s"`
 		RequestSHA256         string   `json:"request_sha256"`
 	}{
-		Contract: executionContract, PreparationVersion: preparationVersion,
+		Contract: executionContract, Part: part, PreparationVersion: preparationVersion,
 		PromptVersion: promptVersion, ResponseSchemaVersion: responseSchemaVersion,
 		FactsSHA256: input.Facts.SHA256, ClaimsSHA256: input.Claims.SHA256,
 		GroupsSHA256s: sortedDigests(groupDigests), RequestSHA256: hex.EncodeToString(requestDigest[:]),

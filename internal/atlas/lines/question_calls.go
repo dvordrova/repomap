@@ -38,46 +38,9 @@ type questionCaller struct {
 // CallableEvidence projects existing observations for exactly the requested
 // native declarations. Keys stay local; the owner binds them to its advertised
 // refs. This is the same evidence used by questions, without another graph walk
-// per declaration or any recursive caller/body expansion.
+// per declaration or any recursive caller/body expansion. Every call and
+// caller is listed.
 func CallableEvidence(graph atlas.Graph, subjects map[string]bool) map[string]map[string]any {
-	return CallableEvidenceWithin(graph, subjects, EvidenceLimits{})
-}
-
-// EvidenceLimits bounds one declaration's projected call and caller lists.
-// Zero keeps every observation. A bounded list names what it does not show
-// in calls_omitted / called_by_omitted, so a reader never mistakes the cut
-// for the complete set. The orientation request is one call against one
-// context window and needs the bound; questions keep the complete lists.
-type EvidenceLimits struct {
-	Calls   int
-	Callers int
-}
-
-// writtenOrder lists a declaration's calls in the order they are written in
-// its body. The graph keeps them in a stable order of their contents, which
-// put redis-server main's fprintf, exit and time calls before
-// initServerConfig: read in that order, or cut after the first few, the
-// calls said nothing of what main does first. Calls at one site keep their
-// stored order; a call without a known line follows the located ones.
-func writtenOrder(calls []atlas.SymbolCall) []atlas.SymbolCall {
-	ordered := slices.Clone(calls)
-	slices.SortStableFunc(ordered, func(a, b atlas.SymbolCall) int {
-		if (a.Line < 1) != (b.Line < 1) {
-			if a.Line < 1 {
-				return 1
-			}
-			return -1
-		}
-		if a.Line != b.Line {
-			return a.Line - b.Line
-		}
-		return a.Column - b.Column
-	})
-	return ordered
-}
-
-// CallableEvidenceWithin is CallableEvidence with bounded lists.
-func CallableEvidenceWithin(graph atlas.Graph, subjects map[string]bool, limits EvidenceLimits) map[string]map[string]any {
 	result := make(map[string]map[string]any)
 	if len(subjects) == 0 {
 		return result
@@ -97,23 +60,42 @@ func CallableEvidenceWithin(graph atlas.Graph, subjects map[string]bool, limits 
 		}
 		facts := map[string]any{"name": place.Symbol.Decl.Name, "path": place.Path, "line": place.LineNo,
 			"signature": place.Symbol.Decl.Signature, "author_doc": place.Symbol.Decl.Doc}
-		questionCallableEvidence(facts, place, places, symbols, limits)
+		questionCallableEvidence(facts, place, places, symbols)
 		result[subject] = facts
 	}
 	return result
 }
 
+// WrittenOrder lists a declaration's calls in the order they are written in
+// its body. The graph keeps them in a stable order of their contents, which
+// put redis-server main's fprintf, exit and time calls before
+// initServerConfig: read in that order, the calls said nothing of what main
+// does first. Calls at one site keep their stored order; a call without a
+// known line follows the located ones.
+func WrittenOrder(calls []atlas.SymbolCall) []atlas.SymbolCall {
+	ordered := slices.Clone(calls)
+	slices.SortStableFunc(ordered, func(a, b atlas.SymbolCall) int {
+		if (a.Line < 1) != (b.Line < 1) {
+			if a.Line < 1 {
+				return 1
+			}
+			return -1
+		}
+		if a.Line != b.Line {
+			return a.Line - b.Line
+		}
+		return a.Column - b.Column
+	})
+	return ordered
+}
+
 // Attach only this declaration's observations. In particular a selected type
 // does not recursively pull in its methods' calls, and an incoming caller does
 // not donate its other calls to the selected declaration.
-func questionCallableEvidence(facts map[string]any, place atlas.Place, places, symbols map[string]atlas.Place, limits EvidenceLimits) {
+func questionCallableEvidence(facts map[string]any, place atlas.Place, places, symbols map[string]atlas.Place) {
 	var evidence EvidenceCatalog
 	var calls []questionCall
-	for i, call := range writtenOrder(place.Symbol.Calls) {
-		if limits.Calls > 0 && i >= limits.Calls {
-			facts["calls_omitted"] = len(place.Symbol.Calls) - i
-			break
-		}
+	for _, call := range WrittenOrder(place.Symbol.Calls) {
 		projected := questionCall{callEvidence: evidence.callWithOrigins(call)}
 		for _, id := range call.CalleeIDs {
 			if declaration := questionDeclarationOf(places[id]); declaration != nil {
@@ -126,11 +108,7 @@ func questionCallableEvidence(facts map[string]any, place atlas.Place, places, s
 		facts["calls"] = calls
 	}
 	var callers []questionCaller
-	for i, caller := range place.Symbol.CalledBy {
-		if limits.Callers > 0 && i >= limits.Callers {
-			facts["called_by_omitted"] = len(place.Symbol.CalledBy) - i
-			break
-		}
+	for _, caller := range place.Symbol.CalledBy {
 		original := places[caller.PlaceID]
 		if original.Symbol == nil && caller.ObjectID != "" {
 			original = symbols[caller.ObjectID]

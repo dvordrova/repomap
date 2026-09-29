@@ -15,6 +15,7 @@ import (
 
 type terminologyProvider struct {
 	result map[string]any
+	flow   map[string]any
 	names  []string
 	calls  int
 }
@@ -34,7 +35,11 @@ func (p *terminologyProvider) Complete(_ context.Context, prepared llm.Prepared)
 		return llm.Completion{}, err
 	}
 	if !strings.Contains(prompt.User, `"prose":`) {
-		raw, err := json.Marshal(p.result)
+		answer := p.result
+		if strings.Contains(prompt.User, `"members":`) {
+			answer = p.flow
+		}
+		raw, err := json.Marshal(answer)
 		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
 	}
 	var request struct {
@@ -77,15 +82,16 @@ func TestOrientationTermsUseOnlyAcceptedOriginalSlotsLiveAndCached(t *testing.T)
 			map[string]any{"command": "BadRecipe", "refs": []string{"f999"}},
 			map[string]any{"command": "GoodRecipe", "refs": []string{refs.fact("entrypoint")}},
 		},
-		"main_flow": map[string]any{"title": "GoodTitle", "steps": []any{
-			map[string]any{"target": refs.target("alpha"), "ref": "f999", "explanation": "BadStep", "key": "main_flow.steps[1]"},
-			map[string]any{"target": refs.target("beta"), "ref": refs.fact("call"), "explanation": "GoodStep"},
-		}},
-	}, names: []string{"BadSummary", "BadRole", "NestedBadRole", "GoodRole", "BadRecipe", "GoodRecipe", "BadStep", "GoodStep", "GoodTitle"}}
+		"main_flow_target": refs.target("alpha"),
+	}, flow: map[string]any{"main_flow": map[string]any{"title": "GoodTitle", "steps": []any{
+		map[string]any{"ref": "f999", "explanation": "BadStep", "key": "main_flow.steps[1]"},
+		map[string]any{"ref": refs.fact("route"), "explanation": "GoodStep"},
+	}}}, names: []string{"BadSummary", "BadRole", "NestedBadRole", "GoodRole", "BadRecipe", "GoodRecipe", "BadStep", "GoodStep", "GoodTitle"}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 	var first []terminology.Candidate
 	for run := 0; run < 2; run++ {
-		collector := terminology.NewCollector([]string{"README.md"})
+		// The flow request quotes no README; its target's manifest is its source.
+		collector := terminology.NewCollector([]string{"README.md", "alpha/go.mod"})
 		result, rejected, err := Run(t.Context(), executor, collector.Wrap(provider), fixture.input)
 		if err != nil || len(rejected) != 4 || result.Summary != "" || len(result.Roles) != 1 || len(result.RunRecipe) != 1 || len(result.MainFlow.Steps) != 1 {
 			t.Fatalf("partial orientation lost valid siblings: %+v, %v", result, err)
@@ -110,8 +116,9 @@ func TestOrientationTermsUseOnlyAcceptedOriginalSlotsLiveAndCached(t *testing.T)
 			t.Fatal("cache replay changed accepted term origins")
 		}
 	}
-	// Orientation, names and explanations, each once: the second run is warm.
-	if provider.calls != 3 {
+	// The overview, the flow, names and explanations, each once: the second
+	// run is warm.
+	if provider.calls != 4 {
 		t.Fatalf("cached partial orientation made another provider call: %d calls", provider.calls)
 	}
 }
@@ -119,7 +126,7 @@ func TestOrientationTermsUseOnlyAcceptedOriginalSlotsLiveAndCached(t *testing.T)
 func TestOrientationEquivalentRoleSlotsSurviveUntilAnActualConflict(t *testing.T) {
 	fixture := newFixture(t)
 	refs := fixture.refs(t)
-	_, catalogue, err := buildRequest(fixture.input)
+	_, catalogue, err := buildOverview(fixture.input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +140,7 @@ func TestOrientationEquivalentRoleSlotsSurviveUntilAnActualConflict(t *testing.T
 			rows = append(rows, map[string]any{"target": refs.target("alpha"), "role": "Worker", "purpose": "Handles background jobs.", "refs": []string{refs.fact("route")}})
 		}
 		raw, _ := json.Marshal(map[string]any{"roles": rows})
-		result, err := normalize(raw, catalogue)
+		result, err := normalizeOverview(raw, catalogue)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -156,12 +163,12 @@ func TestOrientationCachesEmptyResponseButNeverWhollyRejectedOutput(t *testing.T
 		accepted bool
 	}{
 		{"empty", map[string]any{}, true},
-		{"bad section types", map[string]any{"summary": 42, "roles": "wrong", "run_recipe": true, "main_flow": []string{"wrong"}}, false},
+		{"bad section types", map[string]any{"summary": 42, "roles": "wrong", "run_recipe": true, "main_flow_target": []string{"wrong"}}, false},
 		{"all rows refused", map[string]any{
 			"summary": "Unsupported summary", "summary_refs": []string{"f999"},
-			"roles":      []any{map[string]any{"target": refs.target("alpha"), "role": "Unsupported role", "purpose": "Unsupported purpose", "refs": []string{"f999"}}},
-			"run_recipe": []any{map[string]any{"command": "unsupported", "refs": []string{"f999"}}},
-			"main_flow":  map[string]any{"title": "Unsupported flow", "steps": []any{map[string]any{"target": refs.target("alpha"), "ref": "f999", "explanation": "Unsupported step"}}},
+			"roles":            []any{map[string]any{"target": refs.target("alpha"), "role": "Unsupported role", "purpose": "Unsupported purpose", "refs": []string{"f999"}}},
+			"run_recipe":       []any{map[string]any{"command": "unsupported", "refs": []string{"f999"}}},
+			"main_flow_target": "t999",
 		}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {

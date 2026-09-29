@@ -30,19 +30,21 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 				map[string]any{"target": refs.target("alpha"), "role": "Backend API service",
 					"purpose": "Serves the items list over HTTP.", "refs": []string{refs.fact("entrypoint"), refs.fact("route")}},
 				map[string]any{"target": refs.target("beta"), "role": "HTTP client",
-					"purpose": "Fetches items from Alpha.", "refs": []string{refs.fact("call"), refs.subject("beta", "core")}},
+					"purpose": "Fetches items from Alpha.", "refs": []string{refs.fact("call"), refs.subject("beta", "inbound")}},
 			},
 			"run_recipe": []any{
 				map[string]any{"target": refs.target("alpha"), "command": "go run .", "cwd": "alpha",
 					"note": "Listens on PORT.", "refs": []string{refs.fact("manifest"), refs.fact("config")}},
 			},
-			"main_flow": map[string]any{
-				"title": "From the items request to the response",
-				"steps": []any{
-					map[string]any{"target": refs.target("beta"), "ref": refs.fact("call"), "explanation": "Beta calls GET /api/items."},
-					map[string]any{"target": refs.target("alpha"), "ref": refs.fact("route"), "explanation": "Alpha handles the route in Serve."},
-					map[string]any{"target": refs.target("alpha"), "ref": refs.subject("alpha", "core"), "explanation": "Apply computes the items."},
-				},
+			"main_flow_target": refs.target("alpha"),
+		})
+	}, flow: func([]byte) []byte {
+		return encodeResponse(t, map[string]any{
+			"title": "From the items request to the response",
+			"steps": []any{
+				map[string]any{"ref": refs.fact("route"), "explanation": "Alpha handles the route in Serve."},
+				map[string]any{"ref": refs.subject("alpha", "inbound"), "explanation": "Serve calls Apply."},
+				map[string]any{"ref": refs.subject("alpha", "core"), "explanation": "Apply computes the items."},
 			},
 		})
 	}}
@@ -67,7 +69,7 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 		!reflect.DeepEqual(result.Roles[0].FactIDs, []string{fixture.factID("entrypoint"), fixture.factID("route")}) ||
 		result.Roles[0].TargetID != fixture.targetID("alpha") ||
 		!reflect.DeepEqual(result.Roles[1].FactIDs, []string{fixture.factID("call")}) ||
-		!reflect.DeepEqual(result.Roles[1].SubjectIDs, []string{refs.subject("beta", "core")}) {
+		!reflect.DeepEqual(result.Roles[1].SubjectIDs, []string{refs.subject("beta", "inbound")}) {
 		t.Fatalf("roles = %#v", result.Roles)
 	}
 	if len(result.RunRecipe) != 1 || result.RunRecipe[0].Cwd != "alpha" ||
@@ -75,13 +77,13 @@ func TestRunRestoresAcceptedRowsToExactIDs(t *testing.T) {
 		t.Fatalf("recipe = %#v", result.RunRecipe)
 	}
 	if len(result.MainFlow.Steps) != 3 || result.MainFlow.Title == "" ||
-		result.MainFlow.Steps[1].FactID != fixture.factID("route") ||
+		result.MainFlow.Steps[0].FactID != fixture.factID("route") ||
 		result.MainFlow.Steps[2].SubjectID != fixture.subjectID("alpha", "core") ||
 		result.MainFlow.Steps[2].TargetID != fixture.targetID("alpha") {
 		t.Fatalf("flow = %#v", result.MainFlow)
 	}
-	if provider.completions != 1 {
-		t.Fatalf("provider completions = %d, want one call", provider.completions)
+	if provider.completions != 2 {
+		t.Fatalf("provider completions = %d, want the overview and the flow", provider.completions)
 	}
 	provider.assertRequestShape(t, fixture)
 }
@@ -122,7 +124,7 @@ func TestRunDeduplicatesEquivalentRolesAndRefusesConflictingTargetOnly(t *testin
 	fixture := newFixture(t)
 	refs := fixture.refs(t)
 	alpha := map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("route")}}
-	alphaWithOtherRefs := map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("entrypoint"), refs.claim("readme"), refs.subject("alpha", "core"), refs.fact("route")}}
+	alphaWithOtherRefs := map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("entrypoint"), refs.claim("readme"), refs.subject("alpha", "inbound"), refs.fact("route")}}
 	beta := map[string]any{"target": refs.target("beta"), "role": "Client", "purpose": "Fetches items.", "refs": []string{refs.fact("call")}}
 	for _, conflict := range []bool{false, true} {
 		rows := []any{alpha, alphaWithOtherRefs, beta}
@@ -139,7 +141,7 @@ func TestRunDeduplicatesEquivalentRolesAndRefusesConflictingTargetOnly(t *testin
 		}
 		if !conflict && (!reflect.DeepEqual(result.Roles[0].FactIDs, []string{fixture.factID("route"), fixture.factID("entrypoint")}) ||
 			!reflect.DeepEqual(result.Roles[0].ClaimIDs, []string{fixture.claimID("readme")}) ||
-			!reflect.DeepEqual(result.Roles[0].SubjectIDs, []string{refs.subject("alpha", "core")})) {
+			!reflect.DeepEqual(result.Roles[0].SubjectIDs, []string{refs.subject("alpha", "inbound")})) {
 			t.Fatal("equivalent interpretations lost or duplicated their distinct supporting references")
 		}
 		if conflict && (len(result.Roles) != 1 || result.Roles[0].TargetID != fixture.targetID("beta") || len(rejected) != 1) {
@@ -174,18 +176,20 @@ func TestRunRejectsRecipeWithoutManifestOrEntrypointFact(t *testing.T) {
 	}
 }
 
-func TestRunRejectsFlowStepCitingMemberOfAnotherTarget(t *testing.T) {
+// The flow is asked over one target's scope: a step citing another target's
+// member, or a claim, cites nothing the flow request advertised.
+func TestRunFlowStepsCiteOnlyTheChosenTargetsScope(t *testing.T) {
 	fixture := newFixture(t)
 	refs := fixture.refs(t)
 	provider := &presetProvider{respond: func([]byte) []byte {
+		return encodeResponse(t, map[string]any{"main_flow_target": refs.target("alpha")})
+	}, flow: func([]byte) []byte {
 		return encodeResponse(t, map[string]any{
-			"main_flow": map[string]any{
-				"title": "Items flow",
-				"steps": []any{
-					map[string]any{"target": refs.target("beta"), "ref": refs.subject("alpha", "core"), "explanation": "Wrong target."},
-					map[string]any{"target": refs.target("alpha"), "ref": refs.claim("readme"), "explanation": "Claims are not steps."},
-					map[string]any{"target": refs.target("alpha"), "ref": refs.subject("alpha", "core"), "explanation": "Apply computes the items."},
-				},
+			"title": "Items flow",
+			"steps": []any{
+				map[string]any{"ref": refs.subject("beta", "core"), "explanation": "Wrong target."},
+				map[string]any{"ref": refs.claim("readme"), "explanation": "Claims are not steps."},
+				map[string]any{"target": refs.target("beta"), "ref": refs.subject("alpha", "core"), "explanation": "Apply computes the items."},
 			},
 		})
 	}}
@@ -194,12 +198,30 @@ func TestRunRejectsFlowStepCitingMemberOfAnotherTarget(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(result.MainFlow.Steps) != 1 || result.MainFlow.Steps[0].SubjectID != fixture.subjectID("alpha", "core") ||
-		result.MainFlow.Title != "Items flow" {
+		result.MainFlow.Steps[0].TargetID != fixture.targetID("alpha") || result.MainFlow.Title != "Items flow" {
 		t.Fatalf("flow = %#v", result.MainFlow)
 	}
-	if len(rejected) != 2 || !strings.Contains(rejected[0].Reason, "does not belong to target") ||
-		!strings.Contains(rejected[1].Reason, "no advertised") {
+	if len(rejected) != 2 || !strings.Contains(rejected[0].Reason, "no advertised") || !strings.Contains(rejected[1].Reason, "no advertised") {
 		t.Fatalf("rejected = %#v", rejected)
+	}
+}
+
+// An overview that names no flow target, or an unknown one, asks no flow.
+func TestRunAsksNoFlowWithoutAKnownTarget(t *testing.T) {
+	fixture := newFixture(t)
+	refs := fixture.refs(t)
+	for _, target := range []string{"", "t9"} {
+		provider := &presetProvider{respond: func([]byte) []byte {
+			return encodeResponse(t, map[string]any{"main_flow_target": target,
+				"roles": []any{map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("route")}}}})
+		}}
+		result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
+		if err != nil || provider.completions != 1 || len(result.Roles) != 1 || len(result.MainFlow.Steps) != 0 {
+			t.Fatalf("target %q: %v, %d calls, %+v", target, err, provider.completions, result)
+		}
+		if refused := len(rejected) == 1 && rejected[0].Section == sectionMainFlow; refused != (target != "") {
+			t.Fatalf("target %q: rejected %+v", target, rejected)
+		}
 	}
 }
 
@@ -222,9 +244,11 @@ func TestRunMalformedResponseLeavesOtherReportInputsAvailable(t *testing.T) {
 	provider := &presetProvider{respond: func([]byte) []byte {
 		return encodeResponse(t, map[string]any{
 			"summary": 42, "roles": "none", "extra": true,
-			"run_recipe": []any{map[string]any{"command": "go run ./alpha", "refs": []string{refs.fact("entrypoint")}}},
-			"main_flow":  map[string]any{"title": 42, "steps": []any{map[string]any{"target": refs.target("alpha"), "ref": refs.fact("route"), "explanation": "Handles items."}}},
+			"run_recipe":       []any{map[string]any{"command": "go run ./alpha", "refs": []string{refs.fact("entrypoint")}}},
+			"main_flow_target": refs.target("alpha"),
 		})
+	}, flow: func([]byte) []byte {
+		return encodeResponse(t, map[string]any{"title": 42, "steps": []any{map[string]any{"ref": refs.fact("route"), "explanation": "Handles items."}}})
 	}}
 	result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
 	if err != nil || len(result.RunRecipe) != 1 || len(result.MainFlow.Steps) != 1 || len(rejected) != 3 {
@@ -237,11 +261,9 @@ func TestRunAllRejectedYieldsEmptySealedResult(t *testing.T) {
 	provider := &presetProvider{respond: func([]byte) []byte {
 		return encodeResponse(t, map[string]any{
 			"summary": "Unsupported.", "summary_refs": []string{"f404"},
-			"roles":      []any{map[string]any{"target": "t1", "role": "X", "purpose": "Y", "refs": []string{}}},
-			"run_recipe": []any{map[string]any{"command": "make", "refs": []string{"c404"}}},
-			"main_flow": map[string]any{"title": "Nothing", "steps": []any{
-				map[string]any{"target": "t1", "ref": "s404", "explanation": "Missing."},
-			}},
+			"roles":            []any{map[string]any{"target": "t1", "role": "X", "purpose": "Y", "refs": []string{}}},
+			"run_recipe":       []any{map[string]any{"command": "make", "refs": []string{"c404"}}},
+			"main_flow_target": "t404",
 		})
 	}}
 	result, rejected, err := Run(context.Background(), llm.Executor{Enabled: false}, provider, fixture.input)
@@ -256,7 +278,7 @@ func TestRunAllRejectedYieldsEmptySealedResult(t *testing.T) {
 			t.Fatalf("a refused row lost its own reason: %#v", row)
 		}
 	}
-	if len(rejected) != 5 || sections["summary"] != 1 || sections["roles"] != 1 || sections["run_recipe"] != 1 || sections["main_flow"] != 2 {
+	if len(rejected) != 4 || sections["summary"] != 1 || sections["roles"] != 1 || sections["run_recipe"] != 1 || sections["main_flow"] != 1 {
 		t.Fatalf("rejected = %#v", rejected)
 	}
 	want, err := Empty(fixture.input.Facts.SHA256, fixture.input.Claims.SHA256, groupDigests(fixture.input.Groups), len(rejected))
@@ -273,18 +295,15 @@ func TestRunAllRejectedYieldsEmptySealedResult(t *testing.T) {
 
 func TestRequestBytesAreDeterministicAndCloseOverRefs(t *testing.T) {
 	fixture := newFixture(t)
-	first, _, err := encodeRequest(fixture.input, packingLadder[0])
-	if err != nil {
-		t.Fatal(err)
-	}
+	first := encodeOverview(t, fixture.input)
 	reordered := fixture.input
 	reordered.Groups = []groupindex.Index{fixture.input.Groups[1], fixture.input.Groups[0]}
-	second, _, err := encodeRequest(reordered, packingLadder[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(first, second) {
+	if second := encodeOverview(t, reordered); !bytes.Equal(first, second) {
 		t.Fatalf("request bytes depend on groups order:\n%s\n%s", first, second)
+	}
+	flow, _ := encodeFlow(t, fixture.input, fixture.targetID("alpha"))
+	if again, _ := encodeFlow(t, reordered, fixture.targetID("alpha")); !bytes.Equal(flow, again) {
+		t.Fatalf("flow bytes depend on groups order:\n%s\n%s", flow, again)
 	}
 	refs := fixture.refs(t)
 	for _, ref := range []string{
@@ -293,6 +312,11 @@ func TestRequestBytesAreDeterministicAndCloseOverRefs(t *testing.T) {
 	} {
 		if ref == "" || !bytes.Contains(first, []byte(`"`+ref+`"`)) {
 			t.Fatalf("request did not preserve canonical compact ref %q", ref)
+		}
+	}
+	for _, ref := range []string{fixture.factID("route"), refs.subject("alpha", "inbound"), refs.subject("alpha", "core")} {
+		if !bytes.Contains(flow, []byte(`"`+ref+`"`)) {
+			t.Fatalf("flow request did not preserve canonical compact ref %q", ref)
 		}
 	}
 	if !bytes.Contains(first, []byte(`"content_trust":"`+contentTrust+`"`)) {
@@ -312,9 +336,9 @@ func TestRunKeepsEvidenceBeyondTwoMiBUntilActualProviderRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	complete, _, err := encodeRequest(fixture.input, packingLadder[0])
-	if err != nil || len(complete) <= 2<<20 {
-		t.Fatalf("large complete request: %d bytes, %v", len(complete), err)
+	complete := encodeOverview(t, fixture.input)
+	if len(complete) <= 2<<20 {
+		t.Fatalf("large complete request: %d bytes", len(complete))
 	}
 	provider := &presetProvider{respond: func([]byte) []byte { return []byte(`{}`) }}
 	result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
@@ -324,20 +348,36 @@ func TestRunKeepsEvidenceBeyondTwoMiBUntilActualProviderRefusal(t *testing.T) {
 	if !bytes.Equal(provider.users[0], complete) {
 		t.Fatal("size changed the evidence supplied to the model")
 	}
-	var sent request
+	var sent overviewRequest
 	if err := json.Unmarshal(provider.users[0], &sent); err != nil {
 		t.Fatal(err)
 	}
 	if len(sent.Claims) != len(fixture.input.Claims.Claims) || len(sent.Groups) == 0 {
 		t.Fatal("large request lost claims or groups")
 	}
-	// This fixture is large in facts and claims, which no rung shrinks; a
-	// provider that holds not even the smallest rung leaves an empty,
-	// journaled orientation.
+	// A provider that cannot hold the overview leaves an empty, journaled
+	// orientation.
 	tiny := &presetProvider{maximumUserBytes: 10}
 	result, rejected, err = Run(t.Context(), llm.Executor{}, tiny, fixture.input)
 	if err != nil || tiny.completions != 0 || len(rejected) != 1 || rejected[0].Section != "request" || rejected[0].Reason == "" || result.RejectedCount != 1 || len(result.Roles) != 0 {
-		t.Fatalf("a request no packing can fit must leave an empty, journaled orientation: %v, rejected=%+v calls=%d", err, rejected, tiny.completions)
+		t.Fatalf("a request that cannot fit must leave an empty, journaled orientation: %v, rejected=%+v calls=%d", err, rejected, tiny.completions)
+	}
+}
+
+// A flow request the provider cannot hold is journaled; the overview stands.
+func TestAFlowRequestThatDoesNotFitLeavesTheOverview(t *testing.T) {
+	fixture := newFixture(t)
+	refs := fixture.refs(t)
+	provider := &presetProvider{refuseFlow: true, respond: func([]byte) []byte {
+		return encodeResponse(t, map[string]any{"main_flow_target": refs.target("alpha"),
+			"roles": []any{map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": []string{refs.fact("route")}}}})
+	}}
+	result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
+	if err != nil || provider.completions != 1 || len(result.Roles) != 1 || len(result.MainFlow.Steps) != 0 {
+		t.Fatalf("the overview did not stand: %v, %d calls, %+v", err, provider.completions, result)
+	}
+	if len(rejected) != 1 || rejected[0].Section != sectionFlowRequest || !strings.Contains(string(rejected[0].Raw), "request_bytes") || result.RejectedCount != 1 {
+		t.Fatalf("the refused flow request was not journaled: %+v", rejected)
 	}
 }
 
@@ -366,23 +406,35 @@ func TestPersistRejectedRoundTrip(t *testing.T) {
 }
 
 func TestPromptKeepsRepositoryTextUntrustedAndAvoidsInternalVocabulary(t *testing.T) {
-	lower := strings.ToLower(promptText)
-	for _, fragment := range []string{"untrusted", "one sentence", "manifest", "entrypoint", "`main_flow`", "never invent a ref"} {
-		if !strings.Contains(lower, fragment) {
-			t.Fatalf("prompt lacks %q", fragment)
+	for _, prompt := range []struct {
+		text  string
+		words []string
+	}{
+		{overviewPrompt, []string{"manifest", "entrypoint", "`main_flow_target`"}},
+		{flowPrompt, []string{"`steps`", "`members`"}},
+	} {
+		lower := strings.ToLower(prompt.text)
+		for _, fragment := range append([]string{"untrusted", "one sentence", "never invent a ref"}, prompt.words...) {
+			if !strings.Contains(lower, fragment) {
+				t.Fatalf("prompt lacks %q", fragment)
+			}
 		}
-	}
-	for _, banned := range []string{"retained", "source-bound", "authority", "projection", "selector", "outcome", "target contract"} {
-		if strings.Contains(lower, banned) {
-			t.Fatalf("prompt contains banned word %q", banned)
+		for _, banned := range []string{"retained", "source-bound", "authority", "projection", "selector", "outcome", "target contract"} {
+			if strings.Contains(lower, banned) {
+				t.Fatalf("prompt contains banned word %q", banned)
+			}
 		}
 	}
 }
 
-// presetProvider answers with canned JSON and records every request it saw.
+// presetProvider answers with canned JSON and records every request it saw:
+// the overview with respond, the flow with flow (the empty answer when
+// unset). refuseFlow refuses every flow request by size.
 type presetProvider struct {
 	respond          func(user []byte) []byte
+	flow             func(user []byte) []byte
 	maximumUserBytes int
+	refuseFlow       bool
 
 	mu          sync.Mutex
 	users       [][]byte
@@ -392,6 +444,7 @@ type presetProvider struct {
 type presetPrepared struct {
 	System string `json:"system"`
 	User   string `json:"user"`
+	Flow   bool   `json:"flow"`
 }
 
 func (provider *presetProvider) State() []byte {
@@ -399,19 +452,22 @@ func (provider *presetProvider) State() []byte {
 }
 
 func (provider *presetProvider) Prepare(prompt llm.Prompt, limits llm.Limits) (llm.Prepared, error) {
-	if !prompt.ResponseFormatJSON || !strings.Contains(prompt.System, "\n\n"+strings.TrimSpace(promptText)) || !strings.Contains(prompt.System, "prose in English.") || prompt.User == "" ||
-		!strings.HasSuffix(prompt.System, prompt.ResponseExample) || strings.Count(prompt.System, `"main_flow"`) != 1 ||
+	asks := func(system, example string) bool {
+		return strings.Contains(prompt.System, "\n\n"+strings.TrimSpace(system)) && prompt.ResponseExample == example && strings.HasSuffix(prompt.System, example)
+	}
+	overview, flow := asks(overviewPrompt, overviewExample), asks(flowPrompt, flowExample)
+	if !prompt.ResponseFormatJSON || overview == flow || !strings.Contains(prompt.System, "prose in English.") || prompt.User == "" ||
 		limits.MaxRequestBytes != llm.SemanticRecordByteLimit ||
 		limits.MaxResponseBytes != llm.ProviderResponseByteLimit || limits.MaxOutputTokens != maxOutputTokens {
 		return llm.Prepared{}, fmt.Errorf("preset received invalid request contract")
 	}
-	if provider.maximumUserBytes > 0 && len(prompt.User) > provider.maximumUserBytes {
+	if provider.maximumUserBytes > 0 && len(prompt.User) > provider.maximumUserBytes || flow && provider.refuseFlow {
 		return llm.Prepared{}, llm.NewResourceLimitError(llm.ResourceLimitError{
 			Stage: "preset_prepare", Kind: llm.ResourceLimitRequestBytes,
 			Limit: provider.maximumUserBytes, Observed: len(prompt.User), ObservedKnown: true,
 		})
 	}
-	wire, err := json.Marshal(presetPrepared{System: prompt.System, User: prompt.User})
+	wire, err := json.Marshal(presetPrepared{System: prompt.System, User: prompt.User, Flow: flow})
 	if err != nil {
 		return llm.Prepared{}, err
 	}
@@ -427,15 +483,22 @@ func (provider *presetProvider) Complete(_ context.Context, prepared llm.Prepare
 	provider.completions++
 	provider.users = append(provider.users, []byte(prompt.User))
 	provider.mu.Unlock()
+	respond := provider.respond
+	if prompt.Flow {
+		respond = provider.flow
+		if respond == nil {
+			respond = func([]byte) []byte { return []byte(`{}`) }
+		}
+	}
 	return llm.Completion{
-		Response: provider.respond([]byte(prompt.User)), FinishReason: llm.FinishStop, ChoiceCount: 1,
+		Response: respond([]byte(prompt.User)), FinishReason: llm.FinishStop, ChoiceCount: 1,
 		Metrics: llm.Metrics{Attempts: 1},
 	}, nil
 }
 
 func (provider *presetProvider) assertRequestShape(t *testing.T, fixture *fixture) {
 	t.Helper()
-	var seen request
+	var seen overviewRequest
 	if err := json.Unmarshal(provider.users[0], &seen); err != nil {
 		t.Fatalf("decode request: %v", err)
 	}
@@ -453,12 +516,19 @@ func (provider *presetProvider) assertRequestShape(t *testing.T, fixture *fixtur
 		t.Fatalf("groups = %d, connections = %d", len(seen.Groups), len(seen.Connections))
 	}
 	for _, group := range seen.Groups {
-		if group.MemberCount != len(group.Members) || len(group.Members) == 0 || group.Members[0].Anchor == "" {
-			t.Fatalf("group members = %#v", group)
+		if group.MemberCount == 0 {
+			t.Fatalf("group = %#v", group)
 		}
 	}
-	if _, aliased := fixture.subjectIDs["alpha"]["core"]; !aliased {
-		t.Fatal("fixture lost subject ids")
+	if len(seen.Seeds) != 2 || seen.Seeds[0].Name != "Serve" || len(seen.Seeds[0].Calls) != 1 {
+		t.Fatalf("seeds = %#v", seen.Seeds)
+	}
+	var flow flowRequest
+	if err := json.Unmarshal(provider.users[1], &flow); err != nil {
+		t.Fatalf("decode flow request: %v", err)
+	}
+	if flow.Target.Ref != fixture.targetID("alpha") || len(flow.Members) != 2 || flow.Members[0].Name != "Serve" || flow.Members[1].Name != "Apply" {
+		t.Fatalf("flow request = %#v", flow)
 	}
 }
 
@@ -512,7 +582,7 @@ type refLookup struct {
 
 func (fixture *fixture) refs(t *testing.T) refLookup {
 	t.Helper()
-	_, cat, err := buildRequest(fixture.input)
+	_, cat, err := buildOverview(fixture.input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,14 +616,36 @@ func (lookup refLookup) claim(label string) string {
 	return ""
 }
 
+// subject is a member's target-qualified ref, as either request writes it.
 func (lookup refLookup) subject(target, label string) string {
-	targetRef := lookup.target(target)
-	for ref, entry := range lookup.cat.subjects {
-		if entry.id == lookup.fixture.subjectID(target, label) && entry.targetRef == targetRef {
-			return ref
-		}
+	return lookup.fixture.targetID(target) + "." + lookup.fixture.subjectID(target, label)
+}
+
+// encodeOverview and encodeFlow are the requests' exact bytes.
+func encodeOverview(t *testing.T, input Input) []byte {
+	t.Helper()
+	wire, _, err := buildOverview(input)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return ""
+	encoded, err := encodeWire(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func encodeFlow(t *testing.T, input Input, targetID string) ([]byte, flowScope) {
+	t.Helper()
+	wire, _, scope, err := buildFlow(input, targetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := encodeWire(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded, scope
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -602,8 +694,23 @@ func newFixture(t *testing.T) *fixture {
 		Facts:          result.facts(t, alphaProgram.Target.ID, betaProgram.Target.ID),
 		Claims:         result.claims(t),
 		Groups:         groups,
+		Graph:          atlas.Graph{Places: append(result.places("alpha"), result.places("beta")...)},
 	}
 	return result
+}
+
+// places are one target's declaration places: Serve (lines 1-12) calls
+// Apply (line 3) at line 10.
+func (fixture *fixture) places(target string) []atlas.Place {
+	targetID := fixture.targetID(target)
+	path := target + "/main.go"
+	return []atlas.Place{
+		{ID: "place-" + target + "-serve", Kind: atlas.PlaceSymbol, Path: path, LineNo: 1, TargetIDs: []string{targetID},
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.objectID(target, "inbound"), Name: "Serve", Kind: "function", Signature: "func Serve()", EndLine: 12},
+				Calls: []atlas.SymbolCall{{Name: "Apply", Kind: "calls", Line: 10, Column: 2, Resolution: "exact", CalleeIDs: []string{"place-" + target + "-apply"}}}}},
+		{ID: "place-" + target + "-apply", Kind: atlas.PlaceSymbol, Path: path, LineNo: 3, TargetIDs: []string{targetID},
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: fixture.objectID(target, "core"), Name: "Apply", Kind: "function"}}},
+	}
 }
 
 func (fixture *fixture) facts(t *testing.T, alphaProgramID, betaProgramID string) facts.Result {

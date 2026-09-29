@@ -9,14 +9,14 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 )
 
-// Both fixture targets are built from the same program, so their core member
+// Both fixture targets are built from the same program, so their seed
 // has the same bare subject id. A summary and a role citing both used to seal
 // two equal ids and end the run.
 func TestSummaryAndRoleKeepTargetQualifiedSubjects(t *testing.T) {
 	fixture := newFixture(t)
 	refs := fixture.refs(t)
-	alphaCore, betaCore := refs.subject("alpha", "core"), refs.subject("beta", "core")
-	if fixture.subjectID("alpha", "core") != fixture.subjectID("beta", "core") || alphaCore == betaCore {
+	alphaCore, betaCore := refs.subject("alpha", "inbound"), refs.subject("beta", "inbound")
+	if fixture.subjectID("alpha", "inbound") != fixture.subjectID("beta", "inbound") || alphaCore == betaCore {
 		t.Fatalf("fixture no longer repeats a bare subject id across targets: %s %s", alphaCore, betaCore)
 	}
 	provider := &presetProvider{respond: func([]byte) []byte {
@@ -49,7 +49,7 @@ func TestSummaryAndRoleKeepTargetQualifiedSubjects(t *testing.T) {
 func TestRefsWrittenAsOneStringAreOneRef(t *testing.T) {
 	fixture := newFixture(t)
 	refs := fixture.refs(t)
-	_, catalogue, err := buildRequest(fixture.input)
+	_, catalogue, err := buildOverview(fixture.input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestRefsWrittenAsOneStringAreOneRef(t *testing.T) {
 		},
 		"run_recipe": []any{map[string]any{"command": "go run .", "cwd": "alpha", "refs": refs.fact("entrypoint")}},
 	})
-	result, err := normalize(raw, catalogue)
+	result, err := normalizeOverview(raw, catalogue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestRefsWrittenAsOneStringAreOneRef(t *testing.T) {
 		t.Fatalf("a row that is not an object was not refused alone: %+v", result.rejected)
 	}
 	// Any other wrong type for a ref list still refuses its section.
-	result, err = normalize(encodeResponse(t, map[string]any{
+	result, err = normalizeOverview(encodeResponse(t, map[string]any{
 		"summary": "Alpha serves items.", "summary_refs": 42,
 		"roles": []any{map[string]any{"target": refs.target("alpha"), "role": "Backend", "purpose": "Serves items.", "refs": refs.fact("route")}},
 	}), catalogue)
@@ -117,10 +117,12 @@ func TestTargetRefAndCwdAreTrimmedButStillChecked(t *testing.T) {
 				map[string]any{"target": refs.target("alpha") + " ", "command": "go run .", "cwd": " alpha ", "refs": []string{refs.fact("entrypoint")}},
 				map[string]any{"command": "go run .", "cwd": "alpha\nbeta", "refs": []string{refs.fact("entrypoint")}},
 			},
-			"main_flow": map[string]any{"title": "Items", "steps": []any{
-				map[string]any{"target": " " + refs.target("alpha"), "ref": refs.subject("alpha", "core"), "explanation": "Apply computes the items."},
-			}},
+			"main_flow_target": " " + refs.target("alpha"),
 		})
+	}, flow: func([]byte) []byte {
+		return encodeResponse(t, map[string]any{"title": "Items", "steps": []any{
+			map[string]any{"ref": " " + refs.subject("alpha", "core"), "explanation": "Apply computes the items."},
+		}})
 	}}
 	result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
 	if err != nil || result.Validate() != nil {

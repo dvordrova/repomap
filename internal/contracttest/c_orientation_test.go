@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/claims"
@@ -20,12 +23,163 @@ import (
 
 // The orientation reads kvd's main by its own calls, in the order main writes
 // them, from the graph an ordinary run builds: its places name each
-// declaration by the object its program indexed (t1.n1), and a member of the
+// declaration by the object its program indexed (t1.n1), and a seed of the
 // group index (n1 of t1) finds its place there. Looked up by the bare member
 // ID, no member found one and every request went without member evidence;
 // listed in the graph's order, main's external calls came first. Redis's main
 // flow then put loadServerConfig before the initServerConfig main calls first.
+// A seed's row is complete: the recipe needs every one of main's settings.
 func TestCFixtureOrientationReadsMainsCallsInWrittenOrder(t *testing.T) {
+	run := runKvdOrientation(t)
+	var overview struct {
+		Seeds []struct {
+			Ref, Name, Anchor string
+			Calls             []any
+		}
+	}
+	if err := json.Unmarshal(run.asked.bodies(t)[0], &overview); err != nil {
+		t.Fatal(err)
+	}
+	mainLine, _ := run.fixture.at(t, "kvd.c", "int main(int argc, char **argv) {", "")
+	for _, seed := range overview.Seeds {
+		if seed.Name != "main" || seed.Anchor != fmt.Sprintf("kvd.c:%d", mainLine) {
+			continue
+		}
+		names, lines := callHeads(seed.Calls)
+		// main's seventeen calls, as written: its three settings, the
+		// --symbols branch, then the port.
+		if want := []string{"stdlib.h.getenv", "stdlib.h.getenv", "stdlib.h.getenv", "string.h.strcmp", "printSymbols", "stdlib.h.atoi"}; len(names) != 17 || !slices.Equal(names[:6], want) || !slices.IsSorted(lines) {
+			t.Fatalf("main's calls read %v at %v, want all 17 as written, starting %v", names, lines, want)
+		}
+		return
+	}
+	t.Fatalf("kvd's main is not a seed row: %+v", overview.Seeds)
+}
+
+// kvd's Main flow is asked over what kvd runs: main and what it calls, the
+// load-time code, each command's reach, and what a callable hands over:
+// main hands acceptHandler to the event loop, which hands
+// readQueryFromClient on, which runs processCommand. No call reaches them,
+// so without the hand-over the flow could not go past loopMain. Every one
+// is listed with all of its calls, in reading order.
+func TestCFixtureMainFlowScopeFollowsWhatMainHandsOver(t *testing.T) {
+	run := runKvdOrientation(t)
+	bodies := run.asked.bodies(t)
+	if len(bodies) != 2 {
+		t.Fatalf("the orientation asked %d times, want the overview then the flow", len(bodies))
+	}
+	var flow struct {
+		Target  struct{ Ref, Name string }
+		Members []struct {
+			Ref, Name, Anchor string
+			Calls             []any
+		}
+	}
+	if err := json.Unmarshal(bodies[1], &flow); err != nil {
+		t.Fatal(err)
+	}
+	if flow.Target.Name != "kvd" {
+		t.Fatalf("the flow was asked for %+v, not kvd", flow.Target)
+	}
+	at := map[string]int{}
+	for position, member := range flow.Members {
+		if _, repeated := at[member.Ref]; repeated {
+			t.Fatalf("%s is listed twice", member.Ref)
+		}
+		at[member.Ref] = position
+	}
+	var index groupindex.Index
+	for _, candidate := range run.indexes {
+		if candidate.Target.Name == "kvd" {
+			index = candidate
+		}
+	}
+	subjects := map[string]groupindex.Subject{}
+	byName := map[string]string{}
+	for _, subject := range index.Subjects {
+		subjects[subject.ID] = subject
+		if subject.Object != nil {
+			byName[subject.Object.Name] = index.Target.ID + "." + subject.ID
+		}
+	}
+	runs := func(id string) bool {
+		object := subjects[id].Object
+		return object != nil && slices.Contains([]programindex.ObjectKind{programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectLambda, programindex.ObjectModule}, object.Kind)
+	}
+	for _, function := range index.Launch.Functions {
+		if _, listed := at[index.Target.ID+"."+function.SubjectID]; runs(function.SubjectID) && !listed {
+			t.Fatalf("launch function %s is not listed", function.SubjectID)
+		}
+	}
+	for _, reach := range index.Reach {
+		for _, reached := range reach.Subjects {
+			if _, listed := at[index.Target.ID+"."+reached.SubjectID]; runs(reached.SubjectID) && !listed {
+				t.Fatalf("%s, reached by %s, is not listed", reached.SubjectID, reach.OperationID)
+			}
+		}
+	}
+	order := []string{"main", "acceptHandler", "readQueryFromClient", "processInputBuffer", "processCommand"}
+	for i, name := range order {
+		position, listed := at[byName[name]]
+		if !listed {
+			t.Fatalf("%s is not in kvd's flow scope", name)
+		}
+		if i == 0 && position != 0 {
+			t.Fatalf("main is member %d, not the first", position)
+		}
+		if i > 0 && position < at[byName[order[i-1]]] {
+			t.Fatalf("%s (member %d) comes before %s, which hands it over or calls it", name, position, order[i-1])
+		}
+	}
+	// Every listed member has every call its declaration makes.
+	calls := map[string]int{}
+	for _, place := range run.graph.Places {
+		if place.Symbol != nil {
+			calls[fmt.Sprintf("%s %s:%d", place.Symbol.Decl.Name, place.Path, place.LineNo)] = len(place.Symbol.Calls)
+		}
+	}
+	for _, member := range flow.Members {
+		if want, placed := calls[member.Name+" "+member.Anchor]; placed && len(member.Calls) != want {
+			t.Fatalf("%s lists %d of its %d calls", member.Name, len(member.Calls), want)
+		}
+	}
+	for _, body := range bodies {
+		for _, cut := range []string{"calls_omitted", "called_by", "callee_id"} {
+			if strings.Contains(string(body), cut) {
+				t.Fatalf("a request carries %q", cut)
+			}
+		}
+	}
+}
+
+// callHeads reads each call tuple's called name and line.
+func callHeads(calls []any) ([]string, []int) {
+	var names []string
+	var lines []int
+	for _, call := range calls {
+		head, _ := call.(string)
+		if tuple, isList := call.([]any); isList {
+			head, _ = tuple[0].(string)
+		}
+		head, _, _ = strings.Cut(head, " -> ")
+		at := strings.LastIndex(head, "@")
+		line, _ := strconv.Atoi(head[at+1:])
+		names, lines = append(names, head[:at]), append(lines, line)
+	}
+	return names, lines
+}
+
+type kvdOrientation struct {
+	fixture cFixture
+	graph   atlas.Graph
+	indexes []groupindex.Index
+	asked   *capturedOrientation
+}
+
+// runKvdOrientation runs the orientation over kvd and kvcli as an ordinary
+// run builds them, the overview choosing kvd's flow.
+func runKvdOrientation(t *testing.T) kvdOrientation {
+	t.Helper()
 	fixture := loadCFixture(t)
 	set := buildCSet(t, fixture, "c:kvd", "c:kvcli")
 	server, client := set["c:kvd"], set["c:kvcli"]
@@ -59,65 +213,21 @@ func TestCFixtureOrientationReadsMainsCallsInWrittenOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	asked := &capturedOrientation{}
+	asked := &capturedOrientation{flowTarget: server.Target.ID}
 	if _, _, err := orientation.Run(t.Context(), llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}}, asked,
 		orientation.Input{RepositoryName: "kvd", Facts: layer, Claims: noClaims, Groups: indexes, Graph: graph}); err != nil {
 		t.Fatal(err)
 	}
-	var request struct {
-		Groups []struct {
-			Members []struct {
-				Ref, Name, Anchor string
-			}
-		}
-		MemberEvidence []struct {
-			Ref      string
-			Evidence struct {
-				Calls []struct {
-					Name string
-					Line int
-				}
-				CallsOmitted int `json:"calls_omitted"`
-			}
-		} `json:"member_evidence"`
-	}
-	if err := json.Unmarshal(asked.request(t), &request); err != nil {
-		t.Fatal(err)
-	}
-	main := ""
-	mainLine, _ := fixture.at(t, "kvd.c", "int main(int argc, char **argv) {", "")
-	for _, group := range request.Groups {
-		for _, member := range group.Members {
-			if member.Name == "main" && member.Anchor == fmt.Sprintf("kvd.c:%d", mainLine) {
-				main = member.Ref
-			}
-		}
-	}
-	for _, row := range request.MemberEvidence {
-		if row.Ref != main {
-			continue
-		}
-		var names []string
-		lines := make([]int, 0, len(row.Evidence.Calls))
-		for _, call := range row.Evidence.Calls {
-			names = append(names, call.Name)
-			lines = append(lines, call.Line)
-		}
-		// The first six of main's seventeen calls, as written: its three
-		// settings, the --symbols branch, then the port.
-		if want := []string{"stdlib.h.getenv", "stdlib.h.getenv", "stdlib.h.getenv", "string.h.strcmp", "printSymbols", "stdlib.h.atoi"}; !slices.Equal(names, want) || !slices.IsSorted(lines) || row.Evidence.CallsOmitted != 11 {
-			t.Fatalf("main's calls read %v at %v (%d more), want %v first as written", names, lines, row.Evidence.CallsOmitted, want)
-		}
-		return
-	}
-	t.Fatalf("kvd's main (%q) is advertised without its calls: %d members have evidence", main, len(request.MemberEvidence))
+	return kvdOrientation{fixture: fixture, graph: graph, indexes: indexes, asked: asked}
 }
 
-// capturedOrientation keeps the orientation request and answers with the
-// legitimate empty orientation.
+// capturedOrientation keeps the orientation's requests. It answers the
+// overview by choosing flowTarget's Main flow, when one is set, and the flow
+// with the legitimate empty answer.
 type capturedOrientation struct {
-	mu   sync.Mutex
-	user []byte
+	flowTarget string
+	mu         sync.Mutex
+	users      [][]byte
 }
 
 func (*capturedOrientation) State() []byte { return []byte(`{"provider":"captured-orientation"}`) }
@@ -129,19 +239,23 @@ func (*capturedOrientation) Prepare(prompt llm.Prompt, _ llm.Limits) (llm.Prepar
 func (asked *capturedOrientation) Complete(_ context.Context, prepared llm.Prepared) (llm.Completion, error) {
 	asked.mu.Lock()
 	defer asked.mu.Unlock()
-	if asked.user != nil {
-		return llm.Completion{}, fmt.Errorf("the orientation was asked twice")
+	if len(asked.users) == 2 {
+		return llm.Completion{}, fmt.Errorf("the orientation was asked a third time")
 	}
-	asked.user = slices.Clone(prepared.Bytes())
-	return llm.Completion{Response: []byte(`{}`), FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, nil
+	asked.users = append(asked.users, slices.Clone(prepared.Bytes()))
+	response := []byte(`{}`)
+	if len(asked.users) == 1 && asked.flowTarget != "" {
+		response = []byte(`{"main_flow_target":"` + asked.flowTarget + `"}`)
+	}
+	return llm.Completion{Response: response, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, nil
 }
 
-func (asked *capturedOrientation) request(t *testing.T) []byte {
+func (asked *capturedOrientation) bodies(t *testing.T) [][]byte {
 	t.Helper()
 	asked.mu.Lock()
 	defer asked.mu.Unlock()
-	if asked.user == nil {
+	if len(asked.users) == 0 {
 		t.Fatal("the orientation was not asked")
 	}
-	return asked.user
+	return asked.users
 }

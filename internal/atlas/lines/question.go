@@ -79,7 +79,7 @@ func QuestionRows(graph atlas.Graph) []QuestionChunk {
 				facts["aliases"] = decl.Aliases
 			}
 			if symbol, ok := symbols[decl.ObjectID]; ok {
-				questionCallableEvidence(facts, symbol, places, symbols, EvidenceLimits{})
+				questionCallableEvidence(facts, symbol, places, symbols)
 			}
 			units = append(units, questionUnit{
 				anchor:  QuestionAnchor{SubjectID: decl.ObjectID, Path: file.Path, Name: decl.Name, Kind: decl.Kind, Line: decl.LineNo, Column: decl.Column},
