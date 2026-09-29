@@ -431,6 +431,23 @@ never entered into or read from a repository-wide unqualified map.
   row links. A column click shows a tile with its whole part; a canvas
   click never moves the camera; "Back to map" restores the page as it
   stood; a reading reached anew opens in its default state.
+- **Benchmark v4 fixes (2026-09-29, REPORT):** the column has no scroller
+  of its own inside it: a dispatcher's "Its handlers by input" folds under
+  its count, each handler a link like every name. A kind chosen in an
+  Inputs frame (Settings) opens the collection at that kind's section.
+  "Also runs on its own:" follows the Main flow: the program's scheduled,
+  then continuous inputs, each its registered callable with what registers
+  and what runs it, from saved registrations and kinds only (Redis
+  serverCron and IOThreadEntryPoint, freqtrade's four threads, litestream
+  none); a call through a function value resolved to one callable runs
+  it. A Main flow step's name links all of its function's code and
+  "registers it" the registration line; its twist is always shown. A
+  column name chosen in a part too dense to read at a fitting zoom shows
+  the part's closed card with the chosen tile in it. A part lists the
+  declarations reached from outside it first, counted. A caller, callee or
+  flow call carries a "</>" mark per call site linking that line, its
+  place on hover, no number. The canvas location row's frames go up a
+  level; every reading ends with the home's text-page links.
 
 ## Contracts and formats
 

@@ -1,5 +1,63 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Benchmark v4 fixes: the column's scroller, kinds, work on its own, step links, call sites, dense parts
+
+- **Why:** benchmark v4 on Redis (`results-v4.md`, onboarding R01, R2):
+  call's 95 "handlers by input" sat in a scroller of their own (a wheel
+  scrolled the page) with plain handler names; "Settings" in the Inputs
+  frame opened at the 96 requests; serverCron was not findable from a Main
+  flow of client commands; step links opened the registering call's line
+  (inside createClient, addReply, initServer); with line numbers gone a
+  caller's name opened processCommand 70 lines above the call;
+  listAddNodeHead jumped into Core data structures' 91 unreadable tiles.
+- **672e98ab and the follow-up:** the dispatched list is part of the
+  column's scroll, folded under its count past twelve, each handler (and
+  each "reached from" name) a link. A kind in a collection's closed frame
+  is a button reading the collection at its section (Background work: the
+  first of scheduled/continuous). "Also runs on its own:" after the Main
+  flow (`ownWork`, saved scheduled then continuous inputs with their
+  registration facts only): Redis "serverCron — main → initServer
+  registers it; aeProcessEvents → processTimeEvents runs it" and
+  IOThreadEntryPoint; freqtrade UvicornServer.run, Telegram._init,
+  ExchangeWS._start_forever, IFreqaiModel._start_scanning; repomap's JS
+  sizeWorkspace; litestream none. `runnersOf` counts a function-value call
+  resolved to one callable (C `te->timeProc`); a runner chain starts at the
+  last runner shown; identical registration chains read once (sizeWorkspace
+  had "canvas registers it" ×4); methods carry their type. Step names link
+  all of their function's code (`#L2386-L2415`), "registers it" the
+  registration line (`#L2456`), no step prints a line, twists always show;
+  a scheduled input's reading opens at its line. Reading ends carry
+  `sites`: a "</>" mark per call site on callers/callees, flow rows and
+  helper names (hover), queueMultiCommand's caller linking `redis.c#L2221`.
+  A part too dense to read where it fits (`tooDense`: tile text below
+  `staysOpen` of its size) is framed as a part with the chosen tile alone in
+  its card. A part lists declarations reached from outside first ("40
+  functions · 14 reached from outside"). A tile newly chosen in the part
+  being read reads from the top; readings end with the home's text links;
+  the canvas location row's frames go up a level.
+- **Tests:** `TestWorkARunsOnItsOwnReadsAfterTheMainFlow`,
+  `TestAKindChosenOpensItsCollectionAtItsSection`, the C Main flow test
+  now checks each step's place is its declaration (fails with the
+  registration line), the dispatch-site test checks the fold and links, the
+  InputTypes test checks each kind's pick; the no-line-number test keeps
+  its read sites out and asserts the call-site marks; the members-order
+  test reads the outside-first order.
+- **Renders (no model calls) of the four saved runs into `next-*.html` and
+  `latest-*.html`:** Redis 4.01 → 4.19 MB, litestream 3.81 → 3.91 MB,
+  freqtrade 8.35 → 8.76 MB, repomap 9.11 → 9.75 MB (the call sites).
+  Headless walks: no page error, no nested scroller in any reading, every
+  kind lands on its section, 16 declarations per report read. Screenshots
+  `look/v4fix-{before,after}-{call,settings,component,helper}.png`,
+  `look/v4fix-after-{scheduled-input,members,callsite}.png`,
+  `look/v4fix-final-{freqtrade,repomap}-own.png`.
+- **Verified:** `make test`, `make vet` (package parallelism 2), `make
+  ui-test` (134). `make ui-visual-test`: 62 passed, 2 failed, 6 skipped;
+  the two failures ("dense internal inventory…", "a tile points at and
+  chooses its own declaration") fail identically at 896eef2a (since
+  ada1f59e framed a chosen tile's whole part), not from this change.
+- **Open:** freqtrade renders differ between runs in their display-ref
+  numbering (t1235/t1236), at 896eef2a as well.
+
 ## 2026-09-29 — a part of files in subdirectories reads its members; same-line fields apart
 
 - **0193aa60:** a part reading's declaration names its file by path, as

@@ -530,6 +530,14 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
       step.querySelector(':scope>.anchor')?.remove();
       rmFlowStep(ctx,step,part,rmPage.link(step.dataset.stepKey));
     });
+    // A step no part holds is still its name, the link into its code, with
+    // no line printed after it.
+    steps.querySelectorAll('li.flow-step:not([data-step-part])').forEach(function(step){
+      var code=step.querySelector('.flow-what>code'),anchor=step.querySelector(':scope>a.anchor');
+      if(!code||!anchor)return;
+      code.replaceChildren(rmStepName(ctx,step,code.textContent));
+      anchor.remove();
+    });
     // A program no model flow passes reads forward from its one entry: its
     // calls stand open under it, in the order they are written (owner,
     // 2026-09-29: redis-cli's Main flow had read only "main in Command line
