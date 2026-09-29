@@ -209,8 +209,16 @@ func TestPythonTablesOfNamesAreTheOnesAFunctionReads(t *testing.T) {
 		}
 	}
 	want := map[string][][]string{
-		"OPTIONS":  {{"verbose", "-v", "--verbose", "help=print more"}, {"force", "-f", "--force", "help=overwrite files"}},
-		"REQUIRED": {{"port"}, {"dbfile"}},
+		"OPTIONS":    {{"verbose", "-v", "--verbose", "help=print more"}, {"force", "-f", "--force", "help=overwrite files"}},
+		"REQUIRED":   {{"port"}, {"dbfile"}},
+		"ARGS_SERVE": {{"verbose"}, {"force"}},
+		"ARGS_INIT":  {{"force"}, {"verbose"}},
+		"NO_CONFIG":  {{"init"}, {"help"}, {"prune"}},
+		"KNOWN":      {{"serve"}, {"init"}},
+		"HELP":       {{"serve", "run the server"}, {"init", "create the files"}},
+		"COMMANDS":   {{"serve"}, {"init"}, {"status"}},
+		"READ_ONLY":  {{"status"}, {"help"}},
+		"WRITES":     {{"init"}, {"serve"}},
 	}
 	if !reflect.DeepEqual(rows, want) {
 		t.Fatalf("tables of names: %q, want %q", rows, want)

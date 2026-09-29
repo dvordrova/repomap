@@ -32,7 +32,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 23
+	GraphVersion = 24
 	Version      = 19
 
 	GraphFilename    = "places.json"
@@ -288,12 +288,24 @@ type TableRow struct {
 }
 
 // TableRead is one read of a table: ReaderID is the reading declaration's
-// symbol place, LineNo and Column the read as written.
+// symbol place, LineNo and Column the read as written. Form is how the site
+// uses the rows (ProgramIndex's shared witness kinds): TableReadMembership
+// tests whether a value is one of them, TableReadKeys reads another table,
+// KeysOf (its symbol place), with each of them as the key; "" is any other
+// read.
 type TableRead struct {
 	ReaderID string `json:"reader_id"`
 	LineNo   int    `json:"line_no"`
 	Column   int    `json:"column,omitempty"`
+	Form     string `json:"form,omitempty"`
+	KeysOf   string `json:"keys_of,omitempty"`
 }
+
+// The forms of a table read (TableRead.Form).
+const (
+	TableReadMembership = "membership"
+	TableReadKeys       = "keys"
+)
 
 // Comparison is one value a declaration compares with several words, in
 // its declaration's file (ProgramIndex Comparison): Value as written,
@@ -1134,6 +1146,7 @@ func compactGraphPlaceIDs(graph Graph) (Graph, error) {
 			}
 			for read := range place.Symbol.ReadAt {
 				place.Symbol.ReadAt[read].ReaderID = mapID(place.Symbol.ReadAt[read].ReaderID)
+				place.Symbol.ReadAt[read].KeysOf = mapID(place.Symbol.ReadAt[read].KeysOf)
 			}
 			sort.Slice(place.Symbol.Uses, func(i, j int) bool { return SymbolUseLess(place.Symbol.Uses[i], place.Symbol.Uses[j]) })
 			place.Symbol.Uses = slices.Compact(place.Symbol.Uses)

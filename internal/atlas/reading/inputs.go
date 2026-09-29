@@ -22,7 +22,8 @@ import (
 // an accepted table makes each of its rows an entry whose handler is not
 // established, declared by the table, one catalogue. None, middleware and
 // an undecided answer make nothing; the classifier's rejected rows and a
-// tables.md line record them.
+// tables.md line record them. A table whose rows are keys of another table,
+// or which is only tested for membership, is not asked (tableReferences).
 
 // storedKey is the question a kept callable is asked under: its registrar
 // and the callable, so every call keeping the same callable in the same
@@ -120,8 +121,13 @@ func (r *reader) readInputs(ctx context.Context) error {
 	var tableIDs []string
 	tableSubjects := map[string]rowSubject{}
 	sourceLines := map[string][]string{}
+	references := r.tableReferences()
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil || len(place.Symbol.Rows) == 0 || r.testFile(place.Parent) {
+			continue
+		}
+		if reference := references[place.ID]; reference != "" {
+			fmt.Fprintf(&r.tables, "- atlas_inputs: table %s at %s:%d %s; not asked\n", place.Symbol.Decl.Name, place.Path, place.LineNo, reference)
 			continue
 		}
 		decl := place.Symbol.Decl
@@ -169,6 +175,9 @@ func (r *reader) readInputs(ctx context.Context) error {
 			}
 		}
 	}
+	// tableKinds already holds the comparisons' kinds (dispatch.go): each
+	// count is of its own question's answers.
+	tables, fieldsDecided := 0, 0
 	if len(tableRows) > 0 {
 		r.rowSubjects = tableSubjects
 		answers, err := r.runTable(ctx, lines.Inputs("table"), 2, tableRows)
@@ -178,10 +187,10 @@ func (r *reader) readInputs(ctx context.Context) error {
 		for i, id := range tableIDs {
 			if answer := answers[i].answer; answer != nil && answer["becomes"] != "" {
 				r.tableKinds[id] = answer["becomes"]
+				tables++
 			}
 		}
 	}
-	tables := len(r.tableKinds)
 	if len(fieldRows) > 0 {
 		r.rowSubjects = fieldSubjects
 		answers, err := r.runTable(ctx, lines.Inputs("field"), 3, fieldRows)
@@ -191,10 +200,11 @@ func (r *reader) readInputs(ctx context.Context) error {
 		for i, field := range fields {
 			if answer := answers[i].answer; answer != nil && answer["becomes"] != "" {
 				r.tableKinds[fieldKey(field)] = answer["becomes"]
+				fieldsDecided++
 			}
 		}
 	}
-	fmt.Fprintf(&r.tables, "atlas_inputs: %d of %d kept callables, %d of %d tables and %d of %d tagged fields decided\n\n", len(r.storedKinds), len(storedRows), tables, len(tableRows), len(r.tableKinds)-tables, len(fieldRows))
+	fmt.Fprintf(&r.tables, "atlas_inputs: %d of %d kept callables, %d of %d tables and %d of %d tagged fields decided\n\n", len(r.storedKinds), len(storedRows), tables, len(tableRows), fieldsDecided, len(fieldRows))
 	r.reportStage(lines.StageInputs)
 	return nil
 }
@@ -257,6 +267,108 @@ func (r *reader) bindTableRows() {
 					Values: slices.Clone(words), Words: slices.Clone(words), Direction: atlas.DirectionIn, GivenKind: kind}}}
 		}
 	}
+}
+
+// tableReferences are the tables whose rows are no inputs of their own, each
+// with why, by place. A table every read of which outside tests looks
+// another table up with each of its one-word rows (a keys read) holds that
+// table's rows: ARGS_TRADE's option keys, which _build_args looks up in
+// AVAILABLE_CLI_OPTIONS. The other table must be asked, or hold in turn the
+// rows of one that is; a cycle of such tables is asked. A table every read
+// of which outside tests only tests a value against its rows holds the
+// words of one condition, as a list written in the condition is one case and
+// no comparison: NO_CONF_REQURIED, which _parse_args tests the parsed
+// subcommand against. Either is used by its readers, not asked.
+func (r *reader) tableReferences() map[string]string {
+	keysOf := map[string][]string{}
+	usedBy := map[string][]string{}
+	result := map[string]string{}
+	for _, place := range r.opts.Graph.Places {
+		if place.Symbol == nil || len(place.Symbol.Rows) == 0 || r.testFile(place.Parent) {
+			continue
+		}
+		var keys, readers []string
+		membership, plain := false, false
+		for _, read := range place.Symbol.ReadAt {
+			reader := r.places[read.ReaderID]
+			if reader.Symbol == nil || r.testFile(reader.Parent) {
+				continue
+			}
+			if name := reader.Symbol.Decl.Name; !slices.Contains(readers, name) {
+				readers = append(readers, name)
+			}
+			switch read.Form {
+			case atlas.TableReadKeys:
+				if !slices.Contains(keys, read.KeysOf) {
+					keys = append(keys, read.KeysOf)
+				}
+			case atlas.TableReadMembership:
+				membership = true
+			default:
+				plain = true
+			}
+		}
+		switch {
+		case plain || len(readers) == 0:
+		case membership && len(keys) == 0:
+			result[place.ID] = "is only tested for a value's membership, used by " + strings.Join(readers, ", ")
+		case !membership && oneWordRows(place.Symbol.Rows):
+			keysOf[place.ID], usedBy[place.ID] = keys, readers
+		}
+	}
+	// A table holds another's rows when that one is asked, or holds in turn
+	// the rows of one that is.
+	const (
+		visiting = iota + 1
+		holds
+		asked
+	)
+	state := map[string]int{}
+	var resolve func(id string) bool
+	resolve = func(id string) bool {
+		keys, ok := keysOf[id]
+		if !ok {
+			return false
+		}
+		switch state[id] {
+		case visiting, asked:
+			return false
+		case holds:
+			return true
+		}
+		state[id] = visiting
+		for _, of := range keys {
+			table := r.places[of]
+			if r.testFile(table.Parent) || result[of] != "" || keysOf[of] != nil && !resolve(of) {
+				state[id] = asked
+				return false
+			}
+		}
+		state[id] = holds
+		return true
+	}
+	for _, place := range r.opts.Graph.Places {
+		if keysOf[place.ID] == nil || !resolve(place.ID) {
+			continue
+		}
+		var names []string
+		for _, of := range keysOf[place.ID] {
+			names = append(names, r.places[of].Symbol.Decl.Name)
+		}
+		result[place.ID] = "holds keys of " + strings.Join(names, ", ") + ", used by " + strings.Join(usedBy[place.ID], ", ")
+	}
+	return result
+}
+
+// oneWordRows says every row of a table is one word with no field: a list,
+// tuple or set of strings, whose elements a loop reads whole.
+func oneWordRows(rows []atlas.TableRow) bool {
+	for _, row := range rows {
+		if len(row.Literals) != 1 || row.Literals[0].Field != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // tableReaders is how a table is read, for its question: each declaration

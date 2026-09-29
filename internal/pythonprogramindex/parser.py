@@ -191,6 +191,70 @@ def origins_invalidated(binding):
     return binding.get("origin_invalidated", binding.get("value_invalidated", False))
 
 
+BLOCKS = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.With, ast.AsyncWith, ast.Match) + \
+    ((ast.TryStar,) if hasattr(ast, "TryStar") else ())
+DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+
+
+def pass_jumps(node):
+    # The statements in node that end a loop's pass early: return and raise
+    # anywhere, break and continue outside an inner loop's body. A nested
+    # definition runs apart.
+    found = set()
+    pending = [(node, False)]
+    while pending:
+        value, inner = pending.pop()
+        if isinstance(value, DEFINITIONS):
+            continue
+        if isinstance(value, (ast.Return, ast.Raise)) or \
+                isinstance(value, (ast.Break, ast.Continue)) and not inner:
+            found.add(type(value))
+        loop = isinstance(value, (ast.For, ast.AsyncFor, ast.While))
+        for child in ast.iter_child_nodes(value):
+            pending.append((child, inner or (loop and any(child is item for item in value.body))))
+    return found
+
+
+def unconditional_subscripts(node):
+    # The subscripts an expression or a plain statement evaluates whenever
+    # it runs: not in a conditional expression's branches, after the first
+    # operand of and/or, in a lambda or in a comprehension.
+    found = set()
+    pending = [node]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, ast.Subscript):
+            found.add(id(value))
+        if isinstance(value, ast.IfExp):
+            pending.append(value.test)
+        elif isinstance(value, ast.BoolOp):
+            pending.append(value.values[0])
+        elif not isinstance(value, DEFINITIONS + COMPREHENSIONS):
+            pending.extend(ast.iter_child_nodes(value))
+    return found
+
+
+def pass_subscripts(body):
+    # The subscripts a for statement's body evaluates on every pass, for a
+    # subscript keyed by its elements (record_table_key): none when the body
+    # can end the loop early (break, return, raise); else those in its plain
+    # statements before one that can skip the rest of a pass (continue),
+    # never in a block's own statements.
+    jumps = set()
+    for statement in body:
+        jumps |= pass_jumps(statement)
+    if jumps & {ast.Break, ast.Return, ast.Raise}:
+        return set()
+    reached = set()
+    for statement in body:
+        if ast.Continue in pass_jumps(statement):
+            break
+        if not isinstance(statement, BLOCKS + DEFINITIONS):
+            reached |= unconditional_subscripts(statement)
+    return reached
+
+
 class Scope:
     def __init__(self, ref, qname, kind, parent=None, class_ref="", class_qname=""):
         self.ref = ref
@@ -290,6 +354,17 @@ class Analyzer:
         # module-level assignment writes the name.
         self.compared_words = {}
         self.table_rows = {}
+        # Keys a module-level variable is read with (attach_table_keys):
+        # each read of a variable whose elements a subscript uses as keys,
+        # with the subscripted variable and the subscript, the parameters
+        # of a callable it uses so, by callable, and each read of a
+        # variable handed to a repository callable as an argument.
+        self.key_reads = []
+        self.parameter_keys = {}
+        self.handed_reads = []
+        # Each read testing a value's membership in a variable, with its
+        # scope, the value and its case (attach_memberships).
+        self.membership_reads = []
 
     def add_object(self, value, qname=""):
         ref = value["source_ref"]
@@ -512,6 +587,8 @@ class Analyzer:
             visitor = RelationVisitor(self, module, self.module_scopes[module["name"]])
             visitor.visit(module["tree"])
         self.attach_comparisons()
+        self.attach_memberships()
+        self.attach_table_keys()
         for ref, rows in self.table_rows.items():
             value = self.objects_by_ref.get(ref)
             if rows and value is not None and value["kind"] == "variable":
@@ -640,6 +717,53 @@ class Analyzer:
             if comparisons:
                 comparisons.sort(key=lambda comparison: location_key(comparison["location"]))
                 value["comparisons"] = comparisons
+
+    def attach_memberships(self):
+        # A membership test stays one only when its scope compares the same
+        # value in no other case: `if command in READ_ONLY: ... elif command
+        # in WRITES:` compares command case by case, as an if/elif chain of
+        # words does, so neither read is a membership test (PROGRAM_INDEX).
+        if not self.membership_reads:
+            return
+        cases = {}
+        for ref, words in self.compared_words.items():
+            for word in words:
+                cases.setdefault((ref, word["key"]), set()).add(word["case"])
+        for _, scope, key, case in self.membership_reads:
+            cases.setdefault((scope, key), set()).add(case)
+        relations = {relation["source_ref"]: relation for relation in self.relations}
+        for read, scope, key, _ in self.membership_reads:
+            if len(cases[(scope, key)]) > 1:
+                for witness in relations[read]["witnesses"]:
+                    if witness["kind"] == "membership":
+                        witness["kind"] = "variable_read"
+
+    def attach_table_keys(self):
+        # A read of a module-level variable whose elements a subscript of
+        # another module-level variable uses as keys gains a `keys` witness
+        # naming the subscripted variable at the subscript (PROGRAM_INDEX):
+        # the variable iterated where it is read, or handed as an argument
+        # to a repository callable that iterates that parameter. A keyword
+        # argument meets its parameter by name, a positional one by its
+        # position as a call site counts (the receiver excluded).
+        keyed = list(self.key_reads)
+        for callee, position, keyword, read in self.handed_reads:
+            for parameter, name, table, location in self.parameter_keys.get(callee, []):
+                if (keyword and keyword == name) or (not keyword and position == parameter):
+                    keyed.append((read, table, location))
+        if not keyed:
+            return
+        relations = {relation["source_ref"]: relation for relation in self.relations}
+        for read, table, location in keyed:
+            relation = relations[read]
+            # A table looked up with its own rows (`HELP[name] for name in
+            # HELP`) holds no keys of another.
+            if table in relation["to_refs"]:
+                continue
+            witness = {"kind": "keys", "object_ref": table, "detail": self.objects_by_ref[table]["name"], "location": location}
+            if witness not in relation["witnesses"]:
+                relation["witnesses"].append(witness)
+                relation["witnesses_observed"] += 1
 
     def object_qname(self, ref):
         return self.qnames_by_ref.get(ref, "")
@@ -1248,6 +1372,11 @@ class RelationVisitor(ast.NodeVisitor):
         # but it must not let a later assignment explain an earlier call.
         self.pattern_bindings = {id(scope): {}}
         self.read_shadows = set()
+        # A comprehension target's element (iterated), while it shadows,
+        # and, by scope, how many try statements with handlers the visit is
+        # in the body of (visit_Try).
+        self.comprehension_elements = {}
+        self.handled = {}
 
     def object(self, ref):
         return self.analyzer.objects_by_ref.get(ref)
@@ -2549,8 +2678,77 @@ class RelationVisitor(ast.NodeVisitor):
                 candidate.get("container_ref") == self.scope.ref:
             return
         if candidate and candidate["kind"] == "variable":
-            self.emit_resolved("reads", self.scope.ref, resolved, node,
-                               "variable_read", safe_expression_name(node))
+            # The right side of `in`/`not in` is read as a set a value is
+            # tested against (visit_Compare): a `membership` witness.
+            membership = getattr(node, "repomap_membership", None)
+            read = self.emit_resolved("reads", self.scope.ref, resolved, node,
+                                      "membership" if membership else "variable_read", safe_expression_name(node))
+            if membership:
+                self.analyzer.membership_reads.append((read, self.scope.ref) + membership)
+            return read
+        return ""
+
+    def module_variable(self, ref):
+        # A variable a module body declares.
+        value = self.object(ref) if ref else None
+        return bool(value) and value["kind"] == "variable" and \
+            (self.object(value.get("container_ref", "")) or {}).get("kind") == "module"
+
+    def iterated(self, node):
+        # Visits what a loop iterates and says what its elements are, for a
+        # subscript keyed by them (record_table_key): a parameter of this
+        # callable, by position and name, while the name is still bound to
+        # it, or a module-level variable, by the relation reading it here.
+        if not isinstance(node, ast.Name) or not isinstance(node.ctx, ast.Load):
+            self.visit(node)
+            return None
+        resolved = self.read_name(node.id)
+        read = self.record_read(node, resolved)
+        origin = (self.current_pattern_bindings().get(node.id) or {}).get("source_origin") or {}
+        if origin.get("kind") == "parameter" and node.id not in self.read_shadows:
+            return {"parameter": origin["position"], "name": origin["text"]}
+        if read and self.module_variable(resolved[1]):
+            return {"read": read}
+        return None
+
+    def element_of(self, name):
+        # What a name holds as a loop's element here, if it still does: a
+        # comprehension's target, or a for statement's until it is bound
+        # again (the binding is replaced).
+        if name in self.read_shadows:
+            return self.comprehension_elements.get(name)
+        return (self.current_pattern_bindings().get(name) or {}).get("element_of")
+
+    def visit_Subscript(self, node):
+        if isinstance(node.ctx, ast.Load) and isinstance(node.slice, ast.Name):
+            self.record_table_key(node)
+        self.generic_visit(node)
+
+    def record_table_key(self, node):
+        # `OPTIONS[val]` with val an element of a loop over a parameter or a
+        # module-level variable, OPTIONS a module-level variable: those
+        # elements are keys OPTIONS is read with (attach_table_keys).
+        element = self.element_of(node.slice.id)
+        if element is None or id(node) not in element["reached"]:
+            return
+        subscripted = node.value
+        resolved = ("unknown", "")
+        if isinstance(subscripted, ast.Name):
+            resolved = self.read_name(subscripted.id)
+        elif isinstance(subscripted, ast.Attribute) and isinstance(subscripted.value, ast.Name):
+            # `options.OPTIONS[val]`: a module's variable, as visit_Attribute
+            # resolves one.
+            base = self.read_name(subscripted.value.id)
+            if (self.object(base[1]) or {}).get("kind") in ("module", "package") and self.resolve(subscripted.value) == base:
+                resolved = self.resolve(subscripted)
+        if not self.module_variable(resolved[1]):
+            return
+        location = source_location(self.module["path"], node)
+        if "read" in element:
+            self.analyzer.key_reads.append((element["read"], resolved[1], location))
+        else:
+            self.analyzer.parameter_keys.setdefault(self.scope.ref, []).append(
+                (element["parameter"], element["name"], resolved[1], location))
 
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
@@ -2576,11 +2774,24 @@ class RelationVisitor(ast.NodeVisitor):
         self.visit(node.value)
 
     def visit_ListComp(self, node):
-        previous = self.read_shadows
-        self.read_shadows = set(previous)
+        previous, previous_elements = self.read_shadows, self.comprehension_elements
+        self.read_shadows, self.comprehension_elements = set(previous), dict(previous_elements)
+        # One generator with no condition evaluates its result for every
+        # element: the subscripts that result always evaluates are keyed by
+        # the element (record_table_key).
+        results = [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+        single = len(node.generators) == 1 and not node.generators[0].ifs and not self.handled.get(id(self.scope))
         for generator in node.generators:
-            self.visit(generator.iter)
-            self.read_shadows.update(part.id for part in ast.walk(generator.target) if isinstance(part, ast.Name))
+            element = self.iterated(generator.iter)
+            names = [part.id for part in ast.walk(generator.target) if isinstance(part, ast.Name)]
+            self.read_shadows.update(names)
+            for name in names:
+                self.comprehension_elements[name] = None
+            if element is not None and single and isinstance(generator.target, ast.Name):
+                reached = set()
+                for result in results:
+                    reached |= unconditional_subscripts(result)
+                self.comprehension_elements[generator.target.id] = {**element, "reached": reached}
             for condition in generator.ifs:
                 self.visit(condition)
         if isinstance(node, ast.DictComp):
@@ -2588,7 +2799,7 @@ class RelationVisitor(ast.NodeVisitor):
             self.visit(node.value)
         else:
             self.visit(node.elt)
-        self.read_shadows = previous
+        self.read_shadows, self.comprehension_elements = previous, previous_elements
 
     visit_SetComp = visit_ListComp
     visit_DictComp = visit_ListComp
@@ -2676,6 +2887,17 @@ class RelationVisitor(ast.NodeVisitor):
 
         arguments = [(argument, position, "") for position, argument in enumerate(node.args, 1)]
         arguments.extend((value.value, 0, value.arg or "") for value in node.keywords)
+        # A module-level variable handed to a repository callable: its read
+        # meets the callable's parameter in attach_table_keys, by keyword or
+        # by position before any starred argument. A method called through
+        # its class is handed its receiver as its first positional argument,
+        # which a parameter's position does not count: only its keyword
+        # arguments meet parameters.
+        callee = self.object(resolved[1]) if resolved[0] == "local" and resolved[1] else None
+        positional = next((position for position, argument in enumerate(node.args, 1) if isinstance(argument, ast.Starred)), len(node.args) + 1)
+        if callee is not None and callee["kind"] == "method" and isinstance(node.func, ast.Attribute) and \
+                (self.object(self.resolve(node.func.value)[1]) or {}).get("kind") == "type":
+            positional = 1
         for argument, position, keyword in arguments:
             authority, ref = self.partial_callable(argument) or self.resolve(argument)
             value = self.object(ref) if ref else None
@@ -2697,7 +2919,15 @@ class RelationVisitor(ast.NodeVisitor):
             # call traversal and inflate witness accounting.
             if isinstance(argument, ast.Call):
                 argument.repomap_result_consumer = name
-            self.visit(argument)
+            if callee is not None and callee["kind"] in ("function", "method") and \
+                    isinstance(argument, ast.Name) and isinstance(argument.ctx, ast.Load) and \
+                    (keyword or position < positional):
+                argument_resolved = self.read_name(argument.id)
+                read = self.record_read(argument, argument_resolved)
+                if read and self.module_variable(argument_resolved[1]):
+                    self.analyzer.handed_reads.append((resolved[1], position, keyword, read))
+            else:
+                self.visit(argument)
         self.visit(node.func)
 
     def visit_Assign(self, node):
@@ -2843,6 +3073,10 @@ class RelationVisitor(ast.NodeVisitor):
             elif isinstance(operator, ast.In) and isinstance(right, (ast.Tuple, ast.List, ast.Set)) and right.elts and \
                     all(text(value) for value in right.elts) and not isinstance(left, ast.Constant):
                 self.compared_word(left, right.elts, "equals", node)
+            # `command in NO_CONFIG`: the variable is read as the words a
+            # value is tested against (record_read).
+            if isinstance(operator, (ast.In, ast.NotIn)) and isinstance(right, (ast.Name, ast.Attribute)):
+                right.repomap_membership = (ast.dump(left), getattr(node, "repomap_case", (id(node), None))[0])
         self.generic_visit(node)
 
     def visit_Match(self, node):
@@ -2907,7 +3141,7 @@ class RelationVisitor(ast.NodeVisitor):
         )
 
     def visit_For(self, node):
-        self.visit(node.iter)
+        element = self.iterated(node.iter)
         self._target_reads(node.target)
         type_ref = self.iterated_class(node.iter) if isinstance(node, ast.For) else ""
         self.bind_pattern_target(node.target, {"observed": 0})
@@ -2916,6 +3150,8 @@ class RelationVisitor(ast.NodeVisitor):
                 "origin_refs": [type_ref], "origin_resolution": "alternatives", "origins_observed": 1,
                 "annotation_origin": True, "iteration_origin": True,
             })
+        if element is not None and isinstance(node.target, ast.Name) and not self.handled.get(id(self.scope)):
+            self.current_pattern_bindings()[node.target.id]["element_of"] = {**element, "reached": pass_subscripts(node.body)}
         for statement in node.body:
             self.visit(statement)
         # A loop can execute zero times; its item type is not established for
@@ -2927,6 +3163,21 @@ class RelationVisitor(ast.NodeVisitor):
             self.visit(statement)
 
     visit_AsyncFor = visit_For
+
+    def visit_Try(self, node):
+        # A loop in the body of a try statement with handlers need not look
+        # every element up: a handler may catch the failed lookup.
+        key = id(self.scope)
+        if node.handlers:
+            self.handled[key] = self.handled.get(key, 0) + 1
+        for statement in node.body:
+            self.visit(statement)
+        if node.handlers:
+            self.handled[key] -= 1
+        for part in list(node.handlers) + list(node.orelse) + list(node.finalbody):
+            self.visit(part)
+
+    visit_TryStar = visit_Try
 
     def visit_Delete(self, node):
         for target in node.targets:

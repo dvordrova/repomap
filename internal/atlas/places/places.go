@@ -1274,7 +1274,9 @@ func atlasComparisons(values []programindex.Comparison) []atlas.Comparison {
 }
 
 // collectTableReads keeps, for each table (an object with rows), every
-// located read of it by a lifted declaration, one per site.
+// located read of it by a lifted declaration, one per site and form: a
+// membership test, the keys of each table it is read as (the shared
+// witness kinds), or a plain read.
 func (b *builder) collectTableReads(target TargetInput) {
 	for _, relation := range target.Index.Relations {
 		if relation.Kind != programindex.RelationReads || relation.Location == nil {
@@ -1284,6 +1286,25 @@ func (b *builder) collectTableReads(target TargetInput) {
 		if reader == "" {
 			continue
 		}
+		site := atlas.TableRead{ReaderID: reader, LineNo: relation.Location.Line, Column: relation.Location.Column}
+		var reads []atlas.TableRead
+		for _, witness := range relation.Witnesses {
+			switch witness.Kind {
+			case programindex.WitnessMembership:
+				read := site
+				read.Form = atlas.TableReadMembership
+				reads = append(reads, read)
+			case programindex.WitnessKeys:
+				if of := b.symbolOf[witness.ObjectID]; of != "" && len(b.byID[witness.ObjectID].Rows) > 0 {
+					read := site
+					read.Form, read.KeysOf = atlas.TableReadKeys, of
+					reads = append(reads, read)
+				}
+			}
+		}
+		if len(reads) == 0 {
+			reads = []atlas.TableRead{site}
+		}
 		for _, to := range relation.ToIDs {
 			table := b.symbolOf[to]
 			if table == "" || len(b.byID[to].Rows) == 0 {
@@ -1292,7 +1313,9 @@ func (b *builder) collectTableReads(target TargetInput) {
 			if b.tableReadRows[table] == nil {
 				b.tableReadRows[table] = make(map[atlas.TableRead]bool)
 			}
-			b.tableReadRows[table][atlas.TableRead{ReaderID: reader, LineNo: relation.Location.Line, Column: relation.Location.Column}] = true
+			for _, read := range reads {
+				b.tableReadRows[table][read] = true
+			}
 		}
 	}
 }
@@ -1315,7 +1338,10 @@ func (b *builder) tableReads(id string) []atlas.TableRead {
 		if a.LineNo != c.LineNo {
 			return a.LineNo < c.LineNo
 		}
-		return a.Column < c.Column
+		if a.Column != c.Column {
+			return a.Column < c.Column
+		}
+		return a.Form+"\x00"+a.KeysOf < c.Form+"\x00"+c.KeysOf
 	})
 	return result
 }

@@ -799,6 +799,20 @@ type Witness struct {
 	ObjectRef        string    `json:"-"`
 }
 
+// Witness kinds every adapter shares on a reads relation of a variable: how
+// the site uses the variable's elements (a table's rows). Membership: the
+// site tests whether a value is one of them (`command in NO_CONFIG`). Keys:
+// each element is a key the program reads another module-level variable
+// with, which ObjectID names and Location shows subscripted: the variable
+// iterated where it is read (`OPTIONS[name] for name in ARGS`), or handed to
+// a repository callable that iterates that parameter (`build_args(
+// optionlist=ARGS)` where build_args does `for val in optionlist:
+// OPTIONS[val]`). Any other read keeps its adapter's kind.
+const (
+	WitnessMembership = "membership"
+	WitnessKeys       = "keys"
+)
+
 // PatternForm is the closed syntactic shape retained for adapter-neutral
 // pattern classification. It describes source syntax only, never framework or
 // protocol semantics.
@@ -1739,6 +1753,9 @@ func (index Index) Validate() error {
 				return fmt.Errorf("program index: relation %q witness names an unknown object", relation.ID)
 			}
 		}
+		if !validTableReadForm(index.Objects, relation) {
+			return fmt.Errorf("program index: relation %q has a table read form off a read of variables", relation.ID)
+		}
 		for _, pattern := range relation.Patterns {
 			for _, witness := range pattern.Context {
 				if witness.ObjectID != "" {
@@ -2122,6 +2139,36 @@ func resolveObjectRef(bindings []objectBinding, ref string) (string, error) {
 	return bindings[position].ID, nil
 }
 
+// validTableReadForm checks the shared table-read witnesses: a membership or
+// keys form only on a read of variables, one of the two per site, and a keys
+// witness naming a variable other than the one read.
+func validTableReadForm(objects []Object, relation Relation) bool {
+	membership, keys := false, false
+	for _, witness := range relation.Witnesses {
+		switch witness.Kind {
+		case WitnessMembership:
+			membership = true
+		case WitnessKeys:
+			keys = true
+			if object, _ := objectWithID(objects, witness.ObjectID); object.Kind != ObjectVariable || slices.Contains(relation.ToIDs, witness.ObjectID) {
+				return false
+			}
+		}
+	}
+	if !membership && !keys {
+		return true
+	}
+	if membership && keys || relation.Kind != RelationReads {
+		return false
+	}
+	for _, id := range relation.ToIDs {
+		if object, _ := objectWithID(objects, id); object.Kind != ObjectVariable {
+			return false
+		}
+	}
+	return true
+}
+
 func hasObjectID(objects []Object, id string) bool {
 	position := sort.Search(len(objects), func(position int) bool { return !compactIDLess(objects[position].ID, id, "n") })
 	return position < len(objects) && objects[position].ID == id
@@ -2314,7 +2361,8 @@ func validateRelationShape(value Relation) error {
 func validateWitness(value Witness) error {
 	if !validText(value.Kind) || !validOptionalText(value.Detail) ||
 		!validOptionalText(value.SourceExpression) || !validOptionalLocation(value.Location) ||
-		value.ObjectRef != "" || value.ObjectID != "" && !validCompactID(value.ObjectID, "n") {
+		value.ObjectRef != "" || value.ObjectID != "" && !validCompactID(value.ObjectID, "n") ||
+		value.Kind == WitnessKeys && value.ObjectID == "" {
 		return fmt.Errorf("program index: invalid witness")
 	}
 	return nil
