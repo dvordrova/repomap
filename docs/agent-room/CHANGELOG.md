@@ -69,6 +69,85 @@
   nearest declaration above it; the key map `key->command` is no
   sub-argument of `on-key`.
 
+## 2026-09-29 — F3: what outgoing calls reach is named once per destination, not per call
+
+- **Why:** after 84e48166 fed `reached_from` into destination naming,
+  litestream's control socket had 10 names and 8 boxes (3 names that
+  morning), and populate.go's windows w40 (11 rows) and w43 (7) came back
+  "row was not answered", seven boxes titled `sql.DB.Exec`, `sql.Open`, ….
+  Owner rule: a decision is asked once, code derives the rest. Design
+  reviewed by a skeptic before the code; its seven changes are in. Code
+  04b0f429.
+- **Cause (a), many names:** `destination` was a cell of every outgoing row,
+  asked in one window per owner declaration. litestream's seven
+  subcommands each dial `net.DialTimeout("unix", *socketPath, …)` (walk end
+  `{--socket}`) and post to `http://localhost/<command>`; `net` and
+  `net/http` are `none` in atlas_systems, so 14 windows each drew a free
+  `other:` name. `reached_from` only shifted the draws (the DialTimeout rows
+  had none: their closure has no exact caller).
+- **Cause (b), unanswered windows:** the response held exactly one row, the
+  one whose key the response-format example shows (`b16`, `b22`, `b147`).
+  Not size: w40's user message was 23.5 KB (19.1 KB that morning, when the
+  same 11 rows were answered), `reached_from` one 57-byte entry a row.
+  Replayed 3 times through the provider, w40 answered 1 of 11 rows in 3/3
+  draws, w43 1 of 7 in 3/3, w59 1 of 2 in 2/3; with `reached_from` stripped,
+  w43 answered 7/7 in 3/3 but w40 still 1/11 and w59 1/2: near-identical
+  rows under a one-row example with a real key, not one field. Open for the
+  table package: a placeholder key (or one skeleton per row) in the
+  example, checked first on the saved w40.
+- **Change (READING § Outside systems, One destination, one name):** a row
+  whose package atlas_systems named takes that name in code (89 of 89
+  answered rows with a catalogue package had chosen it). A fact naming no
+  external takes the package of the talking call at its exact site (the SQL
+  text on `db.Exec` claimed that call), else of the talking call handed
+  what its site's call returns (`db.Exec(fmt.Sprintf(…))`), and that call's
+  walk. Rows of one targets set whose reaching call's walks end alike are
+  one destination: a URL by scheme and host as written, a setting by the
+  setting, any other value by the site where the walk stopped; a row with
+  no reaching call is alone. One system among a destination's packages
+  names all its rows; none asks once (`repomap.atlas.destinations.v1`, table
+  `atlas_boundaries`, round 3); several ask each package-less row alone.
+  The item: ends with the code where they end, calls as written, callers
+  with signature, the calls beside the rows and the callables handed over
+  (litestream's `Run$1` by `InfoCommand.Run` to
+  `net/http.Transport.DialContext`), `reached_from` by name. The outbound
+  boundaries row keeps `line` and `address` only, no `reached_from`; without
+  captions a row with no address to choose is not sent.
+- **Checks:** `TestADestinationIsNamedOnceForAllItsCalls` (package names,
+  one server from two declarations asked once with both calls, callers and
+  `reached_from`, a query fact on Exec and a formatted one handed to Exec
+  named by `database/sql`, a URL whose packages name two systems asking its
+  plain request alone, facts without a reaching call alone),
+  `TestDestinationKeyIsWhereTheWalksEnd`,
+  `TestDestinationWindowSharesItsCatalogueAndDecodesClosedAndFreeNames`,
+  `TestDestinationNameRefusesAnUnlistedOrEmptyNameAlone`; kvd's connect
+  asked once as `netConnect in net.c [main repl]`; Echo's driver open named
+  by its package, its statement asked. `make test` and `make vet` (package
+  parallelism 2) pass on HEAD plus these files.
+- **Acceptance (litestream, the ordinary binary, online):** run
+  `20260929-175350` (exit 0, 56 s): 15 destinations asked of 146 outgoing
+  calls; with formatted SQL handed to its Exec, `20260929-175908` (exit 0,
+  35 s): 4 (`{--socket}`, `http://localhost`, ssh's `c.Host`, the heartbeat
+  URL); atlas_boundaries 97 live calls before, 1 now; a rerun is fully
+  cached (`175647`). The report names the 14 CLI calls "Litestream control
+  socket", populate.go's 18 SQLite; the map (headless Chromium, loopback
+  server) shows one control-socket box, no page errors.
+- **Probe** (`<scratchpad>/f3probe`: saved request bodies replayed byte for
+  byte through `deepseek.Client`, 3 draws; text-model answers carry no
+  probabilities, so stability is agreement across draws):
+
+  | Destination | Before (per-row windows of `165546`) | After (3 draws) |
+  | --- | --- | --- |
+  | control socket, 14 calls | 14 questions; 7, 7 and 9 names per draw ("Unix domain socket", "Litestream socket server", "Litestream sync socket", "litestream daemon", …) | 2 questions in one window; both "Litestream control socket daemon", "…daemon", "Litestream control socket": one name per draw |
+  | populate.go, 18 calls | w40 1 of 11 answered, 3/3 draws; w43 1 of 7, 3/3 | no question: SQLite from `database/sql` |
+  | ssh `c.Host` | "SFTP" | "SFTP", 3/3 (catalogue entry) |
+  | heartbeat URL | "heartbeat endpoint" | "heartbeat endpoint", 3/3 |
+
+- **Open:** the socket and the HTTP server it carries stay two destinations
+  that share a name only by the model's answer (the client's
+  `Transport.DialContext` is not followed); the name's spelling varies
+  between draws ("… control socket" / "… control socket daemon").
+
 ## 2026-09-29 — F4: a table of another table's keys, or one only tested for membership, is no inputs of its own
 
 - **Why:** the freqtrade acceptance (scratchpad `accept/run-freqtrade.log`,

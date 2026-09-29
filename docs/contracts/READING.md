@@ -898,8 +898,12 @@ package, never of a list in code (`repomap.atlas.systems.v1`, stage
 `atlas_systems`, the text model). Code groups the boundaries table's outgoing
 rows by the outside package their own call goes through, as the facts record
 it at the site (a Go import path, a Python or JavaScript module, a C header, a
-Clojure namespace); only the call the boundary's external names counts, so a
-row whose site holds no such call has no package. One row per package for the
+Clojure namespace). The row's own call is the call its external names or, for
+a fact naming none, the call at its exact site whose symbol `talks` (an
+outgoing kind; the fact claimed that call's boundary, as an SQL text on
+`db.Exec`), else the talking call handed what the call at its site returns
+(`db.Exec(fmt.Sprintf(…))` for the text Sprintf formats); a row with none has
+no package and no reaching call. One row per package for the
 whole run: `package`, `dependency` (each module and version its targets'
 dependency catalogues record) and `calls`, each package symbol the program
 calls with one call as written (the first outside tests given a literal, else
@@ -909,18 +913,56 @@ outside system (criteria in `prompts/systems.md`). Each package is remembered
 on its own (`Memoize`); the cell is a decision, kept without captions. An
 undecided package has no name.
 
-An outgoing row's catalogue is built from these names for the row's own
-targets: one `d*` entry per name (case-insensitively), in name order, listing
-the `packages` reaching it; a package answered `none` gives none. The row
-chooses the entry of the system its call reaches, the one listing its
-`package` when there is one, or writes `other: ` and a name when its call
-reaches a system no entry is; a package, protocol, host, URL or key is no
-system's name. The catalogue offers names only; no entry establishes a call's
-runtime role. A tagged free value keeps its name whatever the whitespace
-around the colon (`other:Name`, `other : Name`); the tag and a nonempty name
-remain required, and this normalization chooses no destination. The report
-groups records by the stored name without its parenthetical qualifier,
-case-insensitively, and folds no text onto another name.
+**One destination, one name** (F3, 2026-09-29; skeptic-reviewed). What an
+outgoing call reaches is decided once per destination, never per call
+(`reading/destination_groups.go`). A row whose package atlas_systems named
+takes that name in code, with no question: the catalogue entry listing the
+package, which the per-row prompt only looked up. Rows are one destination
+when the code knows they reach one place: the same targets and the same
+walk ends of their reaching call's decided argument (DestinationReader). An
+end is an absolute URL by its scheme and host as written (cut at the first
+`/`, `?` or `#`), a setting by the setting that begins it (`{--socket}`,
+`{env:API}/users` as `{env:API}`), and any other address or an unresolved
+expression by that value and the site where the walk stopped (two clients
+both asking `"/health"` stay apart; `?.DB` at `main.go:55` is one origin). A
+row with no reaching call, or whose walk read nothing, is its own
+destination; the walk of another call at its site (the fmt.Sprintf
+formatting a query) says nothing of it. A destination whose rows' packages
+name exactly one system gives it to its rows without a package; one naming
+none is asked once (`repomap.atlas.destinations.v1`, table
+`atlas_boundaries`, round 3, the text model, `Memoize` by the item under the
+subject `destination:<key>`, `lines/prompts/destinations.md`); one naming
+several is shown by the facts not to be one destination, so each row keeps
+its package's name and each row without one is asked alone. The item is the
+destination: `ends` (the walked addresses as written, the unresolved
+expressions, each with `written`, the code where the walk ended), `calls`
+(each call as written with its kind, package and literals, each once),
+`callers` (each declaration making them once, with its file, signature, the
+calls beside the rows as written (`OwnerCalls`: within three lines, or with
+address literals) and the callables it hands over or is handed by, with the
+receiving call: litestream's `Run$1` is handed by `InfoCommand.Run` to
+`net/http.Transport.DialContext`), and `reached_from` (below; by name, each
+once). No author documentation, README claim or source context is sent. The
+catalogue is built from the systems' names for the destination's targets
+(`destination_catalog`, `destination_options`): one `d*` entry per name
+(case-insensitively), in name order, listing the `packages` reaching it; a
+package answered `none` gives none. It offers names only; no entry
+establishes a call's runtime role. Destinations of one catalogue share
+windows. The cell is a `d*` ref or
+`other: ` and a name; a package, protocol, host, URL, file path or key is no
+system's name. A refused answer names none; each call keeps its own site,
+address and chains. A tagged free value keeps its name whatever the
+whitespace around the colon (`other:Name`, `other : Name`); the tag and a
+nonempty name remain required, and this normalization chooses no
+destination. The report groups records by the stored name without its
+parenthetical qualifier, case-insensitively, and folds no text onto another
+name. litestream's seven subcommands each dial `{--socket}` and post to
+`http://localhost/<command>`: 14 per-row questions drew 7, 7 and 9 names in
+three draws, now two questions (asked in one window) draw one name per draw;
+its populate.go rows, 11 of them unanswered before, take SQLite from
+`database/sql` with no question. The socket and the HTTP server stay two
+destinations that happen to share a name: the code does not follow the
+client's `Transport.DialContext` to the socket it dials.
 
 **What a call reaches.** Which value of a call names what it reaches is
 the model's one decision per outside symbol, never a list of packages in
@@ -1047,10 +1089,12 @@ types request of an English name asks `line` alone and the model writes no
 
 **Boundary rows.** A boundary row requests explanation, never existence or
 kind: a `line`; for an incoming entry its `name` (Operation ownership), with
-or without `--captions`, and no `method` field; for an outgoing fact a
-destination and a closed original address ref, while its native kind and
-dispatch basis cannot be changed by model cells. An entry's rows share windows
-without an owner. Without captions a row with no decision to make is not sent
+or without `--captions`, and no `method` field; for an outgoing fact a closed
+original address ref, while its native kind and dispatch basis cannot be
+changed by model cells. What an outgoing call reaches is its destination's
+one answer (One destination, one name), never a cell of its row. An entry's
+rows share windows without an owner. Without captions a row with no decision
+to make (an outgoing row whose address code knows or that has no candidate) is not sent
 and has no line: `Boundary.Line` holds only a line the model wrote, the fact's
 given text being only the joint request's context, so an entry's or outgoing
 fact's summary is empty unless the model explained it (the reading and Find
@@ -1059,24 +1103,24 @@ leaves no line. A row whose only address option is `unknown` reads any address
 answer as `unknown`. The address catalogue lists only literals that can be
 addresses (no format templates, nothing from formatting, logging, time or
 string packages), sent only for outgoing rows whose address code does not
-know; `destination` chooses from the row's targets' catalogue (above); an
-outgoing row carries its call's outside `package` when code names the call at
-its site, and `reached_from`: the declarations its programs reach the call
-from, by name and signature: GroupsIndex's `reached_from` as the reading
-computes it before the parts are drawn (a file stands for its part: exact callers are followed back
-through the call's own file to the first caller in another file, or to a
-seed or an input's handler where they run out; test callers and callers the
-row's programs never run are skipped), so a connect written in a network
-helper is named by what reaches it (a replica's primary, a client's
-server), not "TCP endpoint". A row's choices are the same whatever rows share its window (other
-targets' rows never do); an owner's calls near the line and its source context
-are sent once per window and rows reference them. Boundary source context
+know; an outgoing row carries its call's outside `package` when code names
+the call at its site. A destination's item carries `reached_from`, the
+declarations its rows' programs reach the calls from, by name, each once:
+GroupsIndex's `reached_from` as the reading computes it before the parts are
+drawn (a file stands for its part: exact callers are followed back through
+the call's own file to the first caller in another file, or to a seed or an
+input's handler where they run out; test callers and callers the row's
+programs never run are skipped), so a connect written in a network helper is
+named by what reaches it (a replica's primary, a client's server), not "TCP
+endpoint". A row's choices are the same whatever rows share its window; an
+owner's calls near the line and its source context are sent once per window
+and rows reference them. Boundary source context
 carries each original call site to its owning declaration, with safe
 receiver/source arguments, native API and same-line columns. `external`,
 `direction: out` and `invokes_external` describe source indexing or call
 direction, not a proven exchange with another process. Calls stay individually
-anchored; grouping by a shared name or counting Do sites cannot establish the
-number of systems.
+anchored; a shared name or a count of Do sites cannot establish the number of
+systems: only the walk ends above make calls one destination.
 
 ## Type and concept descriptions
 

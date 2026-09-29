@@ -229,10 +229,13 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   cron and supported one-shot scheduled work remain distinguishable from
   listeners, lifecycle hooks and middleware within the same request. Original
   own-call receiver/arguments/API distinguish effects on the request and response.
-- **Boundaries:** v8 asks fixed native facts only for explanation and applicable
-  closed address/destination fields. A destination is chosen among the names
-  the row's targets' outside packages were given (`atlas_systems`, one
-  question per package), or `other:`; no list of systems lives in code. Candidate communication needs an accepted
+- **Boundaries:** v8 asks fixed native facts only for explanation and an
+  applicable closed address. What an outgoing call reaches is named once per
+  destination (2026-09-29, F3): a call whose package `atlas_systems` named
+  (one question per package) takes that name in code; calls whose walks end
+  at the same URL host, setting or origin in one program are one destination,
+  asked once (`repomap.atlas.destinations.v1`) among those names or
+  `other:`; no list of systems lives in code. Candidate communication needs an accepted
   runtime interpretation; a remote client instance is distinct from an option
   passed to its later constructor. Source chains preserve correlated uses and explicit
   unknowns; imports, timers and internal delegation do not become integrations.
