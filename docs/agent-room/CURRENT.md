@@ -133,7 +133,8 @@ never entered into or read from a repository-wide unqualified map.
 - **Map of parts (2026-09-25, owner's proxy spec; the owner's open questions
   1–7 of that spec still stand):** one DeepSeek request per target groups the
   target's units into named parts from code structure only (paths, names,
-  exported signatures, exact call sites and whole-file imports); no README,
+  exported signatures, exact call sites and file imports between rows, a box
+  carrying those of the whole files that joined it, 2026-09-29); no README,
   AGENTS, docstring or package documentation reaches it. Since 2026-09-28 the
   role split runs first and a unit is a whole file (`f*`) or one box of a
   split file (`c*`, parts request v2). A declaration takes its unit's part, a
@@ -228,6 +229,9 @@ never entered into or read from a repository-wide unqualified map.
     users' box only when every unit it declares, its types included, is a
     decided helper (Redis: staticsymbols.h, lzf_c.c and lzf_d.c join;
     pqsort.c stays whole);
+  - (2026-09-29, delegated, skeptic and probe) a file that joined a box
+    gives that box its imports ("c4 -> f13", lzf_c.c's include of lzfP.h);
+    no single-user join rule and no per-row `called_from` field;
   - the all-quiet exception: when every arrow of a program would be quiet,
     its calls into helpers are drawn, so quieting never empties a map;
   - depth layering in an input's path: every call into a part from a part
@@ -521,6 +525,7 @@ There are no old-format readers or manually rewritten seals.
 | freqtrade subcommands, no model (2026-09-29) | A Python field stored once from a call carries it (PYTHON): `self.parser.add_subparsers(...)` is argparse's, all 34 `add_parser` subcommands are exact word-given calls, each joined by its result to the `set_defaults(func=…)` handing its handler over; an online run has not confirmed the inputs yet. |
 | Report batch, "b", compaction and flow (2026-09-29) | Runs at 68d6d4c5 on the default cache, rendered at 656e8a16: Redis exit 0 in 11 s (0 live), 28.96 → 4.27 MB; litestream v24 exit 0 in 74 s, 9.23 → 3.92 MB; freqtrade exit 0 in 319 s (orientation refused by context size), 46.54 → 9.30 MB; self-snap exit 0 in 124 s, 37.34 → 9.72 MB. `make test`, `make vet`, `make ui-test`, `make ui-visual-test` pass; headless walks without page errors (CHANGELOG). |
 | Fix B, type takers, field readers/writers, own-executable join (2026-09-29) | Runs with the e04743b1 binary, rendered at 61c9dd00, on the default cache, no `cache clear`: Redis exit 0 in 35 s, litestream v24 exit 0 in 63 s, freqtrade exit 0 in 260 s (orientation refused by context size, as before), self-snap (e04743b1) exit 0 in 116 s. Redis's 4 undecided units (dupClientReplyValue, dupStringObject, lookupKeyRead, convertToRealHash) became rows the parts answer put in Server core state, no follow-up, no lone part; iojob placed by rule C with freeIOJob/queueIOJob in Virtual memory; litestream's 2 and self's 2 joined existing parts. litestream-test's 3 `litestream` launches draw an arrow into cmd/litestream; cmd/litestream's 9 self-launches keep their tile and name it. Pages: Redis 4.31 MB, litestream 3.92 MB, freqtrade 9.41 MB, repomap 9.97 MB. `make test`, `make vet` (package parallelism 2), `make ui-test` (134), `make ui-visual-test` (64 passed, 6 skipped) pass; headless walks without page errors. |
+| Joined files' imports, Connections headings (2026-09-29) | At 66902610 on the default cache, rendered at the same commit: Redis exit 0 in 34 s, one live parts request (redis-server, `"c4 -> f13"` its only change): pqsort.c now in Sort command, lzfP.h in Persistence (RDB and AOF), 19 parts, no other part changed. litestream v24 (6/8, the two C targets fail on missing headers as before), freqtrade (10/10) and self-snap (2/2) ran every atlas request from the cache; only orientation went live where its first packing is refused by context size, as before. litestream's Connections: no repeated heading or row naming its heading (13 and 30 before). `make test`, `make vet` (package parallelism 2), `make ui-test` (135), `make ui-visual-test` (64 passed, 6 skipped) pass; headless walks of the four renders without page errors. |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. The 2026-09-28 cold run completed (430 s) with the orientation refused by context size. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 

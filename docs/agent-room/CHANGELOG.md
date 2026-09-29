@@ -1,5 +1,62 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — A box carries the imports of the files that joined it; a Connections end's name said once
+
+- **Why:** the parts request listed imports between whole-file rows only.
+  Redis's lzf_c.c and lzf_d.c join redis.c's Persistence box by rule B,
+  and their includes of lzfP.h vanished with them: lzfP.h (f13) was the one
+  row of redis-server with no call and no import line. DeepSeek lumped it
+  with pqsort.c (f16), sometimes as "Persistence", and two benchmark readers
+  repeated that as a wrong claim.
+- **Decision (delegated; a skeptic and a provider probe):** "c1". The
+  skeptic measured a single-user join rule (a): it would move 44 files in 4
+  repositories, 42 of them harmfully, so it was rejected; (b) was rejected
+  for reversing the owner's near-tie clause. The probe added `"c4 -> f13"`
+  to the saved Redis window, 5 draws: pqsort.c went to Sort command twice
+  and "Compression and sorting" three times, never Persistence; lzfP.h to
+  Persistence twice; 18–20 parts; zipmap unmoved. A per-row `called_from`
+  field was probed too and destabilised the map (9–12 parts): rejected.
+  Evidence in the scratchpad's `probe-calledfrom/` (`probe_c1.py`,
+  `answers_c1.json`) and `skeptic-filejoin/`.
+- **4412b3d6 (c1):** `rowImports` lets a file stand for one row: a whole
+  file for its own, a file that is no row of its own for the one row every
+  unit of it sits in (exact: all its code is there); a file whose units sit
+  in several rows or none stands for none, and an import within one row is
+  none. The placement follow-up shows a row the same imports. The prompts
+  keep their wording, so requests without such a file keep their bytes.
+  `TestAJoinedFileImportsThroughItsBox` fails on the old code; partstest's
+  `checkImports` now checks the imports exactly (a mutation dropping one
+  import fails the Python, Clojure and C fixtures) and lets an import-only
+  arrow touch a role part through a file wholly in it. No language fixture
+  has a rule-B join under the check's helper rule (their `role_attached`
+  samples are all declarations): recorded missing in READING.
+- **66902610 (Connections):** ends of one name are one heading, in the
+  column and the canvas's card ("→ checkpointWithExecutor" had stood twice
+  under SQLite, one per statement); in the column a row with no call of its
+  own that would only name its heading gives the heading its "</>" mark,
+  one per place ("→ acquireReadLock </>", not then "acquireReadLock
+  </>"). litestream's column: 13 repeated headings and 30 heading-repeating
+  rows before, 0 and 0 after (`look/c1-litestream-sqlite-after.png`).
+- **Runs at 66902610, default system cache, no `--debug-dir`, no `cache
+  clear`:** Redis exit 0 in 34 s: atlas_zones 1 live (redis-server; its
+  input differs from the previous run by `"c4 -> f13"` alone, the other
+  three programs' byte-identical), and the descriptions, areas, core, keys,
+  orientation and glossary that follow. The answer: pqsort.c in Sort
+  command, lzfP.h in Persistence (RDB and AOF), 19 parts as before, no
+  other part's units or name changed. litestream v24 exit 0 in 45 s, 6/8
+  targets (the two C targets fail on missing headers, as before), 0 live
+  calls; freqtrade exit 0 in 5m13s, 10/10, every atlas request cached,
+  orientation 3 live (refused by context size, as before); self-snap exit 0
+  in 70 s, every atlas request cached, orientation 1 live and 1 cached (its
+  first packing refused by size, as before). A first litestream and
+  self-snap attempt without the Go SDK overlay in `GOFLAGS` lost their Go
+  targets to the SDK's broken `slices` and were rerun with it. Renders
+  into `redis-r2/run/latest-*.html`: Redis 4.24 MB, litestream 3.91 MB,
+  freqtrade 8.76 MB, repomap 9.75 MB; headless smoke walks of all four
+  without page errors, nested scrollers or line numbers.
+- **Verified:** `make test`, `make vet` (package parallelism 2), `make
+  ui-test` (135), `make ui-visual-test` (64 passed, 6 skipped).
+
 ## 2026-09-29 — Visual journeys green, renders byte-identical, Connections rows and helpers by name
 
 - **9fcba2bd (visual journeys):** the two `make ui-visual-test` failures
