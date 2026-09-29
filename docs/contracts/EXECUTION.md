@@ -190,6 +190,12 @@ The display-translation cube behind `--lang`
   competing root-format instruction. Analytical responses use that direct owner
   shape; glossary work has a separate request and cannot add a `result/terms`
   wrapper. Table examples derive from the current `fill` columns and mode.
+  Their row key is the placeholder `<each row's key>` (`table.ExampleKey`),
+  never a real row's: a window's first key in the example read as "answer
+  this row", and windows of near-identical rows came back holding only it;
+  a bare `<row key>` let rows whose optional cell is "none" be left out. No
+  row may carry the placeholder, and a response row under it answers
+  nothing ("response row copied the example's placeholder key").
 - Models select only closed short refs already owned by their source artifacts:
   `t*`, `n*`, `e*`, `a*`, `h*`, `g*`, `o*`, `k*`, `x*`, and the sealed graph's
   file refs `f*` and the atlas's part refs `p*`. Cross-target refs

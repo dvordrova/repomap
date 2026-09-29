@@ -1,5 +1,40 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — A table's response example shows no real row key
+
+- **Why:** F3's open item (03d4542a): windows of near-identical rows came
+  back holding only the row whose key the one-row response example showed
+  (`b16`, `b22`, `b147`); Redis's `g6` window and freqtrade's `b1655` too.
+  Code ac168bec.
+- **Change** (EXECUTION § Results and prompt ownership): the example's key
+  is the placeholder `<each row's key>` (`table.ExampleKey`), whatever the
+  window holds. No row may carry it (a preparation error), and a response
+  row under it answers nothing ("response row copied the example's
+  placeholder key"). Every table window's bytes change once; row memos
+  (their identity has no example) keep their answers.
+- **Measured** (saved request bodies, only the example's last line changed,
+  the ordinary DeepSeek client, 6 draws unless noted; rows answered per
+  draw): litestream 20260929-165546 w40 real key 1/11 in 3 of 3 draws,
+  either placeholder 11/11 in 12 of 12; w43 real 1/7, 1/7, 7/7, either
+  placeholder 7/7 in 12 of 12; w59 real 1/2 in 3 of 3, either placeholder
+  2/2 in 12 of 12; freqtrade 191655 r2-w2 real 2/2 in 1 of 6,
+  `<each row's key>` 6 of 6; Redis 201637 r3-w2 3/3 in all 12 draws either
+  way. The bare `<row key>` cost an optional cell's "none": litestream's
+  publish window (6 rows, two with no holder) came back whole in 3 of 12
+  draws, the two rows left out, against 5 of 6 with the real key and 12 of
+  12 with `<each row's key>`. One skeleton per row also answered every row
+  in 6 of 6 but adds 50 to 100 bytes a row; not taken.
+- **Checks:** `TestResponseExampleShowsAPlaceholderKeyNoRowCarries`,
+  `TestResponseExampleListsKeyFirstThenColumnsInFillOrder`; `make test` and
+  `make vet` (package parallelism 2) pass.
+- **Acceptance** (ordinary binary from HEAD plus this change, default
+  cache): litestream `20260929-205940` exit 0, 26 s, one live call
+  (atlas_publish, the one unmemoized text-model table window; the rest are
+  categorizer tables or row memos), 28 rejections, 0 "row was not
+  answered" (the newest run before, `203012`: 0 live calls, 28, 0). The
+  interim `<row key>` build's run `205505`: one live call, 30 rejections, 2
+  "row was not answered" (publish's `pub3`, `pub4`, both "none").
+
 ## 2026-09-30 — The canvas: one Outside frame per program, arrows as their own handles, marks for input kinds, one geometry check
 
 - **Why:** the owner on litestream's whole map ("кто придумывает так уродливо
