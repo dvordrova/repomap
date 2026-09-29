@@ -18,6 +18,11 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 	if err := target.Validate(); err != nil {
 		return gofacts.Facts{}, fmt.Errorf("analysis target scope: %w", err)
 	}
+	// A tagged program is scoped in the load its tags make.
+	facts, err := buildFacts(facts, target)
+	if err != nil {
+		return gofacts.Facts{}, fmt.Errorf("analysis target scope: %w", err)
+	}
 	packagesByIdentity := make(map[string]gofacts.PackageFact, len(facts.Packages))
 	for _, pkg := range facts.Packages {
 		packagesByIdentity[packageIdentityKey(pkg.ModuleID, pkg.CanonicalPath)] = pkg

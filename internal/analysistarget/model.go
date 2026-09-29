@@ -5,8 +5,12 @@ package analysistarget
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/gotarget"
 )
 
 const Version = 2
@@ -57,6 +61,14 @@ type Target struct {
 	LibraryPackages []TargetPackage `json:"library_packages,omitempty"`
 	RootBoundary    RootBoundary    `json:"root_boundary"`
 	Roots           []Root          `json:"roots"`
+	// BuildTags are the tags the repository's own build descriptions build
+	// this main package with when it builds only with them, BuildPlatform the
+	// GOOS/GOARCH it is loaded for and BuildSources the description lines
+	// saying so (gofacts.TaggedBuild). The target is analysed with the run's
+	// tags and these, for that platform.
+	BuildTags     []string                 `json:"build_tags,omitempty"`
+	BuildPlatform string                   `json:"build_platform,omitempty"`
+	BuildSources  []gofacts.BuildTagSource `json:"build_sources,omitempty"`
 }
 
 // Validate verifies both the target shape and its self-sealed Ref.
@@ -89,6 +101,9 @@ func (target Target) Validate() error {
 	default:
 		return fmt.Errorf("analysis target: invalid kind %q", target.Kind)
 	}
+	if err := validateBuildTags(target); err != nil {
+		return err
+	}
 	canonical := canonicalRoots(target.Roots)
 	if len(canonical) != len(target.Roots) {
 		return fmt.Errorf("analysis target: roots are not canonical")
@@ -105,6 +120,32 @@ func (target Target) Validate() error {
 	}
 	if target.Ref != want {
 		return fmt.Errorf("analysis target: ref binding mismatch")
+	}
+	return nil
+}
+
+func validateBuildTags(target Target) error {
+	if len(target.BuildTags) == 0 {
+		if len(target.BuildSources) != 0 || target.BuildPlatform != "" {
+			return fmt.Errorf("analysis target: build sources or platform without build tags")
+		}
+		return nil
+	}
+	canonical, err := gotarget.CanonicalBuildTags(target.BuildTags)
+	if err != nil || strings.Join(canonical, ",") != strings.Join(target.BuildTags, ",") ||
+		target.Kind != KindExecutablePackage || len(target.BuildSources) == 0 {
+		return fmt.Errorf("analysis target: invalid build tags")
+	}
+	if platform, err := gotarget.Parse(target.BuildPlatform); err != nil || platform.String() != target.BuildPlatform {
+		return fmt.Errorf("analysis target: invalid build platform")
+	}
+	for index, source := range target.BuildSources {
+		clean := canonicalDirForMatch(source.Path)
+		if source.Path != clean || clean == "." || strings.HasPrefix(clean, "../") || path.IsAbs(source.Path) || source.Line <= 0 ||
+			index > 0 && (target.BuildSources[index-1].Path > source.Path ||
+				target.BuildSources[index-1].Path == source.Path && target.BuildSources[index-1].Line >= source.Line) {
+			return fmt.Errorf("analysis target: invalid build tag source")
+		}
 	}
 	return nil
 }
@@ -137,6 +178,12 @@ func (target Target) Snapshot() Target {
 		copyTarget.LibraryPackages = nil
 	} else {
 		copyTarget.LibraryPackages = append([]TargetPackage(nil), target.LibraryPackages...)
+	}
+	copyTarget.BuildTags = nil
+	copyTarget.BuildSources = nil
+	if len(target.BuildTags) > 0 {
+		copyTarget.BuildTags = append([]string(nil), target.BuildTags...)
+		copyTarget.BuildSources = append([]gofacts.BuildTagSource(nil), target.BuildSources...)
 	}
 	return copyTarget
 }

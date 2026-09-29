@@ -111,6 +111,12 @@ func Candidates(facts gofacts.Facts) ([]Candidate, error) {
 		})
 	}
 
+	tagged, err := taggedCandidates(facts)
+	if err != nil {
+		return nil, err
+	}
+	candidates = append(candidates, tagged...)
+
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].Target.Kind != candidates[j].Target.Kind {
 			return candidates[i].Target.Kind < candidates[j].Target.Kind

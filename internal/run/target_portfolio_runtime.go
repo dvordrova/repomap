@@ -638,8 +638,12 @@ func targetPortfolioChoices(catalog analysistarget.TargetCatalog) string {
 		if len(choices) == limit {
 			continue
 		}
+		kind := string(entry.Candidate.Target.Kind)
+		if tags := entry.Candidate.Target.BuildTags; len(tags) > 0 {
+			kind += ", -tags " + strings.Join(tags, ",") + " for " + entry.Candidate.Target.BuildPlatform
+		}
 		choices = append(choices, fmt.Sprintf(
-			"%s (%s; %s)", entry.DisplayPath, entry.Candidate.Target.Kind, entry.Candidate.Key,
+			"%s (%s; %s)", entry.DisplayPath, kind, entry.Candidate.Key,
 		))
 	}
 	if available > len(choices) {

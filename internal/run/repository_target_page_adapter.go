@@ -83,7 +83,9 @@ type goRepositoryDispatchPlan struct {
 	snapshots map[repositoryTargetKey]snapshot.Snapshot
 	errors    map[repositoryTargetKey]error
 	all       []snapshot.Snapshot
-	workspace repositoryGoWorkspaceState
+	// workspaces are keyed by the targets' own build selection
+	// (goBuildSelection).
+	workspaces map[string]*repositoryGoWorkspaceState
 }
 
 func prepareGoRepositoryDispatchPlan(
@@ -91,8 +93,9 @@ func prepareGoRepositoryDispatchPlan(
 	ordered []repositoryTypedTarget,
 ) (any, error) {
 	state := &goRepositoryDispatchPlan{
-		snapshots: make(map[repositoryTargetKey]snapshot.Snapshot),
-		errors:    make(map[repositoryTargetKey]error),
+		snapshots:  make(map[repositoryTargetKey]snapshot.Snapshot),
+		errors:     make(map[repositoryTargetKey]error),
+		workspaces: make(map[string]*repositoryGoWorkspaceState),
 	}
 	source, ok := repositoryPlanGoSource(plan)
 	if !ok {

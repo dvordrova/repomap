@@ -52,20 +52,17 @@ func BuildCatalog(facts gofacts.Facts) (TargetCatalog, error) {
 		return TargetCatalog{}, err
 	}
 
-	packages := make(map[string]gofacts.PackageFact, len(facts.Packages))
-	for _, pkg := range facts.Packages {
-		if pkg.Locality != "" && pkg.Locality != "local" {
-			continue
-		}
-		packages[packageIdentityKey(pkg.ModuleID, pkg.CanonicalPath)] = pkg
-	}
-	modules := make(map[string]gofacts.ModuleFact, len(facts.Modules))
-	for _, module := range facts.Modules {
-		modules[module.ID] = module
-	}
-
+	runPackages, runModules := catalogFacts(facts)
 	entries := make([]TargetCatalogEntry, 0, len(candidates))
 	for _, candidate := range candidates {
+		packages, modules := runPackages, runModules
+		if len(candidate.Target.BuildTags) > 0 {
+			tagged, err := buildFacts(facts, candidate.Target)
+			if err != nil {
+				return TargetCatalog{}, err
+			}
+			packages, modules = catalogFacts(tagged)
+		}
 		module, ok := modules[candidate.Target.ModuleID]
 		if !ok {
 			return TargetCatalog{}, fmt.Errorf("analysis target catalog: missing exact module facts for %q", candidate.Target.ModuleID)
@@ -116,6 +113,22 @@ func BuildCatalog(facts gofacts.Facts) (TargetCatalog, error) {
 		return TargetCatalog{}, err
 	}
 	return catalog, nil
+}
+
+// catalogFacts indexes one load's local packages and modules.
+func catalogFacts(facts gofacts.Facts) (map[string]gofacts.PackageFact, map[string]gofacts.ModuleFact) {
+	packages := make(map[string]gofacts.PackageFact, len(facts.Packages))
+	for _, pkg := range facts.Packages {
+		if pkg.Locality != "" && pkg.Locality != "local" {
+			continue
+		}
+		packages[packageIdentityKey(pkg.ModuleID, pkg.CanonicalPath)] = pkg
+	}
+	modules := make(map[string]gofacts.ModuleFact, len(facts.Modules))
+	for _, module := range facts.Modules {
+		modules[module.ID] = module
+	}
+	return packages, modules
 }
 
 // Validate rejects identity, display, order, and seal drift. The catalog never

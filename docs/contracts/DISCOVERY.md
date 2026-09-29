@@ -266,6 +266,55 @@ Regression comparisons preserve every materialized byte while checking that repe
   targets, so an unselected language's page prerequisite cannot block an exact
   target owned by another adapter.
 
+## Go programs built with tags
+
+A Go main package can build only with build tags: litestream's
+`cmd/litestream-vfs` has no file without `vfs` or `SQLITE3VFS_LOADABLE_EXT`,
+so the run's own load (its `GOTAGS`) sees no program there. The repository's
+own build descriptions say which tags build it, and that is a code fact with a
+source line, not a guess:
+
+- Read are the recipe lines of every `Makefile`, `makefile`, `GNUmakefile`
+  and `*.mk`, and every `.goreleaser.y(a)ml` build, outside the tooling
+  directories. Shell scripts are not read: a script runs wherever it is
+  started, so its relative package paths name no exact directory.
+- A recipe line is read as make runs it in its makefile's directory: the
+  variables the makefile sets outside conditionals are expanded (`=`, `:=`,
+  `?=`, `+=`); a variable it sets inside a conditional, by `define` or `!=`,
+  an automatic variable, a function or a variable it never sets is decided
+  only at run time. A `go build` or `go install` is read with its `-tags`
+  (`-tags=a,b`, `-tags a,b`), its `-C` and a `cd` before it on the line,
+  the `GOOS`/`GOARCH` assignments before it, and its package arguments: a
+  relative directory, the directory of the `.go` files it names, or an import
+  path of one of the repository's modules. A pattern (`./...`), a versioned
+  or absolute argument names no package. A tag, `-C`, platform or package
+  argument decided only at run time leaves the line unread; the value of
+  another flag does not matter. A goreleaser build's package is `main` under
+  `dir`, its tags its `tags` list or one `-tags` in its `flags` (both, or a
+  template, leave it unread), one line per listed `goos`×`goarch`.
+- A described package the run's own load already makes a program is left as
+  it is. Otherwise its module is loaded again with the run's tags and the
+  line's, for the line's platform (the run's where the line sets none). cgo
+  is the go command's own default for that platform, as in the typed load
+  that follows. One platform is loaded per package and tags, the first that
+  makes it a program, in order: the run's, the host's, then the other lines'
+  as written. Litestream's line 17 builds for the run's platform
+  (`windows/amd64`, chosen by its platform evidence), where cgo is off and
+  `main.go` is a cgo file; line 43 (`GOOS=darwin GOARCH=amd64`) is the host's.
+- Each package that load makes a program is a Go executable target like any
+  other, with the same candidate key, carrying `build_tags`,
+  `build_platform` and `build_sources` (the description lines) in its
+  identity. It is scoped, catalogued and restored from its tagged load, and
+  analysed with the run's tags and its own for its platform; targets share a
+  prepared workspace only with targets of the same tags and platform. The
+  portfolio reads the tags as a `go_build_tags` observation and as a
+  hypothesis of the main file; `--target` choices list them. A package two
+  different tag sets both make a program is recorded as a Go fact warning
+  and analysed with neither.
+- Only Go has build constraints. C's equivalent, the flags of a makefile's
+  link lines, is already read from its dry run (C projects); Python, JS/TS
+  and Clojure have none.
+
 ## Python package and launch observations
 
 The Python adapter records static package lists in setup.py, pyproject.toml

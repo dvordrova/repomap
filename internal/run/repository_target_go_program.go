@@ -11,6 +11,7 @@ import (
 	"github.com/dvordrova/repomap/internal/gocoreobject"
 	"github.com/dvordrova/repomap/internal/godynamichandoff"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/gotarget"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
 	"github.com/dvordrova/repomap/internal/snapshot"
@@ -57,8 +58,18 @@ func prepareGoRepositoryProgramFacts(
 	if err != nil {
 		return goRepositoryProgramFacts{}, err
 	}
+	if platform := scoped.AnalysisTarget.BuildPlatform; platform != "" {
+		goTarget = platform // the platform its tagged build was found for
+	}
 	surfaceOptions := surfacediscovery.DefaultOptions(options.Repo, goTarget)
-	surfaceOptions.BuildTags = append([]string(nil), options.GoBuildTags...)
+	// A program its build descriptions build only with tags is analysed with
+	// the run's tags and its own (gofacts.TaggedBuild).
+	surfaceOptions.BuildTags, err = gotarget.CanonicalBuildTags(
+		append(append([]string(nil), options.GoBuildTags...), scoped.AnalysisTarget.BuildTags...),
+	)
+	if err != nil {
+		return goRepositoryProgramFacts{}, err
+	}
 	if options.DirectCallDepth > 0 {
 		surfaceOptions.DirectCallDepth = options.DirectCallDepth
 	}
@@ -69,9 +80,21 @@ func prepareGoRepositoryProgramFacts(
 	surfaceOptions.CaptureCoreObjectIndex = true
 	surfaceOptions.CaptureDynamicHandoffIndex = true
 
-	result, err := state.workspace.analyze(
-		ctx, surfaceOptions, scoped, state.all,
-	)
+	// One prepared workspace loads one build selection: targets share it only
+	// with the targets of their own tags and platform.
+	selection := goBuildSelection(*scoped.AnalysisTarget)
+	workspace := state.workspaces[selection]
+	if workspace == nil {
+		workspace = &repositoryGoWorkspaceState{}
+		state.workspaces[selection] = workspace
+	}
+	var peers []snapshot.Snapshot
+	for _, peer := range state.all {
+		if peer.AnalysisTarget != nil && goBuildSelection(*peer.AnalysisTarget) == selection {
+			peers = append(peers, peer)
+		}
+	}
+	result, err := workspace.analyze(ctx, surfaceOptions, scoped, peers)
 	if err != nil {
 		return goRepositoryProgramFacts{}, err
 	}
@@ -132,6 +155,12 @@ func prepareGoRepositoryProgramFacts(
 		TestSources:       gofacts.CloneTestSources(scoped.GoFacts.TestSources),
 		Dependencies:      ownedDependencies,
 	}, nil
+}
+
+// goBuildSelection names a target's own build tags and platform ("@" for a
+// target of the run's own load).
+func goBuildSelection(target analysistarget.Target) string {
+	return strings.Join(target.BuildTags, ",") + "@" + target.BuildPlatform
 }
 
 func effectiveScopedGoTarget(baseline string, scoped snapshot.Snapshot) (string, error) {

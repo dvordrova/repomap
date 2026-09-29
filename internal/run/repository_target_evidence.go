@@ -295,6 +295,9 @@ func goNativeEvidence(target analysistarget.Target, facts gofacts.Facts, catalog
 	for _, root := range target.Roots {
 		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "go_main", Path: root.Path, Line: root.Line, Fields: map[string]string{"package": target.PackagePath}})
 	}
+	for _, source := range target.BuildSources {
+		result.Observations = append(result.Observations, targetportfolio.Observation{Kind: "go_build_tags", Path: source.Path, Line: source.Line, Fields: map[string]string{"tags": strings.Join(target.BuildTags, ","), "platform": target.BuildPlatform}})
+	}
 	if target.Kind != analysistarget.KindModuleLibrary {
 		return result
 	}

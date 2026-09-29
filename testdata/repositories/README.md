@@ -222,6 +222,26 @@ Test code comes from runner facts, never from a file name alone:
 | Clojure | namespaces that require `clojure.test` | none in the fixture |
 | C | none: C has no standard test runner, and the Makefile's `test` rule is a recipe | every unit, including [tools/dump.c](c/tools/dump.c) |
 
+A test's SQL reaches no program's outbound calls or data
+([test_code_catalogs_test.go](../../internal/contracttest/test_code_catalogs_test.go)):
+each fixture's test file writes `CREATE TABLE test_only_rows`.
+
+| Language | Test file | What the facts see |
+| --- | --- | --- |
+| Go | [root_test.go](go/root_test.go), and [root_optional_test.go](go/root_optional_test.go), which no load selects | data only: test sources are parsed declarations without calls |
+| Python | [tests/test_facade.py](python/tests/test_facade.py) | a `sql_query` call and data |
+| JS/TS | [src/market.test.ts](jsts/src/market.test.ts) | a `sql_query` call and data |
+| Clojure | [test/example/service_test.clj](clojure/test/example/service_test.clj) | a `sql_query` call only: the database extractor reads no Clojure |
+| C | none: the C adapter records no testing sources | |
+
+A Go program that builds only with build tags
+([go_build_tags_test.go](../../internal/contracttest/go_build_tags_test.go)):
+[cmd/vfs](go/cmd/vfs/main.go) and [root_vfs.go](go/root_vfs.go) build only
+with `fixturevfs`, which the fixture's [Makefile](go/Makefile) passes to
+`go build ./cmd/vfs` through `VFS_TAGS`. Only Go has build constraints: C's
+equivalent, the flags of a makefile's link lines, is read from its dry run;
+Python, JS/TS and Clojure have none.
+
 Runner-configured test directories have no derived equivalent in Python
 (`testpaths` often names the production package) or Clojure (no manifest is
 read). The Python and Clojure contracts record both gaps. C has no runner

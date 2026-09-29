@@ -55,6 +55,10 @@ type Facts struct {
 	Dependencies          *dependencies.Catalog `json:"dependencies,omitempty"`
 	Coverage              Coverage              `json:"coverage"`
 	Warnings              []string              `json:"warnings,omitempty"`
+	// TaggedBuilds are the modules loaded again with the -tags the
+	// repository's own build descriptions give main packages that build only
+	// with them (build_descriptions.go).
+	TaggedBuilds []TaggedBuild `json:"tagged_builds,omitempty"`
 }
 
 // PackageOrigin is the exact package namespace row returned by the canonical
@@ -329,6 +333,30 @@ func LoadWithOptions(
 	}
 	defer repoReader.Close()
 
+	facts, err := loadModules(ctx, repoReader, resolvedRepoPath, fileList, target, buildTags, moduleDirs)
+	if err != nil {
+		return nil, err
+	}
+	tagged, taggedWarnings, err := loadTaggedBuilds(ctx, repoReader, resolvedRepoPath, fileList, target, buildTags, facts)
+	if err != nil {
+		return nil, err
+	}
+	facts.TaggedBuilds = tagged
+	facts.Warnings = canonicalWarnings(append(facts.Warnings, taggedWarnings...))
+	return facts, nil
+}
+
+// loadModules collects the exact facts of the given modules under one build
+// selection: the run's, or a tagged build's (build_descriptions.go).
+func loadModules(
+	ctx context.Context,
+	repoReader *reporead.Reader,
+	resolvedRepoPath string,
+	fileList []string,
+	target gotarget.Target,
+	buildTags []string,
+	moduleDirs []string,
+) (*Facts, error) {
 	var allPkgs []goListPackage
 	var packageFacts []PackageFact
 	var testSources []TestSource

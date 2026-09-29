@@ -183,13 +183,7 @@ func buildGoFileTargetProjection(
 		)
 	}
 
-	packages := make(map[string]gofacts.PackageFact, len(facts.Packages))
-	for _, pkg := range facts.Packages {
-		if pkg.Locality != "" && pkg.Locality != "local" {
-			continue
-		}
-		packages[packageIdentityKey(pkg.ModuleID, pkg.CanonicalPath)] = pkg
-	}
+	runPackages, _ := catalogFacts(facts)
 
 	resolver := GoFileTargetResolver{
 		initialized:       true,
@@ -205,6 +199,14 @@ func buildGoFileTargetProjection(
 	for _, entry := range catalog.Entries {
 		target := entry.Candidate.Target
 		resolver.orderedTargetRefs = append(resolver.orderedTargetRefs, target.Ref)
+		packages := runPackages
+		if len(target.BuildTags) > 0 {
+			tagged, taggedErr := buildFacts(facts, target)
+			if taggedErr != nil {
+				return goFileTargetProjection{}, fmt.Errorf("analysis target Go file discovery: %w", taggedErr)
+			}
+			packages, _ = catalogFacts(tagged)
+		}
 
 		for _, targetPackage := range target.ModulePackages {
 			pkg, ok := exactGoTargetPackage(packages, target, targetPackage)
@@ -257,8 +259,12 @@ func buildGoFileTargetProjection(
 					return goFileTargetProjection{}, resolveErr
 				}
 				addGoTargetRef(&resolver, fileRef, target.Ref)
+				hypotheses := []string{goMainFileHypothesis}
+				if tags := BuildTagsHypothesis(target); tags != "" {
+					hypotheses = append(hypotheses, tags)
+				}
 				rawCandidates = append(rawCandidates, FileCandidate{
-					FileRef: fileRef, Hypotheses: []string{goMainFileHypothesis},
+					FileRef: fileRef, Hypotheses: hypotheses,
 				})
 			}
 

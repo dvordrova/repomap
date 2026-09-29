@@ -14,6 +14,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   dependency metadata but must not enter package counts, target identity, or
   the typed ProgramIndex scope. A source-bearing package that fails type
   checking is not filtered and still fails its owning target closed.
+- A main package that builds only with tags the repository's build
+  descriptions give it is a target of its own tagged load (`TaggedBuild`,
+  DISCOVERY "Go programs built with tags"); nothing else of the run's own
+  build selection changes. cgo's generated wrappers (`_cgoexp_*`,
+  `_cgo_cmalloc`) keep the column-less `//line` declaration the direct call
+  index gives them, in the dynamic handoff index too.
 
 The Go fact inventory also retains the complete build-selected package-origin
 universe from every `go list -deps` row, including `DepOnly` rows. The Go
