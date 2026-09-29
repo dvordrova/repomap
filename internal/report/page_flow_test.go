@@ -73,8 +73,9 @@ func flowFixture() (*pageBuilder, groupindex.Index) {
 // A function's flow is its calls in the order they are written, each
 // callee once with every place it is called; a dispatch site is one call;
 // a library's call is named; a helper folds when its part is one most
-// parts call into or the caller's own, and stays when its part says what
-// it is for; a declaration no part holds keeps its call and its own flow.
+// parts call into, and stays when its part says what it is for or is the
+// caller's own (its own work); a declaration no part holds keeps its call
+// and its own flow.
 func TestAFunctionsFlowIsItsCallsInWrittenOrder(t *testing.T) {
 	builder, index := flowFixture()
 	raw := builder.groupReading(index, index.Groups[0], pageGroup{ID: "t1-g1", Title: index.Groups[0].Title})
@@ -119,7 +120,7 @@ func TestAFunctionsFlowIsItsCallsInWrittenOrder(t *testing.T) {
 		return nil
 	}
 	want := []string{
-		"redisLog [helper] @1273,1288", "tryResizeHashTables @1284", "closeTimedoutClients [helper] @1297", "fork from unistd.h @1300",
+		"redisLog [helper] @1273,1288", "tryResizeHashTables @1284", "closeTimedoutClients @1297", "fork from unistd.h @1300",
 		"rdbSaveBackground @1322", "lookupKeyRead (no part) @1350", "one of setCommand, getCommand @1360",
 	}
 	if got := flowOf("serverCron"); !slices.Equal(got, want) {

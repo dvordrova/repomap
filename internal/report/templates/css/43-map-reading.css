@@ -517,6 +517,11 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-flow-above{font-family:system-ui;font-size:12px;margin-left:6px}
 .map-flow-one{color:var(--ink)}
 .map-flow-names{margin:2px 0 4px 14px;font:13px/20px var(--mono);overflow-wrap:anywhere}
+/* A step's helper calls: one muted line of names under its rows. */
+.map-flow-helpers,.flow-enabled .map-inspector p.map-flow-helpers{margin:0 0 4px 14px;font:12px/18px var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.map-flow-helpers .map-reading-name{font-size:12px;opacity:.75}
+.map-flow-helpers-toggle,.flow-enabled .map-inspector button.map-flow-helpers-toggle{border:0;background:none;box-shadow:none;margin:0;padding:0;min-width:0;height:auto;color:var(--muted);cursor:pointer;font:12px/18px system-ui}
+.map-flow-helpers-toggle:hover{color:var(--link)}
 /* The way a request comes in: one chain, a line per part. */
 .map-input-flow>h5{margin:0 0 4px}
 .map-flow-chain{margin:0 0 8px;font:13px/21px var(--mono)}

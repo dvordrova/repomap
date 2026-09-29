@@ -264,8 +264,9 @@ never entered into or read from a repository-wide unqualified map.
   input catalogue rows, state changes or static drawing; glossary files
   written when opened); a `<noscript>` line says so. The page data is
   written compactly and read back exactly (REPORT). A function reads as its
-  flow, its calls in written order grouped by part, helper calls behind one
-  toggle; an input opens at how a request reaches it (REPORT).
+  flow, its calls in written order grouped by part, helper calls named on
+  one muted line under their step (a call into its own part is its work);
+  an input opens at how a request reaches it (REPORT).
 - **Decoders (2026-09-26, owner: "валидаторы и строгие декодеры нам уже 30
   дней палки в колеса вставляют"):** the one-time identical-bytes resample is
   deleted; a decoder refuses only what is wrong, at the smallest scope, and an

@@ -7,10 +7,13 @@
 // focus on a call that can open; a name reads its declaration and shows it
 // on the canvas; a call its ancestors already make says it is shown above.
 // Helper calls (the helper question's decision, into a part most of the
-// program's parts call into or the caller's own) wait behind one quiet
-// toggle, "Show helper calls", unless every call of a step is one: then
-// they are its calls. Where a call is written and what it hands over are on
-// its name's hover. Go ordered every list; nothing here sorts.
+// program's parts call into) stand as one muted line under their step,
+// "+ helpers: createListObject, dictAdd", each name reading its
+// declaration; the line opens them into rows in place, and "Show helper
+// calls" opens every step's. A step whose every call is a helper shows
+// them as its calls. No name is hidden (owner, 2026-09-29). Where a call is
+// written and what it hands over are on its name's hover. Go ordered every
+// list; nothing here sorts.
 // <flow>
 var rmFlowHelpers=false;
 // The part node a declaration stands in: a reading names it by its link
@@ -89,32 +92,52 @@ function rmFlowRow(ctx,data,call,opts,helper){
 }
 // A flow's calls, each run into one part under its box. Top level names
 // every part; an opened call names none when all its calls stay in its
-// caller's part.
+// caller's part. Its helper calls stand as one muted line after its rows,
+// each name a link, until the line or the toggle opens them in place.
 function rmFlowList(ctx,data,own,opts){
   var list=rmEl('div','map-flow-list'),calls=own.flow||[];
   var every=calls.length>0&&calls.every(function(call){return call.helper;});
-  var shown=calls.filter(function(call){return every||rmFlowHelpers||!call.helper;});
-  opts=Object.assign({},opts,{single:shown.length===1,auto:(opts.auto||0)});
+  var work=calls.filter(function(call){return every||!call.helper;}),helpers=every?[]:calls.filter(function(call){return call.helper;});
+  opts=Object.assign({},opts,{single:work.length===1,auto:(opts.auto||0)});
+  var key=opts.path+'\u0000helpers';
   function partOf(call){
     if(call.decl!==undefined)return (data.decls[call.decl]||{}).part||'';
     if(call.one)return (data.decls[call.one[0]]||{}).part||'';
     return '\0';
   }
-  var stays=opts.parentPart&&shown.every(function(call){var part=partOf(call);return part===opts.parentPart||part==='\0';});
-  var group=null,at=null;
-  shown.forEach(function(call){
-    var part=partOf(call);
-    if(!group||part!==at){
-      group=rmEl('div','map-flow-group');at=part;
-      if(!stays&&part&&part!=='\0'){var box=rmPartBox(ctx,part,'');group.appendChild(box);var node=rmFlowPart(ctx,part);if(node&&node.dataset.summary)box.title=node.dataset.summary;}
-      list.appendChild(group);
-    }
-    group.appendChild(rmFlowRow(ctx,data,call,opts,call.helper&&!every));
-  });
+  function draw(){
+    list.replaceChildren();
+    var opened=rmFlowHelpers||opts.open.has(key),shown=opened?calls:work;
+    var stays=opts.parentPart&&shown.every(function(call){var part=partOf(call);return part===opts.parentPart||part==='\0';});
+    var group=null,at=null;
+    shown.forEach(function(call){
+      var part=partOf(call);
+      if(!group||part!==at){
+        group=rmEl('div','map-flow-group');at=part;
+        if(!stays&&part&&part!=='\0'){var box=rmPartBox(ctx,part,'');group.appendChild(box);var node=rmFlowPart(ctx,part);if(node&&node.dataset.summary)box.title=node.dataset.summary;}
+        list.appendChild(group);
+      }
+      group.appendChild(rmFlowRow(ctx,data,call,opts,call.helper&&!every));
+    });
+    if(!helpers.length||rmFlowHelpers)return;
+    // The step's helper calls, one muted line: every name shown and read
+    // by a click; "+ helpers" opens them in place, "− helpers" folds them.
+    var line=rmEl('p','map-flow-helpers'),more=rmEl('button','map-flow-helpers-toggle',opened?rmT('− helpers'):rmT('+ helpers:'));
+    more.type='button';more.setAttribute('aria-expanded',String(opened));
+    more.addEventListener('click',function(event){event.stopPropagation();if(opts.open.has(key))opts.open.delete(key);else opts.open.add(key);draw();});
+    line.appendChild(more);
+    if(!opened)helpers.forEach(function(call,i){
+      line.appendChild(document.createTextNode(i?', ':' '));
+      var decl=call.decl!==undefined?data.decls[call.decl]:null;
+      line.appendChild(decl?rmFlowName(ctx,decl,call):rmEl('span','map-flow-plain',call.one?rmT('one of {0}',call.one.length):call.name||''));
+    });
+    list.appendChild(line);
+  }
+  draw();
   return list;
 }
 // A declaration's flow, kept whole across "Show helper calls": what is open
-// stays open.
+// stays open, a step's helpers opened by their line too.
 function rmFlowTree(ctx,data,own,auto){
   var root=rmEl('div','map-flow-root'),open=new Set(),key=(data.decls[own.decl]||{}).key||'';
   root.rmRender=function(){root.replaceChildren(rmFlowList(ctx,data,own,{parentPart:'',ancestors:new Set([key]),open:open,path:'',auto:auto||0}));};

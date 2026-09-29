@@ -49,6 +49,8 @@ var russianUI = map[string]string{
 	"{0} lines": "Строк: {0}",
 	"This report needs JavaScript: every answer is in this file's data, and its script reads it.": "Отчёту нужен JavaScript: все ответы — в данных этого файла, их читает его скрипт.",
 	"Show helper calls":          "Показать вспомогательные вызовы",
+	"+ helpers:":                 "+ вспомогательные:",
+	"− helpers":                  "− вспомогательные",
 	"called at {0}":              "вызывается в {0}",
 	"↑ shown above":              "↑ показано выше",
 	"Open its calls":             "Открыть его вызовы",

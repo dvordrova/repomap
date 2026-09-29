@@ -968,15 +968,20 @@ grouped the same way; when all of those stay in its part no box repeats.
 A call one of its ancestors makes says "↑ shown above" instead. What a
 call hands over ("passed as a callback") and where it is written ("called
 at redis.c:1273 · 1288") are on its name's hover. A helper call folds
-behind one quiet toggle, "Show helper calls", that lights its rows when
-on: the callee is a declaration the helper question decided serves the
-work of others, and it stands in a part more than half of the program's
-other parts call into (decided from the calls, never by name: Server core
-state, Core data structures, Client I/O and command dispatch in
-redis-server) or in the caller's own part. A helper into any other part
-stays, since its part says what it is for, and a step whose every call is
-a helper shows them as its calls. What is open stays open across the
-toggle. A step of the component's Main flow opens in place to its code
+into one muted line under its step, "+ helpers: createListObject,
+listAddNodeHead, dictAdd", each name a link reading its declaration as
+elsewhere; "+ helpers" opens that step's helpers into rows in place,
+lighter, and "− helpers" folds them again. The one quiet toggle "Show
+helper calls" opens every step's. No name is hidden (owner, 2026-09-29:
+the fold had hidden the answer of three of thirteen benchmark
+questions). A call folds when the callee is a declaration the helper
+question decided serves the work of others and it stands in a part more
+than half of the program's other parts call into (decided from the
+calls, never by name). A call into the caller's own part is its work and
+stays (rdbLoad's rdbLoadType, expireGenericCommand's setExpire and
+deleteKey); a helper into any other part stays, since its part says what
+it is for; a step whose every call is a helper shows them as its calls.
+What is open stays open across the toggle. A step of the component's Main flow opens in place to its code
 flow the same way, the model's sentence kept in its style above it.
 
 An input's reading opens at how a request reaches it: "How a request

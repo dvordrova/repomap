@@ -20,11 +20,14 @@ import (
 //     code the report names no declaration for (a library's fork or write),
 //     a plain row.
 //   - One are, for a dispatch site, the declarations it calls one of.
-//   - Helper folds the call behind "Show helper calls": the callee is a
-//     declaration the helper question decided serves the work of others,
-//     and it stands in a part most of the program's parts call into, or in
-//     the caller's own part. A helper into any other part stays: its part
-//     says what it is for.
+//   - Helper folds the call into its step's one muted line of helper names
+//     ("+ helpers: createListObject, dictAdd", each a name that reads it):
+//     the callee is a declaration the helper question decided serves the
+//     work of others, and it stands in a part most of the program's parts
+//     call into. A call into the caller's own part is its work and stays
+//     (owner, 2026-09-29: rdbLoad's rdbLoadType, expireGenericCommand's
+//     setExpire and deleteKey had waited behind the toggle); so does a
+//     helper into any other part, whose part says what it is for.
 type pageFlowCall struct {
 	Decl *int   `json:"decl,omitempty"`
 	Name string `json:"name,omitempty"`
@@ -112,7 +115,6 @@ func compareSites(a, b *programindex.Location) int {
 func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, declare func(string) int) []pageFlowCall {
 	flow := builder.flowIndex(index)
 	groupOf := builder.edgesBetweenGroups(*index).groupOf
-	callerPart := groupOf[callerID]
 	var calls []pageFlowCall
 	at := map[string]int{}
 	byRelation := map[string]int{}
@@ -165,8 +167,7 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 			continue
 		}
 		if ref, known := builder.subject(index.Target.ID, edge.ToSubjectID); known && ref.subject.Interpretation != nil && ref.subject.Interpretation.Helper {
-			part := groupOf[edge.ToSubjectID]
-			call.Helper = part != "" && (flow.shared[part] || part == callerPart)
+			call.Helper = flow.shared[groupOf[edge.ToSubjectID]]
 		}
 		if edge.Resolution == programindex.ResolutionAlternatives && edge.RelationID != "" {
 			byRelation[edge.RelationID] = len(calls)

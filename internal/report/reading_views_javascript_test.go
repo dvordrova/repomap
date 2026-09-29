@@ -179,10 +179,12 @@ assert.deepEqual(read.slice(reads),['redisClient'],'a written field reads the ty
 
 // A function's reading lists its calls as its flow, in the order Go wrote
 // them, each run into one part under that part's box, with no caption
-// repeating its name ("serverCron calls, in order:"). Helper calls wait
-// behind "Show helper calls" unless every call of a step is one; a call
-// opens in place to its callee's flow, a call its ancestors make says it is
-// shown above, and a library's call is a plain row.
+// repeating its name ("serverCron calls, in order:"). Helper calls stand as
+// one muted line of names under their step, each name reading its
+// declaration, unless every call of a step is one; the line and "Show
+// helper calls" open them in place. A call opens in place to its callee's
+// flow, a call its ancestors make says it is shown above, and a library's
+// call is a plain row.
 func TestAFunctionsReadingIsItsFlow(t *testing.T) {
 	reading := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
 	flow := systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
@@ -202,13 +204,23 @@ data.own.push({decl:save,flow:[{decl:log,helper:true,sites:[{at:'server.c:3010'}
 data.own.push({decl:lookup,flow:[{decl:1,sites:[{at:'server.c:905'}]}]});
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
 const said=view.textContent;
-assert.ok(!/serverCron calls|in order|steps|helpers|only helpers|not on the map|also from/.test(said),'no caption repeats its name and no meta word: '+said);
+assert.ok(!/serverCron calls|in order|steps|\d+ helpers|only helpers|not on the map|also from/.test(said),'no caption repeats its name and no meta word: '+said);
 const root=view.all(c=>c.has('map-flow-root'))[0];
 const rows=()=>root.all(c=>c.has('map-flow-row')&&!c.has('map-flow-helper')).map(c=>c.all(x=>x.has('map-reading-name')||x.has('map-flow-plain'))[0].textContent);
 assert.deepEqual(rows(),['beforeSleep()','wait3()','rdbSave()','rdbSave()','lookupKeyRead()','serverCron()'],'the calls in the order Go wrote them, helpers folded');
 assert.deepEqual(root.all(c=>c.has('map-part-box')).map(c=>c.textContent),['Server lifecycle and cron','Persistence','Server lifecycle and cron'],'each run into one part stands under its box');
 assert.ok(root.all(c=>c.has('map-flow-above')).length===1,'a call its ancestors make is shown above');
-assert.ok(!root.textContent.includes('redisLog'),'the helper call waits behind the toggle');
+const helperLine=root.all(c=>c.has('map-flow-helpers'));
+assert.equal(helperLine.length,1,'one line of helper names under the step');
+assert.equal(helperLine[0].textContent,'+ helpers: redisLog()','the helper is named, not hidden');
+const helperReads=read.length;helperLine[0].all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
+assert.deepEqual(read.slice(helperReads),['redisLog'],'a helper name reads its declaration');
+// The line opens the step's helpers into rows in place, and folds them again.
+helperLine[0].children[0].listeners.click({stopPropagation(){}});
+assert.deepEqual(root.all(c=>c.has('map-flow-row')&&c.has('map-flow-helper')).map(c=>c.textContent),['redisLog()'],'opened, the helper is a row in its place');
+assert.equal(root.all(c=>c.has('map-flow-helpers'))[0].textContent,'− helpers');
+root.all(c=>c.has('map-flow-helpers'))[0].children[0].listeners.click({stopPropagation(){}});
+assert.equal(root.all(c=>c.has('map-flow-helpers'))[0].textContent,'+ helpers: redisLog()');
 // Opening rdbSave shows its only call, a helper, as its call.
 const saveRow=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('rdbSave()'))[0];
 saveRow.open=true;
@@ -220,6 +232,7 @@ assert.ok(lookupRow&&lookupRow.all(c=>c.has('map-flow-plain')).length>0,'a decla
 rmFlowHelpers=true;root.rmRender();
 const shownHelpers=root.all(c=>c.has('map-flow-helper'));
 assert.ok(shownHelpers.length===1&&shownHelpers[0].textContent==='redisLog()','the toggle shows the helper call, lighter, in its place');
+assert.equal(root.all(c=>c.has('map-flow-helpers')).length,0,'with the toggle on, no step keeps its line');
 assert.ok(root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('rdbSave()')&&c.open).length===1,'what was open stays open');
 `)
 }
