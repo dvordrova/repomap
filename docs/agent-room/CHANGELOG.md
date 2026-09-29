@@ -1,5 +1,77 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Go programs built with tags; test code reaches no catalogue
+
+- **Why:** litestream's Makefile builds `./cmd/litestream-vfs` with
+  `-tags vfs,SQLITE3VFS_LOADABLE_EXT`; the run's own load saw no program
+  there, so the report's "litestream-vfs" was the npm wrapper and 22 must
+  items (the VFS PRAGMAs and SQL functions, `LITESTREAM_REPLICA_URL`, its
+  workers and data) had no page. freqtrade's
+  library showed `tests/` rows among its outbound calls and data, and
+  litestream's data held `*_test.go` SQL (32 of its 54 extras).
+- **Tagged programs (5ecf315d, DISCOVERY "Go programs built with tags"):**
+  gofacts reads makefile recipe lines (variables the makefile sets outside
+  conditionals expanded) and goreleaser builds for `go build`/`go install`
+  with `-tags`, `-C`, a `cd`, `GOOS`/`GOARCH` and package arguments. A
+  described package the run's load makes no program is loaded again with
+  the line's tags for the line's platform (the run's, then the host's, then
+  as written) and becomes a Go executable target with `build_tags`,
+  `build_platform` and `build_sources` in its identity, the ordinary key,
+  its own prepared workspace, a `go_build_tags` portfolio observation and a
+  main-file hypothesis. litestream: Makefile:17 builds for the run's
+  `windows/amd64` (platform evidence), where cgo is off and `main.go` is a
+  cgo file; Makefile:43 (`GOOS=darwin GOARCH=amd64`) is the host's and makes
+  it a program: 2 extra `go list` loads, the other three lines are not
+  loaded.
+- **cgo (14f93036):** the dynamic handoff index refused the column-less
+  `//line` declarations of cgo's `_cgoexp_*` and `_cgo_cmalloc`, which the
+  direct call index accepts, so any Go target with cgo in its own packages
+  failed ("seal Go dynamic handoff index: invalid function").
+- **Test code (4b0e4394, 4445bcd9, READING "Boundaries"):** the reading's one
+  test rule, its adapter's `TestSources`, now drops every boundary a test
+  file makes before any question and every data object in a test file. An
+  extraction in a code file belongs only to the programs holding the file
+  (eef3a98e's rule, which a root target's path claim bypassed), so a test no
+  load selects (other programs' tests, `vfs`/`chaos`/`soak` tags,
+  `tests/integration`) is no program's data.
+- **Fixtures:** the Go fixture's Makefile builds `cmd/vfs` with
+  `-tags $(VFS_TAGS)`; `cmd/vfs` and `root_vfs.go` build only with
+  `fixturevfs` (TestCumulativeGoProgramBuiltWithTagsFromItsMakefile). Each
+  language fixture's test file writes `CREATE TABLE test_only_rows`, and
+  `root_optional_test.go` (only `repomap_optional_tests`) too
+  (TestCumulativeTestCodeReachesNoOutboundOrData; Go data only, Clojure call
+  only, C records no testing sources). Mutations fail both tests.
+- **Acceptance (binary 994141c4a9bc, commit 5ecf315d; `make test` and
+  `make vet` green):**
+  - litestream `--no-model --target x` lists `cmd/litestream-vfs
+    (executable_package, -tags SQLITE3VFS_LOADABLE_EXT,vfs for
+    darwin/amd64; github.com/benbjohnson/litestream@.::…/cmd/litestream-vfs)`.
+    Its no-model run: exit 0, 7.6 s, 36 files, 2,203 objects (249 in
+    `vfs.go`, which only `vfs` builds; the seven exported `GoLitestream*`),
+    eight `LITESTREAM_*` environment reads in `main.go` among 17.
+  - litestream library, no-model: data 1,143 → 18, from test files
+    1,091 → 0 (the other 34 were `cmd/` programs' and `_examples` code).
+  - freqtrade library, no-model: outbound 25 → 20 (`tests/` 5 → 0), data
+    71 → 35 (`tests/` 36 → 0).
+  - litestream ordinary online run: exit 0, 1m07s, 139 live and 118 cached
+    calls (1m52s provider time), 7/9 targets (the two C targets fail as
+    before: `Python.h`, the generated `litestream-vfs.h`). Pages 6 → 7:
+    `cmd/litestream-vfs` has three parts (Platform internals, VFS core, VFS
+    C bindings), the `extension litestream` input
+    (`sqlite3vfs.RegisterVFS`), `LITESTREAM_REPLICA_URL` and the other
+    settings, and an orientation line naming them. cmd/litestream's data
+    40 → 16, from tests 24 → 0; no page has an outbound or data row from a
+    test file.
+  - Open: the PRAGMA names are the cases of `vfs.go`'s `FileControl`
+    switch on `pragmaName`, and the SQL functions are registered in
+    `src/litestream-vfs.c`, whose C target fails on the header `go build`
+    generates; neither is an input yet. The vfs page has no outbound call or
+    data of its own: the shared module folded into cmd/litestream carries
+    `db.go`'s statements.
+  - Open: `atlas_systems` is no registered semantic stage, so its live
+    exchange warns `stage=unknown code=artifact_write_failed`; unrelated to
+    this batch.
+
 ## 2026-09-29 — Go field reads and writes; an outside field store names the field
 
 - **Why:** Go recorded no field access (GO's gap after the C field pass,
