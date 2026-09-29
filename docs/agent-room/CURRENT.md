@@ -209,6 +209,16 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   titled by that name where its directory ends otherwise
   (`freqtrade-client`) ([Discovery](../contracts/DISCOVERY.md),
   [Report](../contracts/REPORT.md)).
+- **Held code and self-launches (2026-09-30):** a program holds the files
+  its map claims (its parts' declarations and its off-map files); a shared
+  declaration's callers elsewhere count only programs holding the caller,
+  so programs sharing one Python project index no longer repeat each
+  other's callers. A program starting itself (litestream's MCP server
+  running `litestream`) draws an arrow into its own entry part, not an
+  Outside chip. A Python test directory beside a distribution's declared
+  packages is test code whole, so a folded root distribution's `tests/`
+  leaves the product map by the test-only part rule
+  ([Report](../contracts/REPORT.md), [Python](../contracts/PYTHON.md)).
 - **Data ownership:** an extraction belongs to the programs holding one of its
   files. One no program holds in a code file (tests, fixtures, scripts) or
   under a tooling directory (`testdata`, `.github`, `.claude`, `.vscode`) is

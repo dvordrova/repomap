@@ -1,5 +1,92 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — The data batch of the second human-eye review: held code, test directories, self-launches, unread and template addresses, prose refs, entry names
+
+- **Why:** the reviewer's items 1–8 (crops in the scratchpad's `eye2/`)
+  and the column agent's native `X$1 calls Y` labels. Item 6a (spellings
+  of one value) is the entry above (0e4536a3).
+- **Shared code (1, f467d538; REPORT):** a program holds the files its map
+  claims (its parts' declarations, its off-map files); a shared
+  declaration's holders, its callers elsewhere and a call side's own path
+  count only held declarations. freqtrade's `FreqtradeBot.process` had
+  listed `Worker._process_running` under its own part and under five script
+  programs sharing the project index. A declaration calling itself is no
+  caller elsewhere.
+- **Tests on the product map (2, 3ec10290; PYTHON § Test sources):** the
+  topmost directory below a resolved pytest table holding a selected test
+  module, with no declared module or program launch file under it, in a
+  project declaring its packages, is test code whole. freqtrade's test
+  sources went 106 → 140; the "Strategy test fixtures" / "Test fixtures"
+  parts and the "Tests" area are gone (33 parts, 8 areas). Clojure's test
+  alias `:extra-paths` and Playwright's `testDir` are the equivalents.
+- **othello (3, 4; 269d3a62, c1b3abcf):** the desktop Inputs read
+  `key-pressed`, `mouse-moved`, `mouse-pressed` (378a0679, now run) and the
+  `:draw` hand-over `othello.ui.draw/draw-state`, no longer
+  `othello.ui.sketch/start!`: an entry with no chosen word is named by its
+  handler before the boundary's Caller, which is the enclosing function
+  when the handler lives in another file. `move` does call itself (its
+  two-argument form calls its three-argument form through the var); no
+  declaration is listed among its own callers or callees, and the app
+  program's second listing was the shared-code join.
+- **Prose refs (5, 94d2130b; READING § Orientation) — this run's one
+  question change:** the overview prompt says refs go only in the ref
+  fields; the decoder refuses a summary or role label writing an advertised
+  ref and drops a purpose or note writing one, no rewrite. freqtrade's
+  saved overview request (`bce326d6…`), 3 draws each: the former prompt
+  wrote refs in the summary in 2 of 3 ("main program (t1)", "(t2-t6)"),
+  the new one in 0 of 3 (every draw 7 roles, 7 steps). The run's summary
+  has no ref.
+- **Kind titles (6c, ead4fbe1; REPORT):** "Inputs" as a kind was
+  `extension` (litestream's `sqlite3vfs.RegisterVFS`, the Python package's
+  `Extension(...)`), missing from the column's title map; every kind
+  GroupsIndex gives is titled, `entry` reads "Kind not established".
+- **Self-launch (7, 28fcda00; REPORT):** litestream's MCP server runs
+  `litestream`, its own program (executables `litestream` joined; the rule
+  kept a program starting itself outside). Its arrow now goes into the part
+  holding the program's seeds; no Outside chip named litestream.
+- **Addresses (8; bd60212f, b885d644, 9395235d; READING, GO):** a walk
+  ending at an unknown value is `Unread` ("Address not established from
+  code": Redis's `(struct sockaddr*)&sa`). A Go function's result leaves
+  out returns handing zero values beside a non-nil error (litestream's
+  `expand`'s `return "", err` had made the WAL `-wal`). A template writes
+  an unresolved part as the code wrote it and is one file: `{db.path}-wal`.
+- **Labels (269d3a62; READING):** connections name an inline callable by
+  its holder (`FindSQLiteDatabases (inline) calls IsSQLiteDatabase`); 21 of
+  litestream's 1340 connections had carried `$N`, now 0.
+- **Checks:** `TestACallerIsListedOnlyUnderTheProgramsHoldingIt`,
+  `TestATestDirectoryBesideTheDeclaredPackagesIsTestCode`,
+  `TestCumulativePytestMetadataPreservesAllIndexedDeclarations` (tests/
+  whole), `TestAProseValueWritingARefIsRefusedAtItsCell`,
+  `TestAStartedProgramThisRepositoryBuildsIsThatProgram`,
+  `TestAWalkEndingAtAnUnreadValueEstablishesNoAddress`,
+  `TestAnUnreadAddressIsNotEstablishedFromCode`, `assertGoSourceValues`
+  (failing helper), `TestEveryLanguageKeepsTheFilesItsCodeReaches`
+  (`{store.path}-journal`), `TestAnUnnamedEntryIsNamedByItsHandlerNotItsRegistrar`,
+  `TestAConnectionNamesAnInlineCallableByItsHolder`,
+  `TestADeclarationCallingItselfIsNoInternalConnection`; `make test` and
+  `make vet` (package parallelism 2) pass.
+- **Acceptance** (ordinary binary from 16415332 plus the display agents'
+  uncommitted edits, default cache, `--no-serve --no-open`): othello
+  `20260929-234241` exit 0, 4 s; litestream `234245` exit 0, 82 s (live:
+  atlas_api 1, keys 2, role_assign 1, role_gate 3, symbols 2, glossary 11,
+  orientation 2); Redis `234508` exit 0, 21 s (glossary 3, orientation 1);
+  freqtrade `234529` exit 0, 247 s (api 1, areas 7, boundaries 2, core 2,
+  role_helper 1, glossary 15, orientation 2). litestream: `storageClass`
+  carries `storage-class` as its alias, the WAL is `{db.path}-wal`, no
+  Outside tile named litestream (the MCP part's arrow goes into the entry
+  part). Redis: `b121`'s use is unread and the page says so once.
+- **Open:** freqtrade's `--verbose`, `--user-data-dir`, `--no-color` are
+  not global: its main parser takes only `--version` (`ARGS_MAIN`); they
+  are `ARGS_COMMON`, added to `_common_parser`, which 19 subcommands take
+  as `parents=[...]`, and every flag is a row of `AVAILABLE_CLI_OPTIONS`
+  read by `_build_args(optionlist=ARGS_X, parser=P)`. Nesting them needs
+  two code facts not made yet (a key list handed with a parser to the
+  table's reader; a parser handed as a parent to an input's own call). The
+  column shows no spelling aliases yet (`Operation.Aliases`), and the
+  canvas's input groups (web/cards.mjs, kind-icons.mjs) still lack
+  `extension`/`consumer` (its icon key is `queue_consumer`). Python has no
+  `same_value_as` (PYTHON).
+
 ## 2026-09-30 — Spellings of one value are one input with aliases (reviewer's item 6a)
 
 - **Why:** litestream reads a replica URL's options in two spellings,
