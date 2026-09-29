@@ -820,6 +820,27 @@ reader what say what its rows are: redis-cli's `cmdTable`, read by
 callers, and is command 0.83–0.88 with its file; DEBUG's `strencoding`, read
 into a reply, went from command 0.55 to none 0.88–0.93.
 
+Two tables are not asked, since how they are read says their rows are no
+inputs of their own (places `read_at` forms, PROGRAM_INDEX's shared
+witnesses); each is a tables.md line naming its readers, and makes nothing.
+A table every read of which outside tests looks another table up with each
+of its rows, all one word (a list, tuple or set of strings), holds that
+table's rows: freqtrade's 28 `ARGS_*` lists of option keys, which
+`_build_args` looks up in `AVAILABLE_CLI_OPTIONS`, were each answered
+command beside the 124 real flags. The other table must be asked or hold
+in turn the rows of one that is; a cycle of such tables is asked. A table
+every read of which outside tests only tests a value's membership holds
+the words of one condition, as a list written in the condition is one case
+and no comparison: `NO_CONF_REQURIED`, which `_parse_args` tests the
+parsed subcommand against, was answered command and listed
+`backtest-filter`, no subcommand. A table with any other read is asked as
+before. freqtrade asks 29 of its 60 tables outside tests (28 hold keys,
+`NO_CONF_REQURIED`, `NO_CONF_ALLOWED` and `SUPPORTED_EXCHANGES` are only
+tested); the asked tables' items are unchanged. The acceptance run's 272
+command extras held 167 rows of these tables and its one trap hit
+(`backtest-filter`); every subcommand they duplicated is found at its
+`add_parser` call.
+
 **Settings in tagged fields.** A repository structure field whose tag names a
 key (Go's object aliases, `yaml:"dbs"`) is asked on its own what that key is
 (`repomap.atlas.inputs.v1.field`, stage `atlas_inputs`, Jev, `Memoize`):

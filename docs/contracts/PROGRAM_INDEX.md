@@ -57,7 +57,19 @@ ProgramIndex retains:
   `c_function_pointer_store`, Go `interface_field_assignment`, Python
   `function_value_store`). It is identity only: the call stays unresolved,
   the witness is never its target, and validation refuses an `object_id` that
-  names no object of the index or a control-context witness that names one;
+  names no object of the index or a control-context witness that names one.
+  Two witness kinds are shared by every adapter, on a `reads` relation of a
+  variable, and say how the site uses the variable's elements (a table's
+  rows): `membership`, the site tests whether a value is one of them
+  (`command in NO_CONFIG`), and `keys`, each element is a key the program
+  reads another module-level variable with, which its `object_id` names and
+  its location shows subscripted (the variable iterated there, or handed to
+  a repository callable that iterates that parameter: freqtrade's
+  `ARGS_TRADE`, handed to `_build_args` as `optionlist`, which does
+  `for val in optionlist: AVAILABLE_CLI_OPTIONS[val]`). Validation refuses
+  either off a read of variables, both on one site, and a `keys` witness
+  naming no variable or the variable read. Python records both (PYTHON); C
+  records neither (C); Go, JS/TS and Clojure record no tables of names;
 - every source-distinct neutral relation pattern;
 - call/decorator form, selector, invocation, dispatch and exact source location.
   Every adapter uses the same closed words. `invocation` is how a call runs:

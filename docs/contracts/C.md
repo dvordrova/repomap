@@ -491,6 +491,12 @@ nothing:
   (`getopt_long(argc, argv, "hvc:o:", …)`), deferred and never asked;
 - a table of names declared inside a function (`long_opts` in `main`) or a
   file-level one no call compares with;
+- how a function reads a table (PROGRAM_INDEX's `membership` and `keys`
+  witnesses; PYTHON): C has no membership operator (a loop comparing each
+  row with `strcmp` may return a flag or the row) and no subscript by a
+  string (a row handed to a lookup function is a call), so every table read
+  is a plain `c_variable_read` and every table is asked (missing
+  equivalent, 2026-09-29);
 - an element of the argument vector handed to a repository function with no
   literal beside it (a configuration file's path in `argv[1]`);
 - a registry filled element by element (`t[i].proc = fn`);

@@ -596,6 +596,48 @@ read by a function (60 with a place outside tests: a table whose name
 starts with `_` is no declaration), `AVAILABLE_CLI_OPTIONS` with its 124
 `Arg(...)` rows among them, and 46 comparisons outside tests.
 
+How a function reads a table is recorded on the read (PROGRAM_INDEX's
+shared `membership` and `keys` witnesses), so the reading can tell a table
+naming another's rows from one declaring its own (READING):
+
+- `membership`: a module-level or field variable on the right of `in` or
+  `not in` (`parsed_arg.command in NO_CONF_REQURIED`). A scope testing the
+  same expression in another case, against another table or written words
+  (`if command in READ_ONLY: … elif command in WRITES:`), compares it case
+  by case as an if/elif chain does, so neither read is a membership test.
+- `keys`: a subscript of a module-level variable X, by name or as a
+  module's attribute, whose index is the element of a loop over the table:
+  a `for` whose target is that name until it is bound again, or a
+  comprehension with one generator and no condition. The loop iterates the
+  table where it is read, or a parameter of the function, and then each
+  call of that function (resolved, not through a class) handing the table
+  by keyword, or by position before any starred argument, meets the
+  parameter by name or by position as a call site counts, the receiver
+  excluded (`self._build_args(optionlist=ARGS_TRADE, parser=trade_cmd)`).
+  A method called through its class is handed its receiver first, so only
+  its keyword arguments meet parameters. The subscript must run on every
+  pass: in a plain statement of the loop's own body before any `continue`,
+  in a body with no `break`, `return` or `raise`, outside a conditional
+  expression's branches, the later operands of `and`/`or`, a lambda or a
+  comprehension, and the loop outside the body of a `try` with handlers.
+  A table looked up with its own rows (`HELP[name] for name in HELP`)
+  holds no keys of another.
+
+The fixture's `dispatch.py` holds each: `ARGS_SERVE` handed to
+`build_args` by keyword and `ARGS_INIT` by position and looked up by
+`init_flags`' comprehension (keys of `OPTIONS`), `NO_CONFIG` and `KNOWN`
+tested alone (membership, `KNOWN` before a `getattr` dispatch), and the
+counter-cases `HELP` (its own keys, and a membership test beside a plain
+lookup), `COMMANDS` (looked up only under a condition, handed through a
+class), `READ_ONLY` and `WRITES` (tested case by case)
+(`TestPythonTablesNamingAnotherTablesRowsAreNoInputs`). freqtrade records
+keys of `AVAILABLE_CLI_OPTIONS` on the reads of its 28 `ARGS_*` tables
+(through `_build_args`) and membership on 7 tables, 3 of them tested
+alone (`NO_CONF_REQURIED`, `NO_CONF_ALLOWED`, `SUPPORTED_EXCHANGES`). Not
+recorded: `X.get(v)` and `v in X` before `X[v]` (a lookup under its own
+test is no keys read), and keys a program writes into X at run time (X's
+rows are its initializer's).
+
 ## Programs a call starts
 
 `revision` in `tool_cli.py` runs `subprocess.run(["git", "rev-parse",

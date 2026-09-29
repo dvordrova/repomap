@@ -1,5 +1,50 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — F4: a table of another table's keys, or one only tested for membership, is no inputs of its own
+
+- **Why:** the freqtrade acceptance (scratchpad `accept/run-freqtrade.log`,
+  `claim-audit/accept/freqtrade.md`) had 272 command extras, up from 11
+  after the Python tables (e4de0f0c) and the table question's read lines
+  (84e48166). The 28 `ARGS_*` lists of option keys were each answered
+  command beside `AVAILABLE_CLI_OPTIONS`' 124 real flags, and
+  `NO_CONF_REQURIED` listed the trap `backtest-filter`. The item showed
+  `_build_subcommands` handing `ARGS_TRADE` to `_build_args`, never
+  `_build_args` looking each element up in `AVAILABLE_CLI_OPTIONS`: the
+  code fact was missing, not the model's judgement. Code 5fc884b5; the
+  code derives it, no question is added or changed.
+- **Facts:** ProgramIndex's shared `membership` and `keys` witnesses on a
+  read of a variable (PROGRAM_INDEX), recorded by Python (PYTHON); atlas
+  graph 24 carries each read's form (`read_at` `form`, `keys_of`).
+- **Reading:** a table every read of which outside tests keys another asked
+  table with one-word rows, or only tests a value's membership, is not
+  asked and makes nothing; a tables.md line names its readers (READING).
+- **Skeptic (acted on):** keys needs X ≠ T (`HELP[name] for name in HELP`
+  folded HELP away), a subscript on every pass (a guarded lookup, a try
+  with handlers, a continue before it, a comprehension's condition), no
+  positional match through a class (`K.build(k, OTHER, FLAGS)` shifted a
+  position), every read a keys read, X asked (chains followed, a cycle
+  asked) and one-word rows; membership needs one case (`if c in A: … elif
+  c in B:` is compared case by case and stays asked); validation of both
+  kinds. A validation list before a `getattr` dispatch (`KNOWN`) is none,
+  as a list written in its condition is. Each is a fixture case in
+  `dispatch.py` (`TestPythonTablesNamingAnotherTablesRowsAreNoInputs`,
+  which fails with the reading rule off: the three tables are asked).
+- **Missing equivalents:** C tables record neither form (no membership
+  operator, no subscript by a string; C.md); Go, JS/TS and Clojure record no
+  tables of names.
+- **Measured (no-model freqtrade, `python:.:script:freqtrade`):** 60 tables
+  outside tests; 28 `ARGS_*` hold keys of `AVAILABLE_CLI_OPTIONS` (167
+  rows), `NO_CONF_REQURIED`, `NO_CONF_ALLOWED` and `SUPPORTED_EXCHANGES`
+  (answered none before) are only tested (38 rows); 29 tables asked, their
+  items byte-identical, so no probe was needed. Against the acceptance
+  audit, 167 of the 272 command extras sit on these tables' rows (→ 105;
+  the rest: 95 `cli_options.py` flags outside the inventory, 4
+  `trade_model.py` settings, 3 other rows), and the trap hit goes (1 → 0);
+  every subcommand they duplicated is found at its `add_parser` call, so
+  recall is unchanged. Not yet confirmed by an online run.
+- **Also:** the `atlas_inputs` tables.md line counted comparisons as tables
+  (freqtrade "100 of 60 tables"); each count is now its own question's.
+
 ## 2026-09-29 — Acceptance fixes: every stage journaled, each refusal once, no empty frontier, the claim audit's file and target matching
 
 - **Why:** the integrated acceptance (scratchpad `accept/`, `claim-audit/accept/`)
