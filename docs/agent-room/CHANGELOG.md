@@ -1,5 +1,59 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Where an outgoing call is reached from (claim audit fix A)
+
+- **Why:** an outgoing call written in a shared helper named only its caller
+  one hop inside the helper's own file: Redis's `connect` (anet.c:158) and
+  `gethostbyname` (anet.c:115/146) read "Called from anetTcpConnect,
+  anetTcpNonBlockConnect" with line pairs, never syncWithMaster,
+  cliConnect or createClient (root cause: `claim-audit/rootcause/
+  external-data.md`, fix A).
+- **Change:** GroupsIndex 26 (de051380) saves `OutboundCall.ReachedFrom`, a
+  code fact at projection: exact `calls` followed back per program through
+  the call's own part; each path ends at the first caller in another part
+  with its call site, or where callers run out inside the part only at a
+  seed or an input's handler (else dropped); test sources and callers the
+  adapter proved never run are skipped; cycles stop, no depth cap; no model
+  request changes (READING § Outside systems). The tile's reading
+  (dd0087f0) shows "Called from" in place of the one-hop callers: every
+  record the tile stands for, its own program first, each part in its box
+  with its callers by name, another program's part named with its program,
+  no line numbers or code marks, a name reading its function in the column
+  and on the canvas, more than twelve folded under the count (REPORT §
+  External communication and data).
+- **Fixtures (a8f094e1):** C's client gains `repl.c` (without a command,
+  each input line over its own connection), so net.c's `netConnect` is
+  reached from main (kvcli.c) and repl (repl.c): held end to end by the kvd
+  preset reading. Go `DestinationRequest`, Python and TypeScript `dispatch`
+  already existed and are held over their real ProgramIndex with the parts
+  given by the test. **Missing:** Clojure has no sending helper with two
+  callers (`revision`'s git is called by nothing).
+- **Skipped:** fix D (declared-on for outgoing calls, "configured at …"). It
+  is no one line per destination: freqtrade's "cryptocurrency exchanges"
+  spans Exchange's `_init_ccxt` object and exchange_ws's parameter store,
+  SQLAlchemy sessions differ by module, and C's object is the `socket()`
+  call, which configures nothing.
+- **Acceptance (binary of a8f094e1, default cache, ordinary runs):**
+  - Redis 20260929-140032: exit 0, 15 s, 0 live calls. t1 connect and
+    gethostbyname@146 ← Replication: syncWithMaster (redis.c:7219); t2 ←
+    Benchmark client: createClient (redis-benchmark.c:343), @115 ←
+    parseOptions (:430); t4 ← Command line client: cliConnect
+    (redis-cli.c:179), @115 ← parseOptions (:386). The shared
+    gethostbyname@146 tile reads all three under their parts
+    (`look/b4a-redis-dns-*.png`). The "TCP endpoint" tile is redis-server's
+    master only: redis-cli's and redis-benchmark's connects are joined to
+    redis-server's input and drawn into it, so their callers are on that
+    arrow (its call's side names cliConnect), not on the tile
+    (`look/b4a-redis-tcp-*.png`).
+  - freqtrade 20260929-140146: exit 0, 321 s, 0 live calls. t1: 170 of 213
+    outgoing calls have callers, 875 in total, at most 38 names on one call
+    (Telegram's send_message, reached from 38 command handlers of its own
+    part); exchange calls reach 36 functions in 6 parts (fetch_l2_order_book
+    23, folded, `look/b4a-freqtrade-orderbook-*.png`). webhook.py's
+    `requests.post` has none: RPCManager calls each module's `send_msg`
+    over a list, which no exact call resolves.
+  - Renders: `redis-r2/run/latest-{redis,freqtrade}.html`.
+
 ## 2026-09-29 — Python: inherited self calls and fields, what a call produces, partial
 
 - **Why:** the claim audit's root-cause pass (external-data, workers) found
