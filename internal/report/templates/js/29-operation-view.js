@@ -486,8 +486,10 @@ function rmCatalogInputClick(event,reveal){
     // Search is a chooser. Once a destination is chosen it must not continue
     // highlighting every other result or covering the destination's drawing.
     search.value=searchValue='';filter.value=filterValue='';updateResults();
-    // Choosing an input, even its tile on the canvas, moves to its path; only
-    // Show input frames the tile.
+    // Choosing an input from Find, a link or a reading moves to its path; its
+    // tile clicked on the canvas is read with its path, the camera staying
+    // (owner, 2026-09-29: a click on the canvas reads, it does not move).
+    // Only Show input frames the tile.
     var path=focus!=='input'&&rmInputPath(n,byID).length>0;
     // Reading anything else leaves the input's path (owner, 2026-09-28):
     // "serverCron ·" had prefixed every breadcrumb for four questions.
@@ -496,7 +498,7 @@ function rmCatalogInputClick(event,reveal){
     emphasize();if(navigate)address(n,!!(focus||path)&&!!map.captureViewport?.()?.overview);
     await ready;if(ticket!==selectionRevision)return false;map.showNode?.(n);if(source)map.explainSource?.(source);
     if(focus==='input')surface?.showInput(n.id);
-    else if(focus||path)focusNode(n,!!n.dataset.activation||focus==='center');
+    else if(focus)focusNode(n,!!n.dataset.activation||focus==='center');
     emit();return true;
   }
   // A click on an arrow end reads the frame it stands on, scrolled to its
@@ -679,7 +681,7 @@ function rmCatalogInputClick(event,reveal){
     var frameConnections=null,partConnections=card.querySelector('.map-part-reading');
     if(n.dataset.branch==='area'||n.dataset.branch==='component'||partConnections){
       frameConnections=rmEl('div','map-frame-connections-holder');
-      if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'',function(part,key){readDeclaration(byID[part],key);})){
+      if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'',function(part,key){readDeclaration(byID[part],key);},function(id){var input=byID[id];if(input&&input.dataset.activation)select(input,true,null,true);})){
         if(partConnections)partConnections.insertBefore(frameConnections,partConnections.querySelector(':scope>.map-reading-in')||partConnections.querySelector(':scope>.map-reading-out'));
         else (card.querySelector('.map-area-composition')||card.querySelector('.map-card-intro'))?.after(frameConnections);
       }else frameConnections=null;

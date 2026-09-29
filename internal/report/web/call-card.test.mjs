@@ -76,6 +76,8 @@ test('inputs sharing a handler are one row naming each input, counted as one han
   assert.equal(card.total,2,'the card counts handlers');
   assert.equal(countsHandlers(card),true);assert.equal(countWords['implemented in'],'{0} handlers','its count says handlers');
   assert.deepEqual(card.groups[0].pairs[0].rows.map(r=>`${r.caller}>${r.callee}`),['sadd>saddCommand','sinter, smembers>sinterCommand']);
+  // Each input keeps its node, so the reading column reads it.
+  assert.deepEqual(card.groups[0].pairs[0].rows[1].inputRefs,[{id:'sinter',name:'sinter'},{id:'smembers',name:'smembers'}]);
 });
 
 // redis-cli's options and cmdTable rows have no established handler: their

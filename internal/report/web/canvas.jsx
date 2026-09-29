@@ -338,19 +338,31 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const owner=symbol.owner?symbols[symbol.owner-1]?.name:'';
     return {part:member.part,names:[symbol.name,owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:[symbol.href,symbol.open].filter(Boolean)};
   }
-  // Centre a declaration at the scale its tile reads at.
+  // Show a declaration's tile with its part: at the zoom where the part's
+  // tiles are drawn and the part stands whole across the canvas, its title
+  // in sight, never deeper (owner, 2026-09-29: a name chosen in the column
+  // had zoomed to the tile's own size, the frames around it cut to giant
+  // "Core data st…" and "Linked lis…" titles). A part that fits is framed
+  // whole; one taller than the canvas is framed across and the tile
+  // centred down it, the part's head or foot kept at the margin.
   function focusMember(part,index,smooth=true){
     const n=placed.get(part);if(!n||!instance||initializing)return false;
     const data={...byID.get(part),...looseOf(n)},{box,scale}=partBox(data),grid=partGrid(data,box);
     const symbols=data.symbols||[],row=grid.rows[index]||grid.rows[(symbols[index]?.owner||0)-1];
     if(!row)return false;
-    const {inset,columnGap:gap}=tileRoom,rect=host.getBoundingClientRect();
+    const {inset,columnGap:gap}=tileRoom,rect=host.getBoundingClientRect(),margin=24;
     // The declarations stand inside the part's 1px border (canvas.css).
     const point={x:n.absolute.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor),
       y:n.absolute.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor)};
     overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
     arrive([part]);locationSubject=part;
-    commitCamera(instance.setViewport(pointViewport(point,Math.min(maxZoom,deepZoom(part)),rect.width,rect.height),{duration:smooth?420:0}),part);
+    const drawn=860*1.02/(box.width*scale),across=(rect.width-2*margin)/n.width;
+    const zoom=Math.min(maxZoom,deepZoom(part),Math.max(drawn,across));
+    const viewport=pointViewport(point,zoom,rect.width,rect.height);
+    if(n.width*zoom<=rect.width-2*margin)viewport.x=rect.width/2-(n.absolute.x+n.width/2)*zoom;
+    if(n.height*zoom<=rect.height-2*margin)viewport.y=rect.height/2-(n.absolute.y+n.height/2)*zoom;
+    else viewport.y=Math.min(margin-n.absolute.y*zoom,Math.max(rect.height-margin-(n.absolute.y+n.height)*zoom,viewport.y));
+    commitCamera(instance.setViewport(viewport,{duration:smooth?420:0}),part);
     return true;
   }
   // Whether a declaration's tile is drawn and in sight at the current
@@ -927,7 +939,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description}</p>}
       {inputs&&<InputTypes groups={item.inputGroups} lit={lit}/>}
       {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
-        <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,true);}}>{byID.get(id).name||byID.get(id).title}</button>
+        <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,false);}}>{byID.get(id).name||byID.get(id).title}</button>
       </li>)}</ul>}
       {showCounts&&<div className="flow-inside-counts">{counts}</div>}
     </div>;
@@ -1395,12 +1407,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // `choose(part,key)` reads a declaration in the report: a name in the
   // column's rows is chosen when the part it names lists that declaration
   // among its own tiles.
-  function mountConnections(container,id,open='',choose=null){
+  function mountConnections(container,id,open='',choose=null,readInput=null){
     const groups=frameConnections(id);
     if(!groups.length)return false;
     for(const [element,root] of mounted)if(!element.isConnected){root.unmount();mounted.delete(element);}
     const root=mounted.get(container)||createRoot(container);mounted.set(container,root);
-    const chooser=choose&&{go:choose,can:(part,key)=>!!key&&(byID.get(part)?.symbols||[]).some(symbol=>symbol.href===key||symbol.open===key)};
+    const chooser=choose&&{go:choose,can:(part,key)=>!!key&&(byID.get(part)?.symbols||[]).some(symbol=>symbol.href===key||symbol.open===key),input:readInput};
     flushSync(()=>root.render(<FrameConnections groups={groups} open={open} choose={chooser} single={!placed.get(id)?.frame}/>));
     return true;
   }

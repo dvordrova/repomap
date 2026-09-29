@@ -412,6 +412,12 @@ details.map-reading-peer[open]>summary::before{content:'▾'}
 .map-reading-out{padding-top:10px;border-top:1px solid var(--line)}
 .map-decl-name{margin:8px 0 2px;font-family:var(--mono);overflow-wrap:anywhere}
 .map-decl-code.map-reading-name{font-size:17px;font-weight:750}
+/* The declaration's name is the link to all of its code (owner,
+   2026-09-29: readers had taken it for a title): underlined under the
+   pointer, with a small code mark in the link's own colour. */
+a.map-decl-code:hover{text-decoration:underline}
+a.map-decl-code::after{content:"</>";display:inline-block;margin-left:6px;padding:0 3px;border:1px solid currentColor;border-radius:3px;font:600 10px/14px var(--mono);vertical-align:3px;opacity:.7}
+a.map-decl-code:hover::after{opacity:1}
 .map-decl-signature{color:var(--muted);font-size:12.5px}
 .map-decl-where{display:flex;align-items:center;gap:12px;margin:0 0 10px}
 /* The author's comment above a declaration, quoted in its reading and marked as theirs. */

@@ -19,6 +19,13 @@ function Name({at,href,title,choose,children}){
   return href?<a href={href} title={title||undefined} target="_blank" onClick={read}>{children}</a>
     :<button type="button" className="flow-card-name" title={title||undefined} onClick={read}>{children}</button>;
 }
+// The inputs of a row, each a name reading that input in the reading
+// column (owner, 2026-09-29: "sync" and "slaveof" had been plain text).
+function InputNames({refs,choose}){
+  return <>{refs.map((ref,i)=><React.Fragment key={ref.id}>{i>0&&', '}{choose?.input
+    ?<button type="button" className="flow-card-name" onClick={event=>{event.stopPropagation();choose.input(ref.id);}}>{ref.name}</button>
+    :ref.name}</React.Fragment>)}</>;
+}
 // Once names read declarations, a row's code is its own explicit link:
 // where the call is written.
 function OpenCode({href,title}){
@@ -82,7 +89,7 @@ export function CallRows({card,sticky=true,choose=null}){
           }
           if(row.sides)return <SidesRow key={i} row={row} choose={choose}/>;
           const again=i>0&&pair.rows[i-1].caller===row.caller&&pair.rows[i-1].kind!=='other';
-          return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.inputs?row.caller:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
+          return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.inputs?<InputNames refs={row.inputRefs} choose={choose}/>:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
             {verb(row.kind)&&<i>{verb(row.kind)}</i>}{row.callee&&<Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>}{choose&&<OpenCode href={row.site||row.calleeHref} title={row.at}/>}</p>;
         })}</div>
       </div>)}

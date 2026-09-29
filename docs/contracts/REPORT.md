@@ -338,8 +338,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   in the tiles' own slate and grey head. There is no folded prose legend
   under the map. The input context
   and leave-path action live in the reading card. An input chosen from
-  Find, a link, a reading or its own tile on the canvas is entered as its
-  path, while the reading column reads the input. The camera takes the part
+  Find, a link or a reading is entered as its path, while the reading
+  column reads the input; its own tile clicked on the canvas is read with
+  its path pinned and the camera staying, as every canvas click reads
+  without moving (owner, 2026-09-29: slaveof's tile had flown the camera
+  to its path). The camera takes the part
   holding its handler, then each part the trace reaches from a part already
   taken while all of them fit at a scale where their headings stay about
   twelve pixels (and their layer open), and frames them; when the next step
@@ -636,8 +639,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   camera stays on a tile in sight. A modifier click still opens its code. A
   declaration the reading column names by its source (Find's code hit, a
   declaration chosen in the reading, a restored visit) is the one chosen on
-  the canvas, and a newly named one out of sight is centred at its reading
-  scale; a restored visit keeps its camera. The page data gives each tile its file and the
+  the canvas, and a newly named one out of sight is shown with its part: at
+  the zoom where the part's tiles are drawn and the part stands whole across
+  the canvas, framed whole when it fits and else across with the tile centred
+  down it, never deeper than the part's own title fits (owner, 2026-09-29: a
+  name chosen in the column had zoomed to the tile's own size under giant
+  cut titles); a restored visit keeps its camera. The page data gives each tile its file and the
   same source link its reading uses, served or static.
 
   Root summaries prioritize saved area names over role, counts and purpose;
@@ -793,7 +800,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Selection and hover never change box positions or sizes. The first click
   reads and zoom is separate (owner, 2026-09-28): a click on a part, a
   frame's title or a component's, a collection's or a destination's whole-map
-  card updates the reading column and marks it without moving the camera;
+  card, an area named on a component's card, or an input's tile updates the
+  reading column and marks it without moving the camera;
   the magnifier, "+" and a double-click zoom. Explicit destination clicks
   and Find move to their exact result when it is out of sight.
 

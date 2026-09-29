@@ -40,7 +40,10 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
       if(takenIn.has(kind)||kind==='input'){inputs.add(relation.from);kinds.set('inputs',inputs.size);}
       if(seen.has(key)){
         const row=seen.get(key),input=nameOf(relation.from);
-        if(row?.inputs&&!row.inputs.includes(input)){row.inputs.push(input);row.inputs.sort((a,b)=>String(a).localeCompare(String(b)));row.caller=row.inputs.join(', ');}
+        if(row?.inputs&&!row.inputs.includes(input)){
+          row.inputRefs.push({id:relation.from,name:input});row.inputRefs.sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+          row.inputs=row.inputRefs.map(ref=>ref.name);row.caller=row.inputs.join(', ');
+        }
         continue;
       }
       total++;
@@ -62,7 +65,9 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
         // A call that leaves its program: each program's side of it, from
         // its own code (page_shared_code.go).
         sides:call.sides||null};
-      seen.set(key,!words&&(call.name||member)?Object.assign(row,{inputs:[row.caller]}):null);
+      // A row of inputs names each by its node, so the reading column can
+      // read it ("sync, slaveof → syncCommand").
+      seen.set(key,!words&&(call.name||member)?Object.assign(row,{inputs:[row.caller],inputRefs:[{id:relation.from,name:row.caller}]}):null);
       if(call.fold&&words){
         const foldKey=`${row.caller}\0${call.fold}`;
         if(!group.folds.has(foldKey))group.folds.set(foldKey,{caller:row.caller,callerAt:row.callerAt,site:row.site,kind,fold:call.fold,of:call.of||0,one:!!call.one,same:call.same||'',count:0,parts:new Map()});

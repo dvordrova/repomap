@@ -414,7 +414,8 @@ const showInput=()=>controls.children.flatMap(c=>c.children).find(c=>c.className
  assert.deepEqual(tiles,['get'],'Show input frames the tile among its group, not the path or the wall');
  assert.equal(showInput(),undefined,'once its tile is framed there is nowhere to go');
  const before=focused.length;await select(get,true);
- assert.deepEqual(focused.slice(before),[{id:'get',center:true}],'its tile clicked on the canvas moves to its path');
+ assert.deepEqual(focused.slice(before),[],'its tile clicked on the canvas reads it with its path, the camera staying (owner, 2026-09-29)');
+ assert.equal(operation,get,'the path stays pinned');
  assert.ok(showInput());
  await select(dispatch,true,null,true);
  assert.equal(operation,null,'reading a part leaves the input path (owner, 2026-09-28)');
