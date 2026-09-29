@@ -47,18 +47,22 @@
     },
     {
       "id": "f12",
-      "path": "staticsyms.h"
+      "path": "repl.c"
     },
     {
       "id": "f13",
-      "path": "strbuf.c"
+      "path": "staticsyms.h"
     },
     {
       "id": "f14",
-      "path": "strbuf.h"
+      "path": "strbuf.c"
     },
     {
       "id": "f15",
+      "path": "strbuf.h"
+    },
+    {
+      "id": "f16",
       "path": "tools/dump.c"
     }
   ]

@@ -15,4 +15,6 @@ configuration file of one directive per line: `port 7380` and
 `dbfilename backup.kv`. `bgsave` writes `dump.kv`
 from a forked child. The client connects to `KVD_HOST` (`127.0.0.1` by
 default, optionally written `kvd://127.0.0.1`) and `KVD_PORT`; its option
-`--raw` comes before the command.
+`--raw` comes before the command. Without a command it reads commands from
+its standard input, one per line, and sends each over a connection of its
+own.

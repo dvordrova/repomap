@@ -190,7 +190,7 @@ func TestCFixtureProgramsComeFromTheMakefile(t *testing.T) {
 	clientRule, _ := fixture.at(t, "Makefile", "kvcli: kvcli.o", "")
 	// The client links the server's event loop too, as redis-cli links
 	// adlist.o, and never runs it.
-	if client.Anchor != (cproject.Site{Path: "Makefile", Line: clientRule}) || !reflect.DeepEqual(cSpecPaths(client.Units), []string{"kvcli.c", "loop.c", "net.c", "strbuf.c"}) {
+	if client.Anchor != (cproject.Site{Path: "Makefile", Line: clientRule}) || !reflect.DeepEqual(cSpecPaths(client.Units), []string{"kvcli.c", "loop.c", "net.c", "repl.c", "strbuf.c"}) {
 		t.Fatalf("kvcli: %+v", client)
 	}
 	// Every unit keeps the flags that change what clang reads and drops

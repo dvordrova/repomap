@@ -9,11 +9,12 @@ all: kvd kvcli
 kvd: kvd.o loop.o net.o strbuf.o
 	$(CC) -o kvd kvd.o loop.o net.o strbuf.o -pthread
 
-kvcli: kvcli.o net.o strbuf.o loop.o
-	$(CC) -o kvcli kvcli.o net.o strbuf.o loop.o
+kvcli: kvcli.o repl.o net.o strbuf.o loop.o
+	$(CC) -o kvcli kvcli.o repl.o net.o strbuf.o loop.o
 
 kvd.o: kvd.c kvd.h loop.h net.h strbuf.h staticsyms.h
 kvcli.o: kvcli.c net.h strbuf.h
+repl.o: repl.c net.h
 loop.o: loop.c loop.h loop_poll.c loop_epoll.c
 net.o: net.c net.h
 strbuf.o: strbuf.c strbuf.h

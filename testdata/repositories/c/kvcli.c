@@ -8,6 +8,9 @@
 #include "net.h"
 #include "strbuf.h"
 
+/* The interactive mode, in repl.c. */
+int repl(const char *host, int port);
+
 /* The commands the client checks before sending: the same names as the
  * server's table, which also names the functions that run them. */
 static struct cliCommand {
@@ -44,6 +47,8 @@ int main(int argc, char **argv) {
     ssize_t n;
     int fd, j, first = 1;
 
+    /* Without a command, the client reads its commands from its input. */
+    if (argc == 1) return repl(host != NULL ? withoutScheme(host) : "127.0.0.1", port != NULL ? atoi(port) : 7379);
     /* --raw, an option of the client, comes before the command. */
     if (argc > 2 && strcasecmp(argv[1], "--raw") == 0) first = 2;
     if (argc <= first) {
