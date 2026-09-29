@@ -584,9 +584,12 @@ part's card shows it beside the pair's own.
   outbound call, listener or program started, and nothing is asked about it.
   A data object the extractors find in a test file is no data of a program.
   Both stop where the reading produces a target's boundaries and data; the
-  report hides nothing. A file a test runner does not collect (a helper
-  under `tests/` pytest's patterns do not match) is ordinary code until its
-  adapter lists it.
+  report hides nothing. An extraction in a code file belongs only to the
+  programs holding that file, never to a target merely because its root holds
+  the path, so a test no load selects (`//go:build integration`, litestream's
+  `tests/`) is no program's data either. A file a test runner does not
+  collect (a helper under `tests/` pytest's patterns do not match) is
+  ordinary code until its adapter lists it.
 
 ## External symbols: the `atlas_api` table
 

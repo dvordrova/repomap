@@ -32,8 +32,11 @@ func (b *builder) addExtractions(graph *atlas.Graph) {
 			continue
 		}
 		entity := &atlas.EntityFacts{Data: facts.CloneData(fact.Data), Name: fact.Symbol, Extractor: fact.Extractor, Status: fact.Value, Files: []string{}}
+		// Code belongs to the programs that hold it, never to a target only
+		// because its root holds the path: a test file no load selects
+		// (`//go:build integration`, another program's test) is no program's.
 		targets := make(map[string]struct{})
-		if target := programTargets[fact.TargetID]; target != "" {
+		if target := programTargets[fact.TargetID]; target != "" && !facts.IsSourceFile(fact.Path) {
 			targets[target] = struct{}{}
 		}
 		for _, member := range fact.Evidence {
