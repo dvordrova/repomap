@@ -198,3 +198,51 @@ func TestRolePurposesDifferingOnlyInSpacesAreOneRole(t *testing.T) {
 		}
 	}
 }
+
+// Refs go only in the ref fields. A prose value writing a request-local
+// ref is refused at its own cell and never rewritten: the summary alone, a
+// role row whose label writes one, a purpose or a note alone (its role or
+// step stays). A ref-shaped word the request does not advertise is prose.
+// freqtrade's summary had read "main program (t1)" and "REST client (t7)".
+func TestAProseValueWritingARefIsRefusedAtItsCell(t *testing.T) {
+	fixture := newFixture(t)
+	refs := fixture.refs(t)
+	_, catalogue, err := buildOverview(fixture.input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alpha, beta, route := refs.target("alpha"), refs.target("beta"), refs.fact("route")
+	raw := encodeResponse(t, map[string]any{
+		"summary": "The main program (" + alpha + ") serves items.", "summary_refs": route,
+		"roles": []any{
+			map[string]any{"target": alpha, "role": "Backend", "purpose": "Serves items to " + beta + ".", "refs": route},
+			map[string]any{"target": beta, "role": "Client of " + alpha, "purpose": "Fetches items.", "refs": refs.fact("call")},
+		},
+		"run_recipe": []any{map[string]any{"command": "go run .", "cwd": "alpha", "note": "Start it before " + beta + " (see " + route + ").", "refs": refs.fact("entrypoint")}},
+	})
+	result, err := normalizeOverview(raw, catalogue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.summary != "" || len(result.roles) != 1 || result.roles[0].Role != "Backend" || result.roles[0].Purpose != "" ||
+		len(result.recipe) != 1 || result.recipe[0].Note != "" || result.recipe[0].Command != "go run ." {
+		t.Fatalf("prose writing refs was kept or its neighbours lost: %+v", result)
+	}
+	var sections []string
+	for _, row := range result.rejected {
+		if !strings.Contains(row.Reason, "request-local ref") {
+			t.Fatalf("unexpected refusal %+v", row)
+		}
+		sections = append(sections, row.Section)
+	}
+	if !reflect.DeepEqual(sections, []string{sectionSummary, sectionRoles, sectionRoles, sectionRunRecipe}) {
+		t.Fatalf("refused cells = %v", sections)
+	}
+	// An unadvertised ref-shaped word is no ref: "a42" and "t99" stand.
+	result, err = normalizeOverview(encodeResponse(t, map[string]any{
+		"summary": "It checks a42 cells and t99 timers.", "summary_refs": route,
+	}), catalogue)
+	if err != nil || result.summary != "It checks a42 cells and t99 timers." {
+		t.Fatalf("an unadvertised ref-shaped word refused the summary: %+v %v", result, err)
+	}
+}

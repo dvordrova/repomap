@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -273,6 +274,10 @@ func (result *normalized) acceptSummary(response modelResponse, cat catalog) {
 		result.reject(sectionSummary, raw, sentenceReason("summary"))
 		return
 	}
+	if ref := cat.proseRef(response.Summary); ref != "" {
+		result.reject(sectionSummary, raw, proseRefReason("summary", ref, "summary_refs"))
+		return
+	}
 	refs, ignored, err := cat.resolve(response.SummaryRefs, "", classFact, classClaim, classSubject)
 	if err != nil {
 		result.reject(sectionSummary, raw, err.Error())
@@ -302,10 +307,21 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 		result.reject(sectionRoles, raw, sentenceReason("role"))
 		return
 	}
+	if ref := cat.proseRef(row.Role); ref != "" {
+		result.reject(sectionRoles, raw, proseRefReason("role", ref, "refs"))
+		return
+	}
 	// The label is the decision; an empty purpose stays empty, never filled.
 	if row.Purpose != "" && !validSentence(row.Purpose) {
 		result.reject(sectionRoles, raw, sentenceReason("purpose"))
 		return
+	}
+	// A purpose writing a ref in its prose is refused alone: the role stands
+	// without it, as a refused note leaves its step.
+	if ref := cat.proseRef(row.Purpose); ref != "" {
+		purpose, _ := json.Marshal(row.Purpose)
+		result.reject(sectionRoles, purpose, proseRefReason("purpose", ref, "refs")+"; the purpose is dropped and the role kept")
+		row.Purpose = ""
 	}
 	refs, ignored, err := cat.resolve(row.Refs, row.Target, classFact, classClaim, classSubject)
 	if err != nil {
@@ -411,6 +427,11 @@ func (result *normalized) acceptRecipe(raw json.RawMessage, cat catalog, slot st
 		// The note is optional: only it is dropped, and the step stays.
 		note, _ := json.Marshal(row.Note)
 		result.reject(sectionRunRecipe, note, sentenceReason("note")+"; the note is dropped and the step kept")
+		row.Note = ""
+	}
+	if ref := cat.proseRef(row.Note); ref != "" {
+		note, _ := json.Marshal(row.Note)
+		result.reject(sectionRunRecipe, note, proseRefReason("note", ref, "refs")+"; the note is dropped and the step kept")
 		row.Note = ""
 	}
 	result.recipe = append(result.recipe, RecipeStep{
@@ -564,6 +585,38 @@ func ids(refs []resolvedRef) []string {
 		result = append(result, ref.id)
 	}
 	return result
+}
+
+// refToken is the shape of a request-local ref written as a word: a
+// target (t7), a fact (a12), a claim (h3) or a target-qualified member or
+// group (t1.n22, t1.g3).
+var refToken = regexp.MustCompile(`\b(?:t[0-9]+(?:\.[a-z][0-9]+)?|[ah][0-9]+)\b`)
+
+// proseRef is the first request-local ref a prose value writes, or "": a
+// word of the ref shape that the request advertises, or a member or group
+// of an advertised target. Refs belong in the refs fields; a sentence
+// carrying one ("its main program (t1)") is refused at its own cell, never
+// rewritten (owner, 2026-09-30: freqtrade's summary read "main program
+// (t1)" and "REST client (t7)").
+func (cat catalog) proseRef(text string) string {
+	for _, token := range refToken.FindAllString(text, -1) {
+		if _, known := cat.targets[token]; known {
+			return token
+		}
+		if _, err := cat.lookup(token, ""); err == nil {
+			return token
+		}
+		if target, _, qualified := strings.Cut(token, "."); qualified {
+			if _, known := cat.targets[target]; known {
+				return token
+			}
+		}
+	}
+	return ""
+}
+
+func proseRefReason(field, ref, refsField string) string {
+	return fmt.Sprintf("%s writes the request-local ref %q in its prose; refs go only in %s", field, ref, refsField)
 }
 
 func sentenceReason(field string) string {

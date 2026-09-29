@@ -71,6 +71,11 @@ cite a ref of the wrong kind.
 
 Rules for each part:
 
+- Refs go only in the ref fields (`summary_refs`, `refs`, `target`,
+  `main_flow_target`). Never write a ref such as `t1`, `a12`, `h3` or
+  `t1.n22` inside `summary`, `role`, `purpose` or `note`: name a target by
+  its name there, never by its ref. A sentence that writes a ref is refused.
+
 - `summary`: one sentence. `summary_refs` may cite facts (`a*`), claims
   (`h*`), or seeds (`tN.nN`). Prefer facts over claims.
 - `roles`: exactly one row per target. `role` is a short label such as
