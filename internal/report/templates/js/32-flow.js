@@ -41,11 +41,14 @@ function rmFlowTitle(ctx,decl,call){
   var kind=call.kind||'calls',words=kind==='calls'||kind==='invokes_external'?'':rmEndWords.out[kind]||kind.replace(/_/g,' ');
   return [part?part.dataset.title:'',words?rmT(words):'',sites.length?rmT('called at {0}',sites.join(' · ')):''].filter(Boolean).join('\n');
 }
+// A call's name. A macro's call is the macro as written ("redisAssert"),
+// its hover naming what its expansion calls; the name reads that.
 function rmFlowName(ctx,decl,call){
-  var text=rmCallableName(decl);
+  var text=rmCallableName(decl),title=rmFlowTitle(ctx,decl,call);
+  if(call.macro&&call.decl!==undefined){text=call.macro;title=[rmT('{0} expands to a call of {1}',call.macro,decl.name),title].filter(Boolean).join('\n');}
   // A declaration no part holds is a plain name.
-  if(!decl.part){var plain=rmEl('span','map-reading-name map-flow-plain',text);plain.title=rmFlowTitle(ctx,decl,call);return plain;}
-  var name=rmDeclName(decl,text,ctx.goDecl(decl),rmFlowTitle(ctx,decl,call));
+  if(!decl.part){var plain=rmEl('span','map-reading-name map-flow-plain',text);plain.title=title;return plain;}
+  var name=rmDeclName(decl,text,ctx.goDecl(decl),title);
   var part=rmFlowPart(ctx,decl.part);
   if(part){name.addEventListener('mouseenter',function(){ctx.light([part.id]);});name.addEventListener('mouseleave',function(){ctx.light([]);});}
   return name;
@@ -55,18 +58,23 @@ function rmFlowRow(ctx,data,call,opts,helper){
   var decl=call.decl!==undefined?data.decls[call.decl]:null;
   if(!decl&&!call.one){
     // A call into code the report names no declaration for (a library's
-    // fork): a plain row.
-    var lib=rmEl('div','map-flow-row map-flow-lib'+(helper?' map-flow-helper':'')),said=rmEl('span','map-flow-plain',call.name+'()');
-    said.title=[call.lib,rmFlowTitle(ctx,null,call)].filter(Boolean).join('\n');lib.appendChild(said);return lib;
+    // fork), or a macro whose expansion calls only such code ("assert"):
+    // a plain row.
+    var lib=rmEl('div','map-flow-row map-flow-lib'+(helper?' map-flow-helper':'')),said=rmEl('span','map-flow-plain',call.macro||call.name+'()');
+    said.title=[call.lib,call.macro?rmT('a macro'):'',rmFlowTitle(ctx,null,call)].filter(Boolean).join('\n');lib.appendChild(said);return lib;
   }
   if(call.one){
-    // A dispatch site: one call, one of the declarations it can call.
+    // A dispatch site: one call, one of the declarations it can call; a
+    // macro's call, the macro as written, its declarations under it.
     var site=rmEl('details','map-flow-row map-flow-dispatch'+(helper?' map-flow-helper':'')),head=rmEl('summary','map-flow-head');
-    head.append(rmEl('span','map-flow-twist'),rmEl('span','map-flow-one',rmT('one of {0}',call.one.length)));head.title=rmFlowTitle(ctx,null,call);site.appendChild(head);
+    head.appendChild(rmEl('span','map-flow-twist'));
+    if(call.macro)head.appendChild(rmEl('span','map-flow-plain',call.macro+(call.every?'':' ')));
+    if(!call.every)head.appendChild(rmEl('span','map-flow-one',rmT('one of {0}',call.one.length)));
+    head.title=rmFlowTitle(ctx,null,call);site.appendChild(head);
     site.addEventListener('toggle',function(){
       if(!site.open||site.dataset.drawn)return;site.dataset.drawn='1';
       var names=rmEl('p','map-flow-names');
-      call.one.forEach(function(at,i){if(i)names.appendChild(document.createTextNode(' '));names.appendChild(rmFlowName(ctx,data.decls[at],call));});
+      call.one.forEach(function(at,i){if(i)names.appendChild(document.createTextNode(' '));names.appendChild(rmFlowName(ctx,data.decls[at],{sites:call.sites,kind:call.kind}));});
       site.appendChild(names);
     });
     return site;
@@ -129,7 +137,7 @@ function rmFlowList(ctx,data,own,opts){
     if(!opened)helpers.forEach(function(call,i){
       line.appendChild(document.createTextNode(i?', ':' '));
       var decl=call.decl!==undefined?data.decls[call.decl]:null;
-      line.appendChild(decl?rmFlowName(ctx,decl,call):rmEl('span','map-flow-plain',call.one?rmT('one of {0}',call.one.length):call.name||''));
+      line.appendChild(decl?rmFlowName(ctx,decl,call):rmEl('span','map-flow-plain',call.macro||(call.one?rmT('one of {0}',call.one.length):call.name||'')));
     });
     list.appendChild(line);
   }

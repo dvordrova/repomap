@@ -129,7 +129,14 @@ seed.
 - A call written in a macro argument keeps its own spelling location; a call
   the macro body writes is sited at the macro use, with the outermost macro
   name as written as its selector and the body's spelling as a
-  `macro_expansion` witness.
+  `macro_expansion` witness (no place when the body is the platform's:
+  `tools/dump.c`'s `assert(keys.len == 0)`, whose builtins are in the
+  `builtin` package). A function's flow (REPORT) reads the calls of one
+  macro as that macro, once, as the code writes it (`assert`, not
+  `__assert_rtn` and `__builtin_expect`), and never shows a compiler
+  builtin as a call. Go, Python and JS/TS have no macros; Clojure records
+  no call a macro's expansion makes (CLOJURE), so it has no internals to
+  hide.
 - A function passed as an argument is `passes_callback` bound to that argument.
   An assignment target's index and receiver are read like any expression, so
   a function passed to a call there (`marks[fold(c, n, both)] = 1`, `+=`,

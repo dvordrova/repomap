@@ -36,11 +36,32 @@ func flowFixture() (*pageBuilder, groupindex.Index) {
 		name string
 		line int
 	}{"cron": {"serverCron", 1250}, "resize": {"tryResizeHashTables", 1180}, "closeClients": {"closeTimedoutClients", 1200}, "log": {"redisLog", 100},
-		"save": {"rdbSaveBackground", 3000}, "lookup": {"lookupKeyRead", 900}, "h1": {"getCommand", 4000}, "h2": {"setCommand", 4100}, "x4": {"dictFind", 50}} {
+		"save": {"rdbSaveBackground", 3000}, "lookup": {"lookupKeyRead", 900}, "h1": {"getCommand", 4000}, "h2": {"setCommand", 4100}, "x4": {"dictFind", 50},
+		"fail": {"_redisAssert", 2000}} {
 		add(id, place.name, place.line)
 	}
-	builder.subjects[subjectKey("t1", "fork")] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: "fork", Kind: groupindex.SubjectObject,
-		Object: &groupindex.ObjectFacts{Name: "unistd.h.fork", Kind: programindex.ObjectExternalSymbol, External: &programindex.ExternalSymbol{PackagePath: "unistd.h", Name: "fork"}}}}
+	external := func(id, header, name string) {
+		builder.subjects[subjectKey("t1", id)] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: id, Kind: groupindex.SubjectObject,
+			Object: &groupindex.ObjectFacts{Name: header + "." + name, Kind: programindex.ObjectExternalSymbol, External: &programindex.ExternalSymbol{PackagePath: header, Name: name}}}}
+	}
+	external("fork", "unistd.h", "fork")
+	external("exit", "unistd.h", "_exit")
+	external("assertRtn", "assert.h", "__assert_rtn")
+	external("expect", "builtin", "__builtin_expect")
+	// Calls a macro's expansion makes (the C adapter's macro_expansion
+	// witness, the macro as written its selector): the system header's
+	// assert, and the repository's redisAssert, whose body the repository
+	// spells.
+	macro := func(id, name string, own bool) programindex.Relation {
+		witness := programindex.Witness{Kind: "macro_expansion", Detail: name + " expands to a call"}
+		if own {
+			witness.Location = &programindex.Location{Path: "redis.c", Line: 238}
+		}
+		return programindex.Relation{ID: id, Patterns: []programindex.RelationPattern{{Selector: name}}, Witnesses: []programindex.Witness{witness}}
+	}
+	builder.data.ProgramPortfolio.Entries = []programindex.Index{{Target: programindex.Target{ID: "t1"}, Relations: []programindex.Relation{
+		macro("assert-1", "assert", false), macro("expect-1", "assert", false), macro("assert-2", "assert", false),
+		macro("redisAssert-1", "redisAssert", true), macro("exit-1", "redisAssert", true)}}}
 	call := func(from, to string, line int, relation string, kind programindex.RelationKind, resolution programindex.Resolution) groupindex.StructuralEdge {
 		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationID: relation, RelationKind: kind, Resolution: resolution, Location: at(line)}
 	}
@@ -53,13 +74,19 @@ func flowFixture() (*pageBuilder, groupindex.Index) {
 		{ID: "g3", Title: "Persistence", MemberSubjectIDs: []string{"save"}},
 		{ID: "g4", Title: "Core data structures", MemberSubjectIDs: []string{"x4"}},
 		{ID: "g5", Title: "String commands", MemberSubjectIDs: []string{"h1", "h2"}},
-		{ID: "g6", Title: "Debug", MemberSubjectIDs: []string{}},
+		{ID: "g6", Title: "Debug", MemberSubjectIDs: []string{"fail"}},
 	}, StructuralEdges: []groupindex.StructuralEdge{
 		exact("cron", "save", 1322), exact("cron", "log", 1288), exact("cron", "resize", 1284), exact("cron", "log", 1273),
 		call("cron", "fork", 1300, "fork", programindex.RelationInvokesExternal, programindex.ResolutionExact),
 		exact("cron", "closeClients", 1297), exact("cron", "lookup", 1350),
 		call("cron", "h2", 1360, "dispatch", programindex.RelationCalls, programindex.ResolutionAlternatives),
 		call("cron", "h1", 1360, "dispatch", programindex.RelationCalls, programindex.ResolutionAlternatives),
+		call("cron", "assertRtn", 1370, "assert-1", programindex.RelationInvokesExternal, programindex.ResolutionExact),
+		call("cron", "expect", 1370, "expect-1", programindex.RelationInvokesExternal, programindex.ResolutionExact),
+		call("cron", "assertRtn", 1372, "assert-2", programindex.RelationInvokesExternal, programindex.ResolutionExact),
+		call("cron", "expect", 1374, "builtin-1", programindex.RelationInvokesExternal, programindex.ResolutionExact),
+		call("cron", "fail", 1380, "redisAssert-1", programindex.RelationCalls, programindex.ResolutionExact),
+		call("cron", "exit", 1380, "exit-1", programindex.RelationInvokesExternal, programindex.ResolutionExact),
 		exact("save", "log", 3010), exact("h1", "log", 4010), exact("x4", "log", 60),
 		exact("lookup", "log", 905), exact("lookup", "x4", 906),
 	}}
@@ -72,7 +99,10 @@ func flowFixture() (*pageBuilder, groupindex.Index) {
 
 // A function's flow is its calls in the order they are written, each
 // callee once with every place it is called; a dispatch site is one call;
-// a library's call is named; a helper folds when its part is one most
+// a library's call is named; a call a macro's expansion makes is the
+// macro as written, once, and a compiler builtin no call of its own
+// (owner, 2026-09-29: handleClientsWaitingListPush's assert had read
+// __assert_rtn and __builtin_expect); a helper folds when its part is one most
 // parts call into, and stays when its part says what it is for or is the
 // caller's own (its own work); a declaration no part holds keeps its call
 // and its own flow.
@@ -103,8 +133,13 @@ func TestAFunctionsFlowIsItsCallsInWrittenOrder(t *testing.T) {
 						names = append(names, reading.Decls[one].Name)
 					}
 					line = "one of " + strings.Join(names, ", ")
+				case call.Macro != "":
+					line = "macro " + call.Macro + " from " + call.Lib
 				default:
 					line = call.Name + " from " + call.Lib
+				}
+				if call.Macro != "" && call.Decl != nil {
+					line = "macro " + call.Macro + " calling " + line
 				}
 				if call.Helper {
 					line += " [helper]"
@@ -122,6 +157,7 @@ func TestAFunctionsFlowIsItsCallsInWrittenOrder(t *testing.T) {
 	want := []string{
 		"redisLog [helper] @1273,1288", "tryResizeHashTables @1284", "closeTimedoutClients @1297", "fork from unistd.h @1300",
 		"rdbSaveBackground @1322", "lookupKeyRead (no part) @1350", "one of setCommand, getCommand @1360",
+		"macro assert from assert.h @1370,1372", "macro redisAssert calling _redisAssert @1380",
 	}
 	if got := flowOf("serverCron"); !slices.Equal(got, want) {
 		t.Fatalf("serverCron's flow = %q\nwant %q", got, want)

@@ -1,5 +1,6 @@
 /* dump: prints the keys of a kvd snapshot file. The Makefile does not build
  * it; build it by hand with `cc -o dump tools/dump.c strbuf.c`. */
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -21,6 +22,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     sbInit(&keys);
+    /* assert is the platform's macro: its expansion's calls (and any
+     * compiler builtin it uses) are one call as written, `assert`. */
+    assert(keys.len == 0);
     while (fgets(line, sizeof line, fp) != NULL) {
         char *space = strchr(line, ' ');
         if (space == NULL) continue;

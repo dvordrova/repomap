@@ -20,6 +20,16 @@ import (
 //     code the report names no declaration for (a library's fork or write),
 //     a plain row.
 //   - One are, for a dispatch site, the declarations it calls one of.
+//   - Macro is a call as the code writes it when a macro's expansion makes
+//     it (the C adapter's macro_expansion witness and the call's selector,
+//     the outermost macro name at the use): one row for the macro, never
+//     its expansion's internals (`assert`, not __assert_rtn and
+//     __builtin_expect). Its Decl or One are the repository declarations
+//     its expansion calls (redisAssert's _redisAssert, dictHashKey's hash
+//     functions), Every saying One are all called rather than one of them;
+//     with none it is a plain row, Lib the header of what it calls when the
+//     macro is not the repository's. A compiler builtin (the adapter's
+//     `builtin` package) is never a call of its own.
 //   - Helper folds the call into its step's one muted line of helper names
 //     ("+ helpers: createListObject, dictAdd", each a name that reads it):
 //     the callee is a declaration the helper question decided serves the
@@ -38,6 +48,52 @@ type pageFlowCall struct {
 	Possible bool              `json:"possible,omitempty"`
 	Helper   bool              `json:"helper,omitempty"`
 	Sites    []pageReadingSite `json:"sites,omitempty"`
+	Macro    string            `json:"macro,omitempty"`
+	Every    bool              `json:"every,omitempty"`
+}
+
+// builtinPackage is the package the C adapter gives a compiler builtin
+// (`__builtin_expect`, C: "`__builtin_*` calls belong to the platform").
+const builtinPackage = "builtin"
+
+// pageMacroCall is a call a macro's expansion makes: the macro as written
+// at its use, and whether the macro is the repository's own (its body's
+// spelling is in the repository).
+type pageMacroCall struct {
+	name string
+	own  bool
+}
+
+// macroCalls are a program's calls made by a macro's expansion, by relation
+// ID, built once from its ProgramIndex.
+func (builder *pageBuilder) macroCalls(targetID string) map[string]pageMacroCall {
+	if builder.macros == nil {
+		builder.macros = map[string]map[string]pageMacroCall{}
+	}
+	if cached, done := builder.macros[targetID]; done {
+		return cached
+	}
+	calls := map[string]pageMacroCall{}
+	if builder.data != nil && builder.data.ProgramPortfolio != nil {
+		for _, entry := range builder.data.ProgramPortfolio.Entries {
+			if entry.Target.ID != targetID {
+				continue
+			}
+			for _, relation := range entry.Relations {
+				if len(relation.Patterns) == 0 || relation.Patterns[0].Selector == "" {
+					continue
+				}
+				for _, witness := range relation.Witnesses {
+					if witness.Kind == "macro_expansion" {
+						calls[relation.ID] = pageMacroCall{name: relation.Patterns[0].Selector, own: witness.Location != nil}
+						break
+					}
+				}
+			}
+		}
+	}
+	builder.macros[targetID] = calls
+	return calls
 }
 
 // flowKinds are the relations a flow reads as calls.
@@ -115,9 +171,15 @@ func compareSites(a, b *programindex.Location) int {
 func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, declare func(string) int) []pageFlowCall {
 	flow := builder.flowIndex(index)
 	groupOf := builder.edgesBetweenGroups(*index).groupOf
+	macros := builder.macroCalls(index.Target.ID)
 	var calls []pageFlowCall
 	at := map[string]int{}
 	byRelation := map[string]int{}
+	// A macro's row: the repository declarations its expansion calls, and
+	// whether a dispatch site makes them one of several.
+	into := map[int][]int{}
+	dispatched := map[int]bool{}
+	first := map[int]string{}
 	for _, position := range flow.byCaller[callerID] {
 		edge := index.StructuralEdges[position]
 		var site *pageReadingSite
@@ -130,6 +192,40 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 			kind = ""
 		}
 		possible := edge.Resolution != programindex.ResolutionExact
+		var external *programindex.ExternalSymbol
+		if ref, known := builder.subject(index.Target.ID, edge.ToSubjectID); known && ref.subject.Object != nil {
+			external = ref.subject.Object.External
+		}
+		// A call a macro's expansion makes is the macro as written, once.
+		if macro, made := macros[edge.RelationID]; made {
+			key := "\x01" + macro.name
+			listed, seen := at[key]
+			if !seen {
+				listed = len(calls)
+				at[key] = listed
+				calls = append(calls, pageFlowCall{Macro: macro.name, Possible: possible})
+			}
+			row := &calls[listed]
+			if site != nil && !slices.ContainsFunc(row.Sites, func(other pageReadingSite) bool { return other.At == site.At }) {
+				row.Sites = append(row.Sites, *site)
+			}
+			if callee := declare(edge.ToSubjectID); callee >= 0 {
+				if !slices.Contains(into[listed], callee) {
+					into[listed] = append(into[listed], callee)
+				}
+				if first[listed] == "" {
+					first[listed] = edge.ToSubjectID
+				}
+				dispatched[listed] = dispatched[listed] || edge.Resolution == programindex.ResolutionAlternatives
+			} else if external != nil && !macro.own && row.Lib == "" && external.PackagePath != builtinPackage {
+				row.Lib = external.PackagePath
+			}
+			continue
+		}
+		// A compiler builtin is never a call of its own.
+		if external != nil && external.PackagePath == builtinPackage {
+			continue
+		}
 		// A dispatch site is one call, one of the declarations it calls.
 		if edge.Resolution == programindex.ResolutionAlternatives && edge.RelationID != "" {
 			if listed, seen := byRelation[edge.RelationID]; seen {
@@ -179,10 +275,19 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 		at[key] = len(calls)
 		calls = append(calls, call)
 	}
+	// A macro's row calls what its expansion calls: one declaration, the
+	// declarations a dispatch site calls one of, or all of several.
+	for listed, callees := range into {
+		row := &calls[listed]
+		row.One, row.Every, row.Possible = callees, !dispatched[listed], dispatched[listed]
+		if ref, known := builder.subject(index.Target.ID, first[listed]); known && len(callees) == 1 && ref.subject.Interpretation != nil && ref.subject.Interpretation.Helper {
+			row.Helper = flow.shared[groupOf[first[listed]]]
+		}
+	}
 	// A dispatch site of one declaration is a call of it.
 	for i := range calls {
 		if len(calls[i].One) == 1 {
-			calls[i].Decl, calls[i].One = &calls[i].One[0], nil
+			calls[i].Decl, calls[i].One, calls[i].Every = &calls[i].One[0], nil, false
 		}
 	}
 	return calls

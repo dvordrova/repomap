@@ -320,6 +320,34 @@ func TestCFixtureIndexesTheServer(t *testing.T) {
 		t.Fatalf("kvAssert has no macro_expansion witness at kvd.h:%d: %+v", defineLine, failure.Witnesses)
 	}
 
+	// A platform macro's calls (tools/dump.c's `assert(keys.len == 0)`)
+	// are each at the macro's use with the macro as written for their
+	// selector and a macro_expansion witness with no place, the body being
+	// the platform's; a compiler builtin among them is in the `builtin`
+	// package. The report reads them as the one call `assert`.
+	dump := buildCIndex(t, fixture, "c:tools/dump.c")
+	dumpMain := cObject(t, dump, programindex.ObjectFunction, "main", "tools/dump.c")
+	assertLine, assertColumn := fixture.at(t, "tools/dump.c", "assert(keys.len == 0);", "")
+	platformCalls := cRelationsAt(dump, programindex.RelationInvokesExternal, dumpMain.ID, "tools/dump.c", assertLine)
+	if len(platformCalls) == 0 {
+		t.Fatalf("assert(keys.len == 0) at tools/dump.c:%d makes no platform call", assertLine)
+	}
+	for _, relation := range platformCalls {
+		if relation.Location.Column != assertColumn || len(relation.Patterns) != 1 || relation.Patterns[0].Selector != "assert" {
+			t.Fatalf("a call assert's expansion makes is not at the macro as written: %+v", relation)
+		}
+		platform := false
+		for _, witness := range relation.Witnesses {
+			platform = platform || witness.Kind == "macro_expansion" && witness.Location == nil
+		}
+		if !platform {
+			t.Fatalf("a call assert's expansion makes has no platform macro_expansion witness: %+v", relation.Witnesses)
+		}
+		if symbol := cExternal(t, dump, relation.ToIDs); strings.HasPrefix(symbol.Name, "__builtin_") && symbol.PackagePath != "builtin" {
+			t.Fatalf("the compiler builtin %s is in %q", symbol.Name, symbol.PackagePath)
+		}
+	}
+
 	// Platform calls name the header the fixture includes.
 	for _, call := range []struct{ from, path, name, header, needle string }{
 		{"main", "kvd.c", "getenv", "stdlib.h", `getenv("KVD_PORT")`},

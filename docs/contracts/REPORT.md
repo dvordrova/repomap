@@ -962,7 +962,15 @@ part stands under that part's box (its description on hover, a click
 reads it); a library's call (`fork`, `wait3`) is a plain row naming its
 library on hover; a declaration no part holds (`lookupKeyRead`) is a
 plain name whose own flow still opens, carried in the reading that calls
-it, so no call is dropped. A twist, shown while a call that can open is
+it, so no call is dropped. A call a macro's expansion makes is shown as
+the code writes it: the macro as written, once (C's `macro_expansion`
+witness and the call's selector; `assert`, not `__assert_rtn` and
+`__builtin_expect`), a plain row naming the header of what it calls
+when its body is the platform's; when its expansion calls repository
+declarations (redisAssert's `_redisAssert`, dictHashKey's hash functions)
+the row opens to them as a call does, its hover saying what it expands
+to. A compiler builtin (the adapter's `builtin` package) is never a call
+of its own. A twist, shown while a call that can open is
 pointed at or focused, opens that call in place to its callee's flow,
 grouped the same way; when all of those stay in its part no box repeats.
 A call one of its ancestors makes says "↑ shown above" instead. What a

@@ -199,7 +199,8 @@ const d=data.decls;
 d.push(decl('redisLog','function','#core'),decl('rdbSave','function','#persist'),decl('lookupKeyRead','function',''));
 const log=d.length-3,save=d.length-2,lookup=d.length-1;
 data.own[0].flow=[{decl:log,helper:true,sites:[{at:'server.c:1273'},{at:'server.c:1288'}]},{decl:2,sites:[{at:'server.c:1284'}]},{name:'wait3',lib:'sys/wait.h',kind:'invokes_external',sites:[{at:'server.c:1304'}]},
-  {decl:save,sites:[{at:'server.c:1322'}]},{decl:save,kind:'passes_callback',sites:[{at:'server.c:1330'}]},{decl:lookup,sites:[{at:'server.c:1350'}]},{decl:0,sites:[{at:'server.c:1360'}]}];
+  {decl:save,sites:[{at:'server.c:1322'}]},{decl:save,kind:'passes_callback',sites:[{at:'server.c:1330'}]},{decl:lookup,sites:[{at:'server.c:1350'}]},{decl:0,sites:[{at:'server.c:1360'}]},
+  {macro:'assert',lib:'assert.h',sites:[{at:'server.c:1370'}]},{decl:1,macro:'redisAssert',sites:[{at:'server.c:1380'}]}];
 data.own.push({decl:save,flow:[{decl:log,helper:true,sites:[{at:'server.c:3010'}]}]});
 data.own.push({decl:lookup,flow:[{decl:1,sites:[{at:'server.c:905'}]}]});
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
@@ -207,8 +208,11 @@ const said=view.textContent;
 assert.ok(!/serverCron calls|in order|steps|\d+ helpers|only helpers|not on the map|also from/.test(said),'no caption repeats its name and no meta word: '+said);
 const root=view.all(c=>c.has('map-flow-root'))[0];
 const rows=()=>root.all(c=>c.has('map-flow-row')&&!c.has('map-flow-helper')).map(c=>c.all(x=>x.has('map-reading-name')||x.has('map-flow-plain'))[0].textContent);
-assert.deepEqual(rows(),['beforeSleep()','wait3()','rdbSave()','rdbSave()','lookupKeyRead()','serverCron()'],'the calls in the order Go wrote them, helpers folded');
-assert.deepEqual(root.all(c=>c.has('map-part-box')).map(c=>c.textContent),['Server lifecycle and cron','Persistence','Server lifecycle and cron'],'each run into one part stands under its box');
+assert.deepEqual(rows(),['beforeSleep()','wait3()','rdbSave()','rdbSave()','lookupKeyRead()','serverCron()','assert','redisAssert'],'the calls in the order Go wrote them, helpers folded, a macro as written');
+const macro=root.all(c=>c.has('map-reading-name')&&c.textContent==='redisAssert')[0];
+assert.ok(macro.title.startsWith('redisAssert expands to a call of initServer'),'a macro names what its expansion calls on its hover: '+macro.title);
+assert.equal(root.all(c=>c.has('map-flow-plain')&&c.textContent==='assert')[0].title,'assert.h\na macro\ncalled at server.c:1370');
+assert.deepEqual(root.all(c=>c.has('map-part-box')).map(c=>c.textContent),['Server lifecycle and cron','Persistence','Server lifecycle and cron','Server lifecycle and cron'],'each run into one part stands under its box');
 assert.ok(root.all(c=>c.has('map-flow-above')).length===1,'a call its ancestors make is shown above');
 const helperLine=root.all(c=>c.has('map-flow-helpers'));
 assert.equal(helperLine.length,1,'one line of helper names under the step');

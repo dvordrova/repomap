@@ -289,6 +289,9 @@ type pageBuilder struct {
 	// flows are each program's calls by caller in written order
 	// (page_flow.go), built once.
 	flows map[string]*pageFlowIndex
+	// macros are each program's calls a macro's expansion makes, by
+	// relation ID (page_flow.go), built once.
+	macros map[string]map[string]pageMacroCall
 	// declarationEnds is the last line of each declaration by its place
 	// (path, line, column), from every program's index, built once.
 	declarationEnds map[string]int
