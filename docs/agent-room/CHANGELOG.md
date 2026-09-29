@@ -1,5 +1,35 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — READING trimmed back to a contract: 18,391 → 13,969 words
+
+- **Why:** READING grew from 9,740 to 18,391 words in 2.5 days with run
+  stories, repeated rules, restated prompt criteria and test inventories.
+- **Removed:** history and run numbers down to "(owner, date)" tags; 29
+  repeated statements merged into their owning section (symbol-selection
+  columns, concurrency, the `open` cell, question-only recall, the Jev-only
+  tables, parts-answer repeats and conflicts, the role-split task, test and
+  never-run parts, question budgets, answer states); option and answer
+  criteria that restate the embedded prompt files, now pointers to them (the
+  closed choice sets, what each choice leads to, each Jev question's text
+  and the decoder rules stay); test names and fixture case lists; mechanics
+  the code states.
+- **Stale passages removed, the newer rule and the code kept:** symbol
+  selection asks `key_symbol` only (no activation, no `unassessed`); the
+  operations table and its v19 cells (gone since 2026-09-17); the boundary
+  candidate/decision/basis cells (`fixed` is always true); request-local row
+  refs where a table has no artifact ID; the glossary's 32,768-token
+  allowance; "saved" per-input paths (`Reach` is not persisted); old format
+  versions; a program the repository builds itself is joined by equal names
+  (`target.executables`), not "not done"; `binds` includes `setting`.
+- **Checks:** an independent reviewer compared the draft with the original,
+  the pointed-to prompt files and the code; its nine findings are restored
+  (the recorded missing fixture equivalents, an entry's line and name failing
+  alone, an empty text taking its no-decision value, two type-description
+  statements, the one cross-target wait, the request-local ref examples, the
+  role-split option sources, `binds` `none` for a symbol that wraps or stores
+  the callable, welcome deductions). Headings and anchors are unchanged. The
+  cut is 24%, short of the 30% aimed at.
+
 ## 2026-09-29 — REPORT trimmed back to a contract: 19,550 → 16,026 words
 
 - **Why:** REPORT grew from 7,920 to 19,550 words in 2.5 days, with run
