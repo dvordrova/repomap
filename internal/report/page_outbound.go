@@ -102,6 +102,16 @@ type pageOutboundUse struct {
 	Steps                     []pageOutboundStep
 }
 
+// FrontierName is the frontier the address passes through, or "" when it
+// names nothing: freqtrade's getattr(ccxt, name)(config) is a frontier
+// "()", which printed "Address passes through ()". The chain's steps stand.
+func (use pageOutboundUse) FrontierName() string {
+	if strings.Trim(use.Frontier, "() \t") == "" {
+		return ""
+	}
+	return use.Frontier
+}
+
 type pageOutboundStep struct {
 	Name   string
 	Anchor pageAnchor
@@ -448,7 +458,7 @@ func (row pageOutbound) Line() string {
 func (row pageOutbound) InformativeUses() []pageOutboundUse {
 	var uses []pageOutboundUse
 	for _, use := range row.Uses {
-		frontier := use.Frontier != "" && (row.External == "" || displayCallable(use.Frontier) != row.External)
+		frontier := use.FrontierName() != "" && (row.External == "" || displayCallable(use.Frontier) != row.External)
 		if use.Address != "" || frontier || len(use.Steps) > 1 {
 			uses = append(uses, use)
 		}

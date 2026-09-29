@@ -1229,7 +1229,9 @@ The run from the program's own code ("{program} connects out from … → …")
 stands only for a record with no "Called from", which says it by part. A
 destination chain whose frontier is the record's own callable, one step at
 its line, names the call a second time and is no line on the page or in the
-column; two steps of one declaration on one line are one name.
+column; two steps of one declaration on one line are one name. A frontier
+that names nothing (freqtrade's `getattr(ccxt, name)(config)`, a bare `()`)
+is no address step: the chain prints its steps and no address line.
 
 An operation or native route exposes Data links only when its accepted path
 reaches an exact native model owner or a query's explicitly observed callable

@@ -96,6 +96,44 @@ func TestOutboundChainsSayNothingTheRecordSays(t *testing.T) {
 	}
 }
 
+// A frontier that names nothing is no address step: freqtrade's
+// getattr(ccxt, name)(config) reached its ccxt calls through a frontier
+// "()", and 41 of its exchange tiles read "Address passes through ()". The
+// chain prints its steps and no address line.
+func TestOutboundFrontierNamingNothingPrintsNoAddress(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Outbound: []groupindex.OutboundCall{{
+		ID: "b1554", Kind: "sdk", External: "ccxt.Exchange.fetch_funding_rates", Location: programindex.Location{Path: "binance.py", Line: 288, Column: 35},
+		Uses: []atlas.DestinationUse{{Frontier: "()", Steps: []atlas.DestinationStep{
+			{SubjectID: "s638", Name: "Binance.fetch_funding_rates", Path: "binance.py", Line: 288, Column: 35},
+			{SubjectID: "s749", Name: "Exchange._init_ccxt", Path: "exchange.py", Line: 424, Column: 19},
+		}}},
+	}}}
+	section := &pageSection{ID: "t1", programTargetID: "t1"}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
+	builder.fillSectionOutbound(section)
+	row := section.Outbound[0]
+	if uses := row.InformativeUses(); len(uses) != 1 || uses[0].FrontierName() != "" {
+		t.Fatalf("the chain through an unnamed call is lost or names it: %+v", uses)
+	}
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := parsed.ExecuteTemplate(&out, "outbound-row", row); err != nil {
+		t.Fatal(err)
+	}
+	page := out.String()
+	for _, absent := range []string{"Address passes through", "<code>()</code>", "Address not determined"} {
+		if strings.Contains(page, absent) {
+			t.Errorf("a frontier naming nothing printed %q:\n%s", absent, page)
+		}
+	}
+	if !strings.Contains(page, "Exchange._init_ccxt") {
+		t.Fatalf("the chain lost its steps:\n%s", page)
+	}
+}
+
 func TestOutboundSourceUsesDoNotHideBehindOneSelectedAddress(t *testing.T) {
 	index := groupindex.Index{Target: programindex.Target{ID: "service"}, Outbound: []groupindex.OutboundCall{{
 		ID: "shared-send", Kind: "client_request", Source: "model", Address: "https://prices.example",
