@@ -1,5 +1,46 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Claim audit as a gated Go test
+
+- **What:** `internal/audit` (test-only; DEVELOPMENT "Claim audit") ports the
+  scratchpad `audit.py`. `TestClaimAudit`, gated by `REPOMAP_AUDIT_RUNS`,
+  reads a run through `report.ReadRunReceipt`, `groupindex.Overlay.Hydrate`
+  (its derived `Launch.Nested`) and `atlas.Read`, scores it against
+  `testdata/audit/<repo>/inventory.json` (ca90d611, with the Redis aeMain
+  erratum) and writes `<repo>.md`/`.json` to `REPOMAP_AUDIT_OUT`. It fails
+  only on a BROKEN flow link, an invented name or a missing quote (new:
+  AUTO-4, recipe notes). `TestAuditFixture` covers the rules in `make test`.
+- **Rules against audit.py:** nested inputs are no rows (fix 0); an outgoing
+  call's `ReachedFrom` caller site may match an external item, ranked after
+  the row's own location; audit.py's handler, call-chain and table-owner
+  anchors (its tiers 5–7) are not ported; `flow` items are scored against the
+  Main flow steps (±2 lines), not the workers.
+- **Newest runs** (redis `20260929-140032`, litestream `-143047`, freqtrade
+  `-140146`; measured at 3408c475, since the tree's uncommitted ProgramIndex
+  22 refuses these version-21 runs). Must found per requests / commands /
+  workers / external / data; no falsity in any:
+  - redis: 95/96, 47/50, 2/2, 3/3, 0/5; trap hits 0 (12 nested); Main flow
+    items 0/1.
+  - litestream: 16/18, 38/69, 0/13, 10/16, 3/15; extras 13/21/0/38/30
+    (13 nested); Main flow items 0/2.
+  - freqtrade: 119/122, 44/78, 7/8, 7/12, 6/19; extras 3/11/0/79/20
+    (13 nested); Main flow items 0/5.
+- **Against audit.py on the same runs:** flow link, names and wording checks
+  identical. Fix 0: redis commands trap hits 12 → 0 (7 loglevel/appendfsync
+  values, the 4 DEBUG encodings, SORT's `limit`), litestream request extras
+  26 → 13 (MCP tool parameters), freqtrade request/command extras 9/18 →
+  3/11. ReachedFrom: redis external 0/3 → 3/3 (+2 may), extras 5 → 0.
+  Unported anchors: litestream Azure Blob Storage and heartbeat ping,
+  freqtrade Discord webhook POST found → missed; litestream external extras
+  26 → 38. Flow items leave the workers `may` counts; aeMain (anchored at its
+  call in main) and freqtrade's loops are missed: the steps sit at the
+  callee's declaration (ae.c:375) or the new freqtrade flow stops at
+  `start_trading`.
+- **Against the errata baseline (the 10:xx runs):** redis unchanged; the
+  others changed with the product (5ecf315d `cmd/litestream-vfs` +4 must,
+  data extras 54 → 30; freqtrade +2 requests, +3 workers, +2 external, external
+  extras 18 → 79, flow 9 → 7 steps).
+
 ## 2026-09-29 — Go programs built with tags; test code reaches no catalogue
 
 - **Why:** litestream's Makefile builds `./cmd/litestream-vfs` with

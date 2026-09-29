@@ -93,6 +93,21 @@ other adapters' targets are unaffected.
 
 An output-limit or request-packing change must first pass one saved complete-window probe; it does not replace ordinary acceptance. Preserve the exact compared inputs, accepted rows, rejected rows, timings and token accounting. Do not repeat Airflow while the prerequisite fixes and Freqtrade acceptance remain outstanding. See [CURRENT](../agent-room/CURRENT.md#acceptance-and-open-work).
 
+## Claim audit
+
+`internal/audit` (test-only) scores saved ordinary runs against reviewed ground
+truth, `testdata/audit/<repo>/inventory.json`: redis-1.3.6 `7b7f987e`,
+litestream-v24 `d26cb54e`, freqtrade `9f10e357`, othello `b8130da8`. Each
+`generate.py` rebuilds its inventory from `~/git/<repo>` at that pinned
+revision; after the freeze a change is a dated erratum with a code citation.
+Run it at milestones only, on main run directories the current binary wrote at
+those revisions (siblings come from report.json `files`):
+`REPOMAP_AUDIT_RUNS='redis-1.3.6=<run>,freqtrade=<run>' REPOMAP_AUDIT_OUT=<dir> go test -p 2 -timeout 10m -count=1 -run TestClaimAudit ./internal/audit`.
+It writes `<repo>.md` and `<repo>.json` there, never into a run or the cache.
+Recall and precision have no thresholds. The test fails only on a broken Main
+flow link, an invented code name, a quote its cited file does not write, or a
+run the product's readers refuse. The package comment states the matching rules.
+
 ## Evidence before optimization
 
 ### How to judge an optimization against these results
