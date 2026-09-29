@@ -1,5 +1,21 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — a part of files in subdirectories reads its members; same-line fields apart
+
+- **0193aa60:** a part reading's declaration names its file by path, as
+  the part's file list does, so a part of files in subdirectories reads
+  its members file by file (litestream's cmd/litestream parts and most of
+  repomap's Go parts listed none: the column compared `main.go` with
+  `cmd/litestream/main.go`). A field a struct declares on the same line as
+  another is its own declaration by name, so a part's "Calls into" no
+  longer names `shared.cone` as czero. `TestAPartsMembersKeepTheirFilesPathAndTheirOwnNames`
+  fails with either change reverted.
+- **Renders of the same four saved runs:** Redis 4.01 MB, litestream
+  3.81 MB, freqtrade 8.35 MB, repomap 9.11 MB; a headless check of every
+  part reading (litestream 22, repomap 45, Redis 32) found every member
+  under a listed file and no page error. `go test ./internal/report/...`,
+  `make ui-test` (134) pass.
+
 ## 2026-09-29 — "Reads:" in place of "Uses variables"; no line numbers in the column
 
 - **Why:** the owner's rule for the reading column, no line numbers
