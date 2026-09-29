@@ -183,6 +183,18 @@ func glossaryMatchesWith(text string, syntax displaySyntax, byName map[string][]
 		if match.start >= end {
 			result = append(result, match)
 			end = match.end
+			continue
+		}
+		// Two lookup names reading the same words, a code name as written and
+		// a glossary name in any case (freqtrade's Hyperopt class and its
+		// "hyperopt" term), offer their definitions together, as homonyms do.
+		// Keeping whichever the map ranged first had renumbered the page's
+		// display texts from one render of a saved run to the next.
+		last := &result[len(result)-1]
+		if last.start == match.start && last.end == match.end && last.ending == match.ending {
+			ids := slices.Concat(last.ids, match.ids)
+			slices.Sort(ids)
+			last.ids = slices.Compact(ids)
 		}
 	}
 	return result

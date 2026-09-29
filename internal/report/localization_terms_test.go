@@ -367,3 +367,21 @@ func TestCodeNamesMatchAsWrittenAndAcronymPluralsStayLowerCase(t *testing.T) {
 		t.Fatalf("code and acronym lookup: %v %v", matchedWords(plain, spans), err)
 	}
 }
+
+// A code name read as written and a glossary name in any case can read the
+// same words: freqtrade's Hyperopt class and its "hyperopt" term. The words
+// offer both definitions, as homonyms do; keeping whichever the lookup map
+// ranged first had renumbered the saved run's display texts between renders.
+func TestACodeNameAndAGlossaryNameOnTheSameWordsOfferBothDefinitions(t *testing.T) {
+	hyperopt := glossaryFixture("c19", "Hyperopt", "The hyperparameter search class.", "")
+	hyperopt.Code = true
+	page := &PreparedPage{view: &pageView{Glossary: []pageGlossaryTerm{
+		hyperopt,
+		glossaryFixture("term-hyperopt-0", "hyperopt", "Searching strategy parameters.", ""),
+	}}}
+	entry := page.prepareTerminology("label", "Hyperopt reads Config", "", nil, nil)
+	_, spans, err := entry.finishDisplayText(entry.Text)
+	if err != nil || len(entry.Terms) != 2 || len(spans) != 1 || !reflect.DeepEqual(spans[0].IDs, []string{"c19", "term-hyperopt-0"}) {
+		t.Fatalf("the same words kept one definition: %+v %+v %v", entry.Terms, spans, err)
+	}
+}

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/terminology"
 )
 
 func TestSavedHTMLUsesOrdinaryRendererAndPreservesPublication(t *testing.T) {
@@ -58,6 +60,44 @@ func TestSavedHTMLUsesOrdinaryRendererAndPreservesPublication(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Rendering one saved run again gives the same bytes. Glossary names that read
+// the same words ("LOAD" as an acronym and "load" in any case in "clean
+// calls load") had been settled by map order, so freqtrade's display refs
+// shifted (t1235/t1236) between two renders of one saved run with one binary.
+func TestRenderingASavedRunAgainGivesTheSameBytes(t *testing.T) {
+	runDir := t.TempDir()
+	data := reportProgramShellDataFixture(t, "example.com/team/server")
+	data.ArtifactsDir, data.defaultProgramIndexArtifactFilename = runDir, "program-index.json"
+	source := []terminology.Source{{Path: "main.py", Line: 1}}
+	data.Glossary = pageGlossaryCatalog(t,
+		[]terminology.Candidate{{Name: "LOAD", Explanation: "The loader command.", Sources: source}},
+		[]terminology.Candidate{{Name: "load", Explanation: "Reading saved input.", Sources: source}})
+	manifest := validRunManifestFixture(t)
+	runSource, err := NewRunSource(manifest.AnalysisRoot, manifest.RepositoryState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Generate(runDir, runSource, GenerateOptions{Data: &data, PublishHTML: true}); err != nil {
+		t.Fatal(err)
+	}
+	published, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(published, []byte("The loader command.")) || !bytes.Contains(published, []byte("Reading saved input.")) {
+		t.Fatal("the fixture's two glossary names are not on the page")
+	}
+	for render := 1; render <= 8; render++ {
+		again, err := RenderSavedHTML(runDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(again, published) {
+			t.Fatalf("render %d of the same saved run differs from its publication", render)
+		}
 	}
 }
 
