@@ -253,6 +253,19 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		return args
 	}
 	started := map[site]bool{}
+	// joined is, by file, the call each call is another spelling of: an
+	// operand of the same `or` form (source.go joinedCalls).
+	joined := map[string]map[[2]int][2]int{}
+	for _, u := range a.Usages {
+		if valid(u.site) && u.Macro && u.To == "clojure.core" && u.Name == "or" {
+			for later, first := range sources[u.Filename].joinedCalls(u.site) {
+				if joined[u.Filename] == nil {
+					joined[u.Filename] = map[[2]int][2]int{}
+				}
+				joined[u.Filename][later] = first
+			}
+		}
+	}
 	for _, u := range a.Usages {
 		if !valid(u.site) {
 			continue
@@ -370,6 +383,38 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			args := s.arguments(u.site)
 			pattern := p.RelationPatternInput{SourceRef: fmt.Sprintf("local:%s:%d:%d", u.Filename, u.Row, u.Col), Form: p.PatternCall, Selector: name, Location: location(u.site), Arguments: args, ArgumentsObserved: len(args)}
 			addRelation(p.RelationCalls, ownerAt(u.site), nil, u.site, p.DispatchFunctionValue, &pattern)
+		}
+	}
+	// A call another spelling of an earlier call names that call's pattern
+	// when both make the same relation: one kind, from one declaration, to
+	// one target.
+	if len(joined) > 0 {
+		byPattern := map[string]int{}
+		for i, relation := range input.Relations {
+			if len(relation.Patterns) == 1 {
+				byPattern[relation.Patterns[0].SourceRef] = i
+			}
+		}
+		for i := range input.Relations {
+			relation := &input.Relations[i]
+			if len(relation.Patterns) != 1 || relation.Patterns[0].Location == nil {
+				continue
+			}
+			at := relation.Patterns[0].Location
+			first, ok := joined[at.Path][[2]int{at.Line, at.Column}]
+			if !ok {
+				continue
+			}
+			ref := fmt.Sprintf("call:%s:%d:%d", at.Path, first[0], first[1])
+			position, ok := byPattern[ref]
+			if !ok || !strings.HasPrefix(relation.Patterns[0].SourceRef, "call:") {
+				continue
+			}
+			root := input.Relations[position]
+			if root.Kind != relation.Kind || root.FromRef != relation.FromRef || !slices.Equal(root.ToRefs, relation.ToRefs) {
+				continue
+			}
+			relation.Patterns[0].SameValueAs = &p.PatternRefInput{RelationSourceRef: root.SourceRef, PatternSourceRef: ref}
 		}
 	}
 	for i := range input.Relations {

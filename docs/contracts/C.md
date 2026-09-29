@@ -506,6 +506,19 @@ nothing:
   word a call compares (`strcasecmp(argv[0], "timeout")` in Redis's
   `loadServerConfig`, asked per call above) or a row of a table of names.
 
+Spellings of one value are recorded (PROGRAM_INDEX `same_value_as`,
+`internal/cproject/spellings.go`): calls of one function written the same
+but for their string literals, as the operands of one `||` written the
+same around their call, or as the conditions of one if/else-if chain's
+arms whose statements are written the same; each later call names the
+first. kvd's `loadConfig` compares `argv[0]` with `"dbfilename"` or its
+older spelling `"dbfile"` in one condition: both are asked, answered
+setting, and are one input `dbfilename` with the alias `dbfile` (READING;
+`TestEveryLanguageKeepsTheSpellingsOfOneValue`,
+`TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests`). A call
+written through a macro and a function-pointer call join nothing; `&&` is
+none.
+
 
 ## Programs a call starts
 

@@ -430,6 +430,11 @@ type SymbolCall struct {
 	// put each function the call reaches there (a command table's row): the
 	// order a reader meets those functions in. Local, never provider prose.
 	Stores []CallStore `json:"stores,omitempty"`
+	// SameValueAs is where the earlier call this call reads the same value
+	// as is written (ProgramIndex RelationPattern.SameValueAs): the first
+	// spelling of one read, `query.Get("storageClass")` for the else-if
+	// arm's `query.Get("storage-class")`. Local, never provider prose.
+	SameValueAs *sourcevalue.Anchor `json:"same_value_as,omitempty"`
 }
 
 // CallStore is where the code first stored one function a call through a
@@ -954,6 +959,13 @@ type Boundary struct {
 	// entries and each other element's words values of the entry written
 	// last before them. A code fact: its answer is still the model's.
 	ValueOf string `json:"value_of,omitempty"`
+	// AliasOf is, for an entry a call's words make, the entry it is
+	// another spelling of: its call reads the same value as that entry's
+	// call (ProgramIndex SameValueAs), both answered the same kind, and
+	// that call is written first (`query.Get("storage-class")` of
+	// `query.Get("storageClass")`). A code fact; each call's answer is
+	// still the model's.
+	AliasOf string `json:"alias_of,omitempty"`
 }
 
 // DeclaredOn is the call that made the object an entry is declared on, at
@@ -1740,6 +1752,21 @@ func Validate(value Atlas) error {
 			}
 			if boundary.ValueOf != "" && (!boundary.HandlerUnknown || boundary.ValueOf == boundary.ID) {
 				return fmt.Errorf("atlas: boundary %q is a value of an invalid entry", boundary.ID)
+			}
+		}
+		// An alias names an entry of the same kind whose handler is not
+		// established either, and which is no alias itself.
+		spelled := make(map[string]Boundary, len(target.Boundaries))
+		for _, boundary := range target.Boundaries {
+			spelled[boundary.ID] = boundary
+		}
+		for _, boundary := range target.Boundaries {
+			if boundary.AliasOf == "" {
+				continue
+			}
+			first, ok := spelled[boundary.AliasOf]
+			if !ok || !boundary.HandlerUnknown || boundary.AliasOf == boundary.ID || !first.HandlerUnknown || first.AliasOf != "" || first.Kind != boundary.Kind || first.Direction != DirectionIn || boundary.Direction != DirectionIn {
+				return fmt.Errorf("atlas: boundary %q is another spelling of an invalid entry %q", boundary.ID, boundary.AliasOf)
 			}
 		}
 		for _, call := range target.Unsure {

@@ -669,6 +669,11 @@ type boundaryState struct {
 	// a value of (values.go).
 	element *valueElement
 	valueOf string
+	// sameValueAs is, for an entry a call's words make, where the earlier
+	// call its call reads the same value as is written; aliasOf the entry
+	// it is another spelling of (spellings.go).
+	sameValueAs *sourcevalue.Anchor
+	aliasOf     string
 	// tableRow marks an entry a row of an accepted table makes (inputs.go).
 	tableRow bool
 }
@@ -721,6 +726,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	publishes = append(publishes, r.bindInterpretedBoundaries()...)
 	publishes = r.dropTestBoundaries(publishes)
 	r.foldValues()
+	r.foldSpellings()
 	r.bindTableRows()
 	r.markDeclaredOn()
 	if err := r.readPrograms(ctx); err != nil {
@@ -1216,7 +1222,7 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 				}
 				if kind := r.readWordCall(running, place.ID, decl.ObjectID, call.Line, call.Column, symbol, call.Values); kind != "" {
 					id := boundaryID(fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s\x00%s\x00%s", atlas.DirectionIn, place.ID, call.Line, call.Column, call.Kind, call.Name, call.Resolution))
-					r.boundaries[id] = &boundaryState{kind: kind, handlerUnknown: true, element: comparedElement(call.SourceArguments), place: atlas.Place{
+					r.boundaries[id] = &boundaryState{kind: kind, handlerUnknown: true, element: comparedElement(call.SourceArguments), sameValueAs: cloneAnchor(call.SameValueAs), place: atlas.Place{
 						ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: call.Line, Column: call.Column,
 						Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
 							Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name, External: call.Name,

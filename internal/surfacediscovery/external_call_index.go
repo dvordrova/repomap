@@ -102,6 +102,12 @@ type ExternalCallPattern struct {
 	Context       []ControlContext   `json:"context,omitempty"`
 	ID            string             `json:"id"`
 	Callsite      Location           `json:"callsite"`
+	// SameValueAs is the ID of the pattern of the earlier call this call
+	// reads the same value as (same_value_calls.go): an operand of the
+	// same || or an arm of the same if/else-if chain written the same but
+	// for its call's words. The adapter keeps it only when that call's
+	// pattern is kept beside it.
+	SameValueAs string `json:"same_value_as,omitempty"`
 	// ResultID is an exact, source-bound SSA call-result identity. It is not a
 	// declaration and does not claim that the call executes. A later method
 	// pattern may cite the same identity as its receiver, preserving neutral
@@ -665,7 +671,8 @@ func validateExternalCallPattern(value ExternalCallPattern) error {
 			return fmt.Errorf("invalid call control context")
 		}
 	}
-	if value.ID != externalCallPatternID(value.Callsite) || !validRepositoryDirectCallLocation(value.Callsite) {
+	if value.ID != externalCallPatternID(value.Callsite) || !validRepositoryDirectCallLocation(value.Callsite) ||
+		value.SameValueAs == value.ID || !externalCallPlainOptional(value.SameValueAs) {
 		return fmt.Errorf("invalid pattern identity")
 	}
 	if value.ReceiverResultIDs == nil || !externalCallPlainOptional(value.ResultID) ||

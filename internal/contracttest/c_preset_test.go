@@ -200,6 +200,13 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("inputs = %+v\nwant %+v", got, want)
 	}
+	// dbfilename's older spelling, compared in the same condition and
+	// answered setting too, is its alias: no setting of its own.
+	for _, operation := range indexes[0].Operations {
+		if operation.Name == "dbfilename" && (len(operation.Aliases) != 1 || operation.Aliases[0].Name != "dbfile" || operation.Aliases[0].Written != `strcasecmp(argv[0], "dbfile")`) {
+			t.Fatalf("dbfilename's other spellings: %+v", operation.Aliases)
+		}
+	}
 	// Binding, listening on and accepting from the server's socket are its
 	// listening side: they serve, and the connection accept takes in is no
 	// outgoing request. Nothing else kvd calls talks to another system:

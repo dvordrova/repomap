@@ -178,3 +178,12 @@
 ;; started there, as Go's go statement starts one.
 (defn warm-greetings [names]
   (future (greet-many names)))
+
+;; A replica URL's options, read the way litestream's S3 client reads them:
+;; `or` takes the second spelling of one option when the first is absent,
+;; one value. The region is read once; user and password, joined by `and`,
+;; are both needed.
+(defn replica-options [params]
+  {:storage-class (or (get params "storageClass") (get params "storage-class"))
+   :region (get params "region")
+   :credentials (and (get params "user") (get params "password"))})

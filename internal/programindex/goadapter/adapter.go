@@ -562,7 +562,7 @@ func (projection *goProjection) projectRelations() error {
 		if !ok {
 			return fmt.Errorf("Go program index adapter: direct edge %q has no callee", edge.ID)
 		}
-		patterns, err := projection.callPatterns(edge.Patterns, callee.Symbol.Name)
+		patterns, err := projection.callPatterns(edge.Patterns, callee.Symbol.Name, edge.ID)
 		if err != nil {
 			return err
 		}
@@ -659,7 +659,7 @@ func (projection *goProjection) projectRelations() error {
 				Kind: witnessKind, Detail: locationDetail(callsite), Location: location,
 			})
 		}
-		patterns, err := projection.callPatterns(family.Patterns, family.Target.Name)
+		patterns, err := projection.callPatterns(family.Patterns, family.Target.Name, family.ID)
 		if err != nil {
 			return err
 		}
@@ -853,9 +853,13 @@ func (projection *goProjection) projectInterfaceImplementations() error {
 
 func (projection *goProjection) callPatterns(
 	values []surfacediscovery.ExternalCallPattern,
-	selector string,
+	selector, relationRef string,
 ) ([]programindex.RelationPatternInput, error) {
 	result := make([]programindex.RelationPatternInput, 0, len(values))
+	kept := make(map[string]bool, len(values))
+	for _, pattern := range values {
+		kept[pattern.ID] = true
+	}
 	for _, pattern := range values {
 		location, err := projection.surfaceLocation(pattern.Callsite)
 		if err != nil {
@@ -900,9 +904,16 @@ func (projection *goProjection) callPatterns(
 			}
 			control = append(control, programindex.Witness{Kind: "control_context", Detail: context.Kind, Location: location})
 		}
+		// The call it reads the same value as is a call of the same callee
+		// from the same caller, so of this relation; a call it names that
+		// the relation did not keep names nothing.
+		var sameValueAs *programindex.PatternRefInput
+		if pattern.SameValueAs != "" && kept[pattern.SameValueAs] {
+			sameValueAs = &programindex.PatternRefInput{RelationSourceRef: relationRef, PatternSourceRef: pattern.SameValueAs}
+		}
 		result = append(result, programindex.RelationPatternInput{
 			ReceiverValue: sourcevalue.Clone(pattern.ReceiverValue), ResultValue: sourcevalue.Clone(pattern.ResultValue),
-			Context:   control,
+			Context: control, SameValueAs: sameValueAs,
 			SourceRef: pattern.ID, Form: programindex.PatternCall, Selector: selector,
 			Location:  location,
 			ResultRef: resultRef, ReceiverRef: receiverRef,

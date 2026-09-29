@@ -1771,6 +1771,14 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 		}
 		byObject[symbol][symbolCallKey(call)] = call
 	}
+	// Where each pattern is written, for the calls naming the call they
+	// read the same value as.
+	patternAt := make(map[string]*programindex.Location)
+	for _, relation := range target.Index.Relations {
+		for _, pattern := range relation.Patterns {
+			patternAt[pattern.ID] = pattern.Location
+		}
+	}
 	for _, relation := range target.Index.Relations {
 		if relation.Kind == programindex.RelationImports {
 			continue
@@ -1838,6 +1846,9 @@ func (b *builder) collectSymbolCalls(byObject map[string]map[string]atlas.Symbol
 			if pattern.Location != nil {
 				call.Line = pattern.Location.Line
 				call.Column = pattern.Location.Column
+			}
+			if at := patternAt[pattern.SameValueAs]; pattern.SameValueAs != "" && at != nil {
+				call.SameValueAs = &sourcevalue.Anchor{Path: atlasPath(at.Path), Line: at.Line, Column: at.Column}
 			}
 			for _, argument := range pattern.Arguments {
 				if value, ok := literalArgument(argument); ok {

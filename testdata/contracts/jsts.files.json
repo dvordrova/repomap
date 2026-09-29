@@ -175,54 +175,58 @@
     },
     {
       "id": "f44",
-      "path": "src/route-mounts.ts"
+      "path": "src/replica-options.ts"
     },
     {
       "id": "f45",
-      "path": "src/runtime-registrations.ts"
+      "path": "src/route-mounts.ts"
     },
     {
       "id": "f46",
-      "path": "src/server.ts"
+      "path": "src/runtime-registrations.ts"
     },
     {
       "id": "f47",
-      "path": "src/sql-literals.ts"
+      "path": "src/server.ts"
     },
     {
       "id": "f48",
-      "path": "src/stored-callbacks.ts"
+      "path": "src/sql-literals.ts"
     },
     {
       "id": "f49",
-      "path": "src/test-setup.ts"
+      "path": "src/stored-callbacks.ts"
     },
     {
       "id": "f50",
-      "path": "src/testing/real-service.ts"
+      "path": "src/test-setup.ts"
     },
     {
       "id": "f51",
-      "path": "src/type-members.ts"
+      "path": "src/testing/real-service.ts"
     },
     {
       "id": "f52",
-      "path": "src/workers.ts"
+      "path": "src/type-members.ts"
     },
     {
       "id": "f53",
-      "path": "src/workspace-origins-js.js"
+      "path": "src/workers.ts"
     },
     {
       "id": "f54",
-      "path": "src/workspace-origins.ts"
+      "path": "src/workspace-origins-js.js"
     },
     {
       "id": "f55",
-      "path": "tsconfig.json"
+      "path": "src/workspace-origins.ts"
     },
     {
       "id": "f56",
+      "path": "tsconfig.json"
+    },
+    {
+      "id": "f57",
       "path": "vitest.config.ts"
     }
   ]

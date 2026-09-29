@@ -281,6 +281,14 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		}
 		addRelation("program:"+value.Ref, programindex.RelationImports, from, to, resolution, value.Location, witnessKind, "", "")
 	}
+	// A call names the earlier call it is another spelling of only when
+	// both keep a pattern and make the same relation: one kind, from one
+	// declaration, to one target.
+	spelling := map[string]string{}
+	for _, value := range result.Calls {
+		kind, to := callRelationShape(value)
+		spelling[value.Ref] = fmt.Sprint(value.Pattern != nil, kind, value.CallerRef, to)
+	}
 	for _, value := range result.Calls {
 		to := append([]string(nil), value.CalleeRefs...)
 		kind := programindex.RelationCalls
@@ -304,6 +312,9 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 		}
 		relationIndex := addRelation("program:"+value.Ref, kind, value.CallerRef, to, resolution, value.Location, witnessKind, value.Expression, jstsInvocation(value.Invocation))
 		relations[relationIndex].Patterns = programCallPatterns(value)
+		if first := value.SameValueAs; first != "" && value.Pattern != nil && len(relations[relationIndex].Patterns) == 1 && spelling[first] == spelling[value.Ref] {
+			relations[relationIndex].Patterns[0].SameValueAs = &programindex.PatternRefInput{RelationSourceRef: "program:" + first, PatternSourceRef: "pattern:" + first}
+		}
 		if value.Invocation == "decorator" {
 			for i := range relations[relationIndex].Patterns {
 				relations[relationIndex].Patterns[i].Form = programindex.PatternDecoratorCall
@@ -562,6 +573,21 @@ func programOptionalResolution(value string) programindex.Resolution {
 		return ""
 	}
 	return programResolution(value)
+}
+
+// callRelationShape is the kind and target a call's relation takes, as the
+// projection makes it.
+func callRelationShape(value Call) (programindex.RelationKind, []string) {
+	to := append([]string(nil), value.CalleeRefs...)
+	kind := programindex.RelationCalls
+	if value.ExternalPackage != "" && programResolution(value.Resolution) != programindex.ResolutionUnresolved {
+		to = []string{"external\x00" + value.ExternalPackage + "\x00" + value.ExternalExport + "\x00" + value.ExternalReceiver + "\x00" + value.ExternalName + "\x00" + value.RepositoryPath}
+		kind = programindex.RelationInvokesExternal
+	}
+	if value.Invocation == "decorator" {
+		kind = programindex.RelationDecorates
+	}
+	return kind, to
 }
 
 func programCallPatterns(value Call) []programindex.RelationPatternInput {

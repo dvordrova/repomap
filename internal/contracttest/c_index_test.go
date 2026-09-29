@@ -377,7 +377,10 @@ func TestCFixtureIndexesTheServer(t *testing.T) {
 				}
 			}
 		}
-		if want := (programindex.LineRange{Line: first, EndLine: last}); len(branches) != 1 || branches[0] != want {
+		// dbfilename's older spelling, dbfile, is compared in the same
+		// condition and guards the same line.
+		want := programindex.LineRange{Line: first, EndLine: last}
+		if len(branches) == 0 || slices.ContainsFunc(branches, func(branch programindex.LineRange) bool { return branch != want }) {
 			t.Errorf("%s guards %+v, want %+v", compared.needle, branches, want)
 		}
 	}

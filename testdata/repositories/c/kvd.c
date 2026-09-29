@@ -316,7 +316,7 @@ static char **splitLine(char *line, int *count) {
 }
 
 /* Reads the configuration file an operator writes, one directive per line
- * ("port 7380", "dbfilename backup.kv"), as Redis reads redis.conf. */
+ * ("port 7380", "dbfilename backup.kv" or "dbfile backup.kv"), as Redis reads redis.conf. */
 static void loadConfig(const char *filename) {
     FILE *fp = fopen(filename, "r");
     char line[256];
@@ -325,7 +325,7 @@ static void loadConfig(const char *filename) {
         int words;
         char **argv = splitLine(line, &words);
         if (words == 2 && strcasecmp(argv[0], "port") == 0) server.port = atoi(argv[1]);
-        else if (words == 2 && strcasecmp(argv[0], "dbfilename") == 0) server.dbfile = strdup(argv[1]);
+        else if (words == 2 && (strcasecmp(argv[0], "dbfilename") == 0 || strcasecmp(argv[0], "dbfile") == 0)) server.dbfile = strdup(argv[1]);
         /* A directive's values are compared with its second word. */
         else if (words == 2 && strcasecmp(argv[0], "persist") == 0) {
             if (strcasecmp(argv[1], "never") == 0) server.dirty = -1;

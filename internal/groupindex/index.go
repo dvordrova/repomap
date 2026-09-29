@@ -255,6 +255,13 @@ type Operation struct {
 	// another (atlas Boundary.ValueOf: "always" after "appendfsync"), that
 	// input: it is listed as its sub-argument (Launch.Nested).
 	ValueOf string `json:"value_of,omitempty"`
+	// Aliases are, for a handler-less input its code reads under several
+	// spellings of one value (atlas Boundary.AliasOf: litestream's
+	// query.Get("storage-class") in the else-if arm after
+	// query.Get("storageClass")), its other spellings in source order, each
+	// named by its words and kept with its call as written. The input is
+	// named by its first spelling, as a case listing several words is.
+	Aliases []OperationAlias `json:"aliases,omitempty"`
 	// DeclaredBy is the subject whose code makes the call declaring or
 	// registering the input: the caller of that call. For an input whose
 	// handler is not established it is where the input is parsed, never its
@@ -270,6 +277,14 @@ type Operation struct {
 	// the model matched it to (the joints peers question, decision 14):
 	// redis-cli's `get` row names redis-server's get. MODEL; never an arrow.
 	Sends []PeerInput `json:"sends,omitempty"`
+}
+
+// OperationAlias is another spelling of an input: its name, where its call
+// is and the call as written.
+type OperationAlias struct {
+	Name     string                `json:"name"`
+	Location programindex.Location `json:"location"`
+	Written  string                `json:"written,omitempty"`
 }
 
 // PeerInput is one input of another program: its target and operation, and
@@ -875,6 +890,7 @@ func (index Index) Snapshot() Index {
 	}
 	for i := range result.Operations {
 		result.Operations[i].Sends = append([]PeerInput(nil), index.Operations[i].Sends...)
+		result.Operations[i].Aliases = append([]OperationAlias(nil), index.Operations[i].Aliases...)
 		if on := result.Operations[i].DeclaredOn; on != nil {
 			copied := *on
 			result.Operations[i].DeclaredOn = &copied
@@ -978,6 +994,11 @@ func (index Index) Validate() error {
 		_, subjectExists := subjectsByID[operation.SubjectID]
 		if on := operation.DeclaredOn; on != nil && (on.Location.Path == "" || on.Location.Line < 1 || !validOptionalText(on.Text)) {
 			return fmt.Errorf("group index: operation %q is declared on an invalid object", operation.ID)
+		}
+		for _, alias := range operation.Aliases {
+			if !operation.HandlerUnknown || !validText(alias.Name) || !validOptionalText(alias.Written) || alias.Location.Path == "" || alias.Location.Line < 1 || alias.Location.Column < 1 {
+				return fmt.Errorf("group index: operation %q has an invalid other spelling", operation.ID)
+			}
 		}
 		_, declarerExists := subjectsByID[operation.DeclaredBy]
 		if operation.DeclaredBy != "" && !declarerExists {

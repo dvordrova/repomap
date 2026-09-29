@@ -278,6 +278,20 @@ not. Not recorded yet:
   property names, with no tag and no alias, so no property is asked what
   its key is.
 
+Spellings of one value are recorded (PROGRAM_INDEX `same_value_as`): calls
+of one callee (the checker's symbol) written the same but for their string
+literals, as the operands of one `||` or `??` written the same around
+their call, or as the conditions of one if/else-if chain's arms whose
+then-statements are written the same; each later call names the first,
+and the projection keeps it only when both calls make the same relation.
+`src/replica-options.ts` reads `storageClass` with `??`, `forcePathStyle`
+with `||` and `verbose`/`v` in an if/else-if chain, beside `&&` and arms
+setting different values, which are none
+(`TestEveryLanguageKeepsTheSpellingsOfOneValue`). A property read
+(`process.env.A ?? process.env.B`) is no call and is not recorded; an arm
+whose body names its own word (`if (q.has("a")) x = q.get("a") else if
+(q.has("b")) x = q.get("b")`) is written differently and is none.
+
 ## Programs a call starts
 
 `revision` in `src/cli.ts` calls `spawn("git", ["rev-parse", "HEAD"], …)`

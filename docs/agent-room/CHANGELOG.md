@@ -1,5 +1,44 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Spellings of one value are one input with aliases (reviewer's item 6a)
+
+- **Why:** litestream reads a replica URL's options in two spellings,
+  `query.Get("storageClass")` / `"storage-class"` in an if/else-if chain
+  (s3/replica_client.go:205, cmd/litestream/main.go:1520) and
+  `"forcePathStyle"` / `"force-path-style"` in one `||`
+  (s3/replica_client.go:217); each call answered `setting` was its own
+  tile.
+- **Change:** ProgramIndex 24 records on a call pattern `same_value_as`,
+  the earlier call of the same callee (same declaration) written the same
+  but for its string literals, as another operand of one `||` (JS/TS `??`,
+  Clojure `or`) or the header of another arm of one if/else-if chain whose
+  headers and bodies are written alike; `&&` is none. Go
+  (`surfacediscovery/same_value_calls.go`), C (`cproject/spellings.go`),
+  JS/TS (`helper.mjs`) and Clojure (`or` forms) record it; Python is
+  missing (PYTHON). Places carries it on `SymbolCall.SameValueAs` (stripped
+  from provider evidence); the reading makes a call-made entry whose call
+  reads the same value as another entry of the same kind in the same
+  declaration its other spelling (`spellings.go`, `atlas.Boundary.AliasOf`),
+  and GroupsIndex folds it into the first spelling's operation
+  (`Operation.Aliases`: name, site, call as written). No new question;
+  each call keeps its own answer. The python-tutorial-game indexes are
+  resealed (version and seal only).
+- **Evidence:** a no-model run of cmd/litestream records 36 facts,
+  among them `storage-class` (twice), `part-size`, the four `sse-*`
+  spellings, `force-path-style`, `LITESTREAM_ACCESS_KEY_ID` and
+  `LITESTREAM_SECRET_ACCESS_KEY`, and conditions listing words through
+  calls (`strings.HasPrefix(host, "10.") || …`). The fold itself needs an
+  online run (the `enters` answers); not run here.
+- **Open:** the column shows no alias yet (the data is on
+  `Operation.Aliases`); a condition testing two different values with `||`
+  (`q.Get("user") == "" || q.Get("password") == ""`) reads as one value if
+  both are answered the same kind.
+- **Checks:** `TestSameValueAsNamesTheEarlierCallsPattern`,
+  `TestEveryLanguageKeepsTheSpellingsOfOneValue` (Go, JS/TS, Clojure, C),
+  `TestGoSpellingsOfOneSettingAreOneInput`, the kvd preset's
+  `dbfilename`/`dbfile`; `make test` and `make vet` (package parallelism 2)
+  pass.
+
 ## 2026-09-30 — The column, second human-eye review: whole names, short Outside readings, one kind heading, no run-on start line
 
 - **Why:** the reviewer's column findings: names wrapped mid-identifier

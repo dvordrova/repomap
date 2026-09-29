@@ -60,6 +60,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 		definedAt: map[string]Position{}, slots: map[string]*slot{}, stores: map[string][]*store{}, passedTo: map[string][]passedAt{},
 		imported: map[string]bool{}, importers: map[string]dependencies.Importer{}, escaped: map[string]bool{},
 		fieldRoles: map[*Node]fieldRole{}, assigned: map[*Node]*Node{},
+		callOf: map[*Node]*call{}, joined: map[*Node]bool{},
 	}
 	for _, unit := range parsed.Units {
 		b.scopes = append(b.scopes, newUnitScope(unit))
@@ -126,6 +127,10 @@ type builder struct {
 	// assigned are, by the member a plain assignment's destination names,
 	// the value it assigns, until the walk reaches that member.
 	assigned map[*Node]*Node
+	// callOf is the call recorded at each call expression; joined marks the
+	// || operators and if statements a chain already holds (spellings.go).
+	callOf map[*Node]*call
+	joined map[*Node]bool
 
 	imported  map[string]bool
 	importers map[string]dependencies.Importer
@@ -812,6 +817,9 @@ func (b *builder) emitCalls() {
 		at := location(c.site)
 		pattern := p.RelationPatternInput{SourceRef: c.patternRef, Form: p.PatternCall, Selector: c.selector, Location: at,
 			Context: c.context, Branch: c.branch, Arguments: c.arguments, ArgumentsObserved: len(c.arguments)}
+		if first := c.sameValueAs; first != nil && at != nil && location(first.site) != nil {
+			pattern.SameValueAs = &p.PatternRefInput{RelationSourceRef: first.relationRef, PatternSourceRef: first.patternRef}
+		}
 		r := p.RelationInput{SourceRef: c.relationRef, Kind: p.RelationCalls, FromRef: c.from, Location: at, Patterns: []p.RelationPatternInput{pattern}}
 		switch {
 		case c.direct.ref != "":

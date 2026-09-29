@@ -170,6 +170,11 @@ type Call struct {
 	Location         Location     `json:"location"`
 	Pattern          *CallPattern `json:"pattern,omitempty"`
 	PatternsObserved int          `json:"patterns_observed"`
+	// SameValueAs is the ref of the earlier call this call is another
+	// spelling of (PROGRAM_INDEX SameValueAs): an operand of the same || or
+	// ?? written the same around its call, or an arm of the same
+	// if/else-if chain written the same but for its call's words.
+	SameValueAs string `json:"same_value_as,omitempty"`
 }
 
 // Binding records a callable value supplied to a JSX attribute, not an

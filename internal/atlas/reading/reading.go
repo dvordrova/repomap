@@ -1308,7 +1308,7 @@ func (r *reader) target(meta TargetMeta) atlas.Target {
 			Values: append([]string{}, facts.Values...), Name: state.name, Line: state.writtenLine(), FactID: factID,
 			Source: facts.Source, Destination: state.destinationOf(meta.ID), Address: state.address, Basis: state.basis,
 			HandlerUnknown: state.handlerUnknown, ProgramNotNamed: state.programNotNamed,
-			DeclaredOn: state.on, Written: state.asWritten, ValueOf: state.valueOf,
+			DeclaredOn: state.on, Written: state.asWritten, ValueOf: state.valueOf, AliasOf: state.aliasOf,
 		})
 	}
 	target.Unsure, target.Idioms = r.launchEvidence(meta.ID)

@@ -792,6 +792,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	// boundary whose operation stands for it: a joint naming the first
 	// names the second's operation.
 	standsFor := make(map[string]string)
+	// aliasOf is, for a handler-less input another spelling of one value,
+	// the boundary of its first spelling (atlas Boundary.AliasOf).
+	aliasOf := make(map[string]string)
 	for _, boundary := range target.Boundaries {
 		kind := OperationKind(boundary.Kind)
 		if boundary.Direction != atlas.DirectionIn || kind == "" {
@@ -827,6 +830,9 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				declaredBy = ""
 			}
 			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary), Written: boundary.Written, ValueOf: boundary.ValueOf}
+			if boundary.AliasOf != "" {
+				aliasOf[boundary.ID] = boundary.AliasOf
+			}
 			key := strings.Join(append([]string{kind, boundary.ObjectID}, boundary.Values...), "\x00")
 			if on := operation.DeclaredOn; on != nil {
 				// Two objects in one function are two declarations.
@@ -882,6 +888,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			boundRequests[subjectID] = true
 		}
 	}
+	operations = foldSpellings(operations, aliasOf, standsFor)
 	// J1: a hand-over with no words of its own, made on what a word entry
 	// of the same kind produced (set_defaults(func=f) on add_parser("x")'s
 	// parser, .action(run) on .command("x")), is one input with that entry:
@@ -1194,6 +1201,61 @@ func snakeCase(label string) string {
 		kind = "integrates_with"
 	}
 	return kind
+}
+
+// foldSpellings makes the spellings of one value one input (atlas
+// Boundary.AliasOf, the reading's spellings.go): the operation of the first
+// spelling stands, named by its words, and lists each other spelling's name,
+// site and call as written among its aliases, in source order; a joint
+// naming another spelling names that operation. An alias whose first
+// spelling made no operation of its kind stays its own input.
+func foldSpellings(operations []Operation, aliasOf, standsFor map[string]string) []Operation {
+	if len(aliasOf) == 0 {
+		return operations
+	}
+	at := make(map[string]int, len(operations))
+	for position, operation := range operations {
+		if operation.HandlerUnknown {
+			at[operation.ID] = position
+		}
+	}
+	folded := make(map[int]bool)
+	for position, operation := range operations {
+		first, ok := aliasOf[operation.ID]
+		if !ok {
+			continue
+		}
+		for seen := map[string]bool{}; standsFor[first] != "" && !seen[first]; first = standsFor[first] {
+			seen[first] = true
+		}
+		stands, ok := at[first]
+		if !ok || stands == position || folded[stands] || operations[stands].Kind != operation.Kind {
+			continue
+		}
+		operations[stands].Aliases = append(operations[stands].Aliases, OperationAlias{Name: operation.Name, Location: operation.Location, Written: operation.Written})
+		folded[position] = true
+		standsFor[operation.ID] = operations[stands].ID
+	}
+	if len(folded) == 0 {
+		return operations
+	}
+	kept := operations[:0]
+	for position, operation := range operations {
+		if folded[position] {
+			continue
+		}
+		slices.SortStableFunc(operation.Aliases, func(a, b OperationAlias) int {
+			if locationBefore(&a.Location, &b.Location) {
+				return -1
+			}
+			if locationBefore(&b.Location, &a.Location) {
+				return 1
+			}
+			return 0
+		})
+		kept = append(kept, operation)
+	}
+	return kept
 }
 
 // validOperationKind accepts the kinds the reading's activations and the

@@ -484,3 +484,99 @@ func (s source) caseComparison(at site) *programindex.Comparison {
 	comparison.Location = comparison.Cases[0].Location
 	return comparison
 }
+
+// joinedCalls are, for an `(or …)` form at site, the calls its operands
+// read the same value with (PROGRAM_INDEX SameValueAs): operands written
+// the same but for the string literals their one call is given, each call
+// of the same form, `(or (get params "storageClass") (get params
+// "storage-class"))`. Each later call's opening parenthesis maps to the
+// first's. `and` is none: both are needed.
+func (s source) joinedCalls(at site) map[[2]int][2]int {
+	start, end := s.offset(at.Row, at.Col), s.offset(at.EndRow, at.EndCol)
+	if start < 0 || end <= start || end > len(s.text) || s.text[start] != '(' {
+		return nil
+	}
+	nodes, _ := forms(s.text[start:end], 0, 0)
+	if len(nodes) != 1 || len(nodes[0].children) < 3 {
+		return nil
+	}
+	type read struct {
+		call         [2]int
+		shape, words string
+	}
+	spelled := func(operand form) (read, bool) {
+		var calls []form
+		closure := false
+		var visit func(form)
+		visit = func(node form) {
+			text := s.text[start+node.start:]
+			if len(text) > 3 && string(text[:3]) == "(fn" && (unicode.IsSpace(text[3]) || text[3] == '[') || text[0] == '#' && len(text) > 1 && text[1] == '(' {
+				closure = true
+				return
+			}
+			if text[0] == '(' {
+				for _, child := range node.children {
+					if s.text[start+child.start] == '"' {
+						calls = append(calls, node)
+						break
+					}
+				}
+			}
+			for _, child := range node.children {
+				visit(child)
+			}
+		}
+		visit(operand)
+		if closure || len(calls) != 1 || len(calls[0].children) == 0 {
+			return read{}, false
+		}
+		call := calls[0]
+		written := string(s.text[start+operand.start : start+operand.end])
+		base := operand.start
+		var words []string
+		for i := len(call.children) - 1; i >= 0; i-- {
+			child := call.children[i]
+			if s.text[start+child.start] != '"' {
+				continue
+			}
+			from, to := child.start-base, child.end-base
+			words = append([]string{written[from:to]}, words...)
+			written = written[:from] + "\x00" + written[to:]
+		}
+		at := s.location("", start+call.start)
+		return read{call: [2]int{at.Line, at.Column}, shape: strings.Join(strings.Fields(written), " "), words: strings.Join(words, "\x00")}, true
+	}
+	// Offsets index runes; a byte slice of the written text holds them only
+	// for ASCII text, so a form holding any other character joins nothing.
+	for _, r := range s.text[start:end] {
+		if r > unicode.MaxASCII {
+			return nil
+		}
+	}
+	reads := make([]*read, 0, len(nodes[0].children)-1)
+	for _, operand := range nodes[0].children[1:] {
+		if value, ok := spelled(operand); ok {
+			reads = append(reads, &value)
+		} else {
+			reads = append(reads, nil)
+		}
+	}
+	joined := map[[2]int][2]int{}
+	for i, first := range reads {
+		if first == nil {
+			continue
+		}
+		if _, later := joined[first.call]; later {
+			continue
+		}
+		for _, later := range reads[i+1:] {
+			if later == nil || later.shape != first.shape || later.words == first.words || later.call == first.call {
+				continue
+			}
+			if _, seen := joined[later.call]; !seen {
+				joined[later.call] = first.call
+			}
+		}
+	}
+	return joined
+}

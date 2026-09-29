@@ -270,6 +270,31 @@ litestream's cmd/litestream records 14 comparisons (the subcommand switch
 of `Main.Run` with 17 cases) and cmd/litestream-test 3 (`fs.Arg(0)`'s
 switch and its `help` check, 6 cases).
 
+### Spellings of one value
+
+A call that reads the same value as an earlier call names that call's
+pattern (ProgramIndex 24 `same_value_as`, from the typed syntax in
+`surfacediscovery/same_value_calls.go`): calls of one callee (go/types
+`typeutil.Callee`), written the same but for the string literals the call
+is given, either the operands of one `||` written the same around their one
+call, or the arms of one if/else-if chain whose headers (init and condition)
+are written the same but for their call's words and whose bodies are
+written the same. Each later call names the first of its group; the
+adapter keeps it only when the relation keeps both patterns, which one
+caller's calls of one callee always share. `&&` is none (both values are
+needed), and so are arms storing different fields and a header holding two
+worded calls. litestream's `s3/replica_client.go` records
+`query.Get("storage-class")` after `"storageClass"`, `"part-size"`, the
+`sse-*` spellings, `"force-path-style"` in its `||`, and the environment
+variables `LITESTREAM_ACCESS_KEY_ID` after `AWS_ACCESS_KEY_ID`;
+cmd/litestream's `main.go:1522` its own `storage-class`. A condition naming
+several words through calls (`strings.HasPrefix(host, "10.") ||
+strings.HasPrefix(host, "172.16.")`) is the same fact, as `case "a", "b":`
+is one case. The fixture's `ReplicaOptions`
+(`internal/storefixture/replica_options.go`) holds both shapes and the
+contrasts (`TestEveryLanguageKeepsTheSpellingsOfOneValue`,
+`TestGoSpellingsOfOneSettingAreOneInput`).
+
 ### Settings a structure's tags name
 
 A field whose struct tag names a key (the object aliases below,

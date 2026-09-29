@@ -258,6 +258,9 @@ func (a *analyzer) externalCallPattern(
 		Arguments:         make([]ExternalCallPatternArgument, 0, len(arguments)),
 		ArgumentsObserved: observed,
 	}
+	if root, ok := a.sameValueCall(callsite); ok {
+		pattern.SameValueAs = externalCallPatternID(root)
+	}
 	if resultID, resultType, ok := a.externalCallResult(common, callsite); ok {
 		pattern.ResultID = resultID
 		pattern.ResultType = resultType

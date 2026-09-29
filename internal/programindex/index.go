@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 23
+	Version          = 24
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -966,6 +966,13 @@ type PatternArgumentRefInput struct {
 	Keyword           string
 }
 
+// PatternRefInput identifies one nested pattern by its relation's and its
+// own adapter SourceRef; New resolves it to the pattern's sealed ID.
+type PatternRefInput struct {
+	RelationSourceRef string
+	PatternSourceRef  string
+}
+
 // PatternArgument is one sealed argument. ID is stable under input ordering
 // and is derived from its owning pattern plus its positional or keyword key.
 type PatternArgument struct {
@@ -1008,6 +1015,9 @@ type RelationPatternInput struct {
 	ReceiverOriginsObserved  int
 	Arguments                []PatternArgumentInput
 	ArgumentsObserved        int
+	// SameValueAs is, for a call that reads the same value as an earlier
+	// call (RelationPattern.SameValueAs), that call's pattern.
+	SameValueAs *PatternRefInput
 }
 
 // RelationPattern is a sealed source-syntax candidate. Its identity is local
@@ -1031,6 +1041,19 @@ type RelationPattern struct {
 	Arguments                []PatternArgument  `json:"arguments,omitempty"`
 	ArgumentsObserved        int                `json:"-"`
 	ArgumentsOmitted         int                `json:"arguments_omitted,omitempty"`
+	// SameValueAs is the pattern of an earlier call this call is another
+	// spelling of: a call of the same callee from the same declaration,
+	// written the same but for its string literals, either another operand
+	// of one `||` (JS/TS `??`, Clojure `or`) written the same around its
+	// call (`query.Get("forcePathStyle") != "" ||
+	// query.Get("force-path-style") != ""`), or the header of another arm
+	// of one if/else-if chain whose headers are written the same but for
+	// the call's words and whose bodies are written the same (`if v :=
+	// query.Get("storageClass"); v != "" { storageClass = v } else if v :=
+	// query.Get("storage-class"); …`). It names the first call of its
+	// group, which names none. A code fact: what the value is, and whether
+	// either call is an input, stays the reading's.
+	SameValueAs string `json:"same_value_as,omitempty"`
 }
 
 // Invocation says how a call runs. Empty is an ordinary call that returns
@@ -1531,6 +1554,7 @@ func New(input Input) (Index, error) {
 	}
 	pendingSourceArguments := make(map[string]PatternArgumentRefInput)
 	pendingValueSourceArguments := make(map[string]pendingPatternValueSourceArguments)
+	pendingSameValues := make(map[string]PatternRefInput)
 	for relationPosition, value := range input.Relations {
 		if !validText(value.SourceRef) || !value.Kind.Valid() || !value.Resolution.Valid() || !validText(value.FromRef) ||
 			!validInvocation(value.Invocation) || !validDispatch(value.Dispatch) || !validOptionalLocation(value.Location) {
@@ -1578,7 +1602,7 @@ func New(input Input) (Index, error) {
 		}
 		relationID := relationIDs[relationPosition]
 		patterns, err := canonicalizeRelationPatterns(
-			value.Patterns, relationID, bindings, pendingValueSourceArguments,
+			value.Patterns, relationID, bindings, pendingValueSourceArguments, pendingSameValues,
 		)
 		if err != nil {
 			return Index{}, fmt.Errorf("program index: relation %q patterns: %w", value.SourceRef, err)
@@ -1604,6 +1628,9 @@ func New(input Input) (Index, error) {
 		index.Relations = append(index.Relations, relation)
 	}
 	if err := resolvePatternValueSourceArgumentReferences(index.Relations, pendingValueSourceArguments); err != nil {
+		return Index{}, err
+	}
+	if err := resolveSameValuePatterns(index.Relations, pendingSameValues); err != nil {
 		return Index{}, err
 	}
 	for position := range index.Relations {
@@ -1842,6 +1869,9 @@ func (index Index) Validate() error {
 		if position > 0 && !compactIDLess(index.Relations[position-1].ID, relation.ID, "e") {
 			return fmt.Errorf("program index: relations are not canonical")
 		}
+	}
+	if err := validateSameValuePatterns(index.Relations); err != nil {
+		return err
 	}
 	if err := validateCoverage(index.Coverage, len(index.Objects), len(index.Relations)); err != nil {
 		return err
@@ -2413,6 +2443,7 @@ func canonicalizeRelationPatterns(
 	relationID string,
 	bindings []objectBinding,
 	pendingValueSources map[string]pendingPatternValueSourceArguments,
+	pendingSameValues map[string]PatternRefInput,
 ) ([]RelationPattern, error) {
 	values = slices.Clone(values)
 	sort.Slice(values, func(i, j int) bool { return values[i].SourceRef < values[j].SourceRef })
@@ -2454,6 +2485,12 @@ func canonicalizeRelationPatterns(
 		}
 		if branch := value.Branch; branch != nil && (branch.Line < 1 || branch.EndLine < branch.Line) {
 			return nil, fmt.Errorf("pattern %q branch: lines %d-%d", value.SourceRef, branch.Line, branch.EndLine)
+		}
+		if same := value.SameValueAs; same != nil {
+			if !validText(same.RelationSourceRef) || !validText(same.PatternSourceRef) {
+				return nil, fmt.Errorf("pattern %q names an invalid pattern it reads the same value as", value.SourceRef)
+			}
+			pendingSameValues[id] = *same
 		}
 		pattern := RelationPattern{
 			ID: id, SourceRef: value.SourceRef, Form: value.Form, Selector: value.Selector, Context: control, Branch: cloneLineRange(value.Branch),
@@ -2990,6 +3027,74 @@ func resolvePatternArgumentReference(
 		return "", fmt.Errorf("unknown reference")
 	}
 	return argumentID, nil
+}
+
+// resolveSameValuePatterns gives each pattern that reads the same value as
+// another the other pattern's sealed ID. A reference naming no pattern, or
+// several, refuses the index: the adapter wrote a pattern it did not keep.
+func resolveSameValuePatterns(relations []Relation, pending map[string]PatternRefInput) error {
+	if len(pending) == 0 {
+		return nil
+	}
+	type at struct{ relation, pattern int }
+	bySourceRef := make(map[PatternRefInput][]string)
+	patterns := make(map[string]at)
+	for relationPosition, relation := range relations {
+		for patternPosition, pattern := range relation.Patterns {
+			key := PatternRefInput{RelationSourceRef: relation.SourceRef, PatternSourceRef: pattern.SourceRef}
+			bySourceRef[key] = append(bySourceRef[key], pattern.ID)
+			patterns[pattern.ID] = at{relationPosition, patternPosition}
+		}
+	}
+	for id, reference := range pending {
+		named := bySourceRef[reference]
+		if len(named) != 1 {
+			return fmt.Errorf("program index: pattern %q reads the same value as %d patterns of %q/%q", id, len(named), reference.RelationSourceRef, reference.PatternSourceRef)
+		}
+		position := patterns[id]
+		relations[position.relation].Patterns[position.pattern].SameValueAs = named[0]
+	}
+	return nil
+}
+
+// validateSameValuePatterns holds each pattern that reads the same value as
+// another to the fact's shape: the other is a pattern of a relation of the
+// same kind from the same declaration to the same targets, written before
+// it in the same file, and names none itself.
+func validateSameValuePatterns(relations []Relation) error {
+	type named struct {
+		relation Relation
+		pattern  RelationPattern
+	}
+	var patterns map[string]named
+	for _, relation := range relations {
+		for _, pattern := range relation.Patterns {
+			if pattern.SameValueAs == "" {
+				continue
+			}
+			if patterns == nil {
+				patterns = make(map[string]named)
+				for _, relation := range relations {
+					for _, pattern := range relation.Patterns {
+						patterns[pattern.ID] = named{relation, pattern}
+					}
+				}
+			}
+			first, ok := patterns[pattern.SameValueAs]
+			if !ok || first.pattern.ID == pattern.ID || first.pattern.SameValueAs != "" ||
+				first.relation.FromID != relation.FromID || first.relation.Kind != relation.Kind ||
+				!slices.Equal(first.relation.ToIDs, relation.ToIDs) ||
+				first.pattern.Location == nil || pattern.Location == nil || first.pattern.Location.Path != pattern.Location.Path ||
+				!locationLess(*first.pattern.Location, *pattern.Location) {
+				return fmt.Errorf("program index: pattern %q reads the same value as an invalid pattern %q", pattern.ID, pattern.SameValueAs)
+			}
+		}
+	}
+	return nil
+}
+
+func locationLess(a, b Location) bool {
+	return a.Line < b.Line || a.Line == b.Line && a.Column < b.Column
 }
 
 func resolvePatternValueSourceArgumentReferences(

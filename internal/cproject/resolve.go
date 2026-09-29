@@ -517,11 +517,18 @@ func (w walker) walk(n *Node) {
 			}
 			return
 		case "&&", "||":
+			var operands []*Node
+			if n.Opcode == "||" {
+				operands = w.b.joinOperands(n)
+			}
 			w.walk(n.Inner[0])
 			w.with(true).walk(n.Inner[1])
+			w.b.joinOr(operands)
 			return
 		}
 	case "IfStmt":
+		arms := w.b.chainArms(n)
+		defer w.b.joinArms(arms)
 		// A call in the condition knows the lines the condition guards:
 		// `strcasecmp(argv[0],"slaveof")` selects its block.
 		for i, child := range n.Inner {
@@ -1242,6 +1249,9 @@ type call struct {
 	direct     target
 	slot       *slot
 	expression string // the callee as written, for a call through a pointer
+	// sameValueAs is the earlier call this call is another spelling of
+	// (spellings.go).
+	sameValueAs *call
 }
 
 type designated struct {
@@ -1318,6 +1328,7 @@ func (b *builder) call(w walker, n *Node) {
 		}
 	}
 	b.calls = append(b.calls, c)
+	b.callOf[n] = c
 }
 
 type passedAt struct {

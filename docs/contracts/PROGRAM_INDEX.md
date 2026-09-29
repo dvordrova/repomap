@@ -168,6 +168,21 @@ ProgramIndex retains:
   Validation refuses one on a declaration that runs no code, an unlocated
   or out-of-order one and one with fewer than two worded cases;
 - source-anchored enclosing control statements on individual call patterns;
+- a call pattern's `same_value_as` (ProgramIndex 24): the pattern of an
+  earlier call it is another spelling of, a call of the same callee from
+  the same declaration written the same but for the string literals it is
+  given, either another operand of one `||` (JS/TS `??`, Clojure `or`)
+  written the same around its call, or the condition of another arm of one
+  if/else-if chain written the same but for its call's words, whose body is
+  written the same. It names the first call of its group, which names none
+  (`query.Get("storage-class")` names `query.Get("storageClass")`). `&&`
+  and Clojure `and` are none: both values are needed. A code fact of where
+  the joined call is; what the value is, and whether either call is an
+  input, stays the reading's. Validation refuses one naming no pattern,
+  itself, a later pattern, a pattern of another kind, declaration or
+  target, or one that names another. Go (GO), C (`||` and if-chains, C),
+  JS/TS (`||`, `??` and if-chains, JSTS) and Clojure (`or`, CLOJURE) record
+  it; Python does not yet (PYTHON);
 - call-result and receiver identity;
 - receiver-origin provenance and its resolution;
 - positional and keyword arguments;

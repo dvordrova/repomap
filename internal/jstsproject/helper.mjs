@@ -2071,6 +2071,109 @@ function callControlContext(node) {
   return result
 }
 
+// Spellings of one read (PROGRAM_INDEX SameValueAs): a call of the same
+// callee written the same but for the string literals it is given, either
+// another operand of one || or ?? written the same around its call
+// (`query.get("storageClass") ?? query.get("storage-class")`), or the
+// condition of another arm of one if/else-if chain written the same but for
+// its call's words, whose then-statement is written the same. Each later
+// call names the first. && is none: both are needed.
+const sameValueRoots = new Map()
+const sameValueFiles = new Set()
+function sameValueRoot(node) {
+  const sourceFile = node.getSourceFile()
+  if (!sameValueFiles.has(sourceFile)) {
+    sameValueFiles.add(sourceFile)
+    recordSameValueCalls(sourceFile)
+  }
+  return sameValueRoots.get(node)
+}
+
+function stringLiteralArguments(call) {
+  return (call.arguments || []).map(unwrapParentheses).filter((argument) => ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument))
+}
+
+function unwrapParentheses(node) {
+  while (node && ts.isParenthesizedExpression(node)) node = node.expression
+  return node
+}
+
+// spelledRead is the one call of a piece of code given a string literal, its
+// callee's symbol, the code's text with that call's literals left out, and
+// the literals as written.
+function spelledRead(code, statement) {
+  const found = []
+  let closure = false
+  const visit = (child) => {
+    if (ts.isFunctionLike(child)) { closure = true; return }
+    if (ts.isCallExpression(child) && stringLiteralArguments(child).length > 0) found.push(child)
+    ts.forEachChild(child, visit)
+  }
+  visit(code)
+  if (closure || found.length !== 1) return undefined
+  const call = found[0]
+  const callee = ts.isPropertyAccessExpression(call.expression) ? call.expression.name : call.expression
+  const symbol = checkerForNode(call)?.getSymbolAtLocation(callee)
+  if (!symbol) return undefined
+  const text = code.getSourceFile().text
+  const start = code.getStart()
+  let written = text.slice(start, code.getEnd())
+  const words = []
+  for (const literal of stringLiteralArguments(call).reverse()) {
+    const from = literal.getStart() - start, to = literal.getEnd() - start
+    words.unshift(written.slice(from, to))
+    written = written.slice(0, from) + "\u0000" + written.slice(to)
+  }
+  let shape = written.split(/\s+/).filter(Boolean).join(" ")
+  if (statement) shape += "\u0000" + text.slice(statement.getStart(), statement.getEnd()).split(/\s+/).filter(Boolean).join(" ")
+  return { call, symbol, shape, words: words.join("\u0000") }
+}
+
+function joinSpellings(reads) {
+  reads.forEach((first, index) => {
+    if (!first || sameValueRoots.has(first.call)) return
+    for (const later of reads.slice(index + 1)) {
+      if (!later || later.call === first.call || sameValueRoots.has(later.call) || later.symbol !== first.symbol ||
+          later.shape !== first.shape || later.words === first.words) continue
+      sameValueRoots.set(later.call, first.call)
+    }
+  })
+}
+
+function recordSameValueCalls(sourceFile) {
+  const joined = new Set()
+  const alternative = (node) => ts.isBinaryExpression(node) &&
+    (node.operatorToken.kind === ts.SyntaxKind.BarBarToken || node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+  const visit = (node) => {
+    if (alternative(node) && !joined.has(node)) {
+      const operator = node.operatorToken.kind
+      const operands = []
+      const flatten = (expression) => {
+        const inner = unwrapParentheses(expression)
+        if (alternative(inner) && inner.operatorToken.kind === operator) {
+          joined.add(inner)
+          flatten(inner.left)
+          flatten(inner.right)
+          return
+        }
+        operands.push(expression)
+      }
+      flatten(node)
+      joinSpellings(operands.map((operand) => spelledRead(operand)))
+    }
+    if (ts.isIfStatement(node) && !joined.has(node)) {
+      const arms = []
+      for (let arm = node; arm && ts.isIfStatement(arm); arm = arm.elseStatement) {
+        joined.add(arm)
+        arms.push(arm)
+      }
+      if (arms.length > 1) joinSpellings(arms.map((arm) => spelledRead(arm.expression, arm.thenStatement)))
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+}
+
 function callPattern(node) {
   const selector = terminalSelector(node.expression)
   if (!selector) return undefined
@@ -2273,6 +2376,8 @@ for (const { sourceFile } of sourceFiles) {
         const pattern = callPattern(node)
         call.patterns_observed = 1
         if (pattern) {pattern.context = callControlContext(node); call.pattern = pattern}
+        const first = ts.isCallExpression(node) ? sameValueRoot(node) : undefined
+        if (first) call.same_value_as = callFactRef(first)
       }
       calls.push(call)
 

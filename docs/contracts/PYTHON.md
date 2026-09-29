@@ -647,7 +647,12 @@ so a call on a field resolves by type already; Clojure keeps no fields
   a typed dict or a model class a configuration file is decoded into names
   its keys by its field names, and a field's key alias is a call argument
   (`Field(alias="dbs")`), not an object alias; the adapter records neither
-  as a key, so no Python field is asked what its key is.
+  as a key, so no Python field is asked what its key is;
+- spellings of one value (PROGRAM_INDEX `same_value_as`): `q.get("a") or
+  q.get("b")`, `os.environ.get("A") or os.environ.get("B")` and an
+  `if`/`elif` chain whose arms read one call's words and are written the
+  same are the equivalent of Go's `||` and if/else-if chain, and the
+  adapter records neither, so two spellings stay two inputs.
 
 ## Words a value is compared with, and tables of names
 

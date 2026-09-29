@@ -47,6 +47,9 @@ type analyzer struct {
 	staticCalls     map[*ssa.Function][]ssa.CallInstruction
 	callControls    map[Location][]ControlContext
 	methodArguments map[Location][]*sourcevalue.Value
+	// sameValues is, by call site, the earlier call each call reads the
+	// same value as (same_value_calls.go).
+	sameValues map[Location]Location
 
 	currentPhase        string
 	currentPhaseStarted time.Time

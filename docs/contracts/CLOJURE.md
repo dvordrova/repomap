@@ -254,7 +254,18 @@ own. Not recorded yet:
 - settings a structure names (GO, the tagged-field question): an EDN
   configuration's keys are keywords a function reads (`(:dbs config)`,
   `{:keys [dbs]}`), declared by no structure, so nothing is asked what a
-  key is.
+  key is;
+- spellings of one value in a `cond` or an `if` chain: only an `or` form is
+  read (below).
+
+Spellings of one value are recorded (PROGRAM_INDEX `same_value_as`) for the
+operands of one `(or …)` written the same but for the string literals of
+their one call, each call of the same form: `replica-options` in
+`core.clj` reads `(or (get params "storageClass") (get params
+"storage-class"))`, and the later `get` names the first; its region, read
+once, and user and password under `and` are none
+(`TestEveryLanguageKeepsTheSpellingsOfOneValue`). A form holding a
+character outside ASCII joins nothing (the reader's offsets are runes).
 
 
 ## A future starts its body

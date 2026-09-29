@@ -774,6 +774,25 @@ caller: an option written twice in one function is one input at its first
 site; the same word in another caller is another. A name that cannot stand
 refuses that entry alone.
 
+Spellings of one value are one input, as a case listing several words is
+(reviewer's item 6a, 2026-09-30). A call whose ProgramIndex pattern
+reads the same value as an earlier call (`same_value_as`: litestream's
+`query.Get("storage-class")` in the else-if arm after
+`query.Get("storageClass")`, `query.Get("force-path-style")` joined by
+`||` to `query.Get("forcePathStyle")`) and that its own answer made an
+entry of the same kind as another call of that read, in the same
+declaration, is that entry's other spelling (`spellings.go`,
+`atlas.Boundary.AliasOf`): the call written first stands, named by its own
+words as written, and GroupsIndex keeps each other spelling's name, site
+and call as written among its `Operation.Aliases`, in source order, with
+no input of its own; a joint naming a spelling names the input. Each call
+is still asked on its own and keeps its answer: a spelling answered
+another kind, or none, is not folded, and nothing new is asked. A value of
+another entry (below) is none. A condition testing two different values
+together with `||` (`q.Get("user") == "" || q.Get("password") == ""`)
+reads as one value if both are answered the same kind: a known limit of
+the code fact, which cannot tell a presence test from a required pair.
+
 A directive's values are its sub-arguments (owner's rule K3: the words
 compared inside an input's handling are its sub-arguments), a code fact. Among
 the entries one function's calls make that compare literal elements of one

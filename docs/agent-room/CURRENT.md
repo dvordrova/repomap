@@ -338,6 +338,14 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   stored into an outside value's field (`fs.Usage = c.Usage`) is handed to
   that field, `flag.FlagSet.Usage` with its declared type, not to the type
   (2026-09-29, [Go](../contracts/GO.md)).
+- **Spellings of one value (2026-09-30, reviewer's item 6a):** a call
+  written the same as an earlier call of the same callee but for its
+  words, joined by `||` (`??`, `or`) or in the arms of one if/else-if chain
+  written alike, is a code fact (ProgramIndex 24 `same_value_as`; Go, C,
+  JS/TS, Clojure; Python missing). Two such calls both answered the same
+  entry kind are one input named by the first spelling, the others its
+  `Operation.Aliases` (litestream's `storageClass`/`storage-class`); each
+  call is still asked on its own ([Reading](../contracts/READING.md)).
 - **Files a program keeps are its data (owner, 2026-09-29; skeptic: no
   role):** the calls of symbols answered `talks: file` are walked along their
   decided argument and grouped by where the path ends (a literal or template,
@@ -383,7 +391,7 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 23, places graph 23, reading input 20, atlas 19,
+This wave uses ProgramIndex 24, places graph 23, reading input 20, atlas 19,
 GroupsIndex 26, dependency catalog 2, extraction artifact 2, facts 6, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
