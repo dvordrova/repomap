@@ -70,7 +70,7 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
       seen.set(key,!words&&(call.name||member)?Object.assign(row,{inputs:[row.caller],inputRefs:[{id:relation.from,name:row.caller}]}):null);
       if(call.fold&&words){
         const foldKey=`${row.caller}\0${call.fold}`;
-        if(!group.folds.has(foldKey))group.folds.set(foldKey,{caller:row.caller,callerAt:row.callerAt,site:row.site,kind,fold:call.fold,of:call.of||0,one:!!call.one,same:call.same||'',count:0,parts:new Map()});
+        if(!group.folds.has(foldKey))group.folds.set(foldKey,{caller:row.caller,callerAt:row.callerAt,site:row.site,at:row.at,kind,fold:call.fold,of:call.of||0,one:!!call.one,same:call.same||'',count:0,parts:new Map()});
         const fold=group.folds.get(foldKey);fold.count++;
         if(!fold.parts.has(intoID))fold.parts.set(intoID,{id:intoID,name:nameOf(intoID),count:0,rows:[]});
         const part=fold.parts.get(intoID);part.count++;part.rows.push({callee:row.callee,href:row.calleeHref,calleeAt:row.calleeAt});

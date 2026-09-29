@@ -84,8 +84,9 @@ test('a click on an arrow end opens its frame\'s connection in the reading',asyn
 
 // A name in a connection of the reading column reads that declaration in
 // the report, as its tile does: Redis's "anetTcpGeneri…" opened GitHub for a
-// reader who meant to read it. The row's code is its own explicit link, and
-// a modifier-click on a name still opens the code it linked to.
+// reader who meant to read it. The row's code is its own "</>" mark, the
+// place on its hover only, and a modifier-click on a name still opens the
+// code it linked to.
 test('a name in the reading\'s connection reads its declaration, and its code is an explicit link',async({page,context})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/?both-parts&symbols&reading-names');
@@ -99,8 +100,11 @@ test('a name in the reading\'s connection reads its declaration, and its code is
   await pointAt(page,all);
   await all.locator('button').click();
   const row=page.locator('[data-reading-connections] details[open] .flow-card-row',{hasText:'processJob'});
-  await expect(row).toHaveText('handleCreate→processJobOpen code ↗');
-  await expect(row.locator('a',{hasText:'Open code ↗'})).toHaveAttribute('href','#routes.go-20');
+  await expect(row).toHaveText('handleCreate→processJob');
+  const mark=row.locator('a.map-call-site');
+  await expect(mark).toHaveAttribute('href','#routes.go-20');
+  await expect(mark).toHaveAttribute('title','routes.go:20');
+  expect(await mark.evaluate(el=>getComputedStyle(el,'::before').content),'the column\'s code mark').toBe('"</>"');
   await expect(row.locator('a,button',{hasText:'handleCreate'}),'a caller the report holds no declaration for is only named').toHaveCount(0);
   const pages=[];context.on('page',opened=>pages.push(opened));
   await pointAt(page,row.locator('a',{hasText:/^processJob$/}));

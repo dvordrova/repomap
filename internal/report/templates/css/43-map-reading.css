@@ -332,7 +332,7 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-frame-connections .flow-card-fold-parts p{font-size:12px;line-height:18px;word-spacing:4px}
 .map-card .map-frame-connections a{text-decoration:none}.map-card .map-frame-connections a:hover{text-decoration:underline}
 /* In the column a row's names read their declarations and its code is one
-   explicit link at its end, so a row is a line that wraps: in the grid the
+   "</>" mark at its end, so a row is a line that wraps: in the grid the
    link had no column, and "anetTcpGeneri…" was cut to fit. */
 .map-frame-connections .flow-card-reading .flow-card-rows{display:block}
 .map-frame-connections .flow-card-reading .flow-card-rows>.flow-card-row{display:block}
@@ -340,7 +340,7 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-frame-connections .flow-card-reading .flow-card-sides>b.flow-card-program{margin-right:5px}
 .map-frame-connections .flow-card-reading .flow-card-sides>em{margin-left:6px}
 .map-frame-connections .flow-card-reading .flow-card-again{visibility:visible}
-.map-frame-connections .flow-card-reading .flow-card-row>.flow-card-code{margin-left:6px;font:400 12px/20px system-ui,-apple-system,sans-serif;white-space:nowrap}
+.map-frame-connections .flow-card-reading .flow-card-row>a.map-call-site{margin-left:6px;white-space:nowrap;overflow-wrap:normal;text-decoration:none}
 .map-card .flow-card-name{font:inherit;margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;text-align:left}
 /* An input's reading (owner's 3c) carries the Inputs blue of its tile and
    collection, never core's purple: its heading's bar and kind, its links.
@@ -570,5 +570,8 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 a.map-call-site{display:inline-block;margin-left:5px;padding:0 3px;border:1px solid currentColor;border-radius:3px;font:600 9px/13px var(--mono);vertical-align:1px;opacity:.55;text-decoration:none}
 a.map-call-site::before{content:"</>"}
 a.map-call-site:hover,a.map-call-site:focus-visible{opacity:1}
-.map-flow-helper-call>a.map-call-site{visibility:hidden}
-.map-flow-helper-call:hover>a.map-call-site,.map-flow-helper-call:focus-within>a.map-call-site{visibility:visible}
+/* A helper's marks take no room until its name is pointed at or focused,
+   so "+ helpers: zrealloc(), zmalloc()" reads as a plain list (hidden
+   marks had held their room: "zrealloc()    , zmalloc()"). */
+.map-flow-helper-call>a.map-call-site{display:none}
+.map-flow-helper-call:hover>a.map-call-site,.map-flow-helper-call:focus-within>a.map-call-site{display:inline-block}

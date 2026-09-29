@@ -953,7 +953,8 @@ each caller or callee other than a variable's reader or writer carries a
 small code mark per place it is written, the "</>" its own name's link
 carries, linking that line in the caller's code, the place ("redis.c:2221")
 on its hover only; a flow's call row carries its places so, and a helper's
-name in the "+ helpers" line shows its marks while pointed at or focused.
+name in the "+ helpers" line shows its marks while pointed at or focused,
+taking no room until then, so the line reads as a plain list of names.
 The name itself still reads the declaration. The page data keeps those
 places (`sites` on a declaration reading's end, a flow call's `sites`) and
 no place of a variable's read or write.
@@ -1156,8 +1157,10 @@ their handler is not established count as inputs and share one row per
 place, named in order ("-a, -h declared in parseOptions"). In the column a
 name in those rows reads its declaration in its part, as a click on its
 tile does, and a modifier-click still opens the code it linked to; a row's
-code is one explicit "Open code ↗" at its end, where the call is written,
-and a row wraps with its names whole. The page data names the
+code is the column's "</>" mark at its end, linking where the call is
+written, the place on its hover only: no row prints a place (owner,
+2026-09-29: litestream's rows read "acquireReadLock db.go:1186 Open code
+↗"). A row wraps with its names whole. The page data names the
 declarations at a call's two ends (`caller`, `callee`, keyed as the
 reading keys a declaration) apart from where the call is written and where
 it lands. A name whose part lists no such declaration is only named. The

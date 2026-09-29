@@ -26,10 +26,13 @@ function InputNames({refs,choose}){
     ?<button type="button" className="flow-card-name" onClick={event=>{event.stopPropagation();choose.input(ref.id);}}>{ref.name}</button>
     :ref.name}</React.Fragment>)}</>;
 }
-// Once names read declarations, a row's code is its own explicit link:
-// where the call is written.
-function OpenCode({href,title}){
-  return href?<a className="flow-card-code" href={href} title={title||undefined} target="_blank" onClick={stop}>{t('Open code ↗')}</a>:null;
+// Once names read declarations, a row's code is its own link: where the
+// call is written, as the column's small "</>" code mark, the place
+// ("db.go:1186") on its hover only. No place is printed in the column
+// (owner, 2026-09-29: litestream's rows had read "acquireReadLock
+// db.go:1186 Open code ↗").
+function CodeMark({href,title}){
+  return href?<a className="map-call-site" href={href} title={title||undefined} aria-label={t('The call at {0}',title||'')} target="_blank" onClick={stop}/>:null;
 }
 // The words between a caller and its callee: an arrow for a call, the
 // relation's own words for anything else ("passes callback"). Inputs taken
@@ -74,7 +77,7 @@ export function CallRows({card,sticky=true,choose=null}){
     {card.groups.map(group=><section key={group.id||'-'} data-call-group={group.id}>
       {group.id&&<h4 className="flow-card-group"><span>{group.name}</span><b>{group.count}</b></h4>}
       {group.folds.map(fold=><div key={fold.caller+fold.fold} className="flow-card-fold">
-        <p className="flow-card-row"><Name at={fold.callerAt} href={fold.site} choose={choose}>{fold.caller}</Name><i>{verb(fold.kind)}</i><span className="flow-card-say">{foldWords(fold)}</span>{choose&&<OpenCode href={fold.site}/>}</p>
+        <p className="flow-card-row"><Name at={fold.callerAt} href={fold.site} choose={choose}>{fold.caller}</Name><i>{verb(fold.kind)}</i><span className="flow-card-say">{foldWords(fold)}</span>{choose&&<CodeMark href={fold.site} title={fold.at}/>}</p>
         <div className="flow-card-fold-parts">{fold.parts.map(part=><details key={part.id} onClick={stop}>
           <summary><span>{part.name}</span><b>{part.count}</b></summary>
           <p>{part.rows.map((row,i)=><React.Fragment key={i}>{i>0&&' '}<Name at={row.calleeAt} href={row.href} choose={choose}>{row.callee}</Name></React.Fragment>)}</p>
@@ -85,12 +88,12 @@ export function CallRows({card,sticky=true,choose=null}){
         <div className="flow-card-rows">{pair.rows.map((row,i)=>{
           if(row.kind==='other'){
             if(!row.at&&!row.otherHref&&(row.other===pair.name||row.other===group.name))return null;
-            return <p key={i} className="flow-card-row flow-card-other">{choose?<span>{row.other}</span>:<Link href={row.otherHref}>{row.other}</Link>}{row.at&&<em>{row.at}</em>}{choose&&<OpenCode href={row.otherHref} title={row.at}/>}</p>;
+            return <p key={i} className="flow-card-row flow-card-other">{choose?<span>{row.other}</span>:<Link href={row.otherHref}>{row.other}</Link>}{!choose&&row.at&&<em>{row.at}</em>}{choose&&<CodeMark href={row.otherHref} title={row.at}/>}</p>;
           }
           if(row.sides)return <SidesRow key={i} row={row} choose={choose}/>;
           const again=i>0&&pair.rows[i-1].caller===row.caller&&pair.rows[i-1].kind!=='other';
           return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.inputs?<InputNames refs={row.inputRefs} choose={choose}/>:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
-            {verb(row.kind)&&<i>{verb(row.kind)}</i>}{row.callee&&<Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>}{choose&&<OpenCode href={row.site||row.calleeHref} title={row.at}/>}</p>;
+            {verb(row.kind)&&<i>{verb(row.kind)}</i>}{row.callee&&<Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>}{choose&&<CodeMark href={row.site||row.calleeHref} title={row.at}/>}</p>;
         })}</div>
       </div>)}
     </section>)}
@@ -108,7 +111,7 @@ function SidesRow({row,choose}){
       {side.path.map((step,k)=><React.Fragment key={k}>{k>0&&<i>→</i>}<Name at={step.part&&step.key?{part:step.part,key:step.key}:null} href={k===side.path.length-1&&s===0?row.site:''} choose={choose}>{step.name}</Name></React.Fragment>)}
     </React.Fragment>)}
     {row.sides.length===1&&first&&<><i>→</i><span>{row.callee}</span><em>{t('outgoing')}</em></>}
-    {choose&&<OpenCode href={row.site||row.calleeHref} title={row.at}/>}
+    {choose&&<CodeMark href={row.site||row.calleeHref} title={row.at}/>}
   </p>;
 }
 
