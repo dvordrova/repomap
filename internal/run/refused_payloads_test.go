@@ -371,10 +371,12 @@ func TestPartlyRefusedAnswerStaysInItsRunAndInTheCache(t *testing.T) {
 				}
 			}
 		}
-		// Both the journal's row and the table's row name the refused row in
-		// each run that exchanged it, live or as an exact hit.
-		if run != warm && (!pointers[debugdump.SemanticExchangesDir] || !pointers[atlas.TablesDir]) {
-			t.Errorf("%s: the refused row must be named from the journal and from the table: %v", filepath.Base(run), pointers)
+		// The journal's row names the refused row, once, in each run that
+		// exchanged it, live or as an exact hit. The table keeps its window
+		// refs, but its reader journals no second row of the same refusal
+		// (until 2026-09-29 it did, under the window's response ref).
+		if run != warm && (!pointers[debugdump.SemanticExchangesDir] || pointers[atlas.TablesDir]) {
+			t.Errorf("%s: the refused row must be named once, from the journal: %v", filepath.Base(run), pointers)
 		}
 		for _, link := range exchangeLinks(t, run) {
 			if link.stage != lines.StageFiles {
