@@ -594,6 +594,7 @@ var russianUI = map[string]string{
 	"Which of these, if any, leads to an input dispatched here is not established.": "Какой из них, если хоть какой-то, ведёт к входу, выбираемому здесь, не установлено.",
 	"Not on the map":                        "Нет на карте",
 	"The program's entry is not on the map": "Точка входа программы не на карте",
+	"Also installable as library":           "Также устанавливается как библиотека",
 	"the program's entry":                   "точка входа программы",
 	"Tests":                                 "Тесты",
 	"Left out of the parts":                 "Не отнесён ни к одной части",

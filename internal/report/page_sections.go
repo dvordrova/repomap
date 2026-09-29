@@ -46,7 +46,12 @@ type pageSection struct {
 	// written in, tests left out. The home's table of programs lists them:
 	// a model's summary had claimed all four Redis programs share ae, sds,
 	// adlist, dict and anet, which the Makefile does not.
-	BuiltFrom   []string
+	BuiltFrom []string
+	// Libraries are the import names under which its build also installs
+	// the program's code as a library: a library of the same manifest the
+	// portfolio folded into it (ProgramTarget Libraries), named on the
+	// program instead of drawn as a second component.
+	Libraries   []string
 	Map         *pageMap
 	RouteGroups []pageRouteGroup
 	Requests    []pageGroupOperation
@@ -465,6 +470,7 @@ func (builder *pageBuilder) buildSections() {
 		overview.fillSectionOutbound(section)
 		overview.fillSectionData(section)
 		section.BuiltFrom = builder.builtFrom(section.programTargetID)
+		section.Libraries = builder.libraryFacet(section.programTargetID)
 		section.InboundCount = section.NativeRouteCount() + len(section.Requests)
 		section.InputsCount = section.InboundCount + len(section.Activities)
 		section.Coverage = sectionCoverage(section)

@@ -237,6 +237,12 @@ type TargetInput struct {
 	// console_script, package.json bin commands. Empty when the build names
 	// none.
 	Executables []string
+	// Libraries are the import names under which the same build also
+	// installs this program's code as a library: the declared top-level
+	// packages of a library target of the same manifest that the portfolio
+	// folded into this program (DISCOVERY, "Target selection"). Empty when
+	// no library was folded into it.
+	Libraries []string
 }
 
 // Target is one exact selected program scope. It remains independent of a
@@ -256,6 +262,9 @@ type Target struct {
 	// Executables are the names the build gives the program's executable
 	// (TargetInput.Executables), sorted and each once.
 	Executables []string `json:"executables,omitempty"`
+	// Libraries are the import names of the library facet folded into this
+	// program (TargetInput.Libraries), sorted and each once.
+	Libraries []string `json:"libraries,omitempty"`
 }
 
 // Snapshot returns a consumer-owned copy of the selected target boundary.
@@ -265,6 +274,7 @@ func (target Target) Snapshot() Target {
 	result.Sources = cloneTargetSources(target.Sources)
 	result.Seeds = cloneTargetSeeds(target.Seeds)
 	result.Executables = slices.Clone(target.Executables)
+	result.Libraries = slices.Clone(target.Libraries)
 	return result
 }
 
@@ -1411,6 +1421,11 @@ func New(input Input) (Index, error) {
 		sort.Strings(index.Target.Executables)
 		index.Target.Executables = slices.Compact(index.Target.Executables)
 	}
+	if len(input.Target.Libraries) > 0 {
+		index.Target.Libraries = slices.Clone(input.Target.Libraries)
+		sort.Strings(index.Target.Libraries)
+		index.Target.Libraries = slices.Compact(index.Target.Libraries)
+	}
 	if err := validateTargetShape(index.Target); err != nil {
 		return Index{}, err
 	}
@@ -2197,6 +2212,11 @@ func validateTargetShape(target Target) error {
 	for position, name := range target.Executables {
 		if !validText(name) || strings.ContainsAny(name, "/\\ \t\r\n") || position > 0 && target.Executables[position-1] >= name {
 			return fmt.Errorf("program index: invalid or noncanonical executables")
+		}
+	}
+	for position, name := range target.Libraries {
+		if !validText(name) || strings.ContainsAny(name, "/\\ \t\r\n") || position > 0 && target.Libraries[position-1] >= name {
+			return fmt.Errorf("program index: invalid or noncanonical libraries")
 		}
 	}
 	pathsByRef := make(map[string]string, len(target.Sources))

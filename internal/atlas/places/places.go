@@ -50,6 +50,11 @@ type TargetInput struct {
 	Dependencies *dependencies.Catalog
 	// Root is the target's root directory, repository-relative.
 	Root string
+	// AbsorbedRoot is the root of a library folded into this program, which
+	// it also claims (claimByRoot): shallower than Root, it gives the
+	// program the library's other files without lifting Root to its depth,
+	// so a sibling rooted with the program keeps sharing Root's files.
+	AbsorbedRoot string
 }
 
 func (target TargetInput) read() (TargetInput, error) {
@@ -489,7 +494,8 @@ func (b *builder) collectObjects(target TargetInput) {
 // alone: a program reaches the files of the libraries it uses, but they are
 // the library's, and a call into them is the seam between the two. The
 // deepest indexed root wins. Targets with the same root keep their shared
-// files; their order cannot erase the library beside an executable.
+// files; their order cannot erase the library beside an executable. A
+// program's absorbed root is a second, shallower root of the same program.
 func (b *builder) claimByRoot() {
 	type root struct {
 		targetID string
@@ -497,11 +503,11 @@ func (b *builder) claimByRoot() {
 	}
 	var roots []root
 	for _, target := range b.input.Targets {
-		path := atlasPath(target.Root)
-		if path == "" {
-			continue
+		for _, path := range []string{atlasPath(target.Root), atlasPath(target.AbsorbedRoot)} {
+			if path != "" {
+				roots = append(roots, root{target.Index.Target.ID, path})
+			}
 		}
-		roots = append(roots, root{target.Index.Target.ID, path})
 	}
 	for filePath, state := range b.files {
 		owners, depth := make(map[string]struct{}), -1

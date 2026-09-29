@@ -138,7 +138,9 @@ func containsString(values []string, value string) bool {
 
 // CanSeed preserves the owner's complete module view and API. Declared library
 // guards and executable forms with the same exact launch callable are eligible;
-// whether they belong to one product remains a portfolio decision.
+// whether they belong to one product remains a portfolio decision. A
+// script-file launch of the owner's callable file (ScriptFileOf) is not
+// offered: the portfolio folds it after the model's placements.
 func CanSeed(owner, seed Target) bool {
 	if SameLaunch(owner, seed) {
 		return true
@@ -167,6 +169,24 @@ func CanSeed(owner, seed Target) bool {
 		}
 	}
 	return true
+}
+
+// ScriptFileOf reports a script-file launch of the very file that defines
+// the owner's argument-free launch callable: an author shebang with no
+// __main__ guard and no launch call runs only that file's definitions, and
+// the owner (freqtrade-client = freqtrade_client.ft_client:main beside the
+// shebang of ft_client.py) is how its code runs. Both belong to one project.
+// It is not an advertised seed owner: the portfolio folds such a launch
+// into its one owner after the model's placements (DISCOVERY).
+func ScriptFileOf(owner, seed Target) bool {
+	if owner.Ref == seed.Ref || owner.ProjectDir != seed.ProjectDir || owner.Kind != KindExecutable || seed.Kind != KindExecutable {
+		return false
+	}
+	if len(seed.Roots) != 1 || seed.Roots[0].Kind != RootScriptFile || len(seed.LaunchCalls) != 0 {
+		return false
+	}
+	entry, ok := LaunchEntry(owner)
+	return ok && entry.Path == seed.Roots[0].Path
 }
 
 // SameLaunch records identical argument-free callable entry evidence. It does

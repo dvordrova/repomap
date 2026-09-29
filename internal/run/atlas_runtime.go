@@ -78,18 +78,13 @@ func readRepositoryAtlas(
 	for position := range runs {
 		run := &runs[position]
 		index := programindex.Index{Target: run.programTarget()}
-		root := filepath.ToSlash(filepath.Dir(runTargetAnchorPath(index)))
-		if target, ok := planned[run.SelectedTargetKey]; ok && target.AbsorbedRoot != "" {
-			// The executable absorbed its module library: its page claims the
-			// module root, so internal and pkg packages are its own boxes.
-			root = target.AbsorbedRoot
-		}
+		claimed, root := atlasTargetRoots(index, planned[run.SelectedTargetKey])
 		readIndex := run.validProgramIndex
 		if run.ProgramIndex == nil {
 			filename := filepath.Join(run.RunDir, programindex.ArtifactFilename)
 			readIndex = func() (programindex.Index, error) { return indexReader.ReadFile(filename) }
 		}
-		target := places.TargetInput{Index: index, Root: root, ReadIndex: readIndex}
+		target := places.TargetInput{Index: index, Root: claimed, AbsorbedRoot: planned[run.SelectedTargetKey].AbsorbedRoot, ReadIndex: readIndex}
 		catalog, err := run.dependencyCatalog()
 		if err != nil {
 			return atlasOutcome{}, err
@@ -371,4 +366,19 @@ func externalDependencies(catalog *dependencies.Catalog) []reading.Dependency {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Package < result[j].Package })
 	return result
+}
+
+// atlasTargetRoots are a page's roots in the atlas: its own, the directory
+// of its anchor file, which places claims at its own depth, and the root it
+// reads as, which is the root of a library folded into it when there is one
+// (the executable absorbed its library, so internal and pkg packages, or a
+// Python distribution's tests, are its own boxes). A folded library's root
+// is claimed beside the program's own, never instead of it: a guard tool
+// beside a console script's file keeps sharing that directory with it.
+func atlasTargetRoots(index programindex.Index, planned repositoryTypedTarget) (claimed, root string) {
+	claimed = filepath.ToSlash(filepath.Dir(runTargetAnchorPath(index)))
+	if planned.AbsorbedRoot != "" {
+		return claimed, planned.AbsorbedRoot
+	}
+	return claimed, claimed
 }

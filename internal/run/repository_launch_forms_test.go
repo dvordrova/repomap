@@ -97,7 +97,9 @@ func TestCumulativePythonLaunchFormsReachPortfolioAndRetainAllSeeds(t *testing.T
 		t.Fatal(err)
 	}
 	selected, found := plan.DefaultTarget()
-	if !found || len(selected.Seeds) != 2 || len(plan.Targets) != len(native)-2 {
+	// client/'s script file and library fold into fixture-client as well
+	// (TestClientPackageIsOneProgramWithItsLaunchFormAndLibraryFacet).
+	if !found || len(selected.Seeds) != 2 || len(plan.Targets) != len(native)-4 {
 		t.Fatal("accepted launch forms not absorbed exactly once")
 	}
 	ownerNative, _ := repositoryPythonTarget(selected)

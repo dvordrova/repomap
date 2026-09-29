@@ -297,7 +297,7 @@ func WithSeeds(repository *corpus.Corpus, input programindex.Input, target pytho
 		if err := seed.Validate(); err != nil {
 			return programindex.Input{}, err
 		}
-		if !pythontarget.CanSeed(target, seed) {
+		if !pythontarget.CanSeed(target, seed) && !pythontarget.ScriptFileOf(target, seed) {
 			return programindex.Input{}, fmt.Errorf("Python seed is outside its declared owner")
 		}
 		projected, err := projectTarget(repository, seed, objects)

@@ -316,6 +316,10 @@ type repositoryTypedTarget struct {
 	// package directory, so internal packages land on the product page.
 	Absorbed     []repositoryTargetKey
 	AbsorbedRoot string
+	// Libraries names the library facet a folded library of the same
+	// manifest gives this program: its declared top-level import packages.
+	// The page's ProgramTarget carries them (programindex Libraries).
+	Libraries []string
 
 	native any
 }
@@ -450,6 +454,9 @@ func buildRepositoryProgramPageAuthority(
 		)
 	}
 	input.Target.ID = request.TargetID
+	// A library folded into this program is its facet, a portfolio fact
+	// every adapter's page carries the same way.
+	input.Target.Libraries = slices.Clone(request.Target.Libraries)
 	index, err := programindex.New(input)
 	if err != nil {
 		return repositoryProgramPageAuthority{}, fmt.Errorf(

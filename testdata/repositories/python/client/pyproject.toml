@@ -1,0 +1,15 @@
+# A client package installed on its own, as freqtrade's ft_client is: one
+# console script, a shebang on the module that defines it, and the package
+# itself. repomap shows one component, fixture-client, that is also
+# installable as library fixture_client; cli.py's shebang is its launch form.
+[project]
+name = "repomap-fixture-client"
+version = "0.0.0"
+
+[project.scripts]
+fixture-client = "fixture_client.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fixture_client*"]
+exclude = ["tests", "tests.*"]
