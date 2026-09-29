@@ -924,8 +924,35 @@ next round with `result_given_to` (the reaching symbols given its result),
 until a walk meets no symbol not yet asked: `http.NewRequestWithContext`'s
 request handed to `Client.Do` is asked and answers `url`. A `file`
 symbol's calls are walked the same way and logged as `atlas_files` lines in
-`tables.md`; the data files a program keeps are not projected from them yet.
-A method a request builder states is no longer read from its arguments.
+`tables.md`. A method a request builder states is no longer read from its
+arguments.
+
+**Files a program keeps** are its data (owner, 2026-09-29), gathered in code
+from those answers with no question of their own and no role (skeptic,
+2026-09-29: the path as written and the functions reaching it,
+`reading.FileReader`). Every call outside tests of a symbol answered `file`,
+in declarations the program runs, is walked along its decided argument, and
+the calls are grouped by where the walk ends: a literal or a template as the
+walk writes it (`dump.rdb`, `{db.path}-wal`, `{--config}`,
+`{env:KVD_CONFIG}`, a stored field value the walk reads as `initializer:`)
+is one file; a field the walk cannot follow further whose accesses the
+program records by that path (`server.dbfilename`, a field of a file-scope
+variable) is one file named `{server.dbfilename}`, whose values are the
+field's writes in the program, each walked from the value it stores
+(ProgramIndex `Relation.Value`: `"dump.rdb"` at `initServerConfig`, what
+`zstrdup(argv[1])` returns in `loadServerConfig`, not established); any
+other end, including a symbol with no decided argument, is a path not
+established, one per function making the calls, never invented. Each file
+is a data record `w1`, `w2`, … of kind `file` (origin `call`, scope the
+program's target) in the order of its first call, listing its calls (the
+outside symbol, the declaration making it, its site, each site once) and a
+field's values (the path, or none, the declaration writing it, the site).
+Only C records a write's value today; a Go field's writes carry none, Python
+sets no path and a field stored twice is unknown to it, JS/TS and Clojure
+record no field writes, so their files end at a literal, a template, a
+setting or a path not established. A file reads nothing else from the
+model: which of its calls read and which write it is not decided (a
+per-call question would be).
 
 An outbound call names the extracted tables among its values as `data_ids`.
 It also names where its program reaches it from (`reached_from`, a code

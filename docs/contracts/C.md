@@ -211,7 +211,13 @@ seed.
   destination of `=`, of a compound assignment and of `++`/`--`, and an
   element of an array member there (`server.buf[0] = 'a'`), is written;
   one fact stands for the site, though a compound assignment also reads
-  the old value. Everything else reads: the value, the address
+  the old value. A plain `=` to the member itself keeps the value it
+  stores as the relation's `value` (ProgramIndex 23), recorded as any
+  argument's origin: `server.dbfilename = "dump.rdb"` stores the literal,
+  `server.dbfilename = zstrdup(argv[1])` the call's result; a compound
+  assignment, `++`/`--` and an element of an array member store none. The
+  files a program keeps read a field's values from them (READING);
+  `TestCFixtureFieldWritesKeepTheValueTheyStore` checks kvd's. Everything else reads: the value, the address
   (`&c->reply`), an element of a pointer member, whose pointer is read
   (`c->argv[0] = o` reads `redisClient.argv`), and the pointer a `->`
   member is taken from. A record a `.` member is taken from, and an array

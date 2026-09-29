@@ -392,7 +392,12 @@ chain (`self.a.b = x`) stays unresolved, where C follows every field of a
 chain and names its root, as Go does (GO). The current
 JS/TS and Clojure adapters do not emit comparable target-bound field-write
 relations; their mutation-tracing equivalent remains unavailable rather than
-being inferred from call or field-initializer evidence.
+being inferred from call or field-initializer evidence. A Python write
+carries no stored value (C's does, PROGRAM_INDEX): a field's stores reach
+the destination walk only as a field value's initializer, and a field
+stored twice (the fixture's `MutableAdapter.url`, a default and a
+replacement) is unknown, so a file read from such a field is a path not
+established (READING, files a program keeps; 2026-09-29 files pass).
 
 ## Handler tables and stored callbacks
 

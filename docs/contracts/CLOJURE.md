@@ -151,7 +151,11 @@ function reads with a call (`(:dbs config)`), a record's field has no
 declaration the index names, and a value is not written in place (an
 atom's `swap!` is a call). So Clojure records no field read or write and no
 `field_path`, where C records each with its path (C, PROGRAM_INDEX);
-recorded in the 2026-09-29 C field pass, not fabricated.
+recorded in the 2026-09-29 C field pass, not fabricated. Nor does it record
+a parameter's origin: the fixture's `deliver!` spits to `destination`,
+which `core.clj` passes as "greeting.txt", and the file that call reaches is
+a path not established (READING, files a program keeps; recorded in the
+2026-09-29 files pass).
 
 ## Calls that run when a namespace loads
 

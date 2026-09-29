@@ -1095,9 +1095,10 @@ collection is closed, its row of that kind), dimming nothing, and when chosen
 reading the collection at that kind's section, as a kind chosen in the
 collection's closed frame does (Background work at the first of its scheduled
 and continuous sections; owner, 2026-09-29); its Connections; then its Main
-flow, what it runs on its own, what its program never runs, its TODOs and its
-analysis coverage, each a list opening in place; and a link to its whole
-page, which links its Inputs collection. Its areas are on the canvas and are
+flow, what it runs on its own, the files its program reaches (below), what
+its program never runs, its TODOs and its analysis coverage, each a list
+opening in place; and a link to its whole page, which links its Inputs
+collection. Its areas are on the canvas and are
 not listed again.
 
 An Inputs collection is read by its catalogues: its component first, in its
@@ -1185,6 +1186,24 @@ The Data shelf lists source-scoped models/tables, written columns and keys,
 queries and original sources. Query-to-table references are reversible, so a
 table exposes its referring queries. Equal table names never merge source
 scopes; SQL mentions and JOINs prove no schema ownership or foreign keys.
+
+The files a program keeps (READING § Outside systems, GroupsIndex data
+records of kind `file`, `page_data_files.go`) are the shelf's "Files" and a
+section of the component's reading after its areas and parts (owner,
+2026-09-29; `31-reading-column.js` `rmComponentFiles`). No role is given
+(skeptic, 2026-09-29): a file is its path as written, else the paths its
+field's writes store and "from" the field, or the field in braces when they
+store none (`dump.rdb from server.dbfilename`, `appendonly.aof`,
+`{server.vm_swap_file}`); the paths not established are one line. The
+shelf's static row prints no function and no place. The column adds what
+else sets a field, each once: the setting whose branch makes the write (as a
+setting's writes are read, its name reading its input), else the function
+writing what is not established; then "Read or written by", the functions
+whose calls reach the file by part in their boxes, as a field's writers and
+readers stand, the part naming most first. No line number is written: a
+path links to where it is written, its place on hover, and a name reads its
+function. Which function reads and which writes is not established, so one
+list names both.
 
 An outside call's tile is read with "Called from": where each program
 whose record the tile stands for reaches the call from (GroupsIndex

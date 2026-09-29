@@ -312,6 +312,15 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   stored into an outside value's field (`fs.Usage = c.Usage`) is handed to
   that field, `flag.FlagSet.Usage` with its declared type, not to the type
   (2026-09-29, [Go](../contracts/GO.md)).
+- **Files a program keeps are its data (owner, 2026-09-29; skeptic: no
+  role):** the calls of symbols answered `talks: file` are walked along their
+  decided argument and grouped by where the path ends (a literal or template,
+  a field whose writes' stored values are its paths, else a path not
+  established per function), with no new question; the Data shelf lists each
+  path and the component's reading adds who reads or writes it by part. Only
+  C records a write's stored value (ProgramIndex 23); which call reads and
+  which writes is not decided ([Reading](../contracts/READING.md),
+  [Report](../contracts/REPORT.md)).
 - **Benchmark v3 and v4 fixes (2026-09-29):** a flow's helper calls are named
   on one muted line under their step, and a call into the caller's own part
   is its work; a macro's call reads as the macro, a compiler builtin as no
@@ -348,8 +357,8 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 22, places graph 23, reading input 20, atlas 19,
-GroupsIndex 25, dependency catalog 2, extraction artifact 2, facts 6, claims 2
+This wave uses ProgramIndex 23, places graph 23, reading input 20, atlas 19,
+GroupsIndex 26, dependency catalog 2, extraction artifact 2, facts 6, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
 dependencies. Accepted extractor nodes use `u*`; arbitrary public-protocol IDs

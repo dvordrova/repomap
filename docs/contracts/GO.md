@@ -499,6 +499,9 @@ adapter joins each access to the core object field by package, type and
 field name. The places graph keeps them as the declaration's `fields` and the
 report's readings list each field's writers and readers (READING, REPORT);
 the role split does not read them, so no model request changes with them.
+A write carries no stored value, where C records it (PROGRAM_INDEX), so a
+file read from a Go field has no established path (READING, files a program
+keeps; recorded in the 2026-09-29 files pass).
 GroupsIndex reach takes a field read as a terminal read (READING, reach).
 
 The cumulative fixture's `internal/storefixture/server_state.go` is kvd's

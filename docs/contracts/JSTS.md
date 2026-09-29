@@ -210,7 +210,12 @@ relation to that property, as any declared value reference; an assignment
 to it is a destination and no relation. JS/TS therefore records no field
 writes and no `field_path`, where C records each field read and write with
 its path (C, PROGRAM_INDEX) and Python a typed receiver's attribute writes
-(PYTHON). Recorded, not added, in the 2026-09-29 C field pass.
+(PYTHON). Recorded, not added, in the 2026-09-29 C field pass. The
+fixture's `node:fs` calls (`prepare-readme.mjs`'s `readFileSync` through
+`prepareReadme("README.md")`) name no outside symbol without `@types/node`,
+as `spawn` does not, so no `talks` answer makes them file calls and no file
+of a JS/TS program is gathered from them (READING, files a program keeps;
+2026-09-29 files pass).
 
 ## Native compiler compatibility
 

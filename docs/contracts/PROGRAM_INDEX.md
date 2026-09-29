@@ -45,7 +45,10 @@ ProgramIndex retains:
   `db->expires`; Go's `serverState.db.value`, `Store.dbs` for `s.dbs`). The
   target gathers one field's readers and writers across functions; the path
   is what each wrote. Validation refuses a `field_path` on a relation that is
-  no read or write of one field of a type. Python leaves the path out (the
+  no read or write of one field of a type. A write may carry the `value` a
+  plain assignment stores there, a source value like an argument's origin
+  (ProgramIndex 23, C only: `server.dbfilename = "dump.rdb"`); validation
+  refuses it on any other relation. Python leaves the path out (the
   written expression is its witness's detail); JS/TS and Clojure record no
   field writes (JSTS, CLOJURE);
 - complete witnesses and omission counts. A witness that names a

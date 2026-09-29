@@ -1,5 +1,58 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — The files a program keeps are its data: path as written, the functions reaching it, no role
+
+- **Why:** owner, DATA includes the files a program owns; skeptic, no role
+  label, the path template and the functions that read or write it
+  (claim-audit rootcause `external-data.md` F2–F6, F5's role question
+  dropped). No new question: `talks: file` and the argument decision
+  (84e48166) are the model's part. Code 6ae2c794; `make test`, `make vet`
+  (package parallelism 2) and `make ui-test` (133) pass.
+- **Derivation (code, `reading.FileReader`):** each call outside tests of a
+  `file` symbol, in declarations its program runs, is walked along its
+  decided argument; calls are grouped by where the path ends: a literal or
+  template (`{--flag}`, `{env:KEY}`, an `initializer:` value included), a
+  field the walk cannot follow whose accesses the program records by that
+  path (its writes are its values, each walked from what it stores), else a
+  path not established, one per function. Data records `w1…` of kind `file`
+  (origin `call`, scope the target) list the calls and a field's values;
+  GroupsIndex names each call's and write's subject (`call_subject_ids`,
+  `value_subject_ids`) and orders `w*` before `y*` by ordinal.
+- **ProgramIndex 23:** a C write by plain `=` keeps the value it stores
+  (`Relation.Value`, the places graph's `SymbolField.Value`); compound
+  assignments, `++`/`--` and array elements store none. No model request
+  reads it. The python-tutorial-game indexes are resealed (only version and
+  seal differ).
+- **Report:** the Data shelf's "Files" lists each path as written (or its
+  field's stored paths "from" the field, or `{field}`), one line for the
+  paths not established, no functions or places; the component's reading
+  (`rmComponentFiles`, after its areas and parts) adds what else sets a
+  field (the setting whose branch writes it, else the writing function, each
+  once) and "Read or written by": the functions by part box. Paths link to
+  their write site; names read their function; no line numbers, no role.
+- **Checks:** `TestCFixtureFieldWritesKeepTheValueTheyStore`,
+  `TestEveryLanguageKeepsTheFilesItsCodeReaches` (C kvd: `{server.dbfile}`
+  = `dump.kv` by main, not established by loadConfig, opened by
+  saveSnapshot; `{env:KVD_CONFIG}` by loadConfig; Go `fixture-state.db` and
+  LoadServerConfig not established; Python read_settings and Clojure
+  deliver! not established; JS/TS names no fs symbol), the kvd preset
+  through GroupsIndex (`checkKvdFiles`), and the page's shelf, reading and
+  column (`TestAProgramsFilesAreItsDataWithTheFunctionsReachingThemByPart`).
+- **Redis preview (no model, redis-server's places with fopen/unlink/open
+  argument 1 and rename argument 2 preset; the lead's run decides):** 13
+  records: `dump.rdb` from `server.dbfilename` (initServerConfig 1493, and
+  loadServerConfig 1755 not established; rdbSave's rename, rdbLoad,
+  updateSlavesWaitingBgsave, syncWithMaster's rename), `appendonly.aof`,
+  `/var/run/redis.pid`, `/dev/null`, `{server.logfile}`,
+  `{server.vm_swap_file}`, and 7 functions whose paths are snprintf
+  buffers. Rendered through `repomap render` on the injected records and
+  read in headless Chromium: the column's Files section, no page errors.
+- **Open:** which call reads and which writes needs a per-call decision (not
+  asked); `/tmp/redis-%p.vm` is behind `zstrdup(...)`, whose result the C
+  adapter does not follow, so vm_swap_file shows `{server.vm_swap_file}`
+  set in initServerConfig; Go writes carry no value; audit.py's data rows do
+  not yet take the calls and writes as anchors.
+
 ## 2026-09-29 — An outside call's record in the column prints no place; flow items anchored at their function
 
 - **Column (owner rules: no line numbers, no duplication):** an External
