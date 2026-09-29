@@ -116,6 +116,9 @@ type pageSection struct {
 	// component at its entry line.
 	EntryPart   string
 	EntrySource string
+	// EntryGroup is that part's group (entryGroup): where a launch of the
+	// program by its own code goes on the map.
+	EntryGroup string
 }
 
 // pageOffMapEntry is a launch point the map of parts does not draw.
@@ -160,6 +163,7 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 	}
 	section.MapFailure = mapFailureReasons[index.MapFailure]
 	section.EntryPart, section.EntrySource = builder.entryLanding(section.ID, index)
+	section.EntryGroup = entryGroup(index)
 	offEntries := map[string]bool{}
 	for _, entry := range index.Entries {
 		if entry.GroupID != "" {
@@ -204,13 +208,7 @@ func (builder *pageBuilder) fillSectionOffMap(section *pageSection) {
 // reads the component at its entry line. It had landed on the inputs, where
 // a reader looking for main found none.
 func (builder *pageBuilder) entryLanding(sectionID string, index *groupindex.Index) (string, string) {
-	group := ""
-	for _, entry := range index.Entries {
-		if entry.GroupID == "" || group != "" && entry.GroupID != group {
-			return "", ""
-		}
-		group = entry.GroupID
-	}
+	group := entryGroup(index)
 	if group == "" {
 		return "", ""
 	}
@@ -226,6 +224,19 @@ func (builder *pageBuilder) entryLanding(sectionID string, index *groupindex.Ind
 		}
 	}
 	return groupAnchorID(sectionID, group), source
+}
+
+// entryGroup is the part holding every seed of the program; none when a
+// seed is off the map or the seeds stand in two parts.
+func entryGroup(index *groupindex.Index) string {
+	group := ""
+	for _, entry := range index.Entries {
+		if entry.GroupID == "" || group != "" && entry.GroupID != group {
+			return ""
+		}
+		group = entry.GroupID
+	}
+	return group
 }
 
 type pageFileFolder struct {

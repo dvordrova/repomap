@@ -485,7 +485,10 @@ func TestSystemOutboundWithoutOneExactPeerRemainsExternal(t *testing.T) {
 // cmd/litestream's main package builds): its call's arrow goes from the
 // launching part into that program's component and no outside tile stands
 // for it, while its record reads "Runs this repository's program" with a
-// link to the component. A program starting itself keeps its tile.
+// link to the component. A program starting itself runs its own entry: the
+// arrow goes into the part holding its seeds and no tile stands for it
+// (litestream's MCP server running litestream had stood outside as a chip
+// of its own name); with no such part drawn it keeps its tile.
 func TestAStartedProgramThisRepositoryBuildsIsThatProgram(t *testing.T) {
 	programs := []groupindex.Index{
 		{Target: programindex.Target{ID: "t1", Executables: []string{"litestream"}}},
@@ -506,7 +509,7 @@ func TestAStartedProgramThisRepositoryBuildsIsThatProgram(t *testing.T) {
 	self := pageOutbound{ID: "cmd-litestream-out-b2", Program: true, Destination: "litestream", Runs: runs, KindLabel: outboundKindLabel("runs_program"), Source: "fact",
 		Anchor: pageAnchor{Text: "mcp.go:12", Href: "mcp.go#L12"}, MapGroup: "g5"}
 	view := pageView{Sections: []*pageSection{
-		{ID: "cmd-litestream", programTargetID: "t1", Outbound: []pageOutbound{self}, Map: &pageMap{Nodes: []pageMapNode{{ID: "n-t1-g5", FullTitle: "MCP server"}}}},
+		{ID: "cmd-litestream", programTargetID: "t1", Outbound: []pageOutbound{self}, EntryGroup: "g1", Map: &pageMap{Nodes: []pageMapNode{{ID: "n-t1-g5", FullTitle: "MCP server"}, {ID: "n-t1-g1", FullTitle: "Command line"}}}},
 		{ID: "cmd-test", programTargetID: "t2", Outbound: []pageOutbound{launch}, Map: &pageMap{Nodes: []pageMapNode{{ID: "n-t2-g3", FullTitle: "Restore checks"}}}},
 	}}
 	got := view.SystemMap()
@@ -516,8 +519,21 @@ func TestAStartedProgramThisRepositoryBuildsIsThatProgram(t *testing.T) {
 			tiles[node.ID] = true
 		}
 	}
-	if tiles["system-cmd-test-out-b1"] || !tiles["system-cmd-litestream-out-b2"] {
-		t.Fatalf("tiles %v: the launch of another program of the repository has none, a program starting itself keeps its own", tiles)
+	if tiles["system-cmd-test-out-b1"] || tiles["system-cmd-litestream-out-b2"] {
+		t.Fatalf("tiles %v: a launch of a program of the repository, itself included, has none", tiles)
+	}
+	if !slices.ContainsFunc(got.Edges, func(edge pageMapEdge) bool { return edge.From == "n-t1-g5" && edge.To == "n-t1-g1" }) {
+		t.Fatalf("no arrow from the MCP server into litestream's own entry part: %+v", got.Edges)
+	}
+	view.Sections[0].EntryGroup = ""
+	tiles = map[string]bool{}
+	for _, node := range view.SystemMap().Nodes {
+		if node.ItemKind == "External communication" {
+			tiles[node.ID] = true
+		}
+	}
+	if !tiles["system-cmd-litestream-out-b2"] {
+		t.Fatalf("tiles %v: a program starting itself with no entry part drawn keeps its tile", tiles)
 	}
 	if !slices.ContainsFunc(got.Edges, func(edge pageMapEdge) bool {
 		return edge.From == "n-t2-g3" && edge.To == "system-component-cmd-litestream" && edge.FromSource == launch.Anchor && len(edge.Calls) == 1 && edge.Calls[0].Label == "runRestore calls os/exec.CommandContext"

@@ -240,14 +240,28 @@ func (view *pageView) SystemMap() *pageMap {
 				}
 				// A started program this repository builds is that program:
 				// the call's arrow goes into its component, and no outside
-				// tile stands for it. A program starting itself keeps its tile,
-				// whose reading names it.
+				// tile stands for it. A program starting itself runs its own
+				// entry: the arrow goes into the part holding its seeds
+				// (litestream's MCP server runs `litestream`, which had stood
+				// outside as a chip of its own name), and none when the call
+				// is written in that part.
 				if from := targetMapNodeID(section.programTargetID, mapNodeID(row.MapGroup)); row.MapGroup != "" && len(row.Runs) > 0 {
 					_, drawn := positions[from]
 					joined := false
 					for _, program := range row.Runs {
 						to, known := positions["system-component-"+program.Section]
-						if !drawn || !known || program.Section == section.ID {
+						if program.Section == section.ID {
+							entry := ""
+							if section.EntryGroup != "" {
+								entry = targetMapNodeID(section.programTargetID, mapNodeID(section.EntryGroup))
+							}
+							to, known = positions[entry]
+							if drawn && known && entry == from {
+								joined = true
+								continue
+							}
+						}
+						if !drawn || !known {
 							continue
 						}
 						edge := pageMapEdge{From: from, To: result.Nodes[to].ID, Scope: "structure", Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
