@@ -3,7 +3,6 @@ package report
 import (
 	"cmp"
 	"encoding/json"
-	"path"
 	"slices"
 	"strings"
 
@@ -60,7 +59,8 @@ type pageReadingDecl struct {
 	// Code is the link to all of its lines, where Href names the first.
 	Code string `json:"code,omitempty"`
 	// At is where it is declared, "redis.c:1155", said on hover; File is
-	// the file alone, the one the reading writes.
+	// its file by path, as Files lists it, so a part of files in
+	// subdirectories (cmd/litestream/main.go) reads its members file by file.
 	At   string `json:"at,omitempty"`
 	File string `json:"file,omitempty"`
 	// Kind is function, type or variable (a method is a function, a
@@ -260,6 +260,17 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		if decl.Key == "" {
 			return -1
 		}
+		// Fields a struct declares on one line share their link: each is
+		// its own declaration by name, or shared.cone would read as czero.
+		if position, known := at[decl.Key]; known && decl.Kind == "field" && reading.Decls[position].Name != decl.Name {
+			key := decl.Key + "\x00" + decl.Name
+			if position, known := at[key]; known {
+				return position
+			}
+			at[key] = len(reading.Decls)
+			reading.Decls = append(reading.Decls, decl)
+			return len(reading.Decls) - 1
+		}
 		if position, known := at[decl.Key]; known {
 			listed := &reading.Decls[position]
 			listed.Kind = cmp.Or(listed.Kind, decl.Kind)
@@ -275,7 +286,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			return -1
 		}
 		return declare(pageReadingDecl{Name: label, Key: declarationKey(anchor), Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code,
-			At: anchor.Text, File: path.Base(anchor.Path), Kind: kind, Part: part})
+			At: anchor.Text, File: anchor.Path, Kind: kind, Part: part})
 	}
 
 	// The members: the declarations a reader looks for, as the part's tiles
@@ -720,7 +731,7 @@ func (builder *pageBuilder) readingFan(targetID string, fold *dispatchFold, ends
 		if anchor == nil {
 			continue
 		}
-		if position := declare(pageReadingDecl{Name: name, Key: declarationKey(anchor), Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code, At: anchor.Text, File: path.Base(anchor.Path)}); position >= 0 {
+		if position := declare(pageReadingDecl{Name: name, Key: declarationKey(anchor), Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, Code: anchor.Code, At: anchor.Text, File: anchor.Path}); position >= 0 {
 			fan.Via = append(fan.Via, position)
 		}
 	}

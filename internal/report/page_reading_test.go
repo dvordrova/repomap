@@ -349,3 +349,55 @@ func TestAProgramIsBuiltFromItsLinkedUnits(t *testing.T) {
 		t.Fatalf("Go: %s", got)
 	}
 }
+
+// A part of files in subdirectories names each member's file by the path
+// its file list uses, so the column finds them file by file (litestream's
+// cmd/litestream/main.go read as an empty part while the file was said
+// as main.go); fields a struct declares on one line keep their own names.
+func TestAPartsMembersKeepTheirFilesPathAndTheirOwnNames(t *testing.T) {
+	b, index, part, anchors := readingFixture(t)
+	move := func(id, path string, line int) {
+		ref := b.subjects[subjectKey("t1", id)]
+		object := *ref.subject.Object
+		object.Location = &programindex.Location{Path: path, Line: line, Column: 1}
+		ref.subject.Object = &object
+		b.subjects[subjectKey("t1", id)] = ref
+		anchors[id] = b.links.anchorPointer(path, line, 1)
+	}
+	move("sleep", "cmd/app/main.go", 40)
+	move("alpha", "cmd/tool/main.go", 50)
+	move("f-argc", "server.go", 97)
+	move("f-mbargc", "server.go", 97)
+	reading := decodeReading(t, b.groupReading(index, part, pageGroup{ID: "t1-g14", Title: part.Title, Connections: []pageConnection{
+		readingRow(anchors, "→", "#t1-g4", "Core data structures", "reads", "cron", "serverCron", "f-argc", "argc"),
+		readingRow(anchors, "→", "#t1-g4", "Core data structures", "reads", "cron", "serverCron", "f-mbargc", "mbargc"),
+	}}))
+	for _, want := range []string{"cmd/app/main.go", "cmd/tool/main.go"} {
+		if !slices.Contains(reading.Files, want) {
+			t.Fatalf("files %q lack %s", reading.Files, want)
+		}
+	}
+	members := map[string]bool{}
+	for _, kind := range reading.Members {
+		for _, position := range kind.Decls {
+			decl := reading.Decls[position]
+			if !slices.Contains(reading.Files, decl.File) {
+				t.Fatalf("%s is in %q, which the part's files %q do not list", decl.Name, decl.File, reading.Files)
+			}
+			members[decl.Name] = true
+		}
+	}
+	if !members["beforeSleep"] || !members["appendServerSaveParams"] {
+		t.Fatalf("members %v lack the subdirectory files' declarations", members)
+	}
+	var fields []string
+	for _, decl := range reading.Decls {
+		if decl.Kind == "field" {
+			fields = append(fields, decl.Name)
+		}
+	}
+	slices.Sort(fields)
+	if !slices.Contains(fields, "argc") || !slices.Contains(fields, "mbargc") {
+		t.Fatalf("fields on one line read as %q, want argc and mbargc each", fields)
+	}
+}
