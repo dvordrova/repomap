@@ -1,5 +1,43 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Visual journeys green, renders byte-identical, Connections rows and helpers by name
+
+- **9fcba2bd (visual journeys):** the two `make ui-visual-test` failures
+  since ada1f59e pinned the camera the owner changed that day. "Dense
+  internal inventory…" clicked the final area on a whole-map card and
+  expected its part opened; the card's area names now read in the column
+  with the camera staying, which the journey checks. "A tile points at and
+  chooses its own declaration" expected a declaration named out of sight
+  centred at its own size; it is now shown with its whole part, framed and
+  centred, the tile in sight, which the journey checks. No product change.
+- **6cf4388c (render determinism):** glossary lookup ranged a map of
+  spellings and kept the first of two equal spans, so freqtrade's Hyperopt
+  class (a code name as written) and its "hyperopt" term took turns over
+  "Hyperopt reads Config"; the display texts' dedup split or joined and the
+  refs after it shifted (t1235/t1236). Equal spans now offer both
+  definitions, sorted, as homonyms do. `TestRenderingASavedRunAgainGivesTheSameBytes`
+  renders one saved run eight times against its publication and fails
+  within a few renders without the fix; the lookup test checks Hyperopt
+  offers both. A second render of each of the four saved runs is
+  byte-identical to the first.
+- **00ab5520 (the column's marks):** a Connections row in the column ends
+  in the "</>" code mark linking where the call is written, the place on
+  hover, with no printed place or "Open code ↗" (litestream's
+  "acquireReadLock db.go:1186 Open code ↗" reads "acquireReadLock </>";
+  160 + 50 rows of its two main components, none with a place). A helper's
+  hidden marks take no room: "+ helpers: zrealloc(), zmalloc(),
+  incrRefCount()"; pointing at or focusing a name shows its mark, Tab
+  reaches it. The arrow-ends journey checks the row's mark and title.
+- **Renders (no model calls) into `redis-r2/run/latest-*.html`:** Redis
+  4.19 MB, litestream 3.91 MB, freqtrade 8.76 MB, repomap 9.75 MB. Headless
+  smoke walks of all four: no page error, no nested scroller, no line
+  number in a reading, 16 declarations read each. Screenshots
+  `look/connrows-before-litestream.png`, `look/connmark-after-litestream.png`,
+  `look/helpers-after-{rest,hover}.png`.
+- **Verified:** `make test`, `make vet` (package parallelism 2), `make
+  ui-test` (134), `make ui-visual-test` (64 passed, 6 skipped: the
+  REPOMAP_REAL_RUN journeys).
+
 ## 2026-09-29 — Benchmark v4 fixes: the column's scroller, kinds, work on its own, step links, call sites, dense parts
 
 - **Why:** benchmark v4 on Redis (`results-v4.md`, onboarding R01, R2):
