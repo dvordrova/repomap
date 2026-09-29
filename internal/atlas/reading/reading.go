@@ -155,6 +155,9 @@ type reader struct {
 	// arguments are, by external symbol, which value of a call to it names
 	// what the call reaches (api_argument.go).
 	arguments map[string]ArgumentChoice
+	// fileReader walks the file symbols' calls once for every program's
+	// files (files.go).
+	fileReader *FileReader
 	// callEnters are what the words of each asked call become, by call
 	// site: an entry kind, none, or "" undecided (api_call.go); entering
 	// the outside symbols some call of which is an entry. wordCalls are

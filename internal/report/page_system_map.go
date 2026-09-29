@@ -51,7 +51,7 @@ func (view *pageView) SystemMap() *pageMap {
 			destinations["#"+id] = id
 		}
 		id := "system-component-" + section.ID
-		add(pageMapNode{ID: id, Owner: section.ID, Branch: "component", ItemKind: "Component", Href: "#" + section.ID, FullTitle: componentTitle(section, view.Sections), Entries: componentEntries(section), Sources: jsonStrings(section.BuiltFrom), Summary: section.Purpose, SummaryRef: section.PurposeRef, Role: section.Role, RoleRef: section.RoleRef, Language: section.Language, ComponentKind: section.Kind, SourceKind: "model", DetailsID: section.ID})
+		add(pageMapNode{ID: id, Owner: section.ID, Branch: "component", ItemKind: "Component", Href: "#" + section.ID, FullTitle: componentTitle(section, view.Sections), Entries: componentEntries(section), Files: section.Data.FilesReading, Sources: jsonStrings(section.BuiltFrom), Summary: section.Purpose, SummaryRef: section.PurposeRef, Role: section.Role, RoleRef: section.RoleRef, Language: section.Language, ComponentKind: section.Kind, SourceKind: "model", DetailsID: section.ID})
 		destinations["#"+section.ID] = id
 	}
 	for _, section := range view.Sections {

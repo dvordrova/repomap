@@ -535,6 +535,69 @@ function rmOutline(ctx,component){
   var list=rmEl('ul','map-outline');top.forEach(function(node){list.appendChild(item(node));});box.appendChild(list);
   return box;
 }
+// The files a component's program reaches by their paths (owner,
+// 2026-09-29; page_data_files.go): each by its path as written, or the
+// paths its field's writes store and the field (the field in braces when
+// they store none), with what else sets it (a setting whose branch writes
+// it, a function writing what is not established); then the functions whose calls reach it, by part, as a
+// field's writers and readers read. The paths not established are one
+// line. No role and no line numbers: a name reads its function, a path
+// links to where it is written, its place said on hover.
+function rmComponentFiles(ctx,data){
+  if(!data||!(data.files||[]).length)return null;
+  data.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
+  function users(groups){
+    var box=rmEl('div','map-field-uses'),count=groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=count>12;
+    var side=rmEl(long?'details':'div','map-field-side'),head=rmEl(long?'summary':'span','map-field-side-head',rmT('Read or written by'));
+    if(long)head.appendChild(rmEl('span','map-reading-peer-count',String(count)));
+    side.appendChild(head);
+    groups.forEach(function(group){
+      var line=rmEl('span','map-field-part');
+      if(group.part||group.title)line.appendChild(rmPartBox(ctx,group.part,group.title));
+      group.decls.forEach(function(at){var decl=data.decls[at];line.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));});
+      side.appendChild(line);
+    });
+    box.appendChild(side);
+    return box;
+  }
+  function also(term,value){
+    if(value.setting){
+      term.append(document.createTextNode('; '+rmT('set by the setting')+' '));
+      var input=value.input?ctx.nodeById(value.input):null,name=rmEl(input?'button':'code','map-file-setting',value.setting);
+      if(input){name.type='button';name.addEventListener('click',function(event){event.stopPropagation();ctx.readNode(input);});}
+      term.appendChild(name);
+    }else if(value.decl!==undefined){
+      var decl=data.decls[value.decl];
+      term.append(document.createTextNode('; '+rmT('set in')+' '),rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));
+    }
+  }
+  var named=data.files.filter(function(file){return file.path||file.field;}).length;
+  var box=rmEl('details','map-component-section map-component-files'),summary=rmEl('summary');
+  summary.appendChild(rmEl('span','',rmT('Files')));
+  if(named)summary.appendChild(rmEl('span','map-reading-peer-count',String(named)));
+  box.appendChild(summary);
+  var grid=rmEl('dl','map-reading-field-grid map-files');
+  data.files.forEach(function(file){
+    var term=rmEl('dt','map-field-path');
+    if(file.path)term.appendChild(rmEl('code','',file.path));
+    else if(file.field){
+      var paths=(file.values||[]).filter(function(value){return value.value;});
+      paths.forEach(function(value,i){
+        if(i)term.append(document.createTextNode(' · '));
+        term.appendChild(rmDeclName({name:value.value,href:value.href,open:value.open},value.value,null,value.at));
+      });
+      // With no path its writes store, the field stands for it in braces.
+      if(paths.length)term.append(document.createTextNode(' '+rmT('from')+' '),rmEl('code','',file.field));
+      else term.appendChild(rmEl('code','','{'+file.field+'}'));
+      (file.values||[]).forEach(function(value){if(!value.value)also(term,value);});
+    }else term.appendChild(rmEl('span','meta',rmT('Path not established')));
+    var row=rmEl('dd','map-field-uses-row');row.appendChild(users(file.by||[]));
+    grid.append(term,row);
+  });
+  box.appendChild(grid);
+  box.open=data.files.length<=rmShortSection;
+  return box;
+}
 var rmInputKindCounts={request:'{0} requests',command:'{0} commands',setting:'{0} settings',interaction:'{0} user interactions',continuous:'{0} continuous',scheduled:'{0} scheduled'};
 function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   var ctx=map.readingContext(),intro=card.querySelector('.map-card-intro'),page=card.querySelector('.map-card-actions>.map-details-link');
@@ -632,6 +695,8 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   // Its areas and parts, each a name that reads it, with its description on
   // one line (owner, 2026-09-28).
   var outline=rmOutline(ctx,n);if(outline)place(outline);
+  // The files its program reaches, after its parts (rmComponentFiles).
+  var files=rmComponentFiles(ctx,rmPage.data(n,'files'));if(files)place(files);
   var dead=details.querySelector(':scope>.component-reference h3[id$="-dead"]');
   if(dead){var unreached=[];for(var at=dead.nextElementSibling;at;at=at.nextElementSibling)unreached.push(at);section(rmT('Not reachable from the entrypoints'),0,unreached);}
   var todos=details.querySelector(':scope>.component-reference h3[id$="-todos"]');

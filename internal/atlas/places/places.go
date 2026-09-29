@@ -110,7 +110,7 @@ func Build(input Input) (atlas.Graph, error) {
 		symbolBindingRows: make(map[string]map[string]atlas.SymbolBinding),
 		symbolCallRows:    make(map[string]map[string]atlas.SymbolCall),
 		symbolUseRows:     make(map[string]map[atlas.SymbolUse]bool),
-		symbolFieldRows:   make(map[string]map[atlas.SymbolField]bool),
+		symbolFieldRows:   make(map[string]map[atlas.SymbolField]*sourcevalue.Value),
 		factSubjects:      make(map[string]string),
 		unreached:         make(map[string]map[string]struct{}),
 	}
@@ -246,10 +246,10 @@ type builder struct {
 	symbolCallerRows  map[string]map[string]atlas.SymbolCaller
 	symbolBindingRows map[string]map[string]atlas.SymbolBinding
 	symbolCallRows    map[string]map[string]atlas.SymbolCall
-	symbolUseRows     map[string]map[atlas.SymbolUse]bool // symbol place -> what it reads, hands over or is decorated by
-	symbolFieldRows   map[string]map[atlas.SymbolField]bool // symbol place -> the record fields it reads and writes
-	memberOwners      map[string]string                   // retained declaration -> native owner's symbol place
-	unreached         map[string]map[string]struct{}      // symbol place -> targets whose program never runs it
+	symbolUseRows     map[string]map[atlas.SymbolUse]bool                 // symbol place -> what it reads, hands over or is decorated by
+	symbolFieldRows   map[string]map[atlas.SymbolField]*sourcevalue.Value // symbol place -> the record fields it reads and writes, with the value a write stores
+	memberOwners      map[string]string                                   // retained declaration -> native owner's symbol place
+	unreached         map[string]map[string]struct{}                      // symbol place -> targets whose program never runs it
 	typeFields        map[string]typeField
 	// workspace lists the package paths of the repository's own modules, from
 	// the dependency catalogs: a call into one of them is not an integration.
@@ -1229,7 +1229,8 @@ func (b *builder) collectSymbolUses(rows map[string]map[atlas.SymbolUse]bool, ta
 }
 
 // collectSymbolFields keeps, for each lifted declaration, the record fields
-// its reads and writes name with a field path, at the field as written.
+// its reads and writes name with a field path, at the field as written, and
+// the value a write stores when the adapter recorded it.
 // They stay apart from Uses: a field is no declaration of its own, and what
 // a declaration uses feeds the role split.
 func (b *builder) collectSymbolFields(target TargetInput) {
@@ -1247,10 +1248,10 @@ func (b *builder) collectSymbolFields(target TargetInput) {
 			continue
 		}
 		if b.symbolFieldRows[from] == nil {
-			b.symbolFieldRows[from] = make(map[atlas.SymbolField]bool)
+			b.symbolFieldRows[from] = make(map[atlas.SymbolField]*sourcevalue.Value)
 		}
 		b.symbolFieldRows[from][atlas.SymbolField{TypeID: typeID, Field: field.Name, Path: relation.FieldPath, Kind: string(relation.Kind),
-			LineNo: relation.Location.Line, Column: relation.Location.Column}] = true
+			LineNo: relation.Location.Line, Column: relation.Location.Column}] = sourcevalue.Clone(relation.Value)
 	}
 }
 
@@ -1322,7 +1323,8 @@ func (b *builder) tableReads(id string) []atlas.TableRead {
 func (b *builder) symbolFields() map[string][]atlas.SymbolField {
 	result := make(map[string][]atlas.SymbolField, len(b.symbolFieldRows))
 	for id, set := range b.symbolFieldRows {
-		for field := range set {
+		for field, value := range set {
+			field.Value = value
 			result[id] = append(result[id], field)
 		}
 		sort.Slice(result[id], func(i, j int) bool { return atlas.SymbolFieldLess(result[id][i], result[id][j]) })

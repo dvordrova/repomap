@@ -259,6 +259,26 @@ from (ProgramIndex `field_path`):
 | TypeScript | missing: a property read is a declared value reference; no writes (JSTS) |
 | Clojure | missing: a map's keys are keywords and a record's fields no declarations (CLOJURE) |
 
+A plain assignment to a field keeps the value it stores (ProgramIndex
+`value`, C only): kvd's `main` stores `"dump.kv"` in `server.dbfile`,
+`loadConfig` what `strdup(argv[1])` returns; `server.dirty++` and
+`server.dirty += deleted` store none
+(`TestCFixtureFieldWritesKeepTheValueTheyStore`). Go's writes carry no
+value, Python's no path, and JS/TS and Clojure record none (above).
+
+The files a program keeps are gathered from its file calls, walked along
+their decided path argument (`TestEveryLanguageKeepsTheFilesItsCodeReaches`,
+the `talks` and argument answers preset; the kvd preset carries kvd's through
+GroupsIndex):
+
+| Language | Files |
+| --- | --- |
+| C | [kvd.c](c/kvd.c) `saveSnapshot`'s `fopen(filename, "w")`, given `server.dbfile` by `bgsaveCommand`: `{server.dbfile}`, whose writes store `dump.kv` (`main`) and what is not established (`loadConfig`, under the `dbfilename` directive); `loadConfig`'s `fopen`: `{env:KVD_CONFIG}` |
+| Go | [fixtures.go](go/internal/storefixture/fixtures.go) `createFixtureState`: `fixture-state.db`; [tool_cli.go](go/internal/storefixture/tool_cli.go) `LoadServerConfig`'s `os.ReadFile(path)`, which no call gives: not established. Missing: a field's writes carry no value, and `serverState.dbfile` reaches no file call |
+| Python | [outside_results.py](python/src/fixture_app/outside_results.py) `read_settings`'s `Path(name).open()`, through `Path`'s argument to `name`, which no call gives: not established. Missing: a field stored twice is unknown (`MutableAdapter.url`), so no file from a field default and its override |
+| TypeScript | missing: [prepare-readme.mjs](jsts/packages/documentation-tools/scripts/prepare-readme.mjs)'s `readFileSync` names no symbol without `@types/node` |
+| Clojure | [service.cljc](clojure/src/example/service.cljc) `deliver!`'s `spit`: not established, since the adapter records no parameter origin (core.clj passes `"greeting.txt"`); a value is no field |
+
 A callable stored into the field of an outside value the code holds is
 handed to that field, named with its declared type:
 

@@ -59,7 +59,7 @@ func Index(repository *corpus.Corpus, parsed *Parsed) (*Result, error) {
 		externalFunctions: map[string]string{}, externalVariables: map[string]string{}, functionByRef: map[string]*function{},
 		definedAt: map[string]Position{}, slots: map[string]*slot{}, stores: map[string][]*store{}, passedTo: map[string][]passedAt{},
 		imported: map[string]bool{}, importers: map[string]dependencies.Importer{}, escaped: map[string]bool{},
-		fieldRoles: map[*Node]fieldRole{},
+		fieldRoles: map[*Node]fieldRole{}, assigned: map[*Node]*Node{},
 	}
 	for _, unit := range parsed.Units {
 		b.scopes = append(b.scopes, newUnitScope(unit))
@@ -123,6 +123,9 @@ type builder struct {
 	// and write.
 	fieldRoles    map[*Node]fieldRole
 	fieldAccesses []fieldAccess
+	// assigned are, by the member a plain assignment's destination names,
+	// the value it assigns, until the walk reaches that member.
+	assigned map[*Node]*Node
 
 	imported  map[string]bool
 	importers map[string]dependencies.Importer
@@ -990,7 +993,7 @@ func (b *builder) emitFieldAccesses() {
 		}
 		b.sequence++
 		b.relation(p.RelationInput{SourceRef: fmt.Sprintf("c:field:%d", b.sequence), Kind: kind, FromRef: access.from,
-			ToRefs: []string{access.field}, Resolution: p.ResolutionExact, Location: at, Witnesses: witnesses, FieldPath: access.path})
+			ToRefs: []string{access.field}, Resolution: p.ResolutionExact, Location: at, Witnesses: witnesses, FieldPath: access.path, Value: access.value})
 	}
 }
 

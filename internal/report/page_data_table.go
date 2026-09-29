@@ -64,7 +64,7 @@ const (
 
 // pageDataDecls are the readings whose top-level "decls" list declarations
 // the page names once.
-var pageDataDecls = map[string]bool{"reading": true, "inputPath": true, "catalogue": true, "launch": true, "reached": true}
+var pageDataDecls = map[string]bool{"reading": true, "inputPath": true, "catalogue": true, "launch": true, "reached": true, "files": true}
 
 func newPageData(base string) *pageData {
 	return newPageDataRange(base, "-L")

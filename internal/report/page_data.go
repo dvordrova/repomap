@@ -11,6 +11,12 @@ import (
 type pageDataCatalog struct {
 	Rows            []pageDataRow
 	Tables, Queries int
+	// Files are the files the program's code reaches by their paths
+	// (page_data_files.go); Unknown says some paths are not established;
+	// FilesReading is their reading for the component's column.
+	Files        []pageDataFile
+	Unknown      bool
+	FilesReading string
 }
 
 // TableRows and QueryRows split the catalog for display: declared and
@@ -86,13 +92,13 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 			continue
 		}
 		for _, record := range original.Data {
-			if record.Data != nil {
+			if record.Data != nil && record.Data.Kind != "file" {
 				refs[record.ID] = pageDataReference{Name: record.Data.Name, Source: builder.links.anchorPointer(record.Path, record.Line, 0)}
 			}
 		}
 	}
 	for _, record := range index.Data {
-		if record.Data != nil {
+		if record.Data != nil && record.Data.Kind != "file" {
 			name := record.Data.Name
 			if record.Data.Schema != "" {
 				name = record.Data.Schema + "." + name
@@ -110,7 +116,7 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 	operations := dataOperationLinks(index)
 	for _, record := range index.Data {
 		data := record.Data
-		if data == nil || vendoredPath(record.Path) || catalogTable(data.Name) {
+		if data == nil || data.Kind == "file" || vendoredPath(record.Path) || catalogTable(data.Name) {
 			continue
 		}
 		row := pageDataRow{ID: dataRowID(section.ID, record.ID), Name: data.Name, Scope: data.Scope, Connection: data.Connection, SQL: data.SQL, Expression: data.Expression, Statement: data.Statement, Partial: data.Partial, Anchor: builder.links.anchor(record.Path, record.Line, 0)}
@@ -190,6 +196,7 @@ func (builder *pageBuilder) fillSectionData(section *pageSection) {
 			}
 		}
 	}
+	builder.fillSectionFiles(section, index)
 	sort.SliceStable(section.Data.Rows, func(i, j int) bool {
 		a, b := section.Data.Rows[i], section.Data.Rows[j]
 		if (a.SQL == "") != (b.SQL == "") {

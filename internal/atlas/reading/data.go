@@ -25,6 +25,8 @@ func (r *reader) dataForTarget(id string) []atlas.DataRecord {
 			refs[edge.From] = append(refs[edge.From], edge.To)
 		}
 	}
+	// The files the program's own code reaches by their paths (files.go).
+	rows = append(rows, r.filesForTarget(id)...)
 	for i := range rows {
 		rows[i].References = refs[rows[i].ID]
 		sort.Slice(rows[i].References, func(a, b int) bool { return compactIDLess(rows[i].References[a], rows[i].References[b]) })

@@ -16,7 +16,7 @@ func TestDataOwnerUsesExactUniqueNativeTypeSource(t *testing.T) {
 		{ID: "function", Kind: programindex.ObjectFunction, Name: "Trade", Location: location},
 	}}
 	rows := []atlas.DataRecord{{ID: "table", Path: "models.py", Line: 10, Data: &facts.DataObject{Kind: "table", Origin: "orm", Scope: "orm:models.Base", Name: "trades", Owner: &facts.Anchor{Path: "models.py", Line: 9}}}}
-	result := projectData(program, rows)
+	result := projectData(program, rows, nil)
 	if len(result) != 1 || result[0].OwnerSubjectID != "model" {
 		t.Fatal("schema did not attach to its unique class anchor")
 	}
@@ -25,7 +25,7 @@ func TestDataOwnerUsesExactUniqueNativeTypeSource(t *testing.T) {
 		t.Fatal("projection shares mutable source ownership")
 	}
 	program.Objects = append(program.Objects, programindex.Object{ID: "ambiguous", Kind: programindex.ObjectType, Name: "Trade", Location: location})
-	result = projectData(program, rows)
+	result = projectData(program, rows, nil)
 	if len(result) != 1 || result[0].OwnerSubjectID != "" {
 		t.Fatal("ambiguous source invented one owner or removed schema")
 	}
@@ -37,11 +37,11 @@ func TestDataQueryOwnerKeepsExactNativeCallableColumn(t *testing.T) {
 		{ID: "second", Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "query.ts", Line: 3, Column: 30}},
 	}}
 	rows := []atlas.DataRecord{{ID: "query", Path: "query.ts", Line: 3, Data: &facts.DataObject{Kind: "query", Origin: "query", Scope: "source:query.ts", Name: "read", SQL: "SELECT 1", Owner: &facts.Anchor{Path: "query.ts", Line: 3, Column: 30}}}}
-	if got := projectData(program, rows); len(got) != 1 || got[0].OwnerSubjectID != "second" {
+	if got := projectData(program, rows, nil); len(got) != 1 || got[0].OwnerSubjectID != "second" {
 		t.Fatalf("precise query owner lost: %+v", got)
 	}
 	rows[0].Data.Owner.Column = 0
-	if got := projectData(program, rows); len(got) != 1 || got[0].OwnerSubjectID != "" {
+	if got := projectData(program, rows, nil); len(got) != 1 || got[0].OwnerSubjectID != "" {
 		t.Fatal("ambiguous same-line query picked one owner")
 	}
 }

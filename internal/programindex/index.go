@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 22
+	Version          = 23
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -1057,6 +1057,9 @@ type RelationInput struct {
 	// FieldPath is, on a reads or writes relation whose target is a field
 	// of a record, the field as the code reaches it (Relation.FieldPath).
 	FieldPath string
+	// Value is, on a writes relation with a FieldPath, the value the site
+	// assigns (Relation.Value).
+	Value *sourcevalue.Value
 }
 
 // Relation is one typed, locally resolved edge or uncertainty joint.
@@ -1088,6 +1091,13 @@ type Relation struct {
 	// the readers and writers of one field gather across functions whatever
 	// root each reaches it from.
 	FieldPath string `json:"field_path,omitempty"`
+	// Value is, on a writes relation with a FieldPath, the value a plain
+	// assignment stores in the field there, as the adapter records any
+	// source value (`server.dbfilename = "dump.rdb"` stores the literal,
+	// `= zstrdup(argv[1])` the call's result). A compound assignment, ++
+	// and --, an element of an array field and an adapter recording no
+	// value have none (C only; GO, PYTHON, JSTS, CLOJURE).
+	Value *sourcevalue.Value `json:"value,omitempty"`
 }
 
 // CoverageInput retains adapter observations that could not all be represented
@@ -1554,6 +1564,7 @@ func New(input Input) (Index, error) {
 			Patterns:         patterns, PatternsObserved: value.PatternsObserved,
 			PatternsOmitted: value.PatternsObserved - len(patterns),
 			FieldPath:       value.FieldPath,
+			Value:           sourcevalue.Clone(value.Value),
 		}
 		if value.SourceArgument != nil {
 			if value.Kind != RelationPassesCallback || !validPatternArgumentRefInput(*value.SourceArgument) {
@@ -1631,6 +1642,7 @@ func (index Index) Snapshot() Index {
 		result.Relations[position].Location = cloneLocation(index.Relations[position].Location)
 		result.Relations[position].Witnesses = cloneWitnesses(index.Relations[position].Witnesses)
 		result.Relations[position].Patterns = cloneRelationPatterns(index.Relations[position].Patterns)
+		result.Relations[position].Value = sourcevalue.Clone(index.Relations[position].Value)
 	}
 	result.Categorization = cloneCategorization(index.Categorization)
 	return result
@@ -2251,6 +2263,9 @@ func validateRelationShape(value Relation) error {
 	}
 	if value.FieldPath != "" && (!validText(value.FieldPath) || value.Kind != RelationReads && value.Kind != RelationWrites || len(value.ToIDs) != 1) {
 		return fmt.Errorf("program index: a field path belongs to a read or write of one field")
+	}
+	if value.Value != nil && (value.Kind != RelationWrites || value.FieldPath == "" || sourcevalue.Validate(value.Value) != nil) {
+		return fmt.Errorf("program index: a written value belongs to a write of one field")
 	}
 	if value.TargetsObserved <= 0 || value.TargetsObserved < len(value.ToIDs) ||
 		value.TargetsOmitted != value.TargetsObserved-len(value.ToIDs) ||

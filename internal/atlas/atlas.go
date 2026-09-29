@@ -349,14 +349,17 @@ const UseTakes = "takes"
 // SymbolField is one read or write of a record's field: TypeID is the
 // record type's symbol place and Field the field's name, Path the field as
 // the code reaches it (server.masterhost, redisDb.expires), Kind `reads` or
-// `writes`, and LineNo and Column the field as written.
+// `writes`, and LineNo and Column the field as written. Value is, on a
+// write, the value the site stores when the adapter recorded it
+// (ProgramIndex Relation.Value: `server.dbfilename = "dump.rdb"`).
 type SymbolField struct {
-	TypeID string `json:"type_id"`
-	Field  string `json:"field"`
-	Path   string `json:"path"`
-	Kind   string `json:"kind"`
-	LineNo int    `json:"line_no"`
-	Column int    `json:"column,omitempty"`
+	TypeID string             `json:"type_id"`
+	Field  string             `json:"field"`
+	Path   string             `json:"path"`
+	Kind   string             `json:"kind"`
+	LineNo int                `json:"line_no"`
+	Column int                `json:"column,omitempty"`
+	Value  *sourcevalue.Value `json:"value,omitempty"`
 }
 
 // SymbolFieldLess orders field accesses by field, then by site.
@@ -1485,7 +1488,7 @@ func validateGraph(graph Graph) error {
 			}
 			for _, field := range place.Symbol.Fields {
 				if seen[field.TypeID] != PlaceSymbol || field.Field == "" || field.Path == "" || field.LineNo < 1 ||
-					field.Kind != "reads" && field.Kind != "writes" {
+					field.Kind != "reads" && field.Kind != "writes" || field.Value != nil && (field.Kind != "writes" || sourcevalue.Validate(field.Value) != nil) {
 					return fmt.Errorf("atlas: symbol %q has an invalid field access of %q", place.ID, field.Path)
 				}
 			}

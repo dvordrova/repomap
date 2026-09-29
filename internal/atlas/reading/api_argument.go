@@ -34,7 +34,7 @@ func argumentSubject(symbol string) string { return "apiargument:" + symbol }
 
 // readArguments asks which argument names what each reaching symbol's calls
 // reach, then the symbols whose results those arguments carry, round by
-// round, and logs the files the file symbols' calls reach.
+// round, and logs what the file symbols' calls reach.
 func (r *reader) readArguments(ctx context.Context, symbols []*apiSymbol, talks map[string]string) error {
 	r.arguments = map[string]ArgumentChoice{}
 	usage := map[string]sourceSite{}
@@ -161,8 +161,8 @@ func (r *reader) readArguments(ctx context.Context, symbols []*apiSymbol, talks 
 		return nil
 	}
 	fmt.Fprintf(&r.tables, "atlas_api arguments: %d of %d outside symbols decided which argument names what their calls reach\n\n", decided, total)
-	// What each call of a file symbol reaches, as the walk reads it: the
-	// files a program keeps are projected from these (not yet).
+	// What each call of a file symbol reaches, as the walk reads it; the
+	// files each program keeps are gathered from the same walk (files.go).
 	tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: options})
 	for _, name := range reaching {
 		if talks[name] != lines.APIFile {

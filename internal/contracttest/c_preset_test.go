@@ -41,7 +41,8 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	preset := &kvdPreset{}
+	// fopen reaches a file by its first argument, the path.
+	preset := &kvdPreset{roles: map[string]map[string]string{"stdio.h.fopen": {"talks": "file", "argument": "argument 1"}}}
 	result, err := reading.Read(context.Background(), reading.Options{
 		Graph: graph, Repository: "kvd", Revision: "test", NoCaptions: true,
 		Targets:  []reading.TargetMeta{{ID: index.Target.ID, Language: "c", Kind: "executable", Name: index.Target.Name, Root: "."}},
@@ -201,13 +202,14 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 	}
 	// Binding, listening on and accepting from the server's socket are its
 	// listening side: they serve, and the connection accept takes in is no
-	// outgoing request. Nothing else kvd calls talks to another system.
+	// outgoing request. Nothing else kvd calls talks to another system:
+	// fopen reaches a file, no system.
 	var serving []string
 	for _, role := range result.Atlas.API {
 		if role.Publishes {
 			serving = append(serving, role.Symbol)
 		}
-		if role.Talks != "" {
+		if role.Talks != "" && (role.Symbol != "stdio.h.fopen" || role.Talks != "file") {
 			t.Fatalf("%s talks %s", role.Symbol, role.Talks)
 		}
 	}
@@ -251,6 +253,48 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 		t.Fatalf("entries asked for a name = %v, want %v", named, wantNamed)
 	}
 	checkKvdReach(t, index, indexes[0])
+	checkKvdFiles(t, fixture, indexes[0])
+}
+
+// checkKvdFiles holds kvd's files through GroupsIndex: the snapshot read
+// from server.dbfile, whose default main stores and loadConfig overrides
+// with what it read (not established), opened by saveSnapshot; the
+// configuration file KVD_CONFIG names, opened by loadConfig. Each call and
+// each write is named by the subject making it.
+func checkKvdFiles(t *testing.T, fixture cFixture, index groupindex.Index) {
+	t.Helper()
+	names := map[string]string{}
+	for _, subject := range index.Subjects {
+		if subject.Object != nil {
+			names[subject.ID] = subject.Object.Name
+		}
+	}
+	var got []string
+	for _, record := range index.Data {
+		if record.Data == nil || record.Data.Kind != "file" {
+			continue
+		}
+		line := record.Data.Name + ":"
+		for position, call := range record.Data.File.Calls {
+			line += fmt.Sprintf(" %s by %s@%d", call.Symbol, names[record.CallSubjectIDs[position]], call.Anchor.Line)
+		}
+		for position, value := range record.Data.File.Values {
+			line += fmt.Sprintf(" = %q by %s@%d", value.Value, names[record.ValueSubjectIDs[position]], value.Anchor.Line)
+		}
+		got = append(got, line)
+	}
+	at := func(needle string) int {
+		line, _ := fixture.at(t, "kvd.c", needle, needle[:1])
+		return line
+	}
+	want := []string{
+		fmt.Sprintf(`{server.dbfile}: stdio.h.fopen by saveSnapshot@%d = "" by loadConfig@%d = "dump.kv" by main@%d`,
+			at(`fopen(filename, "w")`), at("server.dbfile = strdup(argv[1])"), at(`server.dbfile = "dump.kv";`)),
+		fmt.Sprintf("{env:KVD_CONFIG}: stdio.h.fopen by loadConfig@%d", at(`fopen(filename, "r")`)),
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("kvd's files = %q\nwant %q", got, want)
+	}
 }
 
 // checkKvdReach holds kvd's derived reach to its code. processCommand's
@@ -680,7 +724,11 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 			}
 			return typesafetest.Choose("none"), true
 		case "argument":
-			// No value of a call names what it reaches in this reading.
+			// A value of a call names what it reaches only where the
+			// reading's roles say which.
+			if value := preset.roles[symbol]["argument"]; value != "" {
+				return typesafetest.Choose(value), true
+			}
 			return typesafetest.Choose("none"), true
 		case "enters":
 			arguments := strings.Join(stringsOf(question.Item["arguments"]), "; ")

@@ -505,6 +505,7 @@ func (w walker) walk(n *Node) {
 		switch n.Opcode {
 		case "=":
 			w.b.markField(n.Inner[0], fieldWrite)
+			w.b.markAssigned(n.Inner[0], n.Inner[1])
 			w.b.assign(w, n.Inner[0], n.Inner[1])
 			// A variable that is itself the destination is written, not
 			// read; a member or an element of it is reached through it.
@@ -601,6 +602,7 @@ func (w walker) walk(n *Node) {
 			w.b.fieldAccess(w, n)
 		} else {
 			delete(w.b.fieldRoles, n)
+			delete(w.b.assigned, n)
 		}
 		// The record a . member is taken from is passed through, not used.
 		if !n.IsArrow && len(n.Inner) > 0 {
@@ -707,13 +709,27 @@ func (b *builder) markField(n *Node, role fieldRole) {
 	}
 }
 
+// markAssigned keeps the value a plain assignment stores in the member its
+// destination names, through parentheses: the member itself, not an
+// element of an array member, whose value is one element's.
+func (b *builder) markAssigned(destination, value *Node) {
+	for destination != nil && destination.Kind == "ParenExpr" && len(destination.Inner) == 1 {
+		destination = destination.Inner[0]
+	}
+	if destination != nil && destination.Kind == "MemberExpr" {
+		b.assigned[destination] = value
+	}
+}
+
 // A fieldAccess is a function body reading or writing a field of a
-// repository record, at the field's name as written.
+// repository record, at the field's name as written; a write by a plain
+// assignment keeps the value it stores, as any source value is recorded.
 type fieldAccess struct {
 	from, field, path string
 	write             bool
 	site              Position
 	macro             *programindex.Witness
+	value             *sourcevalue.Value
 }
 
 // fieldAccess records a member expression that reads or writes a field of a
@@ -722,11 +738,16 @@ type fieldAccess struct {
 func (b *builder) fieldAccess(w walker, n *Node) {
 	role := b.fieldRoles[n]
 	delete(b.fieldRoles, n)
+	assigned := b.assigned[n]
+	delete(b.assigned, n)
 	field := w.scope.fields[n.ReferencedMemberDecl]
 	if role == fieldStep || field == nil || field.ref == "" || b.objects[field.ref] == nil || len(n.Inner) == 0 {
 		return
 	}
 	access := fieldAccess{from: w.owner, field: field.ref, path: b.fieldPath(w, n), write: role == fieldWrite, site: n.End.Site()}
+	if access.write && assigned != nil && sourceAnchor(assigned.Begin.Site()) != nil {
+		access.value = b.originOf(w, assigned, map[string]bool{})
+	}
 	if n.End.InMacroBody() {
 		if macro := TokenText(b.source(n.End.Expansion.File), n.End.Expansion); macro != "" {
 			verb := "a read"

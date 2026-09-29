@@ -230,6 +230,9 @@ type pageMapNode struct {
 	// from (pageSection BuiltFrom), a JSON list.
 	Entries string
 	Sources string
+	// Files are, on a component, the files its program's code reaches by
+	// their paths with the functions reaching each (pageFiles).
+	Files string
 	// Collection is, on a component's Inputs collection, its reading
 	// (pageInputCollection): its inputs by catalogue and by kind, by name.
 	Collection string

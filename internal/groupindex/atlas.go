@@ -8,6 +8,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -978,7 +979,14 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		idioms = append(idioms, row)
 	}
-	data := projectData(program, target.Data)
+	// A file's calls and writes are named by the subject making them: the
+	// declaration the reading named, else the function holding the site.
+	data := projectData(program, target.Data, func(ref string, at facts.Anchor) string {
+		if subject := subjectOf(ref); subject != "" {
+			return subject
+		}
+		return enclosing(programindex.Location{Path: at.Path, Line: at.Line, Column: max(1, at.Column)})
+	})
 	outbound := projectOutbound(program, target, groupOfBox, sourceRefs)
 	joinOutboundData(outbound, data)
 	// Each outgoing call is reached from the callers outside its part, a
