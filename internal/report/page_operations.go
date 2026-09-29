@@ -280,7 +280,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			Neighbours: strings.Join(nearIDs, " "), Degree: len(near), Members: 1,
 			Trace:   strings.Join(trace, " "),
 			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown, Written: operation.Written,
-			Sets:    builder.settingSets(index, operation, decls),
+			Sets:      builder.settingSets(index, operation, decls),
 			Catalogue: catalogueOf[operation.ID], DeclaredBy: declaredByOf[operation.ID], Declares: strings.Join(declaresOf[operation.ID], " "),
 		})
 	}
@@ -385,21 +385,6 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		result.Width = 780
 		result.MinWidth = 780
 		result.Lanes = append(result.Lanes, pageMapLane{Label: "Other components", X: 480})
-	}
-	routingNodes := make(map[string]*pageMapNode, len(byID))
-	for id, node := range byID {
-		routingNodes[id] = &node
-	}
-	router := newMapEdgeRouter(routingNodes, result.Height)
-	for i := range result.Edges {
-		edge := &result.Edges[i]
-		edge.Path, _, _, _, _ = router.route(routingNodes[edge.From], routingNodes[edge.To])
-	}
-	result.Height += router.extraHeight()
-	// The interactive view uses the same outside-column loop geometry.
-	// Reserve its full gutter before hovering, so preview cannot rescale nodes.
-	for _, node := range result.Nodes {
-		result.Width = max(result.Width, node.X+node.Width+mapLoopMaxDepth+2*mapLoopSpread+mapPadding)
 	}
 	result.Lanes = append(result.Lanes, pageMapLane{Label: "Operations", X: mapPadding}, pageMapLane{Label: "Implementation", X: 246})
 	return result
@@ -552,13 +537,11 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		add(pageMapNode{ID: id, Branch: "components", Children: strings.Join(peerRoots, " "), Remote: true, Href: "#" + id, FullTitle: "Connected components", Title: mapTitle("Connected components"), Subtitle: fmt.Sprintf("%d components · explore →", len(peerRoots)), Lane: "dependencies"})
 	}
 	// Every group is retained, including groups with no classified operation.
-	// The no-script document uses the compact zone picture; scripted views
-	// position all retained nodes from this complete reservoir.
-	static := builder.buildZoneMap(section, index)
-	result.Width, result.Height, result.MinWidth = static.Width, static.Height, static.MinWidth
-	result.Frames, result.Lanes = static.Frames, static.Lanes
+	zones := builder.buildZoneMap(section, index)
+	result.Width, result.Height, result.MinWidth = zones.Width, zones.Height, zones.MinWidth
+	result.Frames, result.Lanes = zones.Frames, zones.Lanes
 	positions := make(map[string]pageMapNode)
-	for _, node := range static.Nodes {
+	for _, node := range zones.Nodes {
 		positions[node.ID] = node
 	}
 	for i := range result.Nodes {
@@ -568,10 +551,6 @@ func (builder *pageBuilder) addMapStructure(result *pageMap, section *pageSectio
 		} else {
 			node.InitiallyHidden = true
 		}
-	}
-	for _, edge := range static.Edges {
-		edge.Scope = "static"
-		result.Edges = append(result.Edges, edge)
 	}
 }
 

@@ -18,20 +18,12 @@ import (
 // is made of and how its parts reach each other. It exists because a column of
 // equally weighted headings cannot show that one group holds a third of the
 // target while another holds three symbols.
-//
-// The layout is computed here, in Go, and shipped as plain SVG. With no
-// scripting the map still reads and every node is a link to the group it
-// names; scripting only adds the neighbourhood preview.
 const (
 	mapNodeWidth = 196.0
 	// A box holds its name and nothing else: the count and the size bar
 	// under the name were pretty, and the owner found them a distraction that
 	// told him nothing the hover card does not.
 	mapNodeHeight = 50.0
-	// mapLaneGap is wide enough to write on. An arrow with no words on it is
-	// a line between two boxes and a reader has to guess what it means, so
-	// the gutter between lanes carries the connection's own words.
-	mapLaneGap = 136.0
 	// A lane too long for one column is broken into further columns, and the
 	// gap between them has to fit an arrow and its words too — narrower than
 	// a lane boundary, wide enough to draw in.
@@ -54,32 +46,17 @@ const (
 	mapTitleLines  = 2
 	// mapBarWidth is how wide a full-width membership bar is drawn.
 	mapBarWidth = 174.0
-	// An edge between two groups in one column loops back into the side it
+	// An edge between two boxes in one column loops back into the side it
 	// left from, so its head points at the box it arrives at. Depth grows
-	// with the vertical distance it covers, up to a bound, and repeats in one
-	// gutter are pushed apart so two loops are two loops.
+	// with the vertical distance it covers, up to a bound.
 	mapLoopMinDepth = 26.0
 	mapLoopMaxDepth = 74.0
 	mapLoopPerRow   = 0.22
-	mapLoopSpread   = 9.0
-	mapLoopVariants = 3
-	// An edge that skips over a column travels along a band under the map
-	// instead of passing behind the boxes in between, where it used to
-	// disappear and re-emerge as two unrelated stubs.
-	mapBandTop  = 16.0
-	mapBandStep = 9.0
+	// An edge that skips over a column turns into a band under the map
+	// instead of passing behind the boxes in between.
 	mapBandTurn = 14.0
-	// mapEdgeLabelBudget is how many characters fit on one label line inside
-	// a lane gutter, and a label may take two of them.
-	mapEdgeLabelBudget = 22
-	mapEdgeLabelLines  = 2
-	mapEdgeLabelEm     = 5.3
-	mapEdgeLabelLine   = 11.0
-	// mapEdgeLabelMinRoom and mapEdgeLabelMinBudget are the least horizontal
-	// space, and the least characters in it, worth writing a label in. Below
-	// them the words would be cut to nothing, and the whole label is on the
-	// arrow's tooltip anyway.
-	mapEdgeLabelMinRoom   = 40.0
+	// mapEdgeLabelMinBudget is the least characters worth writing a line in:
+	// below it the words would be cut to nothing.
 	mapEdgeLabelMinBudget = 6
 	// mapLegibleScale is the most a map may be shrunk to fit the column it is
 	// in; past it the words on the arrows stop being words. A map that would
@@ -93,10 +70,6 @@ const (
 	// name sits in the band above them.
 	mapFramePad    = 12.0
 	mapFrameHeader = 26.0
-	// mapFrameArrowGap is how far short of a zone's outline an arrow stops.
-	// Landing on the outline, the head sat across the 2.5px stroke and the
-	// first box inside, and read as a mistake.
-	mapFrameArrowGap = 7.0
 	// mapZoneGroups is how many groups a zone shows on the overview. A zone
 	// holding more says so and keeps the rest on its cards below: the map is
 	// the architecture of a target, not an inventory of it, and thirty equal
@@ -107,15 +80,6 @@ const (
 	// the cards.
 	mapOverviewBoxes = 14
 )
-
-// mapLabelSteps are the vertical nudges a label tries, in order, when the
-// place it wants is taken — in multiples of its own height, so two labels
-// that end up one step apart do not touch. Fixed fourteen-pixel steps put
-// "wraps handlers" against "routes requests" with no air between them.
-var mapLabelSteps = []float64{0, -1, 1, -2, 2, -3, 3}
-
-// mapLabelClearance is the air between two stacked labels.
-const mapLabelClearance = 3.0
 
 type pageMap struct {
 	System     bool
@@ -309,7 +273,6 @@ type pageMapEdge struct {
 	ToSource             pageAnchor
 	Scope                string
 	Operations           string
-	Path                 string
 	From                 string
 	To                   string
 	Label                string
@@ -321,12 +284,6 @@ type pageMapEdge struct {
 	// wiring before anything serves) or a call into a helper. The map draws
 	// it dashed, and only while one of its ends is the reader's selection.
 	Init bool
-	// Lines is the label written beside the edge. It is empty when there is
-	// no room for it without covering another one; the whole label is on the
-	// edge's tooltip either way.
-	Lines  []string
-	LabelX float64
-	LabelY float64
 }
 
 // buildMap lays out one target's groups in three columns — what reaches in,
@@ -427,7 +384,6 @@ func (builder *pageBuilder) buildZoneMap(section *pageSection, index *groupindex
 		}
 	}
 	result.Grouped = len(grouped)
-	positions := make(map[string]*pageMapNode)
 	neighbours := builder.mapNeighbours(*index)
 	steps := builder.flowStepsByGroup(section, *index)
 
@@ -496,29 +452,10 @@ func (builder *pageBuilder) buildZoneMap(section *pageSection, index *groupindex
 	result.Width = mapPadding*2 + float64(placed.columns)*mapNodeWidth +
 		float64(max(placed.columns-1, 0))*mapColumnGap
 
-	for position := range result.Nodes {
-		positions[result.Nodes[position].ID] = &result.Nodes[position]
-	}
-	// Connections follow the levels the boxes are drawn at. Two groups inside
-	// one part are joined box to box; anything crossing a part's frame is one
-	// arrow between the parts. Drawn box to box regardless, chi's core was
-	// forty lines with "part of middleware" written on eight of them.
-	// A group the overview left out still reaches, and what it reaches is
-	// still on the screen — inside a zone. Its connection is the zone's, so
-	// endpoints are resolved over every block and not only the drawn ones.
-	// Resolved over the drawn ones alone, chi's map carried two arrows for
-	// fourteen boxes, because almost everything a box talks to is one of the
-	// ninety groups on the cards below.
-	endpoints, endpointOf := mapEndpoints(result.Frames, result.Nodes, everything)
-	edges, band, rightmost := mapEdges(*index, endpoints, endpointOf, result.Height)
-	result.Edges = edges
-	result.Height += band + mapPadding + 14
-	if reach := rightmost + mapPadding; reach > result.Width {
-		result.Width = reach
-	}
+	result.Height += mapPadding + 14
 	result.MinWidth = mapMinWidth(result.Width)
 	result.Trace = builder.mapTrace(section, *index, steps)
-	if len(result.Nodes) == 1 && len(result.Edges) == 0 {
+	if len(result.Nodes) == 1 {
 		node := &result.Nodes[0]
 		node.X, node.Y = mapPadding, mapPadding
 		result.Frames, result.Lanes = nil, nil
@@ -1282,432 +1219,6 @@ func mapNodeIDs(groupIDs []string) []string {
 		}
 	}
 	return result
-}
-
-// mapEdges draws one arrow per pair of groups that are connected, and writes
-// what the connection is beside it where there is room. Cross-target
-// connections are deliberately absent: the other end has no position on this
-// map. Two connections between the same pair are one arrow carrying both
-// labels, because two identical curves drawn on top of each other are one
-// curve that reads as a thicker line.
-// mapEndpoints lists what an arrow may start and end at: every box that is in
-// no part, and every part as a whole. It also says, for each group, which of
-// those its connections belong to.
-func mapEndpoints(
-	frames []pageMapFrame,
-	nodes []pageMapNode,
-	blocks []mapBlock,
-) (map[string]*pageMapNode, map[string]string) {
-	frameOf := make(map[string]string)
-	for _, block := range blocks {
-		if block.container == nil {
-			continue
-		}
-		for _, group := range block.groups {
-			frameOf[group.ID] = mapNodeID(block.container.ID)
-		}
-	}
-	endpoints := make(map[string]*pageMapNode, len(nodes)+len(frames))
-	for position := range nodes {
-		endpoints[nodes[position].ID] = &nodes[position]
-	}
-	for position := range frames {
-		frame := frames[position]
-		endpoints[mapNodeID(frame.ID)] = &pageMapNode{
-			ID: mapNodeID(frame.ID), FullTitle: frame.Title, Lane: frame.Lane, Frame: true,
-			X: frame.X, Y: frame.Y, Width: frame.Width, Height: frame.Height,
-		}
-	}
-	endpointOf := make(map[string]string, len(nodes))
-	for _, block := range blocks {
-		for _, group := range block.groups {
-			if frame, inside := frameOf[group.ID]; inside {
-				endpointOf[group.ID] = frame
-				continue
-			}
-			endpointOf[group.ID] = mapNodeID(group.ID)
-		}
-	}
-	return endpoints, endpointOf
-}
-
-func mapEdges(
-	index groupindex.Index,
-	nodes map[string]*pageMapNode,
-	endpointOf map[string]string,
-	bottom float64,
-) ([]pageMapEdge, float64, float64) {
-	type pair struct{ from, to string }
-	labels := make(map[pair][]string)
-	possible := make(map[pair]bool)
-	exact := make(map[pair]bool)
-	quiet := make(map[pair]bool)
-	var order []pair
-	for _, connection := range index.Connections {
-		if connection.From.TargetID != index.Target.ID || connection.To.TargetID != index.Target.ID {
-			continue
-		}
-		// Across parts the parts are joined. Inside one part nothing is
-		// drawn: two boxes of one zone stand in one column, and an arrow
-		// between them left the zone, arced through the gutter and came
-		// back into it, which read as "why does this leave and re-enter?".
-		// The card beside either box says the connection in words.
-		fromID, toID := endpointOf[connection.From.GroupID], endpointOf[connection.To.GroupID]
-		if fromID == toID {
-			continue
-		}
-		from, fromKnown := nodes[fromID]
-		to, toKnown := nodes[toID]
-		if !fromKnown || !toKnown || from == to {
-			continue
-		}
-		key := pair{from.ID, to.ID}
-		if _, seen := labels[key]; !seen {
-			order = append(order, key)
-			labels[key] = nil
-			quiet[key] = true
-		}
-		// A pair stands quiet only when every connection it draws does
-		// (GroupsIndex's Quiet).
-		quiet[key] = quiet[key] && connection.Quiet
-		if !containsString(labels[key], connection.Label) && connection.Label != "" {
-			labels[key] = append(labels[key], connection.Label)
-		}
-		if connection.SupportResolution == programindex.PatternValuePossible {
-			possible[key] = true
-		} else {
-			exact[key] = true
-		}
-	}
-	router := newMapEdgeRouter(nodes, bottom)
-	result := make([]pageMapEdge, 0, len(order))
-	for _, key := range order {
-		from, to := nodes[key.from], nodes[key.to]
-		path, labelX, labelY, room, minLeft := router.route(from, to)
-		edge := pageMapEdge{
-			Path: path, From: key.from, To: key.to,
-			Label: strings.Join(labels[key], " · "),
-			// Dashed only when nothing about this pair is exact, so one
-			// uncertain call among several cannot make the whole arrow
-			// look uncertain.
-			Possible: possible[key] && !exact[key],
-			Init:     quiet[key],
-		}
-		if lines, atX, atY := router.placeLabel(edge.Label, labelX, labelY, room, minLeft); lines != nil {
-			edge.Lines, edge.LabelX, edge.LabelY = lines, atX, atY
-		}
-		result = append(result, edge)
-	}
-	return result, router.extraHeight(), router.rightmost
-}
-
-func containsString(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
-}
-
-// mapEdgeRouter keeps an arrow out of the boxes. Three shapes exist, and each
-// was drawn wrong before: an edge inside one column left and arrived on the
-// same side with its head pointing away from the box it arrived at; an edge
-// that skipped a column passed behind the boxes in between and read as two
-// unrelated stubs; and neither carried a word of what it meant.
-type mapEdgeRouter struct {
-	columns []float64
-	bandY   float64
-	// bandEnd is the rightmost x each band row is already occupied to, so two
-	// detours share a row only when their spans do not overlap.
-	bandEnd []float64
-	loops   map[float64]int
-	placed  []mapLabelBox
-	// rightmost is how far right anything drawn here reaches. A loop beside
-	// the last column, and the words on it, live outside the columns, and a
-	// picture that ends at the last box cuts them off.
-	rightmost float64
-}
-
-type mapLabelBox struct{ left, right, top, bottom float64 }
-
-func newMapEdgeRouter(nodes map[string]*pageMapNode, bottom float64) *mapEdgeRouter {
-	seen := make(map[float64]struct{}, len(nodes))
-	router := &mapEdgeRouter{bandY: bottom + mapBandTop, loops: make(map[float64]int)}
-	for _, node := range nodes {
-		// A zone's outline stands a pad to the left of its boxes; it is not
-		// a column of its own. Counted as one, an arrow from a box to its
-		// neighbour zone was routed as if to the next column and drawn as
-		// a stub at the zone's edge, leading nowhere.
-		x := columnX(node)
-		if _, repeated := seen[x]; repeated {
-			continue
-		}
-		seen[x] = struct{}{}
-		router.columns = append(router.columns, x)
-	}
-	sort.Float64s(router.columns)
-	// A zone's top and bottom outline are taken before any label is placed:
-	// "wraps handlers" written across a frame's edge was a word cut by a line.
-	for _, node := range nodes {
-		if !node.Frame {
-			// A box is taken whole: a loop's words at its apex landed on
-			// the box of the next column when the gutter was narrow.
-			router.placed = append(router.placed, mapLabelBox{
-				left: node.X, right: node.X + node.Width, top: node.Y, bottom: node.Y + node.Height,
-			})
-			continue
-		}
-		for _, y := range []float64{node.Y, node.Y + node.Height} {
-			router.placed = append(router.placed, mapLabelBox{
-				left: node.X - 4, right: node.X + node.Width + 4,
-				top: y - mapFrameOutlineBand, bottom: y + mapFrameOutlineBand,
-			})
-		}
-	}
-	return router
-}
-
-// mapFrameOutlineBand is how far above and below a zone's outline a label
-// keeps off.
-const mapFrameOutlineBand = 5.0
-
-func (router *mapEdgeRouter) extraHeight() float64 {
-	if len(router.bandEnd) == 0 {
-		return 0
-	}
-	return mapBandTop + float64(len(router.bandEnd))*mapBandStep
-}
-
-// columnX is the column a node stands in: a box's own left edge, and for a
-// zone the left edge of the boxes inside it.
-func columnX(node *pageMapNode) float64 {
-	if node.Frame {
-		return node.X + mapFramePad
-	}
-	return node.X
-}
-
-func (router *mapEdgeRouter) column(x float64) int {
-	for index, candidate := range router.columns {
-		if candidate == x {
-			return index
-		}
-	}
-	return -1
-}
-
-// gutter is the empty vertical strip after column index, as a centre and a
-// width. The strip after the last column is as wide as a lane gap so an edge
-// leaving the right-hand lane still has somewhere to go.
-func (router *mapEdgeRouter) gutter(index int) (centre, width float64) {
-	right := router.columns[index] + mapNodeWidth
-	if index+1 >= len(router.columns) {
-		return right + mapLaneGap/2, mapLaneGap
-	}
-	next := router.columns[index+1]
-	return (right + next) / 2, next - right
-}
-
-// route returns the path, where a label for it would sit, and how much
-// horizontal room that label has.
-func (router *mapEdgeRouter) route(from, to *pageMapNode) (path string, labelX, labelY, room, minLeft float64) {
-	fromColumn, toColumn := router.column(columnX(from)), router.column(columnX(to))
-	startY, endY := from.Y+from.Height/2, to.Y+to.Height/2
-	switch {
-	case fromColumn == toColumn:
-		// A loop's words start clear of the box it left, or the box is drawn
-		// over the first half of them.
-		x, y, width := router.loopLabel(from, startY, endY)
-		return router.loopPath(from, fromColumn, startY, endY), x, y, width, from.X + from.Width + 3
-	case abs(toColumn-fromColumn) >= 2:
-		path, x, y, width := router.detour(from, to, fromColumn, toColumn, startY, endY)
-		return path, x, y, width, 0
-	default:
-		path, x, y, width := router.direct(from, to, fromColumn, toColumn, startY, endY)
-		return path, x, y, width, 0
-	}
-}
-
-// direct joins two neighbouring columns. Forward it leaves the right side and
-// arrives at the left; backwards it leaves the left side and arrives at the
-// right, which is the same curve read the other way round.
-func (router *mapEdgeRouter) direct(
-	from, to *pageMapNode,
-	fromColumn, toColumn int,
-	startY, endY float64,
-) (string, float64, float64, float64) {
-	startX, endX := arrowEnds(from, to, toColumn < fromColumn)
-	gutterIndex := fromColumn
-	if toColumn < fromColumn {
-		gutterIndex = toColumn
-	}
-	// The curve bends by half the horizontal distance it covers and no more:
-	// a fixed bend across a narrow gutter overshoots the box it is arriving
-	// at and comes back, which reads as a mistake.
-	bend := (endX - startX) / 2
-	path := fmt.Sprintf("M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
-		startX, startY, startX+bend, startY, endX-bend, endY, endX, endY)
-	centre, width := router.gutter(gutterIndex)
-	return path, centre, (startY + endY) / 2, width
-}
-
-// loopPath connects two groups in one column with an arc in the gutter beside
-// it, arriving back on the side it left so its head points into the box.
-func (router *mapEdgeRouter) loopPath(
-	from *pageMapNode,
-	column int,
-	startY, endY float64,
-) string {
-	side := from.X + from.Width
-	depth := router.loopDepth(from, startY, endY)
-	router.loops[from.X]++
-	router.reach(side + depth)
-	return fmt.Sprintf("M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
-		side, startY, side+depth, startY, side+depth, endY, side, endY)
-}
-
-func (router *mapEdgeRouter) loopDepth(from *pageMapNode, startY, endY float64) float64 {
-	depth := mapLoopMinDepth + abs(int(endY-startY))*mapLoopPerRow
-	if depth > mapLoopMaxDepth {
-		depth = mapLoopMaxDepth
-	}
-	return depth + float64(router.loops[from.X]%mapLoopVariants)*mapLoopSpread
-}
-
-// loopLabel puts a loop's words at its own apex rather than in the middle of
-// the gutter, so they do not queue up behind the labels of the edges that
-// cross that gutter on their way to the next column.
-func (router *mapEdgeRouter) loopLabel(
-	from *pageMapNode,
-	startY, endY float64,
-) (x, y, room float64) {
-	side := from.X + from.Width
-	depth := router.loopDepth(from, startY, endY)
-	_, width := router.gutter(router.column(columnX(from)))
-	return side + depth*0.6, (startY + endY) / 2, width
-}
-
-// detour sends an edge that skips a column along a band under the map. Rows in
-// the band are reused whenever two detours cover different spans.
-func (router *mapEdgeRouter) detour(
-	from, to *pageMapNode,
-	fromColumn, toColumn int,
-	startY, endY float64,
-) (string, float64, float64, float64) {
-	startX, endX := arrowEnds(from, to, toColumn < fromColumn)
-	firstGutter, lastGutter := fromColumn, toColumn-1
-	if toColumn < fromColumn {
-		firstGutter, lastGutter = fromColumn-1, toColumn
-	}
-	first, _ := router.gutter(firstGutter)
-	last, _ := router.gutter(lastGutter)
-	left, right := first, last
-	if left > right {
-		left, right = right, left
-	}
-	row := router.bandRow(left, right)
-	bandY := router.bandY + float64(row)*mapBandStep
-	turn := mapBandTurn
-	if first > last {
-		turn = -turn
-	}
-	path := fmt.Sprintf(
-		"M%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f L%.1f %.1f C%.1f %.1f %.1f %.1f %.1f %.1f",
-		startX, startY,
-		first, startY, first, bandY, first+turn, bandY,
-		last-turn, bandY,
-		last, bandY, last, endY, endX, endY,
-	)
-	return path, (first + last) / 2, bandY - 6, right - left
-}
-
-// arrowEnds is where an arrow leaves one endpoint and meets the other: at a
-// box's side, and a little short of a zone's outline.
-func arrowEnds(from, to *pageMapNode, backwards bool) (startX, endX float64) {
-	fromGap, toGap := 0.0, 0.0
-	if from.Frame {
-		fromGap = mapFrameArrowGap
-	}
-	if to.Frame {
-		toGap = mapFrameArrowGap
-	}
-	if backwards {
-		return from.X - fromGap, to.X + to.Width + toGap
-	}
-	return from.X + from.Width + fromGap, to.X - toGap
-}
-
-func (router *mapEdgeRouter) bandRow(left, right float64) int {
-	for row, end := range router.bandEnd {
-		if left > end {
-			router.bandEnd[row] = right
-			return row
-		}
-	}
-	router.bandEnd = append(router.bandEnd, right)
-	return len(router.bandEnd) - 1
-}
-
-// placeLabel writes the connection's own words beside the arrow when they fit
-// in the room it has and do not cover a label already written. A label that
-// cannot be placed is not shrunk to nothing: it stays on the tooltip whole.
-func (router *mapEdgeRouter) placeLabel(label string, x, y, room, minLeft float64) ([]string, float64, float64) {
-	if label == "" || room < mapEdgeLabelMinRoom {
-		return nil, x, y
-	}
-	budget := int((room - 8) / mapEdgeLabelEm)
-	if budget > mapEdgeLabelBudget {
-		budget = mapEdgeLabelBudget
-	}
-	lines := wrapToLines(label, budget, mapEdgeLabelLines)
-	if len(lines) == 0 {
-		return nil, x, y
-	}
-	widest := 0
-	for _, line := range lines {
-		if count := len([]rune(line)); count > widest {
-			widest = count
-		}
-	}
-	width := float64(widest)*mapEdgeLabelEm + 6
-	height := float64(len(lines))*mapEdgeLabelLine + 2
-	if left := x - width/2; minLeft > 0 && left < minLeft {
-		x = minLeft + width/2
-	}
-	// A label that would land on one already written moves off its edge a
-	// little rather than disappearing. Only when every offset is taken does
-	// the label give up and stay on the tooltip alone.
-	for _, step := range mapLabelSteps {
-		offset := step * (height + mapLabelClearance)
-		box := mapLabelBox{
-			left: x - width/2, right: x + width/2,
-			top: y + offset - height/2, bottom: y + offset + height/2,
-		}
-		if router.occupied(box) {
-			continue
-		}
-		router.placed = append(router.placed, box)
-		router.reach(box.right)
-		return lines, x, y + offset
-	}
-	return nil, x, y
-}
-
-func (router *mapEdgeRouter) reach(x float64) {
-	if x > router.rightmost {
-		router.rightmost = x
-	}
-}
-
-func (router *mapEdgeRouter) occupied(box mapLabelBox) bool {
-	for _, taken := range router.placed {
-		if box.left < taken.right && taken.left < box.right &&
-			box.top < taken.bottom && taken.top < box.bottom {
-			return true
-		}
-	}
-	return false
 }
 
 func abs(value int) float64 {

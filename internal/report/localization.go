@@ -779,12 +779,6 @@ func (page *PreparedPage) applyDisplay(options RenderOptions) error {
 			node := &section.Map.Nodes[i]
 			node.Title = mapTitle(node.FullTitle)
 		}
-		for i := range section.Map.Edges {
-			edge := &section.Map.Edges[i]
-			if len(edge.Lines) > 0 {
-				edge.Lines = wrapToLines(edge.Label, mapEdgeLabelBudget, mapEdgeLabelLines)
-			}
-		}
 	}
 	return page.applyUI(language)
 }

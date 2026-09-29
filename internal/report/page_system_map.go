@@ -130,7 +130,7 @@ func (view *pageView) SystemMap() *pageMap {
 		for _, edge := range section.Map.Edges {
 			from, fromKnown := positions[canonical(edge.From)]
 			to, toKnown := positions[canonical(edge.To)]
-			if edge.ConnectionID == "" || edge.Scope == "static" || !fromKnown || !toKnown ||
+			if edge.ConnectionID == "" || !fromKnown || !toKnown ||
 				result.Nodes[from].Remote || result.Nodes[to].Remote || result.Nodes[from].Owner == "" ||
 				result.Nodes[to].Owner == "" || result.Nodes[from].Owner == result.Nodes[to].Owner {
 				continue
@@ -347,9 +347,6 @@ func (view *pageView) SystemMap() *pageMap {
 	for _, section := range view.Sections {
 		if section.Map != nil {
 			for _, edge := range section.Map.Edges {
-				if edge.Scope == "static" {
-					continue
-				}
 				edge.From, edge.To = canonical(edge.From), canonical(edge.To)
 				if from := outboundByConnection[edge.ConnectionID]; from != "" && !ambiguousConnections[edge.ConnectionID] {
 					if localOutbound[from] == "" {
@@ -371,8 +368,6 @@ func (view *pageView) SystemMap() *pageMap {
 					continue
 				}
 				edge.Operations = remap(edge.Operations)
-				edge.Path = ""
-				edge.Lines = nil
 				raw, _ := json.Marshal(edge)
 				key := string(raw)
 				if !seenEdges[key] {
