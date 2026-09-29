@@ -43,6 +43,10 @@ func TestCumulativeDataPreservesORMOwnershipUnknownScopesAndSQLSources(t *testin
 				t.Fatal(err)
 			}
 			var declarations, queries int
+			// Each fixture's test file writes CREATE TABLE test_only_rows: the
+			// extractor sees SQL wherever it is written, and the reading keeps
+			// a test's data out of every program (test_code_catalogs_test.go).
+			testRows := false
 			scopes := map[string]bool{}
 			partial := false
 			joined, adjacent, aliases, schema := false, false, false, false
@@ -58,6 +62,10 @@ func TestCumulativeDataPreservesORMOwnershipUnknownScopesAndSQLSources(t *testin
 					partial = partial || node.Data.Partial
 					joined = joined || strings.Contains(node.Data.Expression, "+ table +") && node.Data.Partial && reflect.DeepEqual(node.Data.Tables, []string{"orders"})
 					adjacent = adjacent || strings.Contains(node.Data.Expression, "\n") && strings.Contains(node.Data.SQL, "SELECT id FROM trades") && !node.Data.Partial
+				}
+				if node.Data.Kind == "table" && node.Data.Name == "test_only_rows" {
+					testRows = true
+					continue
 				}
 				if node.Data.Kind == "table" && node.Data.Origin != "query" {
 					declarations++
@@ -86,6 +94,9 @@ func TestCumulativeDataPreservesORMOwnershipUnknownScopesAndSQLSources(t *testin
 				}
 			} else if declarations != 1 {
 				t.Fatalf("SQL declarations=%d", declarations)
+			}
+			if !testRows {
+				t.Fatal("the SQL the fixture's test writes is not extracted")
 			}
 			if queries == 0 || declarations == 0 || len(response.Links) == 0 {
 				t.Fatalf("missing source data: %+v", response)
