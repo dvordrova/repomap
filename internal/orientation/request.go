@@ -1,6 +1,7 @@
 package orientation
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -15,7 +16,7 @@ import (
 )
 
 const (
-	requestVersion = 3
+	requestVersion = 4
 
 	// MaxAdvertisedGroupMembers caps the members listed per group; member_count
 	// still reports the real size. The orientation request is one call against
@@ -77,11 +78,15 @@ type targetWire struct {
 	Manifest string `json:"manifest,omitempty"`
 }
 
+// factWire is one advertised fact. Rows that are identical but for their
+// ref and target are one row: freqtrade's t1..t7 each hold the same 1,464
+// registrations. Targets lists every target holding it; the ref is the first
+// one's fact id.
 type factWire struct {
-	Ref    string   `json:"ref"`
-	Kind   string   `json:"kind"`
-	Target string   `json:"target,omitempty"`
-	Peer   string   `json:"peer_target,omitempty"`
+	Ref     string   `json:"ref"`
+	Kind    string   `json:"kind"`
+	Targets []string `json:"targets,omitempty"`
+	Peer    string   `json:"peer_target,omitempty"`
 	Anchor string   `json:"anchor,omitempty"`
 	Method string   `json:"method,omitempty"`
 	Path   string   `json:"path,omitempty"`
@@ -119,12 +124,14 @@ type groupWire struct {
 	Members     []memberWire `json:"members"`
 }
 
+// connectionWire is every connection of one (from, to, kind): each distinct
+// label, and each distinct sentence that says more than its own label.
 type connectionWire struct {
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Kind    string `json:"kind"`
-	Label   string `json:"label"`
-	Summary string `json:"summary"`
+	From      string   `json:"from"`
+	To        string   `json:"to"`
+	Kind      string   `json:"kind"`
+	Labels    []string `json:"labels"`
+	Sentences []string `json:"sentences,omitempty"`
 }
 
 type memberEvidenceWire struct {
@@ -145,9 +152,20 @@ type request struct {
 	MemberEvidence    []memberEvidenceWire `json:"member_evidence,omitempty"`
 }
 
+// factEntry is one advertised fact row. A row several targets share restores,
+// for a response row naming one of them, that target's own fact id.
 type factEntry struct {
-	id   string
-	kind facts.Kind
+	id       string
+	kind     facts.Kind
+	byTarget map[string]string // target ref -> that target's fact id
+}
+
+// idFor is the exact fact id this row stands for in the named target.
+func (entry factEntry) idFor(targetRef string) string {
+	if id := entry.byTarget[targetRef]; id != "" {
+		return id
+	}
+	return entry.id
 }
 
 type subjectEntry struct {
@@ -220,47 +238,105 @@ func buildRequestWith(input Input, bounds packing) (request, catalog, error) {
 	for _, index := range indexes {
 		wire.Groups = append(wire.Groups, builder.groups(index)...)
 	}
+	var connections []groupConnection
 	for _, index := range indexes {
-		connections, err := builder.connections(index)
+		rows, err := builder.connections(index)
 		if err != nil {
 			return request{}, catalog{}, err
 		}
-		wire.Connections = append(wire.Connections, connections...)
+		connections = append(connections, rows...)
 	}
+	wire.Connections = collapseConnections(connections)
 	if bounds.Evidence {
-		// A declaration place names its program-index object qualified by
-		// its program: a member n4 of t1 is the place whose ObjectID is
-		// t1.n4. Looked up by the bare n4, no member found its place, and
-		// every orientation request went without member evidence: the
-		// model ordered redis-server's main flow loadServerConfig before
-		// initServerConfig without seeing main's calls.
-		subjectsByTarget := make(map[string]map[string]bool)
-		for subject := range builder.subjectRefs {
-			if subjectsByTarget[subject.targetID] == nil {
-				subjectsByTarget[subject.targetID] = make(map[string]bool)
-			}
-			subjectsByTarget[subject.targetID][atlas.ScopedObjectID(subject.targetID, subject.subjectID)] = true
-		}
-		for targetID, subjects := range subjectsByTarget {
-			graph := input.Graph
-			graph.Places = slices.DeleteFunc(slices.Clone(input.Graph.Places), func(place atlas.Place) bool {
-				return len(place.TargetIDs) > 0 && !slices.Contains(place.TargetIDs, targetID)
-			})
-			evidence := lines.CallableEvidenceWithin(graph, subjects, lines.EvidenceLimits{Calls: bounds.Calls, Callers: bounds.Callers})
-			for subject, ref := range builder.subjectRefs {
-				if subject.targetID != targetID {
-					continue
-				}
-				if facts := evidence[atlas.ScopedObjectID(subject.targetID, subject.subjectID)]; facts != nil {
-					wire.MemberEvidence = append(wire.MemberEvidence, memberEvidenceWire{Ref: ref, Evidence: facts})
-				}
-			}
-		}
+		wire.MemberEvidence = builder.memberEvidence(bounds)
 	}
 	sort.Slice(wire.MemberEvidence, func(i, j int) bool {
 		return qualifiedSubjectRefLess(wire.MemberEvidence[i].Ref, wire.MemberEvidence[j].Ref)
 	})
 	return wire, builder.catalog, nil
+}
+
+// memberEvidence gives each listed member the observations of its
+// declaration place. Places of a declaration several programs compile are
+// merged and keep one program's object id: freqtrade's build_helpers module
+// is t2.n1, t3.n59 and t4.n16, and its place's ObjectID is t1.n1781. A
+// member is therefore its place by declaration identity
+// (groupindex.DeclarationKey of its ProgramIndex object), not by its own
+// qualified id, by which 9 of 10 freqtrade targets found no place.
+func (builder *requestBuilder) memberEvidence(bounds packing) []memberEvidenceWire {
+	places := builder.input.Graph.Places
+	// Only the listed members' and the places' own objects need a key.
+	needed := make(map[string]map[string]bool)
+	need := func(targetID, subjectID string) {
+		if needed[targetID] == nil {
+			needed[targetID] = make(map[string]bool)
+		}
+		needed[targetID][subjectID] = true
+	}
+	for subject := range builder.subjectRefs {
+		need(subject.targetID, subject.subjectID)
+	}
+	for _, place := range places {
+		if place.Symbol == nil {
+			continue
+		}
+		if targetID, subjectID, ok := strings.Cut(place.Symbol.Decl.ObjectID, "."); ok {
+			need(targetID, subjectID)
+		}
+	}
+	keys := make(map[string]string) // qualified subject -> declaration key
+	for _, index := range builder.input.Groups {
+		for _, subject := range index.Subjects {
+			if subject.Object == nil || !needed[index.Target.ID][subject.ID] {
+				continue
+			}
+			object := programindex.Object{Name: subject.Object.Name, Kind: subject.Object.Kind, Location: subject.Object.Location}
+			if key := groupindex.DeclarationKey(object); key != "" {
+				keys[atlas.ScopedObjectID(index.Target.ID, subject.ID)] = key
+			}
+		}
+	}
+	subjectsByTarget := make(map[string][]subjectKey)
+	for subject := range builder.subjectRefs {
+		subjectsByTarget[subject.targetID] = append(subjectsByTarget[subject.targetID], subject)
+	}
+	var rows []memberEvidenceWire
+	for targetID, subjects := range subjectsByTarget {
+		graph := builder.input.Graph
+		graph.Places = slices.DeleteFunc(slices.Clone(places), func(place atlas.Place) bool {
+			return len(place.TargetIDs) > 0 && !slices.Contains(place.TargetIDs, targetID)
+		})
+		own := make(map[string]bool)
+		byKey := make(map[string]string)
+		for _, place := range graph.Places {
+			if place.Symbol == nil || place.Symbol.Decl.ObjectID == "" {
+				continue
+			}
+			own[place.Symbol.Decl.ObjectID] = true
+			if key := keys[place.Symbol.Decl.ObjectID]; key != "" && byKey[key] == "" {
+				byKey[key] = place.Symbol.Decl.ObjectID
+			}
+		}
+		placeOf := make(map[subjectKey]string, len(subjects))
+		wanted := make(map[string]bool, len(subjects))
+		for _, subject := range subjects {
+			objectID := atlas.ScopedObjectID(subject.targetID, subject.subjectID)
+			if !own[objectID] {
+				if merged := byKey[keys[objectID]]; merged != "" {
+					objectID = merged
+				}
+			}
+			placeOf[subject] = objectID
+			wanted[objectID] = true
+		}
+		evidence := lines.CallableEvidenceWithin(graph, wanted, lines.EvidenceLimits{Calls: bounds.Calls, Callers: bounds.Callers})
+		for _, subject := range subjects {
+			if facts := evidence[placeOf[subject]]; facts != nil {
+				rows = append(rows, memberEvidenceWire{Ref: builder.subjectRefs[subject], Evidence: facts})
+			}
+		}
+	}
+	return rows
 }
 
 func qualifiedSubjectRefLess(left, right string) bool {
@@ -290,39 +366,138 @@ func (builder *requestBuilder) targets() []targetWire {
 	return rows
 }
 
+// facts writes each advertised fact once. Rows identical but for their ref
+// and target, with their links read as the rows they point at, are one row
+// listing every target that holds it. A repository-wide row never joins a
+// target's row.
 func (builder *requestBuilder) facts(omitted map[string]int) []factWire {
 	advertised := make([]facts.Fact, 0, len(builder.input.Facts.Facts))
+	position := make(map[string]int)
 	for _, fact := range builder.input.Facts.Facts {
 		if !advertises(fact.Kind) {
 			omitted[string(fact.Kind)]++
 			continue
 		}
-		ref := fact.ID
-		builder.catalog.facts[ref] = factEntry{id: fact.ID, kind: fact.Kind}
-		builder.factRefs[fact.ID] = ref
+		position[fact.ID] = len(advertised)
 		advertised = append(advertised, fact)
 	}
-	rows := make([]factWire, 0, len(advertised))
-	for _, fact := range advertised {
-		rows = append(rows, builder.factWire(fact))
+	content := make([]string, len(advertised))
+	links := make([][]int, len(advertised))
+	for i, fact := range advertised {
+		row := builder.factWire(fact)
+		row.Ref, row.Targets = "", nil
+		encoded, _ := json.Marshal(row)
+		content[i] = strconv.FormatBool(fact.TargetID != "") + string(encoded)
+		for _, linked := range fact.Refs {
+			if at, known := position[linked]; known {
+				links[i] = append(links[i], at)
+			}
+		}
+	}
+	class := shareClasses(content, links)
+	members := make(map[int][]int)
+	var order []int
+	for i := range advertised {
+		if members[class[i]] == nil {
+			order = append(order, class[i])
+		}
+		members[class[i]] = append(members[class[i]], i)
+	}
+	rows := make([]factWire, 0, len(order))
+	for _, shared := range order {
+		holders := members[shared]
+		// The first target's copy names the row; a repository-wide row has
+		// only its own. Within one target the first copy in artifact order.
+		first := slices.MinFunc(holders, func(a, b int) int {
+			left, right := advertised[a].TargetID, advertised[b].TargetID
+			switch {
+			case left == right:
+				return a - b
+			case programindex.TargetIDLess(left, right):
+				return -1
+			default:
+				return 1
+			}
+		})
+		entry := factEntry{id: advertised[first].ID, kind: advertised[first].Kind}
+		var targets []string
+		for _, holder := range holders {
+			builder.factRefs[advertised[holder].ID] = entry.id
+			targetRef := builder.targetRefs[advertised[holder].TargetID]
+			if targetRef == "" || slices.Contains(targets, targetRef) {
+				continue
+			}
+			targets = append(targets, targetRef)
+			if entry.byTarget == nil {
+				entry.byTarget = make(map[string]string)
+			}
+			entry.byTarget[targetRef] = advertised[holder].ID
+		}
+		slices.SortFunc(targets, func(a, b string) int {
+			if programindex.TargetIDLess(a, b) {
+				return -1
+			}
+			if programindex.TargetIDLess(b, a) {
+				return 1
+			}
+			return 0
+		})
+		builder.catalog.facts[entry.id] = entry
+		row := builder.factWire(advertised[first])
+		row.Targets = targets
+		rows = append(rows, row)
+	}
+	// Links are written once every fact has its row's ref.
+	for i := range rows {
+		rows[i].Links = nil
+		fact := advertised[position[rows[i].Ref]]
+		for _, linked := range fact.Refs {
+			if ref, known := builder.factRefs[linked]; known && !slices.Contains(rows[i].Links, ref) {
+				rows[i].Links = append(rows[i].Links, ref)
+			}
+		}
 	}
 	return rows
 }
 
+// shareClasses partitions rows by their content and, recursively, by the
+// classes of the rows they link to, until the partition no longer splits.
+func shareClasses(content []string, links [][]int) []int {
+	class := make([]int, len(content))
+	count := -1
+	for {
+		ids := make(map[string]int)
+		next := make([]int, len(content))
+		for i := range content {
+			key := content[i]
+			for _, linked := range links[i] {
+				key += "\x00" + strconv.Itoa(class[linked])
+			}
+			id, known := ids[key]
+			if !known {
+				id = len(ids)
+				ids[key] = id
+			}
+			next[i] = id
+		}
+		class = next
+		if len(ids) == count {
+			return class
+		}
+		count = len(ids)
+	}
+}
+
+// factWire writes one fact's own fields; facts() sets its ref, targets and
+// links.
 func (builder *requestBuilder) factWire(fact facts.Fact) factWire {
 	row := factWire{
-		Ref: builder.factRefs[fact.ID], Kind: string(fact.Kind),
-		Target: builder.targetRefs[fact.TargetID], Peer: builder.targetRefs[fact.PeerTargetID],
+		Ref: fact.ID, Kind: string(fact.Kind), Peer: builder.targetRefs[fact.PeerTargetID],
 		Method: fact.Method, Path: fact.Path, Key: fact.Key, Value: fact.Value,
 		Symbol: fact.Symbol, Text: fact.Text,
 	}
 	if fact.Anchor != nil {
 		row.Anchor = fact.Anchor.String()
-	}
-	for _, linked := range fact.Refs {
-		if ref, known := builder.factRefs[linked]; known {
-			row.Links = append(row.Links, ref)
-		}
 	}
 	return row
 }
@@ -447,37 +622,64 @@ func subjectLabel(subject groupindex.Subject) memberWire {
 	}
 }
 
-func (builder *requestBuilder) connections(index groupindex.Index) ([]connectionWire, error) {
-	rows := make([]connectionWire, 0, len(index.Connections))
+// groupConnection is one GroupsIndex connection in request refs.
+type groupConnection struct {
+	from, to, kind, label, summary string
+}
+
+func (builder *requestBuilder) connections(index groupindex.Index) ([]groupConnection, error) {
+	rows := make([]groupConnection, 0, len(index.Connections))
 	for _, connection := range index.Connections {
 		from, fromKnown := builder.groupRefs[groupKey{targetID: connection.From.TargetID, groupID: connection.From.GroupID}]
 		to, toKnown := builder.groupRefs[groupKey{targetID: connection.To.TargetID, groupID: connection.To.GroupID}]
 		if !fromKnown || !toKnown {
 			return nil, fmt.Errorf("orientation: connection %s cites a group outside the GroupsIndex set", connection.ID)
 		}
-		rows = append(rows, connectionWire{
-			From: from, To: to, Kind: connection.SemanticKind, Label: connection.Label, Summary: connection.Summary,
+		rows = append(rows, groupConnection{
+			from: from, to: to, kind: connection.SemanticKind, label: connection.Label, summary: connection.Summary,
 		})
 	}
-	// Connections carry no refs of their own; their order follows the refs
-	// they cite, not the caller's slice.
-	sort.SliceStable(rows, func(i, j int) bool {
-		a, b := rows[i], rows[j]
-		if a.From != b.From {
-			return compactRefLess(a.From, b.From)
-		}
-		if a.To != b.To {
-			return compactRefLess(a.To, b.To)
-		}
-		if a.Kind != b.Kind {
-			return a.Kind < b.Kind
-		}
-		if a.Label != b.Label {
-			return a.Label < b.Label
-		}
-		return a.Summary < b.Summary
-	})
 	return rows, nil
+}
+
+// collapseConnections writes one row per (from, to, kind) with every distinct
+// label and every distinct sentence that differs from its own label: freqtrade
+// had 4,280 connections over 380 such keys, and 2,346 sentences only repeated
+// their label. Connections carry no refs of their own; their order follows the
+// refs they cite, not the caller's slice.
+func collapseConnections(connections []groupConnection) []connectionWire {
+	sort.SliceStable(connections, func(i, j int) bool {
+		a, b := connections[i], connections[j]
+		if a.from != b.from {
+			return compactRefLess(a.from, b.from)
+		}
+		if a.to != b.to {
+			return compactRefLess(a.to, b.to)
+		}
+		if a.kind != b.kind {
+			return a.kind < b.kind
+		}
+		if a.label != b.label {
+			return a.label < b.label
+		}
+		return a.summary < b.summary
+	})
+	rows := make([]connectionWire, 0, len(connections))
+	for _, connection := range connections {
+		last := len(rows) - 1
+		if last < 0 || rows[last].From != connection.from || rows[last].To != connection.to || rows[last].Kind != connection.kind {
+			rows = append(rows, connectionWire{From: connection.from, To: connection.to, Kind: connection.kind, Labels: []string{}})
+			last++
+		}
+		row := &rows[last]
+		if connection.label != "" && !slices.Contains(row.Labels, connection.label) {
+			row.Labels = append(row.Labels, connection.label)
+		}
+		if connection.summary != "" && connection.summary != connection.label && !slices.Contains(row.Sentences, connection.summary) {
+			row.Sentences = append(row.Sentences, connection.summary)
+		}
+	}
+	return rows
 }
 
 func anchorString(path string, line int) string {

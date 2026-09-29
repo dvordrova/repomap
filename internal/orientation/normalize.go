@@ -223,7 +223,7 @@ func (result *normalized) acceptSummary(response modelResponse, cat catalog) {
 		result.reject(sectionSummary, raw, sentenceReason("summary"))
 		return
 	}
-	refs, ignored, err := cat.resolve(response.SummaryRefs, classFact, classClaim, classSubject)
+	refs, ignored, err := cat.resolve(response.SummaryRefs, "", classFact, classClaim, classSubject)
 	if err != nil {
 		result.reject(sectionSummary, raw, err.Error())
 		return
@@ -257,7 +257,7 @@ func (result *normalized) acceptRole(raw json.RawMessage, cat catalog, slot stri
 		result.reject(sectionRoles, raw, sentenceReason("purpose"))
 		return
 	}
-	refs, ignored, err := cat.resolve(row.Refs, classFact, classClaim, classSubject)
+	refs, ignored, err := cat.resolve(row.Refs, row.Target, classFact, classClaim, classSubject)
 	if err != nil {
 		result.reject(sectionRoles, raw, err.Error())
 		return
@@ -347,7 +347,7 @@ func (result *normalized) acceptRecipe(raw json.RawMessage, cat catalog, slot st
 		result.reject(sectionRunRecipe, raw, "cwd must be one non-empty single-line path")
 		return
 	}
-	refs, ignored, err := cat.resolve(row.Refs, classFact)
+	refs, ignored, err := cat.resolve(row.Refs, row.Target, classFact)
 	if err != nil {
 		result.reject(sectionRunRecipe, raw, err.Error())
 		return
@@ -415,7 +415,7 @@ func (result *normalized) acceptFlowStep(raw json.RawMessage, cat catalog, slot 
 		result.reject(sectionMainFlow, raw, sentenceReason("explanation"))
 		return
 	}
-	refs, _, err := cat.resolve([]string{row.Ref}, classFact, classSubject)
+	refs, _, err := cat.resolve([]string{row.Ref}, row.Target, classFact, classSubject)
 	if err != nil {
 		result.reject(sectionMainFlow, raw, err.Error())
 		return
@@ -437,8 +437,9 @@ func (result *normalized) acceptFlowStep(raw json.RawMessage, cat catalog, slot 
 }
 
 // resolve keeps the advertised set. An unusable additional ref does not undo
-// valid evidence; a row with no remaining evidence still has no answer.
-func (cat catalog) resolve(refs []string, allowed ...byte) ([]resolvedRef, []string, error) {
+// valid evidence; a row with no remaining evidence still has no answer. A
+// fact row several targets share restores the named target's own fact id.
+func (cat catalog) resolve(refs []string, targetRef string, allowed ...byte) ([]resolvedRef, []string, error) {
 	seen := make(map[string]struct{}, len(refs))
 	resolved := make([]resolvedRef, 0, len(refs))
 	var ignored []string
@@ -451,7 +452,7 @@ func (cat catalog) resolve(refs []string, allowed ...byte) ([]resolvedRef, []str
 			ignored = append(ignored, ref)
 			continue
 		}
-		entry, err := cat.lookup(ref)
+		entry, err := cat.lookup(ref, targetRef)
 		if err != nil || !bytes.ContainsRune(allowed, rune(entry.class)) {
 			ignored = append(ignored, ref)
 			continue
@@ -471,9 +472,9 @@ func (result *normalized) rejectRefs(section string, refs []string) {
 	}
 }
 
-func (cat catalog) lookup(ref string) (resolvedRef, error) {
+func (cat catalog) lookup(ref, targetRef string) (resolvedRef, error) {
 	if entry, known := cat.facts[ref]; known {
-		return resolvedRef{ref: ref, class: classFact, id: entry.id, fact: entry}, nil
+		return resolvedRef{ref: ref, class: classFact, id: entry.idFor(targetRef), fact: entry}, nil
 	}
 	if id, known := cat.claims[ref]; known {
 		return resolvedRef{ref: ref, class: classClaim, id: id}, nil

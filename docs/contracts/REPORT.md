@@ -1579,9 +1579,10 @@ failed, is rendered by the server through the same `RenderServedPage`.
   scalar choice or conflicting interpretation goes to `rejected.jsonl`
   with its raw output and reason. Independent sections and rows survive a bad
   neighbour. Complete prose is preserved; short labels normalize whitespace.
-  Orientation prepares its original input against the actual provider envelope,
-  without an artificial 2 MiB cap or size-triggered evidence removal. Validation
-  annotates and never aborts the run.
+  The member ladder (40/20/12 members per group by string-sorted id, 6+6
+  calls) is current behaviour and a known violation of "never sample", to be
+  replaced by an entry-forward scope. Validation annotates and never aborts
+  the run.
 
 ## UI iteration and review
 

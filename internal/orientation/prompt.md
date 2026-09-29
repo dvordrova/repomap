@@ -12,13 +12,25 @@ cite a ref of the wrong kind.
 
 - `targets`: the analyzed parts of the repository (refs `t1`, `t2`, ...) with
   their language, name, root directory, and manifest file.
-- `facts`: what the code and manifests prove (refs `a*`). Each fact has a
-  `kind` (`entrypoint`, `http_route`, `http_call`, `portal`, `config_read`,
-  `risk`, `manifest`, `negative`, `dead_module`, `dependency`), the target it
-  belongs to, and an `anchor` of the form `path:line`. A `portal` joins one
-  client call to the server route it reaches; its `links` name both facts.
-  `omitted_fact_counts` tells how many rows of other kinds exist but were not
-  listed.
+- `facts`: what the code and manifests prove (refs `a*`), each with its
+  `kind`, the `targets` it holds for (written once when several targets hold
+  the same fact; none for the whole repository) and usually an `anchor` of
+  the form `path:line`. `omitted_fact_counts` tells how many rows of other
+  kinds exist but were not listed. Kinds:
+  - `entrypoint`: where a program starts.
+  - `registration`: a call into code the repository does not own that hands
+    over a repository function or an address-like value: a route, a
+    command, a consumer, a timer, a client request or a server start. Which
+    of these it is, the fact does not say.
+  - `sql_query`: an SQL statement and the tables it names.
+  - `config_read`: an environment or configuration key read.
+  - `dynamic_execution`: code run from data (exec, eval, a subprocess, an
+    object-building deserializer), where reading stops.
+  - `manifest`: a value quoted from a manifest.
+  - `dependency`: an outside package a target imports.
+  - `dead_module`: a file no entrypoint reaches.
+  - `negative`: something the repository lacks.
+  - `unanalysed_file`: a file in a language nothing here analyses.
 - `claims`: text people wrote (refs `h*`): README lines, docstrings, commit
   subjects, each with a source and a date when known. Claims can be stale or
   wrong; facts win when they disagree.
@@ -28,7 +40,9 @@ cite a ref of the wrong kind.
   may cite (target-qualified refs such as `t1.n22`), each with a name and an anchor. Group refs such as `t1.g3` are
   context only; do not use them in the orientation result’s citation fields.
 - `connections`: how groups relate to each other, including links between
-  targets. These interpretations do not prove execution order.
+  targets: one row per `from`, `to` and `kind`, with every distinct label in
+  `labels` and every description that says more than its label in
+  `sentences`. These interpretations do not prove execution order.
 - `member_evidence`: original observations for the cited members. Calls retain
   their source sites, invocation and resolution, receiver and argument origins,
   and possible callee declarations. A member's calls are listed in the order

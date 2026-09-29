@@ -23,10 +23,14 @@ const (
 	StageName = "orientation"
 
 	executionContract     = "repomap.orientation.v1"
-	preparationVersion    = 3
-	promptVersion         = 7
+	preparationVersion    = 4
+	promptVersion         = 8
 	responseSchemaVersion = 1
-	maxOutputTokens       = llm.DefaultMaxOutputTokens
+	// maxOutputTokens is measured: 117 accepted orientation exchanges
+	// answered in at most 1,260 output tokens (median 848). The shared
+	// 128,000 reservation took that much of the 1,048,576-token window from
+	// the request.
+	maxOutputTokens = 16384
 )
 
 //go:embed prompt.md

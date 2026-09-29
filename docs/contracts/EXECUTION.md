@@ -20,13 +20,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   decoded-response ceiling and requests up to 128,000 output tokens unless its
   owning contract states a smaller measured allowance (glossary 32,768; parts
   and areas answers min(128,000, max(8,192, 16 × listed rows)); part and area
-  descriptions 200). An allowance bounds a runaway answer, never evidence; an
+  descriptions 200; orientation 16,384, where 117 accepted answers used at
+  most 1,260 output tokens, median 848). An allowance bounds a runaway answer, never evidence; an
   answer that reaches it is the ordinary output-token refusal, never truncated
   or partly accepted. A lower configured provider token ceiling remains
   authoritative. Composite input is
   repartitioned when its prepared request does not fit. A real provider
   envelope failure is terminal unless the owning stage defines a lossless
-  repartition; it never authorizes truncation or partial publication. Only
+  repartition; it never authorizes truncation or partial publication.
+  Orientation's member ladder (40/20/12 members per group by string-sorted
+  id, 6+6 calls) is current behaviour and a known violation of this, to be
+  replaced by an entry-forward scope. Only
   such a provider envelope, a representation overflow, canonical
   identity/path/format validation, or an explicit user narrowing option may
   remain terminal. Every printed console event starts with

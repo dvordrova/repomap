@@ -1,0 +1,141 @@
+package orientation
+
+import (
+	"encoding/json"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
+)
+
+// freqtrade's build_helpers module is t2.n1, t3.n59 and t4.n16, and its one
+// merged place keeps t1's numbering (t1.n1781). Looked up by their own
+// qualified ids, t2 and t3 found no place and went without evidence.
+func TestAMergedDeclarationPlaceGivesEachOwningTargetItsEvidence(t *testing.T) {
+	location := &programindex.Location{Path: "build_helpers/tool.py", Line: 10, Column: 1}
+	index := func(targetID, subjectID string, grouped bool) groupindex.Index {
+		value := groupindex.Index{Target: programindex.Target{ID: targetID}, Subjects: []groupindex.Subject{{
+			ID: subjectID, Kind: groupindex.SubjectObject,
+			Object: &groupindex.ObjectFacts{Name: "main", Kind: programindex.ObjectFunction, Location: location},
+		}}}
+		if grouped {
+			value.Groups = []groupindex.Group{{ID: "g1", Title: "Tool", Summary: "Runs the tool.", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{subjectID}}}
+		}
+		return value
+	}
+	input := Input{
+		Facts:  facts.Result{Targets: []facts.Target{{ID: "t1"}, {ID: "t2"}, {ID: "t3"}}},
+		Groups: []groupindex.Index{index("t1", "n1781", false), index("t2", "n1", true), index("t3", "n59", true)},
+		Graph: atlas.Graph{Places: []atlas.Place{{
+			ID: "s1", Kind: atlas.PlaceSymbol, Path: "build_helpers/tool.py", LineNo: 10, TargetIDs: []string{"t2", "t3"},
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "t1.n1781", Name: "main", Kind: "function"},
+				Calls: []atlas.SymbolCall{{Name: "update_tiers", Kind: "calls", Line: 11, Column: 5}}},
+		}}},
+	}
+	wire, _, err := buildRequest(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]bool)
+	for _, row := range wire.MemberEvidence {
+		raw, _ := json.Marshal(row.Evidence)
+		got[row.Ref] = strings.Contains(string(raw), "update_tiers")
+	}
+	if want := map[string]bool{"t2.n1": true, "t3.n59": true}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("member evidence = %v, want %v", got, want)
+	}
+}
+
+// Targets holding the same fact see it once; a response row naming one of
+// them keeps that target's own fact.
+func TestASharedFactIsOneRowAndEachTargetKeepsItsOwnID(t *testing.T) {
+	fixture := newFixture(t)
+	alpha, beta := fixture.targetID("alpha"), fixture.targetID("beta")
+	rows := append([]facts.Fact(nil), fixture.input.Facts.Facts...)
+	for _, target := range []string{beta, alpha} {
+		rows = append(rows, facts.Fact{
+			ID: facts.NewFactID(target, facts.KindRegistration, "shared/cli.py", "shared"), Kind: facts.KindRegistration, TargetID: target,
+			Anchor: &facts.Anchor{Path: "shared/cli.py", Line: 4}, Key: "add_parser", Path: "trade", Text: "argparse.add_parser",
+		})
+	}
+	fixture.input.Facts.Facts = rows
+	sealed, err := facts.Seal(fixture.input.Facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.input.Facts = sealed
+	own := make(map[string]string)
+	for _, fact := range sealed.Facts {
+		if fact.Key == "add_parser" {
+			own[fact.TargetID] = fact.ID
+		}
+	}
+	wire, cat, err := buildRequest(fixture.input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shared []factWire
+	for _, row := range wire.Facts {
+		if row.Key == "add_parser" {
+			shared = append(shared, row)
+		}
+		if len(row.Targets) > 1 && row.Key != "add_parser" {
+			t.Fatalf("distinct facts were joined: %+v", row)
+		}
+	}
+	if len(shared) != 1 || shared[0].Ref != own[alpha] || !reflect.DeepEqual(shared[0].Targets, []string{alpha, beta}) {
+		t.Fatalf("shared fact rows = %+v, own ids %v", shared, own)
+	}
+	if len(wire.Facts) != 10 {
+		t.Fatalf("fact rows = %d, want the fixture's 9 and one shared", len(wire.Facts))
+	}
+	if _, advertised := cat.facts[own[beta]]; advertised {
+		t.Fatal("the second copy is a ref the request never shows")
+	}
+	ref := shared[0].Ref
+	raw := encodeResponse(t, map[string]any{
+		"summary": "Alpha and Beta parse a trade command.", "summary_refs": []string{ref},
+		"roles": []any{map[string]any{"target": beta, "role": "Command line", "purpose": "Parses trade.", "refs": []string{ref}}},
+		"run_recipe": []any{map[string]any{"target": beta, "command": "python cli.py trade", "refs": []string{ref, fixture.refs(t).fact("entrypoint")}}},
+		"main_flow": map[string]any{"title": "Trade", "steps": []any{
+			map[string]any{"target": beta, "ref": ref, "explanation": "Beta registers trade."},
+			map[string]any{"target": alpha, "ref": ref, "explanation": "Alpha registers trade."},
+		}},
+	})
+	result, err := normalize(raw, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.summaryRefs, []string{own[alpha]}) ||
+		len(result.roles) != 1 || !reflect.DeepEqual(result.roles[0].FactIDs, []string{own[beta]}) ||
+		len(result.recipe) != 1 || result.recipe[0].FactIDs[0] != own[beta] ||
+		len(result.flow.Steps) != 2 || result.flow.Steps[0].FactID != own[beta] || result.flow.Steps[1].FactID != own[alpha] {
+		t.Fatalf("restored ids: summary %v roles %+v recipe %+v flow %+v; own %v", result.summaryRefs, result.roles, result.recipe, result.flow.Steps, own)
+	}
+}
+
+// One (from, to, kind) is one row, and no label or sentence is lost.
+func TestConnectionsOfOneKindAreOneRowWithEveryLabelAndSentence(t *testing.T) {
+	rows := collapseConnections([]groupConnection{
+		{from: "t1.g2", to: "t2.g1", kind: "calls", label: "fetches items", summary: "Alpha fetches items from Beta's API."},
+		{from: "t1.g2", to: "t2.g1", kind: "calls", label: "fetches items", summary: "fetches items"},
+		{from: "t1.g2", to: "t2.g1", kind: "calls", label: "posts orders", summary: "posts orders"},
+		{from: "t1.g2", to: "t2.g1", kind: "calls", label: "fetches items", summary: "Alpha polls Beta for new items."},
+		{from: "t1.g2", to: "t2.g1", kind: "calls", label: "fetches items", summary: "Alpha fetches items from Beta's API."},
+		{from: "t1.g2", to: "t2.g1", kind: "reads", label: "fetches items", summary: "fetches items"},
+		{from: "t1.g10", to: "t1.g1", kind: "calls", label: "starts", summary: "starts"},
+	})
+	want := []connectionWire{
+		{From: "t1.g2", To: "t2.g1", Kind: "calls", Labels: []string{"fetches items", "posts orders"},
+			Sentences: []string{"Alpha fetches items from Beta's API.", "Alpha polls Beta for new items."}},
+		{From: "t1.g2", To: "t2.g1", Kind: "reads", Labels: []string{"fetches items"}},
+		{From: "t1.g10", To: "t1.g1", Kind: "calls", Labels: []string{"starts"}},
+	}
+	if !reflect.DeepEqual(rows, want) {
+		t.Fatalf("connections =\n%+v\nwant\n%+v", rows, want)
+	}
+}
