@@ -1072,10 +1072,14 @@ directory rule. The one part of a script, which takes the program's name, reads
 the same title. The home's table of programs says what each is "Built from":
 a C program's link units; a script's file and what its code imports,
 followed through each imported file's imports (ProgramIndex
-`ImportedFiles`), tests left out; otherwise the files its index declares
-things in. A script shares its project's index with the project's other
-programs, whose files are the whole project's: freqtrade's build_helpers
-scripts had each read 373 files.
+`ImportedFiles`), tests left out; a Python program whose build declares
+packages (ProgramTarget `libraries`), its entry files and what their code
+imports with every file of those packages; otherwise the files its index
+declares things in (a Python program declaring no package may load its
+code by strings, as a Django project does). A Python program shares its
+project's index with the project's other programs, whose files are the
+whole project's: freqtrade's build_helpers scripts and `freqtrade` itself
+had each read 373 files.
 
 position in the menu, a next question and an explicit return to all
 questions. The menu is one vertical list of topic headings with every

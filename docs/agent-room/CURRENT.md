@@ -251,7 +251,14 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   SQLAlchemy's `select(...).filter(...)`, `func.sum(...)` in `select`); a
   launch no word names is no outside system but an unknown of its call
   ("What is missing"); a destination one of whose records connects into
-  another of the report's programs is that program. Candidate communication needs an accepted
+  another of the report's programs is that program. Calls sent through one
+  object are one destination (2026-09-30): a row whose symbol names nothing
+  it reaches (an ORM's `select`) ends where the outside call with a decided
+  argument that made the object it is sent through ends
+  (`create_engine(db_url)`), a call on an exchange's result where the
+  exchange's first call ends; only the key and the destination's ends
+  change, never the row's own address. A caller reached only through a call
+  resolved to alternatives is a possible `reached_from`. Candidate communication needs an accepted
   runtime interpretation; a remote client instance is distinct from an option
   passed to its later constructor. Source chains preserve correlated uses and explicit
   unknowns; imports, timers and internal delegation do not become integrations.

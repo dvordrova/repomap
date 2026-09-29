@@ -945,14 +945,18 @@ as an argument to a call of a symbol answered the same kind is part of that
 call's (`func.count(...)` in `select(...)`, a `text()` statement in
 `execute(...)`), with any call made on it (`func.sum(...).label(...)`): only
 the call that begins the exchange, or receives the parts, is a boundary. A
+call made on such a part with no `talks` answer of its own hands the part on
+too (`func.count(...).label("count")` in `select(...)`, `func.count.label`
+never answered, 2026-09-30); a call answered another kind ends the chain
+(`requests.get(...).json()` in `select(...)` keeps the request). A
 receiver of alternatives each such a result counts; a field of a result, a
 value formatted from one or another kind never does. freqtrade's SQLAlchemy
 rows (all answered `db`, whose criteria include building the statement a
 session runs) had made `sum`, `filter` and `label` destination rows of their
 own: 116 db rows, now 63 (29 `select`, 3 `update`, 2 `inspect`, 2
 `order_by.limit` on a repository function's statement, 1 `read_sql`, 24
-SQL facts, and 2 `func.count` whose `.label`, handed to `select`, has no
-`talks` answer, so the chain stops there) (`reading/boxes.go`
+SQL facts, and 2 `func.count` whose `.label`, handed to `select`, had no
+`talks` answer, so the chain stopped there until the rule above) (`reading/boxes.go`
 `sameExchange`, `handedOnExchanges`).
 
 ### Outside systems
@@ -993,9 +997,48 @@ end is an absolute URL by its scheme and host as written (cut at the first
 `{env:API}/users` as `{env:API}`), and any other address or an unresolved
 expression by that value and the site where the walk stopped (two clients
 both asking `"/health"` stay apart; `?.DB` at `main.go:55` is one origin). A
-row with no reaching call, or whose walk read nothing, is its own
-destination; the walk of another call at its site (the fmt.Sprintf
-formatting a query) says nothing of it. A destination whose rows' packages
+row with no reaching call is its own destination; the walk of another call
+at its site (the fmt.Sprintf formatting a query) says nothing of it.
+
+**The object an exchange goes through** (owner, 2026-09-30: calls reaching
+the same session or engine are one destination; skeptic-reviewed). A row's
+destination key and its destination's `ends` are where its exchange ends
+(`boundaryState.through`, `reading/destination_objects.go`); its own walk
+stays its address, chain and the published `Uses`. The exchange ends:
+- for a call made on what a call of its kind returned, where the call that
+  began the exchange ends (`inspector.get_columns("trades")` on
+  `inspect(engine)`), whatever its own argument names;
+- for a call whose symbol decides no argument names what it reaches (an
+  ORM's `select`, `text`, `update`: decided none), where the object it is
+  sent through ends (`DestinationReader.Exchange`). Its senders are the
+  calls its statement is handed whole to (a local name bound to it, an
+  alternative of it, a call answered its kind or nothing made on it, a
+  call of its kind it is handed to, a repository function's parameter and
+  return, the result of a call to no known function it is handed, as a
+  column's `not_in(subquery)`, and a call of its kind handed a column of
+  it, as a CTE's), counting a call to no known function
+  (`Trade.session.scalars`) and a call of its kind made on an object; a
+  call of another kind (a logger's) sends nothing. Their receivers, else the call's own receiver,
+  are followed back: a parameter to each caller's argument, a field to the
+  value its one store gives it, a context manager's entered value to the
+  manager, a repository call to what its function returns, a call to no
+  known function giving no words (`engine.begin()`) to its receiver, and an
+  outside call never asked which argument names what it reaches and giving
+  no words to the object it is made from (receiver, else its first argument
+  another call made or a caller hands: `scoped_session(sessionmaker(bind=
+  engine))`). The outside call with a decided argument that made the
+  object is where it ends, through that argument (`create_engine(db_url)`);
+  any other call is the object itself, keyed by its site
+  (`boto3.client("s3")` and `("sqs")` stay two). An object an outside call
+  answered another kind made, a field no store gives a value, an unknown
+  name and `self` give nothing, and the row keeps its own walk;
+- for a walk stopping at a field of an object (`Trade.session.bind`), where
+  the decided call that made the object ends, only when one did: two values
+  read from one configuration stay apart.
+freqtrade's database rows had been 62 destinations, each asked in its
+window ("Freqtrade database" 39 rows, "Database" 24); its 61 rows (two
+`func.count` rows are now part of their `select`) are one destination,
+"Database", asked once. A destination whose rows' packages
 name exactly one system gives it to its rows without a package; one naming
 none is asked once (`repomap.atlas.destinations.v1`, table
 `atlas_boundaries`, round 3, the text model, `Memoize` by the item under the
@@ -1099,7 +1142,12 @@ An outbound call names the extracted tables among its values as `data_ids`.
 It also names where its program reaches it from (`reached_from`, a code
 fact computed once at projection and persisted with the index): from the
 declaration making the call, exact `calls` relations are followed backwards,
-per program, only through callers in that declaration's own part. Each path
+per program, only through callers in that declaration's own part; a
+declaration no exact call reaches is reached through the calls resolved to
+alternatives among which it stands, and every caller past that step is
+`possible` (2026-09-30: freqtrade's `Webhook.send_msg`, called only by
+`RPCManager.send_msg`'s loop over its registered handlers, had no callers;
+the reading marks such a caller "possible"). Each path
 ends at the first caller in another part (or in none), kept with its call
 site; a path whose callers run out inside the part is kept only when it
 ends at a seed or an input's handler, with no site, and otherwise dropped,
@@ -1187,8 +1235,9 @@ declarations its program reaches the calls from, by name, each once:
 GroupsIndex's `reached_from` as the reading computes it before the parts are
 drawn (a file stands for its part: exact callers are followed back through
 the call's own file to the first caller in another file, or to a seed or an
-input's handler where they run out; test callers and callers the row's
-programs never run are skipped), so a connect written in a network helper is
+input's handler where they run out, through alternatives only where no exact
+caller is; test callers and callers the row's programs never run are
+skipped), so a connect written in a network helper is
 named by what reaches it (a replica's primary, a client's server), not "TCP
 endpoint". A row's choices are the same whatever rows share its window; an
 owner's calls near the line and its source context are sent once per window

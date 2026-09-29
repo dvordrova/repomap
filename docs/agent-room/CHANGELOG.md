@@ -1,5 +1,84 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Calls sent through one engine are one destination; possible callers; script directories; what a Python program is built from
+
+- **Why:** the open items of ed1a04d9: freqtrade's database named twice
+  ("Freqtrade database" 39 rows, "Database" 24, each row its own
+  destination asked per window); `func.count(...).label(...)` in `select`
+  still a row; the webhook with no callers; build_helpers' two CI scripts
+  falling to `freqtrade`; `freqtrade` "Built from" 373 files. The design
+  went past a skeptic (read-only agent), whose changes were taken: an
+  object's walk stops at a call giving words, takes no config object's base,
+  counts only statements handed whole, and moves only the key and the
+  destination's ends, never a row's address; closures reading a rebound
+  name, test sources' stores and a class using its own same-named field
+  handled; a file only a script's root covers keeps its programs.
+- **Reading** (READING § One exchange, § One destination, one name):
+  `handedOnExchanges` hands a part on through a call with no `talks`
+  answer, not through another kind. A row's destination key and ends are
+  where its exchange ends (`boundaryState.through`,
+  `reading/destination_objects.go`): a call on an exchange's result ends
+  where its first call does; a call deciding no argument ends where the
+  object its statement is sent through was made (`DestinationReader.Exchange`:
+  senders by `sendersOf`, objects by `object`, to `create_engine(db_url)`);
+  a field of an object a decided call made goes on through that call
+  (`Trade.session.bind`). `DestinationChoices.Talks` carries the talks
+  answers. A field's stores are read only when its one receiver path found
+  nothing; callers through alternatives are not receiver paths.
+- **Python** (PYTHON § Source values of rebound names, class attributes and
+  entered objects): a class attribute stored once through its class's name
+  (`Trade.session = scoped_session(...)`, `Order.session = Trade.session`)
+  reads that call's result; `with X as name` binds an `entered` value
+  (a new source value kind, `sourcevalue.Validate`); a straight-line rebinding, or one in an
+  if arm, stays known and an if statement joins its arms' values as
+  `alternatives`; except/match/def/class rebindings clear a name; a list
+  field closed over appended constructions makes a call on its element
+  `alternatives` of the classes' methods (dispatch `interface`). The parser
+  request marks test sources. Fixtures: `destinations.py`'s ledger,
+  `inherited_clients.py`'s `Notifier`/`OpenNotifier`.
+- **Reached from** (GroupsIndex `OutboundCaller.Possible`, reading
+  `reachedFrom`): a declaration no exact call reaches is reached through the
+  alternatives it stands among, every caller past that step possible; the
+  reading column marks it (`pageReadingEnd.Possible`).
+- **Claims** (DISCOVERY): the deepest root covering a file decides it; a
+  file in a script's directory no script imports is no program's when a
+  shallower root would take it, unless that program's entry imports it
+  (ProgramIndex `ImportedFilesFrom`). **Built from** (REPORT): a Python
+  program declaring packages is built from its entry files' imports and
+  those packages' files.
+- **Checks:** `TestOneExchangeWithASystemIsOneBoundary` (unanswered chain,
+  another kind), `TestRowsSentThroughOneEngineReachWhatTheEngineReaches`,
+  `TestACallOnAnExchangesResultEndsWhereTheExchangeEnds`,
+  `TestCumulativePythonStatementsSentThroughObjectsEndAtTheirEngine`,
+  `TestCumulativePythonSelfCallsAndFieldsFollowTheBaseChain` (alternatives,
+  dispatch), `TestCumulativePythonSourceValuesRetainSharedHelperAndCapturedOwner`
+  (a rebound name reads its replacement: the test had pinned unknown),
+  `TestOutboundCallIsReachedFromTheFirstCallersOutsideItsPart`,
+  `TestAnOutgoingCallIsNamedWithWhereItsProgramsReachItFrom`,
+  `TestAFileInAScriptsDirectoryNoOneImportsIsNoProgramsFile`,
+  `TestAScriptProgramIsItsFileAndWhatItImports` (a Python program's Built
+  from); `make test`, `make vet` (package parallelism 2) pass.
+- **Acceptance** (ordinary binary, default cache, `--no-serve --no-open`):
+  freqtrade `20260929-221230` exit 0, 295 s; live calls atlas_api 11,
+  areas 9, boundaries 1, core 2, describe 9, keys 21, role_assign 2,
+  role_gate 4, symbols 5, systems 1, zones 1, glossary 29, orientation 2
+  (the changed graph: Python alternatives and joined values, the dropped CI
+  files). The database is one destination of 61 rows, "Database", asked
+  once; the webhook's 3 rows "Webhook", reached from 11 FreqtradeBot
+  methods (`notify_status`, `startup`, `process`, `_notify_enter`,
+  `_notify_exit`, …), each possible, through `RPCManager.send_msg`'s
+  `mod.send_msg` (now `alternatives` of Telegram, Discord, Webhook and
+  ApiServer); `build_helpers/pre_commit_update.py` and
+  `binance_update_lev_tiers.py` are no program's; `freqtrade` is built from
+  332 files (its package), not 373. The interim run `220126` (before the if
+  join, the not_in and CTE passes and the receiver rule) had kept 4 rows
+  alone ("Freqtrade database": `get_trades_query`'s two selects, the
+  not_in subquery, the CTE) and read the webhook's field stores, named
+  "Discord". Rendered to the scratchpad's `redis-r2/run/latest-freqtrade.html`.
+- **Open:** a statement reaching its session only through a loop, try or
+  with rebinding stays its own destination; JS/TS reassigned `let`, static
+  class attributes and `using` values have no equivalent (PYTHON).
+
 ## 2026-09-30 — Room for arrows through the fit, a program frame that hugs its areas, one "where am I", input-kind marks in the column
 
 - **Why:** the lead's decisions on the canvas report of the morning: ship the

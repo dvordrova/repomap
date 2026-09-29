@@ -250,8 +250,14 @@ Regression comparisons preserve every materialized byte while checking that repe
     whichever other root holds them (`places.TargetInput.Script`,
     2026-09-30). freqtrade's three build_helpers scripts had each drawn the
     directory's five files as parts, and scripts/rest_client.py the file of
-    ws_client.py beside it; build_helpers' two guardless CI scripts now
-    fall to the root distribution folded into `freqtrade`.
+    ws_client.py beside it. The deepest root covering a file decides it: a
+    file in a script's directory no script there imports is no program's
+    when a shallower root would take it, unless that program's entry files
+    import it (ProgramIndex `ImportedFilesFrom`); build_helpers' two
+    guardless CI scripts, which had fallen to the root distribution folded
+    into `freqtrade`, are no program's. A file only a script's root covers
+    keeps every program indexing it (a repository-root `manage.py`'s apps,
+    reached only by strings).
   Other adapters have no equivalent: a JS/TS package's `bin` commands are
   executables of its one package target, a Clojure project is one target
   with its `-main` seeds (a shadow-cljs build reads other files), and a C

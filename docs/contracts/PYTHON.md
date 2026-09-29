@@ -336,6 +336,91 @@ call's result, not the function: a recorded missing equivalent. Go has no
 partial application; a method value (`s.handle`) is already a bare
 callable.
 
+## Source values of rebound names, class attributes and entered objects
+
+The value a name holds where it is read (a pattern's source value) is its
+source-ordered binding (2026-09-30, destinations through objects,
+READING; skeptic-reviewed):
+
+- A plain assignment or with item rebinding a name in the statement list of
+  its previous binding, or in an arm of an if statement standing there,
+  whose value was known, holds the new value for the reads that follow
+  (`statement = update(Ledger)...; execute(statement); statement =
+  update(Archive)...; execute(statement)`). Each arm of an if statement
+  starts from the bindings before it, and after it a name an arm bound
+  holds each path's last value, the value before it for a path that left
+  it alone: one value, or their `alternatives`, none chosen, as Go's SSA
+  joins them (freqtrade's `get_trades_query` returns
+  `select(Trade).filter(...)`, `select(Trade)` or the `.options(...)` made
+  on either); a class a call on it reaches stays unknown when two bindings
+  meet. A rebinding in a loop, try, with or match body of a name bound
+  outside it, or of a `global` or `nonlocal` name, or after an unknown
+  value, leaves the name unknown as before; a nested def or lambda reading
+  an enclosing name bound more than once reads it unknown (it runs later).
+  Literal-initializer authority is unchanged. `reassigned_address` now
+  reads its replacement parameter, never the literal it replaced.
+- `with X as name` binds `name` to an `entered` value whose one part is
+  X's value: what entering X gives, which need not be X
+  (`with engine.begin() as connection`). A tuple or attribute target, an
+  `except ... as` name, a match capture and a nested def or class rebinding
+  a name make it unknown; the earlier value no longer leaks
+  (`conn = a.connect()` then `with b.begin() as conn:` had read
+  `a.connect()`).
+- A class attribute stored once by a plain assignment through its class's
+  name anywhere in the program (`Trade.session = scoped_session(...)` in
+  freqtrade's `init_db`) holds that store's value wherever the class is read
+  so: the call's result, or, stored from another class attribute
+  (`Order.session = Trade.session`), what that one holds. A second store of
+  any kind in the class, the base it inherits the attribute from or a class
+  deriving from it (a class-body value, `self.name`, `cls.name`,
+  `type(self).name`, `setattr`) leaves it unknown; a store in a configured
+  test source (`PairLock.session = MagicMock()`) is not the program's (the
+  parser request marks test sources). The value-less annotation
+  `session: ClassVar[...]` is no store. Which symbol `Trade.session.execute`
+  calls is not changed.
+
+`destinations.py`'s ledger checks each case
+(`TestCumulativePythonStatementsSentThroughObjectsEndAtTheirEngine`):
+`Ledger.session` and `Archive.session` read scoped_session's result,
+`Journal.session` (a class-body store too) a field, both `connection`s an
+`entered` value, the second `statement` its own update, the lambda's
+`statement` nothing, `ledger_query` the alternatives of its arms; and every
+statement's destination ends where create_engine's walk does, the
+subquery a column's `not_in` takes and the CTE whose column another select
+reads included.
+
+A list field stored once as an empty list (annotated or not) whose every
+use in the program is the class's own `self.<field>`, the one store, an
+append of a construction of a repository class or of a local bound once to
+one, `pop`, `remove`, `clear`, iteration, a truth test, `len` and an
+element read, holds objects of those classes: a closed set, which wins over
+its annotation. Another receiver's `.<field>`, an alias, `extend`, `insert`,
+`+=`, a slice or element store, handing or returning the list and a base or
+deriving class using it leave it open; a class unrelated to it using its own
+field of that name does not. A method call on an element of such a list is a
+`calls` relation to each class's method of that name (its own or
+inherited), `alternatives` with dispatch `interface` when there are several,
+`exact` when one; a class with no such method leaves it unresolved.
+freqtrade's `RPCManager.registered_modules` (Telegram, Discord, Webhook,
+ApiServer) makes `mod.send_msg(msg)` their four `send_msg`s.
+`inherited_clients.py`'s `Notifier` and `OpenNotifier` check it
+(`TestCumulativePythonSelfCallsAndFieldsFollowTheBaseChain`).
+
+Native equivalents: Go reads each use's SSA value (a φ is the
+`alternatives` of its values, GO), so rebinding in place and the join of an
+if statement's arms are already exact;
+Go package variables written in a function carry no stored value (GO), a
+missing equivalent of class attributes stored through a name; Go interface
+calls are already `alternatives` of the implementations (`interface`). JS/TS
+reads a reassigned `let` as unknown (JSTS, missing equivalent), and a
+static class attribute stored through its class and a `using` declaration's
+value are not recorded (missing equivalents); its typed method calls resolve
+by the compiler. Clojure's adapter records no call results as origins and
+follows no local's value (CLOJURE), so none of these applies; its protocol
+calls stay unresolved (missing equivalent of registered lists). C has no
+context managers or classes; a file-scope variable's field write carries
+its value (C, PROGRAM_INDEX).
+
 ## Variable reads and attribute writes
 
 Underscore is an ordinary Python parameter/local name. Its declaration,
