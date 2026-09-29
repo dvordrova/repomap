@@ -1,5 +1,74 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — F5 othello: shadow-cljs builds are programs, keyword hand-overs and a future's body are registrations, test aliases mark tests, build descriptions are manifest facts
+
+- **Why:** othello (Uncle Bob, Clojure + ClojureScript; ground truth
+  `testdata/audit/othello/inventory.json`) came out nearly empty: one
+  `deps.edn` target, no registration for Quil's sketch, the recipe
+  `clojure -M -m othello.core` without the `:run` alias that brings Quil, and
+  a "Spec helpers" part with `spec/othello/spec_helper.clj` in "Built from".
+  Code f5c8f148, 378a0679, 35513784 (executable scope); contracts 42ff9ae5
+  (CLOJURE, DISCOVERY, PROGRAM_INDEX).
+- **a) Registrations.** `(q/sketch … :mouse-pressed host/on-press
+  :key-pressed host/on-key …)` was twenty positional arguments; the facts
+  name a handler only when a call hands exactly one callable, and the sketch
+  hands six, so none. Now a Clojure call's trailing keyword/value pairs, or a
+  trailing map (Clojure 1.11), are keyword arguments, and the facts read an
+  outside call handed several repository callables under keywords as one
+  registration per keyword (`keywordHandoffs`): registrar
+  `quil.core.sketch.key-pressed`, the keyword its first word, placed at the
+  entry. General: a synthetic WebSocketApp(`on_message=`, `on_close=`) case
+  checks the shared rule; the Go, Python, JS/TS and C fixtures hold no such
+  call yet (recorded). A `future`'s body calls carry `goroutine`, and the
+  future's use is a call of `clojure.core/future` given them, so the started
+  call's word is `clojure.core/future` (a started call's word is the call it
+  is handed to, else `go`) and the statement is asked as written.
+- **b) Discovery.** `ScoutShadow`: each shadow-cljs build naming its
+  `:init-fn`/`:main`/`:entries` is a ClojureScript program
+  (`clojure:shadow-cljs.edn:app`, executable scope) over the `.cljs` sources
+  and the `:cljs` branch of the `.cljc` sources, seeded there; `js/` globals,
+  `goog.*` and ClojureScript's own namespaces are its platform.
+- **c) Recipe.** deps.edn, project.clj and shadow-cljs.edn rows are
+  `manifest` facts (each alias's `main-opts`, `exec-fn`, `extra-paths`,
+  `extra-deps` at its line; each build's target, output, entries), held by
+  the target whose manifest it is. No model text is patched.
+- **d) Tests.** An alias running a test runner (`speclj.main`,
+  `cognitect.test-runner`, `kaocha.runner`) names its `:extra-paths` as test
+  directories, Leiningen its `:test-paths`; every source there is a test
+  source. The no-tests negative reads adapter test sources, and no test
+  source is judged a dead module.
+- **Acceptance:** one ordinary run, `.bin/repomap ~/git/othello --no-serve
+  --no-open` built from the committed tree at cc0f2765 (the shared checkout
+  briefly did not compile on another lane's gofacts work), default cache:
+  exit 0, 24 s, runs `20260929-181127-othello-a0d4d5e264c6` (othello) and
+  `20260929-181129-othello-app-fa6ec6043291` (app), rendered to the
+  scratchpad's `redis-r2/run/latest-othello.html`. The page shows two
+  programs, `othello (package)` entry `-main()` and `app (executable)` entry
+  `init()`, both placed standalone; each with 3 user interactions (mouse
+  pressed, mouse moved, key pressed, handlers `host/on-press`, `on-move`,
+  `on-key`); "How to run": `clojure -M:run` and `clojure -M:web watch app`
+  (open localhost:8080); no spec file in "Built from", no "Spec helpers"
+  part, no "no tests" gap. The model answered the sketch's `update`/`draw`
+  none or undecided (the criteria's "a hook the program's loop runs on every
+  turn") and the future's start none (a one-shot start, like the Go
+  fixture's cache load): not patched. That run predates 378a0679: its three
+  entries are named after the declaration (`start!`, `update-state`, the
+  nearest-declaration caller of the top-level `defsketch`) because no word
+  named them, and the six spec files were "not reachable"; offline (a
+  no-model run) the facts now give the keyword as a word and no dead
+  module, and the preset test checks the naming words. Claim audit
+  (`REPOMAP_AUDIT_RUNS`, same run): commands 0 of 14 must (the inventory
+  anchors keys at `events.cljc:211` and clicks at `:174`, the inputs sit at
+  the registrations), workers 0 of 4, external 0 of 1, data 0 of 2; one
+  audit flag, "invented name cljs.edn", is its tokenizer reading
+  `shadow-cljs.edn`. `make test` and `make vet` pass on the committed tree.
+- **Missing, recorded:** a function literal handed to an outside call
+  (`(js/setTimeout (fn [] …) 20)`, the web build's AI search) hands nothing,
+  since the adapter projects no closure; `(Thread. f)` and core.async
+  `go`/`thread` start nothing; places names a top-level call's caller by the
+  nearest declaration above it; the key map `key->command` is no
+  sub-argument of `on-key`.
+
 ## 2026-09-29 — F4: a table of another table's keys, or one only tested for membership, is no inputs of its own
 
 - **Why:** the freqtrade acceptance (scratchpad `accept/run-freqtrade.log`,
