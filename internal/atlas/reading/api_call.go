@@ -30,6 +30,7 @@ import (
 // decided. talks holds each symbol's decided talks answer.
 func (r *reader) readCalls(ctx context.Context, symbols []*apiSymbol, talks map[string]string) error {
 	r.callEnters, r.entering = map[sourceSite]string{}, map[string]bool{}
+	handlers := r.handlerKinds()
 	handed := map[string]bool{}
 	for _, s := range symbols {
 		handed[s.name] = s.handsCallable
@@ -69,6 +70,12 @@ func (r *reader) readCalls(ctx context.Context, symbols []*apiSymbol, talks map[
 			role := r.api[symbol]
 			site := sourceSite{place.Path, call.Line, call.Column}
 			if _, seen := r.callEnters[site]; seen || handed[symbol] || role.talks != "" || role.publishes || claimedByOtherFact(claims[sourceSite{path: site.path, line: site.line}], symbol, site.column) {
+				continue
+			}
+			// Words its handler compares with what it was handed are an
+			// entry's sub-arguments, not asked (sub_arguments.go).
+			if kind := subArgumentKind(place, call, handlers); kind != "" {
+				r.callEnters[site] = kind
 				continue
 			}
 			r.callEnters[site] = ""

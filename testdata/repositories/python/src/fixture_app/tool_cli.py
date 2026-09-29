@@ -7,13 +7,17 @@ handled through set_defaults, two calls that each hand argparse something,
 one input. `--force` is declared on init's own parser, `--verbose` on the
 tool's.
 `revision` starts another program, git: the words of its command line are
-git's, not this tool's options.
+git's, not this tool's options. `init-*` is a word only init's handler
+compares with what it was handed: a sub-argument of init.
 """
 import argparse
+import fnmatch
 import subprocess
 
 
 def run_init(arguments):
+    if fnmatch.fnmatch(arguments.cmd, "init-*"):
+        return "variant"
     return arguments.cmd
 
 

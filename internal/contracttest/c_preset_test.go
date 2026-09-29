@@ -103,6 +103,11 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 		if strings.HasPrefix(call, "stdlib.h.getenv") {
 			t.Fatalf("a setting read the facts name was asked what its words become: %v", call)
 		}
+		// A word an established entry's handler compares with what it was
+		// handed is its sub-argument, not asked (K3).
+		if strings.Contains(call, " in setCommand:") {
+			t.Fatalf("a word set's handler compares with its argument vector was asked: %v", call)
+		}
 	}
 	// Each callable kvd's own functions keep is asked once, with while what
 	// it is kept: the walk back from the keeping call stops at the program's
@@ -114,7 +119,7 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 		"acceptHandler by loopCreateFileEvent during [from the program's start at main]",
 		"beforeSleep by loopSetBeforeSleep during [from the program's start at main]",
 		"readQueryFromClient by loopCreateFileEvent during [while acceptHandler run (handed to loopCreateFileEvent)]",
-		"sendReplyToClient by loopCreateFileEvent during [while pingCommand, bgsaveCommand, getCommand, setCommand, keysCommand, delCommand run (handed to kvd.h.kvCommand.proc), through addReply, addReplyLong while readQueryFromClient run (handed to loopCreateFileEvent), through processInputBuffer, processCommand, addReply]",
+		"sendReplyToClient by loopCreateFileEvent during [while pingCommand, bgsaveCommand, getCommand, setCommand, delCommand, keysCommand run (handed to kvd.h.kvCommand.proc), through addReply, addReplyLong while readQueryFromClient run (handed to loopCreateFileEvent), through processInputBuffer, processCommand, addReply]",
 	}
 	if !slices.Equal(kept, wantKept) {
 		t.Fatalf("kept callables asked = %v\nwant %v", kept, wantKept)
@@ -177,6 +182,10 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 		// line: its sub-arguments, no settings of their own.
 		{kind: "setting", name: "never", source: "model"},
 		{kind: "setting", name: "always", source: "model"},
+		// set's NX, a word setCommand compares with an element of the
+		// client's argument vector it was handed: a sub-argument of set's
+		// request (owner's rule K3), never asked what it becomes.
+		{kind: "request", name: "nx", source: "model"},
 	}
 	for _, row := range cCommandRows {
 		want = append(want, input{kind: "request", name: row.name, handler: row.function, source: "fact"})
@@ -262,7 +271,7 @@ func checkKvdReach(t *testing.T, program programindex.Index, index groupindex.In
 			sites = append(sites, site)
 		}
 	}
-	if len(sites) != 1 || names[sites[0].FromSubjectID] != "processCommand" || sites[0].Location == nil || sites[0].Location.Path != "kvd.c" || sites[0].Location.Line != 176 ||
+	if len(sites) != 1 || names[sites[0].FromSubjectID] != "processCommand" || sites[0].Location == nil || sites[0].Location.Path != "kvd.c" || sites[0].Location.Line != 181 ||
 		len(sites[0].Alternatives) != len(cCommandRows) || len(sites[0].OperationIDs) != len(cCommandRows) || len(sites[0].ReachedFrom) != 0 {
 		t.Fatalf("dispatch sites of kvd's inputs: %+v", sites)
 	}
@@ -297,7 +306,9 @@ func checkKvdReach(t *testing.T, program programindex.Index, index groupindex.In
 			t.Fatalf("loadConfig's catalogue is called from %v", catalogue.Calls)
 		}
 	}
-	if want := map[string][]string{"main command": {"--symbols"}, "loadConfig setting": {"port", "dbfilename", "persist"}}; !reflect.DeepEqual(catalogues, want) {
+	// set's nx is declared by setCommand too: its catalogue is GroupsIndex's,
+	// and being nested under set it is no tile of its own.
+	if want := map[string][]string{"main command": {"--symbols"}, "loadConfig setting": {"port", "dbfilename", "persist"}, "setCommand request": {"nx"}}; !reflect.DeepEqual(catalogues, want) {
 		t.Fatalf("catalogues = %v, want %v", catalogues, want)
 	}
 	// A directive's values compared with its line's second word (owner's
@@ -323,6 +334,22 @@ func checkKvdReach(t *testing.T, program programindex.Index, index groupindex.In
 	}
 	if want := map[string][]string{"persist": {"always", "never"}}; !reflect.DeepEqual(values, want) {
 		t.Fatalf("values = %v, want %v", values, want)
+	}
+	// The words a command's handler compares with the argument vector it
+	// was handed are that command's sub-arguments (K3): set lists nx.
+	for position, operation := range index.Operations {
+		if operation.Name == "nx" && !index.Launch.Nested[operation.ID] {
+			t.Fatal("set's nx is not nested")
+		}
+		if operation.Name == "set" {
+			var subArguments []string
+			for _, id := range index.Reach[position].SubArguments {
+				subArguments = append(subArguments, operations[id])
+			}
+			if !slices.Equal(subArguments, []string{"nx"}) {
+				t.Fatalf("set's sub-arguments: %v", subArguments)
+			}
+		}
 	}
 	// The launch walk from main finds them where they are declared.
 	found := map[string][]string{}
@@ -587,7 +614,10 @@ func (preset *kvdPreset) peer(context, row map[string]any) string {
 			preset.connectOffered = append(preset.connectOffered, strings.Join(stringsOf(peer["values"]), " "))
 		}
 		preset.mu.Unlock()
-		return choose(func(peer map[string]any) bool { external, _ := peer["external"].(string); return strings.HasSuffix(external, ".listen") })
+		return choose(func(peer map[string]any) bool {
+			external, _ := peer["external"].(string)
+			return strings.HasSuffix(external, ".listen")
+		})
 	}
 	chosen := "none"
 	if len(values) > 0 && values[0] != "del" {
@@ -642,7 +672,7 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 			arguments := strings.Join(stringsOf(question.Item["arguments"]), "; ")
 			in, _ := question.Item["in"].(string)
 			preset.mu.Lock()
-			preset.entered = append(preset.entered, symbol+" in "+strings.Fields(in+" ?")[0]+": "+arguments)
+			preset.entered = append(preset.entered, symbol+" in "+strings.Fields(in + " ?")[0]+": "+arguments)
 			preset.mu.Unlock()
 			switch {
 			case strings.Contains(arguments, "result of calling splitLine"):

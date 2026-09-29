@@ -81,6 +81,11 @@ static void preloadKey(kvClient *c) {
 
 static void setCommand(kvClient *c) {
     struct kvEntry *e = dbFind(c->argv[1]);
+    /* SET key value NX sets only a key the database does not hold yet. */
+    if (c->argc > 3 && strcasecmp(c->argv[3], "nx") == 0 && e != NULL) {
+        addReply(c, ":0\r\n");
+        return;
+    }
     if (e == NULL) {
         if (server.dbSize == KV_MAX_KEYS) {
             addReply(c, "-ERR the database is full\r\n");

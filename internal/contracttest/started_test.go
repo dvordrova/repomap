@@ -22,7 +22,7 @@ func startedItems(preset *inputsPreset) []string {
 		statement, _ := item["statement"].(string)
 		starts, _ := item["starts"].(string)
 		in, _ := item["in"].(string)
-		items = append(items, statement+" | "+strings.Fields(starts+" ?")[0]+" | "+strings.Fields(in+" ?")[0])
+		items = append(items, statement+" | "+strings.Fields(starts + " ?")[0]+" | "+strings.Fields(in + " ?")[0])
 	}
 	slices.Sort(items)
 	return items
@@ -39,7 +39,9 @@ func startedItems(preset *inputsPreset) []string {
 // ticker loops continuous and scheduled and the one-shot load none; the
 // answers become two entries whose handlers are the started functions, and
 // the one-shot load no entry. time.AfterFunc's one-shot delay and the
-// finite retry are no starting statements.
+// finite retry are no starting statements. The worker's status route's
+// handler compares the request it was handed with two words, the route's
+// sub-arguments (owner's rule K3), never asked what they become.
 func TestCumulativeGoStartsAreAskedPerStatement(t *testing.T) {
 	t.Setenv("CGO_ENABLED", "0")
 	t.Setenv("GOTOOLCHAIN", "local")
@@ -53,6 +55,9 @@ func TestCumulativeGoStartsAreAskedPerStatement(t *testing.T) {
 	}
 	graph := graphWithFacts(t, repository, places.TargetInput{Index: index, Root: "."})
 	preset := &inputsPreset{decide: func(column string, item map[string]any, options []string) (string, bool) {
+		if symbol, _ := item["symbol"].(string); column == "binds" && symbol == "net/http.HandleFunc" {
+			return "request", true
+		}
 		if column != "starts" {
 			return "", false
 		}
@@ -83,13 +88,46 @@ func TestCumulativeGoStartsAreAskedPerStatement(t *testing.T) {
 			}
 		}
 	}
-	got := inputRows(projected, path)
+	const status = "cmd/worker/status.go"
+	got := inputRows(projected, path, status)
 	wantInputs := []inputRow{
+		// serveStatus, the handler of the status route, compares the
+		// request it was handed with HEAD and X-Verbose: sub-arguments of
+		// its route (owner's rule K3), never asked. What it writes to w is
+		// asked, and none. The preset names the route by its call's first
+		// word.
+		{kind: "request", name: "HEAD", declaredBy: "serveStatus", at: status + ":14"},
+		{kind: "request", name: "X-Verbose", declaredBy: "serveStatus", at: status + ":17"},
+		{kind: "request", name: "HandleFunc", declaredBy: "init", handler: "serveStatus", at: status + ":21"},
 		{kind: "continuous", name: "RunCommitWorker", declaredBy: "StartCommitWorker", handler: "RunCommitWorker", at: path + ":24"},
 		{kind: "scheduled", name: "RunCompactor", declaredBy: "StartCompactor", handler: "RunCompactor", at: path + ":53"},
 	}
 	if !reflect.DeepEqual(got, wantInputs) {
 		t.Fatalf("started inputs:\n%+v\nwant\n%+v", got, wantInputs)
+	}
+	var entered []string
+	for _, item := range preset.asked["enters"] {
+		if in, _ := item["in"].(string); strings.HasPrefix(in, "serveStatus") {
+			entered = append(entered, callText(item))
+		}
+	}
+	if want := []string{`fmt.Fprintf(w, "pending jobs (verbose %t)\n", verbose)`}; !slices.Equal(entered, want) {
+		t.Fatalf("serveStatus's calls asked what their words become: %q, want %q", entered, want)
+	}
+	for position, operation := range projected.Operations {
+		if operation.Location.Path == status && operation.SubjectID != "" {
+			var subArguments []string
+			for _, id := range projected.Reach[position].SubArguments {
+				for _, other := range projected.Operations {
+					if other.ID == id {
+						subArguments = append(subArguments, other.Name)
+					}
+				}
+			}
+			if slices.Sort(subArguments); !slices.Equal(subArguments, []string{"HEAD", "X-Verbose"}) {
+				t.Fatalf("the status route's sub-arguments: %v", subArguments)
+			}
+		}
 	}
 }
 

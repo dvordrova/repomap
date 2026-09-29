@@ -166,8 +166,10 @@ func jsonText(value any) (string, bool) {
 // on the parser ArgumentParser("tool") makes and --force on init's own
 // parser, whose catalogue names init as what its members are declared on
 // (K2). Python compares an argument with an operator, which is no call, so
-// the per-call comparison has no Python equivalent; subprocess.run's list
-// of words gives no call word, so its program stays not established.
+// the per-call comparison has no Python equivalent; fnmatch.fnmatch in
+// run_init compares a field of what init's handler was handed with a word,
+// init's sub-argument, never asked (K3). subprocess.run's list of words
+// gives no call word, so its program stays not established.
 func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 	root, repository := materializeFixtureRepository(t, "python")
 	catalog, err := pythontarget.Discover(t.Context(), repository)
@@ -211,20 +213,47 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root, preset)
 	got := inputRows(projected, "src/fixture_app/tool_cli.py")
 	want := []inputRow{
-		{kind: "command", name: "-v", declaredBy: "build_parser", on: `argparse.ArgumentParser("tool")`, at: "src/fixture_app/tool_cli.py:22"},
-		{kind: "command", name: "init", declaredBy: "build_parser", on: `parser.add_subparsers(dest="cmd")`, handler: "run_init", at: "src/fixture_app/tool_cli.py:24"},
-		{kind: "command", name: "--force", declaredBy: "build_parser", on: `commands.add_parser("init")`, at: "src/fixture_app/tool_cli.py:26"},
+		// run_init, init's handler, compares its argument's cmd with
+		// init-*: a word only it checks, init's sub-argument (K3), never
+		// asked what it becomes.
+		{kind: "command", name: "init-*", declaredBy: "run_init", at: "src/fixture_app/tool_cli.py:19"},
+		{kind: "command", name: "-v", declaredBy: "build_parser", on: `argparse.ArgumentParser("tool")`, at: "src/fixture_app/tool_cli.py:26"},
+		{kind: "command", name: "init", declaredBy: "build_parser", on: `parser.add_subparsers(dest="cmd")`, handler: "run_init", at: "src/fixture_app/tool_cli.py:28"},
+		{kind: "command", name: "--force", declaredBy: "build_parser", on: `commands.add_parser("init")`, at: "src/fixture_app/tool_cli.py:30"},
 		// ServiceCommands keeps its parser and subcommands in fields, each
 		// stored once from argparse's call: serve joins its handler as init
 		// does. RebuiltParser stores its parser twice, so --again, on either
 		// parser, is no input.
-		{kind: "command", name: "serve", declaredBy: "build", on: `self.parser.add_subparsers(dest="cmd")`, handler: "run_serve", at: "src/fixture_app/tool_cli.py:54"},
+		{kind: "command", name: "serve", declaredBy: "build", on: `self.parser.add_subparsers(dest="cmd")`, handler: "run_serve", at: "src/fixture_app/tool_cli.py:58"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tool_cli.py's inputs:\n%+v\nwant\n%+v", got, want)
 	}
 	if written := writtenRows(projected, "src/fixture_app/tool_cli.py"); !strings.Contains(written["--force"], `"--force"`) || !strings.Contains(written["init"], `"init"`) {
 		t.Fatalf("registrations as written: %q", written)
+	}
+	for _, item := range preset.asked["enters"] {
+		if symbol, _ := item["symbol"].(string); symbol == "fnmatch.fnmatch" {
+			t.Fatalf("a word init's handler compares with what it was handed was asked: %v", item)
+		}
+	}
+	for position, operation := range projected.Operations {
+		if operation.Name == "init-*" && !projected.Launch.Nested[operation.ID] {
+			t.Fatal("init-* is not nested under init")
+		}
+		if operation.Name == "init" {
+			var subArguments []string
+			for _, id := range projected.Reach[position].SubArguments {
+				for _, other := range projected.Operations {
+					if other.ID == id {
+						subArguments = append(subArguments, other.Name)
+					}
+				}
+			}
+			if !slices.Equal(subArguments, []string{"init-*"}) {
+				t.Fatalf("init's sub-arguments: %v", subArguments)
+			}
+		}
 	}
 	catalogues := catalogueRows(projected)
 	for _, row := range []string{

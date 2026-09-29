@@ -39,114 +39,118 @@
     },
     {
       "id": "f10",
-      "path": "data/schema.sql"
+      "path": "cmd/worker/status.go"
     },
     {
       "id": "f11",
-      "path": "go.mod"
+      "path": "data/schema.sql"
     },
     {
       "id": "f12",
-      "path": "internal/localstore/ledger.go"
+      "path": "go.mod"
     },
     {
       "id": "f13",
-      "path": "internal/localstore/ledger_append.go"
+      "path": "internal/localstore/ledger.go"
     },
     {
       "id": "f14",
-      "path": "internal/localstore/store.go"
+      "path": "internal/localstore/ledger_append.go"
     },
     {
       "id": "f15",
-      "path": "internal/storefixture/command_table.go"
+      "path": "internal/localstore/store.go"
     },
     {
       "id": "f16",
-      "path": "internal/storefixture/data_sources.go"
+      "path": "internal/storefixture/command_table.go"
     },
     {
       "id": "f17",
-      "path": "internal/storefixture/destinations.go"
+      "path": "internal/storefixture/data_sources.go"
     },
     {
       "id": "f18",
-      "path": "internal/storefixture/fixtures.go"
+      "path": "internal/storefixture/destinations.go"
     },
     {
       "id": "f19",
-      "path": "internal/storefixture/generic_types.go"
+      "path": "internal/storefixture/fixtures.go"
     },
     {
       "id": "f20",
-      "path": "internal/storefixture/handoff_flow.go"
+      "path": "internal/storefixture/generic_types.go"
     },
     {
       "id": "f21",
-      "path": "internal/storefixture/http_registrations.go"
+      "path": "internal/storefixture/handoff_flow.go"
     },
     {
       "id": "f22",
-      "path": "internal/storefixture/level_responses.go"
+      "path": "internal/storefixture/http_registrations.go"
     },
     {
       "id": "f23",
-      "path": "internal/storefixture/listen_addresses.go"
+      "path": "internal/storefixture/level_responses.go"
     },
     {
       "id": "f24",
-      "path": "internal/storefixture/local_http_names.go"
+      "path": "internal/storefixture/listen_addresses.go"
     },
     {
       "id": "f25",
-      "path": "internal/storefixture/runtime_registrations.go"
+      "path": "internal/storefixture/local_http_names.go"
     },
     {
       "id": "f26",
-      "path": "internal/storefixture/server_state.go"
+      "path": "internal/storefixture/runtime_registrations.go"
     },
     {
       "id": "f27",
-      "path": "internal/storefixture/tool_cli.go"
+      "path": "internal/storefixture/server_state.go"
     },
     {
       "id": "f28",
-      "path": "internal/storefixture/workers.go"
+      "path": "internal/storefixture/tool_cli.go"
     },
     {
       "id": "f29",
-      "path": "internal/testhelper/helper.go"
+      "path": "internal/storefixture/workers.go"
     },
     {
       "id": "f30",
-      "path": "internal/testhelper/helper_test.go"
+      "path": "internal/testhelper/helper.go"
     },
     {
       "id": "f31",
-      "path": "pkg/servicecfg/settings.go"
+      "path": "internal/testhelper/helper_test.go"
     },
     {
       "id": "f32",
-      "path": "root.go"
+      "path": "pkg/servicecfg/settings.go"
     },
     {
       "id": "f33",
-      "path": "root_external_test.go"
+      "path": "root.go"
     },
     {
       "id": "f34",
-      "path": "root_optional_test.go"
+      "path": "root_external_test.go"
     },
     {
       "id": "f35",
-      "path": "root_test.go"
+      "path": "root_optional_test.go"
     },
     {
       "id": "f36",
-      "path": "root_vfs.go"
+      "path": "root_test.go"
     },
     {
       "id": "f37",
+      "path": "root_vfs.go"
+    },
+    {
+      "id": "f38",
       "path": "testonly/api_test.go"
     }
   ]

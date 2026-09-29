@@ -304,10 +304,12 @@ func (r *reader) readAPI(ctx context.Context) error {
 			}
 		}
 	}
-	if err := r.readCalls(ctx, symbols, talks); err != nil {
+	// The kept callables are decided before the calls: a call their
+	// handlers make may compare words they were handed (sub_arguments.go).
+	if err := r.readInputs(ctx); err != nil {
 		return err
 	}
-	if err := r.readInputs(ctx); err != nil {
+	if err := r.readCalls(ctx, symbols, talks); err != nil {
 		return err
 	}
 	r.reportStage(lines.StageAPI)
