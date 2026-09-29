@@ -156,7 +156,8 @@ never entered into or read from a repository-wide unqualified map.
   Since 2026-09-27 a file can go in several boxes: a Jev gate, a DeepSeek
   naming of its boxes and a Jev assignment of its declarations (READING, "A
   file in several boxes"); a file nearer the cut stays whole and undecided
-  declarations stay off the map as `undecided`. Since 2026-09-28 a
+  declarations stayed off the map as `undecided` (each is a row of its own
+  in the parts request since fix B, 2026-09-29). Since 2026-09-28 a
   declaration the assignment leaves open goes, by code, to the box where
   every declaration of its file that calls it, is decorated by it or reads
   it went (never a hand-over), else where everything it uses went; the
@@ -170,7 +171,15 @@ never entered into or read from a repository-wide unqualified map.
   whole file every declaration of which, its types included, is a helper
   joins its users' box, and only a helper its users share between rows, or
   one nothing uses, is asked the assignment once more in a second pass of
-  its own (a near-tie leaves it undecided). The atlas symbol and GroupsIndex
+  its own (a near-tie leaves it undecided). Since 2026-09-29 (fix B) a
+  unit no box took is a row of its own in the parts request, named by its
+  declaration as a seed's row is, which the parts step places with its
+  calls or leaves `left_out`; its box question stays undecided in the
+  record and its helper mark is the helper question's (Redis's
+  lookupKeyRead is in Server core state). A callable taking a repository
+  type as a parameter is that type's user (places `takes`), so rule C
+  places a type by its takers (iojob goes with freeIOJob and queueIOJob;
+  Clojure has no parameter types). The atlas symbol and GroupsIndex
   carry the helper mark; an arrow into helpers is quiet like
   initialization, with its exception (a program all of whose arrows would
   be quiet draws them); an area is purple when any part in it is the
@@ -388,9 +397,21 @@ never entered into or read from a repository-wide unqualified map.
   catalogue "looked up in" its readers; a table row names the peer program's
   input only through the joints peers question (Operation.Sends, never an
   arrow); a dispatched input's reading names every outer input reaching its
-  dispatch site, the registration hop included. The launched-program → own
-  executable link is not built (a redesign: executable names per adapter
-  and a new joint side).
+  dispatch site, the registration hop included. A launched program whose
+  word equals the name the repository's build gives one of its own
+  programs (ProgramIndex 21 `target.executables`: C's link output, a Go
+  main package's `go build` name, a Python console script, a package.json
+  bin command; Clojure none) is that program (2026-09-29): its record
+  reads "Runs this repository's program", and on the system map the call's
+  arrow goes into that component with no outside tile (cmd/litestream-test
+  → cmd/litestream; a program starting itself keeps its tile). Equal names
+  only; the report joins them (`programsNamed`).
+- **Field readers and writers (2026-09-29):** a record type's reading
+  gives each field "Written by" and "Read by", the functions by part; a
+  global variable's lists the fields reached through it
+  (`server.masterhost`); a function's says "Writes: …" once (its field
+  writes leave "Uses variables"). No line numbers; from C field paths,
+  Python typed receivers and JS/TS declared properties (REPORT).
 
 ## Contracts and formats
 
@@ -415,7 +436,7 @@ Current shapes are defined by their owning code, not historical run headers:
 [report](../../internal/report/report.go),
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
-This wave uses ProgramIndex 20, places graph 21, reading input 19, atlas 19,
+This wave uses ProgramIndex 21, places graph 21, reading input 19, atlas 19,
 GroupsIndex 25, dependency catalog 2, extraction artifact 2, facts 4, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
@@ -463,6 +484,7 @@ There are no old-format readers or manually rewritten seals.
 | C field reads and writes (2026-09-29) | ProgramIndex 20: each C read or write of a repository record's field is a `reads`/`writes` relation to the field with its `field_path` (C), carried as GroupsIndex edges and the places graph's `fields`; no model request reads them. No-model redis-server: 3,088 field accesses of 7,249 relations; `server.masterhost` written by initServerConfig, loadServerConfig and slaveofCommand ×2, read by genRedisInfoString ×3, slaveofCommand ×4 and syncWithMaster; `server.replstate` written by initServerConfig, loadServerConfig, freeClient, syncWithMaster and slaveofCommand ×2, read by serverCron and genRedisInfoString; `redisDb.expires` written only by initServer (as `server.db.expires`), read by 12 functions (deleteKey, expireIfNeeded, serverCron, …). Go, JS/TS and Clojure record no field writes (GO, JSTS, CLOJURE). Saved runs from ProgramIndex 19 no longer render. |
 | freqtrade subcommands, no model (2026-09-29) | A Python field stored once from a call carries it (PYTHON): `self.parser.add_subparsers(...)` is argparse's, all 34 `add_parser` subcommands are exact word-given calls, each joined by its result to the `set_defaults(func=…)` handing its handler over; an online run has not confirmed the inputs yet. |
 | Report batch, "b", compaction and flow (2026-09-29) | Runs at 68d6d4c5 on the default cache, rendered at 656e8a16: Redis exit 0 in 11 s (0 live), 28.96 → 4.27 MB; litestream v24 exit 0 in 74 s, 9.23 → 3.92 MB; freqtrade exit 0 in 319 s (orientation refused by context size), 46.54 → 9.30 MB; self-snap exit 0 in 124 s, 37.34 → 9.72 MB. `make test`, `make vet`, `make ui-test`, `make ui-visual-test` pass; headless walks without page errors (CHANGELOG). |
+| Fix B, type takers, field readers/writers, own-executable join (2026-09-29) | Runs with the e04743b1 binary, rendered at 61c9dd00, on the default cache, no `cache clear`: Redis exit 0 in 35 s, litestream v24 exit 0 in 63 s, freqtrade exit 0 in 260 s (orientation refused by context size, as before), self-snap (e04743b1) exit 0 in 116 s. Redis's 4 undecided units (dupClientReplyValue, dupStringObject, lookupKeyRead, convertToRealHash) became rows the parts answer put in Server core state, no follow-up, no lone part; iojob placed by rule C with freeIOJob/queueIOJob in Virtual memory; litestream's 2 and self's 2 joined existing parts. litestream-test's 3 `litestream` launches draw an arrow into cmd/litestream; cmd/litestream's 9 self-launches keep their tile and name it. Pages: Redis 4.31 MB, litestream 3.92 MB, freqtrade 9.41 MB, repomap 9.97 MB. `make test`, `make vet` (package parallelism 2), `make ui-test` (134), `make ui-visual-test` (64 passed, 6 skipped) pass; headless walks without page errors. |
 | Freqtrade | Latest larger run stopped after repeated 16k retrieval refusals; no accepted final report for this wave. A corrected ordinary run with worker, destination, question and data checks is required. The 2026-09-28 cold run completed (430 s) with the orientation refused by context size. |
 | Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
 

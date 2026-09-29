@@ -1,5 +1,68 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Fix B, a type's takers, field readers and writers, the own-executable join
+
+- **Fix B (22f5cce9):** a unit of a split file no box took (a near-tie in
+  the assignment or the second pass) is a `c*` row of its own in the parts
+  request, named by its declaration as a seed's row is; the parts step
+  places it with its calls or the follow-up leaves it `left_out`. Its box
+  question stays undecided (`role_undecided`), its helper mark is the
+  helper question's; a blocked helper stays off the map.
+  `TestAnUndecidedUnitIsARowOfItsOwn`; partstest requires every undecided
+  unit to be its own part and checks rule C per unit, only for units that
+  are no helpers (the per-file off-map entry had hidden that a helper
+  nothing uses is no rule-C case: kvd.c's beforeSleep).
+- **A type's takers (cc6996a2):** the places graph records `takes` (exact)
+  from a callable to each repository type its parameters carry
+  (ProgramIndex parameter `type_id`), and the role split counts it as a
+  user of the type. Fixtures: freeClient takes kvClient (C),
+  TypedParameter takes TypedQueryClient (Go), update_counter takes
+  MutableCounter (Python), recordOrder takes OrderEvent (TS); Clojure has
+  no parameter types. No model request changes.
+- **Field readers and writers (df8ebe0d, 61c9dd00):** a record type's
+  reading gives each field "Written by" / "Read by" by part; a global
+  variable's lists the fields reached through it (`server.masterhost`, in
+  the source order of each path's first field, from functions reading the
+  variable itself); a function's says "Writes: …" once, each name reading
+  the type declaring the field, and its field writes leave "Uses
+  variables". No line numbers. Stored once per part reading (`fields`,
+  `writes`, names by declaration index).
+- **Own-executable join (e04743b1):** ProgramIndex 21 `target.executables`
+  (C link output, Go main package's `go build` name, Python console/GUI
+  script, package.json bin; none for Clojure or a hand-built C program).
+  A `runs_program` word equal to one reads "Runs this repository's
+  program X" and draws the call's arrow into X's component with no outside
+  tile; a self-launch keeps its tile. The python-tutorial-game indexes are
+  regenerated through the ordinary no-model run of the materialized fixture
+  (only version and seal differ).
+- **Runs (e04743b1 binary, default cache, no `cache clear`), rendered at
+  61c9dd00 into `redis-r2/run/latest-*.html`:** Redis exit 0 in 35 s:
+  dupClientReplyValue, dupStringObject, lookupKeyRead and convertToRealHash
+  were each their own row and the parts answer put all four in Server core
+  state (no follow-up, no lone part); iojob is placed by rule C
+  (`role_placed_by_users`) with freeIOJob and queueIOJob in Virtual memory;
+  19 parts. `server` lists 109 fields; `server.masterhost` written by
+  initServerConfig, loadServerConfig, slaveofCommand, read by
+  slaveofCommand, syncWithMaster, genRedisInfoString; slaveofCommand
+  "Writes: server.masterhost, server.replstate, server.masterport".
+  litestream v24 exit 0 in 63 s: IsSQLiteDatabase and txidVar joined
+  "Configuration parsing"; cmd/litestream-test's 3 `litestream` launches
+  draw one arrow into cmd/litestream, the MCP server's 9 keep their tile
+  with "Runs this repository's program cmd/litestream". freqtrade exit 0
+  in 260 s (orientation refused by context size, as before; no undecided
+  unit; `Arguments` lists its 3 fields' writers and readers). self-snap
+  (e04743b1) exit 0 in 116 s: Documentation and cloneReadmeRoleLog joined
+  existing parts. Pages: Redis 4.31 MB (4.27 before), litestream 3.92 MB,
+  freqtrade 9.41 MB (9.30), repomap 9.97 MB (9.72). Headless walks
+  (`look/b-*.png`) without page errors.
+- **Verified:** `make test`, `make vet` (package parallelism 2), `make
+  ui-test` (134), `make ui-visual-test` (64 passed, 6 skipped).
+- **Open:** a started program's join is equal names only, so
+  `test_startup_time.py`'s `freqtrade` launch (its word not decided) and
+  launches named at run time stay outside; the flow's library-call row
+  (`exec.CommandContext`) does not name the program it joins; the
+  cumulative JS fixture declares no bin (a unit test holds it).
+
 ## 2026-09-29 — Report batch: reading fixes, the page needs JavaScript ("b"), compact page data, the flow
 
 - **Why:** the benchmark (`results-v2.md`), the blind judge and the owner's
