@@ -219,11 +219,12 @@ func readEchoPreset(t *testing.T, provider *echoPreset) (programindex.Index, fac
 	if err != nil {
 		t.Fatal(err)
 	}
+	categorizer := provider.categorizer()
 	result, err := reading.Read(context.Background(), reading.Options{
 		Graph: graph, Repository: "echo", Revision: "test",
 		Targets:  []reading.TargetMeta{{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}},
 		Executor: llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}},
-		Provider: provider, Categorizer: provider.categorizer(), OwnerRunDir: t.TempDir(),
+		Provider: provider, Categorizer: categorizer, OwnerRunDir: t.TempDir(),
 		ReadSource: func(path string) ([]byte, error) {
 			id, ok := repository.ID(path)
 			if !ok {
@@ -240,6 +241,7 @@ func readEchoPreset(t *testing.T, provider *echoPreset) (programindex.Index, fac
 		t.Fatal(err)
 	}
 	assertNoSourceBodies(t, repository, provider.requests)
+	assertNoLocalIdentities(t, append(slices.Clone(provider.requests), categorizer.Requests()...), repositoryPath, repositoryRoot(t))
 	indexes, err := groupindex.ProjectAtlas(map[string]programindex.Index{index.Target.ID: index}, result.Atlas)
 	if err != nil {
 		t.Fatal(err)

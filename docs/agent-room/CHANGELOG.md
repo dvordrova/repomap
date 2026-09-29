@@ -1,5 +1,25 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — A call's stores no longer reach provider bodies
+
+- **Why:** `atlas.SymbolCall.Stores` (where the code first stored each
+  function a call through a field or a name reaches) is documented as local,
+  but `EvidenceCatalog.call()` cleared only `CalleeIDs`. Redis's cached
+  orientation requests carried `"callee_id":"sym:redis.c:1398:beforeSleep"`
+  (2 of the last 400 payloads: a631ad43, 4744e600), and kvd's Jev
+  `atlas_symbols` questions carried `"callee_id":"s17"`.
+- **Change:** `call()` clears `Stores` with `CalleeIDs`; every provider row
+  built from a call (tables, questions, orientation, Jev) goes through it.
+- **Check:** `TestProviderBodiesCarryNoCanonicalIDsOrHostPaths` reads the C
+  fixture's kvd and kvcli with presets, runs the orientation, and refuses
+  any text-model, Jev or orientation body carrying `"callee_id"`,
+  `"callee_ids"`, `"stores"`, `"place_id"`, `"object_id"`, `sym:`, the
+  fixture's host path or the checkout's; it fails with the old `call()`.
+  The Echo preset reading checks the same over its bodies. A scan of all
+  26,895 cached payloads found no other ID key; host paths appear only
+  inside repository documents quoted as written (self-analysis READMEs,
+  airflow logs), which DISCOVERY allows.
+
 ## 2026-09-29 — Run artifacts written compact and once: report.json 1.05 GB → 350 MB
 
 - **Why:** every ordinary freqtrade run wrote a 1,049,791,466-byte

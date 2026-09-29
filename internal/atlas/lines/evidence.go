@@ -106,7 +106,9 @@ func (c *EvidenceCatalog) call(call atlas.SymbolCall) callEvidence {
 	// indexed in the repository. Resolution still distinguishes exact and
 	// possible dispatch; other candidates may remain external or unresolved.
 	hasRepositoryCallee := len(call.CalleeIDs) > 0
-	call.CalleeIDs = nil
+	// Callee IDs and the stores that name them are canonical identities:
+	// local retrieval keys, never provider prose.
+	call.CalleeIDs, call.Stores = nil, nil
 	call.SourceArguments = nil // Read by destination traversal with source anchors.
 	call.ReceiverValue, call.ResultValue = nil, nil
 	call.Column = 0 // The exact native identity stays local.

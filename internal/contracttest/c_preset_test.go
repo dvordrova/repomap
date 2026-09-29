@@ -426,6 +426,8 @@ type kvdPreset struct {
 	unnamed int
 	// entryWindows counts the requests that named entries.
 	entryWindows int
+	// requests are the provider bodies, as sent.
+	requests [][]byte
 }
 
 func (*kvdPreset) State() []byte { return []byte(`{"provider":"kvd-preset"}`) }
@@ -450,6 +452,9 @@ func (preset *kvdPreset) Complete(_ context.Context, prepared llm.Prepared) (llm
 	if err := json.Unmarshal(prepared.Bytes(), &request); err != nil {
 		return llm.Completion{}, err
 	}
+	preset.mu.Lock()
+	preset.requests = append(preset.requests, slices.Clone(prepared.Bytes()))
+	preset.mu.Unlock()
 	var answer any
 	switch {
 	case request.Task == "repomap.atlas.parts.v2":

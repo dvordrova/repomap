@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -22,11 +23,19 @@ type Categorizer struct {
 	// fails the whole request, so no test is answered by accident.
 	Decide func(key string, question llm.Question) (llm.Verdict, bool)
 
-	mu    sync.Mutex
-	calls int
+	mu       sync.Mutex
+	calls    int
+	requests [][]byte
 }
 
 var _ llm.Categorizer = (*Categorizer)(nil)
+
+// Requests are the request bodies, as the client wrote them.
+func (c *Categorizer) Requests() [][]byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.requests)
+}
 
 // Calls is the number of requests answered.
 func (c *Categorizer) Calls() int {
@@ -45,6 +54,9 @@ func (c *Categorizer) Complete(_ context.Context, prepared llm.Prepared) (llm.Co
 	if err := json.Unmarshal(prepared.Bytes(), &body); err != nil {
 		return llm.Completion{}, err
 	}
+	c.mu.Lock()
+	c.requests = append(c.requests, slices.Clone(prepared.Bytes()))
+	c.mu.Unlock()
 	answers := make(map[string]any, len(body.Questions))
 	for key, asked := range body.Questions {
 		// The instructions hold the question and one item under its name.
