@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	Version       = 18
-	HelperVersion = 27
+	Version       = 19
+	HelperVersion = 28
 	// AdvisoryResultBytes is the former adapter-result size threshold.
 	// Crossing it is diagnostic only.
 	AdvisoryResultBytes = 64 << 20
@@ -196,6 +196,34 @@ type Read struct {
 	Location   Location `json:"location"`
 }
 
+// Comparison is a value a declaration or module body compares with two or
+// more different string words in two or more cases (PROGRAM_INDEX
+// Comparison): a switch's cases and the ===/== comparisons of the same
+// expression, as written.
+type Comparison struct {
+	Ref      string             `json:"ref"`
+	OwnerRef string             `json:"owner_ref"`
+	Value    string             `json:"value"`
+	Origin   *sourcevalue.Value `json:"origin,omitempty"`
+	Location Location           `json:"location"`
+	Cases    []ComparisonCase   `json:"cases"`
+}
+
+// ComparisonCase is one case: "case" for switch clauses, "equals" for
+// comparisons, its words, the first word and the lines it selects.
+type ComparisonCase struct {
+	Form     string          `json:"form"`
+	Words    []string        `json:"words"`
+	Location Location        `json:"location"`
+	Branch   *ComparisonSpan `json:"branch,omitempty"`
+}
+
+// ComparisonSpan is the lines a case selects, both included.
+type ComparisonSpan struct {
+	Line    int `json:"line"`
+	EndLine int `json:"end_line"`
+}
+
 // CallPattern retains only adapter-neutral syntax needed by later bounded
 // pattern classification. It deliberately carries no framework or protocol
 // meaning: the adapter records the terminal selector, exact local receiver
@@ -301,6 +329,7 @@ type Result struct {
 	Calls           []Call        `json:"calls"`
 	Bindings        []Binding     `json:"bindings"`
 	Reads           []Read        `json:"reads"`
+	Comparisons     []Comparison  `json:"comparisons,omitempty"`
 	Surfaces        []Surface     `json:"surfaces"`
 	Contracts       []Contract    `json:"contracts"`
 	SHA256          string        `json:"sha256"`
@@ -581,6 +610,11 @@ func (result Result) Validate() error {
 			return err
 		}
 	}
+	for _, value := range result.Comparisons {
+		if err := registerFact(value.Ref, "comparison"); err != nil {
+			return err
+		}
+	}
 	for _, value := range result.Contracts {
 		if err := registerFact(value.Ref, "contract"); err != nil {
 			return err
@@ -608,6 +642,18 @@ func (result Result) Validate() error {
 		for _, ref := range value.ToRefs {
 			if !knownDeclaration(ref) {
 				return fmt.Errorf("jsts project: read has unknown declaration")
+			}
+		}
+	}
+	for _, value := range result.Comparisons {
+		if !knownDeclaration(value.OwnerRef) || value.Value == "" || !validLocation(value.Location, fileRefs) || len(value.Cases) < 2 ||
+			sourcevalue.Validate(value.Origin) != nil {
+			return fmt.Errorf("jsts project: invalid comparison at %s:%d:%d", value.Location.Path, value.Location.Line, value.Location.Column)
+		}
+		for _, item := range value.Cases {
+			if item.Form != "case" && item.Form != "equals" || len(item.Words) == 0 || !validLocation(item.Location, fileRefs) ||
+				item.Branch != nil && (item.Branch.Line < 1 || item.Branch.EndLine < item.Branch.Line) {
+				return fmt.Errorf("jsts project: invalid comparison case at %s:%d:%d", item.Location.Path, item.Location.Line, item.Location.Column)
 			}
 		}
 	}
@@ -876,6 +922,10 @@ func canonicalize(result *Result) {
 		result.Reads[i].ToRefs = canonicalStrings(result.Reads[i].ToRefs)
 	}
 	sort.Slice(result.Reads, func(i, j int) bool { return result.Reads[i].Ref < result.Reads[j].Ref })
+	if len(result.Comparisons) == 0 {
+		result.Comparisons = nil
+	}
+	sort.Slice(result.Comparisons, func(i, j int) bool { return result.Comparisons[i].Ref < result.Comparisons[j].Ref })
 	if result.Surfaces == nil {
 		result.Surfaces = []Surface{}
 	}

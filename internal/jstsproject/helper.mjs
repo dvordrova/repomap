@@ -5,7 +5,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 27
+const CONTRACT_VERSION = 28
 const MAX_NPM_SCOPED_PACKAGE_PARTS = 2
 // Paired with helperCompilerUnavailableExitCode in discover.go. Stderr is
 // human diagnostic text; only this status identifies a missing compiler.
@@ -2336,6 +2336,105 @@ for (const { sourceFile, path: filePath } of sourceFiles) {
   visitJSXBindings(sourceFile)
 }
 
+// A value one declaration or module body compares with two or more
+// different string words in two or more cases (PROGRAM_INDEX Comparison):
+// the cases of a switch on the value and the === or == comparisons of the
+// same expression with a word. Clauses stacked without statements of their
+// own (`case "a": case "b":`) are one case; comparisons in one if
+// condition, through parentheses, && and ||, are one case, which selects the
+// if statement's then-statement. A lone comparison is none.
+const comparisons = []
+{
+  const lineSpan = (node) => {
+    const sourceFile = node.getSourceFile()
+    return {
+      line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile, false)).line + 1,
+      end_line: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+    }
+  }
+  const stringWord = (node) => {
+    const value = node && unwrapPatternValue(node)
+    return value && (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) ? value : undefined
+  }
+  const literalLike = (node) => {
+    const value = node && unwrapPatternValue(node)
+    return !value || ts.isStringLiteralLike(value) || ts.isNumericLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value) ||
+      [ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(value.kind)
+  }
+  const groups = new Map()
+  const add = (owner, compared, word, form, caseKey, branch) => {
+    if (!owner) return
+    const key = `${owner}\0${expressionText(compared)}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push({ owner, compared, word, form, caseKey, branch })
+  }
+  for (const { sourceFile } of sourceFiles) {
+    const visit = (node) => {
+      if (ts.isSwitchStatement(node) && !literalLike(node.expression)) {
+        const owner = readOwner(node)
+        let stacked = []
+        for (const clause of node.caseBlock.clauses) {
+          if (!ts.isCaseClause(clause)) {
+            stacked = []
+            continue
+          }
+          stacked.push(clause)
+          if (clause.statements.length === 0) continue
+          const first = stacked[0]
+          const branch = { line: lineSpan(first).line, end_line: lineSpan(clause).end_line }
+          for (const member of stacked) {
+            const word = stringWord(member.expression)
+            if (word) add(owner, node.expression, word, "case", clause, branch)
+          }
+          stacked = []
+        }
+        for (const member of stacked) {
+          const word = stringWord(member.expression)
+          if (word) add(owner, node.expression, word, "case", member, lineSpan(member))
+        }
+      }
+      if (ts.isBinaryExpression(node) && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken].includes(node.operatorToken.kind)) {
+        let compared = node.left, word = stringWord(node.right)
+        if (!word) { compared = node.right; word = stringWord(node.left) }
+        if (word && !literalLike(compared)) {
+          let caseKey = node, branch, child = node
+          for (let parent = node.parent; parent; child = parent, parent = parent.parent) {
+            if (ts.isParenthesizedExpression(parent)) continue
+            if (ts.isBinaryExpression(parent) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken].includes(parent.operatorToken.kind)) continue
+            if (ts.isIfStatement(parent) && parent.expression === child) { caseKey = parent; branch = lineSpan(parent.thenStatement) }
+            break
+          }
+          add(readOwner(node), compared, word, "equals", caseKey, branch)
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+  }
+  for (const words of groups.values()) {
+    words.sort((a, b) => a.word.getSourceFile() === b.word.getSourceFile() ? a.word.getStart() - b.word.getStart() : 0)
+    const distinct = new Set(words.filter((item) => item.word.text).map((item) => item.word.text))
+    const branches = new Set(words.filter((item) => item.word.text).map((item) => item.caseKey))
+    if (distinct.size < 2 || branches.size < 2) continue
+    const cases = []
+    const byCase = new Map()
+    for (const item of words) {
+      if (byCase.has(item.caseKey)) {
+        byCase.get(item.caseKey).words.push(item.word.text)
+        continue
+      }
+      const value = { form: item.form, words: [item.word.text], location: locationOf(item.word), ...(item.branch ? { branch: item.branch } : {}) }
+      byCase.set(item.caseKey, value)
+      cases.push(value)
+    }
+    const first = words[0]
+    comparisons.push({
+      ref: factRef("comparison", first.word, expressionText(first.compared)), owner_ref: first.owner,
+      value: expressionText(first.compared), origin: sourceValue(first.compared), location: locationOf(first.word), cases,
+    })
+  }
+}
+
 const sharedContract = (value) => value.kind === "shared_type" || value.location.path.startsWith("shared/")
 const sharedContracts = contracts.filter(sharedContract).sort((left, right) =>
   compareText(left.location.path, right.location.path) || left.location.line - right.location.line ||
@@ -2369,6 +2468,7 @@ const result = {
   calls: uniqueByRef(calls),
   bindings: uniqueByRef(bindings),
   reads: uniqueByRef(reads),
+  comparisons: uniqueByRef(comparisons),
   surfaces: uniqueByRef(surfaces),
   contracts: uniqueByRef(contracts),
 }

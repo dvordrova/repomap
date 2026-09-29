@@ -216,6 +216,18 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			continue
 		}
 		owner := ownerAt(u.site)
+		// A case form compares its value with the words its tests write
+		// (PROGRAM_INDEX Comparison); it stays no call.
+		if u.Macro && u.To == "clojure.core" && u.Name == "case" && owner != "" {
+			if comparison := sources[u.Filename].caseComparison(u.site); comparison != nil {
+				object := objects[owner]
+				repeated := slices.ContainsFunc(object.Comparisons, func(recorded p.Comparison) bool { return *recorded.Location == *comparison.Location })
+				if (object.Kind.Callable() || object.Kind == p.ObjectModule) && !repeated {
+					object.Comparisons = append(object.Comparisons, *comparison)
+					objects[owner] = object
+				}
+			}
+		}
 		// Definition operators belong to namespace evaluation, not to their newly
 		// declared function bodies. They are native compile-time forms, not calls.
 		if u.Macro {

@@ -284,6 +284,12 @@ class Analyzer:
         self.module_scopes = {}
         self.relations = []
         self.relations_by_key = {}
+        # The words each callable or module body compares a value with, by
+        # the scope's object ref (compared_word), and the rows of each
+        # module-level table, by its variable's ref, None once a second
+        # module-level assignment writes the name.
+        self.compared_words = {}
+        self.table_rows = {}
 
     def add_object(self, value, qname=""):
         ref = value["source_ref"]
@@ -505,6 +511,11 @@ class Analyzer:
             self.current_path = module["path"]
             visitor = RelationVisitor(self, module, self.module_scopes[module["name"]])
             visitor.visit(module["tree"])
+        self.attach_comparisons()
+        for ref, rows in self.table_rows.items():
+            value = self.objects_by_ref.get(ref)
+            if rows and value is not None and value["kind"] == "variable":
+                value["rows"] = rows
 
         for relation in self.relations:
             values = []
@@ -590,6 +601,45 @@ class Analyzer:
             "objects": self.objects,
             "relations": self.relations,
         }
+
+    def attach_comparisons(self):
+        # A value one scope compares with two or more different non-empty
+        # words in two or more cases is one comparison (PROGRAM_INDEX): the
+        # branches of an if/elif chain and the cases of a match on the same
+        # expression. A lone comparison, or one condition naming several
+        # words for one branch, is none.
+        for ref, words in self.compared_words.items():
+            value = self.objects_by_ref.get(ref)
+            if value is None or value["kind"] not in ("function", "method", "lambda", "module"):
+                continue
+            groups = {}
+            for word in words:
+                groups.setdefault(word["key"], []).append(word)
+            comparisons = []
+            for group in groups.values():
+                group.sort(key=lambda word: location_key(word["location"]))
+                distinct = {word["word"] for word in group if word["word"]}
+                branches = {word["case"] for word in group if word["word"]}
+                if len(distinct) < 2 or len(branches) < 2:
+                    continue
+                cases, by_case = [], {}
+                for word in group:
+                    if word["case"] in by_case:
+                        by_case[word["case"]]["words"].append(word["word"])
+                        continue
+                    item = {"form": word["form"], "words": [word["word"]], "location": word["location"]}
+                    if word["branch"]:
+                        item["branch"] = {"line": word["branch"][0], "end_line": word["branch"][1]}
+                    by_case[word["case"]] = item
+                    cases.append(item)
+                first = group[0]
+                comparison = {"value": first["text"], "location": first["location"], "cases": cases}
+                if first["origin"]:
+                    comparison["origin"] = first["origin"]
+                comparisons.append(comparison)
+            if comparisons:
+                comparisons.sort(key=lambda comparison: location_key(comparison["location"]))
+                value["comparisons"] = comparisons
 
     def object_qname(self, ref):
         return self.qnames_by_ref.get(ref, "")
@@ -2655,12 +2705,165 @@ class RelationVisitor(ast.NodeVisitor):
             self._attribute_write(target)
             self._target_reads(target)
         self.visit(node.value)
+        if len(node.targets) == 1:
+            self.record_table(node.targets[0], node.value)
         origin = self.assignment_origin(node.value)
         initializer = self.initializer_value_candidate(node.value)
         source_origin = self.source_value(node.value)
         for target in node.targets:
+            if self.bind_parallel(target, node.value):
+                continue
             self.bind_pattern_target(target, origin, initializer, source_origin)
             self.bind_field_type(target, node.value)
+
+    def bind_parallel(self, target, value):
+        # `cmd, args = args[0], args[1:]` binds each name to its own value,
+        # every value read before any name is bound.
+        if not isinstance(target, (ast.Tuple, ast.List)) or not isinstance(value, (ast.Tuple, ast.List)) or \
+                len(target.elts) != len(value.elts) or \
+                any(isinstance(item, ast.Starred) for item in list(target.elts) + list(value.elts)):
+            return False
+        bound = [(item, self.assignment_origin(written), self.initializer_value_candidate(written), self.source_value(written))
+                 for item, written in zip(target.elts, value.elts)]
+        for item, origin, initializer, source_origin in bound:
+            self.bind_pattern_target(item, origin, initializer, source_origin)
+        return True
+
+    def record_table(self, target, value):
+        # A module-level variable written once whose value is a list, tuple,
+        # set or dict of one shape: every element a string, a call to one
+        # callee, or a tuple of constants of one length, and a dict's keys
+        # strings (its values of one such shape, or constants). Each element
+        # is a row of the string literals it writes in order: a dict's key,
+        # then a call's positional and keyword words, as written. A nested
+        # dict or a mixed collection is no table. build.go keeps the rows
+        # only of a table a function outside tests reads.
+        if self.scope.kind != "module" or not isinstance(target, ast.Name):
+            return
+        binding = self.scope.bindings.get(target.id)
+        if not binding or binding.get("kind") != "object":
+            return
+        ref = binding["ref"]
+        if ref in self.analyzer.table_rows:
+            self.analyzer.table_rows[ref] = None
+            return
+        self.analyzer.table_rows[ref] = self.written_rows(value)
+
+    def written_rows(self, value):
+        path = self.module["path"]
+
+        def text(node):
+            return isinstance(node, ast.Constant) and isinstance(node.value, str)
+
+        def literal(node, field=""):
+            location = source_location(path, node)
+            return {"value": node.value, "location": location, **({"field": field} if field else {})} if location else None
+
+        def shape(node):
+            if text(node):
+                return "string"
+            if isinstance(node, ast.Call):
+                callee = safe_expression_name(node.func)
+                return "call " + callee if callee else None
+            if isinstance(node, (ast.Tuple, ast.List)) and node.elts and all(isinstance(item, ast.Constant) for item in node.elts):
+                return "tuple %d" % len(node.elts)
+            if isinstance(node, ast.Constant):
+                return "constant"
+            return None
+
+        def words(node):
+            if text(node):
+                return [literal(node)]
+            if isinstance(node, ast.Call):
+                return [literal(item) for item in node.args if text(item)] + \
+                    [literal(item.value, item.arg) for item in node.keywords if item.arg and text(item.value)]
+            if isinstance(node, (ast.Tuple, ast.List)):
+                return [literal(item) for item in node.elts if text(item)]
+            return []
+
+        if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+            shapes = {shape(item) for item in value.elts}
+            if len(shapes) != 1 or None in shapes or "constant" in shapes:
+                return None
+            rows = [words(item) for item in value.elts]
+        elif isinstance(value, ast.Dict):
+            if any(key is None or not text(key) for key in value.keys):
+                return None
+            shapes = {shape(item) for item in value.values}
+            if len(shapes) != 1 or None in shapes:
+                return None
+            rows = [[literal(key)] + words(item) for key, item in zip(value.keys, value.values)]
+        else:
+            return None
+        if len(rows) < 2 or any(not row or None in row for row in rows):
+            return None
+        return [{"literals": row} for row in rows]
+
+    def compared_word(self, compared, literals, form, node, case=None, branch=None):
+        # One word or several a scope compares a value with, in one case:
+        # the if statement whose condition holds the comparison, or a match
+        # case (attach_comparisons).
+        if self.scope.kind not in ("function", "method", "lambda", "module"):
+            return
+        if case is None:
+            case, branch = getattr(node, "repomap_case", (id(node), None))
+        origin = self.source_value(compared)
+        for item in literals:
+            location = source_location(self.module["path"], item)
+            if location is None:
+                continue
+            self.analyzer.compared_words.setdefault(self.scope.ref, []).append({
+                "key": ast.dump(compared), "text": bounded_text(ast.unparse(compared)), "origin": origin,
+                "word": item.value, "location": location, "form": form, "case": case, "branch": branch,
+            })
+
+    def visit_If(self, node):
+        # A comparison in an if statement's condition, alone or joined by
+        # and/or, selects the statement's block.
+        branch = (node.body[0].lineno, node.body[-1].end_lineno) if node.body else None
+        pending = [node.test]
+        while pending:
+            test = pending.pop()
+            if isinstance(test, ast.BoolOp):
+                pending.extend(test.values)
+            elif isinstance(test, ast.Compare):
+                test.repomap_case = (id(node), branch)
+        self.generic_visit(node)
+
+    def visit_Compare(self, node):
+        if len(node.ops) == 1:
+            left, right, operator = node.left, node.comparators[0], node.ops[0]
+            def text(value):
+                return isinstance(value, ast.Constant) and isinstance(value.value, str)
+            if isinstance(operator, ast.Eq):
+                if text(right) and not isinstance(left, ast.Constant):
+                    self.compared_word(left, [right], "equals", node)
+                elif text(left) and not isinstance(right, ast.Constant):
+                    self.compared_word(right, [left], "equals", node)
+            elif isinstance(operator, ast.In) and isinstance(right, (ast.Tuple, ast.List, ast.Set)) and right.elts and \
+                    all(text(value) for value in right.elts) and not isinstance(left, ast.Constant):
+                self.compared_word(left, right.elts, "equals", node)
+        self.generic_visit(node)
+
+    def visit_Match(self, node):
+        # Each case matching the subject with string values: the words of
+        # one case (a | b), and its body as the lines it selects.
+        for case in node.cases:
+            values = []
+            pending = [case.pattern]
+            while pending:
+                pattern = pending.pop(0)
+                if isinstance(pattern, ast.MatchOr):
+                    pending[0:0] = pattern.patterns
+                elif isinstance(pattern, ast.MatchValue) and isinstance(pattern.value, ast.Constant) and isinstance(pattern.value.value, str):
+                    values.append(pattern.value)
+                else:
+                    values = []
+                    break
+            if values:
+                branch = (case.body[0].lineno, case.body[-1].end_lineno) if case.body else None
+                self.compared_word(node.subject, values, "case", case, id(case), branch)
+        self.generic_visit(node)
 
     def visit_AnnAssign(self, node):
         self._attribute_write(node.target)

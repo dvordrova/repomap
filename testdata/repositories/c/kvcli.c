@@ -38,6 +38,24 @@ static const char *withoutScheme(const char *host) {
     return strncmp(host, "kvd://", strlen("kvd://")) == 0 ? host + strlen("kvd://") : host;
 }
 
+/* A short option before the command: the switch compares its letter with
+ * each option's, one comparison of arg[1] for the whole switch ('h' and
+ * '?' stacked on one body are one case). C compares strings by calls
+ * (strcasecmp above), each its own call fact. */
+static int shortOption(const char *arg) {
+    switch (arg[1]) {
+    case 'h':
+    case '?':
+        fprintf(stderr, "usage: kvcli [-h] [-V] [--raw] command [argument ...]\n");
+        return 2;
+    case 'V':
+        puts("kvcli 1.0");
+        return 0;
+    default:
+        return -1;
+    }
+}
+
 int main(int argc, char **argv) {
     const char *host = getenv("KVD_HOST");
     const char *port = getenv("KVD_PORT");
@@ -49,6 +67,7 @@ int main(int argc, char **argv) {
 
     /* Without a command, the client reads its commands from its input. */
     if (argc == 1) return repl(host != NULL ? withoutScheme(host) : "127.0.0.1", port != NULL ? atoi(port) : 7379);
+    if (argv[1][0] == '-' && argv[1][1] != '-') return shortOption(argv[1]);
     /* --raw, an option of the client, comes before the command. */
     if (argc > 2 && strcasecmp(argv[1], "--raw") == 0) first = 2;
     if (argc <= first) {

@@ -102,6 +102,7 @@ type helperOutput struct {
 	Calls            []Call        `json:"calls"`
 	Bindings         []Binding     `json:"bindings"`
 	Reads            []Read        `json:"reads"`
+	Comparisons      []Comparison  `json:"comparisons"`
 	Surfaces         []Surface     `json:"surfaces"`
 	Contracts        []Contract    `json:"contracts"`
 }
@@ -316,7 +317,7 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 	result := Result{
 		Version: Version, HelperVersion: HelperVersion, CorpusSHA256: repository.SHA256(), SourceSHA256: sourceSHA256, Project: project,
 		Files: output.Files, Declarations: output.Declarations, Imports: output.Imports, Exports: output.Exports,
-		Calls: output.Calls, Bindings: output.Bindings, Reads: output.Reads, Surfaces: output.Surfaces, Contracts: output.Contracts,
+		Calls: output.Calls, Bindings: output.Bindings, Reads: output.Reads, Comparisons: output.Comparisons, Surfaces: output.Surfaces, Contracts: output.Contracts,
 	}
 	addScriptSurfaces(&result)
 	addPackageBinarySurfaces(&result)
@@ -1046,6 +1047,14 @@ func rebaseHelperOutput(projectDir string, output *helperOutput) {
 	}
 	for index := range output.Reads {
 		rebaseLocation(&output.Reads[index].Location)
+	}
+	for index := range output.Comparisons {
+		comparison := &output.Comparisons[index]
+		rebaseLocation(&comparison.Location)
+		comparison.Origin = projectValue(comparison.Origin)
+		for at := range comparison.Cases {
+			rebaseLocation(&comparison.Cases[at].Location)
+		}
 	}
 	for index := range output.Surfaces {
 		rebaseLocation(&output.Surfaces[index].Location)

@@ -192,6 +192,27 @@ func programInputFor(result Result, scenarioSHA string) programindex.Input {
 			Parameters: typedInputs(declaration.Parameters, declarationByRef), Results: typedInputs(declaration.Results, declarationByRef),
 		})
 	}
+	if len(result.Comparisons) > 0 {
+		owners := make(map[string]int, len(objects))
+		for position, object := range objects {
+			owners[object.SourceRef] = position
+		}
+		for _, comparison := range result.Comparisons {
+			position, ok := owners[comparison.OwnerRef]
+			if !ok {
+				continue
+			}
+			value := programindex.Comparison{Value: comparison.Value, Origin: sourcevalue.Clone(comparison.Origin), Location: programLocation(comparison.Location)}
+			for _, item := range comparison.Cases {
+				written := programindex.ComparisonCase{Form: programindex.ComparisonForm(item.Form), Words: append([]string(nil), item.Words...), Location: programLocation(item.Location)}
+				if item.Branch != nil {
+					written.Branch = &programindex.LineRange{Line: item.Branch.Line, EndLine: item.Branch.EndLine}
+				}
+				value.Cases = append(value.Cases, written)
+			}
+			objects[position].Comparisons = append(objects[position].Comparisons, value)
+		}
+	}
 	for _, value := range result.Calls {
 		if value.Pattern == nil || value.Pattern.ResultRef == "" {
 			continue

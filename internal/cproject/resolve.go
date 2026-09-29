@@ -541,6 +541,7 @@ func (w walker) walk(n *Node) {
 		}
 		return
 	case "SwitchStmt":
+		w.b.switchComparison(w, n)
 		for i, child := range n.Inner {
 			w.with(i == len(n.Inner)-1).walk(child)
 		}

@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	Version          = 21
+	Version          = 22
 	ArtifactFilename = "program-index.json"
 
 	// These exported values are advisory scale thresholds. ProgramIndex does
@@ -428,6 +428,9 @@ type ObjectInput struct {
 	// initializer that write string literals and store no repository
 	// callable (a row that stores one is a registration, D1).
 	Rows []TableRow
+	// Comparisons are, for a callable or a module body, the values it
+	// compares with two or more different words (see Comparison).
+	Comparisons []Comparison
 }
 
 // ParameterStore is a callable storing one of its own parameters, as it
@@ -459,6 +462,120 @@ type RowLiteral struct {
 	Field    string    `json:"field,omitempty"`
 	Value    string    `json:"value"`
 	Location *Location `json:"location"`
+}
+
+// Comparison is one value a callable or a module body compares with two or
+// more different words: the cases of a switch, match or case statement on
+// the value, and the == comparisons of the same value with a word (a
+// multi-way dispatch): two or more different non-empty words in two or more
+// cases. A lone comparison is none, and so is one condition naming several
+// words for one branch. Value is the compared
+// expression as written; Origin is where its value comes from, as the
+// adapter records source values; Location is where it is first compared.
+// Cases are in source order. It states the structure only: what the words
+// are is decided later.
+type Comparison struct {
+	Value    string             `json:"value"`
+	Origin   *sourcevalue.Value `json:"origin,omitempty"`
+	Location *Location          `json:"location"`
+	Cases    []ComparisonCase   `json:"cases"`
+}
+
+// ComparisonForm is the closed syntax one case is written in.
+type ComparisonForm string
+
+const (
+	// ComparisonCaseForm is a case of a switch, match or case statement.
+	ComparisonCaseForm ComparisonForm = "case"
+	// ComparisonEquals is an == comparison with a word, or a test of
+	// membership in a written list of words.
+	ComparisonEquals ComparisonForm = "equals"
+)
+
+func (form ComparisonForm) Valid() bool {
+	return form == ComparisonCaseForm || form == ComparisonEquals
+}
+
+// ComparisonCase is one branch of a Comparison: the words it compares the
+// value with (`case "a", "b":` has two; comparisons joined by or in one
+// condition are one case), where the first is written, and Branch, the
+// lines of the code the case selects, both included, when the adapter
+// knows them (a case body, the block an if statement's condition guards).
+type ComparisonCase struct {
+	Form     ComparisonForm `json:"form"`
+	Words    []string       `json:"words"`
+	Location *Location      `json:"location"`
+	Branch   *LineRange     `json:"branch,omitempty"`
+}
+
+func cloneComparisons(values []Comparison) []Comparison {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]Comparison, len(values))
+	for i, value := range values {
+		result[i] = Comparison{Value: value.Value, Origin: sourcevalue.Clone(value.Origin), Location: cloneLocation(value.Location)}
+		result[i].Cases = make([]ComparisonCase, len(value.Cases))
+		for j, item := range value.Cases {
+			result[i].Cases[j] = ComparisonCase{Form: item.Form, Words: slices.Clone(item.Words), Location: cloneLocation(item.Location), Branch: cloneLineRange(item.Branch)}
+		}
+	}
+	return result
+}
+
+// canonicalComparisons orders comparisons and their cases by where they are
+// written.
+func canonicalComparisons(values []Comparison) []Comparison {
+	result := cloneComparisons(values)
+	for i := range result {
+		sort.SliceStable(result[i].Cases, func(a, b int) bool {
+			return compareOptionalLocations(result[i].Cases[a].Location, result[i].Cases[b].Location) < 0
+		})
+	}
+	sort.SliceStable(result, func(a, b int) bool { return compareOptionalLocations(result[a].Location, result[b].Location) < 0 })
+	return result
+}
+
+// validComparisons accepts comparisons of a callable or a module body only,
+// each located, in source order, with located cases in source order that
+// compare the value with two or more different non-empty words in two or
+// more cases.
+func validComparisons(kind ObjectKind, values []Comparison) bool {
+	if len(values) > 0 && !callableKind(kind) && kind != ObjectModule {
+		return false
+	}
+	for position, value := range values {
+		if !validText(value.Value) || value.Location == nil || !validLocation(*value.Location) || len(value.Cases) == 0 ||
+			position > 0 && compareOptionalLocations(values[position-1].Location, value.Location) >= 0 ||
+			sourcevalue.Validate(value.Origin) != nil {
+			return false
+		}
+		distinct := map[string]bool{}
+		worded := 0
+		for at, item := range value.Cases {
+			if !item.Form.Valid() || len(item.Words) == 0 || item.Location == nil || !validLocation(*item.Location) ||
+				at > 0 && compareOptionalLocations(value.Cases[at-1].Location, item.Location) >= 0 ||
+				item.Branch != nil && (item.Branch.Line < 1 || item.Branch.EndLine < item.Branch.Line) {
+				return false
+			}
+			counted := false
+			for _, word := range item.Words {
+				if !utf8.ValidString(word) || strings.ContainsRune(word, 0) {
+					return false
+				}
+				if word != "" {
+					distinct[word] = true
+					if !counted {
+						worded, counted = worded+1, true
+					}
+				}
+			}
+		}
+		if len(distinct) < 2 || worded < 2 {
+			return false
+		}
+	}
+	return true
 }
 
 func canonicalParameterStores(values []ParameterStore) []ParameterStore {
@@ -657,6 +774,9 @@ type Object struct {
 	// Rows are a table variable's rows that write words and store no
 	// repository callable (see TableRow).
 	Rows []TableRow `json:"rows,omitempty"`
+	// Comparisons are the values a callable or a module body compares with
+	// two or more different words (see Comparison).
+	Comparisons []Comparison `json:"comparisons,omitempty"`
 }
 
 // Witness preserves one bounded local fact supporting a relation. Kind and
@@ -1302,6 +1422,7 @@ func New(input Input) (Index, error) {
 			Signature: value.Signature, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Unreachable: value.Unreachable, Macro: value.Macro, Directory: value.Directory,
 			External: cloneExternalSymbol(value.External), Aliases: canonicalAliases(value.Aliases), Types: slices.Clone(value.Types),
 			ParameterStores: canonicalParameterStores(value.ParameterStores), Rows: cloneRows(value.Rows),
+			Comparisons: canonicalComparisons(value.Comparisons),
 		}
 		index.Objects = append(index.Objects, object)
 	}
@@ -1501,6 +1622,7 @@ func (index Index) Snapshot() Index {
 		result.Objects[position].Types = slices.Clone(index.Objects[position].Types)
 		result.Objects[position].ParameterStores = canonicalParameterStores(index.Objects[position].ParameterStores)
 		result.Objects[position].Rows = cloneRows(index.Objects[position].Rows)
+		result.Objects[position].Comparisons = cloneComparisons(index.Objects[position].Comparisons)
 	}
 	result.Relations = make([]Relation, len(index.Relations))
 	copy(result.Relations, index.Relations)
@@ -2057,7 +2179,8 @@ func validateObjectInput(value ObjectInput) error {
 		!validOptionalText(value.ContainerRef) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
 		!validAliases(canonicalAliases(value.Aliases)) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
 		(value.Unreachable || value.Macro) && !callableKind(value.Kind) ||
-		!validParameterStores(value.Kind, canonicalParameterStores(value.ParameterStores)) || !validRows(value.Kind, value.Rows) {
+		!validParameterStores(value.Kind, canonicalParameterStores(value.ParameterStores)) || !validRows(value.Kind, value.Rows) ||
+		!validComparisons(value.Kind, canonicalComparisons(value.Comparisons)) {
 		return fmt.Errorf("program index: invalid object input")
 	}
 	for _, typed := range append(append([]TypedNameInput(nil), value.Parameters...), value.Results...) {
@@ -2077,7 +2200,8 @@ func validateObject(value Object) error {
 		!validOptionalText(value.ContainerID) || !validOptionalLocation(value.Location) || !validObjectDirectory(value.Kind, value.Directory) ||
 		!validAliases(value.Aliases) || !validTypeLocations(value.Kind, value.Types) || !validEndLine(value.Location, value.EndLine) || !validCodeLines(value.Location, value.EndLine, value.CodeLines) ||
 		(value.Unreachable || value.Macro) && !callableKind(value.Kind) ||
-		!validParameterStores(value.Kind, value.ParameterStores) || !validRows(value.Kind, value.Rows) {
+		!validParameterStores(value.Kind, value.ParameterStores) || !validRows(value.Kind, value.Rows) ||
+		!validComparisons(value.Kind, value.Comparisons) {
 		return fmt.Errorf("program index: invalid object")
 	}
 	for _, typed := range append(append([]TypedName(nil), value.Parameters...), value.Results...) {

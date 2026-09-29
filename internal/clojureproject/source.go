@@ -358,3 +358,73 @@ func Docstrings(data []byte) []Documentation {
 	}
 	return docs
 }
+
+// caseComparison is a `(case value "a" … "b" … default)` form at site as a
+// comparison of value with its words (PROGRAM_INDEX Comparison): a test
+// that is a string literal, or a list of them (`("a" "b")`), and its result
+// form are one case, whose branch runs from the test to the result's last
+// line. Any other test (a number, a keyword, a symbol) is no word, and a form
+// comparing fewer than two words in two cases is none. The value's origin is
+// its text: the adapter follows no Clojure value.
+func (s source) caseComparison(at site) *programindex.Comparison {
+	start, end := s.offset(at.Row, at.Col), s.offset(at.EndRow, at.EndCol)
+	if start < 0 || end <= start || s.text[start] != '(' {
+		return nil
+	}
+	nodes, _ := forms(s.text[start:end], 0, 0)
+	if len(nodes) != 1 || len(nodes[0].children) < 4 {
+		return nil
+	}
+	children := nodes[0].children
+	written := func(node form) string {
+		return strings.Join(strings.Fields(string(s.text[start+node.start:start+node.end])), " ")
+	}
+	word := func(node form) (string, bool) {
+		value := string(s.text[start+node.start : start+node.end])
+		if !strings.HasPrefix(value, "\"") {
+			return "", false
+		}
+		literal, err := clojureString(value)
+		return literal, err == nil
+	}
+	compared := children[1]
+	anchor := s.location(at.Filename, start+compared.start)
+	comparison := &programindex.Comparison{Value: written(compared), Origin: &sourcevalue.Value{Kind: "unknown", Text: written(compared),
+		Anchor: &sourcevalue.Anchor{Path: anchor.Path, Line: anchor.Line, Column: anchor.Column}}}
+	distinct := map[string]bool{}
+	for i := 2; i+1 < len(children); i += 2 {
+		test, result := children[i], children[i+1]
+		candidates := []form{test}
+		if s.text[start+test.start] == '(' {
+			candidates = test.children
+		}
+		item := programindex.ComparisonCase{Form: programindex.ComparisonCaseForm}
+		for _, candidate := range candidates {
+			value, ok := word(candidate)
+			if !ok {
+				item.Words = nil
+				break
+			}
+			if item.Location == nil {
+				item.Location = s.location(at.Filename, start+candidate.start)
+			}
+			item.Words = append(item.Words, value)
+		}
+		if len(item.Words) == 0 {
+			continue
+		}
+		first, last := s.location(at.Filename, start+test.start), s.location(at.Filename, start+result.end-1)
+		item.Branch = &programindex.LineRange{Line: first.Line, EndLine: last.Line}
+		for _, value := range item.Words {
+			if value != "" {
+				distinct[value] = true
+			}
+		}
+		comparison.Cases = append(comparison.Cases, item)
+	}
+	if len(comparison.Cases) < 2 || len(distinct) < 2 {
+		return nil
+	}
+	comparison.Location = comparison.Cases[0].Location
+	return comparison
+}

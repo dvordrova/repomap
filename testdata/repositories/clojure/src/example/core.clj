@@ -147,3 +147,13 @@
 ;; with it. The same comparison of a row's own name with a word is data.
 (defn shouted? [args] (= (first args) "--shout"))
 (defn default-row? [row] (= (:name row) "default"))
+
+;; A command line read by comparing its first word: one case form compares
+;; the first argument with each subcommand's name, ("check" "verify") one
+;; case of two words. One question for the whole form; the `=` above stays
+;; a call asked on its own.
+(defn run-command [args]
+  (case (first args)
+    "serve" :serve
+    ("check" "verify") :check
+    :usage))

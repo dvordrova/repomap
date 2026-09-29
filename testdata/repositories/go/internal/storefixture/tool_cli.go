@@ -66,3 +66,33 @@ func (c *toolCommand) Run(args []string) error {
 func RunTool(args []string) error {
 	return (&toolCommand{name: "tool"}).Run(args)
 }
+
+// RunSubcommand runs the subcommand its first argument names, as
+// litestream's Main.Run does: the parallel assignment takes that argument,
+// the switch compares it with each subcommand's name ("check" and "verify"
+// are one case), and the default branch compares it with the help words,
+// one case of the same value. The whole dispatch is one comparison of cmd,
+// asked once.
+func RunSubcommand(args []string) string {
+	var cmd string
+	if len(args) > 0 {
+		cmd, args = args[0], args[1:]
+	}
+	switch cmd {
+	case "serve":
+		return "serve " + strings.Join(args, " ")
+	case "check", "verify":
+		return "check"
+	default:
+		if cmd == "help" || cmd == "-h" {
+			return "usage"
+		}
+		return "unknown command " + cmd
+	}
+}
+
+// IsDefaultLevel compares a level with one word: a lone comparison is no
+// dispatch and records nothing.
+func IsDefaultLevel(level string) bool {
+	return level == "default"
+}

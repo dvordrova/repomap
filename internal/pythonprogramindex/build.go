@@ -90,6 +90,11 @@ type parsedObject struct {
 	Results      []parsedTyped                `json:"results,omitempty"`
 	Directory    string                       `json:"directory,omitempty"`
 	External     *programindex.ExternalSymbol `json:"external,omitempty"`
+	// Rows are a module-level table's rows and Comparisons the values a
+	// callable or module body compares with several words, as ProgramIndex
+	// writes them (PYTHON).
+	Rows        []programindex.TableRow   `json:"rows,omitempty"`
+	Comparisons []programindex.Comparison `json:"comparisons,omitempty"`
 }
 
 type parsedTyped struct {
@@ -434,6 +439,7 @@ func buildInputResults(
 		}
 		for viewPosition, group := range batch.views {
 			parsed := parsedViews[viewPosition]
+			keepReadTables(parsed.objects, parsed.relations, testSources)
 			shared := programindex.ShareInput(programindex.Input{
 				ScenarioSHA256: parsed.scenarioSHA256, SourceSHA256: parsed.sourceSHA256,
 				Objects: parsed.objects, Relations: parsed.relations,
@@ -457,6 +463,39 @@ func buildInputResults(
 		}
 	}
 	return inputs, nil
+}
+
+// keepReadTables keeps the rows of a module-level table only when a
+// function outside the tests reads it (a `reads` relation from a function,
+// method or lambda whose file is no test source): a table nothing reads, or
+// only tests or module bodies read, is no table of names (PYTHON).
+func keepReadTables(objects []programindex.ObjectInput, relations []programindex.RelationInput, testSources map[string]bool) {
+	byRef := make(map[string]int, len(objects))
+	for position, object := range objects {
+		byRef[object.SourceRef] = position
+	}
+	read := make(map[string]bool)
+	for _, relation := range relations {
+		if relation.Kind != programindex.RelationReads {
+			continue
+		}
+		position, ok := byRef[relation.FromRef]
+		if !ok {
+			continue
+		}
+		reader := objects[position]
+		if !reader.Kind.Callable() || reader.Location == nil || testSources[reader.Location.Path] {
+			continue
+		}
+		for _, to := range relation.ToRefs {
+			read[to] = true
+		}
+	}
+	for position := range objects {
+		if len(objects[position].Rows) > 0 && !read[objects[position].SourceRef] {
+			objects[position].Rows = nil
+		}
+	}
 }
 
 func targetGroupForTarget(target pythontarget.Target) *targetGroup {
@@ -699,12 +738,30 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 		if _, duplicate := objectRefs[value.SourceRef]; duplicate {
 			return parsedGroup{}, fmt.Errorf("duplicate helper object %q", value.SourceRef)
 		}
+		for _, row := range value.Rows {
+			for _, literal := range row.Literals {
+				if err := validateHelperLocation(literal.Location, allowedPaths); err != nil {
+					return parsedGroup{}, fmt.Errorf("object %q row: %w", value.SourceRef, err)
+				}
+			}
+		}
+		for _, comparison := range value.Comparisons {
+			if err := validateHelperLocation(comparison.Location, allowedPaths); err != nil {
+				return parsedGroup{}, fmt.Errorf("object %q comparison: %w", value.SourceRef, err)
+			}
+			for _, item := range comparison.Cases {
+				if err := validateHelperLocation(item.Location, allowedPaths); err != nil {
+					return parsedGroup{}, fmt.Errorf("object %q comparison case: %w", value.SourceRef, err)
+				}
+			}
+		}
 		objectRefs[value.SourceRef] = value
 		objects = append(objects, programindex.ObjectInput{
 			SourceRef: value.SourceRef, Kind: kind, Name: value.Name,
 			Visibility: programindex.Visibility(value.Visibility), Signature: value.Signature,
 			OwnerRef: value.OwnerRef, ContainerRef: value.ContainerRef, Location: cloneLocation(value.Location), EndLine: value.EndLine, CodeLines: value.CodeLines, Directory: value.Directory,
 			External: cloneParsedExternalSymbol(value.External), Parameters: typedInputs(value.Parameters), Results: typedInputs(value.Results),
+			Rows: value.Rows, Comparisons: value.Comparisons,
 		})
 	}
 	relations := make([]programindex.RelationInput, 0, len(response.Relations))

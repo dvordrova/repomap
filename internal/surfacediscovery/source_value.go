@@ -182,11 +182,28 @@ func (a *analyzer) sourceValue(value ssa.Value, active map[ssa.Value]bool, obser
 	case *ssa.Field:
 		return a.fieldSourceValue(v.X, v.Field, v.Pos(), active, readAt)
 	case *ssa.Lookup:
-		return &sourcevalue.Value{Kind: "index", Anchor: a.valueAnchor(v.Pos()), Parts: []sourcevalue.Value{*a.sourceValue(v.X, active, readAt), *a.sourceValue(v.Index, active, readAt)}}
+		return &sourcevalue.Value{Kind: "index", Anchor: a.valueAnchor(v.Pos()), Parts: []sourcevalue.Value{*a.sourceValue(v.X, active, readAt), *a.indexValue(v.Index, active, readAt)}}
 	case *ssa.Index:
-		return &sourcevalue.Value{Kind: "index", Anchor: a.valueAnchor(v.Pos()), Parts: []sourcevalue.Value{*a.sourceValue(v.X, active, readAt), *a.sourceValue(v.Index, active, readAt)}}
+		return &sourcevalue.Value{Kind: "index", Anchor: a.valueAnchor(v.Pos()), Parts: []sourcevalue.Value{*a.sourceValue(v.X, active, readAt), *a.indexValue(v.Index, active, readAt)}}
+	case *ssa.IndexAddr:
+		// args[0] of a slice: the element's address, read through a load.
+		return &sourcevalue.Value{Kind: "index", Anchor: a.valueAnchor(v.Pos()), Parts: []sourcevalue.Value{*a.sourceValue(v.X, active, readAt), *a.indexValue(v.Index, active, readAt)}}
+	case *ssa.Global:
+		// A package variable (os.Args) is not followed; its name says which.
+		if v.Pkg != nil && v.Pkg.Pkg != nil {
+			unknown.Text = v.Pkg.Pkg.Name() + "." + v.Name()
+		}
 	}
 	return unknown
+}
+
+// indexValue is an element's index: a constant number as written, anything
+// else as any source value.
+func (a *analyzer) indexValue(value ssa.Value, active map[ssa.Value]bool, readAt ssa.Instruction) *sourcevalue.Value {
+	if c, ok := value.(*ssa.Const); ok && c.Value != nil && c.Value.Kind() == constant.Int {
+		return &sourcevalue.Value{Kind: "literal", Text: c.Value.ExactString()}
+	}
+	return a.sourceValue(value, active, readAt)
 }
 
 func (a *analyzer) fieldSourceValue(receiver ssa.Value, field int, pos token.Pos, active map[ssa.Value]bool, readAt ssa.Instruction) *sourcevalue.Value {

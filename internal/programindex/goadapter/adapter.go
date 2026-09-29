@@ -592,6 +592,9 @@ func (projection *goProjection) projectRelations() error {
 	if err := projection.projectFieldAccesses(); err != nil {
 		return err
 	}
+	if err := projection.projectComparisons(); err != nil {
+		return err
+	}
 	dynamicRepresented, err := projection.projectDynamicHandoffs()
 	if err != nil {
 		return err
@@ -762,6 +765,46 @@ func (projection *goProjection) projectFieldAccesses() error {
 			Witnesses:         []programindex.Witness{{Kind: witness, Detail: verb + access.Path, Location: location}},
 			WitnessesObserved: 1, FieldPath: access.Path,
 		})
+	}
+	return nil
+}
+
+// projectComparisons gives each node the values its body compares with two
+// or more different words (GO, PROGRAM_INDEX Comparison).
+func (projection *goProjection) projectComparisons() error {
+	if len(projection.direct.Comparisons) == 0 {
+		return nil
+	}
+	objects := make(map[string]int, len(projection.objects))
+	for position, object := range projection.objects {
+		objects[object.SourceRef] = position
+	}
+	for _, comparison := range projection.direct.Comparisons {
+		ref, ok := projection.directNodeObjectRefs[comparison.CallerID]
+		if !ok {
+			return fmt.Errorf("Go program index adapter: comparison has no projected caller %q", comparison.CallerID)
+		}
+		position, ok := objects[ref]
+		if !ok {
+			return fmt.Errorf("Go program index adapter: comparison caller %q has no object", comparison.CallerID)
+		}
+		location, err := projection.surfaceLocation(comparison.Site)
+		if err != nil {
+			return err
+		}
+		value := programindex.Comparison{Value: comparison.Value, Origin: sourcevalue.Clone(comparison.Origin), Location: location}
+		for _, item := range comparison.Cases {
+			at, err := projection.surfaceLocation(item.Site)
+			if err != nil {
+				return err
+			}
+			written := programindex.ComparisonCase{Form: programindex.ComparisonForm(item.Form), Words: slices.Clone(item.Words), Location: at}
+			if item.BranchLine > 0 {
+				written.Branch = &programindex.LineRange{Line: item.BranchLine, EndLine: item.BranchEnd}
+			}
+			value.Cases = append(value.Cases, written)
+		}
+		projection.objects[position].Comparisons = append(projection.objects[position].Comparisons, value)
 	}
 	return nil
 }

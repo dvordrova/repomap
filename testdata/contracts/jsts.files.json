@@ -119,106 +119,110 @@
     },
     {
       "id": "f30",
-      "path": "src/excluded/retained.test.ts"
+      "path": "src/dispatch.ts"
     },
     {
       "id": "f31",
-      "path": "src/facade-exports/consumer.ts"
+      "path": "src/excluded/retained.test.ts"
     },
     {
       "id": "f32",
-      "path": "src/facade-exports/exchange-index.ts"
+      "path": "src/facade-exports/consumer.ts"
     },
     {
       "id": "f33",
-      "path": "src/facade-exports/exchange.ts"
+      "path": "src/facade-exports/exchange-index.ts"
     },
     {
       "id": "f34",
-      "path": "src/facade-exports/index.ts"
+      "path": "src/facade-exports/exchange.ts"
     },
     {
       "id": "f35",
-      "path": "src/facade-exports/resolver.ts"
+      "path": "src/facade-exports/index.ts"
     },
     {
       "id": "f36",
-      "path": "src/facade-exports/star-consumer.ts"
+      "path": "src/facade-exports/resolver.ts"
     },
     {
       "id": "f37",
-      "path": "src/facade-exports/star-index.ts"
+      "path": "src/facade-exports/star-consumer.ts"
     },
     {
       "id": "f38",
-      "path": "src/facade-exports/star-rates.ts"
+      "path": "src/facade-exports/star-index.ts"
     },
     {
       "id": "f39",
-      "path": "src/http-registrations.ts"
+      "path": "src/facade-exports/star-rates.ts"
     },
     {
       "id": "f40",
-      "path": "src/market-worker.js"
+      "path": "src/http-registrations.ts"
     },
     {
       "id": "f41",
-      "path": "src/market.test.ts"
+      "path": "src/market-worker.js"
     },
     {
       "id": "f42",
-      "path": "src/platform.ts"
+      "path": "src/market.test.ts"
     },
     {
       "id": "f43",
-      "path": "src/route-mounts.ts"
+      "path": "src/platform.ts"
     },
     {
       "id": "f44",
-      "path": "src/runtime-registrations.ts"
+      "path": "src/route-mounts.ts"
     },
     {
       "id": "f45",
-      "path": "src/server.ts"
+      "path": "src/runtime-registrations.ts"
     },
     {
       "id": "f46",
-      "path": "src/sql-literals.ts"
+      "path": "src/server.ts"
     },
     {
       "id": "f47",
-      "path": "src/stored-callbacks.ts"
+      "path": "src/sql-literals.ts"
     },
     {
       "id": "f48",
-      "path": "src/test-setup.ts"
+      "path": "src/stored-callbacks.ts"
     },
     {
       "id": "f49",
-      "path": "src/testing/real-service.ts"
+      "path": "src/test-setup.ts"
     },
     {
       "id": "f50",
-      "path": "src/type-members.ts"
+      "path": "src/testing/real-service.ts"
     },
     {
       "id": "f51",
-      "path": "src/workers.ts"
+      "path": "src/type-members.ts"
     },
     {
       "id": "f52",
-      "path": "src/workspace-origins-js.js"
+      "path": "src/workers.ts"
     },
     {
       "id": "f53",
-      "path": "src/workspace-origins.ts"
+      "path": "src/workspace-origins-js.js"
     },
     {
       "id": "f54",
-      "path": "tsconfig.json"
+      "path": "src/workspace-origins.ts"
     },
     {
       "id": "f55",
+      "path": "tsconfig.json"
+    },
+    {
+      "id": "f56",
       "path": "vitest.config.ts"
     }
   ]

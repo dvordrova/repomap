@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -28,7 +29,9 @@ const (
 	// left out with the synthetic package initializer that evaluates it.
 	// Version 16 adds FieldAccesses: each read and write of a repository
 	// struct's field a node's body names, with the path the code reaches it by.
-	DirectCallIndexVersion = 16
+	// Version 17 adds Comparisons: each value a node's body compares with two
+	// or more different words, a switch's cases or == comparisons.
+	DirectCallIndexVersion = 17
 )
 
 type DirectCallIndexState string
@@ -162,6 +165,33 @@ type DirectCallFieldAccess struct {
 	Site     Location `json:"site"`
 }
 
+// DirectCallComparison is one value a node's body compares with two or more
+// different string words (GO): the cases of a switch on the value and the ==
+// comparisons of the same expression with a word. Value is the expression as
+// written, Origin where its value comes from (the switch tag's or the
+// compared operand's SSA value), Site its first comparison, and Cases each
+// case in source order.
+type DirectCallComparison struct {
+	CallerID string                     `json:"caller_id"`
+	Value    string                     `json:"value"`
+	Origin   *sourcevalue.Value         `json:"origin,omitempty"`
+	Site     Location                   `json:"site"`
+	Cases    []DirectCallComparisonCase `json:"cases"`
+}
+
+// DirectCallComparisonCase is one case of a comparison: Form is "case" for a
+// switch case and "equals" for == comparisons (several joined by || or && in
+// one if condition are one case), Words the words it compares with, Site the
+// first word, and Branch the lines the case selects: the case clause, or the
+// block the if statement's condition guards.
+type DirectCallComparisonCase struct {
+	Form       string   `json:"form"`
+	Words      []string `json:"words"`
+	Site       Location `json:"site"`
+	BranchLine int      `json:"branch_line,omitempty"`
+	BranchEnd  int      `json:"branch_end,omitempty"`
+}
+
 // DirectCallNodeFrontier is closed per-caller accounting for call
 // instructions that cannot become exact repository-local DirectCallEdges.
 // It deliberately retains neither a guessed target nor another source
@@ -188,6 +218,7 @@ type DirectCallIndexCoverage struct {
 	EdgesIndexed                 int `json:"edges_indexed"`
 	DirectStaticWitnessesIndexed int `json:"direct_static_witnesses_indexed"`
 	FieldAccessesIndexed         int `json:"field_accesses_indexed,omitempty"`
+	ComparisonsIndexed           int `json:"comparisons_indexed,omitempty"`
 	SyntheticFunctionsExcluded   int `json:"synthetic_functions_excluded"`
 	InvalidFunctionsExcluded     int `json:"invalid_functions_excluded"`
 	DynamicInvokesExcluded       int `json:"dynamic_invokes_excluded"`
@@ -292,8 +323,10 @@ type DirectCallIndex struct {
 	// FieldAccesses follow the edges: a node's field accesses are recorded
 	// where its calls are, so an explicit depth narrows both alike.
 	FieldAccesses []DirectCallFieldAccess `json:"field_accesses,omitempty"`
-	Coverage      DirectCallIndexCoverage `json:"coverage"`
-	SHA256        string                  `json:"sha256"`
+	// Comparisons, like field accesses, are recorded where a node's calls are.
+	Comparisons []DirectCallComparison  `json:"comparisons,omitempty"`
+	Coverage    DirectCallIndexCoverage `json:"coverage"`
+	SHA256      string                  `json:"sha256"`
 
 	nodeLookup map[string]int
 }
@@ -320,6 +353,15 @@ func (index DirectCallIndex) Snapshot() DirectCallIndex {
 	}
 	snapshot.Frontiers = cloneDirectCallSlice(index.Frontiers)
 	snapshot.FieldAccesses = cloneDirectCallSlice(index.FieldAccesses)
+	snapshot.Comparisons = cloneDirectCallSlice(index.Comparisons)
+	for position := range snapshot.Comparisons {
+		comparison := &snapshot.Comparisons[position]
+		comparison.Origin = sourcevalue.Clone(comparison.Origin)
+		comparison.Cases = cloneDirectCallSlice(comparison.Cases)
+		for at := range comparison.Cases {
+			comparison.Cases[at].Words = cloneDirectCallSlice(comparison.Cases[at].Words)
+		}
+	}
 	snapshot.initializeNodeLookup()
 	return snapshot
 }
@@ -409,9 +451,9 @@ func (index DirectCallIndex) Validate() error {
 			return fmt.Errorf("direct call index: unavailable index has invalid closed reason %q", index.ClosedReason)
 		}
 		if len(index.Modules) != 0 || len(index.Nodes) != 0 || len(index.Variables) != 0 || len(index.Edges) != 0 || len(index.Frontiers) != 0 ||
-			len(index.FieldAccesses) != 0 ||
+			len(index.FieldAccesses) != 0 || len(index.Comparisons) != 0 ||
 			index.Coverage.ModulesIndexed != 0 || index.Coverage.NodesIndexed != 0 || index.Coverage.VariablesIndexed != 0 ||
-			index.Coverage.EdgesIndexed != 0 || index.Coverage.FieldAccessesIndexed != 0 {
+			index.Coverage.EdgesIndexed != 0 || index.Coverage.FieldAccessesIndexed != 0 || index.Coverage.ComparisonsIndexed != 0 {
 			return fmt.Errorf("direct call index: unavailable index retained a partial graph")
 		}
 	} else if index.ClosedReason != "" {
@@ -424,7 +466,8 @@ func (index DirectCallIndex) Validate() error {
 		index.Coverage.NodesIndexed != len(index.Nodes) ||
 		index.Coverage.VariablesIndexed != len(index.Variables) ||
 		index.Coverage.EdgesIndexed != len(index.Edges) ||
-		index.Coverage.FieldAccessesIndexed != len(index.FieldAccesses) {
+		index.Coverage.FieldAccessesIndexed != len(index.FieldAccesses) ||
+		index.Coverage.ComparisonsIndexed != len(index.Comparisons) {
 		return fmt.Errorf("direct call index: coverage does not match graph")
 	}
 
@@ -551,6 +594,28 @@ func (index DirectCallIndex) Validate() error {
 	}
 
 	previous = ""
+	for _, comparison := range index.Comparisons {
+		key := directCallComparisonKey(comparison)
+		if previous != "" && key <= previous {
+			return fmt.Errorf("direct call index: comparisons are not unique canonical order")
+		}
+		previous = key
+		if _, ok := nodes[comparison.CallerID]; !ok {
+			return fmt.Errorf("direct call index: comparison has unknown caller %q", comparison.CallerID)
+		}
+		if comparison.Value == "" || !validRepositoryDirectCallLocation(comparison.Site) || comparison.Site.Column <= 0 || len(comparison.Cases) == 0 ||
+			sourcevalue.Validate(comparison.Origin) != nil {
+			return fmt.Errorf("direct call index: invalid comparison of %q by %q", comparison.Value, comparison.CallerID)
+		}
+		for _, item := range comparison.Cases {
+			if item.Form != "case" && item.Form != "equals" || len(item.Words) == 0 || !validRepositoryDirectCallLocation(item.Site) || item.Site.Column <= 0 ||
+				item.BranchLine < 0 || item.BranchEnd < item.BranchLine {
+				return fmt.Errorf("direct call index: invalid case of the comparison of %q by %q", comparison.Value, comparison.CallerID)
+			}
+		}
+	}
+
+	previous = ""
 	dynamicInvokes := 0
 	nonStaticCalls := 0
 	externalCallees := 0
@@ -608,6 +673,7 @@ type directCallIndexBuilder struct {
 	edges         map[string]DirectCallEdge
 	frontiers     map[string]DirectCallNodeFrontier
 	fieldAccesses map[string]DirectCallFieldAccess
+	comparisons   map[string]DirectCallComparison
 	functionNode  map[*ssa.Function]string
 	functionsSeen map[*ssa.Function]struct{}
 	coverage      DirectCallIndexCoverage
@@ -625,6 +691,7 @@ func newDirectCallIndexBuilder(scenario Scenario, maxEdges int) *directCallIndex
 		edges:     make(map[string]DirectCallEdge), functionNode: make(map[*ssa.Function]string),
 		frontiers:     make(map[string]DirectCallNodeFrontier),
 		fieldAccesses: make(map[string]DirectCallFieldAccess),
+		comparisons:   make(map[string]DirectCallComparison),
 		functionsSeen: make(map[*ssa.Function]struct{}),
 	}
 }
@@ -651,6 +718,7 @@ func (builder *directCallIndexBuilder) close(reason DirectCallIndexClosedReason)
 	builder.edges = nil
 	builder.frontiers = nil
 	builder.fieldAccesses = nil
+	builder.comparisons = nil
 	builder.functionNode = nil
 	return
 }
@@ -666,6 +734,14 @@ func (builder *directCallIndexBuilder) recordFieldAccess(access DirectCallFieldA
 		access.Write = access.Write || previous.Write
 	}
 	builder.fieldAccesses[key] = access
+}
+
+// recordComparison keeps one comparison per caller and first site.
+func (builder *directCallIndexBuilder) recordComparison(comparison DirectCallComparison) {
+	if builder == nil || builder.state != DirectCallIndexReady {
+		return
+	}
+	builder.comparisons[directCallComparisonKey(comparison)] = comparison
 }
 
 func (builder *directCallIndexBuilder) recordFunction(a *analyzer, function *ssa.Function) (string, bool) {
@@ -900,6 +976,12 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 		sort.Slice(index.FieldAccesses, func(i, j int) bool {
 			return directCallFieldAccessKey(index.FieldAccesses[i]) < directCallFieldAccessKey(index.FieldAccesses[j])
 		})
+		for _, comparison := range builder.comparisons {
+			index.Comparisons = append(index.Comparisons, comparison)
+		}
+		sort.Slice(index.Comparisons, func(i, j int) bool {
+			return directCallComparisonKey(index.Comparisons[i]) < directCallComparisonKey(index.Comparisons[j])
+		})
 		sort.Slice(index.Modules, func(i, j int) bool {
 			return directCallModuleKey(index.Modules[i]) < directCallModuleKey(index.Modules[j])
 		})
@@ -920,12 +1002,14 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 		index.Coverage.VariablesIndexed = len(index.Variables)
 		index.Coverage.EdgesIndexed = len(index.Edges)
 		index.Coverage.FieldAccessesIndexed = len(index.FieldAccesses)
+		index.Coverage.ComparisonsIndexed = len(index.Comparisons)
 	} else {
 		index.Coverage.ModulesIndexed = 0
 		index.Coverage.NodesIndexed = 0
 		index.Coverage.VariablesIndexed = 0
 		index.Coverage.EdgesIndexed = 0
 		index.Coverage.FieldAccessesIndexed = 0
+		index.Coverage.ComparisonsIndexed = 0
 	}
 	index.SHA256, _ = directCallIndexSHA256(index)
 	index.initializeNodeLookup()
@@ -1101,6 +1185,13 @@ func directCallFieldAccessKey(access DirectCallFieldAccess) string {
 	return strings.Join([]string{
 		access.CallerID, access.Site.Path, fmt.Sprintf("%09d:%09d", access.Site.Line, access.Site.Column),
 		access.Package, access.Type, access.Field,
+	}, "\x00")
+}
+
+// directCallComparisonKey orders comparisons by caller, then by first site.
+func directCallComparisonKey(comparison DirectCallComparison) string {
+	return strings.Join([]string{
+		comparison.CallerID, comparison.Site.Path, fmt.Sprintf("%09d:%09d", comparison.Site.Line, comparison.Site.Column),
 	}, "\x00")
 }
 
