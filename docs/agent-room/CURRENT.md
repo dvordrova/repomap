@@ -66,7 +66,8 @@ ProgramIndex owns deterministic facts; the reading result owns model annotations
 that reference those facts. Places, atlas and GroupsIndex are migration names,
 not permission to persist partially self-contained copies of objects, relations,
 paths or structural edges. The final repository artifact contains the fact graph
-once and annotations once. `report.json` embeds the same ProgramIndexes directly,
+once and annotations once. `report.json` names the run's own ProgramIndex files (its
+directory's and its targets' sibling directories', each with its SHA-256),
 not a presentation-specific graph, and stores GroupsIndex as the same thin
 semantic overlays. Native group subjects and structural edges exist only as an
 in-memory join while the HTML is built.
