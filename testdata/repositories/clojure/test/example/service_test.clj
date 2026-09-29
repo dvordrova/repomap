@@ -10,3 +10,8 @@
     (is (= 5 (count arguments)))
     (is (= "kept" (first arguments)))
     (is (= "metadata" (nth arguments 3)))))
+
+;; SQL a test runs is the test's, not the program's: its call is no outbound
+;; call of the program.
+(defn create-test-only-rows [execute!]
+  (execute! "CREATE TABLE test_only_rows (id INTEGER PRIMARY KEY)"))

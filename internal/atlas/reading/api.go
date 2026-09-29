@@ -433,10 +433,34 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 	return publishes
 }
 
-// testFile reports a file place of test code.
+// testFile reports a file place of test code: a file the target's adapter
+// lists among its testing sources. It is the one test rule of the reading;
+// testPath is the same rule by the file's path.
 func (r *reader) testFile(fileID string) bool {
 	file := r.places[fileID]
 	return file.File != nil && file.File.Test
+}
+
+func (r *reader) testPath(filePath string) bool {
+	return r.testPaths[filePath]
+}
+
+// dropTestBoundaries removes every boundary a test file makes once all are
+// known. Test code is testing, not the program: its calls reach no input,
+// outbound call or question, and its listeners no address.
+func (r *reader) dropTestBoundaries(publishes []*boundaryState) []*boundaryState {
+	for id, state := range r.boundaries {
+		if r.testPath(state.place.Path) {
+			delete(r.boundaries, id)
+		}
+	}
+	kept := publishes[:0]
+	for _, state := range publishes {
+		if !r.testPath(state.place.Path) {
+			kept = append(kept, state)
+		}
+	}
+	return kept
 }
 
 // readWordCall records what the reading made of one call outside tests

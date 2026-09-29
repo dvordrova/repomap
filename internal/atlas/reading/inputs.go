@@ -204,7 +204,7 @@ func (r *reader) applyStored() {
 			continue
 		}
 		kind := r.storedKinds[storedKey(b)]
-		if kind == "" || kind == lines.APINone || kind == lines.APIMiddleware || r.testFile(state.place.Parent) {
+		if kind == "" || kind == lines.APINone || kind == lines.APIMiddleware {
 			delete(r.boundaries, id)
 			continue
 		}

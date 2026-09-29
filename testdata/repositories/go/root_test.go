@@ -17,3 +17,9 @@ func (*testRootReader) expected() string { return "repository root" }
 func (*testObserver) observe() string { return "observed" }
 
 type testObserver struct{}
+
+// SQL a test runs is the test's, not the library's: its table reaches no data
+// and its call no outbound call of the program.
+func createTestOnlyRows(execute func(string) error) error {
+	return execute("CREATE TABLE test_only_rows (id INTEGER PRIMARY KEY)")
+}

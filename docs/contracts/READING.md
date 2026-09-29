@@ -577,6 +577,16 @@ part's card shows it beside the pair's own.
   code-running call in code a target never runs belongs to the targets that
   run it. Other adapters prove nothing, so in their programs a boundary stays
   wherever its file is linked.
+- Test code is testing, not the program. The reading's one test rule is its
+  adapter's `TestSources` fact (atlas `test` files, the rule its calls,
+  inputs and settings already follow). Once every boundary is made, one
+  written in a test file is dropped before any question: it is no input,
+  outbound call, listener or program started, and nothing is asked about it.
+  A data object the extractors find in a test file is no data of a program.
+  Both stop where the reading produces a target's boundaries and data; the
+  report hides nothing. A file a test runner does not collect (a helper
+  under `tests/` pytest's patterns do not match) is ordinary code until its
+  adapter lists it.
 
 ## External symbols: the `atlas_api` table
 

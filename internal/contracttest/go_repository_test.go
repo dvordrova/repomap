@@ -412,7 +412,7 @@ func assertGoInterfaceDeclarations(t *testing.T, authorities goFixtureAuthoritie
 
 func assertGoTestDeclarationProjection(t *testing.T, repository *corpus.Corpus, index programindex.Index) {
 	t.Helper()
-	want := map[string]bool{"TestPublishedRoot": false, "testExpectedRoot": false, "TestPublishedAPI": false, "TestRootFromTestOnlyPackage": false, "TestPrivateHelper": false, "expected": false, "observe": false, "testObserver": false}
+	want := map[string]bool{"TestPublishedRoot": false, "testExpectedRoot": false, "TestPublishedAPI": false, "TestRootFromTestOnlyPackage": false, "TestPrivateHelper": false, "expected": false, "observe": false, "testObserver": false, "createTestOnlyRows": false}
 	testIDs := make(map[string]bool)
 	names := make(map[string]string)
 	for _, object := range index.Objects {

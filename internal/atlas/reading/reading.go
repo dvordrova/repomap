@@ -146,6 +146,10 @@ type reader struct {
 	openFiles         map[string]bool // file place ID -> open, budget mode only
 	budget            bool
 
+	// testPaths are the paths of the files the targets' adapters list among
+	// their testing sources (testFile).
+	testPaths map[string]bool
+
 	symbolLine map[string]cell    // symbol place ID -> model line
 	api        map[string]apiRole // external symbol -> what it binds, publishes, talks to
 	// callEnters are what the words of each asked call become, by call
@@ -316,6 +320,7 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		classifierGate:    &llm.BatchController{},
 		places:            make(map[string]atlas.Place, len(opts.Graph.Places)),
 		directoriesByPath: make(map[string]string),
+		testPaths:         make(map[string]bool),
 		symbolsBySource:   make(map[string]string),
 		lines:             make(map[string]cell),
 		titles:            make(map[string]cell),
@@ -348,6 +353,9 @@ func Read(ctx context.Context, opts Options) (Result, error) {
 		if place.Kind == atlas.PlaceFile {
 			// Before the parts are drawn, a file stands for itself.
 			r.boxOf[place.ID] = place.Path
+			if place.File != nil && place.File.Test {
+				r.testPaths[place.Path] = true
+			}
 		}
 		if place.Kind == atlas.PlaceSymbol && place.Symbol != nil {
 			r.symbolsBySource[symbolSourceKey(place.Path, place.LineNo, place.Symbol.Decl.Name)] = place.ID

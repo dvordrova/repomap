@@ -700,6 +700,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	r.applyStored()
 	publishes := r.applyAPIRoles()
 	publishes = append(publishes, r.bindInterpretedBoundaries()...)
+	publishes = r.dropTestBoundaries(publishes)
 	r.foldValues()
 	r.bindTableRows()
 	r.markDeclaredOn()

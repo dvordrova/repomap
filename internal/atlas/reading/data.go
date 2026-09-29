@@ -11,7 +11,9 @@ func (r *reader) dataForTarget(id string) []atlas.DataRecord {
 	var rows []atlas.DataRecord
 	known := map[string]bool{}
 	for _, place := range r.opts.Graph.Places {
-		if place.Entity == nil || place.Entity.Data == nil || !contains(place.TargetIDs, id) {
+		// A data object written in a test file is the test's, not the
+		// program's (testPath, the rule boundaries follow).
+		if place.Entity == nil || place.Entity.Data == nil || !contains(place.TargetIDs, id) || r.testPath(place.Path) {
 			continue
 		}
 		known[place.ID] = true
