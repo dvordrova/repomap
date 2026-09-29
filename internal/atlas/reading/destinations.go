@@ -367,7 +367,7 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 							left = prefix.Frontier
 						}
 						if suffix.Frontier != "" {
-							right = "{" + suffix.Frontier + "}"
+							right = "{" + templatePart(&part, suffix.Frontier) + "}"
 						}
 						suffix.Frontier = left + right
 						suffix.Address = ""
@@ -537,6 +537,21 @@ func (d *DestinationReader) chosenCallers(use destinationPath, callees []string,
 		}
 	}
 	return chosen
+}
+
+// templatePart is how a template writes a part whose walk established no
+// address: the value as the code wrote it there when it names one (a
+// field, a parameter, a receiver, an element), else where its walk ended.
+// litestream's WAL file is db.path + "-wal": "{db.path}-wal", however deep
+// the walk of db.path went, and no longer "-wal" alone.
+func templatePart(part *sourcevalue.Value, frontier string) string {
+	switch part.Kind {
+	case "field", "parameter", "receiver", "index":
+		if expression := sourceValueExpression(part); expression != "" && !strings.Contains(expression, "?") {
+			return expression
+		}
+	}
+	return frontier
 }
 
 func sourceValueExpression(value *sourcevalue.Value) string {

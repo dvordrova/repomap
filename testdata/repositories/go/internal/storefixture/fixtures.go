@@ -148,3 +148,14 @@ type TicketContract[T any] interface {
 // Embedding and aliases do not redeclare the original methods.
 type EmbeddedTicket interface{ TicketContract[string] }
 type TicketAlias = TicketContract[string]
+
+// fixtureJournal names its journal after its store's path, which no call
+// gives: the file is the template {store.path}-journal, never "-journal"
+// alone (litestream's db.path + "-wal" had read "-wal").
+type fixtureJournal struct{ path string }
+
+func (store *fixtureJournal) journalPath() string { return store.path + "-journal" }
+
+func ReadFixtureJournal(store *fixtureJournal) ([]byte, error) {
+	return os.ReadFile(store.journalPath())
+}

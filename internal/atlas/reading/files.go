@@ -119,6 +119,10 @@ func (reader *FileReader) Files(targetID string) []atlas.DataRecord {
 					found = gather("path\x00"+path, path, "")
 				case use.Frontier != "" && len(reader.fields[use.Frontier]) > 0:
 					found = gather("field\x00"+use.Frontier, "{"+use.Frontier+"}", use.Frontier)
+				case writtenTemplate(use.Frontier):
+					// A template the walk wrote around a part it could not
+					// resolve is one file: `{db.path}-wal`.
+					found = gather("path\x00"+use.Frontier, use.Frontier, "")
 				default:
 					found = gather("unknown\x00"+place.ID, "", "")
 				}
@@ -146,6 +150,14 @@ func (reader *FileReader) Files(targetID string) []atlas.DataRecord {
 		records = append(records, atlas.DataRecord{ID: fmt.Sprintf("w%d", i+1), Path: first.Path, Line: first.Line, Data: &data})
 	}
 	return records
+}
+
+// writtenTemplate says a walk's end is a template it wrote (concat): literal
+// text beside a part it could not resolve, in braces.
+func writtenTemplate(frontier string) bool {
+	open := strings.IndexByte(frontier, '{')
+	closing := strings.LastIndexByte(frontier, '}')
+	return open >= 0 && closing > open && (open > 0 || closing < len(frontier)-1)
 }
 
 // values are the writes of a field in one program, in site order, each with

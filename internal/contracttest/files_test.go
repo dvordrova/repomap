@@ -76,6 +76,8 @@ func TestCFixtureFieldWritesKeepTheValueTheyStore(t *testing.T) {
 //   - Go: createFixtureState creates "fixture-state.db"; LoadServerConfig
 //     reads the path it is given, which no call gives: not established. Go
 //     records a field's writes without their values, so no field is one.
+//     ReadFixtureJournal reads store.path + "-journal", whose path no call
+//     gives: the template {store.path}-journal.
 //   - Python: read_settings opens Path(name), whose name no call gives: not
 //     established. A field stored twice (MutableAdapter's url, default and
 //     replacement) is unknown to the Python adapter, so its file would be
@@ -174,6 +176,7 @@ func TestEveryLanguageKeepsTheFilesItsCodeReaches(t *testing.T) {
 		got := files(graph, index, []string{"os.Create", "os.ReadFile"}, map[string]reading.ArgumentChoice{"os.Create": {Position: 1}, "os.ReadFile": {Position: 1}})
 		want := []string{
 			fmt.Sprintf("fixture-state.db: os.Create createFixtureState@%d", fixtureLine(t, "go", "internal/storefixture/fixtures.go", `os.Create("fixture-state.db")`)),
+			fmt.Sprintf("{store.path}-journal: os.ReadFile ReadFixtureJournal@%d", fixtureLine(t, "go", "internal/storefixture/fixtures.go", "os.ReadFile(store.journalPath())")),
 			fmt.Sprintf("(not established): os.ReadFile LoadServerConfig@%d", fixtureLine(t, "go", "internal/storefixture/tool_cli.go", "os.ReadFile(path)")),
 		}
 		if !reflect.DeepEqual(got, want) {
