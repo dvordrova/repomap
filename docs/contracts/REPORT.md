@@ -1499,15 +1499,20 @@ Multi-target publication retains each target's ProgramIndex, dependency
 catalogue and GroupsIndex. Shared artifacts, the manifest, report JSON and HTML
 are published once in the owner run from values already held in memory. A
 served report has the same complete set of target sections; it needs no sibling
-report files. Saved report restoration reads the common JSON and manifest.
+report files. Saved report restoration reads the common JSON, the manifest and
+the files the JSON names in the run's own target directories: the owner run
+directory and the target run directories beside it that its
+`program-page-portfolio.json` names.
 The common JSON contains the exact selected ProgramIndexes, not a copied
-presentation graph. It is compact JSON (format 92) and writes each ProgramIndex
+presentation graph. It is compact JSON (format 93) and writes each ProgramIndex
 in its `program-index.json` encoding. A section that is byte for byte a file of
-the owner run directory (the owner's `program-index.json`, `facts.json`,
-`claims.json`, `orientation.json`, `glossary.json`) is not copied: `files` names
-the file and the SHA-256 of its bytes, and restoration decodes that file in the
-section's place and refuses one whose bytes changed. The other targets'
-ProgramIndexes stay in the JSON. Its group-graph field contains only thin GroupsIndex
+those directories (the owner's `program-index.json`, `facts.json`,
+`claims.json`, `orientation.json`, `glossary.json`; another target's
+`program-index.json` in its own run directory) is not copied: `files` names the
+file by its path from the owner run directory (`../<run-id>/program-index.json`
+for another target) and the SHA-256 of its bytes, and restoration decodes that
+file in the section's place and refuses the report when the file is missing or
+its bytes changed. A ProgramIndex no such file holds stays in the JSON. Its group-graph field contains only thin GroupsIndex
 overlays; native subjects and structural edges are joined from those embedded
 ProgramIndexes in memory before rendering. Consequently `report.json` has one
 native graph schema and one semantic overlay schema, with no `ProgramView`.

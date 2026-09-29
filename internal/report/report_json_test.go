@@ -2,7 +2,10 @@ package report
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/terminology"
 )
 
@@ -58,7 +62,7 @@ func TestReportJSONNamesItsRunDirectoryFilesAndReadsBackExactly(t *testing.T) {
 	}
 	var names []string
 	for _, file := range wire.Files {
-		names = append(names, file.Section+":"+file.Name)
+		names = append(names, file.Section+":"+file.Path)
 	}
 	if want := []string{
 		"program_index:" + programindex.ArtifactFilename, "facts:" + facts.ArtifactFilename,
@@ -114,6 +118,81 @@ func TestReportJSONNamesItsRunDirectoryFilesAndReadsBackExactly(t *testing.T) {
 	if _, err := decodeStrictReportJSON(encoded, runDir); err == nil ||
 		!strings.Contains(err.Error(), "is not the file report.json was written with") {
 		t.Fatalf("changed named file = %v", err)
+	}
+}
+
+// Another target's ProgramIndex that is byte for byte the program-index.json
+// of its own run directory, one the run's program page portfolio names, is
+// named by its path from the run directory instead of copied. The report
+// reads back exactly and is refused once that file is changed or missing.
+func TestReportJSONNamesTheOtherTargetsRunDirectoryFile(t *testing.T) {
+	data := reportTwoTargetDataFixture(t)
+	owner, other := data.ProgramPortfolio.Entries[0], data.ProgramPortfolio.Entries[1]
+	runs := t.TempDir()
+	runDir, otherRunID := filepath.Join(runs, "20260810-120000-page-a1b2c3"), "20260810-120000-page-d4e5f6"
+	otherDir := filepath.Join(runs, otherRunID)
+	for _, dir := range []string{runDir, otherDir} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data.ArtifactsDir = runDir
+	writeReportProgramIndexArtifacts(t, runDir, owner)
+	writeReportProgramIndexArtifacts(t, otherDir, other)
+	pages, err := programpage.Build(owner.Target.ID, []programpage.Page{
+		{Target: owner.Target.Snapshot(), RunID: filepath.Base(runDir)},
+		{Target: other.Target.Snapshot(), RunID: otherRunID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pagesJSON, err := pages.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeReportProgramFile(t, filepath.Join(runDir, programpage.ArtifactFilename), pagesJSON)
+
+	encoded, err := encodeReportJSON(&data, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Files            []savedFile    `json:"files"`
+		ProgramPortfolio savedPortfolio `json:"program_portfolio"`
+	}
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatal(err)
+	}
+	otherPath := "../" + otherRunID + "/" + programindex.ArtifactFilename
+	otherBytes, err := os.ReadFile(filepath.Join(otherDir, programindex.ArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDigest := sha256.Sum256(otherBytes)
+	if len(wire.Files) != 2 || wire.Files[0].Path != programindex.ArtifactFilename ||
+		wire.Files[1] != (savedFile{Section: savedSectionProgramIndex, Path: otherPath, SHA256: hex.EncodeToString(otherDigest[:])}) {
+		t.Fatalf("named files = %+v", wire.Files)
+	}
+	if len(wire.ProgramPortfolio.Entries) != 0 {
+		t.Fatal("a ProgramIndex its target's run directory holds is written as well")
+	}
+	restored, err := decodeStrictReportJSON(encoded, runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSameReportData(t, restored, data)
+
+	writeReportProgramFile(t, filepath.Join(otherDir, programindex.ArtifactFilename), append(otherBytes, '\n'))
+	if _, err := decodeStrictReportJSON(encoded, runDir); err == nil ||
+		!strings.Contains(err.Error(), otherPath+" is not the file report.json was written with") {
+		t.Fatalf("changed file of the other target's run directory = %v", err)
+	}
+	if err := os.Remove(filepath.Join(otherDir, programindex.ArtifactFilename)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeStrictReportJSON(encoded, runDir); err == nil ||
+		!strings.Contains(err.Error(), "read "+otherPath+" named by report.json") {
+		t.Fatalf("missing file of the other target's run directory = %v", err)
 	}
 }
 

@@ -12,21 +12,24 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/claims"
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/terminology"
 )
 
 // report.json is compact JSON. Each ProgramIndex is written in its own
 // artifact encoding (programindex.EncodeValidated). A section whose encoding
-// is, byte for byte, a file of the same run directory is not written a second
-// time: report.json names that file with the SHA-256 of its bytes, and the
-// reader decodes the file where the section would have been. The other
-// targets' ProgramIndexes belong to their own run directories and stay in
-// report.json.
+// is, byte for byte, a file of the run's own target directories is not
+// written a second time: report.json names that file by its path relative to
+// the run directory with the SHA-256 of its bytes, and the reader decodes the
+// file where the section would have been. Those directories are the run
+// directory itself and, for another target's ProgramIndex, that target's run
+// directory beside it, which the run's program page portfolio names.
 
 // The sections report.json can name a run-directory file for.
 const (
@@ -37,10 +40,12 @@ const (
 	savedSectionGlossary     = "glossary"
 )
 
-// savedFile is a run-directory file one section of report.json is read from.
+// savedFile is a file one section of report.json is read from. Path is
+// relative to the run directory: a file of the run directory itself, or
+// ../<run-id>/<file> in another target's run directory of the same run.
 type savedFile struct {
 	Section string `json:"section"`
-	Name    string `json:"name"`
+	Path    string `json:"path"`
 	SHA256  string `json:"sha256"`
 }
 
@@ -90,11 +95,12 @@ func encodeReportJSON(data *ReportData, maxBytes int) ([]byte, error) {
 }
 
 // newSavedReport prepares data, a copy the caller owns, for writing: it
-// encodes every ProgramIndex and names each file of runDir that holds a
-// section's exact bytes. Without a run directory everything is written.
+// encodes every ProgramIndex and names each file of the run's target
+// directories that holds a section's exact bytes. Without a run directory
+// everything is written.
 func newSavedReport(data *ReportData, runDir string) (savedReport, error) {
 	saved := savedReport{ReportData: data}
-	indexFiles, err := runProgramIndexFiles(runDir)
+	indexFiles, err := targetProgramIndexFiles(runDir)
 	if err != nil {
 		return savedReport{}, err
 	}
@@ -108,8 +114,8 @@ func newSavedReport(data *ReportData, runDir string) (savedReport, error) {
 		if err != nil {
 			return savedReport{}, fmt.Errorf("report: program index %q: %w", entry.Target.ID, err)
 		}
-		if name, ok := indexFiles[entry.Target.ID+"\x00"+entry.SHA256]; ok {
-			file, same, err := runFileHolding(runDir, savedSectionProgramIndex, name, encoded)
+		if path, ok := indexFiles[entry.Target.ID+"\x00"+entry.SHA256]; ok {
+			file, same, err := runFileHolding(runDir, savedSectionProgramIndex, path, encoded)
 			if err != nil {
 				return savedReport{}, err
 			}
@@ -131,28 +137,59 @@ func newSavedReport(data *ReportData, runDir string) (savedReport, error) {
 	return saved, nil
 }
 
-// runProgramIndexFiles lists the ProgramIndex files runDir's artifact set
-// binds, by target ID and seal.
-func runProgramIndexFiles(runDir string) (map[string]string, error) {
+// targetProgramIndexFiles lists, by target ID and seal, the ProgramIndex
+// files the artifact sets of the run's own target directories bind, as paths
+// relative to runDir: runDir's own, and those of each other target's run
+// directory that runDir's program page portfolio names.
+func targetProgramIndexFiles(runDir string) (map[string]string, error) {
 	if runDir == "" {
 		return nil, nil
 	}
-	raw, err := os.ReadFile(filepath.Join(runDir, programindex.ArtifactSetFilename))
+	files := map[string]string{}
+	if err := addProgramIndexFiles(files, runDir, ""); err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(filepath.Join(runDir, programpage.ArtifactFilename))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return files, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("report: read program index set: %w", err)
+		return nil, fmt.Errorf("report: read program page portfolio: %w", err)
+	}
+	pages, err := programpage.Decode(raw)
+	if err != nil {
+		return nil, fmt.Errorf("report: decode program page portfolio: %w", err)
+	}
+	for _, page := range pages.Pages {
+		if page.RunID == filepath.Base(runDir) {
+			continue
+		}
+		targetDir := filepath.Join(filepath.Dir(runDir), page.RunID)
+		if err := addProgramIndexFiles(files, targetDir, "../"+page.RunID+"/"); err != nil {
+			return nil, err
+		}
+	}
+	return files, nil
+}
+
+// addProgramIndexFiles adds the files dir's artifact set binds, each named
+// by prefix and its file name.
+func addProgramIndexFiles(files map[string]string, dir, prefix string) error {
+	raw, err := os.ReadFile(filepath.Join(dir, programindex.ArtifactSetFilename))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("report: read program index set: %w", err)
 	}
 	set, err := programindex.DecodeArtifactSet(raw)
 	if err != nil {
-		return nil, fmt.Errorf("report: decode program index set: %w", err)
+		return fmt.Errorf("report: decode program index set of %s: %w", filepath.Base(dir), err)
 	}
-	files := make(map[string]string, len(set.Entries))
 	for _, entry := range set.Entries {
-		files[entry.TargetID+"\x00"+entry.IndexSHA256] = entry.Filename
+		files[entry.TargetID+"\x00"+entry.IndexSHA256] = prefix + entry.Filename
 	}
-	return files, nil
+	return nil
 }
 
 // nameRunFile writes a section as the run directory's file when that file
@@ -174,26 +211,28 @@ func nameRunFile[T any](saved *savedReport, runDir, section, name string, field 
 	return nil
 }
 
-// runFileHolding tells whether the run directory's file is exactly encoded,
-// a final newline aside, and names it by the digest of its bytes.
-func runFileHolding(runDir, section, name string, encoded []byte) (savedFile, bool, error) {
-	raw, err := os.ReadFile(filepath.Join(runDir, name))
+// runFileHolding tells whether the file at path, relative to the run
+// directory, is exactly encoded, a final newline aside, and names it by the
+// digest of its bytes.
+func runFileHolding(runDir, section, path string, encoded []byte) (savedFile, bool, error) {
+	raw, err := os.ReadFile(filepath.Join(runDir, filepath.FromSlash(path)))
 	if errors.Is(err, fs.ErrNotExist) {
 		return savedFile{}, false, nil
 	}
 	if err != nil {
-		return savedFile{}, false, fmt.Errorf("report: read %s: %w", name, err)
+		return savedFile{}, false, fmt.Errorf("report: read %s: %w", path, err)
 	}
 	if !bytes.Equal(bytes.TrimSuffix(raw, []byte("\n")), encoded) {
 		return savedFile{}, false, nil
 	}
 	digest := sha256.Sum256(raw)
-	return savedFile{Section: section, Name: name, SHA256: hex.EncodeToString(digest[:])}, true, nil
+	return savedFile{Section: section, Path: path, SHA256: hex.EncodeToString(digest[:])}, true, nil
 }
 
 // decodeStrictReportJSON reads report.json exactly as it was written: no
 // unknown fields, one value, the format this code renders, and every file of
-// runDir it names with the bytes it was written against.
+// the run's target directories it names with the bytes it was written
+// against.
 func decodeStrictReportJSON(reportJSON []byte, runDir string) (ReportData, error) {
 	var data ReportData
 	saved := struct {
@@ -237,10 +276,10 @@ func readSavedFiles(data *ReportData, files []savedFile, runDir string) error {
 	}
 	named := make(map[string]bool, len(files))
 	for _, file := range files {
-		if named[file.Name] {
-			return fmt.Errorf("report: report.json names %s twice", file.Name)
+		if named[file.Path] {
+			return fmt.Errorf("report: report.json names %s twice", file.Path)
 		}
-		named[file.Name] = true
+		named[file.Path] = true
 		raw, err := readSavedFile(runDir, file)
 		if err != nil {
 			return err
@@ -249,19 +288,19 @@ func readSavedFiles(data *ReportData, files []savedFile, runDir string) error {
 		case savedSectionProgramIndex:
 			var index programindex.Index
 			if err := json.Unmarshal(raw, &index); err != nil {
-				return fmt.Errorf("report: decode %s: %w", file.Name, err)
+				return fmt.Errorf("report: decode %s: %w", file.Path, err)
 			}
 			data.ProgramPortfolio.Entries = append(data.ProgramPortfolio.Entries, index)
 		case savedSectionFacts:
-			err = restoreSection(raw, file.Name, &data.Facts)
+			err = restoreSection(raw, file.Path, &data.Facts)
 		case savedSectionClaims:
-			err = restoreSection(raw, file.Name, &data.Claims)
+			err = restoreSection(raw, file.Path, &data.Claims)
 		case savedSectionOrientation:
-			err = restoreSection(raw, file.Name, &data.Orientation)
+			err = restoreSection(raw, file.Path, &data.Orientation)
 		case savedSectionGlossary:
-			err = restoreSection(raw, file.Name, &data.Glossary)
+			err = restoreSection(raw, file.Path, &data.Glossary)
 		default:
-			err = fmt.Errorf("report: report.json names %s for an unknown section %q", file.Name, file.Section)
+			err = fmt.Errorf("report: report.json names %s for an unknown section %q", file.Path, file.Section)
 		}
 		if err != nil {
 			return err
@@ -274,17 +313,31 @@ func readSavedFiles(data *ReportData, files []savedFile, runDir string) error {
 	return nil
 }
 
+// readSavedFile reads a file report.json names: one of the run directory,
+// or another target's ProgramIndex as ../<run-id>/<file>, with the bytes it
+// was written against.
 func readSavedFile(runDir string, file savedFile) ([]byte, error) {
-	if file.Name == "" || file.Name != filepath.Base(file.Name) || file.Name == "." || file.Name == ".." {
-		return nil, fmt.Errorf("report: report.json names an invalid file %q", file.Name)
+	parts := strings.Split(file.Path, "/")
+	name := parts[len(parts)-1]
+	valid := name != "" && name != "." && name != ".." && name == filepath.Base(name)
+	switch len(parts) {
+	case 1:
+	case 3:
+		valid = valid && parts[0] == ".." && file.Section == savedSectionProgramIndex &&
+			programpage.ValidateRunID(parts[1]) == nil && parts[1] != filepath.Base(runDir)
+	default:
+		valid = false
 	}
-	raw, err := os.ReadFile(filepath.Join(runDir, file.Name))
+	if !valid {
+		return nil, fmt.Errorf("report: report.json names an invalid file %q", file.Path)
+	}
+	raw, err := os.ReadFile(filepath.Join(runDir, filepath.FromSlash(file.Path)))
 	if err != nil {
-		return nil, fmt.Errorf("report: read %s named by report.json: %w", file.Name, err)
+		return nil, fmt.Errorf("report: read %s named by report.json: %w", file.Path, err)
 	}
 	digest := sha256.Sum256(raw)
 	if hex.EncodeToString(digest[:]) != file.SHA256 {
-		return nil, fmt.Errorf("report: %s is not the file report.json was written with", file.Name)
+		return nil, fmt.Errorf("report: %s is not the file report.json was written with", file.Path)
 	}
 	return raw, nil
 }
