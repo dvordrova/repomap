@@ -226,7 +226,14 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 						break
 					}
 				}
-				value.Steps = append(value.Steps, pageOutboundStep{Name: name, Anchor: builder.links.anchor(step.Path, step.Line, step.Column)})
+				// Two steps in one declaration on one line read as one:
+				// freqtrade's start_install_ui and its dl_url both read
+				// "install-ui".
+				anchor := builder.links.anchor(step.Path, step.Line, step.Column)
+				if last := len(value.Steps) - 1; last >= 0 && value.Steps[last].Name == name && value.Steps[last].Anchor.Href == anchor.Href && value.Steps[last].Anchor.Text == anchor.Text {
+					continue
+				}
+				value.Steps = append(value.Steps, pageOutboundStep{Name: name, Anchor: anchor})
 			}
 			row.Uses = append(row.Uses, value)
 		}
@@ -435,11 +442,14 @@ func (row pageOutbound) Line() string {
 // InformativeUses are the destination chains worth a line: ones that reach
 // an address, stop at a named frontier, or pass through more than one
 // step. A chain of one step at the record's own location says nothing the
-// record's anchor does not.
+// record's anchor does not, nor does a frontier that is the record's own
+// callable: "Address passes through netdb.h.gethostbyname" under
+// gethostbyname's record named the call a second time.
 func (row pageOutbound) InformativeUses() []pageOutboundUse {
 	var uses []pageOutboundUse
 	for _, use := range row.Uses {
-		if use.Address != "" || use.Frontier != "" || len(use.Steps) > 1 {
+		frontier := use.Frontier != "" && (row.External == "" || displayCallable(use.Frontier) != row.External)
+		if use.Address != "" || frontier || len(use.Steps) > 1 {
 			uses = append(uses, use)
 		}
 	}

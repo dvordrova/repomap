@@ -59,6 +59,43 @@ func TestOutboundInputsFollowCallerSubjectsNotTheirSharedPart(t *testing.T) {
 	}
 }
 
+// A destination chain says only what the record does not: a frontier that
+// is the record's own callable, one step at its own line, named the call a
+// second time ("Address passes through ccxt.Exchange.create_order"), and
+// two steps of one declaration on one line read as one name (freqtrade's
+// start_install_ui and its dl_url both read "install-ui").
+func TestOutboundChainsSayNothingTheRecordSays(t *testing.T) {
+	step := func(subject, name, path string, line, column int) atlas.DestinationStep {
+		return atlas.DestinationStep{SubjectID: subject, Name: name, Path: path, Line: line, Column: column}
+	}
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"},
+		Operations: []groupindex.Operation{{ID: "install", SubjectID: "n134", Name: "install-ui"}},
+		Outbound: []groupindex.OutboundCall{
+			{ID: "b1543", Kind: "sdk", External: "ccxt.Exchange.create_order", Location: programindex.Location{Path: "exchange.py", Line: 1481, Column: 31},
+				Uses: []atlas.DestinationUse{{Frontier: "ccxt.Exchange.create_order", Steps: []atlas.DestinationStep{step("n2627", "Exchange.create_order", "exchange.py", 1481, 31)}}}},
+			{ID: "b76", Kind: "client_request", External: "requests.get", Location: programindex.Location{Path: "deploy_ui.py", Line: 42, Column: 21},
+				Uses: []atlas.DestinationUse{{Frontier: "dl_url", Steps: []atlas.DestinationStep{step("n302", "download_and_install_ui", "deploy_ui.py", 42, 21),
+					step("n134", "start_install_ui", "deploy_commands.py", 133, 9), step("n134", "dl_url", "deploy_commands.py", 133, 46)}}}},
+		}}
+	section := &pageSection{ID: "t1", programTargetID: "t1"}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
+	builder.fillSectionOutbound(section)
+	if uses := section.Outbound[0].InformativeUses(); len(uses) != 0 {
+		t.Fatalf("a chain naming the call itself stands under it: %+v", uses)
+	}
+	uses := section.Outbound[1].InformativeUses()
+	if len(uses) != 1 {
+		t.Fatalf("the address's own chain is gone: %+v", uses)
+	}
+	var names []string
+	for _, step := range uses[0].Steps {
+		names = append(names, step.Name)
+	}
+	if !slices.Equal(names, []string{"download_and_install_ui", "install-ui"}) {
+		t.Fatalf("the chain reads %q", names)
+	}
+}
+
 func TestOutboundSourceUsesDoNotHideBehindOneSelectedAddress(t *testing.T) {
 	index := groupindex.Index{Target: programindex.Target{ID: "service"}, Outbound: []groupindex.OutboundCall{{
 		ID: "shared-send", Kind: "client_request", Source: "model", Address: "https://prices.example",

@@ -1200,6 +1200,18 @@ column and on the canvas. More than twelve callers fold under their count
 static row prints no callers. This is source reading; it adds no map edge
 and infers no runtime caller.
 
+In the column the tile's record (31-reading-column.js `rmOutboundRecord`)
+stands open and prints no place (owner, 2026-09-29): its kind and address,
+then what the call is, once, by its outside name ("netdb.h.gethostbyname"),
+a link to the line making it with that place on hover, in place of the
+intro's printed place; then "Called from" and the names its address passes
+through, each a link. The model's note stands once, in the card's intro.
+The run from the program's own code ("{program} connects out from … → …")
+stands only for a record with no "Called from", which says it by part. A
+destination chain whose frontier is the record's own callable, one step at
+its line, names the call a second time and is no line on the page or in the
+column; two steps of one declaration on one line are one name.
+
 An operation or native route exposes Data links only when its accepted path
 reaches an exact native model owner or a query's explicitly observed callable
 owner; tables link back through those query references. Exact versus

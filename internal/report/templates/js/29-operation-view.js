@@ -850,10 +850,16 @@ function rmEntryLanding(link,nodes,component){
           if(peer)link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(peer,true,null,true);});
         });
         card.insertBefore(copy,card.querySelector('.map-all-members'));
-        // An outside call reads where the program reaches it from, after
-        // its source and the program's side of it.
-        var reached=n.dataset.itemKind==='External communication'?rmReachedFrom(map.readingContext(),rmPage.data(n,'reached')):null,body=copy.querySelector('.outbound-call-body');
-        if(reached&&body){var after=Array.from(body.querySelectorAll(':scope>.outbound-source,:scope>.outbound-runs,:scope>.outbound-side')).pop();if(after)after.after(reached);else body.prepend(reached);}
+        // An outside call reads as its record in the column
+        // (31-reading-column.js rmOutboundRecord): its outside name, a link
+        // to the line making it in place of the intro's printed place, and
+        // where the program reaches it from. No action is offered on it, so
+        // no empty row of actions stands above.
+        if(n.dataset.itemKind==='External communication'&&copy.matches('[data-integration-record]')){
+          rmOutboundRecord(copy,rmReachedFrom(map.readingContext(),rmPage.data(n,'reached')),n.dataset.title,!!card.querySelector('.map-card-intro>.map-card-summary'));
+          card.querySelector('.map-card-intro>.map-card-source')?.remove();
+          var idle=card.querySelector('.map-card-intro>.map-card-actions');if(idle&&!idle.childElementCount)idle.remove();
+        }
       }
     }
   });

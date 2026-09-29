@@ -145,6 +145,8 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .outbound-call>summary{font-size:14px}
 .explorer-controls .map-controls{margin:0 0 0 auto;padding:0}.explorer-controls .map-controls[hidden]{display:none}
 .outbound-call-body{margin:4px 0 6px 18px}
+/* In the column the record stands open under its heading (rmOutboundRecord), flush with the reading. */
+.map-card>[data-integration-record]{list-style:none}.map-card>[data-integration-record]>.outbound-call-body{margin:8px 0 6px}
 .outbound-more{margin:0}.outbound-more>summary{list-style:none;font-size:13px;font-weight:500;color:var(--accent);cursor:pointer}
 .outbound-calls .outbound-calls{margin:4px 0 0;padding:0;border-left:0}
 .outbound-more>summary::-webkit-details-marker{display:none}

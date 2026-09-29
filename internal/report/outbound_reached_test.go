@@ -1,8 +1,10 @@
 package report
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"regexp"
 	"slices"
 	"strings"
@@ -116,4 +118,72 @@ assert.equal(rmReachedFrom(ctx,{decls:[],groups:[]}),null,'no callers, no list')
 	if regexp.MustCompile(`"(line|column)"`).MatchString(tile.Reached) {
 		t.Fatalf("the page data writes a caller's line: %s", tile.Reached)
 	}
+}
+
+// The column reads an outside call's record (owner, 2026-09-29) from the
+// row the component's page writes: no place is printed, the call is named
+// once, a link to the line making it, and the names its address passes
+// through are links too. The run from the program's own code stands only
+// when no "Called from" says it by part.
+func TestAnOutsideCallsRecordInTheColumnPrintsNoPlace(t *testing.T) {
+	call := pageAnchor{Path: "anet.c", Line: 146, Href: "https://src/anet.c#L146", Text: "anet.c:146"}
+	row := pageOutbound{ID: "t1-out-b120", KindLabel: "SDK", External: "netdb.h.gethostbyname", Source: "model", Anchor: call,
+		Summary: "Resolves the master's host name. It blocks.",
+		Side:    &pageCallSide{Program: "redis-server", Path: []pageSideStep{{Name: "syncWithMaster"}, {Name: "anetTcpConnect"}, {Name: "anetTcpGenericConnect"}}},
+		Uses: []pageOutboundUse{{Frontier: "addr", Steps: []pageOutboundStep{{Name: "anetTcpGenericConnect", Anchor: call},
+			{Name: "anetTcpConnect", Anchor: pageAnchor{Path: "anet.c", Line: 170, Href: "https://src/anet.c#L170", Text: "anet.c:170"}}}}}}
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var html bytes.Buffer
+	if err := parsed.ExecuteTemplate(&html, "outbound-row", row); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(html.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
+	runSystemJS(t, readingViewElements+code+`
+El.prototype.querySelector=function(s){return this.querySelectorAll(s)[0]||null;};
+El.prototype.getAttribute=function(k){return this.attrs&&k in this.attrs?this.attrs[k]:null;};
+// The row as the page writes it, in the harness's elements.
+function parse(html){
+  const root=new El('div'),entity=s=>s.replace(/&(amp|lt|gt|quot|#39|#34);/g,(_,e)=>({amp:'&',lt:'<',gt:'>',quot:'"','#39':"'",'#34':'"'})[e]);
+  let at=root;
+  for(const m of html.matchAll(/<(\/?)([a-zA-Z0-9]+)((?:\s+[^\s=>]+(?:="[^"]*")?)*)\s*>|([^<]+)/g)){
+    if(m[4]!==undefined){at.appendChild(text(entity(m[4])));continue;}
+    if(m[1]){at=at.parent||root;continue;}
+    const el=new El(m[2]);el.attrs={};
+    for(const a of m[3].matchAll(/([^\s=]+)(?:="([^"]*)")?/g)){
+      const key=a[1],value=entity(a[2]||'');
+      if(key==='class')el.className=value;else if(key.startsWith('data-'))el.dataset[key.slice(5).replace(/-(.)/g,(_,c)=>c.toUpperCase())]=value;else el.attrs[key]=value;
+    }
+    at.appendChild(el);if(!/^(br|wbr)$/i.test(m[2]))at=el;
+  }
+  return root.children.find(c=>c instanceof El);
+}
+const row=`+string(raw)+`;
+const reached={decls:[{name:'syncWithMaster',kind:'function',part:'#core',href:'h#sync'}],groups:[{part:'#core',title:'Replication',decls:[{decl:0,kind:'calls'}]}]};
+const place=/\.c:\d/;
+const record=parse(row);
+assert.ok(place.test(record.textContent),'the page\'s row prints its places');
+rmOutboundRecord(record,rmReachedFrom(ctx,reached),'gethostbyname',true);
+assert.ok(!place.test(record.textContent),'the column prints no place: '+record.textContent);
+const named=record.all(c=>c.tagName==='A'&&c.textContent==='netdb.h.gethostbyname');
+assert.equal(record.textContent.split('netdb.h.gethostbyname').length,2,'the call is named once: '+record.textContent);
+assert.deepEqual(named.map(c=>[c.href,c.title]),[['https://src/anet.c#L146','anet.c:146']],'a link to its line, its place on hover');
+assert.equal(record.all(c=>c.has('outbound-side')).length,0,'"Called from" says what the run from the program\'s code did');
+assert.equal(record.all(c=>c.has('outbound-reached')).length,1,'where the program reaches it from');
+assert.equal(record.all(c=>c.tagName==='DETAILS'||c.tagName==='SUMMARY').length,0,'the record stands open, no line of its own above it');
+assert.ok(!record.textContent.includes('Resolves the master'),'the card\'s intro says the model\'s note');
+assert.deepEqual(record.all(c=>c.has('outbound-chain'))[0].all(c=>c.tagName==='A').map(c=>[c.textContent,c.href]),
+ [['anetTcpGenericConnect','https://src/anet.c#L146'],['anetTcpConnect','https://src/anet.c#L170']],'the names its address passes through are links');
+const alone=parse(row);
+rmOutboundRecord(alone,null,'gethostbyname',false);
+assert.ok(!place.test(alone.textContent),'no place with no callers either');
+assert.equal(alone.all(c=>c.has('outbound-side')).length,1,'with no "Called from", the run from the program\'s code stands');
+assert.ok(alone.textContent.includes('Resolves the master'),'a note the card does not say stays');
+`)
 }

@@ -188,6 +188,53 @@ function rmReachedFrom(ctx,data){
   });
   return section;
 }
+// An outside call's record as the column reads it (owner, 2026-09-29), from
+// its row on the component's page (target.html "outbound-row"): what the
+// call is, once, by its outside name ("netdb.h.gethostbyname"), a link into
+// the line making it with that place said on hover; its kind and address;
+// then "Called from" (`reached`, rmReachedFrom) and the names its address
+// passes through, each a link. No place is printed. The model's note stands
+// once, in the card's intro (`said`), and the run from the program's own
+// code ("redis-server connects out from syncWithMaster → anetTcpConnect →
+// …") only when no "Called from" says it by part.
+function rmOutboundRecord(record,reached,title,said){
+  function kid(parent,test){return parent&&parent.children?Array.prototype.find.call(parent.children,test)||null:null;}
+  function has(element,cls){return !!element&&!!element.classList&&element.classList.contains(cls);}
+  function tag(name){return function(element){return element.tagName===name;};}
+  // A name with the place its anchor printed: the name, a link to that
+  // place, which its hover says.
+  function linked(name,anchor){
+    var href=anchor&&anchor.getAttribute('href'),at=anchor?anchor.textContent:'';
+    return rmDeclName({name:name,href:href&&href!=='#'?href:'',open:anchor&&anchor.dataset.open||''},name,null,at,false,null);
+  }
+  var call=kid(record,function(element){return has(element,'outbound-call');}),body=call&&kid(call,function(element){return has(element,'outbound-call-body');});
+  if(!body)return;
+  var line=kid(call,tag('SUMMARY')),source=kid(body,function(element){return has(element,'outbound-source');});
+  if(source){
+    var callable=kid(source,tag('CODE'))||kid(line,tag('CODE')),statement=linked(callable?callable.textContent:title,source.querySelector('.anchor'));
+    statement.classList.add('outbound-callable');
+    var words=line&&line.querySelector('.outbound-words');
+    source.replaceChildren(statement);if(words)source.append(document.createTextNode(' '),words);
+  }
+  // A note the card's intro does not say stays first, unless the full
+  // purpose below says it.
+  var note=!said&&line&&line.querySelector('.outbound-note'),parts=[],after=-1;
+  if(note&&!body.querySelector('.outbound-purpose')){var purpose=rmEl('p','outbound-purpose');purpose.appendChild(note);parts.push(purpose);}
+  Array.prototype.slice.call(body.children).forEach(function(part){
+    if(reached&&has(part,'outbound-side')||said&&has(part,'outbound-purpose'))return;
+    parts.push(part);
+    if(has(part,'outbound-source')||has(part,'outbound-runs')||has(part,'outbound-side'))after=parts.length;
+  });
+  if(reached)parts.splice(after<0?0:after,0,reached);
+  body.replaceChildren.apply(body,parts);
+  body.querySelectorAll('.outbound-chain').forEach(function(chain){
+    var steps=kid(chain,tag('OL'));if(!steps)return;
+    Array.prototype.slice.call(steps.children).forEach(function(step){
+      var name=kid(step,tag('CODE'));if(name)step.replaceChildren(linked(name.textContent,step.querySelector('.anchor')));
+    });
+  });
+  record.replaceChildren(body);
+}
 
 // A part's reading (owner, 2026-09-28): the part in its box, the model's
 // description and its files; what it is made of first, its declarations by
