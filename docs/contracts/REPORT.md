@@ -909,7 +909,8 @@ part's: its kind and its part, a link up, in the heading ("Function ·
 Server lifecycle and cron ↑"); who calls it ("Called by", "Used by" for a
 variable or a type), grouped by the part at the other end, its own part
 first; its name as the one link into its code with what its tile writes
-after it, then its file alone ("redis.c") and, when its author wrote one,
+after it, underlined under the pointer and marked by a small "</>" in the
+link's own colour (owner, 2026-09-29: readers had taken it for a title), then its file alone ("redis.c") and, when its author wrote one,
 the comment as written, standing in the reading and marked as the
 author's claim; the model's line when there is one; a type's every
 field with its type, a link reading that type when it is the repository's
@@ -1072,7 +1073,9 @@ list of neighbours by name. A click on an arrow end opens its connection
 alone. A line from inputs counts the handlers they are implemented in,
 with that unit ("← Inputs 12 handlers"; its card "12 handlers, into 3 of
 5"), and inputs sharing a handler stand in its one row, each named ("{a},
-{b} → {handler}"); no input is dropped from it. Inputs taken in where
+{b} → {handler}"), in the column each a name reading that input (owner,
+2026-09-29: "sync" and "slaveof" had been plain text); no input is dropped
+from it. Inputs taken in where
 their handler is not established count as inputs and share one row per
 place, named in order ("-a, -h declared in parseOptions"). In the column a
 name in those rows reads its declaration in its part, as a click on its
