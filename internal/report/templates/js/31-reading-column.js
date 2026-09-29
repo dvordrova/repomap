@@ -86,13 +86,15 @@ function rmEndTitle(ctx,decl){
   var node=decl.part?ctx.nodeByHref(decl.part):null;
   return node?node.dataset.title:'';
 }
-// A name as the column writes it: it breaks only after a dot, never
-// inside a word (litestream's "sql.Tx.Rollbac k"); in a flow's row a single
-// word longer than the row ends in "…" (43-map-reading.css).
+// A name as the column writes it: it breaks only after a dot or a slash,
+// never inside a word or at a hyphen (litestream's "sql.Tx.Rollbac k",
+// othello's "awaiting-" / "computer?", "redis-" / "benchmark.c"); in a
+// flow's row a single word longer than the row ends in "…"
+// (43-map-reading.css).
 function rmDotBreaks(element){
-  var text=element.textContent;if(text.indexOf('.')<0)return element;
+  var text=element.textContent;if(!/[.\/-]/.test(text))return element;
   element.textContent='';
-  text.split(/(?<=\.)/).forEach(function(piece,i){if(i)element.appendChild(document.createElement('wbr'));element.appendChild(document.createTextNode(piece));});
+  text.split(/(?<=[.\/])/).forEach(function(piece,i){if(i)element.appendChild(document.createElement('wbr'));element.appendChild(rmEl('span','map-name-piece',piece));});
   return element;
 }
 // One end of a relation: its name, and what the relation says of it when it
@@ -126,7 +128,7 @@ function rmCallerLine(ctx,data,line){
   head.appendChild(rmDeclName(caller,rmCallableName(caller),ctx.goDecl(caller),rmEndTitle(ctx,caller)));
   if(line.fan){
     var fan=line.fan,say=rmEl('span','map-reading-fan');
-    say.append(document.createTextNode(' → '+rmT(({request:'{0} request handlers',command:'{0} command handlers'})[fan.noun]||'{0} functions',line.ends.length)));
+    say.append(document.createTextNode(' → '+rmT(({request:'request handlers',command:'command handlers'})[fan.noun]||'functions')));
     if(line.ends.every(function(end){return end.possible;}))say.append(document.createTextNode(', '),rmEl('span','possible',rmT('possible')));
     if((fan.via||[]).length){
       say.append(document.createTextNode(', '+rmT('via')+' '));
@@ -138,26 +140,31 @@ function rmCallerLine(ctx,data,line){
   row.appendChild(ends);
   return row;
 }
-// A heading with its count: "12 functions".
-function rmCountHeading(tag,key,count){return rmEl(tag,'map-reading-count',rmT(key,count));}
+// Functions by the part they stand in: the part in its box on a line of
+// its own, its functions under it one to a line (owner, 2026-09-29:
+// several names to a line had read as a wall). A name reads its
+// declaration; no line numbers.
+function rmNamesByPart(ctx,data,groups){
+  var box=rmEl('div','map-names-by-part');
+  groups.forEach(function(group){
+    var peer=rmEl('div','map-reading-peer');
+    if(group.part||group.title){var head=rmEl('div','map-reading-peer-head');head.appendChild(rmPartBox(ctx,group.part,group.title));peer.appendChild(head);}
+    var list=rmEl('ul','map-reading-ends');
+    group.decls.forEach(function(at){var decl=data.decls[at],item=rmEl('li');item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));list.appendChild(item);});
+    peer.appendChild(list);box.appendChild(peer);
+  });
+  return box;
+}
 // Who changes a field and who reads it (owner, 2026-09-29;
 // page_field_uses.go): "Written by", then "Read by", each its functions by
-// the part they stand in, in the part's box; a long side folds under its
-// count. No line numbers: a name reads its declaration.
+// the part they stand in; a long side folds under its words, no count.
 function rmFieldUses(ctx,data,use){
   var box=rmEl('div','map-field-uses');
   [['written','Written by'],['read','Read by']].forEach(function(pair){
     var groups=use[pair[0]]||[];if(!groups.length)return;
     var count=groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=count>12;
-    var side=rmEl(long?'details':'div','map-field-side'),head=rmEl(long?'summary':'span','map-field-side-head',rmT(pair[1]));
-    if(long)head.appendChild(rmEl('span','map-reading-peer-count',String(count)));
-    side.appendChild(head);
-    groups.forEach(function(group){
-      var line=rmEl('span','map-field-part');
-      if(group.part||group.title)line.appendChild(rmPartBox(ctx,group.part,group.title));
-      group.decls.forEach(function(at){var decl=data.decls[at];line.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));});
-      side.appendChild(line);
-    });
+    var side=rmEl(long?'details':'div','map-field-side');side.appendChild(rmEl(long?'summary':'span','map-field-side-head',rmT(pair[1])));
+    side.appendChild(rmNamesByPart(ctx,data,groups));
     box.appendChild(side);
   });
   return box;
@@ -177,12 +184,11 @@ function rmReachedFrom(ctx,data){
   data.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
   var total=data.groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=total>12;
   var section=rmEl(long?'details':'section','map-reading-side map-reading-in outbound-reached'),heading=rmEl(long?'summary':'h6','',rmT('Called from'));
-  if(long)heading.appendChild(rmEl('span','map-reading-peer-count',String(total)));
   section.appendChild(heading);
   data.groups.forEach(function(group){
     var box=rmEl('div','map-reading-peer'),head=rmEl('div','map-reading-peer-head');
     if(group.program)head.appendChild(rmEl('span','map-reading-program',group.program+':'));
-    head.append(rmPartBox(ctx,group.part,group.title),rmEl('span','map-reading-peer-count',String(group.decls.length)));box.appendChild(head);
+    head.appendChild(rmPartBox(ctx,group.part,group.title));box.appendChild(head);
     var list=rmEl('ul','map-reading-ends');group.decls.forEach(function(end){list.appendChild(rmEndItem(ctx,data,end,'in'));});
     box.appendChild(list);section.appendChild(box);
   });
@@ -237,67 +243,75 @@ function rmOutboundRecord(record,reached,title,said){
 }
 
 // A part's reading (owner, 2026-09-28): the part in its box, the model's
-// description and its files; what it is made of first, its declarations by
-// kind and name, the keys bold, by file when it holds several; its
-// connections (29-operation-view.js mounts them); the parts calling into it,
-// each caller with what it calls here, folded when long; then the parts it
-// calls into, each with its callees, and the variables it uses there.
+// description and its files, one to a line; its key declarations, bold,
+// one to a line, and every other declaration under one closed fold, file
+// by file, those reached from outside first (owner, 2026-09-29: "Made of
+// 123 functions" and its names several to a line had been a wall); its
+// connections (29-operation-view.js mounts them); the parts calling into
+// it, each caller with what it calls here, folded when long; then the
+// parts it calls into, each with its callees, and the variables it uses
+// there. No counts.
 function rmPartView(ctx,node,data){
   var view=rmEl('div','map-part-reading');
   var title=rmEl('div','map-part-title');title.appendChild(rmPartBox(ctx,node.getAttribute('href'),node.dataset.title,true));view.appendChild(title);
   if(node.dataset.summary)view.appendChild(rmModelText('p','map-card-summary',node.dataset.summary,node.dataset.summaryRef));
   var files=data.files||[];
-  if(files.length)view.appendChild(rmEl('p','map-part-files meta',files.join(', ')));
-  // Those reached from outside the part ("Called from": a caller in
-  // another part, an input registered at it, a callable handed over) stand
-  // first, counted in the heading, the rest after them (owner, 2026-09-29:
-  // Persistence's 40 functions had not said which are its ways in).
-  function members(into,file){
-    (data.members||[]).forEach(function(kind){
-      var decls=kind.decls.filter(function(position){return !file||data.decls[position].file===file;});
-      if(!decls.length)return;
-      var outside=kind.decls.slice(0,kind.outside||0),reached=decls.filter(function(position){return outside.indexOf(position)>=0;});
-      var split=reached.length>0&&reached.length<decls.length;
-      var list=rmEl('section','map-reading-members'),heading=rmCountHeading('h6',{function:'{0} functions',type:'{0} types',variable:'{0} variables'}[kind.kind],decls.length);
-      if(split)heading.appendChild(rmEl('span','map-reading-reached-count',' · '+rmT('{0} reached from outside',reached.length)));
-      list.appendChild(heading);
-      function names(positions,cls){
-        var ul=rmEl('ul','map-reading-names'+(cls?' '+cls:''));
-        positions.forEach(function(position){var decl=data.decls[position],item=rmEl('li');item.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at,true));ul.appendChild(item);});
-        return ul;
-      }
-      if(split)list.append(names(reached,'map-reading-reached'),names(decls.filter(function(position){return outside.indexOf(position)<0;})));
-      else list.appendChild(names(decls));
-      into.appendChild(list);
-    });
+  if(files.length){var fileList=rmEl('ul','map-part-files meta');files.forEach(function(file){fileList.appendChild(rmDotBreaks(rmEl('li','',file)));});view.appendChild(fileList);}
+  // Its declarations in Go's order (by kind, then name); those reached from
+  // outside the part ("Called from": a caller in another part, an input
+  // registered at it, a callable handed over) are its ways in.
+  var order=[],outside=new Set();
+  (data.members||[]).forEach(function(kind){kind.decls.forEach(function(position,i){order.push(position);if(i<(kind.outside||0))outside.add(position);});});
+  // The keys stand open; a part with none stands its ways in open instead.
+  var keys=order.filter(function(position){return data.decls[position].bold;});
+  var shown=keys.length?keys:order.filter(function(position){return outside.has(position);});
+  var rest=order.filter(function(position){return shown.indexOf(position)<0;});
+  function names(positions,cls){
+    var ul=rmEl('ul','map-reading-names'+(cls?' '+cls:''));
+    positions.forEach(function(position){var decl=data.decls[position],item=rmEl('li');item.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at,true));ul.appendChild(item);});
+    return ul;
   }
-  // A part of several files, as Core data structures is of adlist.c,
-  // dict.c, sds.c, zipmap.c and zmalloc.c, lists them file by file.
-  if(files.length>1)files.forEach(function(file){
-    var box=rmEl('section','map-reading-file');box.appendChild(rmEl('h5','map-reading-file-name',file.split('/').pop()));
-    members(box,file);if(box.childElementCount>1)view.appendChild(box);
-  });
-  else members(view,'');
+  // The ways in first, set apart from the rest by a rule.
+  function listed(into,positions){
+    var reached=positions.filter(function(position){return outside.has(position);}),other=positions.filter(function(position){return !outside.has(position);});
+    if(reached.length&&other.length)into.append(names(reached,'map-reading-reached'),names(other));
+    else into.appendChild(names(positions));
+  }
+  if(shown.length){var members=rmEl('section','map-reading-members');members.appendChild(names(shown));view.appendChild(members);}
+  if(rest.length){
+    var fold=rmEl('details','map-reading-members map-reading-other');fold.appendChild(rmEl('summary','',rmT(shown.length?'Other declarations':'Declarations')));
+    // A part of several files, as Core data structures is of adlist.c,
+    // dict.c, sds.c, zipmap.c and zmalloc.c, lists them file by file.
+    if(files.length>1)files.forEach(function(file){
+      var here=rest.filter(function(position){return data.decls[position].file===file;});if(!here.length)return;
+      var box=rmEl('section','map-reading-file');box.appendChild(rmDotBreaks(rmEl('h5','map-reading-file-name',file.split('/').pop())));
+      listed(box,here);fold.appendChild(box);
+    });
+    else listed(fold,rest);
+    view.appendChild(fold);
+  }
   if(data.in&&data.in.length){
-    // Many callers fold the whole list under its count: Server core state
-    // had its own declarations below 2,000 px of them.
+    // Many callers fold the whole list: Server core state had its own
+    // declarations below 2,000 px of them.
     var lines=data.in.reduce(function(sum,peer){return sum+peer.lines.length;},0),long=lines>12;
     var incoming=rmEl(long?'details':'section','map-reading-side map-reading-in'),heading=rmEl(long?'summary':'h6','',rmT('Called from'));
-    if(long)heading.appendChild(rmEl('span','map-reading-peer-count',String(lines)));
     incoming.appendChild(heading);
     data.in.forEach(function(peer){
       var box=rmEl(long?'details':'div','map-reading-peer'),head=rmEl(long?'summary':'div','map-reading-peer-head');
-      head.append(rmPeerBox(ctx,peer),rmEl('span','map-reading-peer-count',String(peer.count)));box.appendChild(head);
+      head.appendChild(rmPeerBox(ctx,peer));box.appendChild(head);
       peer.lines.forEach(function(line){box.appendChild(rmCallerLine(ctx,data,line));});
       incoming.appendChild(box);
     });
     view.appendChild(incoming);
   }
   if(data.out&&data.out.length){
-    var outgoing=rmEl('section','map-reading-side map-reading-out');outgoing.appendChild(rmEl('h6','',rmT('Calls into')));
+    // Many callees fold as many callers do: Client I/O's calls into other
+    // parts had run to 8,500 px, one name to a line.
+    var names=data.out.reduce(function(sum,peer){return sum+peer.lines[0].ends.length;},0),wide=names>12;
+    var outgoing=rmEl(wide?'details':'section','map-reading-side map-reading-out');outgoing.appendChild(rmEl(wide?'summary':'h6','',rmT('Calls into')));
     data.out.forEach(function(peer){
-      var box=rmEl('div','map-reading-peer'),head=rmEl('div','map-reading-peer-head');
-      head.append(rmPeerBox(ctx,peer),rmEl('span','map-reading-peer-count',String(peer.count)));box.appendChild(head);
+      var box=rmEl(wide?'details':'div','map-reading-peer'),head=rmEl(wide?'summary':'div','map-reading-peer-head');
+      head.appendChild(rmPeerBox(ctx,peer));box.appendChild(head);
       var ends=peer.lines[0].ends,calls=rmEl('ul','map-reading-ends'),uses=rmEl('ul','map-reading-ends');
       ends.forEach(function(end){(rmUsesVariable(end.kind)?uses:calls).appendChild(rmEndItem(ctx,data,end,'out'));});
       if(calls.childElementCount)box.appendChild(calls);
@@ -309,17 +323,18 @@ function rmPartView(ctx,node,data){
   return {view:view};
 }
 
-// A function's writes or reads as one line, "Writes: server.dirty" or
-// "Reads: redisClient.argv, shared.czero", each field or global variable
-// once, its name reading the type declaring the field or the variable.
-function rmPathsLine(ctx,data,cls,label,paths){
-  var line=rmEl('p','map-reading-paths '+cls);line.appendChild(rmEl('span','map-reading-label',rmT(label)));
-  paths.forEach(function(item,i){
-    line.append(document.createTextNode(i?', ':' '));
-    var decl=item.decl===undefined?null:data.decls[item.decl];
-    line.appendChild(decl?rmDeclName(decl,item.path,ctx.goDecl(decl),decl.at):rmEl('span','',item.path));
+// A function's writes or reads, "Writes:" then each field or global
+// variable once, one to a line, its name reading the type declaring the
+// field or the variable.
+function rmPathsList(ctx,data,cls,label,paths){
+  var box=rmEl('div','map-reading-paths '+cls);box.appendChild(rmEl('p','map-reading-label',rmT(label)));
+  var list=rmEl('ul','map-reading-ends');
+  paths.forEach(function(item){
+    var decl=item.decl===undefined?null:data.decls[item.decl],li=rmEl('li');
+    li.appendChild(decl?rmDeclName(decl,item.path,ctx.goDecl(decl),decl.at):rmEl('span','',item.path));list.appendChild(li);
   });
-  return line;
+  box.appendChild(list);
+  return box;
 }
 // A declaration's reading: who calls it, by part; its name, the link into
 // its code, with its file and the comment its author wrote above it; the
@@ -343,7 +358,7 @@ function rmDeclView(ctx,node,data,concept){
       // Another program's calls into a declaration both hold are named by
       // that program: "redis-cli: [Command line client] cliConnect()".
       if(group.program)head.appendChild(rmEl('span','map-reading-program',group.program+':'));
-      head.append(rmPartBox(ctx,group.part,group.title),rmEl('span','map-reading-peer-count',String(group.decls.length)));box.appendChild(head);
+      head.appendChild(rmPartBox(ctx,group.part,group.title));box.appendChild(head);
       var list=rmEl('ul','map-reading-ends');group.decls.forEach(function(end){list.appendChild(rmEndItem(ctx,data,end,which,variable));});
       box.appendChild(list);section.appendChild(box);
     });
@@ -369,16 +384,21 @@ function rmDeclView(ctx,node,data,concept){
     view.appendChild(comment);
   }
   if(explanation&&explanation.text)view.appendChild(rmModelText('p','map-decl-explanation',explanation.text,explanation.ref));
-  // What it writes, then what else it reads: "Writes: server.dirty",
-  // "Reads: redisClient.argv, shared.czero, …".
-  if((own.writes||[]).length)view.appendChild(rmPathsLine(ctx,data,'map-reading-writes','Writes:',own.writes));
-  if((own.reads||[]).length)view.appendChild(rmPathsLine(ctx,data,'map-reading-reads','Reads:',own.reads));
+  // What it writes, then what else it reads, under one closed "Reads and
+  // writes" (owner, 2026-09-29: processCommand's twenty fields had stood
+  // between its comment and its calls).
+  if((own.writes||[]).length||(own.reads||[]).length){
+    var paths=rmEl('details','map-reading-rw');paths.appendChild(rmEl('summary','',rmT('Reads and writes')));
+    if((own.writes||[]).length)paths.appendChild(rmPathsList(ctx,data,'map-reading-writes','Writes:',own.writes));
+    if((own.reads||[]).length)paths.appendChild(rmPathsList(ctx,data,'map-reading-reads','Reads:',own.reads));
+    view.appendChild(paths);
+  }
   // A record type's fields, each with who writes and reads it; a global
   // variable's fields as the code reaches them through it.
   var uses={};(own.fields||[]).forEach(function(use){uses[use.name]=use;});
   function usesRow(grid,use){if(!use)return;var row=rmEl('dd','map-field-uses-row');row.appendChild(rmFieldUses(ctx,data,use));grid.appendChild(row);}
   if(decl.fields&&decl.fields.length){
-    var fields=rmEl('section','map-reading-fields');fields.appendChild(rmCountHeading('h6','{0} fields',decl.fields.length));
+    var fields=rmEl('section','map-reading-fields');fields.appendChild(rmEl('h6','map-reading-count',rmT('Fields')));
     var grid=rmEl('dl','map-reading-field-grid');
     decl.fields.forEach(function(field){
       var term=rmEl('dt');term.appendChild(rmDeclName({href:field.href,open:field.open,name:field.name},field.name,null,field.at));
@@ -389,10 +409,10 @@ function rmDeclView(ctx,node,data,concept){
     });
     fields.appendChild(grid);view.appendChild(fields);
   }else if(decl.kind==='variable'&&(own.fields||[]).length){
-    var paths=rmEl('section','map-reading-fields');paths.appendChild(rmCountHeading('h6','{0} fields',own.fields.length));
+    var through=rmEl('section','map-reading-fields');through.appendChild(rmEl('h6','map-reading-count',rmT('Fields')));
     var list=rmEl('dl','map-reading-field-grid');
     own.fields.forEach(function(use){list.appendChild(rmEl('dt','map-field-path',use.name));usesRow(list,use);});
-    paths.appendChild(list);view.appendChild(paths);
+    through.appendChild(list);view.appendChild(through);
   }
   [['returns','Returned by'],['takes','Taken by']].forEach(function(pair){
     if(!(own[pair[0]]||[]).length)return;
@@ -405,7 +425,7 @@ function rmDeclView(ctx,node,data,concept){
   // (32-flow.js); what else it relates to stays by part.
   var flowed=(own.flow||[]).length>0,callKinds={calls:1,passes_callback:1,executes:1,invokes_external:1};
   if(flowed){
-    var flow=rmEl('section','map-reading-flow'),headline=rmEl('div','map-flow-headline');headline.appendChild(rmFlowToggle(null));
+    var flow=rmEl('section','map-reading-flow'),headline=rmEl('div','map-flow-headline');headline.append(rmEl('h6','',rmT('Calls')),rmFlowToggle(null));
     flow.append(headline,rmFlowTree(ctx,data,own));view.appendChild(flow);
   }
   var rest=flowed?(own.callees||[]).map(function(group){return Object.assign({},group,{decls:group.decls.filter(function(end){return !callKinds[end.kind];})});}).filter(function(group){return group.decls.length;}):own.callees;
@@ -431,7 +451,7 @@ function rmCollectionView(ctx,node,collection){
     // first of its scheduled and continuous sections.
     section.dataset.kind=group.kind;
     if(rmPendingKind&&[].concat(rmPendingKind).indexOf(group.kind)>=0){section.dataset.readingAnchor='';rmPendingKind='';}
-    heading.append(rmEl('span','',rmT(rmInputKindTitles[group.kind]||'Inputs')),rmEl('span','map-reading-peer-count',String(group.inputs.length)));
+    heading.appendChild(rmEl('span','',rmT(rmInputKindTitles[group.kind]||'Inputs')));
     rmLights(ctx,heading,group.inputs);section.appendChild(heading);
     var first=group.catalogue&&ctx.nodeById(group.catalogue),catalogue=first?rmPage.data(first,'catalogue'):null;
     if(catalogue)rmCatalogueLines(ctx,catalogue).forEach(function(line){section.appendChild(line);});
@@ -442,7 +462,7 @@ function rmCollectionView(ctx,node,collection){
       var input=ctx.nodeById(id),path=input?rmPage.data(input,'inputPath'):null;
       if(path&&(path.sent_to||[]).length){matched++;path.sent_to.forEach(function(entry){if(programs.indexOf(entry.program)<0)programs.push(entry.program);});}
     });
-    if(matched)section.appendChild(rmModelText('p','map-collection-matched',rmT('{0} matched to inputs of {1} by name',matched,programs.join(', '))));
+    if(matched)section.appendChild(rmModelText('p','map-collection-matched',rmT('Matched to inputs of {0} by name',programs.join(', '))));
     var names=rmEl('ul','map-collection-names');
     group.inputs.forEach(function(id){
       var input=ctx.nodeById(id);if(!input)return;
@@ -472,7 +492,8 @@ function rmCatalogueLines(ctx,catalogue){
     var decl=decls[index]||{name:''},node=decl.part?ctx.nodeById(decl.part):null;
     return rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code,part:node?node.getAttribute('href'):'',key:decl.href||decl.open},decl.name,node?function(){ctx.readDeclIn(node,decl.href||decl.open);}:null,decl.source);
   }
-  function callers(calls){var span=rmEl('span','map-collection-callers');calls.forEach(function(call,i){if(i)span.append(document.createTextNode(', '));span.appendChild(name(call.caller));});return span;}
+  // Its callers one to a line under the line naming what they call.
+  function callers(calls){var list=rmEl('ul','map-reading-ends map-collection-callers');calls.forEach(function(call){var item=rmEl('li');item.appendChild(name(call.caller));list.appendChild(item);});return list;}
   function line(key,args){
     var text=rmT.apply(null,[key].concat(args.map(function(_,i){return '\u0001'+i+'\u0002';}))),p=rmEl('p','map-collection-line');
     text.split(/(\u0001\d+\u0002)/).forEach(function(piece){var m=/^\u0001(\d+)\u0002$/.exec(piece);if(m)p.append(args[Number(m[1])]);else if(piece)p.append(document.createTextNode(piece));});
@@ -480,24 +501,26 @@ function rmCatalogueLines(ctx,catalogue){
   }
   if(catalogue.declarer>=0){
     var declared=line(catalogue.table?'listed in {0}':'declared in {0}',[name(catalogue.declarer)]);
-    if((catalogue.calls||[]).length)declared.append(document.createTextNode(' ← '),callers(catalogue.calls));
+    if((catalogue.calls||[]).length)declared.append(document.createTextNode(' ←'));
     lines.push(declared);
+    if((catalogue.calls||[]).length)lines.push(callers(catalogue.calls));
   }
   (catalogue.readers||[]).forEach(function(reader){
     var read=line('looked up in {0}',[name(reader.reader)]);
-    if((reader.calls||[]).length)read.append(document.createTextNode(' ← '),callers(reader.calls));
+    if((reader.calls||[]).length)read.append(document.createTextNode(' ←'));
     lines.push(read);
+    if((reader.calls||[]).length)lines.push(callers(reader.calls));
   });
-  // What else the declaring code uses, one folded line with its count;
-  // each variable's other users fold under theirs (owner, 2026-09-29: the
+  // What else the declaring code uses, one folded line; each variable's
+  // other users fold under theirs, one to a line (owner, 2026-09-29: the
   // Settings catalogue read as walls of "uses server, also used by …").
   if((catalogue.uses||[]).length){
-    var usesFold=rmEl('details','map-collection-uses');usesFold.appendChild(rmEl('summary','',rmT('Also uses {0} variables',catalogue.uses.length)));
+    var usesFold=rmEl('details','map-collection-uses');usesFold.appendChild(rmEl('summary','',rmT('Also uses variables')));
     catalogue.uses.forEach(function(use){
       var row=line('uses {0}',[name(use.decl)]);
       if((use.users||[]).length){
-        var users=rmEl('details','map-collection-users'),head=rmEl('summary','',rmT('also used by {0}',use.users.length));users.appendChild(head);
-        var names=rmEl('span','map-collection-callers');use.users.forEach(function(user,i){if(i)names.append(document.createTextNode(', '));names.appendChild(name(user));});
+        var users=rmEl('details','map-collection-users'),head=rmEl('summary','',rmT('also used by'));users.appendChild(head);
+        var names=rmEl('ul','map-reading-ends map-collection-callers');use.users.forEach(function(user){var item=rmEl('li');item.appendChild(name(user));names.appendChild(item);});
         users.appendChild(names);row.appendChild(users);
       }
       usesFold.appendChild(row);
@@ -506,60 +529,32 @@ function rmCatalogueLines(ctx,catalogue){
   }
   return lines;
 }
-// A component's reading: its role and purpose, the model's; where its
-// program starts, one link per entrypoint name; its inputs counted by kind,
-// each count lighting its tiles on the canvas while pointed at and reading
-// the collection when chosen; its connections (29-operation-view.js); then
-// its main flow, what its program never runs, its TODOs and its analysis
-// coverage, each a list opening in place, and a link to its whole page.
-// The kind whose section a count chosen in a component's reading, or the
+// A component's reading (owner, 2026-09-29, after the critic: nine
+// sections had run to ten screens): its role and purpose, the model's;
+// where its program starts, one link per entrypoint name; the kinds of its
+// inputs, each lighting its tiles on the canvas while pointed at and
+// reading the collection when chosen; its Main flow with what it runs on
+// its own; the files it reaches; its connections (29-operation-view.js);
+// then one line of links, its whole page first. Its areas and parts are
+// the canvas's; what its entrypoints do not reach, its TODOs and its
+// analysis coverage are the "What is missing" page's. No counts.
+// The kind whose section a kind chosen in a component's reading, or the
 // kinds whose first section a kind chosen in a collection's frame, lands
 // on, and whether the column's "Main flow" link asked for its Main flow.
 var rmPendingKind='',rmPendingFlow=false;
 // A section of so few lines stands open in a reading.
 var rmShortSection=8;
-// A component's areas and parts: each area with its parts under it, each a
-// name in its box that reads it, and its description on one line, the
-// whole on hover.
-function rmOutline(ctx,component){
-  function children(node){return (node.dataset.children||'').split(/\s+/).map(ctx.nodeById).filter(function(child){return child&&!child.dataset.activation&&child.dataset.branch!=='inputs';});}
-  var top=children(component);if(!top.length)return null;
-  function item(node){
-    var li=rmEl('li'),box=rmPartBox(ctx,'#'+node.id,node.dataset.title);li.appendChild(box);
-    if(node.dataset.summary){var said=rmModelText('span','map-outline-summary',node.dataset.summary,node.dataset.summaryRef);said.title=node.dataset.summary;li.appendChild(said);}
-    var inner=children(node);
-    if(inner.length){var list=rmEl('ul','map-outline');inner.forEach(function(child){list.appendChild(item(child));});li.appendChild(list);}
-    return li;
-  }
-  var box=rmEl('section','map-component-outline');box.appendChild(rmEl('h6','',rmT('Areas and parts')));
-  var list=rmEl('ul','map-outline');top.forEach(function(node){list.appendChild(item(node));});box.appendChild(list);
-  return box;
-}
 // The files a component's program reaches by their paths (owner,
 // 2026-09-29; page_data_files.go): each by its path as written, or the
 // paths its field's writes store and the field (the field in braces when
 // they store none), with what else sets it (a setting whose branch writes
-// it, a function writing what is not established); then the functions whose calls reach it, by part, as a
-// field's writers and readers read. The paths not established are one
-// line. No role and no line numbers: a name reads its function, a path
-// links to where it is written, its place said on hover.
+// it, a function writing what is not established); each opening to the
+// functions whose calls reach it, by part. A file whose path is not
+// established is not listed. No role and no line numbers: a name reads its
+// function, a path links to where it is written, its place said on hover.
 function rmComponentFiles(ctx,data){
   if(!data||!(data.files||[]).length)return null;
   data.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
-  function users(groups){
-    var box=rmEl('div','map-field-uses'),count=groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=count>12;
-    var side=rmEl(long?'details':'div','map-field-side'),head=rmEl(long?'summary':'span','map-field-side-head',rmT('Read or written by'));
-    if(long)head.appendChild(rmEl('span','map-reading-peer-count',String(count)));
-    side.appendChild(head);
-    groups.forEach(function(group){
-      var line=rmEl('span','map-field-part');
-      if(group.part||group.title)line.appendChild(rmPartBox(ctx,group.part,group.title));
-      group.decls.forEach(function(at){var decl=data.decls[at];line.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));});
-      side.appendChild(line);
-    });
-    box.appendChild(side);
-    return box;
-  }
   function also(term,value){
     if(value.setting){
       term.append(document.createTextNode('; '+rmT('set by the setting')+' '));
@@ -571,16 +566,14 @@ function rmComponentFiles(ctx,data){
       term.append(document.createTextNode('; '+rmT('set in')+' '),rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));
     }
   }
-  var named=data.files.filter(function(file){return file.path||file.field;}).length;
+  var named=data.files.filter(function(file){return file.path||file.field;});
+  if(!named.length)return null;
   var box=rmEl('details','map-component-section map-component-files'),summary=rmEl('summary');
-  summary.appendChild(rmEl('span','',rmT('Files')));
-  if(named)summary.appendChild(rmEl('span','map-reading-peer-count',String(named)));
-  box.appendChild(summary);
-  var grid=rmEl('dl','map-reading-field-grid map-files');
-  data.files.forEach(function(file){
-    var term=rmEl('dt','map-field-path');
-    if(file.path)term.appendChild(rmEl('code','',file.path));
-    else if(file.field){
+  summary.appendChild(rmEl('span','',rmT('Files')));box.appendChild(summary);
+  named.forEach(function(file){
+    var by=file.by||[],entry=rmEl(by.length?'details':'div','map-file'),term=rmEl(by.length?'summary':'p','map-field-path');
+    if(file.path)term.appendChild(rmDotBreaks(rmEl('code','',file.path)));
+    else{
       var paths=(file.values||[]).filter(function(value){return value.value;});
       paths.forEach(function(value,i){
         if(i)term.append(document.createTextNode(' · '));
@@ -590,28 +583,28 @@ function rmComponentFiles(ctx,data){
       if(paths.length)term.append(document.createTextNode(' '+rmT('from')+' '),rmEl('code','',file.field));
       else term.appendChild(rmEl('code','','{'+file.field+'}'));
       (file.values||[]).forEach(function(value){if(!value.value)also(term,value);});
-    }else term.appendChild(rmEl('span','meta',rmT('Path not established')));
-    var row=rmEl('dd','map-field-uses-row');row.appendChild(users(file.by||[]));
-    grid.append(term,row);
+    }
+    entry.appendChild(term);
+    if(by.length)entry.appendChild(rmNamesByPart(ctx,data,by));
+    box.appendChild(entry);
   });
-  box.appendChild(grid);
-  box.open=data.files.length<=rmShortSection;
+  box.open=named.length<=rmShortSection;
   return box;
 }
-var rmInputKindCounts={request:'{0} requests',command:'{0} commands',setting:'{0} settings',interaction:'{0} user interactions',continuous:'{0} continuous',scheduled:'{0} scheduled'};
 function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   var ctx=map.readingContext(),intro=card.querySelector('.map-card-intro'),page=card.querySelector('.map-card-actions>.map-details-link');
   card.querySelector('.map-related-operations')?.remove();card.querySelector('.map-card-evidence')?.remove();card.querySelector('.map-all-members')?.remove();
   card.querySelector('.map-card-actions')?.remove();
   var after=intro.querySelector(':scope>.map-card-summary');
   function place(item){if(after)after.after(item);else intro.prepend(item);after=item;}
+  // Where its program starts, one entry to a line.
   var entries=rmPage.data(n,'entries')||[];
   if(entries.length){
-    var start=rmEl('p','map-component-entry');
-    entries.forEach(function(entry,i){
-      if(i)start.append(document.createTextNode(' · '));
-      var part=entry.part?ctx.nodeByHref(entry.part):null;
-      start.appendChild(rmDeclName({name:entry.name,href:entry.href,open:entry.open,key:entry.key},entry.name+(entry.callable?'()':''),part?function(){ctx.readDeclIn(part,entry.key);}:null,''));
+    var start=rmEl('div','map-component-entry');
+    entries.forEach(function(entry){
+      var part=entry.part?ctx.nodeByHref(entry.part):null,line=rmEl('div');
+      line.appendChild(rmDeclName({name:entry.name,href:entry.href,open:entry.open,key:entry.key},entry.name+(entry.callable?'()':''),part?function(){ctx.readDeclIn(part,entry.key);}:null,''));
+      start.appendChild(line);
     });
     if(anchorEntry)start.dataset.readingAnchor='';
     place(start);
@@ -621,16 +614,18 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   details.querySelectorAll(':scope>.component-intro>.component-entry').forEach(function(entry){
     var line=entry.cloneNode(true);if(anchorEntry)line.dataset.readingAnchor='';place(line);
   });
+  // The kinds of its inputs, one to a line, in words.
   var collection=collectionNode?rmPage.data(collectionNode,'collection'):null;
   if(collection&&collection.kinds.length){
-    var inputs=rmEl('p','map-component-inputs');inputs.appendChild(rmEl('span','map-reading-label',rmT('Inputs')));
+    var inputs=rmEl('div','map-component-inputs');inputs.appendChild(rmEl('p','map-reading-label',rmT('Inputs')));
+    var kinds=rmEl('ul','map-component-input-kinds');
     collection.kinds.forEach(function(kind){
-      var count=rmEl('button','',rmT(rmInputKindCounts[kind.kind]||'{0} inputs',kind.inputs.length));count.type='button';
-      rmLights(ctx,count,kind.inputs);
-      count.addEventListener('click',function(){ctx.light([]);rmPendingKind=kind.kind;ctx.readNode(collectionNode);});
-      inputs.appendChild(count);
+      var item=rmEl('li'),choice=rmEl('button','',rmT(rmInputKindTitles[kind.kind]||'Inputs'));choice.type='button';
+      rmLights(ctx,choice,kind.inputs);
+      choice.addEventListener('click',function(){ctx.light([]);rmPendingKind=kind.kind;ctx.readNode(collectionNode);});
+      item.appendChild(choice);kinds.appendChild(item);
     });
-    place(inputs);
+    inputs.appendChild(kinds);place(inputs);
   }
   function copy(element){
     var clone=element.cloneNode(true);clone.removeAttribute('id');clone.querySelectorAll('[id]').forEach(function(el){el.removeAttribute('id');});
@@ -638,22 +633,15 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     clone.querySelectorAll('.collapse-label').forEach(function(label){label.remove();});
     return clone;
   }
-  // A section of the reading, a list opening in place; a short one stands
-  // open (owner, 2026-09-28).
-  function section(title,count,parts,open,at){
-    if(!parts.length)return null;
-    var box=rmEl('details','map-component-section'),summary=rmEl('summary');summary.appendChild(rmEl('span','',title));
-    if(count)summary.appendChild(rmEl('span','map-reading-peer-count',String(count)));
-    box.appendChild(summary);parts.forEach(function(part){box.appendChild(copy(part));});
-    box.open=!!open||box.querySelectorAll('li').length<=rmShortSection;
-    if(at)at(box);else card.appendChild(box);
-    return box;
-  }
   // Its Main flow near the top, open (owner, 2026-09-28), each step's name
-  // reading that declaration and showing it on the canvas.
-  var flow=details.querySelector(':scope>.component-flow');
+  // reading that declaration and showing it on the canvas; what the program
+  // runs on its own closes it (owner, 2026-09-29: serverCron was not
+  // findable from a flow of client commands; page_flow_steps.go ownWork).
+  var flow=details.querySelector(':scope>.component-flow'),own=details.querySelector(':scope>.component-own-work');
   if(flow){
-    var steps=section(rmT('Main flow'),0,Array.from(flow.querySelectorAll(':scope>.flow-title,:scope>p.meta,:scope>ol')),true,place);
+    var steps=rmEl('details','map-component-section'),head=rmEl('summary');head.appendChild(rmEl('span','',rmT('Main flow')));steps.appendChild(head);
+    Array.from(flow.querySelectorAll(':scope>.flow-title,:scope>p.meta,:scope>ol')).forEach(function(part){steps.appendChild(copy(part));});
+    steps.open=true;place(steps);
     // Each step opens in place to its code flow (32-flow.js), the model's
     // sentence kept in its style above it.
     var toggle=rmEl('div','map-flow-headline');toggle.appendChild(rmFlowToggle(null));steps.insertBefore(toggle,steps.children[1]||null);
@@ -686,23 +674,11 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     // A registered callable's step names where it is registered and what
     // runs it, each name reading its declaration.
     rmStepChainNames(ctx,steps);
-  }
-  // What the program runs on its own, right after its Main flow (owner,
-  // 2026-09-29: serverCron was not findable from a flow of client
-  // commands; page_flow_steps.go ownWork).
-  var own=details.querySelector(':scope>.component-own-work');
-  if(own)place(rmOwnWork(ctx,own));
-  // Its areas and parts, each a name that reads it, with its description on
-  // one line (owner, 2026-09-28).
-  var outline=rmOutline(ctx,n);if(outline)place(outline);
-  // The files its program reaches, after its parts (rmComponentFiles).
+    if(own)steps.appendChild(rmOwnWork(ctx,own));
+  }else if(own)place(rmOwnWork(ctx,own));
+  // The files its program reaches, after its flow (rmComponentFiles).
   var files=rmComponentFiles(ctx,rmPage.data(n,'files'));if(files)place(files);
-  var dead=details.querySelector(':scope>.component-reference h3[id$="-dead"]');
-  if(dead){var unreached=[];for(var at=dead.nextElementSibling;at;at=at.nextElementSibling)unreached.push(at);section(rmT('Not reachable from the entrypoints'),0,unreached);}
-  var todos=details.querySelector(':scope>.component-reference h3[id$="-todos"]');
-  if(todos&&todos.nextElementSibling)section(rmT('TODOs'),todos.nextElementSibling.querySelectorAll('.todo-rows>li').length,Array.from(todos.nextElementSibling.children).filter(function(child){return child.tagName!=='SUMMARY';}));
-  var coverage=details.querySelector(':scope>.component-reference .component-coverage');
-  if(coverage)section(rmT('Analysis coverage'),coverage.querySelectorAll('li').length,Array.from(coverage.children).filter(function(child){return child.tagName!=='SUMMARY';}));
+  // Its whole page leads the reading's one line of links (30-map.js).
   if(page){page.textContent=rmT('Component details');var foot=rmEl('p','map-component-page');foot.appendChild(page);card.appendChild(foot);}
 }
 // A Main flow step's declaration, or one it names beside it: a link into
@@ -744,7 +720,8 @@ function rmOwnWorkLine(ctx,from){
 }
 // The home's table of programs (owner, 2026-09-28), one block each in the
 // component's page order: its name, reading it; its role, the model's; its
-// entry; its inputs by kind; its connections as its arrow ends group them;
+// entry; the kinds of its inputs, in words; its connections as its arrow
+// ends group them;
 // and the files it is built from (page data: for C its link line's units),
 // a build fact: a model's summary had said all four Redis programs share
 // ae, sds, adlist, dict and anet, which their Makefile does not.
@@ -759,16 +736,19 @@ function rmProgramsTable(ctx,holder,components,connections){
     if(n.dataset.role)about.appendChild(rmModelText('span','',n.dataset.role,n.dataset.roleRef));
     table.appendChild(about);
     var entries=rmPage.data(n,'entries')||[];
-    if(entries.length)line('Entry',rmEl('dd','',entries.map(function(entry){return entry.name+(entry.callable?'()':'');}).join(' · ')));
+    if(entries.length){var starts=rmEl('ul','system-program-files');entries.forEach(function(entry){starts.appendChild(rmDotBreaks(rmEl('li','',entry.name+(entry.callable?'()':''))));});var at=rmEl('dd');at.appendChild(starts);line('Entry',at);}
     var collection=ctx.nodeById('system-inputs-'+n.dataset.owner),kinds=(collection&&rmPage.data(collection,'collection')||{}).kinds||[];
-    if(kinds.length)line('Inputs',rmEl('dd','',kinds.map(function(kind){return rmT(rmInputKindCounts[kind.kind]||'{0} inputs',kind.inputs.length);}).join(' · ')));
+    if(kinds.length)line('Inputs',rmEl('dd','',kinds.map(function(kind){return rmT(rmInputKindTitles[kind.kind]||'Inputs');}).join(' · ')));
     var ends=connections(n.id);
-    if(ends.length)line('Connections',rmEl('dd','',ends.map(function(end){return (end.incoming?'← ':'→ ')+end.title;}).join(' · ')));
+    // An arrow stays with its name, which breaks only at its dots.
+    if(ends.length){var peers=rmEl('ul','system-program-files');ends.forEach(function(end){var item=rmEl('li','',end.incoming?'←\u00a0':'→\u00a0');item.appendChild(rmDotBreaks(rmEl('span','',end.title)));peers.appendChild(item);});var cell=rmEl('dd');cell.appendChild(peers);line('Connections',cell);}
+    // Its files one to a line, folded when many; no count.
     var files=rmPage.data(n,'sources')||[];
     if(files.length){
-      var built=rmEl('dd');
-      if(files.length<=rmShortSection*2)built.appendChild(rmEl('code','',files.join(' ')));
-      else{var fold=rmEl('details');fold.append(rmEl('summary','',rmT('{0} files',files.length)),rmEl('code','',files.join(' ')));built.appendChild(fold);}
+      var built=rmEl('dd'),list=rmEl('ul','system-program-files');
+      files.forEach(function(file){list.appendChild(rmDotBreaks(rmEl('li','',file)));});
+      if(files.length<=rmShortSection)built.appendChild(list);
+      else{var fold=rmEl('details');fold.append(rmEl('summary','',rmT('Files')),list);built.appendChild(fold);}
       line('Built from',built);
     }
   });

@@ -328,6 +328,9 @@ type pageFlowStep struct {
 	// it and shows it on the canvas (owner, 2026-09-28).
 	Part string
 	Key  string
+	// In is true when Label is the function a closure step is written in
+	// ("in ReplicateCommand.Run"; stepName).
+	In bool
 	// Registers and RunBy are, for a step citing a registration, where the
 	// callable it names is registered and what runs it (registeredStep).
 	Registers []pageStepRegistration

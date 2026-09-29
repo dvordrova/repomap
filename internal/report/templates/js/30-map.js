@@ -309,14 +309,14 @@ function rmInputPart(operation,id){
 // The inputs dispatched at a site, by name, each with its handler, and a box
 // that filters them by either (owner, 2026-09-28: "one of 94 handlers"
 // opened nothing). The list is part of the column's own scroll, folded
-// under its count when long, as a side of more than twelve names is, and
+// when long, as a side of more than twelve names is, and
 // opened in place (owner, 2026-09-29: its own scroller had taken the wheel
 // and the page scrolled under it). An input's name reads the input, its
 // handler's name the handler's declaration.
 function rmDispatchedList(map,site,decls){
   var ctx=map.readingContext?map.readingContext():null;
   var fold=rmEl('details','map-dispatched');fold.open=site.dispatched.length<=12;
-  var head=rmEl('summary');head.append(rmEl('span','',rmT('Its handlers by input')),rmEl('span','map-reading-peer-count',String(site.dispatched.length)));fold.appendChild(head);
+  var head=rmEl('summary');head.appendChild(rmEl('span','',rmT('Its handlers by input')));fold.appendChild(head);
   var filter=rmEl('input','map-dispatched-filter');filter.type='search';filter.placeholder=rmT('Filter');filter.setAttribute('aria-label',rmT('Filter'));
   var list=rmEl('ul','map-dispatched-list');
   site.dispatched.forEach(function(entry){
@@ -364,8 +364,11 @@ function rmSiteReading(map,node,key){
   function name(index){return rmSiteDeclName(ctx,decls[index]||{name:''});}
   (readings.sites||[]).forEach(function(site){
     var decl=decls[site.site];if(!decl||(decl.href||decl.open)!==key)return;
-    box.appendChild(rmEl('h6','',rmT('Dispatch site · {0} · {1} inputs dispatched here',rmSiteHandlers(site),site.inputs)));
-    rmSharedHandlers(site,decls,function(id){return document.getElementById(id)?.dataset.title||id;}).forEach(function(line){box.appendChild(rmEl('p','meta',line));});
+    // Named, not counted (owner, 2026-09-29: no digits in the column); the
+    // counts stay on its hover.
+    var heading=rmEl('h6','',rmT('Dispatch site'));
+    heading.title=[rmT('Dispatch site · {0} · {1} inputs dispatched here',rmSiteHandlers(site),site.inputs)].concat(rmSharedHandlers(site,decls,function(id){return document.getElementById(id)?.dataset.title||id;})).join('\n');
+    box.appendChild(heading);
     if((site.dispatched||[]).length)box.appendChild(rmDispatchedList(map,site,decls));
     if(!(site.reached_from||[]).length){box.appendChild(rmEl('p','meta',rmT('No input reaches {0} by calls',decl.name)));return;}
     box.appendChild(rmEl('p','',rmT('{0} is reached from these inputs:',decl.name)));
@@ -732,7 +735,7 @@ function rmDeclarationRelations(map,node,key,nodes){
         var destination=href.charAt(0)==='#'&&document.getElementById(href.slice(1));
         if(destination&&node.dataset.branch&&href!=='#'+id&&destination!==map.closest('[data-report-page]')){var detail=document.createElement('a');detail.href=href;detail.textContent=rmT('Open component');detail.className='map-details-link';actions.appendChild(detail);}
         var users=map.operationChoices(id);
-        if(users.length){var usage=document.createElement('details'),summary=document.createElement('summary');usage.className='map-related-operations';summary.textContent=rmT('Related operations for {0} · {1}',titleOf(node),users.length);usage.appendChild(summary);
+        if(users.length){var usage=document.createElement('details'),summary=document.createElement('summary');usage.className='map-related-operations';summary.textContent=rmT('Related operations for {0}',titleOf(node));usage.appendChild(summary);
           users.forEach(function(op){var b=document.createElement('button');b.type='button';b.textContent=op.dataset.title;
             if(users.some(function(other){return other!==op&&other.dataset.title===op.dataset.title;})&&op.dataset.sourceText)b.textContent+=' · '+op.dataset.sourceText;
             b.addEventListener('click',function(){
@@ -768,11 +771,11 @@ function rmDeclarationRelations(map,node,key,nodes){
       if(index>=0)map.inspectConcept(index);
     };
     map.showAllMembers=function(node){map.showNode(node);var list=card.querySelector('.map-all-members');if(list){list.open=true;list.scrollIntoView({block:'nearest'});}};
-    map.showNode=function(node){if(map.exploreNode||!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');map.dispatchEvent(new CustomEvent('repomap:inspect',{detail:{node:node,card:card}}));var foot=homeLinks();if(foot)card.appendChild(foot);}};
+    map.showNode=function(node){if(map.exploreNode||!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');map.dispatchEvent(new CustomEvent('repomap:inspect',{detail:{node:node,card:card}}));var foot=homeLinks(),page=card.querySelector(':scope>.map-component-page');if(foot&&page&&page.firstChild){foot.prepend(page.firstChild,document.createTextNode(' · '));page.remove();}if(foot)card.appendChild(foot);}};
     // The home's text pages stay one small line away at the foot of every
     // reading (owner, 2026-09-29: "How do I run it?" and the glossary had
     // gone from the column once a component was read, and only the home
-    // icon brought them back).
+    // icon brought them back); a component's whole page leads that line.
     var homeNav=map.hasAttribute('data-system-map')&&document.querySelector('template[data-system-reading-home]')?.content.querySelector('nav');
     function homeLinks(){
       if(!homeNav)return null;

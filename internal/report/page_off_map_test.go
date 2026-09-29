@@ -156,9 +156,9 @@ func TestAPartTheProgramNeverRunsIsListedWithItsUnreachableCode(t *testing.T) {
 	if want := []string{"sds.c sdsdup"}; !slices.Equal(symbols, want) {
 		t.Fatalf("unreachable symbols = %q, want %q", symbols, want)
 	}
-	// On the page the part stands under "Not reachable from the
-	// entrypoints", before the symbols, and not under Tests or Not on the
-	// map.
+	// On the "What is missing" page the part stands under "Not reachable
+	// from the entrypoints", before the symbols, and not under Tests or Not
+	// on the map; the component's own page no longer repeats it.
 	section.FactsAvailable, section.Entrypoints, section.Map = true, []pageEntrypoint{{Symbol: "main"}}, &pageMap{}
 	section.Unreached = builder.unreachedRows(target)
 	section.UnreachedCount = 1
@@ -166,14 +166,20 @@ func TestAPartTheProgramNeverRunsIsListedWithItsUnreachableCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out bytes.Buffer
-	if err := parsed.ExecuteTemplate(&out, "target.html", section); err != nil {
+	var out, page bytes.Buffer
+	if err := parsed.ExecuteTemplate(&out, "component-gaps", section); err != nil {
 		t.Fatal(err)
 	}
 	html := out.String()
 	heading, part, symbolsAt := strings.Index(html, "Not reachable from the entrypoints"), strings.Index(html, " · Linked list · "), strings.Index(html, "unreached-symbols")
 	if heading < 0 || part < heading || symbolsAt < part || strings.Contains(html, "off-map-catalog") {
 		t.Fatalf("the part is not listed under what is not reachable (heading %d, part %d, symbols %d):\n%s", heading, part, symbolsAt, html)
+	}
+	if err := parsed.ExecuteTemplate(&page, "target.html", section); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(page.String(), "unreached-symbols") {
+		t.Fatalf("the component's page repeats what is not reachable")
 	}
 }
 

@@ -83,7 +83,9 @@
   // or one of a part its program never runs, is still code to find: it
   // opens its row and its source, and no part.
   document.querySelectorAll('.off-map-catalog [data-off-map-file] .chip, .unreached-parts [data-off-map-file] .chip').forEach(function(chip){
-    var row=chip.closest('[data-off-map-file]'),section=chip.closest('[data-report-page]');if(!section)return;
+    // What a program never reaches is listed for it on the "What is
+    // missing" page (component-gaps), and belongs to its program.
+    var row=chip.closest('[data-off-map-file]'),gaps=chip.closest('[data-gaps-of]'),section=(gaps&&document.getElementById(gaps.dataset.gapsOf))||chip.closest('[data-report-page]');if(!section)return;
     var entry=codeEntry(row.dataset.path,chip,row,'');
     var list=chip.closest('.unreached-parts')?rmT('Not reachable from the entrypoints'):rmT('Not on the map');
     belongs(entry,section,{destination:row,program:programOf(section),title:programOf(section)+' / '+list});

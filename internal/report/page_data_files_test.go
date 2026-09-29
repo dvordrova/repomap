@@ -137,10 +137,11 @@ func TestAProgramsFilesAreItsDataWithTheFunctionsReachingThemByPart(t *testing.T
 	raw := section.Data.FilesReading
 
 	// The column: the path, linked to where it is written, from its field,
-	// what else sets it, then who reads or writes it by part box; a name
-	// reads its function, the setting its input.
+	// what else sets it, each opening to who reads or writes it by part box,
+	// one to a line; a name reads its function, the setting its input. A
+	// path not established and every count are left out (owner, 2026-09-29).
 	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading") +
-		systemJSPiece(t, "31-reading-column.js", "// The kind whose section a count", "function rmComponentReading(")
+		systemJSPiece(t, "31-reading-column.js", "var rmPendingKind=", "function rmComponentReading(")
 	runSystemJS(t, readingViewElements+code+`
 nodes['#t1-g1']={dataset:{title:'Persistence',lane:''},getAttribute:()=>'#t1-g1'};
 nodes['#t1-g2']={dataset:{title:'Configuration',lane:''},getAttribute:()=>'#t1-g2'};
@@ -148,16 +149,17 @@ const inputs={'t1-o1':{dataset:{title:'dbfilename'}}};
 ctx.nodeById=id=>inputs[id]||null;
 const files=rmComponentFiles(ctx,`+raw+`);
 assert.equal(files.tagName,'DETAILS');assert.ok(files.open,'a short list stands open');
-assert.equal(files.children[0].textContent,'Files2','its heading counts the files whose path is said');
-const terms=files.all(c=>c.tagName==='DT'),rows=files.all(c=>c.tagName==='DD');
-assert.deepEqual(terms.map(c=>c.textContent),['dump.kv from server.dbfile; set by the setting dbfilename; set in rewriteConfig()','{env:KVD_CONFIG}','Path not established']);
-assert.equal(terms[0].all(c=>c.has('map-reading-name'))[0].href,'https://github.com/o/r/blob/abc/kvd.c#L351','a path links to where it is written');
-assert.deepEqual(rows.map(r=>[r.all(c=>c.has('map-part-box')).map(c=>c.textContent),names(r)]),
- [[['Persistence'],['rdbLoad()','saveSnapshot()']],[['Configuration'],['loadConfig()']],[['Configuration'],['dumpKeys()']]],'who reads or writes it, by part');
-assert.ok(!/\.c:\d/.test(files.textContent),'no line numbers: '+files.textContent);
-assert.ok(!/snapshot|config|log|temporary/i.test(files.all(c=>c.has('map-field-side-head')).map(c=>c.textContent).join(' ')),'no role');
-rows[0].all(c=>c.has('map-reading-name'))[1].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
-terms[0].all(c=>c.tagName==='BUTTON'&&c.textContent==='dbfilename')[0].listeners.click({stopPropagation(){}});
+assert.equal(files.children[0].textContent,'Files','its heading counts nothing');
+const entries=files.children.filter(c=>c.has('map-file'));
+assert.deepEqual(entries.map(e=>e.children[0].textContent),['dump.kv from server.dbfile; set by the setting dbfilename; set in rewriteConfig()','{env:KVD_CONFIG}'],'each file by its path; no line for a path not established');
+assert.ok(entries.every(e=>e.tagName==='DETAILS'&&!e.open),'each folds its functions under its path');
+assert.equal(entries[0].children[0].all(c=>c.has('map-reading-name'))[0].href,'https://github.com/o/r/blob/abc/kvd.c#L351','a path links to where it is written');
+assert.deepEqual(entries.map(e=>[e.all(c=>c.has('map-part-box')).map(c=>c.textContent),e.all(c=>c.tagName==='LI').map(c=>c.textContent)]),
+ [[['Persistence'],['rdbLoad()','saveSnapshot()']],[['Configuration'],['loadConfig()']]],'who reads or writes it, by part, one to a line');
+assert.ok(!/\.c:\d/.test(files.textContent)&&!/Read or written by|Path not established/.test(files.textContent),'no line numbers and no labels: '+files.textContent);
+assert.ok(!/\d/.test(files.textContent.replace(/L\d+/g,'')),'no counts: '+files.textContent);
+entries[0].all(c=>c.tagName==='LI')[1].all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
+entries[0].children[0].all(c=>c.tagName==='BUTTON'&&c.textContent==='dbfilename')[0].listeners.click({stopPropagation(){}});
 assert.deepEqual(read.slice(-2),['saveSnapshot','dbfilename'],'a name reads its function, a setting its input');
 assert.equal(rmComponentFiles(ctx,null),null,'no files, no section');
 `)

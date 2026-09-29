@@ -504,7 +504,8 @@ func mainFlowSection(t *testing.T, html string) string {
 
 // The client links the fixture's net.c but never listens: the page says
 // where the listener went, in the client's own list of what its entrypoints
-// never reach, as it lists what the traversal never reached before. Read
+// never reach on the "What is missing" page, as it lists what the traversal
+// never reached before. Read
 // together, each program's list names the other program that runs a
 // declaration it never runs: the server's event loop, listener and
 // sbConsume are the server's, and the server never connects. Neither list
@@ -528,17 +529,17 @@ func TestCRepositoryPageListsWhatAProgramNeverRuns(t *testing.T) {
 	neverRuns := func(program string) []string {
 		t.Helper()
 		section := string(page)
-		at := strings.Index(section, `data-component-name="`+program+` (executable)"`)
-		if at < 0 {
-			t.Fatalf("the page has no component %s", program)
+		at := strings.Index(section, `<h4>`+program+` (executable)</h4>`)
+		if at < 0 || !strings.Contains(section[:at], `class="component-gaps"`) {
+			t.Fatalf("the What is missing page has no program %s", program)
 		}
 		section = section[at:]
-		start := strings.Index(section, `-dead">Not reachable from the entrypoints</h3>`)
+		start := strings.Index(section, `-dead">Not reachable from the entrypoints</h5>`)
 		if start < 0 {
 			t.Fatalf("%s has no list of what its entrypoints never reach", program)
 		}
 		section = section[start:]
-		section = section[:strings.Index(section, "</details>\n</details>")]
+		section = section[:strings.Index(section, "</section>")]
 		if !strings.Contains(section, "Nothing this program runs reaches the declarations below. This does not establish that the code is unused.") {
 			t.Fatalf("%s's list does not say that it does not establish unused code:\n%s", program, section)
 		}

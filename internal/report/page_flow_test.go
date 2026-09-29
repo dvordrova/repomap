@@ -271,11 +271,14 @@ func TestARegistrationStepIsRegisteredOnItsOwnPath(t *testing.T) {
 // What a program runs on its own reads after its Main flow (owner,
 // 2026-09-29: serverCron was not findable from a flow of client commands):
 // its scheduled inputs, then its continuous ones, each the callable its
-// registration hands over, registered from the program's entries and run
-// by the function calling it through a value, that function's run from the
-// last runner the flow already showed; a callable no registration hands
-// over is its name alone, one the Main flow names is not repeated, and a
-// request is no work of its own.
+// registration hands over, registered by its registering function alone
+// (no run of calls from the entries is chosen: litestream's Replica.monitor
+// had read "… ReplicateCommand.Run → Store.Close → … → Replica.Start
+// registers it", through its shutdown) and run by the function calling it
+// through a value, that function's run from the last runner the flow
+// already showed; a callable no registration hands over is its name alone,
+// one the Main flow names is not repeated, and a request is no work of its
+// own.
 func TestWorkARunsOnItsOwnReadsAfterTheMainFlow(t *testing.T) {
 	builder, index := flowFixture()
 	add := func(id, name string, line int) {
@@ -341,7 +344,7 @@ func TestWorkARunsOnItsOwnReadsAfterTheMainFlow(t *testing.T) {
 		said = append(said, line)
 	}
 	want := []string{
-		"t1-o3 serverCron @redis.c:1250 — main → initServer registers it @redis.c:1575; aeProcessEvents → processTimeEvents runs it",
+		"t1-o3 serverCron @redis.c:1250 — initServer registers it @redis.c:1575; aeProcessEvents → processTimeEvents runs it",
 		"t1-o4 tickTimer @redis.c:700",
 		"t1-o2 IOThreadEntryPoint @redis.c:8665 — spawnIOThread registers it @redis.c:8728",
 	}

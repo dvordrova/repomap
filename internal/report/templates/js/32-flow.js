@@ -7,13 +7,14 @@
 // focus on a call that can open; a name reads its declaration and shows it
 // on the canvas; a call its ancestors already make says it is shown above.
 // Helper calls (the helper question's decision, into a part most of the
-// program's parts call into) stand as one muted line under their step,
-// "+ helpers: createListObject, dictAdd", each name reading its
-// declaration; the line opens them into rows in place, and "Show helper
-// calls" opens every step's. A step whose every call is a helper shows
-// them as its calls. No name is hidden (owner, 2026-09-29). Where a call is
-// written and what it hands over are on its name's hover. Go ordered every
-// list; nothing here sorts.
+// program's parts call into, never the caller's own) fold under one muted
+// "+ helpers" under their step only when there are more than three of
+// them: three or fewer stand as rows, and so does a step whose every call
+// is a helper (owner, 2026-09-29: processCommand's lookupCommand and
+// queueMultiCommand had waited among eighteen names). The fold opens them
+// into rows in place, and "Show helper calls" opens every step's. Names
+// stand one to a line; where a call is written and what it hands over are
+// on its name's hover. Go ordered every list; nothing here sorts.
 // <flow>
 var rmFlowHelpers=false;
 // The part node a declaration stands in: a reading names it by its link
@@ -59,16 +60,17 @@ function rmFlowRow(ctx,data,call,opts,helper){
   var decl=call.decl!==undefined?data.decls[call.decl]:null;
   if(call.one){
     // A dispatch site: one call, one of the declarations it can call; a
-    // macro's call, the macro as written, its declarations under it.
+    // macro's call, the macro as written, its declarations under it, one
+    // to a line.
     var site=rmEl('details','map-flow-row map-flow-dispatch'+(helper?' map-flow-helper':'')),head=rmEl('summary','map-flow-head');
     head.appendChild(rmEl('span','map-flow-twist'));
     if(call.macro)head.appendChild(rmEl('span','map-flow-plain',call.macro+(call.every?'':' ')));
-    if(!call.every)head.appendChild(rmEl('span','map-flow-one',rmT('one of {0}',call.one.length)));
+    if(!call.every)head.appendChild(rmEl('span','map-flow-one',rmT('one of these')));
     head.title=rmFlowTitle(ctx,null,call);site.appendChild(head);
     site.addEventListener('toggle',function(){
       if(!site.open||site.dataset.drawn)return;site.dataset.drawn='1';
-      var names=rmEl('p','map-flow-names');
-      call.one.forEach(function(at,i){if(i)names.appendChild(document.createTextNode(' '));names.appendChild(rmFlowName(ctx,data.decls[at],{sites:call.sites,kind:call.kind}));});
+      var names=rmEl('ul','map-flow-names');
+      call.one.forEach(function(at){var item=rmEl('li');item.appendChild(rmFlowName(ctx,data.decls[at],{sites:call.sites,kind:call.kind}));names.appendChild(item);});
       site.appendChild(names);
     });
     return site;
@@ -94,18 +96,19 @@ function rmFlowRow(ctx,data,call,opts,helper){
 }
 // A flow's calls, each run into one part under its box. Top level names
 // every part; an opened call names none when all its calls stay in its
-// caller's part. Its helper calls stand as one muted line after its rows,
-// each name a link, until the line or the toggle opens them in place. Its
-// calls into code the report names no declaration for (a library's
+// caller's part. More than three helper calls fold under one muted
+// "+ helpers" after its rows until it or the toggle opens them in place.
+// Its calls into code the report names no declaration for (a library's
 // strerror, close or fork, a macro calling only such code: "assert") are
 // no rows: one muted line ends the step, "also calls: strerror, close",
 // each name once in the order written (owner, 2026-09-29: as rows they
 // had split one part's calls under two boxes, "Replication" twice).
+var rmFlowFoldAbove=3;
 function rmFlowList(ctx,data,own,opts){
   var list=rmEl('div','map-flow-list'),all=own.flow||[];
   var outside=all.filter(function(call){return call.decl===undefined&&!call.one;}),calls=all.filter(function(call){return outside.indexOf(call)<0;});
-  var every=calls.length>0&&calls.every(function(call){return call.helper;});
-  var work=calls.filter(function(call){return every||!call.helper;}),helpers=every?[]:calls.filter(function(call){return call.helper;});
+  var marked=calls.filter(function(call){return call.helper;}),fold=marked.length>rmFlowFoldAbove&&marked.length<calls.length;
+  var work=fold?calls.filter(function(call){return !call.helper;}):calls,helpers=fold?marked:[];
   opts=Object.assign({},opts,{single:work.length===1,auto:(opts.auto||0)});
   var key=opts.path+'\u0000helpers';
   function partOf(call){
@@ -125,7 +128,7 @@ function rmFlowList(ctx,data,own,opts){
         if(!stays&&part&&part!=='\0'){var box=rmPartBox(ctx,part,'');group.appendChild(box);var node=rmFlowPart(ctx,part);if(node&&node.dataset.summary)box.title=node.dataset.summary;}
         list.appendChild(group);
       }
-      group.appendChild(rmFlowRow(ctx,data,call,opts,call.helper&&!every));
+      group.appendChild(rmFlowRow(ctx,data,call,opts,call.helper&&fold));
     });
     if(helpers.length&&!rmFlowHelpers)list.appendChild(helperLine(opened));
     if(outside.length)list.appendChild(alsoLine());
@@ -140,17 +143,12 @@ function rmFlowList(ctx,data,own,opts){
     return line;
   }
   function helperLine(opened){
-    // The step's helper calls, one muted line: every name shown and read
-    // by a click; "+ helpers" opens them in place, "− helpers" folds them.
-    var line=rmEl('p','map-flow-helpers'),more=rmEl('button','map-flow-helpers-toggle',opened?rmT('− helpers'):rmT('+ helpers:'));
+    // The step's helper calls, folded: "+ helpers" opens them into rows in
+    // place, "− helpers" folds them.
+    var line=rmEl('p','map-flow-helpers'),more=rmEl('button','map-flow-helpers-toggle',opened?rmT('− helpers'):rmT('+ helpers'));
     more.type='button';more.setAttribute('aria-expanded',String(opened));
     more.addEventListener('click',function(event){event.stopPropagation();if(opts.open.has(key))opts.open.delete(key);else opts.open.add(key);draw();});
     line.appendChild(more);
-    if(!opened)helpers.forEach(function(call,i){
-      line.appendChild(document.createTextNode(i?', ':' '));
-      var decl=call.decl!==undefined?data.decls[call.decl]:null;
-      line.appendChild(decl?rmFlowName(ctx,decl,call):rmEl('span','map-flow-plain',call.macro||(call.one?rmT('one of {0}',call.one.length):call.name||'')));
-    });
     return line;
   }
   draw();
@@ -234,7 +232,6 @@ function rmInputFlowSection(ctx,path,title,inputNode,choose){
         var from=decls[way.from!==undefined?way.from:way.chain[0]]||{},node=rmFlowPart(ctx,from.part);
         head.appendChild(document.createTextNode(rmT('from')+' '));head.appendChild(rmPartBox(ctx,node?node.getAttribute('href')||'#'+node.id:'',from.name||''));
       });
-      if(also.length)head.appendChild(document.createTextNode((others.length?', ':'')+'+'+also.length));
       more.appendChild(head);
       others.forEach(function(way){
         var line=chain(way,null);
@@ -242,9 +239,10 @@ function rmInputFlowSection(ctx,path,title,inputNode,choose){
         if(input){var who=rmEl('button','system-catalogue-member',input.dataset.title);who.type='button';who.addEventListener('click',function(){choose(input);});line.insertBefore(who,line.firstChild);}
         more.appendChild(line);
       });
+      // The inputs that run the site themselves, one to a line.
       if(also.length){
-        var runs=rmEl('p','map-flow-also');
-        also.forEach(function(input,i){if(i)runs.appendChild(document.createTextNode(' '));var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});runs.appendChild(b);});
+        var runs=rmEl('ul','map-reading-ends map-flow-also-inputs');
+        also.forEach(function(input){var item=rmEl('li'),b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});item.appendChild(b);runs.appendChild(item);});
         more.appendChild(runs);
       }
       section.appendChild(more);

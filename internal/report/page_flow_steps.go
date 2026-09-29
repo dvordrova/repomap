@@ -19,6 +19,9 @@ type pageStepName struct {
 	Key  string
 	Code string
 	Open string
+	// In is true when Name is the function a closure is written in
+	// (closureHome): the step reads "in ReplicateCommand.Run", not Run$1.
+	In bool
 }
 
 // pageStepRegistration is one place a step's callable is registered: the
@@ -37,6 +40,9 @@ type pageStepRegistration struct {
 type pageStepPath struct {
 	shown   []string
 	runners map[string]bool
+	// alone names each registration by its registering function alone,
+	// with no run of calls reaching it (ownWork).
+	alone bool
 }
 
 // registeredStep reads a step citing a registration (owner, 2026-09-29:
@@ -66,22 +72,7 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 	if !known || ref.subject.Object == nil || ref.subject.Object.Location == nil {
 		return false
 	}
-	groupOf := builder.edgesBetweenGroups(*index).groupOf
-	named := func(subjectID string) pageStepName {
-		ref, known := builder.subject(section.programTargetID, subjectID)
-		if !known {
-			return pageStepName{Name: subjectID}
-		}
-		name, anchor := builder.subjectDisplay(ref.subject)
-		step := pageStepName{Name: builder.withType(section.programTargetID, ref.subject, name)}
-		if anchor != nil {
-			step.Code, step.Open = cmp.Or(anchor.Code, anchor.Href), anchor.Open
-		}
-		if group := groupOf[subjectID]; group != "" && anchor != nil {
-			step.Part, step.Key = "#"+groupAnchorID(section.ID, group), declarationKey(anchor)
-		}
-		return step
-	}
+	named := func(subjectID string) pageStepName { return builder.stepName(section, subjectID) }
 	names := func(chain []string) []pageStepName {
 		out := make([]pageStepName, len(chain))
 		for i, id := range chain {
@@ -93,7 +84,7 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 	// lines; the registering call's line is its registration's.
 	own := named(fact.ObjectID)
 	_, ownAnchor := builder.subjectDisplay(ref.subject)
-	row.Label, row.Part, row.Key, row.Anchor = own.Name, own.Part, own.Key, ownAnchor
+	row.Label, row.Part, row.Key, row.Anchor, row.In = own.Name, own.Part, own.Key, ownAnchor, own.In
 	var calls []int
 	for position, edge := range index.StructuralEdges {
 		if edge.Role == groupindex.EdgeRelationTarget && edge.RelationKind == programindex.RelationCalls && edge.Resolution == programindex.ResolutionExact {
@@ -128,6 +119,17 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 	if len(starts) == 0 {
 		starts = entries
 	}
+	// Work a program runs on its own is registered where its registering
+	// function stands: no run of calls from the entries is chosen for it
+	// (litestream's Replica.monitor had read "main → Main.Run →
+	// ReplicateCommand.Run → Store.Close → … → Replica.Start registers it",
+	// the shortest of the program's exact calls, through its shutdown).
+	if path.alone {
+		for _, site := range sites {
+			row.Registers = append(row.Registers, registration(site, nil))
+		}
+		starts = nil
+	}
 	for at := len(starts) - 1; at >= 0 && row.Registers == nil; at-- {
 		for _, site := range sites {
 			if chain := chainOf(index, calls, starts[at], site.OwnerID); chain != nil {
@@ -139,6 +141,14 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 		for _, site := range sites {
 			row.Registers = append(row.Registers, registration(site, fromEntries(site.OwnerID)))
 		}
+	}
+	// A closure registered by the function it is written in already says
+	// where: "in ReplicateCommand.Run", not "… ReplicateCommand.Run registers
+	// it" again.
+	if own.In {
+		row.Registers = slices.DeleteFunc(row.Registers, func(site pageStepRegistration) bool {
+			return len(site.By) == 1 && site.By[0].Name == own.Name && site.By[0].Key == own.Key
+		})
 	}
 	// Registrations by the same run of calls read once, linking the first
 	// registering call: sizeWorkspace had read "canvas registers it" four
@@ -279,7 +289,6 @@ func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, path *
 	if path == nil {
 		path = &pageStepPath{runners: map[string]bool{}}
 	}
-	groupOf := builder.edgesBetweenGroups(*index).groupOf
 	seen := map[string]bool{}
 	var work []pageOwnWork
 	for _, operation := range operations {
@@ -292,17 +301,89 @@ func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, path *
 		if name == "" || shown[declarationKey(anchor)] {
 			continue
 		}
-		name = builder.withType(section.programTargetID, ref.subject, name)
 		row := pageOwnWork{Input: operationNodeID(section.ID, operation.ID)}
 		fact, registered := builder.factsByID[operation.FactID]
 		if !registered || fact.Kind != facts.KindRegistration || fact.ObjectID != operation.SubjectID || fact.OwnerID == "" ||
-			!builder.registeredStep(&row.pageFlowStep, fact, section, &pageStepPath{runners: path.runners}) {
-			row.pageFlowStep = pageFlowStep{Label: name, Anchor: anchor}
-			if group := groupOf[operation.SubjectID]; group != "" && anchor != nil {
-				row.Part, row.Key = "#"+groupAnchorID(section.ID, group), declarationKey(anchor)
-			}
+			!builder.registeredStep(&row.pageFlowStep, fact, section, &pageStepPath{runners: path.runners, alone: true}) {
+			own := builder.stepName(section, operation.SubjectID)
+			row.pageFlowStep = pageFlowStep{Label: own.Name, Anchor: anchor, Part: own.Part, Key: own.Key, In: own.In}
 		}
 		work = append(work, row)
 	}
 	return work
+}
+
+// stepName names a declaration a Main flow step reads: its name, a method
+// with its type, read in its part, its link all of its lines. A closure is
+// named by the function it is written in (closureHome) and read there, its
+// link still its own lines: litestream's goroutine reads "in
+// ReplicateCommand.Run", not Run$1.
+func (builder *pageBuilder) stepName(section *pageSection, subjectID string) pageStepName {
+	ref, known := builder.subject(section.programTargetID, subjectID)
+	if !known {
+		return pageStepName{Name: subjectID}
+	}
+	name, anchor := builder.subjectDisplay(ref.subject)
+	step := pageStepName{Name: builder.withType(section.programTargetID, ref.subject, name)}
+	if anchor != nil {
+		step.Code, step.Open = cmp.Or(anchor.Code, anchor.Href), anchor.Open
+	}
+	read := subjectID
+	if home := builder.closureHome(section.programTargetID, ref.subject); home != "" {
+		if homeRef, ok := builder.subject(section.programTargetID, home); ok {
+			homeName, homeAnchor := builder.subjectDisplay(homeRef.subject)
+			step.Name, step.In = builder.withType(section.programTargetID, homeRef.subject, homeName), true
+			read, anchor = home, homeAnchor
+		}
+	}
+	index := builder.graphIndex(section.programTargetID)
+	if index == nil || anchor == nil {
+		return step
+	}
+	if group := builder.edgesBetweenGroups(*index).groupOf[read]; group != "" {
+		step.Part, step.Key = "#"+groupAnchorID(section.ID, group), declarationKey(anchor)
+	}
+	return step
+}
+
+// closureHome is, for a closure (a function its compiler names, Go's
+// Run$1, or a lambda), the innermost function or method of its program
+// whose lines hold it in its file; "" for any other declaration or a
+// closure no declaration's lines hold.
+func (builder *pageBuilder) closureHome(targetID string, subject groupindex.Subject) string {
+	object := subject.Object
+	if object == nil || object.Location == nil || !strings.Contains(object.Name, "$") && object.Kind != programindex.ObjectLambda {
+		return ""
+	}
+	if builder.homes == nil {
+		builder.homes = map[string][]programindex.Object{}
+	}
+	callables, done := builder.homes[targetID]
+	if !done {
+		if builder.data != nil && builder.data.ProgramPortfolio != nil {
+			for _, entry := range builder.data.ProgramPortfolio.Entries {
+				if entry.Target.ID != targetID {
+					continue
+				}
+				for _, candidate := range entry.Objects {
+					if (candidate.Kind == programindex.ObjectFunction || candidate.Kind == programindex.ObjectMethod) &&
+						candidate.Location != nil && candidate.EndLine > 0 && !strings.Contains(candidate.Name, "$") {
+						callables = append(callables, candidate)
+					}
+				}
+			}
+		}
+		builder.homes[targetID] = callables
+	}
+	at, home, span := object.Location, "", 0
+	for _, candidate := range callables {
+		start := candidate.Location
+		if start.Path != at.Path || start.Line > at.Line || candidate.EndLine < at.Line || start.Line == at.Line && start.Column >= at.Column {
+			continue
+		}
+		if width := candidate.EndLine - start.Line; home == "" || width < span {
+			home, span = candidate.ID, width
+		}
+	}
+	return home
 }

@@ -30,14 +30,16 @@ import (
 //     with none it is a plain row, Lib the header of what it calls when the
 //     macro is not the repository's. A compiler builtin (the adapter's
 //     `builtin` package) is never a call of its own.
-//   - Helper folds the call into its step's one muted line of helper names
-//     ("+ helpers: createListObject, dictAdd", each a name that reads it):
-//     the callee is a declaration the helper question decided serves the
-//     work of others, and it stands in a part most of the program's parts
-//     call into. A call into the caller's own part is its work and stays
-//     (owner, 2026-09-29: rdbLoad's rdbLoadType, expireGenericCommand's
-//     setExpire and deleteKey had waited behind the toggle); so does a
-//     helper into any other part, whose part says what it is for.
+//   - Helper marks a call the column may fold under its step's "+ helpers"
+//     (32-flow.js folds them only when more than three): the callee is a
+//     declaration the helper question decided serves the work of others,
+//     and it stands in a part most of the program's parts call into, never
+//     the caller's own. A call into the caller's own part is its work and
+//     stays even when that part is widely called (owner, 2026-09-29:
+//     rdbLoad's rdbLoadType, expireGenericCommand's setExpire and deleteKey,
+//     then processCommand's lookupCommand and queueMultiCommand, had waited
+//     behind the fold); so does a helper into any other part, whose part
+//     says what it is for.
 type pageFlowCall struct {
 	Decl *int   `json:"decl,omitempty"`
 	Name string `json:"name,omitempty"`
@@ -263,7 +265,7 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 			continue
 		}
 		if ref, known := builder.subject(index.Target.ID, edge.ToSubjectID); known && ref.subject.Interpretation != nil && ref.subject.Interpretation.Helper {
-			call.Helper = flow.shared[groupOf[edge.ToSubjectID]]
+			call.Helper = flow.shared[groupOf[edge.ToSubjectID]] && groupOf[edge.ToSubjectID] != groupOf[callerID]
 		}
 		if edge.Resolution == programindex.ResolutionAlternatives && edge.RelationID != "" {
 			byRelation[edge.RelationID] = len(calls)
@@ -281,7 +283,7 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 		row := &calls[listed]
 		row.One, row.Every, row.Possible = callees, !dispatched[listed], dispatched[listed]
 		if ref, known := builder.subject(index.Target.ID, first[listed]); known && len(callees) == 1 && ref.subject.Interpretation != nil && ref.subject.Interpretation.Helper {
-			row.Helper = flow.shared[groupOf[first[listed]]]
+			row.Helper = flow.shared[groupOf[first[listed]]] && groupOf[first[listed]] != groupOf[callerID]
 		}
 	}
 	// A dispatch site of one declaration is a call of it.

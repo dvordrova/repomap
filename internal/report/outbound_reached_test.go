@@ -106,13 +106,13 @@ assert.equal(section.tagName,'SECTION','a short list stands open');
 assert.ok(!/\.c:\d|:\d{2,}/.test(section.textContent),'no line numbers: '+section.textContent);
 parts[0].all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
 assert.deepEqual(read.slice(-1),['syncWithMaster'],'a name reads its function');
-// freqtrade's exchange calls are reached from 39 functions: the list folds
-// under its count.
+// freqtrade's exchange calls are reached from 39 functions: the list folds,
+// counting nothing (owner, 2026-09-29: no digits in the column).
 const many={decls:[],groups:[{part:'#t1-g2',title:'Replication',decls:[]}]};
 for(let i=0;i<39;i++){many.decls.push({name:'caller'+i,kind:'function',part:'#t1-g2',href:'h#c'+i});many.groups[0].decls.push({decl:i,kind:'calls'});}
 const folded=rmReachedFrom(ctx,many);
 assert.equal(folded.tagName,'DETAILS','a long list folds');
-assert.equal(folded.children[0].all(c=>c.has('map-reading-peer-count'))[0].textContent,'39','under its count');
+assert.ok(!/\d/.test(folded.children[0].textContent),'its heading counts nothing: '+folded.children[0].textContent);
 assert.equal(rmReachedFrom(ctx,{decls:[],groups:[]}),null,'no callers, no list');
 `)
 	if regexp.MustCompile(`"(line|column)"`).MatchString(tile.Reached) {

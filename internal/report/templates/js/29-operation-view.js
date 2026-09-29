@@ -70,7 +70,7 @@ function rmKey(nodes,edges,category){
 // connections' list of 95 stood open between the part's callers and its
 // own connections.
 function rmReachingInputs(n,reaching,owner,choose){
-  var inputs=rmEl('details','system-reaching-inputs');inputs.appendChild(rmEl('summary','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')+' · '+reaching.length));
+  var inputs=rmEl('details','system-reaching-inputs');inputs.appendChild(rmEl('summary','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')));
   if(reaching.length){
     var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
     types.forEach(function(choices,type){inputs.appendChild(rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',setting:'Settings',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')));var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
@@ -221,9 +221,9 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
 // data "sets", page_settings.go): "Writes: server.masterhost, …", each
 // reading the type declaring the field. No line numbers.
 function rmSettingWrites(sets,partNode,read){
-  var line=rmEl('p','map-reading-writes system-setting-writes');line.appendChild(rmEl('span','map-reading-label',rmT('Writes:')));
-  sets.forEach(function(set,i){
-    line.appendChild(document.createTextNode(i?', ':' '));
+  var box=rmEl('div','map-reading-writes system-setting-writes');box.appendChild(rmEl('p','map-reading-label',rmT('Writes:')));
+  var line=rmEl('ul','map-reading-ends');box.appendChild(line);
+  sets.forEach(function(set){
     var key=set.href||set.open,at=key&&partNode(set.part);
     var link=key?repomapMembers.sourceLink({Href:set.code||set.href,Open:set.open,Text:set.name,NoSource:set.no_source}):rmEl('span','',set.name);
     link.classList.add('map-reading-name');if(set.source)link.title=set.source;
@@ -231,9 +231,9 @@ function rmSettingWrites(sets,partNode,read){
       if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
       event.preventDefault();event.stopPropagation();read(at,key);
     });
-    line.appendChild(link);
+    var item=rmEl('li');item.appendChild(link);line.appendChild(item);
   });
-  return line;
+  return box;
 }
 // <catalogue>
 // A catalogue's reading (page_catalogue.go), shared by its members: where
@@ -273,33 +273,40 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   if(on&&catalogue.declarer>=0)head.append.apply(head,inline('Declared on {0} in {1}',on,name(catalogue.declarer)));
   else if(on)head.append.apply(head,inline('Declared on {0}',on));
   else if(catalogue.declarer>=0)head.append.apply(head,inline(catalogue.table?'In {0}':'Declared in {0}',name(catalogue.declarer)));
-  var members=catalogue.members||[];
-  if(members.length>=2){
-    var of=({command:'one of {0} commands',request:'one of {0} requests',setting:'one of {0} settings'})[catalogue.kind]||'one of {0} inputs';
-    head.append(document.createTextNode(' · '+rmT(of,members.length)+': '));
-    members.forEach(function(id,i){
-      var input=inputNode(id);if(!input)return;
-      if(i)head.append(document.createTextNode(' '));
-      if(input.dataset.title===title){head.append(rmEl('b','',input.dataset.title));return;}
-      var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});head.append(b);
-    });
-  }
+  section.appendChild(head);
+  // Its callers one to a line under "called from" (owner, 2026-09-29:
+  // names several to a line had read as a wall).
   function callers(calls){
-    var from=document.createElement('span');
-    calls.forEach(function(call,i){
-      if(i)from.append(document.createTextNode(', '));
-      from.append(name(call.caller));
-      if(call.possible)from.append(rmEl('span','possible',' · '+rmT('possible')));
+    var list=rmEl('ul','map-reading-ends system-catalogue-callers');
+    calls.forEach(function(call){
+      var item=rmEl('li');item.append(name(call.caller));
+      if(call.possible)item.append(rmEl('span','possible',' · '+rmT('possible')));
+      list.appendChild(item);
     });
-    return from;
+    return list;
   }
-  if((catalogue.calls||[]).length){head.append(document.createTextNode(' · '));head.append.apply(head,inline('called from {0}',callers(catalogue.calls)));}
+  if((catalogue.calls||[]).length)section.append(line('system-catalogue-line','called from {0}',''),callers(catalogue.calls));
   // A table's rows are looked up where the table is read.
   (catalogue.readers||[]).forEach(function(reader){
-    head.append(document.createTextNode(' · '));head.append.apply(head,inline('looked up in {0}',name(reader.reader)));
-    if((reader.calls||[]).length){head.append(document.createTextNode(', '));head.append.apply(head,inline('called from {0}',callers(reader.calls)));}
+    section.appendChild(line('system-catalogue-line','looked up in {0}',name(reader.reader)));
+    if((reader.calls||[]).length)section.append(line('system-catalogue-line','called from {0}',''),callers(reader.calls));
   });
-  section.appendChild(head);
+  // The other inputs of its table, one to a line under a closed fold, this
+  // one bold.
+  var members=catalogue.members||[];
+  if(members.length>=2){
+    var of=({command:'One of these commands',request:'One of these requests',setting:'One of these settings'})[catalogue.kind]||'One of these inputs';
+    var fold=rmEl('details','system-catalogue-members');fold.appendChild(rmEl('summary','',rmT(of)));
+    var list=rmEl('ul','map-reading-ends');
+    members.forEach(function(id){
+      var input=inputNode(id);if(!input)return;
+      var item=rmEl('li');
+      if(input.dataset.title===title)item.appendChild(rmEl('b','',input.dataset.title));
+      else{var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});item.appendChild(b);}
+      list.appendChild(item);
+    });
+    fold.appendChild(list);section.appendChild(fold);
+  }
   if(onInput&&catalogue.on_handler!=null)section.appendChild(line('system-catalogue-handled','{0} is handled by {1}',onInput.dataset.title,name(catalogue.on_handler)));
   // What else the declaring code uses, folded under its count: each
   // variable's users under theirs (owner, 2026-09-29: "server is also used
@@ -307,7 +314,7 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   var usesFold=null;
   if(catalogue.declarer>=0&&(catalogue.uses||[]).length){
     usesFold=rmEl('details','system-catalogue-uses-all');var usesHead=rmEl('summary');
-    usesHead.append.apply(usesHead,inline('{0} also uses {1} variables',name(catalogue.declarer),String(catalogue.uses.length)));
+    usesHead.append.apply(usesHead,inline('{0} also uses variables',name(catalogue.declarer)));
     usesFold.appendChild(usesHead);
   }
   (catalogue.uses||[]).forEach(function(use){
@@ -318,14 +325,14 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
     if((use.users||[]).length){
       var more=rmEl('details','system-catalogue-users');
       var summary=rmEl('summary');
-      summary.textContent=rmT('{0} is also used by',(decls[use.decl]||{}).name||'')+' ('+rmT('{0} functions in {1} parts',use.users.length,use.parts||0)+')';
+      summary.textContent=rmT('{0} is also used by',(decls[use.decl]||{}).name||'');
       more.appendChild(summary);
       var byPart=new Map();use.users.forEach(function(user){var part=(decls[user]||{}).part||'';if(!byPart.has(part))byPart.set(part,[]);byPart.get(part).push(user);});
       byPart.forEach(function(users,part){
         var row=rmEl('div','system-neighbours'),node=partNode(part);
-        if(node){var b=rmEl('button','',node.dataset.title);b.type='button';b.addEventListener('click',function(){choose(node);});row.appendChild(b);row.append(document.createTextNode(': '));}
-        users.forEach(function(user,i){if(i)row.append(document.createTextNode(', '));row.append(name(user));});
-        more.appendChild(row);
+        if(node){var b=rmEl('button','',node.dataset.title);b.type='button';b.addEventListener('click',function(){choose(node);});row.appendChild(b);}
+        var list=rmEl('ul','map-reading-ends');users.forEach(function(user){var item=rmEl('li');item.append(name(user));list.appendChild(item);});
+        row.appendChild(list);more.appendChild(row);
       });
       box.appendChild(more);
     }
@@ -570,7 +577,7 @@ function rmEntryLanding(link,nodes,component){
     if(!rows.length)return;
     // Folded under its count, after what the part is made of: 97 inputs'
     // writes into one type had stood above the part's own reading.
-    var section=rmEl('details','system-entity-writes'),head=rmEl('summary');head.append(rmEl('span','',rmT('State changes')),rmEl('span','map-reading-peer-count',String(rows.length)));
+    var section=rmEl('details','system-entity-writes'),head=rmEl('summary');head.appendChild(rmEl('span','',rmT('State changes')));
     section.appendChild(head);section.open=rows.length<=rmShortSection;
     section.appendChild(rmEl('p','meta',rmT('Writes reachable in code; a call path does not prove they execute on every run.')));
     var entities=new Map();rows.forEach(function(row){var key=repomapMembers.sourceKey(row.write.entity);if(!entities.has(key))entities.set(key,[]);entities.get(key).push(row);});
@@ -621,27 +628,33 @@ function rmEntryLanding(link,nodes,component){
     if(member){document.dispatchEvent(new Event('repomap:visit'));map.inspectConcept?.(-1);return;}
     select(n,true,null,true);
   };
-  // What an area is made of: its parts in their order, each with how many
-  // declarations of each kind in which files, and those declarations, the
-  // model's keys first and bold, the rest by name. A part leads to its
-  // reading; a declaration to its own, in its part.
+  // What an area is made of (owner, 2026-09-29: "Made of 2 parts", "123
+  // functions, 4 types" and 127 names several to a line had been a wall):
+  // its parts in their order, each in its box reading it, its description
+  // on one line, and only its key declarations, bold, one to a line, each
+  // reading its declaration in its part. Its other declarations are the
+  // part's own reading. No counts.
   function areaComposition(n){
     var parts=(n.dataset.children||'').split(/\s+/).map(function(id){return byID[id];}).filter(function(part){return part&&!part.dataset.activation&&!part.dataset.branch;});
     if(!parts.length)return null;
-    var section=rmEl('section','map-area-composition'),made=parts.map(function(part){return repomapMembers.composition(part);});
-    var heading=rmEl('h5','map-made-of');heading.appendChild(rmEl('span','',rmT('Made of {0} parts',parts.length)));section.appendChild(heading);
-    parts.forEach(function(part,index){
-      var entry=rmEl('div','map-area-part'),go=rmEl('button','',part.dataset.title);go.type='button';
+    var section=rmEl('section','map-area-composition');
+    section.appendChild(rmEl('h5','map-made-of',rmT('Parts')));
+    parts.forEach(function(part){
+      var entry=rmEl('div','map-area-part'),go=rmEl('button','map-part-box',part.dataset.title);go.type='button';
+      if(part.dataset.lane==='core')go.classList.add('map-part-box-core');else if(part.dataset.lane==='triggers')go.classList.add('map-part-box-entry');
       go.addEventListener('click',function(){select(part,true,null,false);});entry.appendChild(go);
-      var counts=made[index];if(counts.total)entry.appendChild(rmEl('small','',counts.counts+(counts.files.length?' · '+counts.files.join(', '):'')));
-      var members=rmEl('div','map-area-members');
-      repomapMembers.sorted(part).forEach(function(item){
-        var link=repomapMembers.sourceLink(item.source);link.textContent=repomapMembers.displayName(item);if(item.key)link.className='map-member-key';
-        link.title=[item.source.Text,item.source.NoSource?rmT('No source'):''].filter(Boolean).join('\n');
-        link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(part,true,{href:item.source.Href,open:item.source.Open,key:repomapMembers.sourceKey(item.source)},false);});
-        members.appendChild(link);
-      });
-      if(members.childElementCount)entry.appendChild(members);
+      if(part.dataset.summary){var said=rmModelText('p','map-area-part-summary',part.dataset.summary,part.dataset.summaryRef);said.title=part.dataset.summary;entry.appendChild(said);}
+      var keys=repomapMembers.sorted(part).filter(function(item){return item.key;});
+      if(keys.length){
+        var members=rmEl('ul','map-area-members');
+        keys.forEach(function(item){
+          var li=rmEl('li'),link=repomapMembers.sourceLink(item.source);link.textContent=repomapMembers.displayName(item);link.className='map-member-key';
+          link.title=[item.source.Text,item.source.NoSource?rmT('No source'):''].filter(Boolean).join('\n');
+          link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(part,true,{href:item.source.Href,open:item.source.Open,key:repomapMembers.sourceKey(item.source)},false);});
+          li.appendChild(link);members.appendChild(li);
+        });
+        entry.appendChild(members);
+      }
       section.appendChild(entry);
     });
     return section;

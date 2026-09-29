@@ -32,7 +32,10 @@ const chip=(text,href)=>({textContent:text,tagName:'A',getAttribute:name=>name==
 const section=id=>sections[id];
 function offMap(sectionID,path,text,list){
   const row={dataset:{path},querySelectorAll:()=>[]},s=section(sectionID),c=chip(text,'h/'+path);
-  c.closest=selector=>selector==='[data-off-map-file]'?row:selector==='[data-report-page]'?s:selector==='.unreached-parts'?(list==='unreached'?{}:null):null;
+  // What a program never reaches stands on the "What is missing" page,
+  // marked with the program it is missing from.
+  const unreached=list==='unreached';
+  c.closest=selector=>selector==='[data-off-map-file]'?row:selector==='[data-gaps-of]'?(unreached?{dataset:{gapsOf:sectionID}}:null):selector==='[data-report-page]'?(unreached?{id:'repository-reference'}:s):selector==='.unreached-parts'?(unreached?{}:null):null;
   return c;
 }
 const off=[offMap('cli','adlist.c','listCreate:41','unreached'),offMap('server','redis.c','saveparam:301','catalog')];

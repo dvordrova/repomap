@@ -300,6 +300,9 @@ type pageBuilder struct {
 	// fieldsByTarget are each program's reads and writes of record fields
 	// (page_field_uses.go), built once.
 	fieldsByTarget map[string]*pageFieldFacts
+	// homes are each program's functions and methods with their lines, the
+	// places a closure is written in (closureHome), built once.
+	homes map[string][]programindex.Object
 }
 
 // subjectKey is the only identity used by the report projection. Subject IDs
@@ -867,17 +870,95 @@ func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, *pageStepPath
 	flow := &pageFlow{Title: orient.MainFlow.Title}
 	here := false
 	path := &pageStepPath{runners: map[string]bool{}}
+	previous := ""
+	var subjects []string
 	for _, step := range orient.MainFlow.Steps {
 		row := builder.flowStep(step, section, path)
 		if row.Target == "" {
 			here = true
 		}
-		flow.Steps = append(flow.Steps, row)
+		// Two steps in a row naming one function are its one step, the
+		// later's words kept: redis-server's flow had cited main twice, "The
+		// program starts at main" and "main initializes the server".
+		names := builder.flowStepSubject(step)
+		if names != "" && names == previous {
+			flow.Steps, subjects = flow.Steps[:len(flow.Steps)-1], subjects[:len(subjects)-1]
+		}
+		previous = names
+		flow.Steps, subjects = append(flow.Steps, row), append(subjects, names)
 	}
+	builder.qualifySharedLabels(flow.Steps, subjects)
 	if !here {
 		return nil, nil
 	}
 	return flow, path
+}
+
+// qualifySharedLabels names two different declarations a flow's steps call
+// alike by where they are written: a function by its module or file
+// ("trade_commands.start_trading"), as a method is by its type
+// (ReplicateCommand.Run, flowStep). One declaration named twice keeps its
+// name.
+func (builder *pageBuilder) qualifySharedLabels(steps []pageFlowStep, subjects []string) {
+	named := map[string]map[string]bool{}
+	for i, step := range steps {
+		if subjects[i] == "" || step.Target != "" {
+			continue
+		}
+		if named[step.Label] == nil {
+			named[step.Label] = map[string]bool{}
+		}
+		named[step.Label][subjects[i]] = true
+	}
+	for i := range steps {
+		if subjects[i] == "" || steps[i].Target != "" || len(named[steps[i].Label]) < 2 {
+			continue
+		}
+		program, id, _ := strings.Cut(subjects[i], "\x00")
+		ref, ok := builder.subject(program, id)
+		if !ok || ref.subject.Object == nil {
+			continue
+		}
+		if where := builder.writtenIn(program, *ref.subject.Object); where != "" && !strings.Contains(steps[i].Label, ".") {
+			steps[i].Label = where + "." + steps[i].Label
+		}
+	}
+}
+
+// writtenIn is the short name of the module or file a declaration is
+// written in: its container's last path segment ("trade_commands" of
+// freqtrade.commands.trade_commands), else its file's name without its
+// extension.
+func (builder *pageBuilder) writtenIn(targetID string, object groupindex.ObjectFacts) string {
+	if container, ok := builder.subject(targetID, object.ContainerID); ok && container.subject.Object != nil {
+		if kind := container.subject.Object.Kind; kind == programindex.ObjectModule || kind == programindex.ObjectPackage {
+			name := container.subject.Object.Name
+			return name[strings.LastIndexAny(name, "./")+1:]
+		}
+	}
+	if object.Location != nil {
+		file := object.Location.Path[strings.LastIndex(object.Location.Path, "/")+1:]
+		return strings.TrimSuffix(file, path.Ext(file))
+	}
+	return ""
+}
+
+// flowStepSubject is the declaration a Main flow step names, by its
+// program and ID: a fact's declaration (an entrypoint's main, a registered
+// callable) or the step's subject; "" when it names none.
+func (builder *pageBuilder) flowStepSubject(step orientation.FlowStep) string {
+	if step.SubjectID != "" {
+		if ref, ok := builder.subject(step.TargetID, step.SubjectID); ok {
+			return ref.programTargetID + "\x00" + step.SubjectID
+		}
+		return ""
+	}
+	if fact, ok := builder.factsByID[step.FactID]; ok && fact.ObjectID != "" {
+		if owner := builder.byFacts[fact.TargetID]; owner != nil {
+			return owner.programTargetID + "\x00" + fact.ObjectID
+		}
+	}
+	return ""
 }
 
 func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSection, path *pageStepPath) pageFlowStep {
@@ -901,7 +982,14 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 	case step.SubjectID != "":
 		if ref, ok := builder.subject(step.TargetID, step.SubjectID); ok {
 			row.Label, row.Anchor = builder.subjectDisplay(ref.subject)
+			// A method reads with its type: Main.Run, not one of Runs.
+			row.Label = builder.withType(ref.programTargetID, ref.subject, row.Label)
 			owner = builder.byProgram[ref.programTargetID]
+			// A closure is named by the function it is written in.
+			if owner == section && builder.closureHome(section.programTargetID, ref.subject) != "" {
+				own := builder.stepName(section, step.SubjectID)
+				row.Label, row.In, row.Part, row.Key = own.Name, true, own.Part, own.Key
+			}
 			// A callable some registration hands over reads the same way
 			// whether the step names it or its registration.
 			if owner == section && builder.data.Facts != nil {
@@ -926,7 +1014,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		path.shown = append(path.shown, step.SubjectID)
 	}
 	// A declaration of this program is read in its part.
-	if owner == section && step.SubjectID != "" && row.Anchor != nil {
+	if owner == section && step.SubjectID != "" && row.Anchor != nil && !row.In {
 		if index := builder.graphIndex(section.programTargetID); index != nil {
 			if group := builder.edgesBetweenGroups(*index).groupOf[step.SubjectID]; group != "" {
 				row.Part, row.Key = "#"+groupAnchorID(section.ID, group), declarationKey(row.Anchor)

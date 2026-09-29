@@ -300,13 +300,12 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
    18 functions" with its files once beside it, then every declaration, the
    model's keys first and bold, the rest by name, none with a line number.
    An area lists its parts the same way, each with its own declarations. */
-.map-made-of{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px}
-.map-made-of>small,.map-area-part>small{font:400 12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
+.map-made-of{margin:12px 0 4px}
+.map-area-part-summary,.flow-enabled .map-inspector p.map-area-part-summary{margin:2px 0 2px 2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12.5px;color:var(--muted)}
 .map-area-composition{margin:12px 0}.map-area-composition>h5{margin:12px 0 4px}
 .map-area-part{margin:10px 0 0}
-.map-card .map-area-part>button{font:inherit;font-size:14px;font-weight:650;color:var(--ink);margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;text-align:left}
-.map-area-part>small{display:block;font-family:inherit;margin:1px 0 2px}
-.map-area-members{display:flex;flex-wrap:wrap;gap:0 10px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.map-area-part>.map-part-box{cursor:pointer}
+.flow-enabled .map-inspector .map-area-members{list-style:none;margin:2px 0 0 12px;padding:0;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.map-area-members>li{margin:0}
 .map-card .map-area-members a{text-decoration:none}.map-card .map-area-members a:hover{text-decoration:underline}
 .map-area-members .map-member-key{font-weight:750}
 /* A frame's Connections (owner's 3b): one line per participant at the other
@@ -397,10 +396,10 @@ details.map-reading-peer[open]>summary::before{content:'▾'}
 .map-part-title{margin:6px 0 8px}
 .flow-enabled .map-inspector .map-part-title .map-part-box{font-size:16px;padding:6px 10px;border-width:2px}
 .map-reading-caller{margin:6px 0 10px 12px}
-.flow-enabled .map-inspector p.map-part-files{margin:0 0 10px;font-family:var(--mono);font-size:12px}
+.flow-enabled .map-inspector ul.map-part-files{list-style:none;margin:0 0 10px;padding:0;font-family:var(--mono);font-size:12px}
 .flow-enabled .map-inspector .map-reading-ends{list-style:none;margin:2px 0 0 14px;padding:0 0 0 10px;border-left:1px solid var(--line)}
 .flow-enabled .map-inspector .map-reading-ends li{margin:1px 0;font-size:13px}
-.flow-enabled .map-inspector .map-reading-names{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-wrap:wrap;gap:2px 12px}
+.flow-enabled .map-inspector .map-reading-names{list-style:none;margin:0 0 14px;padding:0}.map-reading-names>li{margin:1px 0}
 .map-reading-name{font-family:var(--mono);font-size:13px;text-decoration:none}
 .map-reading-name:hover{text-decoration:underline}
 .map-reading-key{font-weight:750}
@@ -429,22 +428,18 @@ a.map-decl-code:hover{text-decoration:underline}
 .map-reading-field-grid .map-field-uses-row{margin:0 0 6px 12px;color:inherit;font-family:system-ui;overflow-wrap:normal}
 .map-field-side{margin:1px 0;font-size:12.5px;line-height:1.5}
 .map-field-side-head{color:var(--muted);font-weight:600}
-.map-field-side-head .map-reading-peer-count{margin-left:6px}
-.map-field-part{display:block;margin:1px 0 1px 10px}
-.map-field-part>.map-part-box{font-size:11.5px;padding:0 6px;margin-right:6px}
-.map-field-part>.map-reading-name{display:inline-block;max-width:100%;margin-right:6px;overflow-wrap:anywhere}
 /* "Writes: …" and "Reads: …", one line each, the pair together. */
 .map-reading-paths{margin:0 0 12px;font-size:13px;overflow-wrap:anywhere}
-.map-reading-paths+.map-reading-paths{margin-top:-8px}
+.map-reading-rw{margin:0 0 12px}.map-reading-rw>summary{cursor:pointer;font:600 12px/1.4 system-ui;color:var(--muted);letter-spacing:.02em}.map-reading-paths>.map-reading-label{margin:6px 0 0;font:600 12px/1.4 system-ui;color:var(--muted)}
 /* A collection's names flow in their order with no holes: a grid with
    long names spanning two cells left gaps where the eye lost the order. */
-.flow-enabled .map-inspector .map-collection-names{list-style:none;margin:6px 0 12px;padding:0;display:flex;flex-wrap:wrap;gap:3px 14px}
+.flow-enabled .map-inspector .map-collection-names{list-style:none;margin:6px 0 12px;padding:0}
 .flow-enabled .map-inspector .map-collection-names li{margin:0;line-height:1.5}
 .flow-enabled .map-inspector .map-collection-names button{border:0;background:transparent;padding:0;font:13px/1.5 var(--mono);text-align:left;cursor:pointer}
 .map-collection-names button:hover{text-decoration:underline}
 .flow-enabled .map-inspector p.map-collection-line{margin:0 0 4px;font-size:13px}
 .map-component-entry{margin:6px 0}
-.map-component-inputs{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:8px 0}
+.map-component-inputs{margin:8px 0}.map-component-inputs>.map-reading-label{margin:0;font-size:13px;font-weight:600}.flow-enabled .map-inspector ul.map-component-input-kinds{list-style:none;margin:2px 0 0;padding:0}.flow-enabled .map-inspector ul.map-component-input-kinds button{margin:0;line-height:1.6}
 .flow-enabled .map-inspector .map-component-inputs button{border:0;background:transparent;padding:0;font:inherit;font-size:13px;cursor:pointer}
 .map-component-inputs button:hover{text-decoration:underline}
 .map-reading-label{font-weight:600;font-size:13px}
@@ -462,10 +457,6 @@ a.map-decl-code:hover{text-decoration:underline}
 /* A component's areas and parts, each named in its box with its description on one line. */
 .map-component-outline{margin:10px 0}
 .map-component-outline h6{margin:0 0 6px;font-size:13px}
-.flow-enabled .map-inspector ul.map-outline{list-style:none;margin:0;padding:0}
-.flow-enabled .map-inspector ul.map-outline ul.map-outline{padding-left:14px;margin:4px 0 6px}
-.map-outline li{margin:3px 0;min-width:0}
-.map-outline-summary{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12.5px;color:var(--muted);margin:1px 0 0 2px}
 /* The home's table of programs: role, entry, inputs, connections and the files each is built from. */
 .system-programs table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
 .system-programs th{text-align:left;font-weight:600;color:var(--muted);padding:4px 6px 4px 0;border-bottom:1px solid var(--line)}
@@ -479,7 +470,7 @@ a.map-decl-code:hover{text-decoration:underline}
 /* A caller's dispatch into the part, one line, its ends folded under it. */
 details.map-reading-caller>summary{cursor:pointer;list-style-position:outside}
 .map-reading-fan{color:var(--muted);font-size:13px}
-details.map-reading-in>summary{display:flex;gap:8px;cursor:pointer;font-weight:600;font-size:13px}
+details.map-reading-in>summary,details.map-reading-out>summary{display:flex;gap:8px;cursor:pointer;font-weight:600;font-size:13px}
 /* An input's registration as the code wrote it. */
 .map-card-written{margin:4px 0 8px}
 .map-card-written code{font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap;color:var(--ink)}
@@ -518,10 +509,9 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-flow-helper .map-reading-name,.map-flow-helper .map-flow-plain{opacity:.55}
 .map-flow-above{font-family:system-ui;font-size:12px;margin-left:6px}
 .map-flow-one{color:var(--ink)}
-.map-flow-names{margin:2px 0 4px 14px;font:13px/20px var(--mono);overflow-wrap:anywhere}
+.flow-enabled .map-inspector ul.map-flow-names{list-style:none;margin:2px 0 4px 14px;padding:0;font:13px/20px var(--mono);overflow-wrap:anywhere}
 /* A step's helper calls: one muted line of names under its rows. */
 .map-flow-helpers,.flow-enabled .map-inspector p.map-flow-helpers{margin:0 0 4px 14px;font:12px/18px var(--mono);color:var(--muted);overflow-wrap:anywhere}
-.map-flow-helpers .map-reading-name{font-size:12px;opacity:.75}
 .map-flow-helpers-toggle,.flow-enabled .map-inspector button.map-flow-helpers-toggle{border:0;background:none;box-shadow:none;margin:0;padding:0;min-width:0;height:auto;color:var(--muted);cursor:pointer;font:12px/18px system-ui}
 .map-flow-helpers-toggle:hover{color:var(--link)}
 /* The way a request comes in: one chain, a line per part. */
@@ -545,8 +535,8 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-flow-step-code{margin:4px 0 6px 14px}
 /* What the program runs on its own, after its Main flow, one line each:
    "serverCron — main → initServer registers it; aeProcessEvents runs it". */
-.map-component-own{border-top:1px solid var(--line);padding:8px 0}
-.map-component-own>.map-reading-label{margin:0 0 4px;font-weight:600;font-size:14px}
+.map-component-own{margin:8px 0 0}
+.map-component-own>.map-reading-label{margin:0 0 4px;font-weight:600;font-size:13px}
 .map-component-own-list{list-style:none;margin:4px 0;padding:0;font-size:13px;line-height:1.55}
 .map-component-own-list>li{margin:2px 0;overflow-wrap:anywhere}
 .map-component-own-list .flow-what{font-weight:600}
@@ -559,7 +549,6 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-reading-home-links{margin:18px 0 4px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;line-height:1.6;color:var(--muted)}
 /* A part's declarations reached from outside it stand first, their count
    in the heading; the rest follow after a gap. */
-.map-reading-reached-count{font-weight:400;color:var(--muted)}
 .flow-enabled .map-inspector .map-reading-names.map-reading-reached{margin-bottom:8px;padding-bottom:6px;border-bottom:1px dotted var(--line)}
 /* A name breaks only after a dot (31-reading-column.js), never inside a
    word ("sql.Tx.Rollbac k"); a single word longer than a flow's row ends in
@@ -572,3 +561,20 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-flow-also,.flow-enabled .map-inspector p.map-flow-also{margin:0 0 4px 14px;font:12px/18px var(--mono);color:var(--muted)}
 .map-flow-also .map-flow-plain{color:var(--muted)}
 .map-flow-also-label{font-family:system-ui}
+
+/* The column names one thing to a line and counts nothing (owner,
+   2026-09-29): a file opens to its functions by part, a part's other
+   declarations and a function's reads and writes wait under closed folds,
+   and a frame's connections drop their counts, their parts one to a line. */
+.map-file{margin:4px 0}.map-file>summary,.map-file>p.map-field-path{cursor:pointer;font:13px/1.45 var(--mono);margin:0}
+.map-file>p.map-field-path{cursor:auto}
+.map-names-by-part{margin:2px 0 6px}
+.map-reading-other{margin:0 0 14px}.map-reading-other>summary{cursor:pointer;font:600 12px/1.4 system-ui;color:var(--muted);letter-spacing:.02em;margin:0 0 6px}
+.flow-enabled .map-inspector ul.system-program-files{list-style:none;margin:0;padding:0}
+.map-reading-home-links .map-details-link{display:inline;margin:0}
+.map-frame-connections>details>summary>b,.map-frame-connections>details>summary>small,.map-frame-connections .flow-card-group>b,.map-frame-connections .flow-card-pair>b,.map-frame-connections .flow-card-fold-parts summary>b{display:none}
+.map-frame-connections .flow-card-fold-parts p>*{display:block}
+/* A name breaks only after its dots and slashes (rmDotBreaks). */
+.map-name-piece{white-space:nowrap}
+.map-reading-flow>.map-flow-headline{justify-content:space-between}.map-reading-flow>.map-flow-headline>h6{margin:0;font:600 12px/1.4 system-ui;color:var(--muted);letter-spacing:.02em}
+.map-related-operations>button{display:block;margin:2px 0}

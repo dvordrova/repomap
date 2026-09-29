@@ -50,11 +50,12 @@ const data={decls:[decl('serverCron','function','#own',{doc:'Called every 100 ms
    callees:[{part:'#core',title:'Server core state',decls:[{decl:5,kind:'calls'}]}]}]};
 `
 
-// A part's reading stands as the owner chose (2026-09-28): who calls into
-// it, each caller with what it calls here and a callback said so; the
-// part's own box, the model's description marked by style, its files; its
-// declarations under a heading per kind in the page data's order, a key in
-// bold; the parts it calls, with the variables it uses there apart. A
+// A part's reading stands as the owner chose (2026-09-28, 2026-09-29): who
+// calls into it, each caller with what it calls here and a callback said
+// so; the part's own box, the model's description marked by style, its
+// files; its key declarations bold, one to a line, and the rest under one
+// closed fold, in the page data's order, counting nothing; the parts it
+// calls, with the variables it uses there apart. A
 // declaration's reading: its callers by part, its name as the code link
 // with its file and its author's comment, and what it calls. A name reads
 // its declaration.
@@ -64,7 +65,10 @@ func TestReadingColumnViewsFollowThePreparedData(t *testing.T) {
 const part=rmPartView(ctx,nodes['#own'],data).view;
 const at=cls=>part.children.findIndex(c=>c.has(cls));
 assert.ok(at('map-reading-members')<at('map-reading-in')&&at('map-reading-in')<at('map-reading-out'),'what it is made of first, then who calls it (owner, 2026-09-28)');
-assert.deepEqual(part.children.filter(c=>c.has('map-reading-members')).map(names),[['beforeSleep','initServer','serverCron'],['shared']],'its declarations by kind, in the page data\'s order');
+assert.deepEqual(part.children.filter(c=>c.has('map-reading-members')).map(names),[['initServer'],['beforeSleep','serverCron','shared']],'its keys, then the rest in the page data\'s order');
+const other=part.children.find(c=>c.has('map-reading-other'));
+assert.ok(other.tagName==='DETAILS'&&!other.open&&other.children[0].textContent==='Other declarations','the rest wait under a closed fold');
+assert.ok(!/\d/.test(part.textContent),'no counts: '+part.textContent);
 const incoming=part.children[at('map-reading-in')],outgoing=part.children[at('map-reading-out')];
 assert.deepEqual(names(incoming),['main()','initServer()','beforeSleep()'],'each caller with what it calls here');
 assert.equal(incoming.all(c=>c.has('map-reading-relation')).length,1,'a callback is said so');
@@ -90,33 +94,27 @@ assert.ok(one('map-decl-explanation').has('model'),'the model\'s line is marked 
 `)
 }
 
-// A component's reading names every area and part, each reading it, with
-// its description on one line; the home names every program with its role,
-// entry, inputs, connections and the files it is built from (owner,
-// 2026-09-28).
-func TestAComponentsOutlineAndTheHomesProgramsFollowThePageData(t *testing.T) {
+// The home names every program with its role, entry, the kinds of its
+// inputs in words, its connections and the files it is built from, one to
+// a line and counting nothing (owner, 2026-09-28, 2026-09-29).
+func TestTheHomesProgramsFollowThePageData(t *testing.T) {
 	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading") +
 		systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "function rmCollectionView(") +
-		systemJSPiece(t, "31-reading-column.js", "// The kind whose section a count", "function rmComponentReading(") +
+		systemJSPiece(t, "31-reading-column.js", "var rmPendingKind=", "// The files a component's program reaches") +
 		systemJSPiece(t, "31-reading-column.js", "// The home's table of programs", "// </reading-column>")
 	runSystemJS(t, readingViewElements+code+`
 const all={
  'system-component-t1':{id:'system-component-t1',dataset:{title:'redis-server',owner:'t1',role:'Backend database server',children:'area core',entries:'[{"name":"main","callable":true}]',sources:'["adlist.c","redis.c"]'}},
- area:{id:'area',dataset:{title:'Core infrastructure',summary:'Provides runtime services.',children:'core'},getAttribute:()=>'#area'},
- core:{id:'core',dataset:{title:'Server core state',summary:'Manages core state.',lane:'core'},getAttribute:()=>'#core'},
  'system-inputs-t1':{id:'system-inputs-t1',dataset:{collection:'{"groups":[],"kinds":[{"kind":"request","inputs":["a","b"]},{"kind":"setting","inputs":["c"]}]}'}}};
 const opened=[];
 const context={nodeByHref:href=>all[href.slice(1)]||null,nodeById:id=>all[id]||null,readNode:n=>opened.push(n.dataset.title)};
-const outline=rmOutline(context,all['system-component-t1']);
-const area=outline.all(c=>c.tagName==='LI'&&c.children[0].textContent==='Core infrastructure')[0];
-assert.ok(area.all(c=>c.has('map-part-box')).some(c=>c.textContent==='Server core state'),'a part stands under its area');
-assert.deepEqual(area.all(c=>c.has('map-outline-summary')).map(c=>[c.textContent,c.has('model')]),[['Provides runtime services.',true],['Manages core state.',true]],'each with the model\'s description');
-outline.all(c=>c.tagName==='BUTTON'&&c.textContent==='Core infrastructure')[0].listeners.click({stopPropagation(){}});
-assert.deepEqual(opened,['Core infrastructure'],'a name reads its area');
 const holder=rmEl('div');
 rmProgramsTable(context,holder,[all['system-component-t1']],()=>[{incoming:true,title:'redis-cli'},{incoming:false,title:'TCP endpoint'}]);
 assert.deepEqual(holder.all(c=>c.has('model')).map(c=>c.textContent),['Backend database server'],'its role is the model\'s');
-for(const fact of ['main()','2 requests','1 settings','← redis-cli','→ TCP endpoint','adlist.c redis.c'])assert.ok(holder.textContent.includes(fact),'its entry, inputs by kind, connections by direction and files: '+fact);
+const lines=holder.all(c=>c.tagName==='LI').map(c=>c.textContent);
+assert.deepEqual(lines,['main()','←\u00a0redis-cli','→\u00a0TCP endpoint','adlist.c','redis.c'],'its entry, connections by direction and files, one to a line, an arrow kept with its name');
+assert.ok(holder.textContent.includes('Incoming requests · Settings'),'the kinds of its inputs in words');
+assert.ok(!/\d/.test(holder.textContent),'no counts: '+holder.textContent);
 holder.all(c=>c.tagName==='BUTTON'&&c.textContent==='redis-server')[0].listeners.click();
 assert.deepEqual(opened.at(-1),'redis-server','its name reads it');
 `)
@@ -135,14 +133,15 @@ const decls=[d('listCreate','adlist.c'),d('dictCreate','dict.c'),d('sdsnew','sds
 const fanned={decls,files:['adlist.c','dict.c','sds.c'],members:[{kind:'function',decls:[0,1,2]}],
  in:[{part:'#main',title:'main',count:5,lines:[{caller:3,ends:[5,6,7,8,9].map(i=>({decl:i,kind:'calls',possible:true})),fan:{of:94,noun:'request',via:[4]}}]}]};
 const view=rmPartView(ctx,nodes['#own'],fanned).view;
-assert.deepEqual(view.children.filter(c=>c.has('map-reading-file')).map(c=>[c.children[0].textContent,...names(c)]),
- [['adlist.c','listCreate'],['dict.c','dictCreate'],['sds.c','sdsnew']],'file by file');
+const other=view.children.find(c=>c.has('map-reading-other'));
+assert.deepEqual(other.children.filter(c=>c.has('map-reading-file')).map(c=>[c.children[0].textContent,...names(c)]),
+ [['adlist.c','listCreate'],['dict.c','dictCreate'],['sds.c','sdsnew']],'file by file under the fold');
 const lines=view.all(c=>c.has('map-reading-caller'));
 assert.equal(lines.length,1,'the fan-out is one line');
 assert.equal(lines[0].tagName,'DETAILS','folded');
 const head=lines[0].children[0];
 assert.deepEqual(names(head),['loadAppendOnlyFile()','cmdTable'],'the caller and the site it dispatches through');
-assert.ok(head.textContent.includes('5')&&head.all(c=>c.has('possible')).length===1,'its ends counted, possible');
+assert.ok(head.textContent.includes('request handlers')&&!/\d/.test(head.textContent)&&head.all(c=>c.has('possible')).length===1,'its ends named by kind, not counted, possible: '+head.textContent);
 `)
 }
 
@@ -201,14 +200,15 @@ assert.deepEqual(read.slice(reads),['redisClient'],'a written field reads the ty
 `)
 }
 
-// A function's reading lists its calls as its flow, in the order Go wrote
-// them, each run into one part under that part's box, with no caption
-// repeating its name ("serverCron calls, in order:"). Helper calls stand as
-// one muted line of names under their step, each name reading its
-// declaration, unless every call of a step is one; the line and "Show
-// helper calls" open them in place. A call opens in place to its callee's
-// flow, a call its ancestors make says it is shown above, and a library's
-// call is a plain row.
+// A function's reading lists its calls as its flow, under "Calls", in the
+// order Go wrote them, each run into one part under that part's box, with
+// no caption repeating its name ("serverCron calls, in order:"). More than
+// three helper calls fold under one muted "+ helpers" naming none of them;
+// three or fewer stand as rows, as do the calls of a step whose every call
+// is a helper (owner, 2026-09-29: processCommand's own calls had waited
+// among eighteen names). The fold and "Show helper calls" open them in
+// place. A call opens in place to its callee's flow, a call its ancestors
+// make says it is shown above, and a library's call is a plain row.
 func TestAFunctionsReadingIsItsFlow(t *testing.T) {
 	reading := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
 	flow := systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
@@ -220,13 +220,14 @@ Object.defineProperty(El.prototype,'open',{get(){return !!this._open;},set(v){co
 nodes['#persist']={id:'persist',dataset:{title:'Persistence',summary:'Saves the dataset.'},getAttribute:()=>'#persist'};
 ctx.nodeById=()=>null;document.getElementById=()=>null;
 const d=data.decls;
-d.push(decl('redisLog','function','#core'),decl('rdbSave','function','#persist'),decl('lookupKeyRead','function',''));
-const log=d.length-3,save=d.length-2,lookup=d.length-1;
+d.push(decl('redisLog','function','#core'),decl('rdbSave','function','#persist'),decl('lookupKeyRead','function',''),decl('zmallocUsed','function','#core'),decl('dictRandom','function','#core'),decl('freeOne','function','#core'));
+const log=d.length-6,save=d.length-5,lookup=d.length-4,used=d.length-3,random=d.length-2,free=d.length-1;
 data.own[0].flow=[{decl:log,helper:true,sites:[{at:'server.c:1273'},{at:'server.c:1288'}]},{decl:2,sites:[{at:'server.c:1284'}]},{name:'wait3',lib:'sys/wait.h',kind:'invokes_external',sites:[{at:'server.c:1304'}]},
-  {decl:save,sites:[{at:'server.c:1322'}]},{decl:save,kind:'passes_callback',sites:[{at:'server.c:1330'}]},{decl:lookup,sites:[{at:'server.c:1350'}]},{decl:0,sites:[{at:'server.c:1360'}]},
+  {decl:used,helper:true,sites:[{at:'server.c:1310'}]},{decl:save,sites:[{at:'server.c:1322'}]},{decl:save,kind:'passes_callback',sites:[{at:'server.c:1330'}]},{decl:random,helper:true,sites:[{at:'server.c:1340'}]},
+  {decl:lookup,sites:[{at:'server.c:1350'}]},{decl:0,sites:[{at:'server.c:1360'}]},{decl:free,helper:true,sites:[{at:'server.c:1365'}]},
   {macro:'assert',lib:'assert.h',sites:[{at:'server.c:1370'}]},{decl:1,macro:'redisAssert',sites:[{at:'server.c:1380'}]}];
 data.own.push({decl:save,flow:[{decl:log,helper:true,sites:[{at:'server.c:3010'}]}]});
-data.own.push({decl:lookup,flow:[{decl:1,sites:[{at:'server.c:905'}]}]});
+data.own.push({decl:lookup,flow:[{decl:log,helper:true,sites:[{at:'server.c:904'}]},{decl:1,sites:[{at:'server.c:905'}]}]});
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
 const said=view.textContent;
 assert.ok(!/serverCron calls|in order|steps|\d+ helpers|only helpers|not on the map|also from/.test(said),'no caption repeats its name and no meta word: '+said);
@@ -251,27 +252,32 @@ for(const list of lists){const boxes=list.children.filter(c=>c.has&&c.has('map-f
 assert.deepEqual(view.all(c=>c.tagName==='A'&&c.textContent==='').length,0,'no code mark beside a name');
 assert.ok(root.all(c=>c.has('map-flow-above')).length===1,'a call its ancestors make is shown above');
 const helperLine=root.all(c=>c.has('map-flow-helpers'));
-assert.equal(helperLine.length,1,'one line of helper names under the step');
-assert.deepEqual(names(helperLine[0]),['redisLog()'],'the helper is named, not hidden');
-const helperReads=read.length;helperLine[0].all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
-assert.deepEqual(read.slice(helperReads),['redisLog'],'a helper name reads its declaration');
-// The line opens the step's helpers into rows in place, and folds them again.
+assert.equal(helperLine.length,1,'one fold of helper calls under the step');
+assert.deepEqual(names(helperLine[0]),[],'the fold names none of them: several names to a line were a wall');
+assert.equal(helperLine[0].children[0].textContent,'+ helpers');
+// The fold opens the step's helpers into rows in place, and folds them again.
 helperLine[0].children[0].listeners.click({stopPropagation(){}});
-assert.deepEqual(root.all(c=>c.has('map-flow-row')&&c.has('map-flow-helper')).map(c=>c.textContent),['redisLog()'],'opened, the helper is a row in its place');
-assert.deepEqual(names(root.all(c=>c.has('map-flow-helpers'))[0]),[],'opened, the line no longer repeats the names');
+const helperRows=root.all(c=>c.has('map-flow-row')&&c.has('map-flow-helper'));
+assert.deepEqual(helperRows.map(c=>c.textContent),['redisLog()','zmallocUsed()','dictRandom()','freeOne()'],'opened, each helper is a row in its place');
+const helperReads=read.length;helperRows[0].all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
+assert.deepEqual(read.slice(helperReads),['redisLog'],'a helper name reads its declaration');
 root.all(c=>c.has('map-flow-helpers'))[0].children[0].listeners.click({stopPropagation(){}});
-assert.deepEqual(names(root.all(c=>c.has('map-flow-helpers'))[0]),['redisLog()'],'and folds them again');
+assert.equal(root.all(c=>c.has('map-flow-row')&&c.has('map-flow-helper')).length,0,'and folds them again');
 // Opening rdbSave shows its only call, a helper, as its call.
 const saveRow=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('rdbSave()'))[0];
 saveRow.open=true;
 assert.ok(saveRow.all(c=>c.has('map-flow-row')).some(r=>r.textContent==='redisLog()'&&!r.has('map-flow-helper')),'a step whose every call is a helper shows them');
+// Three helper calls or fewer stand as rows: lookupKeyRead's one.
+const lookupOpen=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('lookupKeyRead()'))[0];
+lookupOpen.open=true;
+assert.ok(lookupOpen.all(c=>c.has('map-flow-row')).some(r=>r.textContent==='redisLog()'&&!r.has('map-flow-helper'))&&lookupOpen.all(c=>c.has('map-flow-helpers')).length===0,'a lone helper call stands as a row');
 // The declaration no part holds is a plain name that still opens.
 const lookupRow=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('lookupKeyRead()'))[0];
 assert.ok(lookupRow&&lookupRow.all(c=>c.has('map-flow-plain')).length>0,'a declaration no part holds keeps its call, a plain name');
 // The toggle shows the helper calls, the open ones staying open.
 rmFlowHelpers=true;root.rmRender();
 const shownHelpers=root.all(c=>c.has('map-flow-helper'));
-assert.ok(shownHelpers.length===1&&shownHelpers[0].textContent==='redisLog()','the toggle shows the helper call, lighter, in its place');
+assert.deepEqual(shownHelpers.map(c=>c.textContent),['redisLog()','zmallocUsed()','dictRandom()','freeOne()'],'the toggle shows the folded helper calls, lighter, in their place');
 assert.equal(root.all(c=>c.has('map-flow-helpers')).length,0,'with the toggle on, no step keeps its line');
 assert.ok(root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('rdbSave()')&&c.open).length===1,'what was open stays open');
 `)
@@ -280,8 +286,8 @@ assert.ok(root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('rdbSave()
 // An input's reading opens at how a request reaches it: the first way as
 // one chain, a line per part, the handler last in its part, the callable
 // handed over saying how on its hover; the other ways folded on one line
-// named by the part where each leaves the first, "+N" for the inputs that
-// run the site themselves; then who sends it, last.
+// named by the part where each leaves the first, the inputs that run the
+// site themselves listed inside it, not counted; then who sends it, last.
 func TestAnInputsReadingOpensAtHowARequestReachesIt(t *testing.T) {
 	reading := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
 	flow := systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
@@ -305,7 +311,7 @@ assert.ok(hop.title.includes('createClient')&&hop.title.includes('acceptHandler'
 const others=section.children.find(c=>c.has('map-flow-other-ways'));
 assert.ok(others.tagName==='DETAILS'&&!others.open,'the other ways are folded');
 assert.deepEqual(others.children[0].all(c=>c.has('map-part-box')).map(c=>c.textContent),['Replication'],'named by the part where each leaves the first');
-assert.ok(others.children[0].textContent.includes('+2'),'the inputs running the site themselves are counted');
+assert.ok(!/\d/.test(others.children[0].textContent),'the fold counts nothing: '+others.children[0].textContent);
 const sent=section.children.at(-1);
 assert.ok(sent.has('map-flow-sent')&&sent.textContent.includes('redis-cli'),'who sends it, last');
 `)

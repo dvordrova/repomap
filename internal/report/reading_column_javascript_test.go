@@ -254,16 +254,17 @@ box.chooseComponent('unknown');assert.equal(component.value,'');
 }
 
 // Client connections' 95 reaching inputs stood open between the part's
-// callers and its own connections. They are folded under their count, by
-// kind, and each still opens its input.
-func TestInputsReachingAPartAreFoldedUnderTheirCount(t *testing.T) {
+// callers and its own connections. They are folded, by kind, counting
+// nothing (owner, 2026-09-29: no digits in the column), and each still
+// opens its input.
+func TestInputsReachingAPartAreFolded(t *testing.T) {
 	code := systemJSPiece(t, "29-operation-view.js", "function rmReachingInputs(", "(function(){document.querySelectorAll('[data-map-explorer]')")
 	runSystemJS(t, fakeElements+code+`
 const get={dataset:{activation:'request',title:'get'}},cron={dataset:{activation:'continuous',title:'serverCron'}};
 let chosen=null;
 const inputs=rmReachingInputs({dataset:{}},[get,cron],()=>'redis-server',input=>{chosen=input;});
 assert.equal(inputs.tagName,'DETAILS');assert.ok(!inputs.open,'the list is folded');
-assert.equal(inputs.children[0].tagName,'SUMMARY');assert.ok(inputs.children[0].textContent.endsWith('2'),'under their count');
+assert.equal(inputs.children[0].tagName,'SUMMARY');assert.ok(!/\d/.test(inputs.children[0].textContent),'counting nothing: '+inputs.children[0].textContent);
 assert.equal(inputs.all(e=>e.tagName==='H6').length,2,'by kind');
 inputs.find(e=>e.tagName==='BUTTON'&&e.textContent==='redis-server / serverCron').listeners.click();
 assert.equal(chosen,cron);
@@ -335,26 +336,32 @@ assert.deepEqual(repomapMembers.composition(node),{total:6,counts:'4 functions, 
 `)
 }
 
-// An area's reading starts with its parts, each with what it is made of and
-// its declarations, keys first; a part leads to its reading and a
-// declaration to its own, in its part, without moving the camera.
-func TestAnAreasCompositionListsItsPartsAndTheirCode(t *testing.T) {
+// An area's reading starts with its parts, each in its box with its
+// description and only its key declarations, one to a line, counting
+// nothing (owner, 2026-09-29: "123 functions, 4 types" and 127 names
+// several to a line had been a wall); a part leads to its reading and a key
+// to its own, in its part, without moving the camera.
+func TestAnAreasCompositionListsItsPartsAndTheirKeys(t *testing.T) {
 	code := systemJSPiece(t, "29-operation-view.js", "  function areaComposition(", "  map.addEventListener('repomap:inspect'")
 	runSystemJS(t, fakeElements+`
-const part=(id,title,branch)=>({id,dataset:{title,branch:branch||''}});
-const byID={a:part('a','Compression'),b:part('b','Data structures'),c:part('c','Nested','area')};
+const part=(id,title,branch,summary)=>({id,dataset:{title,branch:branch||'',summary:summary||''}});
+const byID={a:part('a','Compression','','Compresses dumps.'),b:part('b','Data structures'),c:part('c','Nested','area')};
+function rmModelText(tag,cls,text){const e=rmEl(tag,cls+' model',text);return e;}
 const members={a:[{name:'lzf_compress',key:true,source:{Href:'h/c'}},{name:'u8',source:{Href:'h/u8'}}],b:[{name:'listNext',source:{Href:'h/n'}}]};
 const repomapMembers={sorted:p=>members[p.id]||[],composition:p=>({total:(members[p.id]||[]).length,counts:(members[p.id]||[]).length+' functions',files:p.id==='a'?['lzf.c']:[]}),
   sourceLink:s=>{const a=rmEl('a');a.href=s.Href;return a;},displayName:i=>i.name,sourceKey:s=>s.Href};
 const chosen=[];function select(n,navigate,source,focus){chosen.push([n.id,source?source.key:undefined,focus]);}
 `+code+`
 const section=areaComposition({dataset:{children:'a b c'}});
+assert.ok(!/\d/.test(section.textContent),'no counts: '+section.textContent);
 const parts=section.all(e=>e.className==='map-area-part');
-assert.deepEqual(parts.map(p=>[p.children[0].textContent,p.children[2].children.map(c=>c.textContent)]),[['Compression',['lzf_compress','u8']],['Data structures',['listNext']]],'each part with its declarations, keys first');
-assert.equal(parts[0].children[2].children[0].className,'map-member-key','a key is marked');
+const keys=p=>p.all(e=>e.tagName==='LI').map(li=>li.textContent);
+assert.deepEqual(parts.map(p=>[p.children[0].textContent,keys(p)]),[['Compression',['lzf_compress']],['Data structures',[]]],'each part with its keys alone, one to a line');
+assert.equal(parts[0].children[1].textContent,'Compresses dumps.','its description');
+assert.equal(parts[0].all(e=>e.tagName==='LI')[0].children[0].className,'map-member-key','a key is bold');
 parts[0].children[0].listeners.click();
-parts[0].children[2].children[1].listeners.click({preventDefault(){},stopPropagation(){}});
-assert.deepEqual(chosen,[['a',undefined,false],['a','h/u8',false]]);
+parts[0].all(e=>e.tagName==='LI')[0].children[0].listeners.click({preventDefault(){},stopPropagation(){}});
+assert.deepEqual(chosen,[['a',undefined,false],['a','h/c',false]]);
 assert.equal(areaComposition({dataset:{children:'c'}}),null,'an area of no parts has no composition');
 `)
 }
@@ -486,11 +493,12 @@ assert.equal(steps.children.find(c=>c.className==='system-path-deeper'),undefine
 `)
 }
 
-// A dispatch site is read with its declaration: how many it chooses
-// between, how many inputs are dispatched there, and the inputs whose own
-// code reaches it, each with its calls to it and a button to its reading,
-// with the line that none of them is established as leading to an input
-// dispatched there; or that no input reaches it by calls.
+// A dispatch site is read with its declaration: named, how many it chooses
+// between and how many inputs are dispatched there on its hover (no digits
+// in the column), and the inputs whose own code reaches it, each with its
+// calls to it and a button to its reading, with the line that none of them
+// is established as leading to an input dispatched there; or that no input
+// reaches it by calls.
 func TestADispatchSitesReadingListsTheInputsReachingIt(t *testing.T) {
 	code := systemJSPiece(t, "30-map.js", "// The inputs dispatched at a site", "// Who calls a declaration and what it calls")
 	runSystemJS(t, fakeElements+`
@@ -505,10 +513,11 @@ document.getElementById=id=>({'t1-exec':{dataset:{title:'exec'}},'t1-lpush':{dat
 const box=rmSiteReading(map,node,'h/call');
 // Every name with code is its link, as every name in the column is.
 assert.equal(box.find(e=>e.tagName==='A'&&e.textContent==='call').href,'h/call');
-// The site's counts say what they count, and why its 95 inputs outnumber
-// its 94 handlers.
-assert.ok(/94.*95/.test(box.children[0].textContent),'how many it chooses between and how many inputs are dispatched there');
-assert.ok(box.textContent.includes('sinterCommand')&&box.textContent.includes('sinter, smembers'),'a handler several inputs share, with those inputs');
+// The site's counts say what they count on its hover, and why its 95
+// inputs outnumber its 94 handlers.
+assert.ok(!/\d/.test(box.children[0].textContent),'the heading counts nothing: '+box.children[0].textContent);
+assert.ok(/94.*95/.test(box.children[0].title),'how many it chooses between and how many inputs are dispatched there, on its hover');
+assert.ok(box.children[0].title.includes('sinterCommand')&&box.children[0].title.includes('sinter, smembers'),'a handler several inputs share, with those inputs');
 const reached=box.all(e=>e.className==='map-concept-reached');
 assert.deepEqual(reached.map(r=>[r.children[0].textContent,r.all(e=>e.tagName==='LI').length]),[['exec',1],['lpush',2]],'each input reaching it, with its calls to it');
 assert.equal(reached[1].all(e=>e.className==='possible').length,1,'a possible call says so');
