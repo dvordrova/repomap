@@ -856,7 +856,11 @@ by {handler}"), reading that declaration in its part when the part lists
 it. An input whose handler is not established says so ("handler not
 established") and where it is declared: "declared in" the part its call is
 written in, with the call's source link; some code acts on it and the facts
-do not yet say which. A registration the model did not explain has no line:
+do not yet say which. Its options, the inputs nested under it as a
+subcommand's flags are (READING; GroupsIndex `Reach.Options`), are no tiles:
+they are listed in its reading, each at its source (page data
+`inputPath.options`), and an object's members nested so are no longer listed
+as what it "declares". A registration the model did not explain has no line:
 its given text only restates the fact, and the reading and Find name its
 handler. The reading projects GroupsIndex's saved reach, ways and dispatch
 sites; the page walks no code.

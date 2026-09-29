@@ -220,7 +220,12 @@ The display-translation cube behind `--lang`
 
 - Set-valued closed-ref responses are filtered to advertised refs and
   deduplicated locally; never require a model to echo each selected ref exactly
-  once. Assignment rows keyed by an unknown ref are likewise discarded. A
+  once. A sequence whose row lists each option with the value it stands for
+  (`ValuesFrom`, an entry's `words`) takes a member written as exactly one
+  option's value, the whole cell first, as that option: litestream's window
+  of flag and route names answered `socket` and `POST /start` for `w1` and
+  `w2`, and all were discarded (2026-09-29). A value two options share names
+  neither. Assignment rows keyed by an unknown ref are likewise discarded. A
   known prose ref paired with a valid non-documentation class is an unsupported
   set member and is discarded before its hypotheses or per-file bounds gain
   authority; it is never repaired or promoted into `documentation`. Go

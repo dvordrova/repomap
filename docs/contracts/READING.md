@@ -515,14 +515,27 @@ every literal in order and the address its mount prefixes compose (`GET` and
 table's `{"get", getCommand, ...}` row). The incoming boundaries table asks
 each entry `name`, a sequence of closed `w*` refs over those words; code
 restores the chosen words verbatim, joined by one space in the model's order,
-as the atlas boundary's `name`; free text never replaces a known route. A word
+as the atlas boundary's `name` (a word written as its value is that word:
+EXECUTION); free text never replaces a known route. A word
 that cannot stand in a one-line name as written (a control character,
 surrounding space) is not offered and never trimmed into one. A refused name
 leaves the handler's native name. GroupsIndex names the operation by that name
 or, with no accepted choice, by its handler's native name; an entry whose
 handler is not established (External symbols) is named by its one word without
-a question, and with several and no accepted choice by all its nameable words,
-in order, never by its declaring caller. No name is composed from a fact's
+a question, and with several and no accepted choice by the first nameable word
+its code wrote (`lines.FirstEntryWord`; a handed value's first literal), never
+by its declaring caller: a flag's name before its default and usage
+(`fs.String("socket", "/var/run/litestream.sock", "control socket path")` is
+`socket`), a row's first field, a case's first spelling. The other words are
+its registration as written (`Written`), which its reading shows, never its
+name (owner, 2026-09-29: litestream's tiles read "socket
+/var/run/litestream.sock control socket path"). A handler written inline (Go's
+numbered closure `Run$1`, a lambda) names its entry as a reader names it:
+the repository function it only wraps (its one call), else the function whose
+lines hold it, a method with its type, followed by " (inline)" (GroupsIndex
+`ObjectFacts.Inline`, never persisted; a declaration an input's reading names
+reads the same). litestream's `RestoreTool$1` calls `isReplicaURL` beside its
+outside calls and is "RestoreTool (inline)", never that helper. No name is composed from a fact's
 method and values, and no code tells a verb, path, command or topic apart.
 Nothing is asked when the registration wrote no word. A declaration whose
 native route already is its operation is no operation of its own: the entry
@@ -714,6 +727,32 @@ of the handler's kind whose handler is not established, declared by the
 handler; GroupsIndex nests it under the entry (`Launch.Nested`,
 `Reach.SubArguments`). Redis's SORT (7 words), DEBUG (5) and SLAVEOF (2) were
 14 near-tie questions.
+
+A flag belongs to its subcommand (owner, 2026-09-29): GroupsIndex nests a
+handler-less input under an input of the same kind, as its option
+(`Reach.Options`, `Launch.Nested`; derived, never persisted), by two code
+facts. It is declared on the object that input's own call made (argparse's
+`init.add_argument("--force")` on `commands.add_parser("init")`: the
+catalogue's `OnOperationID`), unless an input with its own handler is declared
+on that object too (freqtrade's subparsers hold 33 handled subcommands, no
+options of the `command` dest); or it is declared in a case's branch, or by code
+only that branch runs: the calls written in the lines a comparison case or a
+guarding call selects (ProgramIndex comparison case and pattern `branch`,
+GroupsIndex `Branches`), followed as the launch walk follows calls, while the
+walk from the launch's roots that takes no call written in a case's branch
+never reaches that code. litestream's `Main.Run` switch runs
+`(&DatabasesCommand{}).Run(ctx, args)` in case `databases`, whose own flag set
+declares `-json`: `-json` is databases' option, as each subcommand's `-json`
+is its own, and no flag word is twice among the tiles; C's kvcli runs `bench`
+in its `bench` branch, whose `--requests` is bench's. A line belongs to the
+branch starting last at or before it, so a nested branch is its own and
+`} else if (…) {` opens the next. An input of another kind is none (a replica
+URL's `endpoint` setting the subcommand's code reads), nor is a value of
+another input (`ValueOf`). Freqtrade's argparse options are rows of
+`AVAILABLE_CLI_OPTIONS` handed to each subparser through a list of keys, a
+value flow the code does not follow: they stay the program's. TypeScript's
+switch and Clojure's case form carry the same branches; their fixtures
+declare no option in a subcommand's own code yet.
 
 A call whose answer makes its words an entry, and that no fact boundary, in or
 out, names at its line and column, is that entry: a model boundary, direction

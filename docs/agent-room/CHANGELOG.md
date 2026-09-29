@@ -1,5 +1,65 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — An input is named by its word, a subcommand's flags are its options, an inline handler is named by where it is written
+
+- **Why:** litestream's Inputs grid (owner: "не понимаю почему тут столько
+  слов разных") read "json output raw JSON", "socket
+  /var/run/litestream.sock control socket path", "replica replica URL
+  (e.g., s3://bucket/prefix, …)", with `-json`, `-timeout` and `-socket` six
+  to ten times each; its routes read `Server.handleInfo`, its MCP tools
+  `DatabasesTool$1`.
+- **a) Names.** The boundaries window of litestream's 87 entry names came
+  back with the words themselves (`socket`, `POST /start`) instead of their
+  `w*` refs, and the decoder discarded every one; a handler-less entry then
+  took all its literals as its name. A sequence column with `ValuesFrom`
+  (the name column's `words`) now takes a member written as exactly one
+  option's value, the whole cell first (EXECUTION). With no word chosen, a
+  handler-less entry is named by the first nameable word its code wrote
+  (`lines.FirstEntryWord`; a handed value's first literal); its default and
+  usage stay its registration as written, which its reading shows.
+- **b) Options.** GroupsIndex nests a handler-less input under an input of
+  its kind (`Reach.Options`, `Launch.Nested`; derived) when it is declared
+  on the object that input's call made (argparse's `--force` on
+  `add_parser("init")`), unless a handled input shares the object
+  (freqtrade's subparsers), or in a case's branch or by code only that
+  branch runs (ProgramIndex case and guard `branch`, compiled as
+  `Branches`; the launch walk taking no branch call must not reach it). The
+  input's page data carries `inputPath.options`; nested members leave its
+  catalogue's members and "declares".
+- **c) Inline handlers.** `ObjectFacts.Inline` (compiled, never persisted):
+  the repository function a closure only wraps, else the function holding
+  it, a method with its type, "(inline)": `ReplicateCommand.Run (inline)`,
+  `RestoreTool (inline)` (it calls the helper `isReplicaURL` beside outside
+  calls), never `$N`. Used for an entry named by its handler and for the
+  declarations an input's reading names.
+- **Fixtures:** Go `RunSubcommand` runs `runServe`/`runCheck`, each with its
+  own flag set and `-verbose`; `StartSweeper`'s goroutine is "StartSweeper
+  (inline)"; C kvcli's `bench` branch runs `bench`, whose `--requests` is
+  its option; Python's `--force` on init's parser
+  (`TestASubcommandsOptionsAreNestedUnderIt`,
+  `TestCumulativeGoStartsAreAskedPerStatement`). TypeScript's switch and
+  Clojure's case form carry the same branches; their fixtures declare no
+  option inside a subcommand's own code yet.
+- **Acceptance:** two ordinary litestream runs (default cache), exit 0: the
+  first 4 m 31 s (21 live windows, rejected windows re-asked), the second
+  57 s warm; rendered to the scratchpad's `redis-r2/run/latest-litestream.html`.
+  `cmd/litestream`'s Inputs: 212 → 160 tiles; its 17 commands are the 15
+  subcommand words, `help` and `-`, each subcommand reading its flags
+  (`databases`: `-config`, `-no-expand-env`, `-json`); no flag word twice
+  among the tiles, no `$N`, routes `GET /info` … `POST /unregister`;
+  `litestream-test`'s subcommands hold theirs. Saved Redis and freqtrade
+  runs render with the same tile counts (128/11/102; 326).
+- **Left:** the query keys of a replica URL (`endpoint`, `region`,
+  `forcePathStyle`, `skipVerify`, `storageClass`/`storage-class`,
+  `concurrency`) are real settings a person writes in that URL, declared on
+  `ParseReplicaURLWithQuery(c.URL)`'s result or `NewReplicaClientFromURL`'s
+  `query`; tying them to the `url` setting would follow the URL's value, so
+  they stay settings. Redis's `acceptHandler` is a request by the entry
+  criteria (the accept handler of the listening socket) and wrote no word, so
+  it keeps its handler's name. The reading's rendering of `options`, the tile
+  kind line and a Clojure part's namespace prefix are the reading and canvas
+  pages'.
+
 ## 2026-09-29 — One component under two names: a client package's shebang and library fold into its console script
 
 - **Why:** freqtrade's whole map drew three components for `ft_client/`:
