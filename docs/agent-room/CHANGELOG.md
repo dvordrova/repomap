@@ -1,5 +1,43 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — "Reads:" in place of "Uses variables"; no line numbers in the column
+
+- **Why:** the owner's rule for the reading column, no line numbers
+  ("человек будет видеть код"); pushGenericCommand's "Uses variables" was a
+  wall of fields printed as variables with every line using them ("argv
+  :4248 :4250 …"), and named the wrong field where a struct declares
+  several on one line (czero for `shared.cone`, nokeyerr for
+  `shared.wrongtypeerr`: the reading keys a declaration by its line link).
+- **Reads (9ee99c2d):** a declaration says "Reads: redisClient.argv,
+  shared.cone, robj.ptr, redisClient.db.dict, …" under "Writes:", from the
+  exact reads edges: field paths as the adapter records them (C
+  `field_path`; `Type.field` for Python/JS) and module variables read whole,
+  each once in the order first used, each name reading the type declaring
+  the field or the variable. A field also written stays under Writes; a
+  name leading to a longer listed path is said by it (serverCron 32 → 25
+  names: `server.db` by `server.db.dict.size`); locals and parameters are
+  never listed. Callers, callees, "Used by", a catalogue's callers and the
+  launch fold's unsure/closed functions are names only, once; the page
+  data keeps no place for them (the flow's hover keeps its call sites).
+  Tests pinning `:30`/`server:21` line lists deleted;
+  `TestAFunctionsReadingSaysEachReadOnceWithNoLineNumbers` renders Go's
+  reading through the column script.
+- **Renders (`repomap render`, no model calls) of the four saved runs into
+  `redis-r2/run/latest-*.html`:** Redis 4.31 → 4.01 MB (−7.1%), litestream
+  3.91 → 3.81 MB (−2.6%), freqtrade 9.41 → 8.37 MB (−11.0%), repomap
+  9.88 → 9.13 MB (−7.5%). Headless walks: pushGenericCommand,
+  processCommand and serverCron read with no `:N` anywhere, the Settings
+  catalogue and "How these were found" likewise; smoke walks of all four
+  pages (75 declarations) found no line number and no page error.
+  Screenshots `look/reads-{pushGenericCommand,processCommand,serverCron}.png`.
+- **Verified:** `make test`, `make vet` (package parallelism 2), `make
+  ui-test` (134).
+- **Open:** a part's "Calls into" still lists "Uses variables" per
+  neighbour by field name, where same-line fields share one key; a part
+  of several files in a subdirectory lists no declarations (the column's
+  file-by-file split compares a declaration's base name with the file's
+  path; litestream's cmd/litestream parts, most of repomap's Go parts).
+
 ## 2026-09-29 — Benchmark v3 fixes: helper names, macros, Main flow, camera, settings, TODOs
 
 - **Why:** benchmark v3 on Redis (`results-v3.md`) and its blind judge:
