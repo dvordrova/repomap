@@ -929,7 +929,9 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 					r.opts.State(def.Stage, "ready", reason)
 				}
 			}
-			r.journalRowRejections(def, window, value.Rejections)
+			// The observer bound to this stage already journaled each of these
+			// refusals with its exchange; the owner keeps them for its summary.
+			r.journalRowRejections(def, window, value.Rejections, r.journalsRejections())
 			if err := r.writeWindowResult(window, value.Answers, source, reason); err != nil {
 				return nil, err
 			}
@@ -962,10 +964,11 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 			Samples:     []string{fmt.Sprintf("round %d window %d", window.Round, window.Index)},
 		})
 		// A response with no accepted row is not cached; each row's own
-		// reason still reaches the journal, not only the first one.
+		// reason still reaches the journal, not only the first one (the
+		// observer journaled the refusal once, under its first reason).
 		var refused *table.NoRowsAccepted
 		if errors.As(result.Err, &refused) {
-			r.journalRowRejections(def, window, refused.Rejections)
+			r.journalRowRejections(def, window, refused.Rejections, false)
 		}
 		if err := r.writeWindowResult(window, nil, atlas.SourceGiven, reason); err != nil {
 			return nil, err
@@ -975,22 +978,26 @@ func (r *reader) runPreparedGroups(ctx context.Context, def table.Definition, ro
 	return answers, nil
 }
 
-// journalRowRejections writes one journal row per refused row or cell of a
-// window's response.
-func (r *reader) journalRowRejections(def table.Definition, window table.Window, rejections []table.RowRejection) {
+// journalRowRejections records one row per refused row or cell of a
+// window's response. journaled says the bound observer already appended
+// these same refusals to the run's journal, pointing at the exchange that
+// holds the exact request and response: the rows then stay only in the
+// owner's summary, so the journal has one record per refusal.
+func (r *reader) journalRowRejections(def table.Definition, window table.Window, rejections []table.RowRejection, journaled bool) {
 	for _, rejection := range rejections {
-		samples := []string{rejection.Key}
-		for _, row := range window.Rows {
-			if rejection.Key == row.ID {
-				samples = append(samples, row.ID)
-				break
-			}
-		}
 		r.rejected = append(r.rejected, modeldiag.Row{
-			Stage: def.Stage, Kind: rejectionKind(rejection), Count: 1, Reason: rejection.Reason, Samples: samples,
-			ResponseRef: filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))),
+			Stage: def.Stage, Kind: rejectionKind(rejection), Count: 1, Reason: rejection.Reason, Samples: []string{rejection.Key},
+			ResponseRef:      filepath.ToSlash(filepath.Join(atlas.TablesDir, r.windowFileName(window, "response.ref.json"))),
+			AlreadyJournaled: journaled,
 		})
 	}
+}
+
+// journalsRejections reports whether the run's observer appends a
+// response's own row and cell refusals to rejected.jsonl itself.
+func (r *reader) journalsRejections() bool {
+	observer, ok := r.opts.Executor.Observer.(interface{ JournalsRejections() bool })
+	return ok && observer.JournalsRejections()
 }
 
 // rejectionKind names a refused row, or one refused cell of a kept row.

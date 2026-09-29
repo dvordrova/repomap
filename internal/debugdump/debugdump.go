@@ -173,6 +173,9 @@ const (
 	SemanticStageAtlasRoleGate    = "atlas_role_gate"
 	SemanticStageAtlasRoleBoxes   = "atlas_role_boxes"
 	SemanticStageAtlasRoleAssign  = "atlas_role_assign"
+	SemanticStageAtlasProgram     = "atlas_program"
+	SemanticStageAtlasInputs      = "atlas_inputs"
+	SemanticStageAtlasSystems     = "atlas_systems"
 	SemanticRequestPrepared       = "prepared_request"
 	SemanticRequestExactSent      = "exact_sent_request"
 	SemanticStateAccepted         = "accepted"
@@ -772,44 +775,51 @@ func validateSemanticOutcome(outcome SemanticOutcome) error {
 	return nil
 }
 
+// semanticStages is every stage a semantic exchange may be journaled under.
+// A stage that owns model requests and is missing here loses its exchanges:
+// each write is refused and the run warns stage=unknown. The test that
+// reads the stage owners' declarations keeps the two from drifting.
+var semanticStages = map[string]struct{}{
+	SemanticStageReadmeFileClassifier:  {},
+	SemanticStageTargetPortfolio:       {},
+	SemanticStageDocumentationReduce:   {},
+	SemanticStageProgramCategorization: {},
+	SemanticStageProgramGrouping:       {},
+	SemanticStageGroupMatching:         {},
+	SemanticStageOrientation:           {},
+	SemanticStageReportTranslation:     {},
+	SemanticStageGlossary:              {},
+	SemanticStageAtlasTargets:          {},
+	SemanticStageAtlasDirectories:      {},
+	SemanticStageAtlasZones:            {},
+	SemanticStageAtlasFiles:            {},
+	SemanticStageAtlasSymbols:          {},
+	SemanticStageAtlasOperations:       {},
+	SemanticStageAtlasBoundaries:       {},
+	SemanticStageAtlasArrows:           {},
+	SemanticStageAtlasJoints:           {},
+	SemanticStageAtlasQuestion:         {},
+	SemanticStageAtlasAnswer:           {},
+	SemanticStageAtlasLearn:            {},
+	SemanticStageAtlasAPI:              {},
+	SemanticStageAtlasPublish:          {},
+	SemanticStageAtlasCore:             {},
+	SemanticStageAtlasKeys:             {},
+	SemanticStageAtlasPlacement:        {},
+	SemanticStageAtlasDescribe:         {},
+	SemanticStageAtlasAreas:            {},
+	SemanticStageAtlasRoleHelper:       {},
+	SemanticStageAtlasRoleGate:         {},
+	SemanticStageAtlasRoleBoxes:        {},
+	SemanticStageAtlasRoleAssign:       {},
+	SemanticStageAtlasProgram:          {},
+	SemanticStageAtlasInputs:           {},
+	SemanticStageAtlasSystems:          {},
+}
+
 func validSemanticStage(stage string) bool {
-	switch stage {
-	case SemanticStageReadmeFileClassifier,
-		SemanticStageTargetPortfolio,
-		SemanticStageDocumentationReduce,
-		SemanticStageProgramCategorization,
-		SemanticStageProgramGrouping,
-		SemanticStageGroupMatching,
-		SemanticStageOrientation,
-		SemanticStageAtlasTargets,
-		SemanticStageAtlasDirectories,
-		SemanticStageAtlasZones,
-		SemanticStageAtlasFiles,
-		SemanticStageAtlasSymbols,
-		SemanticStageAtlasOperations,
-		SemanticStageAtlasBoundaries,
-		SemanticStageAtlasArrows,
-		SemanticStageAtlasJoints,
-		SemanticStageAtlasQuestion,
-		SemanticStageReportTranslation,
-		SemanticStageGlossary,
-		SemanticStageAtlasAnswer,
-		SemanticStageAtlasLearn,
-		SemanticStageAtlasAPI,
-		SemanticStageAtlasPublish,
-		SemanticStageAtlasCore,
-		SemanticStageAtlasKeys,
-		SemanticStageAtlasPlacement,
-		SemanticStageAtlasDescribe,
-		SemanticStageAtlasAreas,
-		SemanticStageAtlasRoleHelper,
-		SemanticStageAtlasRoleGate,
-		SemanticStageAtlasRoleBoxes,
-		SemanticStageAtlasRoleAssign:
-		return true
-	default:
-		return false
-	}
+	_, ok := semanticStages[stage]
+	return ok
 }
 
 func validSemanticState(state string) bool {

@@ -100,10 +100,7 @@ func (r *reader) readQuestionBatch(ctx context.Context, chunks []lines.QuestionC
 		}
 		if exchange.Err == nil && len(exchange.Outcome.Value.Rejections) > 0 {
 			rejected, reasked, recovered := 0, 0, 0
-			journaled := false
-			if observer, ok := r.opts.Executor.Observer.(interface{ JournalsRejections() bool }); ok {
-				journaled = observer.JournalsRejections()
-			}
+			journaled := r.journalsRejections()
 			var details []string
 			for _, rejection := range exchange.Outcome.Value.Rejections {
 				for q, ref := range exchange.QuestionRefs {
