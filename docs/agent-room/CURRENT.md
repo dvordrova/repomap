@@ -362,9 +362,12 @@ never entered into or read from a repository-wide unqualified map.
   connections, groups without members, seed rows) answers summary, roles,
   recipe and `main_flow_target`; a second request asks that target's main
   flow over Launch ∪ Reach ∪ hand-overs, every member complete as a lossless
-  tuple row in reading order. The member ladder is gone. freqtrade's flow
-  request is ~711K tokens, Redis ~155K, litestream ~245K; self-snap's
-  (~1.57M) is journaled under `flow_request` while its overview stands.
+  tuple row in reading order. The member ladder is gone. Accepted on
+  freqtrade (flow 760,231 input tokens, into Worker.run and _worker), Redis
+  (main → aeMain → processCommand → call, `[/path/to/redis.conf]`) and
+  litestream (LITESTREAM env and flags); warm reruns make no live call.
+  self-snap's flow request exceeds the window and is journaled under
+  `flow_request` while its overview stands.
 - **Glossary:** only accepted prose enters a separate p-ref generation/reduction
   pass. Generation is three steps, each one decision (owner, 2026-09-28):
   DeepSeek lists names, Jev decides per name domain concept / general

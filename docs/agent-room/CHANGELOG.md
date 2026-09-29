@@ -1,5 +1,58 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Orientation stage 2 accepted on freqtrade, Redis and litestream
+
+- **Two prompt sentences (429c9759, 00a8c0db):** the first cold draws kept
+  the evidence but not the owner's recipe checks: Redis wrote `./redis-server
+  [redis.conf]` though main's seed row carries `Usage: ./redis-server
+  [/path/to/redis.conf]`, and litestream's recipe named no LITESTREAM key
+  though `LITESTREAM_CONFIG` (DefaultConfigPath) is an overview fact. The
+  overview prompt now says to write a usage line's arguments as it writes
+  them, and to name the settings a start reads (environment keys, flags) in
+  the note. Only the overview requests changed; the flow requests stayed
+  cached.
+- **Ordinary runs** (`make build` binary, default cache, `--no-serve
+  --no-open`, exit 0 each). Actual tokens are the provider's input tokens:
+
+| run | overview chars / tokens | flow chars / tokens | roles / recipe / flow steps | live / cached |
+| --- | --- | --- | --- | --- |
+| freqtrade 094714 | 1,206,953 / 353,482 | 2,431,311 / 760,231 | 10 / 7 / 9 | 22 / 764 (glossary 21) |
+| Redis 094650 | 224,508 / 60,881 | 518,005 / 189,028 | 4 / 4 / 12 | 4 / 153 (glossary 3) |
+| litestream 094617 | 380,124 / 106,491 | 839,797 / 269,174 | 6 / 4 / 8 | 7 / 161 (glossary 6) |
+
+  Flow rows tokenize denser than the measure's 3.45 chars/token (2.7–3.2):
+  freqtrade's flow was 760,231 tokens against ~711K estimated, within the
+  1,032,192 budget. freqtrade cold is 353K + 760K input tokens against one
+  712K stage-1 request.
+- **freqtrade:** summary "Freqtrade is a Python crypto trading bot whose
+  main program (t1) provides CLI commands …"; 10 roles; recipe `python -m
+  freqtrade trade` with its `-c/--config` note. Flow "Freqtrade CLI startup
+  and command dispatch": __main__.py entrypoint → freqtrade.main → main →
+  Arguments.get_parsed_arg → _build_subcommands → the trade registration
+  (`set_defaults(func=start_trading)`) → start_trading → Worker.run →
+  Worker._worker ("starts the FreqtradeBot, throttles the running
+  process"). FreqtradeBot.process is in the request (member #1280, handed
+  over) but no step cites it.
+- **Redis:** recipe `./redis-server [/path/to/redis.conf]`; flow main →
+  initServer → acceptHandler and serverCron registrations → main → aeMain →
+  beforeSleep → readQueryFromClient → processInputBuffer → processCommand →
+  call (12 steps).
+- **litestream:** recipe `go run ./cmd/litestream replicate` with
+  LITESTREAM_CONFIG and the LITESTREAM/AWS key pairs in its note; flow main
+  → Main.Run → applyLitestreamEnv → ReplicateCommand.ParseFlags →
+  ReplicateCommand.Run → NewStore → Store.Open.
+- **Checks:** no orientation request carries `calls_omitted`,
+  `called_by` or `callee_id`, and no payload of the three warm runs carries
+  `callee_id` or `calls_omitted` (767, 156 and 164 payloads). Rendered to
+  the scratchpad's `latest-{freqtrade,redis,litestream}.html`; the headless
+  smoke walk (4 components, every Inputs kind, 8 parts, 16 declarations
+  each) had no page error. Warm reruns: 0 live calls (freqtrade 767 cached,
+  Redis 156, litestream 164), exit 0.
+- **self-snap (record only, 100211):** overview accepted (320,721 tokens; 2
+  roles, 4 recipe steps); the flow request (5,367,195 chars) was refused by
+  the provider (`context_tokens`) and journaled under `flow_request` with
+  its request bytes; exit 0.
+
 ## 2026-09-29 — Orientation stage 2: an overview, then the main flow over one target's entry-forward scope
 
 - **Why:** the 40/20/12 member ladder sampled group members and cut each to
