@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -77,7 +78,8 @@ func decodeReading(t *testing.T, raw string) pageGroupReading {
 }
 
 // A part's reading lists its declarations by kind, each list by name
-// whatever its case, the keys marked; a type keeps every field and its type,
+// whatever its case, those "Called from" reaches first and counted (owner,
+// 2026-09-29), the keys marked; a type keeps every field and its type,
 // bulklen past the tile's "… +2" included; the part's callers are one line
 // per caller with what it calls here, calls before callbacks; every input
 // registered at the part is one neighbour counted by its inputs.
@@ -102,9 +104,9 @@ func TestPartReadingListsMembersByNameAndCallersByCaller(t *testing.T) {
 	}
 	var kinds []string
 	for _, members := range reading.Members {
-		kinds = append(kinds, members.Kind+": "+strings.Join(names(members.Decls), " "))
+		kinds = append(kinds, fmt.Sprintf("%s %d: %s", members.Kind, members.Outside, strings.Join(names(members.Decls), " ")))
 	}
-	if want := []string{"function: appendServerSaveParams beforeSleep daemonize initServer serverCron tryResizeHashTables Zfree", "type: redisClient", "variable: server"}; !slices.Equal(kinds, want) {
+	if want := []string{"function 4: beforeSleep daemonize initServer serverCron appendServerSaveParams tryResizeHashTables Zfree", "type 0: redisClient", "variable 0: server"}; !slices.Equal(kinds, want) {
 		t.Fatalf("members %q, want %q", kinds, want)
 	}
 	for _, decl := range reading.Decls {

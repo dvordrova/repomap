@@ -306,29 +306,42 @@ function rmInputPart(operation,id){
   if(!part||!(part.entered||[]).length&&!part.others)return null;
   return {entered:part.entered||[],others:part.others||0,decls:path.decls||[]};
 }
-// What a dispatch site's "one of N" counts: the handlers it chooses
-// between, or its functions and how many of them are handlers when some
-// are not (page_input_path.go).
 // The inputs dispatched at a site, by name, each with its handler, and a box
 // that filters them by either (owner, 2026-09-28: "one of 94 handlers"
-// opened nothing). A name reads its input.
+// opened nothing). The list is part of the column's own scroll, folded
+// under its count when long, as a side of more than twelve names is, and
+// opened in place (owner, 2026-09-29: its own scroller had taken the wheel
+// and the page scrolled under it). An input's name reads the input, its
+// handler's name the handler's declaration.
 function rmDispatchedList(map,site,decls){
-  var fold=rmEl('details','map-dispatched');fold.open=true;
-  fold.appendChild(rmEl('summary','',rmT('Its handlers by input')+' · '+site.dispatched.length));
+  var ctx=map.readingContext?map.readingContext():null;
+  var fold=rmEl('details','map-dispatched');fold.open=site.dispatched.length<=12;
+  var head=rmEl('summary');head.append(rmEl('span','',rmT('Its handlers by input')),rmEl('span','map-reading-peer-count',String(site.dispatched.length)));fold.appendChild(head);
   var filter=rmEl('input','map-dispatched-filter');filter.type='search';filter.placeholder=rmT('Filter');filter.setAttribute('aria-label',rmT('Filter'));
   var list=rmEl('ul','map-dispatched-list');
   site.dispatched.forEach(function(entry){
     var input=document.getElementById(entry.input),item=rmEl('li'),name=rmEl('button','',input?input.dataset.title:entry.input);name.type='button';
     name.addEventListener('click',function(){map.chooseOperation?.(entry.input);});
-    item.append(name,document.createTextNode(' → '+((decls[entry.handler]||{}).name||'')));
+    item.append(name,document.createTextNode(' → '),rmSiteDeclName(ctx,decls[entry.handler]||{name:''}));
     item.dataset.filter=(item.textContent||'').toLowerCase();list.appendChild(item);
   });
   filter.addEventListener('input',function(){var words=filter.value.trim().toLowerCase();list.querySelectorAll('li').forEach(function(item){item.hidden=!!words&&item.dataset.filter.indexOf(words)<0;});});
   fold.append(filter,list);
   return fold;
 }
+// What a dispatch site's "one of N" counts: the handlers it chooses
+// between, or its functions and how many of them are handlers when some
+// are not (page_input_path.go).
 function rmSiteHandlers(site){
   return site.handlers<site.of?rmT('one of {0} functions, {1} of them handlers',site.of,site.handlers):rmT('one of {0} handlers',site.of);
+}
+// A declaration a site's reading names: a link into all of its code whose
+// plain click reads it in its part, its part named on hover, as every name
+// in the column is; a plain name when it has neither.
+function rmSiteDeclName(ctx,decl){
+  var part=ctx?rmFlowPart(ctx,decl.part):null,key=decl.href||decl.open||'';
+  if(!key)return rmEl('span','',decl.name||'');
+  return rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code,key:key},decl.name||'',part?function(){ctx.readDeclIn(part,key);}:null,part?part.dataset.title:'');
 }
 // Each handler several inputs dispatched at a site share, with those inputs:
 // why the site's inputs outnumber its handlers.
@@ -344,11 +357,11 @@ function rmSharedHandlers(site,decls,title){
 // not established: that list stands here, never in a dispatched input's
 // reading, where a reader took it for GET's route.
 function rmSiteReading(map,node,key){
-  var box=rmEl('div','map-concept-dispatch'),readings=null;
+  var box=rmEl('div','map-concept-dispatch'),readings=null,ctx=map.readingContext?map.readingContext():null;
   readings=rmPage.data(node,'dispatch');
   if(!readings||!key)return box;
   var decls=readings.decls||[];
-  function name(index){var decl=decls[index]||{name:''},item=rmEl('span','',decl.name);if(decl.source)item.title=decl.source;return item;}
+  function name(index){return rmSiteDeclName(ctx,decls[index]||{name:''});}
   (readings.sites||[]).forEach(function(site){
     var decl=decls[site.site];if(!decl||(decl.href||decl.open)!==key)return;
     box.appendChild(rmEl('h6','',rmT('Dispatch site · {0} · {1} inputs dispatched here',rmSiteHandlers(site),site.inputs)));
@@ -497,6 +510,11 @@ function rmDeclarationRelations(map,node,key,nodes){
       return out;
     }
     var inspectedNode=null, inspectionKey='', inspectionRevision=0, inspectionPending=false, remembered=new Map();
+    // The declaration a returning reading had, and whether one newly chosen
+    // with it reads from the top instead (owner, 2026-09-29: a tile chosen
+    // in the part being read kept the column where the last one stood, and
+    // a click meant for a step hit another name).
+    var savedConcept='',freshDeclaration=false;
     function remember(){
       if(inspectionPending||!inspectedNode||card.classList.contains('map-card-connection'))return;
       remembered.set(inspectionKey,{concept:map.explorerMember?.key,scroll:content.scrollTop,expanded:rmOpenFolds(card)});
@@ -517,6 +535,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       // opens in its default state (owner, 2026-09-29: after "Expand all"
       // redis-server's column stood 9,877 px tall on every later visit).
       var memory=remembered.get(inspectionKey),saved=returning?memory:null, ticket=++inspectionRevision;
+      savedConcept=saved?.concept||'';freshDeclaration=false;
       content.scrollTop = 0;
       card.classList.remove('map-card-connection');
       var id = node.getAttribute('data-node');
@@ -557,9 +576,9 @@ function rmDeclarationRelations(map,node,key,nodes){
       var source=node.getAttribute('data-source');
       // An input with no handler established says where it is parsed.
       var parsed=node.dataset.activation&&node.dataset.handlerUnknown==='true'?rmT.html('parsed at')+' ':'';
-      if(source) html += '<p>'+parsed+'<a target="_blank" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
-      else if(node.dataset.open) html += '<p><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';
-      else if(node.dataset.noSource==='true') html += '<p><span title="'+escapeText(rmT('No source'))+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</span></p>';
+      if(source) html += '<p class="map-card-source">'+parsed+'<a target="_blank" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
+      else if(node.dataset.open) html += '<p class="map-card-source"><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';
+      else if(node.dataset.noSource==='true') html += '<p class="map-card-source"><span title="'+escapeText(rmT('No source'))+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</span></p>';
       html += '</div>';
       var concepts = map.exploreNode ? repomapMembers.items(node) : rmPage.data(node,'concepts') || [];
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);
@@ -693,6 +712,7 @@ function rmDeclarationRelations(map,node,key,nodes){
         rmHeadingUp(map,kindHeading,node,true);
         partView.querySelectorAll('.map-reading-name').forEach(function(name){if(name.dataset.declKey===key)name.setAttribute('aria-current','true');});
         if(!map.readingRestoring&&!inspectionPending)content.scrollTop=0;
+        else if(!map.readingRestoring&&key!==savedConcept)freshDeclaration=true;
         map.dispatchEvent(new Event('repomap:reading'));remember();
       }
       if(concepts.length&&!reading){
@@ -728,9 +748,9 @@ function rmDeclarationRelations(map,node,key,nodes){
         // A reading opened at one of its sections (an arrow end's connection,
         // an input's path) starts there, that section open.
         var anchor=card.querySelector('[data-reading-anchor]');
-        if(saved)rmRestoreFolds(card,saved.expanded);
+        if(saved&&!freshDeclaration)rmRestoreFolds(card,saved.expanded);
         if(anchor?.matches('details'))anchor.open=true;
-        content.scrollTop=saved?.scroll||0;
+        content.scrollTop=freshDeclaration?0:saved?.scroll||0;
         // A declaration newly chosen with its part is read from its own
         // reading; one the reader returns to keeps the place they left.
         // An arrow end opened from the canvas opens that connection alone.
@@ -748,7 +768,21 @@ function rmDeclarationRelations(map,node,key,nodes){
       if(index>=0)map.inspectConcept(index);
     };
     map.showAllMembers=function(node){map.showNode(node);var list=card.querySelector('.map-all-members');if(list){list.open=true;list.scrollIntoView({block:'nearest'});}};
-    map.showNode=function(node){if(map.exploreNode||!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');map.dispatchEvent(new CustomEvent('repomap:inspect',{detail:{node:node,card:card}}));}};
+    map.showNode=function(node){if(map.exploreNode||!repomapPreview.showFor(node)){show(node);card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');map.dispatchEvent(new CustomEvent('repomap:inspect',{detail:{node:node,card:card}}));var foot=homeLinks();if(foot)card.appendChild(foot);}};
+    // The home's text pages stay one small line away at the foot of every
+    // reading (owner, 2026-09-29: "How do I run it?" and the glossary had
+    // gone from the column once a component was read, and only the home
+    // icon brought them back).
+    var homeNav=map.hasAttribute('data-system-map')&&document.querySelector('template[data-system-reading-home]')?.content.querySelector('nav');
+    function homeLinks(){
+      if(!homeNav)return null;
+      var line=document.createElement('p');line.className='map-reading-home-links';
+      Array.from(homeNav.querySelectorAll('a[href]')).forEach(function(link,i){
+        if(i)line.appendChild(document.createTextNode(' · '));
+        var a=document.createElement('a');a.href=link.getAttribute('href');a.textContent=link.textContent.replace(/\s*→\s*$/,'');line.appendChild(a);
+      });
+      return line.childElementCount?line:null;
+    }
     map.showMember=function(node,item){
       map.showNode(node);map.explainSource({href:item.source.Href,open:item.source.Open,key:repomapMembers.sourceKey(item.source)});
       var frame=inspector.getBoundingClientRect();
@@ -768,6 +802,7 @@ function rmDeclarationRelations(map,node,key,nodes){
     map.addEventListener('repomap:connection',function(event){
       remember();inspectionRevision++;map.clearMapPreview?.();content.scrollTop=0;card.classList.add('map-card-connection');card.replaceChildren();
       var title=document.createElement('b');heading.replaceChildren(title);heading.classList.remove('has-concepts');connectionReading(event.detail,title,card);
+      var foot=homeLinks();if(foot)card.appendChild(foot);
       card.hidden=false;map.querySelector('.map-inspector').classList.add('has-preview');
     });
     for (var n = 0; n < nodes.length; n++) {

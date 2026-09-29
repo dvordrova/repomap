@@ -792,6 +792,21 @@ function rmCatalogInputClick(event,reveal){
       card.querySelector('.map-card-intro').after(pathSection);
       if(flowSection){pathSection.before(flowSection);flowSection.dataset.readingAnchor='';}else pathSection.dataset.readingAnchor='';
     }
+    // Work the program runs on its own reads as its line of the component's
+    // "Also runs on its own": its callable, a link into all of its code,
+    // where it is registered, "registers it" linking the registering call,
+    // and what runs it (owner, 2026-09-29: serverCron's line link had
+    // opened the registering call, inside initServer). The reading opens
+    // at it; its line number goes with that link.
+    var ownPage=n.dataset.activation&&n.dataset.owner?document.getElementById(n.dataset.owner):null;
+    var ownLine=ownPage?Array.from(ownPage.querySelectorAll(':scope>.component-own-work li[data-input]')).find(function(li){return li.dataset.input===n.id;}):null;
+    if(ownLine){
+      var ownHolder=rmEl('ul','map-component-own-list map-input-own');ownHolder.appendChild(rmOwnWorkLine(map.readingContext(),ownLine));
+      var anchored=card.querySelector('[data-reading-anchor]');
+      if(anchored){anchored.before(ownHolder);delete anchored.dataset.readingAnchor;}else card.querySelector('.map-card-intro').after(ownHolder);
+      ownHolder.dataset.readingAnchor='';
+      card.querySelector('.map-card-intro>.map-card-source')?.remove();
+    }
     if(n.dataset.activation&&!inputPath){
       var pathState=projection.selection('',n.id),pathParts=rmEl('section','system-input-parts');
       pathParts.appendChild(rmEl('h5','',rmT('Parts on this input path')));
@@ -874,6 +889,9 @@ function rmCatalogInputClick(event,reveal){
         // magnifier reads the part it enters.
         follow:function(id,explicit){var n=byID[id];if(!n||scope===id||!explicit&&operation&&!scope)return;select(n,true,null,false);},
         openConnection:function(id,key){openConnection(id,key);},
+        // A kind chosen in an Inputs collection reads it at that kind's
+        // section (31-reading-column.js), the camera staying.
+        readKind:function(id,kinds){var n=byID[id];if(!n)return;rmPendingKind=kinds;select(n,true,null,false);},
         connection:function(group){map.previewConnection?.({from:group.incoming?group.outside:group.area,to:group.incoming?group.area:group.outside,possible:group.relations.some(function(r){return r.possible;}),relations:group.relations});}
       });
       map.visibleEdges=surface.layout.edges;

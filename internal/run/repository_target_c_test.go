@@ -472,6 +472,23 @@ func TestCMainFlowReadsARegistrationAsTheCallableItRegisters(t *testing.T) {
 	if strings.Contains(flow, "<code>loopCreateFileEvent</code>") {
 		t.Fatalf("a step reads the registrar:\n%s", flow)
 	}
+	// A step's own place is its callable's declaration, never the call
+	// registering it (owner, 2026-09-29: readQueryFromClient's link had
+	// opened createClient's registering line).
+	source, err := os.ReadFile(filepath.Join(root, "kvd.c"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(source), "\n")
+	for _, step := range regexp.MustCompile(`<code>(\w+)</code></span> <span class="anchor">kvd\.c:(\d+)<`).FindAllStringSubmatch(flow, -1) {
+		line := 0
+		for _, digit := range step[2] {
+			line = line*10 + int(digit-'0')
+		}
+		if line < 1 || line > len(lines) || !strings.Contains(lines[line-1], step[1]+"(") || strings.Contains(lines[line-1], "loopCreateFileEvent") {
+			t.Fatalf("the step %s is placed at kvd.c:%d, not its declaration:\n%s", step[1], line, flow)
+		}
+	}
 }
 
 // mainFlowSection is the page's Main flow section, its source for the

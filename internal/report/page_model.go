@@ -856,10 +856,13 @@ func anchorList(anchor *pageAnchor) []pageAnchor {
 // that target takes part in it. A four-target repository was printing a flow
 // through one example on all four pages, including the two it never touches,
 // which reads as a claim about that target and is not one.
-func (builder *pageBuilder) flow(section *pageSection) *pageFlow {
+//
+// The path it returns is what its steps named, for the work the program
+// runs on its own (ownWork).
+func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, *pageStepPath) {
 	orient := builder.data.Orientation
 	if orient == nil || len(orient.MainFlow.Steps) == 0 {
-		return nil
+		return nil, nil
 	}
 	flow := &pageFlow{Title: orient.MainFlow.Title}
 	here := false
@@ -872,9 +875,9 @@ func (builder *pageBuilder) flow(section *pageSection) *pageFlow {
 		flow.Steps = append(flow.Steps, row)
 	}
 	if !here {
-		return nil
+		return nil, nil
 	}
-	return flow
+	return flow, path
 }
 
 func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSection, path *pageStepPath) pageFlowStep {

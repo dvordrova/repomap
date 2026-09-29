@@ -79,12 +79,27 @@ function rmEndTitle(ctx,decl){
   var node=decl.part?ctx.nodeByHref(decl.part):null;
   return node?node.dataset.title:'';
 }
+// Where a call is written in its caller's code: a small code mark per
+// place, the mark the declaration's own link carries, linking that line,
+// the place on its hover and never printed (owner, 2026-09-29: with the
+// line numbers gone, "Called by processCommand" had opened processCommand
+// at its top, above the call).
+function rmSiteMarks(holder,sites){
+  (sites||[]).forEach(function(site){
+    if(!site||!site.href&&!site.open)return;
+    var mark=repomapMembers.sourceLink({Href:site.href,Open:site.open,Text:''});
+    mark.classList.add('map-call-site');mark.title=site.at||'';mark.setAttribute('aria-label',rmT('The call at {0}',site.at||''));
+    holder.appendChild(mark);
+  });
+  return holder;
+}
 // One end of a relation: its name, and what the relation says of it when it
 // is not a call (a variable's readers say only who writes it: "Used by"
-// says the rest).
+// says the rest); in a declaration's reading, where each call is written.
 function rmEndItem(ctx,data,end,side,quiet){
   var decl=data.decls[end.decl],item=rmEl('li');
   item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));
+  rmSiteMarks(item,end.sites);
   var words=quiet&&end.kind==='reads'?'':rmEndWords[side][end.kind];
   if(words)item.appendChild(rmEl('span','map-reading-relation',rmT(words)));
   if(end.possible)item.appendChild(rmEl('span','possible',rmT('possible')));
@@ -157,15 +172,27 @@ function rmPartView(ctx,node,data){
   if(node.dataset.summary)view.appendChild(rmModelText('p','map-card-summary',node.dataset.summary,node.dataset.summaryRef));
   var files=data.files||[];
   if(files.length)view.appendChild(rmEl('p','map-part-files meta',files.join(', ')));
+  // Those reached from outside the part ("Called from": a caller in
+  // another part, an input registered at it, a callable handed over) stand
+  // first, counted in the heading, the rest after them (owner, 2026-09-29:
+  // Persistence's 40 functions had not said which are its ways in).
   function members(into,file){
     (data.members||[]).forEach(function(kind){
       var decls=kind.decls.filter(function(position){return !file||data.decls[position].file===file;});
       if(!decls.length)return;
-      var list=rmEl('section','map-reading-members');
-      list.appendChild(rmCountHeading('h6',{function:'{0} functions',type:'{0} types',variable:'{0} variables'}[kind.kind],decls.length));
-      var names=rmEl('ul','map-reading-names');
-      decls.forEach(function(position){var decl=data.decls[position],item=rmEl('li');item.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at,true));names.appendChild(item);});
-      list.appendChild(names);into.appendChild(list);
+      var outside=kind.decls.slice(0,kind.outside||0),reached=decls.filter(function(position){return outside.indexOf(position)>=0;});
+      var split=reached.length>0&&reached.length<decls.length;
+      var list=rmEl('section','map-reading-members'),heading=rmCountHeading('h6',{function:'{0} functions',type:'{0} types',variable:'{0} variables'}[kind.kind],decls.length);
+      if(split)heading.appendChild(rmEl('span','map-reading-reached-count',' · '+rmT('{0} reached from outside',reached.length)));
+      list.appendChild(heading);
+      function names(positions,cls){
+        var ul=rmEl('ul','map-reading-names'+(cls?' '+cls:''));
+        positions.forEach(function(position){var decl=data.decls[position],item=rmEl('li');item.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at,true));ul.appendChild(item);});
+        return ul;
+      }
+      if(split)list.append(names(reached,'map-reading-reached'),names(decls.filter(function(position){return outside.indexOf(position)<0;})));
+      else list.appendChild(names(decls));
+      into.appendChild(list);
     });
   }
   // A part of several files, as Core data structures is of adlist.c,
@@ -323,9 +350,11 @@ function rmCollectionView(ctx,node,collection){
   if(component){var head=rmEl('div','map-part-title');head.appendChild(rmPartBox(ctx,component.getAttribute('href'),component.dataset.title));head.firstChild.classList.add('map-part-box-component');view.appendChild(head);}
   collection.groups.forEach(function(group){
     var section=rmEl('section','map-collection-group'),heading=rmEl('h6','map-reading-count');
-    // "37 settings" in the component's reading lands on its own section.
+    // "37 settings" in the component's reading, or Settings in the
+    // collection's frame, lands on its own section: Background work on the
+    // first of its scheduled and continuous sections.
     section.dataset.kind=group.kind;
-    if(rmPendingKind===group.kind){section.dataset.readingAnchor='';rmPendingKind='';}
+    if(rmPendingKind&&[].concat(rmPendingKind).indexOf(group.kind)>=0){section.dataset.readingAnchor='';rmPendingKind='';}
     heading.append(rmEl('span','',rmT(rmInputKindTitles[group.kind]||'Inputs')),rmEl('span','map-reading-peer-count',String(group.inputs.length)));
     rmLights(ctx,heading,group.inputs);section.appendChild(heading);
     var first=group.catalogue&&ctx.nodeById(group.catalogue),catalogue=first?rmPage.data(first,'catalogue'):null;
@@ -349,6 +378,7 @@ function rmCollectionView(ctx,node,collection){
     section.appendChild(names);view.appendChild(section);
   });
   if(collection.groups.some(function(group){return group.catalogue;}))view.appendChild(rmEl('p','meta',rmT('Where these take effect is not established.')));
+  rmPendingKind='';
   return view;
 }
 // Pointing at inputs in the column lights their tiles on the canvas, and
@@ -406,8 +436,9 @@ function rmCatalogueLines(ctx,catalogue){
 // the collection when chosen; its connections (29-operation-view.js); then
 // its main flow, what its program never runs, its TODOs and its analysis
 // coverage, each a list opening in place, and a link to its whole page.
-// The kind whose section a count chosen in a component's reading lands on,
-// and whether the column's "Main flow" link asked for its Main flow.
+// The kind whose section a count chosen in a component's reading, or the
+// kinds whose first section a kind chosen in a collection's frame, lands
+// on, and whether the column's "Main flow" link asked for its Main flow.
 var rmPendingKind='',rmPendingFlow=false;
 // A section of so few lines stands open in a reading.
 var rmShortSection=8;
@@ -488,12 +519,15 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     // sentence kept in its style above it.
     var toggle=rmEl('div','map-flow-headline');toggle.appendChild(rmFlowToggle(null));steps.insertBefore(toggle,steps.children[1]||null);
     if(rmPendingFlow){steps.dataset.readingAnchor='';rmPendingFlow=false;}
+    // A step's name is a link into all of its declaration's code, a plain
+    // click reading it; the step's line link goes (owner, 2026-09-29: it
+    // had opened the line registering the callable, inside another
+    // function). Its calls open in place from the step's own twist.
     steps.querySelectorAll('li[data-step-part]').forEach(function(step){
       var part=ctx.nodeByHref(step.dataset.stepPart),code=step.querySelector('.flow-what>code');
       if(!part||!code)return;
-      var name=rmEl('button','map-flow-step-name',code.textContent);name.type='button';
-      name.addEventListener('click',function(){ctx.readDeclIn(part,rmPage.link(step.dataset.stepKey));});
-      code.replaceChildren(name);
+      code.replaceChildren(rmStepName(ctx,step,code.textContent));
+      step.querySelector(':scope>.anchor')?.remove();
       rmFlowStep(ctx,step,part,rmPage.link(step.dataset.stepKey));
     });
     // A program no model flow passes reads forward from its one entry: its
@@ -504,13 +538,13 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     if(entryTwists.length===1)entryTwists[0].click();
     // A registered callable's step names where it is registered and what
     // runs it, each name reading its declaration.
-    steps.querySelectorAll('.flow-chain-name[data-step-part]').forEach(function(code){
-      var part=ctx.nodeByHref(code.dataset.stepPart);if(!part||!code.dataset.stepKey)return;
-      var name=rmEl('button','map-flow-step-name',code.textContent);name.type='button';
-      name.addEventListener('click',function(){ctx.readDeclIn(part,rmPage.link(code.dataset.stepKey));});
-      code.replaceChildren(name);
-    });
+    rmStepChainNames(ctx,steps);
   }
+  // What the program runs on its own, right after its Main flow (owner,
+  // 2026-09-29: serverCron was not findable from a flow of client
+  // commands; page_flow_steps.go ownWork).
+  var own=details.querySelector(':scope>.component-own-work');
+  if(own)place(rmOwnWork(ctx,own));
   // Its areas and parts, each a name that reads it, with its description on
   // one line (owner, 2026-09-28).
   var outline=rmOutline(ctx,n);if(outline)place(outline);
@@ -521,6 +555,43 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
   var coverage=details.querySelector(':scope>.component-reference .component-coverage');
   if(coverage)section(rmT('Analysis coverage'),coverage.querySelectorAll('li').length,Array.from(coverage.children).filter(function(child){return child.tagName!=='SUMMARY';}));
   if(page){page.textContent=rmT('Component details');var foot=rmEl('p','map-component-page');foot.appendChild(page);card.appendChild(foot);}
+}
+// A Main flow step's declaration, or one it names beside it: a link into
+// all of its code (the step's `data-step-code`, else its line link), whose
+// plain click reads the declaration in its part, the part named on hover.
+function rmStepName(ctx,element,text){
+  var d=element.dataset,part=d.stepPart?ctx.nodeByHref(d.stepPart):null,key=d.stepKey?rmPage.link(d.stepKey):'';
+  var anchor=element.querySelector?element.querySelector(':scope>.anchor'):null;
+  var code=d.stepCode?rmPage.link(d.stepCode):anchor&&anchor.getAttribute('href')!=='#'?anchor.getAttribute('href')||'':'';
+  var open=d.stepOpen||(anchor&&anchor.dataset.open)||'';
+  var name=rmDeclName({name:text,href:code,code:code,open:open,key:key},text,part&&key?function(){ctx.readDeclIn(part,key);}:null,part?part.dataset.title:'');
+  name.classList.add('map-flow-step-name');
+  return name;
+}
+// The names a step's registration and runners are said with, each read so.
+function rmStepChainNames(ctx,holder){
+  holder.querySelectorAll('.flow-chain-name').forEach(function(code){
+    if(!code.dataset.stepKey&&!code.dataset.stepCode&&!code.dataset.stepOpen)return;
+    code.replaceChildren(rmStepName(ctx,code,code.textContent));
+  });
+}
+// "Also runs on its own:", one line each: the callable, where it is
+// registered ("registers it" linking the registering call) and what runs
+// it, each name read as a step's is; pointing at a line lights its
+// input's tile.
+function rmOwnWork(ctx,source){
+  var box=rmEl('section','map-component-own');box.appendChild(rmEl('p','map-reading-label',rmT('Also runs on its own:')));
+  var list=rmEl('ul','map-component-own-list');
+  source.querySelectorAll('li').forEach(function(from){list.appendChild(rmOwnWorkLine(ctx,from));});
+  box.appendChild(list);
+  return box;
+}
+function rmOwnWorkLine(ctx,from){
+  var item=from.cloneNode(true),code=item.querySelector('.flow-what>code');
+  if(code&&(item.dataset.stepKey||item.dataset.stepCode||item.dataset.stepOpen))code.replaceChildren(rmStepName(ctx,item,code.textContent));
+  rmStepChainNames(ctx,item);
+  if(item.dataset.input&&ctx.nodeById(item.dataset.input))rmLights(ctx,item,[item.dataset.input]);
+  return item;
 }
 // The home's table of programs (owner, 2026-09-28), one block each in the
 // component's page order: its name, reading it; its role, the model's; its

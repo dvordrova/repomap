@@ -23,6 +23,12 @@ test('the closed input collection lists existing catalogue types without duplica
   for(const kind of ['request','command','background','interaction'])assert.equal(html.split(`data-input-group-kind="${kind}"`).length-1,1);
   assert.match(html,/Incoming requests/);assert.match(html,/Background work/);assert.match(html,/User interactions/);
   assert.doesNotMatch(html,/Same label|data-input-id/,'named inputs are the original graph children, not summary duplicates');
+  // A kind chosen reads the collection at that kind's section: Background
+  // work names its inputs' own kinds (owner, 2026-09-29).
+  const chosen=[];
+  const list=InputTypes({groups:grouped,choose:kinds=>chosen.push(kinds)});
+  for(const item of list.props.children)item.props.onClick({stopPropagation(){}});
+  assert.deepEqual(chosen,[['request'],['command'],['scheduled','continuous'],['interaction']]);
 });
 
 // A call that leaves its program reads from each program's own code, not

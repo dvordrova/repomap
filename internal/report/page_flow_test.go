@@ -267,3 +267,85 @@ func TestARegistrationStepIsRegisteredOnItsOwnPath(t *testing.T) {
 		t.Fatalf("off every path the step names %q", got)
 	}
 }
+
+// What a program runs on its own reads after its Main flow (owner,
+// 2026-09-29: serverCron was not findable from a flow of client commands):
+// its scheduled inputs, then its continuous ones, each the callable its
+// registration hands over, registered from the program's entries and run
+// by the function calling it through a value, that function's run from the
+// last runner the flow already showed; a callable no registration hands
+// over is its name alone, one the Main flow names is not repeated, and a
+// request is no work of its own.
+func TestWorkARunsOnItsOwnReadsAfterTheMainFlow(t *testing.T) {
+	builder, index := flowFixture()
+	add := func(id, name string, line int) {
+		builder.subjects[subjectKey("t1", id)] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: id, Kind: groupindex.SubjectObject,
+			Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "redis.c", Line: line, Column: 1}}}}
+	}
+	add("main", "main", 9124)
+	add("init", "initServer", 1532)
+	add("events", "aeProcessEvents", 275)
+	add("timers", "processTimeEvents", 212)
+	add("spawn", "spawnIOThread", 8719)
+	add("thread", "IOThreadEntryPoint", 8665)
+	add("tick", "tickTimer", 700)
+	index.Groups[0].MemberSubjectIDs = append(index.Groups[0].MemberSubjectIDs, "main", "init", "events", "timers", "spawn", "thread", "tick")
+	exact := func(from, to string) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget,
+			RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact, Location: &programindex.Location{Path: "redis.c", Line: 1}}
+	}
+	index.StructuralEdges = append(index.StructuralEdges, exact("main", "init"), exact("main", "events"), exact("events", "timers"))
+	index.Entries = []groupindex.Entry{{SubjectID: "main"}}
+	index.Operations = []groupindex.Operation{
+		{ID: "o1", Kind: "request", SubjectID: "h1"},
+		{ID: "o2", Kind: "continuous", SubjectID: "thread", FactID: "a2"},
+		{ID: "o3", Kind: "scheduled", SubjectID: "cron", FactID: "a1"},
+		{ID: "o4", Kind: "scheduled", SubjectID: "tick"},
+		{ID: "o5", Kind: "scheduled", SubjectID: "resize"},
+	}
+	builder.indexes = []groupindex.Index{index}
+	registration := func(id, object, owner string, line int) facts.Fact {
+		return facts.Fact{ID: id, Kind: facts.KindRegistration, TargetID: "t1", ObjectID: object, OwnerID: owner, Anchor: &facts.Anchor{Path: "redis.c", Line: line}}
+	}
+	builder.data.Facts = &facts.Result{Facts: []facts.Fact{registration("a1", "cron", "init", 1575), registration("a2", "thread", "spawn", 8728)}}
+	builder.factsByID = builder.data.Facts.ByID()
+	// processTimeEvents calls te->timeProc, which only serverCron is
+	// stored in: a call through a function value resolved to it alone.
+	builder.data.ProgramPortfolio.Entries[0].Relations = append(builder.data.ProgramPortfolio.Entries[0].Relations,
+		programindex.Relation{ID: "time-proc", Kind: programindex.RelationCalls, FromID: "timers", ToIDs: []string{"cron"}, Resolution: programindex.ResolutionExact, Dispatch: programindex.DispatchFunctionValue})
+	section := &pageSection{ID: "t1", programTargetID: "t1"}
+	resize, _ := builder.subject("t1", "resize")
+	_, resizeAnchor := builder.subjectDisplay(resize.subject)
+	flow := &pageFlow{Steps: []pageFlowStep{{Label: "tryResizeHashTables", Key: declarationKey(resizeAnchor)}}}
+	var said []string
+	for _, work := range builder.ownWork(section, flow, &pageStepPath{runners: map[string]bool{"events": true}}) {
+		var how []string
+		for _, site := range work.Registers {
+			var by []string
+			for _, name := range site.By {
+				by = append(by, name.Name)
+			}
+			how = append(how, strings.Join(by, " → ")+" registers it @"+site.At.Text)
+		}
+		for _, chain := range work.RunBy {
+			var by []string
+			for _, name := range chain {
+				by = append(by, name.Name)
+			}
+			how = append(how, strings.Join(by, " → ")+" runs it")
+		}
+		line := work.Input + " " + work.Label + " @" + work.Anchor.Text
+		if len(how) > 0 {
+			line += " — " + strings.Join(how, "; ")
+		}
+		said = append(said, line)
+	}
+	want := []string{
+		"t1-o3 serverCron @redis.c:1250 — main → initServer registers it @redis.c:1575; aeProcessEvents → processTimeEvents runs it",
+		"t1-o4 tickTimer @redis.c:700",
+		"t1-o2 IOThreadEntryPoint @redis.c:8665 — spawnIOThread registers it @redis.c:8728",
+	}
+	if !slices.Equal(said, want) {
+		t.Fatalf("it runs on its own:\n%s\nwant\n%s", strings.Join(said, "\n"), strings.Join(want, "\n"))
+	}
+}

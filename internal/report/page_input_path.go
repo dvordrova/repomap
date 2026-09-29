@@ -220,14 +220,7 @@ func (decls *pathDecls) of(subject string) int {
 	if ref, known := decls.builder.subject(decls.targetID, subject); known {
 		name, anchor := decls.builder.subjectDisplay(ref.subject)
 		if name != "" {
-			decl.Name = name
-		}
-		// A method is read with its type: RestoreCommand.Run, not one of
-		// fourteen Runs.
-		if object := ref.subject.Object; object != nil && object.Kind == programindex.ObjectMethod && object.OwnerID != "" && !strings.Contains(decl.Name, ".") {
-			if owner, ok := decls.builder.subject(decls.targetID, object.OwnerID); ok && owner.subject.Object != nil && owner.subject.Object.Name != "" {
-				decl.Name = strings.TrimPrefix(owner.subject.Object.Name, "*") + "." + decl.Name
-			}
+			decl.Name = decls.builder.withType(decls.targetID, ref.subject, name)
 		}
 		if anchor != nil {
 			decl.Href, decl.Open, decl.Source, decl.NoSource, decl.Code = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource, anchor.Code
@@ -235,6 +228,17 @@ func (decls *pathDecls) of(subject string) int {
 	}
 	decl.Part = decls.part(subject)
 	return decls.add(subject, decl)
+}
+
+// withType reads a method with its type: RestoreCommand.Run, not one of
+// fourteen Runs; UvicornServer.run, not run.
+func (builder *pageBuilder) withType(targetID string, subject groupindex.Subject, name string) string {
+	if object := subject.Object; object != nil && object.Kind == programindex.ObjectMethod && object.OwnerID != "" && !strings.Contains(name, ".") {
+		if owner, ok := builder.subject(targetID, object.OwnerID); ok && owner.subject.Object != nil && owner.subject.Object.Name != "" {
+			return strings.TrimPrefix(owner.subject.Object.Name, "*") + "." + name
+		}
+	}
+	return name
 }
 
 // add names a declaration that is no subject of this program (an outside

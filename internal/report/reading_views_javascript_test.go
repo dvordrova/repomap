@@ -281,7 +281,8 @@ assert.equal(section.children.at(-1).textContent,'redis-cli sends get.','who sen
 
 // A function's reading prints no line number (owner, 2026-09-29:
 // "человек будет видеть код"): a caller calling from two places is its
-// name once, and "Uses variables" ("argv :4248 :4250 …", fields reached
+// name once with a code mark for each place, its line on hover only, and
+// "Uses variables" ("argv :4248 :4250 …", fields reached
 // through a parameter printed as variables) is one line, "Reads: …", each
 // field by the path the code reaches it by and each global variable once,
 // in the order first used. A field it also writes stays under "Writes:", a
@@ -343,9 +344,17 @@ func TestAFunctionsReadingSaysEachReadOnceWithNoLineNumbers(t *testing.T) {
 	if len(own.Writes) != 1 || own.Writes[0].Path != "redisClient.db" {
 		t.Fatalf("serverCron writes %+v", own.Writes)
 	}
-	for _, site := range []string{"#L301", "#L305", "#L22", "#L27"} {
+	// A read's places are not kept; a call's are, each a code mark on its
+	// caller (owner, 2026-09-29: the caller's name had opened processCommand
+	// at its top, above the call).
+	for _, site := range []string{"#L22", "#L27"} {
 		if strings.Contains(raw, site) {
 			t.Fatalf("the reading keeps the use site %s: %s", site, raw)
+		}
+	}
+	for _, site := range []string{"#L301", "#L305"} {
+		if !strings.Contains(raw, site) {
+			t.Fatalf("the reading drops the call site %s: %s", site, raw)
 		}
 	}
 	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
@@ -359,6 +368,24 @@ assert.deepEqual(said,[],'no line number anywhere in the reading');
 assert.equal(view.all(c=>c.has('map-reading-reads'))[0].textContent,'Reads: redisClient.argv, server, shared.czero.ptr');
 assert.equal(view.all(c=>c.has('map-reading-writes'))[0].textContent,'Writes: redisClient.db');
 assert.equal(view.all(c=>c.has('map-reading-name')&&c.textContent==='processTimeEvents()').length,1,'a caller calling from two places is one name');
+assert.deepEqual(view.all(c=>c.has('map-call-site')).map(c=>c.href.replace(/^.*#/,'#')+' '+c.title),['#L301 server.go:301','#L305 server.go:305'],'with a code mark for each place it calls from, the place on hover');
 assert.ok(!view.textContent.includes('Uses variables'));
+`)
+}
+
+// A kind chosen in an Inputs collection's frame, or a count in its
+// component's reading, opens the collection at that kind's section,
+// Background work at the first of its scheduled and continuous sections
+// (owner, 2026-09-29: Settings had opened the reading at its 96 requests).
+func TestAKindChosenOpensItsCollectionAtItsSection(t *testing.T) {
+	code := systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "// Where a catalogue's inputs are declared") + "\nvar rmPendingKind='';\n"
+	runSystemJS(t, readingViewElements+code+`
+const inputs={a:{dataset:{title:'get'}},b:{dataset:{title:'dir'}},c:{dataset:{title:'IOThreadEntryPoint'}},d:{dataset:{title:'serverCron'}}};
+const node={dataset:{owner:'t1',collection:JSON.stringify({groups:[{kind:'request',inputs:['a']},{kind:'setting',inputs:['b']},{kind:'continuous',inputs:['c']},{kind:'scheduled',inputs:['d']}]})}};
+const context={nodeById:id=>inputs[id]||null,nodeByHref:()=>null,light(){},readNode(){}};
+const at=()=>rmCollectionView(context,node,rmPage.data(node,'collection')).children.filter(c=>c.dataset&&'readingAnchor' in c.dataset).map(c=>c.dataset.kind);
+rmPendingKind='setting';assert.deepEqual(at(),['setting']);
+rmPendingKind=['scheduled','continuous'];assert.deepEqual(at(),['continuous'],'Background work lands on the first of its sections');
+assert.deepEqual(at(),[],'a later reading opens at its top');
 `)
 }

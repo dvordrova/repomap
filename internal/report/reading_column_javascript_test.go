@@ -487,15 +487,19 @@ assert.equal(steps.children.find(c=>c.className==='system-path-deeper'),undefine
 // with the line that none of them is established as leading to an input
 // dispatched there; or that no input reaches it by calls.
 func TestADispatchSitesReadingListsTheInputsReachingIt(t *testing.T) {
-	code := systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// Who calls a declaration and what it calls")
+	code := systemJSPiece(t, "30-map.js", "// The inputs dispatched at a site", "// Who calls a declaration and what it calls")
 	runSystemJS(t, fakeElements+`
 const readings={sites:[{site:0,of:94,handlers:94,inputs:95,shared:[{handler:5,inputs:['t1-sinter','t1-smembers']}],reached_from:[{input:'t1-exec',calls:[[2,0,0]]},{input:'t1-lpush',calls:[[3,4,0],[4,0,1]]}]},{site:1,of:94,handlers:94,inputs:95}],
   decls:[{name:'call',href:'h/call'},{name:'loadAppendOnlyFile',href:'h/load'},{name:'execCommand'},{name:'lpushCommand'},{name:'handleClientsWaitingListPush'},{name:'sinterCommand'}]};
 const node={dataset:{dispatch:JSON.stringify(readings)}},chosen=[];
 const map={chooseOperation:id=>chosen.push(id)};
+function rmDeclName(decl,text,go,title){const a=rmEl('a','map-reading-name',text);a.href=decl.code||decl.href;a.title=title;if(go)a.listeners.click=go;return a;}
+function rmFlowPart(){return null;}
 document.getElementById=id=>({'t1-exec':{dataset:{title:'exec'}},'t1-lpush':{dataset:{title:'lpush'}},'t1-sinter':{dataset:{title:'sinter'}},'t1-smembers':{dataset:{title:'smembers'}}})[id]||null;
 `+code+`
 const box=rmSiteReading(map,node,'h/call');
+// Every name with code is its link, as every name in the column is.
+assert.equal(box.find(e=>e.tagName==='A'&&e.textContent==='call').href,'h/call');
 // The site's counts say what they count, and why its 95 inputs outnumber
 // its 94 handlers.
 assert.deepEqual(box.children.map(c=>c.textContent),['Dispatch site · one of 94 handlers · 95 inputs dispatched here','sinterCommand handles 2 of these inputs: sinter, smembers','call is reached from these inputs:',
@@ -505,6 +509,16 @@ box.find(e=>e.tagName==='BUTTON'&&e.textContent==='lpush').listeners.click();
 assert.deepEqual(chosen,['t1-lpush']);
 assert.deepEqual(rmSiteReading(map,node,'h/load').children.map(c=>c.textContent),['Dispatch site · one of 94 handlers · 95 inputs dispatched here','No input reaches loadAppendOnlyFile by calls']);
 assert.equal(rmSiteReading(map,node,'h/other').childElementCount,0,'another declaration has no site reading');
+// The inputs dispatched at a site are part of the column's own scroll,
+// folded under their count when long (owner, 2026-09-29), each input's name
+// reading the input and each handler's name its declaration's link.
+const handlers=Array.from({length:13},(_,i)=>({name:'h'+i+'Command',href:'h/h'+i}));
+const many={sites:[{site:0,of:94,handlers:94,inputs:13,dispatched:handlers.map((_,i)=>({input:'t1-exec',handler:i+1}))}],decls:[{name:'call',href:'h/call'}].concat(handlers)};
+const list=rmSiteReading(map,{dataset:{dispatch:JSON.stringify(many)}},'h/call').find(e=>e.className==='map-dispatched');
+assert.equal(list.tagName,'DETAILS');assert.equal(list.open,false,'thirteen inputs fold under their count');
+const rows=list.find(e=>e.className==='map-dispatched-list').children;
+assert.equal(rows.length,13);
+assert.equal(rows[0].children[0].tagName,'BUTTON');assert.equal(rows[0].children[2].tagName,'A');assert.equal(rows[0].children[2].href,'h/h0');
 `)
 }
 

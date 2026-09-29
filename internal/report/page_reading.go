@@ -104,10 +104,14 @@ type pageReadingField struct {
 	TypeDecl *int `json:"type_decl,omitempty"`
 }
 
-// pageReadingKind is the part's declarations of one kind, by name.
+// pageReadingKind is the part's declarations of one kind, by name, the
+// Outside first of them those reached from outside the part: a caller in
+// another part, an input registered at it, a callable handed over (its
+// "Called from").
 type pageReadingKind struct {
-	Kind  string `json:"kind"`
-	Decls []int  `json:"decls"`
+	Kind    string `json:"kind"`
+	Decls   []int  `json:"decls"`
+	Outside int    `json:"outside,omitempty"`
 }
 
 // pageReadingPeer is one part at the other end of this part's relations:
@@ -158,6 +162,12 @@ type pageReadingEnd struct {
 	Decl     int    `json:"decl"`
 	Kind     string `json:"kind"`
 	Possible bool   `json:"possible,omitempty"`
+	// Sites are, in a declaration's own reading, where each relation other
+	// than a variable's read or write is written in the caller's code: a
+	// small code mark each, the place on its hover, never a number (owner,
+	// 2026-09-29: queueMultiCommand's caller had opened processCommand at
+	// its top, 70 lines above the call).
+	Sites []pageReadingSite `json:"sites,omitempty"`
 }
 
 // pageReadingSite is one place a flow's call is written, said on its name's
@@ -463,11 +473,15 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		// The declaration's own reading: the caller's callees, the callee's
 		// callers, each by the part the other end stands in.
+		var sites []pageReadingSite
+		if row.FromSource != nil && !usesVariable(kind) {
+			sites = []pageReadingSite{{At: row.FromSource.Text, Href: row.FromSource.Href, Open: row.FromSource.Open}}
+		}
 		if fromPart == own {
-			addEnd(callees, from, cmp.Or(toPart, row.Href), cmp.Or(toTitle, row.Title), pageReadingEnd{Decl: to, Kind: kind, Possible: row.Possible})
+			addEnd(callees, from, cmp.Or(toPart, row.Href), cmp.Or(toTitle, row.Title), pageReadingEnd{Decl: to, Kind: kind, Possible: row.Possible, Sites: sites})
 		}
 		if toPart == own {
-			addEnd(callers, to, cmp.Or(fromPart, row.Href), cmp.Or(fromTitle, row.Title), pageReadingEnd{Decl: from, Kind: kind, Possible: row.Possible})
+			addEnd(callers, to, cmp.Or(fromPart, row.Href), cmp.Or(fromTitle, row.Title), pageReadingEnd{Decl: from, Kind: kind, Possible: row.Possible, Sites: sites})
 		}
 	}
 	sortEnds := func(ends []pageReadingEnd) []pageReadingEnd {
@@ -511,6 +525,25 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 	}
 	reading.In = peerLines(incoming, incomingOrder, "←")
 	reading.Out = peerLines(outgoing, outgoingOrder, "→")
+	// The declarations "Called from" reaches stand first in their kind's
+	// list, each list still by name (owner, 2026-09-29: Persistence's 40
+	// functions had not said which of them are its ways in).
+	outside := map[int]bool{}
+	for _, peer := range reading.In {
+		for _, line := range peer.Lines {
+			for _, end := range line.Ends {
+				outside[end.Decl] = true
+			}
+		}
+	}
+	for i := range reading.Members {
+		slices.SortStableFunc(reading.Members[i].Decls, func(a, b int) int { return boolFirst(outside[a], outside[b]) })
+		for _, decl := range reading.Members[i].Decls {
+			if outside[decl] {
+				reading.Members[i].Outside++
+			}
+		}
+	}
 
 	// Each member's own reading. The variables a declaration reads and
 	// writes are said by its Reads and Writes lines (page_field_uses.go),
@@ -753,6 +786,11 @@ func mergeEnd(ends []pageReadingEnd, end pageReadingEnd) []pageReadingEnd {
 	for i := range ends {
 		if ends[i].Decl == end.Decl && ends[i].Kind == end.Kind {
 			ends[i].Possible = ends[i].Possible && end.Possible
+			for _, site := range end.Sites {
+				if !slices.ContainsFunc(ends[i].Sites, func(other pageReadingSite) bool { return other.At == site.At }) {
+					ends[i].Sites = append(ends[i].Sites, site)
+				}
+			}
 			return ends
 		}
 	}

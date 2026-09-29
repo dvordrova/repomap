@@ -127,7 +127,7 @@ function Part({data}) {
     <PartSymbols symbols={data.symbols} calls={data.symbolCalls} width={box.width} height={box.height} grid={grid} member={data.member}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
-  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
+  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''} ${data.member?.alone?'flow-part-has-chosen':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
@@ -138,6 +138,8 @@ function Part({data}) {
         and the card kept an empty line. */}
     {data.description&&(!heading||standaloneText)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines,maxHeight:standaloneLines*15}:{WebkitLineClamp:data.descriptionMost||undefined,maxWidth:cardText}}>{data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
+    {/* A part too dense to read its tiles where it fits shows the chosen one alone. */}
+    {data.member?.alone&&data.symbols?.[data.member.chosen]&&<span className="flow-part-chosen">{data.symbols[data.member.chosen].name}{data.symbols[data.member.chosen].text&&<em>{data.symbols[data.member.chosen].text}</em>}</span>}
     {data.symbols?.length>0&&!data.activation&&<button type="button" className="flow-part-zoom nopan" aria-label={t('Zoom into {0}',data.name||data.title)}
       onClick={event=>{event.stopPropagation();data.zoomInto?.();}}>
       <span className="flow-zoom-picture" aria-hidden="true"/></button>}
@@ -305,8 +307,17 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(deepPart)locationID=deepPart;
     // An input collection is named as its heading reads, with its component.
     const nameOf=item=>item?.branch==='inputs'?[t('Inputs'),item.componentName].filter(Boolean).join(' · '):item?.name||item?.title;
-    const names=[];for(let id=locationID;id;id=placed.get(id)?.parentId)names.unshift(nameOf(byID.get(id)));
-    location.textContent=names.filter(Boolean).join(' / ')||t('System map');
+    const path=[];for(let id=locationID;id;id=placed.get(id)?.parentId)if(nameOf(byID.get(id)))path.unshift(id);
+    if(!path.length){location.textContent=t('System map');return;}
+    // Each frame it names goes up to that level, as the breadcrumb's
+    // segments do (owner, 2026-09-29: the row read as a breadcrumb and
+    // was a dead end).
+    location.replaceChildren(...path.flatMap((id,i)=>{
+      const item=byID.get(id),name=nameOf(item);
+      const step=item?.display?document.createElement('span'):document.createElement('button');step.textContent=name;
+      if(step.tagName==='BUTTON'){step.type='button';step.className='flow-location-step';step.addEventListener('click',event=>{event.stopPropagation();select(id,event,true);});}
+      return i?[document.createTextNode(' / '),step]:[step];
+    }));
   }
   const isOverview=()=>!detailed.size;
   let maxZoom=Math.max(2,...[...scales.values()].map(s=>1.8/s));
@@ -350,6 +361,21 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const data={...byID.get(part),...looseOf(n)},{box,scale}=partBox(data),grid=partGrid(data,box);
     const symbols=data.symbols||[],row=grid.rows[index]||grid.rows[(symbols[index]?.owner||0)-1];
     if(!row)return false;
+    // A part too dense for its tiles to be read where it fits is shown as
+    // its frame, its card closed at the scale a part is read at with the
+    // chosen tile standing in it, rather than as a grid of unreadable
+    // tiles (owner, 2026-09-29: listAddNodeHead chosen in the column had
+    // jumped into Core data structures' 91 functions). Already in sight so,
+    // it stays.
+    if(tooDense(part)){
+      overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();arrive([part]);locationSubject=part;
+      const rect=host.getBoundingClientRect(),v=instance.getViewport();
+      if(box.width*scale*v.zoom<860&&readableFocus(part,placed,byID,detailed,componentsOpen,v,rect.width,rect.height,communicationsOpen,openComponents)){update?.();return true;}
+      const fit=Math.min((rect.width-48)/n.width,(rect.height-48)/n.height);
+      const zoom=Math.min(maxZoom,1/(byID.get(part)?.contentScale||1),fit,.98*860/(box.width*scale));
+      commitCamera(instance.setViewport(partViewport(n,zoom,rect.width,rect.height),{duration:smooth?420:0}),part);
+      return true;
+    }
     const {inset,columnGap:gap}=tileRoom,rect=host.getBoundingClientRect(),margin=24;
     // The declarations stand inside the part's 1px border (canvas.css).
     const point={x:n.absolute.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor),
@@ -364,6 +390,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     else viewport.y=Math.min(margin-n.absolute.y*zoom,Math.max(rect.height-margin-(n.absolute.y+n.height)*zoom,viewport.y));
     commitCamera(instance.setViewport(viewport,{duration:smooth?420:0}),part);
     return true;
+  }
+  // Whether a part's tiles cannot be read at a zoom that fits it: drawn
+  // where the part stands across the canvas (focusMember), their names
+  // stand below the size an open frame's text stays open at (staysOpen).
+  function tooDense(part){
+    const n=placed.get(part);if(!n)return false;
+    const data={...byID.get(part),...looseOf(n)},{box,scale}=partBox(data),grid=partGrid(data,box);
+    const zoom=Math.min(maxZoom,deepZoom(part),Math.max(860*1.02/(box.width*scale),(host.clientWidth-48)/n.width));
+    return scale*zoom/grid.divisor<staysOpen;
   }
   // Whether a declaration's tile is drawn and in sight at the current
   // camera: a tile chosen there, on the canvas or in the reading, is only
@@ -892,6 +927,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(byID.get(id)?.branch==='inputs-part')id=byID.get(id).owner;
     hover.remember(event.clientX,event.clientY);hover.pause();hoverArea='';preview='';map.clearMapPreview?.();callbacks.select(id,center);
   }
+  // A kind chosen in a collection's list reads the collection at that
+  // kind's section, the camera staying.
+  function readKind(id,kinds,event){
+    hover.remember(event.clientX,event.clientY);hover.pause();hoverArea='';preview='';map.clearMapPreview?.();
+    if(callbacks.readKind)callbacks.readKind(id,kinds);else callbacks.select(id,false);
+  }
   // Lay out text once for the whole-map camera. Pan clips that fixed card;
   // zoom scales it with the map instead of rewrapping it at every wheel tick.
   // The whole-map scale at which a summary fits its box whole (see overviewScale).
@@ -937,7 +978,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         <strong style={heading.scale<1?{fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}:undefined}>{heading.lines.join('\n')}</strong></div>}
       {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{item.role}</div>}
       {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-compact" style={{WebkitLineClamp:descriptionLines}}>{item.description}</p>}
-      {inputs&&<InputTypes groups={item.inputGroups} lit={lit}/>}
+      {inputs&&<InputTypes groups={item.inputGroups} lit={lit} choose={(kinds,event)=>readKind(n.id,kinds,event)}/>}
       {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
         <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,false);}}>{byID.get(id).name||byID.get(id).title}</button>
       </li>)}</ul>}
@@ -1128,6 +1169,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         className:`${muted(n.id)?'flow-node-muted':''} ${subjects.has(n.id)?'flow-node-focus':on&&!focused?'flow-node-connected':''} ${shownContext.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''} ${lit.has(n.id)?'flow-node-lit':''}`,
         data:{...item,...looseLook(n),operation:view.operation,reading,zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true),
           member:item?.symbols?.length?{hot:pointed?.part===n.id?pointed.index:-1,chosen:memberChoice?.part===n.id&&view.scope===n.id?memberChoice.index:-1,
+            alone:memberChoice?.part===n.id&&view.scope===n.id&&tooDense(n.id),
             point:index=>pointMember(n.id,index),choose:(index,event)=>chooseMember(n.id,index,event)}:undefined}};
     });
     const edges=drawn.map(route=>{

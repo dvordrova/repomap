@@ -488,7 +488,8 @@ details.map-reading-in>summary{display:flex;gap:8px;cursor:pointer;font-weight:6
 /* A dispatcher's inputs by name, each with its handler, and their filter. */
 .map-dispatched>summary{cursor:pointer;font-weight:600;font-size:13px}
 .flow-enabled .map-inspector .map-dispatched-filter{width:100%;box-sizing:border-box;margin:6px 0;padding:4px 6px;font:13px system-ui;border:1px solid var(--line);border-radius:5px}
-.flow-enabled .map-inspector ul.map-dispatched-list{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto;font:12.5px/1.6 var(--mono)}
+.map-dispatched>summary{display:flex;gap:8px}
+.flow-enabled .map-inspector ul.map-dispatched-list{list-style:none;margin:0;padding:0;font:12.5px/1.6 var(--mono)}
 .flow-enabled .map-inspector .map-dispatched-list button{border:0;background:transparent;padding:0;font:inherit;color:var(--link);cursor:pointer}
 .flow-enabled .map-inspector .system-path-handlers{border:0;background:transparent;padding:0;font:inherit;color:var(--link);cursor:pointer;text-decoration:underline dotted}
 /* Another program's calls into a shared declaration are named by that program. */
@@ -540,7 +541,34 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-flow-sent,.flow-enabled .map-inspector .map-flow-sent{margin:12px 0 0;color:var(--muted);font-size:12.5px}
 /* The component's Main flow: each step opens in place to its code. */
 .map-flow-step-twist,.flow-enabled .map-inspector button.map-flow-step-twist,.map-card button.map-flow-step-twist{border:0;background:none;box-shadow:none;margin:0;padding:0;min-width:0;width:14px;height:20px;color:var(--muted);cursor:pointer;font:11px/20px system-ui;vertical-align:baseline}
-.map-flow-step-twist::before{content:"▸";visibility:hidden}
-li:hover>.map-flow-step-twist::before,.map-flow-step-twist:focus-visible::before{visibility:visible}
+/* A Main flow step's twist is always shown (owner, 2026-09-29: its calls
+   open in place from it; a click on its name reads the function). */
+.map-flow-step-twist,.flow-enabled .map-inspector button.map-flow-step-twist,.map-card button.map-flow-step-twist{width:16px;font:14px/20px system-ui}
+.map-flow-step-twist::before{content:"▸"}
 .map-flow-step-open>.map-flow-step-twist::before{content:"▾";visibility:visible}
 .map-flow-step-code{margin:4px 0 6px 14px}
+/* What the program runs on its own, after its Main flow, one line each:
+   "serverCron — main → initServer registers it; aeProcessEvents runs it". */
+.map-component-own{border-top:1px solid var(--line);padding:8px 0}
+.map-component-own>.map-reading-label{margin:0 0 4px;font-weight:600;font-size:14px}
+.map-component-own-list{list-style:none;margin:4px 0;padding:0;font-size:13px;line-height:1.55}
+.map-component-own-list>li{margin:2px 0;overflow-wrap:anywhere}
+.map-component-own-list .flow-what{font-weight:600}
+.map-component-own-list .flow-how{display:inline;margin:0;color:var(--muted)}
+.map-component-own-list .flow-chain{display:inline}
+.map-input-own{margin:0 0 10px}
+.flow-registers{color:inherit;text-decoration:underline dotted}
+.flow-registers:hover{color:var(--link)}
+/* The home's text pages, one small line at the foot of every reading. */
+.map-reading-home-links{margin:18px 0 4px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;line-height:1.6;color:var(--muted)}
+/* A part's declarations reached from outside it stand first, their count
+   in the heading; the rest follow after a gap. */
+.map-reading-reached-count{font-weight:400;color:var(--muted)}
+.flow-enabled .map-inspector .map-reading-names.map-reading-reached{margin-bottom:8px;padding-bottom:6px;border-bottom:1px dotted var(--line)}
+/* Where a call is written in its caller's code: the mark the declaration's
+   own link carries, one per place, the place on hover, no number. */
+a.map-call-site{display:inline-block;margin-left:5px;padding:0 3px;border:1px solid currentColor;border-radius:3px;font:600 9px/13px var(--mono);vertical-align:1px;opacity:.55;text-decoration:none}
+a.map-call-site::before{content:"</>"}
+a.map-call-site:hover,a.map-call-site:focus-visible{opacity:1}
+.map-flow-helper-call>a.map-call-site{visibility:hidden}
+.map-flow-helper-call:hover>a.map-call-site,.map-flow-helper-call:focus-within>a.map-call-site{visibility:visible}

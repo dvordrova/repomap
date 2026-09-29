@@ -1,7 +1,9 @@
 package report
 
 import (
+	"cmp"
 	"slices"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -9,16 +11,21 @@ import (
 )
 
 // pageStepName is a declaration a Main flow step names beside its own:
-// read in its part (Part, Key) when one holds it.
+// read in its part (Part, Key) when one holds it, and a link into its code
+// (Code, all of its lines on a static page; Open, a served page's source).
 type pageStepName struct {
 	Name string
 	Part string
 	Key  string
+	Code string
+	Open string
 }
 
 // pageStepRegistration is one place a step's callable is registered: the
 // run of calls reaching the function that registers it, that function last,
-// and the registering call's own line.
+// and the registering call's own line, which the words "registers it" link
+// (owner, 2026-09-29: the step's own link had landed on that line, inside
+// createClient, for readQueryFromClient).
 type pageStepRegistration struct {
 	By []pageStepName
 	At *pageAnchor
@@ -45,9 +52,11 @@ type pageStepPath struct {
 //     it). Never an arbitrary first one: readQueryFromClient's step had linked
 //     the one in beforeSleep's resume path;
 //   - what runs it: each function calling it through a value (a dispatch's
-//     alternatives, or an open call whose stores name it), after the run of
-//     exact calls from the program's entries reaching that function the first
-//     time the flow shows it (main → aeMain → aeProcessEvents).
+//     alternatives, a call through a function value, or an open call whose
+//     stores name it), after the run of exact calls from the program's
+//     entries reaching that function the first time the flow shows it (main
+//     → aeMain → aeProcessEvents), from the last runner already shown on
+//     that run when there is one.
 func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, section *pageSection, path *pageStepPath) bool {
 	index := builder.graphIndex(section.programTargetID)
 	if index == nil || builder.data.Facts == nil {
@@ -64,7 +73,10 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 			return pageStepName{Name: subjectID}
 		}
 		name, anchor := builder.subjectDisplay(ref.subject)
-		step := pageStepName{Name: name}
+		step := pageStepName{Name: builder.withType(section.programTargetID, ref.subject, name)}
+		if anchor != nil {
+			step.Code, step.Open = cmp.Or(anchor.Code, anchor.Href), anchor.Open
+		}
 		if group := groupOf[subjectID]; group != "" && anchor != nil {
 			step.Part, step.Key = "#"+groupAnchorID(section.ID, group), declarationKey(anchor)
 		}
@@ -77,8 +89,11 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 		}
 		return out
 	}
+	// The step's name is the callable's, its link all of the callable's
+	// lines; the registering call's line is its registration's.
 	own := named(fact.ObjectID)
-	row.Label, row.Part, row.Key, row.Anchor = own.Name, own.Part, own.Key, nil
+	_, ownAnchor := builder.subjectDisplay(ref.subject)
+	row.Label, row.Part, row.Key, row.Anchor = own.Name, own.Part, own.Key, ownAnchor
 	var calls []int
 	for position, edge := range index.StructuralEdges {
 		if edge.Role == groupindex.EdgeRelationTarget && edge.RelationKind == programindex.RelationCalls && edge.Resolution == programindex.ResolutionExact {
@@ -125,14 +140,33 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 			row.Registers = append(row.Registers, registration(site, fromEntries(site.OwnerID)))
 		}
 	}
-	if len(row.Registers) == 1 {
-		row.Anchor = row.Registers[0].At
-	}
+	// Registrations by the same run of calls read once, linking the first
+	// registering call: sizeWorkspace had read "canvas registers it" four
+	// times, one function's four calls.
+	byChain := map[string]bool{}
+	row.Registers = slices.DeleteFunc(row.Registers, func(site pageStepRegistration) bool {
+		var key strings.Builder
+		for _, name := range site.By {
+			key.WriteString(name.Name + "\x00" + name.Key + "\x00")
+		}
+		seen := byChain[key.String()]
+		byChain[key.String()] = true
+		return seen
+	})
 	for _, runner := range builder.runnersOf(section.programTargetID, fact.ObjectID) {
 		chain := []string{runner}
 		if !path.runners[runner] {
+			// From the entries, or from the last runner already shown on
+			// the way: "aeProcessEvents → processTimeEvents runs it" after
+			// "main → aeMain → aeProcessEvents runs it".
 			if reached := fromEntries(runner); reached != nil {
 				chain = reached
+				for at := len(reached) - 2; at > 0; at-- {
+					if path.runners[reached[at]] {
+						chain = reached[at:]
+						break
+					}
+				}
 			}
 			path.runners[runner] = true
 		}
@@ -144,9 +178,11 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 }
 
 // runnersOf are the functions of a program that call a callable through a
-// value, in relation order, each once: a call whose alternatives hold it,
-// or an open call whose witnesses name it among the values it may call
-// (C's stores into fe->rfileProc).
+// value, in relation order, each once: a call whose alternatives hold it, a
+// call through a function value resolved to it alone (processTimeEvents'
+// te->timeProc, which only serverCron is stored in), or an open call whose
+// witnesses name it among the values it may call (C's stores into
+// fe->rfileProc).
 func (builder *pageBuilder) runnersOf(programTargetID, objectID string) []string {
 	if builder.data == nil || builder.data.ProgramPortfolio == nil {
 		return nil
@@ -157,7 +193,8 @@ func (builder *pageBuilder) runnersOf(programTargetID, objectID string) []string
 			continue
 		}
 		for _, relation := range entry.Relations {
-			if relation.Kind != programindex.RelationCalls || relation.Resolution == programindex.ResolutionExact || slices.Contains(runners, relation.FromID) {
+			if relation.Kind != programindex.RelationCalls || relation.Resolution == programindex.ResolutionExact && relation.Dispatch != programindex.DispatchFunctionValue ||
+				slices.Contains(runners, relation.FromID) {
 				continue
 			}
 			runs := slices.Contains(relation.ToIDs, objectID)
@@ -197,4 +234,75 @@ func (builder *pageBuilder) fieldTypes(programTargetID, objectID string) []progr
 		builder.typesOf[programTargetID] = byObject
 	}
 	return byObject[objectID]
+}
+
+// pageOwnWork is one piece of work a program runs on its own, read as a
+// Main flow step citing its registration is: the callable, where it is
+// registered and what runs it. Input is its input's node on the map.
+type pageOwnWork struct {
+	pageFlowStep
+	Input string
+}
+
+// ownWork is what a program runs without a request arriving (owner,
+// 2026-09-29, benchmark v4: serverCron, a timer, was not findable from a
+// Main flow of client commands): its inputs of the scheduled kind, then of
+// the continuous kind (the ways-in order, outerKindRank), each in its saved
+// order and each callable once, save one the Main flow already names. A
+// registration of it reads as registeredStep reads it, from the program's
+// entries, a runner the flow has already reached by its entries named
+// alone ("serverCron — main → initServer registers it; aeProcessEvents runs
+// it"); a callable no saved registration hands over is its name alone.
+// Nothing is looked for beyond the saved kinds and facts.
+func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, path *pageStepPath) []pageOwnWork {
+	index := builder.graphIndex(section.programTargetID)
+	if index == nil {
+		return nil
+	}
+	var operations []groupindex.Operation
+	for _, operation := range index.Operations {
+		if (operation.Kind == "scheduled" || operation.Kind == "continuous") && operation.SubjectID != "" && !operation.HandlerUnknown {
+			operations = append(operations, operation)
+		}
+	}
+	slices.SortStableFunc(operations, func(a, b groupindex.Operation) int {
+		return outerKindRank(a.Kind) - outerKindRank(b.Kind)
+	})
+	shown := map[string]bool{}
+	if flow != nil {
+		for _, step := range flow.Steps {
+			if step.Key != "" {
+				shown[step.Key] = true
+			}
+		}
+	}
+	if path == nil {
+		path = &pageStepPath{runners: map[string]bool{}}
+	}
+	groupOf := builder.edgesBetweenGroups(*index).groupOf
+	seen := map[string]bool{}
+	var work []pageOwnWork
+	for _, operation := range operations {
+		ref, known := builder.subject(section.programTargetID, operation.SubjectID)
+		if !known || seen[operation.SubjectID] {
+			continue
+		}
+		seen[operation.SubjectID] = true
+		name, anchor := builder.subjectDisplay(ref.subject)
+		if name == "" || shown[declarationKey(anchor)] {
+			continue
+		}
+		name = builder.withType(section.programTargetID, ref.subject, name)
+		row := pageOwnWork{Input: operationNodeID(section.ID, operation.ID)}
+		fact, registered := builder.factsByID[operation.FactID]
+		if !registered || fact.Kind != facts.KindRegistration || fact.ObjectID != operation.SubjectID || fact.OwnerID == "" ||
+			!builder.registeredStep(&row.pageFlowStep, fact, section, &pageStepPath{runners: path.runners}) {
+			row.pageFlowStep = pageFlowStep{Label: name, Anchor: anchor}
+			if group := groupOf[operation.SubjectID]; group != "" && anchor != nil {
+				row.Part, row.Key = "#"+groupAnchorID(section.ID, group), declarationKey(anchor)
+			}
+		}
+		work = append(work, row)
+	}
+	return work
 }

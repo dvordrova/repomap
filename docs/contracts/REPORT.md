@@ -380,8 +380,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   flow" link above every reading of the component (below). The inputs whose own code reaches a site are not listed in a
   dispatched input's reading, where a reader takes them for its route;
   they are the
-  site's own reading, with the declaration: "{site} is reached from these
+  site's own reading, with the declaration: its inputs dispatched there by
+  name, each with its handler ("Its handlers by input", a filter over
+  both), part of the column's own scroll and folded under its count past
+  twelve, never a scroller of its own (owner, 2026-09-29: a wheel under
+  call's 95 rows had scrolled the page), each input's name reading the
+  input and each handler's name, as every name in the column, a link to
+  all of its code whose plain click reads it; then "{site} is reached from these
   inputs:", each input a button to its reading with its calls to the site,
+  each name read so,
   then "Which of these, if any, leads to an input dispatched here is not
   established.", or "No input reaches processCommand by calls". Every
   count says what it counts, from the page data GroupsIndex's sites give:
@@ -644,7 +651,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the canvas, framed whole when it fits and else across with the tile centred
   down it, never deeper than the part's own title fits (owner, 2026-09-29: a
   name chosen in the column had zoomed to the tile's own size under giant
-  cut titles); a restored visit keeps its camera. The page data gives each tile its file and the
+  cut titles); a restored visit keeps its camera. A part too dense for its
+  tiles to be read there, their names below the size an open frame's text
+  stays open at (`staysOpen`), is shown as its frame instead: its card
+  closed at the scale a part is read at, the chosen declaration standing
+  alone in it drawn as its tile, the camera staying when that card is
+  already in sight (owner, 2026-09-29: listAddNodeHead chosen in the
+  column had jumped into Core data structures' 91 unreadable tiles). The page data gives each tile its file and the
   same source link its reading uses, served or static.
 
   Root summaries prioritize saved area names over role, counts and purpose;
@@ -665,7 +678,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the reading column. Text and controls remain inside their own frame; viewport
   clipping does not move them to a different visible corner. The persistent
   location row names the visible item and its known ancestors when its world
-  header leaves the screen. Pinch uses the gesture's actual aim for that context;
+  header leaves the screen; each frame it names goes up to that level, read
+  and framed, as a breadcrumb's segment does (owner, 2026-09-29: it had read
+  as a breadcrumb and was a dead end). Pinch uses the gesture's actual aim for that context;
   an explicit entrance names its destination instead of a neighbouring frame
   at the canvas centre. Root summaries and revealed interiors are exclusive.
 
@@ -888,7 +903,11 @@ registered at the part is one neighbour, Inputs, counted by its inputs.
 Many callers fold each part to its line. Then the part's own box, the
 model's description, its files, and its declarations by kind, each kind
 its own heading and list by name whatever its case ("12 functions",
-"4 variables", types), the keys in bold. "Calls into" lists the parts it
+"4 variables", types), the keys in bold; those "Called from" reaches (a
+caller in another part, an input registered at it, a callable handed
+over) stand first, counted in the heading ("40 functions · 14 reached from
+outside"), the rest after them (owner, 2026-09-29: Persistence's 40
+functions had not said which are its ways in). "Calls into" lists the parts it
 calls, each in its box with its callees by name and the variables it uses
 there. With an input pinned, the input's witness stands under the
 description ("Why it appears in {0}"); the inputs reaching the part and
@@ -926,8 +945,18 @@ written, a part named on its hover; the declaration's own name is the
 link to its code. The same holds for a catalogue's callers ("called from
 processCommand") and the Inputs reading's "How these were found": a
 function making undecided calls is named once per symbol and reason, and
-one with calls the code cannot follow once, with their count. The page
-data keeps no place of such a relation.
+one with calls the code cannot follow once, with their count. Where a call
+is written stays reachable without a number (owner, 2026-09-29: with the
+numbers gone, "Called by processCommand" had opened processCommand at its
+top, 70 lines above the call): in a declaration's "Called by" and "Calls",
+each caller or callee other than a variable's reader or writer carries a
+small code mark per place it is written, the "</>" its own name's link
+carries, linking that line in the caller's code, the place ("redis.c:2221")
+on its hover only; a flow's call row carries its places so, and a helper's
+name in the "+ helpers" line shows its marks while pointed at or focused.
+The name itself still reads the declaration. The page data keeps those
+places (`sites` on a declaration reading's end, a flow call's `sites`) and
+no place of a variable's read or write.
 
 Who changes a field and who reads it (owner, 2026-09-29) is read from the
 program's exact reads and writes of record fields (`page_field_uses.go`):
@@ -1051,14 +1080,39 @@ program's entries for the first) to the function making the registering
 call ("acceptHandler → createClient registers it"), every registration of
 that callable that step reaches, or every one when it reaches none, never
 an arbitrary first one (readQueryFromClient's step had linked beforeSleep's
-resume path); and what runs it, each function calling it through a value
-(a dispatch's alternatives, or an open call whose stores name it), after
-the run of exact calls from the entries reaching that function the first
-time the flow shows it ("main → aeMain → aeProcessEvents runs it"). The
-step links its registration line when it names one. A program no model
+resume path); registrations by the same run of calls read once; and what
+runs it, each function calling it through a value (a dispatch's
+alternatives, a call through a function value resolved to it alone, as
+processTimeEvents' `te->timeProc` is to serverCron, or an open call whose
+stores name it), after the run of exact calls from the entries reaching
+that function the first time the flow shows it ("main → aeMain →
+aeProcessEvents runs it"), from the last runner already shown on that run
+("aeProcessEvents → processTimeEvents runs it"). A method is named with
+its type (`UvicornServer.run`). The step's name, and every name its
+registration and runners are said with, is a link to all of that
+declaration's code whose plain click reads it; the words "registers it"
+link the registering call's line; the step prints no line (owner,
+2026-09-29: readQueryFromClient's link had opened the line registering it
+inside createClient, serverCron's the one inside initServer). Each step's
+twist, which opens its calls in place, is always shown. A program no model
 flow passes reads forward from its entry: the start list's entry names its
-part and key, and with one entry its calls stand open under it in the
-order they are written.
+part and key, its name a link to all of its code, and with one entry its
+calls stand open under it in the order they are written.
+
+Right after the Main flow, "Also runs on its own:" lists what the program
+runs without a request arriving (owner, 2026-09-29: serverCron, a timer,
+was not findable from a flow of client commands; `ownWork`), derived from
+saved data only: its inputs of the scheduled kind, then of the continuous
+kind (the ways-in order of `outerKindRank`), each in its saved order and
+each callable once, save one the Main flow names; each is read as a Main
+flow step citing its registration is, from the program's entries, a
+runner the flow already reached named from it, on one line ("serverCron —
+main → initServer registers it; aeProcessEvents → processTimeEvents runs
+it"); a callable no saved registration hands over is its name alone, and
+nothing is looked for beyond the saved kinds and facts, so a program
+without such inputs (litestream) lists none. Pointing at a line lights its
+input's tile. A scheduled or continuous input's own reading opens at that
+same line, its line link going with it.
 
 An input's reading opens at how a request reaches it: "How a request
 reaches get:", then the first way (GroupsIndex's outer inputs of the
@@ -1136,11 +1190,18 @@ different identities never merge by title. The reading states when no
 connection to another part exists in this report. That absence does not
 classify the declaration as unused or invent a connecting edge; internal
 relations and the complete source inventory remain available. A new
-selection reads from its top. Returning to a part (Back, or the same part
+selection reads from its top, a declaration newly chosen in the part being
+read included, from its tile or the column (owner, 2026-09-29: a tile
+chosen there had kept the column where the last one stood, and a click
+meant for a step hit another name). Returning to a part (Back, or the same part
 shown again) restores its expanded evidence and reading scroll as well as
 the canvas camera; a reading reached anew by a click opens in its default
 state, whatever "Expand all" or a fold opened on an earlier visit (owner,
-2026-09-29). Saved core/entry/dependency
+2026-09-29). Every reading ends with one small line of the home's text
+pages ("How do I run it?", the glossary, what is missing, …), the links the
+home's reading lists, in the muted words of the column's meta text
+(owner, 2026-09-29: they had gone from the column once a component was
+read, and only the home icon brought them back). Saved core/entry/dependency
 lanes remain named in the map and reading; an import is not promoted into an
 external communication.
 
@@ -1289,7 +1350,7 @@ reachable.
 
 ## External communication and data
 
-Selecting a component on the common map reads it without moving the camera (owner, 2026-09-28). Its reading names it without the kind its label adds ("redis-server", its heading "Component · C executable"; the kind stays only when another component would read the same, and the canvas's cards name it so too), then its role and purpose, the model's by their style; its entrypoints, each one link by its name ("main()") that reads the program's seed in its part when it is that seed, a modifier-click opening its code; its inputs counted by kind ("96 requests · 5 commands · 37 settings"), each count lighting its tiles on the canvas while pointed at (or, while their collection is closed, its row of that kind), dimming nothing, and reading the collection when chosen; its Connections; then its Main flow, what its program never runs, its TODOs and its analysis coverage, each a list opening in place, and a link to its whole page, which links its Inputs collection. Its areas are on the canvas and are not listed again. An Inputs collection is read by its catalogues (`pageInputCollection`, `data-collection`): its component first, in its box, a link to its reading; then each catalogue under its kind's heading with its count, one line each for where its inputs are listed or declared, where they are looked up and what else the declaring code uses, the model's count of them matched to another program's inputs by name, and its inputs as a grid of names by name, each reading its input; then the inputs no catalogue holds, by kind; requests first. Each input's record, with its registration line as written, is its own reading. The "Entrypoints" link among its sections lands on the program's entry, from GroupsIndex's entries in the page data: the part holding every seed, the seed read there when it is one; when a seed stands in no part, or the seeds in two parts, the component's reading, opened at its entry line when it has one. Its full-reference section remains available with the main flow, configuration, its parts (each a link reading the part on the canvas), dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches, then the parts its program never runs, one row per file with the file, the part's name and its declarations there as source chips (GroupsIndex `unreachable`), and then, under "{0} symbols" and by file in line order, the other declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: kvcli lists `net.c`'s `netListen`, and does not listen on its map, and it lists its part of `loop.c` with that file's functions, a part it does not draw. A declaration is listed once: a part's row does not repeat among the symbols. Find lists each declaration of such a row as Code with no "In part" link and opens its row. Above the parts and symbols the list says, as the files' list does, that nothing this program runs reaches them and that this does not establish that the code is unused. Each declaration another program of the same report runs names those programs, "(run by kvd)", each linking to its component, in page order: kvcli lists `netListen` run by kvd, and kvd lists `netConnect` run by kvcli. This is page data joined from the saved ProgramIndex set, not a walk: a program runs a declaration when its index holds the same declaration (GroupsIndex's cross-program identity, `groupindex.DeclarationKey`: path, line, column, kind and name; never a name alone), does not mark it `unreachable`, and marks some other callable `unreachable`. An index that marks nothing (a library, a program other code can enter by any name, every adapter but C) proves nothing and names no program; a program that reaches every one of its callables is not named either. It stays a page join over the adapters' saved proofs; GroupsIndex's reach is the input handlers' and is per program. The list reuses the existing heading, the off-map row and the "{0} symbols" summary; no badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. Several call sites of one caller calling one callee are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
+Selecting a component on the common map reads it without moving the camera (owner, 2026-09-28). Its reading names it without the kind its label adds ("redis-server", its heading "Component · C executable"; the kind stays only when another component would read the same, and the canvas's cards name it so too), then its role and purpose, the model's by their style; its entrypoints, each one link by its name ("main()") that reads the program's seed in its part when it is that seed, a modifier-click opening its code; its inputs counted by kind ("96 requests · 5 commands · 37 settings"), each count lighting its tiles on the canvas while pointed at (or, while their collection is closed, its row of that kind), dimming nothing, and reading the collection at that kind's section when chosen, as a kind chosen in the collection's closed frame on the canvas does ("Settings" opens at the settings; Background work at the first of its scheduled and continuous sections; owner, 2026-09-29: it had opened at the 96 requests); its Connections; then its Main flow, what it runs on its own, what its program never runs, its TODOs and its analysis coverage, each a list opening in place, and a link to its whole page, which links its Inputs collection. Its areas are on the canvas and are not listed again. An Inputs collection is read by its catalogues (`pageInputCollection`, `data-collection`): its component first, in its box, a link to its reading; then each catalogue under its kind's heading with its count, one line each for where its inputs are listed or declared, where they are looked up and what else the declaring code uses, the model's count of them matched to another program's inputs by name, and its inputs as a grid of names by name, each reading its input; then the inputs no catalogue holds, by kind; requests first. Each input's record, with its registration line as written, is its own reading. The "Entrypoints" link among its sections lands on the program's entry, from GroupsIndex's entries in the page data: the part holding every seed, the seed read there when it is one; when a seed stands in no part, or the seeds in two parts, the component's reading, opened at its entry line when it has one. Its full-reference section remains available with the main flow, configuration, its parts (each a link reading the part on the canvas), dependencies, coverage and TODO lists. Its traversal coverage, under the existing heading "Not reachable from the entrypoints", lists the files no entrypoint reaches, then the parts its program never runs, one row per file with the file, the part's name and its declarations there as source chips (GroupsIndex `unreachable`), and then, under "{0} symbols" and by file in line order, the other declarations the component's adapter proved its program never runs (ProgramIndex `unreachable`). Their outgoing calls, listener, registrations and settings are not the component's (READING), and this list is where a reader finds them: kvcli lists `net.c`'s `netListen`, and does not listen on its map, and it lists its part of `loop.c` with that file's functions, a part it does not draw. A declaration is listed once: a part's row does not repeat among the symbols. Find lists each declaration of such a row as Code with no "In part" link and opens its row. Above the parts and symbols the list says, as the files' list does, that nothing this program runs reaches them and that this does not establish that the code is unused. Each declaration another program of the same report runs names those programs, "(run by kvd)", each linking to its component, in page order: kvcli lists `netListen` run by kvd, and kvd lists `netConnect` run by kvcli. This is page data joined from the saved ProgramIndex set, not a walk: a program runs a declaration when its index holds the same declaration (GroupsIndex's cross-program identity, `groupindex.DeclarationKey`: path, line, column, kind and name; never a name alone), does not mark it `unreachable`, and marks some other callable `unreachable`. An index that marks nothing (a library, a program other code can enter by any name, every adapter but C) proves nothing and names no program; a program that reaches every one of its callables is not named either. It stays a page join over the adapters' saved proofs; GroupsIndex's reach is the input handlers' and is per program. The list reuses the existing heading, the off-map row and the "{0} symbols" summary; no badge or map mark is added. A component without a flow or start list shows no flow section. Where no model flow passes, the start list reads each entrypoint forward: its part, then the outgoing connections of that part, the entrypoint's own calls first and then the part's others, each in the order they are written, the first few, each line once. Several call sites of one caller calling one callee are one step and the next distinct connection takes the freed place. The model's main flow is the orientation's (READING): its order is the model's, read from each member's calls in the order they are written.
 
 An outbound kind is shown by the protocol-neutral label its kind has:
 `client_request` is "Request", never "HTTP", and the counts and headings of

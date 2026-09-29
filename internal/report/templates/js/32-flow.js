@@ -61,7 +61,7 @@ function rmFlowRow(ctx,data,call,opts,helper){
     // fork), or a macro whose expansion calls only such code ("assert"):
     // a plain row.
     var lib=rmEl('div','map-flow-row map-flow-lib'+(helper?' map-flow-helper':'')),said=rmEl('span','map-flow-plain',call.macro||call.name+'()');
-    said.title=[call.lib,call.macro?rmT('a macro'):'',rmFlowTitle(ctx,null,call)].filter(Boolean).join('\n');lib.appendChild(said);return lib;
+    said.title=[call.lib,call.macro?rmT('a macro'):'',rmFlowTitle(ctx,null,call)].filter(Boolean).join('\n');lib.appendChild(said);return rmSiteMarks(lib,call.sites);
   }
   if(call.one){
     // A dispatch site: one call, one of the declarations it can call; a
@@ -70,6 +70,7 @@ function rmFlowRow(ctx,data,call,opts,helper){
     head.appendChild(rmEl('span','map-flow-twist'));
     if(call.macro)head.appendChild(rmEl('span','map-flow-plain',call.macro+(call.every?'':' ')));
     if(!call.every)head.appendChild(rmEl('span','map-flow-one',rmT('one of {0}',call.one.length)));
+    rmSiteMarks(head,call.sites);
     head.title=rmFlowTitle(ctx,null,call);site.appendChild(head);
     site.addEventListener('toggle',function(){
       if(!site.open||site.dataset.drawn)return;site.dataset.drawn='1';
@@ -82,6 +83,7 @@ function rmFlowRow(ctx,data,call,opts,helper){
   var key=decl.key||decl.href||decl.open,cycle=opts.ancestors.has(key),target=cycle?null:rmFlowOwner(ctx,data,decl),path=opts.path+'>'+(call.kind||'calls')+':'+key;
   var row=rmEl(target?'details':'div','map-flow-row'+(helper?' map-flow-helper':'')),head=rmEl(target?'summary':'div','map-flow-head');
   head.append(rmEl('span','map-flow-twist'),rmFlowName(ctx,decl,call));
+  rmSiteMarks(head,call.sites);
   if(cycle)head.appendChild(rmEl('span','map-flow-above meta',rmT('↑ shown above')));
   row.appendChild(head);
   if(target){
@@ -134,10 +136,13 @@ function rmFlowList(ctx,data,own,opts){
     more.type='button';more.setAttribute('aria-expanded',String(opened));
     more.addEventListener('click',function(event){event.stopPropagation();if(opts.open.has(key))opts.open.delete(key);else opts.open.add(key);draw();});
     line.appendChild(more);
+    // Each helper keeps where it is called: its code marks show while the
+    // name is pointed at or focused.
     if(!opened)helpers.forEach(function(call,i){
       line.appendChild(document.createTextNode(i?', ':' '));
-      var decl=call.decl!==undefined?data.decls[call.decl]:null;
-      line.appendChild(decl?rmFlowName(ctx,decl,call):rmEl('span','map-flow-plain',call.macro||(call.one?rmT('one of {0}',call.one.length):call.name||'')));
+      var decl=call.decl!==undefined?data.decls[call.decl]:null,one=rmEl('span','map-flow-helper-call');
+      one.appendChild(decl?rmFlowName(ctx,decl,call):rmEl('span','map-flow-plain',call.macro||(call.one?rmT('one of {0}',call.one.length):call.name||'')));
+      line.appendChild(rmSiteMarks(one,call.sites));
     });
     list.appendChild(line);
   }

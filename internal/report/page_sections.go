@@ -71,9 +71,12 @@ type pageSection struct {
 	// repository's main flow does not pass through them.
 	Start       []pageStart
 	FlowMissing string
-	Dynamic     []pageDynamic
-	Config      []pageConfig
-	Dead        []pageAnchor
+	// OwnWork is what the program runs on its own, read after its Main
+	// flow (ownWork).
+	OwnWork []pageOwnWork
+	Dynamic []pageDynamic
+	Config  []pageConfig
+	Dead    []pageAnchor
 	// Unreached are the declarations the adapter proved this program never
 	// runs, by file: what they call out to or register is not its own.
 	// UnreachedParts are the parts it never runs, which leave its map: their
@@ -270,9 +273,11 @@ type pageStart struct {
 	Group   string
 	Href    string
 	Reaches []pageConnection
-	// Part and Key read the entry in its part, as a model step's do.
+	// Part and Key read the entry in its part, as a model step's do; Code
+	// is the link to all of its lines, its name's.
 	Part string
 	Key  string
+	Code string
 }
 
 type pageDependency struct {
@@ -463,7 +468,9 @@ func (builder *pageBuilder) buildSections() {
 		section.InboundCount = section.NativeRouteCount() + len(section.Requests)
 		section.InputsCount = section.InboundCount + len(section.Activities)
 		section.Coverage = sectionCoverage(section)
-		section.Flow = builder.flow(section)
+		var shown *pageStepPath
+		section.Flow, shown = builder.flow(section)
+		section.OwnWork = builder.ownWork(section, section.Flow, shown)
 		if section.Flow == nil {
 			if index := builder.graphIndex(section.programTargetID); index != nil {
 				section.Start = builder.startSteps(section, *index)
@@ -1425,6 +1432,11 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 					// step's do: redis-cli's start had read only as "main in
 					// Command line client".
 					step.Part, step.Key = step.Href, declarationKeyOf(builder, index.Target.ID, subjectID)
+					if ref, known := builder.subject(index.Target.ID, subjectID); known {
+						if _, anchor := builder.subjectDisplay(ref.subject); anchor != nil {
+							step.Code = cmp.Or(anchor.Code, anchor.Href)
+						}
+					}
 					step.Reaches = startReaches(builder.groupConnections(index, group), subjectID, maxStartReaches)
 				}
 			}
