@@ -861,8 +861,9 @@ func (builder *pageBuilder) flow(section *pageSection) *pageFlow {
 	}
 	flow := &pageFlow{Title: orient.MainFlow.Title}
 	here := false
+	path := &pageStepPath{runners: map[string]bool{}}
 	for _, step := range orient.MainFlow.Steps {
-		row := builder.flowStep(step, section)
+		row := builder.flowStep(step, section, path)
 		if row.Target == "" {
 			here = true
 		}
@@ -874,7 +875,7 @@ func (builder *pageBuilder) flow(section *pageSection) *pageFlow {
 	return flow
 }
 
-func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSection) pageFlowStep {
+func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSection, path *pageStepPath) pageFlowStep {
 	row := pageFlowStep{Explanation: step.Explanation}
 	var owner *pageSection
 	switch {
@@ -883,6 +884,14 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 			row.Label = factLabel(fact)
 			row.Anchor = builder.links.factAnchor(fact)
 			owner = builder.byFacts[fact.TargetID]
+			// A registration of a repository callable is that callable,
+			// with where it is registered and what runs it.
+			if owner == section && fact.Kind == facts.KindRegistration && fact.ObjectID != "" && builder.registeredStep(&row, fact, section, path) {
+				return row
+			}
+			if owner == section && fact.ObjectID != "" {
+				path.shown = append(path.shown, fact.ObjectID)
+			}
 		}
 	case step.SubjectID != "":
 		if ref, ok := builder.subject(step.TargetID, step.SubjectID); ok {
@@ -895,6 +904,9 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 	}
 	if owner != nil && owner != section {
 		row.Target = owner.Name
+	}
+	if owner == section && step.SubjectID != "" {
+		path.shown = append(path.shown, step.SubjectID)
 	}
 	// A declaration of this program is read in its part.
 	if owner == section && step.SubjectID != "" && row.Anchor != nil {

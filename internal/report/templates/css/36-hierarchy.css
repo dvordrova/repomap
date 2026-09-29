@@ -42,6 +42,10 @@ ol.flow{list-style:none;counter-reset:flow;padding:0;margin:.5rem 0 0}
 .flow-what{font-weight:600}
 .flow-where{font-weight:400;color:var(--muted);font-size:max(var(--text-small),.85em)}
 .flow-why{display:block;margin-top:.1rem}
+/* A registered callable's step: where it is registered, what runs it. */
+.flow-how{display:block;margin-top:.1rem;font-size:max(var(--text-small),.85em);color:var(--muted)}
+.flow-chain{display:block}
+.flow-chain-name{font-weight:400}
 .flow-title{margin-bottom:.2rem}
 
 /* Where the program runs code you cannot read is the page's most distinctive

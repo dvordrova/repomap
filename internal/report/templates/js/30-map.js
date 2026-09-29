@@ -516,9 +516,10 @@ function rmDeclarationRelations(map,node,key,nodes){
       var restoring=map.readingRestoring,returning=restoring||inspectedNode===node;
       remember();inspectedNode=node;inspectionKey=node.id+'\0'+(map.inspectedOperation?.id||'');inspectionPending=true;
       map.explorerMember=null;
-      // Its folds come back whenever the reading is shown again (owner,
-      // 2026-09-28: Persistence's "Called from" tree was closed again on
-      // every return); its scroll and declaration only on Back.
+      // Its folds, scroll and declaration come back when the reader returns
+      // to it (Back, or the same item shown again); reached anew, a reading
+      // opens in its default state (owner, 2026-09-29: after "Expand all"
+      // redis-server's column stood 9,877 px tall on every later visit).
       var memory=remembered.get(inspectionKey),saved=returning?memory:null, ticket=++inspectionRevision;
       content.scrollTop = 0;
       card.classList.remove('map-card-connection');
@@ -622,6 +623,13 @@ function rmDeclarationRelations(map,node,key,nodes){
       else objectHeading.appendChild(titleHeading);
       var kindWord=kindHeading?kindHeading.textContent:'';
       if(reading)rmHeadingUp(map,kindHeading,map.parentFrame(node));
+      // One way back to the program's Main flow while any of its component
+      // is read (owner, 2026-09-29: it had taken a reader five actions).
+      var ownerPage=systemMap&&map.readMainFlow&&node.dataset.owner?document.getElementById(node.dataset.owner):null;
+      if(ownerPage&&ownerPage.querySelector(':scope>.component-flow')){
+        var toFlow=document.createElement('button');toFlow.type='button';toFlow.className='map-main-flow-link';toFlow.textContent=rmT('Main flow');
+        toFlow.addEventListener('click',function(){map.readMainFlow(node.dataset.owner);});heading.appendChild(toFlow);
+      }
       heading.appendChild(objectHeading);
       if(map.closeDetails){
         objectHeading.className='map-object-heading';
@@ -723,7 +731,7 @@ function rmDeclarationRelations(map,node,key,nodes){
         // A reading opened at one of its sections (an arrow end's connection,
         // an input's path) starts there, that section open.
         var anchor=card.querySelector('[data-reading-anchor]');
-        if(memory)rmRestoreFolds(card,memory.expanded);
+        if(saved)rmRestoreFolds(card,saved.expanded);
         if(anchor?.matches('details'))anchor.open=true;
         content.scrollTop=saved?.scroll||0;
         // A declaration newly chosen with its part is read from its own

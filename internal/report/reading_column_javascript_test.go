@@ -486,29 +486,6 @@ assert.equal(steps.children.find(c=>c.className==='system-path-deeper'),undefine
 `)
 }
 
-// A blind reader found the program's Main flow, the model's reading of a
-// request from socket to reply, only by chance. An input's reading links to
-// it, with the flow's title as the model wrote it, kept as model text (its
-// class and its display ref for translation); with no flow section there
-// is no link.
-func TestAnInputsReadingLinksToItsProgramsMainFlow(t *testing.T) {
-	code := systemJSPiece(t, "29-operation-view.js", "function rmInputFlow(", "// Where the reading is, as the toolbar's breadcrumb names it")
-	runSystemJS(t, fakeElements+code+`
-const title={cloneNode:deep=>{const p=rmEl('p','model flow-title');p.dataset.displayRef='t7';p.appendChild(rmEl('span','','A client command from socket read to reply'));return p;}};
-const flow={querySelector:s=>s===':scope>h3[id]'?{id:'t1-flow',textContent:'Main flow'}:s===':scope>.flow-title'?title:null};
-const page={querySelector:s=>s===':scope>.component-flow'?flow:null};
-const box=rmInputFlow(page);
-assert.equal(box.className,'system-input-flow');
-const [link,model]=box.children;
-assert.deepEqual([link.tagName,link.className,link.href,link.textContent],['A','map-details-link','#t1-flow','Main flow']);
-assert.deepEqual([model.className,model.dataset.displayRef,model.textContent],['model flow-title','t7','A client command from socket read to reply'],'the model\'s title stays model text');
-// A flow of facts only (no model title) still links; no flow section, no link.
-assert.equal(rmInputFlow({querySelector:s=>s===':scope>.component-flow'?{querySelector:s=>s===':scope>h3[id]'?{id:'t1-flow',textContent:'Main flow'}:null}:null}).children.length,1);
-assert.equal(rmInputFlow({querySelector:()=>null}),null);
-assert.equal(rmInputFlow(null),null);
-`)
-}
-
 // A dispatch site is read with its declaration: how many it chooses
 // between, how many inputs are dispatched there, and the inputs whose own
 // code reaches it, each with its calls to it and a button to its reading,

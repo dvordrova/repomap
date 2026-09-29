@@ -411,8 +411,9 @@ function rmCatalogueLines(ctx,catalogue){
 // the collection when chosen; its connections (29-operation-view.js); then
 // its main flow, what its program never runs, its TODOs and its analysis
 // coverage, each a list opening in place, and a link to its whole page.
-// The kind whose section a count chosen in a component's reading lands on.
-var rmPendingKind='';
+// The kind whose section a count chosen in a component's reading lands on,
+// and whether the column's "Main flow" link asked for its Main flow.
+var rmPendingKind='',rmPendingFlow=false;
 // A section of so few lines stands open in a reading.
 var rmShortSection=8;
 // A component's areas and parts: each area with its parts under it, each a
@@ -491,6 +492,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     // Each step opens in place to its code flow (32-flow.js), the model's
     // sentence kept in its style above it.
     var toggle=rmEl('div','map-flow-headline');toggle.appendChild(rmFlowToggle(null));steps.insertBefore(toggle,steps.children[1]||null);
+    if(rmPendingFlow){steps.dataset.readingAnchor='';rmPendingFlow=false;}
     steps.querySelectorAll('li[data-step-part]').forEach(function(step){
       var part=ctx.nodeByHref(step.dataset.stepPart),code=step.querySelector('.flow-what>code');
       if(!part||!code)return;
@@ -498,6 +500,20 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
       name.addEventListener('click',function(){ctx.readDeclIn(part,rmPage.link(step.dataset.stepKey));});
       code.replaceChildren(name);
       rmFlowStep(ctx,step,part,rmPage.link(step.dataset.stepKey));
+    });
+    // A program no model flow passes reads forward from its one entry: its
+    // calls stand open under it, in the order they are written (owner,
+    // 2026-09-29: redis-cli's Main flow had read only "main in Command line
+    // client").
+    var entryTwists=steps.querySelectorAll('ol.fact>li>.map-flow-step-twist');
+    if(entryTwists.length===1)entryTwists[0].click();
+    // A registered callable's step names where it is registered and what
+    // runs it, each name reading its declaration.
+    steps.querySelectorAll('.flow-chain-name[data-step-part]').forEach(function(code){
+      var part=ctx.nodeByHref(code.dataset.stepPart);if(!part||!code.dataset.stepKey)return;
+      var name=rmEl('button','map-flow-step-name',code.textContent);name.type='button';
+      name.addEventListener('click',function(){ctx.readDeclIn(part,rmPage.link(code.dataset.stepKey));});
+      code.replaceChildren(name);
     });
   }
   // Its areas and parts, each a name that reads it, with its description on

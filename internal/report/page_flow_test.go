@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
@@ -212,5 +213,57 @@ func TestARequestsWaysInAreChainsInCallOrder(t *testing.T) {
 	}
 	if ways[1].Input != "t1-cron" || said(ways[1].By) != "serverCron → syncWithMaster → createClient" || ways[1].From == nil || decls.list[*ways[1].From].Name != "syncWithMaster" {
 		t.Fatalf("the other way does not name where it leaves the first: %+v", ways[1])
+	}
+}
+
+// A Main flow step citing a registration reads the callable it registers,
+// registered where the step's own path reaches: readQueryFromClient is
+// registered in createClient, which acceptHandler (the step before) calls,
+// and in beforeSleep's resume path, which it does not; the step names the
+// first and links its line, never an arbitrary first site (owner,
+// 2026-09-29: it had linked redis.c:1414). Unreached, every site is named.
+func TestARegistrationStepIsRegisteredOnItsOwnPath(t *testing.T) {
+	builder, index := flowFixture()
+	add := func(id, name string, line int) {
+		builder.subjects[subjectKey("t1", id)] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: id, Kind: groupindex.SubjectObject,
+			Object: &groupindex.ObjectFacts{Name: name, Kind: programindex.ObjectFunction, Location: &programindex.Location{Path: "redis.c", Line: line, Column: 1}}}}
+	}
+	add("accept", "acceptHandler", 2500)
+	add("create", "createClient", 2450)
+	add("sleep", "beforeSleep", 1400)
+	add("read", "readQueryFromClient", 2386)
+	index.Groups[0].MemberSubjectIDs = append(index.Groups[0].MemberSubjectIDs, "accept", "create", "sleep", "read")
+	index.StructuralEdges = append(index.StructuralEdges, groupindex.StructuralEdge{FromSubjectID: "accept", ToSubjectID: "create", Role: groupindex.EdgeRelationTarget,
+		RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact, Location: &programindex.Location{Path: "redis.c", Line: 2510}})
+	builder.indexes = []groupindex.Index{index}
+	registration := func(id, owner string, line int) facts.Fact {
+		return facts.Fact{ID: id, Kind: facts.KindRegistration, TargetID: "t1", Symbol: "readQueryFromClient", ObjectID: "read", OwnerID: owner,
+			Anchor: &facts.Anchor{Path: "redis.c", Line: line}, Registrar: &facts.Registrar{Name: "aeCreateFileEvent"}}
+	}
+	builder.data.Facts = &facts.Result{Facts: []facts.Fact{registration("a147", "sleep", 1414), registration("a151", "create", 2456)}}
+	section := &pageSection{ID: "t1", programTargetID: "t1"}
+	said := func(path *pageStepPath) []string {
+		var row pageFlowStep
+		if !builder.registeredStep(&row, builder.data.Facts.Facts[0], section, path) {
+			t.Fatal("the registration step was not read")
+		}
+		var out []string
+		for _, site := range row.Registers {
+			var by []string
+			for _, name := range site.By {
+				by = append(by, name.Name)
+			}
+			out = append(out, strings.Join(by, " → ")+" @"+site.At.Text)
+		}
+		if row.Label != "readQueryFromClient" {
+			t.Fatalf("the step reads %q", row.Label)
+		}
+		return out
+	}
+	if got := said(&pageStepPath{shown: []string{"accept"}, runners: map[string]bool{}}); !slices.Equal(got, []string{"acceptHandler → createClient @redis.c:2456"}) {
+		t.Fatalf("after acceptHandler the step is registered at %q", got)
+	}
+	if got := said(&pageStepPath{shown: []string{"h1"}, runners: map[string]bool{}}); !slices.Equal(got, []string{"beforeSleep @redis.c:1414", "createClient @redis.c:2456"}) {
+		t.Fatalf("off every path the step names %q", got)
 	}
 }

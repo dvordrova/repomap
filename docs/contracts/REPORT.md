@@ -373,10 +373,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   dispatch fact and the statement "How a request for get gets to
   processCommand is not established.": how a request for the input
   arrives at the dispatch site from outside. No route to the site is
-  drawn. After the boxes the reading links to its program's Main flow
-  (the component's flow section), with the flow's title as the model
-  wrote it, kept as model text; a component with no flow section gives no
-  link. The inputs whose own code reaches a site are not listed in a
+  drawn. The way to its program's Main flow is the column's one "Main
+  flow" link above every reading of the component (below). The inputs whose own code reaches a site are not listed in a
   dispatched input's reading, where a reader takes them for its route;
   they are the
   site's own reading, with the declaration: "{site} is reached from these
@@ -992,6 +990,30 @@ it is for; a step whose every call is a helper shows them as its calls.
 What is open stays open across the toggle. A step of the component's Main flow opens in place to its code
 flow the same way, the model's sentence kept in its style above it.
 
+The Main flow is read once, at the top of the component's reading; the
+component's page keeps it hidden as the column's source, and no other
+reading repeats or links it (owner, 2026-09-29: two copies had cost a
+reader six actions and five dead ends). Above every reading of a part,
+declaration, input or frame of a component that has a Main flow stands one
+small link, "Main flow", reading the component at that section without
+moving the camera. A step citing a registration of a repository callable
+reads as that callable, a name reading it, never as the registrar
+(`aeCreateFileEvent`, owner, 2026-09-29), with how it comes to run, from
+the program's facts and calls (`page_flow_steps.go`): where it is
+registered, the run of exact calls from the most recent earlier step (the
+program's entries for the first) to the function making the registering
+call ("acceptHandler → createClient registers it"), every registration of
+that callable that step reaches, or every one when it reaches none, never
+an arbitrary first one (readQueryFromClient's step had linked beforeSleep's
+resume path); and what runs it, each function calling it through a value
+(a dispatch's alternatives, or an open call whose stores name it), after
+the run of exact calls from the entries reaching that function the first
+time the flow shows it ("main → aeMain → aeProcessEvents runs it"). The
+step links its registration line when it names one. A program no model
+flow passes reads forward from its entry: the start list's entry names its
+part and key, and with one entry its calls stand open under it in the
+order they are written.
+
 An input's reading opens at how a request reaches it: "How a request
 reaches get:", then the first way (GroupsIndex's outer inputs of the
 dispatch site running its handler, requests first, each by the shortest
@@ -1068,7 +1090,9 @@ classify the declaration as unused or invent a connecting edge; internal
 relations and the complete source inventory remain available. A new
 selection reads from its top. Returning to a part (Back, or the same part
 shown again) restores its expanded evidence and reading scroll as well as
-the canvas camera. Saved core/entry/dependency
+the canvas camera; a reading reached anew by a click opens in its default
+state, whatever "Expand all" or a fold opened on an earlier visit (owner,
+2026-09-29). Saved core/entry/dependency
 lanes remain named in the map and reading; an import is not promoted into an
 external communication.
 

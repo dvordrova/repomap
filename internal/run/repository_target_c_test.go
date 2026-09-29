@@ -17,7 +17,10 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/cproject"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
@@ -402,6 +405,78 @@ func TestCRepositoryOrdinaryRun(t *testing.T) {
 			}
 		}
 	}
+}
+
+// A Main flow step citing a registration reads as the callable it
+// registers, never as the registrar, with the run of calls registering it
+// and what runs it (owner, 2026-09-29: three of redis-server's six steps
+// read aeCreateFileEvent, and aeMain, aeProcessEvents and createClient
+// were gone). kvd's main registers acceptHandler with loopCreateFileEvent,
+// acceptHandler registers readQueryFromClient, and loopProcessEvents runs
+// both through fe->rfileProc.
+func TestCMainFlowReadsARegistrationAsTheCallableItRegisters(t *testing.T) {
+	root, _ := cumulativeEvidenceRepository(t, "c")
+	debugDir := t.TempDir()
+	var console strings.Builder
+	runErr := runDefaultWithDeps(root, []string{"--no-model", "--target", "c:kvd", "--no-open", "--debug-dir", debugDir}, defaultRunDeps{
+		ctx: t.Context(), stdout: &console, stderr: &console,
+		serveReport: func(context.Context, reportserver.Options) error { return nil },
+		openReport:  func(string) error { return nil },
+	})
+	if runErr != nil {
+		t.Fatalf("run: %v\n%s", runErr, console.String())
+	}
+	restored, err := report.ReadRunReceipt(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := restored.Data()
+	registration := func(symbol string) string {
+		for _, fact := range data.Facts.OfKind(facts.KindRegistration) {
+			if fact.Symbol == symbol && fact.Registrar != nil && fact.Registrar.Name == "loopCreateFileEvent" {
+				return fact.ID
+			}
+		}
+		t.Fatalf("kvd has no registration of %s", symbol)
+		return ""
+	}
+	target := data.Facts.Facts[0].TargetID
+	data.Orientation = &orientation.Result{MainFlow: orientation.MainFlow{Title: "A request", Steps: []orientation.FlowStep{
+		{TargetID: target, FactID: registration("acceptHandler"), Explanation: "accepts"},
+		{TargetID: target, FactID: registration("readQueryFromClient"), Explanation: "reads"},
+	}}}
+	html, err := report.RenderHTMLWithOptions(data, restored.RenderOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	flow := mainFlowSection(t, string(html))
+	var said []string
+	for _, step := range regexp.MustCompile(`<li class="flow-step"[^>]*><span class="flow-what"><code>([^<]+)</code></span>.*?<span class="flow-how">(.*?)</span><span class="model`).FindAllStringSubmatch(flow, -1) {
+		how := regexp.MustCompile(`<[^>]+>`).ReplaceAllString(step[2], "")
+		how = regexp.MustCompile(` (registers|runs) it`).ReplaceAllString(how, " $1 it; ")
+		said = append(said, step[1]+": "+strings.TrimSuffix(how, "; "))
+	}
+	want := []string{
+		"acceptHandler: main registers it; main → loopMain → loopProcessEvents runs it",
+		"readQueryFromClient: acceptHandler registers it; loopProcessEvents runs it",
+	}
+	if !reflect.DeepEqual(said, want) {
+		t.Fatalf("the Main flow reads %q\nwant %q\n%s", said, want, flow)
+	}
+	if strings.Contains(flow, "<code>loopCreateFileEvent</code>") {
+		t.Fatalf("a step reads the registrar:\n%s", flow)
+	}
+}
+
+// mainFlowSection is the page's Main flow section, its source for the
+// component's reading.
+func mainFlowSection(t *testing.T, html string) string {
+	t.Helper()
+	start := strings.Index(html, `<section class="component-flow" hidden>`)
+	if start < 0 {
+		t.Fatal("the page has no Main flow")
+	}
+	return html[start : start+strings.Index(html[start:], "</section>")]
 }
 
 // The client links the fixture's net.c but never listens: the page says

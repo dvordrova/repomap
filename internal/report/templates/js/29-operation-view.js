@@ -373,17 +373,6 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
   return box;
 }
 // </launch>
-// An input's reading leads to its program's Main flow, the model's reading
-// of a request through the program, with the title the model wrote kept as
-// model text: a reader had found that page only by chance. Null when the
-// component has no flow section.
-function rmInputFlow(page){
-  var flow=page&&page.querySelector(':scope>.component-flow'),heading=flow&&flow.querySelector(':scope>h3[id]');
-  if(!heading)return null;
-  var box=rmEl('div','system-input-flow'),link=rmEl('a','map-details-link',heading.textContent);link.href='#'+heading.id;box.appendChild(link);
-  var title=flow.querySelector(':scope>.flow-title');if(title)box.appendChild(title.cloneNode(true));
-  return box;
-}
 // Where the reading is, as the toolbar's breadcrumb names it: the pinned
 // input, the frames from the component down to what is read, and the
 // declaration named in it. Each segment is a level to go back up to; it had
@@ -536,6 +525,9 @@ function rmCatalogInputClick(event,reveal){
     return component?.dataset.owner||'';
   };
   map.selectComponent=function(id){return select(byID['system-component-'+id],true,null,'center');};
+  // The column's "Main flow" link reads the component at its Main flow, the
+  // one copy of it, without moving the camera.
+  map.readMainFlow=function(id){var component=byID['system-component-'+id];if(!component)return Promise.resolve(false);surface?.clearMember?.();rmPendingFlow=true;return select(component,true,null,false);};
   map.closeDetails=function(){
     selectionRevision++;scope='';surface?.clearHover();emphasize();map.clearInspection?.();
     address(operation||null);emit();
@@ -761,16 +753,6 @@ function rmCatalogInputClick(event,reveal){
       var pathSection=rmInputPathSection(inputPath,n.dataset.title,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(part){select(part,true,null,true);},readDeclaration,!!flowSection);
       card.querySelector('.map-card-intro').after(pathSection);
       if(flowSection){pathSection.before(flowSection);flowSection.dataset.readingAnchor='';}else pathSection.dataset.readingAnchor='';
-    }
-    if(n.dataset.activation){
-      // The program's Main flow, after where the input is dispatched from.
-      var flowLink=rmInputFlow(document.getElementById(n.dataset.owner));
-      if(flowLink){
-        var dispatchBoxes=pathSection?pathSection.querySelectorAll(':scope>.system-shared-path'):[];
-        if(dispatchBoxes.length)dispatchBoxes[dispatchBoxes.length-1].after(flowLink);
-        else if(pathSection)pathSection.querySelector(':scope>h5').after(flowLink);
-        else card.querySelector('.map-card-intro').after(flowLink);
-      }
     }
     if(n.dataset.activation&&!inputPath){
       var pathState=projection.selection('',n.id),pathParts=rmEl('section','system-input-parts');

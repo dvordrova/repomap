@@ -270,6 +270,9 @@ type pageStart struct {
 	Group   string
 	Href    string
 	Reaches []pageConnection
+	// Part and Key read the entry in its part, as a model step's do.
+	Part string
+	Key  string
 }
 
 type pageDependency struct {
@@ -315,6 +318,10 @@ type pageFlowStep struct {
 	// it and shows it on the canvas (owner, 2026-09-28).
 	Part string
 	Key  string
+	// Registers and RunBy are, for a step citing a registration, where the
+	// callable it names is registered and what runs it (registeredStep).
+	Registers []pageStepRegistration
+	RunBy     [][]pageStepName
 }
 
 // pageGroup is one responsibility card. Members are grouped by file so the
@@ -1413,6 +1420,11 @@ func (builder *pageBuilder) startSteps(section *pageSection, index groupindex.In
 				if group, inGroup := groupOf[subjectID]; inGroup {
 					step.Group = group.Title
 					step.Href = "#" + groupAnchorID(section.ID, group.ID)
+					// Its name reads the entry in its part, and its calls open
+					// under it in the order they are written, as a model
+					// step's do: redis-cli's start had read only as "main in
+					// Command line client".
+					step.Part, step.Key = step.Href, declarationKeyOf(builder, index.Target.ID, subjectID)
 					step.Reaches = startReaches(builder.groupConnections(index, group), subjectID, maxStartReaches)
 				}
 			}
