@@ -112,6 +112,10 @@ func (builder *pageBuilder) edgesBetweenGroups(index groupindex.Index) *groupEdg
 
 // A part's native internal relations remain inspectable even though the map
 // draws no self-arrow. Contains is represented by the declaration inventory.
+// A declaration calling itself is no relation between two of them: its
+// flow shows the call, and its Called by and Calls lists do not name it
+// (othello.ai/move, whose two-argument form calls its three-argument form,
+// read "Called by … othello.ai/move()" and "Calls othello.ai/move()").
 func (builder *pageBuilder) internalGroupConnections(index groupindex.Index, group groupindex.Group) []pageConnection {
 	members := make(map[string]bool, len(group.MemberSubjectIDs))
 	for _, id := range group.MemberSubjectIDs {
@@ -119,7 +123,7 @@ func (builder *pageBuilder) internalGroupConnections(index groupindex.Index, gro
 	}
 	var rows []pageConnection
 	for _, edge := range index.StructuralEdges {
-		if edge.Role != groupindex.EdgeRelationTarget ||
+		if edge.Role != groupindex.EdgeRelationTarget || edge.FromSubjectID == edge.ToSubjectID ||
 			!members[edge.FromSubjectID] || !members[edge.ToSubjectID] {
 			continue
 		}
