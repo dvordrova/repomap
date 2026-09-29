@@ -1,8 +1,11 @@
 package facts
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -82,5 +85,33 @@ func TestLargeGoTODOScanStillIgnoresCallsAndStrings(t *testing.T) {
 		requireFact(t, result, KindTODO, expected.text, func(row Fact) bool {
 			return row.Anchor.Path == "sample.go" && row.Anchor.Line == expected.line && row.Text == expected.text
 		})
+	}
+}
+
+// A TODO is a marker a comment in source code writes (owner, 2026-09-29:
+// Redis's ten "TODOs" were <a name="TODO"> anchors of its doc/*.html). A
+// document's, a page's or a data file's marker is none; a marker in a
+// string is none; a comment's is one in every code language, whether an
+// adapter analyses it (C, Python, Clojure) or not (Tcl).
+func TestTODOsAreCommentsOfCodeFiles(t *testing.T) {
+	repository := newCorpus(t, map[string]string{
+		"doc/README.html":   "<a name=\"TODO\">TODO</a>\n",
+		"NOTES.md":          "TODO: write the notes\n",
+		"data/todo.json":    "{\"TODO\": 1}\n",
+		"server.c":          "char *s = \"TODO: not a comment\";\n/* TODO: free the list */\nint x; // FIXME: overflow\n/* notes\n * XXX: retry\n */\n",
+		"tool.py":           "text = \"TODO: data\"  # TODO: split\n",
+		"core.clj":          "(def x \"TODO\") ; HACK: cache it\n",
+		"tests/test-kv.tcl": "puts \"TODO\"\n# TODO: cover expiry\n",
+	})
+	result := mustBuild(t, Input{Repository: repository})
+	var said []string
+	for _, row := range result.OfKind(KindTODO) {
+		said = append(said, fmt.Sprintf("%s:%d %s %s", row.Anchor.Path, row.Anchor.Line, row.Key, row.Text))
+	}
+	sort.Strings(said)
+	want := []string{"core.clj:1 HACK cache it", "server.c:2 TODO free the list", "server.c:3 FIXME overflow", "server.c:5 XXX retry",
+		"tests/test-kv.tcl:2 TODO cover expiry", "tool.py:1 TODO split"}
+	if !slices.Equal(said, want) {
+		t.Fatalf("TODOs = %q\nwant %q", said, want)
 	}
 }

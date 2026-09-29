@@ -387,8 +387,9 @@ func TestBuildTODOs(t *testing.T) {
 	s.object("mod", programindex.ObjectModule, "app", "svc/app.py", 1, "")
 	s.seed("mod", programindex.SeedMainGuard, "svc/app.py", 1)
 	result := mustBuild(t, Input{Repository: repository, Targets: []TargetInput{{Index: s.index(), Root: "svc"}}})
+	// README's "HACK around it" is prose, no comment in code.
 	todos := result.OfKind(KindTODO)
-	if len(todos) != 3 {
+	if len(todos) != 2 {
 		t.Fatalf("todos = %+v", todos)
 	}
 	bare := requireFact(t, result, KindTODO, "bare TODO", func(fact Fact) bool { return fact.Anchor.String() == "svc/app.py:2" })
@@ -398,10 +399,6 @@ func TestBuildTODOs(t *testing.T) {
 	fixme := requireFact(t, result, KindTODO, "FIXME", func(fact Fact) bool { return fact.Key == "FIXME" })
 	if fixme.Text != "handle errors" {
 		t.Fatalf("fixme = %+v", fixme)
-	}
-	hack := requireFact(t, result, KindTODO, "HACK", func(fact Fact) bool { return fact.Key == "HACK" })
-	if hack.TargetID != "" || hack.Text != "around it" {
-		t.Fatalf("hack = %+v", hack)
 	}
 }
 

@@ -453,8 +453,14 @@ longer put an entire directory in the outbound integration lane, and entry
 seeds are checked against the current target's file membership.
 
 Go TODO extraction scans comment tokens, preserving physical source lines;
-`context.TODO()` and string literals are not comment markers. Other languages
-still use their existing line matching. Every readable text file is scanned;
+`context.TODO()` and string literals are not comment markers. A TODO is a
+comment's marker in a code file (owner, 2026-09-29: Redis's ten "TODOs" were
+`<a name="TODO">` anchors of its doc/*.html): a file in a language an adapter
+analyses, or in one no adapter does (the `unanalysed_file` languages), read by
+that language's comment syntax (`//` and `/* */`, `#`, `;`, `--`) with its
+strings skipped, and a language whose syntax is not known kept whole; a
+document's, a page's or a data file's marker is none
+(`TestTODOsAreCommentsOfCodeFiles`). Every readable code file is scanned;
 the former whole-file 1 MiB cutoff silently lost all markers, even at the start
 of an otherwise ordinary source file. Cumulative Go, Python and TypeScript
 examples now retain source-distinct markers on both sides of that former size
