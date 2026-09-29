@@ -447,7 +447,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   then the types, then the rest (owner, 2026-09-28); the file is a hint.
   A part whose declarations share one namespace (Clojure's
   `othello.ui.host/`) names them without it, the whole name on the tile's
-  hover and in the reading.
+  hover and in the reading. In the column a name breaks only after a dot or
+  a slash, never at an underscore, a hyphen or inside a word; a piece too
+  long for its line ends in "…", the whole name on its hover.
   They stack in that order in their column, a column too tall spilling into
   the next. No name is cut, and the columns share the card's width. Tiles
   are drawn small enough to hold them all whole: nothing is counted away and
@@ -834,9 +836,10 @@ entrypoint with its part and key, its name linking to all of its code, then
 that part's outgoing connections, the entrypoint's own calls first and then
 the part's others, each in written order, the first few, each line once;
 several call sites of one caller calling one callee are one step, the next
-distinct connection taking the freed place. With one entry its calls stand
-open under it in written order. A component without a flow or start list shows
-no flow section.
+distinct connection taking the freed place, each on a line of its own. With
+one entry its calls stand open under it in written order and the connections'
+line goes (owner, 2026-09-30: redis-cli's had run on). A component without a
+flow or start list shows no flow section.
 
 Closing the Main flow, "Also runs on its own:" lists what the program runs
 without a request arriving (owner, 2026-09-29), from saved data only: its
@@ -927,7 +930,10 @@ key is read in its part without moving the camera. An area's or component's
 reading then lists its Connections as its arrow ends group them, instead of
 neighbours by name: one line per frame or participant at the other end and
 direction, incoming first, each opening to the arrow card's rows; the column
-prints none of the card's counts and names one to a line. A click on an arrow end opens its connection alone. A line
+prints none of the card's counts and names one to a line. An end written only
+in its program's tests (every declaration of the part, or of each part of the
+area, in ProgramTarget `TestSources`) stands last, under one closed "Tests"
+(owner, 2026-09-30). A click on an arrow end opens its connection alone. A line
 from inputs counts the handlers they are implemented in, with that unit ("←
 Inputs {n} handlers"; its card "{n} handlers, into {a} of {b}"); inputs
 sharing a handler stand in its one row, each named ("{a}, {b} → {handler}")
@@ -1132,12 +1138,15 @@ each in its box with its description on one line and its key declarations
 alone, bold, one to a line; the rest is the part's own reading.
 
 An Inputs collection is read by its catalogues: its component first, in its
-box, linking to its reading; then each catalogue under its kind's heading
-with its count, one line each for where its inputs are listed or declared,
-where they are looked up and what else the declaring code uses, the model's
-count of them matched by name to another program's inputs, and its inputs as
-a grid of names, each reading its input; then, by kind, the inputs no
-catalogue holds; requests first. Each input's record, with its registration
+box, linking to its reading; then each kind once, under its heading
+(owner, 2026-09-30: litestream's had read "Incoming requests" once per
+declaring function), each catalogue of it under a quiet line for where its
+inputs are listed or declared, where they are looked up and what else the
+declaring code uses, the model's words that some are matched by name to
+another program's inputs, and its inputs one to a line, each reading its
+input, a name that is a sentence (a query parameter's description) in the
+reading's own type, not code; then the inputs no catalogue holds; requests
+first. Each input's record, with its registration
 line as written, is its own reading.
 
 The component's "Entrypoints" link lands on the program's entry, from
@@ -1249,6 +1258,16 @@ and readers stand, the part naming most first. No line number is written: a
 path links to where it is written, its place on hover, and a name reads its
 function. Which function reads and which writes is not established, so one
 list names both.
+
+A program's Outside frame is read by its destinations, one to a line, each
+reading its own, then "Called from" joined over all their calls; a
+destination by that "Called from" of its calls and the calls themselves, one
+name to a line under one closed "Its calls", each reading its record (owner,
+2026-09-30: freqtrade's Outside had opened every record, 59,592 px). No
+record opens by default and nothing is counted. A call's own reading names a
+callable written inline as "anonymous function in {function}" (GroupsIndex
+`ObjectFacts.Inline`), in its address sources too, with no place and no
+numbering.
 
 An outside call's tile is read with "Called from": where each program
 whose record the tile stands for reaches the call from (GroupsIndex

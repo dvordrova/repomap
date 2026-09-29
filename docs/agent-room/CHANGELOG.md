@@ -1,5 +1,45 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — The column, second human-eye review: whole names, short Outside readings, one kind heading, no run-on start line
+
+- **Why:** the reviewer's column findings: names wrapped mid-identifier
+  (`FreqtradeBot.process_open_trade / _positions`); freqtrade's Outside
+  reading was 59,592 px of opened per-call records; an area's Connections
+  opened on a test fixture; litestream's Inputs said "Incoming requests" once
+  per declaring function; redis-cli's start line ran on; "(inline)" and
+  `Run$1` (495 times in litestream's page, in address sources) read as jargon.
+- **Change:** `rmDotBreaks` breaks only after `.`/`/` and at spaces, a piece
+  over 24 characters ends in "…" with the whole name on hover, and every list
+  of names in the column goes through it (area keys, catalogues, input paths,
+  settings, program labels). An Outside frame lists its destinations and one
+  joined "Called from" (`rmMergeReached`); a destination adds its calls under
+  one closed "Its calls"; the component page's catalogue is no longer copied
+  in. Outbound address steps are named by `subjectDisplay` (inline names);
+  the column reads "anonymous function in X", drops the chain's numbering and
+  the source count. Parts written only in test sources carry `data-test`;
+  their connection ends stand last under a closed "Tests" (`apart` in
+  `mountConnections`). The Inputs reading names each kind once, a
+  sentence-like input name in prose type. The start list's reaches stand one
+  to a line and go when the entry's calls stand open.
+- **Shape diff** (`<scratchpad>/pageshape`, HEAD vs this pass, the saved
+  redis 203001, litestream 205940, freqtrade 221230 and othello 181127 runs):
+  names broken inside a piece 0 everywhere (freqtrade Outside 173, litestream
+  212 before); Outside readings freqtrade 102.6 → 1 screen, litestream 610.1 →
+  1, their digits 109 and 120 → 0; repeated Inputs headings litestream 20 → 0,
+  freqtrade 8 → 0, redis-cli 2 → 0; no page errors.
+- **Open:** freqtrade's test fixtures (`tests/strategy/strats/…`) are not in
+  its `TestSources`, so their ends do not fold yet (the data agent's check);
+  canvas card labels still carry GroupsIndex's native `X$1 calls Y` (8 in
+  litestream's page data).
+- **Checks:** `TestAColumnNameBreaksOnlyAfterItsDotsAndSlashes`,
+  `TestAnInputsReadingNamesEachKindOnce`,
+  `TestADestinationsCallersAreJoinedByPart`, `TestAFrameOfTestPartsIsTestOnly`,
+  `TestAPartOfTestSourcesIsTestOnly`; `make test`, `make vet` (package
+  parallelism 2), `make ui-test` and `make ui-visual-test` (55 passed, 5
+  skipped) on 94d2130b plus this pass alone, the report, run and ui tests
+  again on ead4fbe1 plus it (whose own reaching-inputs test had failed: it
+  now pieces in the kind titles). Code b08daa63.
+
 ## 2026-09-30 — Calls sent through one engine are one destination; possible callers; script directories; what a Python program is built from
 
 - **Why:** the open items of ed1a04d9: freqtrade's database named twice
