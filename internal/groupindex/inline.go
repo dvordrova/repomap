@@ -17,6 +17,18 @@ import (
 // it is the innermost callable, not itself inline, whose lines hold it; a
 // method reads with its type. A callable no other holds keeps its name.
 func inlineNames(program programindex.Index) map[string]string {
+	return inlineNamesBy(program, true)
+}
+
+// inlineHolders names every callable written inline by the function whose
+// lines hold it, followed by " (inline)", never by a function it wraps: a
+// relation between it and that function would read "IsSQLiteDatabase calls
+// IsSQLiteDatabase".
+func inlineHolders(program programindex.Index) map[string]string {
+	return inlineNamesBy(program, false)
+}
+
+func inlineNamesBy(program programindex.Index, wraps bool) map[string]string {
 	inline := func(object programindex.Object) bool {
 		return object.Kind == programindex.ObjectLambda || closureNumbered(object.Name)
 	}
@@ -56,7 +68,7 @@ func inlineNames(program programindex.Index) map[string]string {
 	}
 	result := make(map[string]string, len(closures))
 	for _, closure := range closures {
-		if called := callees[closure.ID]; len(called) == 1 {
+		if called := callees[closure.ID]; wraps && len(called) == 1 {
 			if callee, known := byID[called[0]]; known && callee.Location != nil && callee.External == nil && callee.Kind.Callable() && !inline(callee) {
 				result[closure.ID] = named(callee)
 				continue

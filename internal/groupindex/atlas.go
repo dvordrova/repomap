@@ -611,6 +611,16 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		// code's fallback over the names their stores wrote instead.
 		stored := map[[2]string]map[string]*storedName{}
 		var open []int
+		// A callable written inline reads by the function holding it
+		// (inlineHolders), never by its number: litestream's canvas cards
+		// had read "FindSQLiteDatabases$1 calls IsSQLiteDatabase".
+		inline := inlineHolders(program)
+		said := func(id string) string {
+			if name := inline[id]; name != "" {
+				return name
+			}
+			return objects[id].Name
+		}
 		for _, relation := range program.Relations {
 			fromBox := memberBoxes[relation.FromID]
 			if fromBox == nil {
@@ -626,7 +636,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				if from == "" || to == "" || from == to {
 					continue
 				}
-				label := objects[relation.FromID].Name + " " + string(relation.Kind) + " " + objects[id].Name
+				label := said(relation.FromID) + " " + string(relation.Kind) + " " + said(id)
 				summary := label
 				if sentence := sentences[[2]string{from, to}]; relation.Kind == programindex.RelationCalls && sentence != "" {
 					summary = sentence
@@ -650,10 +660,10 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 					if stored[pair] == nil {
 						stored[pair] = map[string]*storedName{}
 					}
-					name := stored[pair][objects[id].Name]
+					name := stored[pair][said(id)]
 					if name == nil {
 						name = &storedName{}
-						stored[pair][objects[id].Name] = name
+						stored[pair][said(id)] = name
 					}
 					var store *programindex.Location
 					for _, witness := range relation.Witnesses {
@@ -847,13 +857,17 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		}
 		// The entry is named by the words the model chose among those its
 		// registration wrote, as written; without a choice, by its handler's
-		// own name. A method and a path are two such words, never a shape.
+		// own name, never by the function making the registration (othello's
+		// `:draw draw/draw-state`, no word chosen, had read
+		// othello.ui.sketch/start!: the boundary's Caller is the function
+		// enclosing the call when the handler is written in another file). A
+		// method and a path are two such words, never a shape.
 		name := boundary.Name
-		if name == "" {
-			name = boundary.Caller
-		}
 		if subject := byID[subjectID]; name == "" && subject != nil && subject.Object != nil {
 			name = subject.Object.Name
+		}
+		if name == "" {
+			name = boundary.Caller
 		}
 		// A handler written inline is named as a reader names it, never
 		// by its number (inline.go): DatabasesTool$1 is DatabasesTool
