@@ -1017,7 +1017,11 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 }
 
 // builtFrom lists the files a program is built from, by path (pageSection
-// BuiltFrom).
+// BuiltFrom): a script's file and what its code imports (ProgramTarget
+// ScriptFile; it shares its project's index, whose files are the whole
+// project's: freqtrade's build_helpers scripts read "Built from 373
+// files"), a C program's link line, else the files its index declares
+// things in, tests left out.
 func (builder *pageBuilder) builtFrom(programTargetID string) []string {
 	if builder.data == nil || builder.data.ProgramPortfolio == nil {
 		return nil
@@ -1034,6 +1038,13 @@ func (builder *pageBuilder) builtFrom(programTargetID string) []string {
 				files = append(files, file)
 			}
 		}
+		tests := map[string]bool{}
+		for _, test := range entry.Target.TestSources {
+			tests[test] = true
+		}
+		if script := entry.Target.ScriptFile(); script != "" {
+			return entry.ImportedFiles(script, tests)
+		}
 		if entry.Target.Language == "c" {
 			for _, source := range entry.Target.Sources {
 				if strings.HasSuffix(source.Path, ".c") {
@@ -1041,10 +1052,6 @@ func (builder *pageBuilder) builtFrom(programTargetID string) []string {
 				}
 			}
 		} else {
-			tests := map[string]bool{}
-			for _, test := range entry.Target.TestSources {
-				tests[test] = true
-			}
 			for _, object := range entry.Objects {
 				if object.Location != nil && !tests[object.Location.Path] {
 					add(object.Location.Path)

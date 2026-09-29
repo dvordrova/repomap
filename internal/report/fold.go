@@ -24,6 +24,7 @@ func foldIndexes(indexes []groupindex.Index) []groupindex.Index {
 	for position, index := range indexes {
 		folded[position] = index
 		folded[position].Groups = foldGroups(index, canonical)
+		scriptGroups(index, folded[position].Groups)
 		folded[position].Containers = foldContainers(index, canonical)
 		folded[position].Operations = append([]groupindex.Operation(nil), index.Operations...)
 		for i := range folded[position].Operations {

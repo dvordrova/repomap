@@ -39,6 +39,9 @@ type pageSection struct {
 	// and the fact layer; neither ever reaches the page.
 	programTargetID string
 	factsTargetID   string
+	// title is what the program is titled by when its directory does not
+	// say it (programTitle).
+	title string
 
 	FactsAvailable bool
 	// BuiltFrom are the files its program is built from, by path: for C
@@ -524,6 +527,7 @@ func (builder *pageBuilder) createSections() {
 			used[target.ID] = struct{}{}
 			builder.byFacts[target.ID] = section
 		}
+		section.title = programTitle(index.Target, section.Root)
 		builder.byProgram[index.Target.ID] = section
 		builder.sections = append(builder.sections, section)
 	}
@@ -543,7 +547,9 @@ func (builder *pageBuilder) createSections() {
 
 // labelSections keeps every target distinguishable in the navigation. Two
 // targets can legitimately share a name — a library and a command in one
-// directory — so a repeated name gains the detail that separates them.
+// directory — so a repeated name gains the detail that separates them. A
+// program titled otherwise than by its directory (programTitle) takes that
+// title when no other program does.
 func labelSections(sections []*pageSection) {
 	count := make(map[string]int, len(sections))
 	roots := make(map[string]int, len(sections))
@@ -553,7 +559,11 @@ func labelSections(sections []*pageSection) {
 		roots[section.Root]++
 		rootKinds[section.Root+"\x00"+section.Kind]++
 	}
+	titled := titledLabels(sections)
 	for _, section := range sections {
+		if titled[section] {
+			continue
+		}
 		section.ShortLabel = section.Root
 		if section.Root == "." {
 			section.ShortLabel = section.Name

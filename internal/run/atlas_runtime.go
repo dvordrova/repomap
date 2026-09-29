@@ -78,13 +78,14 @@ func readRepositoryAtlas(
 	for position := range runs {
 		run := &runs[position]
 		index := programindex.Index{Target: run.programTarget()}
-		claimed, root := atlasTargetRoots(index, planned[run.SelectedTargetKey])
+		_, root := atlasTargetRoots(index, planned[run.SelectedTargetKey])
 		readIndex := run.validProgramIndex
 		if run.ProgramIndex == nil {
 			filename := filepath.Join(run.RunDir, programindex.ArtifactFilename)
 			readIndex = func() (programindex.Index, error) { return indexReader.ReadFile(filename) }
 		}
-		target := places.TargetInput{Index: index, Root: claimed, AbsorbedRoot: planned[run.SelectedTargetKey].AbsorbedRoot, ReadIndex: readIndex}
+		target := atlasPlacesTarget(index, planned[run.SelectedTargetKey])
+		target.ReadIndex = readIndex
 		catalog, err := run.dependencyCatalog()
 		if err != nil {
 			return atlasOutcome{}, err
@@ -374,7 +375,16 @@ func externalDependencies(catalog *dependencies.Catalog) []reading.Dependency {
 // (the executable absorbed its library, so internal and pkg packages, or a
 // Python distribution's tests, are its own boxes). A folded library's root
 // is claimed beside the program's own, never instead of it: a guard tool
-// beside a console script's file keeps sharing that directory with it.
+// beside a console script's file still shares the files it imports there
+// (a script holds its file and what it imports, places.TargetInput.Script).
+// atlasPlacesTarget is a page's target as places reads it: its roots
+// (atlasTargetRoots) and whether it is a script, which holds its file and
+// what it imports rather than its directory (ProgramTarget ScriptFile).
+func atlasPlacesTarget(index programindex.Index, planned repositoryTypedTarget) places.TargetInput {
+	claimed, _ := atlasTargetRoots(index, planned)
+	return places.TargetInput{Index: index, Root: claimed, AbsorbedRoot: planned.AbsorbedRoot, Script: index.Target.ScriptFile() != ""}
+}
+
 func atlasTargetRoots(index programindex.Index, planned repositoryTypedTarget) (claimed, root string) {
 	claimed = filepath.ToSlash(filepath.Dir(runTargetAnchorPath(index)))
 	if planned.AbsorbedRoot != "" {

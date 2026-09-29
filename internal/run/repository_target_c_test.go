@@ -529,7 +529,7 @@ func TestCRepositoryPageListsWhatAProgramNeverRuns(t *testing.T) {
 	neverRuns := func(program string) []string {
 		t.Helper()
 		section := string(page)
-		at := strings.Index(section, `<h4>`+program+` (executable)</h4>`)
+		at := strings.Index(section, `<h4>`+program+`</h4>`)
 		if at < 0 || !strings.Contains(section[:at], `class="component-gaps"`) {
 			t.Fatalf("the What is missing page has no program %s", program)
 		}

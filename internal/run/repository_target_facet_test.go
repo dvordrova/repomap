@@ -69,8 +69,8 @@ func facetPlan(t *testing.T, decisions map[string]string) (*corpus.Corpus, repos
 // targets, one component: the script file is the console script's launch
 // form (its seed) and the library its facet, whose root the program claims
 // beside its own. bench.py, a guard in the same directory placed a tool,
-// keeps sharing that directory; the tests only the library held become the
-// program's. The root project's library declares acme beside fixture_app,
+// is a script: it holds its own file and shares only what it imports there;
+// the tests only the library held become the program's. The root project's library declares acme beside fixture_app,
 // code outside the console script's root, so it stays; script_context.py's
 // shebang defines no program's launch callable, so it stays too.
 func TestClientPackageIsOneProgramWithItsLaunchFormAndLibraryFacet(t *testing.T) {
@@ -138,16 +138,14 @@ func TestClientPackageIsOneProgramWithItsLaunchFormAndLibraryFacet(t *testing.T)
 		t.Fatalf("the program lost the script anchor or the facet: seeds=%+v libraries=%v", index.Target.Seeds, index.Target.Libraries)
 	}
 
-	// The atlas: the program claims client/ beside its own directory, which
-	// the tool rooted there keeps sharing.
+	// The atlas: the program claims client/ beside its own directory; the
+	// tool rooted there holds its file and shares the files it imports.
 	var inputs []places.TargetInput
 	for _, pair := range []struct {
 		target repositoryTypedTarget
 		id     string
 	}{{program, "t1"}, {bench, "t2"}} {
-		index := build(pair.target, pair.id)
-		claimed, _ := atlasTargetRoots(index, pair.target)
-		inputs = append(inputs, places.TargetInput{Index: index, Root: claimed, AbsorbedRoot: pair.target.AbsorbedRoot})
+		inputs = append(inputs, atlasPlacesTarget(build(pair.target, pair.id), pair.target))
 	}
 	graph, err := places.Build(places.Input{Repository: repository, Targets: inputs})
 	if err != nil {
@@ -161,6 +159,12 @@ func TestClientPackageIsOneProgramWithItsLaunchFormAndLibraryFacet(t *testing.T)
 	}
 	if !slices.Equal(held["client/fixture_client/rest.py"], []string{"t1", "t2"}) || !slices.Equal(held["client/tests/test_rest.py"], []string{"t1"}) {
 		t.Fatalf("claims: rest.py %v, test_rest.py %v", held["client/fixture_client/rest.py"], held["client/tests/test_rest.py"])
+	}
+	// bench.py is a script: it holds its own file and, in its directory,
+	// only what it imports; cli.py, which it does not import, is the
+	// console script's alone.
+	if !slices.Equal(held["client/fixture_client/bench.py"], []string{"t2"}) || !slices.Equal(held["client/fixture_client/cli.py"], []string{"t1"}) {
+		t.Fatalf("claims: bench.py %v, cli.py %v", held["client/fixture_client/bench.py"], held["client/fixture_client/cli.py"])
 	}
 }
 

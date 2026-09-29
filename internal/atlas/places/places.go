@@ -55,6 +55,10 @@ type TargetInput struct {
 	// program the library's other files without lifting Root to its depth,
 	// so a sibling rooted with the program keeps sharing Root's files.
 	AbsorbedRoot string
+	// Script marks a script program (ProgramTarget ScriptFile): it holds its
+	// own file and, in Root, only the files its code imports, never Root's
+	// other files (claimByRoot).
+	Script bool
 }
 
 func (target TargetInput) read() (TargetInput, error) {
@@ -159,6 +163,7 @@ func Build(input Input) (atlas.Graph, error) {
 		b.collectSymbolUses(b.symbolUseRows, target)
 		b.collectSymbolFields(target)
 		b.collectTableReads(target)
+		b.collectScriptImports(target)
 	}
 	b.releaseTargetObjects()
 	// A located seed may refer to a file supplied by a later target. Resolve
@@ -259,6 +264,10 @@ type builder struct {
 	// workspace lists the package paths of the repository's own modules, from
 	// the dependency catalogs: a call into one of them is not an integration.
 	workspace map[string]struct{}
+
+	// scriptImports are, by script program, the files its code imports
+	// (collectScriptImports).
+	scriptImports map[string]map[string]bool
 }
 
 type typeField struct {
@@ -490,16 +499,46 @@ func (b *builder) collectObjects(target TargetInput) {
 	}
 }
 
+// collectScriptImports records, for a script program, the files its code
+// imports from its own file (ProgramIndex ImportedFiles), tests left out:
+// what it holds in its directory beside its file (claimByRoot).
+func (b *builder) collectScriptImports(target TargetInput) {
+	script := target.Index.Target.ScriptFile()
+	if !target.Script || script == "" {
+		return
+	}
+	tests := make(map[string]bool, len(target.Index.Target.TestSources))
+	for _, test := range target.Index.Target.TestSources {
+		tests[test] = true
+	}
+	imported := make(map[string]bool)
+	for _, file := range target.Index.ImportedFiles(script, tests) {
+		imported[atlasPath(file)] = true
+	}
+	if b.scriptImports == nil {
+		b.scriptImports = make(map[string]map[string]bool)
+	}
+	b.scriptImports[target.Index.Target.ID] = imported
+}
+
 // claimByRoot gives a file under another target's root to that target
 // alone: a program reaches the files of the libraries it uses, but they are
 // the library's, and a call into them is the seam between the two. The
 // deepest indexed root wins. Targets with the same root keep their shared
 // files; their order cannot erase the library beside an executable. A
 // program's absorbed root is a second, shallower root of the same program.
+// A script program (TargetInput.Script) holds its own file, a root of its
+// own that every program built from that file shares, and in its directory
+// only the files its code imports: freqtrade's three build_helpers scripts
+// had each held the directory's five files, and scripts/rest_client.py the
+// file of ws_client.py beside it. Its directory's other files go to
+// whatever other root holds them.
 func (b *builder) claimByRoot() {
 	type root struct {
 		targetID string
 		path     string
+		// only, when set, are the files under path the root holds.
+		only map[string]bool
 	}
 	var roots []root
 	for _, target := range b.input.Targets {
@@ -507,11 +546,23 @@ func (b *builder) claimByRoot() {
 		if path == "" {
 			continue
 		}
-		roots = append(roots, root{target.Index.Target.ID, path})
+		if script := target.Index.Target.ScriptFile(); target.Script && script != "" {
+			file := atlasPath(script)
+			for _, other := range b.input.Targets {
+				for _, source := range other.Index.Target.Sources {
+					if atlasPath(source.Path) == file {
+						roots = append(roots, root{targetID: other.Index.Target.ID, path: file})
+					}
+				}
+			}
+			roots = append(roots, root{targetID: target.Index.Target.ID, path: path, only: b.scriptImports[target.Index.Target.ID]})
+			continue
+		}
+		roots = append(roots, root{targetID: target.Index.Target.ID, path: path})
 		// atlasPath reads an empty path as the repository root: only a
 		// program that absorbed a library has a second root.
 		if target.AbsorbedRoot != "" {
-			roots = append(roots, root{target.Index.Target.ID, atlasPath(target.AbsorbedRoot)})
+			roots = append(roots, root{targetID: target.Index.Target.ID, path: atlasPath(target.AbsorbedRoot)})
 		}
 	}
 	for filePath, state := range b.files {
@@ -520,7 +571,7 @@ func (b *builder) claimByRoot() {
 			if _, indexed := state.targets[r.targetID]; !indexed {
 				continue
 			}
-			if r.path != "." && filePath != r.path && !strings.HasPrefix(filePath, r.path+"/") {
+			if r.path != "." && filePath != r.path && !strings.HasPrefix(filePath, r.path+"/") || r.only != nil && !r.only[filePath] {
 				continue
 			}
 			d := strings.Count(r.path, "/") + 1
