@@ -111,6 +111,70 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   record as before, and a refused one is asked again, as in the next run.
   `--no-cache` keeps every call live and unshared.
 
+## Display translation
+
+The display-translation cube behind `--lang`
+([Report](REPORT.md#english-identities-and-display-translation)):
+
+- Translation requests carry one local dictionary of exact spelling/definition
+  pairs and each text's applicable refs, found by the
+  [term lookup](TERMINOLOGY.md#term-lookup). Equal spellings with different
+  definitions stay separate. Every partition and child window rebuilds its
+  complete dictionary and builds only from its own complete original entries.
+  `llm.Prepare` adds one shared response-language system fragment before
+  provider encoding, execution, fit checks and memo identity. Empty
+  ResponseLanguage means English; the final translator supplies its language.
+  Exact-byte replay neither rebuilds nor adds this instruction.
+- Display translation accepts texts independently, each value judged alone:
+  a string, or an object whose `text` is a string; one wrapper member or a
+  `{ref, text}` list (the echoed `entries` shape included) keeps the same ref
+  identity, and only the window's refs count. Extra entry fields such as
+  echoed `terms` are ignored; the required `text` and original placeholders
+  (protected spans) still validate, and unused metadata neither authorizes a
+  changed translation nor triggers a provider call. A missing or malformed
+  text, a ref listed twice with different texts, or an invalid text
+  (placeholder mismatch) is refused alone and journaled; its neighbours are
+  published and the answer is cached. A repeated object key keeps its last
+  value. Each window's refused texts are asked once more, in a request of only
+  those texts. A text refused again, or a singleton the provider answered but
+  refused (missing entry, placeholder mismatch, validation or envelope
+  failure, resource refusal), keeps its source-language text: the entry is
+  published untranslated, `rejected.jsonl` gets an `entry_untranslated` row
+  per text and the console names them once; a failure before any provider
+  answer still fails the stage. Original entries stay complete; no refused
+  fragment is published or cached as an accepted answer.
+- Display translation alone also halves a whole refused window, follow-ups
+  included, when an answer translates nothing (unreadable JSON, a bare
+  number, no usable text) (owner, 2026-09-09). The exact-request split memo
+  records this as `response_validation`, not a provider resource limit, and
+  applies it only while the owning stage opts in. Valid child windows keep
+  their ordinary cache entries.
+- A validated cached whole-window answer takes precedence, so an upgrade does
+  not retranslate it. Before new calls the plan has at least eight complete
+  windows (one per text for fewer texts), balanced by original UTF-8 text
+  bytes: work distribution, with no row quota or smaller provider envelope.
+  The shared four-worker pool runs them through the adaptive `Each` executor.
+  A failed window neither cancels its running neighbours nor restarts the
+  plan: all divisible failures of a round split together, successful windows
+  stay in memory even with the persistent cache disabled, and only
+  unfinished windows run again, through the same pool and rate-limit gate.
+  Progress reports the unfinished requests; original exchange observers run
+  once per executed request. Translation reports each adaptive request-plan
+  size and closes with its new logical model calls (failed live calls
+  included) versus accepted cache hits; HTTP retries stay separate exchange
+  metrics. A regression covers eight initial windows, four requests starting
+  before any response, complete ordered output, protected spans, dictionaries
+  and zero-call warm reuse.
+- Translation attempts have a local four-minute deadline (owner, 2026-09-09).
+  Its expiry goes straight to the lossless splitter and is memoized with that
+  deadline; identical bytes are never retried. A divisible translation window
+  also splits at once on HTTP 500 (owner-approved), whatever the elapsed time
+  or response wording, stored as the exact-request observation `http_500`,
+  not a resource limit, and reused only while that policy is enabled.
+  Singleton HTTP 500 responses and all other stages keep ordinary transport
+  retries. Parent cancellation stays terminal. Retry reasons, attempt numbers
+  and actual retry starts are printed immediately.
+
 ## Results and prompt ownership
 
 - A model-assisted stage returns a fully validated result, a contractually
