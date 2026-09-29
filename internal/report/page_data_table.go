@@ -356,8 +356,8 @@ func placePath(decl map[string]any) string {
 }
 
 // pageDataEnds are the lists of a reading whose items are a relation's
-// ends: a line's, a part's group's and a declaration's variables.
-var pageDataEnds = map[string]bool{"ends": true, "decls": true, "uses": true}
+// ends: a line's and a part's group's.
+var pageDataEnds = map[string]bool{"ends": true, "decls": true}
 
 // readingKinds leaves a relation's end's kind out when it is a call.
 func (compact pageDataCompaction) readingKinds(value any) {

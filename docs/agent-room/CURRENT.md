@@ -410,9 +410,11 @@ never entered into or read from a repository-wide unqualified map.
 - **Field readers and writers (2026-09-29):** a record type's reading
   gives each field "Written by" and "Read by", the functions by part; a
   global variable's lists the fields reached through it
-  (`server.masterhost`); a function's says "Writes: …" once (its field
-  writes leave "Uses variables"). No line numbers; from C field paths,
-  Python typed receivers and JS/TS declared properties (REPORT).
+  (`server.masterhost`); a function's says "Writes: …" once and
+  "Reads: …" once, the fields by their paths and the global variables it
+  reads, in place of "Uses variables". No column list prints a line number:
+  a caller, callee or variable is its name, once (REPORT). From C field
+  paths, Python typed receivers and JS/TS declared properties.
 - **Benchmark v3 fixes (2026-09-29, REPORT):** a flow's helper calls are
   named on one muted line under their step ("+ helpers: …", each a link),
   and a call into the caller's own part is its work, never folded; a call a

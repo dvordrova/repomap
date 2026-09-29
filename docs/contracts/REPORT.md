@@ -893,8 +893,9 @@ calls, each in its box with its callees by name and the variables it uses
 there. With an input pinned, the input's witness stands under the
 description ("Why it appears in {0}"); the inputs reaching the part and
 the state changes of its types close the reading, folded under their
-counts. Every original row, possible-call mark and source pair is in the
-reading's relations and the arrows' cards; no card of the part is printed.
+counts. Every original row and possible-call mark is in the reading's
+relations, each end by its name alone, and every source pair on the
+arrows' cards; no card of the part is printed.
 A model's sentence naming no two declarations stays on the arrow's card;
 the original native relation is in the reading even when the model
 supplied no sentence for that pair. Membership alone
@@ -912,12 +913,21 @@ first; its name as the one link into its code with what its tile writes
 after it, underlined under the pointer and marked by a small "</>" in the
 link's own colour (owner, 2026-09-29: readers had taken it for a title), then its file alone ("redis.c") and, when its author wrote one,
 the comment as written, standing in the reading and marked as the
-author's claim; the model's line when there is one; a type's every
-field with its type, a link reading that type when it is the repository's
-(ProgramIndex `Object.Types`: `listNode *head` reads listNode), and the
-functions of its part that return or take it; a function's flow; what else it relates to ("Calls", "Uses"), by
-part; and the variables it uses ("Uses variables"), each with a hover
-naming the part holding it.
+author's claim; the model's line when there is one; what it writes and
+what else it reads, one line each ("Writes: …", "Reads: …", below); a
+type's every field with its type, a link reading that type when it is the
+repository's (ProgramIndex `Object.Types`: `listNode *head` reads
+listNode), and the functions of its part that return or take it; a
+function's flow; and what else it relates to ("Calls", "Uses"), by part.
+No name in the column carries a line number (owner, 2026-09-29: "человек
+будет видеть код"): a caller, a callee or a variable is its name, a link
+reading its declaration, once however many places the relation is
+written, a part named on its hover; the declaration's own name is the
+link to its code. The same holds for a catalogue's callers ("called from
+processCommand") and the Inputs reading's "How these were found": a
+function making undecided calls is named once per symbol and reason, and
+one with calls the code cannot follow once, with their count. The page
+data keeps no place of such a relation.
 
 Who changes a field and who reads it (owner, 2026-09-29) is read from the
 program's exact reads and writes of record fields (`page_field_uses.go`):
@@ -933,11 +943,23 @@ path's first field, the fields as the code reaches them through it
 made by a function that reads the variable itself) with the same two
 sides. A function's reading has one line "Writes: server.masterhost, …",
 the fields it writes in the order it first writes them, each name reading
-the type that declares the field. No line numbers ("человек будет видеть
-код"); a side of more than twelve names folds under its count. Each list
-is one value of its part's reading (`fields`, `writes` on the
-declaration's own entry, names by declaration index), written once; a
-list two readings repeat is written once in `shared`. Go records no field
+the type that declares the field. A declaration's reading has one line
+"Reads: redisClient.argv, shared.czero, …" in place of the "Uses
+variables" list, which had printed `c->argv` as `argv` with every line
+using it: the fields it reads, each by the path the code reaches it by
+(`field_path`: the root global variable, or the record type holding the
+chain's first field when the root is a parameter, a local or a call's
+result; `Type.field` without one), and the module variables it reads
+whole, each once, in the order the code first uses them, each name
+reading the type declaring the field or the variable. A field it also
+writes stays on "Writes:"; a name leading to a longer path it reads or
+writes is said by that path (`server` by `server.dirty`, `server.db` by
+`server.db.dict.size`); a local or a parameter is never listed. No line numbers
+("человек будет видеть код"); a side of more than twelve names folds
+under its count. Each list is one value of its part's reading (`fields`,
+`writes`, `reads` on the declaration's own entry, names by declaration
+index), written once; a list two readings repeat is written once in
+`shared`. Go records no field
 access (GO), so a Go type lists none.
 
 A declaration two programs of the report hold is one declaration by
@@ -1254,9 +1276,9 @@ or from another declaration's reading has a reading of its own: its name as
 its tile writes it (a function with what it takes and returns, a type with
 its fields), the model's line only when there is one, its code ("Open code
 ↗" and its file and line), then Called by and Calls, read from the relation
-rows its part already lists (each a fact with the line it is written on),
-grouped by the part at the other end, one line per declaration with every
-place the call is written. A relation other than a call keeps its own
+rows its part already lists, grouped by the part at the other end, one
+line per declaration, its name alone however many places the call is
+written. A relation other than a call keeps its own
 words. Choosing a line reads that declaration, in place when it is in the
 same part, so a chain such as readQueryFromClient → processInputBuffer →
 processCommand is followed one call at a time. A declaration without a

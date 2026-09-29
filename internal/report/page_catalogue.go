@@ -36,14 +36,12 @@ type pageCatalogue struct {
 	Decls   []pageDecl            `json:"decls"`
 }
 
-// pageCatalogueCall is one call into the declaring code: its caller and the
-// call's own source line, a link to it.
+// pageCatalogueCall is one caller of the declaring code, named once however
+// many places it calls from (owner, 2026-09-29: no line numbers; the name
+// reads its code), possible only when every one of its calls is.
 type pageCatalogueCall struct {
-	Caller   int    `json:"caller"`
-	Line     int    `json:"line,omitempty"`
-	Href     string `json:"href,omitempty"`
-	Open     string `json:"open,omitempty"`
-	Possible bool   `json:"possible,omitempty"`
+	Caller   int  `json:"caller"`
+	Possible bool `json:"possible,omitempty"`
 }
 
 // pageCatalogueReader is one function reading a table of inputs, with the
@@ -114,25 +112,23 @@ func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf fu
 		for _, id := range members {
 			result.Members = append(result.Members, inputNode(id))
 		}
-		callOf := func(position int) pageCatalogueCall {
-			edge := index.StructuralEdges[position]
-			call := pageCatalogueCall{Caller: decls.of(edge.FromSubjectID), Possible: edge.Resolution != programindex.ResolutionExact}
-			if edge.Location != nil {
-				anchor := builder.links.anchor(edge.Location.Path, edge.Location.Line, edge.Location.Column)
-				call.Line, call.Href, call.Open = edge.Location.Line, anchor.Href, anchor.Open
+		callers := func(positions []int) []pageCatalogueCall {
+			var calls []pageCatalogueCall
+			for _, position := range positions {
+				edge := index.StructuralEdges[position]
+				call := pageCatalogueCall{Caller: decls.of(edge.FromSubjectID), Possible: edge.Resolution != programindex.ResolutionExact}
+				if at := slices.IndexFunc(calls, func(listed pageCatalogueCall) bool { return listed.Caller == call.Caller }); at >= 0 {
+					calls[at].Possible = calls[at].Possible && call.Possible
+					continue
+				}
+				calls = append(calls, call)
 			}
-			return call
+			return calls
 		}
-		for _, position := range catalogue.Calls {
-			result.Calls = append(result.Calls, callOf(position))
-		}
+		result.Calls = callers(catalogue.Calls)
 		for _, reader := range catalogue.Readers {
 			result.Table = true
-			row := pageCatalogueReader{Reader: decls.of(reader.SubjectID)}
-			for _, position := range reader.Calls {
-				row.Calls = append(row.Calls, callOf(position))
-			}
-			result.Readers = append(result.Readers, row)
+			result.Readers = append(result.Readers, pageCatalogueReader{Reader: decls.of(reader.SubjectID), Calls: callers(reader.Calls)})
 		}
 		for _, use := range catalogue.Uses {
 			row := pageCatalogueUse{Decl: decls.of(use.SubjectID)}

@@ -424,11 +424,6 @@ a.map-decl-code:hover::after{opacity:1}
 .map-author-comment{margin:6px 0 10px;padding:4px 0 4px 10px;border-left:2px solid var(--line);color:var(--ink)}
 .map-author-comment small{display:block;margin-bottom:2px;font:600 11px/1.3 system-ui;color:var(--muted)}
 .map-author-comment q{quotes:none;white-space:pre-line;font-size:13px;line-height:1.45}
-/* The places a relation is written, each a link to its line. */
-.map-reading-sites{margin-left:6px;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
-.map-reading-sites>*+*{margin-left:4px}
-.map-reading-sites a{color:var(--muted)}
-.map-reading-sites>*{white-space:nowrap}
 .map-reading-field-grid{display:grid;grid-template-columns:auto 1fr;gap:1px 12px;margin:0 0 12px;font:13px/1.45 var(--mono)}
 .map-reading-field-grid dt,.map-reading-field-grid dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .map-reading-field-grid dd{color:var(--muted)}
@@ -440,7 +435,9 @@ a.map-decl-code:hover::after{opacity:1}
 .map-field-part{display:block;margin:1px 0 1px 10px}
 .map-field-part>.map-part-box{font-size:11.5px;padding:0 6px;margin-right:6px}
 .map-field-part>.map-reading-name{display:inline-block;max-width:100%;margin-right:6px;overflow-wrap:anywhere}
-.map-reading-writes{margin:0 0 12px;font-size:13px;overflow-wrap:anywhere}
+/* "Writes: …" and "Reads: …", one line each, the pair together. */
+.map-reading-paths{margin:0 0 12px;font-size:13px;overflow-wrap:anywhere}
+.map-reading-paths+.map-reading-paths{margin-top:-8px}
 /* A collection's names flow in their order with no holes: a grid with
    long names spanning two cells left gaps where the eye lost the order. */
 .flow-enabled .map-inspector .map-collection-names{list-style:none;margin:6px 0 12px;padding:0;display:flex;flex-wrap:wrap;gap:3px 14px}

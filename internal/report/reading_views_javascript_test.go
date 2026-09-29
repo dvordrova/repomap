@@ -1,6 +1,13 @@
 package report
 
-import "testing"
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
+)
 
 // A DOM small enough to render the reading column's views and read them
 // back: classes, datasets, text, listeners and `.class` queries.
@@ -38,8 +45,8 @@ const data={decls:[decl('serverCron','function','#own',{doc:'Called every 100 ms
  members:[{kind:'function',decls:[2,1,0]},{kind:'variable',decls:[6]}],
  in:[{part:'#main',title:'main',count:2,lines:[{caller:3,ends:[{decl:1,kind:'calls'},{decl:2,kind:'passes_callback'}]}]}],
  out:[{part:'#core',title:'Server core state',count:2,lines:[{caller:-1,ends:[{decl:5,kind:'calls'},{decl:4,kind:'reads'}]}]}],
- own:[{decl:0,callers:[{part:'#own',title:'Server lifecycle and cron',own:true,decls:[{decl:1,kind:'passes_callback',sites:[{at:'server.c:30',href:'h#30'}]}]}],
-   callees:[{part:'#core',title:'Server core state',decls:[{decl:5,kind:'calls',sites:[{at:'server.c:22',href:'h#22'}]}]}],uses:[{decl:4,kind:'reads',sites:[{at:'server.c:21',href:'h#21'}]}]}]};
+ own:[{decl:0,callers:[{part:'#own',title:'Server lifecycle and cron',own:true,decls:[{decl:1,kind:'passes_callback'}]}],
+   callees:[{part:'#core',title:'Server core state',decls:[{decl:5,kind:'calls'}]}]}]};
 `
 
 // A part's reading stands as the owner chose (2026-09-28): who calls into
@@ -48,9 +55,8 @@ const data={decls:[decl('serverCron','function','#own',{doc:'Called every 100 ms
 // declarations under a heading per kind in the page data's order, a key in
 // bold; the parts it calls, with the variables it uses there apart. A
 // declaration's reading: its callers by part, its name as the code link
-// with its file and its author's comment, what it calls and the variables
-// it uses, each held by a part named on hover. A name reads its
-// declaration.
+// with its file and its author's comment, and what it calls. A name reads
+// its declaration.
 func TestReadingColumnViewsFollowThePreparedData(t *testing.T) {
 	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
 	runSystemJS(t, readingViewElements+code+`
@@ -72,15 +78,12 @@ part.all(c=>c.textContent==='dictResize()'&&c.has('map-reading-name'))[0].listen
 part.all(c=>c.tagName==='BUTTON'&&c.textContent==='main')[0].listeners.click({stopPropagation(){}});
 assert.deepEqual(read,['dictResize','main'],'a name reads its declaration and a part box its part');
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'},explanation:'Runs the cron.',explanation_ref:'e1'});
-assert.deepEqual(view.children.map(c=>c.className),['map-reading-side','map-decl-name','map-decl-where','map-author-comment','map-decl-explanation model','map-reading-side','map-reading-side']);
-assert.equal(view.children[0].textContent,'Called byServer lifecycle and cron1initServer()passes it as a callback:30');
-assert.equal(view.children[0].all(c=>c.tagName==='A'&&c.textContent===':30')[0].href,'h#30','the relation links to its own line');
+assert.deepEqual(view.children.map(c=>c.className),['map-reading-side','map-decl-name','map-decl-where','map-author-comment','map-decl-explanation model','map-reading-side']);
+assert.equal(view.children[0].textContent,'Called byServer lifecycle and cron1initServer()passes it as a callback');
 assert.equal(view.children[1].textContent,'serverCron(id: long)');
 assert.equal(view.children[1].children[0].href,'h#serverCron-L9','the name is the link to all of its code');
 assert.equal(view.children[2].textContent,'server.c','the file alone, no line');
 assert.equal(view.children[3].textContent,"The author's comment in the codeCalled every 100 ms.",'the author\'s comment stands in the reading, marked as theirs');
-assert.equal(view.children[6].textContent,'Uses variablesserver:21');
-assert.equal(view.children[6].all(c=>c.has('map-reading-name'))[0].title,'A global variable of Server core state\nserver.c:21');
 `)
 }
 
@@ -143,7 +146,7 @@ data.own[0].callers.push({part:'#cli',title:'Command line client',program:'redis
 data.own[0].not_called_in='redis-benchmark';
 nodes['#cli']={dataset:{title:'Command line client',lane:'entry'},getAttribute:()=>'#cli'};
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
-assert.equal(view.children[0].textContent,'Called byServer lifecycle and cron1initServer()passes it as a callback:30redis-cli:Command line client1cliConnect()');
+assert.equal(view.children[0].textContent,'Called byServer lifecycle and cron1initServer()passes it as a callbackredis-cli:Command line client1cliConnect()');
 assert.equal(view.children[1].className,'map-reading-not-called meta');
 assert.equal(view.children[1].textContent,'Not called in redis-benchmark');
 `)
@@ -273,5 +276,89 @@ const hop=section.all(c=>c.textContent==='readQueryFromClient()'&&c.has('map-rea
 assert.equal(hop.title,'Server core state\npassed as a callback by createClient, which acceptHandler calls');
 assert.ok(lines[2].startsWith('Other ways in: from Replication, +2'),'the other ways, folded, by where they leave the first: '+lines[2]);
 assert.equal(section.children.at(-1).textContent,'redis-cli sends get.','who sends it, last');
+`)
+}
+
+// A function's reading prints no line number (owner, 2026-09-29:
+// "человек будет видеть код"): a caller calling from two places is its
+// name once, and "Uses variables" ("argv :4248 :4250 …", fields reached
+// through a parameter printed as variables) is one line, "Reads: …", each
+// field by the path the code reaches it by and each global variable once,
+// in the order first used. A field it also writes stays under "Writes:", a
+// name leading to a longer path it reads is said by that path (shared and
+// shared.czero by shared.czero.ptr), and a local is not listed.
+func TestAFunctionsReadingSaysEachReadOnceWithNoLineNumbers(t *testing.T) {
+	b, index, part, anchors := readingFixture(t)
+	add := func(id, name string, kind programindex.ObjectKind, line int, owner string) {
+		b.subjects[subjectKey("t1", id)] = subjectRef{subject: groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: name, Kind: kind, OwnerID: owner,
+			Location: &programindex.Location{Path: "server.go", Line: line, Column: 1}}}}
+		anchors[id] = b.links.anchorPointer("server.go", line, 1)
+	}
+	add("objects", "sharedObjectsStruct", programindex.ObjectType, 600, "module")
+	add("f-czero", "czero", programindex.ObjectVariable, 601, "objects")
+	add("shared", "shared", programindex.ObjectVariable, 610, "module")
+	add("robj", "robj", programindex.ObjectType, 620, "module")
+	add("f-ptr", "ptr", programindex.ObjectVariable, 621, "robj")
+	add("local", "len", programindex.ObjectVariable, 21, "cron")
+	edge := func(to, kind, path string, line int) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: "cron", ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationKind(kind),
+			Resolution: programindex.ResolutionExact, FieldPath: path, Location: &programindex.Location{Path: "server.go", Line: line, Column: 9}}
+	}
+	index.StructuralEdges = []groupindex.StructuralEdge{
+		edge("f-argv", "reads", "redisClient.argv", 21),
+		edge("local", "reads", "", 21),
+		edge("f-argv", "reads", "redisClient.argv", 22),
+		edge("shared", "reads", "", 23),
+		edge("f-czero", "reads", "shared.czero", 23),
+		edge("state", "reads", "", 24),
+		edge("f-db", "writes", "redisClient.db", 25),
+		edge("f-db", "reads", "redisClient.db", 26),
+		edge("f-argv", "reads", "redisClient.argv", 27),
+		edge("f-ptr", "reads", "shared.czero.ptr", 28),
+	}
+	b.indexes[0] = index
+	caller := func(line int) pageConnection {
+		row := readingRow(anchors, "←", "#t1-g6", "Event loop and networking", "calls", "events", "processTimeEvents", "cron", "serverCron")
+		row.FromSource = b.links.anchorPointer("server.go", line, 5)
+		return row
+	}
+	raw := b.groupReading(index, part, pageGroup{ID: "t1-g14", Title: part.Title, Connections: []pageConnection{caller(301), caller(305)},
+		InternalConnections: []pageConnection{
+			readingRow(anchors, "", "", "", "reads", "cron", "serverCron", "f-argv", "argv"),
+			readingRow(anchors, "", "", "", "reads", "cron", "serverCron", "state", "server"),
+		}})
+	reading := decodeReading(t, raw)
+	cron := slices.IndexFunc(reading.Decls, func(decl pageReadingDecl) bool { return decl.Name == "serverCron" })
+	own := reading.Own[slices.IndexFunc(reading.Own, func(owner pageReadingOwner) bool { return owner.Decl == cron })]
+	var reads []string
+	for _, read := range own.Reads {
+		if read.Decl == nil {
+			t.Fatalf("%s reads no declaration", read.Path)
+		}
+		reads = append(reads, read.Path+" "+reading.Decls[*read.Decl].Name)
+	}
+	if want := []string{"redisClient.argv redisClient", "server server", "shared.czero.ptr robj"}; !slices.Equal(reads, want) {
+		t.Fatalf("serverCron reads %q, want %q", reads, want)
+	}
+	if len(own.Writes) != 1 || own.Writes[0].Path != "redisClient.db" {
+		t.Fatalf("serverCron writes %+v", own.Writes)
+	}
+	for _, site := range []string{"#L301", "#L305", "#L22", "#L27"} {
+		if strings.Contains(raw, site) {
+			t.Fatalf("the reading keeps the use site %s: %s", site, raw)
+		}
+	}
+	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
+	runSystemJS(t, readingViewElements+code+`
+const reading=`+raw+`;
+reading.decls.forEach(decl=>{if(decl.key===undefined)decl.key=decl.href;});
+const cron=reading.decls.find(decl=>decl.name==='serverCron');
+const view=rmDeclView(ctx,nodes['#own'],reading,{name:'serverCron',source:{Href:cron.href,Text:cron.at}});
+const said=view.all(()=>true).map(c=>c.textContent).filter(text=>/:\d/.test(text));
+assert.deepEqual(said,[],'no line number anywhere in the reading');
+assert.equal(view.all(c=>c.has('map-reading-reads'))[0].textContent,'Reads: redisClient.argv, server, shared.czero.ptr');
+assert.equal(view.all(c=>c.has('map-reading-writes'))[0].textContent,'Writes: redisClient.db');
+assert.equal(view.all(c=>c.has('map-reading-name')&&c.textContent==='processTimeEvents()').length,1,'a caller calling from two places is one name');
+assert.ok(!view.textContent.includes('Uses variables'));
 `)
 }

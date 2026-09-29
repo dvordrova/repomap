@@ -145,8 +145,8 @@ func TestPartReadingListsMembersByNameAndCallersByCaller(t *testing.T) {
 }
 
 // A declaration's reading names who calls it and what it calls, grouped by
-// the part at the other end, its own part first, and the variables it uses
-// apart from what it calls.
+// the part at the other end, its own part first; the variables it reads are
+// not among what it calls.
 func TestDeclarationReadingGroupsItsRelationsByPartOwnPartFirst(t *testing.T) {
 	b, index, part, anchors := readingFixture(t)
 	card := pageGroup{ID: "t1-g14", Title: part.Title, Connections: []pageConnection{
@@ -174,9 +174,6 @@ func TestDeclarationReadingGroupsItsRelationsByPartOwnPartFirst(t *testing.T) {
 	}
 	if got, want := said(own.Callees), []string{"Server lifecycle and cron: tryResizeHashTables calls", "Core data structures: dictResize calls"}; !slices.Equal(got, want) {
 		t.Fatalf("callees %q, want %q", got, want)
-	}
-	if len(own.Uses) != 1 || reading.Decls[own.Uses[0].Decl].Name != "server" || reading.Decls[own.Uses[0].Decl].Part != "#t1-g14" {
-		t.Fatalf("uses %+v: the variable, with the part holding it", own.Uses)
 	}
 }
 
@@ -262,12 +259,6 @@ func TestFieldsListTheirWritersAndReadersByPart(t *testing.T) {
 	}
 	if want := []string{"server.hz redisServer", "server.dirty redisServer", "redisClient.fd redisClient"}; !slices.Equal(writes, want) {
 		t.Fatalf("serverCron writes %q, want %q", writes, want)
-	}
-	// Said once: a field it writes is not again among the variables it uses.
-	for _, end := range own("serverCron").Uses {
-		if end.Kind == "writes" && reading.Decls[end.Decl].Kind == "field" {
-			t.Fatalf("serverCron's uses repeat the field write %s", reading.Decls[end.Decl].Name)
-		}
 	}
 }
 

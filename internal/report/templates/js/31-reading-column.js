@@ -6,7 +6,8 @@
 // click reads it in the column and marks it there, and the camera moves
 // only when it is out of sight (29-operation-view.js). A modifier-click on
 // a name still opens its code. Lists are plain names, a key in bold: no
-// squares or chips before them.
+// squares or chips before them, and no line numbers after them (owner,
+// 2026-09-29: "человек будет видеть код"; the name is the link to it).
 // <reading-column>
 
 // The reading of a part (page_reading.go), from its card; null when the
@@ -73,32 +74,20 @@ function rmPeerBox(ctx,peer){
   if(!peer.inputs)return rmPartBox(ctx,peer.part,peer.title);
   return rmEl('span','map-part-box map-part-box-input',rmT('Inputs'));
 }
-// The hover of a name in another part: the part and where the relation is
-// written.
-function rmEndTitle(ctx,decl,end){
+// The hover of a name in another part: that part.
+function rmEndTitle(ctx,decl){
   var node=decl.part?ctx.nodeByHref(decl.part):null;
-  return [node?node.dataset.title:'',(end&&end.sites||[]).map(function(site){return site.at;}).join(' · ')].filter(Boolean).join('\n');
-}
-// Where a relation is written, each place a link to its own line (":2011"),
-// its file on hover: the call A → B opens at the call, not at A.
-function rmSiteLinks(end){
-  var sites=rmEl('span','map-reading-sites');
-  (end.sites||[]).forEach(function(site){
-    var line=':'+site.at.split(':').pop(),link=site.href||site.open?repomapMembers.sourceLink({Href:site.href,Open:site.open,Text:line}):rmEl('span','',line);
-    link.title=site.at;sites.appendChild(link);
-  });
-  return sites;
+  return node?node.dataset.title:'';
 }
 // One end of a relation: its name, and what the relation says of it when it
 // is not a call (a variable's readers say only who writes it: "Used by"
 // says the rest).
 function rmEndItem(ctx,data,end,side,quiet){
   var decl=data.decls[end.decl],item=rmEl('li');
-  item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl,end)));
+  item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));
   var words=quiet&&end.kind==='reads'?'':rmEndWords[side][end.kind];
   if(words)item.appendChild(rmEl('span','map-reading-relation',rmT(words)));
   if(end.possible)item.appendChild(rmEl('span','possible',rmT('possible')));
-  if((end.sites||[]).length)item.appendChild(rmSiteLinks(end));
   return item;
 }
 // The heading's kind line: its word, then the frame holding what is read
@@ -116,7 +105,7 @@ function rmHeadingUp(map,kind,frame,member){
 // → 17 request handlers, possible, via cmdTable", its ends folded under it.
 function rmCallerLine(ctx,data,line){
   var caller=data.decls[line.caller],row=rmEl(line.fan?'details':'div','map-reading-caller'),head=line.fan?rmEl('summary'):row;
-  head.appendChild(rmDeclName(caller,rmCallableName(caller),ctx.goDecl(caller),rmEndTitle(ctx,caller,null)));
+  head.appendChild(rmDeclName(caller,rmCallableName(caller),ctx.goDecl(caller),rmEndTitle(ctx,caller)));
   if(line.fan){
     var fan=line.fan,say=rmEl('span','map-reading-fan');
     say.append(document.createTextNode(' → '+rmT(({request:'{0} request handlers',command:'{0} command handlers'})[fan.noun]||'{0} functions',line.ends.length)));
@@ -148,7 +137,7 @@ function rmFieldUses(ctx,data,use){
     groups.forEach(function(group){
       var line=rmEl('span','map-field-part');
       if(group.part||group.title)line.appendChild(rmPartBox(ctx,group.part,group.title));
-      group.decls.forEach(function(at){var decl=data.decls[at];line.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl,null)));});
+      group.decls.forEach(function(at){var decl=data.decls[at];line.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));});
       side.appendChild(line);
     });
     box.appendChild(side);
@@ -217,10 +206,22 @@ function rmPartView(ctx,node,data){
   return {view:view};
 }
 
+// A function's writes or reads as one line, "Writes: server.dirty" or
+// "Reads: redisClient.argv, shared.czero", each field or global variable
+// once, its name reading the type declaring the field or the variable.
+function rmPathsLine(ctx,data,cls,label,paths){
+  var line=rmEl('p','map-reading-paths '+cls);line.appendChild(rmEl('span','map-reading-label',rmT(label)));
+  paths.forEach(function(item,i){
+    line.append(document.createTextNode(i?', ':' '));
+    var decl=item.decl===undefined?null:data.decls[item.decl];
+    line.appendChild(decl?rmDeclName(decl,item.path,ctx.goDecl(decl),decl.at):rmEl('span','',item.path));
+  });
+  return line;
+}
 // A declaration's reading: who calls it, by part; its name, the link into
 // its code, with its file and the comment its author wrote above it; the
-// model's line; a type's fields and the functions returning or taking it;
-// what it calls, by part; the variables it uses.
+// model's line; what it writes and reads; a type's fields and the functions
+// returning or taking it; what it calls, by part.
 function rmDeclView(ctx,node,data,concept){
   var key=repomapMembers.sourceKey(concept.source),view=rmEl('div','map-decl-reading'),position=data.decls.findIndex(function(decl){return decl.key===key;});
   // A declaration the part's reading does not list (neither a function, a
@@ -265,17 +266,10 @@ function rmDeclView(ctx,node,data,concept){
     view.appendChild(comment);
   }
   if(explanation&&explanation.text)view.appendChild(rmModelText('p','map-decl-explanation',explanation.text,explanation.ref));
-  // A function's writes: "Writes: server.masterhost, …", each reading the
-  // type that declares the field.
-  if((own.writes||[]).length){
-    var writes=rmEl('p','map-reading-writes');writes.appendChild(rmEl('span','map-reading-label',rmT('Writes:')));
-    own.writes.forEach(function(write,i){
-      writes.append(document.createTextNode(i?', ':' '));
-      var type=write.decl===undefined?null:data.decls[write.decl];
-      writes.appendChild(type?rmDeclName(type,write.path,ctx.goDecl(type),type.at):rmEl('span','',write.path));
-    });
-    view.appendChild(writes);
-  }
+  // What it writes, then what else it reads: "Writes: server.dirty",
+  // "Reads: redisClient.argv, shared.czero, …".
+  if((own.writes||[]).length)view.appendChild(rmPathsLine(ctx,data,'map-reading-writes','Writes:',own.writes));
+  if((own.reads||[]).length)view.appendChild(rmPathsLine(ctx,data,'map-reading-reads','Reads:',own.reads));
   // A record type's fields, each with who writes and reads it; a global
   // variable's fields as the code reaches them through it.
   var uses={};(own.fields||[]).forEach(function(use){uses[use.name]=use;});
@@ -313,20 +307,6 @@ function rmDeclView(ctx,node,data,concept){
   }
   var rest=flowed?(own.callees||[]).map(function(group){return Object.assign({},group,{decls:group.decls.filter(function(end){return !callKinds[end.kind];})});}).filter(function(group){return group.decls.length;}):own.callees;
   var callees=side(rest,variable?'Uses':'Calls','out');if(callees)view.appendChild(callees);
-  if((own.uses||[]).length){
-    var uses=rmEl('section','map-reading-side');uses.appendChild(rmEl('h6','',rmT('Uses variables')));
-    var list=rmEl('ul','map-reading-ends');
-    own.uses.forEach(function(end){
-      var used=data.decls[end.decl],holder=used.part?ctx.nodeByHref(used.part):null,item=rmEl('li');
-      var title=[holder?rmT('A global variable of {0}',holder.dataset.title):'',(end.sites||[]).map(function(site){return site.at;}).join(' · ')].filter(Boolean).join('\n');
-      item.appendChild(rmDeclName(used,used.name,ctx.goDecl(used),title));
-      if(end.kind==='writes')item.appendChild(rmEl('span','map-reading-relation',rmT('written')));
-      if(end.possible)item.appendChild(rmEl('span','possible',rmT('possible')));
-      if((end.sites||[]).length)item.appendChild(rmSiteLinks(end));
-      list.appendChild(item);
-    });
-    uses.appendChild(list);view.appendChild(uses);
-  }
   return view;
 }
 

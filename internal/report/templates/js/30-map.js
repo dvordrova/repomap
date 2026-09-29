@@ -369,9 +369,9 @@ function rmSiteReading(map,node,key){
   return box;
 }
 // Who calls a declaration and what it calls, read from the relation rows
-// its part already lists (each a fact with the line it is written on),
-// grouped by the part at the other end. The declaration at the other end is
-// one line with every place the call is written, and choosing it reads that
+// its part already lists, grouped by the part at the other end. The
+// declaration at the other end is one line, its name alone however many
+// places the call is written (no line numbers), and choosing it reads that
 // declaration in its part, so a chain is followed one call at a time. A
 // relation other than a call keeps its own words. Nothing is inferred: a
 // relation the part does not list is not here.
@@ -410,11 +410,7 @@ function rmDeclarationRelations(map,node,key,nodes){
         var name=rmEl(entry.part.own||peer?'button':'span','map-concept-decl',words);
         if(name.tagName==='BUTTON'){name.type='button';name.addEventListener('click',function(){read(entry.part,decl.key);});}
         item.appendChild(name);
-        decl.rows.forEach(function(row){
-          var site=row.querySelector('.connection-sources .anchor');if(!site)return;
-          item.appendChild(document.createTextNode(' · '));item.appendChild(site.cloneNode(true));
-          if(row.querySelector(':scope>p>.possible'))item.appendChild(rmEl('span','possible',rmT('possible')));
-        });
+        if(decl.rows.every(function(row){return row.querySelector(':scope>p>.possible');}))item.appendChild(rmEl('span','possible',rmT('possible')));
         list.appendChild(item);
       });
       section.appendChild(list);

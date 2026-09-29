@@ -92,7 +92,7 @@ var rmPage = (function () {
     if(!value||typeof value!=='object')return;
     Object.keys(value).forEach(function(key){
       var item=value[key];
-      if(Array.isArray(item)&&(key==='ends'||key==='decls'||key==='uses'))item.forEach(function(end){if(end&&typeof end==='object'&&!('kind' in end))end.kind='calls';});
+      if(Array.isArray(item)&&(key==='ends'||key==='decls'))item.forEach(function(end){if(end&&typeof end==='object'&&!('kind' in end))end.kind='calls';});
       kinds(item);
     });
   }

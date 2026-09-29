@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"slices"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 )
@@ -9,9 +10,11 @@ import (
 // pageLaunch is the Inputs reading's fold "How these were found"
 // (GroupsIndex Launch): each launch function that holds inputs, by the
 // chain of calls from where the program starts; each outside symbol's
-// idiom line (model); the calls that may declare an input and were not
-// decided; the calls the code cannot follow; and how many other functions
-// the walk reached that declare none, as a count only.
+// idiom line (model); the functions making calls that may declare an input
+// and were not decided; the functions with calls the code cannot follow,
+// each with their count; and how many other functions the walk reached
+// that declare none, as a count only. A function is named once, by its
+// declaration: no line numbers.
 type pageLaunch struct {
 	Found   []pageLaunchFound  `json:"found,omitempty"`
 	Idioms  []pageLaunchIdiom  `json:"idioms,omitempty"`
@@ -35,24 +38,20 @@ type pageLaunchIdiom struct {
 	Functions []int  `json:"functions,omitempty"`
 }
 
+// pageLaunchUnsure is a function making undecided calls of one symbol for
+// one reason, named once however many such calls it makes (owner,
+// 2026-09-29: no line numbers; the name reads its code).
 type pageLaunchUnsure struct {
 	Function int    `json:"function"`
 	Symbol   string `json:"symbol"`
 	Reason   string `json:"reason"`
-	Line     int    `json:"line"`
-	Href     string `json:"href,omitempty"`
-	Open     string `json:"open,omitempty"`
 }
 
+// pageLaunchClosed is a function with calls the code cannot follow, and how
+// many.
 type pageLaunchClosed struct {
-	Function int        `json:"function"`
-	Sites    []pageSite `json:"sites"`
-}
-
-type pageSite struct {
-	Line int    `json:"line"`
-	Href string `json:"href,omitempty"`
-	Open string `json:"open,omitempty"`
+	Function int `json:"function"`
+	Calls    int `json:"calls"`
 }
 
 // launchReading projects a target's launch walk for its Inputs reading.
@@ -99,20 +98,13 @@ func (builder *pageBuilder) launchReading(index *groupindex.Index, partOf func(s
 		case "unsure":
 			for _, position := range function.Unsure {
 				call := index.Unsure[position]
-				anchor := builder.links.anchor(call.Location.Path, call.Location.Line, call.Location.Column)
-				result.Unsure = append(result.Unsure, pageLaunchUnsure{Function: decls.of(function.SubjectID), Symbol: call.Symbol, Reason: call.Reason, Line: call.Location.Line, Href: anchor.Href, Open: anchor.Open})
+				unsure := pageLaunchUnsure{Function: decls.of(function.SubjectID), Symbol: call.Symbol, Reason: call.Reason}
+				if !slices.Contains(result.Unsure, unsure) {
+					result.Unsure = append(result.Unsure, unsure)
+				}
 			}
 		case "closed":
-			closed := pageLaunchClosed{Function: decls.of(function.SubjectID)}
-			for _, position := range function.Closed {
-				site := pageSite{}
-				if location := index.Unresolved[position].Location; location != nil {
-					anchor := builder.links.anchor(location.Path, location.Line, location.Column)
-					site = pageSite{Line: location.Line, Href: anchor.Href, Open: anchor.Open}
-				}
-				closed.Sites = append(closed.Sites, site)
-			}
-			result.Closed = append(result.Closed, closed)
+			result.Closed = append(result.Closed, pageLaunchClosed{Function: decls.of(function.SubjectID), Calls: len(function.Closed)})
 		default:
 			result.Nothing++
 		}

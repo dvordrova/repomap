@@ -289,7 +289,6 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
     calls.forEach(function(call,i){
       if(i)from.append(document.createTextNode(', '));
       from.append(name(call.caller));
-      if(call.line){var at=call.href?repomapMembers.sourceLink({Href:call.href,Open:call.open,Text:':'+call.line}):rmEl('span','',':'+call.line);from.append(document.createTextNode(' '),at);}
       if(call.possible)from.append(rmEl('span','possible',' · '+rmT('possible')));
     });
     return from;
@@ -340,9 +339,11 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
 // <launch>
 // The Inputs reading's fold "How these were found" (page_launch.go): the
 // launch functions that hold inputs, each by its chain of calls from where
-// the program starts; each symbol's idiom line, a model answer; the calls
-// that may declare an input and were not decided; the calls the code cannot
-// follow; and the other functions the launch reaches, counted only.
+// the program starts; each symbol's idiom line, a model answer; the
+// functions making calls that may declare an input and were not decided;
+// the functions with calls the code cannot follow, counted; and the other
+// functions the launch reaches, counted only. A function is its name, once:
+// no line numbers.
 function rmLaunchSection(launch,inputNode,choose,read,partNode){
   var box=rmEl('details','system-launch'),decls=launch.decls||[];
   box.appendChild(rmEl('summary','',rmT('How these were found')));
@@ -356,7 +357,6 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
     });
     return link;
   }
-  function site(line,href,open){return href||open?repomapMembers.sourceLink({Href:href,Open:open,Text:':'+line}):rmEl('span','',':'+line);}
   (launch.found||[]).forEach(function(found){
     var row=rmEl('div','system-path-step');
     found.chain.forEach(function(index,i){if(i)row.append(document.createTextNode(' → '));row.append(name(index));});
@@ -374,17 +374,17 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
   });
   if((launch.unsure||[]).length){
     box.appendChild(rmEl('h6','',rmT('Unsure')));
-    // One line per symbol and reason, its calls folded under it: every
-    // call listed, none dropped.
+    // One line per symbol and reason, its functions folded under it:
+    // every function listed, none dropped.
     var groups=new Map();
     launch.unsure.forEach(function(call){var key=call.symbol+'\u0000'+call.reason;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(call);});
     groups.forEach(function(calls){
       var first=calls[0],text=rmT(first.reason==='no_words'?'calls {0} with words the code computes':'calls {0} with words; whether they are inputs is not decided',first.symbol);
       if(calls.length===1){
-        var row=rmEl('div','system-path-step');row.append(name(first.function),document.createTextNode(' '+text+' '),site(first.line,first.href,first.open));box.appendChild(row);return;
+        var row=rmEl('div','system-path-step');row.append(name(first.function),document.createTextNode(' '+text));box.appendChild(row);return;
       }
-      var fold=rmEl('details','system-path-more');fold.appendChild(rmEl('summary','',first.symbol+' · '+rmT('{0} calls',calls.length)+' · '+text));
-      calls.forEach(function(call){var row=rmEl('div','system-path-step');row.append(name(call.function),document.createTextNode(' '),site(call.line,call.href,call.open));fold.appendChild(row);});
+      var fold=rmEl('details','system-path-more');fold.appendChild(rmEl('summary','',first.symbol+' · '+rmT('{0} functions',calls.length)+' · '+text));
+      calls.forEach(function(call){var row=rmEl('div','system-path-step');row.append(name(call.function));fold.appendChild(row);});
       box.appendChild(fold);
     });
   }
@@ -392,8 +392,7 @@ function rmLaunchSection(launch,inputNode,choose,read,partNode){
     box.appendChild(rmEl('h6','',rmT('Could not look inside')));
     launch.closed.forEach(function(closed){
       var row=rmEl('div','system-path-step');
-      row.append(name(closed.function),document.createTextNode(' · '+rmT('{0} calls the code cannot follow',closed.sites.length)+' '));
-      closed.sites.slice(0,5).forEach(function(at){if(at.line)row.append(site(at.line,at.href,at.open),document.createTextNode(' '));});
+      row.append(name(closed.function),document.createTextNode(' · '+rmT('{0} calls the code cannot follow',closed.calls)));
       box.appendChild(row);
     });
   }

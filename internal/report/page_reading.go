@@ -25,11 +25,13 @@ import (
 //     relation (calls, callbacks, other relations, then the variables it
 //     uses) and by name.
 //   - Own is, for each declaration of the part, who calls it and what it
-//     calls, grouped by the part at the other end (its own part first), and
-//     the variables it uses. A type also names the functions of its part
-//     that return or take it. A record type and a global variable list
-//     their fields with who writes and reads each, and a function the
-//     fields it writes (page_field_uses.go).
+//     calls, grouped by the part at the other end (its own part first),
+//     each by its name alone: no place a relation is written (owner,
+//     2026-09-29: "человек будет видеть код"; the name reads its code). A
+//     type also names the functions of its part that return or take it. A
+//     record type and a global variable list their fields with who writes
+//     and reads each, and a declaration the fields it writes and the fields
+//     and global variables it reads (page_field_uses.go).
 //
 // It is read from the part's own relation rows (Connections and
 // InternalConnections) and its members: a relation the part does not list
@@ -150,17 +152,17 @@ type pageReadingFan struct {
 const readingFanOut = 5
 
 // pageReadingEnd is a declaration at a relation's other end: its kind of
-// relation, whether it is only possible, and every place it is written.
+// relation and whether it is only possible. Where the relation is written
+// is not kept: a caller calling from several places is one name.
 type pageReadingEnd struct {
-	Decl     int               `json:"decl"`
-	Kind     string            `json:"kind"`
-	Possible bool              `json:"possible,omitempty"`
-	Sites    []pageReadingSite `json:"sites,omitempty"`
+	Decl     int    `json:"decl"`
+	Kind     string `json:"kind"`
+	Possible bool   `json:"possible,omitempty"`
 }
 
-// pageReadingSite is one place a relation is written: its words
-// ("redis.c:2011") and the link to that line (owner, 2026-09-28: an edge
-// links to the call's own line).
+// pageReadingSite is one place a flow's call is written, said on its name's
+// hover ("called at redis.c:1273 · 1288"): its words and the link to that
+// line.
 type pageReadingSite struct {
 	At   string `json:"at"`
 	Href string `json:"href,omitempty"`
@@ -174,9 +176,10 @@ type pageReadingOwner struct {
 	// NotCalledIn names this program when its adapter proved it never runs
 	// the declaration (owner, 2026-09-28: "not called in redis-benchmark"),
 	// while other programs of the report call it.
-	NotCalledIn string                 `json:"not_called_in,omitempty"`
-	Callees     []pageReadingPeerDecls `json:"callees,omitempty"`
-	Uses        []pageReadingEnd       `json:"uses,omitempty"`
+	NotCalledIn string `json:"not_called_in,omitempty"`
+	// Callees are what it calls and relates to other than the variables
+	// it reads and writes, which Reads and Writes say.
+	Callees []pageReadingPeerDecls `json:"callees,omitempty"`
 	// Flow is what a function calls, in the order its calls are written
 	// (page_flow.go).
 	Flow    []pageFlowCall `json:"flow,omitempty"`
@@ -184,9 +187,11 @@ type pageReadingOwner struct {
 	Takes   []int          `json:"takes,omitempty"`
 	// Fields are a record type's fields, or a global variable's fields as
 	// the code reaches them through it, each with its writers and readers;
-	// Writes the fields a function writes.
+	// Writes the fields a function writes, and Reads the fields and global
+	// variables it reads, each once.
 	Fields []pageReadingFieldUse `json:"fields,omitempty"`
-	Writes []pageReadingWrite    `json:"writes,omitempty"`
+	Writes []pageReadingPath     `json:"writes,omitempty"`
+	Reads  []pageReadingPath     `json:"reads,omitempty"`
 }
 
 // pageReadingPeerDecls is one part's declarations at the other end of a
@@ -411,10 +416,6 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		if from < 0 || to < 0 {
 			continue
 		}
-		var sites []pageReadingSite
-		if row.FromSource != nil {
-			sites = []pageReadingSite{{At: row.FromSource.Text, Href: row.FromSource.Href, Open: row.FromSource.Open}}
-		}
 		kind := row.Kind
 		if row.Arrow != "" {
 			// Every input registered at this part is one neighbour, Inputs,
@@ -452,10 +453,10 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		// The declaration's own reading: the caller's callees, the callee's
 		// callers, each by the part the other end stands in.
 		if fromPart == own {
-			addEnd(callees, from, cmp.Or(toPart, row.Href), cmp.Or(toTitle, row.Title), pageReadingEnd{Decl: to, Kind: kind, Possible: row.Possible, Sites: sites})
+			addEnd(callees, from, cmp.Or(toPart, row.Href), cmp.Or(toTitle, row.Title), pageReadingEnd{Decl: to, Kind: kind, Possible: row.Possible})
 		}
 		if toPart == own {
-			addEnd(callers, to, cmp.Or(fromPart, row.Href), cmp.Or(fromTitle, row.Title), pageReadingEnd{Decl: from, Kind: kind, Possible: row.Possible, Sites: sites})
+			addEnd(callers, to, cmp.Or(fromPart, row.Href), cmp.Or(fromTitle, row.Title), pageReadingEnd{Decl: from, Kind: kind, Possible: row.Possible})
 		}
 	}
 	sortEnds := func(ends []pageReadingEnd) []pageReadingEnd {
@@ -500,15 +501,15 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 	reading.In = peerLines(incoming, incomingOrder, "←")
 	reading.Out = peerLines(outgoing, outgoingOrder, "→")
 
-	// Each member's own reading.
-	declGroups := func(sides map[string]*side, decl int, variables bool) ([]pageReadingPeerDecls, []pageReadingEnd) {
+	// Each member's own reading. The variables a declaration reads and
+	// writes are said by its Reads and Writes lines (page_field_uses.go),
+	// not among what it calls.
+	declGroups := func(sides map[string]*side, decl int, variables bool) []pageReadingPeerDecls {
 		var groups []pageReadingPeerDecls
-		var uses []pageReadingEnd
 		for _, peer := range sides {
 			item := pageReadingPeerDecls{Part: peer.part, Title: peer.title, Own: peer.part == own}
 			for _, end := range peer.ends[decl] {
 				if variables && usesVariable(end.Kind) {
-					uses = append(uses, end)
 					continue
 				}
 				item.Decls = append(item.Decls, end)
@@ -522,14 +523,14 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		slices.SortFunc(groups, func(a, b pageReadingPeerDecls) int {
 			return cmp.Or(boolFirst(a.Own, b.Own), cmp.Compare(len(b.Decls), len(a.Decls)), strings.Compare(a.Title, b.Title), strings.Compare(a.Part, b.Part))
 		})
-		return groups, sortEnds(uses)
+		return groups
 	}
 	for _, members := range reading.Members {
 		for _, decl := range members.Decls {
 			owner := pageReadingOwner{Decl: decl}
-			owner.Callers, _ = declGroups(callers[decl], decl, false)
-			owner.Callees, owner.Uses = declGroups(callees[decl], decl, true)
-			if len(owner.Callers)+len(owner.Callees)+len(owner.Uses) > 0 {
+			owner.Callers = declGroups(callers[decl], decl, false)
+			owner.Callees = declGroups(callees[decl], decl, true)
+			if len(owner.Callers)+len(owner.Callees) > 0 {
 				reading.Own = append(reading.Own, owner)
 			}
 		}
@@ -602,10 +603,6 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 				continue
 			}
 			end := pageReadingEnd{Decl: caller, Kind: string(call.edge.RelationKind), Possible: call.edge.Resolution != programindex.ResolutionExact}
-			if call.edge.Location != nil {
-				site := builder.links.anchor(call.edge.Location.Path, call.edge.Location.Line, call.edge.Location.Column)
-				end.Sites = []pageReadingSite{{At: site.Text, Href: site.Href, Open: site.Open}}
-			}
 			program := componentTitle(builder.byProgram[call.targetID], builder.sections)
 			at := slices.IndexFunc(groups, func(group pageReadingPeerDecls) bool { return group.Program == program && group.Part == part })
 			if at < 0 {
@@ -740,16 +737,11 @@ func declarationKeyOf(builder *pageBuilder, targetID, subjectID string) string {
 }
 
 // mergeEnd adds an end to a declaration's list, one entry per declaration
-// and relation kind with every place it is written.
+// and relation kind, possible only when every relation it stands for is.
 func mergeEnd(ends []pageReadingEnd, end pageReadingEnd) []pageReadingEnd {
 	for i := range ends {
 		if ends[i].Decl == end.Decl && ends[i].Kind == end.Kind {
 			ends[i].Possible = ends[i].Possible && end.Possible
-			for _, site := range end.Sites {
-				if !slices.ContainsFunc(ends[i].Sites, func(listed pageReadingSite) bool { return listed.At == site.At }) {
-					ends[i].Sites = append(ends[i].Sites, site)
-				}
-			}
 			return ends
 		}
 	}
