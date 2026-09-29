@@ -1186,11 +1186,19 @@ queries and original sources. Query-to-table references are reversible, so a
 table exposes its referring queries. Equal table names never merge source
 scopes; SQL mentions and JOINs prove no schema ownership or foreign keys.
 
-An outbound record also lists native callers of its exact sending callable,
-each linking to its original part with the native caller/callee names,
-possible-call status and source pair. A shared client group is not enough to
-attribute a caller to another method. This is source reading in the panel; it
-adds no map edge and infers no runtime caller.
+An outside call's tile is read with "Called from": where each program
+whose record the tile stands for reaches the call from (GroupsIndex
+`reached_from`, READING § Outside systems), the tile's own program first,
+each part in its box as elsewhere in the column with its callers by name,
+another program's part named with its program ("redis-cli: [Command line
+client] cliConnect()"), and a path's start inside the call's own part under
+that part's box. A caller is its name, once however many places it calls
+from; no line number and no code mark is written (owner, 2026-09-29), the
+places being kept for the name's hover. A name reads its function in the
+column and on the canvas. More than twelve callers fold under their count
+(freqtrade's exchange calls are reached from 39 functions). The record's
+static row prints no callers. This is source reading; it adds no map edge
+and infers no runtime caller.
 
 An operation or native route exposes Data links only when its accepted path
 reaches an exact native model owner or a query's explicitly observed callable

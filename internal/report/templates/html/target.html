@@ -56,7 +56,6 @@
 <div class="outbound-source">{{if .External}}<code class="outbound-callable">{{.External}}</code> · {{end}}{{template "anchor" .Anchor}}</div>
 {{with .Runs}}<p class="outbound-runs">{{t "Runs this repository's program"}} {{range $i, $program := .}}{{if $i}}, {{end}}<a class="outbound-caller-part" href="{{$program.Href}}">{{$program.Title}}</a>{{end}}</p>{{end}}
 {{with .Side}}<p class="outbound-side">{{t "{0} connects out from" .Program}} <code>{{range $i, $step := .Path}}{{if $i}} → {{end}}{{$step.Name}}{{end}}</code></p>{{end}}
-{{if .Callers}}<section class="outbound-callers"><h5>{{t "Called from"}}</h5>{{range .Callers}}<article>{{if .Href}}<a class="outbound-caller-part" href="{{.Href}}">{{.Title}}</a>{{end}}<p><code>{{.Label}}</code>{{if .Possible}} · {{t "possible call"}}{{end}}</p><div>{{template "anchor" .FromSource}} → {{template "anchor" .ToSource}}</div></article>{{end}}</section>{{end}}
 {{with .InformativeUses}}<p class="meta">{{t "Destination sources"}} · {{len .}}</p>{{range .}}<div class="outbound-chain">{{if .Method}}<code>{{.Method}}</code> · {{end}}{{if and (not .Address) .Frontier}}{{t "Address passes through"}} <code>{{.Frontier}}</code>{{else}}{{template "outbound-address" .AddressText}}{{end}}<ol class="plain">{{range .Steps}}<li><code>{{.Name}}</code> · {{template "anchor" .Anchor}}</li>{{end}}</ol></div>{{end}}{{end}}</div></details></li>{{end}}
 
 {{define "outbound-group"}}<li data-integration-item data-source-kind="{{.Source}}">

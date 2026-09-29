@@ -30,33 +30,6 @@ func TestInternalCallRemainsReadableAfterItsDeclarationsShareAPart(t *testing.T)
 	}
 }
 
-func TestExternalCallerReadingUsesExactMethodNotSharedClientGroup(t *testing.T) {
-	index := groupindex.Index{Groups: []groupindex.Group{
-		{ID: "client", Title: "HTTP client", MemberSubjectIDs: []string{"get", "post"}},
-		{ID: "page", Title: "Level page", MemberSubjectIDs: []string{"load"}},
-		{ID: "play", Title: "Playground", MemberSubjectIDs: []string{"run"}},
-	}, StructuralEdges: []groupindex.StructuralEdge{
-		{RelationID: "get-call", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, FromSubjectID: "load", ToSubjectID: "get", Resolution: programindex.ResolutionExact, Location: &programindex.Location{Path: "page.ts", Line: 20}},
-		{RelationID: "post-call", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, FromSubjectID: "run", ToSubjectID: "post", Resolution: programindex.ResolutionAlternatives, Location: &programindex.Location{Path: "play.ts", Line: 72}},
-		{RelationID: "read-only", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationReads, FromSubjectID: "run", ToSubjectID: "get"},
-	}}
-	b := pageBuilder{subjects: map[string]subjectRef{}}
-	for _, id := range []string{"get", "post", "load", "run"} {
-		b.subjects[id] = subjectRef{subject: groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: id, Location: &programindex.Location{Path: id + ".ts", Line: 3}}}}
-	}
-	rows := b.outboundCallers(&index, "front", "get")
-	if len(rows) != 1 || rows[0].Title != "Level page" || rows[0].Label != "load → get" || rows[0].Possible || rows[0].FromSource.Line != 20 {
-		t.Fatalf("GET acquired another client method's caller: %+v", rows)
-	}
-	rows = b.outboundCallers(&index, "front", "post")
-	if len(rows) != 1 || rows[0].Href != "#"+groupAnchorID("front", "play") || !rows[0].Possible || rows[0].FromSource.Line != 72 {
-		t.Fatalf("POST lost its exact caller/source/status: %+v", rows)
-	}
-	if len(b.outboundCallers(&index, "front", "")) != 0 {
-		t.Fatal("unknown caller was inferred from client membership")
-	}
-}
-
 func TestConnectionReadingGroupsPreserveIdentityDirectionAndEvidence(t *testing.T) {
 	rows := []pageConnection{
 		{Href: "#rules", Title: "Rules", Arrow: "→", Label: "call 1", Summary: "Checks moves", SummaryRef: "summary1", FromSource: &pageAnchor{Text: "eval.clj:32"}},

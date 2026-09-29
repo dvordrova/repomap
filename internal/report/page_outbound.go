@@ -1,6 +1,8 @@
 package report
 
 import (
+	"cmp"
+	"encoding/json"
 	"slices"
 	"sort"
 	"strings"
@@ -22,7 +24,11 @@ type pageOutbound struct {
 	KindLabel        string
 	DestinationCount int
 	Uses             []pageOutboundUse
-	Callers          []pageConnection
+	// reached are the callers outside its part the program reaches the
+	// call from (GroupsIndex ReachedFrom), read with its tile; program is
+	// the component making it.
+	reached []pageReachedName
+	program string
 	// Caller is the declaration the outside call is written in; Side the
 	// program's own code reaching it (page_shared_code.go), which says the
 	// program connects out.
@@ -181,7 +187,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 				}
 			}
 		}
-		row.Callers = builder.outboundCallers(index, section.ID, call.SubjectID)
+		row.reached, row.program = builder.outboundReached(index, section, call), componentTitle(section, builder.sections)
 		if ref, known := builder.subject(index.Target.ID, call.SubjectID); known && call.SubjectID != "" {
 			name, anchor := builder.subjectDisplay(ref.subject)
 			row.Caller = name
@@ -242,52 +248,114 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 	}
 }
 
-// A communication's reader follows exact native calls into its sending
-// function. Sharing a client group is not evidence that another method calls
-// this endpoint. This is source reading; no shortcut edge is added to the map.
-func (builder *pageBuilder) outboundCallers(index *groupindex.Index, sectionID, subjectID string) []pageConnection {
-	if subjectID == "" {
-		return nil
-	}
-	calleeRef, known := builder.subject(index.Target.ID, subjectID)
-	if !known {
-		return nil
-	}
-	callee, calleeAnchor := builder.subjectDisplay(calleeRef.subject)
-	if callee == "" {
-		return nil
-	}
-	groups := map[string]groupindex.Group{}
-	for _, group := range index.Groups {
-		for _, id := range group.MemberSubjectIDs {
-			groups[id] = group
-		}
-	}
-	var callers []pageConnection
-	for _, edge := range index.StructuralEdges {
-		if edge.Role != groupindex.EdgeRelationTarget || edge.ToSubjectID != subjectID ||
-			(edge.RelationKind != programindex.RelationCalls && edge.RelationKind != programindex.RelationExecutes) {
-			continue
-		}
-		callerRef, known := builder.subject(index.Target.ID, edge.FromSubjectID)
+// pageReachedName is one caller an outside call is reached from, as its
+// tile's reading names it: the declaration, read in the part it stands in,
+// and the place it makes the call into the call's part, said on hover.
+type pageReachedName struct {
+	decl                 pageReadingDecl
+	part, title, program string
+	site                 pageAnchor
+}
+
+// outboundReached names the callers a call is reached from, in the saved
+// order: each part's, then each path's start inside the call's own part.
+func (builder *pageBuilder) outboundReached(index *groupindex.Index, section *pageSection, call groupindex.OutboundCall) []pageReachedName {
+	program := componentTitle(section, builder.sections)
+	var names []pageReachedName
+	for _, caller := range call.ReachedFrom {
+		ref, known := builder.subject(index.Target.ID, caller.SubjectID)
 		if !known {
 			continue
 		}
-		name, anchor := builder.subjectDisplay(callerRef.subject)
-		if name == "" {
+		label, anchor := builder.subjectDisplay(ref.subject)
+		key := declarationKey(anchor)
+		if label == "" || key == "" {
 			continue
 		}
-		if edge.Location != nil {
-			anchor = builder.links.anchorPointer(edge.Location.Path, edge.Location.Line, edge.Location.Column)
+		name := pageReachedName{program: program}
+		if caller.GroupID != "" {
+			name.part = "#" + groupAnchorID(section.ID, caller.GroupID)
+			name.title = builder.groupTitles[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: caller.GroupID}]
 		}
-		row := pageConnection{Native: true, EvidenceID: edge.RelationID, Arrow: "←", Label: name + " → " + callee,
-			Possible: edge.Resolution != programindex.ResolutionExact, FromSource: anchor, ToSource: calleeAnchor}
-		if group := groups[edge.FromSubjectID]; group.ID != "" {
-			row.Title, row.Href = group.Title, "#"+groupAnchorID(sectionID, group.ID)
+		kind := ""
+		if object := ref.subject.Object; object != nil && (object.Kind == programindex.ObjectFunction || object.Kind == programindex.ObjectMethod) {
+			kind = "function"
 		}
-		callers = append(callers, row)
+		name.decl = pageReadingDecl{Name: builder.withType(index.Target.ID, ref.subject, label), Key: key, Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource,
+			Code: anchor.Code, At: anchor.Text, File: anchor.Path, Kind: kind, Part: name.part}
+		if caller.Location != nil {
+			name.site = builder.links.anchor(caller.Location.Path, caller.Location.Line, caller.Location.Column)
+		}
+		names = append(names, name)
 	}
-	return callers
+	return names
+}
+
+// pageReached is the reading of the callers an outside call's tile is
+// reached from (31-reading-column.js rmReachedFrom): the declarations once,
+// and each part's callers by name, the tile's own program first and every
+// other program's part named with its program. No line number is written:
+// a name reads its function, its call's place said on hover.
+type pageReached struct {
+	Decls  []pageReadingDecl      `json:"decls"`
+	Groups []pageReadingPeerDecls `json:"groups"`
+}
+
+// reachedReading is the JSON of the callers every record a tile stands for
+// is reached from; "" when none is.
+func reachedReading(rows []pageOutbound) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	own := rows[0].program
+	reading := pageReached{Decls: []pageReadingDecl{}, Groups: []pageReadingPeerDecls{}}
+	at := map[string]int{}
+	for _, row := range rows {
+		for _, name := range row.reached {
+			position, known := at[name.decl.Key]
+			if !known {
+				position = len(reading.Decls)
+				at[name.decl.Key] = position
+				reading.Decls = append(reading.Decls, name.decl)
+			}
+			program := ""
+			if name.program != own {
+				program = name.program
+			}
+			group := slices.IndexFunc(reading.Groups, func(group pageReadingPeerDecls) bool {
+				return group.Program == program && group.Part == name.part && group.Title == name.title
+			})
+			if group < 0 {
+				group = len(reading.Groups)
+				reading.Groups = append(reading.Groups, pageReadingPeerDecls{Part: name.part, Title: name.title, Program: program})
+			}
+			end := pageReadingEnd{Decl: position, Kind: string(programindex.RelationCalls)}
+			if name.site.Text != "" {
+				end.sites = []pageAnchor{name.site}
+			}
+			reading.Groups[group].Decls = mergeEnd(reading.Groups[group].Decls, end)
+		}
+	}
+	if len(reading.Groups) == 0 {
+		return ""
+	}
+	// The tile's own program first, each part's callers by name.
+	slices.SortStableFunc(reading.Groups, func(a, b pageReadingPeerDecls) int { return boolFirst(a.Program == "", b.Program == "") })
+	for i := range reading.Groups {
+		ends := reading.Groups[i].Decls
+		for j := range ends {
+			ends[j].Site = callSite(ends[j].sites)
+		}
+		slices.SortStableFunc(ends, func(a, b pageReadingEnd) int {
+			left, right := reading.Decls[a.Decl].Name, reading.Decls[b.Decl].Name
+			return cmp.Or(strings.Compare(strings.ToLower(left), strings.ToLower(right)), strings.Compare(left, right))
+		})
+	}
+	raw, err := json.Marshal(reading)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 // pageOutboundGroup presents every record naming one destination as one

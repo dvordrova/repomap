@@ -163,6 +163,32 @@ function rmFieldUses(ctx,data,use){
   return box;
 }
 
+// Where an outside call is reached from (page_outbound.go, GroupsIndex
+// ReachedFrom): the first callers outside the part making it, each part in
+// its box with its callers by name, another program's part named with its
+// program; a path starting inside that part at a seed or an input's
+// handler stands under the part's own box. Redis's connect, written in
+// anet.c, reads syncWithMaster, cliConnect and createClient, not the
+// wrapper one hop away. A long list folds under its count (freqtrade's
+// exchange calls are reached from 39 functions). No line numbers: a name
+// reads its function in the column and on the canvas.
+function rmReachedFrom(ctx,data){
+  if(!data||!(data.groups||[]).length)return null;
+  data.decls.forEach(function(decl){if(decl.key===undefined)decl.key=decl.href;});
+  var total=data.groups.reduce(function(sum,group){return sum+group.decls.length;},0),long=total>12;
+  var section=rmEl(long?'details':'section','map-reading-side map-reading-in outbound-reached'),heading=rmEl(long?'summary':'h6','',rmT('Called from'));
+  if(long)heading.appendChild(rmEl('span','map-reading-peer-count',String(total)));
+  section.appendChild(heading);
+  data.groups.forEach(function(group){
+    var box=rmEl('div','map-reading-peer'),head=rmEl('div','map-reading-peer-head');
+    if(group.program)head.appendChild(rmEl('span','map-reading-program',group.program+':'));
+    head.append(rmPartBox(ctx,group.part,group.title),rmEl('span','map-reading-peer-count',String(group.decls.length)));box.appendChild(head);
+    var list=rmEl('ul','map-reading-ends');group.decls.forEach(function(end){list.appendChild(rmEndItem(ctx,data,end,'in'));});
+    box.appendChild(list);section.appendChild(box);
+  });
+  return section;
+}
+
 // A part's reading (owner, 2026-09-28): the part in its box, the model's
 // description and its files; what it is made of first, its declarations by
 // kind and name, the keys bold, by file when it holds several; its

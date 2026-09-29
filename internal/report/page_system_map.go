@@ -208,6 +208,11 @@ func (view *pageView) SystemMap() *pageMap {
 	groupFrames := map[string][]int{}
 	var groupKeys []string
 	foldedTiles := map[string]string{}
+	// The records each outside tile stands for, its own first: the tile is
+	// read with the callers every one of them is reached from (Redis's one
+	// connect tile, from syncWithMaster, cliConnect and createClient).
+	tileRows := map[string][]pageOutbound{}
+	var tileOrder []string
 	for _, section := range view.Sections {
 		for _, group := range groupOutbound(section.Outbound) {
 			var children []string
@@ -285,6 +290,10 @@ func (view *pageView) SystemMap() *pageMap {
 						result.Nodes[at].Aliases = append(result.Nodes[at].Aliases, id)
 					}
 				}
+				if _, listed := tileRows[tile]; !listed {
+					tileOrder = append(tileOrder, tile)
+				}
+				tileRows[tile] = append(tileRows[tile], row)
 				from := targetMapNodeID(section.programTargetID, mapNodeID(row.MapGroup))
 				if _, ok := positions[from]; row.MapGroup != "" && ok {
 					edge := pageMapEdge{From: from, To: tile, Scope: "structure", Operations: row.Operations, Label: row.KindLabel, Summary: row.Summary, SummaryRef: row.SummaryRef, Possible: row.Source != "fact", FromSource: row.Anchor}
@@ -307,6 +316,9 @@ func (view *pageView) SystemMap() *pageMap {
 				groupFrames[key] = append(groupFrames[key], positions[id])
 			}
 		}
+	}
+	for _, tile := range tileOrder {
+		result.Nodes[positions[tile]].Reached = reachedReading(tileRows[tile])
 	}
 	// Frames in a group that all spell their destination alike leave it to
 	// the group to say once: three "DNS resolver" tiles side by side said one

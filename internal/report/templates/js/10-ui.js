@@ -44,7 +44,7 @@ function rmScrollToReading(node) {
 // "shared". rmPage.data(element, name) is the value its dataset[name]
 // refers to, read once, or null.
 var rmPage = (function () {
-  var page=null,values=new Map(),decls=new Map(),named={reading:1,inputPath:1,catalogue:1,launch:1};
+  var page=null,values=new Map(),decls=new Map(),named={reading:1,inputPath:1,catalogue:1,launch:1,reached:1};
   function load(){
     if(!page){var node=document.getElementById('rm-page-data');page=node?JSON.parse(node.textContent):{decls:[],values:[]};page.base=page.base||'';page.range=page.range||'-L';page.shared=page.shared||[];}
     return page;

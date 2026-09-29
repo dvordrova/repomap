@@ -34,6 +34,11 @@ func foldIndexes(indexes []groupindex.Index) []groupindex.Index {
 		for i := range folded[position].Outbound {
 			call := &folded[position].Outbound[i]
 			call.GroupID = canonical[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: call.GroupID}].GroupID
+			call.ReachedFrom = append([]groupindex.OutboundCaller(nil), call.ReachedFrom...)
+			for j := range call.ReachedFrom {
+				caller := &call.ReachedFrom[j]
+				caller.GroupID = canonical[groupindex.Endpoint{TargetID: index.Target.ID, GroupID: caller.GroupID}].GroupID
+			}
 		}
 	}
 	for position := range folded {

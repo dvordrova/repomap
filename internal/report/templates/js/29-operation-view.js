@@ -850,6 +850,10 @@ function rmEntryLanding(link,nodes,component){
           if(peer)link.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();select(peer,true,null,true);});
         });
         card.insertBefore(copy,card.querySelector('.map-all-members'));
+        // An outside call reads where the program reaches it from, after
+        // its source and the program's side of it.
+        var reached=n.dataset.itemKind==='External communication'?rmReachedFrom(map.readingContext(),rmPage.data(n,'reached')):null,body=copy.querySelector('.outbound-call-body');
+        if(reached&&body){var after=Array.from(body.querySelectorAll(':scope>.outbound-source,:scope>.outbound-runs,:scope>.outbound-side')).pop();if(after)after.after(reached);else body.prepend(reached);}
       }
     }
   });

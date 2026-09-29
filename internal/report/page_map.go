@@ -170,7 +170,10 @@ type pageMapNode struct {
 	Explained string
 	// Dispatch holds the dispatch sites declared in this part, read with
 	// their declaration (page_input_path.go).
-	Dispatch  string
+	Dispatch string
+	// Reached is, on an outside call's tile, the callers every record it
+	// stands for is reached from, by part (page_outbound.go).
+	Reached   string
 	Writes    []pageEntityWrite
 	Children  string
 	Branch    string

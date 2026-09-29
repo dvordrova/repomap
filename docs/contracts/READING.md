@@ -790,6 +790,20 @@ groups records by the stored name without its parenthetical qualifier,
 case-insensitively, and folds no text onto another name.
 
 An outbound call names the extracted tables among its values as `data_ids`.
+It also names where its program reaches it from (`reached_from`, a code
+fact computed once at projection and persisted with the index): from the
+declaration making the call, exact `calls` relations are followed backwards,
+per program, only through callers in that declaration's own part. Each path
+ends at the first caller in another part (or in none), kept with its call
+site; a path whose callers run out inside the part is kept only when it
+ends at a seed or an input's handler, with no site, and otherwise dropped,
+so a helper nothing uses names nobody. Callers in the program's test
+sources and callers its adapter proved it never runs are skipped; a cycle
+stops where it closes, and there is no depth cap. A call no drawn part
+holds has none. Redis's connect, written in anet.c's
+anetTcpGenericConnect, is reached from syncWithMaster in redis-server,
+cliConnect in redis-cli and createClient in redis-benchmark, not from the
+wrapper one hop inside anet.c. No model is asked.
 GroupsIndex derives no chains (paths from an operation to an outbound call)
 and no operation types. It derives what each input's handler reaches, the
 dispatch sites and the phases, after the joints are in and whenever an index
