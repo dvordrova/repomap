@@ -426,21 +426,6 @@ function rmEntryLanding(link,nodes,component){
   var owner=component();
   return owner?{node:owner,source:null,entry:true}:null;
 }
-// An input's row in a component's catalogue names the input by where it is
-// registered and its handler by its code, and both opened GitHub on a plain
-// click: a reader of Redis's 95 commands meant to read flushdb, not its
-// line in redis.c. When the row's own link to the input (its "To
-// explanation", or its title's anchor) names one input, a plain click on
-// the name or the handler reads that input in the report; a modifier-click
-// still opens the code. Nothing is matched by name.
-function rmCatalogInputClick(event,reveal){
-  if(event.button||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return false;
-  var name=event.target.closest&&event.target.closest('.route-path,.route-symbol,.input-handler a');
-  var row=name&&name.closest('.input-catalog [data-input-item]');if(!row)return false;
-  var ids=new Set(Array.from(row.querySelectorAll('a.input-explanation[href^="#"],.input-title>a[href^="#"]:not(.route-path)')).map(function(a){return a.getAttribute('href').slice(1);}).filter(Boolean));
-  if(ids.size!==1||!reveal(Array.from(ids)[0]))return false;
-  event.preventDefault();event.stopImmediatePropagation();return true;
-}
 (function(){document.querySelectorAll('[data-map-explorer]').forEach(function(map){
   var svg=map.querySelector('svg'),stage=map.querySelector('[data-map-stage]');
   var nodes=Array.from(map.querySelectorAll('[data-node]')),byID={},aliases={};
@@ -951,7 +936,6 @@ function rmCatalogInputClick(event,reveal){
     if(landing.entry)pendingEntry=landing.node.id;
     map.revealNode(landing.node,false,landing.source||undefined).finally(function(){pendingEntry=null;});
   },true);
-  document.addEventListener('click',function(e){rmCatalogInputClick(e,function(id){var target=mapped(document.getElementById(id));if(target)map.revealNode(target,false);return !!target;});},true);
   document.addEventListener('click',function(e){var a=e.target.closest('a[href^="#"]');if(!a||a.closest('[data-map-explorer]')||a.hasAttribute('data-reading-map-return')||a.hasAttribute('data-open')||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;var n=document.getElementById(a.getAttribute('href').slice(1)),target=mapped(n);if(!target)return;e.preventDefault();e.stopImmediatePropagation();map.revealNode(target,false);},true);
   if(map.hasAttribute('data-system-map'))document.querySelector('.nav-home')?.addEventListener('click',function(e){if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();map.showWholeMap().then(function(){rmScrollToReading(map);});});
   window.addEventListener('hashchange',hashChanged);

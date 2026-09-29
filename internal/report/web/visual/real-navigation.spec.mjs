@@ -1,10 +1,9 @@
 import {test,expect} from '@playwright/test';
 
-// The toolbar's breadcrumb and a component's input catalogue on a real
-// report (REPOMAP_REAL_RUN, rendered by .bin/repomap render as in
+// The toolbar's breadcrumb and a declaration's reading on a real report
+// (REPOMAP_REAL_RUN, rendered by .bin/repomap render as in
 // real-report.spec.mjs); the fixture has neither. On Redis the breadcrumb was
-// one link that went nowhere, and a click on an input's name in the
-// catalogue ("flushdb") opened GitHub.
+// one link that went nowhere.
 test.skip(!process.env.REPOMAP_REAL_RUN,'set REPOMAP_REAL_RUN to a saved run directory');
 test.describe.configure({mode:'serial'});
 
@@ -52,23 +51,6 @@ for(const [width,height] of [[1440,900],[1280,800]])test(`each breadcrumb segmen
   await expect(page.locator('.map-inspector-heading')).toContainText(titles[0]);
   await expect(crumbs(page)).toHaveCount(1);
   await expect(page.locator('.flow-location')).toHaveText(titles[0]);
-});
-
-test('a plain click on an input\'s name in the catalogue reads the input',async({page,context})=>{
-  test.setTimeout(120_000);
-  const map=await open(page,1440,900);
-  const component=await page.evaluate(()=>document.querySelector('[data-component-overview]').dataset.componentOverview.replace('system-component-',''));
-  await map.evaluate((map,id)=>map.selectComponent(id),component);await settle(map);
-  // The catalogue's records stand on the component's page, which its
-  // reading leads to.
-  await page.locator('.map-inspector .map-component-page a').click();
-  const row=page.locator(`[id="${component}"] .input-catalog [data-input-item]`).filter({has:page.locator('a.input-explanation')}).first();
-  await row.scrollIntoViewIfNeeded();
-  const name=row.locator('.route-path,.input-title>a').first(),title=(await name.textContent()).trim();
-  let opened=0;context.on('page',()=>opened++);
-  await name.click();await settle(map);await page.waitForTimeout(500);
-  expect(opened,'no tab opens').toBe(0);
-  await expect(page.locator('.map-inspector-heading')).toContainText(title);
 });
 
 // A name in a declaration's reading reads that declaration and marks its

@@ -537,7 +537,7 @@ assert.equal(rows[0].children[0].tagName,'BUTTON');assert.equal(rows[0].children
 // itself, read at its entry line, when no part holds the seed; with neither
 // on this map it is left to the page it names.
 func TestTheEntrypointsLinkLandsOnThePartOrTheComponentsEntryLine(t *testing.T) {
-	code := systemJSPiece(t, "29-operation-view.js", "function rmEntryLanding(", "// An input's row in a component's catalogue")
+	code := systemJSPiece(t, "29-operation-view.js", "function rmEntryLanding(", "(function(){document.querySelectorAll('[data-map-explorer]')")
 	runSystemJS(t, code+`
 const node=(id,href)=>({id,getAttribute:k=>k==='href'?href:null});
 const nodes=[node('n-t1-g1','#t1-g1'),node('n-t1-g2','#t1-g2')],component=node('system-component-t1','#t1');
@@ -552,55 +552,6 @@ assert.equal(rmEntryLanding(link({}),nodes,()=>null),null,'with no component on 
 `)
 }
 
-// A component's catalogue row names its input by where it is registered and
-// its handler by its code; a plain click on either opened GitHub (Redis's
-// flushdb and flushdbCommand among 95 rows). When the row's own link names
-// one input, a plain click reads that input in the report and a modifier-
-// click still opens the code. A row naming no input, or two, keeps its links.
-func TestACatalogRowReadsItsInputOnAPlainClick(t *testing.T) {
-	code := systemJSPiece(t, "29-operation-view.js", "function rmCatalogInputClick(", "(function(){document.querySelectorAll('[data-map-explorer]')")
-	runSystemJS(t, `
-function el(cls,attrs={},children=[]){
-  const node={cls,attrs,children,parent:null,
-    getAttribute:k=>attrs[k],
-    matches(selector){return selector.split(',').some(one=>{one=one.trim();
-      if(one==='.input-catalog [data-input-item]')return 'input-item' in attrs&&!!node.up(n=>n.cls==='input-catalog');
-      if(one==='.input-handler a')return cls==='a'&&!!node.up(n=>n.cls==='input-handler');
-      if(one==='a.input-explanation[href^="#"]')return cls==='a input-explanation'&&String(attrs.href).startsWith('#');
-      if(one==='.input-title>a[href^="#"]:not(.route-path)')return cls==='a'&&node.parent?.cls==='input-title'&&String(attrs.href).startsWith('#');
-      return one==='.'+cls.split(' ').at(-1);});},
-    up(test){for(let at=node.parent;at;at=at.parent)if(test(at))return at;return null;},
-    closest(selector){for(let at=node;at;at=at.parent)if(at.matches(selector))return at;return null;},
-    querySelectorAll(selector){const out=[];const walk=n=>{for(const c of n.children){if(c.matches(selector))out.push(c);walk(c);}};walk(node);return out;}};
-  for(const child of children)child.parent=node;
-  return node;
-}
-function route(ids){
-  const name=el('route-path',{href:'https://github.com/r/redis.c#L791'}),handler=el('route-symbol',{href:'https://github.com/r/redis.c#L6085'});
-  const row=el('li',{'input-item':''},[el('input-title',{},[name,...ids.map(id=>el('a input-explanation',{href:'#'+id}))]),el('input-handler',{},[handler])]);
-  el('input-catalog',{},[row]);
-  return {name,handler};
-}
-`+code+`
-const revealed=[];const reveal=id=>{revealed.push(id);return true;};
-const click=(target,extra={})=>{let prevented=false,stopped=false;const event={target,button:0,preventDefault(){prevented=true;},stopImmediatePropagation(){stopped=true;},...extra};rmCatalogInputClick(event,reveal);return prevented&&stopped;};
-const flushdb=route(['t1-o1']);
-assert.equal(click(flushdb.name),true,'a plain click on the input name reads the input');
-assert.equal(click(flushdb.handler),true,'a plain click on its handler reads the input too');
-assert.deepEqual(revealed,['t1-o1','t1-o1']);
-assert.equal(click(flushdb.name,{metaKey:true}),false,'a modifier-click opens the code');
-assert.equal(click(flushdb.handler,{button:1}),false);
-assert.equal(click(route([]).name),false,'a row that names no input keeps its code link');
-assert.equal(click(route(['t1-o1','t1-o2']).name),false,'nor does a row naming two');
-const operation=el('a',{href:'#t1-o7'}),code=el('a',{href:'https://github.com/r/x.c#L1'});
-el('input-catalog',{},[el('li',{'input-item':''},[el('input-title',{},[operation]),el('input-handler',{},[code])])]);
-assert.equal(click(code),true,'an operation row reads the input its title links to');
-assert.deepEqual(revealed.at(-1),'t1-o7');
-assert.equal(rmCatalogInputClick({target:el('route-path',{href:'x'}),button:0},reveal),false,'a name outside a catalogue row is left alone');
-assert.equal(rmCatalogInputClick({target:flushdb.name,button:0,preventDefault(){throw new Error('prevented')},stopImmediatePropagation(){}},()=>false),false,'an input the map does not draw keeps the link');
-`)
-}
-
 // The toolbar's breadcrumb was one link, "redis-server (executable) /
 // Server runtime / Replication · syncCommand", whose click only re-read the
 // current reading: Redis's readers clicked "Server runtime" in it three
@@ -609,7 +560,7 @@ assert.equal(rmCatalogInputClick({target:flushdb.name,button:0,preventDefault(){
 // and framed, the part is read and entered without its declaration, the
 // declaration is read in its part, the input is entered as its path.
 func TestEachBreadcrumbSegmentGoesUpToItsLevel(t *testing.T) {
-	path := systemJSPiece(t, "29-operation-view.js", "function rmExplorationPath(", "// An input's row in a component's catalogue")
+	path := systemJSPiece(t, "29-operation-view.js", "function rmExplorationPath(", "(function(){document.querySelectorAll('[data-map-explorer]')")
 	levels := systemJSPiece(t, "29-operation-view.js", "  map.explorationPath=function(){", "  map.resumeExploration=function(){")
 	crumbs := systemJSPiece(t, "45-modes.js", "function rmCrumbs(", "// One entrance, one report")
 	runSystemJS(t, fakeElements+`

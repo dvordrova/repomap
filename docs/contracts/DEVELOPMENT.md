@@ -236,8 +236,9 @@ that one pinch crosses one level boundary and a pause lets the next cross
 the next, and that a wheel over the canvas's location row moves the map
 and one past an overflowing inventory's end scrolls neither the page nor
 the map. Without a fixture of its own, `visual/real-navigation.spec.mjs`
-walks the toolbar's breadcrumb up from a part and reads an input from its
-catalogue row on the `REPOMAP_REAL_RUN` report at 1440×900 and 1280×800.
+walks the toolbar's breadcrumb up from a part at 1440×900 and 1280×800 and
+reads a caller named in a declaration's reading on the `REPOMAP_REAL_RUN`
+report.
 PNG attachments show the aim and action for each journey step. Open the
 review page with `npx playwright show-report --host 127.0.0.1`; its HTML is
 a viewer for the screenshots. Actual output also
