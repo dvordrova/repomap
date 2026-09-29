@@ -101,7 +101,7 @@ func assertGoHTTPRegistrations(t *testing.T, repository *corpus.Corpus, index pr
 			requests[fact.Anchor.Line] = fact.Method + " " + fact.Path
 		}
 	}
-	if want := map[int]string{35: "GET https://unused.example", 46: "GET https://client.example/account", 51: "POST https://factory.example/events", 80: "GET https://after-only.example"}; !reflect.DeepEqual(requests, want) {
+	if want := map[int]string{36: "GET https://unused.example", 47: "GET https://client.example/account", 52: "POST https://factory.example/events", 81: "GET https://after-only.example", 134: "GET https://versioned.example/v1/items"}; !reflect.DeepEqual(requests, want) {
 		t.Fatalf("request methods = %v, want %v", requests, want)
 	}
 	adaptertest.AssertParameterHolders(t, result, source, holders)

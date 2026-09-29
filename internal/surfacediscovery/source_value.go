@@ -297,17 +297,65 @@ func orderedAlternatives(values []*sourcevalue.Value, anchor *sourcevalue.Anchor
 // sourceReturn exposes only the retained expression returned by a local native
 // callable. It does not inline calls made by that expression or read dependency
 // implementations. The consumer follows its original call-site identity.
+// errorReturn says whether a return is a function's failure: its last
+// result is an error that is not the nil constant, and every other result
+// is its type's zero value written as a constant ("", 0, false, nil).
+func errorReturn(result *ssa.Return) bool {
+	if len(result.Results) < 2 {
+		return false
+	}
+	last := result.Results[len(result.Results)-1]
+	if !types.Identical(last.Type(), types.Universe.Lookup("error").Type()) {
+		return false
+	}
+	if written, ok := last.(*ssa.Const); ok && written.IsNil() {
+		return false
+	}
+	for _, value := range result.Results[:len(result.Results)-1] {
+		written, ok := value.(*ssa.Const)
+		if !ok || written.Value != nil && !zeroConstant(written.Value) {
+			return false
+		}
+	}
+	return true
+}
+
+func zeroConstant(value constant.Value) bool {
+	switch value.Kind() {
+	case constant.String:
+		return constant.StringVal(value) == ""
+	case constant.Bool:
+		return !constant.BoolVal(value)
+	case constant.Int, constant.Float, constant.Complex:
+		return constant.Sign(value) == 0
+	}
+	return false
+}
+
 func (a *analyzer) sourceReturn(fn *ssa.Function) *sourcevalue.Value {
 	if fn == nil || fn.Syntax() == nil || !a.isRepositoryFunction(fn) {
 		return nil
 	}
-	var values []*sourcevalue.Value
+	var values, failures []*sourcevalue.Value
 	for _, block := range fn.Blocks {
 		for _, instruction := range block.Instrs {
 			if result, ok := instruction.(*ssa.Return); ok && len(result.Results) > 0 {
-				values = append(values, a.sourceValue(result.Results[0], make(map[ssa.Value]bool), result))
+				value := a.sourceValue(result.Results[0], make(map[ssa.Value]bool), result)
+				if errorReturn(result) {
+					failures = append(failures, value)
+					continue
+				}
+				values = append(values, value)
 			}
 		}
+	}
+	// A return handing back zero values with an error that is not nil
+	// (`return "", err`) is the function failing: its caller uses no other
+	// result then, so what it returns is what the other returns give.
+	// litestream's expand returned "" beside its error, and the WAL path
+	// db.path + "-wal" read "-wal". A function that only fails keeps them.
+	if len(values) == 0 {
+		values = failures
 	}
 	if len(values) == 0 {
 		return nil

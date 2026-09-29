@@ -96,7 +96,7 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 	}
 	got := inputRows(projected, "internal/storefixture/tool_cli.go", "internal/storefixture/destinations.go")
 	want := []inputRow{
-		{kind: "command", name: "price-endpoint", declaredBy: "DestinationApplication", at: "internal/storefixture/destinations.go:27"},
+		{kind: "command", name: "price-endpoint", declaredBy: "DestinationApplication", at: "internal/storefixture/destinations.go:28"},
 		{kind: "command", name: "verbose", declaredBy: "runServe", on: `flag.NewFlagSet("serve", flag.ContinueOnError)`, at: "internal/storefixture/tool_cli.go:100"},
 		{kind: "command", name: "verbose", declaredBy: "runCheck", on: `flag.NewFlagSet("check", flag.ContinueOnError)`, at: "internal/storefixture/tool_cli.go:111"},
 		{kind: "setting", name: "listen", declaredBy: "ServerConfig", on: "json.Unmarshal(raw, &config)", at: "internal/storefixture/tool_cli.go:15"},

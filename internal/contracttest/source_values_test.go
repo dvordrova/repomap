@@ -38,7 +38,7 @@ func assertGoSourceValues(t *testing.T, repository *corpus.Corpus, index program
 	}
 	destinations := reading.NewDestinationReader(graph.Places, reading.DestinationChoices{Arguments: map[string]reading.ArgumentChoice{
 		"net/http.Client.Do": {Position: 1}, "net/http.NewRequestWithContext": {Position: 3}, "net/http.NewRequest": {Position: 2},
-		"net/http.Request.WithContext": {Receiver: true},
+		"net/http.Request.WithContext": {Receiver: true}, "net/http.Get": {Position: 1},
 	}, Options: options})
 	var visit func(*sourcevalue.Value)
 	visit = func(value *sourcevalue.Value) {
@@ -80,12 +80,21 @@ func assertGoSourceValues(t *testing.T, repository *corpus.Corpus, index program
 					t.Errorf("request factory/WithContext chain = %+v", destinations.Read(place, call))
 				}
 			}
+			// A helper's `return "", err` is its failure: the address
+			// walks only its other returns.
+			if place.Symbol.Decl.Name == "DestinationThroughAFailingHelper" && call.API != nil && call.API.Package == "net/http" && call.API.Name == "Get" {
+				seen["failing_helper"] = true
+				uses := destinations.Read(place, call)
+				if len(uses) != 1 || uses[0].Address != "https://versioned.example/v1/items" {
+					t.Errorf("a helper's failing return reached the address: %+v", uses)
+				}
+			}
 			for _, argument := range call.SourceArguments {
 				visit(argument.Origin)
 			}
 		}
 	}
-	for _, want := range []string{"literal", "parameter", "call_result", "concat", "suffix", "captured_owner", "transport_identity"} {
+	for _, want := range []string{"literal", "parameter", "call_result", "concat", "suffix", "captured_owner", "transport_identity", "failing_helper"} {
 		if !seen[want] {
 			t.Errorf("source value %s did not survive Go adapter and places", want)
 		}

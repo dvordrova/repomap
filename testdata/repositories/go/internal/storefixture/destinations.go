@@ -2,6 +2,7 @@ package storefixture
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"net/http"
 	"os/exec"
@@ -113,4 +114,22 @@ func RevisionOf(ctx context.Context, ref string) (string, error) {
 	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// destinationBase fails with the zero value beside its error, as Go
+// functions do: its caller uses the value only when the error is nil, so
+// the empty string is no destination and no address is only "/items".
+func destinationBase(raw string) (string, error) {
+	if raw == "" {
+		return "", errors.New("no base")
+	}
+	return raw + "/v1", nil
+}
+
+func DestinationThroughAFailingHelper() {
+	base, err := destinationBase("https://versioned.example")
+	if err != nil {
+		return
+	}
+	_, _ = http.Get(base + "/items")
 }
