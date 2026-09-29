@@ -899,6 +899,18 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		if ref, ok := builder.subject(step.TargetID, step.SubjectID); ok {
 			row.Label, row.Anchor = builder.subjectDisplay(ref.subject)
 			owner = builder.byProgram[ref.programTargetID]
+			// A callable some registration hands over reads the same way
+			// whether the step names it or its registration.
+			if owner == section && builder.data.Facts != nil {
+				for _, fact := range builder.data.Facts.OfKind(facts.KindRegistration) {
+					if builder.byFacts[fact.TargetID] == section && fact.ObjectID == step.SubjectID && fact.OwnerID != "" {
+						if builder.registeredStep(&row, fact, section, path) {
+							return row
+						}
+						break
+					}
+				}
+			}
 		}
 	}
 	if owner == nil {

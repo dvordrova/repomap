@@ -1018,8 +1018,9 @@ reading repeats or links it (owner, 2026-09-29: two copies had cost a
 reader six actions and five dead ends). Above every reading of a part,
 declaration, input or frame of a component that has a Main flow stands one
 small link, "Main flow", reading the component at that section without
-moving the camera. A step citing a registration of a repository callable
-reads as that callable, a name reading it, never as the registrar
+moving the camera. A step citing a registration of a repository callable,
+or naming a callable some registration hands over, reads as that callable,
+a name reading it, never as the registrar
 (`aeCreateFileEvent`, owner, 2026-09-29), with how it comes to run, from
 the program's facts and calls (`page_flow_steps.go`): where it is
 registered, the run of exact calls from the most recent earlier step (the

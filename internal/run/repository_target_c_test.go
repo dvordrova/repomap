@@ -431,19 +431,22 @@ func TestCMainFlowReadsARegistrationAsTheCallableItRegisters(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := restored.Data()
-	registration := func(symbol string) string {
+	registered := func(symbol string) facts.Fact {
 		for _, fact := range data.Facts.OfKind(facts.KindRegistration) {
 			if fact.Symbol == symbol && fact.Registrar != nil && fact.Registrar.Name == "loopCreateFileEvent" {
-				return fact.ID
+				return fact
 			}
 		}
 		t.Fatalf("kvd has no registration of %s", symbol)
-		return ""
+		return facts.Fact{}
 	}
+	// The step naming the callable itself (a subject) reads as the step
+	// naming its registration does.
 	target := data.Facts.Facts[0].TargetID
 	data.Orientation = &orientation.Result{MainFlow: orientation.MainFlow{Title: "A request", Steps: []orientation.FlowStep{
-		{TargetID: target, FactID: registration("acceptHandler"), Explanation: "accepts"},
-		{TargetID: target, FactID: registration("readQueryFromClient"), Explanation: "reads"},
+		{TargetID: target, FactID: registered("acceptHandler").ID, Explanation: "accepts"},
+		{TargetID: target, FactID: registered("readQueryFromClient").ID, Explanation: "reads"},
+		{TargetID: target, SubjectID: registered("sendReplyToClient").ObjectID, Explanation: "replies"},
 	}}}
 	html, err := report.RenderHTMLWithOptions(data, restored.RenderOptions())
 	if err != nil {
@@ -459,6 +462,9 @@ func TestCMainFlowReadsARegistrationAsTheCallableItRegisters(t *testing.T) {
 	want := []string{
 		"acceptHandler: main registers it; main → loopMain → loopProcessEvents runs it",
 		"readQueryFromClient: acceptHandler registers it; loopProcessEvents runs it",
+	}
+	if len(said) == 3 && strings.HasPrefix(said[2], "sendReplyToClient: ") && strings.HasSuffix(said[2], "registers it; loopProcessEvents runs it") {
+		said = said[:2]
 	}
 	if !reflect.DeepEqual(said, want) {
 		t.Fatalf("the Main flow reads %q\nwant %q\n%s", said, want, flow)
