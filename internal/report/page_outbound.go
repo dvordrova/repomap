@@ -52,9 +52,11 @@ type pageOutbound struct {
 	Program         bool
 	ProgramNotNamed bool
 	Words           []string
-	// Runs are this repository's programs whose executable is named what
-	// the started program is (programsNamed): equal names are the code
-	// fact, "runs litestream" is cmd/litestream.
+	// Runs are this repository's programs the record reaches: for a
+	// started program, those whose executable is named what it is
+	// (programsNamed: equal names are the code fact, "runs litestream" is
+	// cmd/litestream); for another record, the program its destination is
+	// (joinOwnPrograms). Its arrow goes into that program's component.
 	Runs []pageRunsProgram
 }
 
@@ -85,7 +87,8 @@ func (builder *pageBuilder) programsNamed(name string) []pageRunsProgram {
 }
 
 // ProgramLabel names a started program no word of its call names: one
-// whose name the code computes, or one the model did not decide.
+// whose name the code computes, or one the model did not decide. Such a
+// launch is read under "What is missing" (unnamedLaunch).
 func (row pageOutbound) ProgramLabel() string {
 	switch {
 	case !row.Program || row.Destination != "":
@@ -261,7 +264,69 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		} else {
 			row.NativeLabel = displayCallable(call.External)
 		}
+		// A program no word of its call names is an unknown about that one
+		// call, no outside system: it is read with the call's function and
+		// under "What is missing", never as a destination, a frame or a
+		// connection (unnamedLaunch).
+		if unnamedLaunch(call) {
+			section.UnnamedLaunches = append(section.UnnamedLaunches, row)
+			continue
+		}
 		section.Outbound = append(section.Outbound, row)
+	}
+	builder.joinOwnPrograms(index, section)
+}
+
+// unnamedLaunch reports a call starting another program whose program the
+// code does not name: none of its words does (ProgramNotNamed), or it was
+// given none, or no answer chose one. It names no destination.
+func unnamedLaunch(call groupindex.OutboundCall) bool {
+	return call.Kind == atlas.BoundaryRunsProgram && call.Destination == ""
+}
+
+// joinOwnPrograms makes a destination that is one of this repository's own
+// programs that program. A record whose integration connection (a joint the
+// reading confirmed by protocol and input) ends in another program of the
+// report says the destination it names is that program: redis-cli's
+// connect reaches redis-server's listening socket, so its "Redis server",
+// the connect and the gethostbyname resolving the server's host, is
+// redis-server. Every record of the destination then reaches that program
+// (Runs), whose component its arrow goes into: no outside system stands for
+// it. A destination whose records reach several programs, or none, stays
+// as it is; a started program keeps the program its word names.
+func (builder *pageBuilder) joinOwnPrograms(index *groupindex.Index, section *pageSection) {
+	peers := make(map[string]string)
+	for _, connection := range index.Connections {
+		if connection.SourceKind == "integration" && connection.To.TargetID != index.Target.ID {
+			peers[connectionKey(index.Target.ID, connection.ID)] = connection.To.TargetID
+		}
+	}
+	reached := make(map[string]map[string]bool)
+	for _, row := range section.Outbound {
+		name := strings.ToLower(canonicalDestination(row.Destination))
+		if row.Program || name == "" {
+			continue
+		}
+		for _, connection := range row.Connections {
+			if peer := peers[connection]; peer != "" {
+				if reached[name] == nil {
+					reached[name] = make(map[string]bool)
+				}
+				reached[name][peer] = true
+			}
+		}
+	}
+	for i := range section.Outbound {
+		row := &section.Outbound[i]
+		name := strings.ToLower(canonicalDestination(row.Destination))
+		if row.Program || len(reached[name]) != 1 {
+			continue
+		}
+		for target := range reached[name] {
+			if peer := builder.byProgram[target]; peer != nil && peer != section {
+				row.Runs = []pageRunsProgram{{Section: peer.ID, Href: "#" + peer.ID, Title: componentTitle(peer, builder.sections)}}
+			}
+		}
 	}
 }
 
@@ -523,7 +588,7 @@ func leadSentence(text string, limit int) string {
 // groupOutbound groups records by their destination text (case-insensitive),
 // or by native label or kind when the model named no destination. A started
 // program is one destination only with the very word its calls wrote: equal
-// words are one literal, and a program no word names is its call's own.
+// words are one literal; a program no word names is no destination.
 // Groups with more records come first; equal counts keep record order.
 // Grouping is a rendering step over translated rows, so it changes no saved
 // data.
@@ -536,8 +601,6 @@ func groupOutbound(rows []pageOutbound) []pageOutboundGroup {
 		switch {
 		case row.Program && row.Destination != "":
 			key, destination = "p\x00"+row.Destination, row.Destination
-		case row.Program:
-			key = "o\x00" + row.ID
 		case destination != "":
 			key = "d\x00" + strings.ToLower(destination)
 		case row.NativeLabel != "":

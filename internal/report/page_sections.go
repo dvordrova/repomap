@@ -58,7 +58,11 @@ type pageSection struct {
 	Activities  []pageGroupOperation
 	InputsCount int
 	Outbound    []pageOutbound
-	Coverage    []string
+	// UnnamedLaunches are the calls starting a program the code does not
+	// name (unnamedLaunch), read under "What is missing" and with the
+	// function making them, never as an outside system.
+	UnnamedLaunches []pageOutbound
+	Coverage        []string
 	// InboundCount counts native route records plus unmatched request
 	// interpretations. They can describe the same endpoint.
 	InboundCount     int

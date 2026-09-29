@@ -468,10 +468,13 @@ func TestAnOutgoingFactWithoutALineIsNamedByItsCallOrItsKind(t *testing.T) {
 
 // A started program is one destination only with the very word its calls
 // wrote: equal words are one literal, a word in another case is another,
-// and a program's word is never folded onto a known system's name. A
-// program no word names is its own call's, labelled for what the reading
-// knows: named at run time, or not established. The record keeps every
-// word its call writes.
+// and a program's word is never folded onto a known system's name. The
+// record keeps every word its call writes. A program no word names is an
+// unknown about its one call, no destination: it is listed under "What is
+// missing", labelled for what the reading knows (named at run time, or not
+// established), and never grouped, framed or connected as an outside system
+// (litestream's -exec launch had drawn a "Program not established" frame
+// twice).
 func TestOutboundProgramsAreOneDestinationOnlyByTheirWord(t *testing.T) {
 	index := groupindex.Index{Target: programindex.Target{ID: "tool"}, Outbound: []groupindex.OutboundCall{
 		{ID: "b1", Kind: atlas.BoundaryRunsProgram, External: "os/exec.CommandContext", Destination: "git", Values: []string{"git", "status"}, Source: "model"},
@@ -486,23 +489,61 @@ func TestOutboundProgramsAreOneDestinationOnlyByTheirWord(t *testing.T) {
 	section := &pageSection{ID: "tool", programTargetID: "tool"}
 	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{index}}
 	builder.fillSectionOutbound(section)
-	if row := section.Outbound[1]; !row.Program || row.KindLabel != "Runs a program" || !slices.Equal(row.Words, []string{"git", "log", "-n"}) || section.Outbound[7].Program {
+	if row := section.Outbound[1]; !row.Program || row.KindLabel != "Runs a program" || !slices.Equal(row.Words, []string{"git", "log", "-n"}) || section.Outbound[4].Program {
 		t.Fatalf("a started program's record lost its kind or its words: %+v", section.Outbound)
 	}
 	got := map[string]int{}
 	for _, group := range groupOutbound(section.Outbound) {
-		name := group.Destination
-		if name == "" {
-			name = group.ProgramLabel
-		}
-		got[name]++
-		if group.Program && group.Destination != "" {
-			got[name+" rows"] = len(group.Rows)
+		got[group.Destination]++
+		if group.Program {
+			got[group.Destination+" rows"] = len(group.Rows)
 		}
 	}
-	want := map[string]int{"git": 1, "git rows": 2, "Git": 1, "Git rows": 1, "redis-server": 1, "redis-server rows": 1,
-		"A program named at run time": 2, "Program not established": 1, "Redis": 1}
+	want := map[string]int{"git": 1, "git rows": 2, "Git": 1, "Git rows": 1, "redis-server": 1, "redis-server rows": 1, "Redis": 1}
 	if !maps.Equal(got, want) {
 		t.Fatalf("program destinations = %v\nwant %v", got, want)
+	}
+	var unnamed []string
+	for _, row := range section.UnnamedLaunches {
+		unnamed = append(unnamed, row.ID+" "+row.ProgramLabel())
+	}
+	if want := []string{"tool-out-b5 A program named at run time", "tool-out-b6 A program named at run time", "tool-out-b7 Program not established"}; !slices.Equal(unnamed, want) {
+		t.Fatalf("unnamed launches = %q\nwant %q", unnamed, want)
+	}
+}
+
+// A destination one of whose records connects to another program of this
+// repository (an integration connection the joints confirmed) is that
+// program: every record of the destination reaches it and says so, and a
+// destination reaching none, or a started program, keeps what it names.
+// redis-cli's "Redis server" was its connect, joined to redis-server's
+// listening socket, and the gethostbyname resolving the server's host,
+// drawn as an outside system beside the arrow into redis-server.
+func TestADestinationThatIsOneOfTheRepositorysProgramsJoinsIt(t *testing.T) {
+	connect := programindex.Location{Path: "anet.c", Line: 158, Column: 9}
+	client := groupindex.Index{Target: programindex.Target{ID: "t4"}, Outbound: []groupindex.OutboundCall{
+		{ID: "b1", SubjectID: "n1", Kind: atlas.BoundaryClientRequest, External: "socket.h.connect", Destination: "Redis server", Location: connect, Source: "model"},
+		{ID: "b2", SubjectID: "n1", Kind: atlas.BoundarySDK, External: "netdb.h.gethostbyname", Destination: "Redis server (host lookup)", Location: programindex.Location{Path: "anet.c", Line: 146, Column: 9}, Source: "model"},
+		{ID: "b3", SubjectID: "n2", Kind: atlas.BoundarySDK, External: "netdb.h.gethostbyname", Destination: "DNS resolver", Location: programindex.Location{Path: "anet.c", Line: 115, Column: 9}, Source: "model"},
+	}, Connections: []groupindex.Connection{
+		{ID: "x9", From: groupindex.Endpoint{TargetID: "t4"}, To: groupindex.Endpoint{TargetID: "t1"}, SourceKind: "integration", FromSubjectID: "n1", FromLocation: &connect},
+	}}
+	server := groupindex.Index{Target: programindex.Target{ID: "t1"}}
+	builder := pageBuilder{data: &ReportData{}, indexes: []groupindex.Index{server, client}}
+	serverSection := &pageSection{ID: "t1", programTargetID: "t1", ShortLabel: "redis-server"}
+	clientSection := &pageSection{ID: "t4", programTargetID: "t4", ShortLabel: "redis-cli"}
+	builder.sections = []*pageSection{serverSection, clientSection}
+	builder.byProgram = map[string]*pageSection{"t1": serverSection, "t4": clientSection}
+	builder.fillSectionOutbound(clientSection)
+	got := map[string]string{}
+	for _, row := range clientSection.Outbound {
+		var reached []string
+		for _, program := range row.Runs {
+			reached = append(reached, program.Title)
+		}
+		got[row.ID] = strings.Join(reached, ",")
+	}
+	if want := map[string]string{"t4-out-b1": "redis-server", "t4-out-b2": "redis-server", "t4-out-b3": ""}; !maps.Equal(got, want) {
+		t.Fatalf("records reach %v\nwant %v", got, want)
 	}
 }

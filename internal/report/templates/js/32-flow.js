@@ -139,6 +139,9 @@ function rmFlowList(ctx,data,own,opts){
       var name=call.macro||call.name||'';if(!name||names.indexOf(name)>=0)return;
       line.appendChild(document.createTextNode(names.length?', ':' '));names.push(name);
       var said=rmDotBreaks(rmEl('span','map-flow-plain',name));said.title=[call.lib,call.macro?rmT('a macro'):''].filter(Boolean).join('\n');line.appendChild(said);
+      // A program the code does not name is no outside system: its call
+      // says so here (page_outbound.go unnamedLaunch).
+      if(call.launch)line.appendChild(rmEl('span','map-flow-launch',' ('+rmT('starts a program the code does not name')+')'));
     });
     return line;
   }

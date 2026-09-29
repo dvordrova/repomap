@@ -37,6 +37,7 @@
 {{if .Unreached}}<details class="evidence-list unreached-symbols"><summary>{{t "{0} symbols" .UnreachedCount}}</summary><ul class="plain fact">{{range .Unreached}}<li><code>{{.Path}}</code> · {{range $i, $member := .Members}}{{if $i}}, {{end}}{{template "chip" $member}}{{template "run-by" $member}}{{end}}</li>{{end}}</ul></details>{{end}}
 {{if .Todos}}<h5 id="{{$.ID}}-todos">{{t "TODOs"}}</h5>
 {{if .Todos}}<details class="evidence-list"><summary>{{t "{0} markers in {1} files" (len .Todos) (len .TodoFiles)}} <span class="collapse-label">{{t "Collapse list"}}</span></summary>{{range .TodoFiles}}<details class="file-folder"><summary><code>{{.Path}}</code> <span class="meta">{{t "{0} markers" (len .Rows)}}</span></summary><ul class="plain fact todo-rows">{{range .Rows}}<li><span>{{.Text}}</span>{{if .Anchor}} {{template "anchor" .Anchor}}{{end}}</li>{{end}}</ul></details>{{end}}</details>{{end}}{{end}}
+{{with .UnnamedLaunches}}<h5 id="{{$.ID}}-unnamed-launches">{{t "Programs it starts that the code does not name"}}</h5><ul class="plain outbound-calls unnamed-launches">{{range .}}{{template "outbound-row" .}}{{end}}</ul>{{end}}
 {{if .Coverage}}<details id="{{.ID}}-coverage" class="component-coverage"><summary>{{t "Analysis coverage"}}</summary><p>{{t "No observations were recorded for these categories; this does not prove their absence:"}}</p><ul>{{range .Coverage}}<li>{{t .}}</li>{{end}}</ul></details>{{end}}
 </section>{{end}}
 {{define "off-map"}}{{if or .TestFiles .OffMap}}<section id="{{.ID}}-off-map" class="off-map-catalog">
@@ -54,9 +55,9 @@
 <div class="outbound-call-body">
 {{if and .Summary .MoreThanBrief}}<p class="outbound-purpose"><span data-display-ref="{{.SummaryRef}}">{{.Summary}}</span></p>{{end}}
 {{if or .Address (gt .DestinationCount 1)}}<div class="outbound-address">{{if gt .DestinationCount 1}}{{t "Destinations"}} · {{.DestinationCount}}{{else}}{{template "outbound-address" .AddressText}}{{end}}</div>{{end}}
-<div class="outbound-basis meta">{{t .KindLabel}}{{if .BasisLabel}} · {{t .BasisLabel}}{{end}}</div>
+<div class="outbound-basis meta">{{t .KindLabel}}{{if .BasisLabel}} · {{t .BasisLabel}}{{end}}{{with .ProgramLabel}} · {{t .}}{{end}}</div>
 <div class="outbound-source">{{if .External}}<code class="outbound-callable">{{.External}}</code> · {{end}}{{template "anchor" .Anchor}}</div>
-{{with .Runs}}<p class="outbound-runs">{{t "Runs this repository's program"}} {{range $i, $program := .}}{{if $i}}, {{end}}<a class="outbound-caller-part" href="{{$program.Href}}">{{$program.Title}}</a>{{end}}</p>{{end}}
+{{with .Runs}}<p class="outbound-runs">{{if $.Program}}{{t "Runs this repository's program"}}{{else}}{{t "Reaches this repository's program"}}{{end}} {{range $i, $program := .}}{{if $i}}, {{end}}<a class="outbound-caller-part" href="{{$program.Href}}">{{$program.Title}}</a>{{end}}</p>{{end}}
 {{with .Side}}<p class="outbound-side">{{t "{0} connects out from" .Program}} <code>{{range $i, $step := .Path}}{{if $i}} → {{end}}{{$step.Name}}{{end}}</code></p>{{end}}
 {{with .InformativeUses}}<p class="meta">{{t "Destination sources"}} · {{len .}}</p>{{range .}}<div class="outbound-chain">{{if .Method}}<code>{{.Method}}</code> · {{end}}{{if and (not .Address) .Frontier}}{{with .FrontierName}}{{t "Address passes through"}} <code>{{.}}</code>{{end}}{{else}}{{template "outbound-address" .AddressText}}{{end}}<ol class="plain">{{range .Steps}}<li><code>{{.Name}}</code> · {{template "anchor" .Anchor}}</li>{{end}}</ol></div>{{end}}{{end}}</div></details></li>{{end}}
 

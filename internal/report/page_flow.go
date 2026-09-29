@@ -52,6 +52,10 @@ type pageFlowCall struct {
 	Sites    []pageReadingSite `json:"sites,omitempty"`
 	Macro    string            `json:"macro,omitempty"`
 	Every    bool              `json:"every,omitempty"`
+	// Launch marks a call starting a program the code does not name
+	// (unnamedLaunch): its function's reading says so, where no outside
+	// system stands for it.
+	Launch bool `json:"launch,omitempty"`
 }
 
 // builtinPackage is the package the C adapter gives a compiler builtin
@@ -109,6 +113,9 @@ var flowKinds = map[programindex.RelationKind]bool{
 type pageFlowIndex struct {
 	byCaller map[string][]int
 	shared   map[string]bool
+	// launches are the sites of the calls starting a program the code
+	// does not name (unnamedLaunch).
+	launches map[programindex.Location]bool
 }
 
 // flowIndex builds a program's flow index once.
@@ -119,7 +126,12 @@ func (builder *pageBuilder) flowIndex(index *groupindex.Index) *pageFlowIndex {
 	if cached := builder.flows[index.Target.ID]; cached != nil {
 		return cached
 	}
-	flow := &pageFlowIndex{byCaller: map[string][]int{}, shared: map[string]bool{}}
+	flow := &pageFlowIndex{byCaller: map[string][]int{}, shared: map[string]bool{}, launches: map[programindex.Location]bool{}}
+	for _, call := range index.Outbound {
+		if unnamedLaunch(call) {
+			flow.launches[call.Location] = true
+		}
+	}
 	groupOf := builder.edgesBetweenGroups(*index).groupOf
 	callers := map[string]map[string]bool{}
 	for position, edge := range index.StructuralEdges {
@@ -239,14 +251,16 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 		}
 		callee := declare(edge.ToSubjectID)
 		key := edge.ToSubjectID + "\x00" + kind
+		launch := edge.Location != nil && flow.launches[programindex.Location{Path: edge.Location.Path, Line: edge.Location.Line, Column: max(1, edge.Location.Column)}]
 		if listed, seen := at[key]; seen && calls[listed].One == nil {
 			if site != nil && !slices.ContainsFunc(calls[listed].Sites, func(other pageReadingSite) bool { return other.At == site.At }) {
 				calls[listed].Sites = append(calls[listed].Sites, *site)
 			}
 			calls[listed].Possible = calls[listed].Possible && possible
+			calls[listed].Launch = calls[listed].Launch || launch
 			continue
 		}
-		call := pageFlowCall{Kind: kind, Possible: possible}
+		call := pageFlowCall{Kind: kind, Possible: possible, Launch: launch}
 		if site != nil {
 			call.Sites = []pageReadingSite{*site}
 		}
