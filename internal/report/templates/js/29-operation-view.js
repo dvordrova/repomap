@@ -771,8 +771,9 @@ function rmCatalogInputClick(event,reveal){
       n.dataset.declares.split(/\s+/).forEach(function(id){var input=byID[id];if(!input)return;var b=rmEl('button','',input.dataset.title);b.type='button';b.addEventListener('click',function(){select(input,true,null,true);});declared.appendChild(b);});
       card.querySelector('.map-card-intro').after(declared);
     }
+    var catalogueSection=null;
     if(n.dataset.activation&&catalogue){
-      var catalogueSection=rmCatalogueSection(catalogue,n.dataset.title,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);},readDeclaration,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;});
+      catalogueSection=rmCatalogueSection(catalogue,n.dataset.title,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);},readDeclaration,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;});
       catalogueSection.dataset.readingAnchor='';
       card.querySelector('.map-card-intro').after(catalogueSection);
     }
@@ -781,6 +782,8 @@ function rmCatalogInputClick(event,reveal){
     if(sets.length){
       var setLine=rmSettingWrites(sets,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},readDeclaration);
       card.querySelector('.map-card-intro').after(setLine);
+      // Its key, comparison and writes are what the reading opens at.
+      if(catalogueSection)delete catalogueSection.dataset.readingAnchor;
     }
     if(n.dataset.activation&&inputPath){
       // A chosen input's reading opens at how a request reaches it, then
