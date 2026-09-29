@@ -1,5 +1,45 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Follow-ups of the REPORT and READING trims
+
+- **Dead catalogue click (b200c8f4):** `rmCatalogInputClick` and its capture
+  listener read a catalogue input row (`.input-catalog [data-input-item]`);
+  no template prints one (the catalogue holds only a link to the Inputs list
+  and the outbound groups), so both are deleted with
+  `TestACatalogRowReadsItsInputOnAPlainClick` and the `REPOMAP_REAL_RUN`
+  journey that clicked such a row (5 real-run journeys remain). The CSS
+  rules and the `[data-input-item]` query in 28-map-routing.js for those rows
+  are dead too and stay for a later cleanup.
+- **No static picture (d3a91ccc):** `buildZoneMap`'s `mapEdges` arrows were
+  appended to each target's map as `static` edges, which the system map (the
+  page's one figure) and the canvas script both skipped; they reached the
+  page only as display-text catalogue entries, each a label joining every
+  connection between two areas (one Redis label joins about 250 relations).
+  Deleted with the edge router (its other use routed operation-map paths
+  the system map then cleared), the dead constants and edge fields, the
+  no-script comments and the static half of
+  `TestTheMapQuietsWhatGroupsIndexMarksQuiet`; the canvas half stays. The
+  zone layout's frames stay (cards link to them).
+  - `repomap render` of the saved Redis (20260929-102019) and freqtrade
+    (20260929-101431) runs at b79ef0f2 and after: the HTML differs only in
+    the deleted script and the text catalogue, which loses only joined
+    static labels; the highest ref on the page moves t6076 → t6065 (Redis)
+    and t12718 → t12709 (freqtrade). A translated run no longer sends these
+    labels; a translated saved run from before no longer rebinds in `render`
+    (its catalogue has the extra entries).
+- **Translation rules (c643d287):** REPORT's translation request, window,
+  refusal and deadline rules (606 words) moved verbatim to EXECUTION
+  "Display translation"; REPORT keeps what the reader sees and points there.
+- **CURRENT:** Airflow's Freqtrade prerequisite is met; the owner items
+  "number chips" (removed, f703fb14) and "area order" (a091e211) are closed.
+  The `none` option of `prompts/entry_options.md` lacks READING's "wraps or
+  stores it"; the criteria are in every entry question's memo identity
+  (`table.questionsDigest`), so the fix would ask every `binds`, `enters` and
+  `becomes` question again: recorded as a known drift instead.
+- **Checks:** `make test`, `make vet` (package parallelism 2), `make ui-test`
+  (133) and `make ui-visual-test` (64 passed, the 5 `REPOMAP_REAL_RUN`
+  journeys skipped) pass.
+
 ## 2026-09-29 — READING trimmed back to a contract: 18,391 → 13,969 words
 
 - **Why:** READING grew from 9,740 to 18,391 words in 2.5 days with run

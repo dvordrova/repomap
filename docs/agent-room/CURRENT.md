@@ -170,11 +170,10 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   its box under its name, a closed area's line on the area's box; looking at
   an area or a component darkens only the arrows that cross its border
   ([Report](../contracts/REPORT.md)). An outside call in the component card is
-  named by its destination (`DeepSeek · Client.Do`). Left for the owner after
-  an owner-proxy review:
-  - the number chips on parts and frame borders (explain or remove);
-  - areas in the model's pipeline order;
-  - a part's inside showing a dozen of hundreds of declarations.
+  named by its destination (`DeepSeek · Client.Do`). Of the owner-proxy
+  review's items, the number chips are gone (each arrow end has one plaque,
+  f703fb14, the owner's 2a) and areas keep the model's order (a091e211); left
+  for the owner: a part's inside showing a dozen of hundreds of declarations.
 - **The page needs JavaScript (2026-09-29, owner decision "b"):** the page is
   one self-contained HTML file whose data holds every answer, each fact once,
   written compactly and read back exactly; the script reads it, nothing the
@@ -208,6 +207,13 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   docstrings too. The trusted-inputs rule covers both; the next change strips
   them with its own before/after on keys. Docstrings stay for captions,
   orientation, glossary and claims until the owner extends the rule.
+- **Known prompt drift (2026-09-29):** READING says a symbol that runs the
+  handed callable in place, wraps or stores it is `binds` `none`;
+  `internal/atlas/lines/prompts/entry_options.md`'s `none` names only a
+  callable run in place. Its criteria are part of every entry question's
+  request and memo identity (`binds`, `enters`, `becomes`), so adding "wraps
+  or stores it" would ask every entry question again; it waits for a change
+  that re-asks them anyway.
 - **Reading:** role/activation/outgoing selection is independent of captions and
   directory closure. Native boundaries and accepted operations survive missing
   prose. Questions retain original evidence, explicit coverage and independent
@@ -358,14 +364,14 @@ Receipts for every row, including the run log moved out of this table on
 
 | Scope | Current status |
 | --- | --- |
-| Local checks | At 260acd7f (2026-09-29, the report tests reduced to what they protect): `make test`, `make vet` (package parallelism 2), `make ui-test` (133) and `make ui-visual-test` (64 passed, the 6 `REPOMAP_REAL_RUN` journeys skipped) pass; a second render of a saved run is byte-identical (6cf4388c). The real-run journeys last passed 6/6 on 2026-09-28 (Redis). |
+| Local checks | At d3a91ccc (2026-09-29, the dead catalogue click and static picture deleted): `make test`, `make vet` (package parallelism 2), `make ui-test` (133) and `make ui-visual-test` (64 passed, the 5 `REPOMAP_REAL_RUN` journeys skipped) pass; a second render of a saved run is byte-identical (6cf4388c). The real-run journeys last passed 6/6 on 2026-09-28 (Redis). |
 | Redis 1.3.6 (C) | Ordinary runs exit 0 on 2026-09-29 (the latest 9 s with 0 live calls; report.json names every ProgramIndex file); orientation stage 2 accepted (recipe `./redis-server [/path/to/redis.conf]`, flow main → aeMain → processCommand → call); redis-server has 19 parts and an entry part holding `main`. Open: the runs use the owner's default system cache, so `cache clear` was last checked on the C fixture's scratch cache (2026-09-28). |
 | litestream v24 (Go) | Ordinary runs exit 0 on 2026-09-29 with 6 of 8 targets (the two C targets fail on missing headers); orientation accepted (`LITESTREAM_CONFIG` and flags in the recipe); cmd/litestream-test's `litestream` launches join cmd/litestream. Open: the misses listed for the owner on 2026-09-28 (flag-set names answered `command`, `setuptools.Extension`, MCP tool names duplicating their AddTool inputs) and answers that drifted on re-asks (`strings.HasPrefix`). |
 | freqtrade (Python) | Ordinary runs exit 0 on 2026-09-29 (the latest 256 s with 0 live calls; report.json 14.7 MB); orientation stage 2 accepted, its flow running through the trade registration into Worker.run and Worker._worker. Open: FreqtradeBot.process stays outside every input's reach, behind `_throttle(func=…)`; no online count of the 34 subcommand inputs and no question run of this wave is recorded. |
 | repomap self-run | self-snap exit 0 on 2026-09-29 (116 s at e04743b1; 70 s at 66902610 with every atlas request cached); its orientation overview is accepted and its flow request exceeds the provider window (journaled under `flow_request`). The last cold self-run with a warm rerun and `cache clear` is 2026-09-26 (108.0 s, warm 25.1 s). |
 | pykrx library target | 2026-09-28 (map model step 3): exit 0, 12 parts. Open: `get_market_ohlcv`, used only by its file's `__main__` demo, is answered helper, tied to the owner's open question on a library's public API as entries. |
 | Syn, issue-bot, Watchtower | The latest ordinary reports are the third series of 2026-09-11 (native routes, operation activation, remote client/option distinctions and glossary provenance checked), before the map of parts and the current formats; the saved-window replays of that time (Watchtower glossary and reducer, boundary v5, issue-bot retrieval) check only packing, decoding and source distinctions. Open: Watchtower's worker answer and launch argument, issue-bot's per-call argument exception, a mixed route counter. |
-| Airflow | Full current ordinary acceptance remains pending. Do not restart before prerequisite fixes, saved-window checks and Freqtrade acceptance. Old elapsed time is not a measurement of the new builder. |
+| Airflow | Full current ordinary acceptance remains pending. Its Freqtrade prerequisite is met (ordinary runs accepted, see its row); do not restart before the prerequisite fixes and saved-window checks. Old elapsed time is not a measurement of the new builder. |
 
 Artifact consistency, a green fixture, a saved reading and a successful single
 window each establish their own limited evidence. None alone establishes model
