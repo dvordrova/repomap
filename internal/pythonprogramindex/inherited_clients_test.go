@@ -83,9 +83,26 @@ func TestCumulativePythonSelfCallsAndFieldsFollowTheBaseChain(t *testing.T) {
 		"return self.start()":                                  {"unresolved"},
 		"return httpx.post(self.url, json=payload)":            {"exact httpx.post"},
 		`return self.send({"content": text})`:                  {"exact Webhook.send"},
+		// Notifier's handlers are a list closed over Chat, Discord and
+		// Webhook: a call on an element is their send, alternatives;
+		// OpenNotifier hands its list out, so its call names nothing.
+		`return httpx.post("https://chat.example/api", json=payload)`: {"exact httpx.post"},
+		`if config.get("chat"):`:                {"unresolved"},
+		`if config.get("discord"):`:             {"unresolved"},
+		"self.handlers.append(Chat())":          {"exact Chat", "unresolved"},
+		"discord = Discord(config)":             {"exact Discord", "exact Discord.__init__"},
+		"self.handlers.append(discord)":         {"unresolved"},
+		"self.handlers.append(Webhook(config))": {"exact Webhook", "exact Webhook", "exact Webhook.__init__", "exact Webhook.__init__", "unresolved", "unresolved"},
+		"handler.send(payload)":                 {"alternatives Webhook.send Chat.send", "unresolved"},
+		"self.handlers.pop()":                   {"unresolved"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("calls in inherited_clients.py:\n have %q\n want %q", got, want)
+	}
+	for _, relation := range index.Relations {
+		if relation.Resolution == programindex.ResolutionAlternatives && relation.Location != nil && relation.Location.Path == path && relation.Dispatch != programindex.DispatchInterface {
+			t.Fatalf("a call on a registered handler says it dispatches by %q", relation.Dispatch)
+		}
 	}
 }
 

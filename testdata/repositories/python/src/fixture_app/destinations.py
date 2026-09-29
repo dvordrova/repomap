@@ -113,3 +113,100 @@ class DocumentedClient:
     def undocumented(self):
         pass
         """A later string is not documentation for this method."""
+
+
+# A database reached through objects, the way freqtrade's persistence does:
+# its statements name nothing they reach, and are sent through a session
+# stored once through its class's name, or through the connection a with
+# statement enters. Each object is followed back to create_engine.
+import sqlalchemy
+from sqlalchemy.orm import scoped_session, sessionmaker
+
+
+class Ledger:
+    """Its session is stored once, through the class's name, by open_ledger."""
+
+    session: "scoped_session"
+
+
+class Archive:
+    """Shares the ledger's session: its one store is the ledger's attribute."""
+
+    session: "scoped_session"
+
+
+class Journal:
+    """Its class body stores a session too: a read through the class names none."""
+
+    session = None
+
+
+def open_ledger(url):
+    engine = sqlalchemy.create_engine(url)
+    Ledger.session = scoped_session(sessionmaker(bind=engine))
+    Archive.session = Ledger.session
+    Journal.session = scoped_session(sessionmaker(bind=engine))
+    migrate_ledger(engine)
+
+
+def migrate_ledger(engine):
+    with engine.begin() as connection:
+        connection.execute(sqlalchemy.text("ALTER TABLE ledger ADD note TEXT"))
+    with engine.begin() as connection:
+        statement = sqlalchemy.update(Ledger).values(note="")
+        connection.execute(statement)
+        statement = sqlalchemy.update(Archive).values(note="")
+        connection.execute(statement)
+
+
+def count_entries():
+    return Ledger.session.execute(sqlalchemy.select(Ledger)).scalar_one()
+
+
+def archived_entries():
+    return Archive.session.scalars(sqlalchemy.select(Archive)).all()
+
+
+def journal_entries():
+    return Journal.session.scalars(sqlalchemy.select(Journal)).all()
+
+
+def deferred_statement():
+    # The lambda runs later: a name its function rebinds may hold either.
+    statement = sqlalchemy.select(Ledger)
+    statement = sqlalchemy.select(Archive)
+    return lambda: Ledger.session.execute(statement)
+
+
+def ledger_query(archived):
+    # Each arm binds the statement; after the if it is either, none chosen.
+    if archived:
+        statement = sqlalchemy.select(Archive)
+    else:
+        statement = sqlalchemy.select(Ledger)
+    if not archived:
+        statement = statement.where(Ledger.note == "")
+    return statement
+
+
+def filtered_entries(archived):
+    return Ledger.session.scalars(ledger_query(archived)).all()
+
+
+def prune_ledger(engine):
+    # A subquery is handed to a column's not_in, whose result the update
+    # takes: it is sent where the update is.
+    with engine.begin() as connection:
+        statement = sqlalchemy.update(Ledger).where(Ledger.note.not_in(sqlalchemy.select(Archive.note)))
+        connection.execute(statement)
+
+
+def ledger_totals():
+    # A statement built as a CTE is sent through the columns another
+    # statement reads from it.
+    totals = sqlalchemy.select(Ledger).cte("totals")
+    return Ledger.session.execute(sqlalchemy.select(totals.c.note)).all()
+
+
+def open_ledger_to_prune(url):
+    prune_ledger(sqlalchemy.create_engine(url))

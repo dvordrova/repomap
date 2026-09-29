@@ -95,3 +95,48 @@ class Discord(Webhook):
 
     def notify(self, text):
         return self.send({"content": text})
+
+
+class Chat:
+    def send(self, payload):
+        return httpx.post("https://chat.example/api", json=payload)
+
+
+class Notifier:
+    """Sends each message to every handler it registered, as freqtrade's
+    RPCManager does: its list is stored once, empty, and only ever given
+    constructions, so a call on an element is each registered class's
+    method, alternatives (Discord's send is Webhook's)."""
+
+    def __init__(self, config):
+        self.handlers: list[Webhook] = []
+        if config.get("chat"):
+            self.handlers.append(Chat())
+        if config.get("discord"):
+            discord = Discord(config)
+            self.handlers.append(discord)
+        self.handlers.append(Webhook(config))
+
+    def send(self, payload):
+        for handler in self.handlers:
+            handler.send(payload)
+
+    def close(self):
+        while self.handlers:
+            self.handlers.pop()
+
+
+class OpenNotifier:
+    """Hands its list out, so anything may be put in it: a call on an
+    element names nothing."""
+
+    def __init__(self, config):
+        self.handlers = []
+        self.handlers.append(Webhook(config))
+
+    def all(self):
+        return self.handlers
+
+    def send(self, payload):
+        for handler in self.handlers:
+            handler.send(payload)

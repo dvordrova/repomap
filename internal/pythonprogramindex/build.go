@@ -54,6 +54,9 @@ type parserFile struct {
 	Name      string   `json:"name"`
 	Aliases   []string `json:"aliases,omitempty"`
 	Package   bool     `json:"package"`
+	// Test marks a configured test source: a store its code writes is not
+	// one the program makes (a class attribute a test replaces).
+	Test bool `json:"test,omitempty"`
 }
 
 type parserPackage struct {
@@ -121,6 +124,7 @@ type parsedRelation struct {
 	ToRefs            []string                  `json:"to_refs"`
 	Resolution        string                    `json:"resolution"`
 	Invocation        string                    `json:"invocation,omitempty"`
+	Dispatch          string                    `json:"dispatch,omitempty"`
 	Location          *programindex.Location    `json:"location,omitempty"`
 	TargetsObserved   int                       `json:"targets_observed"`
 	Witnesses         []parsedWitness           `json:"witnesses"`
@@ -200,6 +204,7 @@ type sourceDigest struct {
 	Aliases    []string      `json:"aliases,omitempty"`
 	Importable bool          `json:"importable,omitempty"`
 	Package    bool          `json:"package"`
+	Test       bool          `json:"test,omitempty"`
 	SHA256     string        `json:"sha256"`
 }
 
@@ -433,7 +438,7 @@ func buildInputResults(
 		return nil, err
 	}
 	for _, batch := range sourceGroups {
-		parsedViews, err := parseSourceGroup(ctx, repository, batch, runner)
+		parsedViews, err := parseSourceGroup(ctx, repository, batch, runner, testSources)
 		if err != nil {
 			return nil, err
 		}
@@ -602,6 +607,7 @@ func parseSourceGroup(
 	repository *corpus.Corpus,
 	group *sourceGroup,
 	runner parserRunner,
+	testSources map[string]bool,
 ) ([]parsedGroup, error) {
 	if group == nil || len(group.modules) == 0 || len(group.views) == 0 {
 		return nil, fmt.Errorf("python program index: source group is empty")
@@ -628,7 +634,7 @@ func parseSourceGroup(
 		baseDigests = append(baseDigests, sourceDigest{
 			FileID: module.FileID, Path: module.Path, Name: module.Name,
 			Importable: module.Importable, Package: module.Package,
-			SHA256: hex.EncodeToString(digest[:]),
+			Test: testSources[module.Path], SHA256: hex.EncodeToString(digest[:]),
 		})
 		request.Sources = append(request.Sources, parserSource{
 			Path: module.Path, Content: base64.StdEncoding.EncodeToString(content.Bytes),
@@ -670,7 +676,7 @@ func parseSourceGroup(
 			sort.Strings(aliases)
 			digests[position].Aliases = aliases
 			view.Files = append(view.Files, parserFile{
-				SourceRef: ref, Path: module.Path, Name: module.Name, Aliases: aliases, Package: module.Package,
+				SourceRef: ref, Path: module.Path, Name: module.Name, Aliases: aliases, Package: module.Package, Test: testSources[module.Path],
 			})
 		}
 		request.Views = append(request.Views, view)
@@ -833,7 +839,7 @@ func compileParserView(response parserViewResult, allowedPaths map[string]struct
 		relations = append(relations, programindex.RelationInput{
 			SourceRef: value.SourceRef, Kind: programindex.RelationKind(value.Kind), FromRef: value.FromRef,
 			ToRefs: append([]string(nil), value.ToRefs...), Resolution: programindex.Resolution(value.Resolution),
-			Invocation: value.Invocation, Location: cloneLocation(value.Location),
+			Invocation: value.Invocation, Dispatch: value.Dispatch, Location: cloneLocation(value.Location),
 			TargetsObserved: value.TargetsObserved, Witnesses: witnesses,
 			WitnessesObserved: value.WitnessesObserved,
 			Patterns:          patterns, PatternsObserved: value.PatternsObserved,

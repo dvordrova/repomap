@@ -197,6 +197,22 @@ DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
 COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 
 
+def bound_names(node):
+    # The names a statement or expression binds where it stands: an
+    # assignment's, a loop's, a with item's or a deletion's targets.
+    if isinstance(node, (ast.Assign, ast.Delete)):
+        targets = node.targets
+    elif isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr, ast.For, ast.AsyncFor, ast.comprehension)):
+        targets = [node.target]
+    elif isinstance(node, (ast.With, ast.AsyncWith)):
+        targets = [item.optional_vars for item in node.items if item.optional_vars is not None]
+    elif isinstance(node, ast.ExceptHandler):
+        return {node.name} if node.name else set()
+    else:
+        return set()
+    return {part.id for target in targets for part in ast.walk(target) if isinstance(part, ast.Name)}
+
+
 def pass_jumps(node):
     # The statements in node that end a loop's pass early: return and raise
     # anywhere, break and continue outside an inner loop's body. A nested
@@ -302,6 +318,9 @@ class Analyzer:
             raise ValueError("Python runtime does not expose exact stdlib module authority")
         self.stdlib_modules = frozenset(sys.stdlib_module_names)
         self.files = sorted(view.get("files", []), key=lambda value: value.get("path", ""))
+        # Configured test sources: what their code stores is not the
+        # program's (a test replacing a class attribute with a mock).
+        self.test_paths = {value.get("path", "") for value in self.files if value.get("test")}
         self.package_rows = sorted(view.get("packages", []), key=lambda value: value.get("name", ""))
         self.namespace_packages = {row["name"] for row in self.package_rows if row.get("namespace", False)}
         self.parsed_sources = parsed_sources
@@ -331,6 +350,23 @@ class Analyzer:
         # stored once from an outside call carries (field_call_origin).
         self.field_stores = {}
         self.field_call_origins = {}
+        # Each store written through a name that is not self or cls
+        # (`Trade.session = scoped_session(...)`, `setattr(Trade, ...)`), as
+        # (the name, the attribute or "*" for any, the stored value of a plain
+        # one-target assignment or None, the storing scope), outside test
+        # sources; resolved to its class once, by (class ref, attribute), in
+        # class_name_stores, and what each class attribute read through its
+        # class holds, in class_attribute_values (class_attribute_value).
+        self.class_name_store_rows = []
+        self.class_name_stores = None
+        self.class_attribute_values = {}
+        # The statements of each module by the statement list they stand in
+        # (statement_block), every attribute written in the program by its
+        # name (attribute_uses), and the classes each list field of a class
+        # is closed over (registered_classes).
+        self.statement_blocks = {}
+        self.attribute_index = None
+        self.registered_elements = {}
         # Each callable's return statements, as (returned expression or
         # None, the callable's scope), and the parameters of every def.
         self.return_nodes = {}
@@ -423,7 +459,7 @@ class Analyzer:
     def add_relation(self, kind, from_ref, to_refs, resolution, node, witness_kind,
                      detail="", invocation="", targets_observed=None,
                      source_expression="", witness_callee=None, patterns=None,
-                     patterns_observed=0, source_argument=None, extra_witnesses=()):
+                     patterns_observed=0, source_argument=None, extra_witnesses=(), dispatch=""):
         path = self.current_path
         location = source_location(path, node)
         witness_location = callee_location(path, witness_callee) \
@@ -487,6 +523,8 @@ class Analyzer:
         }
         if invocation:
             relation["invocation"] = invocation
+        if dispatch:
+            relation["dispatch"] = dispatch
         if location is not None:
             relation["location"] = location
         if source_argument is not None:
@@ -1021,6 +1059,13 @@ class Collector(ast.NodeVisitor):
         return ref
 
     def visit_Call(self, node):
+        # setattr(Trade, "session", ...) stores a class attribute through its
+        # class's name as an assignment does, of no known value; a name not
+        # written as a literal may be any attribute.
+        if isinstance(node.func, ast.Name) and node.func.id == "setattr" and node.args and isinstance(node.args[0], ast.Name) and \
+                self.module["path"] not in self.analyzer.test_paths:
+            name = node.args[1].value if len(node.args) > 1 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str) else "*"
+            self.analyzer.class_name_store_rows.append((node.args[0], name, None, self.scope))
         # A chained call consumes the exact syntactic value produced by its
         # receiver call. Retain that value without assigning any framework or
         # runtime meaning to either selector.
@@ -1187,6 +1232,16 @@ class Collector(ast.NodeVisitor):
         # a default is not what an instance holds).
         if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "self" and self.scope.class_ref:
             key = (self.scope.class_qname, target.attr)
+        elif isinstance(target, ast.Attribute) and self.scope.class_ref and (
+                isinstance(target.value, ast.Name) and target.value.id == "cls" or
+                isinstance(target.value, ast.Call) and isinstance(target.value.func, ast.Name) and target.value.func.id == "type"):
+            # cls.name or type(self).name stores the attribute of whichever
+            # class the method runs for: one more store, of no known value.
+            key, value = (self.scope.class_qname, target.attr), None
+        elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+            if self.module["path"] not in self.analyzer.test_paths:
+                self.analyzer.class_name_store_rows.append((target.value, target.attr, value, self.scope))
+            return
         elif isinstance(target, ast.Name) and self.scope.kind == "type":
             key, value = (self.scope.qname, target.id), None
         elif isinstance(target, (ast.Tuple, ast.List)):
@@ -1377,6 +1432,10 @@ class RelationVisitor(ast.NodeVisitor):
         # in the body of (visit_Try).
         self.comprehension_elements = {}
         self.handled = {}
+        # The statement whose plain assignment or with item binds names now
+        # (bind_pattern_name): a name it rebinds in the statement list of its
+        # previous binding keeps its value (statement_block).
+        self.binding_statement = None
 
     def object(self, ref):
         return self.analyzer.objects_by_ref.get(ref)
@@ -1748,6 +1807,19 @@ class RelationVisitor(ast.NodeVisitor):
         previous = current.get(node.id)
         reassigned = previous is not None and previous.get("binding_observed", False)
         invalidated = reassigned or bool(previous and previous.get("value_invalidated", False))
+        # A plain assignment or with item rebinding a name in the statement
+        # list of its previous binding, whose value is known, runs after it
+        # on every path through that list: reads that follow see this value
+        # (`stmt = update(...); execute(stmt); stmt = update(...);
+        # execute(stmt)`, two `with engine.begin() as connection` blocks).
+        # A rebinding in another list, of a global or nonlocal name, or
+        # after an unknown value leaves it unknown, and a nested callable
+        # reading a rebound name never knows it (source_value).
+        block = self.statement_block(self.binding_statement) if self.binding_statement is not None else None
+        rebinds_in_place = (reassigned and block is not None and previous.get("block") is not None
+                            and self.dominated_by(self.binding_statement, previous["block"])
+                            and previous.get("source_origin") is not None
+                            and node.id not in self.scope.global_names and node.id not in self.scope.nonlocal_names)
         # The class a call on the name reaches ignores the name's stores of
         # None: None has no member to call, so a call on the name is made on
         # its other value (`worker = None` before `worker = Worker(args)`).
@@ -1777,7 +1849,9 @@ class RelationVisitor(ast.NodeVisitor):
             "origin_invalidated": origin_invalidated,
             "none_only": none_only,
             "value_candidate": value_candidate,
-            "source_origin": source_origin if not invalidated else None,
+            "source_origin": source_origin if not invalidated or rebinds_in_place else None,
+            "block": block,
+            "rebound": reassigned,
         }
 
     def bind_pattern_target(self, target, origin, initializer=None, source_origin=None):
@@ -2095,6 +2169,84 @@ class RelationVisitor(ast.NodeVisitor):
             return stores[0]
         return None
 
+    def class_name_store_index(self):
+        # Every store through a class's name (Collector.record_field_store,
+        # setattr), by (the class's ref, the attribute or "*"), each name
+        # resolved where it is written; a name no repository class answers
+        # stores no class attribute.
+        index = self.analyzer.class_name_stores
+        if index is not None:
+            return index
+        index = {}
+        for name, attribute, value, scope in self.analyzer.class_name_store_rows:
+            previous = self.scope, self.module
+            self.scope, self.module = scope, self.scope_module(scope)
+            try:
+                authority, ref = self.resolve(name)
+            finally:
+                self.scope, self.module = previous
+            candidate = self.object(ref) if ref else None
+            if authority == "local" and candidate is not None and candidate["kind"] == "type":
+                index.setdefault((ref, attribute), []).append((value, scope))
+        self.analyzer.class_name_stores = index
+        return index
+
+    def class_attribute_stores(self, class_ref, name):
+        # The stores a read of Class.<name> may see: through the name of
+        # the first class of its chain of single repository bases storing it,
+        # and of every class deriving from it, with every store of the name
+        # in those classes' bodies or methods (self.name, cls.name), which
+        # hold no value this read is given.
+        index = self.class_name_store_index()
+
+        def stores(member):
+            found = list(index.get((member, name), [])) + list(index.get((member, "*"), []))
+            found += [(None, scope) for _, scope in self.analyzer.field_stores.get((self.analyzer.object_qname(member), name), [])]
+            return found
+
+        result = []
+        for member in self.analyzer.field_store_classes(class_ref, name, lambda member: bool(stores(member))):
+            result.extend(stores(member))
+        return result
+
+    def class_attribute_value(self, node):
+        # A class attribute the program stores once, by a plain assignment
+        # through its class's name anywhere (`Trade.session =
+        # scoped_session(...)` in init_db), holds that store's value wherever
+        # the class is read so: the call's result, or what the class
+        # attribute it is given holds (`Order.session = Trade.session`). A
+        # second store of any kind, in the class, a base it inherits the
+        # attribute from or a class deriving from it (a class body value,
+        # self.name, cls.name, setattr), leaves it unknown; a test's store is
+        # not the program's. Call resolution is not changed.
+        if not (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)) or node.value.id in ("self", "cls"):
+            return None
+        authority, class_ref = self.resolve(node.value)
+        candidate = self.object(class_ref) if class_ref else None
+        if authority != "local" or candidate is None or candidate["kind"] != "type":
+            return None
+        key = (class_ref, node.attr)
+        cache = self.analyzer.class_attribute_values
+        if key in cache:
+            return cache[key]
+        cache[key] = None
+        stores = self.class_attribute_stores(class_ref, node.attr)
+        result = None
+        if len(stores) == 1 and stores[0][0] is not None:
+            value, scope = stores[0]
+            previous = self.scope, self.module
+            self.scope, self.module = scope, self.scope_module(scope)
+            try:
+                if isinstance(value, ast.Call):
+                    result = {"kind": "call_result", "text": safe_expression_name(value.func),
+                              "anchor": callee_location(self.module["path"], value.func)}
+                elif isinstance(value, ast.Attribute):
+                    result = self.class_attribute_value(value)
+            finally:
+                self.scope, self.module = previous
+        cache[key] = result
+        return result
+
     def self_field_origin(self, node):
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self" and self.scope.class_qname:
             return self.field_call_origin(self.scope.class_ref, node.attr)
@@ -2247,6 +2399,10 @@ class RelationVisitor(ast.NodeVisitor):
             while scope is not None:
                 binding = self.pattern_bindings.get(id(scope), {}).get(node.id)
                 if binding is not None:
+                    # A nested callable runs later: an enclosing name bound
+                    # more than once may hold any of its values then.
+                    if scope is not self.scope and binding.get("rebound"):
+                        return {**unknown, "text": node.id}
                     return binding.get("source_origin") or {**unknown, "text": node.id}
                 # A lexically local name cannot read a same-spelled outer
                 # parameter before its own assignment has been visited.
@@ -2258,6 +2414,11 @@ class RelationVisitor(ast.NodeVisitor):
             return {"kind": "call_result", "text": safe_expression_name(node.func),
                     "anchor": callee_location(self.module["path"], node.func)}
         if isinstance(node, ast.Attribute):
+            # A class attribute stored once through its class's name holds
+            # that store's value (class_attribute_value).
+            stored = self.class_attribute_value(node)
+            if stored is not None:
+                return stored
             # A field its class stores once, from a call, holds that call's
             # result, as a local name bound to a call does.
             stored = self.self_field_call(node)
@@ -2584,6 +2745,13 @@ class RelationVisitor(ast.NodeVisitor):
         for statement in node.body:
             self.visit(statement)
         self.scope = previous
+        self.rebind_definition(node.name)
+
+    def rebind_definition(self, name):
+        # A def or class rebinds its name where it is written: a value the
+        # name held before is no longer what it reads.
+        if name in self.current_pattern_bindings():
+            self.bind_nonvalue_name(name)
 
     def visit_ClassDef(self, node):
         defined_ref = self.analyzer.node_refs[id(node)]
@@ -2619,6 +2787,7 @@ class RelationVisitor(ast.NodeVisitor):
         for statement in node.body:
             self.visit(statement)
         self.scope = previous
+        self.rebind_definition(node.name)
 
     def visit_Lambda(self, node):
         for value in list(node.args.defaults) + list(node.args.kw_defaults):
@@ -2871,12 +3040,24 @@ class RelationVisitor(ast.NodeVisitor):
             constructed = resolved[0] == "local" and called is not None and called["kind"] == "type"
             if constructed:
                 invocation = "construct"
-            call_relation_ref = self.emit_resolved(
-                kind, self.scope.ref, resolved, node, "callsite", name, invocation,
-                exact_authorities=("literal",), source_expression=source_expression,
-                witness_callee=node.func, pattern=pattern, patterns_observed=patterns_observed,
-                extra_witnesses=self.stored_function_witnesses(node.func) if not resolved[1] else (),
-            )
+            # A call on an element of a list closed over its classes
+            # (registered_classes) is each class's method of that name: its
+            # implementations, several of them alternatives.
+            members = self.registered_members(node.func) if not resolved[1] else []
+            if members:
+                call_relation_ref = self.analyzer.add_relation(
+                    "calls", self.scope.ref, members, "alternatives" if len(members) > 1 else "exact", node, "callsite",
+                    name, invocation=invocation, targets_observed=len(members), source_expression=source_expression,
+                    witness_callee=node.func, patterns=[pattern] if pattern else [], patterns_observed=patterns_observed,
+                    dispatch="interface" if len(members) > 1 else "",
+                )
+            else:
+                call_relation_ref = self.emit_resolved(
+                    kind, self.scope.ref, resolved, node, "callsite", name, invocation,
+                    exact_authorities=("literal",), source_expression=source_expression,
+                    witness_callee=node.func, pattern=pattern, patterns_observed=patterns_observed,
+                    extra_witnesses=self.stored_function_witnesses(node.func) if not resolved[1] else (),
+                )
             initializer = self.class_member(resolved[1], "__init__", ("method",)) if constructed else ""
             if initializer:
                 self.analyzer.add_relation(
@@ -2940,11 +3121,15 @@ class RelationVisitor(ast.NodeVisitor):
         origin = self.assignment_origin(node.value)
         initializer = self.initializer_value_candidate(node.value)
         source_origin = self.source_value(node.value)
-        for target in node.targets:
-            if self.bind_parallel(target, node.value):
-                continue
-            self.bind_pattern_target(target, origin, initializer, source_origin)
-            self.bind_field_type(target, node.value)
+        previous, self.binding_statement = self.binding_statement, (node if len(node.targets) == 1 else None)
+        try:
+            for target in node.targets:
+                if self.bind_parallel(target, node.value):
+                    continue
+                self.bind_pattern_target(target, origin, initializer, source_origin)
+                self.bind_field_type(target, node.value)
+        finally:
+            self.binding_statement = previous
 
     def bind_parallel(self, target, value):
         # `cmd, args = args[0], args[1:]` binds each name to its own value,
@@ -3058,7 +3243,17 @@ class RelationVisitor(ast.NodeVisitor):
                 pending.extend(test.values)
             elif isinstance(test, ast.Compare):
                 test.repomap_case = (id(node), branch)
-        self.generic_visit(node)
+        # Each arm starts from the bindings before the statement, and a name
+        # an arm binds is joined after it (join_branches).
+        self.visit(node.test)
+        before = dict(self.current_pattern_bindings())
+        for statement in node.body:
+            self.visit(statement)
+        after_body = dict(self.current_pattern_bindings())
+        self.pattern_bindings[id(self.scope)] = dict(before)
+        for statement in node.orelse:
+            self.visit(statement)
+        self.join_branches(node, before, [after_body, dict(self.current_pattern_bindings())])
 
     def visit_Compare(self, node):
         if len(node.ops) == 1:
@@ -3104,16 +3299,273 @@ class RelationVisitor(ast.NodeVisitor):
         self._target_reads(node.target)
         if node.value is not None:
             self.visit(node.value)
-            self.bind_pattern_target(
-                node.target, self.assignment_origin(node.value),
-                self.initializer_value_candidate(node.value),
-                self.source_value(node.value),
-            )
+            origin, initializer, source_origin = self.assignment_origin(node.value), self.initializer_value_candidate(node.value), self.source_value(node.value)
+            previous, self.binding_statement = self.binding_statement, node
+            try:
+                self.bind_pattern_target(node.target, origin, initializer, source_origin)
+            finally:
+                self.binding_statement = previous
             self.bind_field_type(node.target, node.value)
         else:
             self.bind_pattern_target(node.target, {"observed": 0})
         if isinstance(node.target, ast.Name):
             self.current_pattern_bindings()[node.target.id]["iterable_annotation"] = (node.annotation, self.scope)
+
+    def visit_With(self, node):
+        # `with engine.begin() as connection` binds the name to what
+        # entering the context manager gives, which need not be the manager
+        # itself: an "entered" value of the manager's value. A tuple or
+        # attribute target is no such name, and each name in it is unknown.
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is None:
+                continue
+            self.visit(item.optional_vars)
+            if isinstance(item.optional_vars, ast.Name):
+                entered = {"kind": "entered", "text": item.optional_vars.id,
+                           "anchor": source_location(self.module["path"], item.optional_vars),
+                           "parts": [self.source_value(item.context_expr)]}
+                previous, self.binding_statement = self.binding_statement, node
+                try:
+                    self.bind_pattern_target(item.optional_vars, {"observed": 0}, None, entered)
+                finally:
+                    self.binding_statement = previous
+            else:
+                for target in ast.walk(item.optional_vars):
+                    if isinstance(target, ast.Name):
+                        self.bind_nonvalue_name(target.id)
+        for statement in node.body:
+            self.visit(statement)
+
+    visit_AsyncWith = visit_With
+
+    def visit_ExceptHandler(self, node):
+        # `except E as name` rebinds the name to the exception caught.
+        if node.type is not None:
+            self.visit(node.type)
+        if node.name:
+            self.bind_nonvalue_name(node.name)
+        for statement in node.body:
+            self.visit(statement)
+
+    def visit_MatchAs(self, node):
+        if node.pattern is not None:
+            self.visit(node.pattern)
+        if node.name:
+            self.bind_nonvalue_name(node.name)
+
+    def visit_MatchStar(self, node):
+        if node.name:
+            self.bind_nonvalue_name(node.name)
+
+    def visit_MatchMapping(self, node):
+        for key in node.keys:
+            self.visit(key)
+        for pattern in node.patterns:
+            self.visit(pattern)
+        if node.rest:
+            self.bind_nonvalue_name(node.rest)
+
+    def attribute_uses(self):
+        # Every attribute the program's code outside tests writes, by its
+        # name: the attribute node, its parent and grandparent, the class
+        # definition it is written in and the def it runs in, each module
+        # walked once.
+        index = self.analyzer.attribute_index
+        if index is not None:
+            return index
+        index = {}
+        for name in sorted(self.analyzer.modules):
+            module = self.analyzer.modules[name]
+            if module["path"] in self.analyzer.test_paths:
+                continue
+            stack = [(module["tree"], None, None, None, None)]
+            while stack:
+                node, parent, grandparent, klass, function = stack.pop()
+                if isinstance(node, ast.Attribute):
+                    index.setdefault(node.attr, []).append((node, parent, grandparent, klass, function, module))
+                inner_class = node if isinstance(node, ast.ClassDef) else klass
+                inner_function = node if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)) else function
+                for child in ast.iter_child_nodes(node):
+                    stack.append((child, node, parent, inner_class, inner_function))
+        self.analyzer.attribute_index = index
+        return index
+
+    def registered_classes(self, expression):
+        # `for mod in self.registered_modules` (freqtrade's RPCManager): a
+        # list field a class stores once as an empty list and only ever
+        # appends constructions of repository classes to holds objects of
+        # those classes, a closed set. Every use of the field in the
+        # program must be the class's own `self.<field>`: the one store, an
+        # append of `C(...)` or of a local bound once to one, pop, remove,
+        # clear, iteration, a truth test, len and an element read. Any other
+        # use (another receiver's `.<field>`, an alias, extend, insert, +=,
+        # a slice or element store, handing or returning the list, a class
+        # deriving from it using it) may put anything in it: none.
+        if not (isinstance(expression, ast.Attribute) and isinstance(expression.value, ast.Name)
+                and expression.value.id == "self" and self.scope.class_ref):
+            return []
+        class_ref, name = self.scope.class_ref, expression.attr
+        key = (class_ref, name)
+        cache = self.analyzer.registered_elements
+        if key in cache:
+            return cache[key]
+        cache[key] = []
+        stores = self.field_stores_seen(class_ref, name)
+        if len(stores) != 1 or not isinstance(stores[0][0], ast.List) or stores[0][0].elts or \
+                self.class_attribute_stores(class_ref, name) != [(None, stores[0][1])]:
+            return []
+        # self in a class unrelated to this one is that class's object; in
+        # a base or a class deriving from it, it may be this class's.
+        related = set(self.analyzer.base_chain(class_ref)) | set(self.analyzer.derived_classes(class_ref))
+        classes = []
+        for node, parent, grandparent, klass, function, module in self.attribute_uses().get(name, []):
+            owner = self.analyzer.node_refs.get(id(klass)) if klass is not None else None
+            if isinstance(node.value, ast.Name) and node.value.id == "self" and owner is not None and owner not in related:
+                continue
+            if owner != class_ref or not isinstance(node.value, ast.Name) or node.value.id != "self" or function is None:
+                return []
+            if isinstance(parent, (ast.Assign, ast.AnnAssign)) and node in (parent.targets if isinstance(parent, ast.Assign) else [parent.target]):
+                continue
+            if isinstance(parent, (ast.For, ast.comprehension)) and parent.iter is node or \
+                    isinstance(parent, (ast.While, ast.If, ast.IfExp, ast.Assert)) and parent.test is node or \
+                    isinstance(parent, (ast.UnaryOp, ast.BoolOp)) or \
+                    isinstance(parent, ast.Subscript) and parent.value is node and isinstance(parent.ctx, ast.Load) or \
+                    isinstance(parent, ast.Call) and isinstance(parent.func, ast.Name) and parent.func.id == "len" and parent.args == [node]:
+                continue
+            if isinstance(parent, ast.Attribute) and parent.value is node and isinstance(grandparent, ast.Call) and grandparent.func is parent:
+                if parent.attr in ("pop", "remove", "clear"):
+                    continue
+                if parent.attr == "append" and len(grandparent.args) == 1 and not grandparent.keywords:
+                    constructed = self.constructed_class(grandparent.args[0], function, module)
+                    if constructed:
+                        if constructed not in classes:
+                            classes.append(constructed)
+                        continue
+            return []
+        classes.sort(key=lambda ref: location_key(self.object(ref).get("location")))
+        cache[key] = classes
+        return classes
+
+    def constructed_class(self, value, function, module):
+        # The repository class a value constructs where it is written: a
+        # call of the class, or a local name bound once, in the def it is
+        # read in, to such a call. "" otherwise.
+        if isinstance(value, ast.Name):
+            bound = [node for node in ast.walk(function) if value.id in bound_names(node)]
+            if len(bound) != 1 or not isinstance(bound[0], ast.Assign) or len(bound[0].targets) != 1:
+                return ""
+            value = bound[0].value
+        if not isinstance(value, ast.Call):
+            return ""
+        scope = self.analyzer.node_scopes.get(id(function))
+        if scope is None:
+            return ""
+        previous = self.scope, self.module
+        self.scope, self.module = scope, module
+        try:
+            authority, ref = self.resolve(value.func)
+        finally:
+            self.scope, self.module = previous
+        candidate = self.object(ref) if ref else None
+        return ref if authority == "local" and candidate is not None and candidate["kind"] == "type" else ""
+
+    def registered_members(self, callee):
+        # The methods a call on a loop's element over a registered list
+        # reaches: each class's member of that name, all of them repository
+        # methods; none when one class has no such method.
+        if not (isinstance(callee, ast.Attribute) and isinstance(callee.value, ast.Name)):
+            return []
+        binding = self.pattern_binding(callee.value.id)
+        if not binding or not binding.get("registered"):
+            return []
+        members = []
+        for class_ref in binding["registered"]:
+            member = self.class_member(class_ref, callee.attr, ("method", "function"))
+            if not member:
+                return []
+            if member not in members:
+                members.append(member)
+        return members
+
+    def statement_block(self, statement):
+        # The statement list a statement stands in, as (the node owning it,
+        # the field), gathered once per module.
+        path = self.module["path"]
+        blocks = self.analyzer.statement_blocks.get(path)
+        if blocks is None:
+            blocks = {}
+            for owner in ast.walk(self.module["tree"]):
+                for field, value in ast.iter_fields(owner):
+                    if isinstance(value, list):
+                        for child in value:
+                            if isinstance(child, ast.stmt):
+                                blocks[id(child)] = (owner, field)
+            self.analyzer.statement_blocks[path] = blocks
+        return blocks.get(id(statement))
+
+    def dominated_by(self, statement, block):
+        # Whether a statement runs only after the statement list block has
+        # reached it: it stands in that list, or in an arm of an if
+        # statement standing there (an arm's value is joined after the if,
+        # join_branches), however deep. A loop, try, with or match between
+        # them runs its body again, not at all or only in part: no.
+        current = statement
+        while True:
+            standing = self.statement_block(current)
+            if standing is None:
+                return False
+            if standing[0] is block[0] and standing[1] == block[1]:
+                return True
+            owner, field = standing
+            if not isinstance(owner, ast.If) or field not in ("body", "orelse"):
+                return False
+            current = owner
+
+    def join_branches(self, statement, before, arms):
+        # After an if statement a name holds what one of its paths left in
+        # it: each arm's last value, and the value before the statement for
+        # a path that did not bind it (no else, an arm leaving it alone). One
+        # value is that value; several are their alternatives, none chosen,
+        # as Go's SSA joins them; an unknown one leaves the name unknown. A
+        # path on which the name is unbound cannot read it. Which class a
+        # call on it reaches stays unknown whenever two bindings meet.
+        current = self.current_pattern_bindings()
+        block = self.statement_block(statement)
+        names = set()
+        for arm in arms:
+            for name, binding in arm.items():
+                if before.get(name) is not binding:
+                    names.add(name)
+        for name in sorted(names):
+            bindings = [arm.get(name) for arm in arms]
+            present = [binding for binding in bindings if binding is not None]
+            distinct = []
+            for binding in present:
+                if not any(binding is known for known in distinct):
+                    distinct.append(binding)
+            values, known = [], True
+            for binding in distinct:
+                origin = binding.get("source_origin")
+                if origin is None:
+                    known = False
+                    break
+                if origin not in values:
+                    values.append(origin)
+            last = next(binding for binding in reversed(bindings) if binding is not None and binding is not before.get(name))
+            joined = dict(last)
+            if not known:
+                joined["source_origin"] = None
+            elif len(values) == 1:
+                joined["source_origin"] = values[0]
+            else:
+                joined["source_origin"] = {"kind": "alternatives", "parts": values}
+            if len(distinct) > 1:
+                joined["value_invalidated"] = True
+                joined["origin_invalidated"] = True
+                joined["rebound"] = True
+            joined["block"] = block
+            current[name] = joined
 
     def visit_AugAssign(self, node):
         self._attribute_write(node.target)
@@ -3143,13 +3595,18 @@ class RelationVisitor(ast.NodeVisitor):
     def visit_For(self, node):
         element = self.iterated(node.iter)
         self._target_reads(node.target)
-        type_ref = self.iterated_class(node.iter) if isinstance(node, ast.For) else ""
+        # The classes a list field is closed over win over its annotation:
+        # they are the objects the list can hold (registered_classes).
+        registered = self.registered_classes(node.iter) if isinstance(node, ast.For) else []
+        type_ref = self.iterated_class(node.iter) if isinstance(node, ast.For) and not registered else ""
         self.bind_pattern_target(node.target, {"observed": 0})
         if type_ref and isinstance(node.target, ast.Name):
             self.current_pattern_bindings()[node.target.id].update({
                 "origin_refs": [type_ref], "origin_resolution": "alternatives", "origins_observed": 1,
                 "annotation_origin": True, "iteration_origin": True,
             })
+        if registered and isinstance(node.target, ast.Name):
+            self.current_pattern_bindings()[node.target.id].update({"registered": list(registered)})
         if element is not None and isinstance(node.target, ast.Name) and not self.handled.get(id(self.scope)):
             self.current_pattern_bindings()[node.target.id]["element_of"] = {**element, "reached": pass_subscripts(node.body)}
         for statement in node.body:
