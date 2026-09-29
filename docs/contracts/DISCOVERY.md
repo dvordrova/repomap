@@ -88,6 +88,22 @@ first commit and after a commit; they do not stand in for that integration.
 
 Clojure sources and EDN manifests enter the same corpus. `deps.edn` and
 `project.clj` define exact JVM project targets; see [Clojure](CLOJURE.md).
+Each build of a `shadow-cljs.edn` that names what it starts from (a module's
+`:init-fn` or `:entries`, a node script's `:main`) is a ClojureScript program
+target of its own, `clojure:shadow-cljs.edn:<build>`, restored from that file
+(several builds of one file are several targets) with its entries as native
+evidence (`shadow_cljs_entry`). The facts pass quotes the run-relevant rows of
+these build descriptions as `manifest` facts, each at the line that writes it:
+`paths`, pinned dependencies (`dependency.<coordinate>`), each alias's
+`main-opts`, `exec-fn`, `extra-paths` and `extra-deps` at the alias's line, a
+Leiningen `:main`, and each build's `target`, `output-dir` and entries, with
+shadow-cljs's `deps.aliases` and `dev-http`. Every alias is quoted, as every
+package.json script is; the rows of a build description hold for the target
+whose own manifest it is among targets sharing its directory. Othello's
+`aliases.run.main-opts = -m othello.core` (deps.edn:25) beside the
+`othello.core/-main` entry is the evidence for `clj -M:run`, and
+`aliases.web.main-opts`, `deps.aliases = web` and `builds.app.*` for the
+browser build; the facts write no command, the overview does.
 Generated `.cpcache` and `.clj-kondo/inline-configs` directories are excluded
 from inventory while their persistent on-disk caches remain intact.
 

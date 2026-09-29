@@ -4,8 +4,22 @@ The ordinary Clojure adapter discovers projects from `deps.edn` and
 `project.clj` in the shared corpus. Coexisting manifests describe one project;
 `deps.edn` supplies its selector (`clojure:deps.edn` at repository root).
 Each project owns its `.clj` and JVM `.cljc` sources up to nested manifest
-boundaries, including tests, examples and tools. `.cljs` is inventoried but is
-not part of this JVM execution view.
+boundaries, including tests, examples and tools. `.cljs` is not part of this
+JVM execution view.
+
+Each build of a `shadow-cljs.edn` that names what it starts from (a module's
+`:init-fn` or `:entries`, a node script's `:main`) is a ClojureScript program
+of its own (`clojure:shadow-cljs.edn:app`, kind `executable`, named by its
+build id), restored from its `shadow-cljs.edn` (`ScoutShadow`). Its view is the
+`.cljs` sources and the `:cljs` branch of the `.cljc` sources of that
+directory, up to a nested `deps.edn`, `project.clj` or `shadow-cljs.edn`, read
+by the same clj-kondo analysis; its seeds are the build's `:init-fn`/`:main`
+functions and `:entries` namespaces, and `-main` seeds only the JVM view.
+ClojureScript's own namespaces (`cljs.core`, `clojure.string`, ...), the
+Closure Library (`goog.*`) and the JavaScript globals clj-kondo writes with no
+namespace (`js/setInterval`, an external symbol of package `js`) are its
+platform. Othello's `:app` build is its browser page beside the desktop
+program `deps.edn` describes.
 
 `internal/clojureproject` runs clj-kondo on exactly those files. Namespace and
 var identities, declarations, imports, uses, Java static calls and local binding
@@ -48,9 +62,9 @@ so none has such an unnamed local.
 Clojure parameters carry no repository type (no `type_id`), so no Clojure
 callable `takes` a type in the places graph (READING); the other four
 adapters record it and their fixtures check it.
-Java instance dispatch and dynamic function targets remain unresolved. This
-initial adapter does not implement ClojureScript execution views or a runtime
-macroexpander; definition/control macro syntax is not promoted into runtime calls.
+Java instance dispatch and dynamic function targets remain unresolved. The
+adapter has no runtime macroexpander; definition/control macro syntax is not
+promoted into runtime calls (a `future`'s use is the one exception, below).
 
 Map/vector values returned by functions remain values in native observations;
 their constructors are functions, not invented named types. The ordinary
@@ -75,6 +89,31 @@ spans); a namespace counts its whole file. Since `defmethod` is no
 declaration, the in-file repeat the fixture asserts is a `declare` and its
 `defn` (`example.core/shout` in `src/example/core.clj`, 1 and 4 code lines),
 which the map of parts reads as one unit.
+
+## Keyword arguments
+
+A call's trailing keyword/value pairs are its keyword arguments, as a
+function taking `& {:keys [...]}` receives them, and since Clojure 1.11 a
+trailing map literal passes the same arguments:
+`(q/sketch :title "Greeter" :draw draw-greeting :key-pressed on-key)` and
+`(ws/websocket "ws://localhost:8080/feed" {:on-message receive-greeting
+:on-close close-feed})` in `src/example/core.clj`. Each value is an argument
+under its keyword (the keyword form itself is no argument), the arguments
+before them keep their positions, and a function handed under a keyword is a
+callback bound to that keyword. A run of pairs goes back from the last
+argument while each pair starts with a plain keyword; a repeated or
+auto-resolved (`::k`) keyword leaves every argument positional. The facts pass
+reads an outside call handed several repository functions under keywords as
+one registration per keyword (PROGRAM_INDEX, the facts pass): othello's
+`quil.core.sketch.key-pressed` hands `host/on-key` over at
+`src/othello/ui/sketch.clj:45`. `TestKeywordArguments`,
+`assertKeywordArguments` and `TestCumulativeClojureKeywordHandoffsAndFutures`
+check both forms. A Python call's keyword arguments and a Go struct's fields
+are keyword arguments natively; a synthetic facts case
+(`TestRegistrationsComeFromCallShapesNotFrameworkNames`, a WebSocketApp handed
+`on_message` and `on_close`) checks the shared rule, and the Go, Python, JS/TS
+and C cumulative fixtures hold no outside call handed two callables under
+keywords yet: recorded, not fabricated.
 
 ## Handler tables and stored callbacks
 
@@ -198,9 +237,14 @@ follows no Clojure value); `run-command`'s `(case (first args) "serve" …
 own. Not recorded yet:
 
 - `-main`'s `& args` carry no argument vector origin;
-- a function started on its own (`future`, `(Thread. f)`, `core.async/go`)
-  carries no `goroutine` or `async_task` invocation, so it is no started
-  registration (GO, goroutines);
+- a function started on its own other than by a `future`: `(Thread. f)`,
+  `core.async/go` and `thread` carry no `goroutine` invocation, so they are no
+  started registration (GO, goroutines);
+- a function literal (`(fn [] ...)`, `#(...)`) is no declaration the adapter
+  projects, so one handed to an outside call hands nothing over: othello's web
+  build hands its AI search to `(js/setTimeout (fn [] (reset! job (play-ai
+  ...))) 20)`, which makes no registration, where Go, Python and JS/TS hand
+  over their closure object;
 - a handler's comparison of what it was handed is no sub-argument (READING,
   K3): the adapter records no argument's origin, so no argument is known to
   come from a parameter;
@@ -212,6 +256,21 @@ own. Not recorded yet:
   key is.
 
 
+## A future starts its body
+
+A `future` runs its body on a thread of its own. Each call written as a form
+of its body (`(future (greet-many names))` in `warm-greetings`,
+`src/example/core.clj`; othello's `(future (play-ai ...))` in `launch-ai`)
+carries the shared invocation word `goroutine`, as Go's `go f()` does, and the
+`future`'s own use is a call of the outside `clojure.core/future` given that
+call as its `call_result` argument, as `asyncio.create_task` is given a
+coroutine. So the facts pass makes the started call a registration whose word
+is `clojure.core/future` (PROGRAM_INDEX), and the reading asks the statement
+`(future (greet-many names))` on its own what it starts
+(`assertFutureStartsItsBody`, `TestCumulativeClojureKeywordHandoffsAndFutures`).
+This is the one macro whose use leaves a relation; ClojureScript has no
+`future`.
+
 ## Programs a call starts
 
 `revision` in `src/example/core.clj` calls `(shell/sh "git" "rev-parse"
@@ -220,13 +279,21 @@ gives the words `git`, `rev-parse`, `HEAD`.
 
 ## Test sources
 
-A namespace that requires `clojure.test` or `speclj.core` is a test source.
-Runner-configured test directories are a missing equivalent of Playwright's
-`testDir`: the adapter reads no manifest contents, so Leiningen
-`:test-paths` and a `deps.edn` alias that runs `cognitect.test-runner` or
-Kaocha are not derived. An alias's `:extra-paths` carries no runner
-authority by itself. A helper namespace under `test/` that requires neither
-framework stays unclassified.
+A namespace that requires `clojure.test`, `cljs.test` or `speclj.core` is a
+test source. So is every source under a directory the build description runs
+as tests, the equivalent of Playwright's `testDir` and pytest's configured
+files: a `deps.edn` alias whose `:main-opts` run (`-m`) or whose `:exec-fn`
+names a test runner of those frameworks (`speclj.main`,
+`cognitect.test-runner`, `kaocha.runner`) names its `:extra-paths`, and a
+Leiningen project its `:test-paths`, Leiningen's own `test` when it writes
+none. Their helpers are test code too: othello's `:spec` alias makes
+`spec/othello/spec_helper.clj` a test source, and the fixture's `:test` alias
+`test/example/fixtures.clj`, which requires no framework. An alias's
+`:extra-paths` alone carry no runner authority (`:dev` adds tooling), and
+neither does an alias running another tool over the same directory (othello's
+`:cov`, `:mutate`); a helper under a directory no runner names stays
+unclassified. A shadow-cljs build reads the test directories of the
+`deps.edn` and `project.clj` beside it.
 
 ## Environment and native serialization
 
@@ -251,8 +318,14 @@ Other native failures and syntax errors remain errors.
 `testdata/contracts/clojure.files.json` binds its exact inventory. Native tests
 cover seeds, namespace calls, a shadowed callable, literal and reader arguments,
 Java ignore metadata, callback source-argument binding, author quotes, JVM-only
-reader branches and stable repeat extraction. The ordinary adapter test checks
-the same graph and dependencies through the registered dispatch boundary.
+reader branches, keyword arguments, a future, runner-configured test
+directories and stable repeat extraction; `TestShadowBuildIsAClojureScriptProgram`
+and `TestCumulativeClojureShadowBuild` read the `:app` build
+(`src/example/web.cljs` hands `refresh!` to `js/setInterval`, a registration
+like any function handed to an outside call), and `TestManifestRowsQuoteAliasesAndBuilds`
+the manifest rows. The ordinary adapter tests check the same graph and
+dependencies through the registered dispatch boundary, and that the run
+restores the JVM project from `deps.edn` and the build from `shadow-cljs.edn`.
 
 Comparable import/call/source-argument/callback cases already exist in the
 cumulative Go, Python and JSTS fixtures and their native adapter tests. Clojure
