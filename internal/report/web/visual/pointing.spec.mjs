@@ -152,7 +152,9 @@ test('a tile points at and chooses its own declaration',async({page},testInfo)=>
   await pointAt(page,tileOf(part,'processJob'));
   await expect.poll(()=>darkArrows(map)).toEqual(['queue>worker']);
   await pointAt(page,tileOf(part,'save'));
-  await expect.poll(()=>darkArrows(map)).toEqual(['worker>save-jobs']);
+  // Its call to PostgreSQL is drawn on the one arrow to the Outside frame,
+  // which every call of the service to the outside shares.
+  await expect.poll(()=>darkArrows(map)).toEqual(['worker>postgres','worker>redis','worker>storage','worker>telemetry']);
   const tile=await tileOf(part,'processJob').boundingBox();
   await page.mouse.move(tile.x+tile.width/2,tile.y+tile.height/2,{steps:6});
   const camera=await map.evaluate(map=>map.captureViewport());
@@ -240,31 +242,3 @@ test('the input collection is headed Inputs and opens to its groups before its i
   await testInfo.attach('journey-02 — A group opened to its inputs',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });
 
-// Frames that share one destination's text stand in one group under one
-// heading. The group is involved when one of its frames is: choosing a
-// system whose resolver is dark had left the group's frame receded around
-// it and its heading at full strength when nothing of it was involved.
-test('a group of frames sharing one destination recedes with them and stays with them',async({page})=>{
-  const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  const map=page.locator('[data-map]');
-  await page.goto('/?shared-destination');await expect(map).toHaveAttribute('data-fixture-ready','true');
-  const heading=page.locator('[data-group-heading]'),group=page.locator('.react-flow__node[data-id^="display-group:"]');
-  const resolver=page.locator('.react-flow__node[data-id="dns-backend"]');
-  await page.mouse.move(1430,890);
-  await map.evaluate(map=>map.restoreReadingState({scope:'backend'}));
-  await expect(resolver).toHaveCSS('opacity','1');
-  await expect(group,'the group of an involved frame stays').toHaveCSS('opacity','1');
-  await expect(heading).toHaveCSS('opacity','1');
-  await map.evaluate(map=>map.restoreReadingState({scope:'api'}));
-  const opacity=locator=>locator.evaluate(element=>Number(getComputedStyle(element).opacity));
-  await expect.poll(()=>opacity(resolver)).toBeLessThan(1);
-  await expect.poll(()=>opacity(group),'a group nothing involves recedes').toBeLessThan(1);
-  await expect.poll(()=>opacity(heading),'and its heading with it').toBeLessThan(1);
-  // The pointer brings forward what it outlines and recedes nothing more.
-  await pointAt(page,page.locator('[data-component-overview="backend"]'));
-  await expect(map).toHaveAttribute('data-subject','backend');
-  await expect(resolver).toHaveCSS('opacity','1');
-  await expect(group).toHaveCSS('opacity','1');
-  await expect(heading).toHaveCSS('opacity','1');
-  expect(errors).toEqual([]);
-});

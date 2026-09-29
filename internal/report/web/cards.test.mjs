@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText} from './cards.mjs';
+import {prepareCards,overviewHeading,overviewScale,groupInputs,wrapText,chipGrid,chip,cardText,kindMark} from './cards.mjs';
 import {semanticLayout} from './semantic.mjs';
 
 // canvas.css draws a card 260px wide inside a 1.5px border and 16px padding.
@@ -75,22 +75,6 @@ test('an overview heading short of its longest word shrinks rather than breaking
       else if(width<card.overviewMinWidth*.7)assert.ok(heading.scale<1,`${title} shrinks well short of its reserve`);
     }
   }
-});
-
-// Redis's first screen showed "DNS resolver" three times side by side.
-test('a frame whose display group carries its destination text draws no heading of its own',()=>{
-  const measure=text=>String(text).length*7;
-  const [tile,,titled]=prepareCards([
-    {id:'dns-cli',title:'DNS resolver',branch:'communication',children:['call'],displayGroup:'dns',displayGroupTitle:'DNS resolver'},
-    {id:'call',title:'gethostbyname'},
-    {id:'dns-alone',title:'DNS resolver',branch:'communication',children:['other']},
-  ],{},measure,text=>text);
-  assert.deepEqual(overviewHeading(tile,tile.overviewMinWidth,measure).lines,[],'the tile repeats nothing');
-  assert.equal(overviewHeading(titled,titled.overviewMinWidth,measure).lines.join(' '),'DNS resolver','a frame alone keeps its heading');
-  assert.equal(tile.displayGroupHeadingAt(3*tile.overviewMinWidth).lines.join(' '),'DNS resolver','the group says it once');
-  assert.equal(titled.displayGroupHeadingAt,undefined);
-  // Open, the tile's calls stand under no title row: the group names them.
-  assert.ok(tile.headerHeight<titled.headerHeight,`the open tile reserves ${tile.headerHeight} above its calls, a titled frame ${titled.headerHeight}`);
 });
 
 // In a 1280×720 window Redis's map could not give its summaries their reserved
@@ -219,16 +203,35 @@ test('one root input collection retains every original input and implementation 
   assert.deepEqual(layout.edges.flatMap(e=>e.relations),relations,'original endpoints and evidence are preserved');
 });
 
-// "Request" stood on 97 of Redis's 98 input tiles, repeating the collection's
-// own "Incoming requests". A tile names its kind only when it differs.
-test('an input tile names its kind only when it is not its collection\'s common kind',()=>{
+// "Request" stood on 97 of Redis's 98 input tiles and "Background
+// activity" above others: an input says its kind by the mark before its
+// name (canvas KindMark), in no row of its own, and its title wraps beside
+// the mark.
+test('an input tile prints no kind and keeps room for its kind mark',()=>{
   const records=[{id:'inputs',branch:'inputs',children:['group','thread']},{id:'group',branch:'inputs-part',title:'String commands',children:['get','set']},
     {id:'get',title:'get',activation:'request'},{id:'set',title:'set',activation:'request'},{id:'thread',title:'IOThreadEntryPoint',activation:'continuous'}];
   const cards=new Map(prepareCards(records,{},text=>String(text).length*7,text=>text).map(card=>[card.id,card]));
-  assert.equal(cards.get('get').kindLabel,'');assert.equal(cards.get('set').kindLabel,'');
-  assert.equal(cards.get('thread').kindLabel,'Background activity');
-  assert.ok(cards.get('get').height<cards.get('thread').height,'a tile without its kind row is shorter');
+  for(const id of ['get','set','thread'])assert.equal(cards.get(id).kindLabel,undefined,`${id} names no kind`);
+  assert.equal(cards.get('get').height,cards.get('thread').height,'every tile of one line is one height');
   assert.deepEqual(cards.get('inputs').inputGroups.map(group=>group.kind),['request','background'],'the collection still lists every kind it holds');
+  const [long]=prepareCards([{id:'long',title:'a'.repeat(30),activation:'command'}],{},text=>String(text).length*7,text=>text);
+  assert.ok(long.title.split('\n').every(line=>line.length*7<=cardText-kindMark),'the title wraps beside the kind mark');
+});
+
+// Litestream's twelve outside systems stood as one strip of frames of every
+// size: an Outside frame's chips are one size, in rows toward a square.
+test('an Outside frame is sized by its chip grid, one size of chip, wrapped into rows',()=>{
+  for(const count of [1,2,5,12,20]){
+    const grid=chipGrid(count);
+    assert.equal(grid.columns*grid.rows>=count,true);
+    assert.ok(count<3||grid.columns>1&&grid.rows>1,`${count} chips wrap into rows, not a strip or a column`);
+    assert.ok(grid.width/grid.height<2.5&&grid.height/grid.width<2.5,`${count} chips keep a compact frame`);
+  }
+  const [outside,destination]=prepareCards([{id:'out',branch:'outside',title:'cmd/litestream',children:['s3','nats']},{id:'s3',branch:'chip',title:'Amazon S3'},{id:'nats',branch:'chip',title:'NATS'}],{},text=>String(text).length*7,text=>text==='Outside'?'Снаружи':text);
+  assert.equal(outside.heading,'Снаружи','the frame is headed Outside');
+  const grid=chipGrid(2);
+  assert.equal(outside.overviewMinWidth,grid.width);assert.equal(outside.overviewHeightAtWidth(2*grid.width),2*grid.height,'it keeps its chips\' proportion');
+  assert.deepEqual([destination.width,destination.height],[chip.width,chip.height]);
 });
 
 // Titled with its component's name, Redis's input collection read as a

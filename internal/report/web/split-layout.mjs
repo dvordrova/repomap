@@ -1,6 +1,7 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {connections} from './layout.mjs';
 import {overviewRecords} from './overview.mjs';
+import {chip,chipGrid} from './cards.mjs';
 
 let engine;
 export const overviewInset=16;
@@ -21,9 +22,6 @@ const key=(...parts)=>JSON.stringify(parts);
 // area: Server runtime's 21 arrows among six parts had 68 bends.
 const pairKey=(a,b)=>a<b?key(a,b):key(b,a);
 const reversed=segments=>segments.slice().reverse().map(points=>points.slice().reverse());
-// A destination frame whose display group says its text for it: a plain
-// tile, titled by the group's heading (cards.mjs).
-const plainTile=record=>record?.branch==='communication'&&!!record.displayGroupTitle;
 // The scale, relative to its reading scale, at which an open area's 17px
 // part headings reach the 12px its layer stays open at (semantic.mjs).
 export const readableScale=12/17;
@@ -74,6 +72,7 @@ function gridInterior(frame,ratio,top,fitted=false){
 // grid of its tiles under its title, and the groups fill the collection's
 // rows in their reading order toward the collection's summary proportion.
 // Arrows that cross the collection are drawn by the outer routes alone.
+const groupProportion=1.6;
 function groupedInterior(frame,ratio,top,order,headers){
   const gap=24,side=32,rank=id=>{const at=order.indexOf(id);return at<0?order.length:at;};
   const groups=[...frame.children].sort((a,b)=>rank(a.id)-rank(b.id));
@@ -85,7 +84,10 @@ function groupedInterior(frame,ratio,top,order,headers){
       const widths=Array(columns).fill(0),rows=[];
       tiles.forEach((tile,i)=>{widths[i%columns]=Math.max(widths[i%columns],tile.width);rows[Math.floor(i/columns)]=Math.max(rows[Math.floor(i/columns)]||0,tile.height);});
       const width=2*side+widths.reduce((a,b)=>a+b,0)+gap*(columns-1),height=head+side+rows.reduce((a,b)=>a+b,0)+gap*(rows.length-1);
-      const distance=Math.abs(Math.log(width/height/ratio));
+      // A group of many inputs wraps into rows wider than tall, whatever
+      // the collection's summary: to its tall proportion, freqtrade's REST
+      // API server had stood 440 by 840 beside groups a fifth its width.
+      const distance=Math.abs(Math.log(width/height/groupProportion));
       if(!best||distance<best.distance)best={columns,widths,rows,width,height,distance};
     }
     tiles.forEach((tile,i)=>{
@@ -95,9 +97,10 @@ function groupedInterior(frame,ratio,top,order,headers){
     });
     group.width=best.width;group.height=best.height;group.edges=[];
   }
-  // Rows of groups: as wide as the collection's proportion asks of their area.
+  // Rows of groups, a little wider than tall: stacked to the collection's
+  // tall summary, its groups stood in one column taller than the canvas.
   const area=groups.reduce((sum,group)=>sum+(group.width+gap)*(group.height+gap),0);
-  const target=Math.max(...groups.map(group=>group.width),Math.sqrt(area*ratio));
+  const target=Math.max(...groups.map(group=>group.width),Math.sqrt(area*Math.max(ratio,1.2)));
   let x=side,y=top,row=0,right=0;
   for(const group of groups){
     if(x>side&&x+group.width>side+target){x=side;y+=row+gap;row=0;}
@@ -110,6 +113,24 @@ function groupedInterior(frame,ratio,top,order,headers){
     else{port.y=at==='SOUTH'?height:0;port.x*=width/frame.width;}
   }
   frame.width=width;frame.height=height;frame.edges=[];
+}
+
+// A program's Outside frame: its chips in the order the page gives them
+// (the destinations not established last), in rows of one chip size
+// (cards.mjs chipGrid). No arrow joins two chips; the frame's arrows are
+// drawn by the outer routes alone.
+function chipInterior(frame,order){
+  const grid=chipGrid(frame.children.length),rank=id=>{const at=order.indexOf(id);return at<0?order.length:at;};
+  [...frame.children].sort((a,b)=>rank(a.id)-rank(b.id)).forEach((tile,i)=>{
+    tile.width=chip.width;tile.height=chip.height;
+    tile.x=chip.side+(i%grid.columns)*(chip.width+chip.gap);tile.y=chip.top+Math.floor(i/grid.columns)*(chip.height+chip.gap);
+  });
+  for(const port of frame.ports||[]){
+    const at=port.layoutOptions?.['elk.port.side'];
+    if(at==='EAST'||at==='WEST'){port.x=at==='EAST'?grid.width:0;port.y*=grid.height/frame.height;}
+    else{port.y=at==='SOUTH'?grid.height:0;port.x*=grid.width/frame.width;}
+  }
+  frame.width=grid.width;frame.height=grid.height;frame.edges=[];
 }
 
 function localGeometry(root){
@@ -151,21 +172,29 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     if(!folded.has(identity))folded.set(identity,{id:`e${folded.size}`,from,to,possible:!!relation.possible,init:true,relations:[]});
     const entry=folded.get(identity);entry.relations.push(relation);entry.init&&=!!relation.init;
   }
+  // Two participants are joined by one outer route, whatever their arrows
+  // between them carry and in whichever direction: the drawing paints one
+  // arrow per pair of ends (route-drawing.mjs), headed at each end its
+  // arrows go into, dashed only when all of them are possible. Laid out
+  // once per direction and certainty, the unpainted routes still took
+  // their room between the frames.
   const edges=[...folded.values()],aggregates=new Map(),ports=new Map(roots.map(root=>[root.id,new Map()]));
   for(const edge of edges){
     const from=rootOf(edge.from),to=rootOf(edge.to);
     if(from===to)continue;
-    const identity=key(from,to,edge.possible);
-    if(!aggregates.has(identity))aggregates.set(identity,{id:`outer:${identity}`,from,to,possible:edge.possible,init:true,edges:[],relations:[]});
-    const aggregate=aggregates.get(identity);aggregate.edges.push(edge.id);aggregate.relations.push(...edge.relations);aggregate.init&&=!!edge.init;
-    for(const [root,other,direction,side] of [[from,to,'out','EAST'],[to,from,'in','WEST']]){
-      const portKey=key(other,direction,edge.possible);
-      if(!ports.get(root).has(portKey))ports.get(root).set(portKey,{id:`port:${key(root,other,direction,edge.possible)}`,
-        width:0,height:0,layoutOptions:{'elk.port.side':side}});
+    const identity=pairKey(from,to);
+    if(!aggregates.has(identity)){
+      const portOf=new Map();
+      for(const [root,other,side] of [[from,to,'EAST'],[to,from,'WEST']]){
+        const port={id:`port:${key(root,other)}`,width:0,height:0,layoutOptions:{'elk.port.side':side}};
+        ports.get(root).set(other,port);portOf.set(root,port.id);
+      }
+      aggregates.set(identity,{id:`outer:${identity}`,from,to,possible:true,init:true,edges:[],relations:[],portOf,
+        sourcePort:portOf.get(from),targetPort:portOf.get(to)});
     }
-    aggregate.sourcePort=ports.get(from).get(key(to,'out',edge.possible)).id;
-    aggregate.targetPort=ports.get(to).get(key(from,'in',edge.possible)).id;
-    edge.aggregate=identity;
+    const aggregate=aggregates.get(identity);aggregate.edges.push(edge.id);aggregate.relations.push(...edge.relations);
+    aggregate.init&&=!!edge.init;aggregate.possible&&=!!edge.possible;
+    edge.aggregate=identity;edge.againstOuter=from!==aggregate.from;
   }
   const summaries=new Map(overviewRecords(items,areas).records.map(item=>[item.id,item]));
   const labels=new Map();
@@ -224,9 +253,9 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         if(ownInteriors&&(cross||childOfRoot(edge.from)!==childOfRoot(edge.to)))return [];
         if(cross&&(!children.has(root.id)||(from===root.id&&edge.from===root.id)||(to===root.id&&edge.to===root.id)))return [];
         if(!inside(edge))return [];
-        const aggregate=cross?aggregates.get(edge.aggregate):null;
-        const source=cross&&from!==root.id?aggregate.targetPort:edge.from;
-        const target=cross&&to!==root.id?aggregate.sourcePort:edge.to;
+        const port=cross?aggregates.get(edge.aggregate).portOf.get(root.id):null;
+        const source=cross&&from!==root.id?port:edge.from;
+        const target=cross&&to!==root.id?port:edge.to;
         const pair=pairKey(source,target),first=laid.get(pair);
         if(first){twins.set(edge.id,{id:first.id,reversed:first.source!==source});return [];}
         laid.set(pair,{id:edge.id,source});
@@ -290,19 +319,16 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     // Cross-frame arrows are drawn by the outer routes alone, so a frame whose
     // tiles no arrow joins needs no interior legs.
     const grouped=root.branch==='inputs'&&(children.get(root.id)||[]).some(id=>children.has(id));
-    // A plain tile's closed summary is its zoom mark alone, under its display
-    // group's heading: the mark's proportion asks nothing of the open calls,
-    // so the tile keeps their own box. Stretched to the mark's 50 by 44, each
-    // of Redis's DNS tiles opened 47% empty below its one call.
-    const plain=plainTile(root);
     const loose=!grouped&&root.branch!=='component'&&(children.get(root.id)||[]).length>2&&!ownAreas.length
       &&(children.get(root.id)||[]).every(id=>!children.has(id))
       &&!ownEdges.some(edge=>rootOf(edge.from)===root.id&&rootOf(edge.to)===root.id&&edge.from!==root.id&&edge.to!==root.id);
-    if(grouped){
+    const outside=root.branch==='outside';
+    if(outside)chipInterior(placed,children.get(root.id)||[]);
+    else if(grouped){
       const order=[...children.get(root.id),...children.get(root.id).flatMap(id=>children.get(id)||[])];
       groupedInterior(placed,ratio,localRecords.get(root.id).headerHeight||64,order,new Map([...localRecords].map(([id,record])=>[id,record.headerHeight||40])));
-    }else if(loose)gridInterior(placed,ratio,localRecords.get(root.id).headerHeight||64,plain);
-    else if(root.branch!=='component'&&!plain){
+    }else if(loose)gridInterior(placed,ratio,localRecords.get(root.id).headerHeight||64);
+    else if(root.branch!=='component'){
       const minimum={width:Math.max(placed.width,placed.height*ratio),height:Math.max(placed.height,placed.width/ratio)};
       placed=(await native(graph(minimum))).children[0];
     }
@@ -319,9 +345,9 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       for(const edge of ownEdges){
         const from=rootOf(edge.from),to=rootOf(edge.to),cross=from!==to;
         if(cross&&((from===root.id&&edge.from===root.id)||(to===root.id&&edge.to===root.id)))continue;
-        const aggregate=cross?aggregates.get(edge.aggregate):null;
-        const source=cross&&from!==root.id?aggregate.targetPort:immediate(edge.from);
-        const target=cross&&to!==root.id?aggregate.sourcePort:immediate(edge.to);
+        const port=cross?aggregates.get(edge.aggregate).portOf.get(root.id):null;
+        const source=cross&&from!==root.id?port:immediate(edge.from);
+        const target=cross&&to!==root.id?port:immediate(edge.to);
         if(source===target)continue;
         const identity=pairKey(source,target);
         if(!bundled.has(identity))bundled.set(identity,{id:`component:${root.id}:${identity}`,sources:[source],targets:[target]});
@@ -388,81 +414,34 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   if(!prepared.roots.length)return {layout:{nodes:[],edges:[],labels:[],width:0,height:0},records:prepared.records,
     scales:prepared.scales,owner:prepared.owner,summaries:prepared.summaries};
   const byID=new Map(prepared.records.map(record=>[record.id,record]));
-  // The outer graph has bundled boundary routes and no interior labels. Give
-  // those routes their own spacing instead of reserving room for every call's
-  // source label again between participants.
-  const outerOptions={...options,'elk.spacing.nodeNode':'16','elk.spacing.edgeNode':'8','elk.spacing.edgeEdge':'4',
-    'elk.layered.spacing.nodeNodeBetweenLayers':'32',
-    'elk.layered.spacing.edgeNodeBetweenLayers':'8','elk.layered.spacing.edgeEdgeBetweenLayers':'4'};
-  // Destination frames of different programs that name the same destination
-  // stand together in a display group: a compound of the outer graph around
-  // them, drawn as a frame that is no participant and ends no arrow. Each
-  // frame stays a root with its own program's arrows. When the page gives the
-  // group the text all its frames name, the group carries it once and the
-  // frames stand as plain tiles.
-  const members=new Map();
-  for(const root of prepared.roots){
-    const group=byID.get(root.id)?.displayGroup;if(!group)continue;
-    if(!members.has(group))members.set(group,[]);members.get(group).push(root.id);
-  }
-  for(const [group,ids] of [...members])if(ids.length<2)members.delete(group);
-  const groupID=group=>`display-group:${group}`,grouped=new Set([...members.values()].flat());
-  const groupPad=16,headingOf=new Map();
-  // A plain tile keeps its calls' proportion at the fit: it grows whole,
-  // until its zoom mark has its room, and its calls grow with it. Grown to
-  // the mark's 50 by 44 pixels alone at Redis's whole-map camera, each DNS
-  // tile stood 156 world units tall around an 84-unit open call and opened
-  // half empty; not grown at all, its mark was drawn at 0.64 of the size of
-  // the TCP endpoint's beside it on a 1440x900 first screen, 0.41 at
-  // 1280x720.
-  const plainGrouped=id=>grouped.has(id)&&plainTile(byID.get(id));
-  for(const [group,ids] of members){const at=byID.get(ids[0])?.displayGroupHeadingAt;if(at)headingOf.set(groupID(group),at);}
-  // The heading stands in a band on the side of its group no arrow enters:
-  // under the tiles when arrows run down, after them when arrows run right.
-  // Above the tiles, Redis's three arrows ran through "DNS resolver". The
-  // band is world room for the heading's screen size at a camera zoom: its
-  // height under a row of tiles, its one-line width beside a column.
-  const headingNeed=(id,groupWidth,zoom,direction)=>direction==='RIGHT'?headingOf.get(id)(Infinity).extent:headingOf.get(id)(groupWidth*zoom).height;
-  // The first placement assumes the preferred camera; the measured correction
-  // below reserves the band at the fit that is actually shown.
-  const firstBands=direction=>new Map([...members].filter(([group])=>headingOf.has(groupID(group))).map(([group,ids])=>{
-    const widths=ids.map(id=>prepared.interiors.get(id).width);
-    const across=direction==='RIGHT'?Math.max(...widths)+2*groupPad:widths.reduce((sum,w)=>sum+w,0)+groupPad*(ids.length+1);
-    return [groupID(group),headingNeed(groupID(group),across,.44,direction)/.44];
-  }));
-  const bandOf=(id,from)=>Math.max(groupPad,from.get(id)||0);
-  const groupPadding=(id,from,direction)=>direction==='RIGHT'?`[top=${groupPad},left=${groupPad},bottom=${groupPad},right=${bandOf(id,from)}]`
-    :`[top=${groupPad},left=${groupPad},bottom=${bandOf(id,from)},right=${groupPad}]`;
-  let bands=new Map(),bandDirection='DOWN';
+  // The outer graph keeps room for its arrows: three fifths of the
+  // interiors' spacing (options) in screen pixels at the preferred .44
+  // camera, the unit its participants' summaries are prepared in. Laid out
+  // at a sixth of the interiors' spacing, the whole map's arrows had run in
+  // gaps of a pixel along other frames' borders and bunched into combs under
+  // litestream's row of destinations (owner, 2026-09-29: "и стрелкам место
+  // оставлять на главной карте"). The fit's corrections keep that room in
+  // the world while they grow the boxes to keep their summaries readable:
+  // grown with the boxes, it left the fit no way to reach readable text.
+  const outerOptions={...options};
+  for(const name of Object.keys(outerOptions))if(name.includes('spacing.'))outerOptions[name]=String(Math.round(Number(outerOptions[name])*.6/.44));
   const leaf=root=>{const interior=prepared.interiors.get(root.id);return {id:root.id,width:interior.width,height:interior.height,layoutOptions:{}};};
-  const input={id:'world',layoutOptions:members.size?{...outerOptions,'elk.hierarchyHandling':'INCLUDE_CHILDREN'}:outerOptions,
-    children:[...prepared.roots.filter(root=>!grouped.has(root.id)).map(leaf),
-      ...[...members].map(([group,ids])=>({id:groupID(group),layoutOptions:{},
-        children:ids.map(id=>leaf(prepared.roots.find(root=>root.id===id)))}))],
+  const input={id:'world',layoutOptions:outerOptions,children:prepared.roots.map(leaf),
     edges:prepared.aggregates.map(edge=>({id:edge.id,sources:[edge.from],targets:[edge.to]}))};
-  // The placed participants, with a group's members at their world position.
-  const flat=placed=>placed.children.flatMap(node=>node.children?node.children.map(member=>({...member,x:node.x+member.x,y:node.y+member.y})):[node]);
-  const participants=graph=>graph.children.flatMap(node=>node.children||[node]);
   const available={width:Math.max(1,width-2*overviewInset),height:Math.max(1,height-2*overviewInset)};
-  // The whole-map camera frames every placed box, a display group's frame
-  // with its padding and heading included. Measured over the participants
-  // alone, Redis's group of three "DNS resolver" frames at the bottom made the
-  // camera 0.85% smaller than this fit, and every heading reserved to the
-  // pixel lost its last letter.
-  function metrics(placed,used,direction){
-    const roots=flat(placed),boxes=placed.children;
-    const span={width:Math.max(...boxes.map(node=>node.x+node.width))-Math.min(...boxes.map(node=>node.x)),
-      height:Math.max(...boxes.map(node=>node.y+node.height))-Math.min(...boxes.map(node=>node.y))};
+  function metrics(placed){
+    const roots=placed.children;
+    const span={width:Math.max(...roots.map(node=>node.x+node.width))-Math.min(...roots.map(node=>node.x)),
+      height:Math.max(...roots.map(node=>node.y+node.height))-Math.min(...roots.map(node=>node.y))};
     const zoom=Math.min(.44,available.width/span.width,available.height/span.height);
     const readable=Math.min(1,...roots.map(node=>{
       const record=byID.get(node.id),minimum=record.overviewMinWidth||0;
       const needed=record.overviewHeightAtWidth?.(node.width*zoom,{availableHeight:available.height})||0;
       return Math.min(minimum?node.width*zoom/minimum:1,needed?node.height*zoom/needed:1);
-    }),...boxes.filter(node=>headingOf.has(node.id)).map(node=>
-      bandOf(node.id,used)*zoom/headingNeed(node.id,node.width,zoom,direction)));
+    }));
     return {span,zoom,readable,overflow:Math.max(span.width/width,span.height/height)};
   }
-  let graph,best,bestInput,failure;
+  let graph,best,failure;
   // Both choices belong to ELK. Free boundary endpoints avoid a star collapsing
   // into one strip; the prepared native ports can pack several connected
   // targets more compactly. Compare only these eight flat candidates. Neither
@@ -471,114 +450,90 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   // joined to the others through one shared listener, raised a
   // NullPointerException only with native ports, RIGHT and layer unzipping.
   // Such a candidate is left out; the map fails only when none is placed.
-  for(const nativePorts of [false,true])for(const direction of ['DOWN','RIGHT']){
-   for(const unzip of [false,true]){
-    const candidate=structuredClone(input),used=firstBands(direction);candidate.layoutOptions['elk.direction']=direction;
-    for(const node of candidate.children)if(node.children){node.layoutOptions['elk.direction']=direction;node.layoutOptions['elk.padding']=groupPadding(node.id,used,direction);}
-    if(nativePorts){
-      for(const node of participants(candidate)){node.ports=structuredClone(prepared.interiors.get(node.id).ports);node.layoutOptions['elk.portConstraints']='FIXED_POS';}
-      for(const edge of candidate.edges){const original=prepared.aggregates.find(a=>a.id===edge.id);edge.sources=[original.sourcePort];edge.targets=[original.targetPort];}
+  // `sizes` are the boxes' world sizes, the prepared ones at first.
+  async function place(sizes=new Map()){
+    let chosen=null;
+    for(const nativePorts of [false,true])for(const direction of ['DOWN','RIGHT'])for(const unzip of [false,true]){
+      const candidate=structuredClone(input);candidate.layoutOptions['elk.direction']=direction;
+      for(const node of candidate.children){
+        const size=sizes.get(node.id);if(!size)continue;
+        node.width=Math.max(node.width,size.width);node.height=Math.max(node.height,size.height);
+      }
+      if(nativePorts){
+        for(const node of candidate.children){
+          const interior=prepared.interiors.get(node.id);
+          node.ports=structuredClone(interior.ports).map(port=>{
+            const side=port.layoutOptions?.['elk.port.side'];
+            return {...port,x:side==='EAST'?node.width:side==='WEST'?0:port.x*node.width/interior.width,
+              y:side==='SOUTH'?node.height:side==='NORTH'?0:port.y*node.height/interior.height};
+          });
+          node.layoutOptions['elk.portConstraints']='FIXED_POS';
+        }
+        for(const edge of candidate.edges){const original=prepared.aggregates.find(a=>a.id===edge.id);edge.sources=[original.sourcePort];edge.targets=[original.targetPort];}
+      }
+      if(unzip)candidate.layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
+      let placed;
+      try{placed=await native(candidate);}catch(error){failure||=error;continue;}
+      const score=metrics(placed);
+      if(!chosen||score.readable>chosen.score.readable||score.readable===chosen.score.readable&&score.overflow<chosen.score.overflow)chosen={placed,score};
     }
-    if(unzip)candidate.layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
-    const template=structuredClone(candidate);
-    let placed;
-    try{placed=await native(candidate);}catch(error){failure||=error;continue;}
-    const score=metrics(placed,used,direction);
-    if(!best||score.readable>best.readable||score.readable===best.readable&&score.overflow<best.overflow){graph=placed;best=score;bestInput=template;bands=used;bandDirection=direction;}
-   }
+    return chosen;
   }
-  if(!best)throw failure;
+  const first=await place();
+  if(!first)throw failure;
+  ({placed:graph,score:best}=first);
   for(let correction=0;correction<2&&best.readable<1-1e-7;correction++){
     // Root summaries use physical pixels. A fitted camera below .44 must
     // still reserve their measured minima, including the space their growth
-    // removes from that camera. A native placement can change its packing
-    // after frames grow; in that case one final correction uses those actual
-    // positions. Interiors keep their prepared geometry in both passes.
-    // A lower corrected fit affects every summary, including participants
-    // that were already readable in the selected candidate.
-    const growing=flat(graph).flatMap(node=>{
+    // removes from that camera. The grown boxes are placed anew, every
+    // candidate again: kept to the first one's direction, the ordinary
+    // fixture's two programs had stood in one column too tall for the
+    // canvas while side by side they fit. Interiors keep their prepared
+    // geometry. A lower corrected fit affects every summary, including
+    // participants that were already readable before.
+    const growing=graph.children.flatMap(node=>{
       const record=byID.get(node.id);
       if(!record.overviewHeightAtWidth)return [];
-      if(plainGrouped(node.id)){
-        // Both sides grow by one factor, so the prepared drawing fills the
-        // grown tile with one uniform transform (interiorScales below).
-        const grow=Math.max(1,(record.overviewMinWidth||0)/(node.width*best.zoom),
-          record.overviewHeightAtWidth(node.width*best.zoom,{availableHeight:available.height})/(node.height*best.zoom));
-        const height=Math.ceil(node.height*best.zoom*grow);
-        return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,needed:{width:height*node.width/node.height,height}}];
-      }
       const physicalWidth=Math.max(node.width*best.zoom,record.overviewMinWidth||0);
       const physicalHeight=record.overviewHeightAtWidth?.(physicalWidth,{availableHeight:available.height})||0;
       return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,
         needed:{width:Math.ceil(physicalWidth),height:Math.ceil(Math.max(node.height*best.zoom,physicalHeight))}}];
     });
-    // A group's heading band grows like a summary: its frame needs the
-    // band's missing screen room at this fit.
-    for(const node of graph.children.filter(node=>headingOf.has(node.id))){
-      const missing=Math.max(0,headingNeed(node.id,node.width,best.zoom,bandDirection)-bandOf(node.id,bands)*best.zoom);
-      const across=bandDirection==='RIGHT'?missing:0,down=bandDirection==='RIGHT'?0:missing;
-      if(missing)growing.push({id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,
-        needed:{width:Math.ceil(node.width*best.zoom+across),height:Math.ceil(node.height*best.zoom+down)}});
-    }
-    if(growing.length){
-      const reserve=axis=>{
-        const coordinate=axis==='width'?'x':'y';
-        const ordered=[...growing].sort((a,b)=>a[coordinate]+a[axis]-b[coordinate]-b[axis]);
-        // Parallel rows share projected space. Only a nonoverlapping chain
-        // adds growth along an axis; summing every row over-reserves the frame
-        // and can incorrectly report that no readable fit exists.
-        const extent=zoom=>{
-          const lengths=[];
-          for(const [i,node] of ordered.entries()){
-            let preceding=0;
-            for(let j=0;j<i;j++)if(ordered[j][coordinate]+ordered[j][axis]<=node[coordinate]+1e-7)
-              preceding=Math.max(preceding,lengths[j]);
-            lengths.push(preceding+Math.max(0,node.needed[axis]-node[axis]*zoom));
-          }
-          return best.span[axis]*zoom+Math.max(0,...lengths);
-        };
-        if(extent(best.zoom)<=available[axis]||extent(0)>=available[axis])return best.zoom;
-        // This monotone piecewise-linear envelope is solved in memory. It
-        // chooses the reserve for the one existing native correction pass.
-        let low=0,high=best.zoom;
-        for(let i=0;i<48;i++){
-          const middle=(low+high)/2;
-          if(extent(middle)<=available[axis])low=middle;else high=middle;
+    if(!growing.length)break;
+    const reserve=axis=>{
+      const coordinate=axis==='width'?'x':'y';
+      const ordered=[...growing].sort((a,b)=>a[coordinate]+a[axis]-b[coordinate]-b[axis]);
+      // Parallel rows share projected space. Only a nonoverlapping chain
+      // adds growth along an axis; summing every row over-reserves the frame
+      // and can incorrectly report that no readable fit exists.
+      const extent=zoom=>{
+        const lengths=[];
+        for(const [i,node] of ordered.entries()){
+          let preceding=0;
+          for(let j=0;j<i;j++)if(ordered[j][coordinate]+ordered[j][axis]<=node[coordinate]+1e-7)
+            preceding=Math.max(preceding,lengths[j]);
+          lengths.push(preceding+Math.max(0,node.needed[axis]-node[axis]*zoom));
         }
-        return low;
+        return best.span[axis]*zoom+Math.max(0,...lengths);
       };
-      const zoom=Math.min(best.zoom,reserve('width'),reserve('height'));
-      const candidate=structuredClone(bestInput);
-      for(const node of participants(candidate)){
-        const minimum=growing.find(item=>item.id===node.id);if(!minimum)continue;
-        node.width=Math.max(node.width,minimum.needed.width/zoom);
-        node.height=Math.max(node.height,minimum.needed.height/zoom);
-        for(const port of node.ports||[]){
-          const side=port.layoutOptions?.['elk.port.side'];
-          if(side==='EAST')port.x=node.width;
-          if(side==='SOUTH')port.y=node.height;
-        }
+      if(extent(best.zoom)<=available[axis]||extent(0)>=available[axis])return best.zoom;
+      // This monotone piecewise-linear envelope is solved in memory.
+      let low=0,high=best.zoom;
+      for(let i=0;i<48;i++){
+        const middle=(low+high)/2;
+        if(extent(middle)<=available[axis])low=middle;else high=middle;
       }
-      const next=new Map(bands);
-      for(const node of candidate.children.filter(node=>headingOf.has(node.id))){
-        const group=graph.children.find(item=>item.id===node.id);
-        next.set(node.id,Math.max(bandOf(node.id,bands),headingNeed(node.id,group.width,zoom,bandDirection)/zoom));
-        node.layoutOptions['elk.padding']=groupPadding(node.id,next,bandDirection);
-      }
-      const template=structuredClone(candidate);
-      let placed;
-      // A correction ELK cannot place keeps the placement it would correct.
-      try{placed=await native(candidate);}catch{break;}
-      const score=metrics(placed,next,bandDirection);
-      if(score.readable>best.readable){graph=placed;best=score;bestInput=template;bands=next;}else break;
-    }
+      return low;
+    };
+    const zoom=Math.min(best.zoom,reserve('width'),reserve('height'));
+    const sizes=new Map(graph.children.map(node=>[node.id,{width:node.width,height:node.height}]));
+    for(const item of growing)sizes.set(item.id,{width:Math.max(item.width,item.needed.width/zoom),height:Math.max(item.height,item.needed.height/zoom)});
+    const next=await place(sizes);
+    if(next&&next.score.readable>best.readable){graph=next.placed;best=next.score;}else break;
   }
   const rootOf=new Map();for(const [root,interior] of prepared.interiors)for(const node of interior.local.nodes)rootOf.set(node.id,root);
-  const placedRoots=flat(graph);
-  // A display group is drawn first, under its members.
-  const nodes=graph.children.filter(node=>node.children).map(node=>({id:node.id,position:{x:node.x,y:node.y},absolute:{x:node.x,y:node.y},
-    width:node.width,height:node.height,frame:true,display:true}));
-  const labels=[],rootOffsets=new Map(placedRoots.map(node=>[node.id,{x:node.x,y:node.y}]));
+  const placedRoots=graph.children;
+  const nodes=[],labels=[],rootOffsets=new Map(placedRoots.map(node=>[node.id,{x:node.x,y:node.y}]));
   // The final text reserve can enlarge a participant. Fit its already prepared
   // drawing to that rectangle with one uniform transform instead of leaving a
   // miniature in its corner. No interior layout or zoom-time work is added.
@@ -593,12 +548,7 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   });
   for(const record of records)byID.set(record.id,record);
   const scales=new Map([...prepared.scales].map(([id,scale])=>[id,scale*interiorScales.get(rootOf.get(id))/prepared.interiors.get(rootOf.get(id)).scale]));
-  // An arrow ELK routes inside a group is given in the group's coordinates.
-  const containers=new Map(graph.children.map(node=>[node.id,{x:node.x,y:node.y}]));
-  const routes=new Map((graph.edges||[]).map(edge=>{
-    const offset=containers.get(edge.container)||{x:0,y:0};
-    return [edge.id,(edge.sections||[]).map(section=>[section.startPoint,...section.bendPoints||[],section.endPoint].map(point=>transform(point,1,offset)))];
-  }));
+  const routes=new Map((graph.edges||[]).map(edge=>[edge.id,(edge.sections||[]).map(section=>[section.startPoint,...section.bendPoints||[],section.endPoint])]));
   for(const root of placedRoots){
     const interior=prepared.interiors.get(root.id),offset=rootOffsets.get(root.id),scale=interiorScales.get(root.id);
     for(const node of interior.local.nodes)nodes.push({...node,
@@ -614,10 +564,13 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     const interior=prepared.interiors.get(root),offset=rootOffsets.get(root);
     return (interior.local.edges.get(id)||[]).map(segment=>segment.map(point=>transform(point,interiorScales.get(root),offset)));
   };
+  // An arrow the other way along its pair's one route takes that route
+  // reversed: it starts where the arrow does.
+  const outerRoute=edge=>{const route=routes.get(`outer:${edge.aggregate}`)||[];return edge.againstOuter?reversed(route):route;};
   const edges=prepared.edges.map(edge=>{
     const from=rootOf.get(edge.from),to=rootOf.get(edge.to);
-    const segments=from===to?localRoute(from,edge.id):routes.get(`outer:${edge.aggregate}`)||[];
-    return {...edge,segments,outerSegments:from!==to?routes.get(`outer:${edge.aggregate}`):undefined,
+    const segments=from===to?localRoute(from,edge.id):outerRoute(edge);
+    return {...edge,segments,outerSegments:from!==to?outerRoute(edge):undefined,
       outerFrom:from!==to?from:undefined,outerTo:from!==to?to:undefined,path:path(segments)};
   });
   const children=new Map();
@@ -633,12 +586,6 @@ export async function layoutPrepared(prepared,width=1200,height=700){
         title:outside.name||outside.title,point:group.incoming?route.at(-1).at(-1):route[0][0]});
     }
   }
-  // A group names nothing unless the page gave it its frames' shared text.
-  const groups=nodes.filter(node=>node.display).map(node=>{
-    const ids=members.get(node.id.slice('display-group:'.length))||[],title=byID.get(ids[0])?.displayGroupTitle||'';
-    return {id:node.id,title,name:title,branch:'communication-group',category:'external',display:true,children:[],tiles:ids,
-      headingAt:headingOf.get(node.id),band:bandOf(node.id,bands),side:bandDirection==='RIGHT'?'right':'bottom'};
-  });
-  return {layout:{nodes,edges,labels,width:graph.width,height:graph.height},records:[...records,...groups],
+  return {layout:{nodes,edges,labels,width:graph.width,height:graph.height},records,
     scales,owner:prepared.owner,summaries:prepared.summaries};
 }

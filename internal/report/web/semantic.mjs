@@ -76,7 +76,7 @@ function layerThreshold(frames,byID,width,height,depth,retaining=false){
 // entrance. A smaller sibling must not begin with microscopic headings.
 export function firstDetailZoom(nodes,records,width,height){
   return Math.max(systemViewport(nodes,width,height).zoom,
-    layerThreshold(nodes.filter(node=>node.frame&&!node.parentId&&!node.display),new Map(records.map(record=>[record.id,record])),width,height,0));
+    layerThreshold(nodes.filter(node=>node.frame&&!node.parentId&&!node.display&&records.find(record=>record.id===node.id)?.branch!=='outside'),new Map(records.map(record=>[record.id,record])),width,height,0));
 }
 
 // One decision per hierarchy depth. The first readable interior opens its
@@ -87,7 +87,8 @@ export function detailLayers(nodes,records,viewport,width,height,previous=new Se
   const byID=new Map(records.map(record=>[record.id,record])),placed=new Map(nodes.map(node=>[node.id,node]));
   const layers=new Map();
   // An input collection's part groups are a layer of their own (below).
-  for(const node of nodes.filter(node=>node.frame&&!node.display&&byID.get(node.id)?.branch!=='inputs-part')){
+  // A program's Outside frame is never closed: its chips name what it holds.
+  for(const node of nodes.filter(node=>node.frame&&!node.display&&!['inputs-part','outside'].includes(byID.get(node.id)?.branch))){
     let depth=0;for(let at=node.parentId;at;at=placed.get(at)?.parentId)depth++;
     if(!layers.has(depth))layers.set(depth,[]);
     layers.get(depth).push(node);
@@ -167,7 +168,7 @@ export function layerFloor(nodes,records,id,width,height){
   const node=placed.get(id);if(!node)return Infinity;
   if(byID.get(id)?.branch==='inputs-part')
     return Math.max(layerFloor(nodes,records,node.parentId,width,height),layerThreshold(inputGroups(nodes,byID),byID,width,height,1,true));
-  const frames=nodes.filter(node=>node.frame&&!node.display&&byID.get(node.id)?.branch!=='inputs-part');
+  const frames=nodes.filter(node=>node.frame&&!node.display&&!['inputs-part','outside'].includes(byID.get(node.id)?.branch));
   let floor=systemViewport(nodes,width,height).zoom;
   for(let depth=0;depth<=depthOf(node);depth++){
     const layer=frames.filter(frame=>depthOf(frame)===depth);
@@ -291,6 +292,13 @@ export function tileViewport(tile,group,width,height,contentScale=1,{pad=24,floo
 
 export function closedContainer(id, placed, records, detailed, componentsOpen, communicationsOpen,openComponents) {
   let closed=null;
+  // An input standing loose beside its collection's part groups opens with
+  // them, not before: its tile had stood open under closed, empty groups.
+  const holder=placed.get(id)?.parentId;
+  if(records.get(id)?.activation&&records.get(holder)?.branch==='inputs'&&communicationsOpen){
+    const groups=(records.get(holder).children||[]).filter(child=>records.get(child)?.branch==='inputs-part');
+    if(groups.length&&!groups.some(group=>communicationsOpen.has(group)))closed=placed.get(holder);
+  }
   for(let at=placed.get(id)?.parentId;at;at=placed.get(at)?.parentId){
     const branch=records.get(at)?.branch;
     if((branch==='area'&&!detailed.has(at))||

@@ -64,8 +64,22 @@ export function fitTitle(title,width,font,measure){
   return {scale,lines:wrapText(title,scale<1?widest:width,font,measure)};
 }
 
-// A closed external frame's zoom mark, 34 by 24, with its 8px insets.
-const zoomMarkRoom=50;
+// A program's Outside frame holds its destinations as chips of one size,
+// each naming its destination in at most two lines, in rows wrapped toward
+// a square instead of one strip (overview.mjs outsideChips): beside or
+// under its program it takes little of the map's width.
+// `top` is the band its title "Outside" stands in.
+export const chip={width:112,height:40,gap:8,side:12,top:34};
+export function chipGrid(count){
+  let best=null;
+  for(let columns=1;columns<=Math.max(1,count);columns++){
+    const rows=Math.ceil(count/columns);
+    const width=2*chip.side+columns*chip.width+(columns-1)*chip.gap,height=chip.top+chip.side+rows*chip.height+(rows-1)*chip.gap;
+    const distance=Math.abs(Math.log(width/height));
+    if(!best||distance<best.distance-1e-9)best={columns,rows,width,height,distance};
+  }
+  return best;
+}
 
 // A card as canvas.css draws it: 260px wide inside a 1.5px border and 16px
 // padding, its title keeping 34px beside it for a part's zoom button. Text is
@@ -74,15 +88,15 @@ const zoomMarkRoom=50;
 // commands and" (225.84px in a 225px column) left "and" alone on a line.
 export const card={width:260,border:1.5,padding:16,zoom:34};
 export const cardText=card.width-2*card.border-2*card.padding;
+// An input's kind mark before its name: 14px, a 6px gap (canvas.css) and
+// the browser's rounding.
+export const kindMark=22;
 
 // A narrow external heading may need the full card width below its zoom mark.
 // Measure the same heading for layout reservation and for the visible card.
-// A frame in a display group that carries its destination text has no
-// heading of its own: it is a plain tile under the group's.
 export function overviewHeading(item,screenWidth,measure){
   const collection=['communication','inputs'].includes(item.branch);
   const size=collection?13:18,lineHeight=collection?17:23,font=`700 ${size}px system-ui`;
-  if(item.displayGroupTitle)return {width:0,clearZoom:false,height:0,lines:[],scale:1,fontSize:size,lineHeight};
   const title=item.heading||item.name||item.title;
   const clearZoom=titleWords(title).some(word=>measure(word,font)>screenWidth-64);
   const width=Math.max(1,Math.min(304,screenWidth-(clearZoom?(collection?16:32):64)));
@@ -105,16 +119,6 @@ export function overviewScale(item,screenWidth,screenHeight,availableHeight=Infi
   return Math.max(low,1e-3);
 }
 
-// A display group's frame carries the destination text its frames all name,
-// once, at their headings' size. The room is the group's own screen width at
-// the whole-map camera, less its insets; `height` is its band under a row of
-// tiles and `extent` its band beside a column of them.
-export function displayGroupHeading(title,screenWidth,measure){
-  const font='700 13px system-ui',width=Math.max(1,Math.min(304,screenWidth-16)),{scale,lines}=fitTitle(title,width,font,measure);
-  return {width,lines,scale,fontSize:13*scale,lineHeight:17*scale,height:10+lines.length*17*scale,
-    extent:16+Math.max(0,...lines.map(line=>measure(line,font)))*scale};
-}
-
 // A group's fixed world box can be much smaller than its siblings at the
 // common reveal threshold. Fit its complete name once, never hide it or
 // rewrap it against the current viewport. The frame itself is painted by Area.
@@ -135,28 +139,16 @@ export function groupHeading(node,title,maxScale,measure,reservedWidth=44,reserv
 }
 
 export function prepareCards(records, _inputOwner, measure, translate) {
-  const kind=n=>translate(({request:'Request',command:'Command',setting:'Setting',interaction:'UI action',scheduled:'Scheduled task',continuous:'Background activity'})[n.activation]||n.kind||'Input');
   const wrap=(text,width,font)=>wrapText(text,width,font,measure);
-  const communicationChildren=new Set(records.filter(n=>n.branch==='communication').flatMap(n=>n.children||[]));
   const byID=new Map(records.map(n=>[n.id,n]));
   // An input collection's inputs, through the part groups inside it.
   const leavesOf=id=>{const n=byID.get(id);return n?.children?.length?n.children.flatMap(leavesOf):[id];};
-  // The collection says what kinds of input it holds. A tile names its kind
-  // only when that kind is not the collection's most common one: "Request"
-  // on 97 of Redis's 98 tiles repeated the frame's own summary.
-  const kinds=['request','command','setting','scheduled','continuous','interaction'];
-  const commonKind=new Map();
-  for(const collection of records.filter(n=>n.branch==='inputs')){
-    const inputs=leavesOf(collection.id).map(id=>byID.get(id)).filter(n=>n?.activation),counts=new Map();
-    for(const input of inputs)counts.set(input.activation,(counts.get(input.activation)||0)+1);
-    const common=[...counts].sort((a,b)=>b[1]-a[1]||(kinds.indexOf(a[0])+1||99)-(kinds.indexOf(b[0])+1||99))[0]?.[0];
-    for(const input of inputs)commonKind.set(input.id,common);
-  }
   const childNames=id=>(byID.get(id)?.children||[]).map(child=>byID.get(child)?.title).filter(Boolean);
   return records.map(n=>{
     const frame=!!n.children?.length;
-    // A part's zoom button takes its room beside its title.
-    const title=wrap(n.title,!frame&&!n.activation&&n.symbols?.length?cardText-card.zoom:cardText,'700 17px system-ui');
+    // A part's zoom button takes its room beside its title, an input's kind
+    // mark its room before it.
+    const title=wrap(n.title,!frame&&!n.activation&&n.symbols?.length?cardText-card.zoom:n.activation?cardText-kindMark:cardText,'700 17px system-ui');
     const label=wrap(n.title,152,'12px system-ui');
     const metadata=[n.language,n.componentKind?translate(n.componentKind):''].filter(Boolean).join(' · ');
     const roleLines=n.role?wrap(n.role,cardText,'600 13px system-ui'):[];
@@ -182,10 +174,13 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     // mark alone.
     // An input collection is headed by the glyph key's word: titled with its
     // component's name, Redis's inputs read as a second redis-server.
-    const heading=n.branch==='inputs'?translate('Inputs'):'';
-    const overviewMinWidth=Math.ceil(Math.max(n.displayGroupTitle?zoomMarkRoom:widest(heading||n.title,collection?'700 13px system-ui':'700 18px system-ui')+(collection?16:64),
+    const heading=n.branch==='inputs'?translate('Inputs'):n.branch==='outside'?translate('Outside'):'';
+    // The Outside frame's summary is its chips: at the whole-map camera
+    // they read at their own size, and the frame keeps their proportion.
+    const grid=n.branch==='outside'?chipGrid((n.children||[]).length):null;
+    const overviewMinWidth=grid?grid.width:Math.ceil(Math.max(widest(heading||n.title,collection?'700 13px system-ui':'700 18px system-ui')+(collection?16:64),
       ...names.map(name=>widest(name,'500 13px system-ui')+32),
-      ...inputGroups.map(group=>widest(group.title,'500 13px system-ui')+16)));
+      ...inputGroups.map(group=>widest(group.title,'500 13px system-ui')+32+kindMark)));
     // A short target name must not squeeze its area inventory into a column
     // of isolated words. Prefer two-line entries within the existing text
     // column; targets with short area names need no extra width.
@@ -196,11 +191,18 @@ export function prepareCards(records, _inputOwner, measure, translate) {
         measure(words.slice(0,i+1).join(' '),'500 13px system-ui'),
         measure(words.slice(i+1).join(' '),'500 13px system-ui'))));
     };
-    const overviewPreferredWidth=Math.ceil(Math.max(overviewMinWidth,
+    const overviewPreferredWidth=grid?grid.width:Math.ceil(Math.max(overviewMinWidth,
       ...names.map(name=>32+Math.min(304,twoLineWidth(name)))));
-    const overviewHeightAtWidth=['component','communication','inputs'].includes(n.branch)?(width,{availableHeight=Infinity}={})=>{
+    const overviewHeightAtWidth=grid?width=>width*grid.height/grid.width:['component','communication','inputs'].includes(n.branch)?(width,{availableHeight=Infinity}={})=>{
       const heading=overviewHeading(n,width,measure);
-      if(n.branch==='inputs')return Math.max(44,16+Math.max(32,heading.height)+inputGroups.reduce((h,group)=>h+6+wrap(group.title,Math.max(1,Math.min(304,width-16)),'500 13px system-ui').length*18,0));
+      // As the summary draws it (canvas.jsx ComponentOverview): inset 8px in
+      // its frame and padded 8px, its heading, a 10px gap, and its kinds 6px
+      // apart, each wrapped beside its kind mark. Counted 16px narrower
+      // and without the gap, "Commands" had stood cut in half under Inputs.
+      if(n.branch==='inputs'){
+        const room=Math.max(1,Math.min(304,width-32)-kindMark),kinds=inputGroups.map(group=>wrap(group.title,room,'500 13px system-ui').length*18);
+        return Math.max(44,33+Math.max(32,heading.height)+(kinds.length?10+kinds.reduce((a,b)=>a+b,0)+6*(kinds.length-1):0));
+      }
       // The inventory remains complete in the scrollable summary. Its first
       // entrance sets the minimum usable height; fitting the entire list would
       // enlarge the world and make its fitted text smaller again.
@@ -210,18 +212,14 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       const controlHeight=28+(n.branch==='communication'?16:32);
       return Math.max(controlHeight,base+(base+list>availableHeight&&rows.length?17+rows[0]:list));
     }:undefined;
-    const kindLabel=input&&!communicationChildren.has(n.id)&&n.activation!==commonKind.get(n.id)?kind(n):'';
-    // The group's heading, measured once for its layout and its drawing.
-    const displayGroupHeadingAt=n.displayGroupTitle?width=>displayGroupHeading(n.displayGroupTitle,width,measure):undefined;
-    return {...n,displayGroupHeadingAt,heading,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
+    return {...n,heading,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
-      kindLabel,description,descriptionMost,subtitle:subtitleLines.join('\n'),
+      description,descriptionMost,subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,
-      // An open plain tile shows its calls with no title above them: its
-      // group's heading names it.
-      headerHeight:n.displayGroupTitle?32:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines?12+descriptionLines*18:0)),
-      // A tile without its kind row is that row shorter.
-      width:card.width,height:frame?undefined:66-(input&&!kindLabel?24:0)+title.length*22+descriptionLines*18+
+      headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines?12+descriptionLines*18:0)),
+      // An input says its kind by the mark before its name, in no row of its
+      // own. A chip is the Outside frame's one size.
+      width:n.branch==='chip'?chip.width:card.width,height:n.branch==='chip'?chip.height:frame?undefined:66-(input?24:0)+title.length*22+descriptionLines*18+
         (subtitleLines.length?8+subtitleLines.length*18:0)};
   });
 }

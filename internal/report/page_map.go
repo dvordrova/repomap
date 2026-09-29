@@ -259,16 +259,10 @@ type pageMapNode struct {
 	Subtitle       string
 	Remote         bool
 	SourceKind     string
-	// DisplayGroup names the display frame outside destination frames of
-	// different programs stand in together because their records name the
-	// same destination. The group is no participant: equal destination text
-	// proves no identity, and each frame keeps its own program and arrows.
-	DisplayGroup string
-	// DisplayGroupTitle is the destination text every frame of the display
-	// group names, spelled alike. The group's frame carries it once and its
-	// frames stand as plain tiles instead of repeating it side by side. It
-	// is the frames' shared text, not the name of a merged participant.
-	DisplayGroupTitle string
+	// Unestablished marks the one destination of a program's Outside frame
+	// holding every call whose destination no record names: the canvas
+	// draws it as the last, muted chip.
+	Unestablished bool
 }
 
 type pageMapEdge struct {

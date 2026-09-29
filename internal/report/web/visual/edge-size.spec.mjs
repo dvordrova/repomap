@@ -35,7 +35,7 @@ test('connection strokes and arrowheads keep their screen size while zooming',as
     await expect.poll(async()=>{
       measured=await page.evaluate(()=>{
       const host=document.querySelector('.flow-root').getBoundingClientRect(),samples=[];
-      const paths=[...document.querySelectorAll('.flow-edge path')].map(path=>{
+      const paths=[...document.querySelectorAll('.flow-edge path:not(.flow-edge-hit)')].map(path=>{
         const css=getComputedStyle(path),matrix=path.getScreenCTM(),scale=Math.hypot(matrix.a,matrix.b);
         const active=path.parentElement.classList.contains('flow-edge-active'),casing=path.classList.contains('flow-edge-casing');
         const kind=(active?'active':'ordinary')+(casing?' casing':''),width=parseFloat(css.strokeWidth)*scale;

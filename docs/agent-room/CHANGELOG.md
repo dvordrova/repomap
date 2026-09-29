@@ -1,5 +1,40 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — The canvas: one Outside frame per program, arrows as their own handles, marks for input kinds, one geometry check
+
+- **Why:** the owner on litestream's whole map ("кто придумывает так уродливо
+  external вызовы расставлять?"): twelve destination frames in one row of
+  every size, empty call tiles, a comb of arrows; then plaques floating
+  beside their arrows, a card's heading drawn over its rows, card bodies
+  with a zoom cursor, "Inputs / Commands" cut in half, a kind row above
+  every input tile. No check had looked at geometry.
+- **Change:** a program's destinations are one-size chips (two lines, the
+  rest on hover) in one amber Outside frame joined to it by one arrow, the
+  records naming none one muted "not established" chip last; no call tile
+  is drawn and cross-program display groups are gone (`SystemMap`,
+  `overview.mjs outsideChips`, `split-layout.mjs chipInterior`). Plaques are
+  gone: an arrow's wide hit path opens its card and a click reads it, boxes
+  standing over arrows (`zIndexMode manual`); two frames share one outer
+  route; the outer spacing is three fifths of the interiors' at the .44
+  camera, not a sixth, and a fit correction places the grown boxes over all
+  eight candidates. An input tile has an Octicons kind mark instead of a
+  kind row, an input without a handler groups with the part its one arrow
+  goes into, a card body reads with the ordinary pointer, the Inputs summary
+  is measured as drawn, Inputs/Outside frames are entered at their tiles'
+  scale, a call card prints no counts and its headings are rows.
+- **Check:** `visual/geometry.spec.mjs` (DEVELOPMENT) on the four 2026-09-29
+  renders, findings before → after: Redis 263 → 46, litestream 916 → 290,
+  freqtrade 694 → 112, othello 69 → 21; what is left is mostly whole-map text
+  under 11px on crowded maps. Whole map at 1054×580 (saved runs): roots
+  litestream 29 → 16, freqtrade 32 → 21; outer routes 31 → 10 and 41 → 22;
+  nearest arrow to a frame it does not join Redis 2.2 → 2.5px, litestream
+  0.9 → 3.2, freqtrade 0.3 → 1.2, summary scale .74/.25/.21 → .72/.22/.24.
+  Room kept at screen size through the fit measured 11.2/5.0/2.8px at
+  .66/.21/.23 but left the fixture's summaries at .84 and .70 of their
+  size: not taken. Tests pinning plaques, display groups, kind rows and
+  destination tiles were deleted; `arrow-handle.spec.mjs` and unit tests
+  for chips, one route and taken-in groups were added.
+
 ## 2026-09-30 — Outside systems: an unnamed launch is no system, one exchange one boundary, a destination is one program's; script programs by their file
 
 - **Why:** the human-eye review of the 2026-09-29 Redis, litestream and

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {prepareCards,wrapText} from './cards.mjs';
 import {prepareInteriors,layoutPrepared,overviewInset,readableScale} from './split-layout.mjs';
+import {outsideChips,inputGroupsByPart} from './overview.mjs';
 import {systemViewport} from './semantic.mjs';
 import {denseInventory,manyExternalInventory,records as ordinaryRecords,relations as ordinaryRelations,areas as ordinaryAreas} from './visual/two-systems-five-externals.mjs';
 
@@ -58,10 +59,13 @@ test('native outer routes stop at frames while local routes retain exact parts a
   assert.deepEqual(layout.nodes.map(node=>node.id).sort(),raw.map(item=>item.id).sort());
   assert.deepEqual(layout.edges.flatMap(edge=>edge.relations).map(r=>r.fromSource).sort(),relations.map(r=>r.fromSource).sort());
   assert.equal(layout.edges.find(edge=>edge.from==='caller'&&edge.to==='call').relations.length,2);
-  const grouped=prepared.aggregates.find(edge=>edge.from==='app'&&edge.to==='remote');
-  assert.equal(grouped.edges.length,2,'two original endpoint pairs share the native outer route');
-  assert.equal(grouped.relations.length,3,'each source stays on that route');
-  assert.ok(prepared.aggregates.some(edge=>edge.from==='remote'&&edge.to==='app'&&edge.possible),'reverse possible relation stays distinct');
+  // Two frames are joined by one route whichever way their arrows go; the
+  // drawing heads it at each end an arrow goes into.
+  const grouped=prepared.aggregates.filter(edge=>[edge.from,edge.to].sort().join()==='app,remote');
+  assert.equal(grouped.length,1,'one native outer route joins the two frames');
+  assert.equal(grouped[0].edges.length,3,'three original endpoint pairs share it, the reverse possible one included');
+  assert.equal(grouped[0].relations.length,4,'each source stays on that route');
+  assert.equal(grouped[0].possible,false,'certain calls keep the shared route solid');
   const nodes=new Map(layout.nodes.map(node=>[node.id,node]));
   const root=id=>{let n=nodes.get(id);while(n.parentId)n=nodes.get(n.parentId);return n;};
   for(const edge of layout.edges){
@@ -307,7 +311,7 @@ test('a fit below .44 reserves collection minima and fits the existing interiors
   ELK.prototype.layout=function(graph,...args){requests.push(structuredClone(graph));return original.call(this,graph,...args);};
   let result;
   try{result=await layoutPrepared(prepared,1054,580);}finally{ELK.prototype.layout=original;}
-  assert.equal(requests.length,9,'one measured correction follows the same eight native candidates');
+  assert.ok(requests.length<=24,'the eight native candidates, placed again after at most two measured corrections');
   const nodes=new Map(result.layout.nodes.map(node=>[node.id,node])),frames=roots.map(root=>nodes.get(root.id));
   const span=axis=>Math.max(...frames.map(node=>node.absolute[axis]+node[axis==='x'?'width':'height']))-Math.min(...frames.map(node=>node.absolute[axis]));
   const zoom=Math.min(.44,1022/span('x'),548/span('y'));
@@ -338,7 +342,7 @@ test('the ordinary map reserves a short component inventory as well as collectio
   ELK.prototype.layout=function(graph,...args){requests.push(structuredClone(graph));return original.call(this,graph,...args);};
   let result;
   try{result=await layoutPrepared(prepared,1000,540);}finally{ELK.prototype.layout=original;}
-  assert.ok(requests.length<=10,'eight native candidates and at most two corrections handle all root summaries');
+  assert.ok(requests.length<=24,'eight native candidates, placed again after at most two corrections, handle all root summaries');
   const nodes=new Map(result.layout.nodes.map(node=>[node.id,node])),roots=result.layout.nodes.filter(node=>!node.parentId);
   const span=axis=>Math.max(...roots.map(node=>node.absolute[axis]+node[axis==='x'?'width':'height']))-Math.min(...roots.map(node=>node.absolute[axis]));
   const zoom=Math.min(.44,968/span('x'),508/span('y'));
@@ -367,9 +371,9 @@ test('parallel rows share one measured reserve while every participant remains r
   ELK.prototype.layout=function(graph,...args){requests.push(structuredClone(graph));return original.call(this,graph,...args);};
   let result;
   try{result=await layoutPrepared(prepared,width,height);}finally{ELK.prototype.layout=original;}
-  assert.ok(requests.length<=10,'multirow sizing stays within the two corrections after the eight native candidates');
+  assert.ok(requests.length<=24,'multirow sizing stays within two corrections of the eight native candidates');
   const nodes=new Map(result.layout.nodes.map(node=>[node.id,node])),roots=result.layout.nodes.filter(node=>!node.parentId);
-  assert.equal(roots.length,21,'both targets, both input collections and all seventeen destinations remain');
+  assert.equal(roots.length,6,'both targets, both input collections and both Outside frames remain');
   const span=axis=>Math.max(...roots.map(node=>node.absolute[axis]+node[axis==='x'?'width':'height']))-Math.min(...roots.map(node=>node.absolute[axis]));
   const zoom=Math.min(.44,available.width/span('x'),available.height/span('y'));
   assert.ok(zoom<.44,'the regression reaches a whole-map fit below the preferred camera');
@@ -472,120 +476,36 @@ test('an area with one arrow draws it straight between its two parts, not around
   assert.ok(length<=Math.abs(a.x-b.x)+Math.abs(a.y-b.y),`the arrow runs ${Math.round(length)} between parts whose centres are ${Math.round(Math.abs(a.x-b.x)+Math.abs(a.y-b.y))} apart`);
 });
 
-// One "TCP endpoint" box took arrows from all three Redis programs. Each
-// program's destination frame stays a participant of its own, with its own
-// arrow; frames naming the same destination stand in one display group.
-test('frames naming one destination stand in a display group, each keeping its own arrow',async()=>{
+// A program's destinations stand in one Outside frame as chips of one size
+// in rows, in the page's order, with no arrow among them: one route joins
+// the program to it, whatever parts call which destination (owner,
+// 2026-09-29: litestream's destinations had stood in one row under a comb
+// of arrows, one per part and destination).
+test('an Outside frame holds its chips in rows of one size and takes one arrow from its program',async()=>{
   const items=[
-    {id:'server',title:'redis-server',branch:'component'},{id:'cli',title:'redis-cli',branch:'component'},
-    {id:'net-s',title:'Networking',category:'part'},{id:'net-c',title:'Network client',category:'part'},
-    {id:'tcp-s',title:'TCP endpoint',branch:'communication',category:'external',displayGroup:'tcp'},
-    {id:'tcp-c',title:'TCP endpoint',branch:'communication',category:'external',displayGroup:'tcp'},
-    {id:'connect-s',title:'connect',category:'external'},{id:'connect-c',title:'connect',category:'external'},
+    {id:'app',title:'Application',branch:'component',children:['area']},
+    {id:'area',title:'Replication',branch:'area',children:['sync','store']},
+    {id:'sync',title:'Sync loop'},{id:'store',title:'Replica store'},
+    {id:'out',title:'Application',branch:'outside',children:['s3','gcs','sftp','nats','lost']},
+    ...['s3','gcs','sftp','nats','lost'].map((id,i)=>({id,title:['Amazon S3','Google Cloud Storage','SFTP','NATS','not established'][i],branch:'communication',children:[`${id}-put`]})),
+    ...['s3','gcs','sftp','nats','lost'].map(id=>({id:`${id}-put`,title:'Put'})),
   ];
-  const areaList=[{id:'server',nodes:['net-s']},{id:'cli',nodes:['net-c']},{id:'tcp-s',nodes:['connect-s']},{id:'tcp-c',nodes:['connect-c']}];
-  const prepared=await prepareInteriors(cards(items),[{from:'net-s',to:'connect-s'},{from:'net-c',to:'connect-c'}],areaList);
-  const {layout,records}=await layoutPrepared(prepared,1200,700);
-  const at=new Map(layout.nodes.map(node=>[node.id,node]));
-  const group=layout.nodes.find(node=>node.display);
-  assert.ok(group&&records.find(record=>record.id===group.id)?.branch==='communication-group','one display group is drawn');
-  for(const id of ['tcp-s','tcp-c']){
-    const frame=at.get(id);
-    assert.equal(frame.parentId,undefined,`${id} stays a participant of its own`);
-    assert.ok(frame.absolute.x>=group.absolute.x-1e-6&&frame.absolute.y>=group.absolute.y-1e-6&&
-      frame.absolute.x+frame.width<=group.absolute.x+group.width+1e-6&&frame.absolute.y+frame.height<=group.absolute.y+group.height+1e-6,`${id} stands inside the group`);
-  }
-  for(const [from,to] of [['net-s','tcp-s'],['net-c','tcp-c']]){
-    const edge=layout.edges.find(edge=>edge.from===from),end=edge.segments.at(-1).at(-1),frame=at.get(to);
-    assert.equal(edge.outerTo,to,`${from}'s arrow ends at its own frame`);
-    assert.ok(border(end,frame),`${from}'s arrow reaches ${to}'s border`);
-  }
-  assert.ok(!layout.edges.some(edge=>edge.outerTo===group.id||edge.to===group.id),'the group ends no arrow');
-});
-
-// Redis's three "DNS resolver" frames stood in a group at the bottom of the
-// map. The fit that reserved every heading measured the frames alone; the
-// camera frames the group too, 0.85% smaller, and each heading reserved to
-// the pixel lost its last letter.
-test('the whole-map camera that frames a display group still gives every heading its reserved room',async()=>{
-  const items=structuredClone(ordinaryRecords),relations=structuredClone(ordinaryRelations),areaList=structuredClone(ordinaryAreas);
-  for(const [id,caller] of [['dns-front','submission'],['dns-backend','worker']]){
-    items.push({id,title:'DNS resolver',category:'external',branch:'communication',children:[`${id}-call`],displayGroup:'dns',displayGroupTitle:'DNS resolver'},
-      {id:`${id}-call`,title:'gethostbyname',category:'external'});
-    areaList.push({id,nodes:[`${id}-call`]});relations.push({from:caller,to:`${id}-call`});
-  }
-  // Plain tiles leave Redis's 1054×580 canvas at the preferred camera; a
-  // smaller one keeps the fit below it.
-  const records=cards(items),width=1000,height=540;
-  const prepared=await prepareInteriors(records,relations,areaList,{availableHeight:height-2*overviewInset});
-  const result=await layoutPrepared(prepared,width,height);
-  const {zoom}=systemViewport(result.layout.nodes,width,height);
-  const group=result.layout.nodes.find(node=>node.display),heading=result.records.find(record=>record.id===group.id);
-  assert.ok(zoom<.44,'the camera fits below the preferred scale, where the reserve matters');
-  for(const node of result.layout.nodes.filter(node=>!node.parentId&&!node.display)){
-    const record=records.find(record=>record.id===node.id);
-    if(!record.overviewMinWidth)continue;
-    assert.ok(node.width*zoom+1e-6>=record.overviewMinWidth,`${node.id}: ${node.width*zoom} of ${record.overviewMinWidth}px for its heading`);
-    assert.ok(node.height*zoom+1e-6>=record.overviewHeightAtWidth(node.width*zoom,{availableHeight:height-2*overviewInset}),`${node.id}: its summary fits`);
-  }
-  const need=heading.side==='right'?heading.headingAt(Infinity).extent:heading.headingAt(group.width*zoom).height;
-  assert.ok(heading.band*zoom+1e-6>=need,`the group's heading has ${heading.band*zoom} of ${need}px`);
-});
-
-// Above the tiles, Redis's three arrows ran through "DNS resolver".
-test('a display group carries its frames\' shared text once, where no arrow runs',async()=>{
-  const items=[
-    {id:'server',title:'redis-server',branch:'component'},{id:'cli',title:'redis-cli',branch:'component'},{id:'bench',title:'redis-benchmark',branch:'component'},
-    ...['server','cli','bench'].flatMap(owner=>[{id:`net-${owner}`,title:'Networking',category:'part'},
-      {id:`dns-${owner}`,title:'DNS resolver',branch:'communication',category:'external',displayGroup:'dns',displayGroupTitle:'DNS resolver'},
-      {id:`resolve-${owner}`,title:'gethostbyname',category:'external'}]),
-  ];
-  const areaList=['server','cli','bench'].flatMap(owner=>[{id:owner,nodes:[`net-${owner}`]},{id:`dns-${owner}`,nodes:[`resolve-${owner}`]}]);
-  const prepared=await prepareInteriors(cards(items),['server','cli','bench'].map(owner=>({from:`net-${owner}`,to:`resolve-${owner}`})),areaList);
-  const {layout,records}=await layoutPrepared(prepared,1200,700);
-  const groups=layout.nodes.filter(node=>node.display);
-  assert.equal(groups.length,1);
-  const group=groups[0],heading=records.find(record=>record.id===group.id);
-  assert.equal(heading.title,'DNS resolver','the group says it');
-  assert.deepEqual(heading.tiles.sort(),['dns-bench','dns-cli','dns-server']);
-  // The heading's band is the group's widest strip beside its tiles.
-  const tiles=heading.tiles.map(id=>layout.nodes.find(node=>node.id===id));
-  const box={left:Math.min(...tiles.map(n=>n.absolute.x)),top:Math.min(...tiles.map(n=>n.absolute.y)),
-    right:Math.max(...tiles.map(n=>n.absolute.x+n.width)),bottom:Math.max(...tiles.map(n=>n.absolute.y+n.height))};
-  const {x,y,width,height}={...group.absolute,width:group.width,height:group.height};
-  const band=[{x,y,width,height:box.top-y},{x,y:box.bottom,width,height:y+height-box.bottom},
-    {x,y,width:box.left-x,height},{x:box.right,y,width:x+width-box.right,height}].sort((a,b)=>b.width*b.height-a.width*a.height)[0];
-  assert.ok(Math.min(band.width,band.height)>=heading.band-1e-6,'the heading has its band');
-  const inside=point=>point.x>band.x+1e-6&&point.x<band.x+band.width-1e-6&&point.y>band.y+1e-6&&point.y<band.y+band.height-1e-6;
-  for(const edge of layout.edges){
-    assert.equal(edge.outerTo,edge.to.replace('resolve-','dns-'),'each program\'s arrow ends at its own tile');
-    for(const segment of edge.segments)for(let i=1;i<segment.length;i++)for(let t=0;t<=1;t+=1/64){
-      const point={x:segment[i-1].x+(segment[i].x-segment[i-1].x)*t,y:segment[i-1].y+(segment[i].y-segment[i-1].y)*t};
-      assert.ok(!inside(point),`${edge.from}'s arrow crosses the heading at ${JSON.stringify(point)}`);
-    }
-  }
-});
-
-// Grown at Redis's whole-map camera to the 50 by 44 pixels of its closed
-// zoom mark and stretched to that proportion, each DNS tile stood 156 world
-// units tall around its one 84-unit call and opened half empty.
-test('a plain tile of a display group is as large as its open calls, not its closed zoom mark',async()=>{
-  const owners=['server','cli','bench'];
-  const items=[...owners.flatMap(owner=>[{id:owner,title:`redis-${owner}`,branch:'component'},{id:`net-${owner}`,title:'Networking',category:'part'},
-    {id:`dns-${owner}`,title:'DNS resolver',branch:'communication',category:'external',displayGroup:'dns',displayGroupTitle:'DNS resolver'},
-    {id:`resolve-${owner}`,title:'gethostbyname',category:'external'}])];
-  const areaList=owners.flatMap(owner=>[{id:owner,nodes:[`net-${owner}`]},{id:`dns-${owner}`,nodes:[`resolve-${owner}`]}]);
-  const width=400,height=300;
-  const prepared=await prepareInteriors(cards(items),owners.map(owner=>({from:`net-${owner}`,to:`resolve-${owner}`})),areaList,{availableHeight:height-2*overviewInset});
-  const {layout}=await layoutPrepared(prepared,width,height),at=new Map(layout.nodes.map(node=>[node.id,node]));
-  assert.ok(systemViewport(layout.nodes,width,height).zoom<.44,'the whole-map camera stands below the preferred scale, where frames grew for their summaries');
-  for(const owner of owners){
-    const tile=at.get(`dns-${owner}`),call=at.get(`resolve-${owner}`);
-    const inset={left:call.absolute.x-tile.absolute.x,right:tile.absolute.x+tile.width-call.absolute.x-call.width,
-      bottom:tile.absolute.y+tile.height-call.absolute.y-call.height};
-    assert.ok(inset.bottom<=inset.left+1e-6&&inset.right<=inset.left+1e-6,
-      `dns-${owner} holds its call with its insets alone: ${JSON.stringify(Object.fromEntries(Object.entries(inset).map(([k,v])=>[k,Math.round(v)])))}`);
-  }
+  const relations=['s3','gcs','sftp','nats','lost'].flatMap((id,i)=>[{from:i%2?'sync':'store',to:`${id}-put`},{from:'sync',to:`${id}-put`,possible:true}]);
+  const shown=outsideChips(items,areas(items),relations);
+  assert.ok(!shown.records.some(record=>record.id.endsWith('-put')),'no call tile is drawn');
+  assert.ok(shown.relations.every(relation=>!relation.to.endsWith('-put')),'every arrow into a call goes into its chip');
+  const prepared=await prepareInteriors(cards(shown.records),shown.relations,shown.areas);
+  assert.equal(prepared.aggregates.filter(edge=>[edge.from,edge.to].includes('out')).length,1,'one route joins the program to its Outside frame');
+  const {layout}=await layoutPrepared(prepared,1200,800),nodes=new Map(layout.nodes.map(node=>[node.id,node]));
+  const chips=['s3','gcs','sftp','nats','lost'].map(id=>nodes.get(id)),frame=nodes.get('out');
+  assert.equal(new Set(chips.map(node=>`${node.width.toFixed(3)}x${node.height.toFixed(3)}`)).size,1,'every chip is one size');
+  assert.ok(new Set(chips.map(node=>node.absolute.y.toFixed(3))).size>1,'the chips wrap into rows');
+  for(const node of chips)assert.ok(node.absolute.x>=frame.absolute.x&&node.absolute.y>=frame.absolute.y&&
+    node.absolute.x+node.width<=frame.absolute.x+frame.width+1e-7&&node.absolute.y+node.height<=frame.absolute.y+frame.height+1e-7,`${node.id} stands in its frame`);
+  const order=[...chips].sort((a,b)=>a.absolute.y-b.absolute.y||a.absolute.x-b.absolute.x).map(node=>node.id);
+  assert.deepEqual(order,['s3','gcs','sftp','nats','lost'],'the chips keep the page\'s order, the one not established last');
+  const routes=new Set(layout.edges.filter(edge=>edge.outerTo==='out').map(edge=>edge.path));
+  assert.equal(routes.size,1,'every call to the outside is drawn on the one route');
 });
 
 // A loose part beside areas is drawn filling its box once the areas open,

@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {records,manyExternalInventory} from './two-systems-five-externals.mjs';
 
-const roots=records.filter(n=>['component','communication','inputs'].includes(n.branch));
+const roots=records.filter(n=>['component','inputs'].includes(n.branch));
 const worldGeometry=page=>page.locator('.react-flow__node').evaluateAll(nodes=>nodes.map(n=>[
   n.dataset.id,n.style.transform,n.style.width,n.style.height,
 ]));
@@ -60,7 +60,7 @@ async function openFixture(page,url='/',{rootCount=roots.length,startupTimeout=1
 
 async function assertOverviewReadable(page,{allowInventoryScroll=false,participants=records}={}){
   const stage=await page.locator('.flow-root').boundingBox();
-  for(const item of participants.filter(n=>['component','communication','inputs'].includes(n.branch))){
+  for(const item of participants.filter(n=>['component','inputs'].includes(n.branch))){
     const label=page.locator(`[data-component-overview="${item.id}"] .flow-component-overview-heading>strong`);
     // An input collection is headed by the colour key's word, not its component's name.
     await expect(label).toHaveText(item.branch==='inputs'?'Inputs':item.title);
@@ -225,29 +225,9 @@ test('dense internal inventory keeps whole-map headings and zoom controls readab
   expect(errors).toEqual([]);
 });
 
-test('external zoom reveals calls and returns to the same overview',async({page})=>{
-  const errors=await openFixture(page);
-  const geometry=await worldGeometry(page);
-  await page.getByRole('button',{name:'Zoom into Backend API',exact:true}).click();
-  await expect(page.locator('[data-reading-title]')).toHaveText('Backend API');
-  await expect(page.locator('.flow-location')).toHaveText('Backend API');
-  for(const id of ['post','get','download']){
-    const call=page.locator(`.react-flow__node[data-id="${id}"]`);
-    await expect(call).toBeInViewport();
-    await expect.poll(()=>call.locator('strong').evaluate(el=>
-      parseFloat(getComputedStyle(el).fontSize)*el.getBoundingClientRect().width/el.offsetWidth
-    ),{message:'Zoom makes call text readable'}).toBeGreaterThanOrEqual(14);
-  }
-  await showWholeMap(page);
-  await expect(page.locator('.flow-location')).toHaveText('System map');
-  await assertOverviewReadable(page);
-  expect(await worldGeometry(page)).toEqual(geometry);
-  expect(errors).toEqual([]);
-});
-
 for(const inputs of [true,false])test(`seventeen external participants remain readable through entry and zoom out${inputs?'':' without inputs'}`,async({page},testInfo)=>{
   test.setTimeout(90000);
-  const prepared=manyExternalInventory({inputs}),rootCount=inputs?21:19;
+  const prepared=manyExternalInventory({inputs}),rootCount=inputs?4:2;
   await page.addInitScript(()=>{
     window.mapStartup={visibleBeforeReady:0,readyAt:null};
     const inspect=()=>{
@@ -285,23 +265,16 @@ for(const inputs of [true,false])test(`seventeen external participants remain re
   expect(await worldGeometry(page)).toEqual(geometry);
   expect(await page.locator('[data-map]').evaluate(map=>{const {x,y,zoom}=map.captureViewport();return {x,y,zoom};})).toEqual(overviewCamera);
   }
-  await page.getByRole('button',{name:'Zoom into Backend API',exact:true}).click();
+  // Every destination is a chip in its program's Outside frame, named on
+  // the whole map; a click reads it, the camera staying.
+  const chips=prepared.records.filter(n=>n.branch==='communication');
+  for(const destination of chips)await expect(page.locator(`.react-flow__node[data-id="${destination.id}"] .flow-chip`),`${destination.title} is a chip`).toHaveAttribute('title',destination.title);
+  const place=()=>page.locator('[data-map]').evaluate(map=>{const {x,y,zoom}=map.captureViewport();return {x,y,zoom};});
+  const before=await place();
+  await page.locator('.react-flow__node[data-id="api"]').click();
   await expect(page.locator('[data-reading-title]')).toHaveText('Backend API');
-  const api=prepared.records.find(n=>n.id==='api');
-  for(const id of api.children){
-    const title=page.locator(`.react-flow__node[data-id="${id}"] .flow-part>strong`);
-    await expect(title).toBeVisible();
-    await expect.poll(()=>title.evaluate(el=>parseFloat(getComputedStyle(el).fontSize)*el.getBoundingClientRect().width/el.offsetWidth),{message:'External calls have readable text after entry'}).toBeGreaterThanOrEqual(14);
-  }
-  const visibleCalls=await page.locator(api.children.map(id=>`.react-flow__node[data-id="${id}"] .flow-part>strong`).join(',')).evaluateAll(headings=>{
-    const canvas=document.querySelector('.flow-root').getBoundingClientRect();
-    return headings.filter(heading=>{
-      const range=document.createRange();range.selectNodeContents(heading);const box=range.getBoundingClientRect();
-      return box.left>=canvas.left&&box.top>=canvas.top&&box.right<=canvas.right&&box.bottom<=canvas.bottom;
-    }).length;
-  });
-  expect(visibleCalls,'External entrance starts at an actual call').toBeGreaterThan(0);
-  await testInfo.attach('journey-02 — Enter the API and its six calls',{body:await workspace.screenshot(),contentType:'image/png'});
+  expect(await place(),'the camera stays').toEqual(before);
+  await testInfo.attach('journey-02 — Read the API from its chip',{body:await workspace.screenshot(),contentType:'image/png'});
   await showWholeMap(page);
   await expect(page.locator('[data-component-overview]')).toHaveCount(rootCount);
   await page.getByRole('button',{name:'Zoom into Web application',exact:true}).click();
@@ -355,8 +328,8 @@ for(const inputs of [true,false])test(`seventeen external participants remain re
 test('whole map remeasures readable headings after a desktop resize',async({page},testInfo)=>{
   const errors=await openFixture(page);
   const savedOverview=await page.locator('[data-map]').evaluate(map=>map.captureViewport());
-  await page.getByRole('button',{name:'Zoom into Backend API',exact:true}).click();
-  await expect(page.locator('[data-reading-title]')).toHaveText('Backend API');
+  await page.getByRole('button',{name:'Zoom into Job processing service',exact:true}).click();
+  await expect(page.locator('[data-reading-title]')).toHaveText('Job processing service');
   let previousCamera,stable=0;
   await expect.poll(async()=>{
     const current=JSON.stringify(await page.locator('[data-map]').evaluate(map=>map.captureViewport()));
@@ -378,9 +351,9 @@ test('whole map remeasures readable headings after a desktop resize',async({page
     const frame=await page.locator(`.react-flow__node[data-id="${item.id}"]`).boundingBox();
     expect(inside(button,frame),`${item.title} zoom control stays in its resized frame`).toBe(true);
   }
-  await page.getByRole('button',{name:'Zoom into Backend API',exact:true}).click();
-  await expect(page.locator('[data-component-overview="api"]')).toHaveCount(0);
-  await assertInsideCanvas(page,page.locator('.react-flow__node[data-id="download"] .flow-part>strong'),'The resized API entrance reveals its actual call',{text:true});
+  await page.getByRole('button',{name:'Zoom into Job processing service',exact:true}).click();
+  await expect(page.locator('[data-component-overview="backend"]')).toHaveCount(0);
+  await assertInsideCanvas(page,page.locator('[data-frame-title="backend"]>strong'),'The resized component entrance keeps its heading',{text:true});
   await page.locator('[data-map]').evaluate((map,viewport)=>map.restoreReadingState({scope:'',viewport}),savedOverview);
   await expect(page.locator('[data-component-overview]')).toHaveCount(roots.length);
   await assertOverviewReadable(page);
@@ -519,7 +492,7 @@ test('visual journey: aim, zoom through both detail levels, return',async({page}
     await pinchUntil(()=>page.locator('[data-summary-area="editing"]').isVisible(),
       'journey-03-before-areas','journey-04-areas-visible','the system’s areas',frontHeading,async()=>{
         const location=page.locator('.flow-location');
-        await expect(location).toHaveText('Web application');
+        await expect(location).toContainText('Web application');
         await assertInsideCanvas(page,location,'The component context remains visible after detail opens',{text:true,container:'.map-stage'});
         // Either actual area can enter the viewport first; native layout need
         // not put Job editing ahead of Progress and results under the pointer.

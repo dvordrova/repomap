@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {records,inputOwner} from './two-systems-five-externals.mjs';
 
 const rootIDs=records.filter(r=>r.branch==='component').map(r=>r.id).sort();
-const collectionIDs=records.filter(r=>['communication','inputs'].includes(r.branch)).map(r=>r.id).sort();
+const collectionIDs=records.filter(r=>r.branch==='inputs').map(r=>r.id).sort();
 const areaIDs=records.filter(r=>r.branch==='area').map(r=>r.id).sort();
 // A collection whose inputs have handlers in several parts groups them by part;
 // the groups are a layer of their own and open together too.

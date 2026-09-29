@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {connections, endPlaques, borderCrossing, plaqueCentre, stubEnds} from './layout.mjs';
+import {connections, borderCrossing, stubEnds} from './layout.mjs';
 import {prepareInteriors,layoutPrepared} from './split-layout.mjs';
 import {semanticLayout} from './semantic.mjs';
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -109,37 +109,15 @@ test('a root leaf reserves its measured readable label dimensions before routing
   assert.deepEqual(result.edges[0].relations,[original]);
 });
 
-// Redis's Data type commands showed two "all" chips side by side for its
-// two-headed arrow to Core infrastructure, and digits on every other end.
-test('each arrow end is one plaque: all only when every part is behind it',()=>{
-  const at=(point,side='left')=>({root:'area',side,point});
-  const labels=endPlaques([
-    {id:'in:core',outside:'core',incoming:true,insides:['hash'],edges:['a'],...at({x:0,y:10})},
-    {id:'out:core',outside:'core',incoming:false,insides:['set','list'],edges:['b'],...at({x:0,y:30})},
-    {id:'out:admin',outside:'admin',incoming:false,insides:['list'],edges:['c'],...at({x:100,y:20},'right')},
-  ],new Set(['hash','set','list']));
-  assert.deepEqual(labels.filter(label=>!label.hidden).map(label=>[label.id,label.all]),[['in:core',true],['out:admin',false]],'one plaque on the side the pair shares');
-  assert.deepEqual(labels[0].insides.sort(),['hash','list','set']);assert.deepEqual(labels[0].edges,['a','b']);
-  assert.equal(labels[1].twin,'in:core');
-  const alone=endPlaques([{id:'in:x',outside:'x',incoming:true,insides:['only'],edges:['e'],...at({x:0,y:0})}],new Set(['only']));
-  assert.equal(alone[0].all,false,'a frame of one part has no all');
-});
-
-// Redis's plaques stood where an arrow ended on a part inside the frame
-// (redis-cli's on Command line client and over Dynamic strings): a plaque
-// sits where the drawn arrow crosses the frame's border.
-test('a plaque stands where its arrow crosses the frame border, clear of what the frame holds',()=>{
+// An arrow's card stands where the drawn arrow crosses the frame's border,
+// not where it ends on a part inside (redis-cli's had stood on Command line
+// client and over Dynamic strings).
+test('an arrow meets a frame\'s border where it crosses it',()=>{
   const frame={x:0,y:0,width:100,height:80};
   assert.deepEqual(borderCrossing([{x:150,y:40},{x:60,y:40},{x:60,y:20}],frame),{x:100,y:40},'an arrow running on to a part inside meets the border once');
   assert.deepEqual(borderCrossing([{x:20,y:30},{x:20,y:-40}],frame),{x:20,y:0},'leaving through the top');
   assert.deepEqual(borderCrossing([{x:-50,y:10},{x:0,y:10}],frame),{x:0,y:10},'an end on the border is its crossing');
   assert.equal(borderCrossing([{x:-50,y:10},{x:-10,y:10}],frame),null,'an arrow that never meets it');
-  // Centred on the border, it steps out only as far as a part inside needs.
-  const tiles=[{left:4,top:20,right:60,bottom:60}];
-  assert.deepEqual(plaqueCentre({x:0,y:40},'left',tiles,{x:11.5,y:10}),{x:-7.5,y:40},'pushed out until it clears the part');
-  assert.deepEqual(plaqueCentre({x:0,y:70},'left',tiles,{x:11.5,y:10}),{x:0,y:70},'nothing inside there: centred on the border');
-  assert.deepEqual(plaqueCentre({x:50,y:80},'bottom',tiles,{x:11.5,y:10}),{x:50,y:80});
-  assert.deepEqual(plaqueCentre({x:30,y:0},'top',[{left:0,top:0,right:100,bottom:18}],{x:11.5,y:10}),{x:30,y:-10},'clear of the title band');
 });
 
 // A part read by itself inside an area had no arrow: the route to the part

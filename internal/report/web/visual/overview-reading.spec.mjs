@@ -4,11 +4,12 @@ import {shortNamedInventory} from './two-systems-five-externals.mjs';
 async function readableText(locator,frame,label,{maximumLines}={}){
   await expect(locator,label).toBeVisible();
   const result=await locator.evaluate(el=>{
-    const style=getComputedStyle(el),range=document.createRange();range.selectNodeContents(el);
-    const rects=[...range.getClientRects()].filter(rect=>rect.width&&rect.height);
-    const words=[],walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
-    while(walker.nextNode()){
-      const node=walker.currentNode;
+    // The lines of its text; an input kind's mark is no line.
+    const style=getComputedStyle(el),range=document.createRange(),texts=[];
+    for(const walk=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);walk.nextNode();)if(!walk.currentNode.parentElement.closest('svg'))texts.push(walk.currentNode);
+    const rects=texts.flatMap(node=>{range.selectNodeContents(node);return [...range.getClientRects()];}).filter(rect=>rect.width&&rect.height);
+    const words=[];
+    for(const node of texts){
       for(const word of node.textContent.matchAll(/\S+/g)){
         range.setStart(node,word.index);range.setEnd(node,word.index+word[0].length);
         if(range.getClientRects().length>1)words.push(word[0]);
@@ -42,12 +43,12 @@ for(const matchedPeer of [false,true])test(`short component names keep complete 
     stable=camera?.fit&&current===previous?stable+1:0;previous=current;return stable;
   },{intervals:[100]}).toBeGreaterThanOrEqual(2);
   const canvas=await page.locator('.flow-root').boundingBox();
-  await expect(page.locator('[data-component-overview]')).toHaveCount(matchedPeer?4:5);
+  await expect(page.locator('[data-component-overview]')).toHaveCount(4);
   await expect(page.locator('.flow-location')).toHaveText('System map');
   const screenshot=await page.locator('.map-workspace').screenshot();
   await testInfo.attach('journey-01 — Ordinary report space · complete initial inventories',{body:screenshot,contentType:'image/png'});
 
-  for(const item of prepared.records.filter(item=>['component','communication','inputs'].includes(item.branch))){
+  for(const item of prepared.records.filter(item=>['component','inputs'].includes(item.branch))){
     const summary=page.locator(`[data-component-overview="${item.id}"]`);
     const frame=await page.locator(`.react-flow__node[data-id="${item.id}"]`).boundingBox();
     expect(frame.x).toBeGreaterThanOrEqual(canvas.x-.5);

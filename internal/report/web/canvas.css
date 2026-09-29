@@ -26,6 +26,14 @@
 .flow-area-title.flow-entry-title{--flow-title-halo:#eef8f4;color:#1d5a51}
 .flow-area-title.flow-input-collection{--flow-title-halo:#edf5ff;color:#204a7b}
 .flow-area-title.flow-communication-title{--flow-title-halo:#fffaf1;color:#77531c}
+/* An outside system in its program's Outside frame: its name in at most
+   two lines, the rest on hover (its title). The one holding the calls whose
+   destination is not established is drawn without fill, dashed. */
+.flow-chip{position:relative;box-sizing:border-box;width:100%;height:100%;display:flex;align-items:center;padding:0 8px;border-radius:7px;background:#fff;border:1.25px solid #906014;color:#5f4214;font:600 12px/15px system-ui}
+.flow-chip-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.flow-chip.flow-chip-unestablished{background:transparent;border-style:dashed;font-style:italic;font-weight:500}
+.react-flow__node.flow-node-connected:not(.flow-node-reading)>.flow-chip,.react-flow__node.flow-node-focus:not(.flow-node-reading)>.flow-chip{border-color:#243044;outline:1px solid #243044;outline-offset:-2.5px}
+.react-flow__node.flow-node-reading>.flow-chip{border-color:#243044;outline:3px solid #243044;outline-offset:-3px}
 .flow-area-title.flow-core-title{--flow-title-halo:var(--core-area);color:var(--core-ink)}
 .flow-communication-title .flow-kind{color:#896019;margin-bottom:4px}
 .system-communication-records article{border-top:1px solid #d4dce6;padding:12px 0}
@@ -58,16 +66,9 @@
 .flow-edge-active path{stroke:#34445b;stroke-width:calc(2.5px / var(--flow-zoom,1))}
 .flow-edge-active .flow-edge-casing{stroke:#fbfcfe;stroke-width:calc(6px / var(--flow-zoom,1))}
 .flow-defs{position:absolute;width:0;height:0}
-.flow-connection-label{position:absolute;pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:#fbfcfe;border-radius:5px;padding:3px;box-sizing:border-box}
-.flow-enabled .flow-connection-label button{padding:3px 9px;background:#e8edf4;border:1px solid #52647d;border-radius:6px;font-size:13px;line-height:18px;cursor:pointer;color:#243044}
-/* Over the arrows it ends, which React Flow lifts to 1002 inside open frames:
-   under them an arrowhead covered the plaque's "all". */
-.flow-boundary-label{padding:0;background:transparent;z-index:1003}
-/* The pointer on an arrowhead, its connection's handle: nothing is drawn. */
-.flow-on-end .react-flow__pane{cursor:pointer}
-/* An arrow end's plaque: "all", or a plain handle, the size of the former one-digit chip at every zoom (canvas.jsx plaqueSize). */
-.flow-enabled .flow-boundary-label button{box-sizing:border-box;min-width:23px;height:20px;background:#e8edf4;border:1px solid #52647d;border-radius:7px;padding:1px 4px;font:400 12px/16px system-ui;color:#243044}
-.flow-connection-label button:hover{background:#d4dce6}
+/* An arrow's handle: a wide unpainted stroke over it takes the pointer
+   (canvas.jsx RoutedEdge); the arrow itself is what the reader points at. */
+.flow-enabled .flow-edge .flow-edge-hit{stroke:transparent;stroke-width:calc(14px / var(--flow-zoom,1));fill:none;pointer-events:stroke!important;cursor:pointer}
 .flow-enabled .system-selection{min-height:32px;margin:8px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .flow-enabled .system-path-note{font-size:13px}
 .flow-enabled .system-results{max-height:190px;overflow:auto}
@@ -144,7 +145,7 @@
 .flow-area-summary .flow-overview-compact:has(>.flow-description)>strong{flex:none}
 .flow-area-summary .flow-overview-compact>.flow-description{flex:none;margin:2px 0 auto;font-size:11px;line-height:15px;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
 .flow-standalone-part>.flow-description{font-size:11px;line-height:15px;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
-.flow-component-overview{position:absolute;transform-origin:top left;pointer-events:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:8px;overflow:hidden;color:#243044;background:#f8fafc;border-radius:8px;cursor:zoom-in}
+.flow-component-overview{position:absolute;transform-origin:top left;pointer-events:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:8px;overflow:hidden;color:#243044;background:#f8fafc;border-radius:8px;cursor:pointer}
 .flow-component-overview-heading{display:flex;flex-shrink:0;gap:8px;align-items:center;width:100%}
 .flow-component-overview-heading>strong{font:700 18px/23px system-ui;white-space:pre;flex:1;min-width:0}
 .flow-component-overview .flow-component-role{margin:0;white-space:normal;flex-shrink:0}
@@ -167,6 +168,9 @@
 .flow-component-overview.flow-input-collection .flow-component-overview-heading{box-sizing:border-box}
 .flow-input-types{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto;overscroll-behavior:contain;flex:0 1 auto}
 .flow-input-types li{margin:0;font:500 13px/18px system-ui}
+/* An input's kind: a small muted mark before its name (kind-icons.mjs). */
+.flow-kind-mark{display:inline-block;flex:none;width:14px;height:14px;margin:0 6px 0 0;vertical-align:-2px;fill:#66758a}
+.flow-input-types .flow-kind-mark{width:13px;height:13px;margin-right:5px}
 .flow-input-types .flow-input-kind{cursor:pointer}
 .flow-input-types .flow-input-kind:hover,.flow-input-types .flow-input-kind:focus-visible{text-decoration:underline}
 .map-object-heading{position:relative;padding-right:38px;min-height:32px}
@@ -185,7 +189,7 @@
 .flow-calls-place::before{content:'';position:absolute;inset:-8px;z-index:-1}
 /* A call card is read at the screen's own type size, beside parts many
    times its size: a dark frame, a firm shadow, a heading that stays while
-   its list scrolls, and in the list a sticky heading for the part the calls
+   its list scrolls, and in the list a heading row for the part the calls
    are made from and, under it, for the part they go into. */
 .flow-connection-calls{position:relative;box-sizing:border-box;width:500px;display:flex;flex-direction:column;overflow:hidden;background:#fff;border:2px solid #243044;border-radius:10px;box-shadow:0 10px 28px rgba(36,48,68,.32);text-align:left;cursor:default;color:#243044;font:400 13px/20px system-ui}
 .flow-connection-calls a{color:var(--link);text-decoration:none}.flow-connection-calls a:hover{text-decoration:underline}
@@ -208,9 +212,7 @@
 .flow-card-groups h4,.flow-card-groups h5{margin:0;display:flex;justify-content:space-between;align-items:baseline;gap:12px;background:#fff}
 .flow-card-group{padding:10px 16px 3px;font:600 14px/19px system-ui;color:#39455a}
 .flow-card-pair{padding:4px 16px 2px 28px;font:500 12.5px/18px system-ui;color:#536176}
-.flow-card-sticky .flow-card-group{position:sticky;top:0;z-index:3}
-.flow-card-sticky .flow-card-pair{position:sticky;top:32px;z-index:2}
-.flow-card-groups:not(.flow-card-sticky) .flow-card-group{padding-top:6px}
+.flow-card-groups .flow-card-group{padding-top:6px}
 .flow-card-rows{display:grid;grid-template-columns:fit-content(210px) auto minmax(0,1fr);padding:0 14px 2px 22px}
 .flow-card-rows>.flow-card-row{display:contents}
 .flow-card-row{margin:0;font:400 12.5px/21px ui-monospace,SFMono-Regular,Menlo,monospace;color:#243044}

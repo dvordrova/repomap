@@ -114,15 +114,18 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   row. Its distant summary shows the actual
   catalogue types (requests, commands, background work, interactions, other
   operations); zoom reveals the named input nodes. Inside, inputs are grouped
-  by the part holding their handler (the saved implementation owner), each
-  group framed, titled and ordered by that part's name; choosing its title
+  by the part holding their handler (the saved implementation owner), or,
+  for an input whose handler is not established, the one part its Inputs
+  arrow goes into, each group framed, titled and ordered by that part's name,
+  its inputs in rows wider than tall; choosing its title
   reads that part. The collection opens to its groups first, each closed like
   a closed area with a zoom mark entering it; a group opens to its inputs
   when their headings read (14px to open, 12px to stay open). An input with
-  no owner stays loose after the groups; a collection whose inputs share one
-  part keeps them loose. The groups are display containment, not
-  architectural areas, and add no relation. A tile names its kind only when
-  it is not the collection's most common kind.
+  neither stays loose after the groups and opens with them; a collection
+  whose inputs share one part keeps them loose. The groups are display
+  containment, not architectural areas, and add no relation. A tile says its
+  kind by a small muted mark before its name (Primer Octicons, the kind's
+  name on hover), never by a printed kind row.
 - An input whose handler is not established (GroupsIndex `handler_unknown`:
   an option a call declares, a value handed over) has no owner: it stands
   loose, no implementation arrow binds it, and such a request is no route and
@@ -143,42 +146,20 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   native HTTP registration stays without an implementation attachment.
   Selecting an input opens the same saved path and sources.
 
-- External communication records without an exact local peer stay
-  selectable nodes in amber destination frames, by each component's external
-  catalogue grouping: one frame per destination its records name, one tile
-  per native outside symbol it calls. One call made from several places is
-  one tile; every caller keeps its line and source on the arrow, and an
-  input's path into any of those calls leads to that tile. Each frame and
-  tile belongs to its component and only that component's arrows reach it:
-  equal destination text proves no identity, each record stays in its
-  component's catalogue and different symbols stay separate tiles. The
-  exception is one call written once (owner, 2026-09-28): a tile of the same
-  destination and symbol whose calls include one at the same path and line as
-  another component's tile is that tile, in the first component's frame,
-  with an arrow from each component making the call; the others' records
-  lead to it. Only the saved location decides this, never a name. A
-  destination frame is a display collection, not an inferred component.
-- Frames of different components naming the same destination stand side by
-  side in one amber display group in the outer layout. The group is no
-  participant: no reading, selection, hover, arrow end or relation; each
-  frame stays a separate record hit by its own program's arrow. When every
-  frame spells the destination alike, the group's frame carries that text
-  once (`DisplayGroupTitle`, from the page data) and the frames are small
-  plain amber tiles with zoom marks, one per program, naming no program. The
-  text is no merged participant's name: each frame keeps its title in its
-  reading, search and accessible name, and spellings that differ (grouped
-  regardless of case) keep their own headings and give the group none. The
-  heading stands in a band on the side no arrow enters (under the tiles when
-  arrows run down, after them when they run right), laid out at the
-  whole-map camera and zooming with the map like closed summaries; once the
-  tiles open it reads at their open frames' title size over plain tiles, so
-  the destination is named once in every state. An open group's frame wraps
-  its tiles and heading; the room its closed heading takes at the whole-map
-  camera stays outside the frame. Entering any tile opens every tile of the
-  group and frames it, heading included, at the scale its calls are drawn
-  at. A plain tile keeps its open calls' proportion: at the whole-map fit it
-  grows whole until its zoom mark has room, so it opens with no room of its
-  own below its calls.
+- External communication records without an exact local peer stand, per
+  program, in one amber Outside frame beside it (owner, 2026-09-29): one
+  chip per destination its records name, every chip one size, in rows
+  toward a square, naming it in at most two lines with the rest on hover,
+  and the records naming none in one muted "not established" chip last.
+  A destination's calls are read in the column when its chip is clicked,
+  the camera staying; no call tile is drawn, and the program's arrows to
+  its destinations are one arrow to its Outside frame, the calls behind it
+  in its card. Equal destination text proves no identity: each program
+  keeps its own destinations. One call written once (the same destination
+  and symbol at the same saved path and line, owner, 2026-09-28) is one
+  call, in the first program's destination, with an arrow from each program
+  making it. An Outside frame and its chips are display collections, not
+  inferred components.
 - When a saved connection identifies one displayed peer in another target,
   the canvas connects the original caller straight to that peer/input, with
   no third participant; its outbound catalogue and source reading stay
@@ -187,7 +168,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   operation membership and possible status survive the display projection.
   Source-owned cross-component links connect the same common canvas.
 
-- Destination frames are amber, parts and area frames neutral; core parts are
+- Outside frames and their chips are amber, parts and area frames neutral; core parts are
   rose, entry parts green, inputs blue and external communications amber,
   identities the saved lanes supply. Each colour means one thing (owner,
   2026-09-28): purple is a link and nothing else, a key declaration is bold
@@ -297,7 +278,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 - An input chosen from Find, a link or a reading is entered as its path while
   the column reads the input; its tile clicked on the canvas is read with its
   path pinned and the camera still, as every canvas click reads without
-  moving (owner, 2026-09-29). Entering the path, the camera takes the part
+  moving (owner, 2026-09-29): a card's body anywhere reads its card with the
+  ordinary pointer, and only its magnifier zooms. Entering the path, the camera takes the part
   holding its handler, then each part the trace reaches from a part already
   taken while all fit at a scale where their headings stay about twelve
   pixels (their layer open), and frames them; when the next step does not
@@ -319,36 +301,23 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   component marks nothing and takes no marks of an open one beside it.
   Nothing on the map is a digit (owner, 2026-09-28): no part number badges,
   digit chips, key line explaining numbers or numbered/arrows switch.
-  Each arrow end on the looked-at frame has one small plaque where its arrow
-  meets the frame; both directions of a pair of frames share one route, so
-  the end one direction took can be the other frame's. A plaque reads "all"
-  only when the parts behind the end are every part of a frame of more than
-  one part (an area's parts, or a component's areas and loose parts);
-  otherwise it is a small plain handle without text. One outside participant
-  stands behind one plaque on a side: both directions between the frame and
-  it share the incoming direction's plaque, standing for the parts behind
-  both. Different outside identities stay separate. Resting on a plaque opens
-  its card (for two directions the incoming one's, whose "go the other way"
-  link opens the other); selected details and their links stay present. The
-  plaque's accessible name is the outside participant, which the reading
-  column lists too. A line has no click target or native tooltip; its
-  arrowhead does (below). The same real endpoints stay connected across zoom
-  levels. While an end's card is open or kept, the parts behind that end take
+  No plaque stands on an arrow's end (owner, 2026-09-29): the arrow is its
+  own handle, its end an ordinary head on the border it enters. Both
+  directions of a pair of frames share one route. The same real endpoints
+  stay connected across zoom levels. While an end's card is open or kept, the parts behind that end take
   the dark outline in place (a closed frame hiding them takes it for them)
-  and the end's arrows and plaque are dark; the end recedes nothing, and the
+  and the end's arrows are dark; the end recedes nothing, and the
   parts at the arrow's other end stay as they are.
 
 - A card (a label's calls) opens on intent, only after the pointer pauses on
   its handle; a handle crossed on the way elsewhere opens nothing. A
-  connection has two handles, its plaque and its arrowhead. Every drawn
-  arrowhead meeting an area's or a component's border is a handle, at every
-  level and whether or not that frame is looked at: the head's own few pixels
-  on empty canvas, with nothing drawn for them and no competition with a
-  title, plaque or summary under the pointer. A head stands for the incoming
+  connection's handle is its drawn arrow, at every level: a wide unpainted
+  hit path along it, under the boxes it joins, which take the pointer first.
+  The pointer on an arrow is on the connection of the head nearest it. A
+  head stands for the incoming
   connection of the area or component it points into; a head on a destination,
   the inputs or a loose part, for the outgoing connection of the frame at the
-  other end; a head beside a plaque of the looked-at frame opens its own
-  direction's card. An arrow between two parts of one frame has no card. An
+  other end; on the looked-at frame's border, for its own direction. An arrow between two parts of one frame has no card. An
   arrowhead stands outside its frame's border. A card stands flush with its
   handle, outside the frame being read so it covers none of its parts, clear
   of the handle, on the side with room and wholly inside the canvas; a label's
@@ -359,14 +328,15 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   to the card crosses parts, frames and empty canvas without changing emphasis
   or labels. Leaving the handle, the pointer is safe inside the triangle
   between where it left and the card: the card lasts and no other handle on
-  the way takes it; moving from an arrowhead onto its own card or plaque is
-  not leaving. A click on a card keeps it open; a click on an arrow end, its
-  plaque or its arrowhead reads in the column the frame whose connection it
+  the way takes it; moving from an arrow onto its own card is not leaving.
+  A click on a card keeps it open; a click on an arrow reads in the column
+  the frame whose connection it
   is, scrolled to its Connections with that connection open, and leaves the
   camera (owner, 2026-09-27). A kept card has a ✕; ✕, Escape or a click on
   empty canvas closes it, and that click closes the card and nothing else: it
   neither selects nor moves the camera.
-  The card's list scrolls under its sticky heading and ✕. The pause, the
+  The card's list scrolls under its heading and ✕; the list's own headings
+  are rows of it, never drawn over its rows, and the card prints no count. The pause, the
   linger and the triangle are interaction timing, not evidence limits.
 
   A label's card (owner, 2026-09-27) is headed by the two frames its arrow
@@ -396,8 +366,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   layout must never do. The component frame wraps its contents, with no
   aspect padding around a compound column. Outer arrows stop at participant
   frames even while their contents are open; continuations to inner parts
-  are not painted, and a plaque at the boundary stands for the explored
-  area's inner parts behind it. Shared participant labels keep every
+  are not painted, and the arrow's card at the boundary stands for the
+  explored area's inner parts behind it. Shared participant labels keep every
   matching part and source. Aggregated strokes are display geometry drawn
   once, not semantic relations; original endpoints, certainty, possible
   status and source relations stay distinct in the reading data and
@@ -413,7 +383,7 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   parts (reading draws none smaller; GroupsIndex keeps no container of fewer
   than two groups) and every group is a node of its component's map, so the
   page draws every area it is given as a frame. Participant, input and
-  destination frames keep their boundary even with one child.
+  Outside frames keep their boundary even with one child.
   Component summaries list their immediate areas in the order the model
   listed them, then their loose parts, so folding a wrapper never removes its
   responsibility from the overview; placement still follows the connections.
@@ -568,24 +538,27 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   down whole, its zoom mark with it until zoom gives the mark its ordinary
   size, as a small group keeps a smaller complete label; a frame too narrow
   for its text at full size keeps that smaller summary rather than stand
-  blank beside a display group's plain tiles. Compact component purposes use
+  blank. Compact component purposes use
   the remaining whole lines, with an ellipsis when shortened, hidden if fewer
   than two lines fit; the complete purpose stays in the reading column.
-  External frames keep room for their summary.
+  An Outside frame's summary is its chips, at their own size at the
+  preferred camera.
   The fixed world places frames, parts, complete input cards, component
   purposes and grouped labels. The outer layout prefers readable text, then
-  a smaller world; unzipping is not forced on small maps. When that fit
+  a smaller world; unzipping is not forced on small maps. Its spacing is the
+  interiors' in the unit of its participants' median height, so arrows keep
+  room between frames rather than run along their borders. When that fit
   would shrink component inventories, collection headings or input types
   below their readable size, a correction before display reserves the
-  missing space: at most two passes, a root readable in the first placement
-  staying readable after the correction, never laying an interior out again, and neither an orientation
-  search nor a zoom-time layout. Cross-participant labels take no interior
-  space; their plaques belong to the outer endpoints. Components and input
+  missing space: at most two passes, each placing the grown boxes over the
+  same eight candidates, a root readable in the first placement staying
+  readable after the correction, never laying an interior out again, and no
+  zoom-time layout. Cross-participant labels take no interior
+  space; their cards belong to the outer endpoints. Components and input
   collections show no empty padding around a long column and keep short
   catalogues compact. Their reserves are measured from the text, never a fixed
   wider frame for every participant, and the fit that sizes them frames
-  exactly what the whole-map camera frames, a display group's frame with its
-  padding and heading band included. Initial placement and resize use the same
+  exactly what the whole-map camera frames. Initial placement and resize use the same
   inner canvas dimensions. Layout runs off the main thread, inside the
   self-contained page. An initial failure leaves the ordinary report
   available; a later one keeps the last complete world and offers reload;

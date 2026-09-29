@@ -175,8 +175,20 @@ directory, the test server renders it once with the built `.bin/repomap render`
 (no provider request) and `visual/real-report.spec.mjs` walks every arrowhead
 and chip of its whole map and of its largest component with a real pointer at
 1440×900 and 1280×800. Without it that spec is skipped. The fixture itself
-reproduces Redis's failing geometry: entering one component opens the other,
-and the component's numbers stand on its own border.
+reproduces Redis's failing geometry: entering one component opens the other.
+
+`visual/geometry.spec.mjs` is the one geometry check of the drawn canvas
+(`visual/geometry.mjs`): at the whole map, the four programs holding most
+areas and their Inputs frames entered by their zoom marks, two areas of each
+and one part's declarations, no two texts overlap, no text is cut without an
+ellipsis and a title, every box stands in its frame, an arrow keeps clear of
+the boxes it does not join, ends on the border of the ones it does and runs
+on no other arrow's line, an arrow's card never draws its heading or rows
+over each other, every text reads at 11px or more, no arrowhead is as large
+as the box it points into, and the canvas prints no kind label, plaque or
+lone number. It runs on the fixture always,
+and on rendered reports named by `REPOMAP_GEOMETRY_REPORTS` (a comma list of
+HTML files from `repomap render`), printing each finding with its level.
 
 Each system has one compact input collection outside its component frame on
 the initial map. Its existing input types remain readable; opening the collection

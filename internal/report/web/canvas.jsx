@@ -3,20 +3,20 @@ import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {ReactFlow, Handle, Position, ViewportPortal, useViewport, useStore} from '@xyflow/react';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import {connections, endPlaques, borderCrossing, plaqueCentre, stubEnds} from './layout.mjs';
+import {connections, borderCrossing, stubEnds} from './layout.mjs';
 import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors, endEmphasis, recedes} from './emphasis.mjs';
 import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport, detailLevel, pinchZoom, zoomBelow} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
-import {inputGroupsByPart} from './overview.mjs';
+import {inputGroupsByPart,outsideChips} from './overview.mjs';
 import {prepareCards,wrapText,overviewHeading,overviewScale,groupHeading,cardText} from './cards.mjs';
 import {overviewInset} from './split-layout.mjs';
 import {HoverGate} from './hover.mjs';
 import {placeCard} from './card-place.mjs';
-import {InputTypes, scrollInventory} from './card-content.jsx';
+import {InputTypes, KindMark, scrollInventory} from './card-content.jsx';
 import {callCard} from './call-card.mjs';
-import {CallRows, cardCount, FrameConnections} from './call-card-view.jsx';
+import {CallRows, FrameConnections} from './call-card-view.jsx';
 import '@xyflow/react/dist/style.css';
 import './canvas.css';
 
@@ -48,8 +48,6 @@ function partGrid(data,box){
 // a head stood 17.5px, nearly three times the area, and covered the plaque
 // at the frame.
 const arrowHead=7,emphasisedHead=arrowHead*1.5/2.5;
-// An arrow end's plaque on screen: the former one-digit chip (canvas.css).
-const plaqueSize={width:23,height:20};
 function PartSymbols({symbols,calls,width,height,grid,member}){
   const {divisor,inner,tileWidth,blocks,rows,hidden}=grid,{inset,columnGap:gap}=tileRoom;
   const links=calls||[],hot=member?.hot??-1,chosen=member?.chosen??-1;
@@ -74,7 +72,7 @@ function PartSymbols({symbols,calls,width,height,grid,member}){
       event.preventDefault();event.stopPropagation();member?.choose(i,event);
     };
     const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner&&mixed.has(i)?'flow-symbol-inner':''} ${symbol.quiet?'flow-symbol-quiet':''} ${i===chosen?'flow-symbol-chosen':''} ${tone(i)}`,
-      'data-symbol':i,title:symbol.full||undefined,onMouseEnter:()=>member?.point(i),onClick:symbol.kind==='more'?undefined:choose};
+      'data-symbol':i,title:symbol.kind==='more'?undefined:`${symbol.full||symbol.name}${symbol.text||''}`,onMouseEnter:()=>member?.point(i),onClick:symbol.kind==='more'?undefined:choose};
     const body=<>{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
     return symbol.href&&symbol.kind!=='more'?<a key={i} href={symbol.code||symbol.href} target="_blank" {...props}>{body}</a>
       :<span key={i} {...props}>{body}</span>;
@@ -130,8 +128,7 @@ function Part({data}) {
   return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''} ${data.member?.alone?'flow-part-has-chosen':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
-    {data.kindLabel&&!heading&&<div className="flow-kind" data-input-kind={data.activation||undefined}>{data.kindLabel}</div>}
-    <strong data-input-name={data.activation?'':undefined}>{heading?.title||data.title}</strong>
+    <strong data-input-name={data.activation?'':undefined}>{data.activation&&<KindMark kind={data.activation}/>}{heading?.title||data.title}</strong>
     {/* The description wraps in the column its lines were counted in: a
         browser that draws the 1.5px border 1px wide leaves a 226px column,
         where pykrx's 225.39px "Fetches Korean market fundamentals" fit whole
@@ -146,8 +143,21 @@ function Part({data}) {
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
 }
+// An outside system the program talks to: a chip in its program's Outside
+// frame, naming it in at most two lines, the whole name on hover. Its calls
+// are read in the column; it is chosen, pointed at and emphasised as a part
+// is.
+function Chip({data}) {
+  const scale=data.contentScale||1;
+  return <div className={`flow-chip ${data.unestablished?'flow-chip-unestablished':''}`} title={data.name}
+    style={{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}}>
+    <Handle type="target" position={Position.Top} isConnectable={false}/>
+    <span className="flow-chip-name">{data.name}</span>
+    <Handle type="source" position={Position.Bottom} isConnectable={false}/>
+  </div>;
+}
 function Area({data}) {
-  return <div className={`flow-area ${data.branch==='component'?'flow-component':['communication','communication-group'].includes(data.branch)?'flow-communication':['inputs','inputs-part'].includes(data.branch)?'flow-input-collection':data.branch!=='area'?'':data.lane==='core'?'flow-area-core':data.lane==='triggers'?'flow-area-entry':''}`}>
+  return <div className={`flow-area ${data.branch==='component'?'flow-component':['communication','outside'].includes(data.branch)?'flow-communication':['inputs','inputs-part'].includes(data.branch)?'flow-input-collection':data.branch!=='area'?'':data.lane==='core'?'flow-area-core':data.lane==='triggers'?'flow-area-entry':''}`}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
@@ -187,7 +197,7 @@ function ZoomMark({node,item,enter,select,compactScale,fitScale=Infinity,muted})
 function FrameTitle({node,item,focused,enter,select,muted}) {
   const viewport=useViewport();
   const scale=item.summaryScale||1;
-  const component=item.branch==='component',communication=item.branch==='communication',inputs=['inputs','inputs-part'].includes(item.branch);
+  const component=item.branch==='component',communication=['communication','outside'].includes(item.branch),inputs=['inputs','inputs-part'].includes(item.branch);
   const x=node.absolute.x+18*scale;
   return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${muted?'flow-node-muted':''} ${component?'flow-component-title':communication?'flow-communication-title':inputs?'flow-input-collection':item.lane==='core'?'flow-core-title':item.lane==='triggers'?'flow-entry-title':''}`}
     data-frame-title={node.id}
@@ -202,16 +212,24 @@ function FrameTitle({node,item,focused,enter,select,muted}) {
     {item.description&&<p className="flow-description" style={{maxWidth:cardText}}>{item.description}</p>}
   </div>;
 }
+// An arrow is drawn over its casing and under a wide unpainted hit path:
+// the pointer on the arrow opens the card of its connection, a click reads
+// it (canvas: routeHead).
 function RoutedEdge({id,data}) {
-  return <g aria-hidden="true" className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''}`} data-edge-id={id} data-edge-ids={data.edgeIDs.join(' ')}>
+  return <g aria-hidden="true" className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''}`} data-edge-id={id} data-edge-ids={data.edgeIDs.join(' ')} data-edge-ends={(data.boxes||[]).join(' ')}>
+    <path className="flow-edge-hit" d={data.path} data-edge-hit={id}/>
     <path className="flow-edge-casing" d={data.path} vectorEffect="non-scaling-stroke"/>
     <path d={data.path} fill="none" vectorEffect="non-scaling-stroke" style={data.possible||data.init?{strokeDasharray:data.init?'calc(3px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))':'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined} markerStart={data.reverseArrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined} markerEnd={data.arrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined}/>
   </g>;
 }
-const nodeTypes={part:Part,area:Area}, edgeTypes={routed:RoutedEdge};
+const nodeTypes={part:Part,area:Area,chip:Chip}, edgeTypes={routed:RoutedEdge};
 
 window.rmCreateFlow = async function(map, stage, records, relations, areas, inputOwner, callbacks) {
-  ({records,areas}=inputGroupsByPart(records,areas,inputOwner));
+  ({records,areas}=inputGroupsByPart(records,areas,inputOwner,relations));
+  // A destination's call tiles are read in the column, not drawn: a tile
+  // the reading names stands for its chip.
+  let chipOf;({records,areas,relations,chipOf}=outsideChips(records,areas,relations));
+  const shown=id=>chipOf.get(id)||id;
   const source=stage.querySelector('svg'), host=document.createElement('div');
   host.className='flow-root';stage.appendChild(host);
   map.classList.add('flow-enabled','flow-initializing');source.style.display='none';source.setAttribute('aria-hidden','true');
@@ -293,7 +311,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const bounds=host.getBoundingClientRect(),pinch=event?.type==='wheel'&&event.ctrlKey;
     const aim=pinch?{x:event.clientX-bounds.left,y:event.clientY-bounds.top}:{x:w/2,y:h/2};
     const point={x:(aim.x-v.x)/v.zoom,y:(aim.y-v.y)/v.zoom};
-    const candidates=layout.nodes.filter(n=>!closed(n.id)&&(scales.has(n.id)||byID.get(n.id)?.branch==='component'||['communication','inputs'].includes(byID.get(n.id)?.branch)||(!n.frame&&!semantic.owner(n.id)))).map(n=>{
+    const candidates=layout.nodes.filter(n=>!closed(n.id)&&(scales.has(n.id)||byID.get(n.id)?.branch==='component'||['communication','inputs','outside'].includes(byID.get(n.id)?.branch)||(!n.frame&&!semantic.owner(n.id)))).map(n=>{
       const x=n.absolute.x*v.zoom+v.x,y=n.absolute.y*v.zoom+v.y;
       const visible=Math.max(0,Math.min(w,x+n.width*v.zoom)-Math.max(0,x))*Math.max(0,Math.min(h,y+n.height*v.zoom)-Math.max(0,y));
       const dx=Math.max(n.absolute.x-point.x,0,point.x-n.absolute.x-n.width),dy=Math.max(n.absolute.y-point.y,0,point.y-n.absolute.y-n.height);
@@ -306,7 +324,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(candidates.length)locationID=candidates.find(n=>n.id===subject)?.id||candidates[0].id;
     if(deepPart)locationID=deepPart;
     // An input collection is named as its heading reads, with its component.
-    const nameOf=item=>item?.branch==='inputs'?[t('Inputs'),item.componentName].filter(Boolean).join(' · '):item?.name||item?.title;
+    const nameOf=item=>item?.branch==='inputs'?[t('Inputs'),item.componentName].filter(Boolean).join(' · '):item?.branch==='outside'?[t('Outside'),item.name].filter(Boolean).join(' · '):item?.name||item?.title;
     const path=[];for(let id=locationID;id;id=placed.get(id)?.parentId)if(nameOf(byID.get(id)))path.unshift(id);
     if(!path.length){location.textContent=t('System map');return;}
     // Each frame it names goes up to that level, as the breadcrumb's
@@ -329,8 +347,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   const children=new Map(areas.map(a=>[a.id,a.nodes]));
   const inventories=new Map(areas.map(a=>[a.id,frameInventory(a.id,children,byID)]));
   const leaves=id=>children.has(id)?children.get(id).flatMap(leaves):[id];
-  const communicationScales=()=>new Map(areas.filter(a=>['communication','inputs','inputs-part'].includes(byID.get(a.id)?.branch))
-    .map(a=>[a.id,Math.min(1,...leaves(a.id).map(id=>byID.get(id)?.contentScale||1))]));
+  // The scale an Inputs or Outside frame's tiles are drawn at: entered at
+  // it, the frame shows whole (owner, 2026-09-29: capped at 1, "Zoom into"
+  // an Inputs frame drawn at 3.4 had filled the canvas with one tile).
+  const communicationScales=()=>new Map(areas.filter(a=>['communication','inputs','inputs-part','outside'].includes(byID.get(a.id)?.branch))
+    .map(a=>[a.id,Math.min(...leaves(a.id).map(id=>byID.get(id)?.contentScale||1))]));
   const maximumZoom=()=>Math.max(2,...[...scales.values(),...communicationScales().values(),
     ...[...byID.values()].filter(n=>!n.children?.length).map(n=>n.contentScale||1)].map(scale=>1.8/scale),
     // Far enough into a part to read its declarations, and no farther.
@@ -523,10 +544,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // Where the drawn arrow crosses that border: its own route first.
     const rect={x:box.absolute.x,y:box.absolute.y,width:box.width,height:box.height};
     const point=[route,...matching].filter(Boolean).map(drawn=>borderCrossing(drawn.points||[],rect)).find(Boolean);
-    if(point)return {root,point,side:sideOf(point,box),obstacles:frameObstacles(root)};
+    if(point)return {root,point,side:sideOf(point,box)};
     // A part looked at whose route is drawn from its area's border gets a
     // short arrow of its own (placeStubs).
-    return box.frame?null:{root,stub:true,obstacles:frameObstacles(root)};
+    return box.frame?null:{root,stub:true};
   }
   // The short arrows of a part looked at, one per connection no drawn
   // route brings to its border (layout.mjs stubEnds): their plaques and the
@@ -539,18 +560,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const ends=stubEnds(box,outsides,.06*(n.width+n.height)/2);
     return stubs.map(label=>{
       const end=ends.get(label.id);Object.assign(label,{point:end.point,side:end.side});
-      return {id:`stub:${label.id}`,from:part,to:part,edgeIDs:label.edges,points:end.points,path:end.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' '),
+      return {id:`stub:${label.id}`,from:part,to:part,edgeIDs:label.edges,points:end.points,boxes:label.incoming?[label.outside,part]:[part,label.outside],path:end.points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' '),
         arrow:true,reverseArrow:false,possible:label.relations.every(relation=>relation.possible),init:false,near:true,kept:true,dim:false};
     });
-  }
-  // What a plaque on a frame's border must not cover: the boxes the frame
-  // holds and the band its title stands in above them.
-  function frameObstacles(root){
-    const box=placed.get(root),inner=layout.nodes.filter(n=>n.parentId===root);
-    if(!box.frame)return partObstacles(box);
-    const boxes=inner.map(n=>({left:n.absolute.x,top:n.absolute.y,right:n.absolute.x+n.width,bottom:n.absolute.y+n.height}));
-    if(!boxes.length)return boxes;
-    return [{left:box.absolute.x,top:box.absolute.y,right:box.absolute.x+box.width,bottom:Math.min(...boxes.map(b=>b.top))},...boxes];
   }
   // Every connection of a frame that its drawn arrows show, where they meet
   // its border.
@@ -561,16 +573,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const outside=byID.get(group.outside);
       return [{...group,id:`boundary:${frame}:${group.key}`,boundary:true,...at,title:outside?.name||outside?.title||''}];
     });
-  }
-  // A part's tiles and its title's band, as Part draws them: what a plaque
-  // on the border of a part looked at must not cover.
-  function partObstacles(n){
-    const data={...byID.get(n.id),...looseOf(n)},{box,scale}=partBox(data),grid=partGrid(data,box);
-    const {inset,columnGap:gap}=tileRoom,header=tileHeader(grid.divisor);
-    const left=column=>n.absolute.x+scale*(1+(inset+column*(grid.tileWidth+gap))/grid.divisor);
-    const top=y=>n.absolute.y+scale*(1+header+(inset+y)/grid.divisor);
-    return [{left:n.absolute.x,top:n.absolute.y,right:n.absolute.x+n.width,bottom:n.absolute.y+scale*(1+header)},
-      ...grid.blocks.map(block=>({left:left(block.column),top:top(block.y),right:left(block.column)+scale*grid.tileWidth/grid.divisor,bottom:top(block.y+block.height)}))];
   }
   // The arrowheads drawn, each the handle of the connection whose arrow it
   // ends: {route, tip, back, into, from}, `back` the point the arrow comes
@@ -587,19 +589,16 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         route.reverseArrow&&from?{route,tip:points[0],back:points[1],into:from,from:into}:null].filter(Boolean);
     });
   }
-  // The arrowhead under a screen point: within 8px of the 12px of arrow the
-  // head is drawn on, the nearest. Its line has no target; the head does.
-  function headAt(x,y){
-    if(!instance||initializing||!heads.length)return null;
-    const zoom=instance.getViewport().zoom,p=instance.screenToFlowPosition({x,y}),length=12/zoom;
-    let best=null,nearest=8/zoom;
-    for(const head of heads){
-      const dx=head.back.x-head.tip.x,dy=head.back.y-head.tip.y,d=Math.hypot(dx,dy)||1;
-      const along=Math.max(0,Math.min(length,((p.x-head.tip.x)*dx+(p.y-head.tip.y)*dy)/d));
-      const distance=Math.hypot(p.x-head.tip.x-dx/d*along,p.y-head.tip.y-dy/d*along);
-      if(distance<nearest){best=head;nearest=distance;}
-    }
-    return best;
+  // An arrow is its own handle (owner, 2026-09-29: the plaques at its ends
+  // had floated beside it): the pointer on the arrow's wide, unpainted hit
+  // path (RoutedEdge) is on the connection of the head nearest to it, and
+  // `at` is where it is on the arrow.
+  let drawnRoutes=new Map();
+  function routeHead(id,event){
+    const route=drawnRoutes.get(id);if(!route||!instance||initializing)return null;
+    const at=instance.screenToFlowPosition({x:event.clientX,y:event.clientY});
+    const own=heads.filter(head=>head.route.id===id).sort((a,b)=>Math.hypot(a.tip.x-at.x,a.tip.y-at.y)-Math.hypot(b.tip.x-at.x,b.tip.y-at.y));
+    return own[0]?{...own[0],at}:null;
   }
   const within=(id,frame)=>{for(let at=id;at;at=placed.get(at)?.parentId)if(at===frame)return true;return false;};
   const isFrame=id=>['area','component'].includes(byID.get(id)?.branch);
@@ -617,26 +616,27 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   // A connection that is not one of the looked-at frame's is kept for its card.
   function keepHeadLabel(label){if(!lookedLabels.some(other=>other.id===label.id))headLabels.set(label.id,label);}
-  // The screen box a card stands by for an arrowhead: 24px about its tip.
+  // The screen box a card stands by for an arrow: 24px about the point on it
+  // the pointer came to.
   function headRect(tip){
     const v=instance.getViewport(),box=host.getBoundingClientRect(),x=box.left+v.x+tip.x*v.zoom,y=box.top+v.y+tip.y*v.zoom;
     return {left:x-12,top:y-12,right:x+12,bottom:y+12,width:24,height:24};
   }
-  // The pointer comes onto an arrowhead, moves along it, or leaves it.
+  // The pointer comes onto an arrow, moves along it, or leaves it.
   function pointHead(head,event){
     if(onHead&&head&&onHead.head.route.id===head.route.id&&onHead.head.tip.x===head.tip.x&&onHead.head.tip.y===head.tip.y)return;
     const label=head&&headConnection(head);
-    // Onto its own card or chip the pointer has not left the look: their own
+    // Onto its own card the pointer has not left the look: the card's own
     // enter came first and keeps it.
-    const own=onHead&&event.target.closest?.(`[data-card="${CSS.escape(onHead.key)}"],[data-connection-label="${CSS.escape(onHead.key.slice(6))}"]`);
+    const own=onHead&&event.target.closest?.(`[data-card="${CSS.escape(onHead.key)}"]`);
     if(onHead&&onHead.key!==`label:${label?.id}`&&!own)leaveHandle(onHead.key,event);
-    onHead=null;host.classList.toggle('flow-on-end',!!label);
+    onHead=null;
     if(!label)return;
-    const key=`label:${label.id}`;
+    const key=`label:${label.id}`,at=head.at||head.tip;
     keepHeadLabel(label);onHead={key,head};
-    aimAt(key,{rect:()=>headRect(head.tip),box:placed.get(label.root),side:label.side});
+    aimAt(key,{rect:()=>headRect(at),box:placed.get(label.root),side:label.side});
   }
-  function leaveHead(event){if(onHead){leaveHandle(onHead.key,event);onHead=null;host.classList.remove('flow-on-end');}}
+  function leaveHead(event){if(onHead){leaveHandle(onHead.key,event);onHead=null;}}
   function clearHover(){hoverArea='';preview='';map.clearMapPreview?.();update?.();}
   function commitCamera(movement,subject){
     // React Flow's imperative camera methods need not emit onMoveEnd. Save
@@ -760,7 +760,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // infrastructure stood cut at both edges.
   function frameView(n,rect){
     const branch=byID.get(n.id).branch,component=branch==='component';
-    const scale=component?(componentFonts.get(n.id)||20)/20:['communication','inputs','inputs-part'].includes(branch)?communicationScales().get(n.id)||1:scales.has(n.id)?byID.get(n.id)?.contentScale||1:1;
+    const scale=component?(componentFonts.get(n.id)||20)/20:['communication','inputs','inputs-part','outside'].includes(branch)?communicationScales().get(n.id)||1:scales.has(n.id)?byID.get(n.id)?.contentScale||1:1;
     const least=scales.has(n.id)||branch==='inputs-part'?layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height):Infinity;
     return frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least});
   }
@@ -823,6 +823,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     commitCamera(instance.setViewport(zoom===view.zoom?view:at(zoom),{duration:420}),up).then(()=>follow(before));
   }
   function focus(id,center=true,smooth=true){
+    id=shown(id);
     const n=placed.get(id);if(!n)return;
     // A part read with one of its declarations named is entered at that
     // tile, unless the tile is in sight.
@@ -837,20 +838,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const contentScale=byID.get(n.id)?.contentScale||1;
     if(!center&&(n.frame&&frameInSight(n)||readableFocus(n.id,placed,byID,detailed,componentsOpen,viewport,rect.width,rect.height,communicationsOpen,openComponents)))return;
     locationSubject=id;
-    // A plain tile is entered with its display group: every tile of it opens
-    // and the camera frames the group, whose heading names them all. Framed
-    // alone, a tile read only "gethostbyname", the heading below the camera.
-    const group=record?.displayGroupTitle&&placed.get(`display-group:${record.displayGroup}`);
-    if(group){
-      const tiles=byID.get(group.id).tiles;
-      communicationsOpen=new Set([...communicationsOpen,...tiles]);arrive(tiles);
-      // The box the open group draws: its tiles and their heading, at the
-      // scale their calls are drawn at. A plain tile grown whole at the fit
-      // draws its calls larger than one: taken as one, Redis's group entered
-      // at 1280x720 stood 978px wide in an 894px canvas, a call cut off.
-      const {width,height}=groupLook(group),scale=Math.min(...tiles.flatMap(tile=>leaves(tile).map(id=>byID.get(id)?.contentScale||1)));
-      commitCamera(instance.setViewport(frameViewport({...group,width,height},layout.nodes,rect.width,rect.height,scale,{floor:staysOpen}),{duration:smooth?420:0}),id);return;
-    }
     if(n.frame){
       const branch=byID.get(n.id).branch,component=branch==='component';
       // Entering a frame opens it, so it may be shown as small as an open frame
@@ -860,8 +847,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // too: they stay open there, as a pinch opens them farther in.
       const groups=branch==='inputs'?(children.get(n.id)||[]).filter(id=>byID.get(id)?.branch==='inputs-part'):[];
       if(['communication','inputs','inputs-part'].includes(branch))communicationsOpen=new Set([...communicationsOpen,n.id,rootOf(n.id),...groups]);
-      else if(!component)detailed=new Set([...detailed,n.id]);
-      if(!component)arrive([n.id,...groups]);
+      else if(!component&&branch!=='outside')detailed=new Set([...detailed,n.id]);
+      if(!component&&branch!=='outside')arrive([n.id,...groups]);
       commitCamera(instance.setViewport(frameView(n,rect),{duration:smooth?420:0}),id);return;
     }
     // A part is framed whole, at its reading scale when it fits there.
@@ -956,19 +943,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         [...(children.get(n.id)||[])].sort((a,b)=>(byID.get(b)?.branch==='area')-(byID.get(a)?.branch==='area'));
       const textHeight=(text,font,lineHeight)=>wrapText(text,contentWidth,font,measure).length*lineHeight;
       const listHeight=areaIDs.length?7+areaIDs.reduce((h,id)=>h+10+textHeight(byID.get(id).name||byID.get(id).title,'500 13px system-ui',18),0):0;
-      const counts=inventory.parts?t('{0} parts',inventory.parts):'';
       const roleHeight=item.role?textHeight(item.role,'600 13px system-ui',18)+10:0;
-      const countsHeight=textHeight(counts,'500 12px system-ui',17)+10;
-      return {communication,inputs,areaIDs,listHeight,counts,roleHeight,countsHeight,inputHeight:inputs?item.overviewHeightAtWidth(screenWidth):0};
+      return {communication,inputs,areaIDs,listHeight,roleHeight,inputHeight:inputs?item.overviewHeightAtWidth(screenWidth):0};
     },[visible,contentWidth]);
     if(!heading)return null;
-    const {communication,inputs,areaIDs,listHeight,counts,roleHeight,countsHeight}=text,scale=fit/zoom;
+    const {communication,inputs,areaIDs,listHeight,roleHeight}=text,scale=fit/zoom;
     let remaining=screenHeight-32-heading.height-listHeight-(areaIDs.length?10:0);
     const listOverflow=remaining<0;
     const showRole=!communication&&!inputs&&roleHeight>0&&remaining>=roleHeight;
     if(showRole)remaining-=roleHeight;
-    const showCounts=!communication&&!inputs&&remaining>=countsHeight;
-    if(showCounts)remaining-=countsHeight;
     const descriptionLines=Math.floor((remaining-10)/18);
     const x=n.absolute.x+8*scale,y=n.absolute.y+8*scale;
     return <div key={'component-'+n.id} className={`flow-component-overview nopan ${item.branch==='communication'?'flow-communication-overview':item.branch==='inputs'?'flow-input-collection':''} ${muted?'flow-node-muted':''}`}
@@ -982,49 +965,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
         <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,false);}}>{byID.get(id).name||byID.get(id).title}</button>
       </li>)}</ul>}
-      {showCounts&&<div className="flow-inside-counts">{counts}</div>}
     </div>;
-  }
-  // A display group's frame carries the text its frames all name, once, in
-  // its band under the tiles or after them, where no arrow runs. It is laid
-  // out at the whole-map camera like their summaries and zooms with the map;
-  // once the tiles open it reads at their open frames' title size, and the
-  // open tiles stay plain under it: three open tiles each titled "DNS
-  // resolver" said one thing three times. It is no participant: nothing to
-  // hover, choose or enter.
-  // The band is the heading's room, so it shrinks with the heading: the
-  // frame of an open group wraps its tiles and their heading, and the room
-  // the closed heading takes at the whole-map camera is left outside it
-  // instead of standing framed and empty under the open calls.
-  const groupHeadingLines=new Map();
-  function groupLook(n){
-    const item=byID.get(n.id),zoom=systemViewport(layout.nodes,layoutSize.width,layoutSize.height).zoom,beside=item.side==='right';
-    const room=beside?Infinity:n.width*zoom,key=`${n.id} ${room}`;
-    if(!groupHeadingLines.has(key))groupHeadingLines.set(key,item.headingAt(room));
-    const heading=groupHeadingLines.get(key);
-    const open=item.tiles.some(id=>communicationsOpen.has(id)),need=beside?heading.extent:heading.height;
-    // A band left short of the heading takes it smaller, never over the tiles.
-    // Open, it takes the 17px of the open frames' titles at their own scale:
-    // shrunk by the closed band's shortfall as well, it read at 13.4px over
-    // 16.2px calls when Redis's 1280x720 map entered it.
-    const closed=Math.min(1,item.band*zoom/need)/zoom;
-    const scale=open?Math.min(closed,(byID.get(item.tiles[0])?.summaryScale||1)*17/heading.fontSize):closed;
-    const band=open?Math.min(item.band,need*scale):item.band;
-    return {item,heading,beside,scale,band,width:beside?n.width-item.band+band:n.width,height:beside?n.height:n.height-item.band+band};
-  }
-  function GroupHeading({node:n,muted}){
-    const {heading,beside,scale,band,width,height}=groupLook(n);
-    const x=beside?n.absolute.x+width-band+8*scale:n.absolute.x+8*scale;
-    const y=beside?n.absolute.y+16:n.absolute.y+height-band+4*scale;
-    return <div className={`flow-group-heading ${muted?'flow-node-muted':''}`} data-group-heading={n.id}
-      style={{transform:`translate(${x}px,${y}px) scale(${scale})`,width:heading.width,
-        fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}}>{heading.lines.join('\n')}</div>;
   }
   function ComponentPresentation({node,focused,muted}){
     const item=byID.get(node.id),open=item.branch==='component'?openComponents.has(node.id):communicationsOpen.has(node.id);
     const {fit,zoom}=useOverviewFit(node);
-    // Open, a plain tile shows its calls under its group's heading alone.
-    if(open&&item.displayGroupTitle)return null;
     return open?<FrameTitle node={node} item={item} focused={focused} enter={enter} select={select} muted={muted}/>:<>
       <ComponentOverview node={node} fit={fit} zoom={zoom} muted={muted}/><ZoomMark node={node} item={item} fitScale={fit<1?fit/zoom:undefined} enter={enter} select={select} muted={muted}/>
     </>;
@@ -1044,7 +989,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       // The closed card is a title over a foot row and the role mark: the
       // title is fitted into what the foot row leaves.
-      return new Map(layout.nodes.filter(n=>scales.has(n.id)||byID.get(n.id)?.branch==='inputs-part').map(n=>[n.id,groupHeading(n,byID.get(n.id).name||byID.get(n.id).title,scale,measure,56,48)]));
+      // Closed cards of one layer take one type size, the size their layer
+      // opens at; only a card too small for it takes its own smaller size.
+      const closedCards=layout.nodes.filter(n=>scales.has(n.id)||byID.get(n.id)?.branch==='inputs-part');
+      const title=n=>byID.get(n.id).name||byID.get(n.id).title;
+      return new Map(closedCards.map(n=>[n.id,groupHeading(n,title(n),scale,measure,56,48)]));
     },[layoutKey]);
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
@@ -1104,7 +1053,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       return [{...group,id:`boundary:${area}:${group.key}`,boundary:true,...at,title:outside.name||outside.title}];
     });
     const stubRoutes=deep?placeStubs(labels,deep):[];
-    endPlaques(labels,parts,id=>wholeComponent?childOf(id):id);
     const labelsShown=!!area&&visible(area)&&(detailed.has(area)||openComponents.has(area)||area===deep);
     lookedLabels=labelsShown?labels:[];lastMatchingOf=matchingOf;
     // A connection opened from its arrowhead that is not one of the looked-at
@@ -1121,7 +1069,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const active=end?end.activeEdges:state.activeEdges;
     const drawn=[...(end?routeDrawing(drawing.edges,closed,end.activeEdges,recede,boundary,initVisible,null):routes),
       ...stubRoutes.map(route=>({...route,on:route.edgeIDs.some(id=>active.has(id))}))];
-    heads=drawnHeads(drawn);
+    heads=drawnHeads(drawn);drawnRoutes=new Map(drawn.map(route=>[route.id,route]));
     const shownContext=end?focusAncestors(end.focus,placed):context;
     // Far enough into one part to read its declarations.
     // The magnifier enters at the scale the part's declarations read at: the
@@ -1150,20 +1098,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // frame's own parts stay as they are.
     // A closed frame stands for the parts behind an end that it hides.
     const subjects=end?new Set([...end.focus].map(id=>closed(id)?.id||id)):state.mode==='search'?state.focus:new Set([state.subject].filter(Boolean));
-    // A frame stands for its parts; a display group (the frames sharing one
-    // destination's text) for its frames: its frame and heading stay with them.
-    const standsFor=id=>{const n=placed.get(id),item=byID.get(id);return [id,...(item?.display?(item.tiles||[]).flatMap(standsFor):n?.frame?leaves(id):[])];};
+    // A frame stands for its parts.
+    const standsFor=id=>{const n=placed.get(id);return [id,...(n?.frame?leaves(id):[])];};
     const muted=recedes(rest,shown,subjects,standsFor);
     const nodes=drawing.nodes.map(n=>{
       const item=byID.get(n.id),focused=shown.focus.has(n.id);
-      // A display group draws the box its heading's band leaves it.
-      const box=n.display&&item?.headingAt?groupLook(n):n;
+      const box=n;
       const reading=view.scope===n.id||view.operation===n.id;
       const contains=n.frame&&leaves(n.id).some(id=>shown.participants.has(id));
       // The other end of a looked-at end stays as it is: only the parts
       // behind the end are outlined.
       const on=!end&&(shown.participants.has(n.id)||contains&&(overview||shut(n.id)));
-      return {...n,width:box.width,height:box.height,type:n.frame?'area':'part',selected:reading,measured:{width:box.width,height:box.height},
+      return {...n,width:box.width,height:box.height,type:n.frame?'area':item?.branch==='chip'?'chip':'part',selected:reading,measured:{width:box.width,height:box.height},
         selectable:false,draggable:false,connectable:false,
         style:{width:box.width,height:box.height,visibility:visible(n.id)?'visible':'hidden'},
         className:`${muted(n.id)?'flow-node-muted':''} ${subjects.has(n.id)?'flow-node-focus':on&&!focused?'flow-node-connected':''} ${shownContext.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''} ${lit.has(n.id)?'flow-node-lit':''}`,
@@ -1177,7 +1123,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         ariaLabel:'',domAttributes:{'aria-hidden':true},
         data:route};
     });
-    return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+    // Arrows stand under the boxes they join and over the frames holding
+    // them (zIndexMode manual: every arrow at 0, a box one over its frame):
+    // lifted over the parts inside open frames, their lines had crossed
+    // cards' text and their hit paths had taken the pointer off a part.
+    return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} zIndexMode="manual"
       nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}
       nodesFocusable={false} edgesFocusable={false} disableKeyboardA11y
       deleteKeyCode={null} selectionKeyCode={null} multiSelectionKeyCode={null} panActivationKeyCode={null} zoomActivationKeyCode={null}
@@ -1197,14 +1147,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       onNodeMouseEnter={(_,n)=>enter(n.id)}
       onMouseMove={event=>{
         if(panning||!instance)return;
-        // An arrowhead on empty canvas is its connection's handle.
-        const head=event.target.classList?.contains('react-flow__pane')?headAt(event.clientX,event.clientY):null;
-        pointHead(head,event);
-        if(look.move(event.clientX,event.clientY,performance.now(),!!onHead||!!event.target.closest?.('.flow-connection-label,.flow-floating-card')))update?.();
+        // An arrow is its connection's handle.
+        const hit=event.target.closest?.('[data-edge-hit]');
+        pointHead(hit?routeHead(hit.dataset.edgeHit,event):null,event);
+        if(look.move(event.clientX,event.clientY,performance.now(),!!onHead||!!event.target.closest?.('.flow-floating-card')))update?.();
         pump();
         if(!hover.move(event.clientX,event.clientY))return;
-        // Labels, arrowheads and the cards they open stay with the frame being read.
-        if(onHead||event.target.closest('.flow-connection-label,.flow-floating-card'))return;
+        // Arrows and the cards they open stay with the frame being read.
+        if(onHead||event.target.closest('.flow-floating-card'))return;
         // A frame's title looks at the whole frame, as its empty space does.
         const frameTitle=event.target.closest('[data-frame-title]');
         if(frameTitle){enter(frameTitle.dataset.frameTitle);return;}
@@ -1218,9 +1168,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         if(area)enter(area.id);
       }}
       onPaneClick={event=>{
-        // A click on an arrowhead reads its connection, as its chip does.
-        const head=headAt(event.clientX,event.clientY),label=head&&headConnection(head);
-        if(label){keepHeadLabel(label);openEnd(label,event);return;}
         // A click on empty canvas first closes an open card; the next one
         // goes where it points.
         if(closeCards())return;
@@ -1229,7 +1176,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
           const frame=drawing.nodes.find(n=>n.frame&&!n.display&&visible(n.id)&&byID.get(n.id)?.branch!=='inputs-part'&&
             (byID.get(n.id)?.branch==='component'?!openComponents.has(n.id):!communicationsOpen.has(n.id))&&
             p.x>=n.absolute.x&&p.x<=n.absolute.x+n.width&&p.y>=n.absolute.y&&p.y<=n.absolute.y+n.height);
-          if(frame){select(frame.id,event,true);return;}
+          // A click anywhere on a closed frame reads it, the camera staying
+          // (owner, 2026-09-29): only its magnifier enters it.
+          if(frame){select(frame.id,event,false);return;}
         }
         clearHover();
       }}
@@ -1249,15 +1198,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         <marker id="flow-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth={emphasisedHead} markerHeight={emphasisedHead} orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#34445b"/></marker>
       </defs></svg>
       <ViewportPortal>
-        {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))&&!closedGroup(n.id)).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
+        {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs','outside'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))&&!closedGroup(n.id)).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)} muted={muted(n.id)}/>)}
-        {drawing.nodes.filter(n=>n.display&&byID.get(n.id)?.headingAt).map(n=><GroupHeading key={'group-'+n.id} node={n} muted={muted(n.id)}/>)}
+        {drawing.nodes.filter(n=>byID.get(n.id)?.branch==='outside').map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>(scales.has(n.id)&&!detailed.has(n.id)||closedGroup(n.id))&&visible(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>closedGroup(n.id)&&visible(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} muted={muted(n.id)}
           select={(id,event)=>{hover.remember(event.clientX,event.clientY);focus(id);}}/>)}
-        {labelsShown&&labels.filter(label=>!label.hidden).map(label=><ConnectionLabel key={label.id} label={label}/>)}
         {cardLabels.filter(label=>look.key===`label:${label.id}`||pinnedLabels.has(label.id)).map(label=><LabelCard key={'card:'+label.id} label={label} frame={placed.get(label.root)} labels={cardLabels}/>)}
       </ViewportPortal>
     </ReactFlow>;
@@ -1265,7 +1213,6 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // What an arrow end stands for: every call behind it, grouped by the part
   // it is made from, then the part it goes into (call-card.mjs).
   const nameOf=id=>byID.get(id)?.branch==='inputs'?t('Inputs'):byID.get(id)?.name||byID.get(id)?.title||'';
-  const partsOf=id=>leaves(id).filter(leaf=>!byID.get(leaf)?.activation).length;
   const labelCard=label=>callCard(label.relations,{nameOf,incoming:label.incoming,groupable:id=>!byID.get(id)?.activation});
   // The same frames' calls the other way, when the map has them.
   const reverseOf=(label,labels)=>labels.find(other=>other.area===label.area&&other.outside===label.outside&&other.incoming!==label.incoming);
@@ -1332,19 +1279,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const toGroup=id=>event=>{event.stopPropagation();const body=event.currentTarget.closest('.flow-connection-calls')?.querySelector('.flow-card-body'),group=body?.querySelector(`[data-call-group="${CSS.escape(id)}"]`);if(body&&group)body.scrollTop=group.offsetTop-body.offsetTop;};
     const head=<header className="flow-card-head">
       <div className="flow-card-title">{name(fromFrame)}<i>→</i>{name(intoFrame)}</div>
-      <p className="flow-card-count">{cardCount(card,partsOf(fromFrame),partsOf(intoFrame))}
-        {back>0&&<> · <button type="button" onClick={openReverse}>{t('{0} go the other way',back)}</button></>}</p>
+      {back>0&&<p className="flow-card-count"><button type="button" onClick={openReverse}>{t('Calls the other way')}</button></p>}
     </header>;
-    // It stands by the handle the pointer rested on, its chip or its arrowhead.
-    const via=lookHandle?.key===key?lookHandle:null,chip=()=>host.querySelector(`[data-connection-label="${CSS.escape(label.id)}"]`)?.getBoundingClientRect();
+    // It stands by the point of the arrow the pointer rested on.
+    const via=lookHandle?.key===key?lookHandle:null;
     return <FloatingCard cardKey={key} side={via?.side||label.side} frame={via?.box||frame} content={String(pinned)} className="flow-arrow-card" head={head}
-      handle={()=>via?.rect()||chip()||(label.point&&headRect(label.point))}>
+      handle={()=>via?.rect()||(label.point&&headRect(label.point))}>
       {pinned&&card.from.length+card.into.length>2&&<div className="flow-card-index">
-        <ul>{card.from.map(part=><li key={part.id}><button type="button" onClick={toGroup(part.id)}>{part.name}</button><b>{part.count}</b></li>)}</ul>
+        <ul>{card.from.map(part=><li key={part.id}><button type="button" onClick={toGroup(part.id)}>{part.name}</button></li>)}</ul>
         <i>→</i>
-        <ul>{card.into.map(part=><li key={part.id}><span>{part.name}</span><b>{part.count}</b></li>)}</ul>
+        <ul>{card.into.map(part=><li key={part.id}><span>{part.name}</span></li>)}</ul>
       </div>}
-      <CallRows card={card}/></FloatingCard>;
+      <CallRows card={card} counts={false}/></FloatingCard>;
   }
   // A click on an arrow end, its chip or its arrowhead, reads its frame's
   // connections in the column, that connection open (owner's 3b); its card
@@ -1354,27 +1300,19 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     if(callbacks.openConnection){closeCards();hover.remember(event.clientX,event.clientY);hover.pause();callbacks.openConnection(label.area,label.key);return;}
     if(pinnedLabels.has(label.id))closeCard(key);else{look.enter(key);pin(key);}
   }
-  // An arrow end's plaque sits on the frame's border where its arrow meets
-  // it, at the one size of the former one-digit chip whatever the zoom, and
-  // steps out only as far as it must to cover nothing the frame holds
-  // (owner, 2026-09-28: scaled with the frame, they had grown into large
-  // grey pills over the parts). It opens its card once the pointer rests on
-  // it, and is dark while its card, or its twin's, is open or kept; a click
-  // reads the connection.
-  function ConnectionLabel({label}){
-    const {zoom}=useViewport();
-    const key=`label:${label.id}`,ends=[label.id,label.twin];
-    const p=plaqueCentre(label.point,label.side,label.obstacles||[],{x:plaqueSize.width/2/zoom,y:plaqueSize.height/2/zoom});
-    const style={transform:`translate(${p.x}px,${p.y}px) scale(${1/zoom}) translate(-50%,-50%)`,transformOrigin:'top left'};
-    return <div className="flow-connection-label flow-boundary-label nopan" style={style} data-connection-outside={label.outside} data-connection-label={label.id}
-      onMouseEnter={event=>{const chip=event.currentTarget;aimAt(key,{rect:()=>chip.isConnected?chip.getBoundingClientRect():null,box:placed.get(label.root),side:label.side});}}
-      onMouseLeave={event=>leaveHandle(key,event)}>
-      <button type="button" aria-label={label.title} className={ends.some(id=>look.key===`label:${id}`||pinnedLabels.has(id))?'flow-label-pinned':''}
-        onClick={event=>{event.stopPropagation();openEnd(label,event);}}>{label.all?t('all'):''}</button>
-    </div>;
-  }
   map.classList.add('flow-enabled');source.style.display='none';source.setAttribute('aria-hidden','true');
+  // The placed boxes as the canvas draws them, for the geometry checks
+  // (visual/geometry.mjs): world rectangles, containment and what is shown.
+  map.flowGeometry=()=>({nodes:layout.nodes.map(n=>({id:n.id,parentId:n.parentId||'',frame:!!n.frame,branch:byID.get(n.id)?.branch||'',
+    x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height,shown:!closed(n.id)}))});
   const root=createRoot(host);flushSync(()=>root.render(<App/>));
+  // A click on an arrow reads its connection in the column, the camera
+  // staying (openEnd).
+  host.addEventListener('click',event=>{
+    const hit=event.target.closest?.('[data-edge-hit]'),head=hit&&routeHead(hit.dataset.edgeHit,event),label=head&&headConnection(head);
+    if(!label)return;
+    event.stopPropagation();keepHeadLabel(label);openEnd(label,event);
+  });
   map.addEventListener('pointerleave',clearHover);
   // Restoring the map's pinned emphasis must not remove connection evidence
   // while the reader moves into the adjacent column to use its source links.
@@ -1464,7 +1402,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   return {get layout(){return layout;},focus,showInput,capture,restore,clearHover,clearMember,mountConnections,frameConnections,light,overview:()=>fitOverview(420),update(next){
     if(memberChoice&&(next.scope||'')!==memberChoice.part)memberChoice=null;
     if(view.scope!==next.scope||view.operation!==next.operation){hover.pause();preview='';map.clearMapPreview?.();}
-    view={...initial,...next,scope:next.scope||'',
-      selected:new Set(next.selected||[]),matched:new Set(next.matched||[])};update();
+    view={...initial,...next,scope:shown(next.scope||''),
+      selected:new Set([...(next.selected||[])].map(shown)),matched:new Set([...(next.matched||[])].map(shown))};update();
   }};
 };

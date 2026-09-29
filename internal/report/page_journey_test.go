@@ -1,9 +1,7 @@
 package report
 
 import (
-	"bytes"
 	"fmt"
-	"html/template"
 	"maps"
 	"slices"
 	"strings"
@@ -161,8 +159,8 @@ func TestInputPathIsTheWitnessTraceOrderedByCallDepth(t *testing.T) {
 // One "TCP endpoint" box took arrows from all three Redis programs, though
 // for redis-cli that endpoint is redis-server and for redis-server its
 // master: equal destination text proves no identity. Each program keeps its
-// own destination frame, tile and arrow; frames naming the same destination
-// only share a display group. One call written once is one tile (owner's
+// own destination, tile and arrow, its destinations in its own Outside
+// frame. One call written once is one tile (owner's
 // decision a): Redis's three programs each drew a "DNS resolver" frame with
 // gethostbyname, called at anet.c:146 by all three and at anet.c:115 by
 // redis-benchmark and redis-cli; it stands once, with an arrow from each
@@ -196,7 +194,7 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 			switch {
 			case node.Branch == "communication":
 				frames[node.ID] = node
-			case node.ItemKind == "External communication":
+			case node.ItemKind == "External communication" && node.Branch == "":
 				tiles[node.ID] = node
 			}
 		}
@@ -217,7 +215,7 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	got := shared.SystemMap()
 	frames, tiles := drawn(got)
 	frame, tile := frames["system-t1-out-b108-destination"], tiles["system-t1-out-b108"]
-	if frame.Owner != "t1" || frame.Children != tile.ID || frame.DisplayGroup != "" || len(frames) != 2 || len(tiles) != 2 {
+	if frame.Owner != "t1" || frame.Children != tile.ID || len(frames) != 2 || len(tiles) != 2 {
 		t.Fatalf("one call written once is not one tile: frames %v tiles %v", frames, tiles)
 	}
 	if want := []string{"system-t2-out-b108", "system-t2-out-b109", "system-t4-out-b108", "system-t4-out-b109"}; !slices.Equal(tile.Aliases, want) {
@@ -231,59 +229,66 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	apart := view(resolve("t1", "anet.c", 115), []pageOutbound{resolve("t2", "benchmark.c", 20)}, []pageOutbound{resolve("t4", "cli.c", 30)})
 	got = apart.SystemMap()
 	frames, tiles = drawn(got)
-	groups := map[string]bool{}
+	outside := map[string]pageMapNode{}
+	for _, node := range got.Nodes {
+		if node.Branch == "outside" {
+			outside[node.Owner] = node
+		}
+	}
 	for _, target := range []string{"t1", "t2", "t4"} {
 		frame, tile := frames["system-"+target+"-out-b108-destination"], tiles["system-"+target+"-out-b108"]
 		if frame.Owner != target || tile.Owner != target || frame.Children != tile.ID || frame.FullTitle != "DNS resolver" {
 			t.Fatalf("program %s lost its own destination: frame %+v tile %+v", target, frame, tile)
 		}
-		groups[frame.DisplayGroup] = true
 		if from := callers(got, tile.ID); len(from) != 1 || !from[targetMapNodeID(target, "n-g1")] {
 			t.Fatalf("the arrows to %s's tile come from %v", target, from)
 		}
-	}
-	if len(groups) != 1 || groups[""] {
-		t.Fatalf("frames naming one destination stand in one display group: %v", groups)
-	}
-	if lone := frames["system-t1-out-b120-destination"]; lone.ID == "" || lone.DisplayGroup != "" || lone.DisplayGroupTitle != "" {
-		t.Fatalf("a destination only one program names needs no group: %+v", lone)
-	}
-	if len(frames) != 4 || len(tiles) != 4 {
-		t.Fatalf("frames %d, tiles %d", len(frames), len(tiles))
-	}
-	// The first screen showed "DNS resolver" three times side by side: the
-	// page gives the group that text once, for its frame to carry, and each
-	// frame keeps its own title for its reading.
-	var page bytes.Buffer
-	parsed, err := template.New("map").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/map.html", "templates/html/partials.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := parsed.ExecuteTemplate(&page, "map.html", got); err != nil {
-		t.Fatal(err)
-	}
-	if carried := strings.Count(page.String(), `data-display-group-title="DNS resolver"`); carried != 3 {
-		t.Fatalf("%d frames tell the page their group carries their destination text", carried)
-	}
-	for _, target := range []string{"t1", "t2", "t4"} {
-		if frame := frames["system-"+target+"-out-b108-destination"]; frame.DisplayGroupTitle != "DNS resolver" || frame.FullTitle != "DNS resolver" {
-			t.Fatalf("program %s's frame: %+v", target, frame)
+		// Each program's destinations stand in its own Outside frame, read
+		// as its external catalogue.
+		want := frame.ID
+		if target == "t1" {
+			want += " system-t1-out-b120-destination"
+		}
+		if box := outside[target]; box.ID != "system-outside-"+target || box.Children != want || box.DetailsID != target+"-external" {
+			t.Fatalf("program %s's Outside frame: %+v", target, box)
 		}
 	}
-	// Grouped without regard to letter case, "DNS Resolver" and "DNS resolver"
-	// stand together but are not one text: each frame keeps its own heading.
-	apart.Sections[2].Outbound[0].Destination = "DNS Resolver"
-	together := 0
-	for _, node := range apart.SystemMap().Nodes {
-		if node.Branch == "communication" && node.DisplayGroup != "" {
-			together++
-			if node.DisplayGroupTitle != "" {
-				t.Fatalf("differently spelled frames lost their own headings: %+v", node)
-			}
+	if len(frames) != 4 || len(tiles) != 4 || len(outside) != 3 {
+		t.Fatalf("frames %d, tiles %d, Outside frames %d", len(frames), len(tiles), len(outside))
+	}
+}
+
+// Every call naming no destination is one "not established" destination,
+// after the named ones in its program's Outside frame: litestream's Outside
+// had held two "Program not established" frames.
+func TestOutsideFrameHoldsOneUnestablishedDestinationLast(t *testing.T) {
+	m := &pageMap{Nodes: []pageMapNode{{ID: "n-g1", FullTitle: "Commands"}}}
+	scopeTargetMapIDs(m, "t1")
+	view := pageView{Sections: []*pageSection{{ID: "t1", programTargetID: "t1", ShortLabel: "litestream", Map: m, Outbound: []pageOutbound{
+		{ID: "t1-out-b1", Program: true, External: "os/exec.Command", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "main.go:10"}},
+		{ID: "t1-out-b2", Destination: "Amazon S3", External: "s3.PutObject", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "s3.go:20"}},
+		{ID: "t1-out-b3", Program: true, ProgramNotNamed: true, External: "os/exec.CommandContext", MapGroup: "g1", Source: "model", Anchor: pageAnchor{Text: "exec.go:30"}},
+	}}}}
+	got := view.SystemMap()
+	var destinations []pageMapNode
+	var outside pageMapNode
+	for _, node := range got.Nodes {
+		switch node.Branch {
+		case "communication":
+			destinations = append(destinations, node)
+		case "outside":
+			outside = node
 		}
 	}
-	if together != 3 {
-		t.Fatalf("%d differently spelled frames stand together", together)
+	if len(destinations) != 2 || destinations[0].FullTitle != "Amazon S3" || destinations[0].Unestablished {
+		t.Fatalf("named destinations: %+v", destinations)
+	}
+	last := destinations[1]
+	if !last.Unestablished || last.FullTitle != "not established" || last.Children != "system-t1-out-b1 system-t1-out-b3" {
+		t.Fatalf("the calls naming no destination are not one last destination: %+v", last)
+	}
+	if outside.Children != destinations[0].ID+" "+last.ID {
+		t.Fatalf("the Outside frame holds %q", outside.Children)
 	}
 }
 

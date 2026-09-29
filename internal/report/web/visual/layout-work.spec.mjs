@@ -85,9 +85,11 @@ for(const inputs of [true,false]){
     await expect.poll(async()=>(await work(page)).pending).toBe(0);
     const initial=await work(page),placed=await geometry(page),prepared=manyExternalInventory({inputs});
     expect(initial.workers).toBe(1);expect(initial.inner).toBeGreaterThan(0);expect(initial.outer).toBeGreaterThan(0);expect(initial.unknown).toBe(0);
-    // Every prepared record is placed; the only nodes added are the input
-    // collection's groups by the part holding their handlers (`inputs~part`).
-    const records=new Set(prepared.records.map(node=>node.id));
+    // Every prepared record is placed but the calls a destination's chip
+    // stands for; the only nodes added are the input collection's groups by
+    // the part holding their handlers (`inputs~part`).
+    const calls=new Set(prepared.records.filter(node=>node.branch==='communication').flatMap(node=>node.children||[]));
+    const records=new Set(prepared.records.map(node=>node.id).filter(id=>!calls.has(id)));
     expect([...records].filter(id=>!placed.some(node=>node.id===id)),'every record is placed').toEqual([]);
     expect(placed.map(node=>node.id).filter(id=>!records.has(id)&&!/^[^~]+-inputs~[^~]+$/.test(id)),'nothing but input groups is added').toEqual([]);
 
@@ -120,7 +122,7 @@ for(const inputs of [true,false]){
     const resized=await work(page);
     expect(resized.inner,'Resizing reuses every already placed interior').toBe(initial.inner);
     expect(resized.workers).toBe(1);expect(resized.unknown).toBe(0);
-    expectAffineInteriors(placed,await geometry(page),prepared.records);
+    expectAffineInteriors(placed,await geometry(page),prepared.records.filter(node=>!calls.has(node.id)).map(node=>node.branch==='communication'?{...node,children:[]}:node));
     expect(errors).toEqual([]);
     await testInfo.attach('Native layout workload',{body:JSON.stringify({initial,resized,requests:await page.evaluate(()=>nativeLayoutWork.requests)},null,2),contentType:'application/json'});
     await testInfo.attach('Reused interiors after resizing',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});

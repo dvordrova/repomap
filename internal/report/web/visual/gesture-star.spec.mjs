@@ -70,11 +70,13 @@ test('one target and twenty external systems have readable overview cards',async
   const map=page.locator('[data-map]');
   await expect(map).toHaveAttribute('data-fixture-ready','true',{timeout:30000});
   await testInfo.attach('Initial placement timing',{body:JSON.stringify({readyMs:Date.now()-started}),contentType:'application/json'});
-  await expect(page.locator('[data-component-overview]')).toHaveCount(21);
+  // The twenty systems are chips of one Outside frame beside the target.
+  await expect(page.locator('[data-component-overview]')).toHaveCount(1);
+  await expect(page.locator('.flow-chip')).toHaveCount(20);
   await testInfo.attach('journey-01 — One target · twenty external systems · initial overview',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
-  for(const item of singleTargetInventory().records.filter(n=>n.children&&n.branch!=='area')){
+  for(const item of singleTargetInventory().records.filter(n=>n.branch==='component'||n.branch==='communication')){
     const frame=await page.locator(`.react-flow__node[data-id="${item.id}"]`).boundingBox();
-    const title=page.locator(`[data-component-overview="${item.id}"] strong`);
+    const title=page.locator(`[data-component-overview="${item.id}"] strong,.react-flow__node[data-id="${item.id}"] .flow-chip-name`);
     await expect(title).toHaveText(item.title);
     const rects=await title.evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);return [...range.getClientRects()].map(r=>({left:r.left,right:r.right,top:r.top,bottom:r.bottom}));});
     for(const rect of rects){
@@ -116,54 +118,3 @@ test('one target and twenty external systems have readable overview cards',async
   await testInfo.attach('journey-02 — Pinch reveals the target interior without its zoom button',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });
 
-test('external arrows end at the frame with its plaque beside them',async({page},testInfo)=>{
-  await page.goto('/');
-  const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
-  await page.locator('[data-zoom-into="front"]').click();
-  await expect.poll(()=>map.evaluate(map=>map.captureViewport().openComponents.includes('front'))).toBe(true);
-  await page.locator('[data-summary-area="editing"] strong,[data-frame-title="editing"]>strong').click();
-  await expect(page.locator('.react-flow__node[data-id="submission"]')).toBeVisible();
-  let previous='',stable=0;
-  await expect.poll(async()=>{const v=JSON.stringify(await map.evaluate(map=>map.captureViewport()));stable=v===previous?stable+1:0;previous=v;return stable;},{intervals:[100]}).toBeGreaterThanOrEqual(2);
-  await page.mouse.move(1430,890);
-  await page.locator('[data-frame-title="editing"]>strong').hover();
-  await expect(map).toHaveAttribute('data-subject','editing');
-  const label=page.locator('.flow-boundary-label[data-connection-outside="api"]');
-  await expect(label,'an end joining some of the parts is a plain handle').toHaveText('');
-  const external=await map.evaluate(map=>map.visibleEdges.find(e=>e.from==='submission'&&e.to==='post'));
-  const drawn=await page.locator(`[data-edge-ids~="${external.id}"] path:not(.flow-edge-casing)`).getAttribute('d');
-  expect(drawn).toBe(external.outerSegments.map(points=>points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')).join(' '));
-  await testInfo.attach('journey-01 — External lines stay outside',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
-  // The outer frame can extend beyond this close area view. Pan to its native
-  // endpoint without changing scale or relying on an offscreen DOM assertion.
-  const marker=await label.boundingBox(),canvas=await page.locator('.flow-root').boundingBox();
-  const viewport=await map.evaluate(map=>map.captureViewport());
-  await map.evaluate((map,state)=>map.restoreReadingState(state),{scope:'editing',viewport:{...viewport,
-    x:viewport.x+canvas.x+canvas.width/2-marker.x-marker.width/2,
-    y:viewport.y+canvas.y+canvas.height/2-marker.y-marker.height/2}});
-  await expect(label).toBeInViewport();
-  const endpoint=await map.evaluate(map=>{
-    const edge=map.visibleEdges.find(e=>e.from==='submission'&&e.to==='post');
-    const m=new DOMMatrixReadOnly(getComputedStyle(map.querySelector('.react-flow__viewport')).transform);
-    const host=map.querySelector('.flow-root').getBoundingClientRect(),p=edge.outerSegments[0][0];
-    return {x:host.x+m.e+p.x*m.a,y:host.y+m.f+p.y*m.d};
-  });
-  // The plaque sits on the frame's border where its arrow meets it and
-  // covers nothing the frame holds (owner, 2026-09-28).
-  const markerBox=await label.locator('button').boundingBox(),rootBox=await page.locator('.react-flow__node[data-id="front"]').boundingBox();
-  const centre={x:markerBox.x+markerBox.width/2,y:markerBox.y+markerBox.height/2};
-  const border=Math.min(Math.abs(centre.x-rootBox.x),Math.abs(centre.x-rootBox.x-rootBox.width),Math.abs(centre.y-rootBox.y),Math.abs(centre.y-rootBox.y-rootBox.height));
-  expect(border,'The plaque stands on the frame border').toBeLessThanOrEqual(markerBox.width/2+.5);
-  expect(Math.abs(centre.y-endpoint.y),'The plaque is centred on its native connection').toBeLessThan(.5);
-  const inner=(await page.locator('.react-flow__node').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.id,box:n.getBoundingClientRect().toJSON()}))))
-    .filter(n=>n.id!=='front'&&n.box.left>=rootBox.x-.5&&n.box.top>=rootBox.y-.5&&n.box.right<=rootBox.x+rootBox.width+.5&&n.box.bottom<=rootBox.y+rootBox.height+.5);
-  expect(inner.length,'the frame holds boxes').toBeGreaterThan(0);
-  for(const node of inner){
-    const b=node.box,overlap=markerBox.x<b.right&&markerBox.x+markerBox.width>b.left&&markerBox.y<b.bottom&&markerBox.y+markerBox.height>b.top;
-    expect(overlap,`The plaque covers no part of the frame: ${node.id}`).toBe(false);
-  }
-  // Over the arrows: an arrowhead had covered the plaque's "all".
-  const [labelLayer,edgeLayer]=await label.evaluate(element=>[Number(getComputedStyle(element).zIndex),Math.max(0,...[...document.querySelectorAll('.react-flow__edges svg')].map(svg=>Number(getComputedStyle(svg).zIndex)||0))]);
-  expect(labelLayer,'The plaque stands over the arrows').toBeGreaterThan(edgeLayer);
-  await testInfo.attach('journey-02 — Pan to the outer arrow · matching endpoint 2',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
-});

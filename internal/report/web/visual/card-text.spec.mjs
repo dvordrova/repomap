@@ -5,10 +5,13 @@ import {test,expect} from '@playwright/test';
 const cardText=page=>page.evaluate(()=>[...document.querySelectorAll('.react-flow__node>.flow-part:not(.flow-part-deep)')]
   .filter(el=>getComputedStyle(el.parentElement).visibility!=='hidden'&&el.getBoundingClientRect().width>0).map(el=>{
     const box=el.getBoundingClientRect(),scale=box.width/el.offsetWidth;
-    const tops=node=>{const range=document.createRange();range.selectNodeContents(node);
-      return [...new Set([...range.getClientRects()].map(r=>Math.round((r.top-box.top)/scale*4)/4))];};
+    // The lines of a node's own text; an input's kind mark is no line.
+    const tops=node=>{const range=document.createRange();
+      return [...new Set([...node.childNodes].filter(child=>child.nodeType===3).flatMap(child=>{range.selectNodeContents(child);return [...range.getClientRects()];})
+        .map(r=>Math.round((r.top-box.top)/scale*4)/4))];};
     const title=el.querySelector(':scope>strong'),description=el.querySelector(':scope>.flow-description');
-    return {id:el.parentElement.dataset.id,height:el.offsetHeight,title:title.textContent,titleTops:tops(title),
+    const own=node=>[...node.childNodes].filter(child=>child.nodeType===3).map(child=>child.textContent).join('');
+    return {id:el.parentElement.dataset.id,height:el.offsetHeight,title:own(title),titleTops:tops(title),
       description:description?.textContent||'',descriptionTops:description?tops(description):[],
       descriptionLines:description?description.offsetHeight/18:0};
   }));

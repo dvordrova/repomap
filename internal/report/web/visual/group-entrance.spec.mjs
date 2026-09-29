@@ -21,17 +21,20 @@ for(const query of ['dense','short-names&matched-peer']){
       await expect.poll(()=>map.evaluate(map=>map.captureViewport().zoom)).toBeGreaterThan(zoom);
     }
     await expect.poll(()=>map.evaluate(map=>map.captureViewport().openComponents.length)).toBeGreaterThan(0);
+    // At rest: the pointer leaves the canvas, no frame is pointed at and no
+    // arrow's card stays open.
+    await page.mouse.move(2,2);await page.keyboard.press('Escape');await page.waitForTimeout(400);
     const inspect=()=>page.locator('[data-summary-area]').evaluateAll(elements=>{
       const canvas=document.querySelector('.flow-root').getBoundingClientRect();
       return elements.flatMap(el=>{
         const frame=el.getBoundingClientRect();
-        if(frame.left<canvas.left||frame.right>canvas.right||frame.top<canvas.top||frame.bottom>canvas.bottom)return [];
+        const inView=!(frame.left<canvas.left||frame.right>canvas.right||frame.top<canvas.top||frame.bottom>canvas.bottom);
         const title=el.querySelector('strong');
         const node=document.querySelector(`.react-flow__node[data-id="${el.dataset.summaryArea}"]`);
         const native=node.querySelector(':scope > .flow-area'),style=getComputedStyle(native);
         const zoom=document.querySelector('[data-map]').captureViewport().zoom;
         const scale=new DOMMatrixReadOnly(getComputedStyle(el).transform).a*zoom,range=document.createRange();range.selectNodeContents(title);
-        return [{id:el.dataset.summaryArea,title:title.textContent,visibility:getComputedStyle(title).visibility,
+        return [{id:el.dataset.summaryArea,inView,marked:/flow-node-(connected|focus|reading)/.test(node.className),title:title.textContent,visibility:getComputedStyle(title).visibility,
           frameVisibility:style.visibility,
           width:frame.width,height:frame.height,font:parseFloat(getComputedStyle(title).fontSize)*scale,
           border:parseFloat(style.borderTopWidth),stroke:[...style.boxShadow.matchAll(/(-?[\d.]+)px/g)].map(m=>Number(m[1]))[3]*zoom,
@@ -43,13 +46,14 @@ for(const query of ['dense','short-names&matched-peer']){
         const viewport=await map.evaluate(map=>map.captureViewport());
         await map.evaluate((map,viewport)=>map.restoreReadingState({viewport}),{...viewport,zoom:viewport.zoom*1.2});
       }
-      const groups=await inspect();
+      // The layer's largest heading, wherever it stands; each group seen.
+      const layer=await inspect(),groups=layer.filter(group=>group.inView);
       await testInfo.attach(`journey-0${step} — ${step===1?'First revealed groups':'Slightly closer groups'}`,{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
       await testInfo.attach(`Group text and frame measurements ${step}`,{body:JSON.stringify(groups,null,2),contentType:'application/json'});
       expect(groups.length,'Complete groups actually visible at this entrance').toBeGreaterThan(0);
       // A layer opens when its largest heading reads; smaller groups keep
       // smaller titles instead of standing blank (REPORT.md).
-      expect(Math.round(Math.max(...groups.map(group=>group.font))*10)/10,'the largest revealed group title is readable (CSS pixels, to 0.1px)').toBeGreaterThanOrEqual(12);
+      expect(Math.round(Math.max(...layer.map(group=>group.font))*10)/10,'the largest revealed group title is readable (CSS pixels, to 0.1px)').toBeGreaterThanOrEqual(12);
       for(const group of groups){
         expect.soft(group.visibility,group.title+' must not be a blank rectangle').toBe('visible');
         expect.soft(group.frameVisibility,group.title+' native frame is actually painted').toBe('visible');
@@ -58,7 +62,8 @@ for(const query of ['dense','short-names&matched-peer']){
           expect.soft(r.bottom,group.title+' bottom text edge').toBeLessThanOrEqual(group.height+.5);
         }
         expect.soft(group.border,group.title+' has no magnified CSS border').toBe(0);
-        expect.soft(group.stroke,group.title+' screen frame width').toBeLessThanOrEqual(2.1);
+        // A frame the reading marks takes the arrows' 2.5px (REPORT.md).
+        if(!group.marked)expect.soft(group.stroke,group.title+' screen frame width').toBeLessThanOrEqual(2.1);
         expect.soft(group.stroke,group.title+' visible frame').toBeGreaterThanOrEqual(1);
       }
     }

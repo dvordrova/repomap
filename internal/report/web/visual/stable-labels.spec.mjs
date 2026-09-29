@@ -67,11 +67,10 @@ test('hover emphasis changes only the outline, never the compact title layout',a
   await testInfo.attach('journey-02 — Emphasis preserves the same line boxes',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });
 
-test('selecting a call does not insert a row above its title or move the camera',async({page},testInfo)=>{
+test('selecting an outside system does not insert a row above its name or move the camera',async({page},testInfo)=>{
   await page.goto('/');
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
-  await page.locator('[data-zoom-into="api"]').click();
-  const title=page.locator('.react-flow__node[data-id="post"] .flow-part>strong');
+  const title=page.locator('.react-flow__node[data-id="api"] .flow-chip-name');
   await expect(title).toBeInViewport();
   let previous='',stable=0;
   await expect.poll(async()=>{
@@ -79,11 +78,11 @@ test('selecting a call does not insert a row above its title or move the camera'
     stable=current===previous?stable+1:0;previous=current;return stable;
   },{intervals:[100]}).toBeGreaterThanOrEqual(2);
   const lines=()=>title.evaluate(el=>{const r=document.createRange();r.selectNodeContents(el);return [...r.getClientRects()].map(b=>[b.x,b.y,b.width,b.height]);});
-  const before=await lines(),camera=await map.evaluate(map=>map.captureViewport());
-  await testInfo.attach('journey-01 — Call title before selection',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  const place=()=>map.evaluate(map=>{const {x,y,zoom}=map.captureViewport();return {x,y,zoom};});
+  const before=await lines(),camera=await place();
   await title.click();
-  await expect(page.locator('[data-reading-title]')).toHaveText('POST /api/jobs');
-  expect(await lines(),'Selection does not add a reading badge row or change the title inset').toEqual(before);
-  expect(await map.evaluate(map=>map.captureViewport())).toEqual(camera);
-  await testInfo.attach('journey-02 — Selection preserves the same title position',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  await expect(page.locator('[data-reading-title]')).toHaveText('Backend API');
+  expect(await lines(),'Selection does not add a reading badge row or change the name inset').toEqual(before);
+  expect(await place(),'the camera stays').toEqual(camera);
+  await testInfo.attach('journey-01 — The chosen system keeps its name in place',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
 });

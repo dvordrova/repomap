@@ -1,8 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {manyExternalInventory} from './two-systems-five-externals.mjs';
 
-const roots=manyExternalInventory().records.filter(n=>['component','communication','inputs'].includes(n.branch)).map(n=>n.id);
-const plain=['dns-front','dns-backend'];
+const roots=manyExternalInventory().records.filter(n=>['component','inputs'].includes(n.branch)).map(n=>n.id);
 
 // In a 1280×720 window Redis's whole map could not give its summaries their
 // reserved room: "TCP endpoint" was cut below its frame and "Background" out
@@ -11,11 +10,11 @@ for(const [label,viewport] of [['a short window',{width:1000,height:620}],['an o
   test(`every whole-map summary reads whole inside its own frame in ${label}`,async({page})=>{
     await page.setViewportSize(viewport);
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
-    await page.goto('/?many-external&shared-destination');
+    await page.goto('/?many-external');
     await expect(page.locator('[data-map]')).toHaveAttribute('data-fixture-ready','true');
     // A frame too narrow for its text at full size keeps a smaller summary,
     // not a blank tile that reads like its display group's plain tiles.
-    await expect(page.locator('[data-component-overview]')).toHaveCount(roots.length+plain.length);
+    await expect(page.locator('[data-component-overview]')).toHaveCount(roots.length);
     for(const id of roots)await expect(page.locator(`[data-component-overview="${id}"] .flow-component-overview-heading>strong`),`${id} names itself`).not.toBeEmpty();
     const cut=await page.locator('[data-component-overview]').evaluateAll(cards=>cards.flatMap(card=>{
       const id=card.dataset.componentOverview,frame=document.querySelector(`.react-flow__node[data-id="${id}"]`).getBoundingClientRect();

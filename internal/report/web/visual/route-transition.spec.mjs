@@ -22,7 +22,7 @@ test('native routes remain painted through wheel reveal and collapse',async({pag
   await settled(page);
   const world=await geometry(page);
   const ids=await map.evaluate(map=>({
-    outer:map.visibleEdges.find(edge=>edge.from==='submission'&&edge.to==='post').id,
+    outer:map.visibleEdges.find(edge=>edge.from==='submission'&&edge.to==='api').id,
     between:map.visibleEdges.find(edge=>edge.from==='routes'&&edge.to==='queue').id,
   }));
   await expect(page.locator(`[data-edge-ids~="${ids.outer}"] path[marker-end]`)).toHaveCount(1);

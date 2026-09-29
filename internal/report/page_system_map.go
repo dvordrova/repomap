@@ -179,25 +179,26 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 		}
 	}
-	// Reuse the external catalogue's display grouping for unmatched records,
-	// per program: one frame per destination its records name, one tile per
-	// outside symbol the program calls, each tile and frame the program's own,
-	// with its own arrow. Equal destination text across programs proves no
-	// identity: one "TCP endpoint" box had taken arrows from all three Redis
-	// programs, though for redis-cli that endpoint is redis-server and for
-	// redis-server its master. Frames of different programs that name the
-	// same destination only stand together in one display group, a frame
-	// around them on the map that is no participant and holds no arrow.
+	// Reuse the external catalogue's grouping for unmatched records, per
+	// program: one destination per name its records give, one call tile per
+	// outside symbol the program calls, each the program's own, with its own
+	// arrow. Equal destination text across programs proves no identity: one
+	// "TCP endpoint" box had taken arrows from all three Redis programs,
+	// though for redis-cli that endpoint is redis-server and for
+	// redis-server its master. A program's destinations stand in one
+	// Outside frame (owner, 2026-09-29): each is a chip the canvas names,
+	// and its calls are read in the column; the records naming no
+	// destination are one "not established" destination after the others.
 	// One call written once is one tile (owner's decision a, 2026-09-28):
 	// programs built from the same code make the same outside call at the
 	// same saved location, so a call of the same destination and symbol at
-	// the same path and line stands once, in the first program's frame, with
-	// an arrow from each program making it. Redis's three programs each drew
-	// a "DNS resolver" frame holding gethostbyname: all three call it at
-	// anet.c:146, the clients at anet.c:115 too. The call's location is the
-	// identity, never its text. A
-	// program's tile of one symbol holds every place it calls it from, so
-	// the tile is another program's when any of those places stands there.
+	// the same path and line stands once, in the first program's
+	// destination, with an arrow from each program making it. Redis's three
+	// programs each drew a "DNS resolver" holding gethostbyname: all three
+	// call it at anet.c:146, the clients at anet.c:115 too. The call's
+	// location is the identity, never its text. A program's tile of one
+	// symbol holds every place it calls it from, so the tile is another
+	// program's when any of those places stands there.
 	sharedTiles := map[string]string{}
 	callSite := func(destination string, row pageOutbound) string {
 		if row.Anchor.Path == "" || row.Anchor.Line <= 0 || row.External == "" {
@@ -205,8 +206,10 @@ func (view *pageView) SystemMap() *pageMap {
 		}
 		return strings.Join([]string{strings.ToLower(destination), row.Anchor.Path, strconv.Itoa(row.Anchor.Line), row.External}, "\x00")
 	}
-	groupFrames := map[string][]int{}
-	var groupKeys []string
+	unestablishedName, err := uiText(view.Language, "not established")
+	if err != nil {
+		unestablishedName = "not established"
+	}
 	foldedTiles := map[string]string{}
 	// The records each outside tile stands for, its own first: the tile is
 	// read with the callers every one of them is reached from (Redis's one
@@ -214,17 +217,12 @@ func (view *pageView) SystemMap() *pageMap {
 	tileRows := map[string][]pageOutbound{}
 	var tileOrder []string
 	for _, section := range view.Sections {
-		for _, group := range groupOutbound(section.Outbound) {
+		var destinations []string
+		for _, group := range outsideGroups(section.Outbound) {
 			var children []string
 			name := group.Destination
 			if name == "" {
-				name = group.ProgramLabel
-			}
-			if name == "" {
-				name = group.NativeLabel
-			}
-			if name == "" {
-				name = group.KindLabel
+				name = unestablishedName
 			}
 			// One tile per outside symbol: the same call made from several
 			// places is one thing the program asks for. Every place it is
@@ -308,36 +306,19 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 			if len(children) > 0 {
 				id := "system-" + group.Rows[0].ID + "-destination"
-				add(pageMapNode{ID: id, Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies"})
-				key := strings.ToLower(name)
-				if _, seen := groupFrames[key]; !seen {
-					groupKeys = append(groupKeys, key)
-				}
-				groupFrames[key] = append(groupFrames[key], positions[id])
+				add(pageMapNode{ID: id, Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies", Unestablished: group.Destination == ""})
+				destinations = append(destinations, id)
 			}
+		}
+		// The program's Outside frame: its destinations, read together as its
+		// external catalogue. Like Inputs, it is named by its program.
+		if len(destinations) > 0 {
+			add(pageMapNode{ID: "system-outside-" + section.ID, Owner: section.ID, Branch: "outside", ItemKind: "External communication", FullTitle: componentTitle(section, view.Sections),
+				Children: strings.Join(destinations, " "), Href: "#" + section.ID + "-external", DetailsID: section.ID + "-external", Lane: "dependencies"})
 		}
 	}
 	for _, tile := range tileOrder {
 		result.Nodes[positions[tile]].Reached = reachedReading(tileRows[tile])
-	}
-	// Frames in a group that all spell their destination alike leave it to
-	// the group to say once: three "DNS resolver" tiles side by side said one
-	// thing three times. Different spellings keep their own titles.
-	for n, key := range groupKeys {
-		frames := groupFrames[key]
-		if len(frames) < 2 {
-			continue
-		}
-		title := result.Nodes[frames[0]].FullTitle
-		for _, at := range frames {
-			if result.Nodes[at].FullTitle != title {
-				title = ""
-			}
-		}
-		for _, at := range frames {
-			result.Nodes[at].DisplayGroup = fmt.Sprintf("destinations-%d", n+1)
-			result.Nodes[at].DisplayGroupTitle = title
-		}
 	}
 	// An input's path into a folded record leads to the tile that stands for
 	// it: reading that tile on the input's path keeps "Why it appears".
@@ -521,6 +502,30 @@ func (view *pageView) SystemMap() *pageMap {
 	completeSystemPaths(result)
 	result.Height = 140 + float64(len(result.Nodes)/3)*100
 	return result
+}
+
+// outsideGroups is a program's external catalogue as its Outside frame
+// holds it: every destination its records name, in the catalogue's order,
+// then one destination for every record naming none (a program not
+// established, a call no model answer names), however the catalogue
+// groups those. Its name is "not established", never a guess.
+func outsideGroups(rows []pageOutbound) []pageOutboundGroup {
+	var named []pageOutboundGroup
+	var unestablished *pageOutboundGroup
+	for _, group := range groupOutbound(rows) {
+		if group.Destination != "" {
+			named = append(named, group)
+			continue
+		}
+		if unestablished == nil {
+			unestablished = &pageOutboundGroup{KindLabel: group.KindLabel}
+		}
+		unestablished.Rows = append(unestablished.Rows, group.Rows...)
+	}
+	if unestablished != nil {
+		named = append(named, *unestablished)
+	}
+	return named
 }
 
 func collapseSystemMapEdges(edges []pageMapEdge) []pageMapEdge {

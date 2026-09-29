@@ -1,6 +1,6 @@
 // Prepared frontend input, not an alternative analysis or a saved layout.
 // The ordinary canvas measures, groups, places and routes every item itself.
-export const records = [
+const baseRecords = [
   {id:'front', title:'Web application', branch:'component', category:'component',
     role:'Browser interface', summary:'Submits jobs and follows their progress through the backend API.',
     children:['editing','tracking']},
@@ -42,11 +42,10 @@ export const records = [
 ];
 
 export const inputOwner = {submit:'submission', create:'routes', consume:'worker'};
-export const areas = records.filter(n=>n.children).map(n=>({id:n.id,nodes:n.children}));
 export const relations = [
   ['editor','submission'], ['status','results'], ['submission','post'],
-  ['status','get'], ['results','download'], ['post','create'], ['get','routes'],
-  ['download','routes'], ['routes','auth'], ['routes','queue'], ['queue','worker'],
+  ['status','get'], ['results','download'], ['submission','create'], ['status','routes'],
+  ['results','routes'], ['routes','auth'], ['routes','queue'], ['queue','worker'],
   ['routes','read-jobs'], ['auth','read-jobs'], ['worker','save-jobs'],
   ['queue','publish'], ['worker','claim'], ['worker','put-object'],
   ['worker','get-object'], ['worker','export'], ['routes','export'],
@@ -57,8 +56,27 @@ relations.push(
   {from:'consume',to:'worker',label:'implemented in',operations:['consume']},
 );
 for(const relation of relations){
-  if([['submission','post'],['post','create']].some(([from,to])=>relation.from===from&&relation.to===to))relation.operations=['submit'];
+  if([['submission','post'],['submission','create']].some(([from,to])=>relation.from===from&&relation.to===to))relation.operations=['submit'];
 }
+
+// Each program's destinations stand in its Outside frame, as the page gives
+// them (page_system_map.go): a destination is the program's whose parts
+// call it.
+function outsideFrames(nodes,edges){
+  const byID=new Map(nodes.map(n=>[n.id,n])),parent=new Map();
+  for(const n of nodes)for(const child of n.children||[])parent.set(child,n.id);
+  const program=id=>{while(parent.has(id))id=parent.get(id);return byID.get(id)?.branch==='component'?id:'';};
+  const kept=nodes.filter(n=>n.branch!=='outside'),frames=new Map();
+  for(const destination of kept.filter(n=>n.branch==='communication')){
+    const caller=edges.find(e=>(destination.children||[]).includes(e.to)&&program(e.from)),owner=caller?program(caller.from):'';
+    if(!owner)continue;
+    if(!frames.has(owner))frames.set(owner,{id:`${owner}-outside`,title:byID.get(owner).title,branch:'outside',category:'external',children:[]});
+    frames.get(owner).children.push(destination.id);
+  }
+  return [...kept,...frames.values()];
+}
+export const records=outsideFrames(baseRecords,relations);
+export const areas = records.filter(n=>n.children).map(n=>({id:n.id,nodes:n.children}));
 
 // The same participants with a dense internal inventory. No geometry is
 // supplied: production measurement and fitting must keep the overview usable.
@@ -120,7 +138,7 @@ export function manyExternalInventory({inputs=true}={}) {
   }
   // Also cover a repository with no observed inputs. This is prepared evidence,
   // not a display filter: no input endpoint or operation tag is supplied.
-  const retained=inputs?nodes:nodes.filter(n=>!n.activation&&n.branch!=='inputs');
+  const retained=outsideFrames(inputs?nodes:nodes.filter(n=>!n.activation&&n.branch!=='inputs'),edges);
   const ids=new Set(retained.map(n=>n.id));
   const retainedEdges=edges.filter(e=>ids.has(e.from)&&ids.has(e.to)).map(e=>
     e.operations?{...e,operations:e.operations.filter(id=>ids.has(id))}:e);
@@ -142,7 +160,8 @@ export function singleTargetInventory() {
   const parts=nodes.filter(n=>ids.has(n.id)&&!n.children),destinations=nodes.filter(n=>n.branch==='communication');
   const edges=source.relations.filter(e=>ids.has(e.from)&&ids.has(e.to));
   destinations.forEach((destination,i)=>destination.children.forEach((to,j)=>edges.push({from:parts[(i+j)%parts.length].id,to})));
-  return {records:nodes,relations:edges,areas:nodes.filter(n=>n.children).map(n=>({id:n.id,nodes:n.children})),inputOwner:{}};
+  const framed=outsideFrames(nodes,edges);
+  return {records:framed,relations:edges,areas:framed.filter(n=>n.children).map(n=>({id:n.id,nodes:n.children})),inputOwner:{}};
 }
 
 // Ordinary reports have less vertical canvas space than the standalone fixture.
@@ -194,7 +213,8 @@ export function shortNamedInventory({matchedPeer=false}={}) {
   );
   const omitted=new Set(nodes.filter(node=>node.branch==='communication'&&(matchedPeer||node.id!=='api'))
     .flatMap(node=>[node.id,...node.children]));omitted.add('consume');delete owners.consume;
-  const retained=nodes.filter(node=>!omitted.has(node.id)),ids=new Set(retained.map(node=>node.id));
-  return {records:retained,relations:edges.filter(edge=>ids.has(edge.from)&&ids.has(edge.to)),
+  const ids=new Set(nodes.filter(node=>!omitted.has(node.id)).map(node=>node.id)),kept=edges.filter(edge=>ids.has(edge.from)&&ids.has(edge.to));
+  const retained=outsideFrames(nodes.filter(node=>!omitted.has(node.id)),kept);
+  return {records:retained,relations:kept,
     areas:retained.filter(node=>node.children).map(node=>({id:node.id,nodes:node.children})),inputOwner:owners};
 }

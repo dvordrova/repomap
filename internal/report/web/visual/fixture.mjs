@@ -60,16 +60,6 @@ if(options.has('many-inputs')){
   areas.find(a=>a.id==='backend-inputs').nodes=collection.children;
 }
 
-// Each system calls its own "DNS resolver": two frames the page groups for
-// display and gives their shared text once.
-if(options.has('shared-destination')){
-  for(const [id,caller] of [['dns-front','submission'],['dns-backend','worker']]){
-    records.push({id,title:'DNS resolver',category:'external',branch:'communication',children:[`${id}-call`],displayGroup:'dns',displayGroupTitle:'DNS resolver'},
-      {id:`${id}-call`,title:'gethostbyname',category:'external'});
-    areas.push({id,nodes:[`${id}-call`]});relations.push({from:caller,to:`${id}-call`});
-  }
-}
-
 // A chosen input carries its saved trace, the parts its code reaches in
 // call-depth order, and its arrows name it.
 if(options.has('input-path')){

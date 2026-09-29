@@ -8,10 +8,9 @@ async function settle(map){
 // Zoomed into a part, the part is the frame the reader looks at (owner,
 // 2026-09-28): redis-cli's Command line client drew no arrow out to Core
 // infrastructure and its column still read redis-cli. Each connection to a
-// part or area beside it leaves the part's own border, marked there by its
-// plaque, and the column reads the part; "−" steps out and the column reads
-// the frame it brings.
-test('a part zoomed into marks its connections on its own border and the column follows the zoom',async({page},testInfo)=>{
+// part or area beside it leaves the part's own border, and the column reads
+// the part; "−" steps out and the column reads the frame it brings.
+test('a part zoomed into draws its connections from its own border and the column follows the zoom',async({page},testInfo)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/?symbols&both-parts');
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
@@ -21,17 +20,8 @@ test('a part zoomed into marks its connections on its own border and the column 
   await expect(map,'the magnifier has the column read the part').toHaveAttribute('data-followed','worker');
   const worker=await page.locator('.react-flow__node[data-id="worker"]').boundingBox(),canvas=await page.locator('.flow-root').boundingBox();
   expect(worker.x>=canvas.x-1&&worker.x+worker.width<=canvas.x+canvas.width+1&&worker.y>=canvas.y-1&&worker.y+worker.height<=canvas.y+canvas.height+1,'the part is framed whole').toBe(true);
-  // Job scheduling beside it in its area, and Request handling, the area of
-  // the HTTP handlers calling it.
-  for(const id of ['boundary:worker:in:queue','boundary:worker:in:requests']){
-    const plaque=page.locator(`.flow-boundary-label[data-connection-label="${id}"] button`);
-    await expect(plaque,`${id} is marked`).toBeVisible();
-    const box=await plaque.boundingBox(),centre={x:box.x+box.width/2,y:box.y+box.height/2};
-    const border=Math.min(Math.abs(centre.x-worker.x),Math.abs(centre.x-worker.x-worker.width),Math.abs(centre.y-worker.y),Math.abs(centre.y-worker.y-worker.height));
-    expect(border,`${id} stands on the part's border`).toBeLessThanOrEqual(box.width/2+.5);
-    const tiles=await page.locator('.react-flow__node[data-id="worker"] .flow-symbol-block').evaluateAll(blocks=>blocks.map(b=>b.getBoundingClientRect().toJSON()));
-    for(const tile of tiles)expect(box.x<tile.right&&box.x+box.width>tile.left&&box.y<tile.bottom&&box.y+box.height>tile.top,`${id} covers no tile`).toBe(false);
-  }
+  // No plaque stands on its border: the arrows are the handles.
+  await expect(page.locator('.flow-connection-label,.flow-boundary-label')).toHaveCount(0);
   // An arrow from Request handling reaches the part's own border: the route
   // between the two areas ends at Job execution's, so the part draws a
   // short arrow of its own there.
@@ -45,7 +35,7 @@ test('a part zoomed into marks its connections on its own border and the column 
   });
   const onBorder=tip=>Math.min(Math.abs(tip.x-worker.x),Math.abs(tip.x-worker.x-worker.width),Math.abs(tip.y-worker.y),Math.abs(tip.y-worker.y-worker.height));
   expect(Math.min(...ends.map(onBorder)),'an arrow meets the part itself').toBeLessThan(2);
-  await testInfo.attach('journey-01 — A part looked at, its arrows and plaques on its own border',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
+  await testInfo.attach('journey-01 — A part looked at, its arrows on its own border',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   // Out one level: the column reads the area the camera now looks at.
   await page.locator('[data-map-zoom]').filter({hasText:'−'}).click();await settle(map);
   await expect(map,'"−" has the column read the area it brings').toHaveAttribute('data-followed','execution');

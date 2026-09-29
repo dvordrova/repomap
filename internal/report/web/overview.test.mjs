@@ -63,3 +63,19 @@ test('an input collection groups its inputs by their handler part, and keeps an 
   const single=inputGroupsByPart(records,areas,{get:'strings',set:'strings'});
   assert.equal(single.records,records,'a collection with one owning part keeps its inputs loose');
 });
+
+// freqtrade's 127 options whose handler is not established stood as a wall
+// of loose tiles under six group frames: each stands with the one part its
+// Inputs arrow goes into, where its code takes it in.
+test('an input without a handler stands in the group of the part it is taken in',()=>{
+  const records=[{id:'inputs',branch:'inputs',children:['trade','--verbose','--config','orphan']},
+    {id:'trade',activation:'command'},{id:'--verbose',activation:'command'},{id:'--config',activation:'command'},{id:'orphan',activation:'command'},
+    {id:'cli',title:'CLI entry and commands'},{id:'engine',title:'Trading engine'},{id:'other',title:'Configuration'}];
+  const relations=[{from:'trade',to:'engine',label:'implemented in'},{from:'--verbose',to:'cli',label:'looked up in'},
+    {from:'--config',to:'cli',label:'declared in'},{from:'orphan',to:'cli',label:'looked up in'},{from:'orphan',to:'other',label:'looked up in'}];
+  const {records:shown}=inputGroupsByPart(records,records.filter(n=>n.children).map(n=>({id:n.id,nodes:n.children})),{trade:'engine'},relations);
+  const group=owner=>shown.find(n=>n.branch==='inputs-part'&&n.owner===owner)?.children;
+  assert.deepEqual(group('engine'),['trade']);
+  assert.deepEqual(group('cli'),['--verbose','--config'],'taken in by one part: with it');
+  assert.ok(shown.find(n=>n.id==='inputs').children.includes('orphan'),'taken in by two parts: loose, after the groups');
+});
