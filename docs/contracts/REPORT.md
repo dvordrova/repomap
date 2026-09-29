@@ -1170,7 +1170,10 @@ Restoring a complete visit is not followed by another hash-driven
 selection; an explicit overview/detail transition remains a separate visit
 even when the selected item's URL is unchanged. Reset keeps the current level.
 A named Back to map returns from full source
-details; Back to question returns to the original answer. Old component and
+details, the glossary or any section below to the page as it stood at the
+last click made while the map was read, the canvas where it was on screen
+and its camera unchanged (owner, 2026-09-29: it had come back shifted);
+Back to question returns to the original answer. Old component and
 map links resolve to the same common canvas. Answers, component reference and
 repository material open below that mounted canvas, and each has a direct
 return to it. Component sidebar links expose the existing flow, configuration,

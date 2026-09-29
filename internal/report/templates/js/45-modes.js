@@ -123,6 +123,14 @@ function rmCrumbs(container,segments,fallback){
     // the panel lives in the toolbar on every page.
     if(panel&&container&&panel.parentElement!==container)container.appendChild(panel);
   }
+  // Where the page stood at the last click made while the map was in sight,
+  // before a link's own scroll: "Back to map" returns there exactly (owner,
+  // 2026-09-29: after the glossary the canvas came back shifted).
+  var mapScroll=null;
+  document.addEventListener('click',function(){
+    var shownMap=document.querySelector('[data-system-map]');if(!shownMap||shownMap.closest('[hidden]')||enclosing(shownMap)!==current)return;
+    var seen=shownMap.getBoundingClientRect();if(seen.bottom>0&&seen.top<window.innerHeight)mapScroll=window.scrollY;
+  },true);
   function setPage(node){
     var page=enclosing(node);if(!page)return;
     var nextQuestion=node.closest('.reading-guide');
@@ -188,7 +196,8 @@ function rmCrumbs(container,segments,fallback){
     }
     if(e.target.closest('a')===mapLink&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
       e.preventDefault();var map=document.querySelector('[data-system-map]');
-      setPage(map);address(mapDestination(map));map.resumeExploration();map.scrollIntoView({block:'start'});return;
+      setPage(map);address(mapDestination(map));map.resumeExploration();
+      if(mapScroll!==null)window.scrollTo(0,mapScroll);else map.scrollIntoView({block:'start'});return;
     }
     var readingQuestion=e.target.closest('.reading-guide');
     if(readingQuestion){question=readingQuestion;term=null;searchIntent='';showReturn();showLocation();}
