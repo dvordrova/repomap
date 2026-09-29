@@ -319,11 +319,7 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 	case "field":
 		result := d.field(&value.Parts[0], value.Text, owner, use, active)
 		if value.Initializer != nil && len(result) == 1 && result[0].Address == "" {
-			initial := value.Initializer
-			if initial.Kind == "field_value" {
-				initial = &initial.Parts[0]
-			}
-			result = d.value(initial, owner, use, active)
+			result = d.value(storedValue(value.Initializer), owner, use, active)
 			for i := range result {
 				if result[i].Address != "" {
 					result[i].Frontier = "initializer: " + result[i].Address
@@ -355,6 +351,25 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		use.Steps = appendDestinationStep(use.Steps, atlas.DestinationStep{SubjectID: owner.ID, Name: use.Frontier, Path: value.Anchor.Path, Line: value.Anchor.Line, Column: value.Anchor.Column})
 	}
 	return []destinationPath{use}
+}
+
+// storedValue is what a field initializer stores: the value of its one
+// store, or, when the field's class and the classes deriving from it each
+// store it (a Python base-class method reading self._url), the value of each
+// store as one alternative.
+func storedValue(initial *sourcevalue.Value) *sourcevalue.Value {
+	switch initial.Kind {
+	case "field_value":
+		return &initial.Parts[0]
+	case "alternatives":
+		stored := *initial
+		stored.Parts = make([]sourcevalue.Value, len(initial.Parts))
+		for i := range initial.Parts {
+			stored.Parts[i] = *storedValue(&initial.Parts[i])
+		}
+		return &stored
+	}
+	return initial
 }
 
 func (d *DestinationReader) parameterCallers(value *sourcevalue.Value, use destinationPath) []destinationCall {

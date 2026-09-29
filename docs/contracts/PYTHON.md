@@ -40,6 +40,13 @@ It maps an exact top-level import root in `sys.stdlib_module_names` to
 `platform` and every other external root to `package`; an invalid or missing
 authority kind fails the adapter boundary.
 
+An `import ccxt` stays an outside module in every module that writes it.
+Until 2026-09-29 only the first module (in path order) to import a package
+read it as outside: the symbol that import made was taken for a repository
+name by every later one, so `ccxt.Exchange` in `exchange.py` and 220 other
+freqtrade outside symbols (numpy 41, asyncio 33, torch 30, …) resolved
+only where an earlier module had resolved the same attribute.
+
 Repeated aliases in one import retain one witness for the same declaration
 at the same source site; the observed count includes that witness once.
 Distinct import statements and calls through each alias retain their own
@@ -114,9 +121,12 @@ The Python adapter also follows unconditional explicit re-exports through
 indexed package/module imports, retaining each written import boundary. A
 factory's declared return type may then supply the original instance method
 as the callback recipient. Reassigned, conflicting, conditional,
-deleted, wildcard or cyclic export bindings remain unresolved; untyped factory
-returns and unrelated same-named classes gain no receiver authority. No module
-is imported or executed to discover exports. TypeScript uses the compiler's
+deleted, wildcard or cyclic export bindings remain unresolved, and unrelated
+same-named classes gain no receiver authority. A factory with no declared
+return type gives a repository class none either; the outside call its one
+return statement returns does give its outside symbol (owner, 2026-09-16:
+no hedged resolution; [What a call produces](#what-a-call-produces)). No
+module is imported or executed to discover exports. TypeScript uses the compiler's
 existing barrel-export and declared-return resolution for the comparable case.
 
 A module-level star import (`from m import *`) may bind any name where it
@@ -188,9 +198,17 @@ A name bound to that call's result holds the instance, source-ordered like
 every local binding: a call on it (`worker.run()`) is the method the class
 declares or inherits along the same chain, exact (`BaseWorker.run`). The
 inherited lookup serves every receiver whose class the adapter knows,
-including a directly annotated parameter and a factory's declared return
-type. A store of `None` does not count: None has no method, so a call on the
-name is made on its other value; freqtrade's `start_trading` writes
+including a directly annotated parameter, a factory's declared return
+type, a class call's direct result (`Worker(name, 1).run()`, in
+`outside_results.py`) and `self` in a method: `self.helper()` is the method
+the class declares or inherits along its chain of single repository bases,
+so freqtrade's `Discord` calling `self._send_msg(payload)` calls
+`Webhook._send_msg` (`inherited_clients.py`: `Discord.notify` calls
+`Webhook.send`; `MixedPrices`, with two bases, and `Heartbeat`, whose base
+is `threading.Thread`, name none;
+`TestCumulativePythonSelfCallsAndFieldsFollowTheBaseChain`). A store of
+`None` does not count: None has no method, so a call on the name is made on
+its other value; freqtrade's `start_trading` writes
 `worker = None` before `worker = Worker(args)`, and `worker.run()` is
 `Worker.run`. A second store of
 anything else leaves the class unknown and the call unresolved, as before.
@@ -214,6 +232,109 @@ Native equivalents:
   equivalent.
 - C has no constructors; its `construct` is a record a table row or a field
   store builds (C), and no code runs for it.
+
+## Inherited members and fields
+
+A class's field holds what its one store gives it, wherever the class, a
+class deriving from it or a base method reads it. The store is a plain
+assignment `self.<field> = value` in any method, and the value is:
+
+- an outside call's result (`self.parser = argparse.ArgumentParser(...)`,
+  [Inputs](#inputs-a-calls-words-declare-and-what-python-does-not-have-yet));
+- a repository function's result whose declared return type is an outside
+  class written as a name or an attribute: freqtrade's
+  `self._api = self._init_ccxt(...)`, with `_init_ccxt(...) -> ccxt.Exchange`,
+  makes `self._api.create_order(...)` `ccxt.Exchange.create_order`;
+- a parameter of the storing def annotated with an outside class and never
+  reassigned there: `ExchangeWS(config, ccxt_object: ccxt.Exchange)` storing
+  `self._ccxt_object = ccxt_object`;
+- a repository function's result whose one return statement returns an
+  outside call ([What a call produces](#what-a-call-produces)).
+
+A union, a container, a quoted type, `typing.Any` (no type) and
+`typing.Self` (the repository class itself) name no outside class, and a
+coroutine function returns a coroutine, not its declared type. A subclass
+sees its base's field: the stores it reads are those of the first class of
+its chain of single repository bases that stores the field, itself first,
+so `Binance` reading `self._api` reads `Exchange`'s store. A store in a
+class deriving from the reading class is a second store, since self may be
+that class's instance: a second store of any kind leaves the field unknown.
+`inherited_clients.py` checks each case: `Prices.ask` and its subclass's
+`FuturesPrices.funding` call `httpx.Client.get` through the factory
+`_make_client(...) -> httpx.Client`, `StreamedPrices.poll` through the
+annotated parameter; `Quotes.last` stays unresolved because `AsyncQuotes`
+stores its own client, and `MaybePrices.ask` because its factory declares
+`httpx.Client | None`
+(`TestCumulativePythonSelfCallsAndFieldsFollowTheBaseChain`).
+
+A method reading a field that the classes deriving from its class also
+store reads one of those stores. The field's source value keeps the store
+of the reading class, or the base it inherits the field from, and the
+`__init__` store of each class deriving from it as `alternatives`, each a
+`field_value` at its own line and none chosen; a class storing the field
+only outside `__init__` is one more alternative, `unknown`. freqtrade's
+`Webhook._send_msg` posts to `self._url`, which `Webhook` stores at
+webhook.py:34 and `Discord` at discord.py:20: destination reading gives
+both addresses. `inherited_clients.py`'s `Webhook.send` and `Discord` check
+it (`TestCumulativePythonBaseReadTakesEachSubclassStore`).
+
+Native equivalents:
+
+- Go and TypeScript fields carry the compiler's declared type, so a call on
+  a field, an inherited one included, resolves by type already (above);
+  Go's promoted methods (`workers.go`) and TypeScript's inherited methods
+  (`workers.ts`) are the `self.helper()` case. Go has no class a base method
+  runs for, so the subclass-store case does not arise; TypeScript's
+  `this.url` source value takes only the enclosing class's constructor
+  record (JSTS), a recorded missing equivalent of the subclass stores.
+- Clojure keeps no fields and dispatches protocol calls unresolved; C has
+  no classes: no equivalent.
+
+## What a call produces
+
+A call on a call's result is a member of what that call produces, as a
+call on a name bound to it is: `Path(name).open()` is `pathlib.Path.open`, a
+repository class's call gives that class's method (`Worker(name, 1).run()`
+is `BaseWorker.run`), and a member of that result, or a call on a call's
+result, continues the outside symbol:
+`scheduler.every().day.at("00:07").do(job)` is
+`schedule.Scheduler.every.day.at.do` and
+`Application.builder().token(token).build()` is
+`telegram.ext.Application.builder.token.build`. What a call produces is the
+outside symbol it calls, the outside class a repository function declares
+it returns, or, for a repository function with no declared return type
+that is neither a coroutine nor a generator function, the outside call its
+one return statement returns. The same holds for a field stored from that
+call (above) and a local name bound to it once. freqtrade's
+`_init_telegram_app` returns `Application.builder().token(...).build()`, so
+`self._app.bot.send_message(...)` is
+`telegram.ext.Application.builder.token.build.bot.send_message`. A function
+with a second return statement, a bare `return` included, gives nothing,
+and a returned repository class's call gives no class. `outside_results.py`
+checks it: `Bot._app` resolves, `Bot._fallback`, from a function with two
+returns, does not (`TestCumulativePythonCallsOnCallResultsAndPartial`).
+
+`functools.partial(f, ...)` given as an argument hands `f` over, as a bare
+`f` would: the argument's authority is `f`, a `passes_callback` cites it,
+and a call outside the repository receiving it is a registration handing
+`f` over. freqtrade's
+`CommandHandler(["forcebuy", "forcelong"], partial(self._force_enter, …))`
+hands `Telegram._force_enter`; the partial call keeps its own callback of
+`f` too. `outside_results.py`'s `Bot.register` checks it.
+
+Native equivalents: the Go and TypeScript compilers type a call's result,
+chains included. Go's `router.HandleFunc(...).Methods("GET")` (`cmd/app/main.go`)
+and `exec.Command(hook, args...).Run()` (`storefixture/destinations.go`) are
+the outside types' methods; TypeScript's
+`createConsumer().on(...).on(...)` (`src/server.ts`,
+`TestCumulativeJSTSChainedCallsKeepTheirOwnPositions`) is `Consumer.on`
+twice, named by the declared return type where Python names the call path
+(`kafka.KafkaConsumer.subscribe.subscribe`, events.py), a recorded
+difference. C has no member calls and Clojure types no call result.
+`Function.prototype.bind` in JS/TS and Clojure's `partial` hand over their
+call's result, not the function: a recorded missing equivalent. Go has no
+partial application; a method value (`s.handle`) is already a bare
+callable.
 
 ## Variable reads and attribute writes
 
@@ -408,7 +529,9 @@ dataclass's `field(default_factory=set)` or a model's `Column(...)` is not
 what an instance holds). `RebuiltParser` stores its parser twice, and its
 `self.parser.add_argument("--again")` stays unresolved and is no input. A
 field stored once from a repository class's constructor keeps the existing
-typed-field rule (receiver fields, above). freqtrade's `Arguments` stores
+typed-field rule (receiver fields, above). The one store may also give the
+field an outside type without an outside call
+([Inherited members and fields](#inherited-members-and-fields)). freqtrade's `Arguments` stores
 `self.parser = ArgumentParser(...)` once, in `_build_subcommands`: its
 `subparsers = self.parser.add_subparsers(...)` is argparse's, and each of
 its 34 subcommands (`trade`, `backtesting`, …) is an `add_parser` call
@@ -422,9 +545,11 @@ so a call on a field resolves by type already; Clojure keeps no fields
   operator is no call, so the per-call contrast of an option comparison
   with a comparison of data (C's `strcasecmp(argv[1], "--raw")` beside
   `strcasecmp(cmd->name, "bgsave")`) has no Python equivalent;
-- a field stored more than once, or from anything but a call (a
-  parameter, another field), carries no origin, and a chain through a
-  field of a field (`self.a.b.c()`) stays unresolved;
+- a field stored more than once, or from anything but a call or a
+  parameter annotated with an outside type (another field, an
+  unannotated parameter), carries no origin, and a chain through a
+  field of a field of a repository class (`self.a.b.c()`) stays
+  unresolved;
 - list and dict tables of names;
 - dict registries (`handlers[name] = fn`);
 - a callable the repository's own function keeps (S1) is not enabled;

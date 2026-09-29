@@ -108,6 +108,12 @@ def statement_position(node):
     return (getattr(node, "lineno", 0), getattr(node, "col_offset", 0))
 
 
+def location_key(location):
+    """A source location's order across modules: path, line, column."""
+    location = location or {}
+    return (location.get("path", ""), location.get("line", 0), location.get("column", 0))
+
+
 def bounded_text(value):
     # The shared ProgramIndex aggregate/envelope bounds own rejection. Local
     # clipping here used to preserve a plausible but incomplete fact.
@@ -261,10 +267,20 @@ class Analyzer:
         # stored once from an outside call carries (field_call_origin).
         self.field_stores = {}
         self.field_call_origins = {}
+        # Each callable's return statements, as (returned expression or
+        # None, the callable's scope), and the parameters of every def.
+        self.return_nodes = {}
+        self.parameter_refs = set()
         # Each class's written bases with the scope and module that define
-        # it, and the repository classes they resolve to there (class_bases).
+        # it, and the repository classes they resolve to there (class_bases);
+        # the classes naming each class as a base, and every class deriving
+        # from each (derived_classes).
         self.class_definitions = {}
         self.class_base_refs = {}
+        self.subclasses = {}
+        self.derived_by_class = {}
+        # The repository functions whose returned call is being resolved.
+        self.producing = set()
         self.module_scopes = {}
         self.relations = []
         self.relations_by_key = {}
@@ -473,6 +489,18 @@ class Analyzer:
             collector = Collector(self, module, scope)
             collector.visit(module["tree"])
 
+        # Every class's bases, resolved where the class is defined, before
+        # any call is read: a read of self.<field> in a base class sees the
+        # stores its subclasses write.
+        for class_ref in sorted(self.class_definitions):
+            _, _, module = self.class_definitions[class_ref]
+            self.current_path = module["path"]
+            resolver = RelationVisitor(self, module, self.module_scopes[module["name"]])
+            for authority, base_ref in resolver.class_bases(class_ref):
+                base = self.objects_by_ref.get(base_ref) if base_ref else None
+                if authority == "local" and base is not None and base["kind"] == "type":
+                    self.subclasses.setdefault(base_ref, []).append(class_ref)
+
         for module in decoded:
             self.current_path = module["path"]
             visitor = RelationVisitor(self, module, self.module_scopes[module["name"]])
@@ -516,13 +544,35 @@ class Analyzer:
                 base = value["parts"][0]
                 owner = base.get("owner", {}) if base.get("kind") == "receiver" else {}
                 class_ref = owners.get((owner.get("path"), owner.get("line"), owner.get("column", 0)), "")
-                field = self.constructor_fields.get(class_ref, {}).get(value.get("text"))
-                if field and id(field) not in active:
-                    if self.field_write_counts.get((class_ref, value["text"]), 0) > 1:
+                name = value.get("text")
+                # The field's __init__ store in its class, or in the base
+                # the class inherits it from, and the store of each class
+                # deriving from it: self may be an instance of any of them,
+                # so each store is one alternative, none of them chosen.
+                classes = self.field_store_classes(
+                    class_ref, name,
+                    lambda member: self.field_write_counts.get((member, name), 0) > 0 or name in self.constructor_fields.get(member, {}),
+                ) if class_ref else []
+                stores = []
+                for member in classes:
+                    field = self.constructor_fields.get(member, {}).get(name)
+                    if field is None and len(classes) > 1:
+                        # This class stores the field only outside __init__:
+                        # an alternative whose value is not followed.
+                        stores.append((member, {"kind": "unknown", "text": "field stored outside __init__"}))
+                        continue
+                    if not field or id(field) in active:
+                        continue
+                    if self.field_write_counts.get((member, name), 0) > 1:
                         field = {**field, "parts": [{"kind": "unknown", "text": "reassigned field", "anchor": field["anchor"]}]}
-                    result["initializer"] = field_initializers(field, active)
-                    init_ref = self.objects_by_qname.get(self.object_qname(class_ref) + ".__init__", "")
+                    stores.append((member, field_initializers(field, active)))
+                if len(stores) == 1:
+                    member, result["initializer"] = stores[0]
+                    init_ref = self.objects_by_qname.get(self.object_qname(member) + ".__init__", "")
                     result["owner"] = self.objects_by_ref.get(init_ref, {}).get("location")
+                elif stores:
+                    stores.sort(key=lambda store: location_key(store[1].get("anchor")))
+                    result["initializer"] = {"kind": "alternatives", "parts": [field for _, field in stores]}
             return result
 
         for relation in self.relations:
@@ -543,6 +593,52 @@ class Analyzer:
 
     def object_qname(self, ref):
         return self.qnames_by_ref.get(ref, "")
+
+    def base_chain(self, class_ref):
+        # The class, then its chain of single repository bases, as a member
+        # lookup walks it: several bases, or a base outside the repository
+        # or unknown, ends the chain.
+        chain, current = [], class_ref
+        while current and current not in chain:
+            chain.append(current)
+            bases = self.class_base_refs.get(current) or []
+            if len(bases) != 1:
+                break
+            authority, base_ref = bases[0]
+            base = self.objects_by_ref.get(base_ref) if base_ref else None
+            if authority != "local" or base is None or base["kind"] != "type":
+                break
+            current = base_ref
+        return chain
+
+    def derived_classes(self, class_ref):
+        # Every repository class that names this class as a base, directly
+        # or through another, in source order of their definitions.
+        cached = self.derived_by_class.get(class_ref)
+        if cached is not None:
+            return cached
+        derived, pending = [], [class_ref]
+        while pending:
+            for subclass in self.subclasses.get(pending.pop(), ()):
+                if subclass != class_ref and subclass not in derived:
+                    derived.append(subclass)
+                    pending.append(subclass)
+        derived.sort(key=lambda ref: location_key(self.objects_by_ref.get(ref, {}).get("location")))
+        self.derived_by_class[class_ref] = derived
+        return derived
+
+    def field_store_classes(self, class_ref, name, stores_field):
+        # The classes whose stores of a field a read of self.<name> in this
+        # class's code may see: the first class of its base chain that
+        # stores it (the class itself first), and every class deriving from
+        # it that stores it too, since self may be one of theirs.
+        classes = []
+        for member in self.base_chain(class_ref):
+            if stores_field(member):
+                classes.append(member)
+                break
+        classes.extend(member for member in self.derived_classes(class_ref) if stores_field(member))
+        return classes
 
 
 class SyntheticNode:
@@ -815,11 +911,25 @@ class Collector(ast.NodeVisitor):
         previous, self.scope = self.scope, child
         for argument in arguments:
             self.add_variable(argument.arg, argument, True)
+            self.analyzer.parameter_refs.add(self.analyzer.node_refs[id(argument)])
             if argument.annotation is not None:
                 self.analyzer.variable_annotations[self.analyzer.node_refs[id(argument)]] = (argument.annotation, parent)
         for statement in node.body:
             self.visit(statement)
         self.scope = previous
+
+    def visit_Return(self, node):
+        # What a callable returns, for a field stored from its call; a bare
+        # return is one more value, None.
+        self.analyzer.return_nodes.setdefault(self.scope.ref, []).append((node.value, self.scope))
+        self.generic_visit(node)
+
+    def visit_Yield(self, node):
+        # Calling a generator returns the generator, not what it returns.
+        self.analyzer.suspended_callables.add(self.scope.ref)
+        self.generic_visit(node)
+
+    visit_YieldFrom = visit_Yield
 
     def visit_ClassDef(self, node):
         parent = self.scope
@@ -1046,7 +1156,11 @@ class Collector(ast.NodeVisitor):
         for alias in node.names:
             bound = alias.asname or alias.name.split(".")[0]
             module_name = alias.name if alias.asname else alias.name.split(".")[0]
-            external = module_name not in self.analyzer.modules and module_name not in self.analyzer.objects_by_qname
+            # An import an earlier module already made has its outside
+            # symbol by now; that keeps it outside, not local.
+            known = self.analyzer.objects_by_qname.get(module_name, "")
+            external = module_name not in self.analyzer.modules and (
+                not known or self.analyzer.objects_by_ref[known]["kind"] == "external_symbol")
             if external:
                 self.analyzer.ensure_external(module_name)
             binding = {
@@ -1309,8 +1423,13 @@ class RelationVisitor(ast.NodeVisitor):
             if isinstance(current, ast.Name) and current.id == "self" and self.scope.class_qname:
                 qname = self.scope.class_qname + "." + ".".join(parts)
                 ref = self.analyzer.objects_by_qname.get(qname, "")
+                if not ref and len(parts) == 1:
+                    # self.helper() is the method the class declares or
+                    # inherits along its chain of single repository bases.
+                    ref = self.class_member(self.scope.class_ref, parts[0])
                 if not ref and len(parts) > 1:
-                    field_ref = self.analyzer.objects_by_qname.get(self.scope.class_qname + "." + parts[0], "")
+                    # The field the class stores, or inherits from a base.
+                    field_ref = self.class_member(self.scope.class_ref, parts[0], ("variable",))
                     owner_ref = self.analyzer.field_type_origins.get(field_ref, "")
                     if owner_ref:
                         owner_name = self.analyzer.object_qname(owner_ref)
@@ -1318,10 +1437,12 @@ class RelationVisitor(ast.NodeVisitor):
                     else:
                         # self.parser.add_subparsers is the outside call's
                         # own member when the field holds one call's result.
-                        origin = self.field_call_origin(self.scope.class_qname, parts[0])
+                        origin = self.field_call_origin(self.scope.class_ref, parts[0])
                         if origin:
                             return "external", self.analyzer.ensure_external(self.object(origin)["name"] + "." + ".".join(parts[1:]))
                 return ("local", ref) if ref else ("unknown", "")
+            if isinstance(current, ast.Call):
+                return self.call_result_member(current, parts)
             if isinstance(current, ast.Name):
                 binding = self.scope.binding(current.id)
                 if binding and binding["kind"] == "module":
@@ -1354,6 +1475,23 @@ class RelationVisitor(ast.NodeVisitor):
                 if base_kind == "external" and base:
                     return "external", self.analyzer.ensure_external(base["name"] + "." + ".".join(parts))
             return "unknown", ""
+        return "unknown", ""
+
+    def call_result_member(self, call, parts):
+        # A member of what a call returns: Worker(name).run() is the
+        # repository class's method, Path(p).open() the outside symbol's
+        # (pathlib.Path.open), and a member of a member of that result, or
+        # a call on a call's result, continues the same outside symbol
+        # (schedule.Scheduler.every.day.at.do).
+        authority, ref = self.resolved_call_target(call.func)
+        if authority == "local":
+            owner_ref = self.produced_class(ref)
+            if owner_ref:
+                target = self.class_member(owner_ref, parts[0]) if len(parts) == 1 else ""
+                return ("local", target) if target else ("unknown", "")
+        origin = self.produced_external(authority, ref)
+        if origin:
+            return "external", self.analyzer.ensure_external(self.object(origin)["name"] + "." + ".".join(parts))
         return "unknown", ""
 
     def expression_name(self, node):
@@ -1401,6 +1539,14 @@ class RelationVisitor(ast.NodeVisitor):
             if binding and len(origins) == 1 and (binding.get("origin_resolution") or "exact") == "exact":
                 origin = self.object(origins[0])
                 return "external", self.analyzer.ensure_external(origin["name"] + "." + node.attr)
+            # A name bound once to a repository function's call holds the
+            # outside value that function produces (produced_external).
+            factories = (binding or {}).get("origin_refs", [])
+            if binding and len(factories) == 1 and not origins_invalidated(binding) \
+                    and (binding.get("origin_resolution") or "exact") == "exact":
+                origin = self.produced_external("local", factories[0])
+                if origin:
+                    return "external", self.analyzer.ensure_external(self.object(origin)["name"] + "." + node.attr)
         return resolved
 
     def current_pattern_bindings(self):
@@ -1630,55 +1776,149 @@ class RelationVisitor(ast.NodeVisitor):
                 return self.iterable_element_type(self.analyzer.variable_annotations.get(ref))
         return ""
 
-    def field_call_origin(self, class_qname, name):
-        # A class's field stored exactly once, by a plain assignment of an
-        # outside call's result (self.parser = argparse.ArgumentParser(...)
-        # in __init__ or any method), holds that result wherever the class
-        # reads it: its origin is the outside symbol the call names. A second
-        # store of any kind (a class attribute, an augmented or deleted
-        # field, another assignment) or a value no outside call produced
-        # leaves it unknown. The call is resolved in the scope that makes
-        # it, whichever method this visitor is in.
+    def field_stores_seen(self, class_ref, name):
+        # The stores of a field a read of self.<name> in this class may see:
+        # those of the first class of its base chain that stores it, and
+        # those of every class deriving from it (Analyzer.field_store_classes).
+        stores = []
+        for member in self.analyzer.field_store_classes(
+                class_ref, name,
+                lambda member: (self.analyzer.object_qname(member), name) in self.analyzer.field_stores):
+            stores.extend(self.analyzer.field_stores[(self.analyzer.object_qname(member), name)])
+        return stores
+
+    def field_call_origin(self, class_ref, name):
+        # A class's field stored exactly once, by a plain assignment of what
+        # an outside call produces (self.parser = argparse.ArgumentParser(...)
+        # in __init__ or any method, or a repository factory declared to
+        # return an outside type), or of a parameter annotated with an
+        # outside type, holds that value wherever the class reads it: its
+        # origin is the outside symbol. The one store may be the class's
+        # own or its base's (a subclass sees its base's field); a store in a
+        # class deriving from it is a second store. A second store of any
+        # kind (a class attribute, an augmented or deleted field, another
+        # assignment) or a value nothing outside produced leaves it unknown.
+        # The value is resolved in the scope that stores it, whichever
+        # method this visitor is in.
         # A call on a local name resolves through that name's source-ordered
         # binding, so only a found origin or a disqualifying store is kept;
         # a store still being resolved is none (self.a = self.a.copy()).
-        key = (class_qname, name)
+        key = (class_ref, name)
         cache = self.analyzer.field_call_origins
         if cache.get(key) is not None:
             return cache[key]
-        stores = self.analyzer.field_stores.get(key, [])
-        if len(stores) != 1 or not isinstance(stores[0][0], ast.Call):
+        stores = self.field_stores_seen(class_ref, name)
+        if len(stores) != 1 or not isinstance(stores[0][0], (ast.Call, ast.Name)):
             cache[key] = ""
             return ""
         if key in cache:
             return ""
         cache[key] = None
         value, scope = stores[0]
-        previous, self.scope = self.scope, scope
+        previous = self.scope, self.module
+        self.scope, self.module = scope, self.scope_module(scope)
         try:
-            authority, ref = self.resolved_call_target(value.func)
+            if isinstance(value, ast.Call):
+                origin = self.produced_external(*self.resolved_call_target(value.func))
+            else:
+                origin = self.parameter_type_origin(value)
         finally:
-            self.scope = previous
+            self.scope, self.module = previous
             del cache[key]
+        if origin:
+            cache[key] = origin
+        return origin
+
+    def scope_module(self, scope):
+        # The module whose code a scope is.
+        while scope.parent is not None:
+            scope = scope.parent
+        return self.analyzer.modules.get(scope.qname, self.module)
+
+    def outside_type(self, annotation):
+        # The outside symbol an annotation written as a plain name or
+        # attribute (ccxt.Exchange) names where it is written; "" for a
+        # repository class, a container, a union, a string or anything else.
+        expression, declared_scope = annotation
+        if not isinstance(expression, (ast.Name, ast.Attribute)):
+            return ""
+        previous = self.scope, self.module
+        self.scope, self.module = declared_scope, self.scope_module(declared_scope)
+        try:
+            authority, ref = self.resolve(expression)
+        finally:
+            self.scope, self.module = previous
         candidate = self.object(ref) if ref else None
-        if authority == "external" and candidate and candidate["kind"] == "external_symbol":
-            cache[key] = ref
-            return ref
-        return ""
+        if authority != "external" or not candidate or candidate["kind"] != "external_symbol":
+            return ""
+        # typing.Any declares no type and typing.Self the repository class
+        # itself: neither is an outside class.
+        if candidate["external"]["package_path"] in ("typing", "typing_extensions"):
+            return ""
+        return ref
+
+    def parameter_type_origin(self, name):
+        # A parameter of the storing def annotated with an outside type
+        # (ccxt_object: ccxt.Exchange) and never reassigned there.
+        binding = self.scope.bindings.get(name.id)
+        if binding is None or binding["kind"] != "object" or binding["ref"] not in self.analyzer.parameter_refs:
+            return ""
+        if self.scope.stores.get(name.id) or name.id in self.scope.opaque_names:
+            return ""
+        annotation = self.analyzer.variable_annotations.get(binding["ref"])
+        return self.outside_type(annotation) if annotation is not None else ""
+
+    def produced_external(self, authority, ref):
+        # The outside symbol whose value a call produces: the outside symbol
+        # it calls, the outside type a repository function declares it
+        # returns (_init_ccxt(...) -> ccxt.Exchange), or, for a repository
+        # function with no declared return type, the outside call its one
+        # return statement returns (return Application.builder()...build()).
+        # Calling a coroutine function returns a coroutine and calling a
+        # generator function a generator, neither what they return; any
+        # other case is "".
+        candidate = self.object(ref) if ref else None
+        if candidate is None:
+            return ""
+        if authority == "external":
+            return ref if candidate["kind"] == "external_symbol" else ""
+        if authority != "local" or candidate["kind"] not in ("function", "method") \
+                or candidate.get("signature", "").startswith("async "):
+            return ""
+        annotation = self.analyzer.return_annotations.get(ref)
+        if annotation is not None:
+            return self.outside_type(annotation)
+        returns = self.analyzer.return_nodes.get(ref, [])
+        if ref in self.analyzer.suspended_callables or len(returns) != 1 or not isinstance(returns[0][0], ast.Call):
+            return ""
+        value, scope = returns[0]
+        active = self.analyzer.producing
+        if ref in active:
+            return ""
+        active.add(ref)
+        previous = self.scope, self.module
+        self.scope, self.module = scope, self.scope_module(scope)
+        try:
+            authority, returned = self.resolved_call_target(value.func)
+        finally:
+            self.scope, self.module = previous
+            active.discard(ref)
+        target = self.object(returned) if returned else None
+        return returned if authority == "external" and target and target["kind"] == "external_symbol" else ""
 
     def self_field_call(self, node):
         # The call a class's field (self.name) is stored from, when it is
-        # the field's one store and a plain assignment.
+        # the field's one store it may see and a plain assignment.
         if not (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self" and self.scope.class_qname):
             return None
-        stores = self.analyzer.field_stores.get((self.scope.class_qname, node.attr), [])
+        stores = self.field_stores_seen(self.scope.class_ref, node.attr)
         if len(stores) == 1 and isinstance(stores[0][0], ast.Call):
-            return stores[0][0]
+            return stores[0]
         return None
 
     def self_field_origin(self, node):
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self" and self.scope.class_qname:
-            return self.field_call_origin(self.scope.class_qname, node.attr)
+            return self.field_call_origin(self.scope.class_ref, node.attr)
         return ""
 
     def pattern_receiver(self, callee):
@@ -1712,7 +1952,30 @@ class RelationVisitor(ast.NodeVisitor):
             result["receiver_origin_resolution"] = binding["origin_resolution"]
         return result
 
+    def partial_callable(self, node):
+        # functools.partial(f, ...) given as an argument hands f over, as a
+        # bare f would: the repository callable its first argument names,
+        # through a partial of a partial too.
+        if not isinstance(node, ast.Call) or not node.args or isinstance(node.args[0], ast.Starred):
+            return None
+        authority, ref = self.resolve(node.func)
+        partial = self.object(ref) if ref else None
+        if authority != "external" or partial is None or partial["name"] != "functools.partial":
+            return None
+        handed = self.partial_callable(node.args[0])
+        if handed is not None:
+            return handed
+        authority, ref = self.resolve(node.args[0])
+        value = self.object(ref) if ref else None
+        if authority in ("local", "literal") and value and value["kind"] in ("function", "method", "lambda"):
+            return authority, ref
+        return None
+
     def pattern_argument_authority(self, node):
+        handed = self.partial_callable(node)
+        if handed is not None:
+            resolution, refs = self.pattern_resolution(handed)
+            return {"object_refs": refs, "resolution": resolution, "objects_observed": 1}
         if isinstance(node, ast.Call):
             ref = self.analyzer.call_result_refs.get(id(node), "")
             return {"object_refs": [ref], "resolution": "exact", "objects_observed": 1} if ref else {"objects_observed": 0}
@@ -1820,8 +2083,9 @@ class RelationVisitor(ast.NodeVisitor):
             # result, as a local name bound to a call does.
             stored = self.self_field_call(node)
             if stored is not None:
-                return {"kind": "call_result", "text": safe_expression_name(stored.func),
-                        "anchor": callee_location(self.module["path"], stored.func)}
+                call, scope = stored
+                return {"kind": "call_result", "text": safe_expression_name(call.func),
+                        "anchor": callee_location(self.scope_module(scope)["path"], call.func)}
             return {"kind": "field", "text": node.attr, "anchor": anchor,
                     "parts": [self.source_value(node.value)]}
         if isinstance(node, ast.Subscript):
@@ -2363,7 +2627,7 @@ class RelationVisitor(ast.NodeVisitor):
         arguments = [(argument, position, "") for position, argument in enumerate(node.args, 1)]
         arguments.extend((value.value, 0, value.arg or "") for value in node.keywords)
         for argument, position, keyword in arguments:
-            authority, ref = self.resolve(argument)
+            authority, ref = self.partial_callable(argument) or self.resolve(argument)
             value = self.object(ref) if ref else None
             if authority in ("local", "literal") and value and value["kind"] in ("function", "method", "lambda"):
                 source_argument = None

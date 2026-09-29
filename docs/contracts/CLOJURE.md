@@ -107,6 +107,9 @@ Missing equivalents, recorded rather than fabricated:
   witnesses draw.
 - A table row that stores two callables is one registration in C; Clojure
   has no table-row registration, so the rule has nothing to apply to here.
+- `(subscribe "topic" (partial handle-order store))` hands over `partial`'s
+  result: the call hands over no function, where Python's
+  `functools.partial(f, ...)` hands `f` (PYTHON, What a call produces).
 - A map of handlers (`(def commands {"get" get-command})`) makes each handler
   a native var read of the var that holds the map, without its key. No
   binding names the handler.

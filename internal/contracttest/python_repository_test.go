@@ -914,11 +914,13 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 	})
 	adaptertest.AssertRegistration(t, index, adaptertest.Registration{
 		Name: "Python direct-result callback registration",
+		// A call on an outside call's direct result is that symbol's member.
 		Registration: adaptertest.Relation{
-			Kind: programindex.RelationCalls, FromID: subscribeDirect.ID,
-			Resolution: programindex.ResolutionUnresolved,
+			Kind: programindex.RelationInvokesExternal, FromID: subscribeDirect.ID,
+			ToIDs:      []string{programIndexExternalObjectNamed(t, index, "kafka.KafkaConsumer.subscribe").ID},
+			Resolution: programindex.ResolutionExact,
 			Path:       "src/fixture_app/events.py", Line: 21,
-			TargetsObserved: 1, TargetsOmitted: 1, WitnessesObserved: 1, PatternsObserved: 1,
+			TargetsObserved: 1, TargetsOmitted: 0, WitnessesObserved: 1, PatternsObserved: 1,
 			Patterns: []adaptertest.Pattern{{
 				Form: programindex.PatternCall, Selector: "subscribe", ReceiverID: directResult.ID,
 				// The registration addresses the terminal selector; its receiver
@@ -1001,12 +1003,13 @@ func TestCumulativePythonChainedCallsKeepTheirOwnPositions(t *testing.T) {
 	// normalized = "/".join(path.split("/"))  -- join takes no literal, so no fact
 	// repeated = name.replace("/", "-").replace("/", "-")
 	// head = path.split("/")[0].split("/")
-	// The parser knows no type for what subscribe returns or for the untyped
-	// parameters, so those calls name no outside symbol; each is still its own
-	// fact at its own attribute name.
+	// A call on a call's result continues the outside symbol that call
+	// names (kafka.KafkaConsumer.subscribe.subscribe); the parser knows no
+	// type for the untyped parameters, so their calls name none. Each is
+	// its own fact at its own attribute name.
 	adaptertest.AssertCallSiteBoundaries(t, repository, input, "src/fixture_app/events.py", []adaptertest.CallSite{
 		{Line: 64, Column: 21, Key: "subscribe", Text: "kafka.KafkaConsumer.subscribe", Path: "orders.chained", Symbol: "handle_order"},
-		{Line: 64, Column: 63, Key: "subscribe", Path: "orders.chained", Symbol: "record_order"},
+		{Line: 64, Column: 63, Key: "subscribe", Text: "kafka.KafkaConsumer.subscribe.subscribe", Path: "orders.chained", Symbol: "record_order"},
 		{Line: 68, Column: 32, Key: "split", Path: "/"},
 		{Line: 69, Column: 21, Key: "replace", Path: "/"},
 		{Line: 69, Column: 39, Key: "replace", Path: "/"},

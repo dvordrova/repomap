@@ -179,6 +179,20 @@ Clojure has no equivalent: a record's constructor is an ordinary function
 and a protocol call on it stays unresolved. C has no constructor; its
 `construct` is a record a table row or a field store builds.
 
+A client is built once and inherited, and a call's result is used on the
+spot, the way freqtrade's Exchange keeps its ccxt client, its Webhook its
+address and its Telegram bot its application:
+
+| Language | Inherited call and field | A subclass's store | A call's result, and a callable handed through partial application |
+| --- | --- | --- | --- |
+| Python | [inherited_clients.py](python/src/fixture_app/inherited_clients.py): `self.ask` in `FuturesPrices` is `Prices.ask`; `self.client.get` is `httpx.Client.get` from the factory's declared type and from the annotated parameter; `Quotes.last` (a subclass stores its own client) and `MaybePrices.ask` (a union) stay unresolved | `Webhook.send`'s `self.url` is Webhook's or Discord's store, both listed | [outside_results.py](python/src/fixture_app/outside_results.py): `Path(name).open()`, `Worker(name, 1).run()`, the `Application.builder()` chain, `self._app` from an untyped factory's one return; `partial(self._force_enter, …)` hands `_force_enter` to `CommandHandler` |
+| TypeScript | the compiler's declared types (`workers.ts`) | missing: only the enclosing class's constructor record (JSTS) | `createConsumer().on(...).on(...)` in [server.ts](jsts/src/server.ts) is `Consumer.on`; `bind` hands over its result: missing |
+| Go | promoted methods and declared field types (`workers.go`) | no base method runs for another type | `router.HandleFunc(...).Methods("GET")` in [main.go](go/cmd/app/main.go); no partial application |
+
+Clojure keeps no fields, types no call result and hands over `partial`'s
+result (CLOJURE); C has no classes or member calls, so neither has an
+equivalent.
+
 A registration on a router parameter is held by what the function's callers
 pass. One caller hands the same router to a helper that passes it on to the
 leaf, to a branch helper that also hands it to itself, and to a spare helper

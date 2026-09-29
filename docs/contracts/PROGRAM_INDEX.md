@@ -269,7 +269,9 @@ ProgramIndex retains source expressions for non-callable arguments,
 receivers and locally observed return values. Go, Python, JSTS and C extract these in their existing parse. Parameter/capture owners, call-result anchors, constructors, field
 initializers and concatenations remain source observations. `alternatives`
 is a value that is one of its parts at run time, none picked: a conditional
-expression, a closure's several bindings, a callable's several returns, in
+expression, a closure's several bindings, a callable's several returns, the
+initializer of a field a Python base-class method reads, one store per class
+storing it (PYTHON), in
 Go a control-flow join's incoming values in edge order (GO.md), and in C
 the writes of a local that reach a read (C.md; Python and JSTS read a local
 assigned on both branches as `unknown`, a recorded missing equivalent). C

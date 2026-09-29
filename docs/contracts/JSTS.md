@@ -298,6 +298,13 @@ Missing equivalents, recorded rather than fabricated:
   `[{name: "del", run: delCommand}]`) makes each handler a value read where
   the table is written, without its key or its row's literals. No binding
   names the handler.
+- A function handed through `handler.bind(this, ...)` is `bind`'s result:
+  the call receiving it hands over no function, where Python's
+  `functools.partial(f, ...)` hands `f` (PYTHON, What a call produces).
+- A base-class method's `this.url` source value takes the enclosing class's
+  constructor record only, not the stores of the classes extending it,
+  which Python lists as alternatives (PYTHON, Inherited members and
+  fields).
 - With no table-row registration, the C rule that a row storing two
   callables is one input has nothing to apply to.
 - An incoming boundary's registration as written (`atlas.Boundary.Written`,
