@@ -14,10 +14,8 @@ are not decisions. `kind_given` says what it is:
 
 `path`, `line`, `caller`, `external` and `values` are the fact's source
 site, enclosing declaration or handler, called symbol and observed
-literals. An outgoing row may carry the `method` its call states, the
-outside `package` its call goes through and `reached_from`, the functions
-of the program that reach the call from outside the file it is written in,
-each with its signature. An entry's `words` are what its
+literals. An outgoing row may carry the `method` its call states and the
+outside `package` its call goes through. An entry's `words` are what its
 registration wrote, as written: the call word, its literals and the address
 its mounts compose. `context.owners` holds the declaration once, with the
 calls near the fact, and `owner_ref` names it. Author documentation is
@@ -39,15 +37,5 @@ Fill only the columns in `fill`:
   over the bare literal it was composed from. Leave out a word that only
   names the registering call or the record type, and answer `none` when no
   word names the entry.
-- `destination`, when requested: the outside system this call reaches,
-  the service or program at the other end as a newcomer would name it.
-  `context.destination_catalog` lists, as `d*` refs, the systems the
-  program's outside packages reach, each with its `packages`. Choose the
-  entry that lists the row's `package`, else the entry that is the system
-  this call reaches. When no entry is, write `other: ` and that system's
-  short name, as the call's values, the owner's calls and `reached_from`
-  show it: name it by what it is to this program, such as the server a
-  client sends its commands to or the primary a replica copies from. A
-  package, a protocol, a host, a URL or a key is not a system's name.
 - `address`, when requested: one `a*` ref from `address_catalog` naming the
   request's destination, else `unknown`.

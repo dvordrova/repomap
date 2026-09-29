@@ -141,49 +141,65 @@ func TestBoundaryRowAsksAddressOnlyWithCandidatesAndNamesItsOwner(t *testing.T) 
 	}
 }
 
-func TestBoundaryWindowSharesOwnerAndDestinationsAndDecodesClosedDestination(t *testing.T) {
+func TestBoundaryWindowSharesOwnerOnce(t *testing.T) {
 	owner := atlas.Place{ID: "owner", Path: "client.go", LineNo: 10, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "publish", Doc: "Publishes events."},
 		Calls: []atlas.SymbolCall{{Kind: "invokes_external", Name: "ch.Publish", Line: 40, Values: []string{"morfeu.events"}}}}}
 	place := func(id string, line int) atlas.Place {
 		return atlas.Place{ID: id, Path: "client.go", LineNo: line, Boundary: &atlas.BoundaryFacts{Direction: atlas.DirectionOut, Caller: "publish", External: "ch.Publish", Values: []string{"morfeu.events"}}}
 	}
-	catalog := Destinations(map[string]string{"github.com/rabbitmq/amqp091-go": "RabbitMQ", "net/http": ""})
-	shared := append([]table.Field{BoundaryOwnerContext(BoundaryOwner("o1", owner, []int{40, 41}, nil))}, DestinationFields(catalog)...)
+	shared := []table.Field{BoundaryOwnerContext(BoundaryOwner("o1", owner, []int{40, 41}, nil))}
 	rows := []table.Row{
 		BoundaryRow(place("first", 40), "o1", BoundaryAddresses(place("first", 40), owner), true),
 		BoundaryRow(place("second", 41), "o1", nil, true),
 	}
-	def := FixedBoundaries(true)
-	windows, err := table.WindowsWithContext(def, 1, shared, rows)
+	windows, err := table.WindowsWithContext(FixedBoundaries(true), 1, shared, rows)
 	if err != nil || len(windows) != 1 {
 		t.Fatalf("windows: %d, %v", len(windows), err)
 	}
 	request := string(windows[0].Request)
-	if strings.Count(request, `"Publishes events."`) != 1 || strings.Count(request, `"destination_catalog"`) != 1 || strings.Count(request, `"owner_ref": "o1"`) != 2 {
-		t.Fatalf("owner or catalogue not shared once per window:\n%s", request)
+	if strings.Count(request, `"Publishes events."`) != 1 || strings.Count(request, `"owner_ref": "o1"`) != 2 || strings.Contains(request, "destination_catalog") {
+		t.Fatalf("owner not shared once per window, or a row offered destinations:\n%s", request)
 	}
-	if !strings.Contains(request, `"destination_catalog": [{"ref":"d1","value":"RabbitMQ","packages":["github.com/rabbitmq/amqp091-go"]}]`) {
-		t.Fatalf("catalogue lost its named package or offered an unnamed one:\n%s", request)
+}
+
+// A destination is one row whatever number of calls it holds: its
+// catalogue is sent once per window, a ref resolves to the listed system
+// and a free name keeps its text; free text without the prefix loses only
+// its own row.
+func TestDestinationWindowSharesItsCatalogueAndDecodesClosedAndFreeNames(t *testing.T) {
+	catalog := Destinations(map[string]string{"github.com/rabbitmq/amqp091-go": "RabbitMQ", "net/http": ""})
+	rows := []table.Row{
+		DestinationRow("g1", []DestinationEnd{{Address: "amqp://broker:5672"}}, []DestinationCall{{Call: `ch.Publish("morfeu.events", msg)`, Kind: "queue_producer", Package: "github.com/rabbitmq/amqp091-go", Values: []string{"morfeu.events"}}}, []DestinationCaller{{Name: "publish", Path: "client.go"}}, nil),
+		DestinationRow("g2", []DestinationEnd{{Unresolved: "cfg.SMSURL", Written: "cfg.SMSURL"}}, []DestinationCall{{Call: "client.Post(cfg.SMSURL, body)", Kind: "client_request", Package: "net/http"}}, []DestinationCaller{{Name: "notify", Path: "notify.go"}}, []string{"main"}),
+	}
+	def := DestinationNames()
+	windows, err := table.WindowsWithContext(def, 3, DestinationFields(catalog), rows)
+	if err != nil || len(windows) != 1 {
+		t.Fatalf("windows: %d, %v", len(windows), err)
+	}
+	request := string(windows[0].Request)
+	if strings.Count(request, `"destination_catalog"`) != 1 || !strings.Contains(request, `"destination_catalog": [{"ref":"d1","value":"RabbitMQ","packages":["github.com/rabbitmq/amqp091-go"]}]`) {
+		t.Fatalf("catalogue not shared once, lost its named package or offered an unnamed one:\n%s", request)
+	}
+	if !strings.Contains(request, `"reached_from": ["main"]`) || strings.Count(request, `"reached_from"`) != 1 {
+		t.Fatalf("reached_from is not the destination's names, or appears without callers:\n%s", request)
 	}
 	result, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[
-		{"key":"first","line":"publishes catalog events to morfeu.events","destination":"d1","address":"a1"},
-		{"key":"second","line":"notifies the operator","destination":"other: Twilio"}]}`))
+		{"key":"g1","destination":"d1"},
+		{"key":"g2","destination":"other: Twilio"}]}`))
 	if err != nil || len(result.Rejections) != 0 {
 		t.Fatalf("closed destination refused: %+v / %v", result, err)
 	}
-	if result.Answers[0]["destination"] != "d1" || DestinationValue(catalog, result.Answers[0]["destination"]) != "RabbitMQ" || result.Answers[0]["address"] != "a1" {
+	if result.Answers[0]["destination"] != "d1" || DestinationValue(catalog, result.Answers[0]["destination"]) != "RabbitMQ" {
 		t.Fatalf("ref did not resolve to the listed system: %+v", result.Answers[0])
 	}
-	if free, ok := table.IsFree(def.Columns[1], result.Answers[1]["destination"]); !ok || free != "Twilio" {
+	if free, ok := table.IsFree(def.Columns[0], result.Answers[1]["destination"]); !ok || free != "Twilio" {
 		t.Fatalf("free destination lost: %+v", result.Answers[1])
 	}
-	if _, asked := result.Answers[1]["address"]; asked {
-		t.Fatalf("a row without candidates acquired an address cell: %+v", result.Answers[1])
-	}
 	refused, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[
-		{"key":"first","line":"publishes","destination":"RabbitMQ broker","address":"a1"},
-		{"key":"second","line":"notifies","destination":"other: Twilio"}]}`))
-	if err != nil || len(refused.Rejections) != 1 || refused.Rejections[0].Key != "first" || refused.Answers[1]["destination"] != "other: Twilio" {
+		{"key":"g1","destination":"RabbitMQ broker"},
+		{"key":"g2","destination":"other: Twilio"}]}`))
+	if err != nil || len(refused.Rejections) != 1 || refused.Rejections[0].Key != "g1" || refused.Answers[1]["destination"] != "other: Twilio" {
 		t.Fatalf("free text without the prefix was accepted or its neighbour lost: %+v / %v", refused, err)
 	}
 }
@@ -197,11 +213,7 @@ func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) 
 			addresses := BoundaryAddresses(place)
 			row := BoundaryRow(place, "", addresses, outgoing)
 			def := FixedBoundaries(outgoing)
-			var shared []table.Field
-			if outgoing {
-				shared = DestinationFields(Destinations(map[string]string{"example.com/client": "Example service"}))
-			}
-			windows, err := table.WindowsWithContext(def, 1, shared, []table.Row{row})
+			windows, err := table.WindowsWithContext(def, 1, nil, []table.Row{row})
 			if err != nil || len(windows) != 1 {
 				t.Fatalf("fixed request: %v", err)
 			}
@@ -218,7 +230,7 @@ func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) 
 			}
 			want := []string{"line"}
 			if outgoing {
-				want = append(want, "destination", "address")
+				want = append(want, "address")
 			} else {
 				// An incoming entry is named from its words; this row wrote
 				// none, so its name is not asked.
@@ -239,17 +251,17 @@ func TestFixedBoundaryRequestAsksForProseNotNativeExistenceOrKind(t *testing.T) 
 				t.Fatalf("unrequested cells acquired authority: %+v / %v", result, err)
 			}
 			if outgoing {
-				// An unlisted address loses only the address: the line and the
-				// destination stand, and no address is taken.
-				bad, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"native","line":"Sends a request.","destination":"d1","address":"a999"}]}`))
+				// An unlisted address loses only the address: the line
+				// stands, and no address is taken.
+				bad, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"native","line":"Sends a request.","address":"a999"}]}`))
 				if err != nil || len(bad.Rejections) != 1 || bad.Rejections[0].Cell != "address" || !strings.Contains(bad.Rejections[0].Reason, "a999") {
 					t.Fatalf("an unlisted address was not refused alone: %+v / %v", bad, err)
 				}
-				if _, taken := bad.Answers[0]["address"]; taken || bad.Answers[0]["line"] != "Sends a request." || bad.Answers[0]["destination"] != "d1" || len(bad.AcceptedRowKeys()) != 0 {
+				if _, taken := bad.Answers[0]["address"]; taken || bad.Answers[0]["line"] != "Sends a request." || len(bad.AcceptedRowKeys()) != 0 {
 					t.Fatalf("fixed fact weakened closed address refs: %+v", bad)
 				}
 				// A row whose every cell fails is still refused.
-				if refused, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"native","line":"","destination":"d999","address":"a999"}]}`)); err == nil || refused.Answers[0] != nil {
+				if refused, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"native","line":"","address":"a999"}]}`)); err == nil || refused.Answers[0] != nil {
 					t.Fatalf("a row without one valid cell was accepted: %+v / %v", refused, err)
 				}
 			}

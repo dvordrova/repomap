@@ -491,8 +491,8 @@ type kvdPreset struct {
 	// connectOffered the values of the inputs the client's connect was
 	// offered as its counterpart.
 	systems, connectOffered []string
-	// reachedFrom are the outgoing rows asked their destination, each with
-	// where its program reaches it from.
+	// reachedFrom are the destinations asked their name, each by the
+	// functions making its calls and where its program reaches them from.
 	reachedFrom []string
 	// peers are the table rows asked which peer input they send, each with
 	// the peer the preset chose ("none" for del: a reader who is unsure).
@@ -616,8 +616,13 @@ func (preset *kvdPreset) answer(table string, fill []map[string]any, context, ro
 			// kvcli's connect reaches the server: no package names a
 			// system, so the reader writes it, from where the client
 			// reaches the call.
+			var callers []string
+			for _, item := range asList(row["callers"]) {
+				caller, _ := item.(map[string]any)
+				callers = append(callers, fmt.Sprintf("%v in %v", caller["name"], caller["path"]))
+			}
 			preset.mu.Lock()
-			preset.reachedFrom = append(preset.reachedFrom, fmt.Sprintf("%v:%v %v", row["path"], row["line"], row["reached_from"]))
+			preset.reachedFrom = append(preset.reachedFrom, fmt.Sprintf("%s %v", strings.Join(callers, ", "), row["reached_from"]))
 			preset.mu.Unlock()
 			answer[name] = "other: kvd server"
 		case table == "atlas_boundaries" && name == "address":

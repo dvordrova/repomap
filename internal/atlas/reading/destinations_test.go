@@ -195,43 +195,81 @@ func TestDestinationChainsStayWithTheTargetsThatRunEveryStep(t *testing.T) {
 	}
 }
 
-// Two calls through one outside package, asked in different windows beside
-// different neighbours, are offered one and the same catalogue and take the
-// same name: litestream's lone Azure DeleteBlob was named S3 while its
-// siblings' window named Azure Blob Storage. The name is asked once per
-// package; a package that reaches no outside system gives no entry, and a
-// call at a boundary's site that is not the boundary's own (the SQL text
-// formatted where a query fact stands) names no package.
-func TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow(t *testing.T) {
+// What an outgoing call reaches is named once per destination, never per
+// call (F3: litestream's seven subcommands each dialled the control socket
+// and each asked its own name, ten names in all). A call whose outside
+// package atlas_systems named takes that name with no question: the lone
+// Azure DeleteBlob and its sibling beside an S3 call alike. Calls whose
+// walks end at the same place are one destination: two requests to one
+// server from two declarations are asked once, with both calls, their
+// callers and where the program reaches them from by name; a query fact
+// at a database call's site shares that call's walk and takes its
+// package's name. A fact without a call, and the SQL text formatted where
+// a query fact stands, are their own destinations.
+func TestADestinationIsNamedOnceForAllItsCalls(t *testing.T) {
 	const azblob, s3, gateway = "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob", "github.com/aws/aws-sdk-go-v2/service/s3", "example.com/gateway"
-	call := func(pkg, receiver, name string, line int) atlas.SymbolCall {
-		return atlas.SymbolCall{Kind: "invokes_external", Name: name, Line: line, Column: 9, API: &atlas.CallAPI{Package: pkg, Receiver: receiver, Name: name}}
+	call := func(pkg, receiver, name string, line int, arguments ...atlas.SourceArgument) atlas.SymbolCall {
+		return atlas.SymbolCall{Kind: "invokes_external", Name: name, Line: line, Column: 9, API: &atlas.CallAPI{Package: pkg, Receiver: receiver, Name: name}, SourceArguments: arguments}
+	}
+	literal := func(text string) atlas.SourceArgument {
+		return atlas.SourceArgument{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: text}}
 	}
 	symbol := func(id, path, target string, line int, calls ...atlas.SymbolCall) atlas.Place {
 		return atlas.Place{ID: "symbol:" + id, Kind: atlas.PlaceSymbol, Path: path, LineNo: line, Parent: "file:" + id, TargetIDs: []string{target},
 			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:" + id, Name: id}, Calls: calls}}
 	}
-	// A lone call in one declaration; another beside an S3 call in a
-	// second; a request through the standard HTTP client in a third; a
-	// gateway call of another target.
 	alone := symbol("DeleteLTXFiles", "abs/replica_client.go", "service", 293, call(azblob, "*Client", "DeleteBlob", 303))
 	beside := symbol("DeleteAll", "abs/all.go", "service", 30, call(azblob, "*Client", "DeleteBlob", 40), call(s3, "*Client", "GetObject", 41))
-	ping := symbol("Ping", "control/ping.go", "service", 10, call("net/http", "*Client", "Get", 12))
 	send := symbol("Send", "gateway/send.go", "tool", 5, call(gateway, "*Client", "Send", 7))
-	// A fact without a declaration names no package and is offered its
-	// target's catalogue all the same.
+	// Two subcommands ask one server for two things; main reaches both.
+	// Info's item carries the calls beside its request, as written, and
+	// the closure it hands its client's transport.
+	info := symbol("Info", "control/info.go", "service", 10, call("net/http", "*Client", "Get", 12, literal("http://localhost/info")),
+		atlas.SymbolCall{Kind: "invokes_external", Name: "fmt.Errorf", Line: 13, Column: 10, API: &atlas.CallAPI{Package: "fmt", Name: "Errorf"}, Values: []string{"failed to connect to control socket: %w"}})
+	info.Symbol.Bindings = []atlas.SymbolBinding{{From: "Info", To: "Info$1", Kind: "passes_callback", Detail: "net/http.Transport.DialContext <- func(ctx context.Context, network string, addr string) (net.Conn, error)"}}
+	list := symbol("List", "control/list.go", "service", 10, call("net/http", "*Client", "Get", 14, literal("http://localhost/list")))
+	main := symbol("main", "main.go", "service", 1,
+		atlas.SymbolCall{Kind: "calls", Name: "Info", Line: 3, Column: 2, CalleeIDs: []string{info.ID}, Resolution: "exact"},
+		atlas.SymbolCall{Kind: "calls", Name: "List", Line: 4, Column: 2, CalleeIDs: []string{list.ID}, Resolution: "exact"})
+	for _, callee := range []*atlas.Place{&info, &list} {
+		callee.Symbol.CalledBy = []atlas.SymbolCaller{{Kind: "calls", Resolution: "exact", PlaceID: main.ID, Path: main.Path, Name: "main", Line: 3}}
+	}
+	// A query fact claims the Exec call at its site: it names no external,
+	// and takes the package of the talking call it stands on. The next Exec
+	// names database/sql.
+	database := &sourcevalue.Value{Kind: "parameter", Text: "db", Position: 1, Anchor: &sourcevalue.Anchor{Path: "db/wal.go", Line: 20, Column: 14}}
+	exec, vacuum := call("database/sql", "*DB", "Exec", 22), call("database/sql", "*DB", "Exec", 24)
+	exec.ReceiverValue, vacuum.ReceiverValue = database, database
+	checkpoint := symbol("Checkpoint", "db/wal.go", "service", 20, exec, vacuum)
+	pragma := atlas.Place{ID: "fact:pragma", Kind: atlas.PlaceBoundary, Path: "db/wal.go", LineNo: 22, Column: 9, Parent: "file:Checkpoint", TargetIDs: []string{"service"},
+		Boundary: &atlas.BoundaryFacts{Source: "fact", ObjectID: "object:Checkpoint", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "pragma"}}, Values: []string{"PRAGMA wal_checkpoint(TRUNCATE)"}, Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryDB}}
+	// One URL given to an S3 call, an Azure call and a plain request: the
+	// packages name two systems, so the facts show no one destination and
+	// the request, named by no package, is asked alone.
+	mirror := symbol("Mirror", "store/mirror.go", "service", 60,
+		call(s3, "*Client", "GetObject", 61, literal("https://store.example/a")), call(azblob, "*Client", "DeleteBlob", 62, literal("https://store.example/b")),
+		call("net/http", "*Client", "Get", 63, literal("https://store.example/c")))
+	// A fact without a declaration names no package and walks nothing.
 	upload := atlas.Place{ID: "fact:upload", Kind: atlas.PlaceBoundary, Path: "abs/upload.go", LineNo: 5, Parent: "file:upload", TargetIDs: []string{"service"},
 		Boundary: &atlas.BoundaryFacts{Source: "external_call", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "upload"}}, External: "azblob.Client.UploadStream", Direction: atlas.DirectionOut, GivenKind: atlas.BoundarySDK}}
-	// A query fact whose site holds the fmt.Sprintf formatting its text.
+	// A query fact at the fmt.Sprintf formatting its text, handed to
+	// db.Exec: the Exec sends it, so its destination is the Exec's.
+	formatted := &sourcevalue.Value{Kind: "call_result", Text: "Sprintf", Anchor: &sourcevalue.Anchor{Path: "db/vacuum.go", Line: 12, Column: 20}}
+	handed := call("database/sql", "*DB", "Exec", 12, atlas.SourceArgument{Position: 1, Origin: formatted})
+	handed.Column, handed.ReceiverValue = 9, database
+	compactor := symbol("Vacuum", "db/vacuum.go", "service", 10, handed,
+		atlas.SymbolCall{Kind: "invokes_external", Name: "fmt.Sprintf", Line: 12, Column: 20, API: &atlas.CallAPI{Package: "fmt", Name: "Sprintf"}})
+	vacuumed := atlas.Place{ID: "fact:vacuum", Kind: atlas.PlaceBoundary, Path: "db/vacuum.go", LineNo: 12, Column: 20, Parent: "file:Vacuum", TargetIDs: []string{"service"},
+		Boundary: &atlas.BoundaryFacts{Source: "fact", ObjectID: "object:Vacuum", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "vacuum"}}, Values: []string{"VACUUM INTO %s"}, Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryDB}}
+	// A query fact whose site holds the fmt.Sprintf formatting its text,
+	// handed to no call that talks: its own destination.
 	shrink := symbol("Shrink", "db/shrink.go", "service", 250, atlas.SymbolCall{Kind: "invokes_external", Name: "fmt.Sprintf", Line: 252, Column: 22, API: &atlas.CallAPI{Package: "fmt", Name: "Sprintf"}})
 	query := atlas.Place{ID: "fact:query", Kind: atlas.PlaceBoundary, Path: "db/shrink.go", LineNo: 252, Column: 22, Parent: "file:Shrink", TargetIDs: []string{"service"},
 		Boundary: &atlas.BoundaryFacts{Source: "fact", ObjectID: "object:Shrink", Origins: []atlas.BoundaryOrigin{{TargetID: "service", FactID: "query"}}, Values: []string{"PRAGMA wal_checkpoint(%s)"}, Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryDB}}
-	graph := []atlas.Place{alone, beside, ping, send, upload, shrink, query}
-	systems := map[string]string{azblob: "Azure Blob Storage", s3: "Amazon S3", "net/http": "none", gateway: "Example gateway"}
+	graph := []atlas.Place{alone, beside, send, info, list, main, checkpoint, pragma, mirror, compactor, vacuumed, upload, shrink, query}
+	systems := map[string]string{azblob: "Azure Blob Storage", s3: "Amazon S3", "net/http": "none", gateway: "Example gateway", "database/sql": "SQLite"}
 	asked := make(map[string]int)
-	var packageRows []map[string]any
-	offered := make(map[string]string)
-	windows := 0
+	var destinations []map[string]any
 	var mu sync.Mutex
 	provider := &mutatedTableProvider{}
 	provider.mutate = func(input map[string]any, rows []map[string]any) {
@@ -239,36 +277,35 @@ func TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow(t *testing.T
 		defer mu.Unlock()
 		if input["table"] == "atlas_systems" {
 			for i, source := range input["rows"].([]any) {
-				row := source.(map[string]any)
-				pkg := row["package"].(string)
+				pkg := source.(map[string]any)["package"].(string)
 				asked[pkg]++
-				packageRows = append(packageRows, row)
 				rows[i]["system"] = systems[pkg]
 			}
 			return
 		}
-		windows++
-		catalog := input["context"].(map[string]any)["destination_catalog"]
+		named := false
+		for _, column := range input["fill"].([]any) {
+			named = named || column.(map[string]any)["name"] == "destination"
+		}
 		for i, source := range input["rows"].([]any) {
 			row := source.(map[string]any)
-			offered[fmt.Sprintf("%v:%v", row["path"], row["line"])] = string(mustJSON(catalog))
-			rows[i]["line"], rows[i]["address"] = "sends", "unknown"
-			// The entry that lists the row's package, as a reader would
-			// choose; a row whose package reaches no named system names
-			// its own, and a row without a package takes the target's
-			// object store.
-			switch pkg, _ := row["package"].(string); {
-			case row["path"] == "db/shrink.go":
-				if pkg != "" {
-					t.Errorf("the query fact took the package of the call formatting its text: %v", row)
+			if !named {
+				if context, _ := input["context"].(map[string]any); row["reached_from"] != nil || context["destination_catalog"] != nil {
+					t.Errorf("a call's own row was offered destinations: %v", row)
 				}
-				rows[i]["destination"] = "other: SQLite"
-			case pkg == "net/http":
+				rows[i]["line"], rows[i]["address"] = "sends", "unknown"
+				continue
+			}
+			destinations = append(destinations, row)
+			switch text := string(mustJSON(row)); {
+			case strings.Contains(text, "store.example"):
+				rows[i]["destination"] = "other: Mirror"
+			case strings.Contains(text, "net/http"):
 				rows[i]["destination"] = "other: Control socket"
-			case pkg == "":
-				rows[i]["destination"] = destinationRef(input, "Azure Blob Storage")
+			case strings.Contains(text, "wal_checkpoint(%s)"):
+				rows[i]["destination"] = "other: SQLite"
 			default:
-				rows[i]["destination"] = destinationRef(input, systems[pkg])
+				rows[i]["destination"] = destinationRef(input, "Azure Blob Storage")
 			}
 		}
 	}
@@ -278,6 +315,11 @@ func TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow(t *testing.T
 		{ID: "service", Dependencies: []Dependency{{Package: azblob, Module: azblob, Version: "v1.6.2"}, {Package: s3, Module: s3, Version: "v1.97.3"}}},
 		{ID: "tool", Dependencies: []Dependency{{Package: gateway, Module: gateway, Version: "v0.1.0"}}},
 	}
+	sources := map[string]string{
+		"control/info.go": strings.Repeat("\n", 11) + `	resp, err := client.Get("http://localhost/info")` + "\n" + `		return fmt.Errorf("failed to connect to control socket: %w", err)` + "\n",
+		"control/list.go": strings.Repeat("\n", 13) + `	resp, err := client.Get("http://localhost/list")` + "\n",
+	}
+	r.opts.ReadSource = func(path string) ([]byte, error) { return []byte(sources[path]), nil }
 	r.places = map[string]atlas.Place{}
 	for _, place := range graph {
 		r.places[place.ID] = place
@@ -285,45 +327,98 @@ func TestOneOutsidePackageIsOfferedTheSameDestinationsInEveryWindow(t *testing.T
 	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
 	r.responseTables = map[string]rememberedTable{}
 	r.api = map[string]apiRole{}
-	for _, api := range []string{azblob + ".Client.DeleteBlob", s3 + ".Client.GetObject", "net/http.Client.Get", gateway + ".Client.Send"} {
+	for _, api := range []string{azblob + ".Client.DeleteBlob", s3 + ".Client.GetObject", gateway + ".Client.Send", "net/http.Client.Get", "database/sql.DB.Exec"} {
 		r.api[api] = apiRole{talks: atlas.BoundarySDK}
 	}
+	r.arguments = map[string]ArgumentChoice{"net/http.Client.Get": {Position: 1}, "database/sql.DB.Exec": {Receiver: true},
+		s3 + ".Client.GetObject": {Position: 1}, azblob + ".Client.DeleteBlob": {Position: 1}}
 	if err := r.readBoundaries(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	// One question per package, with its manifest record and its calls.
-	if want := map[string]int{azblob: 1, s3: 1, "net/http": 1, gateway: 1}; !maps.Equal(asked, want) {
+	// One question per package, and one per destination no package names.
+	if want := map[string]int{azblob: 1, s3: 1, "net/http": 1, gateway: 1, "database/sql": 1}; !maps.Equal(asked, want) {
 		t.Fatalf("packages asked %v, want %v", asked, want)
 	}
-	for _, row := range packageRows {
-		if row["package"] == azblob && (!reflect.DeepEqual(row["dependency"], []any{azblob + " v1.6.2"}) || !strings.Contains(string(mustJSON(row["calls"])), `"symbol":"Client.DeleteBlob"`)) {
-			t.Fatalf("the azblob item lost its record or its call: %v", row)
+	if len(destinations) != 4 {
+		t.Fatalf("destinations asked %d times, want 4 (the server, the mirror's request, the upload, the formatted query): %s", len(destinations), mustJSON(destinations))
+	}
+	for _, row := range destinations {
+		text := string(mustJSON(row))
+		if !strings.Contains(text, "localhost") {
+			continue
 		}
-	}
-	service := offered["abs/replica_client.go:303"]
-	if len(offered) != 7 {
-		t.Fatalf("rows lost: %d windows, %v", windows, offered)
-	}
-	for _, site := range []string{"abs/all.go:40", "abs/all.go:41", "abs/upload.go:5", "control/ping.go:12", "db/shrink.go:252"} {
-		if offered[site] != service {
-			t.Fatalf("%s was offered other destinations than the lone call:\n%s\n%s", site, offered[site], service)
+		for _, want := range []string{`"address":"http://localhost/info"`, `"address":"http://localhost/list"`, `client.Get(\"http://localhost/info\")`, `client.Get(\"http://localhost/list\")`, `"reached_from":["main"]`,
+			`"hands_over":["Info$1 to net/http.Transport.DialContext"]`, `"calls":["fmt.Errorf(\"failed to connect to control socket: %w\", err)"]`, `"name":"List","path":"control/list.go"`} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("the server's item lost %s: %s", want, text)
+			}
 		}
-	}
-	entry := func(ref, value, pkg string) map[string]any {
-		return map[string]any{"ref": ref, "value": value, "packages": []string{pkg}}
-	}
-	if want := string(mustJSON([]any{entry("d1", "Amazon S3", s3), entry("d2", "Azure Blob Storage", azblob)})); service != want {
-		t.Fatalf("the service's catalogue is not its named packages (none gives no entry):\n%s\nwant %s", service, want)
-	}
-	if tool := offered["gateway/send.go:7"]; tool != string(mustJSON([]any{entry("d1", "Example gateway", gateway)})) {
-		t.Fatalf("another target's row is not offered its own target's catalogue: %s", tool)
 	}
 	got := make(map[string]string)
 	for _, state := range r.boundaries {
 		got[fmt.Sprintf("%s:%d", state.place.Path, state.place.LineNo)] = state.destination
 	}
-	want := map[string]string{"abs/replica_client.go:303": "Azure Blob Storage", "abs/all.go:40": "Azure Blob Storage", "abs/all.go:41": "Amazon S3", "abs/upload.go:5": "Azure Blob Storage", "control/ping.go:12": "Control socket", "gateway/send.go:7": "Example gateway", "db/shrink.go:252": "SQLite"}
-	if !maps.Equal(got, want) {
-		t.Fatalf("destinations = %v, want %v", got, want)
+	want := map[string]string{
+		"abs/replica_client.go:303": "Azure Blob Storage", "abs/all.go:40": "Azure Blob Storage", "abs/all.go:41": "Amazon S3", "gateway/send.go:7": "Example gateway",
+		"control/info.go:12": "Control socket", "control/list.go:14": "Control socket",
+		"db/wal.go:22": "SQLite", "db/wal.go:24": "SQLite", "abs/upload.go:5": "Azure Blob Storage", "db/shrink.go:252": "SQLite",
+		"store/mirror.go:61": "Amazon S3", "store/mirror.go:62": "Azure Blob Storage", "store/mirror.go:63": "Mirror",
+		"db/vacuum.go:12": "SQLite",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("destinations = %v", got)
+	}
+	for site, name := range want {
+		if got[site] != name {
+			t.Fatalf("destinations = %v, want %v", got, want)
+		}
+	}
+}
+
+// The walk's ends are a destination's identity, within the row's targets:
+// an absolute URL by its scheme and host as written, a setting's value by
+// the setting, any other address or an unresolved value by where the walk
+// stopped. A row the walk never read, or whose site holds no reaching
+// call, is its own.
+func TestDestinationKeyIsWhereTheWalksEnd(t *testing.T) {
+	use := func(address, frontier string, steps ...atlas.DestinationStep) atlas.DestinationUse {
+		return atlas.DestinationUse{Address: address, Frontier: frontier, Steps: steps}
+	}
+	state := func(id string, uses ...atlas.DestinationUse) *boundaryState {
+		return &boundaryState{place: atlas.Place{ID: id, TargetIDs: []string{"app"}}, uses: uses, reaching: true}
+	}
+	stop := func(path string, line int) atlas.DestinationStep {
+		return atlas.DestinationStep{Path: path, Line: line, Column: 3}
+	}
+	other := state("b", use("http://localhost/info", ""))
+	other.place.TargetIDs = []string{"tool"}
+	formatted := state("b", use("", "?.PageSize", stop("main.go", 55)))
+	formatted.reaching = false
+	for _, same := range [][2]*boundaryState{
+		{state("a", use("http://localhost/info", "")), state("b", use("http://localhost/list?x=1", ""))},
+		{state("a", use("http://{--host}:{--port}/x", "")), state("b", use("http://{--host}:{--port}/y", ""))},
+		{state("a", use("{--socket}", "", stop("info.go", 22))), state("b", use("{--socket}", "", stop("list.go", 22)))},
+		{state("a", use("{env:API}/users", "")), state("b", use("{env:API}/orders", ""))},
+		{state("a", use("", "?.DB", stop("main.go", 55))), state("b", use("", "?.DB", stop("load.go", 9), stop("main.go", 55)))},
+		{state("a", use("/health", "", stop("a.go", 4))), state("b", use("/health", "", stop("a.go", 4)))},
+		{state("a", use("x.db", "", stop("a.go", 4)), use("x.db", "", stop("a.go", 4))), state("b", use("x.db", "", stop("a.go", 4)))},
+	} {
+		if destinationKey(same[0]) != destinationKey(same[1]) {
+			t.Fatalf("one destination split: %q / %q", destinationKey(same[0]), destinationKey(same[1]))
+		}
+	}
+	for _, apart := range [][2]*boundaryState{
+		{state("a", use("http://localhost:8080/info", "")), state("b", use("http://localhost/info", ""))},
+		{state("a", use("http://localhost/info", "")), other},
+		{state("a", use("/health", "", stop("a.go", 4))), state("b", use("/health", "", stop("b.go", 9)))},
+		{state("a", use("", "?.DB", stop("main.go", 55))), state("b", use("", "?.DB", stop("main.go", 57)))},
+		{state("a", use("", "computed value", stop("a.go", 1))), state("b", use("", "unresolved argument", stop("a.go", 1)))},
+		{state("a", use("", "?.PageSize", stop("main.go", 55))), formatted},
+		{state("a"), state("b")},
+		{state("a", use("http://x.example", "")), state("b", use("http://x.example", ""), use("http://y.example", ""))},
+	} {
+		if destinationKey(apart[0]) == destinationKey(apart[1]) {
+			t.Fatalf("two destinations joined: %q", destinationKey(apart[0]))
+		}
 	}
 }

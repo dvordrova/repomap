@@ -230,9 +230,10 @@ func localCall(call atlas.SymbolCall) string {
 // FixedBoundaries explains a boundary whose existence and kind the facts and
 // the symbol roles already gave. An incoming entry also chooses its name among
 // the words its registration wrote; an outgoing fact whose address the code
-// does not know may still need a destination and an address choice. Each cell
-// fails alone: a refused line keeps the fact's given line, a refused name
-// leaves the handler's own name, a refused destination or address names none.
+// does not know may still need an address choice. What an outgoing call
+// reaches is asked once per destination (DestinationNames), never per row.
+// Each cell fails alone: a refused line keeps the fact's given line, a
+// refused name leaves the handler's own name, a refused address names none.
 func FixedBoundaries(outgoing bool) table.Definition {
 	def := table.Definition{
 		Stage: StageBoundaries, Contract: boundariesContract + ".fixed",
@@ -242,7 +243,7 @@ func FixedBoundaries(outgoing bool) table.Definition {
 	}
 	if outgoing {
 		def.Contract += ".outbound"
-		def.Columns = append(def.Columns, destinationColumn(), addressColumn())
+		def.Columns = append(def.Columns, addressColumn())
 		return def
 	}
 	def.Columns = append(def.Columns, table.Column{Name: "name", Kind: table.Sequence, OptionsFrom: "word_options", WhenOptionsFrom: "word_options", Alone: true,
@@ -322,11 +323,12 @@ func EntryName(words []EntryWord, cell string) string {
 // DestinationOther prefixes a destination the catalogue does not name.
 const DestinationOther = "other: "
 
-// destinationColumn chooses among the names the row's outside packages
-// were given (Destinations), or names a system none of them covers.
+// destinationColumn chooses among the names the destination's outside
+// packages were given (Destinations), or names a system none of them
+// covers.
 func destinationColumn() table.Column {
 	return table.Column{Name: "destination", Kind: table.Choice, OptionsFrom: "destination_options", Free: DestinationOther, FreeMaxRunes: LabelRunes, Alone: true,
-		Note: "the d* ref of the system this call reaches from context.destination_catalog, or other: and that system's short name when no entry is it; never a package, protocol, host or URL"}
+		Note: "the d* ref of the system these calls reach from context.destination_catalog, or other: and that system's short name when no entry is it; never a package, protocol, host or URL"}
 }
 
 // addressColumn is asked only where the row carries address candidates: a
@@ -523,17 +525,7 @@ func BoundaryOwner(ref string, owner atlas.Place, rowLines []int, sourceContext 
 	evidence := EvidenceCatalog{OmitDefaults: true}
 	decl := owner.Symbol.Decl
 	calls := []any{}
-	for _, call := range owner.Symbol.Calls {
-		near := false
-		for _, line := range rowLines {
-			if call.Line >= line-OwnerCallSpan && call.Line <= line+OwnerCallSpan {
-				near = true
-				break
-			}
-		}
-		if !near && !addressCandidateLiterals(call) {
-			continue
-		}
+	for _, call := range OwnerCalls(owner, rowLines) {
 		calls = append(calls, evidence.CallWithOrigins(call))
 	}
 	value := map[string]any{"ref": ref, "path": owner.Path, "line": owner.LineNo, "name": decl.Name, "kind": decl.Kind,
@@ -546,6 +538,26 @@ func BoundaryOwner(ref string, owner atlas.Place, rowLines []int, sourceContext 
 		value[field.Name] = field.Value
 	}
 	return value
+}
+
+// OwnerCalls are the calls of an owner a boundary row is read beside: those
+// within OwnerCallSpan lines of a row's line, and every call whose literals
+// are address candidates (a client constructor with its endpoint).
+func OwnerCalls(owner atlas.Place, rowLines []int) []atlas.SymbolCall {
+	var calls []atlas.SymbolCall
+	for _, call := range owner.Symbol.Calls {
+		near := false
+		for _, line := range rowLines {
+			if call.Line >= line-OwnerCallSpan && call.Line <= line+OwnerCallSpan {
+				near = true
+				break
+			}
+		}
+		if near || addressCandidateLiterals(call) {
+			calls = append(calls, call)
+		}
+	}
+	return calls
 }
 
 // BoundaryOwnerContext is the context field carrying one window's owners.

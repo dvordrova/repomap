@@ -7,9 +7,9 @@ import (
 )
 
 // reachedFrom are the declarations an outgoing call is reached from in the
-// programs its row runs in, each by name and signature, for the question
-// naming what the call reaches: Redis's connect is written in anet.c's
-// anetTcpGenericConnect, and redis-server reaches it from syncWithMaster,
+// programs its row runs in, each by name, for the question naming the
+// call's destination (destination_groups.go): Redis's connect is written
+// in anet.c's anetTcpGenericConnect, and redis-server reaches it from syncWithMaster,
 // redis-cli from cliConnect, which says what is at the other end. It is
 // GroupsIndex's ReachedFrom (outbound_reached.go) before the parts are
 // drawn, when a file stands for its part: from the declaration making the
@@ -24,13 +24,7 @@ func (r *reader) reachedFrom(state *boundaryState, owner atlas.Place, handlers m
 		return nil
 	}
 	targets := rowTargets(state)
-	name := func(place atlas.Place) string {
-		text := place.Symbol.Decl.Name
-		if signature := place.Symbol.Decl.Signature; signature != "" {
-			text += " " + signature
-		}
-		return text
-	}
+	name := func(place atlas.Place) string { return place.Symbol.Decl.Name }
 	var result []string
 	seen := map[string]bool{owner.ID: true}
 	stack := []atlas.Place{owner}

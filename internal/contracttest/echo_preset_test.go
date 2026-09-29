@@ -92,6 +92,18 @@ func TestEchoPresetReadingTurnsRegistrationsIntoOperations(t *testing.T) {
 	if !provider.sawRegistration || !provider.sawSQL {
 		t.Fatalf("the preset was never asked about the route symbol (%v) or the query (%v)", provider.sawRegistration, provider.sawSQL)
 	}
+	// The driver's open reaches the system its package was named once; the
+	// statement, on a call the preset says talks to nothing, names no
+	// package and is its own destination, asked.
+	for _, call := range overlay.Outbound {
+		want := "PostgreSQL"
+		if call.External != "" {
+			want = "preset system"
+		}
+		if call.Kind == "db" && call.Destination != want {
+			t.Fatalf("database call %s reaches %q, want %q", call.External, call.Destination, want)
+		}
+	}
 	if len(result.Atlas.API) != 3 {
 		t.Fatalf("api roles = %+v", result.Atlas.API)
 	}

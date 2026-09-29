@@ -643,8 +643,10 @@ type boundaryState struct {
 	// the atlas_api table names it.
 	apiSymbol string
 	// outside is the outside package an outgoing boundary's call goes
-	// through, when the code names the call at its site.
-	outside string
+	// through, when the code names the call at its site; reaching marks a
+	// row whose uses walk that call's value (destination_groups.go).
+	outside  string
+	reaching bool
 	// programNotNamed marks a call starting another program that none of
 	// its words names; destination then holds no program.
 	programNotNamed bool
@@ -723,8 +725,26 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		for _, call := range owner.Symbol.Calls {
 			if call.Line == state.place.LineNo && call.Column == state.place.Column {
 				state.uses = append(state.uses, tracer.Read(owner, call)...)
-				if callsExternal(call, facts.External) {
-					state.outside = call.API.Package
+				// The row's own call is the one its external names or, for a
+				// fact naming none (an SQL text on db.Exec), the call at its
+				// site whose symbol talks to something: the fact claimed
+				// that call's boundary (bindInterpretedBoundaries).
+				if callsExternal(call, facts.External) || facts.External == "" && r.talksOut(call) {
+					state.outside, state.reaching = call.API.Package, true
+				}
+			}
+		}
+		// A fact naming no call whose site holds none that talks, such as
+		// the SQL text a fmt.Sprintf formats, is sent by the talking call
+		// handed what the call at its site returns (db.Exec(fmt.Sprintf(…))):
+		// its destination is that call's, and so is its walk.
+		if !state.reaching && facts.External == "" {
+			site := sourcevalue.Anchor{Path: state.place.Path, Line: state.place.LineNo, Column: state.place.Column}
+			for _, call := range owner.Symbol.Calls {
+				if r.talksOut(call) && handsResultOf(call, site) {
+					state.uses = tracer.Read(owner, call)
+					state.outside, state.reaching = call.API.Package, true
+					break
 				}
 			}
 		}
@@ -741,15 +761,15 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	r.opts.Stage(lines.StageBoundaries, fmt.Sprintf("reviewing runtime relationships: %d source candidates and facts", len(ids)))
 	// Every boundary here has its kind: the facts and the symbol roles gave
 	// it. The table explains it, and for an outgoing one chooses the
-	// destination and the address among the observed values.
+	// address among the observed values; what an outgoing call reaches is
+	// named once per destination (nameDestinations).
 	for mode := 0; mode < 2; mode++ {
 		outgoing, fixed := mode == 1, true
 		def := lines.FixedBoundaries(outgoing)
-		// The rows of one declaration share one window: the declaration, its
-		// source context and the destination catalogue are sent once, and a
-		// row names the declaration by owner_ref. Rows without a declaration
-		// share a window without owners. An outgoing row's catalogue is its
-		// own targets' (rowCatalog): rows of other targets never share it.
+		// The rows of one declaration share one window: the declaration and
+		// its source context are sent once, and a row names the declaration
+		// by owner_ref. Rows without a declaration share a window without
+		// owners.
 		type ownerGroup struct {
 			owner  atlas.Place
 			states []*boundaryState
@@ -794,9 +814,6 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			if owner.Symbol != nil {
 				key = owner.ID
 			}
-			if outgoing {
-				key += "\x00" + strings.Join(rowTargets(state), "\x00")
-			}
 			group, known := byOwner[key]
 			if !known {
 				group = &ownerGroup{owner: owner}
@@ -807,29 +824,28 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		}
 		sort.Strings(keys)
 		// The outside system each package the outgoing rows call through
-		// reaches is asked once, before any row chooses among the names.
-		var packages targetPackages
-		var names map[string]string
+		// reaches is asked once, and each destination the rows reach is
+		// named once (nameDestinations), never per row.
 		if outgoing {
-			packages = make(targetPackages)
+			packages := make(targetPackages)
+			var states []*boundaryState
 			for _, key := range keys {
 				for _, state := range byOwner[key].states {
 					packages.add(state)
+					states = append(states, state)
 				}
 			}
-			var err error
-			if names, err = r.readSystems(ctx, packages.all()); err != nil {
+			names, err := r.readSystems(ctx, packages.all())
+			if err != nil {
+				return err
+			}
+			if err := r.nameDestinations(ctx, states, packages, names, owners); err != nil {
 				return err
 			}
 		}
 		var groups rowGroups
 		var order []*boundaryState
 		addressValues := make(map[string][]lines.BoundaryAddress)
-		var handlers map[string]bool
-		if outgoing {
-			handlers = r.entryHandlers()
-		}
-		catalogs := make(map[string][]lines.Destination)
 		for _, key := range keys {
 			group := byOwner[key]
 			ownerRef := ""
@@ -840,10 +856,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 			}
 			var rows []table.Row
 			var rowLines []int
-			var catalog []lines.Destination
-			if outgoing {
-				catalog = packages.catalog(group.states[0], names)
-			}
+			var states []*boundaryState
 			for _, state := range group.states {
 				addresses := lines.BoundaryAddresses(state.place, original...)
 				if len(state.uses) > 0 {
@@ -853,6 +866,11 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				// value and of a call whose traced chains end in one value;
 				// such a row has no address decision.
 				askAddress := outgoing && state.address == ""
+				// Without captions an outgoing row with no address to
+				// choose has nothing to decide and is not sent.
+				if outgoing && r.opts.NoCaptions && (!askAddress || len(addresses) == 0) {
+					continue
+				}
 				row := lines.BoundaryRow(state.place, ownerRef, addresses, askAddress)
 				if outgoing && state.outside != "" {
 					row.Fields = append(row.Fields, table.Field{Name: "package", Value: state.outside})
@@ -860,33 +878,26 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				if len(state.uses) > 0 {
 					row.Fields = append(row.Fields, table.Field{Name: "destination_chains", Value: destinationEvidence(state.uses)})
 				}
-				// Where the program reaches the call from says what is at its
-				// other end: a replica's master, a client's server.
-				if outgoing {
-					if callers := r.reachedFrom(state, boundaryOwner(state.place.Boundary, owners), handlers); len(callers) > 0 {
-						row.Fields = append(row.Fields, table.Field{Name: "reached_from", Value: callers})
-					}
-				}
 				rows = append(rows, row)
 				rowLines = append(rowLines, state.place.LineNo)
 				if askAddress {
 					addressValues[state.place.ID] = addresses
 				}
-				catalogs[state.place.ID] = catalog
-				order = append(order, state)
+				states = append(states, state)
+			}
+			if len(rows) == 0 {
+				continue
 			}
 			var shared []table.Field
 			if group.owner.Symbol != nil {
 				var sourceContext []table.Field
 				if outgoing {
-					sourceContext = lines.BoundarySourceContext(group.states[0].place, group.owner, r.places, owners)
+					sourceContext = lines.BoundarySourceContext(states[0].place, group.owner, r.places, owners)
 				}
 				shared = append(shared, lines.BoundaryOwnerContext(lines.BoundaryOwner(ownerRef, group.owner, rowLines, sourceContext)))
 			}
-			if outgoing {
-				shared = append(shared, lines.DestinationFields(catalog)...)
-			}
 			groups = append(groups, rowGroup{shared: shared, rows: rows})
+			order = append(order, states...)
 		}
 		answers, err := r.runTableGroups(ctx, def, mode+1, groups, nil)
 		if err != nil {
@@ -913,7 +924,6 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				state.kind = answer["kind"]
 			}
 			if outgoing {
-				state.destination = destinationChoice(def, catalogs[state.place.ID], answer["destination"])
 				if !fixed && state.basis == "" {
 					state.basis = answer["basis"]
 					if state.basis == "remote_client_instance" {
@@ -955,6 +965,45 @@ func destinationChoice(def table.Definition, catalog []lines.Destination, cell s
 		}
 	}
 	return lines.DestinationValue(catalog, cell)
+}
+
+// handsResultOf reports a call given, as its receiver or an argument, what
+// the call at a site returns, directly or as a part of the value.
+func handsResultOf(call atlas.SymbolCall, site sourcevalue.Anchor) bool {
+	var carries func(value *sourcevalue.Value) bool
+	carries = func(value *sourcevalue.Value) bool {
+		if value == nil {
+			return false
+		}
+		if value.Kind == "call_result" && value.Anchor != nil && *value.Anchor == site {
+			return true
+		}
+		for i := range value.Parts {
+			if carries(&value.Parts[i]) {
+				return true
+			}
+		}
+		return false
+	}
+	if carries(call.ReceiverValue) {
+		return true
+	}
+	for _, argument := range call.SourceArguments {
+		if carries(argument.Origin) {
+			return true
+		}
+	}
+	return false
+}
+
+// talksOut reports a call of an outside symbol whose talks answer sends
+// work out: not a file, not another program started.
+func (r *reader) talksOut(call atlas.SymbolCall) bool {
+	if call.API == nil || call.API.Package == "" {
+		return false
+	}
+	talks := r.api[apiName(*call.API)].talks
+	return talks != "" && talks != lines.APIFile && talks != atlas.BoundaryRunsProgram
 }
 
 // callsExternal reports whether the call at a boundary's site is the

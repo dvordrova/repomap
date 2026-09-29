@@ -51,11 +51,17 @@ func TestBoundaryNativeFactSurvivesRefusedProseAndSameLineCallsKeepColumns(t *te
 	if len(r.boundaries) != 2 || !reflect.DeepEqual(r.boundaries[native.ID].place, native) || r.boundaries[native.ID].kind != atlas.BoundaryClientRequest || r.boundaries[native.ID].line != native.Given || r.boundaries[native.ID].address != native.Boundary.Values[0] || r.boundaries[native.ID].basis != "dispatch" {
 		t.Fatalf("refused prose deleted source fact: %+v", r.boundaries)
 	}
-	// Each outbound row loses only its refused line; its destination and
-	// address decisions stand beside it.
-	if len(r.rejected) != 2 || r.rejected[0].Kind != "cell_rejected" || !strings.Contains(r.rejected[0].Reason, `"line"`) || r.rejected[1].Kind != "cell_rejected" {
-		raw, _ := json.Marshal(r.rejected)
+	// Each outbound row asks only its line here (its address is known or
+	// has no candidate; what it reaches is named per destination), so a
+	// refused line refuses the row, and nothing else.
+	raw, _ := json.Marshal(r.rejected)
+	if len(r.rejected) == 0 {
 		t.Fatalf("fixed fact prose was not locally validated: %s", raw)
+	}
+	for _, rejected := range r.rejected {
+		if !strings.Contains(rejected.Reason, `cell "line"`) || strings.Contains(rejected.Reason, "destination") {
+			t.Fatalf("a refusal other than the line's: %s", raw)
+		}
 	}
 }
 

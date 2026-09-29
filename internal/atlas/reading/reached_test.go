@@ -9,7 +9,7 @@ import (
 
 // The question naming what an outgoing call reaches is told where each of
 // its programs reaches the call from: the first callers outside the file it
-// is written in, by name and signature, past the wrappers inside that file;
+// is written in, by name alone, past the wrappers inside that file;
 // a path whose callers run out inside the file only at a seed or an input's
 // handler; not a helper nothing calls, a test's caller, or a caller its
 // program never runs. The server's connect is reached from its replication,
@@ -44,15 +44,15 @@ func TestAnOutgoingCallIsNamedWithWhereItsProgramsReachItFrom(t *testing.T) {
 	row := func(targets ...string) *boundaryState {
 		return &boundaryState{place: atlas.Place{Path: "net.c", TargetIDs: targets}}
 	}
-	if got := r.reachedFrom(row("server"), r.places["generic"], nil); !slices.Equal(got, []string{"syncWithMaster int syncWithMaster(void)"}) {
+	if got := r.reachedFrom(row("server"), r.places["generic"], nil); !slices.Equal(got, []string{"syncWithMaster"}) {
 		t.Fatalf("the server reaches connect from %v", got)
 	}
-	if got := r.reachedFrom(row("client"), r.places["generic"], nil); !slices.Equal(got, []string{"cliConnect static int cliConnect(void)"}) {
+	if got := r.reachedFrom(row("client"), r.places["generic"], nil); !slices.Equal(got, []string{"cliConnect"}) {
 		t.Fatalf("the client reaches connect from %v", got)
 	}
 	// A wrapper inside the file whose callers run out is kept only when it
 	// handles an input.
-	if got := r.reachedFrom(row("server"), r.places["generic"], map[string]bool{"nonblock": true}); !slices.Equal(got, []string{"netNonBlockConnect int netNonBlockConnect(char *host, int port)", "syncWithMaster int syncWithMaster(void)"}) {
+	if got := r.reachedFrom(row("server"), r.places["generic"], map[string]bool{"nonblock": true}); !slices.Equal(got, []string{"netNonBlockConnect", "syncWithMaster"}) {
 		t.Fatalf("with a handler inside the file, the server reaches connect from %v", got)
 	}
 }
