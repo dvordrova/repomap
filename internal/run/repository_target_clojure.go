@@ -22,7 +22,13 @@ func newClojureRepositoryTypedTarget(target clojureproject.Target) (repositoryTy
 	if err != nil {
 		return repositoryTypedTarget{}, err
 	}
-	return newRepositoryTypedTarget(registry, repositoryTargetKey{Adapter: repositoryTargetAdapterClojure, Ref: target.Ref}, target.Selector, target.Name, targetoutcome.ScopePackage, target)
+	// A shadow-cljs build is a program a person runs; the JVM project is a
+	// package, whatever its aliases start.
+	scope := targetoutcome.ScopePackage
+	if target.Platform == "cljs" {
+		scope = targetoutcome.ScopeExecutable
+	}
+	return newRepositoryTypedTarget(registry, repositoryTargetKey{Adapter: repositoryTargetAdapterClojure, Ref: target.Ref}, target.Selector, target.Name, scope, target)
 }
 
 func clojureRepositoryTargetAdapterDescriptor() repositoryTargetAdapterDescriptor {

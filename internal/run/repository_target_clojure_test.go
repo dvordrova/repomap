@@ -5,6 +5,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
 func TestClojureCumulativeOrdinaryAdapter(t *testing.T) {
@@ -57,7 +58,7 @@ func TestClojureShadowBuildIsDiscoveredBesideTheJVMProject(t *testing.T) {
 		t.Fatalf("required files: %v", discovery.RequiredFileRefs)
 	}
 	restored, err := discovery.RestoreFiles([]corpus.FileID{shadow})
-	if err != nil || len(restored) != 1 || restored[0].Target.Selector != "clojure:shadow-cljs.edn:app" {
+	if err != nil || len(restored) != 1 || restored[0].Target.Selector != "clojure:shadow-cljs.edn:app" || restored[0].Target.Scope != targetoutcome.ScopeExecutable {
 		t.Fatalf("restored: %+v %v", restored, err)
 	}
 	targets, err := discovery.ResolveExplicit(repository, "clojure:shadow-cljs.edn:app")
