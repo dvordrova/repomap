@@ -272,6 +272,9 @@ type pageMapNode struct {
 	// Written is an input's registration as the code wrote it: a table's
 	// row with its arity and flags.
 	Written string
+	// Sets are, for a setting, the fields its branch writes (settingSets),
+	// one JSON list.
+	Sets string
 	// InputPath is an input's reading of its saved reach
 	// (page_input_path.go): where it is dispatched from, the sites it
 	// reaches, and the parts it enters with their calls.

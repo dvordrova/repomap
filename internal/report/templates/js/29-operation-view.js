@@ -217,6 +217,24 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   if(parts.childElementCount)section.appendChild(parts);
   return section;
 }
+// A setting's fields as the branch comparing its key writes them (page
+// data "sets", page_settings.go): "Writes: server.masterhost, …", each
+// reading the type declaring the field. No line numbers.
+function rmSettingWrites(sets,partNode,read){
+  var line=rmEl('p','map-reading-writes system-setting-writes');line.appendChild(rmEl('span','map-reading-label',rmT('Writes:')));
+  sets.forEach(function(set,i){
+    line.appendChild(document.createTextNode(i?', ':' '));
+    var key=set.href||set.open,at=key&&partNode(set.part);
+    var link=key?repomapMembers.sourceLink({Href:set.code||set.href,Open:set.open,Text:set.name,NoSource:set.no_source}):rmEl('span','',set.name);
+    link.classList.add('map-reading-name');if(set.source)link.title=set.source;
+    if(at)link.addEventListener('click',function(event){
+      if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+      event.preventDefault();event.stopPropagation();read(at,key);
+    });
+    line.appendChild(link);
+  });
+  return line;
+}
 // <catalogue>
 // A catalogue's reading (page_catalogue.go), shared by its members: where
 // they are declared and where that code is called from, what else it uses
@@ -284,6 +302,15 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   });
   section.appendChild(head);
   if(onInput&&catalogue.on_handler!=null)section.appendChild(line('system-catalogue-handled','{0} is handled by {1}',onInput.dataset.title,name(catalogue.on_handler)));
+  // What else the declaring code uses, folded under its count: each
+  // variable's users under theirs (owner, 2026-09-29: "server is also used
+  // by 116 functions" had stood as walls between a setting and its code).
+  var usesFold=null;
+  if(catalogue.declarer>=0&&(catalogue.uses||[]).length){
+    usesFold=rmEl('details','system-catalogue-uses-all');var usesHead=rmEl('summary');
+    usesHead.append.apply(usesHead,inline('{0} also uses {1} variables',name(catalogue.declarer),String(catalogue.uses.length)));
+    usesFold.appendChild(usesHead);
+  }
   (catalogue.uses||[]).forEach(function(use){
     if(catalogue.declarer<0)return;
     var box=rmEl('div','system-catalogue-uses');
@@ -303,8 +330,9 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
       });
       box.appendChild(more);
     }
-    section.appendChild(box);
+    usesFold.appendChild(box);
   });
+  if(usesFold)section.appendChild(usesFold);
   section.appendChild(rmEl('p','meta',rmT('Where these take effect is not established.')));
   return section;
 }
@@ -747,6 +775,12 @@ function rmCatalogInputClick(event,reveal){
       var catalogueSection=rmCatalogueSection(catalogue,n.dataset.title,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);},readDeclaration,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;});
       catalogueSection.dataset.readingAnchor='';
       card.querySelector('.map-card-intro').after(catalogueSection);
+    }
+    // A setting's own fields: what the branch comparing its key writes.
+    var sets=n.dataset.activation?rmPage.data(n,'sets')||[]:[];
+    if(sets.length){
+      var setLine=rmSettingWrites(sets,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},readDeclaration);
+      card.querySelector('.map-card-intro').after(setLine);
     }
     if(n.dataset.activation&&inputPath){
       // A chosen input's reading opens at how a request reaches it, then

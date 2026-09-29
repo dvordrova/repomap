@@ -327,6 +327,15 @@ relations with their own locations and unresolved frontiers.
   atlas tables over that evidence; deterministic stages preserve the neutral
   evidence and its exact provenance.
 
+A call pattern written in an if statement's condition may carry `branch`,
+the lines of the statement that condition guards (both included): where the
+code a comparison selects is written. The C adapter records it
+(`strcasecmp(argv[0], "persist")` guards its block); it is no witness, never
+enters a model request, and the report reads a setting's written fields
+from it (REPORT). The Go, Python, JS/TS and Clojure adapters record none:
+their settings are struct tags, keyword lookups or option declarations, not
+compared words.
+
 The Go, Python and JSTS adapters
 retain neutral `control_context` witnesses on the existing call pattern. Go
 uses the already loaded AST and types, Python annotates each parsed tree once

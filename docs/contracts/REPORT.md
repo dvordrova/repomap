@@ -958,6 +958,19 @@ socket.h.connect outgoing"), and its row in the component's reference says
 the program connects out from that run. The shared anet pair alone had
 named neither program.
 
+A setting a compared word declares (a configuration directive,
+`strcasecmp(argv[0],"slaveof")`) is read by its key as the code compares it,
+its comparison as written linking that line, then "Writes: server.masterhost,
+server.masterport, server.replstate": the exact field writes the declaring
+function makes on the lines that comparison guards (ProgramIndex pattern
+`branch`, `page_settings.go`), each field once in the order written, each
+reading the type declaring it; without a branch it names none. What else the
+declaring code uses folds under one line with its count ("loadServerConfig
+also uses 7 variables"), each variable's other users under theirs, in the
+setting's reading and in its collection (owner, 2026-09-29: the Settings
+catalogue had read as walls of "uses server, also used by …"). A Go
+struct-tag setting keeps its field and tag.
+
 A function's flow (owner-approved 2026-09-29, the designer's flow v2;
 `page_flow.go`, `32-flow.js`) is what it calls in the order the calls are
 written: GroupsIndex's calls, callbacks, executions and library calls

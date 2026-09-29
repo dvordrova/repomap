@@ -280,6 +280,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			Neighbours: strings.Join(nearIDs, " "), Degree: len(near), Members: 1,
 			Trace:   strings.Join(trace, " "),
 			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown, Written: operation.Written,
+			Sets:    builder.settingSets(index, operation, decls),
 			Catalogue: catalogueOf[operation.ID], DeclaredBy: declaredByOf[operation.ID], Declares: strings.Join(declaresOf[operation.ID], " "),
 		})
 	}

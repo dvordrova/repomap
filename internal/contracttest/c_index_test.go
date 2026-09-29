@@ -349,6 +349,39 @@ func TestCFixtureIndexesTheServer(t *testing.T) {
 		}
 	}
 
+	// A comparison in an if statement's condition knows the lines that
+	// condition guards, where the fields its setting writes are written:
+	// loadConfig's "port" and "dbfilename" guard one line each, "persist" its
+	// block, whose own "never" comparison guards the line after it.
+	loadConfig := cObject(t, index, programindex.ObjectFunction, "loadConfig", "kvd.c")
+	for _, compared := range []struct {
+		needle      string
+		first, last string
+	}{
+		{`strcasecmp(argv[0], "port")`, `strcasecmp(argv[0], "port")`, `strcasecmp(argv[0], "port")`},
+		{`strcasecmp(argv[0], "dbfilename")`, `strcasecmp(argv[0], "dbfilename")`, `strcasecmp(argv[0], "dbfilename")`},
+		{`strcasecmp(argv[0], "persist")`, `strcasecmp(argv[0], "persist")`, `server.dirty = 0;`},
+		{`strcasecmp(argv[1], "never")`, `server.dirty = -1;`, `server.dirty = -1;`},
+	} {
+		line, _ := fixture.at(t, "kvd.c", compared.needle, "")
+		first, _ := fixture.at(t, "kvd.c", compared.first, "")
+		last, _ := fixture.at(t, "kvd.c", compared.last, "")
+		if compared.last == `server.dirty = 0;` {
+			last++ // the block's closing brace
+		}
+		var branches []programindex.LineRange
+		for _, relation := range cRelationsAt(index, programindex.RelationInvokesExternal, loadConfig.ID, "kvd.c", line) {
+			for _, pattern := range relation.Patterns {
+				if pattern.Selector == "strcasecmp" && pattern.Branch != nil {
+					branches = append(branches, *pattern.Branch)
+				}
+			}
+		}
+		if want := (programindex.LineRange{Line: first, EndLine: last}); len(branches) != 1 || branches[0] != want {
+			t.Errorf("%s guards %+v, want %+v", compared.needle, branches, want)
+		}
+	}
+
 	// A field's declared type names where its repository type is declared,
 	// through pointers and arrays (the report links the type); a type of
 	// the platform or a scalar names none.

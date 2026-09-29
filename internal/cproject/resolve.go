@@ -460,6 +460,9 @@ type walker struct {
 	function    *function
 	loops       []programindex.Witness
 	conditional bool
+	// branch is, while an if statement's condition is walked, the lines of
+	// the statement it guards.
+	branch *programindex.LineRange
 	// inList is set inside an initializer list initList already read.
 	inList bool
 	// unevaluated is set inside an operand the program never evaluates
@@ -517,7 +520,22 @@ func (w walker) walk(n *Node) {
 			w.with(true).walk(n.Inner[1])
 			return
 		}
-	case "IfStmt", "ConditionalOperator", "BinaryConditionalOperator":
+	case "IfStmt":
+		// A call in the condition knows the lines the condition guards:
+		// `strcasecmp(argv[0],"slaveof")` selects its block.
+		for i, child := range n.Inner {
+			next := w.with(i > 0)
+			next.branch = nil
+			if i == 0 && len(n.Inner) > 1 {
+				begin, end := n.Inner[1].Begin.Site(), n.Inner[1].End.Site()
+				if begin.Line > 0 && end.Line >= begin.Line && begin.File == end.File && begin.File == child.Begin.Site().File {
+					next.branch = &programindex.LineRange{Line: begin.Line, EndLine: end.Line}
+				}
+			}
+			next.walk(child)
+		}
+		return
+	case "ConditionalOperator", "BinaryConditionalOperator":
 		for i, child := range n.Inner {
 			w.with(i > 0).walk(child)
 		}
@@ -1194,6 +1212,7 @@ type call struct {
 	selector                string
 	macro                   *programindex.Witness
 	context                 []programindex.Witness
+	branch                  *programindex.LineRange
 	arguments               []programindex.PatternArgumentInput
 	designators             map[int]designated // argument position -> function it names
 	// direct is a callee the call names; otherwise slot, when known, is
@@ -1216,7 +1235,7 @@ func (b *builder) call(w walker, n *Node) {
 	}
 	b.sequence++
 	c := &call{relationRef: fmt.Sprintf("c:call:%d", b.sequence), patternRef: fmt.Sprintf("c:call:%d:pattern", b.sequence),
-		from: w.owner, context: slices.Clone(w.loops), designators: map[int]designated{}}
+		from: w.owner, context: slices.Clone(w.loops), branch: w.branch, designators: map[int]designated{}}
 	callee := n.Inner[0]
 	named := designator(callee)
 	start := callee.Begin

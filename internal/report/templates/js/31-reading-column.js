@@ -402,10 +402,22 @@ function rmCatalogueLines(ctx,catalogue){
     if((reader.calls||[]).length)read.append(document.createTextNode(' ← '),callers(reader.calls));
     lines.push(read);
   });
-  (catalogue.uses||[]).forEach(function(use){
-    var users=rmEl('span','map-collection-callers');(use.users||[]).forEach(function(user,i){if(i)users.append(document.createTextNode(', '));users.appendChild(name(user));});
-    lines.push((use.users||[]).length?line('uses {0}, also used by {1}',[name(use.decl),users]):line('uses {0}',[name(use.decl)]));
-  });
+  // What else the declaring code uses, one folded line with its count;
+  // each variable's other users fold under theirs (owner, 2026-09-29: the
+  // Settings catalogue read as walls of "uses server, also used by …").
+  if((catalogue.uses||[]).length){
+    var usesFold=rmEl('details','map-collection-uses');usesFold.appendChild(rmEl('summary','',rmT('Also uses {0} variables',catalogue.uses.length)));
+    catalogue.uses.forEach(function(use){
+      var row=line('uses {0}',[name(use.decl)]);
+      if((use.users||[]).length){
+        var users=rmEl('details','map-collection-users'),head=rmEl('summary','',rmT('also used by {0}',use.users.length));users.appendChild(head);
+        var names=rmEl('span','map-collection-callers');use.users.forEach(function(user,i){if(i)names.append(document.createTextNode(', '));names.appendChild(name(user));});
+        users.appendChild(names);row.appendChild(users);
+      }
+      usesFold.appendChild(row);
+    });
+    lines.push(usesFold);
+  }
   return lines;
 }
 // A component's reading: its role and purpose, the model's; where its

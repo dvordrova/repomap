@@ -140,6 +140,10 @@ seed.
   builtin as a call. Go, Python and JS/TS have no macros; Clojure records
   no call a macro's expansion makes (CLOJURE), so it has no internals to
   hide.
+- A call written in an if statement's condition carries the lines that
+  condition guards as its pattern's `branch` (PROGRAM_INDEX): kvd's
+  `strcasecmp(argv[0], "port")` guards its own line, `"persist"` its block,
+  and the report names the fields a setting's branch writes from it.
 - A function passed as an argument is `passes_callback` bound to that argument.
   An assignment target's index and receiver are read like any expression, so
   a function passed to a call there (`marks[fold(c, n, both)] = 1`, `+=`,

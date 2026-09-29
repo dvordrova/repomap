@@ -808,7 +808,7 @@ func (b *builder) emitCalls() {
 	for _, c := range b.calls {
 		at := location(c.site)
 		pattern := p.RelationPatternInput{SourceRef: c.patternRef, Form: p.PatternCall, Selector: c.selector, Location: at,
-			Context: c.context, Arguments: c.arguments, ArgumentsObserved: len(c.arguments)}
+			Context: c.context, Branch: c.branch, Arguments: c.arguments, ArgumentsObserved: len(c.arguments)}
 		r := p.RelationInput{SourceRef: c.relationRef, Kind: p.RelationCalls, FromRef: c.from, Location: at, Patterns: []p.RelationPatternInput{pattern}}
 		switch {
 		case c.direct.ref != "":

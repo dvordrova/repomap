@@ -163,6 +163,12 @@ type Location struct {
 // TargetSource binds one repository-corpus file identity to its exact
 // repository-relative path. Keeping the pair together prevents consumers from
 // guessing the ref/path association by array position or lexical order.
+// LineRange is a run of whole source lines of one file, both included.
+type LineRange struct {
+	Line    int `json:"line"`
+	EndLine int `json:"end_line"`
+}
+
 type TargetSource struct {
 	FileRef string `json:"file_ref"`
 	Path    string `json:"path"`
@@ -842,7 +848,11 @@ type RelationPatternInput struct {
 	ResultValue   *sourcevalue.Value
 	// Context contains source-anchored enclosing control statements for this
 	// exact call site. It neither classifies the callable nor changes the call.
-	Context                  []Witness
+	Context []Witness
+	// Branch is, for a call written in an if statement's condition, the lines
+	// of the statement that condition guards: where the code the comparison
+	// selects is written (`strcasecmp(argv[0],"slaveof")`'s block).
+	Branch                   *LineRange
 	SourceRef                string
 	Form                     PatternForm
 	Selector                 string
@@ -862,6 +872,7 @@ type RelationPattern struct {
 	ReceiverValue            *sourcevalue.Value `json:"receiver_value,omitempty"`
 	ResultValue              *sourcevalue.Value `json:"result_value,omitempty"`
 	Context                  []Witness          `json:"context,omitempty"`
+	Branch                   *LineRange         `json:"branch,omitempty"`
 	ID                       string             `json:"id"`
 	SourceRef                string             `json:"-"`
 	Form                     PatternForm        `json:"form"`
@@ -2147,8 +2158,11 @@ func canonicalizeRelationPatterns(
 		if len(control) == 0 {
 			control = nil
 		}
+		if branch := value.Branch; branch != nil && (branch.Line < 1 || branch.EndLine < branch.Line) {
+			return nil, fmt.Errorf("pattern %q branch: lines %d-%d", value.SourceRef, branch.Line, branch.EndLine)
+		}
 		pattern := RelationPattern{
-			ID: id, SourceRef: value.SourceRef, Form: value.Form, Selector: value.Selector, Context: control,
+			ID: id, SourceRef: value.SourceRef, Form: value.Form, Selector: value.Selector, Context: control, Branch: cloneLineRange(value.Branch),
 			Location: cloneLocation(value.Location),
 			ResultID: resultID, ReceiverID: receiverID, ReceiverOriginIDs: receiverOriginIDs,
 			ReceiverValue: sourcevalue.Clone(value.ReceiverValue), ResultValue: sourcevalue.Clone(value.ResultValue),
@@ -3117,6 +3131,14 @@ func cloneWitnesses(values []Witness) []Witness {
 	return result
 }
 
+func cloneLineRange(value *LineRange) *LineRange {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+
 func cloneRelationPatterns(values []RelationPattern) []RelationPattern {
 	result := make([]RelationPattern, len(values))
 	copy(result, values)
@@ -3124,6 +3146,7 @@ func cloneRelationPatterns(values []RelationPattern) []RelationPattern {
 		result[position].ReceiverValue = sourcevalue.Clone(values[position].ReceiverValue)
 		result[position].ResultValue = sourcevalue.Clone(values[position].ResultValue)
 		result[position].Location = cloneLocation(values[position].Location)
+		result[position].Branch = cloneLineRange(values[position].Branch)
 		if len(values[position].Context) > 0 {
 			result[position].Context = cloneWitnesses(values[position].Context)
 		} else {

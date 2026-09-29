@@ -555,7 +555,8 @@ function rmDeclarationRelations(map,node,key,nodes){
       if (node.dataset.handlerUnknown==='true' && !node.dataset.catalogue) html += '<p class="map-card-handler">' + rmT.html('handler not established') + '</p>';
       // Its registration as the code wrote it: a command table's row says
       // its arity and flags ({"rpush",rpushCommand,3,REDIS_CMD_BULK|…}).
-      if (node.dataset.written) html += '<p class="map-card-written"><code>' + escapeText(node.dataset.written) + '</code></p>';
+      // A setting's comparison as written links its line (owner, 2026-09-29).
+      if (node.dataset.written) html += '<p class="map-card-written">' + (node.dataset.source ? '<a target="_blank" href="'+escapeText(node.dataset.source)+'"><code>' + escapeText(node.dataset.written) + '</code></a>' : '<code>' + escapeText(node.dataset.written) + '</code>') + '</p>';
       if (node.dataset.operationGroup && !node.dataset.catalogue) html += '<span class="map-card-meta">' + (node.dataset.handlerUnknown==='true' ? rmT.html('declared in') + ' ' : '') + escapeText(node.dataset.operationGroup) + '</span>';
       var source=node.getAttribute('data-source');
       // An input with no handler established says where it is parsed.

@@ -48,6 +48,7 @@ type pageReadingWrite struct {
 type pageFieldAccess struct {
 	from, field, label string
 	writes             bool
+	path               string
 	line, column       int
 }
 
@@ -97,7 +98,7 @@ func (builder *pageBuilder) fieldFacts(index *groupindex.Index) *pageFieldFacts 
 		}
 		access := pageFieldAccess{from: edge.FromSubjectID, field: edge.ToSubjectID, label: label, writes: edge.RelationKind == programindex.RelationWrites}
 		if edge.Location != nil {
-			access.line, access.column = edge.Location.Line, edge.Location.Column
+			access.path, access.line, access.column = edge.Location.Path, edge.Location.Line, edge.Location.Column
 		}
 		facts.byField[access.field] = append(facts.byField[access.field], access)
 		facts.byFrom[access.from] = append(facts.byFrom[access.from], access)
