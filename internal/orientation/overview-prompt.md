@@ -90,7 +90,9 @@ Rules for each part:
   A launch fact identifies the entry point, not a complete usable invocation.
   Check the seeds' calls and author instructions for required arguments and
   prerequisites. Preserve known required arguments, using an explicit
-  placeholder when the user must supply a value; never invent that value. If
+  placeholder when the user must supply a value; never invent that value.
+  When a seed prints a usage line, write the arguments and their placeholders
+  exactly as that line writes them. If
   the supplied evidence cannot support a usable invocation, omit it rather
   than presenting the bare entry point as sufficient.
 - `main_flow_target`: the one target (`t*`) whose main flow a newcomer should

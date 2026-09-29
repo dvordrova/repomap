@@ -25,7 +25,7 @@ const (
 
 	executionContract     = "repomap.orientation.v2"
 	preparationVersion    = 5
-	promptVersion         = 9
+	promptVersion         = 10
 	responseSchemaVersion = 2
 	// maxOutputTokens is measured: 117 accepted orientation exchanges
 	// answered in at most 1,260 output tokens (median 848). The shared
