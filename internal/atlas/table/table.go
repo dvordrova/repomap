@@ -107,6 +107,12 @@ type Column struct {
 	// OptionsFrom catalogue offers, when the catalogue's entries are the
 	// row's own values (a call's words) that one text defines alike.
 	EachCriteria *llm.Criteria `json:"-"`
+	// ValuesFrom names the row field listing each of a Sequence's options
+	// with the value it stands for ({"ref":"w1","value":"socket"}). A
+	// member written as exactly one option's value, not as its ref, is that
+	// option: the model chose it and spelled it by what it says. A value two
+	// options share names neither. A decoder rule like Missing.
+	ValuesFrom string `json:"-"`
 }
 
 // Definition is one table: its stage name, window size, prompt and columns.
@@ -446,9 +452,18 @@ func normalizeCell(column Column, context []Field, row Row, cell string) (string
 		for _, option := range optionsFrom(context, row, column.OptionsFrom) {
 			options[option] = true
 		}
+		values := optionValues(context, row, column.ValuesFrom, options)
+		// The whole cell written as one option's value ("POST /start" for
+		// w2) is that option, before its spaces split it.
+		if ref, ok := values[text]; ok && !options[text] {
+			return ref, nil
+		}
 		var selected []string
 		seen := make(map[string]bool)
 		for _, ref := range strings.Fields(strings.ReplaceAll(text, ",", " ")) {
+			if !options[ref] {
+				ref = values[ref]
+			}
 			if options[ref] && !seen[ref] {
 				selected = append(selected, ref)
 				seen[ref] = true
@@ -596,6 +611,44 @@ func optionsFrom(context []Field, row Row, name string) []string {
 		return result
 	}
 	return nil
+}
+
+// optionValues maps each value the named field lists for exactly one of the
+// options to that option's ref; a value listed for two options is left out.
+func optionValues(context []Field, row Row, name string, options map[string]bool) map[string]string {
+	if name == "" {
+		return nil
+	}
+	field, ok := fieldFrom(context, row, name)
+	if !ok {
+		return nil
+	}
+	raw, err := json.Marshal(field.Value)
+	if err != nil {
+		return nil
+	}
+	var entries []struct {
+		Ref   string `json:"ref"`
+		Value string `json:"value"`
+	}
+	if json.Unmarshal(raw, &entries) != nil {
+		return nil
+	}
+	result := make(map[string]string, len(entries))
+	shared := make(map[string]bool)
+	for _, entry := range entries {
+		value := collapse(entry.Value)
+		if !options[entry.Ref] || value == "" || shared[value] {
+			continue
+		}
+		if previous, seen := result[value]; seen && previous != entry.Ref {
+			delete(result, value)
+			shared[value] = true
+			continue
+		}
+		result[value] = entry.Ref
+	}
+	return result
 }
 
 // IsFree reports whether a choice cell used the column's free prefix and

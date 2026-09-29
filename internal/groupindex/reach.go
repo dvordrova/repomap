@@ -51,6 +51,10 @@ type Reach struct {
 	// reach (and no launch) holds, in operation order: words the handler
 	// itself checks (launch.go).
 	SubArguments []string
+	// Options are the handler-less inputs of this input's kind declared on
+	// the object its own call made, or by code only its branch runs, in
+	// operation order: a subcommand's flags (launch.go).
+	Options []string
 }
 
 // ReachedSubject is one reached declaration and its depth: the fewest calls

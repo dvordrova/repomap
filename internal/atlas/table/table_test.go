@@ -95,6 +95,37 @@ func TestSequencePreservesOrderAndFiltersOnlyExactKnownRefs(t *testing.T) {
 	}
 }
 
+// A name chosen among an entry's words may come back as the words
+// themselves: litestream's window of 87 flag and route names answered
+// "socket" and "POST /start" for w1 and w2, and every one had been
+// discarded. A member written as exactly one word's value is that word; the
+// whole cell first, so a value holding a space stays one word. A value two
+// words share names neither, and a word nothing offers stays unknown.
+func TestSequenceTakesAWordWrittenAsItsValue(t *testing.T) {
+	type word struct {
+		Ref   string `json:"ref"`
+		Value string `json:"value"`
+	}
+	column := Column{Name: "name", Kind: Sequence, OptionsFrom: "word_options", ValuesFrom: "words"}
+	row := Row{Fields: []Field{
+		{Name: "words", Value: []word{{"w1", "HandleFunc"}, {"w2", "POST /start"}, {"w3", "/start"}, {"w4", "socket"}, {"w5", "dup"}, {"w6", "dup"}}},
+		{Name: "word_options", Value: []string{"w1", "w2", "w3", "w4", "w5", "w6"}},
+	}}
+	for input, expected := range map[string]string{
+		"socket": "w4", "POST /start": "w2", "/start": "w3", "w2": "w2", "socket w3": "w4 w3",
+		"dup": "", "unknown": "", "w4 socket": "w4", "none": "",
+	} {
+		if value, err := normalizeCell(column, nil, row, input); err != nil || value != expected {
+			t.Fatalf("%q -> %q, %v; want %q", input, value, err, expected)
+		}
+	}
+	// Without ValuesFrom a value is no ref.
+	column.ValuesFrom = ""
+	if value, err := normalizeCell(column, nil, row, "socket"); err != nil || value != "" {
+		t.Fatalf("a value was taken without ValuesFrom: %q, %v", value, err)
+	}
+}
+
 func testRows() []Row {
 	return []Row{
 		{ID: "f1", Fields: []Field{{Name: "path", Value: "a.go"}, {Name: "box_options", Value: []string{"here", "pkg/b"}}}},

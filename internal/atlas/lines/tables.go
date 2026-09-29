@@ -246,7 +246,7 @@ func FixedBoundaries(outgoing bool) table.Definition {
 		def.Columns = append(def.Columns, addressColumn())
 		return def
 	}
-	def.Columns = append(def.Columns, table.Column{Name: "name", Kind: table.Sequence, OptionsFrom: "word_options", WhenOptionsFrom: "word_options", Alone: true,
+	def.Columns = append(def.Columns, table.Column{Name: "name", Kind: table.Sequence, OptionsFrom: "word_options", WhenOptionsFrom: "word_options", ValuesFrom: "words", Alone: true,
 		Note: "the w* refs of the words that name this entry as its sender names it, in the order they are read; none when no word names it"})
 	return def
 }
@@ -289,6 +289,30 @@ func NameableWords(values []string) []string {
 		}
 	}
 	return words
+}
+
+// FirstEntryWord names an entry whose handler is not established when no word
+// was chosen for it: the first word its code wrote that can stand in a
+// one-line name. A flag's name comes before its default and its usage
+// (fs.String("socket", "/var/run/litestream.sock", "control socket path")
+// is socket), a table row's first field before its other literals, and a
+// case's first spelling before the others (case "help", "-h" is help). A
+// value handed over names its registration's call word first among its
+// words; its literals are its values.
+func FirstEntryWord(facts *atlas.BoundaryFacts) string {
+	if facts == nil {
+		return ""
+	}
+	words := facts.Words
+	if facts.Handed {
+		words = facts.Values
+	}
+	for _, value := range words {
+		if nameable(value) {
+			return value
+		}
+	}
+	return ""
 }
 
 func nameable(value string) bool {

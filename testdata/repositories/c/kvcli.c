@@ -56,6 +56,17 @@ static int shortOption(const char *arg) {
     }
 }
 
+/* bench sends its PINGs the number of times its --requests option says.
+ * Only main's bench branch runs it, so --requests, which it compares its own
+ * arguments with, is bench's option, not the client's. */
+static int bench(int argc, char **argv) {
+    int j, requests = 100;
+    for (j = 1; j < argc; j++)
+        if (strcasecmp(argv[j], "--requests") == 0 && j + 1 < argc) requests = atoi(argv[++j]);
+    printf("bench: %d requests\n", requests);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     const char *host = getenv("KVD_HOST");
     const char *port = getenv("KVD_PORT");
@@ -68,6 +79,8 @@ int main(int argc, char **argv) {
     /* Without a command, the client reads its commands from its input. */
     if (argc == 1) return repl(host != NULL ? withoutScheme(host) : "127.0.0.1", port != NULL ? atoi(port) : 7379);
     if (argv[1][0] == '-' && argv[1][1] != '-') return shortOption(argv[1]);
+    /* bench, a subcommand of the client, runs its own code. */
+    if (strcasecmp(argv[1], "bench") == 0) return bench(argc - 1, argv + 1);
     /* --raw, an option of the client, comes before the command. */
     if (argc > 2 && strcasecmp(argv[1], "--raw") == 0) first = 2;
     if (argc <= first) {

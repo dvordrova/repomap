@@ -293,6 +293,8 @@ func TestCFixturePresetReadingNamesTheClientsOptionsAndCommands(t *testing.T) {
 	slices.SortFunc(got, func(a, b input) int { return strings.Compare(a.name, b.name) })
 	want := []input{
 		{kind: "command", name: "--raw", by: "main"},
+		{kind: "command", name: "--requests", by: "bench"},
+		{kind: "command", name: "bench", by: "main"},
 		{kind: "command", name: "bgsave", by: "cmdTable", sends: "bgsave"},
 		{kind: "command", name: "del", by: "cmdTable"},
 		{kind: "command", name: "get", by: "cmdTable", sends: "get"},

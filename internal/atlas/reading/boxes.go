@@ -942,11 +942,12 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		}
 	}
 	// An entry whose handler is not established has no handler to be named
-	// by: with no word chosen, its name is all its words as written, in
-	// order.
+	// by: with no word chosen, it is named by the first word its code wrote
+	// (lines.FirstEntryWord). Its other words, a flag's default and usage, stay
+	// its registration as written, never its name.
 	for _, state := range r.boundaries {
 		if state.handlerUnknown && state.name == "" {
-			state.name = strings.Join(lines.NameableWords(state.place.Boundary.Words), " ")
+			state.name = lines.FirstEntryWord(state.place.Boundary)
 		}
 	}
 	r.reportStage(lines.StageBoundaries)

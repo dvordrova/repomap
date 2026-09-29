@@ -94,7 +94,9 @@ func made(r *reader) []string {
 // A call outside tests whose words its answer makes an entry is that
 // entry: its handler is not established, its words are the ones the call
 // was given (never its call word or its caller's name), and it is named by
-// them as written when nothing chose among them. A single word needs no
+// the first of them when nothing chose among them: a flag's name, never its
+// default value or usage (owner, 2026-09-29: litestream's tiles read
+// "socket /var/run/litestream.sock control socket path"). A single word needs no
 // choosing. Words none of which can name an entry (a format ending in a
 // line break) make no entry, and that is recorded; a test's call makes
 // none, and neither does a call a fact already names. A word given to a
@@ -128,8 +130,8 @@ func TestAWordGivenCallBecomesAnEntryWhoseHandlerIsNotEstablished(t *testing.T) 
 	want := []string{
 		"main.go in command -p, --port <n> -p, --port <n> handler unknown",
 		"main.go in command quiet quiet handler unknown",
-		"main.go in command socket /var/run/x.sock control socket path socket|/var/run/x.sock|control socket path handler unknown",
-		"main.go in command verbose log more verbose|log more handler unknown",
+		"main.go in command socket socket|/var/run/x.sock|control socket path handler unknown",
+		"main.go in command verbose verbose|log more handler unknown",
 		"main.go out db   handled",
 	}
 	if got := made(r); !reflect.DeepEqual(got, want) {

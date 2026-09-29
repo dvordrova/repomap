@@ -1,6 +1,8 @@
 package groupindex
 
 import (
+	"slices"
+
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -18,8 +20,10 @@ import (
 // were found, never a gate: no input outside it is hidden.
 //
 // Nested are the handler-less inputs declared only inside an input's
-// handler reach (its sub-arguments, as SORT's asc): each is listed in that
-// input's reading (Reach.SubArguments) and is no tile of its own.
+// handler reach (its sub-arguments, as SORT's asc) or only by its own
+// command's code (its options, as litestream's databases -json): each is
+// listed in that input's reading (Reach.SubArguments, Reach.Options) and is
+// no tile of its own.
 //
 // Derived by Derive, never persisted.
 type Launch struct {
@@ -181,5 +185,175 @@ func (graph *reachGraph) launch(reaches []Reach) Launch {
 			}
 		}
 	}
+	var roots []int
+	for _, position := range queue {
+		if depth[position] == 0 {
+			roots = append(roots, position)
+		}
+	}
+	graph.options(reaches, roots, result.Nested)
 	return result
+}
+
+// options nests a command's own options under it (owner, 2026-09-29: a
+// flag belongs to its subcommand), by two code facts:
+//
+//   - declared on the object an input's own call made: argparse's
+//     init.add_argument("--force") on commands.add_parser("init"), unless
+//     an input with its own handler is declared on that object too;
+//   - declared by code only a case's branch runs: litestream's Main.Run
+//     runs (&DatabasesCommand{}).Run(ctx, args) in case "databases", whose
+//     own flag set declares -json; or declared in that branch itself.
+//
+// An option has its input's kind: a setting a subcommand's code reads (a
+// replica URL's endpoint) is no flag of it, and a value of another input
+// (ValueOf) is that input's already. Code only a branch runs is code the
+// walk from the launch's roots reaches only through a call written in a
+// case's branch. A line belongs to the branch starting last before it, so a
+// branch nested in another is its own, and the line `} else if (…) {`
+// closing one guarded block and opening the next is the next's.
+func (graph *reachGraph) options(reaches []Reach, roots []int, nested map[string]bool) {
+	index := graph.index
+	if len(index.Operations) == 0 {
+		return
+	}
+	// Each declaration's branches, and the input at each branch's word.
+	branches := map[int][]InputBranch{}
+	for _, branch := range index.Branches {
+		if position, known := graph.position[branch.SubjectID]; known {
+			branches[position] = append(branches[position], branch)
+		}
+	}
+	inputAt := map[string]int{}
+	for position, operation := range index.Operations {
+		inputAt[operationLocationKey(operation.Location)] = position
+	}
+	// owner is the input whose branch holds a line of a declaration's code,
+	// or -1: the branch starting last at or before the line, the narrower
+	// of two starting on it.
+	owner := func(subject int, at *programindex.Location) int {
+		if at == nil {
+			return -1
+		}
+		var holding *InputBranch
+		for i := range branches[subject] {
+			branch := &branches[subject][i]
+			if branch.Location.Path != at.Path || at.Line < branch.Branch.Line || at.Line > branch.Branch.EndLine {
+				continue
+			}
+			if holding == nil || branch.Branch.Line > holding.Branch.Line ||
+				branch.Branch.Line == holding.Branch.Line && branch.Branch.EndLine < holding.Branch.EndLine {
+				holding = branch
+			}
+		}
+		if holding == nil {
+			return -1
+		}
+		position, ok := inputAt[operationLocationKey(holding.Location)]
+		if !ok || !index.Operations[position].HandlerUnknown {
+			return -1
+		}
+		return position
+	}
+	branchOf := map[int]int{}
+	for from := range graph.exec {
+		if len(branches[from]) == 0 {
+			continue
+		}
+		for _, edge := range graph.exec[from] {
+			if input := owner(from, index.StructuralEdges[edge].Location); input >= 0 {
+				branchOf[edge] = input
+			}
+		}
+	}
+	// The launch without the cases' branches.
+	launched := map[int]bool{}
+	queue := slices.Clone(roots)
+	for _, position := range roots {
+		launched[position] = true
+	}
+	for next := 0; next < len(queue); next++ {
+		for _, edge := range graph.exec[queue[next]] {
+			to := graph.to[edge]
+			if _, inBranch := branchOf[edge]; inBranch || launched[to] ||
+				index.StructuralEdges[edge].Resolution == programindex.ResolutionAlternatives && len(graph.handlers[to]) > 0 {
+				continue
+			}
+			launched[to] = true
+			queue = append(queue, to)
+		}
+	}
+	// What each case's branch runs: from its calls, through calls written in
+	// no other case's branch, never into another input's handler through
+	// alternatives.
+	runs := map[int]map[int]bool{}
+	for edge, input := range branchOf {
+		if runs[input] == nil {
+			runs[input] = map[int]bool{}
+		}
+		runs[input][graph.to[edge]] = true
+	}
+	for input, reached := range runs {
+		queue := make([]int, 0, len(reached))
+		for position := range reached {
+			queue = append(queue, position)
+		}
+		for next := 0; next < len(queue); next++ {
+			for _, edge := range graph.exec[queue[next]] {
+				to := graph.to[edge]
+				if other, inBranch := branchOf[edge]; inBranch && other != input || reached[to] ||
+					index.StructuralEdges[edge].Resolution == programindex.ResolutionAlternatives && len(graph.handlers[to]) > 0 {
+					continue
+				}
+				reached[to] = true
+				queue = append(queue, to)
+			}
+		}
+	}
+	// An object something handled is declared on holds entries of their
+	// own: freqtrade's subparsers, on which 33 subcommands are joined to
+	// their handlers, are no options of the "command" dest the model named.
+	handledOn := map[string]bool{}
+	for _, operation := range index.Operations {
+		if on := operation.DeclaredOn; on != nil && !operation.HandlerUnknown {
+			handledOn[operationLocationKey(on.Location)] = true
+		}
+	}
+	nest := func(input, option int) {
+		id := index.Operations[option].ID
+		if slices.Contains(reaches[input].Options, id) {
+			return
+		}
+		reaches[input].Options = append(reaches[input].Options, id)
+		nested[id] = true
+	}
+	for position, operation := range index.Operations {
+		if !operation.HandlerUnknown || operation.ValueOf != "" {
+			continue
+		}
+		// Declared on the object an input's own call made.
+		if on := operation.DeclaredOn; on != nil && !handledOn[operationLocationKey(on.Location)] {
+			if input, ok := inputAt[operationLocationKey(on.Location)]; ok && input != position && index.Operations[input].Kind == operation.Kind {
+				nest(input, position)
+			}
+		}
+		declaredBy, known := graph.position[operation.DeclaredBy]
+		if operation.DeclaredBy == "" || !known {
+			continue
+		}
+		// Declared in a case's branch itself.
+		location := operation.Location
+		if input := owner(declaredBy, &location); input >= 0 && input != position && index.Operations[input].Kind == operation.Kind {
+			nest(input, position)
+		}
+		// Declared by code only a case's branch runs.
+		if launched[declaredBy] {
+			continue
+		}
+		for input := range index.Operations {
+			if input != position && runs[input][declaredBy] && index.Operations[input].Kind == operation.Kind {
+				nest(input, position)
+			}
+		}
+	}
 }

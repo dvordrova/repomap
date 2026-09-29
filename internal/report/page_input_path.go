@@ -159,6 +159,11 @@ type pageInputPath struct {
 	// compared with ("appendfsync: always | everysec | no").
 	Checks []pageDecl `json:"checks,omitempty"`
 	Values bool       `json:"values,omitempty"`
+	// Options are the input's own options: the inputs of its kind declared
+	// on the object its call made or by code only its branch runs
+	// (GroupsIndex Reach.Options), each at its source: litestream's
+	// databases, -config, -no-expand-env and -json.
+	Options []pageDecl `json:"options,omitempty"`
 	// SentTo are the peer programs' inputs this table row names, and SentBy
 	// the other programs' table rows naming this input (Operation.Sends, a
 	// model match; decision 14).
@@ -221,6 +226,11 @@ func (decls *pathDecls) of(subject string) int {
 		name, anchor := decls.builder.subjectDisplay(ref.subject)
 		if name != "" {
 			decl.Name = decls.builder.withType(decls.targetID, ref.subject, name)
+		}
+		// A callable written inline is named as a reader names it, never by
+		// its number: "declared in ReplicateCommand.Run (inline)", not Run$1.
+		if object := ref.subject.Object; object != nil && object.Inline != "" {
+			decl.Name = object.Inline
 		}
 		if anchor != nil {
 			decl.Href, decl.Open, decl.Source, decl.NoSource, decl.Code = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource, anchor.Code
@@ -390,9 +400,17 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 		}
 	}
 	path.Values = operation.HandlerUnknown && len(path.Checks) > 0
+	for _, id := range reach.Options {
+		for _, other := range index.Operations {
+			if other.ID == id {
+				anchor := builder.links.anchor(other.Location.Path, other.Location.Line, other.Location.Column)
+				path.Options = append(path.Options, pageDecl{Name: builder.operationDisplayName(index.Target.ID, other), Href: anchor.Href, Open: anchor.Open, Source: anchor.Text, NoSource: anchor.NoSource})
+			}
+		}
+	}
 	path.SentTo, path.SentBy = builder.peerInputs(index, operation)
 	path.Decls = decls.list
-	entered := len(path.Checks)+len(path.SentTo)+len(path.SentBy) > 0
+	entered := len(path.Checks)+len(path.Options)+len(path.SentTo)+len(path.SentBy) > 0
 	for _, part := range path.Parts {
 		entered = entered || len(part.Entered) > 0
 	}

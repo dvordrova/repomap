@@ -89,8 +89,11 @@ func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf fu
 			result.On = &at
 			if catalogue.OnOperationID != "" {
 				result.OnInput = inputNode(catalogue.OnOperationID)
+				// A member nested under it is read in its options, no tile.
 				for _, id := range catalogue.OperationIDs {
-					declares[catalogue.OnOperationID] = append(declares[catalogue.OnOperationID], inputNode(id))
+					if !index.Launch.Nested[id] {
+						declares[catalogue.OnOperationID] = append(declares[catalogue.OnOperationID], inputNode(id))
+					}
 				}
 				for _, operation := range index.Operations {
 					if operation.ID == catalogue.OnOperationID && operation.SubjectID != "" {
@@ -110,7 +113,9 @@ func (builder *pageBuilder) catalogueReadings(index *groupindex.Index, partOf fu
 			return cmp.Or(strings.Compare(strings.ToLower(names[a]), strings.ToLower(names[b])), strings.Compare(names[a], names[b]))
 		})
 		for _, id := range members {
-			result.Members = append(result.Members, inputNode(id))
+			if !index.Launch.Nested[id] {
+				result.Members = append(result.Members, inputNode(id))
+			}
 		}
 		callers := func(positions []int) []pageCatalogueCall {
 			var calls []pageCatalogueCall

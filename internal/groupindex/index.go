@@ -129,6 +129,10 @@ type ObjectFacts struct {
 	Results    []programindex.TypedName     `json:"results,omitempty"`
 	External   *programindex.ExternalSymbol `json:"external,omitempty"`
 	Location   *programindex.Location       `json:"location,omitempty"`
+	// Inline is how a reader names a callable written inline in another
+	// (inline.go): its one repository callee, or "Run (inline)". Compiled
+	// from the bound ProgramIndex, never persisted: Name stays native.
+	Inline string `json:"-"`
 }
 
 // PatternValueCandidate retains one adapter-proven value reconstruction. Its
@@ -386,6 +390,12 @@ type Index struct {
 	// calls the code cannot follow. Compiled with the structural edges from
 	// the bound ProgramIndex, never persisted.
 	Unresolved []UnresolvedCall `json:"-"`
+	// Branches are the lines each case of a comparison, and each call
+	// guarding a block, selects (ProgramIndex Comparison case and relation
+	// pattern Branch), at the word compared: where an input a case or a
+	// guard declares is handled by the code written for it. Compiled from
+	// the bound ProgramIndex, never persisted.
+	Branches []InputBranch `json:"-"`
 }
 
 // UnresolvedCall is one call whose callee the ProgramIndex does not know.
@@ -393,6 +403,44 @@ type UnresolvedCall struct {
 	RelationID    string
 	FromSubjectID string
 	Location      *programindex.Location
+}
+
+// InputBranch is one case's or guard's branch: SubjectID compares at
+// Location (the case's first word, the guarding call) and runs Branch.
+type InputBranch struct {
+	SubjectID string
+	Location  programindex.Location
+	Branch    programindex.LineRange
+}
+
+// compileInputBranches lists the branches of the comparisons and guarding
+// calls of retained declarations.
+func compileInputBranches(program programindex.Index, retained map[string]struct{}) []InputBranch {
+	var result []InputBranch
+	add := func(subject string, at *programindex.Location, branch *programindex.LineRange) {
+		if at == nil || branch == nil {
+			return
+		}
+		if _, ok := retained[subject]; !ok {
+			return
+		}
+		location := *at
+		location.Column = max(1, location.Column)
+		result = append(result, InputBranch{SubjectID: subject, Location: location, Branch: *branch})
+	}
+	for _, object := range program.Objects {
+		for _, comparison := range object.Comparisons {
+			for _, item := range comparison.Cases {
+				add(object.ID, item.Location, item.Branch)
+			}
+		}
+	}
+	for _, relation := range program.Relations {
+		for _, pattern := range relation.Patterns {
+			add(relation.FromID, pattern.Location, pattern.Branch)
+		}
+	}
+	return result
 }
 
 // compileUnresolvedCalls lists the unresolved calls made by retained
@@ -670,6 +718,7 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 		StructuralEdges:    structuralEdges,
 		Connections:        connections,
 		Unresolved:         compileUnresolvedCalls(program, allSubjectIDs),
+		Branches:           compileInputBranches(program, allSubjectIDs),
 	}
 	Derive(&index)
 	seal, err := indexDigest(index)
@@ -1300,6 +1349,7 @@ func compileRetainedSubjects(index programindex.Index, retained map[string]struc
 		}
 	}
 	result := make([]Subject, 0, len(retained))
+	inline := inlineNames(index)
 	for _, object := range index.Objects {
 		if _, ok := retained[object.ID]; !ok {
 			continue
@@ -1316,6 +1366,7 @@ func compileRetainedSubjects(index programindex.Index, retained map[string]struc
 				Parameters: append([]programindex.TypedName(nil), object.Parameters...),
 				Results:    append([]programindex.TypedName(nil), object.Results...),
 				External:   cloneExternal(object.External), Location: cloneLocation(object.Location),
+				Inline: inline[object.ID],
 			},
 		})
 	}
@@ -2395,6 +2446,7 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		StructuralEdges: compileStructuralEdges(program, retained), Connections: slices.Clone(artifact.Connections),
 		OffMap: artifact.OffMap, MapFailure: artifact.MapFailure, Unsure: artifact.Unsure, Idioms: artifact.Idioms, SHA256: artifact.SHA256,
 		Unresolved: compileUnresolvedCalls(program, retained),
+		Branches:   compileInputBranches(program, retained),
 	}
 	// Derive writes the connections' derived fields: on a copy, so hydrating
 	// never changes the overlay it reads.

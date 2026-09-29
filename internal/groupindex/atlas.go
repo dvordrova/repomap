@@ -855,6 +855,12 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		if subject := byID[subjectID]; name == "" && subject != nil && subject.Object != nil {
 			name = subject.Object.Name
 		}
+		// A handler written inline is named as a reader names it, never
+		// by its number (inline.go): DatabasesTool$1 is DatabasesTool
+		// (inline).
+		if subject := byID[subjectID]; boundary.Name == "" && subject != nil && subject.Object != nil && subject.Object.Inline != "" {
+			name = subject.Object.Inline
+		}
 		onOf[len(operations)] = declaredOn(boundary)
 		wordless[len(operations)] = len(boundary.Values) == 0
 		operations = append(operations, Operation{ID: boundary.ID, FactID: boundary.FactID, SubjectID: subjectID, GroupID: groupID, Kind: kind, Name: name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, DeclaredBy: enclosing(location), Written: boundary.Written})
@@ -1029,6 +1035,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		Unsure:             unsure,
 		Idioms:             idioms,
 		Unresolved:         compileUnresolvedCalls(program, retained),
+		Branches:           compileInputBranches(program, retained),
 	}
 	return projectedTarget{index: index, groupOfBox: groupOfBox, operationOf: operationOf}, nil
 }

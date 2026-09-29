@@ -300,6 +300,27 @@ func TestEntryNamesAreChosenWordsRestoredAsWritten(t *testing.T) {
 			t.Fatalf("%v chose %q: %q, want %q", tc.place.Boundary.Words, tc.cell, got, tc.want)
 		}
 	}
+	// A name answer that writes the words instead of their refs keeps them:
+	// litestream's flag rows came back as "socket" and its routes as
+	// "POST /start".
+	def := FixedBoundaries(false)
+	flag := entry(atlas.BoundaryCommand, "socket", "/var/run/litestream.sock", "control socket path")
+	route := entry(atlas.BoundaryRequest, "HandleFunc", "POST /start", "/start")
+	route.ID = "b2"
+	windows, err := table.Windows(def, 1, []table.Row{BoundaryRow(flag, "", nil, false), BoundaryRow(route, "", nil, false)})
+	if err != nil || len(windows) != 1 {
+		t.Fatalf("windows: %d, %v", len(windows), err)
+	}
+	decoded, err := table.DecodeResult(def, windows[0], []byte(`{"rows":[{"key":"b1","line":"Reads the socket path.","name":"socket"},{"key":"b2","line":"Receives start requests.","name":"POST /start"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := EntryName(EntryWords(flag), decoded.Answers[0]["name"]); got != "socket" {
+		t.Fatalf("the flag's name written as its word: %q", got)
+	}
+	if got := EntryName(EntryWords(route), decoded.Answers[1]["name"]); got != "POST /start" {
+		t.Fatalf("the route's name written as its word: %q", got)
+	}
 	listener := entry(atlas.BoundaryListenAddress, "Start", ":8080")
 	if words := EntryWords(listener); len(words) != 0 {
 		t.Fatalf("a listener was offered a name: %+v", words)
@@ -311,5 +332,27 @@ func TestEntryNamesAreChosenWordsRestoredAsWritten(t *testing.T) {
 	}
 	if fields["method"] != nil || fields["values"] != nil || !reflect.DeepEqual(fields["word_options"], []string{"w1", "w2"}) {
 		t.Fatalf("an entry row shows a method or values beside its words: %+v", fields)
+	}
+}
+
+// An entry whose handler is not established and for which no word was
+// chosen is named by the first word its code wrote: a flag's name, never its
+// default value or usage; a case's first spelling; a handed value's literal,
+// never its registration's call word.
+func TestFirstEntryWordIsTheFirstWordItsCodeWrote(t *testing.T) {
+	for _, tc := range []struct {
+		facts atlas.BoundaryFacts
+		want  string
+	}{
+		{atlas.BoundaryFacts{Words: []string{"socket", "/var/run/litestream.sock", "control socket path"}}, "socket"},
+		{atlas.BoundaryFacts{Words: []string{"-c", "--config", "path to the configuration"}}, "-c"},
+		{atlas.BoundaryFacts{Words: []string{"help", "-h", "-help", "--help"}}, "help"},
+		{atlas.BoundaryFacts{Words: []string{" padded", "get", "rF"}}, "get"},
+		{atlas.BoundaryFacts{Handed: true, Words: []string{"Register", "k6/x/dns"}, Values: []string{"k6/x/dns"}}, "k6/x/dns"},
+		{atlas.BoundaryFacts{}, ""},
+	} {
+		if got := FirstEntryWord(&tc.facts); got != tc.want {
+			t.Fatalf("%q: %q, want %q", tc.facts.Words, got, tc.want)
+		}
 	}
 }

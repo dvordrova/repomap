@@ -28,11 +28,12 @@ func startedItems(preset *inputsPreset) []string {
 	return items
 }
 
-// The Go fixture's worker service starts three goroutines beside its
+// The Go fixture's worker service starts four goroutines beside its
 // polling loop (internal/storefixture/runtime_registrations.go): the commit
 // worker directly (go RunCommitWorker(stop)), the compactor inside a
-// closure that marks a wait group done, and a closure loading the cache
-// once. Each `go` statement is a registration handing its function over
+// closure that marks a wait group done, a closure loading the cache once
+// and a sweeper closure calling only outside code, named "StartSweeper
+// (inline)". Each `go` statement is a registration handing its function over
 // and is asked on its own, never through one symbol's answer: the closure
 // is named and handled by the one function it calls itself (RunCompactor,
 // loadCache), not by its own Open$1-like name. A preset reader answers the
@@ -66,6 +67,8 @@ func TestCumulativeGoStartsAreAskedPerStatement(t *testing.T) {
 			return "continuous", true
 		case strings.HasPrefix(starts, "RunCompactor"):
 			return "scheduled", true
+		case strings.HasPrefix(starts, "StartSweeper$1"):
+			return "continuous", true
 		}
 		return "", false
 	}}
@@ -75,6 +78,7 @@ func TestCumulativeGoStartsAreAskedPerStatement(t *testing.T) {
 		"go RunCommitWorker(stop) | RunCommitWorker | StartCommitWorker",
 		"go func() { done <- loadCache() }() | loadCache | WarmCache",
 		"go func() {defer wg.Done() RunCompactor(stop)}() | RunCompactor | StartCompactor",
+		"go func() {ticker := time.NewTicker(time.Hour) defer ticker.Stop() for {select {case <-ticker.C: runtime.GC() case <-stop: return}}}() | StartSweeper$1 | StartSweeper",
 	}
 	if got := startedItems(preset); !reflect.DeepEqual(got, want) {
 		t.Fatalf("starting statements asked:\n%q\nwant\n%q", got, want)
@@ -99,8 +103,11 @@ func TestCumulativeGoStartsAreAskedPerStatement(t *testing.T) {
 		{kind: "request", name: "HEAD", declaredBy: "serveStatus", at: status + ":14"},
 		{kind: "request", name: "X-Verbose", declaredBy: "serveStatus", at: status + ":17"},
 		{kind: "request", name: "HandleFunc", declaredBy: "init", handler: "serveStatus", at: status + ":21"},
-		{kind: "continuous", name: "RunCommitWorker", declaredBy: "StartCommitWorker", handler: "RunCommitWorker", at: path + ":24"},
-		{kind: "scheduled", name: "RunCompactor", declaredBy: "StartCompactor", handler: "RunCompactor", at: path + ":53"},
+		{kind: "continuous", name: "RunCommitWorker", declaredBy: "StartCommitWorker", handler: "RunCommitWorker", at: path + ":25"},
+		{kind: "scheduled", name: "RunCompactor", declaredBy: "StartCompactor", handler: "RunCompactor", at: path + ":54"},
+		// A closure calling only outside code is handled by itself and
+		// named by the function it is written in, never StartSweeper$1.
+		{kind: "continuous", name: "StartSweeper (inline)", declaredBy: "StartSweeper", handler: "StartSweeper$1", at: path + ":74"},
 	}
 	if !reflect.DeepEqual(got, wantInputs) {
 		t.Fatalf("started inputs:\n%+v\nwant\n%+v", got, wantInputs)

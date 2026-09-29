@@ -72,7 +72,7 @@ func RunTool(args []string) error {
 // the switch compares it with each subcommand's name ("check" and "verify"
 // are one case), and the default branch compares it with the help words,
 // one case of the same value. The whole dispatch is one comparison of cmd,
-// asked once.
+// asked once. Each case's branch runs its subcommand's own code.
 func RunSubcommand(args []string) string {
 	var cmd string
 	if len(args) > 0 {
@@ -80,15 +80,40 @@ func RunSubcommand(args []string) string {
 	}
 	switch cmd {
 	case "serve":
-		return "serve " + strings.Join(args, " ")
+		return runServe(args)
 	case "check", "verify":
-		return "check"
+		return runCheck(args)
 	default:
 		if cmd == "help" || cmd == "-h" {
 			return "usage"
 		}
 		return "unknown command " + cmd
 	}
+}
+
+// runServe is serve's own code, as each litestream command's Run is: only
+// the serve case runs it, so the flags its own flag set declares are
+// serve's options. -verbose is declared by check too, as litestream's
+// commands each declare -json: two options, one of each subcommand.
+func runServe(args []string) string {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	verbose := fs.Bool("verbose", false, "log each request")
+	_ = fs.Parse(args)
+	if *verbose {
+		return "serve verbosely " + strings.Join(fs.Args(), " ")
+	}
+	return "serve " + strings.Join(fs.Args(), " ")
+}
+
+// runCheck is check's own code: its -verbose is check's option.
+func runCheck(args []string) string {
+	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	verbose := fs.Bool("verbose", false, "log each check")
+	_ = fs.Parse(args)
+	if *verbose {
+		return "check verbosely"
+	}
+	return "check"
 }
 
 // IsDefaultLevel compares a level with one word: a lone comparison is no

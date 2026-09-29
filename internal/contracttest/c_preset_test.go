@@ -698,7 +698,7 @@ func (preset *kvdPreset) peer(context, row map[string]any) string {
 // and accepting from the server's socket serve; every other symbol, such as
 // fopen or the socket's creation, is none. Each word call is answered from
 // where its compared argument comes from, as a reader of the call would: an
-// element of main's argument vector is an option (command), the first word
+// element of main's or bench's argument vector is an option (command), the first word
 // of a line the configuration file splits into is a setting, anything else
 // none. Of the callables kvd's own event loop keeps, the one it runs when
 // the listening socket has a connection to accept is a request, the others
@@ -744,7 +744,7 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 			switch {
 			case strings.Contains(arguments, "result of calling splitLine"):
 				return typesafetest.Choose("setting"), true
-			case strings.Contains(arguments, "of parameter #2 argv of main"):
+			case strings.Contains(arguments, "of parameter #2 argv of main"), strings.Contains(arguments, "of parameter #2 argv of bench"):
 				return typesafetest.Choose("command"), true
 			}
 			return typesafetest.Choose("none"), true
