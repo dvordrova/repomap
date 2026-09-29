@@ -215,7 +215,10 @@ func TestFieldsListTheirWritersAndReadersByPart(t *testing.T) {
 		edge("daemonize", "f-dirty", "reads", "server.dirty", 211),
 	}
 	b.indexes[0] = index
-	reading := decodeReading(t, b.groupReading(index, part, pageGroup{ID: "t1-g14", Title: part.Title}))
+	reading := decodeReading(t, b.groupReading(index, part, pageGroup{ID: "t1-g14", Title: part.Title, InternalConnections: []pageConnection{
+		readingRow(anchors, "", "", "", "writes", "cron", "serverCron", "f-fd", "fd"),
+		readingRow(anchors, "", "", "", "reads", "cron", "serverCron", "state", "server"),
+	}}))
 	at := func(name string) int {
 		return slices.IndexFunc(reading.Decls, func(decl pageReadingDecl) bool { return decl.Name == name })
 	}
@@ -259,6 +262,12 @@ func TestFieldsListTheirWritersAndReadersByPart(t *testing.T) {
 	}
 	if want := []string{"server.hz redisServer", "server.dirty redisServer", "redisClient.fd redisClient"}; !slices.Equal(writes, want) {
 		t.Fatalf("serverCron writes %q, want %q", writes, want)
+	}
+	// Said once: a field it writes is not again among the variables it uses.
+	for _, end := range own("serverCron").Uses {
+		if end.Kind == "writes" && reading.Decls[end.Decl].Kind == "field" {
+			t.Fatalf("serverCron's uses repeat the field write %s", reading.Decls[end.Decl].Name)
+		}
 	}
 }
 

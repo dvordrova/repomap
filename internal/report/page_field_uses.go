@@ -111,10 +111,11 @@ func (builder *pageBuilder) fieldFacts(index *groupindex.Index) *pageFieldFacts 
 }
 
 // fieldReadings adds to a part's reading the field uses of its types and
-// global variables and the writes of its functions. declare names a
+// global variables and the writes of its functions, whose field writes then
+// leave the variables it uses. declare names a
 // function by its subject (-1 when it cannot be read), partOf the part it
 // stands in, and ownerOf the reading of a member.
-func (builder *pageBuilder) fieldReadings(index *groupindex.Index, own string, types, variables, functions map[string]int,
+func (builder *pageBuilder) fieldReadings(index *groupindex.Index, own string, reading *pageGroupReading, types, variables, functions map[string]int,
 	fieldsOf map[string][]string, declare func(string) int, partOf func(string, string) (string, string), ownerOf func(int) *pageReadingOwner,
 	byName func(a, b int) int) {
 	facts := builder.fieldFacts(index)
@@ -256,7 +257,13 @@ func (builder *pageBuilder) fieldReadings(index *groupindex.Index, own string, t
 			writes = append(writes, write)
 		}
 		if len(writes) > 0 {
-			ownerOf(functions[id]).Writes = writes
+			owner := ownerOf(functions[id])
+			owner.Writes = writes
+			// The fields it writes are said once, on this line, not again
+			// among the variables it uses.
+			owner.Uses = slices.DeleteFunc(owner.Uses, func(end pageReadingEnd) bool {
+				return end.Kind == string(programindex.RelationWrites) && reading.Decls[end.Decl].Kind == "field"
+			})
 		}
 	}
 }

@@ -662,7 +662,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			}
 		}
 	}
-	builder.fieldReadings(&index, own, types, variables, functions, fieldsOf, declareSubject, partOf, ownerOf, byName)
+	builder.fieldReadings(&index, own, &reading, types, variables, functions, fieldsOf, declareSubject, partOf, ownerOf, byName)
 	slices.SortFunc(reading.Own, func(a, b pageReadingOwner) int { return cmp.Compare(a.Decl, b.Decl) })
 	if len(reading.Decls) == 0 {
 		return ""
