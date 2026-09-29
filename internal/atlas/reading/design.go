@@ -383,8 +383,7 @@ func (view *designView) groupingUnits(split *unitSplit, outcome *designOutcome) 
 }
 
 // designPartsInput is the parts request: the listed units with the calls
-// among them and the imports among whole files, aggregated over refs the
-// request advertises.
+// and the imports among them, aggregated over refs the request advertises.
 type designPartsInput struct {
 	Task    string          `json:"task"`
 	Units   []designUnitRow `json:"units"`
@@ -395,7 +394,6 @@ type designPartsInput struct {
 func (view *designView) partsInput(units []*designUnit) designPartsInput {
 	listed := map[string]bool{}
 	rowOf := map[string]string{}
-	whole := map[string]string{}
 	input := designPartsInput{Task: designPartsTask}
 	for _, unit := range units {
 		listed[unit.ref] = true
@@ -403,17 +401,55 @@ func (view *designView) partsInput(units []*designUnit) designPartsInput {
 		for _, id := range unit.units {
 			rowOf[id] = unit.ref
 		}
-		if unit.box == "" {
-			whole[unit.file] = unit.ref
-		}
 	}
 	input.Calls = pairCounts(view.siteCounts(rowOf), listed)
-	for _, pair := range sortedPairs(view.imports) {
-		if from, to := whole[pair[0]], whole[pair[1]]; from != "" && to != "" {
-			input.Imports = append(input.Imports, from+" -> "+to)
-		}
+	for _, pair := range sortedPairs(view.rowImports(units)) {
+		input.Imports = append(input.Imports, pair[0]+" -> "+pair[1])
 	}
 	return input
+}
+
+// rowImports are the file imports between the listed rows. A file stands
+// for one row: a whole file for its own, and a file that is no row of its
+// own for the one row every unit of it sits in (a whole file that joined a
+// box: redis-server's lzf_c.c and lzf_d.c, joined to redis.c's Persistence
+// box, import lzfP.h through it, which no call of redis-server reaches). That
+// is exact, as all its code is there. A file whose units sit in several
+// rows, as a split file's usually do, or in none stands for no row, and an
+// import within one row is none.
+func (view *designView) rowImports(units []*designUnit) map[[2]string]bool {
+	rowOf := map[string]string{}
+	fileRow := map[string]string{}
+	for _, unit := range units {
+		for _, id := range unit.units {
+			rowOf[id] = unit.ref
+		}
+		if unit.box == "" {
+			fileRow[unit.file] = unit.ref
+		}
+	}
+	for _, file := range view.files {
+		if _, whole := fileRow[file.id]; whole || len(file.units) == 0 {
+			continue
+		}
+		row := rowOf[file.units[0]]
+		for _, id := range file.units[1:] {
+			if rowOf[id] != row {
+				row = ""
+				break
+			}
+		}
+		if row != "" {
+			fileRow[file.id] = row
+		}
+	}
+	pairs := map[[2]string]bool{}
+	for pair := range view.imports {
+		if from, to := fileRow[pair[0]], fileRow[pair[1]]; from != "" && to != "" && from != to {
+			pairs[[2]string{from, to}] = true
+		}
+	}
+	return pairs
 }
 
 // siteCounts counts, per exact call site, each distinct row other than its
@@ -1236,16 +1272,13 @@ func (r *reader) placeUnits(ctx context.Context, view *designView, round int, ou
 	}
 	byRef := map[string]*designUnit{}
 	rowOf := map[string]string{}
-	whole := map[string]string{}
 	for _, unit := range units {
 		byRef[unit.ref] = unit
 		for _, id := range unit.units {
 			rowOf[id] = unit.ref
 		}
-		if unit.box == "" {
-			whole[unit.file] = unit.ref
-		}
 	}
+	rowImports := view.rowImports(units)
 	var catalogue []map[string]any
 	var all []string
 	for _, part := range outcome.parts {
@@ -1303,16 +1336,15 @@ func (r *reader) placeUnits(ctx context.Context, view *designView, round int, ou
 		if len(calls) > 0 {
 			fields = append(fields, table.Field{Name: "calls", Value: calls})
 		}
-		// Imports are between whole files: a box has none of its own.
+		// Imports are the parts request's, between rows (rowImports): a
+		// whole file's own, and a box's of the files that joined it.
 		imports, importedBy := map[string]bool{}, map[string]bool{}
-		if unit.box == "" {
-			for pair := range view.imports {
-				if pair[0] == unit.file && outcome.partOf[whole[pair[1]]] != "" {
-					imports[outcome.partOf[whole[pair[1]]]] = true
-				}
-				if pair[1] == unit.file && outcome.partOf[whole[pair[0]]] != "" {
-					importedBy[outcome.partOf[whole[pair[0]]]] = true
-				}
+		for pair := range rowImports {
+			if pair[0] == unit.ref && outcome.partOf[pair[1]] != "" {
+				imports[outcome.partOf[pair[1]]] = true
+			}
+			if pair[1] == unit.ref && outcome.partOf[pair[0]] != "" {
+				importedBy[outcome.partOf[pair[0]]] = true
 			}
 		}
 		var importLines []string

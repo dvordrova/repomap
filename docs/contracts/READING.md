@@ -220,8 +220,16 @@ with the first declaration's signature (C has no such repeat). `calls` counts,
 per exact call site, each distinct other listed row the site reaches
 (`"f3 -> c7 (12)"`); a site counts from the unit whose code holds it, a
 method's from its type's unit wherever it is declared; calls resolved only to
-alternatives are left out. `imports` lists imports the adapter resolves to
-one listed whole file, between whole-file rows only (`"f3 -> f7"`); Go
+alternatives are left out. `imports` lists the imports the adapter resolves
+between two files, each standing for one row: a whole file for its own
+(`"f3 -> f7"`), and a file that is no row of its own for the one row every
+unit of it sits in, such as a whole file that joined a box (redis-server's
+lzf_c.c and lzf_d.c, joined to redis.c's Persistence box, give
+`"c4 -> f13"` for their include of lzfP.h), which is exact since all its
+code is there. A file whose units sit in several rows, as a split file's
+usually do, or in none stands for no row, and an import within one row is
+none. The parts and placement prompts keep their wording (imports of whole
+files): a box's lines are those of the whole files that joined it. Go
 package imports resolve to a directory and add nothing. Files without a unit
 are not listed. A file that declares only what follows units of other files,
 such as a Go method declared outside its type's file, is therefore no row,
@@ -262,7 +270,8 @@ one part was drawn, one closed-choice `atlas_placement` table
 keyed by its ref: a left-out unit chooses among every drawn part, a
 conflicting one only between the parts that listed it, with its path, its
 box's name when it is a box, its counts and names, its calls to and from
-the placed rows per site as part refs, and, for a whole file, its imports.
+the placed rows per site as part refs, and its imports to and from the
+placed rows as part refs, the parts request's `imports` of that row.
 An unknown, missing or refused choice leaves the unit's declarations off
 the map with its reason; a box left out leaves its file on the map through
 its other boxes. A group given twice with the same name, ignoring case, and
@@ -504,9 +513,11 @@ is a row of its own named by its declaration and none that is no helper is
 one the code rule places (the units of its file that use it are not all in
 one part, and when none uses it, what it uses in its file is not either),
 that the parts request lists each split file's boxes as `c*` rows and never
-the file whole (a file that joined a box is no row), with imports between
-whole files only, that no import-only
-arrow touches a part holding a split file's box, that the seed's part stands
+the file whole (a file that joined a box is no row), with exactly the
+imports between the rows files stand for (every import between two whole
+files, and the imports of a file that joined a box through that box), that
+an import-only arrow touches a part holding a split file's box only through
+a file all of whose placed code is there, that the seed's part stands
 in, and that an input whose handler is undecided stands in that handler's
 own row (one whose handler is blocked names no part). Its helper
 question takes a declaration for a helper when other code calls, reads or
@@ -528,7 +539,11 @@ each fixture shows: Go
 `HandleFunc /v1/update` (`http_registrations.go`), Python `get /health`,
 TypeScript `get /products/featured`, C `kvCommand get` (kvd.c's command
 table). Clojure's fixture registers no route or command in a split file;
-its one such registration hands a function to `clojure.core/map`.
+its one such registration hands a function to `clojure.core/map`. No
+language fixture has a whole file that joins a box (rule B) under the
+check's helper rule, so none lists a box's import; the reading test
+`TestAJoinedFileImportsThroughItsBox` holds it, and the fixture equivalent
+is recorded missing in every language.
 
 **One rule for every file.** A declaration takes its unit's part, and a
 place its declaration's. A file's own part is the one part holding every

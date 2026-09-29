@@ -42,8 +42,9 @@ func roleGraph(t *testing.T, extra func(files map[string][]roleDecl)) atlas.Grap
 	return roleGraphWith(t, extra, nil)
 }
 
-// roleGraphWith is roleGraph with more boundary places.
-func roleGraphWith(t *testing.T, extra func(files map[string][]roleDecl), boundaries []atlas.Place) atlas.Graph {
+// roleGraphWith is roleGraph with more boundary places and more file
+// edges.
+func roleGraphWith(t *testing.T, extra func(files map[string][]roleDecl), boundaries []atlas.Place, edges ...atlas.Edge) atlas.Graph {
 	t.Helper()
 	files := map[string][]roleDecl{
 		"svc/server.go": {
@@ -128,7 +129,7 @@ func roleGraphWith(t *testing.T, extra func(files map[string][]roleDecl), bounda
 	places = append(places, boundaries...)
 	graph := atlas.Graph{
 		Version: atlas.GraphVersion, Revision: "abc", Places: places,
-		Edges: []atlas.Edge{{From: atlas.FileID("svc/db.go"), To: atlas.FileID("svc/server.go"), Kind: "imports", Count: 1, Witnesses: []atlas.Witness{}}},
+		Edges: append([]atlas.Edge{{From: atlas.FileID("svc/db.go"), To: atlas.FileID("svc/server.go"), Kind: "imports", Count: 1, Witnesses: []atlas.Witness{}}}, edges...),
 		Seeds: []string{atlas.FileID("svc/server.go")}, SeedDecls: []string{atlas.SymbolID("svc/server.go", 3, "main")},
 	}
 	atlas.SortPlaces(graph.Places)
@@ -762,6 +763,75 @@ func TestAFileOfHelpersJoinsTheBoxOfItsUsers(t *testing.T) {
 	svc, provider, _ = read(true, decided)
 	if rows := ownRows(provider); rows != 1 || slices.Contains(membersOf(partsByTitle(svc)["Storage"]), "getBuf") {
 		t.Fatalf("pool.go, which a whole file also uses, joined Storage: %d rows", rows)
+	}
+}
+
+// A whole file that joined a box stands for that box in the imports of the
+// parts request, since all its code is there: pool.go, joined to Storage,
+// imports util.go and db.go imports it, so the Storage row imports util.go's
+// row and db.go's row imports Storage, as redis-server's lzf_c.c and
+// lzf_d.c, joined to redis.c's Persistence box, import lzfP.h, which no call
+// reaches. server.go's own import of util.go stays out: its units sit in
+// several rows. The placement follow-up shows the Storage row, which the
+// parts answer left out, the same imports.
+func TestAJoinedFileImportsThroughItsBox(t *testing.T) {
+	imports := func(from, to string) atlas.Edge {
+		return atlas.Edge{From: atlas.FileID(from), To: atlas.FileID(to), Kind: "imports", Count: 1, Witnesses: []atlas.Witness{}}
+	}
+	graph := roleGraphWith(t, func(files map[string][]roleDecl) {
+		files["svc/pool.go"] = []roleDecl{
+			{name: "bufPool", kind: "variable", line: 3, end: 3, code: 1},
+			{name: "getBuf", kind: "function", line: 5, end: 9, code: 4, uses: []string{"reads svc/pool.go:bufPool"}},
+		}
+		server := files["svc/server.go"]
+		for i := range server {
+			if server[i].name == "Store.Get" {
+				server[i].calls = []string{"svc/pool.go:getBuf"}
+			}
+		}
+	}, nil, imports("svc/pool.go", "svc/util.go"), imports("svc/db.go", "svc/pool.go"), imports("svc/server.go", "svc/util.go"))
+	provider, jev := defaultRoleProvider(), helperJev("getBuf", "bufPool")
+	partFor := provider.partFor
+	provider.partFor = func(unit map[string]any) string {
+		if unit["box"] == "Storage" {
+			return "" // a group without a name: the Storage box is left out
+		}
+		return partFor(unit)
+	}
+	var asked map[string]any
+	provider.placeFor = func(row map[string]any) string {
+		asked = row
+		options, _ := row["part_options"].([]any)
+		return fmt.Sprint(options[0])
+	}
+	result, err := Read(t.Context(), roleOptions(t, graph, provider, jev, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atlas.Validate(result.Atlas); err != nil {
+		t.Fatal(err)
+	}
+	request := partsRequest(t, provider, "svc/")
+	ref := map[string]string{}
+	for _, row := range request.Units {
+		name := fmt.Sprint(row["path"])
+		if box, ok := row["box"].(string); ok {
+			name = box
+		}
+		ref[name] = fmt.Sprint(row["ref"])
+	}
+	if _, listed := ref["svc/pool.go"]; listed || ref["Storage"] == "" {
+		t.Fatalf("pool.go did not join Storage: rows %v", ref)
+	}
+	if want := []string{ref["Storage"] + " -> " + ref["svc/util.go"], ref["svc/db.go"] + " -> " + ref["Storage"]}; !slices.Equal(request.Imports, want) {
+		t.Fatalf("imports %v, want %v: the joined file's through its box, none of the split file's own", request.Imports, want)
+	}
+	parts := partsByTitle(targetOf(t, result, "svc"))
+	if asked["key"] != ref["Storage"] {
+		t.Fatalf("the follow-up asked %v, not the Storage row %s", asked["key"], ref["Storage"])
+	}
+	if got, want := fmt.Sprint(asked["imports"]), fmt.Sprint([]string{"-> " + parts["Utilities"].ID, parts["Database"].ID + " ->"}); got != want {
+		t.Fatalf("the follow-up shows Storage the imports %s, want %s", got, want)
 	}
 }
 

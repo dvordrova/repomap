@@ -73,9 +73,10 @@ func Check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 // that every undecided unit is a row of its own named by its declaration
 // and none is one the code should have placed by its users or what it
 // uses, that a repeated name stays one unit, that a module body is a row of
-// the assignment, that no import-only arrow touches a role part, and that a
-// seed declaration in a split file keeps the entry: the part holding it
-// stands in the "in" column.
+// the assignment, that an import-only arrow touches a role part only through
+// a file whose code is all there (a file that joined a box), and that a seed
+// declaration in a split file keeps the entry: the part holding it stands in
+// the "in" column.
 func CheckSplit(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root string) Map {
 	t.Helper()
 	return check(t, graph, target, root, true)
@@ -172,6 +173,7 @@ func check(t testing.TB, graph atlas.Graph, target reading.TargetMeta, root stri
 	}
 	checkRequest(t, graph, target.ID, root, provider.requests, split, joined)
 	checkMembership(t, graph, target.ID, checked)
+	checkImports(t, graph, target.ID, checked, provider.requests[0], joined)
 	checked.Split, checked.RoleParts = map[string]bool{}, map[string]bool{}
 	checked.Registered = categorizer.registered
 	checked.HelperItems = categorizer.helperItems
@@ -367,9 +369,20 @@ func checkSplit(t testing.TB, graph atlas.Graph, targetID string, checked Map, c
 			}
 		}
 	}
+	// A split file has no endpoint: an import-only arrow touches a role part
+	// only through a file all of whose placed code is there, such as a file
+	// that joined a box.
+	owners := fileParts(graph, targetID, checked)
 	for _, arrow := range checked.Target.Arrows {
-		if len(arrow.Witnesses) == 0 && (checked.RoleParts[arrow.From] || checked.RoleParts[arrow.To]) {
-			t.Fatalf("an import-only arrow %s -> %s touches a role part: a split file has no endpoint", arrow.From, arrow.To)
+		if len(arrow.Witnesses) > 0 || !checked.RoleParts[arrow.From] && !checked.RoleParts[arrow.To] {
+			continue
+		}
+		explained := false
+		for _, edge := range graph.Edges {
+			explained = explained || edge.Kind == "imports" && owners[edge.From].part == arrow.From && owners[edge.To].part == arrow.To
+		}
+		if !explained {
+			t.Fatalf("an import-only arrow %s -> %s touches a role part, and no file wholly in one of them imports a file wholly in the other: a split file has no endpoint", arrow.From, arrow.To)
 		}
 	}
 	// A seed of a split file is never asked the helper question or assigned
@@ -641,14 +654,14 @@ func lexicalChildren(decls []atlas.Decl) map[int]bool {
 
 var (
 	pairPattern   = regexp.MustCompile(`^([fc][0-9]+) -> ([fc][0-9]+)( \([0-9]+\))?$`)
-	importPattern = regexp.MustCompile(`^(f[0-9]+) -> (f[0-9]+)$`)
+	importPattern = regexp.MustCompile(`^([fc][0-9]+) -> ([fc][0-9]+)$`)
 )
 
 // checkRequest checks the parts request: code structure only, one row per
 // whole file (its f* ref) or per box of a split file (a c* ref with the
 // box's name), a split file never a whole row, every file with a
 // declaration of its own listed unless it joined a box (joined), and calls
-// and imports over listed refs only, imports between whole files alone.
+// and imports over listed refs only (checkImports checks which imports).
 func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, requests [][]byte, split bool, joined map[string]bool) {
 	t.Helper()
 	if len(requests) != 1 {
@@ -799,8 +812,126 @@ func checkRequest(t testing.TB, graph atlas.Graph, targetID, root string, reques
 	}
 	for _, pair := range body.Imports {
 		match := importPattern.FindStringSubmatch(pair)
-		if match == nil || !whole[match[1]] || !whole[match[2]] || match[1] == match[2] {
-			t.Fatalf("import %q names a ref that is not a listed whole file", pair)
+		if match == nil || !listed[match[1]] || !listed[match[2]] || match[1] == match[2] {
+			t.Fatalf("import %q names a ref the request does not list", pair)
+		}
+	}
+}
+
+// filePart is the one part holding every placed declaration of a file but a
+// method that goes with its type in another file ("" when they sit in
+// several or none), and whether none of them is off the map.
+type filePart struct {
+	part string
+	all  bool
+}
+
+// fileParts is, by file place, the part of each file of the target.
+func fileParts(graph atlas.Graph, targetID string, checked Map) map[string]filePart {
+	symbols := map[string][]string{}
+	for _, place := range graph.Places {
+		if place.Symbol != nil && slices.Contains(place.TargetIDs, targetID) && !methodElsewhere(graph, place.ID) {
+			symbols[place.Path] = append(symbols[place.Path], place.ID)
+		}
+	}
+	owners := map[string]filePart{}
+	for _, place := range graph.Places {
+		if place.File == nil || !slices.Contains(place.TargetIDs, targetID) {
+			continue
+		}
+		parts, off := map[string]bool{}, false
+		for _, id := range symbols[place.Path] {
+			if part := checked.PartOf[id]; part != "" {
+				parts[part] = true
+			} else {
+				off = true
+			}
+		}
+		if len(parts) == 1 {
+			for part := range parts {
+				owners[place.ID] = filePart{part: part, all: !off}
+			}
+		}
+	}
+	return owners
+}
+
+// checkImports checks which imports the parts request lists. A file stands
+// for one row: a whole file for its own, and a file that is no row of its
+// own for the one row all its code went to (a file that joined a box); a
+// file whose code went to several rows, as a split file's usually does,
+// stands for none. An import is listed between the rows of the two files,
+// never within one row: every import between two whole files and every
+// import of a file that joined a box, with all its code on the map, is
+// listed, and nothing an import between such files does not explain. The
+// preset draws each row as a part of its own named after the row, so a
+// part's title names its row.
+func checkImports(t testing.TB, graph atlas.Graph, targetID string, checked Map, raw []byte, joined map[string]bool) {
+	t.Helper()
+	var body struct {
+		Units []struct {
+			Ref  string `json:"ref"`
+			Path string `json:"path"`
+			Box  string `json:"box"`
+		} `json:"units"`
+		Imports []string `json:"imports"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	whole, rowOfTitle := map[string]string{}, map[string]string{}
+	for _, unit := range body.Units {
+		title := unit.Box
+		if title == "" {
+			title = unit.Path
+			whole[unit.Path] = unit.Ref
+		}
+		if _, twice := rowOfTitle[title]; twice {
+			rowOfTitle[title] = "" // two rows of one name name no row
+		} else {
+			rowOfTitle[title] = unit.Ref
+		}
+	}
+	rowOfPart := map[string]string{}
+	for _, box := range checked.Target.Boxes {
+		rowOfPart[box.ID] = rowOfTitle[box.Title]
+	}
+	owners := fileParts(graph, targetID, checked)
+	// rowOf is the row a file stands for; must says its imports must be
+	// listed.
+	rowOf, must := map[string]string{}, map[string]bool{}
+	for _, place := range graph.Places {
+		if place.File == nil || !slices.Contains(place.TargetIDs, targetID) {
+			continue
+		}
+		if ref, ok := whole[place.Path]; ok {
+			rowOf[place.ID], must[place.ID] = ref, true
+		} else if owner, ok := owners[place.ID]; ok {
+			rowOf[place.ID], must[place.ID] = rowOfPart[owner.part], owner.all && joined[place.Path]
+		}
+	}
+	listed := map[string]bool{}
+	for _, line := range body.Imports {
+		if listed[line] {
+			t.Fatalf("import %q is listed twice", line)
+		}
+		listed[line] = true
+	}
+	explained := map[string]bool{}
+	for _, edge := range graph.Edges {
+		from, to := rowOf[edge.From], rowOf[edge.To]
+		if edge.Kind != "imports" || from == "" || to == "" || from == to {
+			continue
+		}
+		line := from + " -> " + to
+		explained[line] = true
+		if must[edge.From] && must[edge.To] && !listed[line] {
+			t.Fatalf("%s imports %s, yet %q is not listed: %v", placeByID(graph, edge.From).Path, placeByID(graph, edge.To).Path, line, body.Imports)
+		}
+	}
+	for _, line := range body.Imports {
+		if !explained[line] {
+			t.Fatalf("import %q is no import between files that stand for those rows", line)
 		}
 	}
 }
