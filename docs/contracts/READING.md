@@ -739,6 +739,28 @@ to a name the repository's build gives one of its own programs (ProgramIndex
 `target.executables`) makes the launch that program, joined by equal names
 only (REPORT; 2026-09-29).
 
+**Values compared with several words.** A value the repository's own code
+compares with two or more words in two or more cases (ProgramIndex
+`comparisons`: a switch on a program's first argument, an if/elif chain, a
+match or case form) is no call, so no per-call question sees it; each
+comparison outside tests, in a declaration a program runs, is asked once
+for all its cases in the inputs step (`repomap.atlas.dispatch.v1`, column
+`enters`, stage `atlas_inputs`, Jev, `Memoize`; its own state
+`prompts/api_dispatch.md`, the call question's options and criteria file).
+The item is `compares` (the value as written), `from` (its origin in the
+words of a call's `arguments`), `in` (the declaration with its signature)
+and `cases` (each case's words in source order). A comparison none of whose
+words can name an entry is not asked. An entry answer makes one input per
+case whose words can name one, whose handler is not established, at the
+case's first word, named from its words and declared by the comparing
+declaration (one catalogue); a case none of whose words can is
+`entry_unnamed`. None and an undecided answer make nothing; an undecided
+comparison is not yet one of the launch walk's unsure calls. A case's
+`branch` is the lines a setting reads its written fields from (REPORT).
+litestream's `Main.Run` switch is one question whose 17 cases hold its 14
+subcommands. A table's reads (places `read_at`: the reader and the line)
+travel with the table for its question.
+
 **Settings in tagged fields.** A repository structure field whose tag names a
 key (Go's object aliases, `yaml:"dbs"`) is asked on its own what that key is
 (`repomap.atlas.inputs.v1.field`, stage `atlas_inputs`, Jev, `Memoize`):

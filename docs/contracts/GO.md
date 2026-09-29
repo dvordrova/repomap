@@ -236,13 +236,39 @@ handler to. Not recorded yet, and so asked nothing:
   (`var verbose = flag.Bool("verbose", …)` at the end of the same file):
   the synthetic initializer's outside calls stay its unresolved frontier
   (above), so the fixture's `flag.Bool` is not asked;
-- `os.Args` elements, `flag.Arg(i)` and `flag.Args()` carry no argument
-  vector origin, and `==`/`switch` on them is no fact (litestream's
-  subcommands are chosen by a `switch`, so its flags are inputs and its
-  subcommand names are not);
 - package-level composite tables of names and tables inside functions;
 - `handlers[name] = fn` registries;
 - a callable the repository's own function keeps (S1) is not enabled.
+
+### Words a value is compared with
+
+A value a function body compares with two or more different string words
+in two or more cases is one comparison (PROGRAM_INDEX `comparisons`,
+DirectCallIndex 17): the cases of a `switch` on a string value (a case's
+constant expressions are its words, named constants included) and the `==`
+comparisons of the same expression with a string constant, joined into one
+comparison by the expression (a variable by its declaration, anything else
+by its text). A case's branch is its clause; comparisons in one if
+condition, through parentheses, `||` and `&&`, are one case whose branch
+is the if's block, and one in a tagless switch's case its clause. The typed
+syntax gives cases, words and lines; SSA, which compares a switch's tag at
+each case expression and an `==` at its operator, gives the value's
+origin. Source values follow a slice element (`IndexAddr`: litestream's
+`cmd, args = args[0], args[1:]` is `one of: "" | element "0" of parameter
+#2 args of Run`), write a constant index as its number and name a package
+variable they do not follow (`os.Args`). The fixture's `RunSubcommand` in
+`internal/storefixture/tool_cli.go` is litestream's `Main.Run`: a switch
+with `"check", "verify"` in one case and a default branch comparing the
+same `cmd` with the help words, one comparison of three cases;
+`IsDefaultLevel`'s lone `==` is none, and `ToolCommand`'s
+`strings.EqualFold` calls stay calls asked on their own
+(`TestEveryLanguageRecordsAMultiWayDispatchAsOneComparison`,
+`TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase`). Like field
+accesses, comparisons are recorded where a node's calls are. A rune switch
+(a lexer's `case '('`) is not recorded; C's character switch is.
+litestream's cmd/litestream records 14 comparisons (the subcommand switch
+of `Main.Run` with 17 cases) and cmd/litestream-test 3 (`fs.Arg(0)`'s
+switch and its `help` check, 6 cases).
 
 ### Settings a structure's tags name
 

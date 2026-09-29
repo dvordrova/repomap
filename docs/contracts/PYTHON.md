@@ -540,17 +540,17 @@ handler over. Go and TypeScript fields carry the compiler's declared type,
 so a call on a field resolves by type already; Clojure keeps no fields
 (CLOJURE). Not recorded yet:
 
-- `sys.argv` carries no argument vector origin, and a comparison of
-  `sys.argv` or of a parsed argument (`args.cmd == "init"`) is no fact: an
-  operator is no call, so the per-call contrast of an option comparison
-  with a comparison of data (C's `strcasecmp(argv[1], "--raw")` beside
-  `strcasecmp(cmd->name, "bgsave")`) has no Python equivalent;
+- `sys.argv` carries no argument vector origin, and a lone comparison of
+  it or of a parsed argument (`args.cmd == "init"`) is no fact: an operator
+  is no call, so the per-call contrast of an option comparison with a
+  comparison of data (C's `strcasecmp(argv[1], "--raw")` beside
+  `strcasecmp(cmd->name, "bgsave")`) has no Python equivalent (two or more
+  words compared with one value are a comparison, below);
 - a field stored more than once, or from anything but a call or a
   parameter annotated with an outside type (another field, an
   unannotated parameter), carries no origin, and a chain through a
   field of a field of a repository class (`self.a.b.c()`) stays
   unresolved;
-- list and dict tables of names;
 - dict registries (`handlers[name] = fn`);
 - a callable the repository's own function keeps (S1) is not enabled;
 - settings a structure names (GO, the tagged-field question): a dataclass,
@@ -558,6 +558,38 @@ so a call on a field resolves by type already; Clojure keeps no fields
   its keys by its field names, and a field's key alias is a call argument
   (`Field(alias="dbs")`), not an object alias; the adapter records neither
   as a key, so no Python field is asked what its key is.
+
+## Words a value is compared with, and tables of names
+
+An `if`/`elif` chain comparing one expression with a string (`==`, or `in`
+a written tuple, list or set of strings) and a `match` whose cases match
+string values are one comparison per expression and scope when two or more
+different words are compared in two or more cases (PROGRAM_INDEX
+`comparisons`): comparisons in one condition, through `and`/`or`, are one
+case, whose branch is the `if`'s body; a match case's `a | b` is one case,
+its branch the case's body. The value's origin is its source value where it
+is compared, and a parallel assignment binds each name to its own value,
+all read before any is bound (`command, rest = argv[0], argv[1:]`: element
+"0" of parameter `argv`). A module body's comparisons are the module's; a
+class body's are none. The fixture's `src/fixture_app/dispatch.py` holds
+`dispatch` (three cases), `describe` (`match`) and `is_default`'s lone
+comparison, which is none.
+
+A module-level list, tuple, set or dict written once whose elements share
+one shape (every element a string, a call to one callee, or a tuple of
+constants of one length; a dict's keys strings and its values of one such
+shape or constants) is a table of names (PROGRAM_INDEX `rows`): each
+element a row of the string literals it writes in order, a dict's key
+first and a call's keyword words named by their keyword. Only a table a
+function, method or lambda outside the tests reads keeps its rows
+(`keepReadTables`, over the `reads` relations): `dispatch.py`'s `OPTIONS`
+(two `Opt(...)` rows) and `REQUIRED` are tables and `FORMATS`, which
+nothing reads, is none (`TestPythonTablesOfNamesAreTheOnesAFunctionReads`).
+A nested dict (freqtrade's `CONF_SCHEMA`) and a mixed collection are none;
+a table a module body reads alone is none. freqtrade records 64 tables
+read by a function (60 with a place outside tests: a table whose name
+starts with `_` is no declaration), `AVAILABLE_CLI_OPTIONS` with its 124
+`Arg(...)` rows among them, and 46 comparisons outside tests.
 
 ## Programs a call starts
 

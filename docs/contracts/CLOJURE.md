@@ -184,11 +184,17 @@ The object an input is declared on and J1 have no Clojure equivalent: the
 adapter records no call results as origins. A value chosen on either
 branch is an `if` expression, not a reassigned local, and the adapter
 records no value for it, so the Go join of both launches (`alternatives`)
-has no Clojure equivalent either. Not recorded yet:
+has no Clojure equivalent either. A `case` form whose tests are strings,
+or lists of strings, compares its value with those words: two or more
+words in two or more cases are one comparison of the enclosing var
+(PROGRAM_INDEX `comparisons`), each case's branch from its test to its
+result's last line, its value's origin the form as written (the adapter
+follows no Clojure value); `run-command`'s `(case (first args) "serve" …
+("check" "verify") …)` is two cases, while `=` stays a call asked on its
+own. Not recorded yet:
 
 - `-main`'s `& args` carry no argument vector origin;
 - `tools.cli` option vectors are vectors, not literals given to a call;
-- `case` on an argument;
 - `reset!`/`swap!` stores and registries kept in atoms;
 - settings a structure names (GO, the tagged-field question): an EDN
   configuration's keys are keywords a function reads (`(:dbs config)`,

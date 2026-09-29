@@ -454,9 +454,21 @@ of `lookupCommand(argv[first])` through the local `cmd`. Tables of names
 pass 2 (above). The object an input is declared on (K2) and J1, a word
 entry joined with the hand-over made on its result, have no C equivalent:
 C's option parsing compares words and makes no object options are declared
-on. Not recorded yet, and so asked nothing:
+on. A `switch` whose case labels are character literals compares its
+value with those letters: two or more letters in two or more cases are one
+comparison of the function (PROGRAM_INDEX `comparisons`), labels stacked on
+one statement one case, a case's branch from its label to the line before
+the next label or the block's end, its value's origin the switch
+condition's (kvcli's `shortOption`: `switch (arg[1])` with `'h'`/`'?'` and
+`'V'`). A number, an enum or a range label is no word. C compares strings
+by calls, so a `strcmp` chain stays per-call facts with their branches.
+Redis records one in each program: redis-server's glob matcher
+`stringmatchlen` (`*`, `?`, `[`, `\`) and redis-cli's reply reader
+`cliReadReply` (`-`, `+`, `:`, `$`, `*`). Not recorded yet, and so asked
+nothing:
 
-- `switch` or `==` on an argument's characters (`case 'h':`);
+- `==` on an argument's characters (`argv[1][0] == '-'`); a `switch` on
+  character literals is a comparison (below);
 - an option string handed with the whole argument vector
   (`getopt_long(argc, argv, "hvc:o:", …)`), deferred and never asked;
 - a table of names declared inside a function (`long_opts` in `main`) or a

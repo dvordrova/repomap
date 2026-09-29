@@ -117,6 +117,35 @@ ProgramIndex retains:
   type (through pointers, slices and arrays in Go; `list[X]`/`Optional[X]` in
   Python; arrays and promises in JS/TS), that type's object. A value has a
   name, a type or both; an adapter that knows no types leaves them out;
+- a module-level table's `rows`: the rows of its initializer that write
+  string literals and store no repository callable, each literal with the
+  field it fills and where. C records every such file-scope table (C);
+  Python (ProgramIndex 22) a list, tuple, set or dict written once whose
+  elements share one shape (strings, calls to one callee, constant tuples
+  of one length; a dict's keys strings), a dict row starting with its key
+  and a call's keyword words named by the keyword, only when a function
+  outside the tests reads it: freqtrade's `AVAILABLE_CLI_OPTIONS`, 124
+  `Arg(...)` rows; an unread table, a nested dict (`CONF_SCHEMA`) and a
+  mixed collection are none (PYTHON). Go, JS/TS and Clojure record no
+  table of names;
+- a callable's or module body's `comparisons` (ProgramIndex 22): a value it
+  compares with two or more different non-empty words in two or more
+  cases, a multi-way dispatch: the cases of a switch, match or case on the
+  value and the `==` comparisons of the same expression with a word. Each
+  is the value as written, its source `origin`, where it is first compared,
+  and its cases in source order, each with a closed `form` (`case`: an arm
+  of a switch, match or case; `equals`: `==`, or membership in a written
+  list of words), its `words` and the `branch` it selects (the case's
+  lines, or the block an if condition guards). A lone comparison, and one
+  condition naming several words for one branch (`arg == "-h" || arg ==
+  "-help"`), is none. Go (a string switch and `==`, the origin from SSA:
+  litestream's `cmd, args = args[0], args[1:]` is element "0" of parameter
+  `args`), Python (`if`/`elif` with `==` or `in`, `match`), JS/TS (`switch`,
+  `===`/`==`), C (a switch on character literals) and Clojure (`case`)
+  record it; a comparison written as a call (C `strcmp`, Clojure `=`, Go
+  `strings.EqualFold`) stays that call's fact, asked on its own (READING).
+  Validation refuses one on a declaration that runs no code, an unlocated
+  or out-of-order one and one with fewer than two worded cases;
 - source-anchored enclosing control statements on individual call patterns;
 - call-result and receiver identity;
 - receiver-origin provenance and its resolution;
@@ -338,9 +367,9 @@ the lines of the statement that condition guards (both included): where the
 code a comparison selects is written. The C adapter records it
 (`strcasecmp(argv[0], "persist")` guards its block); it is no witness, never
 enters a model request, and the report reads a setting's written fields
-from it (REPORT). The Go, Python, JS/TS and Clojure adapters record none:
-their settings are struct tags, keyword lookups or option declarations, not
-compared words.
+from it (REPORT). The Go, Python, JS/TS and Clojure adapters record none on
+a call: their compared words are comparisons (above), whose cases carry
+the same `branch`, which the report reads the same way.
 
 The Go, Python and JSTS adapters
 retain neutral `control_context` witnesses on the existing call pattern. Go

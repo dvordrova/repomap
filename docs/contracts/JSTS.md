@@ -236,11 +236,19 @@ whose declarations are not installed names none, so the fixture's
 `commander` in `package.json`) is asked nothing, as its express routes are
 not. Not recorded yet:
 
-- `process.argv` carries no argument vector origin, and `===` on it or on
-  `program.opts()` is no fact; `process.argv.includes("--watch")` names no
-  symbol without Node's declarations (below), so the per-call contrast of
-  an option comparison with a comparison of data has no fixture
-  equivalent;
+- `process.argv` carries no argument vector origin, and a lone `===` on it
+  or on `program.opts()` is no fact; `process.argv.includes("--watch")`
+  names no symbol without Node's declarations (below), so the per-call
+  contrast of an option comparison with a comparison of data has no
+  fixture equivalent. A value compared with two or more words in two or
+  more cases is one comparison (PROGRAM_INDEX `comparisons`, helper 28):
+  a `switch`'s clauses (clauses stacked without statements of their own
+  are one case, its branch from the first clause to the last's end) and
+  the `===`/`==` comparisons of the same expression, those in one `if`
+  condition one case whose branch is the then-statement; its origin is
+  the source value (`src/dispatch.ts`'s `switch (process.argv[2])` with
+  its default's help check, one comparison of three cases; `isDefault`'s
+  lone `===` is none);
 - the object an input is declared on (K2) and the join of a word entry
   with the hand-over made on its result (J1): commander's
   `program.command("init").action(initProject)` is that shape, but with

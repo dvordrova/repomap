@@ -1,5 +1,64 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Values compared with several words; Python tables of names (fixes 1 and 3)
+
+- **Why:** litestream's 14 subcommands (`switch cmd` in `Main.Run`,
+  main.go:138–218) and litestream-test's 5 (`switch fs.Arg(0)`) were never
+  asked: a switch or an operator is no call, so `readCalls` had nothing,
+  and `cmd`'s origin read `one of: "" | not followed`. Python recorded no
+  table of names, so freqtrade's `AVAILABLE_CLI_OPTIONS` (124 `Arg(...)`
+  rows) gave no row.
+- **Facts (e4de0f0c, ProgramIndex 22):** `Object.Comparisons` on a callable
+  or module body: a value compared with two or more different non-empty
+  words in two or more cases, each case a closed form (`case`, `equals`),
+  its words and its branch lines. A lone `==` and one condition naming
+  several words for one branch are none. Go (DirectCallIndex 17, a string
+  switch and `==`; source values now follow a slice element, write a
+  constant index and name `os.Args`), Python (if/elif `==`/`in`, `match`;
+  parallel assignment binds each name to its own value), JS/TS (helper 28,
+  result 19: switch, `===`/`==`), C (a switch on character literals) and
+  Clojure (`case`). Comparisons written as calls (C `strcmp`, Clojure `=`,
+  Go `strings.EqualFold`) stay per-call facts. Python `Object.Rows` for a
+  module-level collection of one shape that a function outside tests
+  reads; `CONF_SCHEMA` (nested) stays a gap, and `SCHEMA_TRADE_REQUIRED` is
+  a table like any other (no name matching credited).
+- **Reading (5892d35d, places graph 23):** `SymbolFacts.Comparisons` and a
+  table's `ReadAt` (reader place, line, column; callers through the
+  reader's `CalledBy`). Each comparison is asked once in `atlas_inputs`
+  (`repomap.atlas.dispatch.v1`, `enters`, Jev, memoized, own state
+  `api_dispatch.md`; options and criteria unchanged): `compares`, `from`,
+  `in`, `cases`. An entry answer makes one input per case (handler not
+  established, declared by the comparing function); a setting case reads
+  its branch's written fields (report `branchAt`). Not yet: an undecided
+  comparison is not a launch-walk unsure call, and K3 (a handler's own
+  comparison of what it was handed) does not skip comparisons.
+- **Counts (no-model runs, committed binary):**
+  - litestream cmd/litestream (9 s): 14 comparisons, 62 cases, 73 words;
+    `Main.Run`'s is one question of 17 cases (the 14 subcommands, `wal`,
+    the help words, `""`), its origin `one of: "" | element "0" of
+    parameter #2 args of Run`. Also asked: `NewReplicaFromConfig`'s
+    replica types (8), `InitLog`'s levels and formats, the restore
+    integrity check, S3 debug modes, and 7 error-code or host checks.
+  - litestream cmd/litestream-test (4 s): 3 comparisons, 13 cases; `Run`'s
+    `fs.Arg(0)` is one question of 6 cases (`help` and the 5 subcommands).
+  - freqtrade (freqtrade script, 76 s): 46 comparisons outside tests (119
+    cases, 140 words; 90 more in test files); 64 tables read by a
+    function (582 rows), 60 of them declarations outside tests (555 rows,
+    174 reads), `AVAILABLE_CLI_OPTIONS` read by `Arguments._build_args`
+    (arguments.py:358). A lone-`==` rule would have asked about 311.
+  - Redis 1.3.6: one comparison per program, `stringmatchlen`'s glob
+    letters (redis-server) and `cliReadReply`'s reply types (redis-cli);
+    both are expected to answer none.
+- **Fixtures:** go `RunSubcommand`/`IsDefaultLevel` (tool_cli.go), python
+  `dispatch.py`, jsts `src/dispatch.ts`, clojure `run-command`, c kvcli
+  `shortOption`; `TestEveryLanguageRecordsAMultiWayDispatchAsOneComparison`,
+  `TestPythonTablesOfNamesAreTheOnesAFunctionReads`,
+  `TestEveryLanguageAsksAComparisonOnceAndMakesAnInputPerCase`. The
+  python-tutorial-game indexes are regenerated through no-model runs of
+  the materialized fixture (3 new comparisons and one table).
+- **Contracts:** PROGRAM_INDEX, GO, PYTHON, JSTS, CLOJURE, C, READING, the
+  testdata README, CURRENT's format numbers.
+
 ## 2026-09-29 — Claim audit as a gated Go test
 
 - **What:** `internal/audit` (test-only; DEVELOPMENT "Claim audit") ports the
