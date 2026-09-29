@@ -433,7 +433,7 @@ func buildInputResults(
 	}
 
 	inputs := make([]InputResult, len(targets))
-	testSources, err := configuredPythonTests(repository)
+	testSources, err := pythonTestSources(repository, targets)
 	if err != nil {
 		return nil, err
 	}
