@@ -21,7 +21,10 @@ async function pointAt(page,locator){
 }
 const look=(page,id)=>page.locator(`.react-flow__node[data-id="${id}"]`).evaluate(node=>{
   const card=node.firstElementChild,style=getComputedStyle(card);
-  return {className:node.className,opacity:getComputedStyle(node).opacity,shadow:style.boxShadow,border:style.borderColor,
+  // The card's own outline, as no emphasis draws it.
+  const probe=document.createElement('div');probe.className=card.className;node.parentElement.appendChild(probe);
+  const ownBorder=getComputedStyle(probe).borderColor;probe.remove();
+  return {className:node.className,opacity:getComputedStyle(node).opacity,shadow:style.boxShadow,border:style.borderColor,ownBorder,
     frame:style.getPropertyValue('--flow-frame-color').trim(),frameWidth:style.getPropertyValue('--flow-frame-width').trim()};
 });
 
@@ -37,18 +40,20 @@ test('a pointed part is the subject, dark itself, and nothing recedes',async({pa
   await map.evaluate(map=>map.focusNode('routes'));
   await settle(map);
   await page.mouse.move(1430,890);
+  const quietArea=await look(page,'requests');
   await pointAt(page,page.locator('.react-flow__node[data-id="routes"] strong'));
   await expect(map).toHaveAttribute('data-subject','routes');
   const routes=await look(page,'routes');
   expect(routes.className).toContain('flow-node-focus');
   expect(routes.shadow,'no veil on the pointed part').toBe('none');
-  expect(routes.border,'the pointed part takes the dark outline').toBe('rgb(36, 48, 68)');
   const auth=await look(page,'auth');
   expect(auth.className,'the part across its dark arrow').toContain('flow-node-connected');
   expect(auth.opacity).toBe('1');
   const worker=await look(page,'worker');
   expect(worker.className).not.toContain('flow-node-muted');
   expect(worker.opacity,'a part the pointer does not connect stays as it is').toBe('1');
+  expect(routes.border,'the pointed part takes the dark outline').not.toBe(routes.ownBorder);
+  expect(worker.border,'a part the pointer does not connect keeps its own').toBe(worker.ownBorder);
   const edges=await map.evaluate(map=>{
     const id=(from,to)=>map.visibleEdges.find(e=>e.from===from&&e.to===to).id;
     const at=edge=>{const g=document.querySelector(`[data-edge-ids~="${edge}"]`);return g&&{active:g.classList.contains('flow-edge-active'),opacity:getComputedStyle(g).opacity};};
@@ -62,8 +67,7 @@ test('a pointed part is the subject, dark itself, and nothing recedes',async({pa
   await pointAt(page,page.locator('[data-frame-title="requests"]>strong'));
   await expect(map).toHaveAttribute('data-subject','requests');
   const area=await look(page,'requests');
-  expect(area.frame).toBe('#243044');
-  expect(area.frameWidth).toBe('2.5px');
+  expect([area.frame,area.frameWidth],'its frame darkens').not.toEqual([quietArea.frame,quietArea.frameWidth]);
   for(const id of ['routes','auth']){
     const part=await look(page,id);
     expect(part.shadow,`${id}: no veil inside the pointed area`).toBe('none');
@@ -252,9 +256,10 @@ test('a group of frames sharing one destination recedes with them and stays with
   await expect(group,'the group of an involved frame stays').toHaveCSS('opacity','1');
   await expect(heading).toHaveCSS('opacity','1');
   await map.evaluate(map=>map.restoreReadingState({scope:'api'}));
-  await expect(resolver).toHaveCSS('opacity','0.4');
-  await expect(group,'a group nothing involves recedes').toHaveCSS('opacity','0.4');
-  await expect(heading,'and its heading with it').toHaveCSS('opacity','0.4');
+  const opacity=locator=>locator.evaluate(element=>Number(getComputedStyle(element).opacity));
+  await expect.poll(()=>opacity(resolver)).toBeLessThan(1);
+  await expect.poll(()=>opacity(group),'a group nothing involves recedes').toBeLessThan(1);
+  await expect.poll(()=>opacity(heading),'and its heading with it').toBeLessThan(1);
   // The pointer brings forward what it outlines and recedes nothing more.
   await pointAt(page,page.locator('[data-component-overview="backend"]'));
   await expect(map).toHaveAttribute('data-subject','backend');

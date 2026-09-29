@@ -76,7 +76,8 @@ test('a click on an arrow end opens its frame\'s connection in the reading',asyn
   await expect(open).toHaveCount(1);
   await expect(open).toHaveAttribute('data-connection-key','in:requests');
   await expect(open.locator('summary')).toContainText('Request handling');
-  await expect(open.locator('.flow-card-pair')).toHaveText(['→ Job scheduling1','→ Processing worker1']);
+  await expect(open.locator('.flow-card-pair'),'with the calls its card lists').toHaveCount(2);
+  for(const part of ['Job scheduling','Processing worker'])await expect(open.locator('.flow-card-pair',{hasText:part})).toHaveCount(1);
   await expect(page.locator('[data-reading-connections] details:not([open])').first(),'the frame\'s other connections stay closed under it').toBeAttached();
   await testInfo.attach('journey-01 — The arrow end opens its connection in the reading',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   expect(errors).toEqual([]);
@@ -100,7 +101,7 @@ test('a name in the reading\'s connection reads its declaration, and a modifier-
   await pointAt(page,all);
   await all.locator('button').click();
   const row=page.locator('[data-reading-connections] details[open] .flow-card-row',{hasText:'processJob'});
-  await expect(row).toHaveText('handleCreate→processJob');
+  await expect(row).toContainText('handleCreate');
   expect(await row.evaluate(row=>[...row.querySelectorAll('a')].filter(a=>!a.textContent.trim()).length),'no code mark beside the names').toBe(0);
   await expect(row.locator('a,button',{hasText:'handleCreate'}),'a caller the report holds no declaration for is only named').toHaveCount(0);
   const pages=[];context.on('page',opened=>pages.push(opened));

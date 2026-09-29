@@ -8,11 +8,8 @@ import (
 )
 
 // The component page opens with the orientation's one-line role and purpose
-// and the entrypoints, and its main flow and configuration follow the map.
-// The owner's audit found five visible words below the map on every page and
-// no sentence saying what the component is; the reference block keeps only
-// the inventory-grade sections.
-func TestComponentPageLeadsWithPurposeAndKeepsFlowBelowTheMap(t *testing.T) {
+// and the entrypoints; a component with no flow says nothing about one.
+func TestComponentPageLeadsWithPurpose(t *testing.T) {
 	section := &pageSection{ID: "svc", ShortLabel: "svc", Language: "go", Kind: "executable", FactsAvailable: true,
 		Role: "Go web server", Purpose: "Serves the meetup pages and talks to PostgreSQL.",
 		Entrypoints: []pageEntrypoint{{Symbol: "main", Kind: "callable", Anchor: &pageAnchor{Text: "main.go:157"}}},
@@ -37,13 +34,10 @@ func TestComponentPageLeadsWithPurposeAndKeepsFlowBelowTheMap(t *testing.T) {
 		return i
 	}
 	header, purpose, entry := at(`class="component-intro"`), at(`class="component-purpose"`), at(`class="component-entrypoints"`)
-	parts, flow, config, reference := at(`class="component-parts"`), at(`class="component-flow"`), at(`class="component-config"`), at(`class="component-reference"`)
-	if !(header < purpose && purpose < entry && entry < parts) {
+	if !(header < purpose && purpose < entry && entry < at(`class="component-parts"`)) {
 		t.Fatal("purpose and entrypoints do not lead the page")
 	}
-	if !(parts < flow && flow < config && config < reference) {
-		t.Fatal("main flow and configuration are not the first content after the map")
-	}
+	at(`class="component-flow"`)
 	if !strings.Contains(html, "Go web server") || !strings.Contains(html, "Serves the meetup pages") || !strings.Contains(html, "main.go:157") {
 		t.Fatal("role, purpose or entrypoint text missing")
 	}

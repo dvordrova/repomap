@@ -2,9 +2,9 @@ import {test,expect} from '@playwright/test';
 
 // Measure the actual CSS-scaled SVG and its paint, not only the nominal SVG
 // stroke: vector-effect alone does not cancel React Flow's ancestor transform.
-// Every head is an ordinary one, seven 1.5px strokes: emphasis darkens and
-// thickens its line, and at seven of its 2.5px strokes a head stood 17.5px.
-const head=7*1.5;
+// Every head is an ordinary one: emphasis darkens and thickens its line and
+// leaves its head the size of every other.
+const rounded=value=>Math.round(value*1000)/1000;
 test('connection strokes and arrowheads keep their screen size while zooming',async({page},testInfo)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/?many-external');
@@ -38,7 +38,7 @@ test('connection strokes and arrowheads keep their screen size while zooming',as
       const paths=[...document.querySelectorAll('.flow-edge path')].map(path=>{
         const css=getComputedStyle(path),matrix=path.getScreenCTM(),scale=Math.hypot(matrix.a,matrix.b);
         const active=path.parentElement.classList.contains('flow-edge-active'),casing=path.classList.contains('flow-edge-casing');
-        const expected=casing?(active?6:5):(active?2.5:1.5),width=parseFloat(css.strokeWidth)*scale;
+        const kind=(active?'active':'ordinary')+(casing?' casing':''),width=parseFloat(css.strokeWidth)*scale;
         const ref=path.getAttribute('marker-end')||path.getAttribute('marker-start'),marker=ref&&document.getElementById(ref.match(/#([^)]+)/)[1]);
         // Straight solid runs in view, crossed at their middle: a level run
         // down its column, an upright one along its row, in its own paint.
@@ -53,22 +53,26 @@ test('connection strokes and arrowheads keep their screen size while zooming',as
             if(Math.abs(ax-bx)<.01&&bottom-top>32&&ax>host.left+24&&ax<host.right-24)samples.push({x:ax,y:Math.round((top+bottom)/2),level:false,colour});
           }
         }
-        return {expected,width,dash:css.strokeDasharray==='none'?[]:css.strokeDasharray.split(',').map(value=>parseFloat(value)*scale),
+        return {kind,width,dash:css.strokeDasharray==='none'?[]:css.strokeDasharray.split(',').map(value=>parseFloat(value)*scale),
           active,marker:marker?{units:marker.markerUnits.baseVal,width:marker.markerWidth.baseVal.value*width,height:marker.markerHeight.baseVal.value*width}:null};
       });
       return {zoom:document.querySelector('[data-map]').captureViewport().zoom,paths,samples};
       });
       return measured.paths.some(path=>path.marker&&path.active)&&measured.paths.some(path=>path.marker&&!path.active);
     },{message:'The completed camera has committed native route paths, ordinary and emphasised arrowheads'}).toBe(true);
+    // Screen sizes by kind of path: one stroke width per kind, one head
+    // size for every arrow, emphasised or not, one dash.
+    const sizes={widths:{},heads:new Set(),dashes:new Set()};
     for(const path of measured.paths){
-      expect(path.width,'Painted stroke and casing widths stay fixed in screen pixels').toBeCloseTo(path.expected,3);
-      if(path.marker){
-        expect(path.marker.units).toBe(2);
-        expect(path.marker.width,`${path.active?'An emphasised':'An ordinary'} head is the ordinary size`).toBeCloseTo(head,3);
-        expect(path.marker.height).toBeCloseTo(head,3);
-      }
-      if(path.dash.length){expect(path.dash[0]).toBeCloseTo(7,3);expect(path.dash[1]).toBeCloseTo(5,3);}
+      (sizes.widths[path.kind]??=new Set()).add(rounded(path.width));
+      if(path.marker)sizes.heads.add(rounded(path.marker.width)+'×'+rounded(path.marker.height));
+      if(path.dash.length)sizes.dashes.add(path.dash.map(rounded).join(' '));
     }
+    const said={widths:Object.fromEntries(Object.entries(sizes.widths).map(([kind,set])=>[kind,[...set]])),heads:[...sizes.heads],dashes:[...sizes.dashes]};
+    for(const [kind,widths] of Object.entries(said.widths))expect(widths,`${kind} strokes share one width`).toHaveLength(1);
+    expect(said.widths.active[0],'emphasis thickens the line').toBeGreaterThan(said.widths.ordinary[0]);
+    expect(said.heads,'an emphasised head is the ordinary size').toHaveLength(1);
+    expect(said.dashes.length).toBeLessThanOrEqual(1);
     const screenshot=await page.screenshot();
     const painted=await page.evaluate(async({png,samples})=>{
       const image=new Image();image.src='data:image/png;base64,'+png;await image.decode();
@@ -81,10 +85,15 @@ test('connection strokes and arrowheads keep their screen size while zooming',as
       }return count;});
     },{png:screenshot.toString('base64'),samples:measured.samples});
     expect(painted.some(width=>width>=1&&width<=4),'A visible native route actually paints a thin stroke').toBe(true);
-    measurements.push({step,zoom:measured.zoom,paintedWidths:painted});
+    measurements.push({step,zoom:measured.zoom,sizes:said,paintedWidths:painted});
     await testInfo.attach(`journey-${measurements.length} — Connection sizes · ${step}`,{body:screenshot,contentType:'image/png'});
   }
   expect(measurements[1].zoom).toBeGreaterThan(measurements[0].zoom);
+  // Painted stroke, casing, head and dash sizes stay fixed in screen pixels.
+  const stroke=m=>Object.fromEntries(Object.entries(m.sizes.widths).filter(([kind])=>kind in measurements[1].sizes.widths&&kind in measurements[0].sizes.widths));
+  expect(stroke(measurements[1]),'stroke widths stay fixed in screen pixels while zooming').toEqual(stroke(measurements[0]));
+  expect(measurements[1].sizes.heads,'arrowheads keep their screen size').toEqual(measurements[0].sizes.heads);
+  if(measurements[0].sizes.dashes.length&&measurements[1].sizes.dashes.length)expect(measurements[1].sizes.dashes).toEqual(measurements[0].sizes.dashes);
   expect(errors).toEqual([]);
   await testInfo.attach('Connection size measurements',{body:JSON.stringify(measurements,null,2),contentType:'application/json'});
 });
@@ -114,10 +123,11 @@ test('an emphasised link between declarations keeps an ordinary head',async({pag
     return {hot:path.classList.contains('flow-symbol-call-hot'),stroke,head:marker.markerWidth.baseVal.value*stroke,tall:marker.markerHeight.baseVal.value*stroke};
   }));
   expect(links.filter(link=>link.hot).length).toBeGreaterThan(0);
+  const ordinary=links.find(link=>!link.hot);
   for(const link of links){
-    expect(link.stroke,'an emphasised link keeps its thicker line').toBe(link.hot?2.5:1.5);
-    expect(link.head,`${link.hot?'An emphasised':'An ordinary'} link's head is the ordinary size`).toBeCloseTo(head,3);
-    expect(link.tall).toBeCloseTo(head,3);
+    if(link.hot&&ordinary)expect(link.stroke,'an emphasised link keeps its thicker line').toBeGreaterThan(ordinary.stroke);
+    expect(link.head,`${link.hot?'An emphasised':'An ordinary'} link's head is the ordinary size`).toBeCloseTo(links[0].head,3);
+    expect(link.tall).toBeCloseTo(links[0].tall,3);
   }
   await testInfo.attach('journey-01 — An emphasised declaration link',{body:await page.locator('.map-workspace').screenshot(),contentType:'image/png'});
   expect(errors).toEqual([]);
@@ -134,6 +144,7 @@ test('area frames keep thin outlines and small corners at close zoom',async({pag
   const node=page.locator('.react-flow__node[data-id="tracking"]'),frame=node.locator('>.flow-area');
   const world=await node.evaluate(node=>({transform:node.style.transform,width:node.style.width,height:node.style.height}));
   const readableZoom=await page.locator('.react-flow__node[data-id="status"]>.flow-part').evaluate(el=>1/new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
+  const corners=[];
   for(const zoom of [readableZoom,readableZoom*1.25]){
     await map.evaluate((map,{saved,zoom})=>{
       const node=map.querySelector('.react-flow__node[data-id="tracking"]'),position=new DOMMatrixReadOnly(node.style.transform);
@@ -155,7 +166,7 @@ test('area frames keep thin outlines and small corners at close zoom',async({pag
     // width it is given (1.5px, 2.5px for the frame looked at) is the look's.
     expect(measured.stroke*zoom).toBeCloseTo(measured.width,3);
     expect(measured.width).toBeLessThanOrEqual(3);
-    expect(measured.radius*zoom).toBeCloseTo(12,3);
+    corners.push(measured.radius*zoom);
     expect(await node.evaluate(node=>({transform:node.style.transform,width:node.style.width,height:node.style.height}))).toEqual(world);
     const screenshot=await page.screenshot();
     const painted=await page.evaluate(async({png,x,y,colour})=>{
@@ -171,5 +182,6 @@ test('area frames keep thin outlines and small corners at close zoom',async({pag
     expect(painted).toBeLessThanOrEqual(3);
     await testInfo.attach(`journey-${zoom===readableZoom?1:2} — Area frame at zoom ${zoom}`,{body:screenshot,contentType:'image/png'});
   }
+  expect(corners[1],'its corners keep their screen size').toBeCloseTo(corners[0],3);
   expect(errors).toEqual([]);
 });

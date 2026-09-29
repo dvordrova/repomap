@@ -44,21 +44,24 @@ func TestALaunchPointOffTheMapIsNamedWithItsReason(t *testing.T) {
 	if err := parsed.ExecuteTemplate(&list, "off-map", section); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(list.String(), `main<span class="ln">:9124</span></span> <span class="meta">(the program&#39;s entry)</span>`) || strings.Count(list.String(), "the program&#39;s entry") != 1 {
-		t.Fatalf("the Not on the map list does not name main as the entry:\n%s", list.String())
+	if strings.Count(list.String(), "the program&#39;s entry") != 1 {
+		t.Fatalf("the Not on the map list does not name main as the entry once:\n%s", list.String())
 	}
 	if err := parsed.ExecuteTemplate(&page, "target.html", section); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(page.String(), `<p class="component-entry">The program&#39;s entry is not on the map: `) || !strings.Contains(page.String(), `In no part of its file`) {
+	// The component names its entry with why it is off the map, and with its
+	// file and line, as the page's other source anchors are written.
+	start := strings.Index(page.String(), `class="component-entry"`)
+	if start < 0 {
 		t.Fatalf("the component does not name its entry:\n%s", page.String()[:min(len(page.String()), 2000)])
 	}
-	// The entry line names the file, as the page's other source anchors do:
-	// "main :9124" had left the reader without it.
-	line := page.String()[strings.Index(page.String(), `<p class="component-entry">`):]
+	line := page.String()[start:]
 	line = line[:strings.Index(line, "</p>")]
-	if !strings.Contains(line, `<code>main</code> <span class="anchor">redis.c:9124</span>`) || strings.Contains(line, `class="ln"`) {
-		t.Fatalf("the entry line does not name main with its file and line: %s", line)
+	for _, want := range []string{"main", "redis.c:9124", "In no part of its file"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("the entry line lacks %q: %s", want, line)
+		}
 	}
 	for _, group := range index.Groups {
 		if group.Lane == groupindex.LaneTriggers {

@@ -170,7 +170,7 @@ func TestOutboundCatalogueRetainsCommunicationWithoutDependencyGroups(t *testing
 	if strings.Count(html, `<details class="outbound-call">`) != 7 || strings.Contains(html, `<details class="outbound-more">`) || strings.Count(html, `<strong class="input-title">Pricing service`) != 1 {
 		t.Fatal("destination records are not complete compact nested lines")
 	}
-	if first := strings.Index(html, `Pricing service <span class="meta">· 5</span>`); first < 0 || first > strings.Index(html, "Trace collector") {
+	if first := strings.Index(html, `<strong class="input-title">Pricing service`); first < 0 || first > strings.Index(html, "Trace collector") {
 		t.Fatal("the destination with the most records is not the first group")
 	}
 	if !strings.Contains(html, `data-display-ref="`+section.Outbound[0].SummaryRef+`"`) {
@@ -376,14 +376,16 @@ func TestAnOutgoingFactWithoutALineIsNamedByItsCallOrItsKind(t *testing.T) {
 		row  pageOutbound
 		want string
 	}{
-		{pageOutbound{ID: "call", External: "net/http.Get", KindLabel: "Request", Source: "fact", Anchor: pageAnchor{Text: "client.go:9"}}, `<summary><code class="outbound-callable">Get</code>`},
-		{pageOutbound{ID: "kind", KindLabel: "Request", Source: "fact", Anchor: pageAnchor{Text: "client.go:9"}}, `<summary>Request <span class="meta">client.go:9</span>`},
+		{pageOutbound{ID: "call", External: "net/http.Get", KindLabel: "Request", Source: "fact", Anchor: pageAnchor{Text: "client.go:9"}}, "Get"},
+		{pageOutbound{ID: "kind", KindLabel: "Request", Source: "fact", Anchor: pageAnchor{Text: "client.go:9"}}, "Request"},
 	} {
 		var out bytes.Buffer
 		if err := parsed.ExecuteTemplate(&out, "outbound-row", test.row); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out.String(), test.want) || strings.Contains(out.String(), `class="outbound-note"`) {
+		_, summary, _ := strings.Cut(out.String(), "<summary>")
+		summary, _, _ = strings.Cut(summary, "</summary>")
+		if !strings.Contains(summary, test.want) || strings.Contains(out.String(), `class="outbound-note"`) {
 			t.Fatalf("%s: %s", test.row.ID, out.String())
 		}
 	}

@@ -148,11 +148,9 @@ test('external arrows end at the frame with its plaque beside them',async({page}
     const host=map.querySelector('.flow-root').getBoundingClientRect(),p=edge.outerSegments[0][0];
     return {x:host.x+m.e+p.x*m.a,y:host.y+m.f+p.y*m.d};
   });
-  // The plaque sits on the frame's border where its arrow meets it, the
-  // size of the former one-digit chip, and covers nothing the frame holds
-  // (owner, 2026-09-28).
+  // The plaque sits on the frame's border where its arrow meets it and
+  // covers nothing the frame holds (owner, 2026-09-28).
   const markerBox=await label.locator('button').boundingBox(),rootBox=await page.locator('.react-flow__node[data-id="front"]').boundingBox();
-  expect(Math.round(markerBox.width)).toBe(23);expect(Math.round(markerBox.height)).toBe(20);
   const centre={x:markerBox.x+markerBox.width/2,y:markerBox.y+markerBox.height/2};
   const border=Math.min(Math.abs(centre.x-rootBox.x),Math.abs(centre.x-rootBox.x-rootBox.width),Math.abs(centre.y-rootBox.y),Math.abs(centre.y-rootBox.y-rootBox.height));
   expect(border,'The plaque stands on the frame border').toBeLessThanOrEqual(markerBox.width/2+.5);

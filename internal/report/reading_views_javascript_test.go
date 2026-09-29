@@ -30,6 +30,7 @@ class El{
 }
 const text=value=>({textContent:value});
 const document={createElement:tag=>new El(tag),createTextNode:text};
+const names=el=>el.all(c=>c.has('map-reading-name')).map(c=>c.textContent);
 function rmEl(tag,cls,value){const item=document.createElement(tag);if(cls)item.className=cls;if(value!==undefined)item.textContent=value;return item;}
 function rmT(key,...values){return values.reduce((s,v,i)=>s.replace('{'+i+'}',v),key);}
 const repomapMembers={sourceLink(s){const a=rmEl(s.Href||s.Open?'a':'span','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||'';}};
@@ -61,29 +62,31 @@ func TestReadingColumnViewsFollowThePreparedData(t *testing.T) {
 	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
 	runSystemJS(t, readingViewElements+code+`
 const part=rmPartView(ctx,nodes['#own'],data).view;
-const lines=part.children.map(c=>c.className+': '+c.textContent);
-assert.deepEqual(lines,[
- 'map-part-title: Server lifecycle and cron',
- 'map-card-summary model: Keeps the server running.',
- 'map-part-files meta: server.c',
- 'map-reading-members: 3 functionsbeforeSleepinitServerserverCron',
- 'map-reading-members: 1 variablesshared',
- 'map-reading-side map-reading-in: Called frommain2main()initServer()beforeSleep()passed as a callback',
- 'map-reading-side map-reading-out: Calls intoServer core state2dictResize()Uses variablesserver',
-],'what it is made of first, then who calls it (owner, 2026-09-28)');
-assert.equal(part.all(c=>c.has('map-card-summary'))[0].title,'written by the model','model text says so on hover, with no chip');
+const at=cls=>part.children.findIndex(c=>c.has(cls));
+assert.ok(at('map-reading-members')<at('map-reading-in')&&at('map-reading-in')<at('map-reading-out'),'what it is made of first, then who calls it (owner, 2026-09-28)');
+assert.deepEqual(part.children.filter(c=>c.has('map-reading-members')).map(names),[['beforeSleep','initServer','serverCron'],['shared']],'its declarations by kind, in the page data\'s order');
+const incoming=part.children[at('map-reading-in')],outgoing=part.children[at('map-reading-out')];
+assert.deepEqual(names(incoming),['main()','initServer()','beforeSleep()'],'each caller with what it calls here');
+assert.equal(incoming.all(c=>c.has('map-reading-relation')).length,1,'a callback is said so');
+assert.deepEqual(names(outgoing),['dictResize()','server']);
+assert.equal(outgoing.all(c=>c.has('map-reading-uses')).length,1,'the variables it uses stand apart from its calls');
+const summary=part.all(c=>c.has('map-card-summary'))[0];
+assert.ok(summary.has('model')&&summary.title,'model text says so on hover, with no chip');
 assert.deepEqual(part.all(c=>c.has('map-reading-key')).map(c=>c.textContent),['initServer'],'only the key is bold, in the members list');
 assert.ok(part.all(c=>c.has('map-part-box-entry')).length===1&&part.all(c=>c.has('map-part-box-core')).length===1,'a part box takes its lane');
 part.all(c=>c.textContent==='dictResize()'&&c.has('map-reading-name'))[0].listeners.click({preventDefault(){},stopPropagation(){}});
 part.all(c=>c.tagName==='BUTTON'&&c.textContent==='main')[0].listeners.click({stopPropagation(){}});
 assert.deepEqual(read,['dictResize','main'],'a name reads its declaration and a part box its part');
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'},explanation:'Runs the cron.',explanation_ref:'e1'});
-assert.deepEqual(view.children.map(c=>c.className),['map-reading-side','map-decl-name','map-decl-where','map-author-comment','map-decl-explanation model','map-reading-side']);
-assert.equal(view.children[0].textContent,'Called byServer lifecycle and cron1initServer()passes it as a callback');
-assert.equal(view.children[1].textContent,'serverCron(id: long)');
-assert.equal(view.children[1].children[0].href,'h#serverCron-L9','the name is the link to all of its code');
-assert.equal(view.children[2].textContent,'server.c','the file alone, no line');
-assert.equal(view.children[3].textContent,"The author's comment in the codeCalled every 100 ms.",'the author\'s comment stands in the reading, marked as theirs');
+const one=cls=>view.all(c=>c.has(cls))[0];
+assert.ok(view.children[0].has('map-reading-side'),'its callers first');
+assert.deepEqual(names(view.children[0]),['initServer()']);
+assert.equal(view.children[0].all(c=>c.has('map-reading-relation')).length,1,'a callback is said so');
+assert.equal(one('map-decl-code').href,'h#serverCron-L9','the name is the link to all of its code');
+assert.equal(one('map-decl-signature').textContent,'(id: long)');
+assert.ok(one('map-decl-where').textContent.includes('server.c')&&!/:\d/.test(one('map-decl-where').textContent),'the file alone, no line');
+assert.ok(one('map-author-comment').textContent.includes('Called every 100 ms.'),'the author\'s comment stands in the reading, marked as theirs');
+assert.ok(one('map-decl-explanation').has('model'),'the model\'s line is marked as the model\'s');
 `)
 }
 
@@ -105,12 +108,17 @@ const all={
 const opened=[];
 const context={nodeByHref:href=>all[href.slice(1)]||null,nodeById:id=>all[id]||null,readNode:n=>opened.push(n.dataset.title)};
 const outline=rmOutline(context,all['system-component-t1']);
-assert.equal(outline.textContent,'Areas and partsCore infrastructureProvides runtime services.Server core stateManages core state.Server core stateManages core state.');
+const area=outline.all(c=>c.tagName==='LI'&&c.children[0].textContent==='Core infrastructure')[0];
+assert.ok(area.all(c=>c.has('map-part-box')).some(c=>c.textContent==='Server core state'),'a part stands under its area');
+assert.deepEqual(area.all(c=>c.has('map-outline-summary')).map(c=>[c.textContent,c.has('model')]),[['Provides runtime services.',true],['Manages core state.',true]],'each with the model\'s description');
 outline.all(c=>c.tagName==='BUTTON'&&c.textContent==='Core infrastructure')[0].listeners.click({stopPropagation(){}});
 assert.deepEqual(opened,['Core infrastructure'],'a name reads its area');
 const holder=rmEl('div');
 rmProgramsTable(context,holder,[all['system-component-t1']],()=>[{incoming:true,title:'redis-cli'},{incoming:false,title:'TCP endpoint'}]);
-assert.equal(holder.textContent,'Programsredis-serverBackend database serverEntrymain()Inputs2 requests · 1 settingsConnections← redis-cli · → TCP endpointBuilt fromadlist.c redis.c');
+assert.deepEqual(holder.all(c=>c.has('model')).map(c=>c.textContent),['Backend database server'],'its role is the model\'s');
+for(const fact of ['main()','2 requests','1 settings','← redis-cli','→ TCP endpoint','adlist.c redis.c'])assert.ok(holder.textContent.includes(fact),'its entry, inputs by kind, connections by direction and files: '+fact);
+holder.all(c=>c.tagName==='BUTTON'&&c.textContent==='redis-server')[0].listeners.click();
+assert.deepEqual(opened.at(-1),'redis-server','its name reads it');
 `)
 }
 
@@ -127,11 +135,14 @@ const decls=[d('listCreate','adlist.c'),d('dictCreate','dict.c'),d('sdsnew','sds
 const fanned={decls,files:['adlist.c','dict.c','sds.c'],members:[{kind:'function',decls:[0,1,2]}],
  in:[{part:'#main',title:'main',count:5,lines:[{caller:3,ends:[5,6,7,8,9].map(i=>({decl:i,kind:'calls',possible:true})),fan:{of:94,noun:'request',via:[4]}}]}]};
 const view=rmPartView(ctx,nodes['#own'],fanned).view;
-assert.deepEqual(view.children.filter(c=>c.has('map-reading-file')).map(c=>c.textContent),
- ['adlist.c1 functionslistCreate','dict.c1 functionsdictCreate','sds.c1 functionssdsnew'],'file by file');
-const line=view.all(c=>c.has('map-reading-caller'))[0];
-assert.equal(line.tagName,'DETAILS','the fan-out is one folded line');
-assert.equal(line.children[0].textContent,'loadAppendOnlyFile() → 5 request handlers, possible, via cmdTable');
+assert.deepEqual(view.children.filter(c=>c.has('map-reading-file')).map(c=>[c.children[0].textContent,...names(c)]),
+ [['adlist.c','listCreate'],['dict.c','dictCreate'],['sds.c','sdsnew']],'file by file');
+const lines=view.all(c=>c.has('map-reading-caller'));
+assert.equal(lines.length,1,'the fan-out is one line');
+assert.equal(lines[0].tagName,'DETAILS','folded');
+const head=lines[0].children[0];
+assert.deepEqual(names(head),['loadAppendOnlyFile()','cmdTable'],'the caller and the site it dispatches through');
+assert.ok(head.textContent.includes('5')&&head.all(c=>c.has('possible')).length===1,'its ends counted, possible');
 `)
 }
 
@@ -146,9 +157,9 @@ data.own[0].callers.push({part:'#cli',title:'Command line client',program:'redis
 data.own[0].not_called_in='redis-benchmark';
 nodes['#cli']={dataset:{title:'Command line client',lane:'entry'},getAttribute:()=>'#cli'};
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
-assert.equal(view.children[0].textContent,'Called byServer lifecycle and cron1initServer()passes it as a callbackredis-cli:Command line client1cliConnect()');
-assert.equal(view.children[1].className,'map-reading-not-called meta');
-assert.equal(view.children[1].textContent,'Not called in redis-benchmark');
+const groups=view.children[0].all(c=>c.has('map-reading-peer'));
+assert.deepEqual(groups.map(g=>[g.all(c=>c.has('map-reading-program')).map(c=>c.textContent).join(''),names(g)]),[['',['initServer()']],['redis-cli:',['cliConnect()']]],'its own program\'s callers, then each other program\'s, named');
+assert.ok(view.all(c=>c.has('map-reading-not-called'))[0].textContent.includes('redis-benchmark'),'the program never running it is named');
 `)
 }
 
@@ -169,18 +180,23 @@ data.own.push({decl:6,fields:[{name:'shared.crlf',written:[{part:'#own',title:'S
 data.own[0].writes=[{path:'redisClient.fd',decl:client},{path:'server.hz'}];
 const type=rmDeclView(ctx,nodes['#own'],data,{name:'redisClient',source:{Href:'h#redisClient',Text:'server.c:90'}});
 const grid=type.all(c=>c.has('map-reading-field-grid'))[0];
-assert.deepEqual(grid.children.map(c=>c.className+': '+c.textContent),[
- ': fd',': int','map-field-uses-row: Written byServer lifecycle and cronserverCron()Read byServer lifecycle and croninitServer()mainmain()',': argc',': int',': db',': redisDb *']);
+assert.deepEqual(grid.all(c=>c.tagName==='DT').map(c=>c.textContent),['fd','argc','db'],'its fields in order');
+const uses=grid.all(c=>c.has('map-field-uses-row'));
+assert.equal(uses.length,1,'only a field someone writes or reads has its uses');
+assert.deepEqual(uses[0].all(c=>c.has('map-field-side')).map(names),[['serverCron()'],['initServer()','main()']],'written by, then read by, each its functions');
 // A field's repository type reads that type.
 const typeReads=read.length;grid.children.at(-1).all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
 assert.deepEqual(read.slice(typeReads),['redisDb'],'the field type links to its type');
 assert.ok(!/:\d/.test(grid.textContent),'no line numbers');
 const shared=rmDeclView(ctx,nodes['#own'],data,{name:'shared',source:{Href:'h#shared',Text:'server.c:5'}});
-assert.equal(shared.all(c=>c.has('map-reading-fields'))[0].textContent,'1 fieldsshared.crlfWritten byServer lifecycle and croninitServer()');
+const reached=shared.all(c=>c.has('map-reading-fields'))[0];
+assert.deepEqual([reached.all(c=>c.has('map-field-path')).map(c=>c.textContent),names(reached)],[['shared.crlf'],['initServer()']],'a variable lists the fields reached through it');
 const cron=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
-const writes=cron.all(c=>c.has('map-reading-writes'))[0];
-assert.equal(writes.textContent,'Writes: redisClient.fd, server.hz');
-const reads=read.length;writes.all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
+const writes=cron.all(c=>c.has('map-reading-writes'));
+assert.equal(writes.length,1,'its writes are one line');
+assert.deepEqual(names(writes[0]),['redisClient.fd'],'each field once, its name reading its type');
+assert.ok(writes[0].textContent.includes('server.hz'),'a field of no known type is still named');
+const reads=read.length;writes[0].all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
 assert.deepEqual(read.slice(reads),['redisClient'],'a written field reads the type declaring it');
 `)
 }
@@ -218,7 +234,7 @@ const root=view.all(c=>c.has('map-flow-root'))[0];
 const rows=()=>root.all(c=>c.has('map-flow-row')&&!c.has('map-flow-helper')).map(c=>c.all(x=>x.has('map-reading-name')||x.has('map-flow-plain'))[0].textContent);
 assert.deepEqual(rows(),['beforeSleep()','rdbSave()','rdbSave()','lookupKeyRead()','serverCron()','redisAssert'],'the calls in the order Go wrote them, helpers folded, a macro as written');
 const macro=root.all(c=>c.has('map-reading-name')&&c.textContent==='redisAssert')[0];
-assert.ok(macro.title.startsWith('redisAssert expands to a call of initServer'),'a macro names what its expansion calls on its hover: '+macro.title);
+assert.ok(macro.title.includes('initServer'),'a macro names what its expansion calls on its hover: '+macro.title);
 // A call into code the report names no declaration for (wait3, the
 // assert macro) is no row: the step ends in one line naming each once,
 // in the order written, and one part's calls stay under one box (owner,
@@ -236,15 +252,15 @@ assert.deepEqual(view.all(c=>c.tagName==='A'&&c.textContent==='').length,0,'no c
 assert.ok(root.all(c=>c.has('map-flow-above')).length===1,'a call its ancestors make is shown above');
 const helperLine=root.all(c=>c.has('map-flow-helpers'));
 assert.equal(helperLine.length,1,'one line of helper names under the step');
-assert.equal(helperLine[0].textContent,'+ helpers: redisLog()','the helper is named, not hidden');
+assert.deepEqual(names(helperLine[0]),['redisLog()'],'the helper is named, not hidden');
 const helperReads=read.length;helperLine[0].all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
 assert.deepEqual(read.slice(helperReads),['redisLog'],'a helper name reads its declaration');
 // The line opens the step's helpers into rows in place, and folds them again.
 helperLine[0].children[0].listeners.click({stopPropagation(){}});
 assert.deepEqual(root.all(c=>c.has('map-flow-row')&&c.has('map-flow-helper')).map(c=>c.textContent),['redisLog()'],'opened, the helper is a row in its place');
-assert.equal(root.all(c=>c.has('map-flow-helpers'))[0].textContent,'− helpers');
+assert.deepEqual(names(root.all(c=>c.has('map-flow-helpers'))[0]),[],'opened, the line no longer repeats the names');
 root.all(c=>c.has('map-flow-helpers'))[0].children[0].listeners.click({stopPropagation(){}});
-assert.equal(root.all(c=>c.has('map-flow-helpers'))[0].textContent,'+ helpers: redisLog()');
+assert.deepEqual(names(root.all(c=>c.has('map-flow-helpers'))[0]),['redisLog()'],'and folds them again');
 // Opening rdbSave shows its only call, a helper, as its call.
 const saveRow=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('rdbSave()'))[0];
 saveRow.open=true;
@@ -281,13 +297,17 @@ const path={decls:[p('acceptHandler','n-core'),p('readQueryFromClient','n-core')
   parts:[{depth:0,handler:3,part:'n-own'}],sent_by:[{program:'redis-cli',input:'cli-get',name:'get',in:'cmdTable'}]};
 const inputs={accept:{dataset:{title:'acceptHandler'}},cron:{dataset:{title:'serverCron'}},exec:{dataset:{title:'exec'}},lpush:{dataset:{title:'lpush'}},'cli-get':{dataset:{title:'get'}}};
 const section=rmInputFlowSection(ctx,path,'get',id=>inputs[id]||null,()=>{});
-const lines=section.children.map(c=>c.textContent);
-assert.equal(lines[0],'How a request reaches get:');
-assert.equal(lines[1],'Server core stateacceptHandler() → readQueryFromClient() → call()Server lifecycle and crongetCommand()','the first way, a line per part, the handler last');
-const hop=section.all(c=>c.textContent==='readQueryFromClient()'&&c.has('map-reading-name'))[0];
-assert.equal(hop.title,'Server core state\npassed as a callback by createClient, which acceptHandler calls');
-assert.ok(lines[2].startsWith('Other ways in: from Replication, +2'),'the other ways, folded, by where they leave the first: '+lines[2]);
-assert.equal(section.children.at(-1).textContent,'redis-cli sends get.','who sends it, last');
+const first=section.children.find(c=>c.has('map-flow-chain'));
+assert.deepEqual(first.children.map(run=>[run.all(c=>c.has('map-part-box'))[0].textContent,names(run)]),
+ [['Server core state',['acceptHandler()','readQueryFromClient()','call()']],['Server lifecycle and cron',['getCommand()']]],'the first way, a line per part, the handler last');
+const hop=first.all(c=>c.textContent==='readQueryFromClient()'&&c.has('map-reading-name'))[0];
+assert.ok(hop.title.includes('createClient')&&hop.title.includes('acceptHandler'),'the callable handed over says how on its hover: '+hop.title);
+const others=section.children.find(c=>c.has('map-flow-other-ways'));
+assert.ok(others.tagName==='DETAILS'&&!others.open,'the other ways are folded');
+assert.deepEqual(others.children[0].all(c=>c.has('map-part-box')).map(c=>c.textContent),['Replication'],'named by the part where each leaves the first');
+assert.ok(others.children[0].textContent.includes('+2'),'the inputs running the site themselves are counted');
+const sent=section.children.at(-1);
+assert.ok(sent.has('map-flow-sent')&&sent.textContent.includes('redis-cli'),'who sends it, last');
 `)
 }
 
@@ -384,8 +404,8 @@ const cron=reading.decls.find(decl=>decl.name==='serverCron');
 const view=rmDeclView(ctx,nodes['#own'],reading,{name:'serverCron',source:{Href:cron.href,Text:cron.at}});
 const said=view.all(()=>true).map(c=>c.textContent).filter(text=>/:\d/.test(text));
 assert.deepEqual(said,[],'no line number anywhere in the reading');
-assert.equal(view.all(c=>c.has('map-reading-reads'))[0].textContent,'Reads: redisClient.argv, server, shared.czero.ptr');
-assert.equal(view.all(c=>c.has('map-reading-writes'))[0].textContent,'Writes: redisClient.db');
+assert.deepEqual(view.all(c=>c.has('map-reading-reads')).map(names),[['redisClient.argv','server','shared.czero.ptr']],'one line, each read once, in the order first used');
+assert.deepEqual(view.all(c=>c.has('map-reading-writes')).map(names),[['redisClient.db']]);
 assert.equal(view.all(c=>c.has('map-reading-name')&&c.textContent==='processTimeEvents()').length,1,'a caller calling from two places is one name');
 assert.equal(view.all(c=>c.tagName==='A'&&c.textContent==='').length,0,'and no code mark beside it');
 assert.ok(!view.textContent.includes('Uses variables'));

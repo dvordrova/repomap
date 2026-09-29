@@ -345,7 +345,7 @@ assert.equal(nodeKind({branch:'component'}),null,'a component is listed once');
 assert.deepEqual(nodeKind({}),{kind:'part',type:'Part'});
 assert.deepEqual(nodeKind({branch:'area'}),{kind:'part',type:'Area'});
 assert.deepEqual(nodeKind({activation:'request'}),{kind:'operation',type:'request'});
-assert.equal(nodeSummary({title:'get',handler:'getCommand',summary:''}),'handled by getCommand');
+assert.ok(nodeSummary({title:'get',handler:'getCommand',summary:''}).includes('getCommand'),'with no summary an input is described by its handler');
 assert.equal(nodeSummary({title:'serve',handler:'serve',summary:''}),'');
 assert.equal(nodeSummary({title:'get',handler:'getCommand',summary:'Reads a key.'}),'Reads a key.');
 `)

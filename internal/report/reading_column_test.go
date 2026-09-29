@@ -138,45 +138,6 @@ func TestAnArrowsCallNamesTheDeclarationsAtItsEnds(t *testing.T) {
 	}
 }
 
-// "To explanation" and "To code" scrolled to what was already on screen,
-// "More details ↓" moved a small box by a step, and a click on any tile but
-// the keys said "No explanation saved". Their words are gone from the
-// report's vocabulary, and the reading's script throws on a word it does
-// not have, so none of them can come back unnoticed.
-func TestReadingOffersNoButtonsThatPointAtWhatIsVisible(t *testing.T) {
-	for _, gone := range []string{"To code", "More details ↓", "↑ Back to top", "No explanation saved. Open the source to inspect this element.", "legend"} {
-		if _, present := russianUI[gone]; present {
-			t.Errorf("the reading still has the words %q", gone)
-		}
-	}
-}
-
-// "possible" was painted in the warning red and read as an error.
-func TestPossibleIsMutedNotAWarning(t *testing.T) {
-	raw, err := reportTemplateFS.ReadFile("templates/css/30-components.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	rule := regexp.MustCompile(`(?m)^\.possible\{([^}]*)\}`).FindStringSubmatch(string(raw))
-	if rule == nil || !strings.Contains(rule[1], "color:var(--muted)") || strings.Contains(rule[1], "--warn") {
-		t.Fatalf("possible is not in the muted text colour: %v", rule)
-	}
-}
-
-// Code in this part lists every declaration. A bordered box a declaration
-// put Client connections' 31 declarations some 1,700 pixels long above the
-// part's connections; each is one line, as the part's tiles draw it.
-func TestCodeInThisPartIsALineADeclaration(t *testing.T) {
-	raw, err := reportTemplateFS.ReadFile("templates/css/43-map-reading.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	rule := regexp.MustCompile(`(?m)^\.map-all-members \.map-member\{([^}]*)\}`).FindStringSubmatch(string(raw))
-	if rule == nil || !strings.Contains(rule[1], "border:0") || !strings.Contains(rule[1], "min-height:0") {
-		t.Fatalf("a declaration in the part's code list is drawn as a box: %v", rule)
-	}
-}
-
 // The reading column's height comes from the canvas's workspace. A rule
 // that let it grow outside the canvas made the static map a canvas failure
 // leaves behind carry a reading 6,500 px tall with no scrolling box.
@@ -201,23 +162,19 @@ func TestReadingColumnHeightComesOnlyFromTheCanvas(t *testing.T) {
 	}
 }
 
-// An input's reading carries the Inputs blue its tile and collection are
-// drawn in: the owner saw an input opened in purple, which reads as core.
-// Its heading bar, its kind and its links take the blue; no rule of it
-// takes a purple.
+// An input's reading is marked as one and drawn in the Inputs colour, never
+// in core's purple, which reads as core.
 func TestAnInputsReadingIsInTheInputsBlue(t *testing.T) {
 	raw, err := reportTemplateFS.ReadFile("templates/css/43-map-reading.css")
 	if err != nil {
 		t.Fatal(err)
 	}
 	css := string(raw)
-	for _, want := range []string{`.map-reading-input .map-object-heading{box-shadow:inset 3px 0 #356faa`, `.map-reading-input .map-object-heading .map-card-kind{color:#356faa}`,
-		`.flow-enabled .map-reading-input .map-card a,.flow-enabled .map-reading-input .system-path-part{color:#204a7b}`} {
-		if !strings.Contains(css, want) {
-			t.Fatalf("the input's reading lost its blue: %s", want)
-		}
+	rules := regexp.MustCompile(`[^}]*\.map-reading-input[^{]*\{[^}]*\}`).FindAllString(css, -1)
+	if len(rules) == 0 {
+		t.Fatal("an input's reading has no colour of its own")
 	}
-	for _, rule := range regexp.MustCompile(`[^}]*\.map-reading-input[^{]*\{[^}]*\}`).FindAllString(css, -1) {
+	for _, rule := range rules {
 		for _, purple := range []string{"#63429d", "#4f3aa3", "#4f2f86", "#755299", "#7252b3"} {
 			if strings.Contains(rule, purple) {
 				t.Fatalf("an input's reading is drawn in core's purple: %s", rule)

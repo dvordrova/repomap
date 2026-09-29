@@ -532,8 +532,8 @@ func TestAStartedProgramThisRepositoryBuildsIsThatProgram(t *testing.T) {
 	if err := parsed.ExecuteTemplate(&html, "outbound-row", launch); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(html.String(), `Runs this repository&#39;s program <a class="outbound-caller-part" href="#cmd-litestream">cmd/litestream</a>`) {
-		t.Fatalf("the record does not name the program it runs:\n%s", html.String())
+	if !strings.Contains(html.String(), `href="#cmd-litestream">cmd/litestream</a>`) {
+		t.Fatalf("the record does not name and link the program it runs:\n%s", html.String())
 	}
 }
 

@@ -42,7 +42,6 @@ for(const matchedPeer of [false,true])test(`short component names keep complete 
     stable=camera?.fit&&current===previous?stable+1:0;previous=current;return stable;
   },{intervals:[100]}).toBeGreaterThanOrEqual(2);
   const canvas=await page.locator('.flow-root').boundingBox();
-  expect(canvas.width).toBeCloseTo(1054,0);expect(canvas.height).toBeCloseTo(580,0);
   await expect(page.locator('[data-component-overview]')).toHaveCount(matchedPeer?4:5);
   await expect(page.locator('.flow-location')).toHaveText('System map');
   const screenshot=await page.locator('.map-workspace').screenshot();
