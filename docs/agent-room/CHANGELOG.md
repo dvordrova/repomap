@@ -1,5 +1,51 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — The reading column: five sections, no digits, one name to a line
+
+- **Why:** the owner's critic (round 2): a component reading ran to ten
+  screens in nine sections with up to 53 standalone digits, and a function's
+  own calls hid in "+ helpers" (processCommand's lookupCommand and
+  queueMultiCommand among 18 names); the owner then: an area's reading was
+  "мясо сплошной стеной" (127 names several to a line), names one to a line
+  everywhere; a reviewer: repeated Main flow names, clipped names, walls of
+  "Also runs on its own" chains. UI only, `repomap render` on saved runs.
+- **Component reading** (REPORT § External communication and data): summary
+  with its entry and input kinds in words; Main flow closed by "Also runs on
+  its own"; Files (each path opening to its functions by part, no "Read or
+  written by", no "Path not established"); Connections without counts; one
+  line of links led by "Component details". Areas and parts are the
+  canvas's; Not reachable, TODOs and Analysis coverage moved to the "What is
+  missing" page (`component-gaps`, Find keeps their rows' program).
+- **Main flow:** two steps in a row naming one declaration are one; methods
+  carry their type, same-named functions their module; a closure (`Run$1`)
+  reads "in ReplicateCommand.Run" (`closureHome`: the innermost function
+  whose lines hold it). Own work names its registering function alone:
+  litestream's "main → … → Store.Close → … → Replica.Start registers it" was
+  a real exact-call chain but the shortest of many, through the shutdown.
+- **Function reading:** a call into the caller's own part is never a helper
+  (`page_flow.go`); helpers fold under a nameless "+ helpers" only when more
+  than three; calls stand under "Calls"; Reads/Writes under one closed
+  "Reads and writes"; the dispatch site named, its counts on hover.
+- **Area and part readings:** an area lists its parts with their description
+  and keys alone; a part shows its keys (else its ways in) one to a line and
+  folds every other declaration, by file; long "Calls into" folds. Names
+  break only after `.`/`/` (`rmDotBreaks`), never at a hyphen.
+- **Shape diff** (`<scratchpad>/pageshape/shape.mjs`, HEAD vs this pass on
+  the saved redis 182554, litestream 182612, freqtrade 182749 runs, fresh
+  ordinary runs, all cached but 16 freqtrade calls): component readings
+  redis-server 9→5 sections, 14→0 digits, 10.4→5.1 screens; cmd/litestream
+  9→5, 40→0, 9.1→4.9; freqtrade 10→5, 43→0, 8.9→5.2; every component ≤5
+  sections and 0 digits; areas' crowded lines to 0 (freqtrade Core runtime
+  42.2→5 screens, litestream VFS implementation 4.6→1.1); processCommand
+  rows blockClientOnSwappedKeys, call → + freeMemoryIfNeeded, resetClient,
+  addReplySds, freeClient, lookupCommand, queueMultiCommand, addReply;
+  destinations, inputs per kind and sources unchanged; no page errors.
+- **Checks:** `TestAComponentsReadingIsAtMostFiveSectionsWithNoDigits`
+  (new), the outline test replaced by the home's programs, the flow, files,
+  area, part and dispatch tests rewritten to the new shapes; `make test`,
+  `make vet` (package parallelism 2), `make ui-test` and `make ui-visual-test`
+  (64 passed, 5 skipped) pass on HEAD plus this pass alone.
+
 ## 2026-09-29 — An input is named by its word, a subcommand's flags are its options, an inline handler is named by where it is written
 
 - **Why:** litestream's Inputs grid (owner: "не понимаю почему тут столько

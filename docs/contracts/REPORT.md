@@ -670,21 +670,20 @@ with every place in its words (`site`).
 
 A part's reading heading gives its kind and its frame as a link up ("Part ·
 {frame} ↑"). "Called from" lists the parts calling into it, each
-in its box with its caller → callee pairs counted as the arrow's card counts
-them, and under each caller the declarations of this part it reaches, calls
-first, then other relations in their own words, each list by name; every input
-registered at the part is one neighbour, Inputs, counted by its inputs. Many
-callers fold each part to its line. Then come the part's box, the model's
-description, its files, and its declarations by kind, each kind its own
-heading and list by name whatever its case ("{n} functions", "{n} variables",
-types), keys in bold; those reached from outside (a caller in another part, an
-input registered at it, a callable handed over) stand first, counted in the
-heading ("{n} functions · {k} reached from outside") (owner, 2026-09-29).
-"Calls into" lists the parts it calls, each in its box with its callees by
-name and the variables it uses there. With an input pinned, the input's
-witness stands under the description ("Why it appears in {0}"); the inputs
-reaching the part and the state changes of its types close the reading, folded
-under their counts. The reading shows the part's saved interpreted concepts
+in its box with its caller → callee pairs, and under each caller the
+declarations of this part it reaches, calls first, then other relations in
+their own words, each list by name; every input registered at the part is one
+neighbour, Inputs. Many callers fold each part to its line. Then come the
+part's box, the model's description, its files one to a line, its key
+declarations in bold one to a line, and every other declaration under one
+closed "Other declarations" fold, file by file, those reached from outside (a
+caller in another part, an input registered at it, a callable handed over)
+first; a part with no keys stands its ways in open instead (owner,
+2026-09-29). "Calls into" lists the parts it calls, each in its box with its
+callees by name and the variables it uses there, folded as "Called from" is
+when long. With an input pinned, the input's witness stands under the
+description ("Why it appears in {0}"); the inputs reaching the part and the
+state changes of its types close the reading, folded. The reading shows the part's saved interpreted concepts
 and group highlights; without them it shows the original declaration index and
 invents no explanation. The reading's relations hold every original row and
 possible-call mark, each end by name alone, and the arrows' cards every source
@@ -705,11 +704,12 @@ writes it (a function with what it takes and returns, a type with its
 fields), the one link into its code, underlined under the pointer (owner,
 2026-09-29); its file alone; the author's comment as written,
 when there is one, marked as the author's claim; the model's line only when
-there is one (without it, nothing is said about one); "Writes:" and "Reads:"
-(below); for a type, every field with its type, linking that type when it is
+there is one (without it, nothing is said about one); one closed "Reads and
+writes" holding "Writes:" and "Reads:" (below); for a type, every field with its type, linking that type when it is
 the repository's (ProgramIndex `Object.Types`), and the functions of its part
 that return or take it; for a function, its flow; what else it relates to
-("Calls", "Uses"), by part; then a dispatch site's reading. A relation other
+("Calls", "Uses"), by part; then a dispatch site's reading, named, its counts
+on its hover. A relation other
 than a call keeps its own words. A catalogue's callers ("called from
 {caller}") and the Inputs reading's "How these were found" are named
 the same way: a function making undecided calls once per symbol and reason,
@@ -729,9 +729,9 @@ path, each side grouped by part in the part's box, own part first, then the
 part naming most, each name once. A global variable's reading lists the
 fields the code reaches through it (paths rooted at its name, made by a
 function reading the variable itself), in the source order of each path's
-first field, with the same two sides. A function's reading has one line
-"Writes: …", the fields it writes in first-write order. A declaration's
-reading has one line "Reads: …" instead of a "Uses variables" list: the fields
+first field, with the same two sides. A function's reading lists "Writes:",
+the fields it writes in first-write order. A declaration's reading lists
+"Reads:" instead of a "Uses variables" list: the fields
 it reads, each by the path the code reaches it by (`field_path`: the root
 global variable, or the record type holding the chain's first field when the
 root is a parameter, a local or a call's result; `Type.field` without one),
@@ -739,7 +739,8 @@ and the module variables it reads whole, each once, in first-use order. Each
 name in "Writes:" and "Reads:" reads the type declaring the field, or the
 variable. A field it also writes stays on "Writes:"; a name leading to a
 longer path it reads or writes is said by that path; a local or parameter is
-never listed. A side of more than twelve names folds under its count. Each
+never listed. Every name stands on a line of its own; a side of more than
+twelve names folds. Each
 list is one value of its part's reading (`fields`, `writes`, `reads` on the
 declaration's entry, names by declaration index), written once; a list two
 readings repeat is written once in `shared`.
@@ -791,16 +792,17 @@ repeated when all stay in its part. A call one of its ancestors makes says
 "↑ shown above" instead. What a call hands over ("passed as a callback") and
 where it is written ("called at {file}:{line} · {line}") are on its name's
 hover.
-Helper calls fold into one muted line under their step, "+ helpers: …",
-each name a link reading its declaration; "+ helpers"
-opens them into lighter rows in place and "− helpers" folds them. One quiet
-toggle, "Show helper calls", opens every step's. No name is hidden (owner,
-2026-09-29). A call folds when its callee is a declaration the helper
-question decided serves others' work and stands in a part more than half of
-the program's other parts call into (decided from the calls, never by name).
-A call into the caller's own part is its work and stays; a helper into any
-other part stays; a step whose every call is a helper shows them as its
-calls. What is open stays open across the toggle. A step of the component's
+A function's calls stand under "Calls". Its helper calls fold under one
+muted "+ helpers" naming none of them only when there are more than three;
+three or fewer stand as rows (owner, 2026-09-29: processCommand's
+lookupCommand and queueMultiCommand had waited among eighteen names). "+
+helpers" opens them into lighter rows in place and "− helpers" folds them;
+one quiet toggle, "Show helper calls", opens every step's. A call is a
+helper when its callee is a declaration the helper question decided serves
+others' work and stands in a part more than half of the program's other
+parts call into (decided from the calls, never by name), never the caller's
+own part, even a widely called one; a step whose every call is a helper
+shows them as its calls. What is open stays open across the toggle. A step of the component's
 Main flow opens in place to its code flow the same way, the model's sentence
 kept in its style above it.
 
@@ -810,7 +812,12 @@ No other reading repeats or links it, save one small "Main flow" link above
 every reading of a part, declaration, input or frame of a component that has
 one, reading the component at that section without moving the camera. The
 model's main flow is the orientation's (READING): its order is the model's,
-read from each member's calls in written order. A step citing a
+read from each member's calls in written order. Two steps in a row naming
+one declaration are its one step, the later's words kept; a method is named
+with its type, and two declarations the flow names alike by their module or
+file ("trade_commands.start_trading"); a closure (Go's `Run$1`, a lambda)
+reads "in {enclosing function}", read there, its link its own lines. A step
+citing a
 registration of a repository callable, or naming a callable some
 registration hands over, reads as that callable, never as the registrar
 (owner, 2026-09-29), with how it comes to run, from the program's facts and
@@ -824,7 +831,7 @@ alternatives, a call through a function value resolved to it alone, an open
 call whose stores name it), after the run of exact calls from the entries to
 that function the first time the flow shows it ("{entry} → … → {runner}
 runs it"), from the last runner already shown on that run ("{runner} → …
-runs it"). A method is named with its type. The step's name and every name in
+runs it"). The step's name and every name in
 its registration and runners read that declaration; the words "registers it"
 link the registering call's line; the step prints no line (owner, 2026-09-29).
 Each step's twist, opening its calls in place, is always shown. A program no
@@ -837,14 +844,17 @@ distinct connection taking the freed place. With one entry its calls stand
 open under it in written order. A component without a flow or start list shows
 no flow section.
 
-Right after the Main flow, "Also runs on its own:" lists what the program
-runs without a request arriving (owner, 2026-09-29), from saved data only:
-its scheduled inputs, then its continuous ones (the ways-in order), each in
-saved order and each callable once, save one the Main flow names. Each reads
-as a Main flow step citing its registration does, from the program's
-entries, a runner the flow already reached named from it, on one line
-("{callable} — … registers it; … runs it"); a callable no saved registration
-hands over is its name alone. Nothing is looked for beyond the saved kinds and
+Closing the Main flow, "Also runs on its own:" lists what the program runs
+without a request arriving (owner, 2026-09-29), from saved data only: its
+scheduled inputs, then its continuous ones (the ways-in order), each in saved
+order and each callable once, save one the Main flow names. Each names its
+registering function alone ("{callable} — {registrar} registers it"), never a
+run of calls from the entries (litestream's Replica.monitor had read "… →
+ReplicateCommand.Run → Store.Close → … → Replica.Start registers it", the
+shortest exact route, through its shutdown); a closure registered by the
+function it is written in reads "in {function}" alone. What runs it reads as
+a Main flow step's runners do. A callable no saved registration hands over
+is its name alone. Nothing is looked for beyond the saved kinds and
 facts, so a program without such inputs lists none. Pointing at a line lights
 its input's tile. A scheduled or continuous input's own reading opens at that
 line, its line link going with it.
@@ -919,14 +929,12 @@ decided from the reading's own state, never from the pointer. An up-chevron
 in the reading card's own header closes details, keeping the camera and any
 pinned input path; leaving the path is a separate action.
 
-An area's reading starts under its description with "Made of {n} parts", each
-part a link to its reading with its counts, files and declarations as links,
-keys first and bold, the rest by name; a declaration is read in its part
-without moving the camera. An area's or component's reading then lists its
-Connections as its arrow ends group them, instead of neighbours by name: one
-line per frame or participant at the other end and direction, incoming
-first, with its call count and the parts they come from, each opening to the
-arrow card's rows. A click on an arrow end opens its connection alone. A line
+An area's reading starts under its description with its parts (below); a
+key is read in its part without moving the camera. An area's or component's
+reading then lists its Connections as its arrow ends group them, instead of
+neighbours by name: one line per frame or participant at the other end and
+direction, incoming first, each opening to the arrow card's rows; the column
+prints none of the card's counts and names one to a line. A click on an arrow end opens its connection alone. A line
 from inputs counts the handlers they are implemented in, with that unit ("←
 Inputs {n} handlers"; its card "{n} handlers, into {a} of {b}"); inputs
 sharing a handler stand in its one row, each named ("{a}, {b} → {handler}")
@@ -1090,20 +1098,24 @@ A component chosen on the map is read without moving the camera, as every
 first click is (above). Its reading names it without the kind its label adds
 (heading "Component · {language} {kind}"; the kind stays in the name only
 when another component would read the same, as on the canvas's cards), then
-gives
-its role and purpose, the model's by their style; its entrypoints, each one
-link by name reading the program's seed in its part when it is that seed; its
-inputs counted by kind ("{n} requests · {n} commands · …"),
-each count lighting its tiles on the canvas while pointed at (or, while the
-collection is closed, its row of that kind), dimming nothing, and when chosen
-reading the collection at that kind's section, as a kind chosen in the
-collection's closed frame does (Background work at the first of its scheduled
-and continuous sections; owner, 2026-09-29); its Connections; then its Main
-flow, what it runs on its own, the files its program reaches (below), what
-its program never runs, its TODOs and its analysis coverage, each a list
-opening in place; and a link to its whole page, which links its Inputs
-collection. Its areas are on the canvas and are
-not listed again.
+gives at most five sections, counting nothing and naming one thing to a
+line (owner, after the critic, 2026-09-29: nine sections had run to ten
+screens with up to fifty-three standalone digits): its role and purpose, the
+model's by their style, its entrypoints, each one link by name reading the
+program's seed in its part when it is that seed, and the kinds of its inputs
+in words ("Incoming requests", "Settings", …), each lighting its tiles on the
+canvas while pointed at (or, while the collection is closed, its row of that
+kind), dimming nothing, and when chosen reading the collection at that
+kind's section, as a kind chosen in the collection's closed frame does
+(Background work at the first of its scheduled and continuous sections); its
+Main flow, closed by what it runs on its own; the files its program reaches
+(below); its Connections, their counts left out; and one line of links, its
+whole page ("Component details") first. Its areas and parts are the
+canvas's. What its entrypoints do not reach, its TODOs and its analysis
+coverage stand on the "What is missing" page, under the program's name
+(`component-gaps`), and nowhere else. An area's reading lists its parts,
+each in its box with its description on one line and its key declarations
+alone, bold, one to a line; the rest is the part's own reading.
 
 An Inputs collection is read by its catalogues: its component first, in its
 box, linking to its reading; then each catalogue under its kind's heading
@@ -1121,8 +1133,8 @@ parts, the component's reading, opened at its entry line when it has one. Its
 full-reference section keeps the main flow, configuration, its parts (each
 reading the part on the canvas), dependencies, coverage and TODO lists.
 
-Its traversal coverage, under the existing heading "Not reachable from the
-entrypoints", lists the files no entrypoint reaches; then the parts its
+Its traversal coverage, on the "What is missing" page under the heading "Not
+reachable from the entrypoints", lists the files no entrypoint reaches; then the parts its
 program never runs, one row per file with the file, the part's name and its
 declarations there as source chips (GroupsIndex `unreachable`); then, under
 "{0} symbols" and by file in line order, the other declarations the
@@ -1193,18 +1205,19 @@ scopes; SQL mentions and JOINs prove no schema ownership or foreign keys.
 
 The files a program keeps (READING § Outside systems, GroupsIndex data
 records of kind `file`, `page_data_files.go`) are the shelf's "Files" and a
-section of the component's reading after its areas and parts (owner,
-2026-09-29; `31-reading-column.js` `rmComponentFiles`). No role is given
+section of the component's reading after its Main flow (owner, 2026-09-29;
+`31-reading-column.js` `rmComponentFiles`). No role is given
 (skeptic, 2026-09-29): a file is its path as written, else the paths its
 field's writes store and "from" the field, or the field in braces when they
 store none (`dump.rdb from server.dbfilename`, `appendonly.aof`,
-`{server.vm_swap_file}`); the paths not established are one line. The
+`{server.vm_swap_file}`); the shelf says the paths not established in one
+line, the column leaves them out. The
 shelf's static row prints no function and no place. The column adds what
 else sets a field, each once: the setting whose branch makes the write (as a
 setting's writes are read, its name reading its input), else the function
-writing what is not established; then "Read or written by", the functions
-whose calls reach the file by part in their boxes, as a field's writers and
-readers stand, the part naming most first. No line number is written: a
+writing what is not established; each file opens to the functions whose
+calls reach it by part in their boxes, one to a line, as a field's writers
+and readers stand, the part naming most first. No line number is written: a
 path links to where it is written, its place on hover, and a name reads its
 function. Which function reads and which writes is not established, so one
 list names both.
