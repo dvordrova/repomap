@@ -14,8 +14,16 @@ import (
 // call, each in its own program. Built once.
 type sharedCode struct {
 	// holders are, by declaration key, the programs holding it and its
-	// object there, in page order.
+	// object there, in page order: the programs whose map claims the file
+	// declaring it (heldFiles). A project index several programs share
+	// (Python's) declares every file for each of them; a script program
+	// holds its own file and what it imports there, never the package its
+	// siblings are built from.
 	holders map[string][]sharedHolder
+	// held are, by target, the files its program holds (heldFiles); nil
+	// for a program whose index draws no map and names no file off it,
+	// which holds what its ProgramIndex declares.
+	held map[string]map[string]bool
 	// keys are each program's objects' declaration keys, by
 	// target-qualified object ID.
 	keys map[string]string
@@ -32,10 +40,13 @@ func (builder *pageBuilder) sharedJoin() *sharedCode {
 	if builder.shared != nil {
 		return builder.shared
 	}
-	join := &sharedCode{holders: map[string][]sharedHolder{}, keys: map[string]string{}, unreachable: map[string]bool{}}
+	join := &sharedCode{holders: map[string][]sharedHolder{}, keys: map[string]string{}, unreachable: map[string]bool{}, held: map[string]map[string]bool{}}
 	builder.shared = join
 	if builder.data == nil || builder.data.ProgramPortfolio == nil {
 		return join
+	}
+	for _, section := range builder.sections {
+		join.held[section.programTargetID] = builder.heldFiles(section.programTargetID)
 	}
 	for _, section := range builder.sections {
 		for _, index := range builder.data.ProgramPortfolio.Entries {
@@ -44,7 +55,7 @@ func (builder *pageBuilder) sharedJoin() *sharedCode {
 			}
 			for _, object := range index.Objects {
 				key := groupindex.DeclarationKey(object)
-				if key == "" {
+				if key == "" || !join.holds(index.Target.ID, object.Location) {
 					continue
 				}
 				qualified := subjectKey(index.Target.ID, object.ID)
@@ -55,6 +66,61 @@ func (builder *pageBuilder) sharedJoin() *sharedCode {
 		}
 	}
 	return join
+}
+
+// heldFiles are the files a program's map claims: those of the
+// declarations its parts hold and those it names off the map (GroupsIndex
+// OffMap), by path; nil when its index draws no map and names no file off
+// it.
+func (builder *pageBuilder) heldFiles(targetID string) map[string]bool {
+	index := builder.graphIndex(targetID)
+	if index == nil || len(index.Groups) == 0 && len(index.OffMap) == 0 {
+		return nil
+	}
+	files := map[string]bool{}
+	for _, file := range index.OffMap {
+		files[file.Path] = true
+	}
+	members := map[string]bool{}
+	for _, group := range index.Groups {
+		for _, id := range group.MemberSubjectIDs {
+			members[id] = true
+		}
+	}
+	for _, entry := range builder.data.ProgramPortfolio.Entries {
+		if entry.Target.ID != targetID {
+			continue
+		}
+		for _, object := range entry.Objects {
+			if members[object.ID] && object.Location != nil {
+				files[object.Location.Path] = true
+			}
+		}
+	}
+	return files
+}
+
+// holds says whether a program holds the declaration written at a place:
+// its map claims the file (heldFiles).
+func (join *sharedCode) holds(targetID string, at *programindex.Location) bool {
+	files, drawn := join.held[targetID]
+	if !drawn || files == nil {
+		return true
+	}
+	return at != nil && files[at.Path]
+}
+
+// holdsSubject says whether a program holds one of its index's subjects.
+func (builder *pageBuilder) holdsSubject(targetID, subjectID string) bool {
+	join := builder.sharedJoin()
+	if files, drawn := join.held[targetID]; !drawn || files == nil {
+		return true
+	}
+	ref, known := builder.subject(targetID, subjectID)
+	if !known || ref.subject.Object == nil {
+		return false
+	}
+	return join.holds(targetID, ref.subject.Object.Location)
 }
 
 // neverRun says whether a declaration's program never runs it (its adapter
@@ -74,7 +140,10 @@ type callerElsewhere struct {
 // callersElsewhere are the calls other programs of this report make into
 // the same declaration, each program's callers it runs, in page order
 // (owner, 2026-09-28: "Called by" of anetTcpConnect had listed only one
-// program's callers).
+// program's callers). A caller is listed under a program only when that
+// program holds the caller: freqtrade's FreqtradeBot.process had listed
+// Worker._process_running under each of five script programs sharing the
+// project's index, none of which holds worker.py.
 func (builder *pageBuilder) callersElsewhere(targetID, subjectID string) []callerElsewhere {
 	join := builder.sharedJoin()
 	key := join.keys[subjectKey(targetID, subjectID)]
@@ -91,8 +160,11 @@ func (builder *pageBuilder) callersElsewhere(targetID, subjectID string) []calle
 			continue
 		}
 		for _, edge := range index.StructuralEdges {
-			if edge.Role != groupindex.EdgeRelationTarget || edge.ToSubjectID != holder.objectID || !callsInto(edge.RelationKind) ||
-				join.unreachable[subjectKey(holder.targetID, edge.FromSubjectID)] {
+			// The declaration calling itself is its own call, read once in
+			// its own program (othello.ai/move's two-argument form calls its
+			// three-argument form: the app program had listed it again).
+			if edge.Role != groupindex.EdgeRelationTarget || edge.ToSubjectID != holder.objectID || edge.FromSubjectID == holder.objectID || !callsInto(edge.RelationKind) ||
+				join.unreachable[subjectKey(holder.targetID, edge.FromSubjectID)] || !builder.holdsSubject(holder.targetID, edge.FromSubjectID) {
 				continue
 			}
 			if slices.ContainsFunc(result, func(listed callerElsewhere) bool {
@@ -136,7 +208,7 @@ func (builder *pageBuilder) ownPath(targetID, subjectID string) []string {
 	callers := map[string][]string{}
 	for _, edge := range index.StructuralEdges {
 		if edge.Role == groupindex.EdgeRelationTarget && callsInto(edge.RelationKind) && edge.FromSubjectID != edge.ToSubjectID &&
-			!join.unreachable[subjectKey(targetID, edge.FromSubjectID)] {
+			!join.unreachable[subjectKey(targetID, edge.FromSubjectID)] && builder.holdsSubject(targetID, edge.FromSubjectID) {
 			callers[edge.ToSubjectID] = append(callers[edge.ToSubjectID], edge.FromSubjectID)
 		}
 	}
