@@ -178,7 +178,8 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     // The Outside frame's summary is its chips: at the whole-map camera
     // they read at their own size, and the frame keeps their proportion.
     const grid=n.branch==='outside'?chipGrid((n.children||[]).length):null;
-    const overviewMinWidth=grid?grid.width:Math.ceil(Math.max(widest(heading||n.title,collection?'700 13px system-ui':'700 18px system-ui')+(collection?16:64),
+    const cardHeight=66-(input?24:0)+title.length*22+descriptionLines*18+(subtitleLines.length?8+subtitleLines.length*18:0);
+    const overviewMinWidth=!n.branch&&!frame&&n.category==='component'?Math.ceil(card.width*.7):grid?grid.width:Math.ceil(Math.max(widest(heading||n.title,collection?'700 13px system-ui':'700 18px system-ui')+(collection?16:64),
       ...names.map(name=>widest(name,'500 13px system-ui')+32),
       ...inputGroups.map(group=>widest(group.title,'500 13px system-ui')+32+kindMark)));
     // A short target name must not squeeze its area inventory into a column
@@ -193,7 +194,11 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     };
     const overviewPreferredWidth=grid?grid.width:Math.ceil(Math.max(overviewMinWidth,
       ...names.map(name=>32+Math.min(304,twoLineWidth(name)))));
-    const overviewHeightAtWidth=grid?width=>width*grid.height/grid.width:['component','communication','inputs'].includes(n.branch)?(width,{availableHeight=Infinity}={})=>{
+    // A component the run could not read stands as a card with its name and
+    // why: at the whole map it keeps seven tenths of its size, its name at
+    // twelve pixels, not three (litestream's failed packages/python).
+    const unread=!n.branch&&!frame&&n.category==='component';
+    const overviewHeightAtWidth=unread?width=>width*cardHeight/card.width:grid?width=>width*grid.height/grid.width:['component','communication','inputs'].includes(n.branch)?(width,{availableHeight=Infinity}={})=>{
       const heading=overviewHeading(n,width,measure);
       // As the summary draws it (canvas.jsx ComponentOverview): inset 8px in
       // its frame and padded 8px, its heading, a 10px gap, and its kinds 6px
@@ -219,7 +224,6 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       headerHeight:Math.max(64,32+title.length*22+(metadata?24:0)+(roleLines.length?8+roleLines.length*18:0)+(descriptionLines?12+descriptionLines*18:0)),
       // An input says its kind by the mark before its name, in no row of its
       // own. A chip is the Outside frame's one size.
-      width:n.branch==='chip'?chip.width:card.width,height:n.branch==='chip'?chip.height:frame?undefined:66-(input?24:0)+title.length*22+descriptionLines*18+
-        (subtitleLines.length?8+subtitleLines.length*18:0)};
+      width:n.branch==='chip'?chip.width:card.width,height:n.branch==='chip'?chip.height:frame?undefined:cardHeight};
   });
 }
