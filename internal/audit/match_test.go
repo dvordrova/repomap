@@ -30,6 +30,17 @@ type inventory struct {
 	ReviewSummary json.RawMessage   `json:"review_summary,omitempty"`
 	Review        json.RawMessage   `json:"review,omitempty"`
 	Errata        []json.RawMessage `json:"errata,omitempty"`
+
+	// entries are the declared components' entry files by component name
+	// (components[].entry: "src/othello/core.clj:5 -main -> …").
+	entries map[string]string
+}
+
+// inventoryComponent is a declared component as the audit reads it: its
+// name and the entry its program starts at.
+type inventoryComponent struct {
+	Name  string `json:"name"`
+	Entry string `json:"entry,omitempty"`
 }
 
 // inventoryItem is one thing a newcomer needs to find (must) or may find.
@@ -91,6 +102,18 @@ func decodeInventory(raw []byte) (*inventory, error) {
 			return nil, fmt.Errorf("inventory: trap %d needs a name and an anchor", i)
 		}
 	}
+	if len(inv.Components) > 0 {
+		var declared []inventoryComponent
+		if err := json.Unmarshal(inv.Components, &declared); err != nil {
+			return nil, fmt.Errorf("inventory: components: %w", err)
+		}
+		inv.entries = map[string]string{}
+		for _, component := range declared {
+			if entry, _, _ := strings.Cut(strings.TrimSpace(component.Entry), " "); component.Name != "" && entry != "" {
+				inv.entries[component.Name] = parseAnchor(entry).path
+			}
+		}
+	}
 	return &inv, nil
 }
 
@@ -135,21 +158,34 @@ type reportRow struct {
 	callers   []anchorAt
 
 	destination, external string
-	handlerUnknown        bool
-	handlerUnreachable    bool
-	handler               string
-	declaredBy            string
-	declaredOn            string
-	valueOf               string
+	// paths and writes are a file record's claim (section data, kind file):
+	// the path as written, and each write of the field it is read from;
+	// unknownPath is a file whose path is not established.
+	paths              []string
+	writes             []fileWrite
+	unknownPath        bool
+	handlerUnknown     bool
+	handlerUnreachable bool
+	handler            string
+	declaredBy         string
+	declaredOn         string
+	valueOf            string
 	// nested is the product's Launch.Nested: an input listed under another
 	// input (a sub-argument, a value of its words), never a row of its own.
 	nested bool
 
-	status   string // match, other, trap, extra, entry, same_destination, nested
+	status   string // match, other, trap, extra, entry, same_destination, nested, unknown
 	tier     int
 	items    []int
 	traps    []int
 	expected []string
+}
+
+// fileWrite is one write of a file record's field: its site and the path it
+// stores, empty when that is not established.
+type fileWrite struct {
+	at   anchorAt
+	path string
 }
 
 // operationFamily is the inventory an input row of a kind belongs to.
@@ -209,8 +245,9 @@ var (
 	nonAlphanumeric = regexp.MustCompile(`[^a-z0-9]`)
 )
 
-// normComponent is how a report target's display name meets an inventory
-// component: lower case, letters and digits only, no script extension.
+// normComponent is how a report target's key or program path meets an
+// inventory component: lower case, letters and digits only, no script
+// extension.
 func normComponent(name string) string {
 	s := strings.TrimSpace(strings.ToLower(name))
 	s = componentPrefix.ReplaceAllString(s, "")
@@ -264,6 +301,26 @@ func nameAlternatives(name string, data bool) map[string]bool {
 	return result
 }
 
+// pathAlternatives are the paths a data item names for a file: its name, its
+// name without a trailing "(qualifier)" and that base's "a / b" or "a, b"
+// pieces. A qualifier describes the file ("logfile (default stdout)"), so
+// its words are no path: "restore output sidecars (-wal, -shm, -journal)"
+// names no file "-wal".
+func pathAlternatives(name string) map[string]bool {
+	s := strings.TrimSpace(name)
+	base := strings.TrimSpace(trailingQualifier.ReplaceAllString(s, ""))
+	result := map[string]bool{s: true}
+	if base != "" {
+		result[base] = true
+		for _, part := range nameSeparator.Split(base, -1) {
+			if part = strings.TrimSpace(part); part != "" {
+				result[part] = true
+			}
+		}
+	}
+	return result
+}
+
 // canonicalDestination is the report's grouping of outgoing calls: the
 // destination text before a parenthesis.
 func canonicalDestination(text string) string {
@@ -282,8 +339,9 @@ type candidate struct {
 	also       []string
 	at         anchorAt
 	names      map[string]bool
-	nameFamily string // inputs, data or none
-	scope      string // for a trap: the directory or file it covers entirely
+	paths      map[string]bool // a data item's file paths (pathAlternatives)
+	nameFamily string          // inputs, data or none
+	scope      string          // for a trap: the directory or file it covers entirely
 	entrypoint bool
 	external   bool
 }
@@ -367,6 +425,35 @@ func tierFor(row *reportRow, cand candidate) int {
 		// table's catalogue is the component's data.
 		best = better(best, 2)
 	}
+	if !cand.trap && cand.nameFamily == "data" && row.section == "data" && row.kind == "file" {
+		best = better(best, fileTier(row, cand))
+	}
+	return best
+}
+
+// fileTier matches a file record to a data item by the file's written path,
+// the same claim as the item's: the same path literal, exactly (redis's
+// dump.rdb, the path server.dbfilename's write stores), is the item's
+// anywhere in the component, as a table's name is (2); the write storing it
+// is the item's own line (the inventory anchors dump.rdb at that write,
+// redis.c:1493), the same line and name when that write stores the item's
+// path (0), the same line when its path is not established (1:
+// /tmp/redis-%p.vm, stored through zstrdup at redis.c:1503). No
+// neighbouring line of a write counts.
+func fileTier(row *reportRow, cand candidate) int {
+	best := noTier
+	named := func(path string) bool { return path != "" && cand.paths[strings.TrimSpace(path)] }
+	if slices.ContainsFunc(row.paths, named) {
+		best = 2
+	}
+	for _, write := range row.writes {
+		if cand.at.line > 0 && write.at == cand.at {
+			if named(write.path) {
+				return 0
+			}
+			best = better(best, 1)
+		}
+	}
 	return best
 }
 
@@ -448,16 +535,16 @@ type flowResult struct {
 }
 
 type cell struct {
-	component, inventory                                     string
-	must, found, kindDiffers, otherComponent, missed         int
-	may, mayFound, mayKindDiffers                            int
-	extras, trapHits, wrongKindRows, sameDestination, nested int
-	missedItems, kindItems, otherItems                       []*itemResult
-	extraRows, trapRows, wrongRows, nestedRows               []*reportRow
+	component, inventory                                              string
+	must, found, kindDiffers, otherComponent, missed                  int
+	may, mayFound, mayKindDiffers                                     int
+	extras, trapHits, wrongKindRows, sameDestination, nested, unknown int
+	missedItems, kindItems, otherItems                                []*itemResult
+	extraRows, trapRows, wrongRows, nestedRows, unknownRows           []*reportRow
 }
 
 func (c *cell) empty() bool {
-	return c.must == 0 && c.may == 0 && c.extras == 0 && c.trapHits == 0 && c.wrongKindRows == 0 && c.nested == 0
+	return c.must == 0 && c.may == 0 && c.extras == 0 && c.trapHits == 0 && c.wrongKindRows == 0 && c.nested == 0 && c.unknown == 0
 }
 
 type scoreResult struct {
@@ -483,15 +570,13 @@ func score(run *auditRun, inv *inventory, rows []*reportRow) *scoreResult {
 		}
 	}
 	componentSet := map[string]bool{}
-	byNorm := map[string]string{}
 	for _, component := range invComponents {
 		componentSet[component] = true
-		byNorm[normComponent(component)] = component
 	}
 	compOfTarget := map[string]string{}
 	mappedComponents := map[string]bool{}
 	for _, target := range run.targets {
-		if component := byNorm[normComponent(target.display)]; component != "" {
+		if component := componentOf(target, invComponents, inv.entries); component != "" {
 			compOfTarget[target.id] = component
 			mappedComponents[component] = true
 		}
@@ -520,13 +605,16 @@ func score(run *auditRun, inv *inventory, rows []*reportRow) *scoreResult {
 		case "data":
 			family = "data"
 		}
-		var names map[string]bool
+		var names, paths map[string]bool
 		if family != "" {
 			names = nameAlternatives(item.Name, item.Inventory == "data")
 		}
+		if item.Inventory == "data" {
+			paths = pathAlternatives(item.Name)
+		}
 		itemCands = append(itemCands, candidate{
 			ref: i, component: item.Component, also: item.AlsoComponent, at: parseAnchor(item.Anchor),
-			names: names, nameFamily: family, entrypoint: item.Kind == "entrypoint", external: item.Inventory == "external",
+			names: names, paths: paths, nameFamily: family, entrypoint: item.Kind == "entrypoint", external: item.Inventory == "external",
 		})
 	}
 	var trapCands []candidate
@@ -629,6 +717,13 @@ func score(run *auditRun, inv *inventory, rows []*reportRow) *scoreResult {
 			row.status = "nested"
 		}
 	}
+	// A file whose path is not established claims no file: an honest
+	// unknown, counted apart, never an extra.
+	for _, row := range rows {
+		if row.unknownPath && row.status == "extra" {
+			row.status = "unknown"
+		}
+	}
 
 	result := &scoreResult{inv: inv, rows: rows, compOfTarget: compOfTarget}
 	for i, item := range inv.Items {
@@ -716,6 +811,9 @@ func score(run *auditRun, inv *inventory, rows []*reportRow) *scoreResult {
 		case "nested":
 			c.nested++
 			c.nestedRows = append(c.nestedRows, row)
+		case "unknown":
+			c.unknown++
+			c.unknownRows = append(c.unknownRows, row)
 		case "match":
 			if row.nested || len(row.items) == 0 {
 				continue
@@ -748,6 +846,31 @@ func score(run *auditRun, inv *inventory, rows []*reportRow) *scoreResult {
 		}
 	}
 	return result
+}
+
+// componentOf is the inventory component whose program a report target is,
+// by the target's key or its program's path, never its display name. A
+// component's name is a program key or path (redis-server, freqtrade's
+// build_helpers/create_command_partials.py, litestream's cmd/litestream);
+// a declared component also names its entry file (othello-desktop starts at
+// src/othello/core.clj, deps.edn's :run program, which the report calls
+// "othello"). The first component in inventory order that one of the
+// target's keys names is the target's.
+func componentOf(target auditTarget, components []string, entries map[string]string) string {
+	keys := map[string]bool{}
+	for _, key := range target.keys {
+		if key = normComponent(key); key != "" {
+			keys[key] = true
+		}
+	}
+	for _, component := range components {
+		for _, name := range []string{component, entries[component]} {
+			if key := normComponent(name); key != "" && keys[key] {
+				return component
+			}
+		}
+	}
+	return ""
 }
 
 // scoreFlow scores the items marked flow against the saved Main flow: a

@@ -23,6 +23,17 @@
 // under another (Launch.Nested: a value or a sub-argument) is no row of its
 // own: it may show an item, never an extra or a trap hit. Items marked flow
 // are scored against the Main flow steps, not the workers inventory.
+//
+// A file data record claims the path as written (2026-09-29, the same
+// claim, not a widening): the same path literal as a data item's name
+// matches it anywhere in the component, as a table's name does, and the
+// write of the record's field storing a path matches the item anchored at
+// that write (redis's dump.rdb, server.dbfilename's value at redis.c:1493);
+// see fileTier. A file whose path is not established is an honest unknown,
+// counted in its own column, never an extra. A report target is mapped to
+// an inventory component by its target key or its program's path (its
+// seeds; a declared component's entry file), never by its display name:
+// othello's "othello" is othello-desktop, whose -main deps.edn runs.
 package audit
 
 import (
@@ -197,7 +208,8 @@ func (report *auditReport) falsities() []string {
 
 type tally struct {
 	must, found, kindDiffers, otherComponent, missed, may, mayFound, mayKindDiffers int
-	extras, trapHits, wrongKindRows, nested, reportOnlyExtras, reportOnlyTrapHits   int
+	extras, trapHits, wrongKindRows, nested, unknown                                int
+	reportOnlyExtras, reportOnlyTrapHits                                            int
 }
 
 func (report *auditReport) inventoryTally(name string) tally {
@@ -223,6 +235,7 @@ func (report *auditReport) inventoryTally(name string) tally {
 		t.trapHits += c.trapHits
 		t.wrongKindRows += c.wrongKindRows
 		t.nested += c.nested
+		t.unknown += c.unknown
 	}
 	return t
 }
@@ -231,8 +244,8 @@ func (report *auditReport) headline() []string {
 	var lines []string
 	for _, name := range inventories {
 		t := report.inventoryTally(name)
-		lines = append(lines, fmt.Sprintf("%-9s must %4d found %4d kind≠ %3d other %3d missed %4d extras %4d traps %3d wrong-kind rows %3d nested %3d",
-			name, t.must, t.found, t.kindDiffers, t.otherComponent, t.missed, t.extras, t.trapHits, t.wrongKindRows, t.nested))
+		lines = append(lines, fmt.Sprintf("%-9s must %4d found %4d kind≠ %3d other %3d missed %4d extras %4d traps %3d wrong-kind rows %3d nested %3d unknown %3d",
+			name, t.must, t.found, t.kindDiffers, t.otherComponent, t.missed, t.extras, t.trapHits, t.wrongKindRows, t.nested, t.unknown))
 	}
 	found := 0
 	for _, f := range report.score.flow {
@@ -346,33 +359,34 @@ func (report *auditReport) markdown() string {
 		}
 		mapping = append(mapping, fmt.Sprintf("%s %s → %s", target.id, target.display, component))
 	}
-	w("- Report targets → inventory components: %s", strings.Join(mapping, "; "))
+	w("- Report targets → inventory components (by target key or program path, not display name): %s", strings.Join(mapping, "; "))
 	if len(s.unmapped) > 0 {
 		w("- Inventory components with no report target (found only through `also_component` or another component): %s", strings.Join(s.unmapped, ", "))
 	}
 	w("- Written by internal/audit (TestClaimAudit); no provider call. Rows: the Inputs collection, Configuration reads, Entrypoints, outgoing calls and data records of each target.")
-	w("- Matching: same component (or `also_component`); a row's own anchor in the item's file within 2 lines, or for requests/commands the same written name in the item's file (tables: the same name anywhere in the component). A row keeps only its best tier (exact line > same name > ±1 > ±2). An item wins a tie with a trap. An outgoing call's ReachedFrom caller site may match an external item anchored there, ranked after the row's own location. No handler or call-chain anchors. Outgoing calls to a destination already matched in the component are not extras.")
+	w("- Matching: same component (or `also_component`); a row's own anchor in the item's file within 2 lines, or for requests/commands the same written name in the item's file (tables: the same name anywhere in the component; files: the same written path anywhere in the component, or the item anchored at the write of the record's field that stores it). A row keeps only its best tier (exact line > same name > ±1 > ±2). An item wins a tie with a trap. An outgoing call's ReachedFrom caller site may match an external item anchored there, ranked after the row's own location. No handler or call-chain anchors. Outgoing calls to a destination already matched in the component are not extras.")
 	w("- Nested: inputs the product lists under another input (Launch.Nested) are no rows of their own; they may show an item but are never extras or trap hits.")
+	w("- Unknown: data records of a file whose path is not established claim no file; they are counted apart, never as extras.")
 	w("")
 	w("## Headline per inventory")
 	w("")
 	w("Inventory components only; rows of report targets that map to no inventory component are totalled in the last two columns.")
 	w("")
-	w("| Inventory | must | found | kind differs | other component | missed | recall | may found (kind≠) / may | extras | trap hits | wrong-kind rows | nested | report-only extras | report-only trap hits |")
-	w("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+	w("| Inventory | must | found | kind differs | other component | missed | recall | may found (kind≠) / may | extras | trap hits | wrong-kind rows | nested | unknown | report-only extras | report-only trap hits |")
+	w("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 	for _, name := range inventories {
 		t := report.inventoryTally(name)
-		w("| %s | %d | %d | %d | %d | %d | %s | %d (%d) / %d | %d | %d | %d | %d | %d | %d |", name, t.must, t.found, t.kindDiffers, t.otherComponent, t.missed,
-			percent(t.found, t.must), t.mayFound, t.mayKindDiffers, t.may, t.extras, t.trapHits, t.wrongKindRows, t.nested, t.reportOnlyExtras, t.reportOnlyTrapHits)
+		w("| %s | %d | %d | %d | %d | %d | %s | %d (%d) / %d | %d | %d | %d | %d | %d | %d | %d |", name, t.must, t.found, t.kindDiffers, t.otherComponent, t.missed,
+			percent(t.found, t.must), t.mayFound, t.mayKindDiffers, t.may, t.extras, t.trapHits, t.wrongKindRows, t.nested, t.unknown, t.reportOnlyExtras, t.reportOnlyTrapHits)
 	}
 	w("")
 	w("## Component × inventory")
 	w("")
-	w("| Component | Inventory | must | found | kind differs | other component | missed | may found (kind≠) / may | extras | trap hits | wrong-kind rows | nested |")
-	w("|---|---|---|---|---|---|---|---|---|---|---|---|")
+	w("| Component | Inventory | must | found | kind differs | other component | missed | may found (kind≠) / may | extras | trap hits | wrong-kind rows | nested | unknown |")
+	w("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 	for _, c := range s.cells {
-		w("| %s | %s | %d | %d | %d | %d | %d | %d (%d) / %d | %d | %d | %d | %d |", mdEscape(c.component), c.inventory, c.must, c.found, c.kindDiffers, c.otherComponent, c.missed,
-			c.mayFound, c.mayKindDiffers, c.may, c.extras, c.trapHits, c.wrongKindRows, c.nested)
+		w("| %s | %s | %d | %d | %d | %d | %d | %d (%d) / %d | %d | %d | %d | %d | %d |", mdEscape(c.component), c.inventory, c.must, c.found, c.kindDiffers, c.otherComponent, c.missed,
+			c.mayFound, c.mayKindDiffers, c.may, c.extras, c.trapHits, c.wrongKindRows, c.nested, c.unknown)
 	}
 	w("")
 	w("## Main flow items")
@@ -392,7 +406,7 @@ func (report *auditReport) markdown() string {
 	w("## Details per table")
 	w("")
 	for _, c := range s.cells {
-		if len(c.missedItems)+len(c.kindItems)+len(c.otherItems)+len(c.extraRows)+len(c.trapRows)+len(c.wrongRows)+len(c.nestedRows)+c.sameDestination == 0 {
+		if len(c.missedItems)+len(c.kindItems)+len(c.otherItems)+len(c.extraRows)+len(c.trapRows)+len(c.wrongRows)+len(c.nestedRows)+c.sameDestination+c.unknown == 0 {
 			continue
 		}
 		w("### %s · %s", c.component, c.inventory)
@@ -472,6 +486,14 @@ func (report *auditReport) markdown() string {
 		}
 		if c.sameDestination > 0 {
 			w("_%d more report rows call a destination already matched in this component; not counted as extras._", c.sameDestination)
+			w("")
+		}
+		if c.unknown > 0 {
+			var anchors []string
+			for _, row := range sortedRows(c.unknownRows) {
+				anchors = append(anchors, row.at.String())
+			}
+			w("_%d data records reach a file whose path is not established (`%s`); unknown, not counted as extras._", c.unknown, strings.Join(anchors, ", "))
 			w("")
 		}
 		if len(c.extraRows) > 0 {
@@ -645,8 +667,8 @@ func (report *auditReport) summary() any {
 	type cellOut struct {
 		Component, Inventory                                                     string
 		Must, Found, KindDiffers, OtherComponent, Missed, May, MayFound, MayKind int
-		Extras, TrapHits, WrongKindRows, SameDestination, Nested                 int
-		ExtraRows, TrapRows, NestedRows                                          []string `json:",omitempty"`
+		Extras, TrapHits, WrongKindRows, SameDestination, Nested, Unknown        int
+		ExtraRows, TrapRows, NestedRows, UnknownRows                             []string `json:",omitempty"`
 	}
 	rowID := func(row *reportRow) string {
 		return fmt.Sprintf("%s %s/%s %q %s", row.target, row.section, row.kind, row.name, row.at)
@@ -665,7 +687,7 @@ func (report *auditReport) summary() any {
 	var cells []cellOut
 	for _, c := range report.score.cells {
 		out := cellOut{c.component, c.inventory, c.must, c.found, c.kindDiffers, c.otherComponent, c.missed, c.may, c.mayFound, c.mayKindDiffers,
-			c.extras, c.trapHits, c.wrongKindRows, c.sameDestination, c.nested, nil, nil, nil}
+			c.extras, c.trapHits, c.wrongKindRows, c.sameDestination, c.nested, c.unknown, nil, nil, nil, nil}
 		for _, row := range c.extraRows {
 			out.ExtraRows = append(out.ExtraRows, rowID(row))
 		}
@@ -674,6 +696,9 @@ func (report *auditReport) summary() any {
 		}
 		for _, row := range c.nestedRows {
 			out.NestedRows = append(out.NestedRows, rowID(row))
+		}
+		for _, row := range c.unknownRows {
+			out.UnknownRows = append(out.UnknownRows, rowID(row))
 		}
 		cells = append(cells, out)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -35,6 +36,9 @@ type auditRun struct {
 type auditTarget struct {
 	id      string
 	display string
+	// keys name the target's program: its target key and the files its
+	// program starts at (see targetKeys); never its display name.
+	keys    []string
 	program programindex.Index
 	index   groupindex.Index
 	objects map[string]programindex.Object
@@ -113,7 +117,27 @@ func newAuditTarget(id, display string, program programindex.Index, index groupi
 	for _, object := range program.Objects {
 		objects[object.ID] = object
 	}
-	return auditTarget{id: id, display: display, program: program, index: index, objects: objects}
+	return auditTarget{id: id, display: display, keys: targetKeys(program.Target), program: program, index: index, objects: objects}
+}
+
+// targetKeys are the ways a report target names its program: its target
+// key (the selector, c:redis-server, and its last segment, redis-server)
+// and each file its program starts at (a seed, src/othello/core.clj) with
+// that file's directory (cmd/litestream of cmd/litestream/main.go).
+func targetKeys(target programindex.Target) []string {
+	var keys []string
+	if target.Selector != "" {
+		keys = append(keys, target.Selector)
+		if i := strings.LastIndex(target.Selector, ":"); i >= 0 {
+			keys = append(keys, target.Selector[i+1:])
+		}
+	}
+	for _, seed := range target.Seeds {
+		if seed.Location != nil && seed.Location.Path != "" {
+			keys = append(keys, seed.Location.Path, path.Dir(seed.Location.Path))
+		}
+	}
+	return keys
 }
 
 func locationAt(location *programindex.Location) anchorAt {
@@ -195,6 +219,22 @@ func reportRows(run *auditRun) []*reportRow {
 				row.name = data.Name
 				if data.Schema != "" {
 					row.name = data.Schema + "." + data.Name
+				}
+				// A file record claims the path as written: its literal
+				// or template, and each write of the field it is read
+				// from with the path that write stores. No name is a path
+				// not established.
+				if data.Kind == "file" && data.File != nil {
+					row.unknownPath = data.Name == ""
+					if data.Name != "" {
+						row.paths = append(row.paths, data.Name)
+					}
+					for _, value := range data.File.Values {
+						if value.Value != "" {
+							row.paths = append(row.paths, value.Value)
+						}
+						row.writes = append(row.writes, fileWrite{at: anchorAt{value.Anchor.Path, value.Anchor.Line}, path: value.Value})
+					}
 				}
 			}
 			rows = append(rows, row)
