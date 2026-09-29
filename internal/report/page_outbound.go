@@ -102,14 +102,20 @@ func (row pageOutbound) ProgramLabel() string {
 
 type pageOutboundUse struct {
 	Address, Frontier, Method string
-	Steps                     []pageOutboundStep
+	// Unread says the walk ended at a value its adapter could not read: the
+	// address is not established from code (atlas DestinationUse Unread).
+	Unread bool
+	Steps  []pageOutboundStep
 }
 
 // FrontierName is the frontier the address passes through, or "" when it
 // names nothing: freqtrade's getattr(ccxt, name)(config) is a frontier
 // "()", which printed "Address passes through ()". The chain's steps stand.
+// An unread frontier names nothing either: Redis's connect had read
+// "Address passes through (struct sockaddr*)&sa", the expression its
+// address is cast from.
 func (use pageOutboundUse) FrontierName() string {
-	if strings.Trim(use.Frontier, "() \t") == "" {
+	if use.Unread || strings.Trim(use.Frontier, "() \t") == "" {
 		return ""
 	}
 	return use.Frontier
@@ -227,7 +233,7 @@ func (builder *pageBuilder) fillSectionOutbound(section *pageSection) {
 		destinations := make(map[string]bool)
 		for _, use := range call.Uses {
 			destinations[use.Address+"\x00"+use.Frontier] = true
-			value := pageOutboundUse{Address: use.Address, Frontier: use.Frontier, Method: use.Method}
+			value := pageOutboundUse{Address: use.Address, Frontier: use.Frontier, Unread: use.Unread, Method: use.Method}
 			for _, step := range use.Steps {
 				name := step.Name
 				// Existing operation subjects already own their interpreted

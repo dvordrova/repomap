@@ -968,9 +968,14 @@ type DeclaredOn struct {
 // DestinationUse is one observed argument chain reaching a communication
 // mechanism. Address may be a configuration expression rather than a host.
 // A frontier records where the original source no longer resolves the value.
+// Unread marks a frontier at a value its adapter could not read (sourcevalue
+// kind unknown, such as C's `(struct sockaddr*)&sa`): the address is not
+// established from code, and the frontier is only the expression written
+// there.
 type DestinationUse struct {
 	Address   string            `json:"address,omitempty"`
 	Frontier  string            `json:"frontier,omitempty"`
+	Unread    bool              `json:"unread,omitempty"`
 	Method    string            `json:"method,omitempty"`
 	TargetIDs []string          `json:"target_ids,omitempty"`
 	Steps     []DestinationStep `json:"steps"`

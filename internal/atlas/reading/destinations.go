@@ -357,6 +357,8 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 				seed.Address = ""
 				seed.Frontier = ""
 				for _, suffix := range d.value(&part, owner, seed, active) {
+					// A template of known and unread parts is still read.
+					suffix.Unread = false
 					if prefix.Frontier == "" && suffix.Frontier == "" {
 						suffix.Address = prefix.Address + suffix.Address
 					} else {
@@ -414,6 +416,10 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 		if use.Frontier == "" {
 			use.Frontier = "computed value"
 		}
+		// A value the adapter could not read ends the walk with no address
+		// established from code; its text is only the expression written
+		// there (Redis's connect on `(struct sockaddr*)&sa`).
+		use.Unread = value.Kind == "unknown"
 	}
 	if value.Anchor != nil {
 		use.Steps = appendDestinationStep(use.Steps, atlas.DestinationStep{SubjectID: owner.ID, Name: use.Frontier, Path: value.Anchor.Path, Line: value.Anchor.Line, Column: value.Anchor.Column})

@@ -251,6 +251,7 @@ var russianUI = map[string]string{
 	"model": "модель",
 	"{0}: the dark box is the operation; below it the part with its handler and the parts that handler reaches. A solid arrow is a call in code, a dashed one an interpretation.": "{0}: тёмный блок — сама операция; под ним часть с её обработчиком и части, которые он задействует. Сплошная стрелка — вызов в коде, пунктир — предположение.",
 	"Address passes through":            "Адрес приходит через",
+	"Address not established from code": "Адрес не установлен по коду",
 	"Other":                             "Прочее",
 	"Address not determined":            "Адрес не установлен",
 	"Address":                           "Адрес",
