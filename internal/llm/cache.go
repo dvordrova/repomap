@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
@@ -122,7 +123,18 @@ func readAcceptedCache(rootDir, cacheKey string, limits Limits) (acceptedCacheRe
 	if err := validateAcceptedCacheRecord(record, cacheKey, record.Request, limits); err != nil {
 		return acceptedCacheRecord{}, false, err
 	}
+	markCacheUse(path, filepath.Join(cacheDir, "payloads", record.RequestFile), filepath.Join(cacheDir, "payloads", record.ResponseFile))
 	return record, true, nil
+}
+
+// markCacheUse sets a used answer's record and payloads to now, so a file's
+// modification time says when a run last read it and answers no run reads
+// any more can be found by age. A file that cannot be touched is still used.
+func markCacheUse(paths ...string) {
+	now := time.Now()
+	for _, path := range paths {
+		_ = os.Chtimes(path, now, now)
+	}
 }
 
 func validateAcceptedCacheRecord(

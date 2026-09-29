@@ -1,5 +1,9 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — a cached answer read is marked as used
+
+- Owner: the paid `.llm-cache` answers may never be read again; mark the ones a run reads. `readAcceptedCache` now sets the record and its request/response payloads to the read time (`markCacheUse`, internal/llm/cache.go); a failed touch is ignored. `TestACachedAnswerReadIsMarkedAsUsed` fails without it. After a few days, `find ~/Library/Caches/repomap/runs/.llm-cache -mtime +N` lists answers no run used. Same day: 608 old run dirs (22.5 GB) deleted from the default runs dir at the owner's "да"; .llm-cache (6.5 GB) and today's runs from 07:00 kept.
+
 ## 2026-09-29 — Python class calls construct and run __init__; a name bound to one types its calls
 
 - **Why:** orientation stage 2 scopes the main flow by Reach, and freqtrade's

@@ -353,6 +353,8 @@ truncation or ambiguous final JSON is refused.
 
 ## Exact cache and replay
 
+Reading an accepted answer sets its record and both payloads to the time of the read, so a file's modification time says when a run last used it; answers no run reads any more are found by age (owner, 2026-09-29).
+
 The shared executor stores entity-to-response-row indexes in its existing
 .llm-cache directory. Each memo contains only the request key and original row
 key; the answer comes from the current shared response and is revalidated by
