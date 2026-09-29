@@ -134,7 +134,11 @@ func testRows() []Row {
 	}
 }
 
-func TestResponseExampleUsesTheWindowArtifactID(t *testing.T) {
+// A real row's key in the example reads, to a model without reasoning, as
+// "answer this row": litestream's windows of near-identical rows came back
+// holding only the row the example showed. The example's key is a
+// placeholder no row may carry, and a row answered under it answers nothing.
+func TestResponseExampleShowsAPlaceholderKeyNoRowCarries(t *testing.T) {
 	def := testDefinition()
 	windows, err := Windows(def, 1, testRows())
 	if err != nil {
@@ -145,8 +149,8 @@ func TestResponseExampleUsesTheWindowArtifactID(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, err := Call(def, windows[1])
-	if err != nil || first.Prompt.ResponseExample == second.Prompt.ResponseExample {
-		t.Fatalf("the example did not follow each window's existing row ID: %v", err)
+	if err != nil || first.Prompt.ResponseExample != second.Prompt.ResponseExample {
+		t.Fatalf("the example follows its window's rows: %v", err)
 	}
 	var example struct {
 		Rows []map[string]string `json:"rows"`
@@ -155,13 +159,38 @@ func TestResponseExampleUsesTheWindowArtifactID(t *testing.T) {
 		t.Fatalf("response example lost its table object: %s / %v", first.Prompt.ResponseExample, err)
 	}
 	row := example.Rows[0]
-	if len(row) != len(def.Columns)+1 || row["key"] != "f1" || row["line"] == "" || row["box"] == "" {
-		t.Fatalf("response example does not contain the owner columns: %+v", row)
+	if len(row) != len(def.Columns)+1 || row["key"] != ExampleKey || row["line"] == "" || row["box"] == "" {
+		t.Fatalf("response example does not show the placeholder key and the owner columns: %+v", row)
+	}
+	for _, window := range windows {
+		for _, asked := range window.Rows {
+			if strings.Contains(first.Prompt.ResponseExample, `"`+asked.ID+`"`) {
+				t.Fatalf("the example shows row %s's key: %s", asked.ID, first.Prompt.ResponseExample)
+			}
+		}
 	}
 	def.Columns = append(def.Columns, Column{Name: "activation", Kind: Text})
 	changed, err := Call(def, windows[0])
 	if err != nil || changed.Prompt.ResponseExample == first.Prompt.ResponseExample || !strings.Contains(changed.Prompt.ResponseExample, `"activation"`) {
 		t.Fatalf("response example ignored a contract column change: %s / %v", changed.Prompt.ResponseExample, err)
+	}
+
+	if _, err := Windows(def, 1, []Row{{ID: ExampleKey}}); err == nil {
+		t.Fatal("a row carrying the example's placeholder key was prepared")
+	}
+	result, err := DecodeResult(testDefinition(), windows[0], []byte(`{"rows":[{"key":"<each row's key>","line":"reads a","box":"here"},{"key":"f2","line":"reads b","box":"here"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Answers[0] != nil || result.Answers[1]["line"] != "reads b" {
+		t.Fatalf("answers = %+v", result.Answers)
+	}
+	reasons := map[string]string{}
+	for _, rejection := range result.Rejections {
+		reasons[rejection.Key] = rejection.Reason
+	}
+	if reasons[ExampleKey] != "response row copied the example's placeholder key" || reasons["f1"] != "row was not answered" {
+		t.Fatalf("rejections = %+v", result.Rejections)
 	}
 }
 
@@ -175,8 +204,8 @@ func TestResponseExampleListsKeyFirstThenColumnsInFillOrder(t *testing.T) {
 		{Name: `na"me`, Kind: Text},
 	}}
 	window := Window{Rows: []Row{{ID: "s7"}}}
-	example := ResponseExample(def, window)
-	want := `{"rows":[{"key":"s7","zone":"<computed zone>","entry":"<computed entry>","activation":"<computed activation>","na\"me":"<computed na\"me>"}]}`
+	example := ResponseExample(def)
+	want := `{"rows":[{"key":"<each row's key>","zone":"<computed zone>","entry":"<computed entry>","activation":"<computed activation>","na\"me":"<computed na\"me>"}]}`
 	if example != want {
 		t.Fatalf("example = %s\nwant      %s", example, want)
 	}

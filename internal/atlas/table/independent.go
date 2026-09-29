@@ -175,6 +175,12 @@ func DecodeResult(def Definition, window Window, raw []byte) (Result, error) {
 			continue
 		}
 		key = strings.TrimSpace(key)
+		if key == ExampleKey {
+			// No row carries the example's placeholder (rowIndexes): a row
+			// under it answers nothing that was asked.
+			result.Rejections = append(result.Rejections, RowRejection{Key: key, Reason: "response row copied the example's placeholder key"})
+			continue
+		}
 		if _, known := indexes[key]; !known {
 			result.Rejections = append(result.Rejections, RowRejection{Key: key, Reason: "response key was not asked"})
 			continue

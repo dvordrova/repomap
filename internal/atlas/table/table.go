@@ -409,6 +409,9 @@ func rowIndexes(rows []Row) (map[string]int, error) {
 		if row.ID == "" {
 			return nil, fmt.Errorf("row %d has no ID", i+1)
 		}
+		if row.ID == ExampleKey {
+			return nil, fmt.Errorf("row %d has the response example's placeholder %q as its ID", i+1, ExampleKey)
+		}
 		if _, exists := result[row.ID]; exists {
 			return nil, fmt.Errorf("row ID %q is duplicated", row.ID)
 		}
@@ -727,7 +730,7 @@ func Call(def Definition, window Window) (llm.Call[Answers], error) {
 		State: state,
 		Prompt: llm.Prompt{
 			System: def.System, User: string(window.Request), ResponseFormatJSON: true,
-			Reasoning: def.Reasoning, ResponseExample: ResponseExample(def, window), NoResponseAdjunct: !hasProse,
+			Reasoning: def.Reasoning, ResponseExample: ResponseExample(def), NoResponseAdjunct: !hasProse,
 		},
 		Limits: llm.Limits{
 			MaxRequestBytes:  llm.SemanticRecordByteLimit,
@@ -809,18 +812,25 @@ func questionsDigest(def Definition) (string, error) {
 	return sha256Hex(raw), nil
 }
 
+// ExampleKey is the row key the response example shows: a placeholder no
+// row may carry and no answer is read under. An example showing a window's
+// real first key reads, to a model without reasoning, as "answer this row":
+// windows of near-identical rows came back holding only that row
+// (litestream's populate.go windows, 1 of 11 rows in 3 of 3 draws). With
+// this placeholder every row came back in 12 of 12 draws; a bare
+// "<row key>" also left out the rows of an optional cell's "none" (a
+// publish window, 3 of 12 draws whole).
+const ExampleKey = "<each row's key>"
+
 // ResponseExample is the one-line answer shape appended to every system
 // prompt: the row key first, then the cells in fill order. A map would
 // marshal its keys alphabetically and show the key third; the model copies
 // the shape it sees, and the decoder reads the key before anything else.
-func ResponseExample(def Definition, window Window) string {
+// The key is ExampleKey, never a row's own.
+func ResponseExample(def Definition) string {
 	var example strings.Builder
 	example.WriteString(`{"rows":[{"key":`)
-	key := "<same row ID>"
-	if len(window.Rows) > 0 {
-		key = window.Rows[0].ID
-	}
-	example.Write(jsonString(key))
+	example.Write(jsonString(ExampleKey))
 	for _, column := range def.Columns {
 		example.WriteString(",")
 		example.Write(jsonString(column.Name))
