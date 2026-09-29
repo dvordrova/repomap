@@ -368,8 +368,11 @@ func (index Index) Validate() error {
 	}
 	functions := make(map[string]struct{}, len(index.Functions))
 	for position, function := range index.Functions {
+		// A function's declaration is the direct call index's node: cgo's
+		// generated wrappers (_cgoexp_*, _cgo_cmalloc) carry a //line with
+		// no column there, so a column may be 0 here too.
 		if !validText(function.ID) || !validText(function.Package) || !validText(function.Symbol) ||
-			!validLocation(function.Location) || position > 0 && functionKey(index.Functions[position-1]) >= functionKey(function) {
+			!validPath(function.Location.Path) || function.Location.Line <= 0 || function.Location.Column < 0 || position > 0 && functionKey(index.Functions[position-1]) >= functionKey(function) {
 			return fmt.Errorf("Go dynamic handoff index: invalid function")
 		}
 		if _, duplicate := functions[function.ID]; duplicate {
