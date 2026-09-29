@@ -1,5 +1,5 @@
 import React from 'react';
-import {reach, countWords, countsHandlers, countsInputs} from './call-card.mjs';
+import {reach, countWords, countsHandlers, countsInputs, headingMarks} from './call-card.mjs';
 
 const t=(...args)=>window.rmT(...args);
 const stop=event=>event.stopPropagation();
@@ -71,7 +71,7 @@ function foldWords(fold){
 // written once for its run of calls; a fold is one line, its callees by
 // part under it, each part opening to their names.
 // A relation with no call of its own that would only name the heading above
-// it again says nothing more.
+// it again says nothing more; in the column its code mark joins the heading.
 export function CallRows({card,sticky=true,choose=null}){
   return <div className={`flow-card-groups ${sticky?'flow-card-sticky':''} ${choose?'flow-card-reading':''}`}>
     {card.groups.map(group=><section key={group.id||'-'} data-call-group={group.id}>
@@ -83,19 +83,24 @@ export function CallRows({card,sticky=true,choose=null}){
           <p>{part.rows.map((row,i)=><React.Fragment key={i}>{i>0&&' '}<Name at={row.calleeAt} href={row.href} choose={choose}>{row.callee}</Name></React.Fragment>)}</p>
         </details>)}</div>
       </div>)}
-      {group.pairs.map(pair=><div key={pair.id} className="flow-card-pair-rows">
-        <h5 className="flow-card-pair"><span><i>→</i> {pair.name}</span><b>{pair.count}</b></h5>
-        <div className="flow-card-rows">{pair.rows.map((row,i)=>{
-          if(row.kind==='other'){
-            if(!row.at&&!row.otherHref&&(row.other===pair.name||row.other===group.name))return null;
-            return <p key={i} className="flow-card-row flow-card-other">{choose?<span>{row.other}</span>:<Link href={row.otherHref}>{row.other}</Link>}{!choose&&row.at&&<em>{row.at}</em>}{choose&&<CodeMark href={row.otherHref} title={row.at}/>}</p>;
-          }
-          if(row.sides)return <SidesRow key={i} row={row} choose={choose}/>;
-          const again=i>0&&pair.rows[i-1].caller===row.caller&&pair.rows[i-1].kind!=='other';
-          return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.inputs?<InputNames refs={row.inputRefs} choose={choose}/>:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
-            {verb(row.kind)&&<i>{verb(row.kind)}</i>}{row.callee&&<Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>}{choose&&<CodeMark href={row.site||row.calleeHref} title={row.at}/>}</p>;
-        })}</div>
-      </div>)}
+      {group.pairs.map(pair=>{
+        // In the column a row that would only name its heading again gives
+        // the heading its code mark (headingMarks).
+        const {marks,rows}=choose?headingMarks(pair,group):{marks:[],rows:pair.rows};
+        return <div key={pair.id} className="flow-card-pair-rows">
+          <h5 className="flow-card-pair"><span><i>→</i> {pair.name}{marks.map((row,i)=><CodeMark key={i} href={row.otherHref} title={row.at}/>)}</span><b>{pair.count}</b></h5>
+          {rows.length>0&&<div className="flow-card-rows">{rows.map((row,i)=>{
+            if(row.kind==='other'){
+              if(!row.at&&!row.otherHref&&(row.other===pair.name||row.other===group.name))return null;
+              return <p key={i} className="flow-card-row flow-card-other">{choose?<span>{row.other}</span>:<Link href={row.otherHref}>{row.other}</Link>}{!choose&&row.at&&<em>{row.at}</em>}{choose&&<CodeMark href={row.otherHref} title={row.at}/>}</p>;
+            }
+            if(row.sides)return <SidesRow key={i} row={row} choose={choose}/>;
+            const again=i>0&&rows[i-1].caller===row.caller&&rows[i-1].kind!=='other';
+            return <p key={i} className="flow-card-row"><span className={again?'flow-card-again':''}>{row.inputs?<InputNames refs={row.inputRefs} choose={choose}/>:<Name at={row.callerAt} href={row.site} title={row.at} choose={choose}>{row.caller}</Name>}</span>
+              {verb(row.kind)&&<i>{verb(row.kind)}</i>}{row.callee&&<Name at={row.calleeAt} href={row.calleeHref} choose={choose}>{row.callee}</Name>}{choose&&<CodeMark href={row.site||row.calleeHref} title={row.at}/>}</p>;
+          })}</div>}
+        </div>;
+      })}
     </section>)}
   </div>;
 }

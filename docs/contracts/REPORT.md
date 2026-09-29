@@ -1160,7 +1160,12 @@ tile does, and a modifier-click still opens the code it linked to; a row's
 code is the column's "</>" mark at its end, linking where the call is
 written, the place on its hover only: no row prints a place (owner,
 2026-09-29: litestream's rows read "acquireReadLock db.go:1186 Open code
-↗"). A row wraps with its names whole. The page data names the
+↗"). A row with no call of its own that would only name its heading again
+gives the heading its mark instead, one per place ("→ acquireReadLock
+</>", not the heading and then "acquireReadLock </>"), and ends of one
+name are one heading in the column and the card alike (litestream's SQLite
+had listed "→ checkpointWithExecutor 1" twice, one per statement it runs).
+A row wraps with its names whole. The page data names the
 declarations at a call's two ends (`caller`, `callee`, keyed as the
 reading keys a declaration) apart from where the call is written and where
 it lands. A name whose part lists no such declaration is only named. The

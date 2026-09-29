@@ -76,8 +76,11 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
         const part=fold.parts.get(intoID);part.count++;part.rows.push({callee:row.callee,href:row.calleeHref,calleeAt:row.calleeAt});
         continue;
       }
-      if(!group.pairs.has(intoID))group.pairs.set(intoID,{id:intoID,name:nameOf(intoID),count:0,rows:[]});
-      const pair=group.pairs.get(intoID);pair.count++;pair.rows.push(row);
+      // Ends of one name are one heading: litestream's SQLite had listed
+      // "→ checkpointWithExecutor 1" twice, one per statement it runs there.
+      const pairKey=String(nameOf(intoID)??'')||`\0${intoID}`;
+      if(!group.pairs.has(pairKey))group.pairs.set(pairKey,{id:intoID,name:nameOf(intoID),count:0,rows:[]});
+      const pair=group.pairs.get(pairKey);pair.count++;pair.rows.push(row);
     }
   }
   const byCount=(a,b)=>b.count-a.count||String(a.name).localeCompare(String(b.name));
@@ -89,6 +92,17 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
         parts:[...fold.parts.values()].sort(byCount).map(part=>({...part,rows:part.rows.sort((a,b)=>a.callee.localeCompare(b.callee))}))})),
       pairs:[...group.pairs.values()].sort(byCount).map(pair=>({...pair,rows:pair.rows.sort(bySite)}))})),
   };
+}
+
+// In the reading column a row names its declarations and ends in its code
+// mark, with no place printed. A row with no call of its own names only the
+// end it goes to or comes from, which its heading already names, so there it
+// says nothing but its code: its mark joins the heading and the row is not
+// repeated (litestream's "→ acquireReadLock", then "acquireReadLock </>").
+// A row with no code to link says nothing at all there.
+export function headingMarks(pair,group){
+  const repeats=row=>row.kind==='other'&&(row.other===pair.name||row.other===group.name);
+  return {marks:pair.rows.filter(row=>repeats(row)&&row.otherHref),rows:pair.rows.filter(row=>!repeats(row))};
 }
 
 // What a card's counts count, by kind of call. An arrow from inputs counts
