@@ -182,6 +182,22 @@ unchanged. A real cumulative Python extraction across four target views and
 generic contrasting cases cover this correction. It changes affected graph
 and exact-request hashes, independently of the byte-preserving loading change.
 
+## What a function returns when it fails
+
+A repository function's result value (`result_value`, surfacediscovery
+`sourceReturn`) is the alternatives of its returns' first results, leaving
+out each return that hands back constant zero values (`""`, `0`, `false`,
+`nil`) beside an error that is not the nil constant (`return "", err`):
+the function failing, whose caller uses no other result (2026-09-30). A
+function that only fails keeps its returns. litestream's `expand` returned
+`""` beside its error, so `db.path + "-wal"` walked to `-wal` alone; the
+fixture's `destinationBase` fails the same way and
+`DestinationThroughAFailingHelper`'s address is
+`https://versioned.example/v1/items` alone (`assertGoSourceValues`).
+Python, JS/TS and Clojure raise instead of returning an error beside a
+value, and C's error returns (`-1`, `NULL`) are untyped conventions: no
+equivalent is derived.
+
 ## Calls in package-level variable initializers
 
 Go evaluates a package-level variable's initializer in the package's

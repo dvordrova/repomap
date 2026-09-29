@@ -742,10 +742,20 @@ readings repeat is written once in `shared`.
 
 A declaration two programs of the report hold is one declaration by exact
 identity (`groupindex.DeclarationKey`: path, line, column, kind and name;
-never a name alone). Its "Called by" lists, after its own program's callers,
-the calls each other program's reachable code makes into it, grouped and
-named by program ("{program}: [{part}] {caller}"), each name reading it
-there. When its own program's adapter proved it never runs the
+never a name alone). A program holds the files its map claims, those of its
+parts' declarations and those it names off the map (GroupsIndex `OffMap`);
+an index drawing no map holds what its ProgramIndex declares. Programs
+sharing one project index (Python's) each declare the whole project, but a
+script program holds only its own file and what it imports there
+(2026-09-30: freqtrade's `FreqtradeBot.process` had listed
+`Worker._process_running` under its own part and again under each of five
+script programs). Its "Called by" lists, after its own program's callers,
+the calls each other program's reachable code makes into it, a caller only
+under a program holding the caller, grouped and named by program
+("{program}: [{part}] {caller}"), each name reading it there; the
+declaration calling itself is no caller elsewhere, and in its own part no
+declaration is listed among its own callers or callees (othello.ai/move's
+two-argument form calls its three-argument form; its flow shows the call). When its own program's adapter proved it never runs the
 declaration while another program calls it, the reading says "Not called in
 {program}" and its tile is drawn quiet. A call leaving its program
 names each program's side from that program's own code: the shortest run of
@@ -1224,7 +1234,12 @@ report's programs (ProgramIndex `target.executables`; nothing matched
 loosely) is that program: its record reads "Runs
 this repository's program" with that component's name, which reads it, and
 the call's arrow goes from the launching part into that component, with no
-outside tile. A program starting itself keeps its tile and the same line.
+outside tile. A program starting itself runs its own entry: the call's
+arrow goes from the launching part into the part holding the program's
+seeds (pageSection `EntryGroup`), with no outside tile (2026-09-30:
+litestream's MCP server running `litestream` had stood in its Outside
+frame as a chip of its own name); a call written in that part draws no
+arrow, and with no entry part drawn the tile stays.
 A destination one of whose records has an integration connection (a joint
 the reading confirmed by protocol and input) into another of the report's
 programs is that program (`joinOwnPrograms`, 2026-09-30): every record of
@@ -1295,7 +1310,18 @@ destination chain whose frontier is the record's own callable, one step at
 its line, names the call a second time and is no line on the page or in the
 column; two steps of one declaration on one line are one name. A frontier
 that names nothing (freqtrade's `getattr(ccxt, name)(config)`, a bare `()`)
-is no address step: the chain prints its steps and no address line.
+is no address step: the chain prints its steps and no address line. A walk
+ending at a value its adapter could not read (atlas `DestinationUse.Unread`,
+READING) reads "Address not established from code" with its steps, never
+the expression: Redis's connect had read "Address passes through (struct
+sockaddr*)&sa" (2026-09-30).
+
+An input's kind is named in the column by every kind GroupsIndex gives
+(31-reading-column.js `rmInputKindTitles`): Incoming requests, Commands,
+Settings, User interactions, Scheduled tasks, Background work, Queue
+consumers, Extension points; `entry`, a kind the reading did not establish,
+reads "Kind not established", never "Inputs" (litestream's vfs had read
+"Inputs: Background work · Scheduled tasks · Inputs", 2026-09-30).
 
 An operation or native route exposes Data links only when its accepted path
 reaches an exact native model owner or a query's explicitly observed callable

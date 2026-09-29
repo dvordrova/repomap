@@ -412,7 +412,8 @@ nothing else runs, which is test code, and the application server that the
 a manifest without the runner.
 
 Equivalents: Go test sources come from `go list`'s build-selected `_test.go`
-files. Python has pytest `python_files` and `conftest.py`
-([Python](PYTHON.md#test-sources)). Clojure has native `clojure.test` and
+files. Python has pytest `python_files` and `conftest.py`, and a test
+directory beside a distribution's declared packages, like Playwright's
+`testDir` ([Python](PYTHON.md#test-sources)). Clojure has native `clojure.test` and
 `speclj.core` requires ([Clojure](CLOJURE.md#test-sources)). Those two
 contracts record the runner-directory equivalents that are not derived.

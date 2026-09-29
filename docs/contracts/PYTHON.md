@@ -751,15 +751,34 @@ A resolved pytest table in `pyproject.toml` (`[tool.pytest]` or
 default patterns apply only when pytest is a declared dependency. Every
 `conftest.py` under a resolved table is test code too: it is pytest's own
 plugin file, the equivalent of a JS runner's config. The nearest table owns a
-file, and an unresolved one classifies nothing. The cumulative fixture's
-`tests/conftest.py` is test code; `tests/__init__.py` stays unclassified.
+file, and an unresolved one classifies nothing.
+
+A test directory is test code whole (2026-09-30): the topmost directory
+below a resolved table's own directory that holds a selected test module
+while no file under it is a module the project's build declares
+(`pythontarget.Target.DeclaresModule`) or any program's launch file, in a
+project whose build declares its packages. A distribution ships its
+declared packages; a directory beside them holding its tests holds their
+helpers and the modules they load by path too. freqtrade's root
+distribution folds into `freqtrade` (DISCOVERY), so `tests/` is its; its
+`conftest_trades.py` and the strategies under `tests/strategy/strats`,
+selected by no pattern, had drawn "Strategy test fixtures" and "Test
+fixtures" parts on the product map (READING's test-only part rule reads
+this fact). A test module inside a declared package (`pandas/tests`) is
+selected alone, and a directory holding a program's launch file is none
+(its test-module subdirectory may be). The cumulative fixture's `tests/`
+beside `src/` is a test directory: `tests/__init__.py` and
+`tests/sample_orders.py`, which no pattern names, are test code;
+`src/fixture_app/test_market.py` inside the declared package is selected
+alone (`TestATestDirectoryBesideTheDeclaredPackagesIsTestCode`).
 
 Equivalents that are not derived:
 
 - `testpaths` is a collection root, not a test-only directory. Large
   projects point it at their production package (pandas sets
   `testpaths = "pandas"`), so a file under it is not test code by that
-  fact. Only the `python_files` matches and `conftest.py` below it are.
+  fact. Only the `python_files` matches, `conftest.py` below it and the
+  test directories above are.
 - `unittest` discovery has no manifest declaration. Its `discover -s/-p`
   arguments live in Makefiles, tox or CI, which the adapter does not read.
 - `pytest.ini`, `tox.ini` and `setup.cfg` pytest sections are not read.

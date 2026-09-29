@@ -520,7 +520,10 @@ EXECUTION); free text never replaces a known route. A word
 that cannot stand in a one-line name as written (a control character,
 surrounding space) is not offered and never trimmed into one. A refused name
 leaves the handler's native name. GroupsIndex names the operation by that name
-or, with no accepted choice, by its handler's native name; an entry whose
+or, with no accepted choice, by its handler's native name, never by the
+function making the registration (othello's `:draw draw/draw-state`, handed
+over in `start!` with its handler in another file, had read
+`othello.ui.sketch/start!`, 2026-09-30); an entry whose
 handler is not established (External symbols) is named by its one word without
 a question, and with several and no accepted choice by the first nameable word
 its code wrote (`lines.FirstEntryWord`; a handed value's first literal), never
@@ -533,7 +536,11 @@ name (owner, 2026-09-29: litestream's tiles read "socket
 numbered closure `Run$1`, a lambda) names its entry as a reader names it:
 the repository function it only wraps (its one call), else the function whose
 lines hold it, a method with its type, followed by " (inline)" (GroupsIndex
-`ObjectFacts.Inline`, never persisted; a declaration an input's reading names
+`ObjectFacts.Inline`, never persisted; a relation between parts GroupsIndex
+stores as a connection is labelled by that holder form alone, never by
+what the callable wraps, which could name both ends alike: litestream's
+cards had read "FindSQLiteDatabases$1 calls IsSQLiteDatabase", 2026-09-30;
+a declaration an input's reading names
 reads the same). litestream's `RestoreTool$1` calls `isReplicaURL` beside its
 outside calls and is "RestoreTool (inline)", never that helper. No name is composed from a fact's
 method and values, and no code tells a verb, path, command or topic apart.
@@ -1138,7 +1145,15 @@ in declarations the program runs, is walked along its decided argument, and
 the calls are grouped by where the walk ends: a literal or a template as the
 walk writes it (`dump.rdb`, `{db.path}-wal`, `{--config}`,
 `{env:KVD_CONFIG}`, a stored field value the walk reads as `initializer:`)
-is one file; a field the walk cannot follow further whose accesses the
+is one file; a template writes a part whose walk established no address as
+the code wrote it there when it names a value (a field, a parameter, a
+receiver, an element), else where its walk ended, so litestream's
+`db.path + "-wal"` is `{db.path}-wal` however deep `db.path`'s walk went (it
+had read `-wal` through a failing Go return, GO § Source values,
+2026-09-30); a walk ending at a value its adapter could not read (kind
+`unknown`, C's `(struct sockaddr*)&sa`) is `Unread`: its expression stays
+its frontier for the destinations question, and the page says the address
+is not established from code (REPORT); a field the walk cannot follow further whose accesses the
 program records by that path (`server.dbfilename`, a field of a file-scope
 variable) is one file named `{server.dbfilename}`, whose values are the
 field's writes in the program, each walked from the value it stores
@@ -1669,7 +1684,14 @@ an unknown target, a role without a label, a multi-line `cwd`, or a flow step
 naming another target's member is rejected with its raw JSON and a reason into
 `rejected.jsonl`. Target refs and `cwd` are trimmed before checking. A role
 keeps an empty purpose, never filled in: the label is the decision. An invalid
-optional recipe note is dropped and recorded; its step stays. Summary, roles,
+optional recipe note is dropped and recorded; its step stays. Refs go only in
+the ref fields (the overview prompt says so, 2026-09-30): a summary or role
+label writing an advertised ref (`t7`, `a12`, `h3`, `t1.n22`, `t1.g3`) as a
+word is refused, and a purpose or note writing one is dropped and recorded
+while its role or step stays; nothing is rewritten, and a ref-shaped word the
+request does not advertise is prose. freqtrade's summary had read "main
+program (t1)"; on its saved request two of three draws of the former prompt
+wrote refs in the summary, none of three with the rule. Summary, roles,
 recipe and flow validate separately, so a wrong field type discards no
 accepted section. Equivalent target roles, including purposes differing only
 in whitespace, combine their evidence; conflicting roles leave only that
