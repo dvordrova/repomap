@@ -171,12 +171,18 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     box.appendChild(rmEl('h6','',rmT("{0}'s handler itself calls {1}, where {2} inputs are dispatched:",title,(decls[site.site]||{}).name||'',site.inputs)));
     calls(site.calls||[],box);section.appendChild(box);
   });
-  if((path.checks||[]).length){
-    // Words only the handler's own code checks: the input's sub-arguments.
-    var checks=rmEl('p','system-path-checks');checks.appendChild(rmEl('span','meta',rmT(path.values?'Its values':'Words its handler checks')+': '));
-    path.checks.forEach(function(check,i){if(i)checks.append(document.createTextNode(', '));var link=check.href||check.open?repomapMembers.sourceLink({Href:check.href,Open:check.open,Text:check.name,NoSource:check.no_source}):rmEl('span','',check.name);if(check.source)link.title=check.source;checks.appendChild(link);});
-    section.appendChild(checks);
+  // Words only the handler's own code checks (the input's sub-arguments),
+  // then its options, the inputs nested under it as a subcommand's flags are
+  // (GroupsIndex Reach.Options): names only, one to a line, each a link to
+  // where it is declared.
+  function words(list,title,cls){
+    var box=rmEl('div',cls);box.appendChild(rmEl('p','map-reading-label',rmT(title)));
+    var names=rmEl('ul','map-reading-ends');
+    list.forEach(function(word){var item=rmEl('li'),link=word.href||word.open?repomapMembers.sourceLink({Href:word.href,Open:word.open,Text:word.name,NoSource:word.no_source}):rmEl('span','',word.name);link.classList.add('map-reading-name');if(word.source)link.title=word.source;item.appendChild(link);names.appendChild(item);});
+    box.appendChild(names);return box;
   }
+  if((path.checks||[]).length)section.appendChild(words(path.checks,path.values?'Its values':'Words its handler checks','system-path-checks'));
+  if((path.options||[]).length)section.appendChild(words(path.options,'Its options','system-path-options'));
   // A model match between a table row of one program and an input of
   // another: named, never drawn.
   function peer(entry,key){

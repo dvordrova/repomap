@@ -571,7 +571,7 @@ func (builder *pageBuilder) keySymbols(targetID string, group groupindex.Group, 
 		name, anchor := builder.subjectDisplay(ref.subject)
 		// A closure is named main$3 by the compiler and by nobody else; it
 		// is not a key a reader would recognise.
-		if name == "" || anchor == nil || strings.Contains(name, "$") {
+		if name == "" || anchor == nil || builder.inline(ref.subject) {
 			continue
 		}
 		if interpretation := ref.subject.Interpretation; interpretation != nil && interpretation.Key {
@@ -2030,6 +2030,9 @@ func edgeCalls(edge pageMapEdge) []pageEdgeCall {
 
 type pageNodeSymbol struct {
 	Name string `json:"name"`
+	// Full is the whole name a tile shortens (its namespace, sharedNamespace),
+	// said on the tile's hover.
+	Full string `json:"full,omitempty"`
 	Kind string `json:"kind,omitempty"`
 	Key  bool   `json:"key,omitempty"`
 	Href string `json:"href,omitempty"`
@@ -2118,7 +2121,7 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 			continue
 		}
 		name, anchor := builder.subjectDisplay(ref.subject)
-		if name == "" || strings.Contains(name, "$") {
+		if name == "" || builder.inline(ref.subject) {
 			continue
 		}
 		// A tile is a declaration a reader can look for: a type, a function, a
@@ -2199,6 +2202,16 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		if owner, inPart := position[ref.subject.Object.OwnerID]; inPart && owner != i {
 			symbols[i].Owner = owner + 1
 			symbols[i].Name = strings.TrimPrefix(symbols[i].Name, symbols[owner].Name+".")
+		}
+	}
+	// A part whose declarations share one namespace names them without it
+	// (othello's on-press, not othello.ui.host/on-press); the whole name stays
+	// on the tile's hover (Full) and in the part's reading.
+	if namespace := sharedNamespace(symbols); namespace != "" {
+		for i := range symbols {
+			if strings.HasPrefix(symbols[i].Name, namespace) {
+				symbols[i].Full, symbols[i].Name = symbols[i].Name, strings.TrimPrefix(symbols[i].Name, namespace)
+			}
 		}
 	}
 	// A field whose type is not in this part says nothing here, and a type
@@ -2287,4 +2300,26 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 		return string(raw), ""
 	}
 	return string(raw), string(rawCalls)
+}
+
+// sharedNamespace is the namespace every declaration of a part is named in
+// ("othello.ui.host/", Clojure's ns/name), "" when they are not all so named
+// or not all in one.
+func sharedNamespace(symbols []pageNodeSymbol) string {
+	namespace := ""
+	for _, symbol := range symbols {
+		if symbol.Kind == "field" || symbol.Kind == "skip" {
+			continue
+		}
+		at := strings.LastIndex(symbol.Name, "/")
+		if at <= 0 || at == len(symbol.Name)-1 {
+			return ""
+		}
+		if namespace == "" {
+			namespace = symbol.Name[:at+1]
+		} else if symbol.Name[:at+1] != namespace {
+			return ""
+		}
+	}
+	return namespace
 }

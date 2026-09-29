@@ -338,7 +338,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			continue
 		}
 		label, anchor := builder.subjectDisplay(ref.subject)
-		if label == "" || anchor == nil || strings.Contains(label, "$") {
+		if label == "" || anchor == nil || builder.inline(ref.subject) {
 			continue
 		}
 		kind := kindOf(targetID, id)

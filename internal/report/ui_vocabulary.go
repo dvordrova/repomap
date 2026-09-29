@@ -43,6 +43,7 @@ var russianUI = map[string]string{
 	"via":                              "через",
 	"Its handlers by input":            "Обработчики по входам",
 	"Filter":                           "Фильтр",
+	"Its options":                      "Его параметры",
 	"Its values":                       "Его значения",
 	"parsed at":                        "разбирается в",
 	"Not called in {0}":                "Не вызывается в {0}",

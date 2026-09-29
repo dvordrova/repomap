@@ -300,9 +300,6 @@ type pageBuilder struct {
 	// fieldsByTarget are each program's reads and writes of record fields
 	// (page_field_uses.go), built once.
 	fieldsByTarget map[string]*pageFieldFacts
-	// homes are each program's functions and methods with their lines, the
-	// places a closure is written in (closureHome), built once.
-	homes map[string][]programindex.Object
 }
 
 // subjectKey is the only identity used by the report projection. Subject IDs
@@ -985,11 +982,6 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 			// A method reads with its type: Main.Run, not one of Runs.
 			row.Label = builder.withType(ref.programTargetID, ref.subject, row.Label)
 			owner = builder.byProgram[ref.programTargetID]
-			// A closure is named by the function it is written in.
-			if owner == section && builder.closureHome(section.programTargetID, ref.subject) != "" {
-				own := builder.stepName(section, step.SubjectID)
-				row.Label, row.In, row.Part, row.Key = own.Name, true, own.Part, own.Key
-			}
 			// A callable some registration hands over reads the same way
 			// whether the step names it or its registration.
 			if owner == section && builder.data.Facts != nil {
@@ -1014,7 +1006,7 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		path.shown = append(path.shown, step.SubjectID)
 	}
 	// A declaration of this program is read in its part.
-	if owner == section && step.SubjectID != "" && row.Anchor != nil && !row.In {
+	if owner == section && step.SubjectID != "" && row.Anchor != nil {
 		if index := builder.graphIndex(section.programTargetID); index != nil {
 			if group := builder.edgesBetweenGroups(*index).groupOf[step.SubjectID]; group != "" {
 				row.Part, row.Key = "#"+groupAnchorID(section.ID, group), declarationKey(row.Anchor)
@@ -1066,7 +1058,10 @@ func (builder *pageBuilder) builtFrom(programTargetID string) []string {
 }
 
 // subjectDisplay names one GroupsIndex subject and anchors it when it has a
-// repository location. External symbols are named by package and symbol.
+// repository location. External symbols are named by package and symbol; a
+// callable written inline in another as a reader names it (GroupsIndex
+// ObjectFacts.Inline: "ReplicateCommand.Run (inline)"), never by its number
+// (owner, 2026-09-29: no Run$1 anywhere).
 func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, *pageAnchor) {
 	switch {
 	case subject.Object != nil:
@@ -1076,7 +1071,7 @@ func (builder *pageBuilder) subjectDisplay(subject groupindex.Subject) (string, 
 				object.Location.Path, object.Location.Line, object.Location.Column,
 			)
 			anchor.Code = builder.links.rangeLink(object.Location.Path, object.Location.Line, builder.declarationEnd(*object.Location))
-			return object.Name, anchor
+			return cmp.Or(object.Inline, object.Name), anchor
 		}
 		if object.External != nil {
 			return externalSymbolName(object.External.PackagePath, object.External.Receiver, object.External.Name), nil

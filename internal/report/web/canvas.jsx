@@ -74,7 +74,7 @@ function PartSymbols({symbols,calls,width,height,grid,member}){
       event.preventDefault();event.stopPropagation();member?.choose(i,event);
     };
     const props={className:`${className} ${kind} ${first?'flow-symbol-first-method':''} ${symbol.key?'flow-symbol-key':''} ${symbol.inner&&mixed.has(i)?'flow-symbol-inner':''} ${symbol.quiet?'flow-symbol-quiet':''} ${i===chosen?'flow-symbol-chosen':''} ${tone(i)}`,
-      'data-symbol':i,onMouseEnter:()=>member?.point(i),onClick:symbol.kind==='more'?undefined:choose};
+      'data-symbol':i,title:symbol.full||undefined,onMouseEnter:()=>member?.point(i),onClick:symbol.kind==='more'?undefined:choose};
     const body=<>{symbol.name}{symbol.text&&<em>{symbol.text}</em>}</>;
     return symbol.href&&symbol.kind!=='more'?<a key={i} href={symbol.code||symbol.href} target="_blank" {...props}>{body}</a>
       :<span key={i} {...props}>{body}</span>;
@@ -347,7 +347,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const symbols=byID.get(member?.part)?.symbols||[],symbol=symbols[member?.index];
     if(!symbol)return null;
     const owner=symbol.owner?symbols[symbol.owner-1]?.name:'';
-    return {part:member.part,names:[symbol.name,owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:[symbol.href,symbol.open].filter(Boolean)};
+    return {part:member.part,names:[symbol.name,symbol.full||'',owner?`${owner}.${symbol.name}`:''].filter(Boolean),sources:[symbol.href,symbol.open].filter(Boolean)};
   }
   // Show a declaration's tile with its part: at the zoom where the part's
   // tiles are drawn and the part stands whole across the canvas, its title

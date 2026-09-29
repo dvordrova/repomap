@@ -31,8 +31,9 @@ var rmEndWords={
     imports:'imports it',includes:'includes it',implements:'implements it',reads:'reads it',writes:'writes it',sources:'sources it',integration:'connects to it'}
 };
 function rmUsesVariable(kind){return kind==='reads'||kind==='writes';}
-// A declaration's name as a tree writes it: a function with "()".
-function rmCallableName(decl){return decl.name+(decl.kind==='function'?'()':'');}
+// A declaration's name as a tree writes it: a function with "()", unless
+// its name already closes a parenthesis ("ReplicateCommand.Run (inline)").
+function rmCallableName(decl){return decl.name+(decl.kind==='function'&&!/\)$/.test(decl.name||'')?'()':'');}
 // Model text is told apart by its style alone: italic, with a hover saying
 // who wrote it; no chip opens it.
 function rmModelText(tag,cls,text,ref){

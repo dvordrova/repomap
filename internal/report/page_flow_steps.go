@@ -19,9 +19,6 @@ type pageStepName struct {
 	Key  string
 	Code string
 	Open string
-	// In is true when Name is the function a closure is written in
-	// (closureHome): the step reads "in ReplicateCommand.Run", not Run$1.
-	In bool
 }
 
 // pageStepRegistration is one place a step's callable is registered: the
@@ -84,7 +81,7 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 	// lines; the registering call's line is its registration's.
 	own := named(fact.ObjectID)
 	_, ownAnchor := builder.subjectDisplay(ref.subject)
-	row.Label, row.Part, row.Key, row.Anchor, row.In = own.Name, own.Part, own.Key, ownAnchor, own.In
+	row.Label, row.Part, row.Key, row.Anchor = own.Name, own.Part, own.Key, ownAnchor
 	var calls []int
 	for position, edge := range index.StructuralEdges {
 		if edge.Role == groupindex.EdgeRelationTarget && edge.RelationKind == programindex.RelationCalls && edge.Resolution == programindex.ResolutionExact {
@@ -141,14 +138,6 @@ func (builder *pageBuilder) registeredStep(row *pageFlowStep, fact facts.Fact, s
 		for _, site := range sites {
 			row.Registers = append(row.Registers, registration(site, fromEntries(site.OwnerID)))
 		}
-	}
-	// A closure registered by the function it is written in already says
-	// where: "in ReplicateCommand.Run", not "… ReplicateCommand.Run registers
-	// it" again.
-	if own.In {
-		row.Registers = slices.DeleteFunc(row.Registers, func(site pageStepRegistration) bool {
-			return len(site.By) == 1 && site.By[0].Name == own.Name && site.By[0].Key == own.Key
-		})
 	}
 	// Registrations by the same run of calls read once, linking the first
 	// registering call: sizeWorkspace had read "canvas registers it" four
@@ -306,7 +295,7 @@ func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, path *
 		if !registered || fact.Kind != facts.KindRegistration || fact.ObjectID != operation.SubjectID || fact.OwnerID == "" ||
 			!builder.registeredStep(&row.pageFlowStep, fact, section, &pageStepPath{runners: path.runners, alone: true}) {
 			own := builder.stepName(section, operation.SubjectID)
-			row.pageFlowStep = pageFlowStep{Label: own.Name, Anchor: anchor, Part: own.Part, Key: own.Key, In: own.In}
+			row.pageFlowStep = pageFlowStep{Label: own.Name, Anchor: anchor, Part: own.Part, Key: own.Key}
 		}
 		work = append(work, row)
 	}
@@ -314,10 +303,9 @@ func (builder *pageBuilder) ownWork(section *pageSection, flow *pageFlow, path *
 }
 
 // stepName names a declaration a Main flow step reads: its name, a method
-// with its type, read in its part, its link all of its lines. A closure is
-// named by the function it is written in (closureHome) and read there, its
-// link still its own lines: litestream's goroutine reads "in
-// ReplicateCommand.Run", not Run$1.
+// with its type, a callable written inline as a reader names it
+// ("ReplicateCommand.Run (inline)", subjectDisplay), read in its part, its
+// link all of its lines.
 func (builder *pageBuilder) stepName(section *pageSection, subjectID string) pageStepName {
 	ref, known := builder.subject(section.programTargetID, subjectID)
 	if !known {
@@ -328,62 +316,19 @@ func (builder *pageBuilder) stepName(section *pageSection, subjectID string) pag
 	if anchor != nil {
 		step.Code, step.Open = cmp.Or(anchor.Code, anchor.Href), anchor.Open
 	}
-	read := subjectID
-	if home := builder.closureHome(section.programTargetID, ref.subject); home != "" {
-		if homeRef, ok := builder.subject(section.programTargetID, home); ok {
-			homeName, homeAnchor := builder.subjectDisplay(homeRef.subject)
-			step.Name, step.In = builder.withType(section.programTargetID, homeRef.subject, homeName), true
-			read, anchor = home, homeAnchor
-		}
-	}
 	index := builder.graphIndex(section.programTargetID)
 	if index == nil || anchor == nil {
 		return step
 	}
-	if group := builder.edgesBetweenGroups(*index).groupOf[read]; group != "" {
+	if group := builder.edgesBetweenGroups(*index).groupOf[subjectID]; group != "" {
 		step.Part, step.Key = "#"+groupAnchorID(section.ID, group), declarationKey(anchor)
 	}
 	return step
 }
 
-// closureHome is, for a closure (a function its compiler names, Go's
-// Run$1, or a lambda), the innermost function or method of its program
-// whose lines hold it in its file; "" for any other declaration or a
-// closure no declaration's lines hold.
-func (builder *pageBuilder) closureHome(targetID string, subject groupindex.Subject) string {
-	object := subject.Object
-	if object == nil || object.Location == nil || !strings.Contains(object.Name, "$") && object.Kind != programindex.ObjectLambda {
-		return ""
-	}
-	if builder.homes == nil {
-		builder.homes = map[string][]programindex.Object{}
-	}
-	callables, done := builder.homes[targetID]
-	if !done {
-		if builder.data != nil && builder.data.ProgramPortfolio != nil {
-			for _, entry := range builder.data.ProgramPortfolio.Entries {
-				if entry.Target.ID != targetID {
-					continue
-				}
-				for _, candidate := range entry.Objects {
-					if (candidate.Kind == programindex.ObjectFunction || candidate.Kind == programindex.ObjectMethod) &&
-						candidate.Location != nil && candidate.EndLine > 0 && !strings.Contains(candidate.Name, "$") {
-						callables = append(callables, candidate)
-					}
-				}
-			}
-		}
-		builder.homes[targetID] = callables
-	}
-	at, home, span := object.Location, "", 0
-	for _, candidate := range callables {
-		start := candidate.Location
-		if start.Path != at.Path || start.Line > at.Line || candidate.EndLine < at.Line || start.Line == at.Line && start.Column >= at.Column {
-			continue
-		}
-		if width := candidate.EndLine - start.Line; home == "" || width < span {
-			home, span = candidate.ID, width
-		}
-	}
-	return home
+// inline says a subject is a callable its compiler numbered inside another
+// (Go's Run$1): nobody's declaration to look for, so it is no tile, no key
+// and no member of a part's reading, whatever name it is read by.
+func (builder *pageBuilder) inline(subject groupindex.Subject) bool {
+	return subject.Object != nil && strings.Contains(subject.Object.Name, "$")
 }
