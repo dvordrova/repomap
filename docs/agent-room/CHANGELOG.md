@@ -1,5 +1,58 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Orientation stage 1: evidence join, shared facts, collapsed connections, 16,384 allowance
+
+- **Why:** freqtrade's orientation had been empty since 09-28: rung 1 was
+  4,198,826 chars, 1,202,242 tokens (facts 2,229,142; connections 764,321;
+  claims 551,943; member evidence 476,920; groups 163,617), and rungs 2 and
+  3 were refused too. t1..t7 each held the same 1,464 registrations, and a
+  merged place keeps one program's object id (`t1.n1781` for t2–t4's
+  `build_helpers` module), so only t1's 299 members had evidence.
+- **a08da2e6:** members join their place by `groupindex.DeclarationKey`;
+  identical fact rows are one row with `targets`, whose ref is the first
+  target's fact id and restores each target's own id in a role, recipe or
+  flow row; one connection row per from/to/kind keeps every label and every
+  sentence that differs from its label; `max_tokens` 16,384 (117 accepted
+  exchanges: max 1,260 output tokens, median 848); request version 4,
+  prompt v8 with the current fact kinds. The member ladder is unchanged and
+  stated in READING, REPORT and EXECUTION as a known violation of "never
+  sample". Tests: a merged place owned by t2 and t3 (fails on the old
+  join), a shared fact restored per target, lossless connection rows.
+- **Runs** (default cache, one at a time; all accepted at rung 1):
+
+  | | chars before → after | input tokens before → after | output / cached / latency |
+  | --- | --- | --- | --- |
+  | freqtrade | 4,198,826 → 1,991,994 | 1,202,242 refused → 576,861 | 1,282 / 0 / 16.9 s |
+  | Redis | 1,774,903 → 1,326,648 | 520,044 → 388,526 | 873 / 1,664 / 13.4 s |
+  | litestream | 1,013,404 → 913,719 | 288,307 → 259,760 | 976 / 1,664 / 9.5 s |
+  | self-snap | 3,825,079 refused (rung 2 2,436,543) → 3,657,688 | 641,593 at rung 2 → 981,361 | 612 / 1,664 / 25.9 s |
+
+  After, by section: freqtrade facts 402,781 (1,870 rows, 1,622 shared),
+  connections 188,620 (380 rows: 3,283 labels, 182 sentences), evidence
+  672,112; Redis connections 776,888 → 124,276 (5,124 → 199 rows), evidence
+  863,403 → 1,066,246; litestream connections 124,253 → 16,141; self-snap
+  connections 246,449 → 74,787 at the same 2,207,853 of evidence.
+  Evidence rows per target: freqtrade t1 299, t2–t4 41 each, t5 14, t6 13,
+  t7 32, t9 20, t10 22 (t8 has no groups; before only t1); Redis 330 / 101 /
+  36 / 66 (was 330 / 15 / 31 / 20); litestream t5 6 (was 0).
+- **Answers:** freqtrade: summary citing 5 facts, 10 roles each with a fact,
+  7 recipe steps each on an entrypoint, an 8-step flow (6 members, all with
+  evidence, then the Worker, Wallets and liquidation prices: the lexical
+  member sample shows) and 0 rejected rows. Redis 10 steps (6 members with
+  evidence, main's entrypoint and the accept, read and reply
+  registrations), 0 rejected;
+  litestream 6 of 6 with evidence, 1 ignored ref; self-snap 7 steps (1
+  member, 6 facts), 0 rejected. Live glossary requests: freqtrade 18,
+  Redis 4, litestream 14, self-snap 34.
+- **Exits:** freqtrade's first run filled the disk writing its 1.05 GB
+  report.json (exit 1, the macOS swap grew 3 GB); after `go clean -cache`
+  its rerun exited 0 in 253 s with the orientation from cache. Redis exit 0
+  in 29 s, litestream 68 s, self-snap 103 s. Renders into
+  `redis-r2/run/latest-*.html` are byte-identical to report.html; headless
+  walks show each summary, every role and recipe command, and the Main flow
+  (freqtrade 8 of 8 explanations); smoke walks without page errors.
+- **Verified:** `make test`, `make vet` (package parallelism 2).
+
 ## 2026-09-29 — Call rows are names: no code marks, library calls on one line
 
 - **Why:** benchmark v5 (R1, R3): with several call sites a flow row's
