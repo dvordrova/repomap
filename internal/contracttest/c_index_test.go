@@ -1,6 +1,7 @@
 package contracttest
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -345,6 +346,42 @@ func TestCFixtureIndexesTheServer(t *testing.T) {
 		}
 		if symbol := cExternal(t, dump, relation.ToIDs); strings.HasPrefix(symbol.Name, "__builtin_") && symbol.PackagePath != "builtin" {
 			t.Fatalf("the compiler builtin %s is in %q", symbol.Name, symbol.PackagePath)
+		}
+	}
+
+	// A field's declared type names where its repository type is declared,
+	// through pointers and arrays (the report links the type); a type of
+	// the platform or a scalar names none.
+	fieldTypes := func(owner, field string) []string {
+		record := cObject(t, index, programindex.ObjectType, owner, "kvd.h")
+		for _, object := range index.Objects {
+			if object.OwnerID == record.ID && object.Name == field {
+				var at []string
+				for _, location := range object.Types {
+					at = append(at, fmt.Sprintf("%s:%d", location.Path, location.Line))
+				}
+				return at
+			}
+		}
+		t.Fatalf("%s has no field %s", owner, field)
+		return nil
+	}
+	strbufLine, _ := fixture.at(t, "strbuf.h", "} strbuf;", "")
+	strbufType := cObject(t, index, programindex.ObjectType, "strbuf", "strbuf.h")
+	loopType := cObject(t, index, programindex.ObjectType, "loop", "loop.h")
+	entryType := cObject(t, index, programindex.ObjectType, "kvEntry", "kvd.h")
+	for _, field := range []struct {
+		owner, name string
+		want        []string
+	}{
+		{"kvClient", "query", []string{fmt.Sprintf("strbuf.h:%d", strbufType.Location.Line)}},
+		{"kvServer", "el", []string{fmt.Sprintf("loop.h:%d", loopType.Location.Line)}},
+		{"kvServer", "db", []string{fmt.Sprintf("kvd.h:%d", entryType.Location.Line)}},
+		{"kvClient", "fd", nil},
+		{"kvServer", "saveChild", nil},
+	} {
+		if got := fieldTypes(field.owner, field.name); !slices.Equal(got, field.want) {
+			t.Errorf("%s.%s names its type at %v, want %v (strbuf closes at line %d)", field.owner, field.name, got, field.want, strbufLine)
 		}
 	}
 

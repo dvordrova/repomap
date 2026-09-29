@@ -171,3 +171,30 @@ func (builder *pageBuilder) runnersOf(programTargetID, objectID string) []string
 	}
 	return runners
 }
+
+// fieldTypes are where the repository types a field's declared type names
+// are declared (ProgramIndex Object.Types), from the program's index.
+func (builder *pageBuilder) fieldTypes(programTargetID, objectID string) []programindex.Location {
+	if builder.data == nil || builder.data.ProgramPortfolio == nil {
+		return nil
+	}
+	if builder.typesOf == nil {
+		builder.typesOf = map[string]map[string][]programindex.Location{}
+	}
+	byObject, done := builder.typesOf[programTargetID]
+	if !done {
+		byObject = map[string][]programindex.Location{}
+		for _, entry := range builder.data.ProgramPortfolio.Entries {
+			if entry.Target.ID != programTargetID {
+				continue
+			}
+			for _, object := range entry.Objects {
+				if len(object.Types) > 0 {
+					byObject[object.ID] = object.Types
+				}
+			}
+		}
+		builder.typesOf[programTargetID] = byObject
+	}
+	return byObject[objectID]
+}

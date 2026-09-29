@@ -285,7 +285,10 @@ function rmDeclView(ctx,node,data,concept){
     var grid=rmEl('dl','map-reading-field-grid');
     decl.fields.forEach(function(field){
       var term=rmEl('dt');term.appendChild(rmDeclName({href:field.href,open:field.open,name:field.name},field.name,null,field.at));
-      grid.append(term,rmEl('dd','',field.type||''));usesRow(grid,uses[field.name]);
+      // A field's type reads that type when it is the repository's.
+      var typeDecl=field.type_decl===undefined?null:data.decls[field.type_decl],typed=rmEl('dd');
+      if(typeDecl)typed.appendChild(rmDeclName(typeDecl,field.type||typeDecl.name,ctx.goDecl(typeDecl),typeDecl.at));else typed.textContent=field.type||'';
+      grid.append(term,typed);usesRow(grid,uses[field.name]);
     });
     fields.appendChild(grid);view.appendChild(fields);
   }else if(decl.kind==='variable'&&(own.fields||[]).length){

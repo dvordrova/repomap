@@ -97,6 +97,9 @@ type pageReadingField struct {
 	Open     string `json:"open,omitempty"`
 	NoSource bool   `json:"no_source,omitempty"`
 	At       string `json:"at,omitempty"`
+	// TypeDecl is the repository type its declared type names, in the
+	// reading's declarations (`listNode *head` names listNode).
+	TypeDecl *int `json:"type_decl,omitempty"`
 }
 
 // pageReadingKind is the part's declarations of one kind, by name.
@@ -330,6 +333,11 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			variables[id] = position
 		}
 	}
+	type typedField struct {
+		owner, field int
+		id           string
+	}
+	var typedFields []typedField
 	for _, id := range fields {
 		ref, _ := builder.subject(targetID, id)
 		owner, inPart := types[ref.subject.Object.OwnerID]
@@ -341,6 +349,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			Href: anchor.Href, Open: anchor.Open, NoSource: anchor.NoSource, At: anchor.Text}
 		reading.Decls[owner].Fields = append(reading.Decls[owner].Fields, field)
 		fieldsOf[ref.subject.Object.OwnerID] = append(fieldsOf[ref.subject.Object.OwnerID], id)
+		typedFields = append(typedFields, typedField{owner: owner, field: len(reading.Decls[owner].Fields) - 1, id: id})
 	}
 	slices.Sort(reading.Files)
 	for _, kind := range []string{"function", "type", "variable"} {
@@ -634,6 +643,17 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			subjectAt[position] = id
 		}
 		return position
+	}
+	// A field's type links to that type when it is the repository's.
+	for _, typed := range typedFields {
+		for _, at := range builder.fieldTypes(targetID, typed.id) {
+			if typeID := builder.subjectAt[subjectLocationKey(targetID, at.Path, at.Line)]; typeID != "" && kindOf(targetID, typeID) == "type" {
+				if position := declareSubject(typeID); position >= 0 {
+					reading.Decls[typed.owner].Fields[typed.field].TypeDecl = &position
+					break
+				}
+			}
+		}
 	}
 	queue := append([]string(nil), ids...)
 	flowed := map[string]bool{}

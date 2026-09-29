@@ -292,6 +292,8 @@ type pageBuilder struct {
 	// macros are each program's calls a macro's expansion makes, by
 	// relation ID (page_flow.go), built once.
 	macros map[string]map[string]pageMacroCall
+	// typesOf are each program's field types by object ID (fieldTypes).
+	typesOf map[string]map[string][]programindex.Location
 	// declarationEnds is the last line of each declaration by its place
 	// (path, line, column), from every program's index, built once.
 	declarationEnds map[string]int

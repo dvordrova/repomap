@@ -157,7 +157,9 @@ assert.equal(view.children[1].textContent,'Not called in redis-benchmark');
 func TestAFieldsReadingNamesItsWritersAndReaders(t *testing.T) {
 	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
 	runSystemJS(t, readingViewElements+code+`
-data.decls.push(decl('redisClient','type','#own',{fields:[{name:'fd',type:'int',href:'h#fd',at:'server.c:91'},{name:'argc',type:'int',href:'h#argc',at:'server.c:92'}]}));
+data.decls.push(decl('redisDb','type','#core'));
+const db=data.decls.length-1;
+data.decls.push(decl('redisClient','type','#own',{fields:[{name:'fd',type:'int',href:'h#fd',at:'server.c:91'},{name:'argc',type:'int',href:'h#argc',at:'server.c:92'},{name:'db',type:'redisDb *',href:'h#db',at:'server.c:93',type_decl:db}]}));
 const client=data.decls.length-1;
 data.own.push({decl:client,fields:[{name:'fd',written:[{part:'#own',title:'Server lifecycle and cron',decls:[0]}],read:[{part:'#own',title:'Server lifecycle and cron',decls:[1]},{part:'#main',title:'main',decls:[3]}]}]});
 data.own.push({decl:6,fields:[{name:'shared.crlf',written:[{part:'#own',title:'Server lifecycle and cron',decls:[1]}]}]});
@@ -165,7 +167,10 @@ data.own[0].writes=[{path:'redisClient.fd',decl:client},{path:'server.hz'}];
 const type=rmDeclView(ctx,nodes['#own'],data,{name:'redisClient',source:{Href:'h#redisClient',Text:'server.c:90'}});
 const grid=type.all(c=>c.has('map-reading-field-grid'))[0];
 assert.deepEqual(grid.children.map(c=>c.className+': '+c.textContent),[
- ': fd',': int','map-field-uses-row: Written byServer lifecycle and cronserverCron()Read byServer lifecycle and croninitServer()mainmain()',': argc',': int']);
+ ': fd',': int','map-field-uses-row: Written byServer lifecycle and cronserverCron()Read byServer lifecycle and croninitServer()mainmain()',': argc',': int',': db',': redisDb *']);
+// A field's repository type reads that type.
+const typeReads=read.length;grid.children.at(-1).all(c=>c.has('map-reading-name'))[0].listeners.click({button:0,preventDefault(){},stopPropagation(){}});
+assert.deepEqual(read.slice(typeReads),['redisDb'],'the field type links to its type');
 assert.ok(!/:\d/.test(grid.textContent),'no line numbers');
 const shared=rmDeclView(ctx,nodes['#own'],data,{name:'shared',source:{Href:'h#shared',Text:'server.c:5'}});
 assert.equal(shared.all(c=>c.has('map-reading-fields'))[0].textContent,'1 fieldsshared.crlfWritten byServer lifecycle and croninitServer()');

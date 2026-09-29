@@ -120,7 +120,10 @@ Objects are a module per file, functions at their definitions (prototypes are
 declaration witnesses; `static` is internal visibility), a type per struct,
 union and enum with fields and enum constants contained by it, and file-scope
 variables. Signatures are clang's native text; parameter and result type ids
-follow pointers and qualifiers to repository types. `main` is the callable
+follow pointers and qualifiers to repository types, and a field's `types`
+name where the repository type its declared type names is declared
+(`strbuf query` names strbuf.h's strbuf; a scalar or a platform type names
+none), as Go's `DBs []*DBConfig` names DBConfig. `main` is the callable
 seed.
 
 - A direct call is `calls`, exact after resolving names across units. A call

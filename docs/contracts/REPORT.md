@@ -912,8 +912,9 @@ first; its name as the one link into its code with what its tile writes
 after it, then its file alone ("redis.c") and, when its author wrote one,
 the comment as written, standing in the reading and marked as the
 author's claim; the model's line when there is one; a type's every
-field with its type and the functions of its part that return or take
-it; a function's flow; what else it relates to ("Calls", "Uses"), by
+field with its type, a link reading that type when it is the repository's
+(ProgramIndex `Object.Types`: `listNode *head` reads listNode), and the
+functions of its part that return or take it; a function's flow; what else it relates to ("Calls", "Uses"), by
 part; and the variables it uses ("Uses variables"), each with a hover
 naming the part holding it.
 

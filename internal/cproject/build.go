@@ -401,6 +401,22 @@ func (b *builder) defineTypes() {
 			}
 		}
 	}
+	// A field's declared type names a repository type through pointers,
+	// arrays and qualifiers (`listNode *head` names listNode): where that
+	// type is declared, as Go's `DBs []*DBConfig` names DBConfig.
+	for _, scope := range b.scopes {
+		for _, info := range scope.byID {
+			for _, field := range info.fields {
+				object := b.objects[field.ref]
+				if field.ref == "" || object == nil || object.Types != nil || field.node.Kind != "FieldDecl" {
+					continue
+				}
+				if typed := b.objects[scope.typeRef(field.node.Type)]; typed != nil && typed.Location != nil {
+					object.Types = []p.Location{*typed.Location}
+				}
+			}
+		}
+	}
 }
 
 func isHeader(file string) bool { return strings.HasSuffix(file, ".h") }
