@@ -13,23 +13,38 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas/table"
 )
 
-// destinationKey is what an outgoing row reaches as the code knows it: its
-// targets and the places the walks of its reaching call's value end
-// (destinationEnd), each once and sorted. Rows with one key reach one
-// destination and are named by one answer. A row with no reaching call at
-// its site, or whose walk read nothing, is its own destination: the walk of
-// another call there (the fmt.Sprintf formatting a query's text) says
-// nothing about what the row reaches.
-func destinationKey(state *boundaryState) string {
-	if !state.reaching || len(state.uses) == 0 {
-		return "row\x00" + state.place.ID
+// destinationMember is one outgoing row as one of its programs makes it: a
+// row written in code several programs share (Redis's anet.c connect) is
+// each program's own call, reached from that program's callers and walked
+// to that program's values, so each program's destination is named by its
+// own (the server's connect reaches its master, the clients' the server).
+type destinationMember struct {
+	state  *boundaryState
+	target string
+}
+
+// destinationKey is what an outgoing row reaches in one program as the
+// code knows it: the program and the places the walks of its reaching
+// call's value end there (destinationEnd), each once and sorted. Rows with
+// one key reach one destination and are named by one answer. A row with no
+// reaching call at its site, or whose walk read nothing in the program, is
+// its own destination: the walk of another call there (the fmt.Sprintf
+// formatting a query's text) says nothing about what the row reaches.
+func destinationKey(member destinationMember) string {
+	state := member.state
+	var ends []string
+	if state.reaching {
+		for _, use := range state.uses {
+			if slices.Contains(use.TargetIDs, member.target) {
+				ends = append(ends, destinationEnd(use))
+			}
+		}
 	}
-	ends := make([]string, 0, len(state.uses))
-	for _, use := range state.uses {
-		ends = append(ends, destinationEnd(use))
+	if len(ends) == 0 {
+		return "row\x00" + state.place.ID + "\x00" + member.target
 	}
 	slices.Sort(ends)
-	return strings.Join(rowTargets(state), ",") + "\x02" + strings.Join(slices.Compact(ends), "\x01")
+	return member.target + "\x02" + strings.Join(slices.Compact(ends), "\x01")
 }
 
 // destinationEnd is where one walk ends. An absolute URL is its scheme and
@@ -107,57 +122,67 @@ func packageSystem(state *boundaryState, catalog []lines.Destination) string {
 	return ""
 }
 
-// nameDestinations gives every outgoing row its destination. A row whose
-// package atlas_systems named takes that name; rows the code knows reach
-// one destination (destinationKey) share it, so a destination naming
-// exactly one system gives it to its rows without a package too. One
-// naming none is asked once (lines.DestinationNames). One whose packages
-// name several systems is shown by the facts not to be one destination:
-// each row keeps its package's, and each row without one is asked alone.
-// A refused answer names none.
+// nameDestinations gives every outgoing row its destination in each of its
+// programs. A row whose package atlas_systems named takes that name; rows
+// the code knows reach one destination in one program (destinationKey)
+// share it, so a destination naming exactly one system gives it to its rows
+// without a package too. One naming none is asked once
+// (lines.DestinationNames). One whose packages name several systems is
+// shown by the facts not to be one destination: each row keeps its
+// package's, and each row without one is asked alone. A refused answer
+// names none.
 func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, packages targetPackages, names map[string]string, owners map[string]atlas.Place) error {
-	byKey := make(map[string][]*boundaryState)
+	byKey := make(map[string][]destinationMember)
 	var keys []string
 	for _, state := range states {
-		key := destinationKey(state)
-		if _, known := byKey[key]; !known {
-			keys = append(keys, key)
+		for _, target := range rowTargets(state) {
+			member := destinationMember{state: state, target: target}
+			key := destinationKey(member)
+			if _, known := byKey[key]; !known {
+				keys = append(keys, key)
+			}
+			byKey[key] = append(byKey[key], member)
 		}
-		byKey[key] = append(byKey[key], state)
 	}
 	sort.Strings(keys)
 	type asked struct {
 		key     string
-		states  []*boundaryState
+		members []destinationMember
 		catalog []lines.Destination
+	}
+	name := func(member destinationMember, system string) {
+		if member.state.destinations == nil {
+			member.state.destinations = make(map[string]string)
+		}
+		member.state.destinations[member.target] = system
 	}
 	var questions []asked
 	for _, key := range keys {
 		group := byKey[key]
-		catalog := packages.catalog(group[0], names)
-		var unnamed []*boundaryState
+		catalog := packages.catalog(group[0].target, names)
+		var unnamed []destinationMember
 		systems := make(map[string]string)
-		for _, state := range group {
-			if system := packageSystem(state, catalog); system != "" {
-				state.destination = system
+		for _, member := range group {
+			if system := packageSystem(member.state, catalog); system != "" {
+				name(member, system)
 				systems[strings.ToLower(system)] = system
 			} else {
-				unnamed = append(unnamed, state)
+				unnamed = append(unnamed, member)
 			}
 		}
 		switch {
 		case len(unnamed) == 0:
 		case len(systems) == 1:
 			for _, system := range systems {
-				for _, state := range unnamed {
-					state.destination = system
+				for _, member := range unnamed {
+					name(member, system)
 				}
 			}
 		case len(systems) == 0:
-			questions = append(questions, asked{key: key, states: unnamed, catalog: catalog})
+			questions = append(questions, asked{key: key, members: unnamed, catalog: catalog})
 		default:
-			for _, state := range unnamed {
-				questions = append(questions, asked{key: "row\x00" + state.place.ID, states: []*boundaryState{state}, catalog: catalog})
+			for _, member := range unnamed {
+				questions = append(questions, asked{key: "row\x00" + member.state.place.ID + "\x00" + member.target, members: []destinationMember{member}, catalog: catalog})
 			}
 		}
 	}
@@ -169,24 +194,30 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 	handlers := r.entryHandlers()
 	subjects := make(map[string]rowSubject, len(questions))
 	readable := strings.NewReplacer("\x00", " ", "\x01", " | ", "\x02", " · ")
+	programs := make(map[string]string, len(r.opts.Targets))
+	for _, target := range r.opts.Targets {
+		programs[target.ID] = target.Name
+	}
 	byCatalog := make(map[string]int)
 	var groups rowGroups
 	var members [][]asked
 	for i, question := range questions {
 		id := fmt.Sprintf("g%d", i+1)
-		first := question.states[0].place
+		first := question.members[0].state.place
 		subjects[id] = rowSubject{id: "destination:" + readable.Replace(question.key), path: first.Path, line: first.LineNo}
-		// Destinations offered one catalogue share windows; the rows of
-		// another catalogue never see it.
+		// One program's destinations offered one catalogue share windows,
+		// which name the program; another program's, or another
+		// catalogue's, never see them.
+		program := question.members[0].target
 		raw, _ := json.Marshal(question.catalog)
-		at, known := byCatalog[string(raw)]
+		at, known := byCatalog[program+"\x00"+string(raw)]
 		if !known {
 			at = len(groups)
-			byCatalog[string(raw)] = at
-			groups = append(groups, rowGroup{shared: lines.DestinationFields(question.catalog)})
+			byCatalog[program+"\x00"+string(raw)] = at
+			groups = append(groups, rowGroup{shared: append(lines.DestinationFields(question.catalog), lines.DestinationProgram(programs[program]))})
 			members = append(members, nil)
 		}
-		groups[at].rows = append(groups[at].rows, r.destinationRow(id, question.states, owners, files, handlers))
+		groups[at].rows = append(groups[at].rows, r.destinationRow(id, question.members, owners, files, handlers))
 		members[at] = append(members[at], question)
 	}
 	// The answers come back in the groups' row order.
@@ -194,7 +225,11 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 	for _, group := range members {
 		ordered = append(ordered, group...)
 	}
-	r.opts.Stage(lines.StageBoundaries, fmt.Sprintf("naming %d destinations of %d outgoing calls", len(questions), len(states)))
+	outgoing := 0
+	for _, state := range states {
+		outgoing += len(rowTargets(state))
+	}
+	r.opts.Stage(lines.StageBoundaries, fmt.Sprintf("naming %d destinations of %d outgoing calls", len(questions), outgoing))
 	previous := r.rowSubjects
 	r.rowSubjects = subjects
 	defer func() { r.rowSubjects = previous }()
@@ -203,23 +238,24 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 		return err
 	}
 	for i, question := range ordered {
-		name := "not decided"
+		chosen := "not decided"
 		if answer := answers[i].answer; answer != nil {
-			name = destinationChoice(def, question.catalog, answer["destination"])
-			for _, state := range question.states {
-				state.destination = name
+			chosen = destinationChoice(def, question.catalog, answer["destination"])
+			for _, member := range question.members {
+				name(member, chosen)
 			}
 		}
-		fmt.Fprintf(&r.tables, "%s: destination %s · %d calls · %s\n", lines.StageBoundaries, readable.Replace(question.key), len(question.states), name)
+		fmt.Fprintf(&r.tables, "%s: destination %s · %d calls · %s\n", lines.StageBoundaries, readable.Replace(question.key), len(question.members), chosen)
 	}
 	fmt.Fprintln(&r.tables)
 	return nil
 }
 
-// destinationRow is one destination's item: where its value ends, its
-// calls as written, the functions making them with the calls beside them,
-// and the functions its programs reach them from, by name, each once.
-func (r *reader) destinationRow(id string, states []*boundaryState, owners map[string]atlas.Place, files map[string]*lines.CallFile, handlers map[string]bool) table.Row {
+// destinationRow is one destination's item: where its value ends in its
+// program, its calls as written, the functions making them with the calls
+// beside them, and the functions its program reaches them from, by name,
+// each once.
+func (r *reader) destinationRow(id string, members []destinationMember, owners map[string]atlas.Place, files map[string]*lines.CallFile, handlers map[string]bool) table.Row {
 	var ends []lines.DestinationEnd
 	var calls []lines.DestinationCall
 	var reached []string
@@ -228,14 +264,19 @@ func (r *reader) destinationRow(id string, states []*boundaryState, owners map[s
 	var declarations []atlas.Place
 	callers := make(map[string]*lines.DestinationCaller)
 	var order []string
-	for _, state := range states {
+	for _, member := range members {
+		state := member.state
 		site := sourceSite{state.place.Path, state.place.LineNo, state.place.Column}
 		own[site] = true
 		// The walk of a call that reaches nothing says nothing of where the
-		// row goes.
+		// row goes, and a walk another program makes says nothing of where
+		// it goes in this one.
 		for _, use := range state.uses {
 			if !state.reaching {
 				break
+			}
+			if !slices.Contains(use.TargetIDs, member.target) {
+				continue
 			}
 			end := lines.DestinationEnd{Address: use.Address}
 			if use.Address == "" {
@@ -275,7 +316,7 @@ func (r *reader) destinationRow(id string, states []*boundaryState, owners map[s
 			order = append(order, key)
 		}
 		rowLines[key] = append(rowLines[key], state.place.LineNo)
-		reached = append(reached, r.reachedFrom(state, owner, handlers)...)
+		reached = append(reached, r.reachedFrom([]string{member.target}, owner, handlers)...)
 	}
 	for _, owner := range declarations {
 		caller := callers[owner.ID]

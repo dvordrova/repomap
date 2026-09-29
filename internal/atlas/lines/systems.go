@@ -118,6 +118,14 @@ func DestinationFields(catalog []Destination) []table.Field {
 	return []table.Field{{Name: "destination_catalog", Value: catalog}, {Name: "destination_options", Value: refs}}
 }
 
+// DestinationProgram is the program whose calls a window of destinations
+// names, by its name: a destination is one program's, and the calls a
+// server makes to its master are named in its own window, never beside
+// its clients' identical calls to the server.
+func DestinationProgram(name string) table.Field {
+	return table.Field{Name: "program", Value: name}
+}
+
 // DestinationValue is the system a chosen ref names; empty when the
 // catalogue has no such ref.
 func DestinationValue(catalog []Destination, ref string) string {

@@ -144,13 +144,25 @@ type destinationPath struct {
 	choices map[string]int
 }
 
+// A walk never passes through test code: a test is testing, not the
+// program, so a value a test hands the program's code (freqtrade's
+// tests/rpc/test_rpc_webhook.py building a Webhook with a URL) is not where
+// the program's call goes. Once the tests became freqtrade's own files, its
+// webhook calls walked only into them, and the page dropped the calls
+// whose every walk ran through a test.
 func NewDestinationReader(places []atlas.Place, choices DestinationChoices) *DestinationReader {
 	d := &DestinationReader{places: make(map[string]atlas.Place), callers: make(map[string][]destinationCall), callSites: make(map[sourcevalue.Anchor][]destinationCall), owners: make(map[sourcevalue.Anchor][]atlas.Place), ownerLines: make(map[sourcevalue.Anchor][]atlas.Place), parameterCalls: make(map[sourcevalue.Anchor][]destinationCall), environment: make(map[sourcevalue.Anchor]string), choices: choices}
+	tests := make(map[string]bool)
+	for _, place := range places {
+		if place.Kind == atlas.PlaceFile && place.File != nil && place.File.Test {
+			tests[place.ID] = true
+		}
+	}
 	for _, place := range places {
 		if b := place.Boundary; b != nil && b.Source == "fact" && b.GivenKind == atlas.BoundaryConfig && len(b.Values) > 0 {
 			d.environment[sourcevalue.Anchor{Path: place.Path, Line: place.LineNo, Column: place.Column}] = b.Values[0]
 		}
-		if place.Symbol == nil {
+		if place.Symbol == nil || tests[place.Parent] {
 			continue
 		}
 		d.places[place.ID] = place

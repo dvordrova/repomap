@@ -41,9 +41,7 @@ func TestAnOutgoingCallIsNamedWithWhereItsProgramsReachItFrom(t *testing.T) {
 	for _, place := range places {
 		r.places[place.ID] = place
 	}
-	row := func(targets ...string) *boundaryState {
-		return &boundaryState{place: atlas.Place{Path: "net.c", TargetIDs: targets}}
-	}
+	row := func(targets ...string) []string { return targets }
 	if got := r.reachedFrom(row("server"), r.places["generic"], nil); !slices.Equal(got, []string{"syncWithMaster"}) {
 		t.Fatalf("the server reaches connect from %v", got)
 	}

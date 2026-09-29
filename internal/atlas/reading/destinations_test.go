@@ -116,6 +116,34 @@ func TestDestinationChainsKeepCallArgumentsTogether(t *testing.T) {
 	}
 }
 
+// A walk never passes through test code: the URL a test hands the
+// program's sender is not where the program's call goes, so the walk from
+// the sender reaches only the program's own caller. freqtrade's webhook
+// calls, once its tests were its own files, walked only into
+// tests/rpc/test_rpc_webhook.py.
+func TestDestinationWalksPassNoTestCaller(t *testing.T) {
+	anchor := &sourcevalue.Anchor{Path: "webhook.py", Line: 10, Column: 1}
+	literal := func(text string) *sourcevalue.Value { return &sourcevalue.Value{Kind: "literal", Text: text} }
+	sender := atlas.Place{ID: "send", Path: "webhook.py", LineNo: 10, Parent: "file:webhook.py", TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "send", Column: 1}}}
+	call := atlas.SymbolCall{Name: "requests.post", Line: 11, Column: 5, API: &atlas.CallAPI{Package: "requests", Name: "post"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "parameter", Position: 1, Owner: anchor}}}}
+	sender.Symbol.Calls = []atlas.SymbolCall{call}
+	caller := func(id, path string, url string) atlas.Place {
+		return atlas.Place{ID: id, Path: path, LineNo: 1, Parent: "file:" + path, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: id},
+			Calls: []atlas.SymbolCall{{Name: "send", Line: 2, Column: 3, CalleeIDs: []string{"send"}, SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: literal(url)}}}}}}
+	}
+	places := []atlas.Place{
+		{ID: "file:webhook.py", Kind: atlas.PlaceFile, Path: "webhook.py", File: &atlas.FileFacts{}},
+		{ID: "file:main.py", Kind: atlas.PlaceFile, Path: "main.py", File: &atlas.FileFacts{}},
+		{ID: "file:tests/test_webhook.py", Kind: atlas.PlaceFile, Path: "tests/test_webhook.py", File: &atlas.FileFacts{Test: true}},
+		sender, caller("main", "main.py", "https://hooks.example/notify"), caller("test_send", "tests/test_webhook.py", "https://test.example"),
+	}
+	uses := NewDestinationReader(places, argumentsAt("requests.post", ArgumentChoice{Position: 1})).Read(sender, call)
+	if len(uses) != 1 || uses[0].Address != "https://hooks.example/notify" {
+		t.Fatalf("the walk passed a test: %+v", uses)
+	}
+}
+
 func TestDestinationStopsAtUnknownFactoryInsteadOfSelectingNearbyLiteral(t *testing.T) {
 	place := atlas.Place{ID: "sender", Path: "pipeline.go", LineNo: 10, TargetIDs: []string{"server"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "pipeline.post"}}}
 	call := atlas.SymbolCall{Name: "http.RoundTripper.RoundTrip", Line: 30, Column: 5, API: &atlas.CallAPI{Package: "net/http", Name: "RoundTrip"}, SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "pipeline.go", Line: 20, Column: 5}}}}}
@@ -356,7 +384,7 @@ func TestADestinationIsNamedOnceForAllItsCalls(t *testing.T) {
 	}
 	got := make(map[string]string)
 	for _, state := range r.boundaries {
-		got[fmt.Sprintf("%s:%d", state.place.Path, state.place.LineNo)] = state.destination
+		got[fmt.Sprintf("%s:%d", state.place.Path, state.place.LineNo)] = state.destinationOf(state.place.TargetIDs[0])
 	}
 	want := map[string]string{
 		"abs/replica_client.go:303": "Azure Blob Storage", "abs/all.go:40": "Azure Blob Storage", "abs/all.go:41": "Amazon S3", "gateway/send.go:7": "Example gateway",
@@ -375,23 +403,29 @@ func TestADestinationIsNamedOnceForAllItsCalls(t *testing.T) {
 	}
 }
 
-// The walk's ends are a destination's identity, within the row's targets:
-// an absolute URL by its scheme and host as written, a setting's value by
-// the setting, any other address or an unresolved value by where the walk
-// stopped. A row the walk never read, or whose site holds no reaching
-// call, is its own.
+// The walk's ends are a destination's identity, within one program: an
+// absolute URL by its scheme and host as written, a setting's value by the
+// setting, any other address or an unresolved value by where the walk
+// stopped. A row the walk never read, or whose site holds no reaching call,
+// is its own. A row written in code two programs share is each program's
+// own destination, walked to that program's values: Redis's anet.c connect
+// is reached from the server's master host and the clients' server host.
 func TestDestinationKeyIsWhereTheWalksEnd(t *testing.T) {
 	use := func(address, frontier string, steps ...atlas.DestinationStep) atlas.DestinationUse {
-		return atlas.DestinationUse{Address: address, Frontier: frontier, Steps: steps}
+		return atlas.DestinationUse{Address: address, Frontier: frontier, Steps: steps, TargetIDs: []string{"app"}}
 	}
 	state := func(id string, uses ...atlas.DestinationUse) *boundaryState {
 		return &boundaryState{place: atlas.Place{ID: id, TargetIDs: []string{"app"}}, uses: uses, reaching: true}
+	}
+	key := func(state *boundaryState) string {
+		return destinationKey(destinationMember{state: state, target: state.place.TargetIDs[0]})
 	}
 	stop := func(path string, line int) atlas.DestinationStep {
 		return atlas.DestinationStep{Path: path, Line: line, Column: 3}
 	}
 	other := state("b", use("http://localhost/info", ""))
 	other.place.TargetIDs = []string{"tool"}
+	other.uses[0].TargetIDs = []string{"tool"}
 	formatted := state("b", use("", "?.PageSize", stop("main.go", 55)))
 	formatted.reaching = false
 	for _, same := range [][2]*boundaryState{
@@ -403,8 +437,8 @@ func TestDestinationKeyIsWhereTheWalksEnd(t *testing.T) {
 		{state("a", use("/health", "", stop("a.go", 4))), state("b", use("/health", "", stop("a.go", 4)))},
 		{state("a", use("x.db", "", stop("a.go", 4)), use("x.db", "", stop("a.go", 4))), state("b", use("x.db", "", stop("a.go", 4)))},
 	} {
-		if destinationKey(same[0]) != destinationKey(same[1]) {
-			t.Fatalf("one destination split: %q / %q", destinationKey(same[0]), destinationKey(same[1]))
+		if key(same[0]) != key(same[1]) {
+			t.Fatalf("one destination split: %q / %q", key(same[0]), key(same[1]))
 		}
 	}
 	for _, apart := range [][2]*boundaryState{
@@ -417,8 +451,17 @@ func TestDestinationKeyIsWhereTheWalksEnd(t *testing.T) {
 		{state("a"), state("b")},
 		{state("a", use("http://x.example", "")), state("b", use("http://x.example", ""), use("http://y.example", ""))},
 	} {
-		if destinationKey(apart[0]) == destinationKey(apart[1]) {
-			t.Fatalf("two destinations joined: %q", destinationKey(apart[0]))
+		if key(apart[0]) == key(apart[1]) {
+			t.Fatalf("two destinations joined: %q", key(apart[0]))
 		}
+	}
+	// One shared row, two programs, each walked to its own value.
+	shared := &boundaryState{place: atlas.Place{ID: "connect", TargetIDs: []string{"server", "client"}}, reaching: true, uses: []atlas.DestinationUse{
+		{Frontier: "server.masterhost", Steps: []atlas.DestinationStep{stop("server.c", 7)}, TargetIDs: []string{"server"}},
+		{Frontier: "config.hostip", Steps: []atlas.DestinationStep{stop("cli.c", 9)}, TargetIDs: []string{"client"}},
+	}}
+	server, client := destinationKey(destinationMember{shared, "server"}), destinationKey(destinationMember{shared, "client"})
+	if server == client || !strings.Contains(server, "masterhost") || strings.Contains(server, "hostip") || !strings.Contains(client, "hostip") {
+		t.Fatalf("the shared row's destinations are %q and %q", server, client)
 	}
 }

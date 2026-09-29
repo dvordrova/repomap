@@ -5,8 +5,9 @@ Around the program's own parts the map shows its outside systems: the
 servers it sends requests to, its databases, its message queues, the
 storage and remote services it uses. Each system is one box.
 
-Each row is one destination. The code followed the value that names what
-each of its calls reaches, and all of them reach the same place: the same
+Each row is one destination of one program, `context.program`, which
+makes its calls. The code followed the value that names what each of its
+calls reaches, and all of them reach the same place: the same
 server (one scheme and host, whatever the path), the same setting, or the
 same value where the code stopped following it. Name that place once, for
 all of its calls.
@@ -26,14 +27,18 @@ all of its calls.
   (`handed_over`); a function handing one over says which and to which
   call (`hands_over`).
 - `reached_from`: the functions of the program that reach the calls from
-  outside the files they are written in.
+  outside the files they are written in. They say what the other end is to
+  this program: the same call made from a client's connect and from a
+  replica's sync reaches a server in one program and a primary in another.
 
 Fill `destination` with the outside system these calls reach, the service
 or program at the other end as a newcomer would name it.
 `context.destination_catalog` lists, as `d*` refs, the systems the
 program's outside packages reach, each with its `packages`. Choose the
 entry that is the system these calls reach. When no entry is, write
-`other: ` and that system's short name: name it by what it is to this
-program, such as the server a client sends its commands to or the primary
-a replica copies from. A package, a protocol, a host, a URL, a file path
-or a key is not a system's name.
+`other: ` and that system's short name, written as a proper name: a
+capital first letter and no article. Name it by what it is to this
+program: a vendor's service by its product name, any other system by its
+role for this program, such as the server a client sends its commands to
+or the primary a replica copies from. A package, a protocol, a host, a
+URL, a file path or a key is not a system's name.

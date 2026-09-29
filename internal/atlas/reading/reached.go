@@ -18,12 +18,12 @@ import (
 // callers run out inside the file, at a seed or an input's handler, and is
 // otherwise dropped. Callers in test files and callers none of the row's
 // programs runs are skipped; a cycle stops where it closes, and there is no
-// depth cap. A code fact: no model decides it.
-func (r *reader) reachedFrom(state *boundaryState, owner atlas.Place, handlers map[string]bool) []string {
+// depth cap. A code fact: no model decides it. targets are the programs
+// asked about, each destination being one program's (destinationMember).
+func (r *reader) reachedFrom(targets []string, owner atlas.Place, handlers map[string]bool) []string {
 	if owner.Symbol == nil {
 		return nil
 	}
-	targets := rowTargets(state)
 	name := func(place atlas.Place) string { return place.Symbol.Decl.Name }
 	var result []string
 	seen := map[string]bool{owner.ID: true}

@@ -633,8 +633,12 @@ type boundaryState struct {
 	name        string
 	kind        string
 	destination string
-	address     string
-	basis       string
+	// destinations are, by program, what an outgoing row reaches as that
+	// program's destination is named (destination_groups.go); a program
+	// not listed takes destination.
+	destinations map[string]string
+	address      string
+	basis        string
 	// handlerUnknown marks an entry whose handler is not established: an
 	// option a call declares, a value handed over. It stays where its call
 	// is written and binds to no part.
@@ -663,6 +667,14 @@ type boundaryState struct {
 	valueOf string
 	// tableRow marks an entry a row of an accepted table makes (inputs.go).
 	tableRow bool
+}
+
+// destinationOf is what the row reaches in one of its programs.
+func (state *boundaryState) destinationOf(targetID string) string {
+	if name, named := state.destinations[targetID]; named {
+		return name
+	}
+	return state.destination
 }
 
 // writtenLine is the boundary's line: only one the model wrote. A fixed
@@ -1051,16 +1063,14 @@ func (packages targetPackages) all() []string {
 	return slices.Compact(result)
 }
 
-// catalog is the closed list one outgoing row chooses from: the systems
-// the outside packages of its own targets reach (lines.Destinations). It
-// depends on nothing a window's other rows bring, so two calls through one
-// package are offered the same choices wherever they are packed.
-func (packages targetPackages) catalog(state *boundaryState, names map[string]string) []lines.Destination {
+// catalog is the closed list one program's destination chooses from: the
+// systems the outside packages of that program reach (lines.Destinations).
+// It depends on nothing a window's other rows bring, so two calls through
+// one package are offered the same choices wherever they are packed.
+func (packages targetPackages) catalog(target string, names map[string]string) []lines.Destination {
 	named := make(map[string]string)
-	for _, target := range rowTargets(state) {
-		for pkg := range packages[target] {
-			named[pkg] = names[pkg]
-		}
+	for pkg := range packages[target] {
+		named[pkg] = names[pkg]
 	}
 	return lines.Destinations(named)
 }
@@ -1100,16 +1110,20 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 	// The outside symbol each call site calls: a call on what another call
 	// returned names that call by its site.
 	calledAt := make(map[sourceSite]string)
+	callAt := make(map[sourceSite]atlas.SymbolCall)
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
 			continue
 		}
 		for _, call := range place.Symbol.Calls {
 			if call.Kind == string(programindex.RelationInvokesExternal) && call.API != nil && call.Line > 0 {
-				calledAt[sourceSite{place.Path, call.Line, call.Column}] = apiName(*call.API)
+				site := sourceSite{place.Path, call.Line, call.Column}
+				calledAt[site] = apiName(*call.API)
+				callAt[site] = call
 			}
 		}
 	}
+	handedOn := r.handedOnExchanges(calledAt, callAt)
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil {
 			continue
@@ -1157,12 +1171,15 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 			if role.talks == "" && !role.publishes || role.talks == lines.APIFile {
 				continue
 			}
-			// A call on what a call starting another program returned
-			// (cmd.Run() on exec.Command's command) starts, waits for or
-			// reads that same program: the call that named it is the one
-			// boundary. A command built on either branch is each branch's
-			// launch, and the call on it is theirs.
-			if role.talks == atlas.BoundaryRunsProgram && r.launchedBy(call.ReceiverValue, calledAt) {
+			// One exchange is one boundary (sameExchange): a call on what a
+			// call of the same kind returned continues that call's exchange
+			// (cmd.Run() on exec.Command's command starts the program it
+			// named; select(...).filter(...) builds the statement select
+			// began), and a call whose result a call of the same kind is
+			// handed is part of that call's (func.sum(...) in select(...)).
+			// A command built on either branch is each branch's launch, and
+			// the call on it is theirs.
+			if role.talks != "" && (r.sameExchange(call.ReceiverValue, role.talks, calledAt) || handedOn[sourceSite{place.Path, call.Line, call.Column}]) {
 				continue
 			}
 			claimed := false
@@ -1208,25 +1225,65 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 	return publishes
 }
 
-// launchedBy reports a value that is what a call starting another program
-// returned: that call's result, or alternatives every one of which is such
-// a result. An alternative from anywhere else leaves the value not one.
-func (r *reader) launchedBy(value *sourcevalue.Value, calledAt map[sourceSite]string) bool {
+// sameExchange reports a value that is what a call of a symbol answered
+// the same talks kind returned: that call's result, or alternatives every
+// one of which is such a result. A call made on it continues that call's
+// exchange with the same system: it starts, waits for or reads the program
+// the call named, or adds to the statement the call began, and the call
+// that began it is the one boundary. An alternative from anywhere else
+// leaves the value not one.
+func (r *reader) sameExchange(value *sourcevalue.Value, kind string, calledAt map[sourceSite]string) bool {
 	if value == nil {
 		return false
 	}
 	switch value.Kind {
 	case "call_result":
-		return value.Anchor != nil && r.api[calledAt[sourceSite{value.Anchor.Path, value.Anchor.Line, value.Anchor.Column}]].talks == atlas.BoundaryRunsProgram
+		return value.Anchor != nil && r.api[calledAt[sourceSite{value.Anchor.Path, value.Anchor.Line, value.Anchor.Column}]].talks == kind
 	case "alternatives":
 		for i := range value.Parts {
-			if !r.launchedBy(&value.Parts[i], calledAt) {
+			if !r.sameExchange(&value.Parts[i], kind, calledAt) {
 				return false
 			}
 		}
 		return len(value.Parts) > 0
 	}
 	return false
+}
+
+// handedOnExchanges are the sites of the calls whose result is handed, as
+// written, to a call of a symbol answered the same talks kind: the part
+// builds what that call sends (func.count(...) in select(...), a text()
+// statement handed to execute), so the call receiving it is the one
+// boundary. A call made on such a result is handed on with it
+// (func.sum(...).label(...) in select(...) takes func.sum along), and so is
+// the chain it continues. Only a value handed whole counts: a field of a
+// result, or a result formatted into another value, is not the call's own.
+func (r *reader) handedOnExchanges(calledAt map[sourceSite]string, callAt map[sourceSite]atlas.SymbolCall) map[sourceSite]bool {
+	handed := make(map[sourceSite]bool)
+	var hand func(site sourceSite, kind string)
+	hand = func(site sourceSite, kind string) {
+		if handed[site] || r.api[calledAt[site]].talks != kind {
+			return
+		}
+		handed[site] = true
+		if receiver := callAt[site].ReceiverValue; receiver != nil && receiver.Kind == "call_result" && receiver.Anchor != nil {
+			hand(sourceSite{receiver.Anchor.Path, receiver.Anchor.Line, receiver.Anchor.Column}, kind)
+		}
+	}
+	for site, call := range callAt {
+		kind := r.api[calledAt[site]].talks
+		if kind == "" || kind == lines.APIFile {
+			continue
+		}
+		for _, argument := range call.SourceArguments {
+			if origin := argument.Origin; origin != nil && origin.Kind == "call_result" && origin.Anchor != nil {
+				if inner := (sourceSite{origin.Anchor.Path, origin.Anchor.Line, origin.Anchor.Column}); inner != site {
+					hand(inner, kind)
+				}
+			}
+		}
+	}
+	return handed
 }
 
 // factClaims reports a call a fact boundary already names, in or out: the
