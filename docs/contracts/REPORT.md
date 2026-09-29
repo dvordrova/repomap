@@ -463,6 +463,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Tiles stand by file, the files in the order their first declaration is
   listed, each file's declarations in the page's order: the model's keys,
   then the types, then the rest (owner, 2026-09-28); the file is a hint.
+  A part whose declarations share one namespace (Clojure's
+  `othello.ui.host/`) names them without it, the whole name on the tile's
+  hover and in the reading.
   They stack in that order in their column, a column too tall spilling into
   the next. No name is cut, and the columns share the card's width. Tiles
   are drawn small enough to hold them all whole: nothing is counted away and
@@ -815,8 +818,9 @@ model's main flow is the orientation's (READING): its order is the model's,
 read from each member's calls in written order. Two steps in a row naming
 one declaration are its one step, the later's words kept; a method is named
 with its type, and two declarations the flow names alike by their module or
-file ("trade_commands.start_trading"); a closure (Go's `Run$1`, a lambda)
-reads "in {enclosing function}", read there, its link its own lines. A step
+file ("trade_commands.start_trading"); a callable written inline reads as
+GroupsIndex names it everywhere in the report ("ReplicateCommand.Run
+(inline)", `ObjectFacts.Inline`), never `Run$1`. A step
 citing a
 registration of a repository callable, or naming a callable some
 registration hands over, reads as that callable, never as the registrar
@@ -851,8 +855,7 @@ order and each callable once, save one the Main flow names. Each names its
 registering function alone ("{callable} — {registrar} registers it"), never a
 run of calls from the entries (litestream's Replica.monitor had read "… →
 ReplicateCommand.Run → Store.Close → … → Replica.Start registers it", the
-shortest exact route, through its shutdown); a closure registered by the
-function it is written in reads "in {function}" alone. What runs it reads as
+shortest exact route, through its shutdown). What runs it reads as
 a Main flow step's runners do. A callable no saved registration hands over
 is its name alone. Nothing is looked for beyond the saved kinds and
 facts, so a program without such inputs lists none. Pointing at a line lights
@@ -1094,6 +1097,23 @@ reachable.
 
 ## External communication and data
 
+A program is titled by its directory unless the directory does not say it
+(`page_program_title.go`, 2026-09-30): a script (ProgramTarget
+`ScriptFile`: one source file, no name from its build) by its file
+(`build_helpers/create_command_partials.py`, `etc/s3_mock.py`, not the dotted
+module or "etc"), and a program its build names once by that name where its
+directory ends otherwise (`freqtrade-client`, not
+`ft_client/freqtrade_client`); `cmd/litestream` and `freqtrade` keep their
+directories, and a title two programs would share falls back to the
+directory rule. The one part of a script, which takes the program's name, reads
+the same title. The home's table of programs says what each is "Built from":
+a C program's link units; a script's file and what its code imports,
+followed through each imported file's imports (ProgramIndex
+`ImportedFiles`), tests left out; otherwise the files its index declares
+things in. A script shares its project's index with the project's other
+programs, whose files are the whole project's: freqtrade's build_helpers
+scripts had each read 373 files.
+
 A component chosen on the map is read without moving the camera, as every
 first click is (above). Its reading names it without the kind its label adds
 (heading "Component · {language} {kind}"; the kind stays in the name only
@@ -1186,9 +1206,14 @@ groups stay in collapsed code reference and supply no integration count.
 Empty observations do not prove that the service contacts nothing.
 A started program (`runs_program`, "Runs a program") is one destination only
 with the very word its calls wrote, compared as written (another case is
-another word); a program no word names ("A program named at run time") or one
-the model did not decide ("Program not established") is its own call's
-destination. Its map frame is the same outward frame, named by the word, one
+another word). A program no word names ("A program named at run time") or
+one the model did not decide ("Program not established") is an unknown about
+its one call, no destination (2026-09-30; litestream's `-exec` launch had
+drawn a "Program not established" frame listed twice in Connections): it is
+no catalogue row, frame, tile or connection, but a record under "What is
+missing" ("Programs it starts that the code does not name", its line, words,
+label and source), and its call in its function's reading says "(starts a
+program the code does not name)". Its map frame is the same outward frame, named by the word, one
 tile per symbol; each record's line is the callable followed by every word
 its call writes, each in its own code span, in the call's order. A started
 program whose word equals the name the repository's build gives one of the
@@ -1197,6 +1222,15 @@ loosely) is that program: its record reads "Runs
 this repository's program" with that component's name, which reads it, and
 the call's arrow goes from the launching part into that component, with no
 outside tile. A program starting itself keeps its tile and the same line.
+A destination one of whose records has an integration connection (a joint
+the reading confirmed by protocol and input) into another of the report's
+programs is that program (`joinOwnPrograms`, 2026-09-30): every record of
+the destination, by its name in that program, reads "Reaches this
+repository's program" and its arrow goes into that component, with no
+outside tile. redis-cli's "Redis server", its connect to redis-server's
+listening socket and the gethostbyname resolving the server's host, had
+stood outside beside the arrow into redis-server. A destination reaching
+several programs, or none, stays outside.
 
 The Data shelf lists source-scoped models/tables, written columns and keys,
 queries and original sources. Query-to-table references are reversible, so a

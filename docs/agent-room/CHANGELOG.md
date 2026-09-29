@@ -1,5 +1,22 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Inline names everywhere, an input's options, a part's namespace said once
+
+- **Why:** the input-naming agent's handover (336d24d2): GroupsIndex now
+  names a callable written inline (`ObjectFacts.Inline`: the function it
+  only wraps, else "ReplicateCommand.Run (inline)") and nests a
+  subcommand's flags as `inputPath.options`, neither yet shown; othello's
+  tiles repeated `othello.ui.host/` on every name.
+- **Change:** `subjectDisplay` reads `Inline`, so no `$N` is printed in a
+  flow, a chain, a caller list or on a tile; the column's own closure naming
+  ("in ReplicateCommand.Run", `closureHome`) goes, a new element replacing
+  the old; a compiler-numbered callable still stands on no tile and in no
+  part's members (`inline`, by its native name). An input's reading lists
+  "Its options" and the words its handler checks one to a line, each a link
+  to its source. A part whose tiles share one namespace drops it from their
+  names (`sharedNamespace`), the whole name kept on the tile's hover
+  (`Full`) and in the reading.
+
 ## 2026-09-29 — The reading column: five sections, no digits, one name to a line
 
 - **Why:** the owner's critic (round 2): a component reading ran to ten
