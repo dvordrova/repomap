@@ -708,7 +708,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	if err := r.readPrograms(ctx); err != nil {
 		return err
 	}
-	tracer := NewDestinationReader(r.opts.Graph.Places)
+	tracer := NewDestinationReader(r.opts.Graph.Places, DestinationChoices{Arguments: r.arguments, Options: r.optionNames()})
 	for _, state := range r.boundaries {
 		facts := state.place.Boundary
 		// A started program has no address: the word naming it is its
@@ -825,6 +825,10 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		var groups rowGroups
 		var order []*boundaryState
 		addressValues := make(map[string][]lines.BoundaryAddress)
+		var handlers map[string]bool
+		if outgoing {
+			handlers = r.entryHandlers()
+		}
 		catalogs := make(map[string][]lines.Destination)
 		for _, key := range keys {
 			group := byOwner[key]
@@ -855,6 +859,13 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 				}
 				if len(state.uses) > 0 {
 					row.Fields = append(row.Fields, table.Field{Name: "destination_chains", Value: destinationEvidence(state.uses)})
+				}
+				// Where the program reaches the call from says what is at its
+				// other end: a replica's master, a client's server.
+				if outgoing {
+					if callers := r.reachedFrom(state, boundaryOwner(state.place.Boundary, owners), handlers); len(callers) > 0 {
+						row.Fields = append(row.Fields, table.Field{Name: "reached_from", Value: callers})
+					}
 				}
 				rows = append(rows, row)
 				rowLines = append(rowLines, state.place.LineNo)
@@ -1091,7 +1102,9 @@ func (r *reader) bindInterpretedBoundaries() []*boundaryState {
 					continue
 				}
 			}
-			if role.talks == "" && !role.publishes {
+			// A call reaching a file by its path talks to no other program:
+			// it is no outgoing boundary (api_argument.go logs its file).
+			if role.talks == "" && !role.publishes || role.talks == lines.APIFile {
 				continue
 			}
 			// A call on what a call starting another program returned

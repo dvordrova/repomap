@@ -22,9 +22,14 @@ what runs when the call is made: from the program's start through the
 named declarations, or while callables another registration hands over
 run.
 
-For a table: `table` is its name, `declared` its type, `rows` every row's
-words as the repository wrote them, and `read_by` the declarations that
-read the table.
+For a table: `table` is its name, `declared` its type, `file` the file
+declaring it, `rows` every row's
+words as the repository wrote them, and `read_by` each declaration that
+reads the table: its name and signature, `reads`, each line that reads the
+table as the repository wrote it, and `called_by`, the declarations that
+call it, each with its signature and the lines calling the reader as the
+repository wrote them. How the table is read, and what its reader's
+callers hand it, say what its rows are.
 
 For a field: `field` is its name and type, `structure` the structure
 declaring it with its file, `tag` the field's tag as written (each key the

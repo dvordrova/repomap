@@ -46,6 +46,15 @@ func TestCFixtureConnectIsReachedFromTheClientsTwoParts(t *testing.T) {
 			t.Fatalf("the server reaches a net.c call it never makes: %+v", call)
 		}
 	}
+	// The question naming what the connect reaches is told the same
+	// callers, by name and signature, before the parts are drawn: the
+	// first callers outside net.c.
+	pair.preset.mu.Lock()
+	asked := slices.Clone(pair.preset.reachedFrom)
+	pair.preset.mu.Unlock()
+	if want := "net.c:37 [main int main(int argc, char **argv) repl int repl(const char *host, int port)]"; !slices.Contains(asked, want) {
+		t.Fatalf("the connect's destination was asked with %q, want %q", asked, want)
+	}
 }
 
 // The same shape in each language's cumulative fixture, over its real

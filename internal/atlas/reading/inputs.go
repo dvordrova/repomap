@@ -111,14 +111,15 @@ func (r *reader) readInputs(ctx context.Context) error {
 			continue
 		}
 		for _, use := range place.Symbol.Uses {
-			if use.Kind == "reads" && use.Resolution == "exact" && !slices.Contains(readers[use.PlaceID], place.Symbol.Decl.Name) {
-				readers[use.PlaceID] = append(readers[use.PlaceID], place.Symbol.Decl.Name)
+			if use.Kind == "reads" && use.Resolution == "exact" && !slices.Contains(readers[use.PlaceID], place.ID) {
+				readers[use.PlaceID] = append(readers[use.PlaceID], place.ID)
 			}
 		}
 	}
 	var tableRows []table.Row
 	var tableIDs []string
 	tableSubjects := map[string]rowSubject{}
+	sourceLines := map[string][]string{}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil || len(place.Symbol.Rows) == 0 || r.testFile(place.Parent) {
 			continue
@@ -136,9 +137,10 @@ func (r *reader) readInputs(ctx context.Context) error {
 		if decl.Signature != "" {
 			item = append(item, table.Field{Name: "declared", Value: decl.Signature})
 		}
-		item = append(item, table.Field{Name: "rows", Value: rows})
-		if reading := readers[place.ID]; len(reading) > 0 {
-			sort.Strings(reading)
+		// The file declaring the table says whose it is: a client's table
+		// of the commands a person types is written in the client's files.
+		item = append(item, table.Field{Name: "file", Value: place.Path}, table.Field{Name: "rows", Value: rows})
+		if reading := r.tableReaders(sourceLines, place, readers[place.ID]); len(reading) > 0 {
 			item = append(item, table.Field{Name: "read_by", Value: reading})
 		}
 		rowID := fmt.Sprintf("table%d", len(tableRows)+1)
@@ -255,4 +257,112 @@ func (r *reader) bindTableRows() {
 					Values: slices.Clone(words), Words: slices.Clone(words), Direction: atlas.DirectionIn, GivenKind: kind}}}
 		}
 	}
+}
+
+// tableReaders is how a table is read, for its question: each declaration
+// reading it, by name and signature, with each line reading it as the code
+// wrote it (places ReadAt) and the declarations outside tests calling it,
+// by name and signature, each with its lines calling the reader as
+// written. redis-cli's cmdTable is read by lookupCommand, which compares a
+// row's name with the name it is handed, and cliSendCommand calls it with
+// the first word of its argument vector: what a person typed is looked up
+// there. A reader the graph holds no read site of shows its name and
+// callers.
+func (r *reader) tableReaders(sourceLines map[string][]string, table atlas.Place, readerIDs []string) []map[string]any {
+	sites := map[string][]int{}
+	for _, read := range table.Symbol.ReadAt {
+		if !slices.Contains(readerIDs, read.ReaderID) {
+			readerIDs = append(readerIDs, read.ReaderID)
+		}
+		if !slices.Contains(sites[read.ReaderID], read.LineNo) {
+			sites[read.ReaderID] = append(sites[read.ReaderID], read.LineNo)
+		}
+	}
+	type reader struct {
+		name   string
+		fields map[string]any
+	}
+	var result []reader
+	for _, id := range readerIDs {
+		place := r.places[id]
+		if place.Symbol == nil || r.testFile(place.Parent) {
+			continue
+		}
+		decl := place.Symbol.Decl
+		name := decl.Name
+		if decl.Signature != "" {
+			name += " " + decl.Signature
+		}
+		fields := map[string]any{"reader": name}
+		var reads []string
+		at := sites[id]
+		slices.Sort(at)
+		for _, line := range at {
+			if text := r.sourceLine(sourceLines, place.Path, line); text != "" && !slices.Contains(reads, text) {
+				reads = append(reads, text)
+			}
+		}
+		if len(reads) > 0 {
+			fields["reads"] = reads
+		}
+		// Each caller with the lines calling the reader as written: what
+		// it hands the reader says where the word looked up comes from.
+		var names []string
+		calls := map[string][]string{}
+		for _, caller := range place.Symbol.CalledBy {
+			if caller.Kind != "calls" || caller.Resolution != "exact" || r.testPath(caller.Path) {
+				continue
+			}
+			text := caller.Name
+			if caller.Signature != "" {
+				text += " " + caller.Signature
+			}
+			if _, seen := calls[text]; !seen {
+				names = append(names, text)
+				calls[text] = nil
+			}
+			if line := r.sourceLine(sourceLines, caller.Path, caller.Line); line != "" && !slices.Contains(calls[text], line) {
+				calls[text] = append(calls[text], line)
+			}
+		}
+		if len(names) > 0 {
+			slices.Sort(names)
+			var callers []map[string]any
+			for _, name := range names {
+				caller := map[string]any{"caller": name}
+				if len(calls[name]) > 0 {
+					caller["calls"] = calls[name]
+				}
+				callers = append(callers, caller)
+			}
+			fields["called_by"] = callers
+		}
+		result = append(result, reader{name: name, fields: fields})
+	}
+	slices.SortFunc(result, func(a, b reader) int { return strings.Compare(a.name, b.name) })
+	entries := make([]map[string]any, 0, len(result))
+	for _, item := range result {
+		entries = append(entries, item.fields)
+	}
+	return entries
+}
+
+// sourceLine is one source line as the code wrote it, its space folded,
+// reading each file once into sourceLines; "" for a line the file does not
+// hold.
+func (r *reader) sourceLine(sourceLines map[string][]string, path string, line int) string {
+	if r.opts.ReadSource == nil || line < 1 {
+		return ""
+	}
+	text, read := sourceLines[path]
+	if !read {
+		if content, err := r.opts.ReadSource(path); err == nil {
+			text = strings.Split(string(content), "\n")
+		}
+		sourceLines[path] = text
+	}
+	if line > len(text) {
+		return ""
+	}
+	return strings.Join(strings.Fields(text[line-1]), " ")
 }

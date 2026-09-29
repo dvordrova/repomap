@@ -381,9 +381,9 @@ func TestClosedAPIAnswersMakeTheirBoundaries(t *testing.T) {
 		"sys/socket.h.accept":   {"talks": lines.APIServes},
 		"arpa/inet.h.inet_aton": {"talks": lines.APINone},
 		"netdb.h.gethostbyname": {"talks": atlas.BoundarySDK},
-		"vendor/web.Use":        {"binds": lines.APIMiddleware, "publishes": lines.APINone},
-		"stdlib.h.qsort":        {"binds": lines.APINone, "publishes": lines.APINone},
-		"vendor/web.Route":      {"binds": atlas.BoundaryRequest, "publishes": lines.APINone},
+		"vendor/web.Use":        {"binds": lines.APIMiddleware, "talks": lines.APINone},
+		"stdlib.h.qsort":        {"binds": lines.APINone, "talks": lines.APINone},
+		"vendor/web.Route":      {"binds": atlas.BoundaryRequest, "talks": lines.APINone},
 	}
 	r := answerTestReader(t, nil, nil)
 	r.dry, r.opts.Through = true, ""
@@ -448,7 +448,7 @@ func TestEveryAskedAPICellChangesTheBoundaries(t *testing.T) {
 		}
 		return strings.Join(made, "; ")
 	}
-	for _, def := range []table.Definition{lines.API(true), lines.API(false)} {
+	for _, def := range []table.Definition{lines.API(true, true), lines.API(false, true), lines.API(true, false)} {
 		for _, column := range def.Columns {
 			read := false
 			for _, base := range []table.Answer{{}, {"binds": atlas.BoundaryRequest}} {

@@ -108,6 +108,11 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 		if strings.Contains(call, " in setCommand:") {
 			t.Fatalf("a word set's handler compares with its argument vector was asked: %v", call)
 		}
+		// persist's values, compared with the line's second word after its
+		// first was compared with persist, a setting: its values, not asked.
+		if strings.Contains(call, `"never"`) || strings.Contains(call, `"always"`) {
+			t.Fatalf("a value of a setting's key was asked what its words become: %v", call)
+		}
 	}
 	// Each callable kvd's own functions keep is asked once, with while what
 	// it is kept: the walk back from the keeping call stops at the program's
@@ -435,12 +440,16 @@ type kvdPreset struct {
 	entered []string
 	// kept are the kept callables asked what they become, each with the
 	// function keeping it and while what it is kept; tables the tables of
-	// names asked, each with its readers.
+	// names asked, each with its readers, and tableItems each table's item.
 	kept, tables []string
+	tableItems   map[string]map[string]any
 	// systems are the outside packages asked which system they reach, and
 	// connectOffered the values of the inputs the client's connect was
 	// offered as its counterpart.
 	systems, connectOffered []string
+	// reachedFrom are the outgoing rows asked their destination, each with
+	// where its program reaches it from.
+	reachedFrom []string
 	// peers are the table rows asked which peer input they send, each with
 	// the peer the preset chose ("none" for del: a reader who is unsure).
 	peers []string
@@ -561,7 +570,11 @@ func (preset *kvdPreset) answer(table string, fill []map[string]any, context, ro
 			answer["name"] = refs
 		case table == "atlas_boundaries" && name == "destination":
 			// kvcli's connect reaches the server: no package names a
-			// system, so the reader writes it.
+			// system, so the reader writes it, from where the client
+			// reaches the call.
+			preset.mu.Lock()
+			preset.reachedFrom = append(preset.reachedFrom, fmt.Sprintf("%v:%v %v", row["path"], row["line"], row["reached_from"]))
+			preset.mu.Unlock()
 			answer[name] = "other: kvd server"
 		case table == "atlas_boundaries" && name == "address":
 			answer[name] = "unknown"
@@ -666,7 +679,8 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 				return typesafetest.Choose("continuous"), true
 			}
 			return typesafetest.Choose("none"), true
-		case "publishes":
+		case "argument":
+			// No value of a call names what it reaches in this reading.
 			return typesafetest.Choose("none"), true
 		case "enters":
 			arguments := strings.Join(stringsOf(question.Item["arguments"]), "; ")
@@ -685,7 +699,17 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 			candidate := fmt.Sprint(question.Item["callable"], question.Item["table"])
 			preset.mu.Lock()
 			if question.Item["table"] != nil {
-				preset.tables = append(preset.tables, fmt.Sprintf("%v read by %v", question.Item["table"], question.Item["read_by"]))
+				// Each reader by its name; the whole item keeps how.
+				var readers []string
+				for _, entry := range asList(question.Item["read_by"]) {
+					reader, _ := entry.(map[string]any)["reader"].(string)
+					readers = append(readers, strings.Fields(reader + " ?")[0])
+				}
+				preset.tables = append(preset.tables, fmt.Sprintf("%v read by %v", question.Item["table"], readers))
+				if preset.tableItems == nil {
+					preset.tableItems = map[string]map[string]any{}
+				}
+				preset.tableItems[fmt.Sprint(question.Item["table"])] = question.Item
 			} else {
 				preset.kept = append(preset.kept, fmt.Sprintf("%v by %v during %v", strings.Fields(fmt.Sprint(question.Item["callable"]))[0], strings.Fields(fmt.Sprint(question.Item["kept_by"]))[0], question.Item["during"]))
 			}

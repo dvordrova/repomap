@@ -245,7 +245,7 @@ func TestIndependentTablesPackCompleteRowsWithoutCountCaps(t *testing.T) {
 		}}
 		rows = append(rows, TypeRow(place))
 	}
-	for _, def := range []table.Definition{Directories(), Files(), Symbols(), Types(), FixedBoundaries(true), API(false)} {
+	for _, def := range []table.Definition{Directories(), Files(), Symbols(), Types(), FixedBoundaries(true), API(false, true)} {
 		t.Run(def.Contract, func(t *testing.T) {
 			windows, err := table.Windows(def, 0, rows)
 			if err != nil || len(windows) != 1 || !reflect.DeepEqual(windows[0].Rows, rows) {

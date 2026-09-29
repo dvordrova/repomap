@@ -1129,6 +1129,9 @@ func compactGraphPlaceIDs(graph Graph) (Graph, error) {
 			for use := range place.Symbol.Uses {
 				place.Symbol.Uses[use].PlaceID = mapID(place.Symbol.Uses[use].PlaceID)
 			}
+			for read := range place.Symbol.ReadAt {
+				place.Symbol.ReadAt[read].ReaderID = mapID(place.Symbol.ReadAt[read].ReaderID)
+			}
 			sort.Slice(place.Symbol.Uses, func(i, j int) bool { return SymbolUseLess(place.Symbol.Uses[i], place.Symbol.Uses[j]) })
 			place.Symbol.Uses = slices.Compact(place.Symbol.Uses)
 			for field := range place.Symbol.Fields {

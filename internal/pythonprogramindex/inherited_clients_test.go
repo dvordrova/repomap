@@ -104,7 +104,8 @@ func TestCumulativePythonBaseReadTakesEachSubclassStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader := reading.NewDestinationReader(graph.Places)
+	// The preset's decided argument: httpx.post's first names its URL.
+	reader := reading.NewDestinationReader(graph.Places, reading.DestinationChoices{Arguments: map[string]reading.ArgumentChoice{"httpx.post": {Position: 1}}})
 	found := false
 	for _, place := range graph.Places {
 		if place.Symbol == nil || place.Symbol.Decl.Name != "Webhook.send" {

@@ -141,7 +141,11 @@ func assertCumulativeJSTSSourceValues(t *testing.T, repository *corpus.Corpus, i
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader := reading.NewDestinationReader(graph.Places)
+	// The preset's decided arguments: fetch's first names what it fetches,
+	// and a Request built for it carries its first, the URL.
+	reader := reading.NewDestinationReader(graph.Places, reading.DestinationChoices{Arguments: map[string]reading.ArgumentChoice{
+		javascriptPlatform + ".fetch": {Position: 1}, javascriptPlatform + ".Request": {Position: 1},
+	}})
 	var direct, config, constructor, projected bool
 	for _, place := range graph.Places {
 		if place.Symbol == nil || place.Path != path {

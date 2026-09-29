@@ -51,11 +51,15 @@ func (r *reader) readCalls(ctx context.Context, symbols []*apiSymbol, talks map[
 			}
 		}
 	}
-	type asked struct {
-		site   sourceSite
-		fields []table.Field
+	// waiting are the calls comparing a later element of a value than the
+	// key compared before them, by their key's site (key_values.go).
+	type waitingCall struct {
+		key, site sourceSite
+		symbol    string
+		call      askedCall
 	}
-	bySymbol := map[string][]asked{}
+	var waiting []waitingCall
+	bySymbol := map[string][]askedCall{}
 	files := map[string]*lines.CallFile{}
 	for _, place := range r.opts.Graph.Places {
 		if place.Symbol == nil || r.testFile(place.Parent) {
@@ -105,12 +109,47 @@ func (r *reader) readCalls(ctx context.Context, symbols []*apiSymbol, talks map[
 			if len(arguments) > 0 {
 				fields = append(fields, table.Field{Name: "arguments", Value: arguments})
 			}
+			key, keySite := r.keyCall(files, place, call)
+			if key != "" {
+				fields = append(fields, table.Field{Name: "compared_after", Value: key})
+			}
 			if answer := talks[symbol]; answer != "" {
 				fields = append(fields, table.Field{Name: "talks", Value: answer})
 			}
-			bySymbol[symbol] = append(bySymbol[symbol], asked{site: site, fields: fields})
+			if key != "" {
+				waiting = append(waiting, waitingCall{key: keySite, site: site, symbol: symbol, call: askedCall{site: site, fields: fields}})
+				continue
+			}
+			bySymbol[symbol] = append(bySymbol[symbol], askedCall{site: site, fields: fields})
 		}
 	}
+	if err := r.askCalls(ctx, 3, bySymbol); err != nil {
+		return err
+	}
+	// A value of a key the code compared just before it is that key's
+	// entry's value when the key's answer made it an entry (K3), a step
+	// already decided: it is not asked. Any other is asked on its own.
+	sort.Slice(waiting, func(i, j int) bool { return waiting[i].site.compare(waiting[j].site) < 0 })
+	later := map[string][]askedCall{}
+	for _, call := range waiting {
+		if kind := r.callEnters[call.key]; kind != "" && kind != lines.APINone {
+			r.callEnters[call.site], r.entering[call.symbol] = kind, true
+			continue
+		}
+		later[call.symbol] = append(later[call.symbol], call.call)
+	}
+	return r.askCalls(ctx, 6, later)
+}
+
+// askedCall is one word call to ask: its site and its item.
+type askedCall struct {
+	site   sourceSite
+	fields []table.Field
+}
+
+// askCalls asks the word calls of each symbol, one round, and keeps each
+// answer by its site.
+func (r *reader) askCalls(ctx context.Context, round int, bySymbol map[string][]askedCall) error {
 	if len(bySymbol) == 0 {
 		return nil
 	}
@@ -142,7 +181,7 @@ func (r *reader) readCalls(ctx context.Context, symbols []*apiSymbol, talks map[
 	previous := r.rowSubjects
 	r.rowSubjects = subjects
 	defer func() { r.rowSubjects = previous }()
-	answers, err := r.runTableGroups(ctx, lines.APICall(), 3, groups, nil)
+	answers, err := r.runTableGroups(ctx, lines.APICall(), round, groups, nil)
 	if err != nil {
 		return err
 	}

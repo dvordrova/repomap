@@ -21,7 +21,25 @@ func assertGoSourceValues(t *testing.T, repository *corpus.Corpus, index program
 		"binds_implementation", "callback_registration", "registration_receiver_call",
 		"interface_field_assignment", "literal_string", "alternatives", "unresolved", "invokes_external")
 	seen := map[string]bool{}
-	destinations := reading.NewDestinationReader(graph.Places)
+	// The preset's decisions: Do's request, the URL a request is built
+	// with, the request WithContext is called on, and the option
+	// DestinationApplication declares with flag.String, whose value
+	// flag.String returns.
+	options := map[sourcevalue.Anchor]string{}
+	for _, place := range graph.Places {
+		if place.Symbol == nil {
+			continue
+		}
+		for _, call := range place.Symbol.Calls {
+			if call.API != nil && call.API.Package == "flag" && call.API.Name == "String" && len(call.Values) > 0 {
+				options[sourcevalue.Anchor{Path: place.Path, Line: call.Line, Column: call.Column}] = call.Values[0]
+			}
+		}
+	}
+	destinations := reading.NewDestinationReader(graph.Places, reading.DestinationChoices{Arguments: map[string]reading.ArgumentChoice{
+		"net/http.Client.Do": {Position: 1}, "net/http.NewRequestWithContext": {Position: 3}, "net/http.NewRequest": {Position: 2},
+		"net/http.Request.WithContext": {Receiver: true},
+	}, Options: options})
 	var visit func(*sourcevalue.Value)
 	visit = func(value *sourcevalue.Value) {
 		if value == nil {

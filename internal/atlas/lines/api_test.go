@@ -12,7 +12,7 @@ import (
 
 // The talks question has no "other" to fall into.
 func TestTalksOffersNoOther(t *testing.T) {
-	for _, def := range []table.Definition{API(true), API(false), APICall()} {
+	for _, def := range []table.Definition{API(true, true), API(false, true), API(true, false), APICall()} {
 		for _, column := range def.Columns {
 			if column.Name == "talks" && slices.Contains(column.Options, "other") {
 				t.Fatalf("talks offers other: %v", column.Options)
@@ -27,7 +27,7 @@ func TestTalksOffersNoOther(t *testing.T) {
 // inet_aton "talks sdk" and accept "talks client_request" in some draws and
 // not in others.
 func TestEveryAPIOptionHasCriteriaAndEveryQuestionANone(t *testing.T) {
-	for _, def := range []table.Definition{API(true), API(false), APICall()} {
+	for _, def := range []table.Definition{API(true, true), API(false, true), API(true, false), APICall(), APIArgument()} {
 		if !def.Classifier || !table.Closed(def) {
 			t.Fatalf("%s is not a closed question for the categorizer", def.Contract)
 		}
@@ -49,7 +49,7 @@ func TestEveryAPIOptionHasCriteriaAndEveryQuestionANone(t *testing.T) {
 // the task that says what the map wants.
 func TestAPIRequestSendsEveryCriterion(t *testing.T) {
 	window := table.Window{Rows: []table.Row{{ID: "sym1", Fields: []table.Field{{Name: "symbol", Value: "sys/socket.h.accept"}, {Name: "usage", Value: "fd = accept(s, &sa, &len);"}}}}}
-	for _, asked := range []table.Definition{API(true), API(false), APICall()} {
+	for _, asked := range []table.Definition{API(true, true), API(false, true), API(true, false), APICall()} {
 		def := table.ForClassifier(asked)
 		recorder := &criteriaRecorder{}
 		if _, err := table.ClassifierCall(recorder, def, window); err != nil {
@@ -86,17 +86,22 @@ func (r *criteriaRecorder) Prompt(task string, _ map[string]any, questions map[s
 	return llm.Prompt{User: "{}"}, nil
 }
 
-// A handed symbol's two decisions are independent: a near-tie on whether
-// the call serves leaves what the callable becomes standing.
+// A handed symbol's two decisions are independent: a near-tie on what its
+// call does with other programs leaves what the callable becomes standing.
+// It is asked the same talks question as every other symbol, so a dial
+// handed a configuration with a callback in it is asked whom it talks to.
 func TestHandedAPIDecisionsFailAlone(t *testing.T) {
-	def := API(true)
+	def := API(true, true)
+	if talks := def.Columns[1]; talks.Name != "talks" || !slices.Equal(talks.Options, API(false, true).Columns[0].Options) {
+		t.Fatalf("a handed symbol is not asked the talks question: %+v", def.Columns)
+	}
 	window := table.Window{Rows: []table.Row{{ID: "sym1"}}}
 	result, err := table.DecodeClassifierAnswers(def, window, map[string]llm.Verdict{
-		"sym1|binds":     {Choice: "extension", Probabilities: map[string]float64{"extension": 0.97, "none": 0.03}},
-		"sym1|publishes": {Choice: APINone, Probabilities: map[string]float64{APINone: 0.52, APIServes: 0.48}},
+		"sym1|binds": {Choice: "extension", Probabilities: map[string]float64{"extension": 0.97, "none": 0.03}},
+		"sym1|talks": {Choice: APINone, Probabilities: map[string]float64{APINone: 0.52, APIServes: 0.48}},
 	})
-	if err != nil || result.Answers[0]["binds"] != "extension" || len(result.Rejections) != 1 || result.Rejections[0].Cell != "publishes" {
-		t.Fatalf("a near-tie on publishes cost the symbol its binds: %+v %v", result, err)
+	if err != nil || result.Answers[0]["binds"] != "extension" || len(result.Rejections) != 1 || result.Rejections[0].Cell != "talks" {
+		t.Fatalf("a near-tie on talks cost the symbol its binds: %+v %v", result, err)
 	}
 }
 
@@ -150,7 +155,7 @@ func entryQuestions() []struct {
 	return []struct {
 		def    table.Definition
 		column string
-	}{{API(true), "binds"}, {APICall(), "enters"}}
+	}{{API(true, true), "binds"}, {API(true, false), "binds"}, {APICall(), "enters"}}
 }
 
 // No outcome is decided by two questions: a call's words are asked what
@@ -158,7 +163,7 @@ func entryQuestions() []struct {
 // none. Taking messages from a queue is talks's to say; enters never
 // offers it, nor middleware.
 func TestNoOutcomeIsOfferedInTwoQuestions(t *testing.T) {
-	talks, enters := API(false).Columns[0], APICall().Columns[0]
+	talks, enters := API(false, true).Columns[0], APICall().Columns[0]
 	if talks.Name != "talks" || enters.Name != "enters" {
 		t.Fatalf("the questions are %+v and %+v", talks, enters)
 	}

@@ -1,6 +1,7 @@
 package contracttest
 
 import (
+	"encoding/json"
 	"reflect"
 	"slices"
 	"strings"
@@ -250,6 +251,19 @@ func TestCFixturePresetReadingNamesTheClientsOptionsAndCommands(t *testing.T) {
 	}
 	if !slices.Contains(tables, "cmdTable read by [lookupCommand]") {
 		t.Fatalf("kvcli's table of names was not asked with its reader: %v", tables)
+	}
+	// How the table is read says what its rows are: lookupCommand compares
+	// a row's name with the name it is handed, and main calls it with a
+	// word of its own argument vector, the command a person typed. Each
+	// reading line is shown as written, the reader and its callers by name
+	// and signature, each caller with its lines calling the reader.
+	pair.preset.mu.Lock()
+	item := pair.preset.tableItems["cmdTable"]
+	pair.preset.mu.Unlock()
+	readBy, _ := json.Marshal(item["read_by"])
+	wantReaders := `[{"called_by":[{"caller":"main int main(int argc, char **argv)","calls":["cmd = lookupCommand(argv[first]);"]}],"reader":"lookupCommand struct cliCommand *lookupCommand(const char *name)","reads":["for (j = 0; cmdTable[j].name != NULL; j++)","if (strcasecmp(name, cmdTable[j].name) == 0) return \u0026cmdTable[j];"]}]`
+	if string(readBy) != wantReaders || item["file"] != "kvcli.c" {
+		t.Fatalf("kvcli's table was asked in %v with readers %s\nwant kvcli.c and %s", item["file"], readBy, wantReaders)
 	}
 	names := map[string]string{}
 	for _, subject := range client.Subjects {

@@ -1,7 +1,7 @@
-# What a call does with other running programs
+# What a call does with other running programs or with files
 
 Each option of the question "What does a call to `outside_symbol` do with
-other running programs?" with its criteria: what it is, what it includes,
+other running programs or with files?" with its criteria: what it is, what it includes,
 what it is not for, and examples. The request sends them as each option's
 criteria.
 
@@ -9,9 +9,9 @@ criteria.
 
 What: The call is the program's own listening side: it makes the program reachable by other programs, or takes in a connection another program opened to it.
 
-Includes: listening on an address, a port or a socket path; binding the listening socket to its address; running the application's server or serving loop; starting a consumer or worker that runs the handlers registered on it; accepting the next incoming connection that another program opened to a listening socket
+Includes: listening on an address, a port or a socket path, alone or with a handler or an application the repository hands it; binding the listening socket to its address; running the application's server or serving loop; starting a consumer or worker that runs the handlers registered on it; accepting the next incoming connection that another program opened to a listening socket
 
-Not for: opening a connection to another program, which is this program's own outgoing request; creating a socket or setting its options, which reaches no one yet
+Not for: opening a connection to another program, which is this program's own outgoing request; creating a socket or setting its options, which reaches no one yet; registering a handler, a route or a command that something else serves later (none)
 
 Examples:
 - an HTTP server's listen-and-serve call
@@ -99,17 +99,31 @@ Examples:
 - running a command line through the system shell
 - building a command from a program name and its arguments, then running it
 
+## file
+
+What: The call reaches a file or a directory of the machine the program runs on by a path it is given: it opens, creates, reads or writes a whole file named by its path, renames, moves or removes one, or makes or lists a directory.
+
+Includes: opening a file by its path for reading, writing or appending; creating, truncating or replacing a file; renaming, moving, linking or deleting a file or a directory; making a directory or listing one by its path; reading or writing a whole file named by its path in one call; mapping a file named by its path into memory
+
+Not for: reading from, writing to, seeking in, flushing or closing a file already open, which names no path (none); building or joining a path without opening anything (none); a database file opened through a database library (db); a file on another machine reached through a remote service or a network protocol (sdk, client_request); a socket, a pipe or a device of this program's own process (none)
+
+Examples:
+- opening the configuration file by its path
+- writing a snapshot to a temporary file, then renaming it into place
+- removing a lock file
+- creating the directory the program keeps its data in
+
 ## none
 
-What: The call talks to no other program and starts none: it is the program's own work in its own process, with its own files, memory, threads, signals and clock.
+What: The call talks to no other program, starts none and reaches no file by its path: it is the program's own work in its own process, with its own memory, threads, signals and clock, and the files it already has open.
 
-Includes: converting, parsing, formatting or validating values, an address, a port or a host name already in hand among them; building or configuring an object, a client, a request or a name without sending it; reading the body, the status, the fields or the id of a response, a result or a job an earlier call returned; creating a socket, setting its options, reading or writing a connection that is already open, closing one; handing a value to the host program or runtime this code runs inside; files, logging, memory, threads, signals, time and random numbers; forking a copy of this program that goes on running its own code; evaluating code inside this program's own process; starting, waiting for, reading the output of or stopping a command an earlier call built and named, when this call names no program itself
+Includes: converting, parsing, formatting or validating values, an address, a port, a host name or a path already in hand among them; building or configuring an object, a client, a request or a name without sending it; reading the body, the status, the fields or the id of a response, a result or a job an earlier call returned; creating a socket, setting its options, reading or writing a connection that is already open, closing one; reading from, writing to or closing a file already open; handing a value to the host program or runtime this code runs inside; registering a handler, a route, a command or a hook that something else serves or runs later; running a callable it is handed in place; logging, memory, threads, signals, time and random numbers; forking a copy of this program that goes on running its own code; evaluating code inside this program's own process; starting, waiting for, reading the output of or stopping a command an earlier call built and named, when this call names no program itself
 
-Not for: a call that itself sends to, reads from or opens a connection to another running program, or makes this program reachable by one; a call that starts another program, or names the program and the arguments of the command that starts it (runs_program)
+Not for: a call that itself sends to, reads from or opens a connection to another running program, or makes this program reachable by one; a call that starts another program, or names the program and the arguments of the command that starts it (runs_program); a call that opens, creates, renames or removes a file or a directory by its path (file)
 
 Examples:
 - parsing an IP address from a string, or writing one back as text
 - formatting a message into a buffer
-- opening a local file for writing
+- writing a buffer to a file that is already open
 - starting a thread or installing a signal handler
 - setting an option on a socket

@@ -14,6 +14,9 @@ import (
 // DestinationReader traverses the existing source calls, not inferred arrows.
 // Each branch retains its own target intersection and source sites. Cycles stop
 // explicitly; repository size never silently removes a caller or an address.
+// Which value of an outside call names what it reaches is the model's one
+// decision per symbol (lines.APIArgument), given in DestinationChoices; no
+// list of packages says it.
 type DestinationReader struct {
 	places         map[string]atlas.Place
 	callers        map[string][]destinationCall
@@ -21,6 +24,112 @@ type DestinationReader struct {
 	owners         map[sourcevalue.Anchor][]atlas.Place
 	ownerLines     map[sourcevalue.Anchor][]atlas.Place
 	parameterCalls map[sourcevalue.Anchor][]destinationCall
+	// environment is, by the site of a call, the environment variable a
+	// configuration read there reads (facts config_read, a code fact).
+	environment map[sourcevalue.Anchor]string
+	choices     DestinationChoices
+	// undecided, when set, hears of each outside call whose result a walk
+	// reached and whose symbol has no decided argument (readArguments).
+	undecided func(symbol string, at atlas.Place, call atlas.SymbolCall)
+}
+
+// DestinationChoices are what the reading decided that a walk reads.
+// Arguments are, by outside symbol (package.Receiver.Name), which value of
+// a call to it names what the call reaches. Options are, by the site of a
+// call whose words an answer made a command-line option, the option's
+// name: what such a call returns is that option's value, "{--name}".
+type DestinationChoices struct {
+	Arguments map[string]ArgumentChoice
+	Options   map[sourcevalue.Anchor]string
+}
+
+// ArgumentChoice is which value of a call names what it reaches: its
+// receiver, the argument at a position (from 1), or the one passed by a
+// keyword. None says that no value does.
+type ArgumentChoice struct {
+	Receiver bool
+	Position int
+	Keyword  string
+	None     bool
+}
+
+// value is the chosen value at one call: the receiver, the argument at the
+// position or passed by the keyword, or, when the call passes it the other
+// way, by the parameter name its declared type gives that position.
+func (choice ArgumentChoice) value(call atlas.SymbolCall) *sourcevalue.Value {
+	switch {
+	case choice.None:
+		return nil
+	case choice.Receiver:
+		return call.ReceiverValue
+	}
+	var names []string
+	if call.API != nil {
+		names = parameterNames(call.API.Signature)
+	}
+	position, keyword := choice.Position, choice.Keyword
+	if keyword == "" && position > 0 && position <= len(names) {
+		keyword = names[position-1]
+	}
+	if position == 0 && keyword != "" {
+		for i, name := range names {
+			if name == keyword {
+				position = i + 1
+			}
+		}
+	}
+	for _, argument := range call.SourceArguments {
+		if position > 0 && argument.Position == position && argument.Keyword == "" {
+			return argument.Origin
+		}
+	}
+	for _, argument := range call.SourceArguments {
+		if keyword != "" && argument.Keyword == keyword {
+			return argument.Origin
+		}
+	}
+	return nil
+}
+
+// parameterNames are the names a declared type gives its parameters, in
+// order ("func(ctx context.Context, url string) error" gives ctx and url),
+// or none when it does not name every one.
+func parameterNames(signature string) []string {
+	open := strings.Index(signature, "(")
+	if open < 0 {
+		return nil
+	}
+	var names []string
+	named := func(parameter string) bool {
+		fields := strings.Fields(parameter)
+		if len(fields) < 2 {
+			return false
+		}
+		names = append(names, fields[0])
+		return true
+	}
+	depth, start := 0, open+1
+	for i := open; i < len(signature); i++ {
+		switch signature[i] {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			if depth--; depth == 0 {
+				if strings.TrimSpace(signature[start:i]) != "" && !named(signature[start:i]) {
+					return nil
+				}
+				return names
+			}
+		case ',':
+			if depth == 1 {
+				if !named(signature[start:i]) {
+					return nil
+				}
+				start = i + 1
+			}
+		}
+	}
+	return nil
 }
 
 type destinationCall struct {
@@ -35,9 +144,12 @@ type destinationPath struct {
 	choices map[string]int
 }
 
-func NewDestinationReader(places []atlas.Place) *DestinationReader {
-	d := &DestinationReader{places: make(map[string]atlas.Place), callers: make(map[string][]destinationCall), callSites: make(map[sourcevalue.Anchor][]destinationCall), owners: make(map[sourcevalue.Anchor][]atlas.Place), ownerLines: make(map[sourcevalue.Anchor][]atlas.Place), parameterCalls: make(map[sourcevalue.Anchor][]destinationCall)}
+func NewDestinationReader(places []atlas.Place, choices DestinationChoices) *DestinationReader {
+	d := &DestinationReader{places: make(map[string]atlas.Place), callers: make(map[string][]destinationCall), callSites: make(map[sourcevalue.Anchor][]destinationCall), owners: make(map[sourcevalue.Anchor][]atlas.Place), ownerLines: make(map[sourcevalue.Anchor][]atlas.Place), parameterCalls: make(map[sourcevalue.Anchor][]destinationCall), environment: make(map[sourcevalue.Anchor]string), choices: choices}
 	for _, place := range places {
+		if b := place.Boundary; b != nil && b.Source == "fact" && b.GivenKind == atlas.BoundaryConfig && len(b.Values) > 0 {
+			d.environment[sourcevalue.Anchor{Path: place.Path, Line: place.LineNo, Column: place.Column}] = b.Values[0]
+		}
 		if place.Symbol == nil {
 			continue
 		}
@@ -61,35 +173,41 @@ func NewDestinationReader(places []atlas.Place) *DestinationReader {
 	return d
 }
 
+// Read follows the value a call's symbol's decided argument names back to
+// where it comes from. A call to a symbol without a decided argument, or
+// whose decided argument it was not given, stops at its own name.
 func (d *DestinationReader) Read(place atlas.Place, call atlas.SymbolCall) []atlas.DestinationUse {
-	position, purpose := destinationArgument(call.API)
 	step := destinationStep(place, call)
 	initial := destinationPath{DestinationUse: atlas.DestinationUse{TargetIDs: append([]string(nil), runningTargets(place)...), Steps: []atlas.DestinationStep{step}}}
-	if purpose == "options" {
-		var result []destinationPath
-		for _, argument := range call.SourceArguments {
-			if argument.Origin == nil || argument.Origin.Kind != "call_result" || argument.Origin.Anchor == nil {
-				continue
-			}
-			for _, option := range d.callSites[*argument.Origin.Anchor] {
-				if _, kind := destinationArgument(option.call.API); kind == "endpoint" {
-					result = append(result, d.value(argument.Origin, place, initial, make(map[string]bool))...)
-				}
-			}
-		}
-		if len(result) > 0 {
-			return publishDestinationPaths(result)
-		}
-	}
-	if position == 0 {
-		initial.Frontier = call.Name
-		return []atlas.DestinationUse{initial.DestinationUse}
-	}
-	if value := destinationSourceArgument(call, position); value != nil {
+	if value := d.chosen(call); value != nil {
 		return publishDestinationPaths(d.value(value, place, initial, make(map[string]bool)))
 	}
 	initial.Frontier = call.Name
 	return []atlas.DestinationUse{initial.DestinationUse}
+}
+
+// chosen is the value the decided argument of an outside call names, nil
+// for a call to no outside symbol, to one without a decided argument or
+// decided none, or one not given it.
+func (d *DestinationReader) chosen(call atlas.SymbolCall) *sourcevalue.Value {
+	if call.API == nil {
+		return nil
+	}
+	choice, ok := d.choices.Arguments[apiName(*call.API)]
+	if !ok {
+		return nil
+	}
+	return choice.value(call)
+}
+
+// environmentAt is the environment variable a configuration read at a call
+// reads: at its column, or on its line when the fact has no column.
+func (d *DestinationReader) environmentAt(anchor sourcevalue.Anchor) string {
+	if key := d.environment[anchor]; key != "" {
+		return key
+	}
+	anchor.Column = 0
+	return d.environment[anchor]
 }
 
 func sourceArgument(call atlas.SymbolCall, position int) *sourcevalue.Value {
@@ -111,83 +229,6 @@ func namedSourceArgument(call atlas.SymbolCall, position int, name string) *sour
 		}
 	}
 	return nil
-}
-
-// Keyword arguments retain their written names; the native API contract owns
-// the URL parameter name, just as it owns its positional slot.
-func destinationSourceArgument(call atlas.SymbolCall, position int) *sourcevalue.Value {
-	if call.API != nil {
-		switch call.API.Package {
-		case "requests", "requests.api", "requests.sessions", "requests.models", "httpx", "httpx._api", "httpx._client", "aiohttp", "aiohttp.client":
-			return namedSourceArgument(call, position, "url")
-		}
-	}
-	return sourceArgument(call, position)
-}
-
-// The closed mechanisms identify where a supplied value goes. They never
-// promote a wrapper, import or request builder into a communication operation.
-func destinationArgument(api *atlas.CallAPI) (int, string) {
-	if api == nil {
-		return 0, ""
-	}
-	name := api.Name
-	if dot := strings.LastIndex(name, "."); dot >= 0 {
-		name = name[dot+1:]
-	}
-	switch api.Package {
-	case "net/http":
-		switch name {
-		case "Get", "Head", "Post", "PostForm", "Do", "RoundTrip":
-			return 1, "exchange"
-		case "NewRequest":
-			return 2, "request"
-		case "NewRequestWithContext":
-			return 3, "request"
-		case "WithContext", "Clone":
-			return -1, "receiver"
-		}
-	case "net/url":
-		if name == "String" {
-			return -1, "receiver"
-		}
-		if name == "Parse" {
-			return 1, "endpoint"
-		}
-	case "flag":
-		if name == "String" {
-			return 1, "flag"
-		}
-	case "os":
-		if name == "Getenv" || name == "LookupEnv" || name == "getenv" {
-			return 1, "environment"
-		}
-	case "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp", "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc", "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp", "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc":
-		switch name {
-		case "New", "NewClient":
-			return 0, "options"
-		case "WithEndpoint", "WithEndpointURL":
-			return 1, "endpoint"
-		}
-	case "platform:javascript":
-		switch name {
-		case "fetch":
-			return 1, "exchange"
-		case "Request":
-			return 1, "request"
-		}
-	case "requests", "requests.api", "requests.sessions", "requests.models", "httpx", "httpx._api", "httpx._client", "aiohttp", "aiohttp.client", "axios", "node-fetch", "ky", "got":
-		if name == "Request" {
-			return 2, "request"
-		}
-		switch strings.ToLower(name) {
-		case "get", "post", "put", "patch", "delete", "head", "fetch":
-			return 1, "exchange"
-		case "request":
-			return 2, "exchange"
-		}
-	}
-	return 0, ""
 }
 
 func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, use destinationPath, active map[string]bool) []destinationPath {
@@ -231,39 +272,33 @@ func (d *DestinationReader) value(value *sourcevalue.Value, owner atlas.Place, u
 			for _, call := range d.callSites[*value.Anchor] {
 				next := cloneDestinationPath(use)
 				next.Steps = appendDestinationStep(next.Steps, destinationStep(call.place, call.call))
-				position, kind := destinationArgument(call.call.API)
-				argument := destinationSourceArgument(call.call, position)
-				if (kind == "flag" || kind == "environment") && argument != nil && argument.Kind == "literal" {
-					prefix := "env:"
-					if kind == "flag" {
-						prefix = "--"
-					}
-					next.Address = "{" + prefix + argument.Text + "}"
+				at := sourcevalue.Anchor{Path: call.place.Path, Line: call.call.Line, Column: call.call.Column}
+				// What a command-line option's declaration or an
+				// environment read returns is that setting's value: the
+				// configuration names the address, no deployed value.
+				if name := d.choices.Options[at]; name != "" {
+					next.Address = "{--" + strings.TrimLeft(name, "-") + "}"
 					result = append(result, next)
-				} else if (kind == "request" || kind == "endpoint") && argument != nil {
-					if kind == "request" {
-						if method := sourceArgument(call.call, position-1); method != nil && method.Kind == "literal" {
-							next.Method = method.Text
-						}
+					continue
+				}
+				if key := d.environmentAt(at); key != "" {
+					next.Address = "{env:" + key + "}"
+					result = append(result, next)
+					continue
+				}
+				if call.call.API != nil {
+					if chosen := d.chosen(call.call); chosen != nil {
+						result = append(result, d.value(chosen, call.place, next, active)...)
+						continue
 					}
-					branches := d.value(argument, call.place, next, active)
-					if kind == "request" {
-						if method := sourceArgument(call.call, position-1); method != nil {
-							for i := range branches {
-								methodUse := cloneDestinationPath(branches[i])
-								methodUse.Address = ""
-								methodUse.Frontier = ""
-								methods := d.value(method, call.place, methodUse, active)
-								if len(methods) == 1 && methods[0].Frontier == "" {
-									branches[i].Method = methods[0].Address
-								}
-							}
-						}
+					if _, decided := d.choices.Arguments[apiName(*call.call.API)]; !decided && d.undecided != nil {
+						d.undecided(apiName(*call.call.API), call.place, call.call)
 					}
-					result = append(result, branches...)
-				} else if kind == "receiver" && call.call.ReceiverValue != nil {
-					result = append(result, d.value(call.call.ReceiverValue, call.place, next, active)...)
-				} else if call.call.ResultValue != nil && len(call.call.CalleeIDs) == 1 {
+					next.Frontier = call.call.Name + "()"
+					result = append(result, next)
+					continue
+				}
+				if call.call.ResultValue != nil && len(call.call.CalleeIDs) == 1 {
 					if callee, ok := d.places[call.call.CalleeIDs[0]]; ok {
 						result = append(result, d.value(call.call.ResultValue, callee, next, active)...)
 					} else {

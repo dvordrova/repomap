@@ -460,7 +460,7 @@ func (preset *echoPreset) categorizer() *typesafetest.Categorizer {
 				return typesafetest.Choose(answer), true
 			}
 			return typesafetest.Choose("none"), true
-		case column == "binds" || column == "publishes" || column == "talks":
+		case column == "binds" || column == "talks" || column == "argument":
 			return typesafetest.Choose("none"), true
 		case column == "becomes" && question.Item["tag"] != nil:
 			structure, _ := question.Item["structure"].(string)

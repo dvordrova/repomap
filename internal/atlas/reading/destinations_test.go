@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -12,6 +13,81 @@ import (
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
+
+// argumentsAt are the choices of one symbol's decided argument.
+func argumentsAt(symbol string, choice ArgumentChoice) DestinationChoices {
+	return DestinationChoices{Arguments: map[string]ArgumentChoice{symbol: choice}}
+}
+
+// Which value a call's walk follows is its symbol's decided argument, not a
+// list of packages: Do follows its request, the request builder the URL it
+// was given (a symbol whose result the request is, asked for its own
+// argument), WithContext its receiver. What a command-line option's
+// declaration or an environment read returns is that setting's value, and
+// a builder with no decided argument stops the walk at its call, telling
+// whoever asks which symbol it was.
+func TestDestinationFollowsTheDecidedArgumentThroughBuilders(t *testing.T) {
+	at := func(line int) *sourcevalue.Anchor { return &sourcevalue.Anchor{Path: "main.go", Line: line, Column: 5} }
+	result := func(line int) *sourcevalue.Value { return &sourcevalue.Value{Kind: "call_result", Anchor: at(line)} }
+	outside := func(pkg, receiver, name, signature string, line int, arguments ...atlas.SourceArgument) atlas.SymbolCall {
+		return atlas.SymbolCall{Kind: "invokes_external", Name: name, Line: line, Column: 5, SourceArguments: arguments, API: &atlas.CallAPI{Package: pkg, Receiver: receiver, Name: name, Signature: signature}}
+	}
+	argument := func(position int, value *sourcevalue.Value) atlas.SourceArgument {
+		return atlas.SourceArgument{Position: position, Origin: value}
+	}
+	flagValue := &sourcevalue.Value{Kind: "concat", Parts: []sourcevalue.Value{*result(2), {Kind: "literal", Text: "/prices"}}}
+	calls := []atlas.SymbolCall{
+		outside("flag", "", "String", "", 2, argument(1, &sourcevalue.Value{Kind: "literal", Text: "price-endpoint"})),
+		outside("net/http", "", "NewRequestWithContext", "func(ctx context.Context, method string, url string, body io.Reader) (*http.Request, error)", 3,
+			argument(1, &sourcevalue.Value{Kind: "parameter", Text: "ctx"}), argument(3, flagValue)),
+		outside("net/http", "*Request", "WithContext", "func(ctx context.Context) *http.Request", 4, argument(1, &sourcevalue.Value{Kind: "parameter", Text: "ctx"})),
+		outside("os", "", "Getenv", "", 6, argument(1, &sourcevalue.Value{Kind: "literal", Text: "AUDIT_URL"})),
+		outside("net/url", "", "Parse", "", 7, argument(1, result(6))),
+	}
+	calls[2].ReceiverValue = result(3)
+	do := outside("net/http", "*Client", "Do", "func(req *http.Request) (*http.Response, error)", 5, argument(1, result(4)))
+	audit := outside("net/http", "*Client", "Do", "", 8, argument(1, result(7)))
+	main := atlas.Place{ID: "main", Path: "main.go", LineNo: 1, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "main"}, Calls: append(calls, do, audit)}}
+	env := atlas.Place{ID: "b1", Kind: atlas.PlaceBoundary, Path: "main.go", LineNo: 6, Column: 5, TargetIDs: []string{"app"},
+		Boundary: &atlas.BoundaryFacts{Source: "fact", Direction: atlas.DirectionOut, GivenKind: atlas.BoundaryConfig, Values: []string{"AUDIT_URL"}}}
+	choices := DestinationChoices{
+		Arguments: map[string]ArgumentChoice{
+			"net/http.Client.Do": {Position: 1}, "net/http.NewRequestWithContext": {Keyword: "url"}, "net/http.Request.WithContext": {Receiver: true},
+		},
+		Options: map[sourcevalue.Anchor]string{*at(2): "price-endpoint"},
+	}
+	reader := NewDestinationReader([]atlas.Place{main, env}, choices)
+	var undecided []string
+	reader.undecided = func(symbol string, _ atlas.Place, _ atlas.SymbolCall) { undecided = append(undecided, symbol) }
+	uses := reader.Read(main, do)
+	if len(uses) != 1 || uses[0].Address != "{--price-endpoint}/prices" || len(uses[0].Steps) != 4 {
+		t.Fatalf("the request's URL was not followed through its builders: %+v", uses)
+	}
+	// url.Parse has no decided argument: the walk stops at it, and says so.
+	uses = reader.Read(main, audit)
+	if len(uses) != 1 || uses[0].Frontier != "Parse()" || !slices.Equal(undecided, []string{"net/url.Parse"}) {
+		t.Fatalf("an undecided builder: %+v, %v", uses, undecided)
+	}
+	choices.Arguments["net/url.Parse"] = ArgumentChoice{Position: 1}
+	if uses = NewDestinationReader([]atlas.Place{main, env}, choices).Read(main, audit); len(uses) != 1 || uses[0].Address != "{env:AUDIT_URL}" {
+		t.Fatalf("an environment read's value: %+v", uses)
+	}
+	// None and an argument the call was not given stop at the call.
+	choices.Arguments["net/http.Client.Do"] = ArgumentChoice{None: true}
+	if uses = NewDestinationReader([]atlas.Place{main}, choices).Read(main, do); len(uses) != 1 || uses[0].Frontier != "Do" {
+		t.Fatalf("a call decided none: %+v", uses)
+	}
+	choices.Arguments["net/http.Client.Do"] = ArgumentChoice{Position: 2}
+	if uses = NewDestinationReader([]atlas.Place{main}, choices).Read(main, do); len(uses) != 1 || uses[0].Frontier != "Do" {
+		t.Fatalf("a call not given its decided argument: %+v", uses)
+	}
+	if got := parameterNames("func(ctx context.Context, fn func(a, b int) error, opts ...Option) (int, error)"); !slices.Equal(got, []string{"ctx", "fn", "opts"}) {
+		t.Fatalf("parameter names = %v", got)
+	}
+	if got := parameterNames("int (int, const struct sockaddr *)"); got != nil {
+		t.Fatalf("unnamed parameters named %v", got)
+	}
+}
 
 func TestDestinationChainsKeepCallArgumentsTogether(t *testing.T) {
 	anchor := &sourcevalue.Anchor{Path: "helper.go", Line: 10, Column: 1}
@@ -26,7 +102,7 @@ func TestDestinationChainsKeepCallArgumentsTogether(t *testing.T) {
 		{Name: "Send", Line: 3, Column: 3, CalleeIDs: []string{"helper"}, SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: literal("https://second.example")}, {Position: 2, Origin: literal("/b")}}},
 	}
 	sibling := atlas.Place{ID: "other", Path: "other.go", LineNo: 1, TargetIDs: []string{"other"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "Other"}, Calls: []atlas.SymbolCall{{Name: "Send", Line: 2, Column: 3, CalleeIDs: []string{"helper"}, SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: literal("https://unrelated.example")}, {Position: 2, Origin: literal("/c")}}}}}}
-	uses := NewDestinationReader([]atlas.Place{helper, app, sibling}).Read(helper, call)
+	uses := NewDestinationReader([]atlas.Place{helper, app, sibling}, argumentsAt("net/http.Get", ArgumentChoice{Position: 1})).Read(helper, call)
 	var addresses []string
 	for _, use := range uses {
 		addresses = append(addresses, use.Address)
@@ -44,7 +120,7 @@ func TestDestinationStopsAtUnknownFactoryInsteadOfSelectingNearbyLiteral(t *test
 	place := atlas.Place{ID: "sender", Path: "pipeline.go", LineNo: 10, TargetIDs: []string{"server"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "pipeline.post"}}}
 	call := atlas.SymbolCall{Name: "http.RoundTripper.RoundTrip", Line: 30, Column: 5, API: &atlas.CallAPI{Package: "net/http", Name: "RoundTrip"}, SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "pipeline.go", Line: 20, Column: 5}}}}}
 	place.Symbol.Calls = []atlas.SymbolCall{call, {Name: "picker.pick", Line: 20, Column: 5}, {Name: "log.Printf", Line: 19, Column: 5, Values: []string{"https://unrelated.example"}}}
-	uses := NewDestinationReader([]atlas.Place{place}).Read(place, call)
+	uses := NewDestinationReader([]atlas.Place{place}, argumentsAt("net/http.RoundTrip", ArgumentChoice{Position: 1})).Read(place, call)
 	if len(uses) != 1 || uses[0].Address != "" || uses[0].Frontier != "picker.pick()" || len(uses[0].Steps) != 2 || uses[0].Steps[1].Line != 20 {
 		t.Fatalf("frontier changed into guessed destination: %+v", uses)
 	}
@@ -65,7 +141,7 @@ func TestDestinationConstructorBindsItsOwnKeywordArguments(t *testing.T) {
 	}
 	call := atlas.SymbolCall{Name: "requests.get", Line: 5, Column: 5, API: &atlas.CallAPI{Package: "requests.api", Name: "get"}, SourceArguments: []atlas.SourceArgument{{Keyword: "url", Origin: &sourcevalue.Value{Kind: "field", Text: "endpoint", Parts: []sourcevalue.Value{{Kind: "call_result", Anchor: &sourcevalue.Anchor{Path: "main.py", Line: 2, Column: 5}}}}}}}
 	app.Symbol.Calls = append(app.Symbol.Calls, call)
-	uses := NewDestinationReader([]atlas.Place{app}).Read(app, call)
+	uses := NewDestinationReader([]atlas.Place{app}, argumentsAt("requests.api.get", ArgumentChoice{Keyword: "url"})).Read(app, call)
 	if len(uses) != 1 || uses[0].Address != "https://first.example/a" {
 		t.Fatalf("constructor lost formal ownership or mixed independent instances: %+v", uses)
 	}
@@ -82,7 +158,7 @@ func TestDestinationAlternativeFieldsKeepTheirSourcePair(t *testing.T) {
 	url := &sourcevalue.Value{Kind: "concat", Parts: []sourcevalue.Value{{Kind: "field", Text: "base", Parts: []sourcevalue.Value{choice}}, {Kind: "field", Text: "path", Parts: []sourcevalue.Value{choice}}}}
 	call := atlas.SymbolCall{Name: "fetch", Line: 5, Column: 1, API: &atlas.CallAPI{Package: "platform:javascript", Name: "fetch"}, SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: url}}}
 	p := atlas.Place{ID: "main", Path: "app.ts", LineNo: 1, TargetIDs: []string{"app"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "main"}, Calls: []atlas.SymbolCall{call}}}
-	uses := NewDestinationReader([]atlas.Place{p}).Read(p, call)
+	uses := NewDestinationReader([]atlas.Place{p}, argumentsAt("platform:javascript.fetch", ArgumentChoice{Position: 1})).Read(p, call)
 	if len(uses) != 2 {
 		t.Fatalf("lost source alternatives: %+v", uses)
 	}
@@ -111,7 +187,7 @@ func TestDestinationChainsStayWithTheTargetsThatRunEveryStep(t *testing.T) {
 	replicate := atlas.Place{ID: "replicate", Path: "net.go", LineNo: 30, TargetIDs: []string{"cli", "server"}, Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{Name: "Replicate"}, Unreached: []string{"cli"},
 		Calls: []atlas.SymbolCall{{Name: "Connect", Line: 31, Column: 3, CalleeIDs: []string{"connect"}, SourceArguments: literal("https://master.example")}}}}
 	targets := map[string][]string{}
-	for _, use := range NewDestinationReader([]atlas.Place{connect, cli, replicate}).Read(connect, call) {
+	for _, use := range NewDestinationReader([]atlas.Place{connect, cli, replicate}, argumentsAt("net/http.Get", ArgumentChoice{Position: 1})).Read(connect, call) {
 		targets[use.Address] = use.TargetIDs
 	}
 	if want := map[string][]string{"https://cli.example": {"cli"}, "https://master.example": {"server"}}; !reflect.DeepEqual(targets, want) {

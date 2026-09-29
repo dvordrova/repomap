@@ -22,7 +22,8 @@ func TestGoDestinationsSeparateReadAndReturnStoreContexts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader := reading.NewDestinationReader(graph.Places)
+	// The preset's decided argument: http.Get's first names its URL.
+	reader := reading.NewDestinationReader(graph.Places, reading.DestinationChoices{Arguments: map[string]reading.ArgumentChoice{"net/http.Get": {Position: 1}}})
 	found := map[string]bool{}
 	for _, place := range graph.Places {
 		if place.Symbol == nil {

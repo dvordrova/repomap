@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dvordrova/repomap/internal/atlas"
 	"github.com/dvordrova/repomap/internal/atlas/lines"
@@ -33,6 +34,10 @@ type apiSymbol struct {
 	// belongs to testing and is not asked about.
 	sites   int
 	holders map[string]bool
+	// called is whether code outside tests calls the symbol: a handed
+	// symbol only registrations name (a table row's field) has no call
+	// for its talks answer to decide.
+	called bool
 	// usage is the first site: the call a reader would look at, for a
 	// symbol handed nothing the first that gives it words (a literal). A
 	// symbol only registrations name uses its first registration.
@@ -123,6 +128,7 @@ func (r *reader) apiSymbols() []*apiSymbol {
 			}
 			if !inTest {
 				s.sites++
+				s.called = true
 			}
 			s.literals = appendUnique(s.literals, call.Values...)
 			if s.signature == "" {
@@ -205,20 +211,26 @@ func apiSubject(symbol string) string { return "api:" + symbol }
 func (r *reader) readAPI(ctx context.Context) error {
 	r.api = make(map[string]apiRole)
 	symbols := r.apiSymbols()
-	// Two questions, asked at once, each symbol in exactly one: a symbol
-	// handed a callable is asked what the callable becomes; any other what
-	// its call does with other running programs.
-	var handed, other []*apiSymbol
+	// Three tables, asked at once, each symbol in exactly one: every symbol
+	// the code calls is asked what its call does with other running
+	// programs or with files, and a symbol handed a callable what the
+	// callable becomes; a handed symbol no call names (a table row's field)
+	// has no call to decide, and is asked only that.
+	var handed, other, uncalled []*apiSymbol
 	for _, s := range symbols {
-		if s.handsCallable {
+		switch {
+		case s.handsCallable && s.called:
 			handed = append(handed, s)
-		} else {
+		case s.handsCallable:
+			uncalled = append(uncalled, s)
+		default:
 			other = append(other, s)
 		}
 	}
-	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d outside symbols: %d handed a callable, %d asked what their calls do with other programs", len(symbols), len(handed), len(other)))
-	groups := [][]*apiSymbol{handed, other}
-	definitions := []table.Definition{lines.API(true), lines.API(false)}
+	r.opts.Stage(lines.StageAPI, fmt.Sprintf("reading %d outside symbols: %d what their calls do with other programs or files, %d what the callable they are handed becomes", len(symbols), len(handed)+len(other), len(handed)+len(uncalled)))
+	groups := [][]*apiSymbol{handed, other, uncalled}
+	definitions := []table.Definition{lines.API(true, true), lines.API(false, true), lines.API(true, false)}
+	rounds := []int{1, 2, 5}
 	rows := make([][]table.Row, len(groups))
 	// Each round remembers every symbol's answer apart: a row is its own
 	// subject, keyed by its symbol, so a new call asks only its symbol.
@@ -251,30 +263,32 @@ func (r *reader) readAPI(ctx context.Context) error {
 			rows[round] = append(rows[round], table.Row{ID: id, Fields: fields})
 		}
 	}
-	// The rounds read nothing of each other. The second runs on its own
-	// view, joined after the first; a failure of either cancels the other
-	// and the first failure is reported.
+	// The rounds read nothing of each other. The later ones run on views of
+	// their own, joined after the first in order; a failure of any cancels
+	// the others and the first failure is reported.
 	asking, cancel := context.WithCancel(ctx)
 	defer cancel()
-	view := r.view(nil)
-	view.rowSubjects = subjects[1]
-	r.rowSubjects = subjects[0]
+	views := make([]*reader, len(groups))
+	views[0] = r
+	for round := 1; round < len(groups); round++ {
+		views[round] = r.view(nil)
+	}
 	defer func() { r.rowSubjects = nil }()
 	answers := make([][]rowAnswer, len(groups))
 	failures := make([]error, len(groups))
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		answers[1], failures[1] = view.runTable(asking, definitions[1], 2, rows[1])
-		if failures[1] != nil {
-			cancel()
-		}
-	}()
-	answers[0], failures[0] = r.runTable(asking, definitions[0], 1, rows[0])
-	if failures[0] != nil {
-		cancel()
+	var asked sync.WaitGroup
+	for round := range groups {
+		views[round].rowSubjects = subjects[round]
+		asked.Add(1)
+		go func(round int) {
+			defer asked.Done()
+			answers[round], failures[round] = views[round].runTable(asking, definitions[round], rounds[round], rows[round])
+			if failures[round] != nil {
+				cancel()
+			}
+		}(round)
 	}
-	<-done
+	asked.Wait()
 	for _, err := range failures {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return err
@@ -285,7 +299,9 @@ func (r *reader) readAPI(ctx context.Context) error {
 			return err
 		}
 	}
-	r.joinView(view)
+	for _, view := range views[1:] {
+		r.joinView(view)
+	}
 	if err := r.readStarts(ctx); err != nil {
 		return err
 	}
@@ -312,6 +328,11 @@ func (r *reader) readAPI(ctx context.Context) error {
 	if err := r.readCalls(ctx, symbols, talks); err != nil {
 		return err
 	}
+	// Which argument names what a call reaches reads the talks answers and
+	// the options the calls' words declare.
+	if err := r.readArguments(ctx, symbols, talks); err != nil {
+		return err
+	}
 	r.reportStage(lines.StageAPI)
 	return nil
 }
@@ -321,7 +342,7 @@ func (r *reader) readAPI(ctx context.Context) error {
 // middleware binds no entry, and a call that serves, handed or not, is the
 // program's listening side.
 func apiRoleOf(answer table.Answer) apiRole {
-	role := apiRole{publishes: answer["publishes"] == lines.APIServes}
+	var role apiRole
 	switch binds := answer["binds"]; binds {
 	case "", lines.APINone:
 	case lines.APIMiddleware:
@@ -421,7 +442,7 @@ func (r *reader) applyAPIRoles() []*boundaryState {
 			state.handlerUnknown = true
 		case role.publishes:
 			facts.Direction, facts.GivenKind = atlas.DirectionIn, atlas.BoundaryListenAddress
-		case role.talks != "":
+		case role.talks != "" && role.talks != lines.APIFile:
 			facts.GivenKind = role.talks
 		default:
 			delete(r.boundaries, id)

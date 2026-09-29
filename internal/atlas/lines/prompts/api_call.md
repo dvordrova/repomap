@@ -17,7 +17,10 @@ is the symbol's name, `declared` its type as its package declares it,
 is written in, with its signature, `literals` every word this call gives,
 `arguments` where each argument of the call comes from as the code records
 it (a word, a parameter of a declaration, a field or an element of another
-value, what a call returns, or code that was not followed), and `talks`,
+value, what a call returns, or code that was not followed),
+`compared_after`, when the call compares a later element of a value, the
+last call written before it in the same declaration that compares an
+earlier element of that value, as written, and `talks`,
 when already decided, what a call to the symbol does with other running
 programs. One symbol's words can mean different things at different calls.
 The question asks what the words this one call gives are on our map;

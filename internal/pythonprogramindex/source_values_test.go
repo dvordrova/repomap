@@ -102,7 +102,8 @@ func TestCumulativePythonSourceValuesRetainSharedHelperAndCapturedOwner(t *testi
 			t.Errorf("source observation missing: %s", name)
 		}
 	}
-	reader := reading.NewDestinationReader(graph.Places)
+	// The preset's decided argument: requests.get's first names its URL.
+	reader := reading.NewDestinationReader(graph.Places, reading.DestinationChoices{Arguments: map[string]reading.ArgumentChoice{"requests.get": {Position: 1}}})
 	var direct, config, constructor bool
 	for _, place := range graph.Places {
 		if place.Symbol == nil {

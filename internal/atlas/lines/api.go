@@ -24,6 +24,9 @@ const (
 	APIServes     = "serves"
 	APIMiddleware = "middleware"
 	APINone       = "none"
+	// APIFile is the talks answer that a call reaches a file or a directory
+	// by its path: no other running program, and no outside system.
+	APIFile = "file"
 )
 
 //go:embed prompts/api.md
@@ -37,9 +40,6 @@ var apiCallPrompt string
 
 //go:embed prompts/inputs.md
 var inputsPrompt string
-
-//go:embed prompts/api_publishes_options.md
-var apiPublishesOptionsText string
 
 //go:embed prompts/api_talks_options.md
 var apiTalksOptionsText string
@@ -58,10 +58,9 @@ var programOptionsText string
 // repository becomes on our map reads one file: an option means the same
 // in each of them.
 var (
-	entryOptions        = mustOptions("prompts/entry_options.md", entryOptionsText, entryOptionNames())
-	apiPublishesOptions = mustOptions("prompts/api_publishes_options.md", apiPublishesOptionsText, []string{APIServes, APINone})
-	apiTalksOptions     = mustOptions("prompts/api_talks_options.md", apiTalksOptionsText, TalksOptions())
-	programOptions      = mustOptions("prompts/program_options.md", programOptionsText, []string{programWord, ProgramNotNamed})
+	entryOptions    = mustOptions("prompts/entry_options.md", entryOptionsText, entryOptionNames())
+	apiTalksOptions = mustOptions("prompts/api_talks_options.md", apiTalksOptionsText, TalksOptions())
+	programOptions  = mustOptions("prompts/program_options.md", programOptionsText, []string{programWord, ProgramNotNamed})
 )
 
 // entryOptionNames are every option an entry question may offer: the entry
@@ -87,9 +86,9 @@ func EntryCriteria(names ...string) map[string]llm.Criteria {
 
 // API reads the external symbols the repository calls, one question per
 // symbol and cell, each a closed choice whose every option, none among them,
-// carries its criteria. A symbol handed a repository callable is asked what
-// the callable becomes and whether the call starts serving it; every other
-// symbol is asked what the call does with other running programs. Only the
+// carries its criteria. Every symbol is asked what a call to it does with
+// other running programs or with files (talks); a symbol handed a repository
+// callable is also asked what the callable becomes (binds). Only the
 // decisions the boundaries read are asked.
 //
 // The categorizer (Jev) answers them. Measured on the saved requests of
@@ -106,22 +105,37 @@ func EntryCriteria(names ...string) map[string]llm.Criteria {
 // pykrx (37 symbols, 5 draws against 5 control draws) kept every entry but
 // two, each for a stated reason: a flag set's usage printer is printed text
 // (none) and an errgroup's goroutine does one piece of work and ends (none).
-func API(handed bool) table.Definition {
-	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v8", System: apiPrompt, Classifier: true, Memoize: true}
-	if handed {
-		def.Contract += ".handed"
-		// The two decisions are independent: a near-tie on one leaves the
-		// other standing.
-		def.Columns = []table.Column{
-			{Name: "binds", Kind: table.Choice, Options: entryOptionNames(), Criteria: EntryCriteria(entryOptionNames()...), Item: "outside_symbol", Alone: true,
-				Ask: "What does the repository's callable handed to `outside_symbol` become on our map?"},
-			{Name: "publishes", Kind: table.Choice, Options: []string{APIServes, APINone}, Criteria: apiPublishesOptions, Item: "outside_symbol", Alone: true,
-				Ask: "Does this call to `outside_symbol` make what the repository hands it reachable by other programs?"},
-		}
+//
+// A handed symbol was asked only whether its call starts serving what it
+// is handed until 2026-09-29: ssh.Dial, handed a configuration the
+// repository built with a callback in it, was never asked what it talks
+// to. The talks choice holds serving among its options, so a handed symbol
+// the code calls is asked it in that question's place, and the count of
+// questions stays the same. A handed symbol no call names (the field a
+// table's rows store a callable in) has no call for talks to decide and is
+// asked binds alone.
+//
+// binds and talks say which of the two decisions a table asks; at least
+// one of them.
+func API(binds, talks bool) table.Definition {
+	def := table.Definition{Stage: StageAPI, Contract: "repomap.atlas.api.v9", System: apiPrompt, Classifier: true, Memoize: true}
+	talking := table.Column{Name: "talks", Kind: table.Choice, Options: TalksOptions(), Criteria: apiTalksOptions, Item: "outside_symbol",
+		Ask: "What does a call to `outside_symbol` do with other running programs or with files?"}
+	if !binds {
+		def.Columns = []table.Column{talking}
 		return def
 	}
-	def.Columns = []table.Column{{Name: "talks", Kind: table.Choice, Options: TalksOptions(), Criteria: apiTalksOptions, Item: "outside_symbol",
-		Ask: "What does a call to `outside_symbol` do with other running programs?"}}
+	// The two decisions are independent: a near-tie on one leaves the
+	// other standing.
+	def.Contract += ".handed"
+	def.Columns = []table.Column{{Name: "binds", Kind: table.Choice, Options: entryOptionNames(), Criteria: EntryCriteria(entryOptionNames()...), Item: "outside_symbol", Alone: true,
+		Ask: "What does the repository's callable handed to `outside_symbol` become on our map?"}}
+	if talks {
+		talking.Alone = true
+		def.Columns = append(def.Columns, talking)
+		return def
+	}
+	def.Contract += ".uncalled"
 	return def
 }
 
@@ -176,12 +190,24 @@ func Publish() table.Definition {
 	}
 }
 
-// TalksOptions are what a call that hands nothing over can do with other
-// running programs: serve as the program's listening side, one of the
-// outgoing kinds, start another program, or none. There is no "other" to
-// fall into.
+// TalksOptions are what a call can do with other running programs or with
+// files: serve as the program's listening side, one of the outgoing kinds,
+// start another program, reach a file by its path, or none. There is no
+// "other" to fall into.
 func TalksOptions() []string {
-	return []string{APIServes, atlas.BoundaryClientRequest, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK, atlas.BoundaryRunsProgram, APINone}
+	return []string{APIServes, atlas.BoundaryClientRequest, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK, atlas.BoundaryRunsProgram, APIFile, APINone}
+}
+
+// ReachesByArgument reports a talks answer whose call reaches something an
+// argument or its receiver names: an outgoing kind a destination is read
+// for, or a file. Serving has its address among its words and a started
+// program its own question.
+func ReachesByArgument(talks string) bool {
+	switch talks {
+	case atlas.BoundaryClientRequest, atlas.BoundaryDB, atlas.BoundaryQueueProducer, atlas.BoundaryQueueConsumer, atlas.BoundarySDK, APIFile:
+		return true
+	}
+	return false
 }
 
 // ProgramNotNamed is the program answer that no word a call is given names
