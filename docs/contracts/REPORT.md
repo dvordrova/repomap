@@ -1060,27 +1060,6 @@ footer. Repeated `model` badges are suppressed; source and model-response
 inspection stay available.
 
 The page exposes the complete saved question menu, one open answer, its
-A program is titled by its directory unless the directory does not say it
-(`page_program_title.go`, 2026-09-30): a script (ProgramTarget
-`ScriptFile`: one source file, no name from its build) by its file
-(`build_helpers/create_command_partials.py`, `etc/s3_mock.py`, not the dotted
-module or "etc"), and a program its build names once by that name where its
-directory ends otherwise (`freqtrade-client`, not
-`ft_client/freqtrade_client`); `cmd/litestream` and `freqtrade` keep their
-directories, and a title two programs would share falls back to the
-directory rule. The one part of a script, which takes the program's name, reads
-the same title. The home's table of programs says what each is "Built from":
-a C program's link units; a script's file and what its code imports,
-followed through each imported file's imports (ProgramIndex
-`ImportedFiles`), tests left out; a Python program whose build declares
-packages (ProgramTarget `libraries`), its entry files and what their code
-imports with every file of those packages; otherwise the files its index
-declares things in (a Python program declaring no package may load its
-code by strings, as a Django project does). A Python program shares its
-project's index with the project's other programs, whose files are the
-whole project's: freqtrade's build_helpers scripts and `freqtrade` itself
-had each read 373 files.
-
 position in the menu, a next question and an explicit return to all
 questions. The menu is one vertical list of topic headings with every
 question visible under its saved topics; there is no parallel all-questions
@@ -1107,6 +1086,27 @@ Original source links and full target evidence keep their order and stay
 reachable.
 
 ## External communication and data
+
+A program is titled by its directory unless the directory does not say it
+(`page_program_title.go`, 2026-09-30): a script (ProgramTarget
+`ScriptFile`: one source file, no name from its build) by its file
+(`build_helpers/create_command_partials.py`, `etc/s3_mock.py`, not the dotted
+module or "etc"), and a program its build names once by that name where its
+directory ends otherwise (`freqtrade-client`, not
+`ft_client/freqtrade_client`); `cmd/litestream` and `freqtrade` keep their
+directories, and a title two programs would share falls back to the
+directory rule. The one part of a script, which takes the program's name, reads
+the same title. The home's table of programs says what each is "Built from":
+a C program's link units; a script's file and what its code imports,
+followed through each imported file's imports (ProgramIndex
+`ImportedFiles`), tests left out; a Python program whose build declares
+packages (ProgramTarget `libraries`), its entry files and what their code
+imports with every file of those packages; otherwise the files its index
+declares things in (a Python program declaring no package may load its
+code by strings, as a Django project does). A Python program shares its
+project's index with the project's other programs, whose files are the
+whole project's: freqtrade's build_helpers scripts and `freqtrade` itself
+had each read 373 files.
 
 A component chosen on the map is read without moving the camera, as every
 first click is (above). Its reading names it without the kind its label adds
@@ -1189,15 +1189,6 @@ unknown, and its original call/source chain. Dispatch and explicit
 remote-client configuration stay distinguishable. Native addresses and code
 names stay original; role/purpose use the display bindings. For display,
 observations group by destination text (case-insensitive; the native label or
-A destination one of whose records has an integration connection (a joint
-the reading confirmed by protocol and input) into another of the report's
-programs is that program (`joinOwnPrograms`, 2026-09-30): every record of
-the destination, by its name in that program, reads "Reaches this
-repository's program" and its arrow goes into that component, with no
-outside tile. redis-cli's "Redis server", its connect to redis-server's
-listening socket and the gethostbyname resolving the server's host, had
-stood outside beside the arrow into redis-server. A destination reaching
-several programs, or none, stays outside.
 kind when the model named none): one row per destination with the record
 count, shared kind, basis and address (or the number of distinct addresses);
 its records are compact nested lines (native method and address, else the
@@ -1225,6 +1216,15 @@ loosely) is that program: its record reads "Runs
 this repository's program" with that component's name, which reads it, and
 the call's arrow goes from the launching part into that component, with no
 outside tile. A program starting itself keeps its tile and the same line.
+A destination one of whose records has an integration connection (a joint
+the reading confirmed by protocol and input) into another of the report's
+programs is that program (`joinOwnPrograms`, 2026-09-30): every record of
+the destination, by its name in that program, reads "Reaches this
+repository's program" and its arrow goes into that component, with no
+outside tile. redis-cli's "Redis server", its connect to redis-server's
+listening socket and the gethostbyname resolving the server's host, had
+stood outside beside the arrow into redis-server. A destination reaching
+several programs, or none, stays outside.
 
 The Data shelf lists source-scoped models/tables, written columns and keys,
 queries and original sources. Query-to-table references are reversible, so a
