@@ -24,6 +24,12 @@ ProgramIndex retains:
   (`repomap-fixture`), each package.json `bin` command. Clojure names none;
   its deps.edn aliases are not executables. The report joins a started
   program to this repository's program by equal name (REPORT);
+- the import names under which the same build also installs the program's
+  code as a library (`target.libraries`, sorted and each once, omitted when
+  empty): the declared top-level packages of a Python library of the same
+  manifest the portfolio folded into the program (DISCOVERY, Target
+  selection; `freqtrade_client` on `freqtrade-client`). The component's page
+  names it instead of drawing a second component;
 - objects and their compact target-local identities;
 - adapter-observed package/module directories, independent of source locations;
 - exact, alternatives, and unresolved relation authority as distinct states;

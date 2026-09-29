@@ -217,7 +217,35 @@ Regression comparisons preserve every materialized byte while checking that repe
   model's decision in the journal): the executable's page claims the module
   root, so `internal/` and `pkg/` packages are its own boxes instead of a
   second "shared code" component. Two or more consumers keep the shared
-  library.
+  library. Python has two such folds, applied after the model's placements
+  and journaled beside its decision (`foldPythonFacets`); each is one
+  component under two names, and the owner's project-wide ProgramIndex
+  already holds the folded target's code, so no fact is dropped:
+  - a script-file launch (an author shebang with no `__main__` guard and no
+    launch call) of the file that defines one standalone program's launch
+    callable becomes `seed_of:` that program, keeping its line-1 anchor:
+    freqtrade's `ft_client.py` beside
+    `freqtrade-client = freqtrade_client.ft_client:main`. It is not offered
+    to the model as a seed owner;
+  - a library (standalone or `shared_code`, seeding nothing) whose declared
+    packages all lie under the root of exactly one standalone program of the
+    same project, built from them (its launch file is a declared module) and
+    launched as the distribution's command (a console or GUI script or a
+    `python -m` package launch, itself or as its seed), is `folded_into:`
+    that program. The program's page names the facet ("Also installable as
+    library `freqtrade_client`", its ProgramTarget `libraries`: the declared
+    top-level import packages) and also claims the library's root beside
+    its own directory, never instead of it (a guard tool beside the console
+    script's file keeps sharing that directory), so files only the library
+    held, such as its tests, are the program's. freqtrade's root
+    distribution folds into `freqtrade` the same way. A library with code
+    outside that root, or whose only such program is a declared guard it
+    could have seeded, stays. A fold moves the repository default to its
+    owner, Go's included.
+  Other adapters have no equivalent: a JS/TS package's `bin` commands are
+  executables of its one package target, a Clojure project is one target
+  with its `-main` seeds (a shadow-cljs build reads other files), and a C
+  directory library holds only units no program links.
   Missing or invalid decisions retain `standalone` with the original evidence
   and rejection reason in `target-placements.json`; there is no default seed
   owner. A decision word is read without its surrounding space and letter
@@ -242,7 +270,7 @@ Regression comparisons preserve every materialized byte while checking that repe
   Tools, examples and shared code keep their own complete analysis; shared code
   appears in a counted catalogue with links from its observed consumers.
   The owner accepts an author-written shebang as a native launch candidate.
-  A fallback standalone role is not an accepted model decision and must not be explained as one. Original launch mode, executable bit and anchored relative imports inform the model; they never remove the shebang candidate locally or force a product count.
+  A fallback standalone role is not an accepted model decision and must not be explained as one. Original launch mode, executable bit and anchored relative imports inform the model; they never remove the shebang candidate locally or force a product count. The one exception is the guardless shebang on the file defining a standalone program's launch callable, folded into that program as its launch form (above).
   Seeds keep their original source anchors inside the owner's ProgramIndex,
   without narrowing its library API. JS/TS package ownership stays separate.
   File refs remain exact restoration addresses, and positively supported
@@ -344,7 +372,8 @@ advertised as eligible for a seed owner. Independently, executable forms with
 the same complete argument-free launch callable can belong to one launch group:
 console scripts, module launches and simple direct guards retain their original
 anchors while the model chooses one owner. A shebang alone supplies no callable
-equivalence. JS/TS source-owning package targets retain their
+equivalence; a guardless one on the file defining a program's callable is
+folded into that program after placement (Target selection). JS/TS source-owning package targets retain their
 existing independent compiler boundaries, including packages without start/bin.
 Exact Python launch files also supply their corpus executable bit and direct
 module-level relative imports, including wildcard imports, with original source

@@ -1,5 +1,71 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — One component under two names: a client package's shebang and library fold into its console script
+
+- **Why:** freqtrade's whole map drew three components for `ft_client/`:
+  `freqtrade-client` (console script), `freqtrade_client.ft_client` (the
+  guardless shebang on the same file, the same two parts drawn twice) and a
+  card "ft_client — Packages the freqtrade-client REST client as an
+  independently installable library" holding only the package's tests
+  (owner: "это вообще чет левое тут"). No existing rule fired: the Go
+  sole-consumer fold is Go and `shared_code` only; the shebang has no launch
+  callable, so no launch group; the model's `seed_of:t11` for the console
+  script was refused (t11 is no advertised seed owner); the library was
+  placed standalone and `claimByRoot` left it only `test_client/`.
+- **Rule** (skeptic-reviewed on freqtrade, pykrx, litestream, the
+  python-tutorial-game and cumulative fixtures; adopted with its changes),
+  `foldPythonFacets` after the model's placements, journaled beside its
+  decision: a guardless shebang on the file defining one standalone
+  program's launch callable is that program's seed (`ScriptFileOf`, not
+  offered to the model); a library whose declared packages all lie under the
+  root of exactly one standalone program built from them and launched as the
+  distribution's command (console/GUI script or `python -m`, itself or as a
+  seed) is `folded_into:` it. The program's ProgramTarget carries
+  `libraries` (declared top-level import packages), its page intro reads
+  "Also installable as library `freqtrade_client`" (copied into the
+  component's reading), and the atlas claims the library's root beside the
+  program's own directory (`places.TargetInput.AbsorbedRoot`), never instead
+  of it, so a guard tool beside the console script's file keeps sharing it;
+  the Go fold now claims the same way. A fold moves the repository default to
+  its owner (the Go fold had failed validation when the default was folded).
+  freqtrade's root distribution folds into `freqtrade` the same way: its
+  tests and test strategies become freqtrade's.
+- **Equivalents:** JS/TS `bin` commands are executables of the one package
+  target; a Clojure project is one target with its `-main` seeds; a C
+  directory library holds only units no program links. None folds.
+- **Tests:** the cumulative Python fixture gains `client/` (console script
+  `fixture-client`, guardless shebang `cli.py`, a `bench.py` guard, its
+  tests, the library): `TestClientPackageIsOneProgramWithItsLaunchFormAndLibraryFacet`
+  (seed, facet, journal, default, the index's seeds and `libraries`, atlas
+  claims with the tool sharing the directory) and
+  `TestALibraryIsNoFacetOfAGuardItCouldHaveSeeded`;
+  `TestAProgramNamesTheLibraryFacetFoldedIntoIt` (report);
+  `TestAnAbsorbedRootIsASecondShallowerRootOfItsProgramOnly` (places).
+  Code 4b51aa1f, d6a1afa9.
+- **Acceptance:** `go test -p 2 -timeout 5m ./cmd/... ./internal/...` and
+  `go vet` green on an export of the committed tree (the shared checkout's
+  report, Go-fixture and C tests were red on other lanes' uncommitted work;
+  contracttest and jstsproject timed out once at load 100+ and passed
+  rerun). Ordinary run `repomap ~/git/freqtrade --no-serve --no-open` built
+  from 4b51aa1f, default cache: exit 0, 11 min, but every tool took tests/
+  too (`atlasPath("")` is ".", so each target without an absorbed library
+  claimed the repository root; fixed in d6a1afa9). Rerun from d6a1afa9:
+  exit 0, 11m52s, run `20260929-192959-freqtrade-dfea82fa6fa1`, portfolio
+  a cache hit, atlas all cached but 7 calls (glossary always live), rendered
+  to the scratchpad's `redis-r2/run/latest-freqtrade.html`. Seven components
+  instead of ten: `freqtrade` (472 files, tests included, "Also installable
+  as library `freqtrade`", seeds `main()`, the guard and `python -m`),
+  `freqtrade-client` (root `ft_client`, seeds `ft_client.py:1` and
+  `main()`, "Also installable as library `freqtrade_client`"), three
+  build_helpers and two scripts tools holding only their own directories.
+  The client's card is titled `ft_client/freqtrade_client`, the existing
+  root-path label of a program alone at its root (it had read
+  `freqtrade-client` only because the duplicate shared its root).
+- **Not done:** the same-root duplicates remain: build_helpers' three guards
+  each draw the same five parts, scripts' two the same two (a Python
+  target's root is its anchor's directory and ties keep shared files); a
+  claim rule of their own.
+
 ## 2026-09-29 — F5 othello: shadow-cljs builds are programs, keyword hand-overs and a future's body are registrations, test aliases mark tests, build descriptions are manifest facts
 
 - **Why:** othello (Uncle Bob, Clojure + ClojureScript; ground truth
