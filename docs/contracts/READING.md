@@ -677,6 +677,24 @@ An undecided call makes no entry and is unsure in the launch walk, which says
 of each function it reaches what it holds: the inputs it declares (found), its
 unsure calls, the calls code cannot follow (its unresolved calls), or nothing.
 
+A call written in an established entry's handler that compares its word with
+part of what the handler was handed is that entry's sub-argument (owner's rule
+K3), a code fact, and is not asked: an argument written before the call's
+first word is a field or an element of one of the handler's own parameters
+(`strcasecmp(c->argv[j]->ptr, "limit")` in `sortCommand`), or the call is made
+on one and the word is its first argument (`r.Header.Get("X-Verbose")`).
+Established handlers are the callables a `binds` answer, a kept-callable
+answer or a `starts` answer made an entry of, one kind per handler (the kept
+callables are therefore asked before the calls). A parameter used whole
+beside a word (`fmt.Fprintf(w, …)`, `res.send("…")`), a word written before
+the value (`log.Printf("from %s", r.RemoteAddr)`) and a method's receiver are
+no comparison, and the rule applies only to a call the question would ask, so
+a call to a `talks` symbol stays that outgoing boundary. The call is an entry
+of the handler's kind whose handler is not established, declared by the
+handler; GroupsIndex nests it under the entry (`Launch.Nested`,
+`Reach.SubArguments`). Redis's SORT (7 words), DEBUG (5) and SLAVEOF (2) were
+14 near-tie questions.
+
 A call whose answer makes its words an entry, and that no fact boundary, in or
 out, names at its line and column, is that entry: a model boundary, direction
 in, of the kind answered, whose `words` are the literals given (never the call
@@ -778,6 +796,24 @@ so one structure's fields are one catalogue; when the facts name exactly one
 call decoding the structure, the entry is also declared on it (`Declared on
 yaml.Unmarshal(buf, &config) in Config`). `none` and an undecided answer make
 nothing.
+
+**Starting statements.** A registration with an `invocation` (a Go `go`
+statement, a coroutine handed to `asyncio.create_task`; PROGRAM_INDEX) hands
+its function to no outside symbol, so no `binds` answer decides it: one answer
+would take its example from the first statement and decide every other
+(litestream starts 20 functions with `go`, ticker monitors and signal
+waiters alike). Each statement outside tests is asked on its own
+(`repomap.atlas.starts.v1`, `starts`, Jev, `prompts/api_start.md`, after the
+symbol tables): `request`, `scheduled`, `continuous`, `queue_consumer` or
+`none` from the one criteria file. The item is the statement as written (a
+closure's body included; for a coroutine, the call it is handed to), `in`
+(the declaration it is written in, with its signature), `starts` (the started
+function with its signature), `calls` (what that function calls, by name, in
+source order) and the started call's `literals`; each row is remembered by
+what it shows. An entry answer is that entry, handled by the started
+function and named by its declaration; `none` and an undecided answer make
+nothing. A function the graph holds no declaration of (a closure calling
+nothing) is not asked and makes nothing.
 
 **The roles make the boundaries**; no call site is asked whether it is one. A
 registration handing a callable to a `binds` symbol is that entry, of the

@@ -1,5 +1,79 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Started functions asked per statement (G1); words a handler compares with what it was handed are its sub-arguments (fix 4, K3)
+
+- **Why:** litestream's workers were never asked: each monitor is started by
+  a `go` statement on the repository's own function, and facts skipped a
+  call to an owned callee as delegation (claim-audit rootcause
+  `workers.md`). Redis asked SORT's, DEBUG's and SLAVEOF's `strcasecmp`
+  words one by one and got near ties (`commands-kinds.md` fix 4).
+- **G1 facts 6 (a88fec67):** a `calls` relation with the shared invocation
+  `goroutine` or `async_task` and one exact repository callee is a
+  registration handing that callee over (`internal/facts/started.go`), the
+  second exception beside D1's table rows. Word `go`, or the call a
+  coroutine is handed to (`create_task`); `invocation` on the fact; no
+  outside symbol. A closure written in the statement is named and handled
+  by the one repository function it calls itself (a call whose result
+  another is given is part of it, deferred calls not counted), else keeps
+  its own name.
+- **G1 reading (a88fec67, places graph 22, now 23 with the comparisons):**
+  `repomap.atlas.starts.v1` (`starts`, Jev, memoized per item,
+  `prompts/api_start.md`): request, scheduled, continuous, queue_consumer
+  or none from `entry_options.md`, never the per-symbol `binds`. Item: the
+  statement as written (closure body included; for a coroutine the call it
+  is handed to), `in`, `starts` with its signature, `calls` by name,
+  literals. An entry answer is handled by the started function and named
+  by its declaration (the statement's file may hold only the starter; the
+  places caller would have named the enclosing function); a function the
+  graph holds no declaration of is not asked.
+- **K3 (cfbc8141):** a call `readCalls` would ask, in an established
+  entry's handler (a `binds`, kept-callable or `starts` entry, one kind per
+  handler), whose argument before its first word is a field or element of
+  the handler's own parameter, or whose receiver is one with the word
+  first, is not asked: an entry of the handler's kind, handler not
+  established, nested by the existing `Launch.Nested` (no GroupsIndex
+  code). Kept callables are asked before the calls. The hook sits after
+  the talks, handed and other-fact filters, so a `talks` call stays
+  outgoing. A whole parameter beside a word (`fmt.Fprintf(w, …)`,
+  `res.send(…)`, `req.RequireString("path")`), a word before the value and
+  a method receiver stay asked: Express's `res.send("…")` and Go's
+  `c.String(…)` made the whole-parameter shape unsafe, so litestream's 13
+  MCP `RequireString` rows are still asked (and nested once answered
+  request, as before).
+- **Counts (no-model runs of the committed code, no provider call):**
+  - litestream cmd/litestream: 20 hand-over facts, 19 asked, 1 closure
+    calling nothing not asked (`Main.Run`'s signal waiter, main.go:183).
+    Handlers: `DirectoryMonitor.run`, `DB.monitor`, `Replica.monitor`,
+    `Store.monitorCompactionLevel` ×2 (store.go:199/207, the second through
+    `s.SnapshotLevel()`), `Store.monitorL0Retention`,
+    `Store.monitorValidation`, `Store.monitorHeartbeats`,
+    `ReplicateCommand.runOnce`, `MCPServer.Start`; closures keeping their
+    names: `Start$1` ×2, `Run$1` ×2, `Run$2`, `Compact$2`,
+    `syncReplicaWithRetry$1`, `snapshotReader$1`, `Restore$4`.
+  - cmd/litestream-test: 3 (`LoadCommand.worker`, `LoadCommand.reportStats`,
+    `generateLoad$1`); cmd/litestream-vfs: 25 (adds `VFSFile.syncLoop` ×3,
+    `VFSFile.monitorReplicaClient` ×2, `VFSFile.runHydration`,
+    `VFSFile.monitorCompaction`, `VFSFile.monitorSnapshots`,
+    `VFSFile.monitorL0Retention`).
+  - Redis redis-server (a scratch probe reading the no-model graph with the
+    saved answers of 20260929-140032, every other question neutral):
+    `enters` questions 177 → 163; SORT's sub-arguments alpha, asc, by,
+    desc, get, limit, store (was limit), DEBUG's loadaof, object, reload,
+    segfault, swapout beside its encodings, SLAVEOF's no, one; inputs
+    139 → 152.
+- **Fixtures:** Go `cmd/worker` → `StartBackground` (direct
+  `RunCommitWorker`, a wait-group closure handled by `RunCompactor`, a
+  one-shot `loadCache` answered none) and `cmd/worker/status.go` (HEAD and
+  X-Verbose nested, `Fprintf(w, …)` asked); Python `create_task` of
+  `poll_prices` and `announce_start`, `run_init`'s `fnmatch`; C kvd
+  `setCommand`'s `nx`. `TestCumulativeGoStartsAreAskedPerStatement`,
+  `TestCumulativePythonStartsAreAskedPerStatement`, the C and Python input
+  presets. Missing, recorded: JS/TS (no starting statement; a handler's
+  calls name no outside symbol without the dependency's declarations) and
+  Clojure (`future`, `core.async/go`; no argument origins).
+- **Contracts:** PROGRAM_INDEX, GO, PYTHON, C, JSTS, CLOJURE, READING,
+  CURRENT (facts 6).
+
 ## 2026-09-29 — Values compared with several words; Python tables of names (fixes 1 and 3)
 
 - **Why:** litestream's 14 subcommands (`switch cmd` in `Main.Run`,

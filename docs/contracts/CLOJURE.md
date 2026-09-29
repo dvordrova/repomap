@@ -194,6 +194,12 @@ follows no Clojure value); `run-command`'s `(case (first args) "serve" …
 own. Not recorded yet:
 
 - `-main`'s `& args` carry no argument vector origin;
+- a function started on its own (`future`, `(Thread. f)`, `core.async/go`)
+  carries no `goroutine` or `async_task` invocation, so it is no started
+  registration (GO, goroutines);
+- a handler's comparison of what it was handed is no sub-argument (READING,
+  K3): the adapter records no argument's origin, so no argument is known to
+  come from a parameter;
 - `tools.cli` option vectors are vectors, not literals given to a call;
 - `reset!`/`swap!` stores and registries kept in atoms;
 - settings a structure names (GO, the tagged-field question): an EDN

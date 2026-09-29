@@ -336,6 +336,28 @@ reading itself is the "cyclic value" frontier as before. A field stored
 through a pointer (`c.cmd = exec.CommandContext(…)` then `c.cmd.Start()`)
 is still read as the `field`, not the value last stored there.
 
+## Goroutines a function starts
+
+A `go` statement's call carries the shared `goroutine` invocation. With one
+exact repository callee it is a registration handing that callee over, its
+word `go` (PROGRAM_INDEX); a closure written in the statement is handled by
+the one repository function it calls itself. The reading asks each statement
+what the started function becomes (READING, starting statements). The
+cumulative fixture's worker service (`cmd/worker` → `StartBackground` in
+`internal/storefixture/runtime_registrations.go`) starts `RunCommitWorker`
+directly, the compactor inside a wait-group closure (handled by
+`RunCompactor`) and a one-shot cache load (`loadCache`, answered none by the
+preset); `time.AfterFunc` stays a registration of its outside symbol and the
+finite retry none (`TestCumulativeGoStartsAreAskedPerStatement`). Its status
+route (`cmd/worker/status.go`) compares a field of the request it was handed
+with `HEAD` and makes `r.Header.Get("X-Verbose")`, the route's sub-arguments,
+never asked, while `fmt.Fprintf(w, …)` is asked (READING, K3). Equivalents:
+C's `pthread_create` and Python's `Thread`/`Process` hand a callable to an
+outside symbol and are asked `binds`; Python's `asyncio.create_task` is this
+registration (PYTHON); JS/TS has no statement that starts a function and
+Clojure's `future`, `Thread.` and `core.async/go` are recorded as missing
+(CLOJURE).
+
 ## Handler tables and stored callbacks
 
 These are the Go equivalents of the C adapter's command table, its callbacks

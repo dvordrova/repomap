@@ -313,6 +313,12 @@ Config reads, SQL statements and registrations are the language-neutral facts
 over those patterns: `getenv("KEY")` is a config read, an SQL literal passed to
 a library call is an SQL statement, and an external call that receives a
 repository function (`pthread_create`, `qsort`, `signal`) is a registration.
+C has no statement that starts a function on its own, so no call carries the
+`goroutine` or `async_task` invocation; a thread's function is handed to
+`pthread_create` and asked `binds`. kvd's `setCommand`, the handler of set's
+table row, compares an element of the client's argument vector it was handed
+with `nx`: set's sub-argument, never asked (READING, K3), as Redis's SORT,
+DEBUG and SLAVEOF words are.
 A C file has no dynamic execution: C has no builtin that evaluates code, so
 a repository function named `eval` or `exec` is the repository's own code,
 and `system` and `popen` start another program, which the reading asks

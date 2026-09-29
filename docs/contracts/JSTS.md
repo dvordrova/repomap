@@ -254,6 +254,14 @@ not. Not recorded yet:
   `program.command("init").action(initProject)` is that shape, but with
   its declarations not installed nothing of it is asked, so the fixture
   has neither;
+- a function started on its own: JS/TS has no statement that starts one
+  (a `setInterval` callback and `new Worker(…)` are registrations of their
+  outside symbols), so no call carries the `goroutine` or `async_task`
+  invocation;
+- a route handler's comparison of what it was handed (READING, K3): without
+  the dependency's declarations `request.path.endsWith(".csv")` and
+  `response.send("…")` in an express handler name no outside symbol, and the
+  route names none either, so nothing there is asked or established;
 - array-literal tables of names;
 - object and `Map` registries;
 - a callable the repository's own function keeps (S1) is not enabled;

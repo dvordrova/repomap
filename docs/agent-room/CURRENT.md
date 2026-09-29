@@ -102,7 +102,11 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   call answered an entry kind is an entry whose handler is not established
   (`handler_unknown`). `talks` offers `runs_program`: one outgoing boundary
   per launching call, the program named by the word Jev chooses
-  (`atlas_program`). Each language contract lists what it lacks
+  (`atlas_program`). A `go` statement or a coroutine handed to
+  `create_task` starting a repository function is a registration asked per
+  statement (`starts`, 2026-09-29); a word an established entry's handler
+  compares with part of what it was handed is that entry's sub-argument,
+  never asked (K3). Each language contract lists what it lacks
   ([ProgramIndex](../contracts/PROGRAM_INDEX.md),
   [Reading](../contracts/READING.md) "Operation ownership" and "External
   symbols", [EXTRACTORS](../EXTRACTORS.md)).
@@ -345,7 +349,7 @@ Current shapes are defined by their owning code, not historical run headers:
 [manifest](../../internal/report/manifest.go), and
 [accepted cache](../../internal/llm/cache.go).
 This wave uses ProgramIndex 22, places graph 23, reading input 20, atlas 19,
-GroupsIndex 25, dependency catalog 2, extraction artifact 2, facts 4, claims 2
+GroupsIndex 25, dependency catalog 2, extraction artifact 2, facts 6, claims 2
 and target outcomes 3 with compact artifact-local IDs and no saved adapter
 SourceRefs. Dependency catalogs assign canonical `i*` importers and `d*`
 dependencies. Accepted extractor nodes use `u*`; arbitrary public-protocol IDs
