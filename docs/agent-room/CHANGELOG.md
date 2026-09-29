@@ -1,5 +1,56 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Run artifacts written compact and once: report.json 1.05 GB → 350 MB
+
+- **Why:** every ordinary freqtrade run wrote a 1,049,791,466-byte
+  report.json (one filled the disk). Measured: 608.7 MB of it was
+  indentation; 59.5 MB the owner's `program-index.json` and 9.1 MB
+  `facts`/`claims`/`glossary`/`orientation`, each byte for byte a file of the
+  same run directory; a witness or pattern repeated its relation's location
+  (freqtrade 39,368 of 57,992 witnesses, 16,350 of 35,735 patterns; Redis
+  7,152 of 8,217 and 3,032 of 3,032, with 150 witnesses located nowhere).
+- **Change:** report format 92 is compact and writes each ProgramIndex in its
+  artifact encoding; a section equal to a run-directory file is `files`
+  (name + SHA-256 of its bytes) and is read from that file, refused if the
+  bytes changed. ProgramIndex artifacts write a witness's or pattern's
+  location equal to the relation's as `{}` (never a real location; old
+  artifacts read the same; seal and version unchanged, so every model
+  request and cache key is unchanged). `places.json`, `atlas.json`,
+  `knowledge.json` and the glossary files are compact; `reading-input.json`
+  (version 20) names `places.json` instead of repeating the graph. The
+  unused `reportserver.decodeReportJSON` is gone. Tests: ProgramIndex and
+  report round trips reproduce every relation, witness, pattern and section
+  exactly (the read-back entry order and the location restore fail when
+  reverted); a reading input naming `places.json` reads back the same input.
+- **Runs** (default cache, `make build` binary, `--no-serve --no-open`):
+  freqtrade exit 0 in 251 s, 0 live calls; Redis exit 0 in 8 s, 0 live.
+  `repomap read` of the new freqtrade reading-input.json `--through
+  directories` exit 0 (17 live caption windows: the ordinary run keeps
+  directory captions off).
+
+  | bytes | freqtrade before → after | Redis before → after |
+  | --- | --- | --- |
+  | report.json | 1,049,791,466 → 350,364,579 | 24,071,806 → 4,251,973 |
+  | places.json | 94,504,222 → 45,561,738 | 8,459,186 → 3,552,267 |
+  | reading-input.json | 100,609,250 → 44,942 | 9,049,008 → 662 |
+  | knowledge.json | 29,904,303 → 16,201,291 | 2,731,053 → 1,605,447 |
+  | program-index.json | 59,518,243 → 55,837,724 | 4,259,431 → 3,857,372 |
+  | glossary.json | 7,518,959 → 4,064,739 | 2,306,984 → 903,962 |
+  | owner run dir (du) | 1,358,232 KB → 505,720 KB | 63,688 KB → 26,884 KB |
+  | with target run dirs | 1,717,676 KB → 843,568 KB | 65,220 KB → 28,280 KB |
+
+  `repomap render` of the new freqtrade run equals its report.html and
+  differs from the 07:13 run's render (old binary) only in the format
+  version, the report digest and the wall-clock line; render 60.6 s / 5.15 GB
+  → 53.0 s / 3.04 GB. Redis likewise (its older run had live glossary and
+  orientation calls, so its timing lines differ too). `make test`, `make vet`
+  pass.
+- **Left for the owner:** 336.1 MB of freqtrade's report.json is the other
+  nine targets' ProgramIndexes, each byte for byte the `program-index.json`
+  of its own sibling run directory. Naming those too would make restoring
+  the saved report read the sibling directories, which REPORT does not
+  allow today.
+
 ## 2026-09-29 — Orientation stage 1: evidence join, shared facts, collapsed connections, 16,384 allowance
 
 - **Why:** freqtrade's orientation had been empty since 09-28: rung 1 was
