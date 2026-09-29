@@ -236,12 +236,22 @@ Regression comparisons preserve every materialized byte while checking that repe
     library `freqtrade_client`", its ProgramTarget `libraries`: the declared
     top-level import packages) and also claims the library's root beside
     its own directory, never instead of it (a guard tool beside the console
-    script's file keeps sharing that directory), so files only the library
-    held, such as its tests, are the program's. freqtrade's root
+    script's file shares the files it imports there), so files only the
+    library held, such as its tests, are the program's. freqtrade's root
     distribution folds into `freqtrade` the same way. A library with code
     outside that root, or whose only such program is a declared guard it
     could have seeded, stays. A fold moves the repository default to its
     owner, Go's included.
+  - A script program (ProgramTarget `ScriptFile`: an executable of one
+    source file whose build gives it no name, a guard or shebang script)
+    holds in the atlas its own file, which every program built from that
+    file shares, and in its directory only the files its code imports
+    (ProgramIndex `ImportedFiles`); its directory's other files go to
+    whichever other root holds them (`places.TargetInput.Script`,
+    2026-09-30). freqtrade's three build_helpers scripts had each drawn the
+    directory's five files as parts, and scripts/rest_client.py the file of
+    ws_client.py beside it; build_helpers' two guardless CI scripts now
+    fall to the root distribution folded into `freqtrade`.
   Other adapters have no equivalent: a JS/TS package's `bin` commands are
   executables of its one package target, a Clojure project is one target
   with its `-main` seeds (a shadow-cljs build reads other files), and a C

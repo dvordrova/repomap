@@ -1,5 +1,103 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Outside systems: an unnamed launch is no system, one exchange one boundary, a destination is one program's; script programs by their file
+
+- **Why:** the human-eye review of the 2026-09-29 Redis, litestream and
+  freqtrade reports (crops in the session scratchpad's `eye/`): a
+  "Program not established" frame holding `run`, `CommandContext` and
+  `Cmd.Start`, listed twice in Connections; outside systems filled with bare
+  call names (`sum`, `filter`, `inspect`, `post`); redis-cli and
+  redis-benchmark reading "→ Redis server · → redis-server" and the server's
+  own "→ Redis server" (its master) like a self-loop; freqtrade's helper
+  scripts titled `build_helpers.create_command_partials`, each "Built from
+  373 files" and drawing its siblings' files; lowercase "the …" names
+  beside Telegram; a program named "etc". Code 7901c777 (atlas),
+  2ef3bd98 (report), ec131c4a (script programs).
+- **Unnamed launch** (REPORT, READING § Programs started): a `runs_program`
+  call no word names is no catalogue row, frame, tile or connection; it is
+  listed under "What is missing" ("Programs it starts that the code does
+  not name") and its call in its function's flow says "(starts a program
+  the code does not name)" (`page_outbound.go` `unnamedLaunch`,
+  `page_flow.go` `Launch`, `32-flow.js`). litestream: `-exec`'s
+  `CommandContext` and `Cmd.Start` (two calls: Go records no field's stored
+  value, so `c.cmd.Start()` is not tied to its launch) and
+  etc/s3_mock.py's `subprocess.run`; freqtrade: `chown_user_directory`'s
+  `check_output` and create_command_partials' `subprocess.run([...])`,
+  whose program is written inside a list.
+- **One exchange, one boundary** (READING): a call on a same-kind call's
+  result, or handed whole to a same-kind call, is part of that exchange
+  (`sameExchange`, generalizing the launch rule, and `handedOnExchanges`).
+  freqtrade db rows 116 → 63; `sum`, `filter`, `label`, `get_table_names`
+  are gone; `func.count(...).label(...)` inside `select` stays twice, since
+  `func.count.label` has no talks answer.
+- **A destination is one program's** (READING § One destination, one name):
+  keys, walks and `reached_from` per program, one window per program and
+  catalogue naming the program (`context.program`); walks never pass through
+  test code (freqtrade's webhook calls, once `tests/` became freqtrade's
+  own files with the library fold, walked only into
+  `tests/rpc/test_rpc_webhook.py` and the page dropped them).
+- **The one question change** (`prompts/destinations.md`, measured online):
+  names are proper names, capital first letter, no article, a vendor's
+  service by product name, any other system by its role for this program.
+  Redis, one draw each: per-program items in one shared window → all
+  "Redis Server"; own windows with a `Command server`/`Replication primary`
+  example → server "Replication primary", litestream's control socket
+  copied the example as "Command server"; final wording without named
+  examples → server "Primary", clients "Redis Server" and "DNS Resolver"
+  (one draw left two cli rows unanswered, "row was not answered", the open
+  one-row response example of F3; the next run answered them). litestream
+  "Litestream Daemon", "SFTP", "Litestream Heartbeat Server" (an earlier
+  wording drew "Litestream replica" for the heartbeat); freqtrade "Webhook
+  Endpoint", "Remote pairlist server", "External Message Producer", and the
+  database still two names, "Freqtrade database" (39) and "Database" (24):
+  each `select` row walks nothing and is its own destination, named per
+  window (open).
+- **Own programs** (REPORT): a destination one of whose records has an
+  integration connection into another of the report's programs is that
+  program: its records read "Reaches this repository's program" and draw
+  into its component (`joinOwnPrograms`). redis-cli has no outside frame
+  now; redis-benchmark keeps "DNS Resolver".
+- **Script programs** (DISCOVERY, REPORT; ProgramTarget `ScriptFile`,
+  ProgramIndex `ImportedFiles`): one source file, no name from the build.
+  Titled by the file (`build_helpers/create_command_partials.py`,
+  `etc/s3_mock.py`, `packages/python/scripts/rename_wheel.py`, its one part
+  too); a program the build names by that name where its directory ends
+  otherwise (`freqtrade-client`; C programs now read `redis-cli`, not
+  `redis-cli (executable)`). "Built from" its file and its import closure
+  (create_command_partials 235, extract_config_json_schema 20, was 373
+  each). In the atlas a script holds its file and, in its directory, only
+  what it imports (`places.TargetInput.Script`): each build_helpers and
+  scripts program is one part; the two guardless CI scripts fall to
+  `freqtrade` through the folded root distribution. etc/s3_mock.py is a
+  guard script CI runs around `go test`, placed `tool`; no test rule covers
+  it and no path rule was added.
+- **Checks:** `TestOneExchangeWithASystemIsOneBoundary`,
+  `TestDestinationKeyIsWhereTheWalksEnd` (a shared row per program),
+  `TestDestinationWalksPassNoTestCaller`,
+  `TestOutboundProgramsAreOneDestinationOnlyByTheirWord` (unnamed launches
+  in the gaps), `TestADestinationThatIsOneOfTheRepositorysProgramsJoinsIt`,
+  `TestAScriptProgramIsItsFileAndWhatItImports`, the facet test's claims
+  (bench.py its own, cli.py the console script's, rest.py shared); `make
+  test` and `make vet` (package parallelism 2) pass.
+- **Acceptance** (the ordinary binary, default cache, `--no-serve
+  --no-open`): Redis `20260929-203001` exit 0, 11 s; litestream
+  `20260929-203012` exit 0, 15 s, no live call; freqtrade `20260929-203027`
+  exit 0, 217 s, one live call (atlas_boundaries). The measurement runs
+  before them re-asked only atlas_boundaries (the destinations question)
+  and the glossary on Redis and litestream; freqtrade's first run
+  (`201814`) also re-asked areas, core, describe, keys, zones, joints and
+  orientation, from the moved files (the script claims, and the library
+  fold 4b51aa1f/d6a1afa9 committed since the reviewed run). Rendered to the
+  scratchpad's `redis-r2/run/latest-{redis,litestream,freqtrade}.html`: no
+  "Program not established" frame; outside frames Redis "Primary"
+  (server), "DNS Resolver" (benchmark), none for redis-cli.
+- **Open:** tiles inside an outside system are still one per outside
+  symbol (the canvas lane: callers by part, ReachedFrom, is the data);
+  freqtrade's webhook has no ReachedFrom, its callers reaching it only
+  through alternatives-resolved calls; freqtrade's database named per
+  window; `freqtrade`'s own "Built from" still lists every file of the
+  project's shared index (373).
+
 ## 2026-09-30 — Inline names everywhere, an input's options, a part's namespace said once
 
 - **Why:** the input-naming agent's handover (336d24d2): GroupsIndex now

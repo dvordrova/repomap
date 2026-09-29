@@ -801,12 +801,15 @@ its arity and flags), which the input's reading shows; no request carries it.
 **Programs started.** A call to a `runs_program` symbol is one outgoing
 boundary of that kind, unless its receiver is the result of such a call (a
 `call_result` receiver anchored at the launching call), which starts, waits
-for or reads the same program: the naming call is the one boundary. A receiver
+for or reads the same program: the naming call is the one boundary (the
+one-exchange rule, below, for every kind). A receiver
 that is `alternatives` all of which are such results (a command built on
 either branch of an if/else) is each launch's: the call on it is no boundary,
 and each launch keeps its own boundary and program, one destination when they
 name the same word. One part from elsewhere (a nil branch, a field) leaves the
-call its own boundary. Which program it starts is asked per call
+call its own boundary: litestream's `c.cmd.Start()` on a field holding
+`exec.CommandContext`'s command stays one, since Go records no field's stored
+value. Which program it starts is asked per call
 (`repomap.atlas.program.v1`, stage `atlas_program`, Jev). The item is the
 symbol, the call as written (`usage`) and `words`: each word the call is given
 that can stand on one line, once, in call order, as request-local refs whose
@@ -819,7 +822,11 @@ its program stays not established: a program named inside a list
 evidence that none names it. The boundary's destination is the chosen word as
 written (`atlas.Boundary.Destination`); `ProgramNotNamed` marks `not_named`;
 both empty is not established. Such a boundary is not sent to the boundaries
-table: it has no address, catalogue destination or line. A chosen word equal
+table: it has no address, catalogue destination or line. A launch no word
+names is an unknown about that one call, never an outside system: the
+report reads it with the function making it and under "What is missing"
+(REPORT, 2026-09-30; litestream's `-exec` launch had drawn a "Program not
+established" frame twice). A chosen word equal
 to a name the repository's build gives one of its own programs (ProgramIndex
 `target.executables`) makes the launch that program, joined by equal names
 only (REPORT; 2026-09-29).
@@ -930,6 +937,24 @@ entries are operations through their boundary and are not reviewed as
 operation candidates. There are no `listen_address` facts, per-site
 `decision`, `kind` or `basis` cells, or symbol `outbound` selection.
 
+**One exchange, one boundary** (2026-09-30). A call on what a call of a
+symbol answered the same `talks` kind returned continues that call's
+exchange (`cmd.Run()` on `exec.Command`'s command, `select(...).filter(...)`
+on the statement `select` began), and a call whose result is handed whole
+as an argument to a call of a symbol answered the same kind is part of that
+call's (`func.count(...)` in `select(...)`, a `text()` statement in
+`execute(...)`), with any call made on it (`func.sum(...).label(...)`): only
+the call that begins the exchange, or receives the parts, is a boundary. A
+receiver of alternatives each such a result counts; a field of a result, a
+value formatted from one or another kind never does. freqtrade's SQLAlchemy
+rows (all answered `db`, whose criteria include building the statement a
+session runs) had made `sum`, `filter` and `label` destination rows of their
+own: 116 db rows, now 63 (29 `select`, 3 `update`, 2 `inspect`, 2
+`order_by.limit` on a repository function's statement, 1 `read_sql`, 24
+SQL facts, and 2 `func.count` whose `.label`, handed to `select`, has no
+`talks` answer, so the chain stops there) (`reading/boxes.go`
+`sameExchange`, `handedOnExchanges`).
+
 ### Outside systems
 
 Which outside system an outgoing call reaches is asked once per outside
@@ -956,9 +981,13 @@ undecided package has no name.
 outgoing call reaches is decided once per destination, never per call
 (`reading/destination_groups.go`). A row whose package atlas_systems named
 takes that name in code, with no question: the catalogue entry listing the
-package, which the per-row prompt only looked up. Rows are one destination
-when the code knows they reach one place: the same targets and the same
-walk ends of their reaching call's decided argument (DestinationReader). An
+package, which the per-row prompt only looked up. A destination is one
+program's (2026-09-30): a row written in code several programs share
+(Redis's anet.c `connect`) is each program's own call, reached from that
+program's callers and walked to that program's values, so it is named once
+per program. Rows are one destination when the code knows they reach one
+place: the same program and the same walk ends there of their reaching
+call's decided argument (DestinationReader). An
 end is an absolute URL by its scheme and host as written (cut at the first
 `/`, `?` or `#`), a setting by the setting that begins it (`{--socket}`,
 `{env:API}/users` as `{env:API}`), and any other address or an unresolved
@@ -982,14 +1011,21 @@ address literals) and the callables it hands over or is handed by, with the
 receiving call: litestream's `Run$1` is handed by `InfoCommand.Run` to
 `net/http.Transport.DialContext`), and `reached_from` (below; by name, each
 once). No author documentation, README claim or source context is sent. The
-catalogue is built from the systems' names for the destination's targets
+catalogue is built from the systems' names for the destination's program
 (`destination_catalog`, `destination_options`): one `d*` entry per name
 (case-insensitively), in name order, listing the `packages` reaching it; a
 package answered `none` gives none. It offers names only; no entry
-establishes a call's runtime role. Destinations of one catalogue share
-windows. The cell is a `d*` ref or
-`other: ` and a name; a package, protocol, host, URL, file path or key is no
-system's name. A refused answer names none; each call keeps its own site,
+establishes a call's runtime role. One program's destinations of one
+catalogue share windows, whose context names the program (`program`, its
+target name); another program's never see them: beside the clients'
+identical calls in one window, redis-server's connect to its master was
+named "Redis server", in its own window "Replication primary" and then
+"Primary". The cell is a `d*` ref or `other: ` and a name, written as a
+proper name, a capital first letter and no article: a vendor's service by
+its product name, any other system by its role for this program ("the
+webhook endpoint" and "the program's own database" had stood beside
+Telegram); a package, protocol, host, URL, file path or key is no system's
+name. A refused answer names none; each call keeps its own site,
 address and chains. A tagged free value keeps its name whatever the
 whitespace around the colon (`other:Name`, `other : Name`); the tag and a
 nonempty name remain required, and this normalization chooses no
@@ -1017,7 +1053,10 @@ gives it) or keyword, and the receiver, as request-local refs, each with
 where the call's value comes from; the options are those refs and `none`,
 every ref with one set of criteria. The walk (`DestinationReader`) follows
 the chosen value at every call of the symbol, by position, keyword or the
-parameter's name. Where it meets what another outside call returned: a
+parameter's name, never through test code (2026-09-30: the URL a test hands
+the program's sender is not where the program's call goes; freqtrade's
+webhook calls, once its tests were its own files, walked only into them and
+left the page). Where it meets what another outside call returned: a
 call whose words an answer made a command-line option gives `{--name}`, a
 call the facts name as an environment read `{env:KEY}`, a symbol with a
 decided argument goes on through that argument, and any other stops the
@@ -1144,7 +1183,7 @@ addresses (no format templates, nothing from formatting, logging, time or
 string packages), sent only for outgoing rows whose address code does not
 know; an outgoing row carries its call's outside `package` when code names
 the call at its site. A destination's item carries `reached_from`, the
-declarations its rows' programs reach the calls from, by name, each once:
+declarations its program reaches the calls from, by name, each once:
 GroupsIndex's `reached_from` as the reading computes it before the parts are
 drawn (a file stands for its part: exact callers are followed back through
 the call's own file to the first caller in another file, or to a seed or an

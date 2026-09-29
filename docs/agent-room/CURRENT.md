@@ -201,6 +201,14 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   with a letter outside the Latin script ([Execution](../contracts/EXECUTION.md),
   [Reading](../contracts/READING.md), [Discovery](../contracts/DISCOVERY.md),
   [Terminology](../contracts/TERMINOLOGY.md)).
+- **Script programs (2026-09-30):** a program of one source file whose
+  build gives it no name (ProgramTarget `ScriptFile`, a guard or shebang
+  script) is titled by its file, holds in the atlas its file and in its
+  directory only what its code imports, and is "Built from" its file and
+  its imports (ProgramIndex `ImportedFiles`); a program its build names is
+  titled by that name where its directory ends otherwise
+  (`freqtrade-client`) ([Discovery](../contracts/DISCOVERY.md),
+  [Report](../contracts/REPORT.md)).
 - **Data ownership:** an extraction belongs to the programs holding one of its
   files. One no program holds in a code file (tests, fixtures, scripts) or
   under a tooling directory (`testdata`, `.github`, `.claude`, `.vscode`) is
@@ -235,7 +243,15 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   (one question per package) takes that name in code; calls whose walks end
   at the same URL host, setting or origin in one program are one destination,
   asked once (`repomap.atlas.destinations.v1`) among those names or
-  `other:`; no list of systems lives in code. Candidate communication needs an accepted
+  `other:`; no list of systems lives in code. A destination is one
+  program's, asked in that program's window and named as a proper name
+  (2026-09-30: redis-server's connect to its master reads "Primary", the
+  clients' "Redis Server"); one exchange is one boundary (a call on a
+  same-kind call's result, or handed whole to one, is part of it:
+  SQLAlchemy's `select(...).filter(...)`, `func.sum(...)` in `select`); a
+  launch no word names is no outside system but an unknown of its call
+  ("What is missing"); a destination one of whose records connects into
+  another of the report's programs is that program. Candidate communication needs an accepted
   runtime interpretation; a remote client instance is distinct from an option
   passed to its later constructor. Source chains preserve correlated uses and explicit
   unknowns; imports, timers and internal delegation do not become integrations.
