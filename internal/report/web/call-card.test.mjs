@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {callCard,reach,countWords,countsHandlers,countsInputs,headingMarks} from './call-card.mjs';
+import {callCard,reach,countWords,countsHandlers,countsInputs,headingRows} from './call-card.mjs';
 
 const names={persist:'Persistence',clients:'Client connections',data:'Data structures',strings:'Strings',
   generic:'Generic key commands',lists:'List commands',get:'get',inputs:'Inputs'};
@@ -108,9 +108,9 @@ test('a relation with no call of its own is read by its outside end and site',()
 // runs is an end of its own, named by that function, and its relation has
 // no call of its own. Ends of one name are one heading ("→
 // checkpointWithExecutor 2", not the heading twice); in the reading column a
-// row that only names its heading again gives the heading its code mark,
-// while a call keeps its row.
-test('ends of one name are one heading, and a row naming only its heading gives it its mark',()=>{
+// row that only names its heading again is not repeated, while a call keeps
+// its row.
+test('ends of one name are one heading, and a row naming only its heading is not repeated',()=>{
   const sql=(at)=>({label:'runs SQL',from:`h/db.go:${at}`,at:`db.go:${at}`});
   const card=callCard([
     {from:'engine',to:'stmt-lock',calls:[sql(1186)]},
@@ -121,11 +121,8 @@ test('ends of one name are one heading, and a row naming only its heading gives 
   const group=card.groups[0];
   assert.deepEqual(group.pairs.map(pair=>[pair.name,pair.count]),[['checkpointWithExecutor',2],['acquireReadLock',1],['BeginTx',1]]);
   assert.deepEqual(card.into.length,4,'the ends are still counted apart');
-  const checkpoint=headingMarks(group.pairs[0],group);
-  assert.deepEqual(checkpoint.marks.map(row=>row.otherHref),['h/db.go:1240','h/db.go:1252'],'each statement keeps its own code mark');
-  assert.deepEqual(checkpoint.rows,[],'no row repeats the heading');
-  const begin=headingMarks(group.pairs[2],group);
-  assert.deepEqual([begin.marks,begin.rows.map(row=>`${row.caller}>${row.callee}`)],[[],['acquireReadLock>BeginTx']],'a call keeps its row');
+  assert.deepEqual(headingRows(group.pairs[0],group),[],'no row repeats the heading');
+  assert.deepEqual(headingRows(group.pairs[2],group).map(row=>`${row.caller}>${row.callee}`),['acquireReadLock>BeginTx'],'a call keeps its row');
 });
 
 // A name in the reading column reads its declaration: each end of a call

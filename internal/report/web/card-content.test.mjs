@@ -32,7 +32,9 @@ test('the closed input collection lists existing catalogue types without duplica
 });
 
 // A call that leaves its program reads from each program's own code, not
-// only the shared anet pair (owner, 2026-09-28).
+// only the shared anet pair (owner, 2026-09-28); an outside call has its
+// program's side alone, the program not named again ("cmd/litestream:" had
+// begun every row of cmd/litestream's reading).
 test('a call between programs names each side from its own code, and an outside call says it is outgoing',async()=>{
   globalThis.window={rmT:(key,...values)=>values.reduce((s,v,i)=>s.replace(`{${i}}`,v),key)};
   const view=await build({entryPoints:[new URL('./call-card-view.jsx',import.meta.url).pathname],bundle:true,write:false,format:'cjs',packages:'external',jsx:'transform'});
@@ -47,7 +49,8 @@ test('a call between programs names each side from its own code, and an outside 
     {from:'net',to:'tcp',calls:[{label:'anetTcpGenericConnect calls socket.h.connect',from:'a#128',to:'a#158',at:'anet.c:158',
       sides:[{program:'redis-server',path:[step('syncWithMaster','repl'),step('anetTcpConnect','net'),step('anetTcpGenericConnect','net')]}]}]},
   ],{nameOf:id=>id});
-  const text=renderToStaticMarkup(React.createElement(CallRows,{card})).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
+  const text=renderToStaticMarkup(React.createElement(CallRows,{card})).replace(/<wbr\/?>/g,'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
   assert.match(text,/redis-cli: cliConnect → anetTcpConnect → anetTcpGenericConnect ⇢ redis-server: acceptHandler → anetAccept/);
-  assert.match(text,/redis-server: syncWithMaster → anetTcpConnect → anetTcpGenericConnect → socket\.h\.connect outgoing/);
+  assert.match(text,/ syncWithMaster → anetTcpConnect → anetTcpGenericConnect → socket\.h\.connect outgoing/);
+  assert.equal(text.match(/redis-server:/g).length,1,'the outside call names no program');
 });

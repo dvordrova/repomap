@@ -41,10 +41,13 @@ function rmModelText(tag,cls,text,ref){
   return item;
 }
 // A declaration's name: a link into its code, all of its lines (`code`),
-// whose plain click reads it (`go`), and whose hover says where it stands.
-function rmDeclName(decl,text,go,title,bold){
+// whose plain click reads it (`go`), and whose hover says where it stands;
+// then the one slot for opening its code (rmNameIcon): `code` names what it
+// opens, the declaration's code by default, a caller's call line on a
+// "Called by" row, null for none (the reading's own title).
+function rmDeclName(decl,text,go,title,bold,code){
   var link=decl.href||decl.open?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:text}):rmEl('span','',text);
-  link.classList.add('map-reading-name');
+  link.classList.add('map-reading-name');rmDotBreaks(link);
   if(decl.key)link.dataset.declKey=decl.key;
   if(bold&&decl.bold)link.classList.add('map-reading-key');
   if(title)link.title=title;
@@ -52,8 +55,12 @@ function rmDeclName(decl,text,go,title,bold){
     if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
     event.preventDefault();event.stopPropagation();go(decl);
   });
-  return link;
+  return rmNameIcon(link,code===undefined?{href:decl.code||decl.href,open:decl.open}:code);
 }
+// The one slot beside a name for opening its code: an icon, being chosen
+// (owner, 2026-09-29), will open `code` ({href, open, title}). Until then a
+// name is its link alone, and with no code to open it is always the name.
+function rmNameIcon(name,code){return name;}
 // A part named in a reading stands in a small box as the canvas draws it:
 // its colour and frame by lane (core, entry). A drawn part is a button that
 // reads it.
@@ -79,27 +86,23 @@ function rmEndTitle(ctx,decl){
   var node=decl.part?ctx.nodeByHref(decl.part):null;
   return node?node.dataset.title:'';
 }
-// Where a call is written in its caller's code: a small code mark per
-// place, the mark the declaration's own link carries, linking that line,
-// the place on its hover and never printed (owner, 2026-09-29: with the
-// line numbers gone, "Called by processCommand" had opened processCommand
-// at its top, above the call).
-function rmSiteMarks(holder,sites){
-  (sites||[]).forEach(function(site){
-    if(!site||!site.href&&!site.open)return;
-    var mark=repomapMembers.sourceLink({Href:site.href,Open:site.open,Text:''});
-    mark.classList.add('map-call-site');mark.title=site.at||'';mark.setAttribute('aria-label',rmT('The call at {0}',site.at||''));
-    holder.appendChild(mark);
-  });
-  return holder;
+// A name as the column writes it: it breaks only after a dot, never
+// inside a word (litestream's "sql.Tx.Rollbac k"); in a flow's row a single
+// word longer than the row ends in "…" (43-map-reading.css).
+function rmDotBreaks(element){
+  var text=element.textContent;if(text.indexOf('.')<0)return element;
+  element.textContent='';
+  text.split(/(?<=\.)/).forEach(function(piece,i){if(i)element.appendChild(document.createElement('wbr'));element.appendChild(document.createTextNode(piece));});
+  return element;
 }
 // One end of a relation: its name, and what the relation says of it when it
 // is not a call (a variable's readers say only who writes it: "Used by"
-// says the rest); in a declaration's reading, where each call is written.
+// says the rest). A name is its link: the page prints no separate code
+// marks (owner, 2026-09-29); a caller's name keeps where it makes the call
+// for its code slot.
 function rmEndItem(ctx,data,end,side,quiet){
-  var decl=data.decls[end.decl],item=rmEl('li');
-  item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));
-  rmSiteMarks(item,end.sites);
+  var decl=data.decls[end.decl],item=rmEl('li'),site=side==='in'&&end.site;
+  item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl),false,site?{href:site.href,open:site.open,title:site.at}:undefined));
   var words=quiet&&end.kind==='reads'?'':rmEndWords[side][end.kind];
   if(words)item.appendChild(rmEl('span','map-reading-relation',rmT(words)));
   if(end.possible)item.appendChild(rmEl('span','possible',rmT('possible')));
@@ -277,7 +280,7 @@ function rmDeclView(ctx,node,data,concept){
   // Its own program never runs it, while another program does.
   if(own.not_called_in)view.appendChild(rmEl('p','map-reading-not-called meta',rmT('Not called in {0}',own.not_called_in)));
   var name=rmEl('div','map-decl-name');
-  var link=rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code},decl.name,null,decl.at);link.classList.add('map-decl-code');name.appendChild(link);
+  var link=rmDeclName({name:decl.name,href:decl.href,open:decl.open,code:decl.code},decl.name,null,decl.at,false,null);link.classList.add('map-decl-code');name.appendChild(link);
   symbols=rmPage.data(node,'symbols')||[];
   var symbol=symbols.find(function(s){return (s.href||s.open)===key&&s.kind!=='field';});
   if(symbol&&symbol.text)name.appendChild(rmEl('span','map-decl-signature',symbol.text));

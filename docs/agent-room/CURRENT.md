@@ -448,9 +448,8 @@ never entered into or read from a repository-wide unqualified map.
   "registers it" the registration line; its twist is always shown. A
   column name chosen in a part too dense to read at a fitting zoom shows
   the part's closed card with the chosen tile in it. A part lists the
-  declarations reached from outside it first, counted. A caller, callee or
-  flow call carries a "</>" mark per call site linking that line, its
-  place on hover, no number. The canvas location row's frames go up a
+  declarations reached from outside it first, counted. A name is its link;
+  the page prints no separate code marks. The canvas location row's frames go up a
   level; every reading ends with the home's text-page links.
 
 ## Contracts and formats

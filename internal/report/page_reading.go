@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
@@ -162,21 +163,45 @@ type pageReadingEnd struct {
 	Decl     int    `json:"decl"`
 	Kind     string `json:"kind"`
 	Possible bool   `json:"possible,omitempty"`
-	// Sites are, in a declaration's own reading, where each relation other
-	// than a variable's read or write is written in the caller's code: a
-	// small code mark each, the place on its hover, never a number (owner,
-	// 2026-09-29: queueMultiCommand's caller had opened processCommand at
-	// its top, 70 lines above the call).
-	Sites []pageReadingSite `json:"sites,omitempty"`
+	// Site is, on a "Called by" end of a declaration's own reading, where
+	// the caller makes the call: the first place in source order, its
+	// link, and every place in its words ("redis.c:2221 · 2240"), which the
+	// name's code link will open (owner, 2026-09-29: queueMultiCommand's
+	// caller had opened processCommand at its top, 70 lines above the
+	// call). The page prints no code mark; no other end keeps a place.
+	Site *pageReadingSite `json:"site,omitempty"`
+	sites []pageAnchor
 }
 
-// pageReadingSite is one place a flow's call is written, said on its name's
-// hover ("called at redis.c:1273 · 1288"): its words and the link to that
-// line.
+// pageReadingSite is one place a call is written: its words, said on a
+// name's hover ("called at redis.c:1273 · 1288"), and on a caller the link
+// to that line.
 type pageReadingSite struct {
 	At   string `json:"at"`
 	Href string `json:"href,omitempty"`
 	Open string `json:"open,omitempty"`
+}
+
+// callSite is a caller's call site: the first of its places in source
+// order, and every place in its words, the file once while it stays the
+// same.
+func callSite(sites []pageAnchor) *pageReadingSite {
+	if len(sites) == 0 {
+		return nil
+	}
+	sites = slices.Clone(sites)
+	slices.SortFunc(sites, func(a, b pageAnchor) int {
+		return cmp.Or(strings.Compare(a.Path, b.Path), cmp.Compare(a.Line, b.Line), strings.Compare(a.Text, b.Text))
+	})
+	var words []string
+	for i, site := range sites {
+		if i > 0 && site.Path != "" && site.Path == sites[i-1].Path && site.Line > 0 {
+			words = append(words, strconv.Itoa(site.Line))
+			continue
+		}
+		words = append(words, site.Text)
+	}
+	return &pageReadingSite{At: strings.Join(words, " · "), Href: sites[0].Href, Open: sites[0].Open}
 }
 
 // pageReadingOwner is one declaration of the part and its relations.
@@ -473,15 +498,15 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		// The declaration's own reading: the caller's callees, the callee's
 		// callers, each by the part the other end stands in.
-		var sites []pageReadingSite
-		if row.FromSource != nil && !usesVariable(kind) {
-			sites = []pageReadingSite{{At: row.FromSource.Text, Href: row.FromSource.Href, Open: row.FromSource.Open}}
-		}
 		if fromPart == own {
-			addEnd(callees, from, cmp.Or(toPart, row.Href), cmp.Or(toTitle, row.Title), pageReadingEnd{Decl: to, Kind: kind, Possible: row.Possible, Sites: sites})
+			addEnd(callees, from, cmp.Or(toPart, row.Href), cmp.Or(toTitle, row.Title), pageReadingEnd{Decl: to, Kind: kind, Possible: row.Possible})
 		}
 		if toPart == own {
-			addEnd(callers, to, cmp.Or(fromPart, row.Href), cmp.Or(fromTitle, row.Title), pageReadingEnd{Decl: from, Kind: kind, Possible: row.Possible, Sites: sites})
+			end := pageReadingEnd{Decl: from, Kind: kind, Possible: row.Possible}
+			if row.FromSource != nil && !usesVariable(kind) {
+				end.sites = []pageAnchor{*row.FromSource}
+			}
+			addEnd(callers, to, cmp.Or(fromPart, row.Href), cmp.Or(fromTitle, row.Title), end)
 		}
 	}
 	sortEnds := func(ends []pageReadingEnd) []pageReadingEnd {
@@ -556,6 +581,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 				if variables && usesVariable(end.Kind) {
 					continue
 				}
+				end.Site = callSite(end.sites)
 				item.Decls = append(item.Decls, end)
 			}
 			if len(item.Decls) > 0 {
@@ -786,9 +812,9 @@ func mergeEnd(ends []pageReadingEnd, end pageReadingEnd) []pageReadingEnd {
 	for i := range ends {
 		if ends[i].Decl == end.Decl && ends[i].Kind == end.Kind {
 			ends[i].Possible = ends[i].Possible && end.Possible
-			for _, site := range end.Sites {
-				if !slices.ContainsFunc(ends[i].Sites, func(other pageReadingSite) bool { return other.At == site.At }) {
-					ends[i].Sites = append(ends[i].Sites, site)
+			for _, site := range end.sites {
+				if !slices.ContainsFunc(ends[i].sites, func(other pageAnchor) bool { return other.Text == site.Text }) {
+					ends[i].sites = append(ends[i].sites, site)
 				}
 			}
 			return ends

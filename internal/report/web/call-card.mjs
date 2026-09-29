@@ -94,15 +94,13 @@ export function callCard(relations,{nameOf=id=>id,groupable=()=>true,incoming=fa
   };
 }
 
-// In the reading column a row names its declarations and ends in its code
-// mark, with no place printed. A row with no call of its own names only the
-// end it goes to or comes from, which its heading already names, so there it
-// says nothing but its code: its mark joins the heading and the row is not
-// repeated (litestream's "→ acquireReadLock", then "acquireReadLock </>").
-// A row with no code to link says nothing at all there.
-export function headingMarks(pair,group){
+// In the reading column a row names its declarations, with no place
+// printed. A row with no call of its own names only the end it goes to or
+// comes from, which its heading already names, so there it is not repeated
+// (litestream's "→ acquireReadLock", then "acquireReadLock").
+export function headingRows(pair,group){
   const repeats=row=>row.kind==='other'&&(row.other===pair.name||row.other===group.name);
-  return {marks:pair.rows.filter(row=>repeats(row)&&row.otherHref),rows:pair.rows.filter(row=>!repeats(row))};
+  return pair.rows.filter(row=>!repeats(row));
 }
 
 // What a card's counts count, by kind of call. An arrow from inputs counts

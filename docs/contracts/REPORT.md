@@ -929,8 +929,8 @@ part's: its kind and its part, a link up, in the heading ("Function ·
 Server lifecycle and cron ↑"); who calls it ("Called by", "Used by" for a
 variable or a type), grouped by the part at the other end, its own part
 first; its name as the one link into its code with what its tile writes
-after it, underlined under the pointer and marked by a small "</>" in the
-link's own colour (owner, 2026-09-29: readers had taken it for a title), then its file alone ("redis.c") and, when its author wrote one,
+after it, underlined under the pointer (owner, 2026-09-29: readers had
+taken it for a title), then its file alone ("redis.c") and, when its author wrote one,
 the comment as written, standing in the reading and marked as the
 author's claim; the model's line when there is one; what it writes and
 what else it reads, one line each ("Writes: …", "Reads: …", below); a
@@ -945,19 +945,10 @@ written, a part named on its hover; the declaration's own name is the
 link to its code. The same holds for a catalogue's callers ("called from
 processCommand") and the Inputs reading's "How these were found": a
 function making undecided calls is named once per symbol and reason, and
-one with calls the code cannot follow once, with their count. Where a call
-is written stays reachable without a number (owner, 2026-09-29: with the
-numbers gone, "Called by processCommand" had opened processCommand at its
-top, 70 lines above the call): in a declaration's "Called by" and "Calls",
-each caller or callee other than a variable's reader or writer carries a
-small code mark per place it is written, the "</>" its own name's link
-carries, linking that line in the caller's code, the place ("redis.c:2221")
-on its hover only; a flow's call row carries its places so, and a helper's
-name in the "+ helpers" line shows its marks while pointed at or focused,
-taking no room until then, so the line reads as a plain list of names.
-The name itself still reads the declaration. The page data keeps those
-places (`sites` on a declaration reading's end, a flow call's `sites`) and
-no place of a variable's read or write.
+one with calls the code cannot follow once, with their count. A name is
+its link; the page prints no separate code marks (owner, 2026-09-29), and
+of the places a call is written the page data keeps a "Called by"
+caller's first, in source order, with every place in its words (`site`).
 
 Who changes a field and who reads it (owner, 2026-09-29) is read from the
 program's exact reads and writes of record fields (`page_field_uses.go`):
@@ -1005,8 +996,8 @@ program's side from that program's own code: the shortest run of calls
 from the nearest declaration no other program holds to the declaration
 making or taking the call ("redis-cli: cliConnect → anetTcpConnect →
 anetTcpGenericConnect ⇢ redis-server: acceptHandler → anetAccept"); a call
-to an outside endpoint has the one side and says it is outgoing
-("redis-server: syncWithMaster → anetTcpConnect → anetTcpGenericConnect →
+to an outside endpoint has the one side, its program not named, and says
+it is outgoing ("syncWithMaster → anetTcpConnect → anetTcpGenericConnect →
 socket.h.connect outgoing"), and its row in the component's reference says
 the program connects out from that run. The shared anet pair alone had
 named neither program.
@@ -1032,14 +1023,16 @@ column, each callee once with every place it is called, a dispatch site
 one call ("one of 94"). The flow carries no caption repeating the
 function's name and no count or meta word. Each run of calls into one
 part stands under that part's box (its description on hover, a click
-reads it); a library's call (`fork`, `wait3`) is a plain row naming its
-library on hover; a declaration no part holds (`lookupKeyRead`) is a
+reads it); a library's call (`fork`, `wait3`) is no row: one muted line
+ends the step, "also calls: fork, wait3", each name once in the order
+written, its library on hover, so one part's calls stay under one box; a
+declaration no part holds (`lookupKeyRead`) is a
 plain name whose own flow still opens, carried in the reading that calls
 it, so no call is dropped. A call a macro's expansion makes is shown as
 the code writes it: the macro as written, once (C's `macro_expansion`
 witness and the call's selector; `assert`, not `__assert_rtn` and
-`__builtin_expect`), a plain row naming the header of what it calls
-when its body is the platform's; when its expansion calls repository
+`__builtin_expect`), named on that line when its body is the platform's;
+when its expansion calls repository
 declarations (redisAssert's `_redisAssert`, dictHashKey's hash functions)
 the row opens to them as a call does, its hover saying what it expands
 to. A compiler builtin (the adapter's `builtin` package) is never a call
@@ -1156,13 +1149,10 @@ from it. Inputs taken in where
 their handler is not established count as inputs and share one row per
 place, named in order ("-a, -h declared in parseOptions"). In the column a
 name in those rows reads its declaration in its part, as a click on its
-tile does, and a modifier-click still opens the code it linked to; a row's
-code is the column's "</>" mark at its end, linking where the call is
-written, the place on its hover only: no row prints a place (owner,
-2026-09-29: litestream's rows read "acquireReadLock db.go:1186 Open code
-↗"). A row with no call of its own that would only name its heading again
-gives the heading its mark instead, one per place ("→ acquireReadLock
-</>", not the heading and then "acquireReadLock </>"), and ends of one
+tile does, and a modifier-click still opens the code it linked to; no row
+prints a place (owner, 2026-09-29: litestream's rows read "acquireReadLock
+db.go:1186 Open code ↗"). A row with no call of its own that would only
+name its heading again is not repeated, and ends of one
 name are one heading in the column and the card alike (litestream's SQLite
 had listed "→ checkpointWithExecutor 1" twice, one per statement it runs).
 A row wraps with its names whole. The page data names the

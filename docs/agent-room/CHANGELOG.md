@@ -1,5 +1,55 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Call rows are names: no code marks, library calls on one line
+
+- **Why:** benchmark v5 (R1, R3): with several call sites a flow row's
+  "</>" marks were items of the row's three-column grid of their own, so a
+  second or third wrapped into the 14 px twist column ("<", "/", ">"
+  stacked, 9 × 41 px) and the name column (an empty 224 px bar):
+  cliSendCommand's calls opened under redis-cli's Main flow, syncWithMaster's.
+  Library calls with many sites (strerror, errno, close ×14) read as runs of
+  marks, and as rows they split one part's calls under two boxes
+  ("Replication" twice). The owner then asked for no marks at all: a name
+  is its purple link with its "()".
+- **Change:** every "</>" is gone: flow, Main flow and "What it does" rows,
+  "+ helpers", Called by/Calls, Connections rows and headings, and the
+  declaration title (its name stays the link to its code, underlined on
+  hover). Names render through one helper, `rmDeclName`, whose code slot
+  (`rmNameIcon`, a no-op) is where the owner's chosen icon will open the
+  declaration's code, or on a "Called by" row the caller's call line. The
+  page data keeps only that line (`site` on a "Called by" end: the first
+  place in source order, every place in its words); other ends keep no
+  place and a flow call's `sites` only the words its name's hover says.
+  Renders: Redis 4.24 → 4.17 MB, litestream 3.91 → 3.85 MB, freqtrade
+  8.76 → 8.61 MB, repomap 9.75 → 9.47 MB. A step's calls
+  into code the report names no declaration for are no rows: one muted line
+  ends the step, "also calls: strerror, errno, snprintf, …", each name once
+  in source order, so consecutive calls into one part stay under one box.
+  A name breaks only after a dot, never inside a word (litestream's
+  "sql.Tx.Rollbac k"; a flow row's single word longer than the row ends in
+  "…"); a one-sided outgoing Connections row no longer repeats its program
+  ("cmd/litestream:" on every row of cmd/litestream).
+- **Tests:** the flow test checks no library call is a row, the step's one
+  line names them, no part's box repeats back to back and no name carries a
+  mark; the no-line-number test checks a caller keeps its first call line
+  and no other place is kept; the outgoing-row test checks the program is
+  not named again; the mark assertions of the arrow-ends journey and the
+  heading-marks test are gone.
+- **Dropped (coordinator, after the critic's review), not committed:** a
+  type read at the clicked field, the dispatcher wording ("rpush's handler
+  itself calls call"; call's "one of 94" under the first alternative's
+  part) and the plain card count line. Their implementation is kept as a
+  patch in the scratchpad's `v5fix/v5-full-before-scope-change.patch`.
+- **Looked at:** Redis (syncWithMaster, cliSendCommand opened under the
+  Main flow, processCommand, queueMultiCommand's Called by) and litestream
+  (cmd/litestream's Connections to SQLite): no mark, no library row, no
+  repeated box, no name past the column (`look/v5fix-clean-*.png`;
+  before: `look/v5fix-before-*.png`). Renders into `redis-r2/run/latest-*.html`;
+  headless smoke walks of all four: no page error, no nested scroller, no
+  line number, no mark, 16 declarations read each.
+- **Verified:** `make test`, `make vet` (package parallelism 2), `make
+  ui-test` (135), `make ui-visual-test` (64 passed, 6 skipped).
+
 ## 2026-09-29 — A box carries the imports of the files that joined it; a Connections end's name said once
 
 - **Why:** the parts request listed imports between whole-file rows only.

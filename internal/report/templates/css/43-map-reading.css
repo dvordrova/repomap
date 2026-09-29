@@ -331,16 +331,14 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-frame-connections .flow-card-fold-parts summary{padding:0;margin:0;font-size:12px;line-height:20px}
 .map-frame-connections .flow-card-fold-parts p{font-size:12px;line-height:18px;word-spacing:4px}
 .map-card .map-frame-connections a{text-decoration:none}.map-card .map-frame-connections a:hover{text-decoration:underline}
-/* In the column a row's names read their declarations and its code is one
-   "</>" mark at its end, so a row is a line that wraps: in the grid the
-   link had no column, and "anetTcpGeneri…" was cut to fit. */
+/* In the column a row's names read their declarations, so a row is a
+   line that wraps: in the grid the link had no column, and
+   "anetTcpGeneri…" was cut to fit. */
 .map-frame-connections .flow-card-reading .flow-card-rows{display:block}
 .map-frame-connections .flow-card-reading .flow-card-rows>.flow-card-row{display:block}
-.map-frame-connections .flow-card-reading .flow-card-rows>.flow-card-row>*{white-space:normal;overflow:visible;overflow-wrap:anywhere}
 .map-frame-connections .flow-card-reading .flow-card-sides>b.flow-card-program{margin-right:5px}
 .map-frame-connections .flow-card-reading .flow-card-sides>em{margin-left:6px}
 .map-frame-connections .flow-card-reading .flow-card-again{visibility:visible}
-.map-frame-connections .flow-card-reading .flow-card-row>a.map-call-site{margin-left:6px;white-space:nowrap;overflow-wrap:normal;text-decoration:none}
 .map-card .flow-card-name{font:inherit;margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;text-align:left}
 /* An input's reading (owner's 3c) carries the Inputs blue of its tile and
    collection, never core's purple: its heading's bar and kind, its links.
@@ -414,10 +412,8 @@ details.map-reading-peer[open]>summary::before{content:'▾'}
 .map-decl-code.map-reading-name{font-size:17px;font-weight:750}
 /* The declaration's name is the link to all of its code (owner,
    2026-09-29: readers had taken it for a title): underlined under the
-   pointer, with a small code mark in the link's own colour. */
+   pointer. A name is its link: the page prints no separate code marks. */
 a.map-decl-code:hover{text-decoration:underline}
-a.map-decl-code::after{content:"</>";display:inline-block;margin-left:6px;padding:0 3px;border:1px solid currentColor;border-radius:3px;font:600 10px/14px var(--mono);vertical-align:3px;opacity:.7}
-a.map-decl-code:hover::after{opacity:1}
 .map-decl-signature{color:var(--muted);font-size:12.5px}
 .map-decl-where{display:flex;align-items:center;gap:12px;margin:0 0 10px}
 /* The author's comment above a declaration, quoted in its reading and marked as theirs. */
@@ -517,8 +513,6 @@ details.map-flow-row>summary:hover .map-flow-twist::before,details.map-flow-row>
 details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-flow-head .map-reading-name{font-size:13px}
 .map-flow-plain{color:var(--ink)}
-.map-flow-lib{font:13px/20px var(--mono);padding-left:14px;color:var(--muted)}
-.map-flow-lib .map-flow-plain{color:var(--muted)}
 .map-flow-helper .map-reading-name,.map-flow-helper .map-flow-plain{opacity:.55}
 .map-flow-above{font-family:system-ui;font-size:12px;margin-left:6px}
 .map-flow-one{color:var(--ink)}
@@ -565,13 +559,14 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
    in the heading; the rest follow after a gap. */
 .map-reading-reached-count{font-weight:400;color:var(--muted)}
 .flow-enabled .map-inspector .map-reading-names.map-reading-reached{margin-bottom:8px;padding-bottom:6px;border-bottom:1px dotted var(--line)}
-/* Where a call is written in its caller's code: the mark the declaration's
-   own link carries, one per place, the place on hover, no number. */
-a.map-call-site{display:inline-block;margin-left:5px;padding:0 3px;border:1px solid currentColor;border-radius:3px;font:600 9px/13px var(--mono);vertical-align:1px;opacity:.55;text-decoration:none}
-a.map-call-site::before{content:"</>"}
-a.map-call-site:hover,a.map-call-site:focus-visible{opacity:1}
-/* A helper's marks take no room until its name is pointed at or focused,
-   so "+ helpers: zrealloc(), zmalloc()" reads as a plain list (hidden
-   marks had held their room: "zrealloc()    , zmalloc()"). */
-.map-flow-helper-call>a.map-call-site{display:none}
-.map-flow-helper-call:hover>a.map-call-site,.map-flow-helper-call:focus-within>a.map-call-site{display:inline-block}
+/* A name breaks only after a dot (31-reading-column.js), never inside a
+   word ("sql.Tx.Rollbac k"); a single word longer than a flow's row ends in
+   "…". In a connection's row each name moves to the next line whole. */
+.map-card .map-reading-name:not(.map-decl-code),.map-card .map-flow-also .map-flow-plain{overflow-wrap:normal}
+.map-flow-head>.map-reading-name{overflow:hidden;text-overflow:ellipsis}
+.map-frame-connections .flow-card-reading .flow-card-row>:not(i){display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;white-space:normal;overflow-wrap:normal}
+/* A step's calls into code the report names no declaration for: one muted
+   line of names at its end, no marks. */
+.map-flow-also,.flow-enabled .map-inspector p.map-flow-also{margin:0 0 4px 14px;font:12px/18px var(--mono);color:var(--muted)}
+.map-flow-also .map-flow-plain{color:var(--muted)}
+.map-flow-also-label{font-family:system-ui}

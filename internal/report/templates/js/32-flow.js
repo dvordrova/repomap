@@ -47,22 +47,16 @@ function rmFlowName(ctx,decl,call){
   var text=rmCallableName(decl),title=rmFlowTitle(ctx,decl,call);
   if(call.macro&&call.decl!==undefined){text=call.macro;title=[rmT('{0} expands to a call of {1}',call.macro,decl.name),title].filter(Boolean).join('\n');}
   // A declaration no part holds is a plain name.
-  if(!decl.part){var plain=rmEl('span','map-reading-name map-flow-plain',text);plain.title=title;return plain;}
+  if(!decl.part){var plain=rmDotBreaks(rmEl('span','map-reading-name map-flow-plain',text));plain.title=title;return plain;}
   var name=rmDeclName(decl,text,ctx.goDecl(decl),title);
   var part=rmFlowPart(ctx,decl.part);
   if(part){name.addEventListener('mouseenter',function(){ctx.light([part.id]);});name.addEventListener('mouseleave',function(){ctx.light([]);});}
   return name;
 }
 // One call of a flow: a row that opens to its callee's flow when it has one.
+// Its name is its link; no code mark follows it (owner, 2026-09-29).
 function rmFlowRow(ctx,data,call,opts,helper){
   var decl=call.decl!==undefined?data.decls[call.decl]:null;
-  if(!decl&&!call.one){
-    // A call into code the report names no declaration for (a library's
-    // fork), or a macro whose expansion calls only such code ("assert"):
-    // a plain row.
-    var lib=rmEl('div','map-flow-row map-flow-lib'+(helper?' map-flow-helper':'')),said=rmEl('span','map-flow-plain',call.macro||call.name+'()');
-    said.title=[call.lib,call.macro?rmT('a macro'):'',rmFlowTitle(ctx,null,call)].filter(Boolean).join('\n');lib.appendChild(said);return rmSiteMarks(lib,call.sites);
-  }
   if(call.one){
     // A dispatch site: one call, one of the declarations it can call; a
     // macro's call, the macro as written, its declarations under it.
@@ -70,7 +64,6 @@ function rmFlowRow(ctx,data,call,opts,helper){
     head.appendChild(rmEl('span','map-flow-twist'));
     if(call.macro)head.appendChild(rmEl('span','map-flow-plain',call.macro+(call.every?'':' ')));
     if(!call.every)head.appendChild(rmEl('span','map-flow-one',rmT('one of {0}',call.one.length)));
-    rmSiteMarks(head,call.sites);
     head.title=rmFlowTitle(ctx,null,call);site.appendChild(head);
     site.addEventListener('toggle',function(){
       if(!site.open||site.dataset.drawn)return;site.dataset.drawn='1';
@@ -83,7 +76,6 @@ function rmFlowRow(ctx,data,call,opts,helper){
   var key=decl.key||decl.href||decl.open,cycle=opts.ancestors.has(key),target=cycle?null:rmFlowOwner(ctx,data,decl),path=opts.path+'>'+(call.kind||'calls')+':'+key;
   var row=rmEl(target?'details':'div','map-flow-row'+(helper?' map-flow-helper':'')),head=rmEl(target?'summary':'div','map-flow-head');
   head.append(rmEl('span','map-flow-twist'),rmFlowName(ctx,decl,call));
-  rmSiteMarks(head,call.sites);
   if(cycle)head.appendChild(rmEl('span','map-flow-above meta',rmT('↑ shown above')));
   row.appendChild(head);
   if(target){
@@ -103,9 +95,15 @@ function rmFlowRow(ctx,data,call,opts,helper){
 // A flow's calls, each run into one part under its box. Top level names
 // every part; an opened call names none when all its calls stay in its
 // caller's part. Its helper calls stand as one muted line after its rows,
-// each name a link, until the line or the toggle opens them in place.
+// each name a link, until the line or the toggle opens them in place. Its
+// calls into code the report names no declaration for (a library's
+// strerror, close or fork, a macro calling only such code: "assert") are
+// no rows: one muted line ends the step, "also calls: strerror, close",
+// each name once in the order written (owner, 2026-09-29: as rows they
+// had split one part's calls under two boxes, "Replication" twice).
 function rmFlowList(ctx,data,own,opts){
-  var list=rmEl('div','map-flow-list'),calls=own.flow||[];
+  var list=rmEl('div','map-flow-list'),all=own.flow||[];
+  var outside=all.filter(function(call){return call.decl===undefined&&!call.one;}),calls=all.filter(function(call){return outside.indexOf(call)<0;});
   var every=calls.length>0&&calls.every(function(call){return call.helper;});
   var work=calls.filter(function(call){return every||!call.helper;}),helpers=every?[]:calls.filter(function(call){return call.helper;});
   opts=Object.assign({},opts,{single:work.length===1,auto:(opts.auto||0)});
@@ -129,22 +127,31 @@ function rmFlowList(ctx,data,own,opts){
       }
       group.appendChild(rmFlowRow(ctx,data,call,opts,call.helper&&!every));
     });
-    if(!helpers.length||rmFlowHelpers)return;
+    if(helpers.length&&!rmFlowHelpers)list.appendChild(helperLine(opened));
+    if(outside.length)list.appendChild(alsoLine());
+  }
+  function alsoLine(){
+    var line=rmEl('p','map-flow-also'),names=[];line.appendChild(rmEl('span','map-flow-also-label',rmT('also calls:')));
+    outside.forEach(function(call){
+      var name=call.macro||call.name||'';if(!name||names.indexOf(name)>=0)return;
+      line.appendChild(document.createTextNode(names.length?', ':' '));names.push(name);
+      var said=rmDotBreaks(rmEl('span','map-flow-plain',name));said.title=[call.lib,call.macro?rmT('a macro'):''].filter(Boolean).join('\n');line.appendChild(said);
+    });
+    return line;
+  }
+  function helperLine(opened){
     // The step's helper calls, one muted line: every name shown and read
     // by a click; "+ helpers" opens them in place, "− helpers" folds them.
     var line=rmEl('p','map-flow-helpers'),more=rmEl('button','map-flow-helpers-toggle',opened?rmT('− helpers'):rmT('+ helpers:'));
     more.type='button';more.setAttribute('aria-expanded',String(opened));
     more.addEventListener('click',function(event){event.stopPropagation();if(opts.open.has(key))opts.open.delete(key);else opts.open.add(key);draw();});
     line.appendChild(more);
-    // Each helper keeps where it is called: its code marks show while the
-    // name is pointed at or focused.
     if(!opened)helpers.forEach(function(call,i){
       line.appendChild(document.createTextNode(i?', ':' '));
-      var decl=call.decl!==undefined?data.decls[call.decl]:null,one=rmEl('span','map-flow-helper-call');
-      one.appendChild(decl?rmFlowName(ctx,decl,call):rmEl('span','map-flow-plain',call.macro||(call.one?rmT('one of {0}',call.one.length):call.name||'')));
-      line.appendChild(rmSiteMarks(one,call.sites));
+      var decl=call.decl!==undefined?data.decls[call.decl]:null;
+      line.appendChild(decl?rmFlowName(ctx,decl,call):rmEl('span','map-flow-plain',call.macro||(call.one?rmT('one of {0}',call.one.length):call.name||'')));
     });
-    list.appendChild(line);
+    return line;
   }
   draw();
   return list;

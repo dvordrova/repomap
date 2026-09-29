@@ -216,11 +216,23 @@ const said=view.textContent;
 assert.ok(!/serverCron calls|in order|steps|\d+ helpers|only helpers|not on the map|also from/.test(said),'no caption repeats its name and no meta word: '+said);
 const root=view.all(c=>c.has('map-flow-root'))[0];
 const rows=()=>root.all(c=>c.has('map-flow-row')&&!c.has('map-flow-helper')).map(c=>c.all(x=>x.has('map-reading-name')||x.has('map-flow-plain'))[0].textContent);
-assert.deepEqual(rows(),['beforeSleep()','wait3()','rdbSave()','rdbSave()','lookupKeyRead()','serverCron()','assert','redisAssert'],'the calls in the order Go wrote them, helpers folded, a macro as written');
+assert.deepEqual(rows(),['beforeSleep()','rdbSave()','rdbSave()','lookupKeyRead()','serverCron()','redisAssert'],'the calls in the order Go wrote them, helpers folded, a macro as written');
 const macro=root.all(c=>c.has('map-reading-name')&&c.textContent==='redisAssert')[0];
 assert.ok(macro.title.startsWith('redisAssert expands to a call of initServer'),'a macro names what its expansion calls on its hover: '+macro.title);
-assert.equal(root.all(c=>c.has('map-flow-plain')&&c.textContent==='assert')[0].title,'assert.h\na macro\ncalled at server.c:1370');
-assert.deepEqual(root.all(c=>c.has('map-part-box')).map(c=>c.textContent),['Server lifecycle and cron','Persistence','Server lifecycle and cron','Server lifecycle and cron'],'each run into one part stands under its box');
+// A call into code the report names no declaration for (wait3, the
+// assert macro) is no row: the step ends in one line naming each once,
+// in the order written, and one part's calls stay under one box (owner,
+// 2026-09-29: as rows they had split Replication's calls under two).
+const also=root.all(c=>c.has('map-flow-also'));
+assert.equal(also.length,1,'one line of the calls outside the report');
+assert.deepEqual(also[0].all(c=>c.has('map-flow-plain')).map(c=>c.textContent),['wait3','assert']);
+assert.deepEqual(root.all(c=>c.has('map-part-box')).map(c=>c.textContent),['Server lifecycle and cron','Persistence','Server lifecycle and cron'],'each run into one part stands under its box');
+const lists=[root,...root.all(c=>c.has('map-flow-list'))].map(l=>l.has('map-flow-list')?l:l.children[0]);
+for(const list of lists){const boxes=list.children.filter(c=>c.has&&c.has('map-flow-group')).map(g=>(g.children[0]&&g.children[0].has('map-part-box'))?g.children[0].textContent:'');
+  boxes.forEach((box,i)=>assert.ok(!box||box!==boxes[i-1],'a part\'s box repeats only with another group between: '+boxes));}
+// A name is its link: no row carries a separate code mark, a link with no
+// name of its own (owner, 2026-09-29).
+assert.deepEqual(view.all(c=>c.tagName==='A'&&c.textContent==='').length,0,'no code mark beside a name');
 assert.ok(root.all(c=>c.has('map-flow-above')).length===1,'a call its ancestors make is shown above');
 const helperLine=root.all(c=>c.has('map-flow-helpers'));
 assert.equal(helperLine.length,1,'one line of helper names under the step');
@@ -281,7 +293,7 @@ assert.equal(section.children.at(-1).textContent,'redis-cli sends get.','who sen
 
 // A function's reading prints no line number (owner, 2026-09-29:
 // "человек будет видеть код"): a caller calling from two places is its
-// name once with a code mark for each place, its line on hover only, and
+// name once, the name its link and no place kept beside it, and
 // "Uses variables" ("argv :4248 :4250 …", fields reached
 // through a parameter printed as variables) is one line, "Reads: …", each
 // field by the path the code reaches it by and each global variable once,
@@ -344,18 +356,25 @@ func TestAFunctionsReadingSaysEachReadOnceWithNoLineNumbers(t *testing.T) {
 	if len(own.Writes) != 1 || own.Writes[0].Path != "redisClient.db" {
 		t.Fatalf("serverCron writes %+v", own.Writes)
 	}
-	// A read's places are not kept; a call's are, each a code mark on its
-	// caller (owner, 2026-09-29: the caller's name had opened processCommand
-	// at its top, above the call).
-	for _, site := range []string{"#L22", "#L27"} {
+	// A read keeps no place; a caller keeps where it makes the call, its
+	// first place in source order, for its name's code link (owner,
+	// 2026-09-29: the caller's name had opened processCommand at its top,
+	// above the call). The page prints no separate code marks.
+	for _, site := range []string{"#L22", "#L27", "#L305"} {
 		if strings.Contains(raw, site) {
-			t.Fatalf("the reading keeps the use site %s: %s", site, raw)
+			t.Fatalf("the reading keeps the site %s: %s", site, raw)
 		}
 	}
-	for _, site := range []string{"#L301", "#L305"} {
-		if !strings.Contains(raw, site) {
-			t.Fatalf("the reading drops the call site %s: %s", site, raw)
+	var site *pageReadingSite
+	for _, group := range own.Callers {
+		for _, end := range group.Decls {
+			if reading.Decls[end.Decl].Name == "processTimeEvents" {
+				site = end.Site
+			}
 		}
+	}
+	if site == nil || !strings.HasSuffix(site.Href, "#L301") || !strings.Contains(site.At, "305") {
+		t.Fatalf("processTimeEvents calls serverCron at %+v, want its first line linked and both named", site)
 	}
 	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
 	runSystemJS(t, readingViewElements+code+`
@@ -368,7 +387,7 @@ assert.deepEqual(said,[],'no line number anywhere in the reading');
 assert.equal(view.all(c=>c.has('map-reading-reads'))[0].textContent,'Reads: redisClient.argv, server, shared.czero.ptr');
 assert.equal(view.all(c=>c.has('map-reading-writes'))[0].textContent,'Writes: redisClient.db');
 assert.equal(view.all(c=>c.has('map-reading-name')&&c.textContent==='processTimeEvents()').length,1,'a caller calling from two places is one name');
-assert.deepEqual(view.all(c=>c.has('map-call-site')).map(c=>c.href.replace(/^.*#/,'#')+' '+c.title),['#L301 server.go:301','#L305 server.go:305'],'with a code mark for each place it calls from, the place on hover');
+assert.equal(view.all(c=>c.tagName==='A'&&c.textContent==='').length,0,'and no code mark beside it');
 assert.ok(!view.textContent.includes('Uses variables'));
 `)
 }

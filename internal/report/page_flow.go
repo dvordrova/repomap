@@ -185,7 +185,7 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 		var site *pageReadingSite
 		if edge.Location != nil {
 			anchor := builder.links.anchor(edge.Location.Path, edge.Location.Line, edge.Location.Column)
-			site = &pageReadingSite{At: anchor.Text, Href: anchor.Href, Open: anchor.Open}
+			site = &pageReadingSite{At: anchor.Text}
 		}
 		kind := string(edge.RelationKind)
 		if edge.RelationKind == programindex.RelationCalls {
