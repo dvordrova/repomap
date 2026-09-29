@@ -171,6 +171,8 @@
 /* An input's kind: a small muted mark before its name (kind-icons.mjs). */
 .flow-kind-mark{display:inline-block;flex:none;width:14px;height:14px;margin:0 6px 0 0;vertical-align:-2px;fill:#66758a}
 .flow-input-types .flow-kind-mark{width:13px;height:13px;margin-right:5px}
+.map-inspector .flow-kind-mark,.flow-color-key .flow-kind-mark{width:13px;height:13px;margin-right:5px;vertical-align:-1px}
+.flow-color-key .flow-key-kind{display:inline-flex;align-items:center}
 .flow-input-types .flow-input-kind{cursor:pointer}
 .flow-input-types .flow-input-kind:hover,.flow-input-types .flow-input-kind:focus-visible{text-decoration:underline}
 .map-object-heading{position:relative;padding-right:38px;min-height:32px}
@@ -304,3 +306,14 @@
    chosen outline; nothing recedes. */
 .react-flow__node.flow-node-lit .flow-part{outline:3px solid #243044;outline-offset:-3px}
 .flow-input-types li.flow-lit{outline:2px solid #243044;outline-offset:2px;border-radius:3px}
+
+/* The column's heading says what is read and the frame holding it, a link
+   up, in one run of text: the link wrapped as its own centred block had
+   read "Core · / Client command / handling ↑". An empty row of actions
+   draws no rule. */
+.flow-enabled .map-inspector .map-card-kind .map-reading-up{display:inline;text-align:left;white-space:normal}
+.flow-enabled .map-card-actions:not(:has(*)){display:none}
+/* Where the camera stands is said by the page's breadcrumb and the reading
+   column; the canvas keeps its location only for assistive technology and
+   for a layout that failed. */
+.flow-location:not(.flow-location-error){position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;padding:0;border:0}

@@ -27,6 +27,15 @@ export function titleWords(text){
 export function widestWord(text,font,measure){
   return Math.max(0,...titleWords(text).map(word=>measure(word,font)));
 }
+// The widest piece a title can be broken into: a path or an identifier
+// breaks after its separators (breakWord), so "build_helpers/
+// freqtrade_client_version_align.py" needs its longest piece's width, not
+// the whole name's (owner's reviewer, 2026-09-29: it ran into the zoom
+// mark and pushed its frame 500 pixels wide).
+const separated=/(?<=[/_.:])/u;
+export function widestPiece(text,font,measure){
+  return Math.max(0,...titleWords(text).flatMap(word=>word.split(separated)).map(piece=>measure(piece,font)));
+}
 function breakWord(word,width,font,measure){
   const letters=Array.from(word),pieces=[];
   for(let start=0;start<letters.length;){
@@ -60,7 +69,7 @@ export function wrapText(text,width,font,measure){
 // fitted one pixel narrower than reserved read "DNS resolve" over a clipped
 // "r".
 export function fitTitle(title,width,font,measure){
-  const widest=widestWord(title,font,measure),scale=widest>width?width/widest:1;
+  const widest=widestPiece(title,font,measure),scale=widest>width?width/widest:1;
   return {scale,lines:wrapText(title,scale<1?widest:width,font,measure)};
 }
 
@@ -98,7 +107,7 @@ export function overviewHeading(item,screenWidth,measure){
   const collection=['communication','inputs'].includes(item.branch);
   const size=collection?13:18,lineHeight=collection?17:23,font=`700 ${size}px system-ui`;
   const title=item.heading||item.name||item.title;
-  const clearZoom=titleWords(title).some(word=>measure(word,font)>screenWidth-64);
+  const clearZoom=widestPiece(title,font,measure)>screenWidth-64;
   const width=Math.max(1,Math.min(304,screenWidth-(clearZoom?(collection?16:32):64)));
   const {scale,lines}=fitTitle(title,width,font,measure);
   return {width,clearZoom,lines,scale,fontSize:size*scale,lineHeight:lineHeight*scale,height:lines.length*lineHeight*scale+(clearZoom?32:0)};
@@ -179,7 +188,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     // they read at their own size, and the frame keeps their proportion.
     const grid=n.branch==='outside'?chipGrid((n.children||[]).length):null;
     const cardHeight=66-(input?24:0)+title.length*22+descriptionLines*18+(subtitleLines.length?8+subtitleLines.length*18:0);
-    const overviewMinWidth=!n.branch&&!frame&&n.category==='component'?Math.ceil(card.width*.7):grid?grid.width:Math.ceil(Math.max(widest(heading||n.title,collection?'700 13px system-ui':'700 18px system-ui')+(collection?16:64),
+    const overviewMinWidth=!n.branch&&!frame&&n.category==='component'?Math.ceil(card.width*.7):grid?grid.width:Math.ceil(Math.max(widestPiece(heading||n.title,collection?'700 13px system-ui':'700 18px system-ui',measure)+(collection?16:64),
       ...names.map(name=>widest(name,'500 13px system-ui')+32),
       ...inputGroups.map(group=>widest(group.title,'500 13px system-ui')+32+kindMark)));
     // A short target name must not squeeze its area inventory into a column

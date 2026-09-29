@@ -20,7 +20,7 @@
 export const checks={near:3,font:11,head:10};
 
 // Runs in the page. `level` names where the camera stands.
-export function lintCanvas(level,near=3){
+export function lintCanvas(level,near=3,readNames=true){
   const out=[],root=document.querySelector('.flow-root'),map=document.querySelector('[data-map]');
   if(!root||!map?.flowGeometry)return [{kind:'setup',element:'no canvas',level}];
   const canvas=root.getBoundingClientRect(),viewport=root.querySelector('.react-flow__viewport');
@@ -118,9 +118,11 @@ export function lintCanvas(level,near=3){
       if(inside({left:Math.min(a.x,b.x),right:Math.max(a.x,b.x)+1,top:Math.min(a.y,b.y),bottom:Math.max(a.y,b.y)+1})){out.push({kind:'coincide',element:`${routes[i].id} and ${routes[j].id}`,level});break;}
     }
   }
-  // 7: every text reads at 11px or more where the camera stands.
+  // 7: every text reads at 11px or more where the camera stands, at the
+  // levels names are read at: the whole map of a crowded repository draws
+  // its summaries smaller, whole.
   const small=new Set();
-  for(const text of texts){
+  for(const text of readNames?texts:[]){
     const el=text.el,size=parseFloat(getComputedStyle(el).fontSize)*(el.getBoundingClientRect().height/(el.offsetHeight||el.getBoundingClientRect().height||1));
     // A part's description is its secondary line: nine pixels.
     const least=el.closest('.flow-description')?9:11;
@@ -172,13 +174,14 @@ export async function lintCard(level){
 // `areas` areas of each program; and one part's declarations.
 export async function lintReport(page,{repo='',areas=2,cards=3,programs=4}={}){
   const findings=[],map=page.locator('[data-map]');
+  await page.evaluate(`window.__lintCanvas=${lintCanvas.toString()}`);
   const settle=async()=>{
     let previous='',stable=0;
     for(let i=0;i<100&&stable<2;i++){const v=await map.evaluate(m=>JSON.stringify(m.captureViewport?.()));stable=v===previous?stable+1:0;previous=v;await page.waitForTimeout(100);}
     await page.waitForTimeout(150);
   };
   const lint=async(level,withCards=true)=>{
-    findings.push(...(await page.evaluate(lintCanvas,`${repo} ${level}`)));
+    findings.push(...(await page.evaluate(([level,whole])=>window.__lintCanvas?window.__lintCanvas(level,3,!whole):[],[`${repo} ${level}`,level==='whole map'])));
     if(!withCards)return;
     // The cards of a few arrows, opened as a reader's pointer opens them.
     const hits=await page.evaluate(()=>{

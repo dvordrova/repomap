@@ -80,7 +80,9 @@ test('one pinch crosses at most one level boundary and a pause lets the next cro
     if(base===3)return 3.5;
     // Its font on screen: the CSS size times the scale it is drawn at (the
     // title wraps, so its height is no measure of it).
-    const title=base<2?0:await page.locator('.react-flow__node[data-id="worker"] .flow-part>strong').evaluate(strong=>parseFloat(getComputedStyle(strong).fontSize)*strong.getBoundingClientRect().height/strong.offsetHeight);
+    // A title read only while its part is drawn: inside a closed area it is
+    // hidden however large.
+    const title=base<2?0:await page.locator('.react-flow__node[data-id="worker"] .flow-part>strong').evaluate(strong=>getComputedStyle(strong).visibility==='hidden'?0:parseFloat(getComputedStyle(strong).fontSize)*strong.getBoundingClientRect().height/strong.offsetHeight);
     return base+(title>=12?.5:0);
   };
   async function pinch(ticks,deltaY){
@@ -112,24 +114,12 @@ test('one pinch crosses at most one level boundary and a pause lets the next cro
   expect(errors).toEqual([]);
 });
 
-// The location row stands on the canvas, over the map. A wheel over it
-// scrolled the page while a pixel lower it moved the map.
-test('a wheel over the canvas location row moves the map, not the page',async({page})=>{
-  const map=await ready(page);
-  await page.evaluate(()=>{document.body.style.minHeight='3000px';window.scrollTo(0,0);});
-  const row=await page.locator('.flow-location').boundingBox();
-  await page.mouse.move(row.x+row.width/2,row.y+row.height/2,{steps:4});
-  const before=await map.evaluate(map=>map.captureViewport());
-  await page.mouse.wheel(0,120);
-  await expect.poll(()=>map.evaluate(map=>map.captureViewport().y)).not.toBe(before.y);
-  expect(await page.evaluate(()=>window.scrollY),'the page stays').toBe(0);
-  expect((await map.evaluate(map=>map.captureViewport())).zoom).toBe(before.zoom);
-});
 
 // An overflowing inventory takes the wheel, and keeps it at its end: past
 // its last entry the next notch had scrolled the page, and the one after it
 // moved the map under a pointer that had not moved.
 test('a wheel past the end of an overflowing inventory scrolls neither the page nor the map',async({page})=>{
+  await page.setViewportSize({width:1100,height:640});
   const map=await ready(page,'?dense');
   await page.evaluate(()=>{document.body.style.minHeight='3000px';window.scrollTo(0,0);});
   const list=page.locator('.flow-component-areas.flow-scrollable').first();

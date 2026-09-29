@@ -452,7 +452,9 @@ function rmCollectionView(ctx,node,collection){
     // first of its scheduled and continuous sections.
     section.dataset.kind=group.kind;
     if(rmPendingKind&&[].concat(rmPendingKind).indexOf(group.kind)>=0){section.dataset.readingAnchor='';rmPendingKind='';}
-    heading.appendChild(rmEl('span','',rmT(rmInputKindTitles[group.kind]||'Inputs')));
+    var kindTitle=rmEl('span','',rmT(rmInputKindTitles[group.kind]||'Inputs')),kindMark=globalThis.rmKindMark?.(group.kind);
+    if(kindMark)kindTitle.prepend(kindMark);
+    heading.appendChild(kindTitle);
     rmLights(ctx,heading,group.inputs);section.appendChild(heading);
     var first=group.catalogue&&ctx.nodeById(group.catalogue),catalogue=first?rmPage.data(first,'catalogue'):null;
     if(catalogue)rmCatalogueLines(ctx,catalogue).forEach(function(line){section.appendChild(line);});
@@ -622,6 +624,7 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     var kinds=rmEl('ul','map-component-input-kinds');
     collection.kinds.forEach(function(kind){
       var item=rmEl('li'),choice=rmEl('button','',rmT(rmInputKindTitles[kind.kind]||'Inputs'));choice.type='button';
+      var choiceMark=globalThis.rmKindMark?.(kind.kind);if(choiceMark)choice.prepend(choiceMark);
       rmLights(ctx,choice,kind.inputs);
       choice.addEventListener('click',function(){ctx.light([]);rmPendingKind=kind.kind;ctx.readNode(collectionNode);});
       item.appendChild(choice);kinds.appendChild(item);
@@ -739,7 +742,11 @@ function rmProgramsTable(ctx,holder,components,connections){
     var entries=rmPage.data(n,'entries')||[];
     if(entries.length){var starts=rmEl('ul','system-program-files');entries.forEach(function(entry){starts.appendChild(rmDotBreaks(rmEl('li','',entry.name+(entry.callable?'()':''))));});var at=rmEl('dd');at.appendChild(starts);line('Entry',at);}
     var collection=ctx.nodeById('system-inputs-'+n.dataset.owner),kinds=(collection&&rmPage.data(collection,'collection')||{}).kinds||[];
-    if(kinds.length)line('Inputs',rmEl('dd','',kinds.map(function(kind){return rmT(rmInputKindTitles[kind.kind]||'Inputs');}).join(' · ')));
+    if(kinds.length){
+      var kindList=rmEl('dd');
+      kinds.forEach(function(kind,i){if(i)kindList.append(' · ');var mark=globalThis.rmKindMark?.(kind.kind);if(mark)kindList.append(mark);kindList.append(rmT(rmInputKindTitles[kind.kind]||'Inputs'));});
+      line('Inputs',kindList);
+    }
     var ends=connections(n.id);
     // An arrow stays with its name, which breaks only at its dots.
     if(ends.length){var peers=rmEl('ul','system-program-files');ends.forEach(function(end){var item=rmEl('li','',end.incoming?'←\u00a0':'→\u00a0');item.appendChild(rmDotBreaks(rmEl('span','',end.title)));peers.appendChild(item);});var cell=rmEl('dd');cell.appendChild(peers);line('Connections',cell);}

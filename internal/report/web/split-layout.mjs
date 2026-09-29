@@ -10,9 +10,11 @@ const options={
   'elk.algorithm':'layered','elk.direction':'RIGHT','elk.edgeRouting':'ORTHOGONAL',
   'elk.hierarchyHandling':'INCLUDE_CHILDREN','elk.randomSeed':'1',
   'elk.padding':'[top=64,left=32,bottom=32,right=32]',
-  'elk.spacing.nodeNode':'40','elk.spacing.edgeNode':'24','elk.spacing.edgeEdge':'12',
+  // Parallel arrows 16 apart, an arrow 28 from a box it passes: at 12 and
+  // 24, Core runtime's arrows ran as one band around its parts.
+  'elk.spacing.nodeNode':'40','elk.spacing.edgeNode':'28','elk.spacing.edgeEdge':'16',
   'elk.layered.spacing.nodeNodeBetweenLayers':'70',
-  'elk.layered.spacing.edgeNodeBetweenLayers':'24','elk.layered.spacing.edgeEdgeBetweenLayers':'12',
+  'elk.layered.spacing.edgeNodeBetweenLayers':'28','elk.layered.spacing.edgeEdgeBetweenLayers':'16',
   'elk.layered.mergeEdges':'false','elk.separateConnectedComponents':'true',
 };
 const key=(...parts)=>JSON.stringify(parts);
@@ -228,6 +230,8 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
           height:Math.max(record.minimumHeight||0,derived?.height||0,peer&&!children.has(id)?Math.max(record.height,200):0)};
         if(min.width||min.height){local['elk.nodeSize.constraints']='MINIMUM_SIZE';local['elk.nodeSize.minimum']=`(${min.width},${min.height})`;}
         if(ownInteriors&&children.has(id))local['elk.hierarchyHandling']='SEPARATE_CHILDREN';
+        // An area grown to its siblings' floor holds its parts in its middle.
+        if(ownInteriors&&children.has(id)&&id!==root.id&&record.minimumWidth)local['elk.contentAlignment']='V_CENTER H_CENTER';
         if(ownInteriors&&children.has(id)&&id!==root.id){
           const chosen=areaLayouts.get(id)||{direction:'RIGHT',wrap:true};
           local['elk.direction']=chosen.direction;
@@ -268,6 +272,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       return {id:`interior:${root.id}`,layoutOptions:inputUnzip?{...options,'elk.layered.layerUnzipping.strategy':'ALTERNATING'}:options,children:[actual]};
     }
     let placed=(await native(graph())).children[0];
+    const variants=[];
     if(root.branch==='inputs'&&!(children.get(root.id)||[]).some(id=>children.has(id))){
       const width=root.overviewMinWidth||160;
       const height=root.overviewHeightAtWidth?.(width,{availableHeight})||Math.min(180,placed.height),ratio=width/height;
@@ -312,6 +317,24 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         areaLayouts.set(area.id,{direction:best.direction,wrap:best.wrap});
       }
       placed=(await native(graph())).children[0];
+      // The closed cards of one component share one size rule: none is
+      // smaller than nine twentieths of its largest area on either side, or
+      // half again its own size.
+      // As large only as what they held, litestream's eight loose parts had
+      // stood at a third of Command line interface's width and read at 8px
+      // beside its title, and Redis's Client command handling at a fifth.
+      const areaBoxes=placed.children.filter(child=>children.has(child.id));
+      const floor={width:.45*Math.max(0,...areaBoxes.map(child=>child.width)),height:.45*Math.max(0,...areaBoxes.map(child=>child.height))};
+      let floored=false;
+      // A card grows at most by half again on a side: forty loose parts
+      // beside two areas are forty cards, not forty areas.
+      for(const child of placed.children){
+        if(child.width>=floor.width&&child.height>=floor.height)continue;
+        const record=localRecords.get(child.id);
+        record.minimumWidth=Math.max(record.minimumWidth||0,Math.min(floor.width,1.5*child.width));
+        record.minimumHeight=Math.max(record.minimumHeight||0,Math.min(floor.height,1.5*child.height));floored=true;
+      }
+      if(floored)placed=(await native(graph())).children[0];
     }
     const preferredWidth=root.overviewPreferredWidth||root.overviewMinWidth||(root.branch==='component'?220:160);
     const preferredHeight=root.overviewHeightAtWidth?.(preferredWidth,{availableHeight})||Math.min(180,placed.height);
@@ -354,47 +377,68 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         edgeBundle.set(edge.id,{id:bundled.get(identity).id,reversed:bundled.get(identity).sources[0]!==source});
       }
       const ready=local.nodes.filter(node=>node.parentId===root.id);
+      // The same room for arrows between a component's areas as between
+      // the map's frames: the spacing in the unit of the boxes it places,
+      // their median height over three part cards. In part units, the arrows
+      // between freqtrade's areas ran four pixels from the areas they
+      // passed at the zoom its frame is entered at.
+      const heights=ready.map(node=>node.height).sort((a,b)=>a-b),unit=Math.max(1,(heights[Math.floor(heights.length/2)]||0)/300);
       const componentOptions={...options,'elk.portConstraints':'FIXED_SIDE',
         'elk.padding':`[top=${localRecords.get(root.id).headerHeight||64},left=32,bottom=32,right=32]`};
+      for(const name of Object.keys(componentOptions))if(name.includes('spacing.'))componentOptions[name]=String(Math.round(Number(componentOptions[name])*unit));
       if(root.minimumWidth||root.minimumHeight){
         componentOptions['elk.nodeSize.constraints']='MINIMUM_SIZE';
         componentOptions['elk.nodeSize.minimum']=`(${root.minimumWidth||0},${root.minimumHeight||0})`;
       }
+      const before=new Map(ready.map(node=>[node.id,node]));
+      // A placement of the ready rectangles as the component's whole
+      // drawing: every node inside an area moves with its area, and every
+      // arrow between two of them takes their bundle's route.
+      const finish=compact=>{
+        const after=new Map(compact.nodes.map(node=>[node.id,node]));
+        const offset=id=>{
+          const child=immediate(id),a=before.get(child),b=after.get(child);
+          return a&&b?{x:b.absolute.x-a.absolute.x,y:b.absolute.y-a.absolute.y}:{x:0,y:0};
+        };
+        compact.nodes=local.nodes.map(node=>after.has(node.id)?{...after.get(node.id),frame:node.frame}
+          :{...node,absolute:transform(node.absolute,1,offset(node.id))});
+        const routes=new Map();
+        for(const edge of ownEdges){
+          const bundle=edgeBundle.get(edge.id),route=bundle&&(compact.edges.get(bundle.id)||[]);
+          routes.set(edge.id,bundle?bundle.reversed?reversed(route):route
+            :(local.edges.get(edge.id)||[]).map(segment=>segment.map(point=>transform(point,1,offset(edge.from)))));
+        }
+        compact.edges=routes;
+        return compact;
+      };
       let compact,filled=-Infinity;
-      for(const unzip of [false,true]){
-        const layoutOptions={...componentOptions};
+      // Of both directions, with and without unzipping, the arrangement
+      // nearest its closed summary's proportion: laid out only to the right,
+      // freqtrade's eight areas stood 3.7 times wider than tall under a
+      // summary three fifths as wide as tall, and its frame opened with an
+      // empty band four fifths of its height. Every arrangement is kept: the
+      // whole-map fit takes the one nearest the box it grows the component
+      // to (layoutPrepared), so the frame still hugs its areas.
+      for(const direction of ['RIGHT','DOWN'])for(const unzip of [false,true]){
+        const layoutOptions={...componentOptions,'elk.direction':direction};
         if(unzip)layoutOptions['elk.layered.layerUnzipping.strategy']='ALTERNATING';
-        const graph={id:`component-interior:${root.id}`,layoutOptions:options,children:[{
+        const graph={id:`component-interior:${root.id}`,layoutOptions:{...options,'elk.direction':direction},children:[{
           id:root.id,layoutOptions,ports:structuredClone([...ports.get(root.id).values()]),
           children:ready.map(node=>({id:node.id,width:node.width,height:node.height})),
           edges:structuredClone([...bundled.values()]),
         }]};
-        const candidate=localGeometry((await native(graph)).children[0]);
+        const candidate=finish(localGeometry((await native(graph)).children[0]));
         const aspect=candidate.width/candidate.height,score=Math.min(aspect/ratio,ratio/aspect);
+        variants.push(candidate);
         if(score>filled){compact=candidate;filled=score;}
       }
-      const before=new Map(ready.map(node=>[node.id,node]));
-      const after=new Map(compact.nodes.map(node=>[node.id,node]));
-      const offset=id=>{
-        const child=immediate(id),a=before.get(child),b=after.get(child);
-        return a&&b?{x:b.absolute.x-a.absolute.x,y:b.absolute.y-a.absolute.y}:{x:0,y:0};
-      };
-      compact.nodes=local.nodes.map(node=>after.has(node.id)?{...after.get(node.id),frame:node.frame}
-        :{...node,absolute:transform(node.absolute,1,offset(node.id))});
-      const routes=new Map();
-      for(const edge of ownEdges){
-        const bundle=edgeBundle.get(edge.id),route=bundle&&(compact.edges.get(bundle.id)||[]);
-        routes.set(edge.id,bundle?bundle.reversed?reversed(route):route
-          :(local.edges.get(edge.id)||[]).map(segment=>segment.map(point=>transform(point,1,offset(edge.from)))));
-      }
-      compact.edges=routes;
       local=compact;
     }
     // A fixed unit conversion permits the ordinary .44 overview camera to
     // display the preferred text size. It never uses the eventual fit zoom.
     const scale=Math.max(preferredWidth/local.width,preferredHeight/local.height)/.44;
     const width=local.width*scale,height=local.height*scale;
-    interiors.set(root.id,{id:root.id,local,scale,width,height,
+    interiors.set(root.id,{id:root.id,local,scale,width,height,variants:variants.length?variants:[local],
       ports:local.ports.map(port=>({...port,x:port.x*scale,y:port.y*scale}))});
     for(const item of members){
       const record=localRecords.get(item.id),contentScale=(record.contentScale||1)*scale;
@@ -414,19 +458,29 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   if(!prepared.roots.length)return {layout:{nodes:[],edges:[],labels:[],width:0,height:0},records:prepared.records,
     scales:prepared.scales,owner:prepared.owner,summaries:prepared.summaries};
   const byID=new Map(prepared.records.map(record=>[record.id,record]));
-  // The outer graph keeps room for its arrows: three fifths of the
-  // interiors' spacing (options) in screen pixels at the preferred .44
-  // camera, the unit its participants' summaries are prepared in. Laid out
-  // at a sixth of the interiors' spacing, the whole map's arrows had run in
-  // gaps of a pixel along other frames' borders and bunched into combs under
-  // litestream's row of destinations (owner, 2026-09-29: "и стрелкам место
-  // оставлять на главной карте"). The fit's corrections keep that room in
-  // the world while they grow the boxes to keep their summaries readable:
-  // grown with the boxes, it left the fit no way to reach readable text.
-  const outerOptions={...options};
-  for(const name of Object.keys(outerOptions))if(name.includes('spacing.'))outerOptions[name]=String(Math.round(Number(outerOptions[name])*.6/.44));
+  // The outer graph keeps room for its arrows (owner, 2026-09-29: "и
+  // стрелкам место оставлять на главной карте"): three fifths of the
+  // interiors' spacing (options) in screen pixels at the camera it is laid
+  // out for (`outerOptions`). Laid out at a sixth of the interiors' spacing
+  // in world units, the whole map's arrows had run in gaps of a pixel along
+  // other frames' borders and bunched into combs. When the fit's correction
+  // grows the boxes for a smaller camera the room grows with them, shrinking
+  // on screen as the square root of that camera and never below half its
+  // size (`screenRoom`): kept whole it left the fit no way to keep its
+  // summaries readable, kept in world units it fell to half a pixel on
+  // Redis's map. `roomFor` is the camera the room is laid out for.
+  const screenRoom=zoom=>Math.max(Math.sqrt(zoom/.44),.5);
+  const roomFor=zoom=>zoom/screenRoom(zoom);
+  const outerOptions=camera=>{
+    const spaced={...options};
+    for(const name of Object.keys(spaced))if(name.includes('spacing.'))spaced[name]=String(Math.round(Number(spaced[name])*.6/camera));
+    return spaced;
+  };
   const leaf=root=>{const interior=prepared.interiors.get(root.id);return {id:root.id,width:interior.width,height:interior.height,layoutOptions:{}};};
-  const input={id:'world',layoutOptions:outerOptions,children:prepared.roots.map(leaf),
+  // The arrangement each participant is drawn in: its prepared one, or,
+  // for a component grown by the fit, the one nearest its grown box.
+  let drawnAs=new Map(prepared.roots.map(root=>[root.id,prepared.interiors.get(root.id).local]));
+  const input={id:'world',layoutOptions:outerOptions(.44),children:prepared.roots.map(leaf),
     edges:prepared.aggregates.map(edge=>({id:edge.id,sources:[edge.from],targets:[edge.to]}))};
   const available={width:Math.max(1,width-2*overviewInset),height:Math.max(1,height-2*overviewInset)};
   function metrics(placed){
@@ -451,21 +505,22 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   // NullPointerException only with native ports, RIGHT and layer unzipping.
   // Such a candidate is left out; the map fails only when none is placed.
   // `sizes` are the boxes' world sizes, the prepared ones at first.
-  async function place(sizes=new Map()){
+  async function place(sizes=new Map(),zoom=.44,locals=drawnAs){
     let chosen=null;
     for(const nativePorts of [false,true])for(const direction of ['DOWN','RIGHT'])for(const unzip of [false,true]){
-      const candidate=structuredClone(input);candidate.layoutOptions['elk.direction']=direction;
+      const candidate=structuredClone(input);
+      Object.assign(candidate.layoutOptions,outerOptions(roomFor(zoom)));candidate.layoutOptions['elk.direction']=direction;
       for(const node of candidate.children){
         const size=sizes.get(node.id);if(!size)continue;
         node.width=Math.max(node.width,size.width);node.height=Math.max(node.height,size.height);
       }
       if(nativePorts){
         for(const node of candidate.children){
-          const interior=prepared.interiors.get(node.id);
-          node.ports=structuredClone(interior.ports).map(port=>{
+          const drawn=locals.get(node.id);
+          node.ports=structuredClone(drawn.ports).map(port=>{
             const side=port.layoutOptions?.['elk.port.side'];
-            return {...port,x:side==='EAST'?node.width:side==='WEST'?0:port.x*node.width/interior.width,
-              y:side==='SOUTH'?node.height:side==='NORTH'?0:port.y*node.height/interior.height};
+            return {...port,x:side==='EAST'?node.width:side==='WEST'?0:port.x*node.width/drawn.width,
+              y:side==='SOUTH'?node.height:side==='NORTH'?0:port.y*node.height/drawn.height};
           });
           node.layoutOptions['elk.portConstraints']='FIXED_POS';
         }
@@ -482,7 +537,9 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   const first=await place();
   if(!first)throw failure;
   ({placed:graph,score:best}=first);
-  for(let correction=0;correction<2&&best.readable<1-1e-7;correction++){
+  // The camera the placed graph's room was laid out for.
+  let spacedFor=.44;
+  for(let correction=0;correction<4&&best.readable<1-1e-7;correction++){
     // Root summaries use physical pixels. A fitted camera below .44 must
     // still reserve their measured minima, including the space their growth
     // removes from that camera. The grown boxes are placed anew, every
@@ -491,13 +548,26 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     // canvas while side by side they fit. Interiors keep their prepared
     // geometry. A lower corrected fit affects every summary, including
     // participants that were already readable before.
+    // A box grows to its summary's physical minimum on each side. A
+    // component grows whole, in the arrangement of its areas nearest that
+    // box (prepareInteriors keeps every one), so its open areas still fill
+    // it: grown only in height, freqtrade's frame had opened with its areas
+    // in the top fifth and an empty band under them.
+    const locals=new Map(drawnAs);
     const growing=graph.children.flatMap(node=>{
       const record=byID.get(node.id);
       if(!record.overviewHeightAtWidth)return [];
       const physicalWidth=Math.max(node.width*best.zoom,record.overviewMinWidth||0);
       const physicalHeight=record.overviewHeightAtWidth?.(physicalWidth,{availableHeight:available.height})||0;
-      return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,
-        needed:{width:Math.ceil(physicalWidth),height:Math.ceil(Math.max(node.height*best.zoom,physicalHeight))}}];
+      const needed={width:Math.ceil(physicalWidth),height:Math.ceil(Math.max(node.height*best.zoom,physicalHeight))};
+      const variants=prepared.interiors.get(node.id).variants||[];
+      if(record.branch==='component'&&variants.length>1&&(needed.width>node.width*best.zoom+.5||needed.height>node.height*best.zoom+.5)){
+        const cover=local=>{const aspect=local.width/local.height,width=Math.max(needed.width,needed.height*aspect);return {local,width,height:width/aspect};};
+        const chosen=variants.map(cover).sort((a,b)=>a.width*a.height-b.width*b.height)[0];
+        locals.set(node.id,chosen.local);
+        needed.width=Math.ceil(chosen.width);needed.height=Math.ceil(chosen.height);
+      }
+      return [{id:node.id,x:node.x,y:node.y,width:node.width,height:node.height,needed}];
     });
     if(!growing.length)break;
     const reserve=axis=>{
@@ -506,6 +576,13 @@ export async function layoutPrepared(prepared,width=1200,height=700){
       // Parallel rows share projected space. Only a nonoverlapping chain
       // adds growth along an axis; summing every row over-reserves the frame
       // and can incorrectly report that no readable fit exists.
+      // The axis's length no box covers is the arrows' room: laid out again
+      // for a camera `zoom`, it takes roomFor(spacedFor)/roomFor(zoom) of
+      // its world length, room·screenRoom(zoom) on screen.
+      const intervals=graph.children.map(node=>[node[coordinate],node[coordinate]+node[axis]]).sort((a,b)=>a[0]-b[0]);
+      let covered=0,reach=-Infinity;
+      for(const [start,end] of intervals){if(end>reach){covered+=end-Math.max(start,reach);reach=end;}}
+      const room=Math.max(0,best.span[axis]-covered)*roomFor(spacedFor);
       const extent=zoom=>{
         const lengths=[];
         for(const [i,node] of ordered.entries()){
@@ -514,7 +591,7 @@ export async function layoutPrepared(prepared,width=1200,height=700){
             preceding=Math.max(preceding,lengths[j]);
           lengths.push(preceding+Math.max(0,node.needed[axis]-node[axis]*zoom));
         }
-        return best.span[axis]*zoom+Math.max(0,...lengths);
+        return Math.min(best.span[axis],covered)*zoom+room*screenRoom(zoom)+Math.max(0,...lengths);
       };
       if(extent(best.zoom)<=available[axis]||extent(0)>=available[axis])return best.zoom;
       // This monotone piecewise-linear envelope is solved in memory.
@@ -527,9 +604,15 @@ export async function layoutPrepared(prepared,width=1200,height=700){
     };
     const zoom=Math.min(best.zoom,reserve('width'),reserve('height'));
     const sizes=new Map(graph.children.map(node=>[node.id,{width:node.width,height:node.height}]));
-    for(const item of growing)sizes.set(item.id,{width:Math.max(item.width,item.needed.width/zoom),height:Math.max(item.height,item.needed.height/zoom)});
-    const next=await place(sizes);
-    if(next&&next.score.readable>best.readable){graph=next.placed;best=next.score;}else break;
+    for(const item of growing){
+      const local=locals.get(item.id),aspect=local.width/local.height;
+      let width=Math.max(item.width,item.needed.width/zoom),height=Math.max(item.height,item.needed.height/zoom);
+      // A component's box keeps its arrangement's proportion.
+      if(local!==drawnAs.get(item.id)||byID.get(item.id).branch==='component'){width=Math.max(width,height*aspect);height=width/aspect;}
+      sizes.set(item.id,{width,height});
+    }
+    const next=await place(sizes,zoom,locals);
+    if(next&&next.score.readable>best.readable){graph=next.placed;best=next.score;spacedFor=zoom;drawnAs=locals;}else break;
   }
   const rootOf=new Map();for(const [root,interior] of prepared.interiors)for(const node of interior.local.nodes)rootOf.set(node.id,root);
   const placedRoots=graph.children;
@@ -538,8 +621,8 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   // drawing to that rectangle with one uniform transform instead of leaving a
   // miniature in its corner. No interior layout or zoom-time work is added.
   const interiorScales=new Map(placedRoots.map(root=>{
-    const interior=prepared.interiors.get(root.id);
-    return [root.id,Math.min(root.width/interior.local.width,root.height/interior.local.height)];
+    const local=drawnAs.get(root.id);
+    return [root.id,Math.min(root.width/local.width,root.height/local.height)];
   }));
   const records=prepared.records.map(record=>{
     const root=rootOf.get(record.id),factor=interiorScales.get(root)/prepared.interiors.get(root).scale;
@@ -550,19 +633,19 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   const scales=new Map([...prepared.scales].map(([id,scale])=>[id,scale*interiorScales.get(rootOf.get(id))/prepared.interiors.get(rootOf.get(id)).scale]));
   const routes=new Map((graph.edges||[]).map(edge=>[edge.id,(edge.sections||[]).map(section=>[section.startPoint,...section.bendPoints||[],section.endPoint])]));
   for(const root of placedRoots){
-    const interior=prepared.interiors.get(root.id),offset=rootOffsets.get(root.id),scale=interiorScales.get(root.id);
-    for(const node of interior.local.nodes)nodes.push({...node,
+    const local=drawnAs.get(root.id),offset=rootOffsets.get(root.id),scale=interiorScales.get(root.id);
+    for(const node of local.nodes)nodes.push({...node,
       position:node.parentId?{x:node.position.x*scale,y:node.position.y*scale}:offset,
       absolute:transform(node.absolute,scale,offset),width:node.parentId?node.width*scale:root.width,height:node.parentId?node.height*scale:root.height});
-    for(const label of interior.local.labels){
+    for(const label of local.labels){
       const original=prepared.labels.get(label.id),areaScale=byID.get(original.area)?.contentScale||scale;
       if(rootOf.get(original.outside)!==root.id)continue;
       labels.push({...original,x:offset.x+label.x*scale,y:offset.y+label.y*scale,width:label.width*scale,height:label.height*scale,scale:areaScale});
     }
   }
   const localRoute=(root,id)=>{
-    const interior=prepared.interiors.get(root),offset=rootOffsets.get(root);
-    return (interior.local.edges.get(id)||[]).map(segment=>segment.map(point=>transform(point,interiorScales.get(root),offset)));
+    const offset=rootOffsets.get(root);
+    return (drawnAs.get(root).edges.get(id)||[]).map(segment=>segment.map(point=>transform(point,interiorScales.get(root),offset)));
   };
   // An arrow the other way along its pair's one route takes that route
   // reversed: it starts where the arrow does.

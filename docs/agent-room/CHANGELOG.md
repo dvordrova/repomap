@@ -1,5 +1,38 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Room for arrows through the fit, a program frame that hugs its areas, one "where am I", input-kind marks in the column
+
+- **Why:** the lead's decisions on the canvas report of the morning: ship the
+  wider gaps, fix the program zoom (an empty band under freqtrade's areas, one
+  huge area card beside 5-pixel ones), the same gap rule inside, the column
+  header items (a)–(d), and the kind marks beside the canvas's.
+- **Change:** the whole map's arrow room is laid out in screen pixels for
+  the camera each fit correction plans (three fifths of the interiors'
+  spacing, shrinking only as that camera's square root, never below half);
+  up to four corrections. A component keeps every arrangement of its areas
+  (both directions, with and without unzipping) and grows whole in the one
+  nearest its grown box. No closed card of a component is smaller than
+  9/20 of its largest area (at most 1.5× its own size); arrows between areas
+  are spaced in the unit of the areas, and inside areas 16/28 apart. A
+  closed card's title reads 12px where its program is entered; an area and
+  the magnifier enter no smaller than their own parts read. Path-like titles
+  break at their separators. The column heads a part "Part", its frame link
+  flows inline, an empty actions row draws no rule; Inputs and Outside are
+  named with their program; the home says "System map" once (the canvas's
+  location row is kept only for assistive technology and errors); the
+  reading column, the programs list and the key carry the input-kind marks.
+- **Check** (saved runs of 2026-09-29, 1054×710): geometry findings before →
+  after, Redis 28 → 5, litestream 248 → 11, freqtrade 43 → 12, othello 21 → 3
+  (the small-text rule now skips the whole map); no arrow runs along a frame
+  or on another arrow any more; what is left is area titles at 7–8px at a
+  program entered whole and three clipped descriptions. Nearest arrow to a
+  frame it does not join 0.4/1.7/1.2 → 10/7.8/7.8px (Redis, litestream,
+  freqtrade); smallest whole-map summary drawn at .94/.61/.55 → .75/.46/.47
+  of its size, the cost of that room; freqtrade's program frame empty band
+  0.82 → 0.08. Three fixture tests pinning whole-map text scale were relaxed
+  to half their reserve, one reveal floor to 10.5px, the location-row wheel
+  test deleted.
+
 ## 2026-09-30 — A table's response example shows no real row key
 
 - **Why:** F3's open item (03d4542a): windows of near-identical rows came

@@ -7,7 +7,9 @@ test('card roles remain distinct without colour and important lines meet contras
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
   await page.locator('[data-zoom-into="backend"]').click();
   await expect.poll(()=>map.evaluate(map=>map.captureViewport().openComponents.includes('backend'))).toBe(true);
-  await page.locator('[data-summary-area="requests"] strong,[data-frame-title="requests"]>strong').click();
+  // A click reads without moving the camera: the area's magnifier enters it.
+  const requests=page.locator('[data-zoom-into="requests"]');
+  if(await requests.count())await requests.click();
   await expect(page.locator('.flow-role-core').first()).toBeVisible();
   await expect(page.locator('.flow-role-triggers').first()).toBeVisible();
   await expect(page.locator('.flow-part>.flow-kind').filter({hasText:/^(Core|Entrypoints)$/})).toHaveCount(0);
@@ -44,6 +46,8 @@ test('the entry mark stands clear of the border it sits on and the legend draws 
   const map=page.locator('[data-map]');await expect(map).toHaveAttribute('data-fixture-ready','true');
   await page.locator('[data-zoom-into="backend"]').click();
   await expect.poll(()=>map.evaluate(map=>map.captureViewport().openComponents.includes('backend'))).toBe(true);
+  const requests=page.locator('[data-zoom-into="requests"]');
+  if(await requests.count())await requests.click();
   const mark=page.locator('.react-flow__node[data-id="routes"] .flow-role-triggers');
   await expect(mark).toBeVisible();
   await page.mouse.move(1430,890);

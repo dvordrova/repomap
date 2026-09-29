@@ -45,6 +45,8 @@ for(const [query,id] of [['dense','front'],['single-target','backend']]){
 }
 
 test('pinch over a scrolling target inventory zooms the map',async({page},testInfo)=>{
+  // A short window, where the forty-two entries scroll.
+  await page.setViewportSize({width:1100,height:640});
   await page.goto('/?dense');
   const map=page.locator('[data-map]');
   await expect(map).toHaveAttribute('data-fixture-ready','true');

@@ -119,13 +119,13 @@ function Part({data}) {
   const standaloneLines=heading?Math.floor((heading.height-12-heading.title.split('\n').length*16-16)/15):0;
   const standaloneText=standaloneLines>0;
   if(deep)return <div className={`flow-part flow-part-deep flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''}`}
-      style={{width:box.width,height:box.height,transform:`scale(${scale})`,transformOrigin:'top left'}}>
+      style={{width:box.width,height:box.height,transform:`translate(${data.fillOffset?.x||0}px,${data.fillOffset?.y||0}px) scale(${scale})`,transformOrigin:'top left'}}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <strong style={{fontSize:28/grid.divisor,lineHeight:`${40/grid.divisor}px`,padding:`${20/grid.divisor}px ${32/grid.divisor}px 0`}}>{data.name||data.title}</strong>
     <PartSymbols symbols={data.symbols} calls={data.symbolCalls} width={box.width} height={box.height} grid={grid} member={data.member}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
-  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''} ${data.member?.alone?'flow-part-has-chosen':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
+  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''} ${data.member?.alone?'flow-part-has-chosen':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`translate(${data.fillOffset?.x||0}px,${data.fillOffset?.y||0}px) scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     <strong data-input-name={data.activation?'':undefined}>{data.activation&&<KindMark kind={data.activation}/>}{heading?.title||data.title}</strong>
@@ -303,6 +303,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   function updateLocation(event,subject=locationSubject){
     if(!instance)return;
+    location.classList.toggle('flow-location-error',!!layoutError);
     if(layoutError){location.textContent=t('Could not arrange this map. Reload to try again.');return;}
     if(!openComponents.size&&!communicationsOpen.size){location.textContent=t('System map');return;}
     const v=instance.getViewport(),w=host.clientWidth,h=host.clientHeight;
@@ -399,15 +400,17 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     }
     const {inset,columnGap:gap}=tileRoom,rect=host.getBoundingClientRect(),margin=24;
     // The declarations stand inside the part's 1px border (canvas.css).
-    const point={x:n.absolute.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor),
-      y:n.absolute.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor)};
+    const shift=data.fillOffset||{x:0,y:0};
+    const point={x:n.absolute.x+shift.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor),
+      y:n.absolute.y+shift.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor)};
     overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
     arrive([part]);locationSubject=part;
     const drawn=860*1.02/(box.width*scale),across=(rect.width-2*margin)/n.width;
     const zoom=Math.min(maxZoom,deepZoom(part),Math.max(drawn,across));
     const viewport=pointViewport(point,zoom,rect.width,rect.height);
-    if(n.width*zoom<=rect.width-2*margin)viewport.x=rect.width/2-(n.absolute.x+n.width/2)*zoom;
-    if(n.height*zoom<=rect.height-2*margin)viewport.y=rect.height/2-(n.absolute.y+n.height/2)*zoom;
+    // A part fitted across the canvas fits to within float round-off.
+    if(n.width*zoom<=rect.width-2*margin+.5)viewport.x=rect.width/2-(n.absolute.x+n.width/2)*zoom;
+    if(n.height*zoom<=rect.height-2*margin+.5)viewport.y=rect.height/2-(n.absolute.y+n.height/2)*zoom;
     else viewport.y=Math.min(margin-n.absolute.y*zoom,Math.max(rect.height-margin-(n.absolute.y+n.height)*zoom,viewport.y));
     commitCamera(instance.setViewport(viewport,{duration:smooth?420:0}),part);
     return true;
@@ -432,8 +435,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const symbols=data.symbols||[],row=grid.rows[index]||grid.rows[(symbols[index]?.owner||0)-1];
     if(!row)return false;
     const {inset,columnGap:gap}=tileRoom;
-    const x=(n.absolute.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor))*v.zoom+v.x;
-    const y=(n.absolute.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor))*v.zoom+v.y;
+    const shift=data.fillOffset||{x:0,y:0};
+    const x=(n.absolute.x+shift.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor))*v.zoom+v.x;
+    const y=(n.absolute.y+shift.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor))*v.zoom+v.y;
     return x>24&&y>24&&x<host.clientWidth-24&&y<host.clientHeight-24;
   }
   // Whether a frame (a component, an area, an Inputs collection) is drawn
@@ -761,7 +765,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   function frameView(n,rect){
     const branch=byID.get(n.id).branch,component=branch==='component';
     const scale=component?(componentFonts.get(n.id)||20)/20:['communication','inputs','inputs-part','outside'].includes(branch)?communicationScales().get(n.id)||1:scales.has(n.id)?byID.get(n.id)?.contentScale||1:1;
-    const least=scales.has(n.id)||branch==='inputs-part'?layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height):Infinity;
+    // No smaller than its own parts read at as the layer stays open: the
+    // layer's floor alone is set by its largest parts, and Redis's Core
+    // server infrastructure, entered whole at it, drew its parts at 6px
+    // beside redis-benchmark's.
+    const least=scales.has(n.id)||branch==='inputs-part'?Math.max(layerFloor(layout.nodes,semantic.records,n.id,rect.width,rect.height),branch==='area'?staysOpen/scale:0):Infinity;
     return frameViewport(n,layout.nodes,rect.width,rect.height,scale,{whole:component,pad:component?12:24,floor:staysOpen,least});
   }
   // The level the camera would stand at with viewport `v` (semantic.mjs,
@@ -855,7 +863,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const fit=Math.min((rect.width-48)/n.width,(rect.height-48)/n.height);
     commitCamera(instance.setViewport(partViewport(n,Math.min(1/contentScale,fit),rect.width,rect.height),{duration:smooth?420:0}),id);
   }
-  function capture(){return instance&&!initializing?{...instance.getViewport(),layoutKey,overview:isOverview(),detailAreas:[...detailed],componentsOpen,openComponents:[...openComponents],communicationsOpen:[...communicationsOpen],fit:overviewFit}:restorePending||null;}
+  function capture(){return instance&&!initializing?{...instance.getViewport(),layoutKey,overview:isOverview(),detailAreas:[...detailed],componentsOpen,openComponents:[...openComponents],communicationsOpen:[...communicationsOpen],fit:overviewFit&&!fitting}:restorePending||null;}
   function restore(v){if(!v)return;
     if(!instance||initializing){restorePending=v;return;}
     if(v.fit===true||(v.fit===undefined&&v.componentsOpen===false&&!view.scope&&!view.operation)){fitOverview();return;}
@@ -989,11 +997,15 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       // The closed card is a title over a foot row and the role mark: the
       // title is fitted into what the foot row leaves.
-      // Closed cards of one layer take one type size, the size their layer
-      // opens at; only a card too small for it takes its own smaller size.
+      // A closed card's title reads at twelve pixels where its layer opens,
+      // or, when its program is entered whole below that zoom, where it is
+      // entered (frameView): at the whole program, freqtrade's closed areas
+      // had read at 6 to 10 pixels. A card too small for it takes its own
+      // smaller size.
       const closedCards=layout.nodes.filter(n=>scales.has(n.id)||byID.get(n.id)?.branch==='inputs-part');
-      const title=n=>byID.get(n.id).name||byID.get(n.id).title;
-      return new Map(closedCards.map(n=>[n.id,groupHeading(n,title(n),scale,measure,56,48)]));
+      const title=n=>byID.get(n.id).name||byID.get(n.id).title,rect={width:layoutSize.width,height:layoutSize.height},entered=new Map();
+      const entry=n=>{const root=rootOf(n.id);if(!entered.has(root))entered.set(root,placed.get(root)?frameView(placed.get(root),rect).zoom:Infinity);return entered.get(root);};
+      return new Map(closedCards.map(n=>[n.id,groupHeading(n,title(n),Math.max(scale,1/entry(n)),measure,56,48)]));
     },[layoutKey]);
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
@@ -1013,8 +1025,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       if(!heading)return {};
       const holdsAreas=(children.get(placed.get(n.id)?.parentId)||[]).some(id=>byID.get(id)?.branch==='area');
       if(!holdsAreas||!detailed.size)return {standaloneHeading:heading};
-      const scale=byID.get(n.id)?.contentScale||1;
-      return {fill:{width:n.width/scale,height:n.height/scale}};
+      // Among open areas' parts it is a part of their size, in the middle
+      // of the box its closed card shares with them.
+      const item=byID.get(n.id),scale=item?.contentScale||1;
+      const width=Math.min(n.width/scale,item?.originalWidth||n.width/scale),height=Math.min(n.height/scale,item?.originalHeight||n.height/scale);
+      return {fill:{width,height},fillOffset:{x:(n.width-width*scale)/2,y:(n.height-height*scale)/2}};
     };
     looseOf=looseLook;
     // Every part can be zoomed into until its declarations read at their own size.
@@ -1086,7 +1101,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const {box,scale}=partBox({...byID.get(node.id),...looseOf(node)}),tiles=860*1.02/(box.width*scale);
       overviewFit=false;hover.pause();arrive([node.id]);locationSubject=node.id;
       callbacks.follow?.(node.id,true);
-      commitCamera(instance.setViewport(deepViewport(node,Math.min(maxZoom,Math.max(tiles,Math.min(fit,readable*1.125))),rect.width,rect.height),{duration:420}),node.id);
+      // Whole when its declarations still read at eleven pixels there;
+      // else at that size, its head and first column in sight: fitted
+      // whole, a large Go part had been a wall of 6-pixel declarations.
+      commitCamera(instance.setViewport(deepViewport(node,Math.min(maxZoom,Math.max(tiles,Math.min(readable*1.125,Math.max(fit,readable*.88)))),rect.width,rect.height),{duration:420}),node.id);
     }
     useEffect(()=>callbacks.emphasis?.({...state,overview}),[state.mode,state.subject,view.scope,overview]);
     // A closed frame stands for the participants hidden inside it.
@@ -1212,7 +1230,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   // What an arrow end stands for: every call behind it, grouped by the part
   // it is made from, then the part it goes into (call-card.mjs).
-  const nameOf=id=>byID.get(id)?.branch==='inputs'?t('Inputs'):byID.get(id)?.name||byID.get(id)?.title||'';
+  // A program's Inputs and Outside frames are named with their program:
+  // "← Inputs" had said nothing of whose they were.
+  const nameOf=id=>{const item=byID.get(id);return item?.branch==='inputs'?[t('Inputs'),item.componentName].filter(Boolean).join(' · ')
+    :item?.branch==='outside'?[t('Outside'),item.name].filter(Boolean).join(' · '):item?.name||item?.title||'';};
   const labelCard=label=>callCard(label.relations,{nameOf,incoming:label.incoming,groupable:id=>!byID.get(id)?.activation});
   // The same frames' calls the other way, when the map has them.
   const reverseOf=(label,labels)=>labels.find(other=>other.area===label.area&&other.outside===label.outside&&other.incoming!==label.incoming);
@@ -1304,7 +1325,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // The placed boxes as the canvas draws them, for the geometry checks
   // (visual/geometry.mjs): world rectangles, containment and what is shown.
   map.flowGeometry=()=>({nodes:layout.nodes.map(n=>({id:n.id,parentId:n.parentId||'',frame:!!n.frame,branch:byID.get(n.id)?.branch||'',
-    x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height,shown:!closed(n.id)}))});
+    x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height,shown:!closed(n.id),contentScale:byID.get(n.id)?.contentScale,originalWidth:byID.get(n.id)?.originalWidth}))});
   const root=createRoot(host);flushSync(()=>root.render(<App/>));
   // A click on an arrow reads its connection in the column, the camera
   // staying (openEnd).

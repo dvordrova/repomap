@@ -125,7 +125,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   whose inputs share one part keeps them loose. The groups are display
   containment, not architectural areas, and add no relation. A tile says its
   kind by a small muted mark before its name (Primer Octicons, the kind's
-  name on hover), never by a printed kind row.
+  name on hover), never by a printed kind row; the same mark stands before
+  a kind's name in the reading column and the map's key. A program's Inputs
+  and Outside frames are named with their program in Connections and cards
+  ("← Inputs · redis-server"), and a part's reading is headed "Part".
 - An input whose handler is not established (GroupsIndex `handler_unknown`:
   an option a call declares, a value handed over) has no owner: it stands
   loose, no implementation arrow binds it, and such a request is no route and
@@ -377,7 +380,16 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   at the size their layer stays open at, then takes the fewest detours, then
   the squarer box. Its parts keep their own size, that of the loose parts
   beside it, so an area is as large as what it holds, with no second
-  member-list height. A closed group shows its name and nested-content hint,
+  member-list height; but no closed card of a component (an area or a loose
+  part) is smaller than nine twentieths of its largest area on either side,
+  or half again its own size, an area so grown holding its parts in its
+  middle and a loose part drawn open at its parts' size in the middle of its
+  box. The arrows between a component's areas keep the interiors' spacing in
+  the unit of those areas' median height. A closed card's title reads at
+  twelve pixels where its layer opens, or where its program is entered
+  whole when that is closer. The magnifier frames a part whole only while
+  its declarations still read at eleven pixels there; else at that size,
+  its head and first column in sight. A closed group shows its name and nested-content hint,
   then reveals its objects directly at the next common layer; there is no
   intermediate member-list view. An architectural area holds at least two
   parts (reading draws none smaller; GroupsIndex keeps no container of fewer
@@ -478,12 +490,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   second boundary is held short of it. Secondary purpose text uses the
   remaining complete lines, the full text in the reading column. Text and
   controls stay inside their own frame; viewport clipping never moves them
-  to another corner. The persistent location row names the visible item and
-  its known ancestors when its world header leaves the screen; each frame it
-  names is a breadcrumb segment going up to that level, read and framed
-  (owner, 2026-09-29). Pinch uses the gesture's actual aim for that context;
-  an explicit entrance names its destination, not a neighbouring frame at
-  the canvas centre. Root summaries and revealed interiors are exclusive.
+  to another corner. Where the reader is is said once, by the page's
+  breadcrumb, with the reading column's heading naming what is read and the
+  frame holding it (owner, 2026-09-29: the canvas's own location row, the
+  breadcrumb and the column had named three places, and "System map" stood
+  three times on the home). The canvas keeps its location only for
+  assistive technology and for a layout that failed. Root summaries and revealed interiors are exclusive.
 
   Arrows between groups and participants stop at their boundaries, open or
   closed; routes inside one group keep their part-to-part endpoints, and
@@ -545,15 +557,20 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   preferred camera.
   The fixed world places frames, parts, complete input cards, component
   purposes and grouped labels. The outer layout prefers readable text, then
-  a smaller world; unzipping is not forced on small maps. Its spacing is the
-  interiors' in the unit of its participants' median height, so arrows keep
-  room between frames rather than run along their borders. When that fit
-  would shrink component inventories, collection headings or input types
-  below their readable size, a correction before display reserves the
-  missing space: at most two passes, each placing the grown boxes over the
+  a smaller world; unzipping is not forced on small maps. Arrows keep room
+  between frames (owner, 2026-09-29): the outer spacing is three fifths of
+  the interiors' in screen pixels at the camera it is laid out for, and a
+  correction that grows the boxes for a smaller camera grows it with them,
+  so it shrinks on screen only as the square root of that camera and never
+  below half; a summary may be drawn smaller than its reserve for it. When
+  the fit would shrink component inventories, collection headings or input
+  types below their readable size, a correction before display reserves the
+  missing space: at most four passes, each placing the grown boxes over the
   same eight candidates, a root readable in the first placement staying
   readable after the correction, never laying an interior out again, and no
-  zoom-time layout. Cross-participant labels take no interior
+  zoom-time layout. A component grows whole, in the arrangement of its areas
+  (of both directions, with and without unzipping, all prepared once) nearest
+  the box it grows to, so its open areas fill its frame with no empty band. Cross-participant labels take no interior
   space; their cards belong to the outer endpoints. Components and input
   collections show no empty padding around a long column and keep short
   catalogues compact. Their reserves are measured from the text, never a fixed

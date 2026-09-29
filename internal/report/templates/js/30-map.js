@@ -285,6 +285,15 @@
 
 // A declaration's name as its tile writes it: the name and what follows it
 // in a class box, "(c: redisClient *)" for a function, ": int" for a field.
+// An input's kind as the reading heads it: its small mark (kind-icons.mjs,
+// filled in by rmFillKindMarks) and the kind's name, "Request", not
+// "Operation · request".
+function rmKindHeading(kind){
+  return '<span class="map-kind-mark" data-kind="'+kind+'"></span>'+rmT((globalThis.rmKindNames||{})[kind]||kind);
+}
+function rmFillKindMarks(root){
+  root.querySelectorAll('.map-kind-mark[data-kind]').forEach(function(slot){var mark=globalThis.rmKindMark?.(slot.dataset.kind);if(mark)slot.replaceWith(mark);else slot.remove();});
+}
 function rmDeclarationText(node,concept){
   var symbols=rmPage.data(node,'symbols')||[];
   var href=concept.source&&concept.source.Href,symbol=href&&symbols.find(function(s){return s.href===href&&s.kind!=='field';});
@@ -550,7 +559,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       var html = '<div class="map-card-intro">';
       if(map.exploreNode){
         var current=node.dataset.activation?map.explorerOperation===node&&map.dataset.operationPinned==='true':map.explorerScope===id;
-        html+='<span class="map-card-kind">'+(current?'':rmT('Preview')+' · ')+(node.dataset.itemKind?rmT(node.dataset.itemKind):node.dataset.activation?rmT('Operation')+(counts?' · '+escapeText(counts):''):node.dataset.branch==='component'?rmT('Component'):node.dataset.branch?rmT('Area'):rmT(map.itemKind?map.itemKind(node):'Part'))+'</span>';
+        html+='<span class="map-card-kind">'+(current?'':rmT('Preview')+' · ')+(node.dataset.itemKind?rmT(node.dataset.itemKind):node.dataset.activation?rmKindHeading(node.dataset.activation):node.dataset.branch==='component'?rmT('Component'):node.dataset.branch?rmT('Area'):rmT('Part'))+'</span>';
       }
       html += '<b>' + escapeText(titleOf(node)) + '</b>';
       var summary = node.getAttribute('data-summary');
@@ -631,6 +640,7 @@ function rmDeclarationRelations(map,node,key,nodes){
       // is a reserved row of the inspector, never an overlay on map controls.
       heading.replaceChildren();
       var objectHeading=document.createElement('div'),kindHeading=card.querySelector('.map-card-kind'),titleHeading=card.querySelector('.map-card-intro>b');
+      rmFillKindMarks(card);
       if(kindHeading)objectHeading.appendChild(kindHeading);
       // A part, a declaration and an Inputs collection name what they are
       // in their heading, with the frame holding them as a link up; their

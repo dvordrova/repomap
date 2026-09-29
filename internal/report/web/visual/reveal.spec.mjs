@@ -32,7 +32,10 @@ test('pinch reveals and closes the complete hierarchy layer together',async({pag
     await expect(page.locator('[data-summary-area] .flow-overview-members'),'A group has no intermediate member-list representation').toHaveCount(0);
     return state;
   };
+  // Each tick its own pinch (a pause ends one): a pinch crosses one level
+  // boundary, and the collection's groups and the areas open at two.
   const wheel=async delta=>{
+    await page.waitForTimeout(350);
     const before=(await camera()).zoom;
     await page.keyboard.down('Control');try{await page.mouse.wheel(0,delta);}finally{await page.keyboard.up('Control');}
     await expect.poll(async()=>(await camera()).zoom).not.toBe(before);

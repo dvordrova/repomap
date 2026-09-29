@@ -56,6 +56,10 @@ function rmInputPath(n,byID){
 function rmKey(nodes,edges,category){
   var key=rmEl('span','flow-color-key');
   [['','Parts'],['entry','Entrypoints'],['core','Core'],['input','Inputs'],['external','External communication']].filter(function(item){return nodes.some(function(n){return ['core','entry'].includes(item[0])?!n.dataset.branch&&!n.dataset.activation&&n.dataset.lane===(item[0]==='entry'?'triggers':'core'):item[0]?category(n)===item[0]:!n.dataset.branch&&category(n)==='part'&&!['core','triggers'].includes(n.dataset.lane);});}).forEach(function(item){var label=rmEl('span',item[0]);label.append(rmEl('i'),document.createTextNode(rmT(item[1])));key.appendChild(label);});
+  // The kinds of input the map holds, each by its small mark, as its tiles
+  // draw it.
+  var kindsShown=[];nodes.forEach(function(n){var kind=n.dataset.activation;if(kind&&kindsShown.indexOf(kind)<0&&globalThis.rmKindMark?.(kind))kindsShown.push(kind);});
+  kindsShown.forEach(function(kind){var label=rmEl('span','flow-key-kind');label.append(globalThis.rmKindMark(kind),document.createTextNode(rmT((globalThis.rmKindNames||{})[kind]||kind)));key.appendChild(label);});
   var types=nodes.some(function(n){try{return (rmPage.data(n,'symbolCalls')||[]).some(function(link){return link[2]==='returns'||link[2]==='takes';});}catch(_){return false;}});
   [[false,'calls',edges.some(function(e){return !e.possible;})],[true,'possible calls',edges.some(function(e){return e.possible;})],['types','returns or takes a type',types]].filter(function(item){return item[2];}).forEach(function(item){
     var label=rmEl('span','flow-key-stroke'+(item[0]==='types'?' flow-key-types':item[0]?' flow-key-possible':'')),svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -73,7 +77,7 @@ function rmReachingInputs(n,reaching,owner,choose){
   var inputs=rmEl('details','system-reaching-inputs');inputs.appendChild(rmEl('summary','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')));
   if(reaching.length){
     var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
-    types.forEach(function(choices,type){inputs.appendChild(rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',setting:'Settings',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')));var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
+    types.forEach(function(choices,type){var typeHeading=rmEl('h6','',rmT(({request:'Incoming requests',command:'Commands',setting:'Settings',interaction:'User interactions',scheduled:'Scheduled tasks',continuous:'Background work'})[type]||'Inputs')),typeMark=globalThis.rmKindMark?.(type);if(typeMark)typeHeading.prepend(typeMark);inputs.appendChild(typeHeading);var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
   }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
   return inputs;
 }
