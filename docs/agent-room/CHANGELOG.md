@@ -1,5 +1,88 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Benchmark v3 fixes: helper names, macros, Main flow, camera, settings, TODOs
+
+- **Why:** benchmark v3 on Redis (`results-v3.md`) and its blind judge:
+  the helper fold hid answers of C07, Q6 and C21; `__assert_rtn` and
+  `__builtin_expect` read as library calls; the rebuilt Main flow lost
+  aeMain, aeProcessEvents and createClient (Q2 0.96 → 0.81) and linked
+  readQueryFromClient's beforeSleep registration (redis.c:1414); camera
+  jumps; five actions back to Main flow; settings read as variable walls.
+- **Flow (055e9c7a, 88768671):** a call into the caller's own part is its
+  work and never folds; folded helpers stand as one muted line under their
+  step, "+ helpers: createListObject, listAddNodeHead, dictAdd", each name a
+  link, "+ helpers" opening them in place. A call a macro's expansion makes
+  reads as the macro as written (pattern selector + `macro_expansion`
+  witness; `assert`, `redisAssert` opening to `_redisAssert`, `dictHashKey`
+  to its one-of-3 hash functions); a `builtin`-package call is no call.
+  Fixture: `tools/dump.c`'s `assert(keys.len == 0)`.
+- **Main flow (bd46d873, a27de53d):** a step citing a registration, or
+  naming a callable a registration hands over, reads as that callable with
+  where it is registered (exact calls from the most recent earlier step,
+  else the entries; every reached site, never an arbitrary first) and what
+  runs it (a dispatch's alternatives or an open call whose stores name it,
+  with the entries' chain the first time). Redis: "acceptHandler — main →
+  initServer registers it; main → aeMain → aeProcessEvents runs it",
+  "readQueryFromClient redis.c:2456 — acceptHandler → createClient
+  registers it". Why it changed: c1e72908 (09-28) made kept callables
+  registration facts; the orientation re-asked after facts v5 cited them
+  (a150, a147, a152) and the page showed `factLabel`, the registrar. The
+  run below re-asked orientation again and the model named the subjects
+  themselves; both now read the same. One Main flow: the component page's
+  copy is hidden as the column's source, the input's link to it removed,
+  one "Main flow" link stands above every reading of the component.
+  redis-cli (no model flow) opens main's calls (parseOptions, repl, …).
+  C test `TestCMainFlowReadsARegistrationAsTheCallableItRegisters` fails
+  when the registrar replaces the function.
+- **Column and camera (ada1f59e, d599f2f8, 30-map/45-modes):** a name chosen
+  in the column shows its tile with the part whole across the canvas (tiles
+  drawn), not at the tile's own size; an input's tile and an area named on
+  a component's card read without moving the camera; each input of a
+  connection row reads that input; the declaration's name is underlined on
+  hover with a "</>" mark; "Back to map" restores the page scroll of the
+  last click made while the map was read; a reading reached anew opens in
+  its default state (folds return only on Back or the same item again).
+- **Settings (109463f7, 9af38fb4):** ProgramIndex call patterns may carry
+  `branch`, the lines an if condition guards (C adapter; kvd's port,
+  dbfilename, persist). A setting reads "Writes: server.masterhost,
+  server.masterport, server.replstate" from the declaring function's exact
+  field writes on those lines; "also uses … also used by" folds under one
+  counted line. litestream's struct-tag settings read as before.
+- **Field types (e62211bd):** C fields record `types` (where the repository
+  type they name is declared); a field row's `listNode *` reads listNode.
+- **TODOs (853da540):** a TODO is a comment's marker in a code file (by the
+  language's comment syntax, strings skipped); Redis's ten doc/*.html
+  anchors are gone. test-redis.tcl's `# TODO:` is not listed: unanalysed
+  files are counted, never read (facts v5).
+- **pqsort.c in Persistence (item 17, no change):** DeepSeek's parts answer
+  (`repomap.atlas.parts.v2`, exchange 1fef6f6d) grouped `c4` (redis.c
+  Persistence box), `f13` (lzfP.h) and `f16` (pqsort.c: swapfunc, med3,
+  _pqsort, pqsort) as "Persistence (RDB and AOF)" given `calls:
+  ["c13 -> f16 (1)"]` (c13 = Sort command) and no other call or import.
+  Rule B did not join the file to Sort command because `_pqsort`'s helper
+  answer was a near-tie (Jev helper 0.49, responsibility 0.48, confidence
+  0.24). Not patched downstream.
+- **Runs (binary 109463f7, default cache, no `cache clear`), rendered at
+  05aadb33 into `redis-r2/run/latest-*.html`:** Redis exit 0 in 29 s (atlas
+  0 live; orientation 1 and glossary 3 live after the TODO count changed);
+  litestream v24 exit 0 in 29 s (orientation 1, glossary 6 live); freqtrade
+  exit 0 in 258 s (orientation 3 live, refused by context size at every
+  packing, as before); self-snap exit 0 in 79 s (glossary 38, orientation 2
+  live). Pages: Redis 4.31 MB, litestream 3.91 MB, freqtrade 9.41 MB,
+  repomap 9.88 MB. Headless checks on the Redis page without the toggle:
+  pushGenericCommand, expireGenericCommand, rdbLoad and
+  handleClientsWaitingListPush show every needed call, no builtin; the Main
+  flow names aeMain, aeProcessEvents, createClient and no registrar; no page
+  errors; smoke walks of the other three pages without page errors.
+  Screenshots `look/v3fix-{before,after,final}-*.png`.
+- **Verified:** `make test`, `make vet` (package parallelism 2), `make
+  ui-test` (134).
+- **Open:** a joint's `sides` hold only the connect/accept chains; no send or
+  read functions are recorded for a joint, so the card lists none (item 7).
+  "Uses variables" and "Called by" still show `:line` links (earlier
+  decisions). Setting branches are C only (other adapters' settings are
+  tags or option declarations).
+
 ## 2026-09-29 — Fix B, a type's takers, field readers and writers, the own-executable join
 
 - **Fix B (22f5cce9):** a unit of a split file no box took (a near-tie in

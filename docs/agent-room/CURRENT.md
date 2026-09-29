@@ -413,6 +413,22 @@ never entered into or read from a repository-wide unqualified map.
   (`server.masterhost`); a function's says "Writes: …" once (its field
   writes leave "Uses variables"). No line numbers; from C field paths,
   Python typed receivers and JS/TS declared properties (REPORT).
+- **Benchmark v3 fixes (2026-09-29, REPORT):** a flow's helper calls are
+  named on one muted line under their step ("+ helpers: …", each a link),
+  and a call into the caller's own part is its work, never folded; a call a
+  macro's expansion makes reads as the macro as written, a compiler builtin
+  as no call. A Main flow step citing a registration, or naming a callable
+  a registration hands over, reads as that callable with where on the
+  flow's path it is registered and what runs it (the event loop's chain
+  from main), never the registrar or an arbitrary site; the component
+  reading holds the one Main flow and every reading of the component has
+  one "Main flow" link; a program no model flow passes opens its entry's
+  calls. A setting reads by its key with the fields its branch writes (C
+  pattern `branch`, PROGRAM_INDEX). A TODO is a comment's marker in a code
+  file (facts). A C field records its repository type (`types`), which its
+  row links. A column click shows a tile with its whole part; a canvas
+  click never moves the camera; "Back to map" restores the page as it
+  stood; a reading reached anew opens in its default state.
 
 ## Contracts and formats
 
