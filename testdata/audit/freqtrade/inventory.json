@@ -1,0 +1,4872 @@
+{
+  "repository": "~/git/freqtrade",
+  "revision": "9f10e357a93c1dcf10c2a2b367659214d89c073e",
+  "notes": [
+    "Components: freqtrade (bot program, console script freqtrade = freqtrade.main:main, all subcommands); freqtrade-client (separate package in ft_client/, console script freqtrade-client); scripts/rest_client.py (thin wrapper around freqtrade_client.ft_client.main, same inventory as freqtrade-client); scripts/ws_client.py; five build_helpers scripts; setup.sh and setup.ps1 installers.",
+    "REST routes were extracted with an AST pass over freqtrade/rpc/api_server/*.py (87 decorators incl. the websocket and 4 UI routes) and anchored on the line holding the path literal; names carry the /api/v1 prefix added in webserver.py configure_app (UI router has no prefix).",
+    "Route availability: api_trading routes need trade mode (is_trading_mode); api_webserver, backtest, background, pair_history, pairlists, download_data, lookahead/recursive routes need webserver mode (`freqtrade webserver`); api_v1 routes work in both; /ping and /token/* use no JWT/basic dependency; the websocket checks ws_token or JWT.",
+    "Telegram commands anchor on their CommandHandler line (telegram.py:268-311); a registration with aliases is one item named by its comma-separated strings (39 registrations, 51 command strings). All command handlers except /tg_info are wrapped by authorized_only (chat_id, topic_id, authorized_users); the force_exit__/force_enter__ inline callbacks (_force_exit_inline/_force_enter_inline) are not decorated.",
+    "Workers: the trade process is single-threaded Worker.run + FreqtradeBot.process with schedule jobs run inline; other threads are FTTelegram, FTUvicorn, ccxt_ws, the ExternalMessageConsumer loop and FreqAI retraining, each enabled by config. Discord and webhook POST synchronously in whichever thread calls RPCManager.send_msg (no queue/thread).",
+    "Settings list only top-level or clearly documented schema keys from config_schema.py. Must rule: the core trading parameters a trade config cannot run without (exchange, dry_run, stake_currency, stake_amount, max_open_trades, timeframe, minimal_roi, stoploss, pairlists, strategy) plus the sections that switch on a must worker, external connection or data location (db_url, telegram, api_server, webhook, discord, external_message_consumer, freqai). Tuning sections stay must=false even when SCHEMA_TRADE_REQUIRED (config_schema.py:1494) requires them: entry_pricing and exit_pricing (required, no schema default), tradable_balance_ratio, dry_run_wallet, internals and dataformat_* (required but schema-defaulted). internals.heartbeat_interval is read (worker.py:59) but absent from the schema.",
+    "The repository's own user_data/ contains only backtest_results, data, freqaimodels, hyperopts, logs, notebooks (.gitkeep); strategies, plot and hyperopt_results are created by create_userdata_dir at runtime.",
+    "Ambiguities: 'edge' is a registered subcommand that only errors (must=false); /stopentry is a non-deprecated alias of /pause but marked must=false with the other aliases; FreqUI catch-all route is must=true because it is how the web UI is served; freqtrade-client commands are its FtRestClient public methods (dynamic getattr dispatch): the single must item is the positional `command` slot, the 43 method names are must=false client-command items (same convention as redis-cli's cmdTable words). All six SQLAlchemy tables of the trades DB are must."
+  ],
+  "items": [
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "entrypoint",
+      "name": "freqtrade",
+      "anchor": "pyproject.toml:143",
+      "handler": "freqtrade.main.main",
+      "must": true,
+      "why": "Console script: parses argv with Arguments and calls the chosen subcommand's func."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "entrypoint",
+      "name": "python -m freqtrade",
+      "anchor": "freqtrade/__main__.py:13",
+      "handler": "freqtrade.main.main",
+      "must": false,
+      "why": "Module entry that forwards to freqtrade.main.main."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "trade",
+      "anchor": "freqtrade/commands/arguments.py:429",
+      "handler": "freqtrade.commands.trade_commands.start_trading",
+      "must": true,
+      "why": "Runs the live or dry-run trading bot through Worker (the default Docker/systemd command)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "create-userdir",
+      "anchor": "freqtrade/commands/arguments.py:436",
+      "handler": "freqtrade.commands.deploy_commands.start_create_userdir",
+      "must": true,
+      "why": "Creates the user_data directory tree and copies sample files."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "new-config",
+      "anchor": "freqtrade/commands/arguments.py:444",
+      "handler": "freqtrade.commands.build_config_commands.start_new_config",
+      "must": true,
+      "why": "Interactive questionnaire that writes a new config.json."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "show-config",
+      "anchor": "freqtrade/commands/arguments.py:452",
+      "handler": "freqtrade.commands.build_config_commands.start_show_config",
+      "must": true,
+      "why": "Prints the resolved (merged) configuration, secrets hidden unless --show-sensitive."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "new-strategy",
+      "anchor": "freqtrade/commands/arguments.py:460",
+      "handler": "freqtrade.commands.deploy_commands.start_new_strategy",
+      "must": true,
+      "why": "Renders a strategy file from templates into user_data/strategies."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "download-data",
+      "anchor": "freqtrade/commands/arguments.py:468",
+      "handler": "freqtrade.commands.data_commands.start_download_data",
+      "must": true,
+      "why": "Downloads OHLCV (and optionally trades) history from the exchange into the data directory."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "convert-data",
+      "anchor": "freqtrade/commands/arguments.py:477",
+      "handler": "partial(freqtrade.commands.data_commands.start_convert_data, ohlcv=True)",
+      "must": true,
+      "why": "Converts stored candle data between json/jsongz/feather/parquet formats."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "convert-trade-data",
+      "anchor": "freqtrade/commands/arguments.py:486",
+      "handler": "partial(freqtrade.commands.data_commands.start_convert_data, ohlcv=False)",
+      "must": true,
+      "why": "Converts stored trades data between formats."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "trades-to-ohlcv",
+      "anchor": "freqtrade/commands/arguments.py:495",
+      "handler": "freqtrade.commands.data_commands.start_convert_trades",
+      "must": true,
+      "why": "Builds OHLCV candles from downloaded trades data."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "list-data",
+      "anchor": "freqtrade/commands/arguments.py:504",
+      "handler": "freqtrade.commands.data_commands.start_list_data",
+      "must": true,
+      "why": "Lists downloaded data (pairs/timeframes, or trades with --trades)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "backtesting",
+      "anchor": "freqtrade/commands/arguments.py:513",
+      "handler": "freqtrade.commands.optimize_commands.start_backtesting",
+      "must": true,
+      "why": "Backtests a strategy on stored data and exports results to user_data/backtest_results."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "backtesting-show",
+      "anchor": "freqtrade/commands/arguments.py:520",
+      "handler": "freqtrade.commands.optimize_commands.start_backtesting_show",
+      "must": true,
+      "why": "Prints a previously stored backtest result."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "backtesting-analysis",
+      "anchor": "freqtrade/commands/arguments.py:529",
+      "handler": "freqtrade.commands.analyze_commands.start_analysis_entries_exits",
+      "must": true,
+      "why": "Analyzes entry/exit tags and reasons of a stored backtest (signals export)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "edge",
+      "anchor": "freqtrade/commands/arguments.py:536",
+      "handler": "freqtrade.commands.optimize_commands.start_edge",
+      "must": false,
+      "why": "Still registered (help hidden) but its handler only raises ConfigurationError: Edge was removed."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "hyperopt",
+      "anchor": "freqtrade/commands/arguments.py:545",
+      "handler": "freqtrade.commands.optimize_commands.start_hyperopt",
+      "must": true,
+      "why": "Optimizes strategy parameters over many backtest epochs in parallel workers."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "hyperopt-list",
+      "anchor": "freqtrade/commands/arguments.py:554",
+      "handler": "freqtrade.commands.hyperopt_commands.start_hyperopt_list",
+      "must": true,
+      "why": "Lists epochs from a stored .fthypt hyperopt result file with filters."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "hyperopt-show",
+      "anchor": "freqtrade/commands/arguments.py:563",
+      "handler": "freqtrade.commands.hyperopt_commands.start_hyperopt_show",
+      "must": true,
+      "why": "Shows details of one hyperopt epoch."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "list-exchanges",
+      "anchor": "freqtrade/commands/arguments.py:572",
+      "handler": "freqtrade.commands.list_commands.start_list_exchanges",
+      "must": true,
+      "why": "Lists exchanges known to ccxt and their freqtrade support status."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "list-markets",
+      "anchor": "freqtrade/commands/arguments.py:581",
+      "handler": "partial(freqtrade.commands.list_commands.start_list_markets, pairs_only=False)",
+      "must": true,
+      "why": "Lists markets on an exchange."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "list-pairs",
+      "anchor": "freqtrade/commands/arguments.py:590",
+      "handler": "partial(freqtrade.commands.list_commands.start_list_markets, pairs_only=True)",
+      "must": true,
+      "why": "Lists tradable pairs on an exchange (same handler, pairs_only=True)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "list-strategies",
+      "anchor": "freqtrade/commands/arguments.py:599",
+      "handler": "freqtrade.commands.list_commands.start_list_strategies",
+      "must": true,
+      "why": "Lists strategy classes found in the strategies directory."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "list-hyperoptloss",
+      "anchor": "freqtrade/commands/arguments.py:608",
+      "handler": "freqtrade.commands.list_commands.start_list_hyperopt_loss_functions",
+      "must": true,
+      "why": "Lists available hyperopt loss functions."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "list-freqaimodels",
+      "anchor": "freqtrade/commands/arguments.py:617",
+      "handler": "freqtrade.commands.list_commands.start_list_freqAI_models",
+      "must": true,
+      "why": "Lists available FreqAI model classes."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "list-timeframes",
+      "anchor": "freqtrade/commands/arguments.py:626",
+      "handler": "freqtrade.commands.list_commands.start_list_timeframes",
+      "must": true,
+      "why": "Lists timeframes supported by an exchange."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "show-trades",
+      "anchor": "freqtrade/commands/arguments.py:635",
+      "handler": "freqtrade.commands.list_commands.start_show_trades",
+      "must": true,
+      "why": "Prints trades stored in the trades database."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "test-pairlist",
+      "anchor": "freqtrade/commands/arguments.py:644",
+      "handler": "freqtrade.commands.pairlist_commands.start_test_pairlist",
+      "must": true,
+      "why": "Evaluates the configured pairlist handlers against the exchange and prints the result."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "convert-db",
+      "anchor": "freqtrade/commands/arguments.py:652",
+      "handler": "freqtrade.commands.db_commands.start_convert_db",
+      "must": true,
+      "why": "Copies the trades database from --db-url-from to --db-url (e.g. SQLite to PostgreSQL)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "install-ui",
+      "anchor": "freqtrade/commands/arguments.py:660",
+      "handler": "freqtrade.commands.deploy_commands.start_install_ui",
+      "must": true,
+      "why": "Downloads the FreqUI web frontend from GitHub into rpc/api_server/ui/installed."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "plot-dataframe",
+      "anchor": "freqtrade/commands/arguments.py:668",
+      "handler": "freqtrade.commands.plot_commands.start_plot_dataframe",
+      "must": true,
+      "why": "Writes plotly HTML charts of candles, indicators and trades to user_data/plot."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "plot-profit",
+      "anchor": "freqtrade/commands/arguments.py:677",
+      "handler": "freqtrade.commands.plot_commands.start_plot_profit",
+      "must": true,
+      "why": "Writes a plotly HTML profit chart to user_data/plot."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "webserver",
+      "anchor": "freqtrade/commands/arguments.py:686",
+      "handler": "freqtrade.commands.webserver_commands.start_webserver",
+      "must": true,
+      "why": "Runs the REST API/FreqUI server standalone (webserver mode: backtests, data download) without trading."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "strategy-updater",
+      "anchor": "freqtrade/commands/arguments.py:693",
+      "handler": "freqtrade.commands.strategy_utils_commands.start_strategy_update",
+      "must": true,
+      "why": "Rewrites outdated strategy files to the current interface version."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "lookahead-analysis",
+      "anchor": "freqtrade/commands/arguments.py:702",
+      "handler": "freqtrade.commands.optimize_commands.start_lookahead_analysis",
+      "must": true,
+      "why": "Checks a strategy for lookahead bias by comparing backtests."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "subcommand",
+      "name": "recursive-analysis",
+      "anchor": "freqtrade/commands/arguments.py:712",
+      "handler": "freqtrade.commands.optimize_commands.start_recursive_analysis",
+      "must": true,
+      "why": "Checks a strategy for indicators that depend on startup candle count."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-c/--config",
+      "anchor": "freqtrade/commands/cli_options.py:83",
+      "handler": null,
+      "must": true,
+      "why": "Config file(s), repeatable, '-' reads stdin; default user_data/config.json or ./config.json."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--userdir/--user-data-dir",
+      "anchor": "freqtrade/commands/cli_options.py:100",
+      "handler": null,
+      "must": true,
+      "why": "Selects the user_data directory that holds data, strategies and results."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-s/--strategy",
+      "anchor": "freqtrade/commands/cli_options.py:118",
+      "handler": null,
+      "must": true,
+      "why": "Strategy class name to load."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--strategy-path",
+      "anchor": "freqtrade/commands/cli_options.py:123",
+      "handler": null,
+      "must": false,
+      "why": "Additional strategy lookup directory."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--db-url",
+      "anchor": "freqtrade/commands/cli_options.py:128",
+      "handler": null,
+      "must": true,
+      "why": "Overrides the trades database URL (default sqlite tradesv3[.dryrun].sqlite)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--dry-run",
+      "anchor": "freqtrade/commands/cli_options.py:145",
+      "handler": null,
+      "must": true,
+      "why": "Forces dry-run: removes exchange secrets and simulates orders."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--dry-run-wallet/--starting-balance",
+      "anchor": "freqtrade/commands/cli_options.py:150",
+      "handler": null,
+      "must": false,
+      "why": "Starting balance for dry-run/backtesting."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-v/--verbose",
+      "anchor": "freqtrade/commands/cli_options.py:57",
+      "handler": null,
+      "must": false,
+      "why": "Increases log verbosity."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--logfile/--log-file",
+      "anchor": "freqtrade/commands/cli_options.py:62",
+      "handler": null,
+      "must": false,
+      "why": "Log to a file (rotating), or deprecated syslog:/journald targets."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-d/--datadir/--data-dir",
+      "anchor": "freqtrade/commands/cli_options.py:93",
+      "handler": null,
+      "must": false,
+      "why": "Directory with historical candle data."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--timerange",
+      "anchor": "freqtrade/commands/cli_options.py:162",
+      "handler": null,
+      "must": true,
+      "why": "Time range for backtesting/hyperopt/download."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-i/--timeframe",
+      "anchor": "freqtrade/commands/cli_options.py:158",
+      "handler": null,
+      "must": false,
+      "why": "Timeframe override for optimize commands."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-p/--pairs",
+      "anchor": "freqtrade/commands/cli_options.py:464",
+      "handler": null,
+      "must": false,
+      "why": "Limits a command to given pairs."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--export",
+      "anchor": "freqtrade/commands/cli_options.py:228",
+      "handler": null,
+      "must": false,
+      "why": "Backtest export mode (none/trades/signals)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--backtest-directory/--export-directory",
+      "anchor": "freqtrade/commands/cli_options.py:233",
+      "handler": null,
+      "must": false,
+      "why": "Directory for backtest results."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--strategy-list",
+      "anchor": "freqtrade/commands/cli_options.py:216",
+      "handler": null,
+      "must": false,
+      "why": "Backtests several strategies in one run."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--breakdown",
+      "anchor": "freqtrade/commands/cli_options.py:267",
+      "handler": null,
+      "must": false,
+      "why": "Backtest result breakdown per day/week/month/year/weekday."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--cache",
+      "anchor": "freqtrade/commands/cli_options.py:273",
+      "handler": null,
+      "must": false,
+      "why": "Reuse a cached backtest result not older than the given age."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-e/--epochs",
+      "anchor": "freqtrade/commands/cli_options.py:286",
+      "handler": null,
+      "must": false,
+      "why": "Number of hyperopt epochs."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--spaces",
+      "anchor": "freqtrade/commands/cli_options.py:300",
+      "handler": null,
+      "must": false,
+      "why": "Hyperopt parameter spaces to optimize."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--hyperopt-loss",
+      "anchor": "freqtrade/commands/cli_options.py:366",
+      "handler": null,
+      "must": false,
+      "why": "Hyperopt loss function class."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-j/--job-workers",
+      "anchor": "freqtrade/commands/cli_options.py:342",
+      "handler": null,
+      "must": false,
+      "why": "Parallel hyperopt worker count."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--exchange",
+      "anchor": "freqtrade/commands/cli_options.py:549",
+      "handler": null,
+      "must": false,
+      "why": "Exchange name for data/list commands without a config."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-t/--timeframes",
+      "anchor": "freqtrade/commands/cli_options.py:554",
+      "handler": null,
+      "must": false,
+      "why": "Timeframes to download/convert."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--days",
+      "anchor": "freqtrade/commands/cli_options.py:476",
+      "handler": null,
+      "must": false,
+      "why": "Days of history to download."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--trading-mode",
+      "anchor": "freqtrade/commands/cli_options.py:442",
+      "handler": null,
+      "must": false,
+      "why": "spot/margin/futures for data and list commands."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--sd-notify",
+      "anchor": "freqtrade/commands/cli_options.py:140",
+      "handler": null,
+      "must": false,
+      "why": "Enables systemd notify/watchdog messages from Worker."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--freqaimodel",
+      "anchor": "freqtrade/commands/cli_options.py:804",
+      "handler": null,
+      "must": false,
+      "why": "FreqAI model class to use."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-V/--version",
+      "anchor": "freqtrade/commands/cli_options.py:70",
+      "handler": null,
+      "must": false,
+      "why": "Prints version info and exits."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "exchange",
+      "anchor": "freqtrade/config_schema/config_schema.py:520",
+      "handler": null,
+      "must": true,
+      "why": "Exchange section: name, API credentials, pair_whitelist/blacklist, ccxt options."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "exchange.name",
+      "anchor": "freqtrade/config_schema/config_schema.py:938",
+      "handler": null,
+      "must": false,
+      "why": "Exchange id passed to ccxt."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "exchange.key",
+      "anchor": "freqtrade/config_schema/config_schema.py:945",
+      "handler": null,
+      "must": false,
+      "why": "Exchange API key (recommended via FREQTRADE__EXCHANGE__KEY)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "exchange.secret",
+      "anchor": "freqtrade/config_schema/config_schema.py:952",
+      "handler": null,
+      "must": false,
+      "why": "Exchange API secret (recommended via env)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "exchange.pair_whitelist",
+      "anchor": "freqtrade/config_schema/config_schema.py:996",
+      "handler": null,
+      "must": false,
+      "why": "Static list of pairs to trade (used by StaticPairList)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "exchange.pair_blacklist",
+      "anchor": "freqtrade/config_schema/config_schema.py:1002",
+      "handler": null,
+      "must": false,
+      "why": "Pairs never traded."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "exchange.ccxt_config",
+      "anchor": "freqtrade/config_schema/config_schema.py:1035",
+      "handler": null,
+      "must": false,
+      "why": "Extra options passed to both ccxt clients."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "dry_run",
+      "anchor": "freqtrade/config_schema/config_schema.py:91",
+      "handler": null,
+      "must": true,
+      "why": "Simulated trading when true; selects the dry-run database default."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "stake_currency",
+      "anchor": "freqtrade/config_schema/config_schema.py:52",
+      "handler": null,
+      "must": true,
+      "why": "Quote currency used for stakes."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "stake_amount",
+      "anchor": "freqtrade/config_schema/config_schema.py:56",
+      "handler": null,
+      "must": true,
+      "why": "Amount per trade or 'unlimited'."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "max_open_trades",
+      "anchor": "freqtrade/config_schema/config_schema.py:37",
+      "handler": null,
+      "must": true,
+      "why": "Maximum concurrent open trades."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "timeframe",
+      "anchor": "freqtrade/config_schema/config_schema.py:42",
+      "handler": null,
+      "must": true,
+      "why": "Candle timeframe the strategy runs on."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "minimal_roi",
+      "anchor": "freqtrade/config_schema/config_schema.py:111",
+      "handler": null,
+      "must": true,
+      "why": "ROI table that triggers exits (usually in the strategy)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "stoploss",
+      "anchor": "freqtrade/config_schema/config_schema.py:122",
+      "handler": null,
+      "must": true,
+      "why": "Stoploss ratio (usually in the strategy)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "pairlists",
+      "anchor": "freqtrade/config_schema/config_schema.py:552",
+      "handler": null,
+      "must": true,
+      "why": "Ordered pairlist handlers that build the active whitelist."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "strategy",
+      "anchor": "freqtrade/config_schema/config_schema.py:167",
+      "handler": null,
+      "must": true,
+      "why": "Strategy class name to load."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "db_url",
+      "anchor": "freqtrade/config_schema/config_schema.py:805",
+      "handler": null,
+      "must": true,
+      "why": "SQLAlchemy URL of the trades database."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "telegram",
+      "anchor": "freqtrade/config_schema/config_schema.py:569",
+      "handler": null,
+      "must": true,
+      "why": "Telegram bot: enabled, token, chat_id, notification settings."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server",
+      "anchor": "freqtrade/config_schema/config_schema.py:750",
+      "handler": null,
+      "must": true,
+      "why": "REST API/FreqUI server: enabled, listen address/port, credentials, jwt/ws tokens."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "webhook",
+      "anchor": "freqtrade/config_schema/config_schema.py:686",
+      "handler": null,
+      "must": true,
+      "why": "Generic webhook notifications (enabled, url, format, retries); turns on the webhook POST sender."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "discord",
+      "anchor": "freqtrade/config_schema/config_schema.py:701",
+      "handler": null,
+      "must": true,
+      "why": "Discord webhook notifications (enabled, webhook_url); turns on the Discord sender."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "dry_run_wallet",
+      "anchor": "freqtrade/config_schema/config_schema.py:95",
+      "handler": null,
+      "must": false,
+      "why": "Simulated starting balance."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "tradable_balance_ratio",
+      "anchor": "freqtrade/config_schema/config_schema.py:62",
+      "handler": null,
+      "must": false,
+      "why": "Share of balance the bot may use."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "fiat_display_currency",
+      "anchor": "freqtrade/config_schema/config_schema.py:86",
+      "handler": null,
+      "must": false,
+      "why": "Fiat currency for RPC value display (CoinGecko conversion)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "entry_pricing",
+      "anchor": "freqtrade/config_schema/config_schema.py:351",
+      "handler": null,
+      "must": false,
+      "why": "How entry prices are picked from orderbook/ticker."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "exit_pricing",
+      "anchor": "freqtrade/config_schema/config_schema.py:396",
+      "handler": null,
+      "must": false,
+      "why": "How exit prices are picked."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "order_types",
+      "anchor": "freqtrade/config_schema/config_schema.py:433",
+      "handler": null,
+      "must": false,
+      "why": "Order types for entry/exit/stoploss, stoploss_on_exchange."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "unfilledtimeout",
+      "anchor": "freqtrade/config_schema/config_schema.py:323",
+      "handler": null,
+      "must": false,
+      "why": "Timeouts after which unfilled orders are cancelled."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "trading_mode",
+      "anchor": "freqtrade/config_schema/config_schema.py:198",
+      "handler": null,
+      "must": false,
+      "why": "spot, margin or futures."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "margin_mode",
+      "anchor": "freqtrade/config_schema/config_schema.py:203",
+      "handler": null,
+      "must": false,
+      "why": "cross or isolated margin."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "initial_state",
+      "anchor": "freqtrade/config_schema/config_schema.py:819",
+      "handler": null,
+      "must": false,
+      "why": "Bot state at startup (running/paused/stopped)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "internals",
+      "anchor": "freqtrade/config_schema/config_schema.py:832",
+      "handler": null,
+      "must": false,
+      "why": "process_throttle_secs, heartbeat and sd_notify for the Worker loop."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "user_data_dir",
+      "anchor": "freqtrade/config_schema/config_schema.py:178",
+      "handler": null,
+      "must": false,
+      "why": "user_data directory path."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "datadir",
+      "anchor": "freqtrade/config_schema/config_schema.py:181",
+      "handler": null,
+      "must": false,
+      "why": "Historical data directory."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "external_message_consumer",
+      "anchor": "freqtrade/config_schema/config_schema.py:543",
+      "handler": null,
+      "must": true,
+      "why": "Consumer mode: producers to subscribe to over websocket; turns on the consumer thread and producer websocket client."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "freqai",
+      "anchor": "freqtrade/config_schema/config_schema.py:539",
+      "handler": null,
+      "must": true,
+      "why": "FreqAI machine-learning section; enabled live FreqAI starts the background retraining thread."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "freqaimodel",
+      "anchor": "freqtrade/config_schema/config_schema.py:528",
+      "handler": null,
+      "must": false,
+      "why": "FreqAI model class name."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "coingecko",
+      "anchor": "freqtrade/config_schema/config_schema.py:507",
+      "handler": null,
+      "must": false,
+      "why": "CoinGecko API key/demo flag for fiat conversion and MarketCapPairList."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "log_config",
+      "anchor": "freqtrade/config_schema/config_schema.py:524",
+      "handler": null,
+      "must": false,
+      "why": "Python logging dictConfig override."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "add_config_files",
+      "anchor": "freqtrade/config_schema/config_schema.py:882",
+      "handler": null,
+      "must": false,
+      "why": "Additional config files merged into this one."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "dataformat_ohlcv",
+      "anchor": "freqtrade/config_schema/config_schema.py:851",
+      "handler": null,
+      "must": false,
+      "why": "Storage format of candle data."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "position_adjustment_enable",
+      "anchor": "freqtrade/config_schema/config_schema.py:863",
+      "handler": null,
+      "must": false,
+      "why": "Enables DCA/position adjustment."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "bot_name",
+      "anchor": "freqtrade/config_schema/config_schema.py:319",
+      "handler": null,
+      "must": false,
+      "why": "Bot name shown in RPC messages."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "cancel_open_orders_on_exit",
+      "anchor": "freqtrade/config_schema/config_schema.py:102",
+      "handler": null,
+      "must": false,
+      "why": "Cancel open orders when the bot stops."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "force_entry_enable",
+      "anchor": "freqtrade/config_schema/config_schema.py:824",
+      "handler": null,
+      "must": false,
+      "why": "Enables /forceenter via Telegram/API."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server.listen_port",
+      "anchor": "freqtrade/config_schema/config_schema.py:759",
+      "handler": null,
+      "must": false,
+      "why": "API server port."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server.username",
+      "anchor": "freqtrade/config_schema/config_schema.py:765",
+      "handler": null,
+      "must": false,
+      "why": "API basic-auth username."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server.password",
+      "anchor": "freqtrade/config_schema/config_schema.py:769",
+      "handler": null,
+      "must": false,
+      "why": "API basic-auth password."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server.ws_token",
+      "anchor": "freqtrade/config_schema/config_schema.py:773",
+      "handler": null,
+      "must": false,
+      "why": "Token(s) accepted on the message websocket."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server.jwt_secret_key",
+      "anchor": "freqtrade/config_schema/config_schema.py:778",
+      "handler": null,
+      "must": false,
+      "why": "Secret used to sign JWT tokens."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FREQTRADE__{section}__{key}",
+      "anchor": "freqtrade/configuration/environment_vars.py:82",
+      "handler": "freqtrade.configuration.environment_vars.environment_vars_to_dict",
+      "must": true,
+      "why": "Any FREQTRADE__-prefixed variable overrides the matching nested config key (merged over config files)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FREQTRADE__EXCHANGE__KEY",
+      "anchor": "freqtrade/config_schema/config_schema.py:947",
+      "handler": null,
+      "must": false,
+      "why": "Documented env for the exchange API key."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FREQTRADE__EXCHANGE__SECRET",
+      "anchor": "freqtrade/config_schema/config_schema.py:954",
+      "handler": null,
+      "must": false,
+      "why": "Documented env for the exchange API secret."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FREQTRADE__TELEGRAM__CHAT_ID",
+      "anchor": "freqtrade/config_schema/config_schema.py:580",
+      "handler": null,
+      "must": false,
+      "why": "Documented env for the Telegram chat id (kept as string)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FREQTRADE__TELEGRAM__TOKEN",
+      "anchor": "docs/configuration.md:44",
+      "handler": null,
+      "must": false,
+      "why": "Documented env for the Telegram bot token."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FREQTRADE__WEBHOOK__URL",
+      "anchor": "freqtrade/config_schema/config_schema.py:692",
+      "handler": null,
+      "must": false,
+      "why": "Documented env for the webhook URL."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FREQTRADE__DISCORD__WEBHOOK_URL",
+      "anchor": "freqtrade/config_schema/config_schema.py:708",
+      "handler": null,
+      "must": false,
+      "why": "Documented env for the Discord webhook URL."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FT_APP_ENV",
+      "anchor": "freqtrade/configuration/detect_environment.py:8",
+      "handler": "freqtrade.configuration.detect_environment.running_in_docker",
+      "must": false,
+      "why": "'docker' (set by the Dockerfile) enables sudo chown of user_data and silences the non-loopback API warning."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/recursive_analysis",
+      "anchor": "freqtrade/rpc/api_server/api_analysis.py:115",
+      "handler": "freqtrade.rpc.api_server.api_analysis.api_start_recursive_analysis",
+      "must": true,
+      "why": "Starts a recursive-formula analysis as a background job (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/recursive_analysis/{jobid}",
+      "anchor": "freqtrade/rpc/api_server/api_analysis.py:170",
+      "handler": "freqtrade.rpc.api_server.api_analysis.api_get_recursive_analysis",
+      "must": true,
+      "why": "Returns status/result of a recursive-analysis job (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/lookahead_analysis/{jobid}",
+      "anchor": "freqtrade/rpc/api_server/api_analysis.py:175",
+      "handler": "freqtrade.rpc.api_server.api_analysis.api_get_lookahead_analysis",
+      "must": true,
+      "why": "Returns status/result of a lookahead-analysis job (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/lookahead_analysis",
+      "anchor": "freqtrade/rpc/api_server/api_analysis.py:202",
+      "handler": "freqtrade.rpc.api_server.api_analysis.api_start_lookahead_analysis",
+      "must": true,
+      "why": "Starts a lookahead-bias analysis as a background job (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/token/login",
+      "anchor": "freqtrade/rpc/api_server/api_auth.py:124",
+      "handler": "freqtrade.rpc.api_server.api_auth.token_login",
+      "must": true,
+      "why": "Exchanges HTTP basic credentials for JWT access/refresh tokens."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/token/refresh",
+      "anchor": "freqtrade/rpc/api_server/api_auth.py:151",
+      "handler": "freqtrade.rpc.api_server.api_auth.token_refresh",
+      "must": true,
+      "why": "Issues a new access token from a refresh token."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/background",
+      "anchor": "freqtrade/rpc/api_server/api_background_tasks.py:28",
+      "handler": "freqtrade.rpc.api_server.api_background_tasks.background_job_list",
+      "must": true,
+      "why": "Lists background jobs (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/background/{jobid}",
+      "anchor": "freqtrade/rpc/api_server/api_background_tasks.py:33",
+      "handler": "freqtrade.rpc.api_server.api_background_tasks.background_job",
+      "must": true,
+      "why": "Returns one background job's status (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "DELETE /api/v1/background/clear",
+      "anchor": "freqtrade/rpc/api_server/api_background_tasks.py:42",
+      "handler": "freqtrade.rpc.api_server.api_background_tasks.background_job_delete_all",
+      "must": true,
+      "why": "Deletes all finished background jobs (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "DELETE /api/v1/background/{jobid}",
+      "anchor": "freqtrade/rpc/api_server/api_background_tasks.py:54",
+      "handler": "freqtrade.rpc.api_server.api_background_tasks.background_job_delete",
+      "must": true,
+      "why": "Deletes one finished background job (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/backtest",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:155",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_start_backtest",
+      "must": true,
+      "why": "Starts a backtest as a FastAPI background task (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/backtest",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:208",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_get_backtest",
+      "must": true,
+      "why": "Returns running/finished backtest status and result (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "DELETE /api/v1/backtest",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:263",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_delete_backtest",
+      "must": true,
+      "why": "Resets backtest state and cached data (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/backtest/abort",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:291",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_backtest_abort",
+      "must": true,
+      "why": "Aborts the running backtest (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/backtest/history",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:311",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_backtest_history",
+      "must": true,
+      "why": "Lists stored results in user_data/backtest_results (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/backtest/history/result",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:317",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_backtest_history_result",
+      "must": true,
+      "why": "Loads one stored backtest result (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "DELETE /api/v1/backtest/history/{file}",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:344",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_delete_backtest_history_entry",
+      "must": true,
+      "why": "Deletes a stored backtest result (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "PATCH /api/v1/backtest/history/{file}",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:360",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_update_backtest_history_entry",
+      "must": true,
+      "why": "Updates the notes of a stored backtest result (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/backtest/history/{file}/market_change",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:383",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_get_backtest_market_change",
+      "must": true,
+      "why": "Returns market-change data stored with a backtest (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/backtest/history/{file}/{strategy}/wallet",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:407",
+      "handler": "freqtrade.rpc.api_server.api_backtest.api_get_backtest_wallet",
+      "must": true,
+      "why": "Returns wallet history stored with a backtest (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/download_data",
+      "anchor": "freqtrade/rpc/api_server/api_download_data.py:51",
+      "handler": "freqtrade.rpc.api_server.api_download_data.pairlists_evaluate",
+      "must": true,
+      "why": "Starts a historical data download as a background job (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/pair_history",
+      "anchor": "freqtrade/rpc/api_server/api_pair_history.py:18",
+      "handler": "freqtrade.rpc.api_server.api_pair_history.pair_history",
+      "must": true,
+      "why": "Loads stored candles with strategy indicators (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/pair_history",
+      "anchor": "freqtrade/rpc/api_server/api_pair_history.py:47",
+      "handler": "freqtrade.rpc.api_server.api_pair_history.pair_history_filtered",
+      "must": true,
+      "why": "Same as GET /pair_history with a JSON body and column filter (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/pairlists/available",
+      "anchor": "freqtrade/rpc/api_server/api_pairlists.py:28",
+      "handler": "freqtrade.rpc.api_server.api_pairlists.list_pairlists",
+      "must": true,
+      "why": "Lists available pairlist handlers (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/pairlists/evaluate",
+      "anchor": "freqtrade/rpc/api_server/api_pairlists.py:73",
+      "handler": "freqtrade.rpc.api_server.api_pairlists.pairlists_evaluate",
+      "must": true,
+      "why": "Evaluates a pairlist configuration as a background job (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/pairlists/evaluate/{jobid}",
+      "anchor": "freqtrade/rpc/api_server/api_pairlists.py:127",
+      "handler": "freqtrade.rpc.api_server.api_pairlists.pairlists_evaluate_get",
+      "must": true,
+      "why": "Returns a pairlist evaluation result (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/balance",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:46",
+      "handler": "freqtrade.rpc.api_server.api_trading.balance",
+      "must": true,
+      "why": "Returns the account balance (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/count",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:55",
+      "handler": "freqtrade.rpc.api_server.api_trading.count",
+      "must": true,
+      "why": "Returns open trade count and limits (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/entries",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:60",
+      "handler": "freqtrade.rpc.api_server.api_trading.entries",
+      "must": true,
+      "why": "Returns performance per entry tag (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/exits",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:65",
+      "handler": "freqtrade.rpc.api_server.api_trading.exits",
+      "must": true,
+      "why": "Returns performance per exit reason (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/mix_tags",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:70",
+      "handler": "freqtrade.rpc.api_server.api_trading.mix_tags",
+      "must": true,
+      "why": "Returns performance per entry-tag/exit-reason mix (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/performance",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:75",
+      "handler": "freqtrade.rpc.api_server.api_trading.performance",
+      "must": true,
+      "why": "Returns per-pair performance (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/profit",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:80",
+      "handler": "freqtrade.rpc.api_server.api_trading.profit",
+      "must": true,
+      "why": "Returns the profit summary (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/profit_all",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:85",
+      "handler": "freqtrade.rpc.api_server.api_trading.profit_all",
+      "must": true,
+      "why": "Returns profit summaries for all, long and short trades (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/stats",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:103",
+      "handler": "freqtrade.rpc.api_server.api_trading.stats",
+      "must": true,
+      "why": "Returns exit-reason and duration statistics (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/historic_balance",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:109",
+      "handler": "freqtrade.rpc.api_server.api_trading.api_get_wallet_history",
+      "must": true,
+      "why": "Returns recorded wallet history from wallet_history (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/daily",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:124",
+      "handler": "freqtrade.rpc.api_server.api_trading.daily",
+      "must": true,
+      "why": "Returns profit per day (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/weekly",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:135",
+      "handler": "freqtrade.rpc.api_server.api_trading.weekly",
+      "must": true,
+      "why": "Returns profit per week (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/monthly",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:146",
+      "handler": "freqtrade.rpc.api_server.api_trading.monthly",
+      "must": true,
+      "why": "Returns profit per month (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/status",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:157",
+      "handler": "freqtrade.rpc.api_server.api_trading.status",
+      "must": true,
+      "why": "Returns open trades with current profit (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/trades",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:167",
+      "handler": "freqtrade.rpc.api_server.api_trading.trades",
+      "must": true,
+      "why": "Returns trade history, paginated (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/trade/{tradeid}",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:179",
+      "handler": "freqtrade.rpc.api_server.api_trading.trade",
+      "must": true,
+      "why": "Returns one trade (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "DELETE /api/v1/trades/{tradeid}",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:187",
+      "handler": "freqtrade.rpc.api_server.api_trading.trades_delete",
+      "must": true,
+      "why": "Deletes a trade from the database, cancelling its open orders (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "DELETE /api/v1/trades/{tradeid}/open-order",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:192",
+      "handler": "freqtrade.rpc.api_server.api_trading.trade_cancel_open_order",
+      "must": true,
+      "why": "Cancels the trade's open order (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/trades/{tradeid}/reload",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:198",
+      "handler": "freqtrade.rpc.api_server.api_trading.trade_reload",
+      "must": true,
+      "why": "Reloads a trade's orders from the exchange (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/trades/open/custom-data",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:204",
+      "handler": "freqtrade.rpc.api_server.api_trading.list_open_trades_custom_data",
+      "must": true,
+      "why": "Lists custom data of open trades (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/trades/{trade_id}/custom-data",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:222",
+      "handler": "freqtrade.rpc.api_server.api_trading.list_custom_data",
+      "must": true,
+      "why": "Lists custom data of one trade (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/forceenter",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:235",
+      "handler": "freqtrade.rpc.api_server.api_trading.force_entry",
+      "must": true,
+      "why": "Forces a long/short entry for a pair (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/forcebuy",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:237",
+      "handler": "freqtrade.rpc.api_server.api_trading.force_entry",
+      "must": false,
+      "why": "Deprecated alias of /forceenter on the same handler."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/forceexit",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:264",
+      "handler": "freqtrade.rpc.api_server.api_trading.forceexit",
+      "must": true,
+      "why": "Forces exit of a trade or all trades (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/forcesell",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:266",
+      "handler": "freqtrade.rpc.api_server.api_trading.forceexit",
+      "must": false,
+      "why": "Deprecated alias of /forceexit on the same handler."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/blacklist",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:278",
+      "handler": "freqtrade.rpc.api_server.api_trading.blacklist",
+      "must": true,
+      "why": "Returns the pair blacklist (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/blacklist",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:283",
+      "handler": "freqtrade.rpc.api_server.api_trading.blacklist_post",
+      "must": true,
+      "why": "Adds pairs to the blacklist (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "DELETE /api/v1/blacklist",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:288",
+      "handler": "freqtrade.rpc.api_server.api_trading.blacklist_delete",
+      "must": true,
+      "why": "Removes pairs from the blacklist (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/whitelist",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:295",
+      "handler": "freqtrade.rpc.api_server.api_trading.whitelist",
+      "must": true,
+      "why": "Returns the active pair whitelist (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/locks",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:300",
+      "handler": "freqtrade.rpc.api_server.api_trading.locks",
+      "must": true,
+      "why": "Returns pair locks (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "DELETE /api/v1/locks/{lockid}",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:305",
+      "handler": "freqtrade.rpc.api_server.api_trading.delete_lock",
+      "must": true,
+      "why": "Deletes a pair lock by id (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/locks/delete",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:310",
+      "handler": "freqtrade.rpc.api_server.api_trading.delete_lock_pair",
+      "must": true,
+      "why": "Deletes pair locks by id or pair (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/locks",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:315",
+      "handler": "freqtrade.rpc.api_server.api_trading.add_locks",
+      "must": true,
+      "why": "Adds pair locks (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/start",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:322",
+      "handler": "freqtrade.rpc.api_server.api_trading.start",
+      "must": true,
+      "why": "Sets the bot state to RUNNING (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/stop",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:327",
+      "handler": "freqtrade.rpc.api_server.api_trading.stop",
+      "must": true,
+      "why": "Sets the bot state to STOPPED (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/pause",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:332",
+      "handler": "freqtrade.rpc.api_server.api_trading.pause",
+      "must": true,
+      "why": "Sets the bot state to PAUSED: no new entries (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/stopentry",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:333",
+      "handler": "freqtrade.rpc.api_server.api_trading.pause",
+      "must": false,
+      "why": "Alias of /pause on the same handler."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/stopbuy",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:334",
+      "handler": "freqtrade.rpc.api_server.api_trading.pause",
+      "must": false,
+      "why": "Deprecated alias of /pause on the same handler."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/reload_config",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:339",
+      "handler": "freqtrade.rpc.api_server.api_trading.reload_config",
+      "must": true,
+      "why": "Requests a config reload; Worker rebuilds FreqtradeBot (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/pair_candles",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:344",
+      "handler": "freqtrade.rpc.api_server.api_trading.pair_candles",
+      "must": true,
+      "why": "Returns live analyzed candles for a pair (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "POST /api/v1/pair_candles",
+      "anchor": "freqtrade/rpc/api_server/api_trading.py:349",
+      "handler": "freqtrade.rpc.api_server.api_trading.pair_candles_filtered",
+      "must": true,
+      "why": "Same as GET /pair_candles with a JSON body and column filter (trade mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/ping",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:83",
+      "handler": "freqtrade.rpc.api_server.api_v1.ping",
+      "must": true,
+      "why": "Unauthenticated liveness check."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "HEAD /api/v1/ping",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:84",
+      "handler": "freqtrade.rpc.api_server.api_v1.ping",
+      "must": false,
+      "why": "HEAD variant of the unauthenticated ping."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/version",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:93",
+      "handler": "freqtrade.rpc.api_server.api_v1.version",
+      "must": true,
+      "why": "Returns the bot version."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/show_config",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:99",
+      "handler": "freqtrade.rpc.api_server.api_v1.show_config",
+      "must": true,
+      "why": "Returns the sanitized running configuration and bot state."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/logs",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:111",
+      "handler": "freqtrade.rpc.api_server.api_v1.logs",
+      "must": true,
+      "why": "Returns recent log lines from the in-memory log buffer."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/plot_config",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:116",
+      "handler": "freqtrade.rpc.api_server.api_v1.plot_config",
+      "must": true,
+      "why": "Returns the strategy's plot configuration."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/markets",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:135",
+      "handler": "freqtrade.rpc.api_server.api_v1.markets",
+      "must": true,
+      "why": "Returns exchange markets (bot exchange or a webserver-mode exchange)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/strategy/{strategy}",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:159",
+      "handler": "freqtrade.rpc.api_server.api_v1.get_strategy",
+      "must": true,
+      "why": "Returns a strategy's source code and parameters."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/sysinfo",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:199",
+      "handler": "freqtrade.rpc.api_server.api_v1.sysinfo",
+      "must": true,
+      "why": "Returns CPU and RAM usage."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/health",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:204",
+      "handler": "freqtrade.rpc.api_server.api_v1.health",
+      "must": true,
+      "why": "Returns bot start and last loop timestamps."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/strategies",
+      "anchor": "freqtrade/rpc/api_server/api_webserver.py:23",
+      "handler": "freqtrade.rpc.api_server.api_webserver.list_strategies",
+      "must": true,
+      "why": "Lists strategies in the strategies directory (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/exchanges",
+      "anchor": "freqtrade/rpc/api_server/api_webserver.py:35",
+      "handler": "freqtrade.rpc.api_server.api_webserver.list_exchanges",
+      "must": true,
+      "why": "Lists supported exchanges (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/hyperoptloss",
+      "anchor": "freqtrade/rpc/api_server/api_webserver.py:45",
+      "handler": "freqtrade.rpc.api_server.api_webserver.list_hyperoptloss",
+      "must": true,
+      "why": "Lists hyperopt loss functions (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/freqaimodels",
+      "anchor": "freqtrade/rpc/api_server/api_webserver.py:67",
+      "handler": "freqtrade.rpc.api_server.api_webserver.list_freqaimodels",
+      "must": true,
+      "why": "Lists FreqAI models (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /api/v1/available_pairs",
+      "anchor": "freqtrade/rpc/api_server/api_webserver.py:78",
+      "handler": "freqtrade.rpc.api_server.api_webserver.list_available_pairs",
+      "must": true,
+      "why": "Lists pairs/timeframes that have downloaded data (webserver mode)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "websocket",
+      "name": "WS /api/v1/message/ws",
+      "anchor": "freqtrade/rpc/api_server/api_ws.py:116",
+      "handler": "freqtrade.rpc.api_server.api_ws.message_endpoint",
+      "must": true,
+      "why": "Message websocket for FreqUI and consumer bots; token checked against ws_token or JWT."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /favicon.ico",
+      "anchor": "freqtrade/rpc/api_server/web_ui.py:11",
+      "handler": "freqtrade.rpc.api_server.web_ui.favicon",
+      "must": false,
+      "why": "Serves the UI favicon."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /fallback_file.html",
+      "anchor": "freqtrade/rpc/api_server/web_ui.py:16",
+      "handler": "freqtrade.rpc.api_server.web_ui.fallback",
+      "must": false,
+      "why": "Serves the page shown when FreqUI is not installed."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /ui_version",
+      "anchor": "freqtrade/rpc/api_server/web_ui.py:21",
+      "handler": "freqtrade.rpc.api_server.web_ui.ui_version",
+      "must": true,
+      "why": "Returns the installed FreqUI version."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /{rest_of_path:path}",
+      "anchor": "freqtrade/rpc/api_server/web_ui.py:33",
+      "handler": "freqtrade.rpc.api_server.web_ui.index_html",
+      "must": true,
+      "why": "Serves installed FreqUI files, falling back to index.html (must stay last)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /docs",
+      "anchor": "freqtrade/rpc/api_server/webserver.py:150",
+      "handler": null,
+      "must": false,
+      "why": "FastAPI Swagger UI, only when api_server.enable_openapi is true."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "http",
+      "name": "GET /openapi.json",
+      "anchor": "freqtrade/rpc/api_server/webserver.py:148",
+      "handler": null,
+      "must": false,
+      "why": "FastAPI's default OpenAPI schema route (openapi_url is not disabled)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "ws-message",
+      "name": "subscribe",
+      "anchor": "freqtrade/rpc/api_server/api_ws.py:84",
+      "handler": "freqtrade.rpc.api_server.api_ws._process_consumer_request",
+      "must": true,
+      "why": "Sets which RPCMessageType topics the websocket channel receives; no reply."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "ws-message",
+      "name": "whitelist",
+      "anchor": "freqtrade/rpc/api_server/api_ws.py:96",
+      "handler": "freqtrade.rpc.api_server.api_ws._process_consumer_request",
+      "must": true,
+      "why": "Replies with the current whitelist (used by consumer bots)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "ws-message",
+      "name": "analyzed_df",
+      "anchor": "freqtrade/rpc/api_server/api_ws.py:104",
+      "handler": "freqtrade.rpc.api_server.api_ws._process_consumer_request",
+      "must": true,
+      "why": "Replies with analyzed dataframes per pair (limit capped at 1500 candles)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "status",
+      "anchor": "freqtrade/rpc/telegram.py:268",
+      "handler": "freqtrade.rpc.telegram.Telegram._status",
+      "must": true,
+      "why": "Open trades (or a table with 'table')."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "profit",
+      "anchor": "freqtrade/rpc/telegram.py:269",
+      "handler": "freqtrade.rpc.telegram.Telegram._profit",
+      "must": true,
+      "why": "Profit summary."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "balance",
+      "anchor": "freqtrade/rpc/telegram.py:270",
+      "handler": "freqtrade.rpc.telegram.Telegram._balance",
+      "must": true,
+      "why": "Account balance."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "start",
+      "anchor": "freqtrade/rpc/telegram.py:271",
+      "handler": "freqtrade.rpc.telegram.Telegram._start",
+      "must": true,
+      "why": "Sets bot state to RUNNING."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "stop",
+      "anchor": "freqtrade/rpc/telegram.py:272",
+      "handler": "freqtrade.rpc.telegram.Telegram._stop",
+      "must": true,
+      "why": "Sets bot state to STOPPED."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "forcesell, forceexit, fx",
+      "anchor": "freqtrade/rpc/telegram.py:273",
+      "handler": "freqtrade.rpc.telegram.Telegram._force_exit",
+      "must": true,
+      "why": "Forces exit of a trade or all trades (inline keyboard if no id)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "forcebuy, forcelong",
+      "anchor": "freqtrade/rpc/telegram.py:275",
+      "handler": "freqtrade.rpc.telegram.Telegram._force_enter (order_side=LONG)",
+      "must": true,
+      "why": "Forces a long entry for a pair."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "forceshort",
+      "anchor": "freqtrade/rpc/telegram.py:279",
+      "handler": "freqtrade.rpc.telegram.Telegram._force_enter (order_side=SHORT)",
+      "must": true,
+      "why": "Forces a short entry for a pair."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "reload_trade",
+      "anchor": "freqtrade/rpc/telegram.py:281",
+      "handler": "freqtrade.rpc.telegram.Telegram._reload_trade_from_exchange",
+      "must": true,
+      "why": "Reloads a trade's orders from the exchange."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "trades",
+      "anchor": "freqtrade/rpc/telegram.py:282",
+      "handler": "freqtrade.rpc.telegram.Telegram._trades",
+      "must": true,
+      "why": "Recent closed trades."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "delete",
+      "anchor": "freqtrade/rpc/telegram.py:283",
+      "handler": "freqtrade.rpc.telegram.Telegram._delete_trade",
+      "must": true,
+      "why": "Deletes a trade from the database."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "coo, cancel_open_order",
+      "anchor": "freqtrade/rpc/telegram.py:284",
+      "handler": "freqtrade.rpc.telegram.Telegram._cancel_open_order",
+      "must": true,
+      "why": "Cancels a trade's open order."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "performance",
+      "anchor": "freqtrade/rpc/telegram.py:285",
+      "handler": "freqtrade.rpc.telegram.Telegram._performance",
+      "must": true,
+      "why": "Per-pair performance."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "buys, entries",
+      "anchor": "freqtrade/rpc/telegram.py:286",
+      "handler": "freqtrade.rpc.telegram.Telegram._enter_tag_performance",
+      "must": true,
+      "why": "Performance per entry tag."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "sells, exits",
+      "anchor": "freqtrade/rpc/telegram.py:287",
+      "handler": "freqtrade.rpc.telegram.Telegram._exit_reason_performance",
+      "must": true,
+      "why": "Performance per exit reason."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "mix_tags",
+      "anchor": "freqtrade/rpc/telegram.py:288",
+      "handler": "freqtrade.rpc.telegram.Telegram._mix_tag_performance",
+      "must": true,
+      "why": "Performance per tag mix."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "stats",
+      "anchor": "freqtrade/rpc/telegram.py:289",
+      "handler": "freqtrade.rpc.telegram.Telegram._stats",
+      "must": true,
+      "why": "Exit reason and duration statistics."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "daily",
+      "anchor": "freqtrade/rpc/telegram.py:290",
+      "handler": "freqtrade.rpc.telegram.Telegram._daily",
+      "must": true,
+      "why": "Profit per day."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "weekly",
+      "anchor": "freqtrade/rpc/telegram.py:291",
+      "handler": "freqtrade.rpc.telegram.Telegram._weekly",
+      "must": true,
+      "why": "Profit per week."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "monthly",
+      "anchor": "freqtrade/rpc/telegram.py:292",
+      "handler": "freqtrade.rpc.telegram.Telegram._monthly",
+      "must": true,
+      "why": "Profit per month."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "count",
+      "anchor": "freqtrade/rpc/telegram.py:293",
+      "handler": "freqtrade.rpc.telegram.Telegram._count",
+      "must": true,
+      "why": "Open trade count."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "locks",
+      "anchor": "freqtrade/rpc/telegram.py:294",
+      "handler": "freqtrade.rpc.telegram.Telegram._locks",
+      "must": true,
+      "why": "Active pair locks."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "unlock, delete_locks",
+      "anchor": "freqtrade/rpc/telegram.py:295",
+      "handler": "freqtrade.rpc.telegram.Telegram._delete_locks",
+      "must": true,
+      "why": "Deletes pair locks."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "reload_config, reload_conf",
+      "anchor": "freqtrade/rpc/telegram.py:296",
+      "handler": "freqtrade.rpc.telegram.Telegram._reload_config",
+      "must": true,
+      "why": "Reloads the configuration."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "show_config, show_conf",
+      "anchor": "freqtrade/rpc/telegram.py:297",
+      "handler": "freqtrade.rpc.telegram.Telegram._show_config",
+      "must": true,
+      "why": "Shows the running configuration."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "stopbuy, stopentry, pause",
+      "anchor": "freqtrade/rpc/telegram.py:298",
+      "handler": "freqtrade.rpc.telegram.Telegram._pause",
+      "must": true,
+      "why": "Pauses new entries."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "whitelist",
+      "anchor": "freqtrade/rpc/telegram.py:299",
+      "handler": "freqtrade.rpc.telegram.Telegram._whitelist",
+      "must": true,
+      "why": "Shows the active whitelist."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "blacklist",
+      "anchor": "freqtrade/rpc/telegram.py:300",
+      "handler": "freqtrade.rpc.telegram.Telegram._blacklist",
+      "must": true,
+      "why": "Shows or extends the blacklist."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "blacklist_delete, bl_delete",
+      "anchor": "freqtrade/rpc/telegram.py:301",
+      "handler": "freqtrade.rpc.telegram.Telegram._blacklist_delete",
+      "must": true,
+      "why": "Removes pairs from the blacklist."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "logs",
+      "anchor": "freqtrade/rpc/telegram.py:302",
+      "handler": "freqtrade.rpc.telegram.Telegram._logs",
+      "must": true,
+      "why": "Recent log lines from the in-memory buffer."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "health",
+      "anchor": "freqtrade/rpc/telegram.py:303",
+      "handler": "freqtrade.rpc.telegram.Telegram._health",
+      "must": true,
+      "why": "Last loop timestamp."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "help",
+      "anchor": "freqtrade/rpc/telegram.py:304",
+      "handler": "freqtrade.rpc.telegram.Telegram._help",
+      "must": true,
+      "why": "Command help."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "version",
+      "anchor": "freqtrade/rpc/telegram.py:305",
+      "handler": "freqtrade.rpc.telegram.Telegram._version",
+      "must": true,
+      "why": "Bot and strategy version."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "marketdir",
+      "anchor": "freqtrade/rpc/telegram.py:306",
+      "handler": "freqtrade.rpc.telegram.Telegram._changemarketdir",
+      "must": true,
+      "why": "Sets the strategy market direction (long/short/even/none)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "order",
+      "anchor": "freqtrade/rpc/telegram.py:307",
+      "handler": "freqtrade.rpc.telegram.Telegram._order",
+      "must": true,
+      "why": "Orders of a trade."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "list_custom_data",
+      "anchor": "freqtrade/rpc/telegram.py:308",
+      "handler": "freqtrade.rpc.telegram.Telegram._list_custom_data",
+      "must": true,
+      "why": "Custom data of a trade."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "tg_info",
+      "anchor": "freqtrade/rpc/telegram.py:309",
+      "handler": "freqtrade.rpc.telegram.Telegram._tg_info",
+      "must": true,
+      "why": "Intentionally unauthenticated: reports chat/topic ids for configuration."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "profit_long",
+      "anchor": "freqtrade/rpc/telegram.py:310",
+      "handler": "freqtrade.rpc.telegram.Telegram._profit_long",
+      "must": true,
+      "why": "Profit summary of long trades."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-command",
+      "name": "profit_short",
+      "anchor": "freqtrade/rpc/telegram.py:311",
+      "handler": "freqtrade.rpc.telegram.Telegram._profit_short",
+      "must": true,
+      "why": "Profit summary of short trades."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_status_table",
+      "anchor": "freqtrade/rpc/telegram.py:314",
+      "handler": "freqtrade.rpc.telegram.Telegram._status_table",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_daily",
+      "anchor": "freqtrade/rpc/telegram.py:315",
+      "handler": "freqtrade.rpc.telegram.Telegram._daily",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_weekly",
+      "anchor": "freqtrade/rpc/telegram.py:316",
+      "handler": "freqtrade.rpc.telegram.Telegram._weekly",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_monthly",
+      "anchor": "freqtrade/rpc/telegram.py:317",
+      "handler": "freqtrade.rpc.telegram.Telegram._monthly",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_profit_long",
+      "anchor": "freqtrade/rpc/telegram.py:318",
+      "handler": "freqtrade.rpc.telegram.Telegram._profit_long",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_profit_short",
+      "anchor": "freqtrade/rpc/telegram.py:319",
+      "handler": "freqtrade.rpc.telegram.Telegram._profit_short",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_profit$",
+      "anchor": "freqtrade/rpc/telegram.py:320",
+      "handler": "freqtrade.rpc.telegram.Telegram._profit",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_balance",
+      "anchor": "freqtrade/rpc/telegram.py:321",
+      "handler": "freqtrade.rpc.telegram.Telegram._balance",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_performance",
+      "anchor": "freqtrade/rpc/telegram.py:322",
+      "handler": "freqtrade.rpc.telegram.Telegram._performance",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_enter_tag_performance",
+      "anchor": "freqtrade/rpc/telegram.py:324",
+      "handler": "freqtrade.rpc.telegram.Telegram._enter_tag_performance",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_exit_reason_performance",
+      "anchor": "freqtrade/rpc/telegram.py:327",
+      "handler": "freqtrade.rpc.telegram.Telegram._exit_reason_performance",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_mix_tag_performance",
+      "anchor": "freqtrade/rpc/telegram.py:329",
+      "handler": "freqtrade.rpc.telegram.Telegram._mix_tag_performance",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "update_count",
+      "anchor": "freqtrade/rpc/telegram.py:330",
+      "handler": "freqtrade.rpc.telegram.Telegram._count",
+      "must": false,
+      "why": "Refresh button callback that re-renders the same report."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "force_exit__\\S+",
+      "anchor": "freqtrade/rpc/telegram.py:331",
+      "handler": "freqtrade.rpc.telegram.Telegram._force_exit_inline",
+      "must": false,
+      "why": "Inline-keyboard choice that completes /forceexit."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "requests",
+      "kind": "telegram-callback",
+      "name": "force_enter__\\S+",
+      "anchor": "freqtrade/rpc/telegram.py:332",
+      "handler": "freqtrade.rpc.telegram.Telegram._force_enter_inline",
+      "must": false,
+      "why": "Inline-keyboard choice that completes /forcelong or /forceshort."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "main-loop",
+      "name": "Worker.run",
+      "anchor": "freqtrade/worker.py:78",
+      "handler": "freqtrade.worker.Worker._worker",
+      "must": false,
+      "why": "The `trade` process loop: handles state changes (RUNNING/PAUSED/STOPPED/RELOAD_CONFIG) and throttles each iteration.",
+      "flow": true
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "main-loop",
+      "name": "Worker._throttle",
+      "anchor": "freqtrade/worker.py:186",
+      "handler": "freqtrade.worker.Worker._throttle",
+      "must": false,
+      "why": "Sleeps so an iteration lasts process_throttle_secs, aligned to the next candle.",
+      "flow": true
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "main-loop",
+      "name": "FreqtradeBot.process",
+      "anchor": "freqtrade/freqtradebot.py:257",
+      "handler": "freqtrade.freqtradebot.FreqtradeBot.process",
+      "must": false,
+      "why": "One trading iteration: reload markets, refresh whitelist and candles, analyze, manage orders, exits, entries.",
+      "flow": true
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "scheduler",
+      "name": "FreqtradeBot._schedule (schedule.Scheduler)",
+      "anchor": "freqtrade/freqtradebot.py:157",
+      "handler": "schedule.Scheduler.run_pending",
+      "must": false,
+      "why": "Time-of-day jobs, executed from process() via run_pending (not a separate thread)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "scheduled-job",
+      "name": "futures funding/liquidation update",
+      "anchor": "freqtrade/freqtradebot.py:172",
+      "handler": "freqtrade.freqtradebot.FreqtradeBot.__init__.update",
+      "must": true,
+      "why": "In futures mode, at hh:01:02 and hh:31:02 updates funding fees, liquidation prices and wallets."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "scheduled-job",
+      "name": "ws_connection_reset",
+      "anchor": "freqtrade/freqtradebot.py:174",
+      "handler": "freqtrade.exchange.exchange.Exchange.ws_connection_reset",
+      "must": true,
+      "why": "Daily 00:02 reset of exchange websocket subscriptions."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "scheduled-job",
+      "name": "record_wallet_state",
+      "anchor": "freqtrade/freqtradebot.py:175",
+      "handler": "freqtrade.wallets.Wallets.record_wallet_state",
+      "must": true,
+      "why": "Daily 00:07 snapshot of wallet value into the wallet_history table."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "thread",
+      "name": "FTTelegram",
+      "anchor": "freqtrade/rpc/telegram.py:164",
+      "handler": "freqtrade.rpc.telegram.Telegram._init",
+      "must": true,
+      "why": "Telegram thread with its own asyncio loop: registers handlers and long-polls for updates."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "async-task",
+      "name": "Telegram updater polling",
+      "anchor": "freqtrade/rpc/telegram.py:364",
+      "handler": "freqtrade.rpc.telegram.Telegram._startup_telegram",
+      "must": false,
+      "why": "python-telegram-bot long polling (drop_pending_updates) inside the FTTelegram loop."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "thread",
+      "name": "FTUvicorn",
+      "anchor": "freqtrade/rpc/api_server/uvicorn_threaded.py:57",
+      "handler": "freqtrade.rpc.api_server.uvicorn_threaded.UvicornServer.run",
+      "must": true,
+      "why": "API server thread when api_server.enabled during trade; serves REST, websocket and FreqUI."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "server",
+      "name": "standalone uvicorn (webserver mode)",
+      "anchor": "freqtrade/rpc/api_server/webserver.py:339",
+      "handler": "freqtrade.rpc.api_server.uvicorn_threaded.UvicornServer.run",
+      "must": false,
+      "why": "`freqtrade webserver` runs uvicorn in the main thread instead of FTUvicorn.",
+      "flow": true
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "thread",
+      "name": "ExternalMessageConsumer thread",
+      "anchor": "freqtrade/rpc/external_message_consumer.py:114",
+      "handler": "freqtrade.rpc.external_message_consumer.ExternalMessageConsumer._main",
+      "must": true,
+      "why": "Consumer mode: event-loop thread holding one websocket task per configured producer."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "thread",
+      "name": "ccxt_ws",
+      "anchor": "freqtrade/exchange/exchange_ws.py:34",
+      "handler": "freqtrade.exchange.exchange_ws.ExchangeWS._start_forever",
+      "must": true,
+      "why": "Exchange websocket thread (trade modes, enable_ws): continuously watches OHLCV candles via ccxt.pro."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "thread",
+      "name": "FreqAI training scan",
+      "anchor": "freqtrade/freqai/freqai_interface.py:216",
+      "handler": "freqtrade.freqai.freqai_interface.IFreqaiModel._start_scanning",
+      "must": true,
+      "why": "Live FreqAI: background thread that keeps retraining models per pair."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "background-job",
+      "name": "backtest job",
+      "anchor": "freqtrade/rpc/api_server/api_backtest.py:196",
+      "handler": "freqtrade.rpc.api_server.api_backtest.__run_backtest_bg",
+      "must": false,
+      "why": "Webserver mode: backtest runs as a FastAPI background task tracked in ApiBG.jobs."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "background-job",
+      "name": "pairlist evaluation job",
+      "anchor": "freqtrade/rpc/api_server/api_pairlists.py:98",
+      "handler": "freqtrade.rpc.api_server.api_pairlists.__run_pairlist",
+      "must": false,
+      "why": "Webserver mode: evaluates a pairlist config in the background."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "background-job",
+      "name": "download data job",
+      "anchor": "freqtrade/rpc/api_server/api_download_data.py:83",
+      "handler": "freqtrade.rpc.api_server.api_download_data.__run_download",
+      "must": false,
+      "why": "Webserver mode: downloads history in the background."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "background-job",
+      "name": "lookahead analysis job",
+      "anchor": "freqtrade/rpc/api_server/api_analysis.py:228",
+      "handler": "freqtrade.rpc.api_server.api_analysis.__run_lookahead_analysis_bg",
+      "must": false,
+      "why": "Webserver mode: lookahead analysis in the background."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "background-job",
+      "name": "recursive analysis job",
+      "anchor": "freqtrade/rpc/api_server/api_analysis.py:141",
+      "handler": "freqtrade.rpc.api_server.api_analysis.__run_recursive_analysis_bg",
+      "must": false,
+      "why": "Webserver mode: recursive analysis in the background."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "async-task",
+      "name": "websocket channel reader/broadcaster",
+      "anchor": "freqtrade/rpc/api_server/api_ws.py:125",
+      "handler": "freqtrade.rpc.api_server.api_ws.channel_reader / channel_broadcaster",
+      "must": false,
+      "why": "Per websocket connection: one task handles requests, one pushes MessageStream messages."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "workers",
+      "kind": "process-pool",
+      "name": "hyperopt joblib Parallel",
+      "anchor": "freqtrade/optimize/hyperopt/hyperopt.py:231",
+      "handler": "freqtrade.optimize.hyperopt.hyperopt_optimizer.HyperOptimizer.generate_optimizer_wrapped",
+      "must": false,
+      "why": "Hyperopt evaluates epochs in joblib worker processes (-j/--job-workers)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "exchange",
+      "name": "ccxt (sync client)",
+      "anchor": "freqtrade/exchange/exchange.py:274",
+      "handler": "freqtrade.exchange.exchange.Exchange._init_ccxt",
+      "must": true,
+      "why": "Synchronous ccxt client for orders, balances, tickers, markets. Use site a newcomer lands on: Exchange.create_order -> self._api.create_order (freqtrade/exchange/exchange.py:1481), recorded as a may item.",
+      "use_site": "freqtrade/exchange/exchange.py:1481"
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "exchange",
+      "name": "ccxt.pro / ccxt.async_support (async client)",
+      "anchor": "freqtrade/exchange/exchange.py:283",
+      "handler": "freqtrade.exchange.exchange.Exchange._init_ccxt",
+      "must": false,
+      "why": "Async ccxt client used for candle and trades downloads."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "exchange",
+      "name": "ccxt.pro watch_ohlcv websocket",
+      "anchor": "freqtrade/exchange/exchange_ws.py:248",
+      "handler": "freqtrade.exchange.exchange_ws.ExchangeWS._continuously_async_watch_ohlcv",
+      "must": false,
+      "why": "Streams candles from the exchange websocket."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "http",
+      "name": "data.binance.vision archive download",
+      "anchor": "freqtrade/exchange/binance_public_data.py:121",
+      "handler": "freqtrade.exchange.binance_public_data._download_archive_ohlcv",
+      "must": false,
+      "why": "Binance history downloads fetch daily OHLCV/trades zip archives from data.binance.vision over aiohttp."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "chat",
+      "name": "Telegram Bot API send_message",
+      "anchor": "freqtrade/rpc/telegram.py:2185",
+      "handler": "freqtrade.rpc.telegram.Telegram._send_msg",
+      "must": true,
+      "why": "Send path for every notification and command reply: RPCManager.send_msg -> Telegram.send_msg -> run_coroutine_threadsafe(self._send_msg(...)) -> self._app.bot.send_message to the configured chat."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "chat",
+      "name": "Telegram Bot API polling",
+      "anchor": "freqtrade/rpc/telegram.py:364",
+      "handler": "freqtrade.rpc.telegram.Telegram._startup_telegram",
+      "must": false,
+      "why": "Long-polls Telegram for incoming commands."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "http",
+      "name": "webhook POST",
+      "anchor": "freqtrade/rpc/webhook.py:129",
+      "handler": "freqtrade.rpc.webhook.Webhook._send_msg",
+      "must": true,
+      "why": "POSTs RPC messages (form/json/raw) to webhook.url with retries."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "http",
+      "name": "Discord webhook POST",
+      "anchor": "freqtrade/rpc/discord.py:60",
+      "handler": "freqtrade.rpc.webhook.Webhook._send_msg",
+      "must": true,
+      "why": "Posts embeds to discord.webhook_url through the Webhook sender."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "database",
+      "name": "SQLAlchemy engine",
+      "anchor": "freqtrade/persistence/models.py:77",
+      "handler": "freqtrade.persistence.models.init_db",
+      "must": true,
+      "why": "Connects to db_url (SQLite by default, any SQLAlchemy URL), creates and migrates tables."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "http",
+      "name": "CoinGecko (fiat conversion)",
+      "anchor": "freqtrade/rpc/fiat_convert.py:49",
+      "handler": "freqtrade.rpc.fiat_convert.CryptoToFiatConverter",
+      "must": false,
+      "why": "pycoingecko client for fiat_display_currency conversion in RPC messages."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "http",
+      "name": "CoinGecko (MarketCapPairList)",
+      "anchor": "freqtrade/plugins/pairlist/MarketCapPairList.py:45",
+      "handler": "freqtrade.plugins.pairlist.MarketCapPairList.MarketCapPairList",
+      "must": false,
+      "why": "Fetches market-cap rankings to build the whitelist."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "http",
+      "name": "RemotePairList GET",
+      "anchor": "freqtrade/plugins/pairlist/RemotePairList.py:169",
+      "handler": "freqtrade.plugins.pairlist.RemotePairList.RemotePairList.fetch_pairlist",
+      "must": false,
+      "why": "Fetches a pairlist from a configured URL (optional bearer token)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "http",
+      "name": "GitHub API frequi releases",
+      "anchor": "freqtrade/commands/deploy_ui.py:63",
+      "handler": "freqtrade.commands.deploy_ui.get_ui_download_url",
+      "must": false,
+      "why": "install-ui looks up FreqUI releases on api.github.com."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "http",
+      "name": "FreqUI zip download",
+      "anchor": "freqtrade/commands/deploy_ui.py:42",
+      "handler": "freqtrade.commands.deploy_ui.download_and_install_ui",
+      "must": false,
+      "why": "install-ui downloads and unpacks the release asset."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "websocket",
+      "name": "producer websocket client",
+      "anchor": "freqtrade/rpc/external_message_consumer.py:200",
+      "handler": "freqtrade.rpc.external_message_consumer.ExternalMessageConsumer._create_connection",
+      "must": true,
+      "why": "Consumer mode connects to other freqtrade bots' /api/v1/message/ws and subscribes to whitelist/analyzed_df."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "systemd",
+      "name": "sd_notify",
+      "anchor": "freqtrade/worker.py:62",
+      "handler": "freqtrade.worker.Worker._notify",
+      "must": false,
+      "why": "READY/WATCHDOG/RELOADING/STOPPING notifications to systemd."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "process",
+      "name": "sudo chown",
+      "anchor": "freqtrade/configuration/directory_operations.py:42",
+      "handler": "freqtrade.configuration.directory_operations.chown_user_directory",
+      "must": false,
+      "why": "Only in Docker (FT_APP_ENV=docker): fixes user_data ownership."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "logging",
+      "name": "syslog handler",
+      "anchor": "freqtrade/loggers/__init__.py:139",
+      "handler": "freqtrade.loggers._create_log_config",
+      "must": false,
+      "why": "--logfile syslog:... sends logs to syslog (deprecated CLI form)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "logging",
+      "name": "journald handler",
+      "anchor": "freqtrade/loggers/__init__.py:163",
+      "handler": "freqtrade.loggers._create_log_config",
+      "must": false,
+      "why": "--logfile journald sends logs to journald (optional cysystemd)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "process",
+      "name": "plotly auto_open browser",
+      "anchor": "freqtrade/plot/plotting.py:624",
+      "handler": "freqtrade.plot.plotting.store_plot_file",
+      "must": false,
+      "why": "plot-profit --auto-open opens the generated HTML in a browser."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "db-table",
+      "name": "trades (Trade)",
+      "anchor": "freqtrade/persistence/trade_model.py:1712",
+      "handler": "freqtrade.persistence.trade_model.Trade",
+      "must": true,
+      "why": "One row per position with entry/exit, profit and stoploss state."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "db-table",
+      "name": "orders (Order)",
+      "anchor": "freqtrade/persistence/trade_model.py:77",
+      "handler": "freqtrade.persistence.trade_model.Order",
+      "must": true,
+      "why": "Exchange orders belonging to trades (mirrors ccxt orders)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "db-table",
+      "name": "pairlocks (PairLock)",
+      "anchor": "freqtrade/persistence/pairlock.py:16",
+      "handler": "freqtrade.persistence.pairlock.PairLock",
+      "must": true,
+      "why": "Locks that block trading a pair until a time (protections, manual locks)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "db-table",
+      "name": "KeyValueStore",
+      "anchor": "freqtrade/persistence/key_value_store.py:36",
+      "handler": "freqtrade.persistence.key_value_store._KeyValueStoreModel",
+      "must": true,
+      "why": "Bot-level key/value facts: bot_start_time, startup_time and migration markers (accessed through the KeyValueStore facade)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "db-table",
+      "name": "trade_custom_data",
+      "anchor": "freqtrade/persistence/custom_data.py:28",
+      "handler": "freqtrade.persistence.custom_data._CustomData",
+      "must": true,
+      "why": "Strategy-set custom key/value data per trade (accessed through CustomDataWrapper)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "db-table",
+      "name": "wallet_history",
+      "anchor": "freqtrade/persistence/wallet_history.py:15",
+      "handler": "freqtrade.persistence.wallet_history.WalletHistory",
+      "must": true,
+      "why": "Daily wallet snapshots behind /historic_balance."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "db-file",
+      "name": "tradesv3.sqlite",
+      "anchor": "freqtrade/constants.py:22",
+      "handler": null,
+      "must": true,
+      "why": "Default live database (relative to the working directory)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "db-file",
+      "name": "tradesv3.dryrun.sqlite",
+      "anchor": "freqtrade/constants.py:23",
+      "handler": null,
+      "must": true,
+      "why": "Default dry-run database, chosen when dry_run is true and db_url is default."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "db-migration",
+      "name": "check_migrate",
+      "anchor": "freqtrade/persistence/models.py:99",
+      "handler": "freqtrade.persistence.migrations.check_migrate",
+      "must": false,
+      "why": "Creates tables and migrates older schemas on startup."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "directory",
+      "name": "user_data layout",
+      "anchor": "freqtrade/configuration/directory_operations.py:57",
+      "handler": "freqtrade.configuration.directory_operations.create_userdata_dir",
+      "must": true,
+      "why": "backtest_results, data, hyperopts, hyperopt_results, logs, notebooks, plot, strategies, freqaimodels."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "OHLCV data files",
+      "anchor": "freqtrade/data/history/datahandlers/idatahandler.py:370",
+      "handler": "freqtrade.data.history.datahandlers.idatahandler.IDataHandler._pair_data_filename",
+      "must": true,
+      "why": "Candles stored as <datadir>/<exchange>/[futures/]<PAIR>-<tf>[-<candle>].<feather|json|jsongz|parquet>."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "trades data files",
+      "anchor": "freqtrade/data/history/datahandlers/idatahandler.py:380",
+      "handler": "freqtrade.data.history.datahandlers.idatahandler.IDataHandler._pair_trades_filename",
+      "must": false,
+      "why": "Downloaded trades stored as <PAIR>-trades.<ext>."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "pairs.json",
+      "anchor": "freqtrade/configuration/configuration.py:546",
+      "handler": "freqtrade.configuration.configuration.Configuration._resolve_pairs_list",
+      "must": false,
+      "why": "Fallback pair list file in the data directory for download-data."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "backtest result zip",
+      "anchor": "freqtrade/optimize/optimize_reports/bt_storage.py:69",
+      "handler": "freqtrade.optimize.optimize_reports.bt_storage.store_backtest_results",
+      "must": true,
+      "why": "backtest-result-<date>.zip in backtest_results with stats, config, strategy source and signals."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "backtest metadata json",
+      "anchor": "freqtrade/optimize/optimize_reports/bt_storage.py:74",
+      "handler": "freqtrade.optimize.optimize_reports.bt_storage.store_backtest_results",
+      "must": false,
+      "why": "Metadata stored next to the zip for listing results."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": ".last_result.json",
+      "anchor": "freqtrade/optimize/optimize_reports/bt_storage.py:77",
+      "handler": "freqtrade.optimize.optimize_reports.bt_storage.store_backtest_results",
+      "must": false,
+      "why": "Pointer to the latest backtest (also used for hyperopt results)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "hyperopt results (.fthypt)",
+      "anchor": "freqtrade/optimize/hyperopt/hyperopt.py:56",
+      "handler": "freqtrade.optimize.hyperopt.hyperopt.Hyperopt",
+      "must": true,
+      "why": "hyperopt_results/strategy_<name>_<date>.fthypt holds every epoch; read by hyperopt-list/show."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "hyperopt_tickerdata.pkl",
+      "anchor": "freqtrade/optimize/hyperopt/hyperopt.py:59",
+      "handler": "freqtrade.optimize.hyperopt.hyperopt.Hyperopt",
+      "must": false,
+      "why": "Pickled preprocessed data shared with hyperopt workers."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "strategy parameter file (<strategy>.json)",
+      "anchor": "freqtrade/strategy/hyper.py:106",
+      "handler": "freqtrade.strategy.hyper.HyperStrategyMixin.load_params_from_file",
+      "must": false,
+      "why": "Hyperopt exports best parameters next to the strategy file; the strategy loads them on start."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "directory",
+      "name": "strategies",
+      "anchor": "freqtrade/resolvers/strategy_resolver.py:33",
+      "handler": "freqtrade.resolvers.strategy_resolver.StrategyResolver",
+      "must": true,
+      "why": "User strategy classes are loaded from user_data/strategies (plus --strategy-path)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "directory",
+      "name": "hyperopts",
+      "anchor": "freqtrade/resolvers/hyperopt_resolver.py:26",
+      "handler": "freqtrade.resolvers.hyperopt_resolver.HyperOptLossResolver",
+      "must": false,
+      "why": "Custom hyperopt loss classes."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "directory",
+      "name": "freqaimodels",
+      "anchor": "freqtrade/resolvers/freqaimodel_resolver.py:26",
+      "handler": "freqtrade.resolvers.freqaimodel_resolver.FreqaiModelResolver",
+      "must": false,
+      "why": "Custom FreqAI model classes."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "directory",
+      "name": "FreqAI models dir",
+      "anchor": "freqtrade/freqai/data_kitchen.py:962",
+      "handler": "freqtrade.freqai.data_kitchen.FreqaiDataKitchen",
+      "must": false,
+      "why": "Trained FreqAI models under user_data/models/<identifier>."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "plot HTML files",
+      "anchor": "freqtrade/plot/plotting.py:673",
+      "handler": "freqtrade.plot.plotting.load_and_plot_trades",
+      "must": false,
+      "why": "plot-dataframe writes one HTML per pair to user_data/plot."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "freqtrade-profit-plot.html",
+      "anchor": "freqtrade/plot/plotting.py:716",
+      "handler": "freqtrade.plot.plotting.plot_profit",
+      "must": false,
+      "why": "plot-profit output file."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "log file (RotatingFileHandler)",
+      "anchor": "freqtrade/loggers/__init__.py:177",
+      "handler": "freqtrade.loggers._create_log_config",
+      "must": false,
+      "why": "--logfile path, 10 MB x 10 rotation (Docker compose uses user_data/logs/freqtrade.log)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "config.json",
+      "anchor": "freqtrade/constants.py:16",
+      "handler": null,
+      "must": true,
+      "why": "Default config file name, looked up in user_data/ then the working directory."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "add_config_files",
+      "anchor": "freqtrade/configuration/load_config.py:106",
+      "handler": "freqtrade.configuration.load_config.load_from_files",
+      "must": false,
+      "why": "Config files may include further files (relative, up to 5 levels)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "config from stdin",
+      "anchor": "freqtrade/configuration/load_config.py:62",
+      "handler": "freqtrade.configuration.load_config.load_config_file",
+      "must": false,
+      "why": "-c - reads the config from stdin."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "new-config output",
+      "anchor": "freqtrade/configuration/deploy_config.py:250",
+      "handler": "freqtrade.configuration.deploy_config.deploy_new_config",
+      "must": false,
+      "why": "new-config renders base_config.json.j2 into the chosen config path."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "new-strategy output",
+      "anchor": "freqtrade/commands/deploy_commands.py:80",
+      "handler": "freqtrade.commands.deploy_commands.deploy_new_strategy",
+      "must": false,
+      "why": "new-strategy writes <Strategy>.py rendered from templates."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "sample user_data files",
+      "anchor": "freqtrade/constants.py:147",
+      "handler": null,
+      "must": false,
+      "why": "Templates copied by create-userdir: sample strategy, hyperopt loss, analysis notebook."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "directory",
+      "name": "FreqUI installed files",
+      "anchor": "freqtrade/commands/deploy_commands.py:117",
+      "handler": "freqtrade.commands.deploy_commands.start_install_ui",
+      "must": false,
+      "why": "install-ui unpacks FreqUI inside the package; web_ui routes serve it."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "binance_leverage_tiers.json",
+      "anchor": "freqtrade/exchange/binance.py:388",
+      "handler": "freqtrade.exchange.binance.Binance.load_leverage_tiers",
+      "must": false,
+      "why": "Shipped Binance leverage-tier snapshot loaded instead of the API in dry-run futures."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "file",
+      "name": "leverage_tiers_<stake>.json cache",
+      "anchor": "freqtrade/exchange/exchange.py:3650",
+      "handler": "freqtrade.exchange.exchange.Exchange.cache_leverage_tiers",
+      "must": false,
+      "why": "Futures mode caches fetched leverage tiers under <datadir>/futures/ and reloads them on start."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "FreqtradeBot.state",
+      "anchor": "freqtrade/freqtradebot.py:149",
+      "handler": "freqtrade.freqtradebot.FreqtradeBot",
+      "must": false,
+      "why": "RUNNING/PAUSED/STOPPED/RELOAD_CONFIG, read by Worker and changed by Telegram/API."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "active_pair_whitelist",
+      "anchor": "freqtrade/freqtradebot.py:85",
+      "handler": "freqtrade.freqtradebot.FreqtradeBot._refresh_active_whitelist",
+      "must": false,
+      "why": "Current tradable pairs from pairlists."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "DataProvider analyzed-dataframe cache",
+      "anchor": "freqtrade/data/dataprovider.py:51",
+      "handler": "freqtrade.data.dataprovider.DataProvider",
+      "must": false,
+      "why": "Analyzed dataframes per pair/timeframe served to RPC, websocket and producers."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "DataProvider _msg_queue",
+      "anchor": "freqtrade/data/dataprovider.py:60",
+      "handler": "freqtrade.rpc.rpc_manager.RPCManager.process_msg_queue",
+      "must": false,
+      "why": "Queued analyzed-df messages flushed to RPC each loop."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "Exchange._klines",
+      "anchor": "freqtrade/exchange/exchange.py:246",
+      "handler": "freqtrade.exchange.exchange.Exchange.refresh_latest_ohlcv",
+      "must": false,
+      "why": "In-memory candle cache per pair/timeframe."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "Wallets._wallets",
+      "anchor": "freqtrade/wallets.py:43",
+      "handler": "freqtrade.wallets.Wallets.update",
+      "must": false,
+      "why": "Cached balances (real or simulated in dry-run)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "LocalTrade.bt_trades",
+      "anchor": "freqtrade/persistence/trade_model.py:393",
+      "handler": "freqtrade.persistence.trade_model.LocalTrade",
+      "must": false,
+      "why": "Backtesting keeps trades in memory instead of the database."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "PairLocks.locks",
+      "anchor": "freqtrade/persistence/pairlock_middleware.py:22",
+      "handler": "freqtrade.persistence.pairlock_middleware.PairLocks",
+      "must": false,
+      "why": "In-memory locks when use_db is off (backtesting)."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "ApiBG.jobs",
+      "anchor": "freqtrade/rpc/api_server/webserver_bgwork.py:66",
+      "handler": "freqtrade.rpc.api_server.webserver_bgwork.ApiBG",
+      "must": false,
+      "why": "Webserver-mode background job registry."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "ApiBG.bt",
+      "anchor": "freqtrade/rpc/api_server/webserver_bgwork.py:52",
+      "handler": "freqtrade.rpc.api_server.webserver_bgwork.ApiBG",
+      "must": false,
+      "why": "Webserver-mode backtest instance and cached data."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "ApiServer._message_stream",
+      "anchor": "freqtrade/rpc/api_server/webserver.py:125",
+      "handler": "freqtrade.rpc.api_server.ws.message_stream.MessageStream",
+      "must": false,
+      "why": "In-memory pub/sub: ApiServer.send_msg publishes RPC messages that each websocket channel's broadcaster sends."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "data",
+      "kind": "memory",
+      "name": "bufferHandler",
+      "anchor": "freqtrade/loggers/__init__.py:23",
+      "handler": "freqtrade.rpc.rpc.RPC._rpc_get_logs",
+      "must": false,
+      "why": "Last 1000 log records, served by /logs (API and Telegram)."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "entrypoint",
+      "name": "freqtrade-client",
+      "anchor": "ft_client/pyproject.toml:44",
+      "handler": "freqtrade_client.ft_client.main",
+      "must": true,
+      "why": "Console script of the separate freqtrade-client package (depends only on requests and python-rapidjson)."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "command (positional)",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:31",
+      "handler": "freqtrade_client.ft_client.main_exec",
+      "must": true,
+      "why": "The command slot: name of one of the 43 FtRestClient public methods, called via getattr with the remaining args (key=value become kwargs); each method calls one /api/v1 route of the bot. The individual method names are listed below as must=false client-command items."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "command_arguments",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:53",
+      "handler": "freqtrade_client.ft_client.main_exec",
+      "must": false,
+      "why": "Positional args; 'k=v' items become keyword arguments."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--show",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:35",
+      "handler": "freqtrade_client.ft_client.print_commands",
+      "must": true,
+      "why": "Lists available commands from FtRestClient docstrings (also command 'show'/'help')."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-c/--config",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:44",
+      "handler": "freqtrade_client.ft_client.load_config",
+      "must": true,
+      "why": "Bot config file (default config.json) from which api_server address and credentials are read."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-V/--version",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:33",
+      "handler": null,
+      "must": false,
+      "why": "Prints the client version."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server.listen_ip_address",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:92",
+      "handler": "freqtrade_client.ft_client.main_exec",
+      "must": true,
+      "why": "Read from the bot config to build http://<ip>:<port> and basic auth."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server.listen_port",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:93",
+      "handler": "freqtrade_client.ft_client.main_exec",
+      "must": true,
+      "why": "Read from the bot config to build http://<ip>:<port> and basic auth."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server.username",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:94",
+      "handler": "freqtrade_client.ft_client.main_exec",
+      "must": false,
+      "why": "Read from the bot config to build http://<ip>:<port> and basic auth."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "api_server.password",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:95",
+      "handler": "freqtrade_client.ft_client.main_exec",
+      "must": false,
+      "why": "Read from the bot config to build http://<ip>:<port> and basic auth."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "start",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:78",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.start",
+      "must": false,
+      "why": "CLI command mapped to POST start under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "stop",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:85",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.stop",
+      "must": false,
+      "why": "CLI command mapped to POST stop under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "stopbuy",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:92",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.stopbuy",
+      "must": false,
+      "why": "CLI command mapped to POST stopbuy under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "reload_config",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:99",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.reload_config",
+      "must": false,
+      "why": "CLI command mapped to POST reload_config under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "balance",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:106",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.balance",
+      "must": false,
+      "why": "CLI command mapped to GET balance under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "count",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:113",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.count",
+      "must": false,
+      "why": "CLI command mapped to GET count under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "entries",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:120",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.entries",
+      "must": false,
+      "why": "CLI command mapped to GET entries under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "exits",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:128",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.exits",
+      "must": false,
+      "why": "CLI command mapped to GET exits under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "mix_tags",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:136",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.mix_tags",
+      "must": false,
+      "why": "CLI command mapped to GET mix_tags under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "locks",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:144",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.locks",
+      "must": false,
+      "why": "CLI command mapped to GET locks under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "delete_lock",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:151",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.delete_lock",
+      "must": false,
+      "why": "CLI command mapped to DELETE locks/{lock_id} under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "lock_add",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:159",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.lock_add",
+      "must": false,
+      "why": "CLI command mapped to POST locks under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "daily",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:171",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.daily",
+      "must": false,
+      "why": "CLI command mapped to GET daily under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "weekly",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:178",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.weekly",
+      "must": false,
+      "why": "CLI command mapped to GET weekly under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "monthly",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:185",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.monthly",
+      "must": false,
+      "why": "CLI command mapped to GET monthly under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "profit",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:192",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.profit",
+      "must": false,
+      "why": "CLI command mapped to GET profit under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "stats",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:199",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.stats",
+      "must": false,
+      "why": "CLI command mapped to GET stats under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "performance",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:206",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.performance",
+      "must": false,
+      "why": "CLI command mapped to GET performance under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "status",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:213",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.status",
+      "must": false,
+      "why": "CLI command mapped to GET status under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "version",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:220",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.version",
+      "must": false,
+      "why": "CLI command mapped to GET version under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "show_config",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:227",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.show_config",
+      "must": false,
+      "why": "CLI command mapped to GET show_config under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "ping",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:233",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.ping",
+      "must": false,
+      "why": "CLI command mapped to GET show_config (not /ping) under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "logs",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:243",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.logs",
+      "must": false,
+      "why": "CLI command mapped to GET logs under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "trades",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:251",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.trades",
+      "must": false,
+      "why": "CLI command mapped to GET trades under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "list_open_trades_custom_data",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:268",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.list_open_trades_custom_data",
+      "must": false,
+      "why": "CLI command mapped to GET trades/open/custom-data under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "list_custom_data",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:284",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.list_custom_data",
+      "must": false,
+      "why": "CLI command mapped to GET trades/{trade_id}/custom-data under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "trade",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:298",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.trade",
+      "must": false,
+      "why": "CLI command mapped to GET trade/{trade_id} under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "delete_trade",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:306",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.delete_trade",
+      "must": false,
+      "why": "CLI command mapped to DELETE trades/{trade_id} under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "cancel_open_order",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:315",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.cancel_open_order",
+      "must": false,
+      "why": "CLI command mapped to DELETE trades/{trade_id}/open-order under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "whitelist",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:323",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.whitelist",
+      "must": false,
+      "why": "CLI command mapped to GET whitelist under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "blacklist",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:330",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.blacklist",
+      "must": false,
+      "why": "CLI command mapped to GET blacklist or POST blacklist with args under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "forcebuy",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:341",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.forcebuy",
+      "must": false,
+      "why": "CLI command mapped to POST forcebuy (deprecated route) under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "forceenter",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:351",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.forceenter",
+      "must": false,
+      "why": "CLI command mapped to POST forceenter under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "forceexit",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:395",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.forceexit",
+      "must": false,
+      "why": "CLI command mapped to POST forceexit under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "strategies",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:413",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.strategies",
+      "must": false,
+      "why": "CLI command mapped to GET strategies under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "strategy",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:420",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.strategy",
+      "must": false,
+      "why": "CLI command mapped to GET strategy/{strategy} under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "pairlists_available",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:428",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.pairlists_available",
+      "must": false,
+      "why": "CLI command mapped to GET pairlists/available under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "plot_config",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:435",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.plot_config",
+      "must": false,
+      "why": "CLI command mapped to GET plot_config under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "available_pairs",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:442",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.available_pairs",
+      "must": false,
+      "why": "CLI command mapped to GET available_pairs under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "pair_candles",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:457",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.pair_candles",
+      "must": false,
+      "why": "CLI command mapped to GET pair_candles, or POST with columns under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "pair_history",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:479",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.pair_history",
+      "must": false,
+      "why": "CLI command mapped to GET pair_history under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "sysinfo",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:500",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.sysinfo",
+      "must": false,
+      "why": "CLI command mapped to GET sysinfo under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "commands",
+      "kind": "client-command",
+      "name": "health",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:507",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.health",
+      "must": false,
+      "why": "CLI command mapped to GET health under /api/v1."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "external",
+      "kind": "http",
+      "name": "freqtrade REST API",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:61",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient._call",
+      "must": true,
+      "why": "requests.Session calls {serverurl}/api/v1/{apipath} with JSON body and optional basic auth."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "external",
+      "kind": "http",
+      "name": "HTTP basic auth",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:44",
+      "handler": "freqtrade_client.ft_rest_client.FtRestClient.__init__",
+      "must": false,
+      "why": "Uses api_server username/password, not JWT tokens."
+    },
+    {
+      "component": "freqtrade-client",
+      "inventory": "data",
+      "kind": "file",
+      "name": "config.json (read)",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:67",
+      "handler": "freqtrade_client.ft_client.load_config",
+      "must": true,
+      "why": "Reads the bot config file only for api_server settings; owns no state."
+    },
+    {
+      "component": "scripts/rest_client.py",
+      "inventory": "commands",
+      "kind": "entrypoint",
+      "name": "scripts/rest_client.py",
+      "anchor": "scripts/rest_client.py:14",
+      "handler": "freqtrade_client.ft_client.main",
+      "must": true,
+      "why": "Legacy script path that only calls freqtrade-client's main; same commands and HTTP calls."
+    },
+    {
+      "component": "scripts/ws_client.py",
+      "inventory": "commands",
+      "kind": "entrypoint",
+      "name": "scripts/ws_client.py",
+      "anchor": "scripts/ws_client.py:313",
+      "handler": "scripts.ws_client.main",
+      "must": true,
+      "why": "Debug client for a bot's message websocket."
+    },
+    {
+      "component": "scripts/ws_client.py",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-c/--config",
+      "anchor": "scripts/ws_client.py:42",
+      "handler": "scripts.ws_client.load_config",
+      "must": true,
+      "why": "Config file whose external_message_consumer.producers[0] is used."
+    },
+    {
+      "component": "scripts/ws_client.py",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "-l/--logfile",
+      "anchor": "scripts/ws_client.py:51",
+      "handler": "scripts.ws_client.setup_logging",
+      "must": false,
+      "why": "Log file (default ws_client.log)."
+    },
+    {
+      "component": "scripts/ws_client.py",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "external_message_consumer.producers",
+      "anchor": "scripts/ws_client.py:291",
+      "handler": "scripts.ws_client._main",
+      "must": true,
+      "why": "First producer's host, port, ws_token and secure flag select the websocket to connect to."
+    },
+    {
+      "component": "scripts/ws_client.py",
+      "inventory": "commands",
+      "kind": "setting",
+      "name": "external_message_consumer.wait_timeout/ping_timeout/sleep_time/message_size_limit",
+      "anchor": "scripts/ws_client.py:294",
+      "handler": "scripts.ws_client._main",
+      "must": false,
+      "why": "Connection timing and message size limits."
+    },
+    {
+      "component": "scripts/ws_client.py",
+      "inventory": "workers",
+      "kind": "async-loop",
+      "name": "create_client reconnect loop",
+      "anchor": "scripts/ws_client.py:221",
+      "handler": "scripts.ws_client.create_client",
+      "must": false,
+      "why": "Reconnects forever, receiving messages and pinging on timeout.",
+      "flow": true
+    },
+    {
+      "component": "scripts/ws_client.py",
+      "inventory": "external",
+      "kind": "websocket",
+      "name": "bot message websocket",
+      "anchor": "scripts/ws_client.py:226",
+      "handler": "scripts.ws_client.create_client",
+      "must": true,
+      "why": "Connects to {ws|wss}://host:port/api/v1/message/ws?token=... and sends subscribe/whitelist/analyzed_df requests."
+    },
+    {
+      "component": "scripts/ws_client.py",
+      "inventory": "data",
+      "kind": "file",
+      "name": "ws_client.log",
+      "anchor": "scripts/ws_client.py:55",
+      "handler": "scripts.ws_client.setup_logging",
+      "must": false,
+      "why": "Default debug log file."
+    },
+    {
+      "component": "build_helpers/binance_update_lev_tiers.py",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FREQTRADE__EXCHANGE__KEY",
+      "anchor": "build_helpers/binance_update_lev_tiers.py:8",
+      "handler": null,
+      "must": true,
+      "why": "Binance API key read directly from the environment."
+    },
+    {
+      "component": "build_helpers/binance_update_lev_tiers.py",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "FREQTRADE__EXCHANGE__SECRET",
+      "anchor": "build_helpers/binance_update_lev_tiers.py:9",
+      "handler": null,
+      "must": true,
+      "why": "Binance API secret."
+    },
+    {
+      "component": "build_helpers/binance_update_lev_tiers.py",
+      "inventory": "commands",
+      "kind": "env",
+      "name": "CI_WEB_PROXY",
+      "anchor": "build_helpers/binance_update_lev_tiers.py:11",
+      "handler": null,
+      "must": false,
+      "why": "Optional HTTPS proxy for ccxt."
+    },
+    {
+      "component": "build_helpers/binance_update_lev_tiers.py",
+      "inventory": "external",
+      "kind": "exchange",
+      "name": "ccxt.binance fetch_leverage_tiers",
+      "anchor": "build_helpers/binance_update_lev_tiers.py:23",
+      "handler": null,
+      "must": true,
+      "why": "Fetches Binance futures leverage tiers."
+    },
+    {
+      "component": "build_helpers/binance_update_lev_tiers.py",
+      "inventory": "data",
+      "kind": "file",
+      "name": "freqtrade/exchange/binance_leverage_tiers.json",
+      "anchor": "build_helpers/binance_update_lev_tiers.py:26",
+      "handler": null,
+      "must": true,
+      "why": "Overwrites the shipped leverage-tier snapshot."
+    },
+    {
+      "component": "build_helpers/create_command_partials.py",
+      "inventory": "commands",
+      "kind": "entrypoint",
+      "name": "create_command_partials.py",
+      "anchor": "build_helpers/create_command_partials.py:109",
+      "handler": "extract_command_partials",
+      "must": true,
+      "why": "Regenerates docs/commands/*.md from argparse help (Python 3.13+)."
+    },
+    {
+      "component": "build_helpers/create_command_partials.py",
+      "inventory": "external",
+      "kind": "process",
+      "name": "freqtrade-client --show",
+      "anchor": "build_helpers/create_command_partials.py:97",
+      "handler": "extract_command_partials",
+      "must": true,
+      "why": "Runs the installed client to capture its command list."
+    },
+    {
+      "component": "build_helpers/create_command_partials.py",
+      "inventory": "data",
+      "kind": "file",
+      "name": "docs/commands/*.md",
+      "anchor": "build_helpers/create_command_partials.py:90",
+      "handler": "extract_command_partials",
+      "must": true,
+      "why": "Writes one help partial per subcommand (plus main.md and freqtrade-client.md)."
+    },
+    {
+      "component": "build_helpers/extract_config_json_schema.py",
+      "inventory": "commands",
+      "kind": "entrypoint",
+      "name": "extract_config_json_schema.py",
+      "anchor": "build_helpers/extract_config_json_schema.py:30",
+      "handler": "extract_config_json_schema",
+      "must": true,
+      "why": "Dumps CONF_SCHEMA to JSON."
+    },
+    {
+      "component": "build_helpers/extract_config_json_schema.py",
+      "inventory": "data",
+      "kind": "file",
+      "name": "build_helpers/schema.json",
+      "anchor": "build_helpers/extract_config_json_schema.py:24",
+      "handler": "extract_config_json_schema",
+      "must": true,
+      "why": "Generated config JSON schema."
+    },
+    {
+      "component": "build_helpers/freqtrade_client_version_align.py",
+      "inventory": "commands",
+      "kind": "entrypoint",
+      "name": "freqtrade_client_version_align.py",
+      "anchor": "build_helpers/freqtrade_client_version_align.py:17",
+      "handler": "main",
+      "must": true,
+      "why": "Exits 1 when freqtrade and freqtrade_client __version__ differ."
+    },
+    {
+      "component": "build_helpers/pre_commit_update.py",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--update",
+      "anchor": "build_helpers/pre_commit_update.py:17",
+      "handler": null,
+      "must": true,
+      "why": "Rewrites .pre-commit-config.yaml type-stub pins to match requirements files."
+    },
+    {
+      "component": "build_helpers/pre_commit_update.py",
+      "inventory": "data",
+      "kind": "file",
+      "name": ".pre-commit-config.yaml",
+      "anchor": "build_helpers/pre_commit_update.py:11",
+      "handler": null,
+      "must": true,
+      "why": "Checked (and with --update rewritten) against requirements-dev.txt and requirements.txt."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--install|-i",
+      "anchor": "setup.sh:288",
+      "handler": null,
+      "must": true,
+      "why": "Installs system packages, creates .venv, pip-installs freqtrade and FreqUI."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--config|-c",
+      "anchor": "setup.sh:291",
+      "handler": null,
+      "must": false,
+      "why": "Only prints a hint to use `freqtrade new-config`."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--update|-u",
+      "anchor": "setup.sh:294",
+      "handler": null,
+      "must": true,
+      "why": "git pull and reinstall dependencies."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--reset|-r",
+      "anchor": "setup.sh:297",
+      "handler": null,
+      "must": true,
+      "why": "Hard-resets develop/stable to origin and recreates the venv."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "commands",
+      "kind": "option",
+      "name": "--plot|-p",
+      "anchor": "setup.sh:300",
+      "handler": null,
+      "must": false,
+      "why": "Installs plotly."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "external",
+      "kind": "process",
+      "name": "pip install",
+      "anchor": "setup.sh:107",
+      "handler": "updateenv",
+      "must": true,
+      "why": "Installs requirement sets chosen interactively, then `pip install -e .`."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "external",
+      "kind": "process",
+      "name": "freqtrade install-ui",
+      "anchor": "setup.sh:119",
+      "handler": "updateenv",
+      "must": false,
+      "why": "Downloads FreqUI after installation."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "external",
+      "kind": "process",
+      "name": "git pull",
+      "anchor": "setup.sh:160",
+      "handler": "update",
+      "must": false,
+      "why": "Updates the checkout."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "external",
+      "kind": "process",
+      "name": "git reset --hard origin/develop",
+      "anchor": "setup.sh:222",
+      "handler": "reset",
+      "must": false,
+      "why": "Discards local changes on develop (stable at line 226)."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "external",
+      "kind": "process",
+      "name": "apt-get install",
+      "anchor": "setup.sh:149",
+      "handler": "install_debian",
+      "must": false,
+      "why": "Installs build dependencies on Debian/Ubuntu (yum on RedHat, brew on macOS)."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "external",
+      "kind": "http",
+      "name": "get-pip.py download",
+      "anchor": "setup.sh:18",
+      "handler": "check_installed_pip",
+      "must": false,
+      "why": "Downloads and runs get-pip.py when pip is missing (macOS also fetches the Homebrew installer, line 137)."
+    },
+    {
+      "component": "setup.sh",
+      "inventory": "data",
+      "kind": "directory",
+      "name": ".venv",
+      "anchor": "setup.sh:57",
+      "handler": "updateenv",
+      "must": false,
+      "why": "Virtual environment the script creates and uses."
+    },
+    {
+      "component": "setup.ps1",
+      "inventory": "commands",
+      "kind": "entrypoint",
+      "name": "Main",
+      "anchor": "setup.ps1:290",
+      "handler": "Main",
+      "must": true,
+      "why": "Windows installer: venv, git pull when clean, interactive requirement selection, pip install, FreqUI."
+    },
+    {
+      "component": "setup.ps1",
+      "inventory": "external",
+      "kind": "process",
+      "name": "git pull",
+      "anchor": "setup.ps1:242",
+      "handler": "Main",
+      "must": false,
+      "why": "Updates a clean checkout."
+    },
+    {
+      "component": "setup.ps1",
+      "inventory": "external",
+      "kind": "process",
+      "name": "pip install",
+      "anchor": "setup.ps1:267",
+      "handler": "Main",
+      "must": true,
+      "why": "Installs selected requirement files, then `pip install -e .`."
+    },
+    {
+      "component": "setup.ps1",
+      "inventory": "external",
+      "kind": "process",
+      "name": "python freqtrade install-ui",
+      "anchor": "setup.ps1:279",
+      "handler": "Main",
+      "must": false,
+      "why": "Downloads FreqUI."
+    },
+    {
+      "component": "setup.ps1",
+      "inventory": "data",
+      "kind": "file",
+      "name": "script_log_<timestamp>.txt",
+      "anchor": "setup.ps1:5",
+      "handler": null,
+      "must": false,
+      "why": "Installer log in the temp directory."
+    },
+    {
+      "component": "freqtrade",
+      "inventory": "external",
+      "kind": "exchange",
+      "name": "ccxt order placement (Exchange.create_order)",
+      "anchor": "freqtrade/exchange/exchange.py:1481",
+      "handler": "freqtrade.exchange.exchange.Exchange.create_order",
+      "must": false,
+      "why": "Live (non-dry-run) orders go to the exchange through the sync ccxt client built by _init_ccxt."
+    }
+  ],
+  "not": [
+    {
+      "component": "freqtrade",
+      "name": "backtest-filter",
+      "anchor": "freqtrade/commands/arguments.py:282",
+      "reason": "Listed in NO_CONF_REQURIED but no such subcommand is registered."
+    },
+    {
+      "component": "freqtrade",
+      "name": "start_list_trades_data",
+      "anchor": "freqtrade/commands/data_commands.py:182",
+      "reason": "Exported from freqtrade.commands but not a subcommand: list-data --trades calls it (data_commands.py:124)."
+    },
+    {
+      "component": "freqtrade",
+      "name": "start_conversion",
+      "anchor": "freqtrade/commands/strategy_utils_commands.py:46",
+      "reason": "Helper of strategy-updater, not a subcommand."
+    },
+    {
+      "component": "freqtrade",
+      "name": "HYPEROPT_LOSS_BUILTIN",
+      "anchor": "freqtrade/constants.py:33",
+      "reason": "Loss class names are option values of --hyperopt-loss, not commands."
+    },
+    {
+      "component": "freqtrade",
+      "name": "HYPEROPT_BUILTIN_SPACES",
+      "anchor": "freqtrade/constants.py:47",
+      "reason": "Values of --spaces, not commands or settings."
+    },
+    {
+      "component": "freqtrade",
+      "name": "EXPORT_OPTIONS",
+      "anchor": "freqtrade/constants.py:21",
+      "reason": "Values of --export."
+    },
+    {
+      "component": "freqtrade",
+      "name": "AVAILABLE_PAIRLISTS",
+      "anchor": "freqtrade/constants.py:60",
+      "reason": "Pairlist handler names are values of pairlists[].method, not top-level settings."
+    },
+    {
+      "component": "freqtrade",
+      "name": "TELEGRAM_SETTING_OPTIONS",
+      "anchor": "freqtrade/constants.py:125",
+      "reason": "on/off/silent notification loudness values, not Telegram commands."
+    },
+    {
+      "component": "freqtrade",
+      "name": "Telegram keyboard valid_keys",
+      "anchor": "freqtrade/rpc/telegram.py:181",
+      "reason": "Regexes validating custom keyboard buttons (e.g. '/status table'); not command registrations."
+    },
+    {
+      "component": "freqtrade",
+      "name": "RPCMessageType",
+      "anchor": "freqtrade/enums/rpcmessagetype.py:4",
+      "reason": "Outgoing notification/websocket topics; only subscribe/whitelist/analyzed_df (RPCRequestType) are received."
+    },
+    {
+      "component": "freqtrade",
+      "name": "_OPENAPI_TAGS",
+      "anchor": "freqtrade/rpc/api_server/webserver.py:28",
+      "reason": "OpenAPI tag descriptions, not routes."
+    },
+    {
+      "component": "freqtrade",
+      "name": "API_VERSION changelog",
+      "anchor": "freqtrade/rpc/api_server/api_v1.py:72",
+      "reason": "Comment names '/backtest/history/wallets'; the real route is /backtest/history/{file}/{strategy}/wallet."
+    },
+    {
+      "component": "freqtrade",
+      "name": "download_data handler named pairlists_evaluate",
+      "anchor": "freqtrade/rpc/api_server/api_download_data.py:52",
+      "reason": "POST /download_data's handler reuses the name pairlists_evaluate; it does not evaluate pairlists."
+    },
+    {
+      "component": "freqtrade",
+      "name": "Exchange.loop",
+      "anchor": "freqtrade/exchange/exchange.py:205",
+      "reason": "An asyncio loop driven synchronously with run_until_complete by the caller; not a separate worker."
+    },
+    {
+      "component": "freqtrade",
+      "name": "PYTEST_VERSION",
+      "anchor": "freqtrade/loggers/__init__.py:211",
+      "reason": "Test-only guard in setup_logging, not a user environment variable."
+    },
+    {
+      "component": "freqtrade",
+      "name": "git log subprocess (freqtrade)",
+      "anchor": "freqtrade/__init__.py:16",
+      "reason": "Runs only for 'dev' versions; __version__ is \"2026.8\" at this revision."
+    },
+    {
+      "component": "freqtrade-client",
+      "name": "git log subprocess (freqtrade_client)",
+      "anchor": "ft_client/freqtrade_client/__init__.py:17",
+      "reason": "Same dev-only branch; inactive for version 2026.8."
+    },
+    {
+      "component": "build_helpers/create_command_partials.py",
+      "name": "COLUMNS / NO_COLOR",
+      "anchor": "build_helpers/create_command_partials.py:22",
+      "reason": "Set (not read) to format argparse help; not configuration."
+    },
+    {
+      "component": "freqtrade",
+      "name": "tests/ (e.g. get_patched_freqtradebot)",
+      "anchor": "tests/conftest.py:303",
+      "reason": "Test-only fixtures and mocks; not part of any component."
+    },
+    {
+      "component": "freqtrade-client",
+      "name": "ft_client/test_client",
+      "anchor": "ft_client/test_client/test_rest_client.py:24",
+      "reason": "Test-only code of the client package."
+    },
+    {
+      "component": "freqtrade",
+      "name": "freqtrade/templates/sample_strategy.py",
+      "anchor": "freqtrade/templates/sample_strategy.py:1",
+      "reason": "Template copied into user_data/strategies by create-userdir; not the bot's own strategy."
+    },
+    {
+      "component": "freqtrade-client",
+      "name": "FtRestClient.ping",
+      "anchor": "ft_client/freqtrade_client/ft_rest_client.py:235",
+      "reason": "Client 'ping' calls /show_config, not the /ping route."
+    },
+    {
+      "component": "freqtrade",
+      "name": "edge subcommand help",
+      "anchor": "freqtrade/commands/arguments.py:537",
+      "reason": "Edge is registered only to raise ConfigurationError; not a working mode."
+    },
+    {
+      "component": "freqtrade",
+      "name": "docker-compose command",
+      "anchor": "docker-compose.yml:32",
+      "reason": "Deployment invocation of `freqtrade trade`, not a separate program."
+    },
+    {
+      "component": "freqtrade",
+      "name": "freqtrade.service",
+      "anchor": "freqtrade.service:9",
+      "reason": "systemd unit launching `freqtrade trade`, not a separate program."
+    },
+    {
+      "component": "freqtrade",
+      "name": "freqtrade/vendor/qtpylib",
+      "anchor": "freqtrade/vendor/qtpylib/indicators.py:1",
+      "reason": "Vendored indicator library, not a component."
+    }
+  ],
+  "review": [
+    {
+      "what": "freqtrade-client: 43 client-command items (FtRestClient methods) must=true -> must=false; the `command (positional)` option stays the one must item and its why now names the slot",
+      "why": "Owner convention from redis-cli: individual client command words are may, one must item covers the command slot; each method only forwards to a /api/v1 route already inventoried as a must request",
+      "anchor": "ft_client/freqtrade_client/ft_client.py:31 (slot); ft_client/freqtrade_client/ft_rest_client.py:78-507 (methods)"
+    },
+    {
+      "what": "settings webhook, discord, external_message_consumer, freqai must=false -> must=true",
+      "why": "Each switches on a must worker/external (webhook and Discord POST senders, consumer thread + producer websocket, FreqAI retraining thread), the same reason telegram and api_server were already must",
+      "anchor": "freqtrade/config_schema/config_schema.py:686, :701, :543, :539"
+    },
+    {
+      "what": "note on settings: replaced 'SCHEMA_TRADE_REQUIRED drove the must marks' with the actual rule",
+      "why": "The old note was false: entry_pricing, exit_pricing, tradable_balance_ratio, dry_run_wallet, internals and dataformat_* are in SCHEMA_TRADE_REQUIRED but were must=false; strategy/db_url/telegram/api_server are must but not in it",
+      "anchor": "freqtrade/config_schema/config_schema.py:1494"
+    },
+    {
+      "what": "workers 'standalone uvicorn (webserver mode)' must=false -> must=true",
+      "why": "It is the main loop of `freqtrade webserver` (runs in the main thread), the counterpart of Worker.run for trade",
+      "anchor": "freqtrade/rpc/api_server/webserver.py:339"
+    },
+    {
+      "what": "workers 'FreqAI training scan' thread must=false -> must=true",
+      "why": "A real threading.Thread; every other config-gated thread (FTTelegram, FTUvicorn, ccxt_ws, ExternalMessageConsumer) is must",
+      "anchor": "freqtrade/freqai/freqai_interface.py:216"
+    },
+    {
+      "what": "workers 'hyperopt joblib Parallel' must=false -> must=true",
+      "why": "The only process pool; it is how the hyperopt subcommand (a must command) executes epochs",
+      "anchor": "freqtrade/optimize/hyperopt/hyperopt.py:231"
+    },
+    {
+      "what": "data tables KeyValueStore, trade_custom_data, wallet_history must=false -> must=true",
+      "why": "Owner definition names 'the trades DB and its models'; these complete the six ModelBase tables created by init_db (wallet_history backs /historic_balance and the daily record_wallet_state job)",
+      "anchor": "freqtrade/persistence/key_value_store.py:36; freqtrade/persistence/custom_data.py:28; freqtrade/persistence/wallet_history.py:15"
+    },
+    {
+      "what": "handler of KeyValueStore table KeyValueStore -> _KeyValueStoreModel; of trade_custom_data CustomDataWrapper -> _CustomData",
+      "why": "The handler of a db-table item is the ORM model class holding __tablename__; the named classes are facades",
+      "anchor": "freqtrade/persistence/key_value_store.py:31; freqtrade/persistence/custom_data.py:18"
+    },
+    {
+      "what": "data 'strategies' directory anchor strategy_resolver.py:269 -> :33",
+      "why": "Line 269 is inside the optional recursive_strategy_search branch; line 33 is the resolver's user_subdir = USERPATH_STRATEGIES, the same anchor form as the hyperopts/freqaimodels siblings",
+      "anchor": "freqtrade/resolvers/strategy_resolver.py:33"
+    },
+    {
+      "what": "added data may item 'leverage_tiers_<stake>.json cache'",
+      "why": "File the bot writes under <datadir>/futures/ and reloads; was missing from the data inventory",
+      "anchor": "freqtrade/exchange/exchange.py:3650"
+    },
+    {
+      "what": "added data may item 'ApiServer._message_stream'",
+      "why": "In-memory pub/sub between RPC send_msg and websocket channel broadcasters; was missing",
+      "anchor": "freqtrade/rpc/api_server/webserver.py:125"
+    },
+    {
+      "what": "added setup.sh external may item 'get-pip.py download'",
+      "why": "Outgoing curl download in check_installed_pip; was missing (Homebrew installer fetch noted in why)",
+      "anchor": "setup.sh:18"
+    }
+  ],
+  "errata": [
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / backtest job (freqtrade/rpc/api_server/api_backtest.py:196)",
+      "change": "must True -> False",
+      "reason": "The job is the body of POST /api/v1/backtest (a must request): the route handler registers it as a FastAPI BackgroundTask after answering; it is not a separate way into the program.",
+      "citation": "freqtrade/rpc/api_server/api_backtest.py:155 @router.post(\"/backtest\") -> :196 background_tasks.add_task(__run_backtest_bg ...)"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / hyperopt joblib Parallel (freqtrade/optimize/hyperopt/hyperopt.py:231)",
+      "change": "must True -> False",
+      "reason": "Not a worker: Hyperopt.start blocks in `with Parallel(...)` and waits for every batch of epochs (run_optimizer_parallel) before continuing, so the pool runs in place as how the `hyperopt` subcommand (a must command) does its work. Kept as a may item instead of dropped because joblib does spawn worker processes; reverses the earlier review promotion.",
+      "citation": "freqtrade/optimize/hyperopt/hyperopt.py:231 with Parallel(n_jobs=config_jobs); :136 run_optimizer_parallel; :264 f_val = self.run_optimizer_parallel(...)"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / Worker.run (freqtrade/worker.py:78)",
+      "change": "must True -> False; \"flow\": true",
+      "reason": "The `trade` subcommand's own foreground loop (start_trading -> Worker(args).run()); it is the program's Main flow, not something that runs on its own beside it.",
+      "citation": "freqtrade/commands/trade_commands.py:24-25 worker = Worker(args); worker.run(); freqtrade/worker.py:78 while True:"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / FreqtradeBot.process (freqtrade/freqtradebot.py:257)",
+      "change": "must True -> False; \"flow\": true",
+      "reason": "One iteration of the same foreground loop: Worker._process_running calls it on every throttled pass; part of the Main flow of `trade`, not a worker.",
+      "citation": "freqtrade/worker.py:197-199 _process_running -> self.freqtrade.process(); freqtrade/freqtradebot.py:257"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / Worker._throttle (freqtrade/worker.py:186)",
+      "change": "\"flow\": true (must stays false)",
+      "reason": "Consistency with Worker.run: the throttle sleep is inside the same foreground loop.",
+      "citation": "freqtrade/worker.py:116, :124 self._throttle(...) inside Worker._worker; :186 self._sleep(sleep_duration)"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / standalone uvicorn (webserver mode) (freqtrade/rpc/api_server/webserver.py:339)",
+      "change": "must True -> False; \"flow\": true",
+      "reason": "Not a worker: in `freqtrade webserver` ApiServer runs uvicorn in the foreground main thread (standalone=True), so it is that subcommand's Main flow; the requests it serves are inventoried separately and the background-thread variant (FTUvicorn) stays a must worker. Reverses the earlier review promotion.",
+      "citation": "freqtrade/commands/webserver_commands.py:16 ApiServer(config, standalone=True); freqtrade/rpc/api_server/webserver.py:338-339 if self._standalone: self._server.run()"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "scripts/ws_client.py / workers / create_client reconnect loop (scripts/ws_client.py:221)",
+      "change": "must True -> False; \"flow\": true",
+      "reason": "Consistency with the flow marks: the reconnect loop is the script's own foreground (main -> asyncio.run(_main) -> await create_client), the same shape as litestream `restore -f`; not a worker beside the flow.",
+      "citation": "scripts/ws_client.py:316 asyncio.run(_main(args)); :299 await create_client(; :221 while 1:"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / FreqtradeBot._schedule (schedule.Scheduler) (freqtrade/freqtradebot.py:157)",
+      "change": "must True -> False",
+      "reason": "Scheduler() only constructs the empty holder; what runs are the jobs registered on it (now must) and run inline from process() by run_pending. The holder stays a may item.",
+      "citation": "freqtrade/freqtradebot.py:157 self._schedule = Scheduler(); :308 self._schedule.run_pending()"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / futures funding/liquidation update (freqtrade/freqtradebot.py:172)",
+      "change": "must False -> True",
+      "reason": "A scheduled job is the time-triggered way in a newcomer lands on (futures mode registers it for hh:01:02 and hh:31:02); config-gated like the other must workers (ccxt_ws, FreqAI).",
+      "citation": "freqtrade/freqtradebot.py:159 if self.trading_mode == TradingMode.FUTURES; :172 self._schedule.every().day.at(t).do(update)"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / ws_connection_reset (freqtrade/freqtradebot.py:174)",
+      "change": "must False -> True",
+      "reason": "Scheduled job registered unconditionally (daily 00:02).",
+      "citation": "freqtrade/freqtradebot.py:174 self._schedule.every().day.at(\"00:02\").do(self.exchange.ws_connection_reset)"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / record_wallet_state (freqtrade/freqtradebot.py:175)",
+      "change": "must False -> True",
+      "reason": "Scheduled job registered unconditionally (daily 00:07); it writes the wallet_history table.",
+      "citation": "freqtrade/freqtradebot.py:175 self._schedule.every().day.at(\"00:07\").do(self.wallets.record_wallet_state)"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / external / ccxt (sync client) (freqtrade/exchange/exchange.py:274)",
+      "change": "kept must at the construction; added \"use_site\" and a may item at the use site",
+      "reason": "_init_ccxt is where the exchange connection is configured (exchange name, keys, ccxt_config), so it stays; the call a newcomer following an entry lands on is the order placement, added as a may item so a report anchored there is credited without widening the matcher.",
+      "citation": "freqtrade/exchange/exchange.py:274 self._api = self._init_ccxt(...); :1464 if self._config[\"dry_run\"]; :1481 order = self._api.create_order("
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / external / Telegram Bot API send_message (freqtrade/rpc/telegram.py:2185)",
+      "change": "anchor kept at telegram.py:2185; why rewritten to name the send path",
+      "reason": "Of the Telegram call sites (bot.send_message at :2185 and its NetworkError retry :2199, /tg_info's context.bot.send_message :2281, callback edit_message_text at :1458-1503 and :2136), :2185 is the one on the send path that notifications (send_msg) and all command replies (self._send_msg) go through.",
+      "citation": "freqtrade/rpc/telegram.py:617-629 send_msg -> run_coroutine_threadsafe(self._send_msg(...)); :2147 async def _send_msg; :2185 await self._app.bot.send_message("
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / data / FreqtradeBot.state (freqtrade/freqtradebot.py:149)",
+      "change": "must True -> False",
+      "reason": "A run-state flag (RUNNING/PAUSED/STOPPED/RELOAD_CONFIG), not the owner's keyspace-like main store; the bot's data lives in the trades DB, which stays must.",
+      "citation": "freqtrade/freqtradebot.py:149 self.state = State[initial_state.upper()] if initial_state else State.STOPPED"
+    }
+  ]
+}

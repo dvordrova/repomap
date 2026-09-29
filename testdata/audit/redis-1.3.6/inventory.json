@@ -1,0 +1,3546 @@
+{
+ "repository": "redis-1.3.6",
+ "path": "~/git/redis-1.3.6",
+ "revision": "7b7f987e9184645f64f766b7f8f7eb02a9a69552",
+ "components": [
+  {
+   "name": "redis-server",
+   "kind": "program",
+   "built_by": "Makefile:49",
+   "entry": "redis.c:9124 main",
+   "sources": "redis.c + ae.c anet.c dict.c adlist.c sds.c zmalloc.c lzf_c.c lzf_d.c pqsort.c zipmap.c"
+  },
+  {
+   "name": "redis-cli",
+   "kind": "program",
+   "built_by": "Makefile:60",
+   "entry": "redis-cli.c:501 main",
+   "sources": "redis-cli.c + anet.c sds.c adlist.c zmalloc.c"
+  },
+  {
+   "name": "redis-benchmark",
+   "kind": "program",
+   "built_by": "Makefile:57",
+   "entry": "redis-benchmark.c:483 main",
+   "sources": "redis-benchmark.c + ae.c anet.c sds.c adlist.c zmalloc.c"
+  },
+  {
+   "name": "redis-check-dump",
+   "kind": "program",
+   "built_by": "Makefile:63",
+   "entry": "redis-check-dump.c:615 main",
+   "sources": "redis-check-dump.c + lzf_c.c lzf_d.c"
+  },
+  {
+   "name": "utils/redis_init_script",
+   "kind": "script (not built)",
+   "entry": "utils/redis_init_script:9"
+  },
+  {
+   "name": "utils/redis-copy.rb",
+   "kind": "script (not built)",
+   "entry": "utils/redis-copy.rb:68"
+  },
+  {
+   "name": "utils/redis-sha1.rb",
+   "kind": "script (not built)",
+   "entry": "utils/redis-sha1.rb:48"
+  },
+  {
+   "name": "utils/build-static-symbols.tcl",
+   "kind": "build script (not built)",
+   "entry": "utils/build-static-symbols.tcl:7"
+  },
+  {
+   "name": "Makefile",
+   "kind": "build",
+   "entry": "Makefile:27"
+  }
+ ],
+ "items": [
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "get",
+   "anchor": "redis.c:704",
+   "handler": "getCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): read a string value."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "set",
+   "anchor": "redis.c:705",
+   "handler": "setCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): store a string value."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "setnx",
+   "anchor": "redis.c:706",
+   "handler": "setnxCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): store a string only if the key is absent."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "append",
+   "anchor": "redis.c:707",
+   "handler": "appendCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): append to a string value."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "substr",
+   "anchor": "redis.c:708",
+   "handler": "substrCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 4): return a substring of a string value."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "del",
+   "anchor": "redis.c:709",
+   "handler": "delCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -2): delete keys."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "exists",
+   "anchor": "redis.c:710",
+   "handler": "existsCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): test whether a key exists."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "incr",
+   "anchor": "redis.c:711",
+   "handler": "incrCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): increment an integer value."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "decr",
+   "anchor": "redis.c:712",
+   "handler": "decrCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): decrement an integer value."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "mget",
+   "anchor": "redis.c:713",
+   "handler": "mgetCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -2): read several string values."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "rpush",
+   "anchor": "redis.c:714",
+   "handler": "rpushCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): push onto a list tail."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "lpush",
+   "anchor": "redis.c:715",
+   "handler": "lpushCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): push onto a list head."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "rpop",
+   "anchor": "redis.c:716",
+   "handler": "rpopCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): pop from a list tail."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "lpop",
+   "anchor": "redis.c:717",
+   "handler": "lpopCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): pop from a list head."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "brpop",
+   "anchor": "redis.c:718",
+   "handler": "brpopCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -3): blocking tail pop with timeout (client is blocked)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "blpop",
+   "anchor": "redis.c:719",
+   "handler": "blpopCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -3): blocking head pop with timeout (client is blocked)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "llen",
+   "anchor": "redis.c:720",
+   "handler": "llenCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): list length."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "lindex",
+   "anchor": "redis.c:721",
+   "handler": "lindexCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): read a list element by index."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "lset",
+   "anchor": "redis.c:722",
+   "handler": "lsetCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 4): overwrite a list element."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "lrange",
+   "anchor": "redis.c:723",
+   "handler": "lrangeCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 4): read a list range."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "ltrim",
+   "anchor": "redis.c:724",
+   "handler": "ltrimCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 4): trim a list to a range."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "lrem",
+   "anchor": "redis.c:725",
+   "handler": "lremCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 4): remove list elements equal to a value."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "rpoplpush",
+   "anchor": "redis.c:726",
+   "handler": "rpoplpushcommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): atomically move a list tail element to another list head."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sadd",
+   "anchor": "redis.c:727",
+   "handler": "saddCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): add a set member."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "srem",
+   "anchor": "redis.c:728",
+   "handler": "sremCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): remove a set member."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "smove",
+   "anchor": "redis.c:729",
+   "handler": "smoveCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 4): move a member between sets."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sismember",
+   "anchor": "redis.c:730",
+   "handler": "sismemberCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): test set membership."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "scard",
+   "anchor": "redis.c:731",
+   "handler": "scardCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): set cardinality."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "spop",
+   "anchor": "redis.c:732",
+   "handler": "spopCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): pop a random set member."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "srandmember",
+   "anchor": "redis.c:733",
+   "handler": "srandmemberCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): read a random set member."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sinter",
+   "anchor": "redis.c:734",
+   "handler": "sinterCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -2): intersect sets."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sinterstore",
+   "anchor": "redis.c:735",
+   "handler": "sinterstoreCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -3): intersect sets into a destination key."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sunion",
+   "anchor": "redis.c:736",
+   "handler": "sunionCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -2): union sets."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sunionstore",
+   "anchor": "redis.c:737",
+   "handler": "sunionstoreCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -3): union sets into a destination key."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sdiff",
+   "anchor": "redis.c:738",
+   "handler": "sdiffCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -2): difference of sets."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sdiffstore",
+   "anchor": "redis.c:739",
+   "handler": "sdiffstoreCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -3): difference of sets into a destination key."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "smembers",
+   "anchor": "redis.c:740",
+   "handler": "sinterCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): list set members; served by sinterCommand with one key."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zadd",
+   "anchor": "redis.c:741",
+   "handler": "zaddCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 4): add a sorted-set member with score."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zincrby",
+   "anchor": "redis.c:742",
+   "handler": "zincrbyCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 4): increment a sorted-set member score."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zrem",
+   "anchor": "redis.c:743",
+   "handler": "zremCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): remove a sorted-set member."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zremrangebyscore",
+   "anchor": "redis.c:744",
+   "handler": "zremrangebyscoreCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 4): remove sorted-set members by score range."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zremrangebyrank",
+   "anchor": "redis.c:745",
+   "handler": "zremrangebyrankCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 4): remove sorted-set members by rank range."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zunion",
+   "anchor": "redis.c:746",
+   "handler": "zunionCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -4): union sorted sets into a destination key (WEIGHTS/AGGREGATE)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zinter",
+   "anchor": "redis.c:747",
+   "handler": "zinterCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -4): intersect sorted sets into a destination key (WEIGHTS/AGGREGATE)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zrange",
+   "anchor": "redis.c:748",
+   "handler": "zrangeCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -4): read a sorted-set range by rank."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zrangebyscore",
+   "anchor": "redis.c:749",
+   "handler": "zrangebyscoreCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -4): read a sorted-set range by score."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zcount",
+   "anchor": "redis.c:750",
+   "handler": "zcountCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 4): count sorted-set members in a score range."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zrevrange",
+   "anchor": "redis.c:751",
+   "handler": "zrevrangeCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -4): read a sorted-set range by reverse rank."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zcard",
+   "anchor": "redis.c:752",
+   "handler": "zcardCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): sorted-set cardinality."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zscore",
+   "anchor": "redis.c:753",
+   "handler": "zscoreCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): read a member score."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zrank",
+   "anchor": "redis.c:754",
+   "handler": "zrankCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): rank of a member."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "zrevrank",
+   "anchor": "redis.c:755",
+   "handler": "zrevrankCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): reverse rank of a member."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "hset",
+   "anchor": "redis.c:756",
+   "handler": "hsetCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 4): set a hash field."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "hget",
+   "anchor": "redis.c:757",
+   "handler": "hgetCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): read a hash field."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "hdel",
+   "anchor": "redis.c:758",
+   "handler": "hdelCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): delete a hash field."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "hlen",
+   "anchor": "redis.c:759",
+   "handler": "hlenCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): hash field count."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "hkeys",
+   "anchor": "redis.c:760",
+   "handler": "hkeysCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): list hash fields."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "hvals",
+   "anchor": "redis.c:761",
+   "handler": "hvalsCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): list hash values."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "hgetall",
+   "anchor": "redis.c:762",
+   "handler": "hgetallCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): list hash fields and values."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "hexists",
+   "anchor": "redis.c:763",
+   "handler": "hexistsCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): test a hash field."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "incrby",
+   "anchor": "redis.c:764",
+   "handler": "incrbyCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): increment an integer by an amount."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "decrby",
+   "anchor": "redis.c:765",
+   "handler": "decrbyCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): decrement an integer by an amount."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "getset",
+   "anchor": "redis.c:766",
+   "handler": "getsetCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 3): set a string and return the old value."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "mset",
+   "anchor": "redis.c:767",
+   "handler": "msetCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity -3): set several strings."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "msetnx",
+   "anchor": "redis.c:768",
+   "handler": "msetnxCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity -3): set several strings only if none exists."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "randomkey",
+   "anchor": "redis.c:769",
+   "handler": "randomkeyCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): return a random key."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "select",
+   "anchor": "redis.c:770",
+   "handler": "selectCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): switch the client's database."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "move",
+   "anchor": "redis.c:771",
+   "handler": "moveCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): move a key to another database."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "rename",
+   "anchor": "redis.c:772",
+   "handler": "renameCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): rename a key."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "renamenx",
+   "anchor": "redis.c:773",
+   "handler": "renamenxCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): rename a key only if the target is absent."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "expire",
+   "anchor": "redis.c:774",
+   "handler": "expireCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): set a key time-to-live."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "expireat",
+   "anchor": "redis.c:775",
+   "handler": "expireatCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): set a key expiry as a unix time."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "keys",
+   "anchor": "redis.c:776",
+   "handler": "keysCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): list keys matching a glob pattern."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "dbsize",
+   "anchor": "redis.c:777",
+   "handler": "dbsizeCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): count keys in the current database."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "auth",
+   "anchor": "redis.c:778",
+   "handler": "authCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): authenticate against requirepass."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "ping",
+   "anchor": "redis.c:779",
+   "handler": "pingCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): liveness check (+PONG)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "echo",
+   "anchor": "redis.c:780",
+   "handler": "echoCommand",
+   "must": true,
+   "why": "cmdTable entry (bulk last argument, arity 2): echo the argument."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "save",
+   "anchor": "redis.c:781",
+   "handler": "saveCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): synchronous snapshot to dbfilename (rdbSave)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "bgsave",
+   "anchor": "redis.c:782",
+   "handler": "bgsaveCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): fork a background snapshot child (rdbSaveBackground)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "bgrewriteaof",
+   "anchor": "redis.c:783",
+   "handler": "bgrewriteaofCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): fork a background append-only-file rewrite child."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "shutdown",
+   "anchor": "redis.c:784",
+   "handler": "shutdownCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): save (or fsync the AOF) and exit the server."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "lastsave",
+   "anchor": "redis.c:785",
+   "handler": "lastsaveCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): unix time of the last successful save."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "type",
+   "anchor": "redis.c:786",
+   "handler": "typeCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): type of the value at a key."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "multi",
+   "anchor": "redis.c:787",
+   "handler": "multiCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): start a MULTI transaction (later commands are queued)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "exec",
+   "anchor": "redis.c:788",
+   "handler": "execCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): execute queued MULTI commands."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "discard",
+   "anchor": "redis.c:789",
+   "handler": "discardCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): drop queued MULTI commands."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sync",
+   "anchor": "redis.c:790",
+   "handler": "syncCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): replication handshake from a slave: BGSAVE, stream dump.rdb, then feed writes."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "flushdb",
+   "anchor": "redis.c:791",
+   "handler": "flushdbCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): empty the current database."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "flushall",
+   "anchor": "redis.c:792",
+   "handler": "flushallCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): empty all databases."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "sort",
+   "anchor": "redis.c:793",
+   "handler": "sortCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -2): sort a list/set/zset (BY/GET/LIMIT/STORE options)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "info",
+   "anchor": "redis.c:794",
+   "handler": "infoCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): server statistics and state as a bulk reply."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "monitor",
+   "anchor": "redis.c:795",
+   "handler": "monitorCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 1): turn the connection into a feed of all executed commands."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "ttl",
+   "anchor": "redis.c:796",
+   "handler": "ttlCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 2): remaining time-to-live of a key."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "slaveof",
+   "anchor": "redis.c:797",
+   "handler": "slaveofCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity 3): make this server a slave of host:port, or a master again with NO ONE."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "debug",
+   "anchor": "redis.c:798",
+   "handler": "debugCommand",
+   "must": true,
+   "why": "cmdTable entry (inline, arity -2): debugging subcommands (SEGFAULT, RELOAD, LOADAOF, OBJECT, SWAPOUT)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-command",
+   "name": "quit",
+   "anchor": "redis.c:2148",
+   "handler": "processCommand",
+   "must": true,
+   "why": "Not in cmdTable: processCommand special-cases QUIT and closes the connection."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "connection",
+   "name": "TCP accept on port (default 6379) / bind address",
+   "anchor": "redis.c:1576",
+   "handler": "acceptHandler",
+   "must": false,
+   "why": "Listening socket (anetTcpServer, redis.c:1552) accepts clients; enforces maxclients; each client gets readQueryFromClient."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "requests",
+   "kind": "protocol-stream",
+   "name": "replication stream from the master (when slave)",
+   "anchor": "redis.c:7318",
+   "handler": "syncWithMaster",
+   "must": false,
+   "why": "After SYNC the master link becomes a client flagged REDIS_MASTER; its writes run through the same cmdTable."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "arg",
+   "name": "[/path/to/redis.conf]",
+   "anchor": "redis.c:9130",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Single optional positional argument; more than one prints usage and exits; without it defaults are used."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "timeout",
+   "anchor": "redis.c:1646",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: idle client timeout in seconds (0 disables)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "port",
+   "anchor": "redis.c:1651",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: TCP listen port."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "bind",
+   "anchor": "redis.c:1656",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: listen address."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "save",
+   "anchor": "redis.c:1658",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: save point <seconds> <changes> triggering a background save."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "dir",
+   "anchor": "redis.c:1665",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: chdir to the working directory holding dump, AOF and temp files."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "loglevel",
+   "anchor": "redis.c:1671",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: log verbosity."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "logfile",
+   "anchor": "redis.c:1680",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: log file path or stdout."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "databases",
+   "anchor": "redis.c:1699",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: number of databases (server.dbnum)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "maxclients",
+   "anchor": "redis.c:1704",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: maximum simultaneous clients."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "maxmemory",
+   "anchor": "redis.c:1706",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: memory limit; DENYOOM commands are refused above it."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "slaveof",
+   "anchor": "redis.c:1708",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: start as a slave of <masterip> <masterport>."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "masterauth",
+   "anchor": "redis.c:1712",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: password sent with AUTH to the master."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "glueoutputbuf",
+   "anchor": "redis.c:1714",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: glue small reply buffers before writing (yes/no)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "shareobjects",
+   "anchor": "redis.c:1718",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: share equal string objects (yes/no)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "rdbcompression",
+   "anchor": "redis.c:1722",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: LZF-compress strings in dump.rdb (yes/no)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "shareobjectspoolsize",
+   "anchor": "redis.c:1726",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: size of the object sharing pool."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "daemonize",
+   "anchor": "redis.c:1731",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: fork into the background and write the pid file (yes/no)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "appendonly",
+   "anchor": "redis.c:1735",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: enable the append-only file (yes/no)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "appendfsync",
+   "anchor": "redis.c:1739",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: AOF fsync policy."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "requirepass",
+   "anchor": "redis.c:1750",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: password clients must send with AUTH."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "pidfile",
+   "anchor": "redis.c:1752",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: pid file path used when daemonized."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "dbfilename",
+   "anchor": "redis.c:1754",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: snapshot file name."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "vm-enabled",
+   "anchor": "redis.c:1756",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: enable virtual-memory swapping (yes/no)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "vm-swap-file",
+   "anchor": "redis.c:1760",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: swap file path (%p expands to the pid)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "vm-max-memory",
+   "anchor": "redis.c:1763",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: memory above which values are swapped out."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "vm-page-size",
+   "anchor": "redis.c:1765",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: swap page size in bytes."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "vm-pages",
+   "anchor": "redis.c:1767",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: number of swap pages."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "vm-max-threads",
+   "anchor": "redis.c:1769",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: maximum VM I/O threads (0 = blocking VM)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "hash-max-zipmap-entries",
+   "anchor": "redis.c:1771",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: hash size limit for zipmap encoding."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "commands",
+   "kind": "setting",
+   "name": "hash-max-zipmap-value",
+   "anchor": "redis.c:1773",
+   "handler": "loadServerConfig",
+   "must": true,
+   "why": "Config directive: hash value length limit for zipmap encoding."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "timer",
+   "name": "serverCron",
+   "anchor": "redis.c:1575",
+   "handler": "serverCron",
+   "must": true,
+   "why": "1-second time event: save points, key expiry, idle timeouts, child reaping, VM swap-out, master reconnect."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "forked-child",
+   "name": "background save child (BGSAVE)",
+   "anchor": "redis.c:3360",
+   "handler": "rdbSaveBackground",
+   "must": false,
+   "why": "fork(); the child writes the snapshot with rdbSave and exits; started by BGSAVE, SYNC and save points."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "forked-child",
+   "name": "background AOF rewrite child (BGREWRITEAOF)",
+   "anchor": "redis.c:7876",
+   "handler": "rewriteAppendOnlyFileBackground",
+   "must": false,
+   "why": "fork(); the child rewrites the AOF into a temp file while the parent buffers the diff."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "thread",
+   "name": "VM I/O threads",
+   "anchor": "redis.c:8728",
+   "handler": "IOThreadEntryPoint",
+   "must": true,
+   "why": "pthread_create in spawnIOThread (up to vm-max-threads) to load, size and write swapped values; only with vm-enabled."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "event-callback",
+   "name": "VM completed-job pipe handler",
+   "anchor": "redis.c:8031",
+   "handler": "vmThreadedIOCompletedJob",
+   "must": false,
+   "why": "Main-thread handler woken through a pipe by I/O threads to apply finished jobs."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "event-callback",
+   "name": "beforeSleep",
+   "anchor": "redis.c:9152",
+   "handler": "beforeSleep",
+   "must": false,
+   "why": "Runs before each event-loop wait; resumes clients whose swapped keys were loaded."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "event-callback",
+   "name": "sendBulkToSlave",
+   "anchor": "redis.c:7194",
+   "handler": "sendBulkToSlave",
+   "must": false,
+   "why": "Writable handler that streams dump.rdb to a syncing slave after the BGSAVE finishes."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "cron-step",
+   "name": "save-point check",
+   "anchor": "redis.c:1322",
+   "handler": "serverCron",
+   "must": false,
+   "why": "Inside serverCron: starts rdbSaveBackground when a save <seconds> <changes> point is reached."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "cron-step",
+   "name": "child reaping (wait3)",
+   "anchor": "redis.c:1304",
+   "handler": "backgroundSaveDoneHandler / backgroundRewriteDoneHandler",
+   "must": false,
+   "why": "Inside serverCron: collects finished save/rewrite children and finalizes their files."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "cron-step",
+   "name": "active key expiry",
+   "anchor": "redis.c:1352",
+   "handler": "serverCron",
+   "must": false,
+   "why": "Inside serverCron: samples keys with an expire and deletes expired ones."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "cron-step",
+   "name": "idle client and blocking-pop timeouts",
+   "anchor": "redis.c:1297",
+   "handler": "closeTimedoutClients",
+   "must": false,
+   "why": "Inside serverCron: closes idle clients and unblocks timed-out BLPOP/BRPOP."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "cron-step",
+   "name": "VM swap-out",
+   "anchor": "redis.c:1368",
+   "handler": "vmSwapOneObjectBlocking / vmSwapOneObjectThreaded",
+   "must": false,
+   "why": "Inside serverCron: swaps values out while memory exceeds vm-max-memory."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "cron-step",
+   "name": "master (re)connect",
+   "anchor": "redis.c:1388",
+   "handler": "syncWithMaster",
+   "must": false,
+   "why": "Inside serverCron: when replstate is REDIS_REPL_CONNECT, performs the blocking sync with the master."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "signal-handler",
+   "name": "segvHandler",
+   "anchor": "redis.c:9233",
+   "handler": "segvHandler",
+   "must": false,
+   "why": "SIGSEGV/SIGBUS/SIGFPE/SIGILL handler logging INFO and a backtrace (HAVE_BACKTRACE builds only)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "external",
+   "kind": "tcp-connection",
+   "name": "master Redis server (slaveof host port)",
+   "anchor": "redis.c:7219",
+   "handler": "syncWithMaster",
+   "must": true,
+   "why": "anetTcpConnect to masterhost:masterport; sends AUTH (if masterauth) and SYNC, downloads the dump, keeps the link."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "external",
+   "kind": "dns",
+   "name": "host name resolution for the master host",
+   "anchor": "anet.c:145",
+   "handler": "anetTcpConnect",
+   "must": false,
+   "why": "gethostbyname when masterhost is not a dotted IPv4 address; part of the master connection."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "external",
+   "kind": "outgoing-protocol",
+   "name": "AUTH <masterauth> to the master",
+   "anchor": "redis.c:7230",
+   "handler": "syncWithMaster",
+   "must": false,
+   "why": "Sent over the master connection only when masterauth is set."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "external",
+   "kind": "outgoing-protocol",
+   "name": "SYNC to the master",
+   "anchor": "redis.c:7252",
+   "handler": "syncWithMaster",
+   "must": false,
+   "why": "Requests the bulk dump from the master."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "external",
+   "kind": "outgoing-stream",
+   "name": "write propagation to slaves and MONITOR clients",
+   "anchor": "redis.c:2057",
+   "handler": "replicationFeedSlaves",
+   "must": false,
+   "why": "Executed writes are queued to slaves/monitors over their inbound connections; no connection is opened."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "in-memory-store",
+   "name": "keyspace: redisDb.dict",
+   "anchor": "redis.c:282",
+   "handler": null,
+   "must": true,
+   "why": "Per-database dict key -> robj; server.db[dbnum] in struct redisServer (redis.c:341), created at redis.c:1558.",
+   "struct": "redisDb (redis.c:281)"
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "snapshot-file",
+   "name": "dump.rdb",
+   "anchor": "redis.c:1493",
+   "handler": "rdbSave / rdbLoad",
+   "must": true,
+   "why": "Default dbfilename: written via temp file + rename by rdbSave (redis.c:3256), loaded at startup by rdbLoad (redis.c:3618)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "append-log",
+   "name": "appendonly.aof",
+   "anchor": "redis.c:1494",
+   "handler": "feedAppendOnlyFile / loadAppendOnlyFile",
+   "must": true,
+   "why": "Append-only log of writes: opened redis.c:1580, written redis.c:7469, replayed redis.c:7528; name not configurable."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "swap-file",
+   "name": "/tmp/redis-%p.vm",
+   "anchor": "redis.c:1503",
+   "handler": "vmInit",
+   "must": true,
+   "why": "Default vm-swap-file for swapped-out values; opened and sized in vmInit (redis.c:7978) when vm-enabled."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "in-memory",
+   "name": "expires dict (redisDb.expires)",
+   "anchor": "redis.c:283",
+   "handler": null,
+   "must": false,
+   "why": "Per-database key -> expire time; saved in the snapshot."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "in-memory",
+   "name": "blocking keys (redisDb.blockingkeys)",
+   "anchor": "redis.c:284",
+   "handler": null,
+   "must": false,
+   "why": "Keys with clients blocked in BLPOP/BRPOP."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "in-memory",
+   "name": "object sharing pool (server.sharingpool)",
+   "anchor": "redis.c:342",
+   "handler": null,
+   "must": false,
+   "why": "Pool of shared string objects used when shareobjects is on."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "in-memory",
+   "name": "client, slave and monitor lists",
+   "anchor": "redis.c:345",
+   "handler": null,
+   "must": false,
+   "why": "server.clients, server.slaves and server.monitors connection registries."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "pid-file",
+   "name": "/var/run/redis.pid",
+   "anchor": "redis.c:1492",
+   "handler": "daemonize",
+   "must": false,
+   "why": "Default pidfile, written only when daemonized (redis.c:9117)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "log-file",
+   "name": "logfile (default stdout)",
+   "anchor": "redis.c:931",
+   "handler": "redisLog",
+   "must": false,
+   "why": "Log lines appended to the configured logfile, or stdout."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "config-file",
+   "name": "redis.conf (argv[1], or '-' for stdin)",
+   "anchor": "redis.c:1621",
+   "handler": "loadServerConfig",
+   "must": false,
+   "why": "Configuration file read once at startup."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "temp-file",
+   "name": "temp-<pid>.rdb",
+   "anchor": "redis.c:3270",
+   "handler": "rdbSave",
+   "must": false,
+   "why": "Temporary snapshot renamed onto dbfilename; removed if the child dies."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "temp-file",
+   "name": "temp-rewriteaof-bg-<pid>.aof",
+   "anchor": "redis.c:7882",
+   "handler": "rewriteAppendOnlyFileBackground",
+   "must": false,
+   "why": "Rewritten AOF from the child; the parent appends its diff (backgroundRewriteDoneHandler, redis.c:1205) and renames it onto appendonly.aof (redis.c:1221)."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "temp-file",
+   "name": "temp-rewriteaof-<pid>.aof",
+   "anchor": "redis.c:7690",
+   "handler": "rewriteAppendOnlyFile",
+   "must": false,
+   "why": "Inner temp file of the rewrite, renamed to the bg temp name."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "temp-file",
+   "name": "temp-<time>.<pid>.rdb (slave sync)",
+   "anchor": "redis.c:7275",
+   "handler": "syncWithMaster",
+   "must": false,
+   "why": "Dump received from the master, renamed onto dbfilename and loaded."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "data",
+   "kind": "system-file",
+   "name": "/proc/sys/vm/overcommit_memory",
+   "anchor": "redis.c:9080",
+   "handler": "linuxOvercommitMemoryValue",
+   "must": false,
+   "why": "Read at startup on Linux to warn when overcommit is 0."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-h",
+   "anchor": "redis-cli.c:384",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "server host, resolved with anetResolve; default 127.0.0.1."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-p",
+   "anchor": "redis-cli.c:394",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "server port, default 6379."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-a",
+   "anchor": "redis-cli.c:403",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "password; AUTH is sent only in interactive mode."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-r",
+   "anchor": "redis-cli.c:397",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "repeat the command N times."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-n",
+   "anchor": "redis-cli.c:400",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "database number, sent as SELECT before the command."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-i",
+   "anchor": "redis-cli.c:406",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "force interactive mode."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "arg",
+   "name": "<command> [arg ...]",
+   "anchor": "redis-cli.c:311",
+   "handler": "cliSendCommand",
+   "must": true,
+   "why": "Redis command word and arguments from argv or the '>> ' prompt, checked against the local cmdTable, then sent."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "interactive-word",
+   "name": "quit / exit",
+   "anchor": "redis-cli.c:486",
+   "handler": "repl",
+   "must": false,
+   "why": "Typed at the interactive prompt; exits locally without contacting the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "stdin",
+   "name": "last argument from standard input",
+   "anchor": "redis-cli.c:524",
+   "handler": "readArgFromStdin",
+   "must": false,
+   "why": "When exactly one argument is missing, stdin is read to EOF and used as the last argument."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "auth",
+   "anchor": "redis-cli.c:65",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "get",
+   "anchor": "redis-cli.c:66",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "set",
+   "anchor": "redis-cli.c:67",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "setnx",
+   "anchor": "redis-cli.c:68",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "append",
+   "anchor": "redis-cli.c:69",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "substr",
+   "anchor": "redis-cli.c:70",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "del",
+   "anchor": "redis-cli.c:71",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "exists",
+   "anchor": "redis-cli.c:72",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "incr",
+   "anchor": "redis-cli.c:73",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "decr",
+   "anchor": "redis-cli.c:74",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "rpush",
+   "anchor": "redis-cli.c:75",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "lpush",
+   "anchor": "redis-cli.c:76",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "rpop",
+   "anchor": "redis-cli.c:77",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "lpop",
+   "anchor": "redis-cli.c:78",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "brpop",
+   "anchor": "redis-cli.c:79",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "blpop",
+   "anchor": "redis-cli.c:80",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "llen",
+   "anchor": "redis-cli.c:81",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "lindex",
+   "anchor": "redis-cli.c:82",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "lset",
+   "anchor": "redis-cli.c:83",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "lrange",
+   "anchor": "redis-cli.c:84",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "ltrim",
+   "anchor": "redis-cli.c:85",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "lrem",
+   "anchor": "redis-cli.c:86",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "rpoplpush",
+   "anchor": "redis-cli.c:87",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3) sent as bulk while the server table marks rpoplpush inline."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "sadd",
+   "anchor": "redis-cli.c:88",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "srem",
+   "anchor": "redis-cli.c:89",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "smove",
+   "anchor": "redis-cli.c:90",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "sismember",
+   "anchor": "redis-cli.c:91",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "scard",
+   "anchor": "redis-cli.c:92",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "spop",
+   "anchor": "redis-cli.c:93",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "srandmember",
+   "anchor": "redis-cli.c:94",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "sinter",
+   "anchor": "redis-cli.c:95",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "sinterstore",
+   "anchor": "redis-cli.c:96",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "sunion",
+   "anchor": "redis-cli.c:97",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "sunionstore",
+   "anchor": "redis-cli.c:98",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "sdiff",
+   "anchor": "redis-cli.c:99",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "sdiffstore",
+   "anchor": "redis-cli.c:100",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "smembers",
+   "anchor": "redis-cli.c:101",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zadd",
+   "anchor": "redis-cli.c:102",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zincrby",
+   "anchor": "redis-cli.c:103",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zrem",
+   "anchor": "redis-cli.c:104",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zremrangebyscore",
+   "anchor": "redis-cli.c:105",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zmerge",
+   "anchor": "redis-cli.c:106",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -3) with no redis-server command: the server answers unknown command."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zmergeweighed",
+   "anchor": "redis-cli.c:107",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -4) with no redis-server command: the server answers unknown command."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zrange",
+   "anchor": "redis-cli.c:108",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -4, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zrank",
+   "anchor": "redis-cli.c:109",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zrevrank",
+   "anchor": "redis-cli.c:110",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zrangebyscore",
+   "anchor": "redis-cli.c:111",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -4, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zcount",
+   "anchor": "redis-cli.c:112",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zrevrange",
+   "anchor": "redis-cli.c:113",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -4, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zcard",
+   "anchor": "redis-cli.c:114",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "zscore",
+   "anchor": "redis-cli.c:115",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "incrby",
+   "anchor": "redis-cli.c:116",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "decrby",
+   "anchor": "redis-cli.c:117",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "getset",
+   "anchor": "redis-cli.c:118",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "randomkey",
+   "anchor": "redis-cli.c:119",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "select",
+   "anchor": "redis-cli.c:120",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "move",
+   "anchor": "redis-cli.c:121",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "rename",
+   "anchor": "redis-cli.c:122",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "renamenx",
+   "anchor": "redis-cli.c:123",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "keys",
+   "anchor": "redis-cli.c:124",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "dbsize",
+   "anchor": "redis-cli.c:125",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "ping",
+   "anchor": "redis-cli.c:126",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "echo",
+   "anchor": "redis-cli.c:127",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "save",
+   "anchor": "redis-cli.c:128",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "bgsave",
+   "anchor": "redis-cli.c:129",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "rewriteaof",
+   "anchor": "redis-cli.c:130",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1) with no redis-server command: the server answers unknown command."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "bgrewriteaof",
+   "anchor": "redis-cli.c:131",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "shutdown",
+   "anchor": "redis-cli.c:132",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "lastsave",
+   "anchor": "redis-cli.c:133",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "type",
+   "anchor": "redis-cli.c:134",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "flushdb",
+   "anchor": "redis-cli.c:135",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "flushall",
+   "anchor": "redis-cli.c:136",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "sort",
+   "anchor": "redis-cli.c:137",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "info",
+   "anchor": "redis-cli.c:138",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "mget",
+   "anchor": "redis-cli.c:139",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "expire",
+   "anchor": "redis-cli.c:140",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "expireat",
+   "anchor": "redis-cli.c:141",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "ttl",
+   "anchor": "redis-cli.c:142",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "slaveof",
+   "anchor": "redis-cli.c:143",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "debug",
+   "anchor": "redis-cli.c:144",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "mset",
+   "anchor": "redis-cli.c:145",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -3, multibulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "msetnx",
+   "anchor": "redis-cli.c:146",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity -3, multibulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "monitor",
+   "anchor": "redis-cli.c:147",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1); the cli then prints replies forever."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "multi",
+   "anchor": "redis-cli.c:148",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "exec",
+   "anchor": "redis-cli.c:149",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "discard",
+   "anchor": "redis-cli.c:150",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 1, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "hset",
+   "anchor": "redis-cli.c:151",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 4, multibulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "hget",
+   "anchor": "redis-cli.c:152",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "hdel",
+   "anchor": "redis-cli.c:153",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "hlen",
+   "anchor": "redis-cli.c:154",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "hkeys",
+   "anchor": "redis-cli.c:155",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "hvals",
+   "anchor": "redis-cli.c:156",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "hgetall",
+   "anchor": "redis-cli.c:157",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 2, inline); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "commands",
+   "kind": "client-command",
+   "name": "hexists",
+   "anchor": "redis-cli.c:158",
+   "handler": "cliSendCommand",
+   "must": false,
+   "why": "Client cmdTable word (arity 3, bulk); validated locally, forwarded to the server."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "external",
+   "kind": "tcp-connection",
+   "name": "Redis server at -h/-p (default 127.0.0.1:6379)",
+   "anchor": "redis-cli.c:179",
+   "handler": "cliConnect",
+   "must": true,
+   "why": "anetTcpConnect once per process; replies are parsed by cliReadReply."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "external",
+   "kind": "dns",
+   "name": "host name resolution for -h",
+   "anchor": "redis-cli.c:386",
+   "handler": "anetResolve",
+   "must": false,
+   "why": "Resolves the -h argument before connecting."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "external",
+   "kind": "outgoing-protocol",
+   "name": "SELECT <db>",
+   "anchor": "redis-cli.c:299",
+   "handler": "selectDb",
+   "must": false,
+   "why": "Sent before the command when -n is non-zero."
+  },
+  {
+   "component": "redis-cli",
+   "inventory": "external",
+   "kind": "outgoing-protocol",
+   "name": "AUTH <password>",
+   "anchor": "redis-cli.c:477",
+   "handler": "repl",
+   "must": false,
+   "why": "Sent at the start of interactive mode when -a is given."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-h",
+   "anchor": "redis-benchmark.c:428",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "server host, default 127.0.0.1."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-p",
+   "anchor": "redis-benchmark.c:436",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "server port, default 6379."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-c",
+   "anchor": "redis-benchmark.c:419",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "number of parallel connections, default 50."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-n",
+   "anchor": "redis-benchmark.c:422",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "total number of requests, default 10000."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-d",
+   "anchor": "redis-benchmark.c:439",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "SET/GET value size in bytes, clamped to 1..1MB; default 3 in code (redis-benchmark.c:496) while the usage text says 2 (redis-benchmark.c:465)."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-k",
+   "anchor": "redis-benchmark.c:425",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "1 = keep alive, 0 = reconnect per request."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-r",
+   "anchor": "redis-benchmark.c:444",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "key space length for random _rand keys."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-q",
+   "anchor": "redis-benchmark.c:450",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "quiet: only requests per second."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-l",
+   "anchor": "redis-benchmark.c:452",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "loop the whole test sequence forever."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-D",
+   "anchor": "redis-benchmark.c:454",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "debug output (config.debug, used at redis-benchmark.c:189)."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "commands",
+   "kind": "flag",
+   "name": "-I",
+   "anchor": "redis-benchmark.c:456",
+   "handler": "parseOptions",
+   "must": true,
+   "why": "idle mode: open -c idle connections and wait forever instead of benchmarking (redis-benchmark.c:515)."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "external",
+   "kind": "tcp-connection",
+   "name": "Redis server at -h/-p (default 127.0.0.1:6379)",
+   "anchor": "redis-benchmark.c:343",
+   "handler": "createClient",
+   "must": true,
+   "why": "anetTcpNonBlockConnect per simulated client; -c connections share one ae event loop."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "external",
+   "kind": "dns",
+   "name": "host name resolution for -h",
+   "anchor": "redis-benchmark.c:430",
+   "handler": "anetResolve",
+   "must": false,
+   "why": "Resolves -h before connecting."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "external",
+   "kind": "outgoing-protocol",
+   "name": "fixed command mix: PING, PING (multi bulk), SET, GET, INCR, LPUSH, LPOP, SADD, SPOP, LRANGE 100/300/450/600",
+   "anchor": "redis-benchmark.c:531",
+   "handler": "main",
+   "must": false,
+   "why": "Hard-coded request payloads sent in sequence; not selectable by the user."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "workers",
+   "kind": "event-callback",
+   "name": "writeHandler",
+   "anchor": "redis-benchmark.c:357",
+   "handler": "writeHandler",
+   "must": false,
+   "why": "Writable file event per connection that sends the query buffer."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "workers",
+   "kind": "event-callback",
+   "name": "readHandler",
+   "anchor": "redis-benchmark.c:333",
+   "handler": "readHandler",
+   "must": false,
+   "why": "Readable file event per connection that parses replies and records latency."
+  },
+  {
+   "component": "redis-benchmark",
+   "inventory": "data",
+   "kind": "in-memory",
+   "name": "latency histogram (config.latency)",
+   "anchor": "redis-benchmark.c:504",
+   "handler": null,
+   "must": false,
+   "why": "Per-millisecond request counts used for the report."
+  },
+  {
+   "component": "redis-check-dump",
+   "inventory": "commands",
+   "kind": "arg",
+   "name": "<dump.rdb>",
+   "anchor": "redis-check-dump.c:627",
+   "handler": "main",
+   "must": true,
+   "why": "Single positional argument: the RDB file to check; without it usage is printed."
+  },
+  {
+   "component": "redis-check-dump",
+   "inventory": "data",
+   "kind": "input-file",
+   "name": "RDB dump file (read-only mmap)",
+   "anchor": "redis-check-dump.c:637",
+   "handler": "process",
+   "must": true,
+   "why": "Validates the REDIS0001 header and every opcode, reporting corrupt ranges; never writes."
+  },
+  {
+   "component": "utils/redis_init_script",
+   "inventory": "commands",
+   "kind": "subcommand",
+   "name": "start",
+   "anchor": "utils/redis_init_script:10",
+   "handler": null,
+   "must": false,
+   "why": "Starts redis-server with the port-specific config unless the pid file exists."
+  },
+  {
+   "component": "utils/redis_init_script",
+   "inventory": "commands",
+   "kind": "subcommand",
+   "name": "stop",
+   "anchor": "utils/redis_init_script:19",
+   "handler": null,
+   "must": false,
+   "why": "Sends SHUTDOWN via nc, waits, then removes the pid file."
+  },
+  {
+   "component": "utils/redis_init_script",
+   "inventory": "external",
+   "kind": "process-launch",
+   "name": "/usr/local/bin/redis-server /etc/redis/6379.conf",
+   "anchor": "utils/redis_init_script:16",
+   "handler": null,
+   "must": false,
+   "why": "Launches the server binary."
+  },
+  {
+   "component": "utils/redis_init_script",
+   "inventory": "external",
+   "kind": "process-launch",
+   "name": "nc localhost 6379 (SHUTDOWN)",
+   "anchor": "utils/redis_init_script:25",
+   "handler": null,
+   "must": false,
+   "why": "Pipes a SHUTDOWN request to the server with netcat."
+  },
+  {
+   "component": "utils/redis_init_script",
+   "inventory": "data",
+   "kind": "pid-file",
+   "name": "/var/run/redis_6379.pid",
+   "anchor": "utils/redis_init_script:6",
+   "handler": null,
+   "must": false,
+   "why": "Pid file the script checks; differs from the server default /var/run/redis.pid."
+  },
+  {
+   "component": "utils/redis_init_script",
+   "inventory": "data",
+   "kind": "config-file",
+   "name": "/etc/redis/6379.conf",
+   "anchor": "utils/redis_init_script:7",
+   "handler": null,
+   "must": false,
+   "why": "Config path passed to redis-server."
+  },
+  {
+   "component": "utils/redis-copy.rb",
+   "inventory": "commands",
+   "kind": "arg",
+   "name": "<srchost> <srcport> <dsthost> <dstport>",
+   "anchor": "utils/redis-copy.rb:68",
+   "handler": "redisCopy",
+   "must": false,
+   "why": "Four positional arguments; waits for a key press before copying."
+  },
+  {
+   "component": "utils/redis-copy.rb",
+   "inventory": "external",
+   "kind": "client-lib-connection",
+   "name": "source Redis (redis gem)",
+   "anchor": "utils/redis-copy.rb:17",
+   "handler": "redisCopy",
+   "must": false,
+   "why": "Reads KEYS * and values from the source."
+  },
+  {
+   "component": "utils/redis-copy.rb",
+   "inventory": "external",
+   "kind": "client-lib-connection",
+   "name": "destination Redis (redis gem)",
+   "anchor": "utils/redis-copy.rb:18",
+   "handler": "redisCopy",
+   "must": false,
+   "why": "Writes strings, lists, sets and TTLs to the destination."
+  },
+  {
+   "component": "utils/redis-sha1.rb",
+   "inventory": "commands",
+   "kind": "arg",
+   "name": "[host] [port] [db]",
+   "anchor": "utils/redis-sha1.rb:48",
+   "handler": "redisSha1",
+   "must": false,
+   "why": "Optional positional arguments, defaults 127.0.0.1 6379 0."
+  },
+  {
+   "component": "utils/redis-sha1.rb",
+   "inventory": "external",
+   "kind": "client-lib-connection",
+   "name": "Redis server (redis gem)",
+   "anchor": "utils/redis-sha1.rb:17",
+   "handler": "redisSha1",
+   "must": false,
+   "why": "Reads every key to compute a dataset SHA1."
+  },
+  {
+   "component": "utils/build-static-symbols.tcl",
+   "inventory": "data",
+   "kind": "input-file",
+   "name": "redis.c",
+   "anchor": "utils/build-static-symbols.tcl:7",
+   "handler": null,
+   "must": false,
+   "why": "Scans static function names; 'make staticsymbols' redirects its output to staticsymbols.h."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "all",
+   "anchor": "Makefile:27",
+   "handler": null,
+   "must": false,
+   "why": "Build target: builds the four programs."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "clean",
+   "anchor": "Makefile:69",
+   "handler": null,
+   "must": false,
+   "why": "Build target: removes binaries and objects."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "dep",
+   "anchor": "Makefile:72",
+   "handler": null,
+   "must": false,
+   "why": "Build target: prints header dependencies."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "staticsymbols",
+   "anchor": "Makefile:75",
+   "handler": null,
+   "must": false,
+   "why": "Build target: regenerates staticsymbols.h."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "test",
+   "anchor": "Makefile:78",
+   "handler": null,
+   "must": false,
+   "why": "Build target: runs tclsh test-redis.tcl against a running server."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "bench",
+   "anchor": "Makefile:81",
+   "handler": null,
+   "must": false,
+   "why": "Build target: runs ./redis-benchmark."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "log",
+   "anchor": "Makefile:84",
+   "handler": null,
+   "must": false,
+   "why": "Build target: regenerates Changelog from git log."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "32bit",
+   "anchor": "Makefile:87",
+   "handler": null,
+   "must": false,
+   "why": "Build target: builds with -m32."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "gprof",
+   "anchor": "Makefile:93",
+   "handler": null,
+   "must": false,
+   "why": "Build target: builds with -pg."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "gcov",
+   "anchor": "Makefile:96",
+   "handler": null,
+   "must": false,
+   "why": "Build target: builds with coverage flags."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "noopt",
+   "anchor": "Makefile:99",
+   "handler": null,
+   "must": false,
+   "why": "Build target: builds without optimization."
+  },
+  {
+   "component": "Makefile",
+   "inventory": "commands",
+   "kind": "make-target",
+   "name": "32bitgprof",
+   "anchor": "Makefile:102",
+   "handler": null,
+   "must": false,
+   "why": "Build target: builds 32-bit with -pg."
+  },
+  {
+   "component": "redis-server",
+   "inventory": "workers",
+   "kind": "main-loop",
+   "name": "aeMain event loop",
+   "anchor": "redis.c:9153",
+   "handler": "aeMain",
+   "must": false,
+   "why": "main's last call: blocks in the event loop, running beforeSleep and aeProcessEvents until stop is set.",
+   "flow": true
+  }
+ ],
+ "not": [
+  {
+   "component": "redis-server",
+   "name": "vm-max-threads (second branch)",
+   "anchor": "redis.c:1775",
+   "reason": "Duplicate directive branch; unreachable because the branch at redis.c:1769 matches first."
+  },
+  {
+   "component": "redis-server",
+   "name": "appendfilename",
+   "anchor": "redis.c:1494",
+   "reason": "Not a config directive in 1.3.6: appendonly.aof is a fixed default with no parser branch."
+  },
+  {
+   "component": "redis-server",
+   "name": "debug / verbose / notice / warning",
+   "anchor": "redis.c:1672",
+   "reason": "Values of the loglevel setting, not settings."
+  },
+  {
+   "component": "redis-server",
+   "name": "no / always / everysec",
+   "anchor": "redis.c:1740",
+   "reason": "Values of the appendfsync setting."
+  },
+  {
+   "component": "redis-server",
+   "name": "stdout",
+   "anchor": "redis.c:1684",
+   "reason": "Value of the logfile setting meaning standard output."
+  },
+  {
+   "component": "redis-server",
+   "name": "yes / no",
+   "anchor": "redis.c:1605",
+   "reason": "Boolean values accepted by several directives."
+  },
+  {
+   "component": "redis-server",
+   "name": "- (config path)",
+   "anchor": "redis.c:1618",
+   "reason": "Value of the config-path argument meaning stdin, not a flag."
+  },
+  {
+   "component": "redis-server",
+   "name": "asc / desc / alpha / limit / store / by / get",
+   "anchor": "redis.c:6240",
+   "reason": "SORT argument keywords; 'get' here is not the GET command."
+  },
+  {
+   "component": "redis-server",
+   "name": "weights / aggregate / sum / min / max",
+   "anchor": "redis.c:5464",
+   "reason": "ZUNION/ZINTER argument keywords."
+  },
+  {
+   "component": "redis-server",
+   "name": "withscores",
+   "anchor": "redis.c:5595",
+   "reason": "ZRANGE/ZREVRANGE argument keyword."
+  },
+  {
+   "component": "redis-server",
+   "name": "limit (zrangebyscore)",
+   "anchor": "redis.c:5697",
+   "reason": "ZRANGEBYSCORE/ZCOUNT argument keyword."
+  },
+  {
+   "component": "redis-server",
+   "name": "no one",
+   "anchor": "redis.c:7326",
+   "reason": "SLAVEOF arguments meaning become a master again."
+  },
+  {
+   "component": "redis-server",
+   "name": "segfault / reload / loadaof / object / swapout",
+   "anchor": "redis.c:8977",
+   "reason": "DEBUG subcommand arguments, not separate requests."
+  },
+  {
+   "component": "redis-server",
+   "name": "DEBUG [SEGFAULT|OBJECT <key>|SWAPOUT <key>|RELOAD]",
+   "anchor": "redis.c:9063",
+   "reason": "Words inside an error reply."
+  },
+  {
+   "component": "redis-server",
+   "name": "redis_version / role / used_memory ... (INFO fields)",
+   "anchor": "redis.c:6491",
+   "reason": "Fields inside the INFO reply."
+  },
+  {
+   "component": "redis-server",
+   "name": "raw / int / zipmap / hashtable",
+   "anchor": "redis.c:131",
+   "reason": "Encoding names printed in DEBUG OBJECT replies."
+  },
+  {
+   "component": "redis-server",
+   "name": "select 0 .. select 9",
+   "anchor": "redis.c:1452",
+   "reason": "Shared objects written into the slave/monitor stream, not requests handled here."
+  },
+  {
+   "component": "redis-server",
+   "name": "SELECT / EXPIREAT written to the AOF",
+   "anchor": "redis.c:7427",
+   "reason": "Records written to the append-only file (EXPIRE is logged as EXPIREAT)."
+  },
+  {
+   "component": "redis-server",
+   "name": "AUTH / SYNC strings in syncWithMaster",
+   "anchor": "redis.c:7252",
+   "reason": "Outgoing requests to the master; the served handlers are authCommand and syncCommand in cmdTable."
+  },
+  {
+   "component": "redis-server",
+   "name": "REDIS_CMD_INLINE / REDIS_CMD_BULK / REDIS_CMD_DENYOOM",
+   "anchor": "redis.c:107",
+   "reason": "Command table flags, not commands."
+  },
+  {
+   "component": "redis-server",
+   "name": "REDIS_SERVERPORT 6379",
+   "anchor": "redis.c:85",
+   "reason": "Compiled default of the port setting, not a separate setting."
+  },
+  {
+   "component": "redis-server",
+   "name": "daemonize fork",
+   "anchor": "redis.c:9104",
+   "reason": "The parent exits and the child is the server itself; not background work."
+  },
+  {
+   "component": "redis-server",
+   "name": "readQueryFromClient / sendReplyToClient file events",
+   "anchor": "redis.c:2456",
+   "reason": "Per-connection request I/O plumbing, not background workers."
+  },
+  {
+   "component": "redis-server",
+   "name": "symsTable",
+   "anchor": "staticsymbols.h:1",
+   "reason": "Generated function-name table for crash backtraces, not a command table."
+  },
+  {
+   "component": "redis-server",
+   "name": "design-documents/REDIS-CLUSTER",
+   "anchor": "design-documents/REDIS-CLUSTER:1",
+   "reason": "Unimplemented cluster proposal; no cluster code, requests or connections exist."
+  },
+  {
+   "component": "redis-server",
+   "name": "doc/*Command.html",
+   "anchor": "doc/QuitCommand.html:22",
+   "reason": "Documentation pages, not handlers."
+  },
+  {
+   "component": "redis-cli",
+   "name": "redis-cli cmdTable as requests",
+   "anchor": "redis-cli.c:64",
+   "reason": "Client-side command table: redis-cli serves nothing, and the table does not define what the server accepts."
+  },
+  {
+   "component": "redis-cli",
+   "name": "zmerge / zmergeweighed / rewriteaof as server commands",
+   "anchor": "redis-cli.c:106",
+   "reason": "Only in the client table (also redis-cli.c:107, 130); redis-server has no such commands."
+  },
+  {
+   "component": "redis-cli",
+   "name": "zunion / zinter / zremrangebyrank / sync as redis-cli commands",
+   "anchor": "redis.c:746",
+   "reason": "Server commands missing from the client table; redis-cli rejects them locally as unknown."
+  },
+  {
+   "component": "redis-cli",
+   "name": "MONITOR read_forever loop",
+   "anchor": "redis-cli.c:366",
+   "reason": "Foreground blocking read, not a worker."
+  },
+  {
+   "component": "redis-benchmark",
+   "name": "PING / SET / GET / INCR / LPUSH / LPOP / SADD / SPOP / LRANGE payloads and report titles",
+   "anchor": "redis-benchmark.c:531",
+   "reason": "Hard-coded outgoing requests and labels; not commands the user types and not requests served."
+  },
+  {
+   "component": "redis-check-dump",
+   "name": "STRING / LIST / SET / ZSET / HASH / EXPIRETIME / SELECTDB / EOF",
+   "anchor": "redis-check-dump.c:649",
+   "reason": "Type labels for the report output."
+  },
+  {
+   "component": "test",
+   "name": "test-redis.tcl",
+   "anchor": "test-redis.tcl:229",
+   "reason": "Test-only suite (make test); its -h/-p/-stress/--flush/--first/--last options (test-redis.tcl:2037-2050) and 'exec leaks redis-server' are not product items."
+  },
+  {
+   "component": "test",
+   "name": "zipmap.c main (ZIPMAP_TEST_MAIN)",
+   "anchor": "zipmap.c:412",
+   "reason": "Self-test main compiled only with -DZIPMAP_TEST_MAIN; no Makefile target builds it, so it is not a program or entry point."
+  },
+  {
+   "component": "redis-server",
+   "name": "/dev/null (server.devnull)",
+   "anchor": "redis.c:1539",
+   "reason": "Sink stream used to measure serialized object length (redis.c:3242); not a file the server owns."
+  },
+  {
+   "component": "Makefile",
+   "name": "OPTIMIZATION / ARCH / PROF / CFLAGS / CCLINK / DEBUG",
+   "anchor": "Makefile:6",
+   "reason": "Make variables (?= can be overridden from the environment at build time); no built program reads an environment variable."
+  },
+  {
+   "component": "test",
+   "name": "redis.tcl bulkarg / multibulkarg lists",
+   "anchor": "redis.tcl:22",
+   "reason": "Tcl client library used by the tests; its command lists are client-side, not server requests."
+  },
+  {
+   "component": "utils/redis_init_script",
+   "name": "REDISPORT",
+   "anchor": "utils/redis_init_script:3",
+   "reason": "Shell variable assigned in the script, not an environment variable read."
+  },
+  {
+   "component": "utils/redis-copy.rb",
+   "name": "'redis-sha1.rb' header comment",
+   "anchor": "utils/redis-copy.rb:1",
+   "reason": "Copy-pasted header; the file is the copy tool."
+  }
+ ],
+ "notes": [
+  "Components: the Makefile builds four programs (redis-server, redis-cli, redis-benchmark, redis-check-dump) and no library; shared objects (ae, anet, sds, adlist, zmalloc, lzf) are linked into several programs. utils/* scripts and Makefile targets are included with must=false only.",
+  "All 95 redis-server cmdTable entries plus QUIT (special-cased in processCommand) are must requests; the handler is the cmdTable function (smembers is served by sinterCommand).",
+  "redis-cli command words are listed as commands (kind client-command, must=false each); the single must item is '<command> [arg ...]'. The client table differs from the server: client-only zmerge, zmergeweighed, rewriteaof; server-only sync, zunion, zinter, zremrangebyrank; rpoplpush is bulk on the client but inline on the server.",
+  "redis-cli -a is only honoured in interactive mode: repl() sends AUTH (redis-cli.c:472-477); one-shot mode never sends it.",
+  "No environment variables are read by any C program (no getenv). Make variables (OPTIMIZATION, ARCH, PROF, CFLAGS, DEBUG) exist in the Makefile but are not listed.",
+  "When a config file is given, the three default save points (redis.c:1514-1516) are cleared first (redis.c:9129); only the file's save lines apply.",
+  "hash-max-zipmap-entries/value are parsed, but genRedisInfoString resets both to their compiled defaults each time INFO runs (redis.c:6486-6487).",
+  "Replication to slaves is master-side output over inbound connections (replicationFeedSlaves, sendBulkToSlave); only the slave side opens an outgoing connection (syncWithMaster). Listed as external must=false / worker must=false accordingly.",
+  "serverCron sub-steps are listed separately as cron-step workers with must=false; serverCron itself is the must timer.",
+  "VM (swap file, I/O threads) is off by default (vm-enabled no in redis.conf) but is a real code path; its swap file and threads are marked must.",
+  "The working tree also contains build outputs (*.o and the four binaries); they are untracked and git-ignored (.gitignore:2-8), not committed, and are not inventory items."
+ ],
+ "review_summary": "Reviewer (read-only, code only): opened every must=true anchor (96 requests, 31 redis-server commands, 4 workers, 1 external, 4 data, 7 redis-cli commands + 1 external, 9->11 redis-benchmark flags + 1 external, 2 redis-check-dump items); all land on the named code with the right handler. Independent greps (cmdTable, loadServerConfig branches, fork/pthread_create/aeCreateTimeEvent/aeCreateFileEvent, fopen/open/rename, anetTcpConnect/anetTcpServer, getenv, argv parsing in the four mains) found no missing must item. All 37 original traps verified at their anchors. Edits were made in _gen/gen_redis.py and the JSON regenerated.",
+ "review": [
+  {
+   "change": "redis-benchmark flag -D: must false -> true",
+   "anchor": "redis-benchmark.c:454",
+   "why": "Owner definition: commands are CLI flags. -D is live (config.debug read at redis-benchmark.c:189) and printed in usage; no rule exempts debug flags, and every redis-cli flag is must."
+  },
+  {
+   "change": "redis-benchmark flag -I: must false -> true",
+   "anchor": "redis-benchmark.c:456",
+   "why": "Owner definition: commands are CLI flags. -I switches the program to idle mode (redis-benchmark.c:515) and is printed in usage."
+  },
+  {
+   "change": "redis-benchmark flag -d: why text adds the real default",
+   "anchor": "redis-benchmark.c:496",
+   "why": "Code default is 3 bytes; the usage text claims 2 (redis-benchmark.c:465). A claim of 'default 2' quotes the usage, not behaviour."
+  },
+  {
+   "change": "temp-rewriteaof-bg-<pid>.aof: why text cites the rename at redis.c:1221",
+   "anchor": "redis.c:7882",
+   "why": "redis.c:1205 is the temp-name snprintf in backgroundRewriteDoneHandler; the rename onto appendonly.aof is redis.c:1221."
+  },
+  {
+   "change": "added redis-server external dns 'host name resolution for the master host' (must=false)",
+   "anchor": "anet.c:145",
+   "why": "Same shape as the redis-cli and redis-benchmark dns items: anetTcpConnect resolves masterhost with gethostbyname."
+  },
+  {
+   "change": "added trap 'zipmap.c main (ZIPMAP_TEST_MAIN)'",
+   "anchor": "zipmap.c:412",
+   "why": "A second int main in the C sources; only a -DZIPMAP_TEST_MAIN build compiles it and the Makefile never does."
+  },
+  {
+   "change": "added trap '/dev/null (server.devnull)'",
+   "anchor": "redis.c:1539",
+   "why": "fopen of a path at startup that is not owned data (used as a length-measuring sink, redis.c:3242)."
+  },
+  {
+   "change": "added trap 'OPTIMIZATION / ARCH / PROF / CFLAGS / CCLINK / DEBUG'",
+   "anchor": "Makefile:6",
+   "why": "Owner definition lists env vars as commands; these are build-time make variables, not environment read by a program (no getenv anywhere). Promoted from a note to a trap."
+  },
+  {
+   "change": "trap test-redis.tcl: reason lists --first/--last too",
+   "anchor": "test-redis.tcl:2037",
+   "why": "The option loop also accepts --first and --last."
+  },
+  {
+   "change": "note on build outputs: 'committed' -> 'untracked and git-ignored'",
+   "anchor": ".gitignore:2",
+   "why": "git ls-files lists no *.o or binaries; .gitignore:2-8 ignores them."
+  }
+ ],
+ "errata": [
+  {
+   "date": "2026-09-29",
+   "item": "redis-server / workers / background save child (BGSAVE) (redis.c:3360)",
+   "change": "must true -> false",
+   "reason": "A forked child is how BGSAVE / BGREWRITEAOF / SYNC / a save point do their work, not a way into the program; the ways in (the bgsave, bgrewriteaof and sync commands, the serverCron save-point check) and the files (dump.rdb, appendonly.aof, the temp files) stay must/may items, so the child remains findable on the bgsave/dump.rdb path.",
+   "citation": "redis.c:3360 fork() in rdbSaveBackground; started from bgsaveCommand redis.c:4117 (cmdTable redis.c:782), syncCommand redis.c:7090, the serverCron save point redis.c:1322 and redis.c:7201"
+  },
+  {
+   "date": "2026-09-29",
+   "item": "redis-server / workers / background AOF rewrite child (BGREWRITEAOF) (redis.c:7876)",
+   "change": "must true -> false",
+   "reason": "A forked child is how BGSAVE / BGREWRITEAOF / SYNC / a save point do their work, not a way into the program; the ways in (the bgsave, bgrewriteaof and sync commands, the serverCron save-point check) and the files (dump.rdb, appendonly.aof, the temp files) stay must/may items, so the child remains findable on the bgsave/dump.rdb path.",
+   "citation": "redis.c:7876 fork() in rewriteAppendOnlyFileBackground; started only from bgrewriteaofCommand redis.c:7914 (cmdTable redis.c:783)"
+  },
+  {
+   "date": "2026-09-29",
+   "item": "not / redis-server / aeMain event loop (redis.c:9153)",
+   "change": "added \"flow\": true (still a trap as a worker)",
+   "reason": "Consistency with the freqtrade and litestream flow marks: the program's own foreground loop belongs to the Main flow, not to workers. Redis keeps it as a trap (listing it as a worker is wrong); the other two inventories carry their loops as must=false workers items with flow=true.",
+   "citation": "redis.c:9153 aeMain(server.el) in main"
+  },
+  {
+   "date": "2026-09-29",
+   "item": "not / redis-server / aeMain event loop (redis.c:9153)",
+   "change": "trap -> item redis-server / workers / aeMain event loop: must false, \"flow\": true",
+   "reason": "The program's own foreground loop is scored against the Main flow, like freqtrade's Worker.run and litestream's restore follow loop (must=false workers items with flow=true), so the three repositories score their main loops alike. A workers row on it is an extra, not a trap hit.",
+   "citation": "redis.c:9153 aeMain(server.el) in main, its last call before aeDeleteEventLoop (redis.c:9154); ae.c:375-381 aeMain loops over eventLoop->beforesleep and aeProcessEvents until eventLoop->stop"
+  }
+ ]
+}

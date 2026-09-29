@@ -1,0 +1,607 @@
+{
+ "repository": "othello",
+ "path": "~/git/othello",
+ "revision": "b8130da8608698667dc78b0c2f7cf4120f65111e",
+ "components": [
+  {
+   "name": "othello-desktop",
+   "kind": "program (JVM, Quil/Processing window)",
+   "built_by": "deps.edn:25 (:run)",
+   "entry": "src/othello/core.clj:5 -main -> src/othello/ui/sketch.clj:36 start!",
+   "sources": "src/othello/core.clj, src/othello/ui/sketch.clj + shared .cljc (board, rules, game, ai, ui/*)"
+  },
+  {
+   "name": "othello-web",
+   "kind": "program (ClojureScript browser bundle, p5 canvas)",
+   "built_by": "shadow-cljs.edn:6 (:app) via deps.edn:27 (:web)",
+   "entry": "src/othello/ui/web.cljs:40 defsketch, init at src/othello/ui/web.cljs:51",
+   "sources": "src/othello/ui/web.cljs, public/index.html + shared .cljc"
+  },
+  {
+   "name": "dev-tooling",
+   "kind": "developer aliases (not programs of the repository)",
+   "built_by": "deps.edn:4-24"
+  }
+ ],
+ "items": [
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "alias",
+   "name": "clj -M:run",
+   "anchor": "deps.edn:25",
+   "handler": "othello.core/-main",
+   "must": true,
+   "why": "deps.edn alias that adds Quil and runs -m othello.core; the only way to start the desktop game."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "alias",
+   "name": "clj -M:web watch app",
+   "anchor": "deps.edn:27",
+   "handler": "othello.ui.web/init",
+   "must": true,
+   "why": "Runs shadow-cljs; build :app (shadow-cljs.edn:6) compiles to public/js with init-fn othello.ui.web/init; page at localhost:8080/index.html."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":n -> :new-game",
+   "anchor": "src/othello/ui/events.cljc:211",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: new game with the same colour; wired via :key-pressed host/on-key (src/othello/ui/sketch.clj:45)."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":u -> :undo",
+   "anchor": "src/othello/ui/events.cljc:212",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: undo the last turn (you + computer), or cancel an animation; wired via :key-pressed host/on-key (src/othello/ui/sketch.clj:45)."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":h -> :hints",
+   "anchor": "src/othello/ui/events.cljc:213",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: toggle legal-move hints; wired via :key-pressed host/on-key (src/othello/ui/sketch.clj:45)."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":1 -> :play-black",
+   "anchor": "src/othello/ui/events.cljc:214",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: restart playing Black (you move first); wired via :key-pressed host/on-key (src/othello/ui/sketch.clj:45)."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":2 -> :play-white",
+   "anchor": "src/othello/ui/events.cljc:215",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: restart playing White (computer opens); wired via :key-pressed host/on-key (src/othello/ui/sketch.clj:45)."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "mouse",
+   "name": "click a board square",
+   "anchor": "src/othello/ui/events.cljc:174",
+   "handler": "handle-board-click",
+   "must": true,
+   "why": "Main move input: a legal square starts the move animation, an illegal one flashes; wired via :mouse-pressed (src/othello/ui/sketch.clj:43)."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :new-game (New Game)",
+   "anchor": "src/othello/ui/layout.cljc:47",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :undo (Undo)",
+   "anchor": "src/othello/ui/layout.cljc:48",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :play-black (Play Black)",
+   "anchor": "src/othello/ui/layout.cljc:49",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :play-white (Play White)",
+   "anchor": "src/othello/ui/layout.cljc:50",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :hints (Hints)",
+   "anchor": "src/othello/ui/layout.cljc:51",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "commands",
+   "kind": "mouse",
+   "name": "mouse move (hover ghost disc)",
+   "anchor": "src/othello/ui/events.cljc:231",
+   "handler": "on-mouse-move",
+   "must": false,
+   "why": "Stores the pointer; the view shows a ghost disc and hand cursor on legal squares; wired via :mouse-moved (src/othello/ui/sketch.clj:44)."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":n -> :new-game",
+   "anchor": "src/othello/ui/events.cljc:211",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: new game with the same colour; wired via :key-pressed host/on-key (src/othello/ui/web.cljs:48)."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":u -> :undo",
+   "anchor": "src/othello/ui/events.cljc:212",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: undo the last turn (you + computer), or cancel an animation; wired via :key-pressed host/on-key (src/othello/ui/web.cljs:48)."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":h -> :hints",
+   "anchor": "src/othello/ui/events.cljc:213",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: toggle legal-move hints; wired via :key-pressed host/on-key (src/othello/ui/web.cljs:48)."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":1 -> :play-black",
+   "anchor": "src/othello/ui/events.cljc:214",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: restart playing Black (you move first); wired via :key-pressed host/on-key (src/othello/ui/web.cljs:48)."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "key",
+   "name": ":2 -> :play-white",
+   "anchor": "src/othello/ui/events.cljc:215",
+   "handler": "handle-button",
+   "must": true,
+   "why": "Key binding in key->command: restart playing White (computer opens); wired via :key-pressed host/on-key (src/othello/ui/web.cljs:48)."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "mouse",
+   "name": "click a board square",
+   "anchor": "src/othello/ui/events.cljc:174",
+   "handler": "handle-board-click",
+   "must": true,
+   "why": "Main move input: a legal square starts the move animation, an illegal one flashes; wired via :mouse-pressed (src/othello/ui/web.cljs:46)."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :new-game (New Game)",
+   "anchor": "src/othello/ui/layout.cljc:47",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :undo (Undo)",
+   "anchor": "src/othello/ui/layout.cljc:48",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :play-black (Play Black)",
+   "anchor": "src/othello/ui/layout.cljc:49",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :play-white (Play White)",
+   "anchor": "src/othello/ui/layout.cljc:50",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "button",
+   "name": "sidebar button :hints (Hints)",
+   "anchor": "src/othello/ui/layout.cljc:51",
+   "handler": "handle-button",
+   "must": false,
+   "why": "Sidebar button hit-tested by button-at; same command as its key."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "commands",
+   "kind": "mouse",
+   "name": "mouse move (hover ghost disc)",
+   "anchor": "src/othello/ui/events.cljc:231",
+   "handler": "on-mouse-move",
+   "must": false,
+   "why": "Stores the pointer; the view shows a ghost disc and hand cursor on legal squares; wired via :mouse-moved (src/othello/ui/web.cljs:47)."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "workers",
+   "kind": "future",
+   "name": "AI move search in a future",
+   "anchor": "src/othello/ui/sketch.clj:29",
+   "handler": "launch-ai",
+   "must": true,
+   "why": "Runs ai/move (negamax, alpha-beta, iterative deepening, 1200 ms budget) off the sketch thread; polled with realized?."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "workers",
+   "kind": "frame-loop",
+   "name": "Quil :update frame loop (60 fps)",
+   "anchor": "src/othello/ui/sketch.clj:41",
+   "handler": "update-state",
+   "must": true,
+   "why": "Every frame: host/update-state -> events/on-frame ticks animations, pass notice and AI job; launches the future when needed."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "workers",
+   "kind": "frame-loop",
+   "name": "Quil :draw per frame",
+   "anchor": "src/othello/ui/sketch.clj:42",
+   "handler": "othello.ui.draw/draw-state",
+   "must": false,
+   "why": "Paints the view model each frame."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "workers",
+   "kind": "timer",
+   "name": "AI move search via js/setTimeout (20 ms)",
+   "anchor": "src/othello/ui/web.cljs:29",
+   "handler": "launch-ai",
+   "must": true,
+   "why": "Defers ai/move (400 ms budget) to a timeout on the browser main thread; the result lands in an atom polled each frame."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "workers",
+   "kind": "frame-loop",
+   "name": "Quil :update frame loop (60 fps)",
+   "anchor": "src/othello/ui/web.cljs:44",
+   "handler": "update-state",
+   "must": true,
+   "why": "Every frame: host/update-state -> events/on-frame ticks animations and launches the AI timeout when needed."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "workers",
+   "kind": "frame-loop",
+   "name": "Quil :draw per frame",
+   "anchor": "src/othello/ui/web.cljs:45",
+   "handler": "othello.ui.draw/draw-state",
+   "must": false,
+   "why": "Paints the view model each frame on the p5 canvas."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "external",
+   "kind": "cdn-script",
+   "name": "https://cdn.jsdelivr.net/npm/p5@1.7.0/lib/p5.min.js",
+   "anchor": "public/index.html:26",
+   "handler": null,
+   "must": true,
+   "why": "The browser fetches p5 from jsDelivr; the bundle resolves \"p5\" to this global (shadow-cljs.edn:10)."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "data",
+   "kind": "in-memory-store",
+   "name": "UI state map (Quil fun-mode state)",
+   "anchor": "src/othello/ui/events.cljc:8",
+   "handler": "fresh-ui",
+   "must": true,
+   "why": "Single state map: :game, :phase, :pointer, :animation, :hints?, frame counters, :ai and :ai-job; threaded through every handler.",
+   "struct": "map built by othello.ui.events/fresh-ui (events.cljc:10-23); :game from othello.game/new-game"
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "data",
+   "kind": "in-memory",
+   "name": "game map with :board, :moves and :history",
+   "anchor": "src/othello/game.cljc:5",
+   "handler": "new-game",
+   "must": false,
+   "why": "Game record; :history holds snapshots (game.cljc:34) used by undo."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "data",
+   "kind": "in-memory",
+   "name": "board vector of 64 cells",
+   "anchor": "src/othello/board.cljc:50",
+   "handler": "initial-board",
+   "must": false,
+   "why": "Flat vector of :empty/:black/:white indexed row*8+col."
+  },
+  {
+   "component": "othello-desktop",
+   "inventory": "data",
+   "kind": "constant-table",
+   "name": "positional weights table",
+   "anchor": "src/othello/ai/eval.cljc:5",
+   "handler": null,
+   "must": false,
+   "why": "Static 64-entry evaluation weights used by the AI."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "data",
+   "kind": "in-memory-store",
+   "name": "UI state map (Quil fun-mode state)",
+   "anchor": "src/othello/ui/events.cljc:8",
+   "handler": "fresh-ui",
+   "must": true,
+   "why": "Single state map: :game, :phase, :pointer, :animation, :hints?, frame counters, :ai and :ai-job; threaded through every handler.",
+   "struct": "map built by othello.ui.events/fresh-ui (events.cljc:10-23); :game from othello.game/new-game"
+  },
+  {
+   "component": "othello-web",
+   "inventory": "data",
+   "kind": "in-memory",
+   "name": "game map with :board, :moves and :history",
+   "anchor": "src/othello/game.cljc:5",
+   "handler": "new-game",
+   "must": false,
+   "why": "Game record; :history holds snapshots (game.cljc:34) used by undo."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "data",
+   "kind": "in-memory",
+   "name": "board vector of 64 cells",
+   "anchor": "src/othello/board.cljc:50",
+   "handler": "initial-board",
+   "must": false,
+   "why": "Flat vector of :empty/:black/:white indexed row*8+col."
+  },
+  {
+   "component": "othello-web",
+   "inventory": "data",
+   "kind": "constant-table",
+   "name": "positional weights table",
+   "anchor": "src/othello/ai/eval.cljc:5",
+   "handler": null,
+   "must": false,
+   "why": "Static 64-entry evaluation weights used by the AI."
+  },
+  {
+   "component": "dev-tooling",
+   "inventory": "commands",
+   "kind": "alias",
+   "name": "clj -M:spec",
+   "anchor": "deps.edn:4",
+   "handler": null,
+   "must": false,
+   "why": "Developer alias: runs the Speclj suite in spec/."
+  },
+  {
+   "component": "dev-tooling",
+   "inventory": "commands",
+   "kind": "alias",
+   "name": "clj -M:cov",
+   "anchor": "deps.edn:7",
+   "handler": null,
+   "must": false,
+   "why": "Developer alias: runs Speclj under Cloverage (lcov); not in the README."
+  },
+  {
+   "component": "dev-tooling",
+   "inventory": "commands",
+   "kind": "alias",
+   "name": "clj -M:crap",
+   "anchor": "deps.edn:14",
+   "handler": null,
+   "must": false,
+   "why": "Developer alias: runs crap4clj (coverage + complexity report)."
+  },
+  {
+   "component": "dev-tooling",
+   "inventory": "commands",
+   "kind": "alias",
+   "name": "clj -M:mutate <file>",
+   "anchor": "deps.edn:18",
+   "handler": null,
+   "must": false,
+   "why": "Developer alias: runs clj-mutate mutation testing on one source file."
+  }
+ ],
+ "not": [
+  {
+   "component": "othello-web",
+   "name": "dev-http 8080 (index.html)",
+   "anchor": "shadow-cljs.edn:3",
+   "reason": "shadow-cljs's static dev server for public/; the repository defines no request handler."
+  },
+  {
+   "component": "othello-web",
+   "name": "nREPL port 7888",
+   "anchor": "shadow-cljs.edn:2",
+   "reason": "shadow-cljs development REPL port, not a product endpoint."
+  },
+  {
+   "component": "othello-web",
+   "name": ":after-load othello.ui.web/init",
+   "anchor": "shadow-cljs.edn:11",
+   "reason": "Hot-reload hook of the dev build, not a worker."
+  },
+  {
+   "component": "othello-web",
+   "name": "/js/main.js",
+   "anchor": "public/index.html:27",
+   "reason": "The app's own compiled bundle from the same origin, not an external service."
+  },
+  {
+   "component": "othello-web",
+   "name": "p5 npm dependency",
+   "anchor": "package.json:5",
+   "reason": "Not bundled: shadow-cljs resolves \"p5\" to the global loaded from the CDN script."
+  },
+  {
+   "component": "othello-web",
+   "name": "public/js output dir",
+   "anchor": "shadow-cljs.edn:7",
+   "reason": "Build output written by shadow-cljs, not runtime data."
+  },
+  {
+   "component": "othello-desktop",
+   "name": "-main arguments",
+   "anchor": "src/othello/core.clj:5",
+   "reason": "-main ignores its arguments; the desktop game has no flags or subcommands."
+  },
+  {
+   "component": "othello-desktop",
+   "name": "right mouse button",
+   "anchor": "src/othello/ui/host.cljc:18",
+   "reason": "Right clicks are explicitly ignored; not a command."
+  },
+  {
+   "component": "othello-desktop",
+   "name": "q/create-font \"SansSerif\"",
+   "anchor": "src/othello/ui/sketch.clj:16",
+   "reason": "Java logical font resolved by the local JVM; not an external load, file or service."
+  },
+  {
+   "component": "othello-desktop",
+   "name": "\"N new   U undo   H hints\" / \"1 play black   2 play white\"",
+   "anchor": "src/othello/ui/draw.cljc:149",
+   "reason": "Help text painted in the sidebar; the bindings live in key->command."
+  },
+  {
+   "component": "othello-desktop",
+   "name": "button labels \"New Game\", \"Undo\", ...",
+   "anchor": "src/othello/ui/layout.cljc:47",
+   "reason": "Display labels; commands are dispatched by :id in handle-button."
+  },
+  {
+   "component": "othello-desktop",
+   "name": "events/tick-ai",
+   "anchor": "src/othello/ui/events.cljc:156",
+   "reason": "Synchronous AI path used only by specs (spec/othello/spec_helper.clj:54), not a worker."
+  },
+  {
+   "component": "othello-desktop",
+   "name": "timed-deepen deadline",
+   "anchor": "src/othello/ai/search.cljc:84",
+   "reason": "Time budget checked inside the synchronous search, not a timer."
+  },
+  {
+   "component": "othello-desktop",
+   "name": "anim frame constants",
+   "anchor": "src/othello/ui/anim.cljc:3",
+   "reason": "Frame counts consumed by the frame loop, not timers."
+  },
+  {
+   "component": "dev-tooling",
+   "name": "--max-workers 3",
+   "anchor": "README.md:49",
+   "reason": "clj-mutate option in the README, not a worker or flag of the game."
+  },
+  {
+   "component": "dev-tooling",
+   "name": "git dependencies on github.com",
+   "anchor": "deps.edn:15",
+   "reason": "Build-time dependency resolution for dev aliases, not runtime communication."
+  },
+  {
+   "component": "dev-tooling",
+   "name": "clj-mutate manifest comments (:test-command \"clj -M:spec --tag ~no-mutate\")",
+   "anchor": "src/othello/ui/events.cljc:238",
+   "reason": "Tool metadata comments in each source file, not code or commands of the game."
+  },
+  {
+   "component": "test",
+   "name": "spec/**",
+   "anchor": "spec/othello/architecture_spec.clj:7",
+   "reason": "Test-only code (it reads src/ files to check dependencies); not product data or behaviour."
+  }
+ ],
+ "notes": [
+  "Two programs share the .cljc domain and UI logic (board, rules, game, ai, ui/events, ui/host, ui/view, ui/draw); no separate library artifact is built. Shared inputs and the state map are listed once per program with the same anchor.",
+  "No requests: neither program serves a connection. The browser page is served by shadow-cljs dev-http (port 8080), which has no handler in this repository.",
+  "No environment variables, config files, databases or files are read or written at runtime; the desktop program opens no network connection. The only runtime network access is the browser loading p5 from jsDelivr.",
+  "Key bindings are Quil keywords :n :u :h :1 :2 (lower case); the README shows N/U/H. Shift or Caps Lock would produce different keywords and do nothing (inference from Quil key-as-keyword, not tested here).",
+  "The web AI job is not parallel: js/setTimeout runs the search on the browser main thread after 20 ms, which is why the web budget is smaller (400 ms, depth 4, endgame 8 vs 1200 ms, depth 6, endgame 12).",
+  "Sidebar buttons duplicate the key commands and are marked must=false; board click and the five keys are must.",
+  "dev-tooling aliases run third-party tools (Speclj, Cloverage, crap4clj, clj-mutate); listed as must=false commands only."
+ ],
+ "review_summary": "Reviewer (read-only, code only): opened every must=true anchor (2 launch aliases, 5 keys + board click per program, future/setTimeout and :update loop per program, p5 CDN script, UI state map per program); all land on the named code with the right handler and component. Independent greps (future/Thread/setTimeout/setInterval/agent/promise, slurp/spit/io/, js/, getenv, fetch/http, key->command, Quil handler wiring in sketch.clj and web.cljs, index.html, deps.edn, shadow-cljs.edn) found no missing must item. All 17 original traps verified at their anchors. Edits were made in _gen/gen_othello.py and the JSON regenerated.",
+ "review": [
+  {
+   "change": "added trap 'q/create-font \"SansSerif\"'",
+   "anchor": "src/othello/ui/sketch.clj:16",
+   "why": "The only resource the desktop program asks for by name at runtime; it is a JVM logical font, so a claim of an external load or font file would be wrong."
+  }
+ ]
+}
