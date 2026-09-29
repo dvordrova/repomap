@@ -149,7 +149,7 @@ func (p *inputsPreset) Complete(_ context.Context, prepared llm.Prepared) (llm.C
 func (p *inputsPreset) categorizer() *typesafetest.Categorizer {
 	neutral := map[string]string{
 		"role": "domain", "key_symbol": "yes", "boxes": "one box", "helper": "responsibility",
-		"binds": "none", "publishes": "none", "talks": "none", "enters": "none", "becomes": "none",
+		"binds": "none", "publishes": "none", "talks": "none", "enters": "none", "becomes": "none", "starts": "none",
 	}
 	return &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
 		column := key[strings.LastIndex(key, "|")+1:]

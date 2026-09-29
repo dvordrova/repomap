@@ -99,7 +99,14 @@ func askedOutsideSymbols(t *testing.T, repository *corpus.Corpus, index programi
 				question = "binds"
 			case "enters":
 				question = "enters"
+			case "starts":
+				question = "starts"
 			}
+		}
+		// A starting statement is asked on its own, of no outside symbol
+		// (started_test.go).
+		if question == "starts" {
+			continue
 		}
 		for _, row := range request.Rows {
 			if question == "enters" {

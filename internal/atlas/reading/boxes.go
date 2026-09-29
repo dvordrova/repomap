@@ -698,6 +698,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 		r.boundaries[place.ID] = state
 	}
 	r.applyStored()
+	r.applyStarts()
 	publishes := r.applyAPIRoles()
 	publishes = append(publishes, r.bindInterpretedBoundaries()...)
 	publishes = r.dropTestBoundaries(publishes)

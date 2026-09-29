@@ -286,6 +286,9 @@ func (r *reader) readAPI(ctx context.Context) error {
 		}
 	}
 	r.joinView(view)
+	if err := r.readStarts(ctx); err != nil {
+		return err
+	}
 	// The talks answer each symbol was given, none among them: a call's
 	// words are asked only beside none or no decided answer.
 	talks := map[string]string{}

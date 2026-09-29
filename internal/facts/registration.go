@@ -25,9 +25,20 @@ func (b *builder) addRegistrations(target *targetContext) {
 	values := newRouteValueReader(target)
 	originsByValue := target.routeValueOrigins()
 	prefixes := target.prefixesByObject()
+	starts := target.newStartReader()
 	var shapes []registrationShape
 	for _, relation := range target.input.Index.Relations {
-		if target.ownsCallee(relation) && !target.tableRow(relation) || target.unreachable(relation) {
+		if target.unreachable(relation) {
+			continue
+		}
+		// A call starting the repository's own callable to run on its own
+		// hands it over (started.go): the one exception, beside table rows,
+		// to a call the repository declares being delegation.
+		if started := starts.shapes(relation); len(started) > 0 {
+			shapes = append(shapes, started...)
+			continue
+		}
+		if target.ownsCallee(relation) && !target.tableRow(relation) {
 			continue
 		}
 		for _, pattern := range relation.Patterns {
@@ -49,6 +60,11 @@ func (b *builder) addRegistrations(target *targetContext) {
 	}
 	for _, shape := range shapes {
 		if !shape.accept(holders) {
+			continue
+		}
+		// A started callable is handed to no router: it has no address.
+		if shape.invocation != "" {
+			b.addRegistration(target, shape, nil, values)
 			continue
 		}
 		owner := shape.pattern.ReceiverID
@@ -160,6 +176,9 @@ type registrationShape struct {
 	origin         string
 	originKnown    bool
 	method         string
+	// invocation is the shared invocation word of a call that starts its
+	// repository callee to run on its own (started.go).
+	invocation string
 }
 
 // registrationShape reads what a call outside the repository is given: its
@@ -574,6 +593,7 @@ func (b *builder) addRegistration(target *targetContext, shape registrationShape
 			OwnerID:    ownerID,
 			Handed:     shape.constructed && shape.handlerID == "",
 			Text:       shape.origin,
+			Invocation: shape.invocation,
 			Resolution: resolution,
 			Evidence:   address.evidence,
 		}, shape.word, address.path, shape.handlerName)

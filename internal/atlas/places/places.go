@@ -1743,7 +1743,7 @@ func (b *builder) collectBoundaries() {
 		if !ok || targetID == "" {
 			continue
 		}
-		var direction, kind, method, external, holder string
+		var direction, kind, method, external, holder, invocation string
 		var values, words []string
 		var kept *atlas.RegistrarFacts
 		switch fact.Kind {
@@ -1767,6 +1767,11 @@ func (b *builder) collectBoundaries() {
 				}
 				// The literals are the call's; the registrar's name is no word.
 				words = slices.Clone(fact.Values)
+			}
+			if fact.Invocation != "" {
+				// The statement starting a callable (`go`) names nothing:
+				// its words are the started call's literals.
+				invocation, words = fact.Invocation, slices.Clone(fact.Values)
 			}
 		case facts.KindSQLQuery:
 			direction, kind = atlas.DirectionOut, atlas.BoundaryDB
@@ -1812,7 +1817,7 @@ func (b *builder) collectBoundaries() {
 				Source: "fact", Origins: []atlas.BoundaryOrigin{origin}, ObjectID: objectID, SubjectID: b.factSubjects[objectID],
 				Caller: caller, CallerDoc: callerDoc, External: external, Method: method, Values: values, Words: words,
 				Holder: holder, Handed: fact.Kind == facts.KindRegistration && fact.Handed, Direction: direction, GivenKind: kind,
-				Registrar: kept,
+				Registrar: kept, Invocation: invocation,
 			},
 		}}
 	}

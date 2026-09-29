@@ -93,3 +93,20 @@ class UnknownWalletOwner:
 
 def evaluate_local(expression):
     return eval(expression)
+
+
+async def poll_prices():
+    """Poll the exchange for prices for as long as the program runs."""
+    while True:
+        print("poll prices")
+        await asyncio.sleep(60)
+
+
+async def announce_start():
+    """Say once that the bot started."""
+    print("started")
+
+
+def start_background_tasks():
+    asyncio.create_task(poll_prices())
+    asyncio.create_task(announce_start())

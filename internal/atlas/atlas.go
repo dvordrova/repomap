@@ -32,7 +32,7 @@ import (
 const (
 	// GraphVersion and Version change when the shape of the artifacts
 	// changes; an artifact of another version is refused, never patched.
-	GraphVersion = 21
+	GraphVersion = 22
 	Version      = 19
 
 	GraphFilename    = "places.json"
@@ -480,6 +480,13 @@ type BoundaryFacts struct {
 	// the kept callable becomes (atlas_inputs stored); no outside symbol's
 	// role decides it.
 	Registrar *RegistrarFacts `json:"registrar,omitempty"`
+	// Invocation is, for a registration starting the repository's own
+	// callable to run on its own (a Go `go` statement, a coroutine handed
+	// to asyncio.create_task), its shared invocation word: goroutine or
+	// async_task. The reading asks each such statement what the started
+	// callable becomes (atlas_api starts); no outside symbol's role
+	// decides it.
+	Invocation string `json:"invocation,omitempty"`
 }
 
 // RegistrarFacts is the repository function a callable is handed to and

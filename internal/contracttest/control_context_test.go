@@ -32,10 +32,10 @@ func TestCumulativeGoWorkerControlContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	adaptertest.AssertCallControls(t, index, graph, "cmd/worker/main.go", "processPendingJobs", map[int][]adaptertest.Control{
-		11: nil,
-		13: {{Line: 12, Kind: "range body over channel"}},
-		19: {{Line: 18, Kind: "range body"}},
-		29: {{Line: 24, Kind: "for body without condition"}, {Line: 25, Kind: "select without default"}},
-		38: nil,
+		13: nil,
+		15: {{Line: 14, Kind: "range body over channel"}},
+		21: {{Line: 20, Kind: "range body"}},
+		31: {{Line: 26, Kind: "for body without condition"}, {Line: 27, Kind: "select without default"}},
+		40: nil,
 	})
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"example.com/repomap/cumulative-go-fixture/internal/storefixture"
 	"example.com/repomap/cumulative-go-fixture/pkg/servicecfg"
 	"log"
 	"time"
@@ -8,6 +9,7 @@ import (
 
 func processPendingJobs() { log.Print("checking pending jobs") }
 func main() {
+	storefixture.StartBackground(make(chan struct{}))
 	processPendingJobs() // startup: once before the loop
 	for range time.Tick(time.Duration(servicecfg.PollIntervalSeconds()) * time.Second) {
 		processPendingJobs()

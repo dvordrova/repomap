@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 5
+	Version          = 6
 	ArtifactFilename = "facts.json"
 
 	digestDomain = "repomap-facts-v3\x00"
@@ -153,7 +153,8 @@ type Target struct {
 //	registration Key (call word), Values (literals), Path (address literal, mount
 //	            prefixes applied), Method (verb the word or literal states),
 //	            Symbol/ObjectID (callable handed over), Text (external symbol
-//	            behind the call), Evidence (prefix/value sites)
+//	            behind the call), Evidence (prefix/value sites),
+//	            Invocation (a started callable: goroutine, async_task)
 //	sql_query   Value (statement), Key (tables), Symbol/ObjectID (caller)
 //	config_read Key (env key), Value (literal default), Symbol
 //	dynamic_execution Key (what runs the code), Symbol, Text (source line)
@@ -188,7 +189,14 @@ type Fact struct {
 	// parameter in a field or a module-level variable (owner decision
 	// 2026-09-27). A registration with an outside symbol names it in Text
 	// instead; a registrar is never an outside system.
-	Registrar  *Registrar `json:"registrar,omitempty"`
+	Registrar *Registrar `json:"registrar,omitempty"`
+	// Invocation is, for a registration, the shared invocation word of a
+	// call that starts a repository callable to run on its own rather than
+	// in place: goroutine (Go's `go f()`) or async_task (a coroutine handed
+	// to another call, asyncio.create_task(f())). Key is the statement that
+	// starts it (`go`, or the call the coroutine is handed to); no outside
+	// symbol receives it, so Text is empty (started.go).
+	Invocation string     `json:"invocation,omitempty"`
 	Method     string     `json:"method,omitempty"`
 	Path       string     `json:"path,omitempty"`
 	Key        string     `json:"key,omitempty"`
@@ -459,6 +467,11 @@ func (fact Fact) validate(targets map[string]struct{}) error {
 		if err := evidence.validate(); err != nil {
 			return err
 		}
+	}
+	if fact.Invocation != "" && (fact.Kind != KindRegistration ||
+		fact.Invocation != programindex.InvocationGoroutine && fact.Invocation != programindex.InvocationAsyncTask ||
+		fact.ObjectID == "" || fact.Text != "" || fact.Registrar != nil) {
+		return fmt.Errorf("a started callable is a registration handing over one callable, with no outside symbol or registrar")
 	}
 	switch fact.Kind {
 	case KindRegistration:

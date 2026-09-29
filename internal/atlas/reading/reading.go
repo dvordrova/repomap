@@ -162,7 +162,11 @@ type reader struct {
 	// storedKinds and tableKinds are the decided kinds of the kept
 	// callables and the tables of names (inputs.go).
 	storedKinds, tableKinds map[string]string
-	keys                    map[string][]string // file place ID -> key symbol IDs, by rank
+	// startKinds are what the function each starting statement starts
+	// became, by the statement's site: an entry kind, none, or ""
+	// undecided (api_start.go).
+	startKinds map[sourceSite]string
+	keys       map[string][]string // file place ID -> key symbol IDs, by rank
 	// selectedKeys is every declaration the selection found worth a reader's
 	// attention; partKeys is what explains the part it stands in.
 	selectedKeys, partKeys, keysDecided map[string]bool
