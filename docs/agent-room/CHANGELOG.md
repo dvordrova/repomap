@@ -1,5 +1,34 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — report.json names the other targets' program-index.json: freqtrade 354 MB → 14.7 MB
+
+- **Why:** 336 MB of freqtrade's format-92 report.json was the nine other
+  targets' ProgramIndexes, each byte for byte the `program-index.json` of its
+  own target run directory (left for the owner in the entry below; the
+  owner approved naming them).
+- **Change (cf5c0681):** report format 93. `files` entries carry a `path`
+  from the owner run directory instead of a `name`; another target's
+  ProgramIndex is `../<run-id>/program-index.json` for a run ID the owner's
+  `program-page-portfolio.json` names whose `program-index-set.json` binds
+  that target and seal, with the SHA-256 of the file's bytes. Restoring
+  refuses a missing or changed file, and any path other than a file name
+  or `../<run-id>/<file>` for a ProgramIndex. REPORT: saved restoration
+  reads the files the JSON names in the run's own target directories. Test:
+  both targets' indexes read back exactly; one appended byte in the other
+  target's file, then its removal, refuse the report.
+- **Runs** (`make build` binary at cf5c0681, default cache, `--no-serve
+  --no-open`): freqtrade 101431 exit 0 in 256 s, Redis 102019 exit 0 in 9 s,
+  0 live calls each; every ProgramIndex is named (0 left inline).
+  `repomap render` of each equals its report.html byte for byte (freqtrade
+  render 50.1 s / 2.78 GB max RSS, 53.0 s / 3.04 GB before). report.html is
+  the same size as the 095735 and 100147 runs'.
+
+  | | freqtrade 095735 → 101431 | Redis 100147 → 102019 |
+  | --- | --- | --- |
+  | report.json bytes | 353,833,510 → 14,716,376 | 4,230,702 → 3,040,159 |
+  | owner run dir (du) | 509,168 KB → 178,052 KB | 25,516 KB → 24,356 KB |
+  | with target run dirs | 849,976 KB → 518,860 KB | 26,912 KB → 25,752 KB |
+
 ## 2026-09-29 — Orientation stage 2 accepted on freqtrade, Redis and litestream
 
 - **Two prompt sentences (429c9759, 00a8c0db):** the first cold draws kept
