@@ -1,5 +1,56 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — Acceptance fixes: every stage journaled, each refusal once, no empty frontier, the claim audit's file and target matching
+
+- **Why:** the integrated acceptance (scratchpad `accept/`, `claim-audit/accept/`)
+  found F1, F6, F7 and three audit matching gaps. Code 6819ee2e, e9ddfd78,
+  d43bfcf4, d18c83c5. Focused tests and vet pass (debugdump, atlas/reading,
+  report, audit, run, modeldiag).
+- **F1 (6819ee2e):** `atlas_inputs`, `atlas_systems` and `atlas_program` were
+  no semantic stage: every run warned `stage=unknown
+  code=artifact_write_failed` and journaled none of their exchanges (their
+  `rejected.jsonl` rows had no ref). The stages are one set in debugdump.
+  The stage owners import debugdump, so no list is derived at compile time;
+  `TestEveryDefinedStageIsASemanticStage` reads the `Stage…` constants of
+  lines, reading, terminology, reporttranslation and debugdump from source
+  (removing a stage from the set fails it by name).
+- **F6 (6819ee2e, d18c83c5):** a table's row or cell refusal was journaled
+  twice: by the observer with its exchange, and by the reader under the
+  window's `response.ref.json` (the same response payload) with the row key
+  twice in samples. The reader's rows are `AlreadyJournaled` when the run's
+  observer journals, and keep one key; a window with no accepted row still
+  journals each row's reason (the observer has only its first). The
+  exchange ref alone is kept: it links the request as well.
+  `TestTableRowRefusalIsJournaledOnce`; the partly refused run test expects
+  one row from the journal.
+- **F7 (e9ddfd78):** freqtrade's `getattr(ccxt, name)(config)` is a frontier
+  `()`: 41 exchange tiles read "Address passes through ()". A frontier naming
+  nothing prints no address line; the chain's steps stand. `repomap render`
+  of the saved freqtrade run: 0 such lines. The five ccxt calls of kind
+  `client_request` (set_position_mode ×2, un_watch_ohlcv,
+  un_watch_ohlcv_for_symbols, publicPostInfo) come from atlas_api's `talks`
+  answer (round 2 window 11 answered 3 client_request, 3 sdk, 4 none for
+  ccxt.Exchange members; boundaries receive it as `kind_given`). A model
+  answer, not patched.
+- **Claim audit (d43bfcf4), the same claims, not a widening:** a file record
+  matches a data item by its written path (the same literal exactly, not a
+  qualifier's words, anywhere in the component; or the write of its field
+  storing it at the item's line); a path not established is an `unknown`
+  column, not an extra; a target maps to a component by its key or its
+  program's path (seeds, a declared component's entry), not its display
+  name. Re-run into `claim-audit/accept2`: redis data must found 0 → 3 of 5
+  (dump.rdb, appendonly.aof, /tmp/redis-%p.vm; /var/run/redis.pid may),
+  extras 7 → 0, unknown 3; freqtrade data extras 158 → 37, unknown 121;
+  litestream extras 113 → 33, unknown 79, may found 5 → 6
+  (`C:\Litestream\litestream.yml`); othello `t1 othello` → othello-desktop,
+  whose only report row is its entrypoint (no Inputs, outside calls or data
+  yet), so its counts are unchanged (0 of 21 must). No other inventory moved.
+- **Open:** litestream's WAL path is recorded as `-wal` (`db.WALPath()`'s
+  unknown prefix dropped); redis-check-dump's mmap'd dump file is a path not
+  established at its argv read; a whole-window refusal is still journaled
+  twice in kind (the observer's `response_validation`, the reader's
+  `window_rejected` with its row count).
+
 ## 2026-09-29 — The files a program keeps are its data: path as written, the functions reaching it, no role
 
 - **Why:** owner, DATA includes the files a program owns; skeptic, no role

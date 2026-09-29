@@ -485,7 +485,15 @@ Decoders refuse at the smallest scope, so most refusals are parts of an
 accepted answer: a row, cell, member or term, or an annotation the atlas
 reader records after validating it (a file in no part, a one-part area).
 Each such `rejected.jsonl` row points at its exchange, which therefore keeps
-its payloads both ways. Its accepted cache record, store payloads, key and
+its payloads both ways. A refusal is one row: when the run's observer
+journals an answer's row and cell refusals, a table reader keeps its own row
+of each only for the stage's summary (until 2026-09-29 each was written a
+second time under its window's `response.ref.json`, the same response
+bytes, with its key twice). A stage whose requests are journaled is a
+registered semantic stage (`debugdump.semanticStages`); an unregistered one
+loses every exchange with a `stage=unknown` warning, as `atlas_inputs` and
+`atlas_systems` did until 2026-09-29, so a test reads the stage owners'
+`Stage…` constants. The exchange's accepted cache record, store payloads, key and
 hits are unchanged. The journal entry and window refs of every run that reads
 it, live, as a cache hit or through a memo, link that run's own
 content-hashed copy instead, as for a refused answer. Each is decided where it
