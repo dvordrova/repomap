@@ -309,7 +309,7 @@ A call of a method declared on an external interface is one `invokes_external` r
 
 ## Compact artifact encoding
 
-`program-index.json` stores each fact once. Observed counts are not written: every `*_observed` value is the number of retained rows plus the stored `*_omitted` value, and a zero omission, an empty collection or an absent optional value is left out. Coverage stores only non-zero object/relation omissions; everything else is compiled from the rows when the artifact is read. Decoding restores the same in-memory index, including empty collections, before validating the seal.
+`program-index.json` stores each fact once. Observed counts are not written: every `*_observed` value is the number of retained rows plus the stored `*_omitted` value, and a zero omission, an empty collection or an absent optional value is left out. Coverage stores only non-zero object/relation omissions; everything else is compiled from the rows when the artifact is read. A witness or pattern at its relation's own location writes `"location":{}` (never a real location, which has a path, line and column), so the location is written once, on the relation; one without a location still writes none, and an artifact spelling every location out reads the same. Decoding restores the same in-memory index, including empty collections and those locations, before validating the seal, which is over the index and not over the artifact bytes.
 
 Go may additionally provide exhaustive repository-local method-set matches when
 its exact analysis input requests them. ProgramIndex stores these as exact

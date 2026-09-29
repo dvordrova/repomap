@@ -25,7 +25,7 @@ func VerifyOrdinaryReportHTMLPayload(
 	htmlBytes, reportJSON []byte,
 	authority OrdinaryReportHTMLAuthority,
 ) error {
-	data, err := decodeStrictReportJSON(reportJSON)
+	data, err := decodeStrictReportJSON(reportJSON, authority.ArtifactsDir)
 	if err != nil {
 		return fmt.Errorf("report: verify html report data: %w", err)
 	}

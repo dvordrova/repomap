@@ -1184,7 +1184,7 @@ func EncodeGraph(graph Graph) ([]byte, error) {
 		return nil, err
 	}
 	graph.SHA256 = digest
-	return json.MarshalIndent(graph, "", "  ")
+	return json.Marshal(graph)
 }
 
 // DecodeGraph reads places.json and checks its seal.
@@ -1224,7 +1224,7 @@ func Encode(value Atlas) ([]byte, error) {
 		return nil, err
 	}
 	value.SHA256 = digest
-	return json.MarshalIndent(value, "", "  ")
+	return json.Marshal(value)
 }
 
 // Decode reads atlas.json and checks its seal.

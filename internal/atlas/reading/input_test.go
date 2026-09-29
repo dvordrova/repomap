@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -144,5 +145,53 @@ func TestSavedInputHasOneVersionAndRequiresCompleteTargets(t *testing.T) {
 		if _, err := LoadInput(filename); err == nil {
 			t.Fatal("incompatible or incomplete input accepted")
 		}
+	}
+}
+
+// Beside a places.json of exactly its sealed graph, the saved input names
+// that file by its digest instead of repeating the graph, and reads back the
+// same input; a places.json changed since is refused.
+func TestSavedInputNamesThePlacesFileBesideIt(t *testing.T) {
+	graph := testGraph(t)
+	inline := readOptions(t, graph, nil, "")
+	if _, err := SaveInput(inline); err != nil {
+		t.Fatal(err)
+	}
+	named := readOptions(t, graph, nil, "")
+	sealed, err := atlas.EncodeGraph(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atlas.WriteGraph(named.OwnerRunDir, sealed); err != nil {
+		t.Fatal(err)
+	}
+	named.SealedGraph = sealed
+	if _, err := SaveInput(named); err != nil {
+		t.Fatal(err)
+	}
+	filename := filepath.Join(named.OwnerRunDir, InputFilename)
+	raw, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(`"graph":`)) || !bytes.Contains(raw, []byte(`"graph_file":{"name":"places.json","sha256":"`)) {
+		t.Fatalf("saved input repeats the graph of places.json: %s", raw)
+	}
+	want, err := LoadInput(filepath.Join(inline.OwnerRunDir, InputFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadInput(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal("the input naming places.json reads back another input")
+	}
+	if err := atlas.WriteGraph(named.OwnerRunDir, append(sealed, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadInput(filename); err == nil || !strings.Contains(err.Error(), "not the graph it was saved with") {
+		t.Fatalf("changed places.json = %v", err)
 	}
 }

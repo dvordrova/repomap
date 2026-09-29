@@ -39,7 +39,7 @@ func TestReportJSONUsesProgramIndexAndThinGroupOverlayDirectly(t *testing.T) {
 	if overlay["target_id"] == nil || overlay["groups"] == nil || overlay["target"] != nil || overlay["structural_edges"] != nil {
 		t.Fatalf("report did not persist a thin group overlay: %v", mapsKeys(overlay))
 	}
-	restored, err := decodeStrictReportJSON(encoded)
+	restored, err := decodeStrictReportJSON(encoded, data.ArtifactsDir)
 	if err != nil {
 		t.Fatal(err)
 	}

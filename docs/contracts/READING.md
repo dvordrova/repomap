@@ -171,7 +171,9 @@ new description or selection requests.
   one line in the atlas. Every row and answer is printed to `tables.md`, with prompts, requests, raw
   responses and normalized source-bound results under `tables/`. The ordinary
   path saves `reading-input.json` before its first atlas call, from the same
-  sealed graph bytes as `places.json`; `read` consumes
+  sealed graph bytes as `places.json`, which it names by the SHA-256 of its
+  bytes (`graph_file`) instead of repeating them when that file lies beside
+  it; `read` consumes
   exactly that format and runs the same reader. Above two thousand files the directory and
   file rows carry an `open` cell and what the model closes keeps its
   fallback line.

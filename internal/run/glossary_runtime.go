@@ -71,7 +71,7 @@ func reduceReportGlossary(ctx context.Context, options repositoryTargetDispatchO
 		return fmt.Errorf("glossary: %w", err)
 	}
 	data.Glossary = &catalog
-	if err := writeGlossaryArtifact(runDir, "glossary.json", catalog); err != nil {
+	if err := writeGlossaryArtifact(runDir, terminology.CatalogFilename, catalog); err != nil {
 		return err
 	}
 	// Where each term is written in the repository's own files: a fact the
@@ -143,7 +143,7 @@ func glossaryCodeNames(indexes []programindex.Index, repository *facts.Result) m
 }
 
 func writeGlossaryArtifact(runDir, name string, value any) error {
-	raw, err := json.MarshalIndent(value, "", "  ")
+	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}

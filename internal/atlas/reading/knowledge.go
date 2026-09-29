@@ -512,12 +512,12 @@ func (r *reader) persistKnowledge() error {
 		}
 		return rows[i].Contract < rows[j].Contract
 	})
-	raw, err := json.MarshalIndent(struct {
+	raw, err := json.Marshal(struct {
 		Version    int         `json:"version"`
 		Repository string      `json:"repository"`
 		Revision   string      `json:"revision"`
 		Records    []Knowledge `json:"records"`
-	}{KnowledgeVersion, r.opts.Repository, r.opts.Revision, rows}, "", "  ")
+	}{KnowledgeVersion, r.opts.Repository, r.opts.Revision, rows})
 	if err != nil {
 		return err
 	}

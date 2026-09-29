@@ -2,9 +2,13 @@ package reading
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +19,7 @@ import (
 )
 
 const InputFilename = "reading-input.json"
-const InputVersion = 19
+const InputVersion = 20
 
 // Input is the complete deterministic boundary before the first atlas call.
 // No repository files, manifests, report schema or compiler are needed to read it.
@@ -32,15 +36,23 @@ func (input Input) Options() Options {
 	return Options{Graph: input.Graph, Targets: input.Targets, Repository: input.Repository, Revision: input.Revision, Budget: input.Budget}
 }
 
-// savedInput is Input with the sealed graph kept as the bytes it was sealed
-// to. Its fields and their order are Input's, so the file is the same.
+// savedInput is Input as reading-input.json holds it: the sealed graph as
+// the bytes it was sealed to or, when the places.json beside it holds exactly
+// those bytes, as that file named by the SHA-256 of its bytes.
 type savedInput struct {
 	Version    int             `json:"version"`
 	Repository string          `json:"repository"`
 	Revision   string          `json:"revision"`
-	Graph      json.RawMessage `json:"graph"`
+	Graph      json.RawMessage `json:"graph,omitempty"`
+	GraphFile  *graphFile      `json:"graph_file,omitempty"`
 	Targets    []TargetMeta    `json:"targets"`
 	Budget     bool            `json:"budget"`
+}
+
+// graphFile is the places.json a reading input's graph is read from.
+type graphFile struct {
+	Name   string `json:"name"`
+	SHA256 string `json:"sha256"`
 }
 
 // SaveInput runs before the provider and returns the same sealed graph it saves.
@@ -60,7 +72,15 @@ func SaveInput(opts Options) (atlas.Graph, error) {
 		return atlas.Graph{}, err
 	}
 	input := savedInput{Version: InputVersion, Repository: opts.Repository, Revision: opts.Revision, Graph: graphJSON, Targets: opts.Targets, Budget: opts.Budget}
-	data, err := json.MarshalIndent(input, "", "  ")
+	places, err := os.ReadFile(filepath.Join(opts.OwnerRunDir, atlas.GraphFilename))
+	switch {
+	case err == nil && bytes.Equal(bytes.TrimSuffix(places, []byte("\n")), graphJSON):
+		digest := sha256.Sum256(places)
+		input.Graph, input.GraphFile = nil, &graphFile{Name: atlas.GraphFilename, SHA256: hex.EncodeToString(digest[:])}
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		return atlas.Graph{}, err
+	}
+	data, err := json.Marshal(input)
 	if err != nil {
 		return atlas.Graph{}, err
 	}
@@ -76,19 +96,42 @@ func LoadInput(filename string) (Input, error) {
 	if err != nil {
 		return Input{}, fmt.Errorf("reading input: %w", err)
 	}
-	var input Input
+	var saved savedInput
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
+	if err := decoder.Decode(&saved); err != nil {
 		return Input{}, fmt.Errorf("reading input: %w", err)
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return Input{}, fmt.Errorf("reading input: expected one JSON object")
 	}
-	if input.Version != InputVersion {
-		return Input{}, fmt.Errorf("reading input: version %d, want %d; generate a new analysis", input.Version, InputVersion)
+	if saved.Version != InputVersion {
+		return Input{}, fmt.Errorf("reading input: version %d, want %d; generate a new analysis", saved.Version, InputVersion)
 	}
-	graphJSON, err := json.Marshal(input.Graph)
+	graphJSON := []byte(saved.Graph)
+	if saved.GraphFile != nil {
+		if len(saved.Graph) != 0 || saved.GraphFile.Name != atlas.GraphFilename {
+			return Input{}, fmt.Errorf("reading input: the graph is written and named, or names another file")
+		}
+		places, err := os.ReadFile(filepath.Join(filepath.Dir(filename), atlas.GraphFilename))
+		if err != nil {
+			return Input{}, fmt.Errorf("reading input: %w", err)
+		}
+		if digest := sha256.Sum256(places); hex.EncodeToString(digest[:]) != saved.GraphFile.SHA256 {
+			return Input{}, fmt.Errorf("reading input: %s beside it is not the graph it was saved with; generate a new analysis", atlas.GraphFilename)
+		}
+		graphJSON = places
+	}
+	input := Input{Version: saved.Version, Repository: saved.Repository, Revision: saved.Revision, Targets: saved.Targets, Budget: saved.Budget}
+	decoder = json.NewDecoder(bytes.NewReader(graphJSON))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input.Graph); err != nil {
+		return Input{}, fmt.Errorf("reading input: graph: %w", err)
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return Input{}, fmt.Errorf("reading input: graph: expected one JSON object")
+	}
+	graphJSON, err = json.Marshal(input.Graph)
 	if err != nil {
 		return Input{}, err
 	}

@@ -29,6 +29,9 @@ type Entry struct {
 	Variants    []Candidate `json:"variants"`
 }
 
+// CatalogFilename is the run directory's file of the reduced glossary.
+const CatalogFilename = "glossary.json"
+
 type Catalog struct {
 	Version           int      `json:"version"`
 	Entries           []Entry  `json:"entries"`

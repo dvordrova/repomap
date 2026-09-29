@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,31 +30,6 @@ import (
 var reportTemplateFS embed.FS
 
 const reportPageEntryTemplate = "page.html"
-
-func encodeReportJSON(data *ReportData, maxBytes int) ([]byte, error) {
-	if data == nil {
-		return nil, fmt.Errorf("report: data is required")
-	}
-	if err := validateProgramPresentation(data); err != nil {
-		return nil, err
-	}
-	persisted := reportDataForPersistence(data)
-	// SourceIDs are issued by the local report server after manifest
-	// verification. They are session navigation IDs, not persistent evidence.
-	persisted.SourceIDs = nil
-	b, err := json.MarshalIndent(persisted, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	b = append(b, '\n')
-	if maxBytes > 0 && len(b) > maxBytes {
-		return nil, &ReportResourceLimitError{
-			LimitBytes:  maxBytes,
-			ActualBytes: len(b),
-		}
-	}
-	return b, nil
-}
 
 // ReportResourceLimitError is a terminal report-publication resource outcome.
 // It deliberately exposes only byte counts, never report or source content.
@@ -936,33 +910,6 @@ func scrubRenderLocalPaths(value any, roots []string) {
 // result. It used to carry advisory scale warnings; it carries nothing now
 // and stays only so the generation functions keep their shape.
 type GenerationDiagnostics struct{}
-
-// decodeStrictReportJSON reads report.json exactly as it was written: no
-// unknown fields, one value, the format this code renders.
-func decodeStrictReportJSON(reportJSON []byte) (ReportData, error) {
-	decoder := json.NewDecoder(bytes.NewReader(reportJSON))
-	decoder.DisallowUnknownFields()
-	var data ReportData
-	if err := decoder.Decode(&data); err != nil {
-		return ReportData{}, fmt.Errorf("report: decode report.json: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return ReportData{}, fmt.Errorf("report: report.json contains multiple values")
-		}
-		return ReportData{}, fmt.Errorf("report: report.json has trailing data: %w", err)
-	}
-	if data.FormatVersion != CurrentFormatVersion {
-		return ReportData{}, fmt.Errorf("report: unsupported report format version %d", data.FormatVersion)
-	}
-	if data.ProgramPortfolio == nil || data.GroupGraph == nil {
-		return ReportData{}, fmt.Errorf("report: report.json is missing its program or group graph")
-	}
-	if err := data.GroupGraph.Hydrate(data.ProgramPortfolio.Entries); err != nil {
-		return ReportData{}, fmt.Errorf("report: restore group graph: %w", err)
-	}
-	return data, nil
-}
 
 // pageTemplateFuncs are the functions every page template may call: t for
 // the static UI vocabulary, outboundGroups for the destination-grouped

@@ -1501,7 +1501,13 @@ are published once in the owner run from values already held in memory. A
 served report has the same complete set of target sections; it needs no sibling
 report files. Saved report restoration reads the common JSON and manifest.
 The common JSON contains the exact selected ProgramIndexes, not a copied
-presentation graph. Its group-graph field contains only thin GroupsIndex
+presentation graph. It is compact JSON (format 92) and writes each ProgramIndex
+in its `program-index.json` encoding. A section that is byte for byte a file of
+the owner run directory (the owner's `program-index.json`, `facts.json`,
+`claims.json`, `orientation.json`, `glossary.json`) is not copied: `files` names
+the file and the SHA-256 of its bytes, and restoration decodes that file in the
+section's place and refuses one whose bytes changed. The other targets'
+ProgramIndexes stay in the JSON. Its group-graph field contains only thin GroupsIndex
 overlays; native subjects and structural edges are joined from those embedded
 ProgramIndexes in memory before rendering. Consequently `report.json` has one
 native graph schema and one semantic overlay schema, with no `ProgramView`.

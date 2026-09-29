@@ -1,6 +1,8 @@
 package programindex
 
 import (
+	"bytes"
+	"encoding/json"
 	"reflect"
 	"slices"
 	"sort"
@@ -1113,6 +1115,87 @@ func TestCodecIsStrictAndValidatesSeal(t *testing.T) {
 	tampered := []byte(strings.Replace(string(encoded), "runtime.schedule", "runtime.changed", 1))
 	if _, err := Decode(tampered); err == nil {
 		t.Fatal("Decode accepted content with a stale seal")
+	}
+}
+
+// The artifact writes a relation's location once: a witness or pattern at
+// that same location says {}, and the reader gives the location back. A
+// witness or pattern elsewhere or without a location is written as it is.
+func TestArtifactWritesARelationsOwnLocationOnceAndReadsItBack(t *testing.T) {
+	input := representativeInput()
+	at := Location{Path: "src/worker.lang", Line: 14, Column: 5}
+	elsewhere := Location{Path: "src/worker.lang", Line: 15, Column: 2}
+	exact := &input.Relations[1]
+	exact.Witnesses = []Witness{
+		{Kind: "syntax_call", Location: &at},
+		{Kind: "syntax_call", Detail: "through an alias", Location: &elsewhere},
+		{Kind: "syntax_count", Detail: "2"},
+	}
+	exact.WitnessesObserved = 3
+	exact.Patterns = []RelationPatternInput{
+		{SourceRef: "at-relation", Form: PatternCall, Selector: "schedule", Location: &at},
+		{SourceRef: "elsewhere", Form: PatternCall, Selector: "schedule", Location: &elsewhere},
+		{SourceRef: "unlocated", Form: PatternCall, Selector: "schedule"},
+	}
+	exact.PatternsObserved = 3
+	index, err := newMeasuredProgramIndex(input)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	encoded, err := Encode(index)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if got := strings.Count(string(encoded), `"location":{}`); got != 2 {
+		t.Fatalf("relation's own location is not written once: %d {} in %s", got, encoded)
+	}
+	if got := strings.Count(string(encoded), `{"path":"src/worker.lang","line":14,"column":5}`); got != 1 {
+		t.Fatalf("relation's own location is written %d times: %s", got, encoded)
+	}
+	if got := strings.Count(string(encoded), `{"path":"src/worker.lang","line":15,"column":2}`); got != 2 {
+		t.Fatalf("a location elsewhere is not written in full: %s", encoded)
+	}
+	decoded, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	// Every relation, witness and pattern the artifact holds, with every
+	// location spelled out, is the index that was encoded.
+	want, err := json.Marshal(index.Relations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.Marshal(decoded.Relations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) || decoded.SHA256 != index.SHA256 {
+		t.Fatalf("decoded relations differ:\n got %s\nwant %s", got, want)
+	}
+	restored := decoded.Relations[relationPositionWithSourceRef(t, index, "relation-exact")]
+	for _, witness := range restored.Witnesses {
+		if witness.Location != nil && witness.Location == restored.Location {
+			t.Fatal("a restored witness location shares the relation's")
+		}
+	}
+	for _, pattern := range restored.Patterns {
+		if pattern.Location != nil && pattern.Location == restored.Location {
+			t.Fatal("a restored pattern location shares the relation's")
+		}
+	}
+
+	// An artifact written with every location spelled out reads the same.
+	spelled, err := json.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, err := Decode(spelled); err != nil || again.SHA256 != index.SHA256 {
+		t.Fatalf("fully spelled artifact = %v", err)
+	}
+	// {} on a relation without a location names no location and is refused.
+	unlocated := []byte(strings.Replace(string(encoded), `{"path":"src/worker.lang","line":20,"column":7}`, `{}`, 1))
+	if _, err := Decode(unlocated); err == nil {
+		t.Fatal("Decode accepted {} for a relation without a location")
 	}
 }
 

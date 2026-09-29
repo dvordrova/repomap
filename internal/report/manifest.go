@@ -200,7 +200,7 @@ func ReadRunReceipt(runDir string) (RunReceipt, error) {
 	if err != nil {
 		return RunReceipt{}, err
 	}
-	data, err := decodeStrictReportJSON(raw)
+	data, err := decodeStrictReportJSON(raw, absoluteRunDir)
 	if err != nil {
 		return RunReceipt{}, err
 	}

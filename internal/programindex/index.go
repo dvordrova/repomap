@@ -1048,11 +1048,94 @@ func Encode(index Index) ([]byte, error) {
 	if err := index.Validate(); err != nil {
 		return nil, err
 	}
-	encoded, err := json.Marshal(index)
+	return EncodeValidated(index)
+}
+
+// EncodeValidated returns the artifact bytes of an index its caller has
+// validated already: Encode without validating a second time. A witness or
+// pattern at its relation's own location writes that location as {}, so the
+// path, line and column are written once, on the relation; the reader
+// restores them. {} is never a location itself (a location has a path, a
+// line and a column), and a witness or pattern without a location still
+// writes none. The seal is over the index, not over these bytes.
+func EncodeValidated(index Index) ([]byte, error) {
+	encoded, err := json.Marshal(storedIndexOf(index))
 	if err != nil {
 		return nil, fmt.Errorf("program index: encode artifact: %w", err)
 	}
 	return encoded, nil
+}
+
+// storedIndex is an Index as its artifact writes it: its relations name a
+// witness's or pattern's location that equals the relation's own as {}.
+type storedIndex struct {
+	indexArtifact
+	Relations []storedRelation `json:"relations"`
+}
+
+type storedRelation struct {
+	Relation
+	Witnesses []storedWitness `json:"witnesses,omitempty"`
+	Patterns  []storedPattern `json:"patterns,omitempty"`
+}
+
+type storedWitness struct {
+	Witness
+	Location *storedLocation `json:"location,omitempty"`
+}
+
+type storedPattern struct {
+	RelationPattern
+	Location *storedLocation `json:"location,omitempty"`
+}
+
+// storedLocation is a Location as the artifact writes it; the empty one is
+// the relation's own location.
+type storedLocation struct {
+	Path   string `json:"path,omitempty"`
+	Line   int    `json:"line,omitempty"`
+	Column int    `json:"column,omitempty"`
+}
+
+func storedIndexOf(index Index) storedIndex {
+	stored := storedIndex{indexArtifact: indexArtifact(index), Relations: make([]storedRelation, len(index.Relations))}
+	for position, relation := range index.Relations {
+		row := storedRelation{Relation: relation}
+		if len(relation.Witnesses) > 0 {
+			row.Witnesses = make([]storedWitness, len(relation.Witnesses))
+			for witness, value := range relation.Witnesses {
+				row.Witnesses[witness] = storedWitness{Witness: value, Location: storedLocationOf(value.Location, relation.Location)}
+			}
+		}
+		if len(relation.Patterns) > 0 {
+			row.Patterns = make([]storedPattern, len(relation.Patterns))
+			for pattern, value := range relation.Patterns {
+				row.Patterns[pattern] = storedPattern{RelationPattern: value, Location: storedLocationOf(value.Location, relation.Location)}
+			}
+		}
+		stored.Relations[position] = row
+	}
+	return stored
+}
+
+func storedLocationOf(location, relation *Location) *storedLocation {
+	switch {
+	case location == nil:
+		return nil
+	case relation != nil && *location == *relation:
+		return &storedLocation{}
+	default:
+		return &storedLocation{Path: location.Path, Line: location.Line, Column: location.Column}
+	}
+}
+
+// restoreRelationLocation gives back the relation's own location that the
+// artifact wrote as {}. Without a relation location {} stays empty, and
+// validation refuses it.
+func restoreRelationLocation(location **Location, relation *Location) {
+	if *location != nil && **location == (Location{}) && relation != nil {
+		*location = cloneLocation(relation)
+	}
 }
 
 // Decode strictly decodes one JSON artifact, rejects unknown fields and
@@ -1119,8 +1202,12 @@ func restoreRelationCounts(relation *Relation) {
 	relation.TargetsObserved = len(relation.ToIDs) + relation.TargetsOmitted
 	relation.WitnessesObserved = len(relation.Witnesses) + relation.WitnessesOmitted
 	relation.PatternsObserved = len(relation.Patterns) + relation.PatternsOmitted
+	for position := range relation.Witnesses {
+		restoreRelationLocation(&relation.Witnesses[position].Location, relation.Location)
+	}
 	for position := range relation.Patterns {
 		pattern := &relation.Patterns[position]
+		restoreRelationLocation(&pattern.Location, relation.Location)
 		pattern.ReceiverOriginIDs = emptyIfNil(pattern.ReceiverOriginIDs)
 		pattern.Arguments = emptyIfNil(pattern.Arguments)
 		pattern.ReceiverOriginsObserved = len(pattern.ReceiverOriginIDs) + pattern.ReceiverOriginsOmitted

@@ -251,25 +251,6 @@ func renderRun(runID string, receipt report.RunReceipt) (runRecord, error) {
 	}, nil
 }
 
-func decodeReportJSON(encoded []byte) (report.ReportData, error) {
-	decoder := json.NewDecoder(bytes.NewReader(encoded))
-	decoder.DisallowUnknownFields()
-	var data report.ReportData
-	if err := decoder.Decode(&data); err != nil {
-		return report.ReportData{}, fmt.Errorf("report.json is invalid: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return report.ReportData{}, fmt.Errorf("report.json contains multiple values")
-		}
-		return report.ReportData{}, fmt.Errorf("report.json has trailing data: %w", err)
-	}
-	if data.FormatVersion != report.CurrentFormatVersion {
-		return report.ReportData{}, fmt.Errorf("report.json has format version %d", data.FormatVersion)
-	}
-	return data, nil
-}
-
 // navigationRunID reads the sibling run id back out of a navigation link.
 func navigationRunID(
 	initialRunID, currentTargetID string,
