@@ -503,10 +503,15 @@ func (b *builder) claimByRoot() {
 	}
 	var roots []root
 	for _, target := range b.input.Targets {
-		for _, path := range []string{atlasPath(target.Root), atlasPath(target.AbsorbedRoot)} {
-			if path != "" {
-				roots = append(roots, root{target.Index.Target.ID, path})
-			}
+		path := atlasPath(target.Root)
+		if path == "" {
+			continue
+		}
+		roots = append(roots, root{target.Index.Target.ID, path})
+		// atlasPath reads an empty path as the repository root: only a
+		// program that absorbed a library has a second root.
+		if target.AbsorbedRoot != "" {
+			roots = append(roots, root{target.Index.Target.ID, atlasPath(target.AbsorbedRoot)})
 		}
 	}
 	for filePath, state := range b.files {
