@@ -3204,7 +3204,7 @@
    "inventory": "workers",
    "kind": "main-loop",
    "name": "aeMain event loop",
-   "anchor": "redis.c:9153",
+   "anchor": "ae.c:375",
    "handler": "aeMain",
    "must": false,
    "why": "main's last call: blocks in the event loop, running beforeSleep and aeProcessEvents until stop is set.",
@@ -3541,6 +3541,13 @@
    "change": "trap -> item redis-server / workers / aeMain event loop: must false, \"flow\": true",
    "reason": "The program's own foreground loop is scored against the Main flow, like freqtrade's Worker.run and litestream's restore follow loop (must=false workers items with flow=true), so the three repositories score their main loops alike. A workers row on it is an extra, not a trap hit.",
    "citation": "redis.c:9153 aeMain(server.el) in main, its last call before aeDeleteEventLoop (redis.c:9154); ae.c:375-381 aeMain loops over eventLoop->beforesleep and aeProcessEvents until eventLoop->stop"
+  },
+  {
+   "date": "2026-09-29",
+   "item": "redis-server / workers / aeMain event loop (redis.c:9153)",
+   "change": "anchor redis.c:9153 -> ae.c:375",
+   "reason": "A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow step at the declaration of the function it names (internal/audit flowSteps: the step subject's declaration). Anchored at a call site or a loop no step can match it (0/8 flow items found across the three inventories), so the item is anchored at its function's declaration; the line it was anchored at stays cited.",
+   "citation": "ae.c:375 void aeMain(aeEventLoop *eventLoop) {, the declaration; ae.c:377 while (!eventLoop->stop), the loop; redis.c:9153 aeMain(server.el) in main, the call it was anchored at"
   }
  ]
 }

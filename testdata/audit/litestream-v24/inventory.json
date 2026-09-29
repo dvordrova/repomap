@@ -1816,7 +1816,7 @@
       "inventory": "workers",
       "kind": "service-loop",
       "name": "Windows service control loop",
-      "anchor": "cmd/litestream/main_windows.go:80",
+      "anchor": "cmd/litestream/main_windows.go:57",
       "handler": "windowsService.Execute",
       "must": false,
       "why": "Blocks on SCM change requests while running as a Windows service.",
@@ -2360,7 +2360,7 @@
       "inventory": "workers",
       "kind": "ticker",
       "name": "restore follow loop",
-      "anchor": "replica.go:817",
+      "anchor": "replica.go:791",
       "handler": "Replica.follow",
       "must": false,
       "why": "restore -f polls the replica every follow-interval and applies new LTX files to the restored database.",
@@ -5082,6 +5082,20 @@
       "change": "\"flow\": true",
       "reason": "Consistency with the follow loop: when run as a Windows service, main -> runWindowsService blocks in svc.Run and Execute's SCM loop is the service's own foreground flow (it runs replicate, then waits for Stop).",
       "citation": "cmd/litestream/main.go:125 return runWindowsService(ctx); cmd/litestream/main_windows.go:44 svc.Run; :71 c.Run(s.ctx); :80 for {"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "litestream (root library package) / workers / restore follow loop (replica.go:817)",
+      "change": "anchor replica.go:817 -> replica.go:791",
+      "reason": "A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow step at the declaration of the function it names (internal/audit flowSteps: the step subject's declaration). Anchored at a loop no step can match it (0/8 flow items found across the three inventories), so the item is anchored at its function's declaration; the line it was anchored at stays cited.",
+      "citation": "replica.go:791 func (r *Replica) follow(ctx context.Context, ...), the declaration; replica.go:817 ticker := time.NewTicker(interval), the line it was anchored at, before the ticker loop"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "cmd/litestream / workers / Windows service control loop (cmd/litestream/main_windows.go:80)",
+      "change": "anchor cmd/litestream/main_windows.go:80 -> cmd/litestream/main_windows.go:57",
+      "reason": "A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow step at the declaration of the function it names (internal/audit flowSteps: the step subject's declaration). Anchored at a loop no step can match it (0/8 flow items found across the three inventories), so the item is anchored at its function's declaration; the line it was anchored at stays cited.",
+      "citation": "cmd/litestream/main_windows.go:57 func (s *windowsService) Execute(args []string, ...), the declaration; :80 for {, the loop it was anchored at"
     },
     {
       "date": "2026-09-29",

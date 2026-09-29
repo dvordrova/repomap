@@ -2707,7 +2707,7 @@
       "inventory": "workers",
       "kind": "main-loop",
       "name": "Worker.run",
-      "anchor": "freqtrade/worker.py:78",
+      "anchor": "freqtrade/worker.py:76",
       "handler": "freqtrade.worker.Worker._worker",
       "must": false,
       "why": "The `trade` process loop: handles state changes (RUNNING/PAUSED/STOPPED/RELOAD_CONFIG) and throttles each iteration.",
@@ -2718,7 +2718,7 @@
       "inventory": "workers",
       "kind": "main-loop",
       "name": "Worker._throttle",
-      "anchor": "freqtrade/worker.py:186",
+      "anchor": "freqtrade/worker.py:145",
       "handler": "freqtrade.worker.Worker._throttle",
       "must": false,
       "why": "Sleeps so an iteration lasts process_throttle_secs, aligned to the next candle.",
@@ -2810,7 +2810,7 @@
       "inventory": "workers",
       "kind": "server",
       "name": "standalone uvicorn (webserver mode)",
-      "anchor": "freqtrade/rpc/api_server/webserver.py:339",
+      "anchor": "freqtrade/rpc/api_server/uvicorn_threaded.py:36",
       "handler": "freqtrade.rpc.api_server.uvicorn_threaded.UvicornServer.run",
       "must": false,
       "why": "`freqtrade webserver` runs uvicorn in the main thread instead of FTUvicorn.",
@@ -4212,7 +4212,7 @@
       "inventory": "workers",
       "kind": "async-loop",
       "name": "create_client reconnect loop",
-      "anchor": "scripts/ws_client.py:221",
+      "anchor": "scripts/ws_client.py:197",
       "handler": "scripts.ws_client.create_client",
       "must": false,
       "why": "Reconnects forever, receiving messages and pinging on timeout.",
@@ -4867,6 +4867,34 @@
       "change": "must True -> False",
       "reason": "A run-state flag (RUNNING/PAUSED/STOPPED/RELOAD_CONFIG), not the owner's keyspace-like main store; the bot's data lives in the trades DB, which stays must.",
       "citation": "freqtrade/freqtradebot.py:149 self.state = State[initial_state.upper()] if initial_state else State.STOPPED"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / Worker.run (freqtrade/worker.py:78)",
+      "change": "anchor freqtrade/worker.py:78 -> freqtrade/worker.py:76",
+      "reason": "A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow step at the declaration of the function it names (internal/audit flowSteps: the step subject's declaration). Anchored at a loop or a call site no step can match it (0/8 flow items found across the three inventories), so the item is anchored at its function's declaration; the line it was anchored at stays cited.",
+      "citation": "freqtrade/worker.py:76 def run(self) -> None:, the declaration; :78 while True:, the loop it was anchored at"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / Worker._throttle (freqtrade/worker.py:186)",
+      "change": "anchor freqtrade/worker.py:186 -> freqtrade/worker.py:145",
+      "reason": "A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow step at the declaration of the function it names (internal/audit flowSteps: the step subject's declaration). Anchored at a loop or a call site no step can match it (0/8 flow items found across the three inventories), so the item is anchored at its function's declaration; the line it was anchored at stays cited.",
+      "citation": "freqtrade/worker.py:145 def _throttle(, the declaration; :186 self._sleep(sleep_duration), the call it was anchored at"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "scripts/ws_client.py / workers / create_client reconnect loop (scripts/ws_client.py:221)",
+      "change": "anchor scripts/ws_client.py:221 -> scripts/ws_client.py:197",
+      "reason": "A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow step at the declaration of the function it names (internal/audit flowSteps: the step subject's declaration). Anchored at a loop or a call site no step can match it (0/8 flow items found across the three inventories), so the item is anchored at its function's declaration; the line it was anchored at stays cited.",
+      "citation": "scripts/ws_client.py:197 async def create_client(, the declaration; :221 while 1:, the loop it was anchored at"
+    },
+    {
+      "date": "2026-09-29",
+      "item": "freqtrade / workers / standalone uvicorn (webserver mode) (freqtrade/rpc/api_server/webserver.py:339)",
+      "change": "anchor freqtrade/rpc/api_server/webserver.py:339 -> freqtrade/rpc/api_server/uvicorn_threaded.py:36",
+      "reason": "A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow step at the declaration of the function it names (internal/audit flowSteps: the step subject's declaration). Anchored at a loop or a call site no step can match it (0/8 flow items found across the three inventories), so the item is anchored at its function's declaration; the line it was anchored at stays cited.",
+      "citation": "freqtrade/rpc/api_server/uvicorn_threaded.py:36 def run(self, sockets=None):, the declaration of UvicornServer.run, the item's handler, whose :54 loop.run_until_complete(self.serve(...)) serves in the foreground; freqtrade/rpc/api_server/webserver.py:339 self._server.run() in ApiServer.start_api, the call it was anchored at"
     }
   ]
 }

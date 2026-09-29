@@ -991,6 +991,30 @@ fix(CLI, "workers", "Windows service control loop",
     "Execute's SCM loop is the service's own foreground flow (it runs replicate, then waits for Stop).",
     "cmd/litestream/main.go:125 return runWindowsService(ctx); cmd/litestream/main_windows.go:44 svc.Run; :71 "
     "c.Run(s.ctx); :80 for {", flow=True)
+# A flow item says "the Main flow runs through X": a claim about function X, and a Main flow step is anchored at
+# its function's declaration (internal/audit flowSteps). At the loop inside X no step could match it. The new
+# anchor's check is verified with every other anchor below.
+FLOW_ANCHOR = ("A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow "
+               "step at the declaration of the function it names (internal/audit flowSteps: the step subject's "
+               "declaration). Anchored at a loop no step can match it (0/8 flow items found across the three "
+               "inventories), so the item is anchored at its function's declaration; the line it was anchored at "
+               "stays cited.")
+
+
+def reanchor(comp, inv, name, anchor, check, citation):
+    it = find(comp, inv, name)
+    assert it.get("flow") is True, (comp, inv, name)
+    erratum(it, f"anchor {it['anchor']} -> {anchor}", FLOW_ANCHOR, citation)
+    it["anchor"], it["_check"] = anchor, check
+
+
+reanchor(LIB, "workers", "restore follow loop", "replica.go:791", "func (r *Replica) follow(",
+         "replica.go:791 func (r *Replica) follow(ctx context.Context, ...), the declaration; replica.go:817 ticker := "
+         "time.NewTicker(interval), the line it was anchored at, before the ticker loop")
+reanchor(CLI, "workers", "Windows service control loop", "cmd/litestream/main_windows.go:57",
+         "func (s *windowsService) Execute(",
+         "cmd/litestream/main_windows.go:57 func (s *windowsService) Execute(args []string, ...), the declaration; "
+         ":80 for {, the loop it was anchored at")
 
 # 2. Data: only a keyspace-like main store is must in-memory data; one remote layout, many variants.
 RULE_MEM = ("The owner's must in-memory data is a keyspace-like main store that holds the program's data (Redis's "

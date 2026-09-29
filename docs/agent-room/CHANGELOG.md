@@ -1,5 +1,36 @@
 # Implementation and acceptance journal
 
+## 2026-09-29 — An outside call's record in the column prints no place; flow items anchored at their function
+
+- **Column (owner rules: no line numbers, no duplication):** an External
+  communication tile's record (`rmOutboundRecord`) stands open with no
+  printed place. Redis's "gethostbyname anet.c:146", "netdb.h.gethostbyname
+  · anet.c:146" and the intro's "anet.c:146" are one name,
+  `netdb.h.gethostbyname`, a link to anet.c:146 with the place on hover;
+  destination steps are links too. "redis-server connects out from
+  syncWithMaster → anetTcpConnect → anetTcpGenericConnect" is gone where
+  "Called from" lists the callers; it stays on freqtrade's 25 tiles with
+  none (`fetch_balance`: "connects out from get_balances"). The model's note
+  is said once, in the intro; the empty actions row goes.
+- **Page and column:** a chain whose frontier is the record's own callable,
+  one step at its line ("Address passes through ccxt.Exchange.create_order"),
+  is no line; equal consecutive steps are one (freqtrade's `start_install_ui`
+  and `dl_url` both read "install-ui").
+- **Audit errata (2026-09-29):** Main flow steps are anchored at the
+  callee's declaration, flow items were at the loop or call site (0/8
+  found). Re-anchored at the declaration: Redis aeMain redis.c:9153 → ae.c:375;
+  freqtrade Worker.run worker.py:78 → :76, Worker._throttle :186 → :145,
+  create_client ws_client.py:221 → :197, standalone uvicorn webserver.py:339
+  → uvicorn_threaded.py:36 (UvicornServer.run, its handler); litestream
+  Replica.follow replica.go:817 → :791, windowsService.Execute
+  main_windows.go:80 → :57. FreqtradeBot.process was already at its `def`
+  (freqtradebot.py:257), now asserted. Redis run `20260929-140032`'s Main
+  flow names aeMain at ae.c:375.
+- **Renders:** the newest saved runs (Redis `20260929-140032`, freqtrade
+  `140146`) hold ProgramIndex 21, which the current binary (22) refuses; they
+  were rendered by a scratch build overlaying only that constant.
+  Screenshots `<scratchpad>/look/ui-ext-{before,after}-*.png`.
+
 ## 2026-09-29 — One batch of items and criteria: how a table is read, whose interface, a key's values, talks of handed symbols, `file` and which argument, where a call is reached from
 
 - **Why:** claim-audit rootcause `commands-kinds.md` fixes 2 and 7 and fix

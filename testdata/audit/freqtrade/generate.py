@@ -1032,7 +1032,44 @@ set_must(FT, "data", "FreqtradeBot.state", False,
          "data lives in the trades DB, which stays must.",
          "freqtrade/freqtradebot.py:149 self.state = State[initial_state.upper()] if initial_state else State.STOPPED")
 
-revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
+# 5. A flow item says "the Main flow runs through X": a claim about function X, and a Main flow step is anchored
+# at its function's declaration (internal/audit flowSteps). At the loop or the call inside X no step could match it.
+FLOW_ANCHOR = ("A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow "
+               "step at the declaration of the function it names (internal/audit flowSteps: the step subject's "
+               "declaration). Anchored at a loop or a call site no step can match it (0/8 flow items found across "
+               "the three inventories), so the item is anchored at its function's declaration; the line it was "
+               "anchored at stays cited.")
+
+
+def reanchor(component, inventory, name, path, lineno, chk, citation):
+    it = find_item(component, inventory, name)
+    assert it.get("flow") is True, label(it)
+    text = line_of(path, lineno)
+    assert chk in text, (path, lineno, chk, text)
+    erratum(label(it), f"anchor {it['anchor']} -> {path}:{lineno}", FLOW_ANCHOR, citation)
+    it["anchor"] = f"{path}:{lineno}"
+
+
+reanchor(FT, "workers", "Worker.run", "freqtrade/worker.py", 76, "def run(self) -> None:",
+         "freqtrade/worker.py:76 def run(self) -> None:, the declaration; :78 while True:, the loop it was anchored at")
+reanchor(FT, "workers", "Worker._throttle", "freqtrade/worker.py", 145, "def _throttle(",
+         "freqtrade/worker.py:145 def _throttle(, the declaration; :186 self._sleep(sleep_duration), the call it was "
+         "anchored at")
+reanchor("scripts/ws_client.py", "workers", "create_client reconnect loop", "scripts/ws_client.py", 197,
+         "async def create_client(",
+         "scripts/ws_client.py:197 async def create_client(, the declaration; :221 while 1:, the loop it was anchored at")
+reanchor(FT, "workers", "standalone uvicorn (webserver mode)", "freqtrade/rpc/api_server/uvicorn_threaded.py", 36,
+         "def run(self, sockets=None):",
+         "freqtrade/rpc/api_server/uvicorn_threaded.py:36 def run(self, sockets=None):, the declaration of "
+         "UvicornServer.run, the item's handler, whose :54 loop.run_until_complete(self.serve(...)) serves in the "
+         "foreground; freqtrade/rpc/api_server/webserver.py:339 self._server.run() in ApiServer.start_api, the call "
+         "it was anchored at")
+# FreqtradeBot.process is already anchored at its declaration: no erratum.
+it = find_item(FT, "workers", "FreqtradeBot.process")
+assert it["anchor"] == "freqtrade/freqtradebot.py:257" and line_of("freqtrade/freqtradebot.py", 257).strip() == \
+    "def process(self) -> None:", it
+
+revision =subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
 assert revision == PINNED, f"{REPO} is at {revision}, the inventory is pinned to {PINNED}"
 
 notes = [

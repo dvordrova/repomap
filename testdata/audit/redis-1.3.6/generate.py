@@ -495,6 +495,21 @@ erratum("not / redis-server / aeMain event loop (redis.c:9153)",
         "score their main loops alike. A workers row on it is an extra, not a trap hit.",
         "redis.c:9153 aeMain(server.el) in main, its last call before aeDeleteEventLoop (redis.c:9154); "
         "ae.c:375-381 aeMain loops over eventLoop->beforesleep and aeProcessEvents until eventLoop->stop")
+# A flow item says "the Main flow runs through aeMain": a claim about the function, and a Main flow step is
+# anchored at its function's declaration (internal/audit flowSteps). At the call in main no step could match it.
+FLOW_ANCHOR = ("A flow item's claim is that the Main flow runs through a function, and the audit anchors a Main flow "
+               "step at the declaration of the function it names (internal/audit flowSteps: the step subject's "
+               "declaration). Anchored at a call site or a loop no step can match it (0/8 flow items found across "
+               "the three inventories), so the item is anchored at its function's declaration; the line it was "
+               "anchored at stays cited.")
+it = find_item("redis-server", "workers", "aeMain event loop")
+assert it["anchor"] == "redis.c:9153" and it.get("flow") is True
+AE_MAIN = open("ae.c", encoding="latin-1").read().splitlines()[375 - 1]
+assert AE_MAIN.startswith("void aeMain(aeEventLoop *eventLoop)"), AE_MAIN
+erratum("redis-server / workers / aeMain event loop (redis.c:9153)", "anchor redis.c:9153 -> ae.c:375", FLOW_ANCHOR,
+        "ae.c:375 void aeMain(aeEventLoop *eventLoop) {, the declaration; ae.c:377 while (!eventLoop->stop), the "
+        "loop; redis.c:9153 aeMain(server.el) in main, the call it was anchored at")
+it["anchor"] = "ae.c:375"
 
 doc = {"repository": "redis-1.3.6", "path": "~/git/redis-1.3.6", "revision": rev, "components": components,
        "items": items, "not": not_list, "notes": notes, "review_summary": review_summary, "review": review,
