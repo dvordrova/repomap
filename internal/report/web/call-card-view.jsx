@@ -138,17 +138,18 @@ export function FrameConnections({groups,open,choose=null,single=false}){
 }
 
 // An arrow's card on the canvas (briefCard): the parts it goes into, under
-// each the names it reaches there, one to a line in columns as wide as the
-// longest of them.
+// each the names it reaches there, one name to a line. A part its heading
+// names already (`into`) is not named again: "Server lifecycle and cron →
+// Virtual memory" had stood over "→ Virtual memory" and its names in two
+// columns (reviewer, 2026-09-30).
 // A part's first dozen names say what it is; a click on the arrow reads
 // every call in the column.
 const briefMost=12;
-export function BriefRows({card}){
+export function BriefRows({card,into=''}){
   const parts=briefCard(card);
-  const widest=Math.max(0,...parts.flatMap(part=>part.names.map(entry=>String(entry.name).length)));
   return <div className="flow-card-brief">{parts.map(part=><section key={part.name}>
-    <h5 className="flow-card-pair"><span><i>→</i> {part.name}</span></h5>
-    {part.names.length>0&&<ul style={{gridTemplateColumns:`repeat(auto-fill,minmax(${Math.min(460,Math.max(96,widest*7.6+12))}px,1fr))`}}>
+    {part.name!==into&&<h5 className="flow-card-pair"><span><i>→</i> {part.name}</span></h5>}
+    {part.names.length>0&&<ul>
       {part.names.slice(0,briefMost).map(entry=><li key={entry.name}><Link href={entry.href}>{entry.name}</Link></li>)}
       {part.names.length>briefMost&&<li className="flow-card-more" aria-hidden="true">…</li>}</ul>}
   </section>)}</div>;

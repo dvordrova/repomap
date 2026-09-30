@@ -219,11 +219,15 @@ function FrameTitle({node,item,focused,enter,select,muted}) {
 // An arrow is drawn over its casing and under a wide unpainted hit path:
 // the pointer on the arrow opens the card of its connection, a click reads
 // it (canvas: routeHead).
+// A quiet arrow (wiring or a call into a helper, drawn only while one of
+// its ends is looked at) is drawn as its calls are, solid or dashed: dotted,
+// othello's negamax → evaluate had read as the key's "returns or takes a
+// type" (reviewer, 2026-09-30).
 function RoutedEdge({id,data}) {
   return <g aria-hidden="true" className={`flow-edge ${data.on?'flow-edge-active':''} ${data.dim?'flow-edge-muted':''}`} data-edge-id={id} data-edge-ids={data.edgeIDs.join(' ')} data-edge-ends={(data.boxes||[]).join(' ')}>
     <path className="flow-edge-hit" d={data.path} data-edge-hit={id}/>
     <path className="flow-edge-casing" d={data.path} vectorEffect="non-scaling-stroke"/>
-    <path d={data.path} fill="none" vectorEffect="non-scaling-stroke" style={data.possible||data.init?{strokeDasharray:data.init?'calc(3px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))':'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined} markerStart={data.reverseArrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined} markerEnd={data.arrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined}/>
+    <path d={data.path} fill="none" vectorEffect="non-scaling-stroke" style={data.possible?{strokeDasharray:'calc(7px / var(--flow-zoom, 1)) calc(5px / var(--flow-zoom, 1))'}:undefined} markerStart={data.reverseArrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined} markerEnd={data.arrow?`url(#${data.on?'flow-arrow-active':'flow-arrow'})`:undefined}/>
   </g>;
 }
 const nodeTypes={part:Part,area:Area,chip:Chip}, edgeTypes={routed:RoutedEdge};
@@ -632,7 +636,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const looked=deepPart&&(head.into===deepPart||head.from===deepPart)?lookedLabels.filter(carries):[];
     if(looked.length)return looked.find(label=>label.incoming===(head.into===deepPart))||looked[0];
     const [frame,incoming]=isFrame(head.into)?[head.into,true]:isFrame(head.from)?[head.from,false]:[];
-    return frame?frameLabels(frame,lastMatchingOf).find(label=>label.incoming===incoming&&carries(label))||null:null;
+    if(frame)return frameLabels(frame,lastMatchingOf).find(label=>label.incoming===incoming&&carries(label))||null;
+    // An arrow between two parts is the calling part's connection to the
+    // other: inside Game logic no arrow had opened a card.
+    return head.from&&placed.has(head.from)?frameLabels(head.from,lastMatchingOf).find(label=>!label.incoming&&label.outside===head.into&&carries(label))||null:null;
   }
   // A connection that is not one of the looked-at frame's is kept for its card.
   function keepHeadLabel(label){if(!lookedLabels.some(other=>other.id===label.id))headLabels.set(label.id,label);}
@@ -1058,9 +1065,12 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const entry=n=>{const root=placed.get(rootOf(n.id));return root?frameView(root,rect).zoom:Infinity;};
       // The note naming the targets not analysed fills its box with its
       // words at the size they were measured at (cards.mjs).
+      // Its words are the targets' names (cards.mjs unreadNote): measured
+      // lines, as a card's description is drawn (litestream's note had
+      // stood as an empty box, reviewer 2026-09-30).
       const note=n=>{
-        const {note}=byID.get(n.id),scale=Math.min(n.width/note.width,n.height/note.height);
-        return [n.id,{scale,title:note.title.join('\n'),width:n.width/scale,height:n.height/scale}];
+        const item=byID.get(n.id),{note}=item,scale=Math.min(n.width/note.width,n.height/note.height);
+        return [n.id,{scale,title:note.title.join('\n'),width:n.width/scale,height:n.height/scale,lines:wrapText(item.description||item.summary||'',note.width-14,'11px system-ui',measure)}];
       };
       return new Map(layout.nodes.filter(n=>!n.frame&&(!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component'||byID.get(n.id).note)).map(n=>{
         if(byID.get(n.id).note)return note(n);
@@ -1391,7 +1401,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       </div>}
       {destinations?<ul className="flow-card-destinations">{destinations.map(([name,parts])=><li key={name}>
         <b>{name}</b>{parts.size>0&&<span>← {[...parts].join(', ')}</span>}</li>)}</ul>
-        :<BriefRows card={card}/>}</FloatingCard>;
+        :<BriefRows card={card} into={nameOf(intoFrame)}/>}</FloatingCard>;
   }
   // A click on an arrow end, its chip or its arrowhead, reads its frame's
   // connections in the column, that connection open (owner's 3b); its card
