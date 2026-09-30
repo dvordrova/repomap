@@ -3,6 +3,7 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -402,5 +403,23 @@ func TestAPartsMembersKeepTheirFilesPathAndTheirOwnNames(t *testing.T) {
 	// Each named with its type, as a reading lists a field.
 	if !slices.Contains(fields, "redisClient.argc") || !slices.Contains(fields, "redisClient.mbargc") {
 		t.Fatalf("fields on one line read as %q, want argc and mbargc each", fields)
+	}
+}
+
+// Inputs of one kind sharing a name carry their own key words in the
+// collection, which tell them apart (freqtrade's version and version_main,
+// both -V --version); an input no other shares its name with carries none.
+func TestAnInputCollectionKeysOnlyItsSameNamedInputs(t *testing.T) {
+	nodes := map[string]pageMapNode{
+		"o1": {FullTitle: "-V --version", Activation: "command", Key: "version"},
+		"o2": {FullTitle: "-V --version", Activation: "command", Key: "version_main"},
+		"o3": {FullTitle: "--erase", Activation: "command", Key: "erase"},
+	}
+	var collection pageInputCollection
+	if err := json.Unmarshal([]byte(inputCollection([]string{"o1", "o2", "o3"}, func(id string) pageMapNode { return nodes[id] })), &collection); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"o1": "version", "o2": "version_main"}; !maps.Equal(collection.Keys, want) {
+		t.Fatalf("keys %v, want %v", collection.Keys, want)
 	}
 }

@@ -263,6 +263,11 @@ type Operation struct {
 	// handler looks up by its key, what the key names (atlas Boundary.Names:
 	// othello's n names new-game).
 	Names []string `json:"names,omitempty"`
+	// Key is, for an input whose handler is not established, the first
+	// word its registration wrote beyond its name's words, one with no space
+	// (a table row's key, a parameter's dest): freqtrade's version and
+	// version_main, both named -V --version, told apart by it.
+	Key string `json:"key,omitempty"`
 	// Aliases are, for a handler-less input its code reads under several
 	// spellings of one value (atlas Boundary.AliasOf: litestream's
 	// query.Get("storage-class") in the else-if arm after

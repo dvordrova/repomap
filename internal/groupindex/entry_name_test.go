@@ -48,3 +48,22 @@ func TestAConnectionNamesAnInlineCallableByItsHolder(t *testing.T) {
 		t.Fatalf("a reader still names a wrapper by what it wraps: %v", got)
 	}
 }
+
+// An input's key is the first word its registration wrote beyond its
+// name's, with no space: a table row's key (freqtrade's version_main
+// beside -V --version), never its help text.
+func TestAnInputsKeyIsItsFirstWordBeyondItsName(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		values []string
+		want   string
+	}{
+		{"-V --version", []string{"version_main", "-V", "--version", "show program's version number and exit"}, "version_main"},
+		{"--erase", []string{"--erase", "Clean all existing data"}, ""},
+		{"socket", []string{"socket", "/var/run/litestream.sock", "control socket path"}, "/var/run/litestream.sock"},
+	} {
+		if got := entryKey(c.name, c.values); got != c.want {
+			t.Fatalf("key of %q from %q = %q, want %q", c.name, c.values, got, c.want)
+		}
+	}
+}

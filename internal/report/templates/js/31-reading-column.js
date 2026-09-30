@@ -653,12 +653,16 @@ function rmCollectionView(ctx,node,collection){
   // its code as written, which stays behind its link (owner's review,
   // 2026-09-30: "save strcasecmp(argv[0]" and "-V --version "version":
   // Arg("-V"" had read as names).
-  function ofWhich(input){
+  // Declared by one declaration, it says its own key word (a table row's
+  // key: freqtrade's version and version_main, both -V --version).
+  function ofWhich(input,id){
     if(titles[shared(input)]<2)return null;
     var of=holders[input.dataset.sourceText||''];
     if(of&&of.length)return rmEl('span','map-reading-where',of.join(', '));
     var by=input.dataset.declaredBy||'';
-    return by&&declarers[shared(input)].size>1?rmEl('span','map-reading-where',by):null;
+    if(by&&declarers[shared(input)].size>1)return rmEl('span','map-reading-where',by);
+    var key=(collection.keys||{})[id];
+    return key?rmEl('span','map-reading-where',key):null;
   }
   kinds.forEach(function(kind){
     var groups=collection.groups.filter(function(group){return group.kind===kind;}),all=[].concat.apply([],groups.map(function(group){return group.inputs;}));
@@ -699,7 +703,7 @@ function rmCollectionView(ctx,node,collection){
         // prose, not code.
         if(rmProse(input.dataset.title))button.classList.add('map-collection-prose');
         button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);
-        var of=ofWhich(input);if(of)item.append(' ',of);
+        var of=ofWhich(input,id);if(of)item.append(' ',of);
         list.appendChild(item);
       });
       return list;

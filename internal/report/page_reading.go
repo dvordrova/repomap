@@ -917,6 +917,10 @@ func componentTitle(section *pageSection, sections []*pageSection) string {
 type pageInputCollection struct {
 	Groups []pageCollectionGroup `json:"groups"`
 	Kinds  []pageCollectionGroup `json:"kinds"`
+	// Keys are, by input, its own key word (pageMapNode Key), for the
+	// inputs sharing their name and kind with another: what tells them
+	// apart when their subcommands and declarations do not.
+	Keys map[string]string `json:"keys,omitempty"`
 }
 
 // pageCollectionGroup is inputs of one kind, by name; Catalogue names one
@@ -962,6 +966,18 @@ func inputCollection(children []string, node func(string) pageMapNode) string {
 		return groups
 	}
 	collection := pageInputCollection{Kinds: byKind(children)}
+	shared := map[string]int{}
+	for _, id := range children {
+		shared[node(id).Activation+"\x00"+node(id).FullTitle]++
+	}
+	for _, id := range children {
+		if input := node(id); input.Key != "" && shared[input.Activation+"\x00"+input.FullTitle] > 1 {
+			if collection.Keys == nil {
+				collection.Keys = map[string]string{}
+			}
+			collection.Keys[id] = input.Key
+		}
+	}
 	catalogues := map[string]int{}
 	var loose []string
 	for _, id := range children {

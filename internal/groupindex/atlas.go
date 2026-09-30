@@ -268,6 +268,18 @@ func projectAtlasFrom(ids []string, value atlas.Atlas, keys *DeclarationKeys, re
 	return result, nil
 }
 
+// entryKey is the first word a registration wrote beyond its name's words,
+// one with no space and that can stand as written (Operation.Key).
+func entryKey(name string, values []string) string {
+	named := strings.Fields(name)
+	for _, value := range values {
+		if value != "" && !strings.ContainsAny(value, " \t\r\n") && validText(value) && !slices.Contains(named, value) {
+			return value
+		}
+	}
+	return ""
+}
+
 // drawnEnds are the declarations a relation's arrow may reach: its targets,
 // or, for a call left unresolved, what the witnesses of its stores name. The
 // relation keeps its resolution, so such an arrow is possible like one of
@@ -839,7 +851,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			if byID[declaredBy] == nil {
 				declaredBy = ""
 			}
-			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary), Written: boundary.Written, ValueOf: boundary.ValueOf, Names: slices.Clone(boundary.Names)}
+			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary), Written: boundary.Written, ValueOf: boundary.ValueOf, Names: slices.Clone(boundary.Names), Key: entryKey(boundary.Name, boundary.Values)}
 			if boundary.AliasOf != "" {
 				aliasOf[boundary.ID] = boundary.AliasOf
 			}
