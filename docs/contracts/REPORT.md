@@ -1181,7 +1181,10 @@ cannot imply an empty component map.
 With nothing selected, the reading column shows the repository summary,
 marked as the model's by its style alone, and entrances to the complete
 saved question menu, run material, terminology, missing observations and
-author claims: ordinary rendered content, not another model summary. The
+author claims: ordinary rendered content, not another model summary. Those
+entrances are one line at the home reading's foot, after its programs, as
+every other reading ends with them (owner, 2026-09-30: at its top they had
+come before anything to read). The
 components, their areas and inputs are on the canvas and are not listed
 again (owner, 2026-09-28); the targets the run could not read are named
 there with why. On the canvas they are one note, "Not analysed", naming
@@ -1288,7 +1291,13 @@ directory ends otherwise (`freqtrade-client`, not
 `ft_client/freqtrade_client`); `cmd/litestream` and `freqtrade` keep their
 directories, and a title two programs would share falls back to the
 directory rule. The one part of a script, which takes the program's name, reads
-the same title. The home's table of programs says what each is "Built from":
+the same title. Every row of the home's table of programs does something,
+in the link style (owner, 2026-09-30: "ничего не кликабельное"): a
+program's name reads it, its entry reads that function in its part, an
+input kind reads the program's inputs at that kind, and a connection reads
+that arrow, or the outside frame it names. The table says what each is
+"Built from", a list longer than a short section folded by its top
+folders, names only:
 a C program's link units; a script's file and what its code imports,
 followed through each imported file's imports (ProgramIndex
 `ImportedFiles`), tests left out; a Python program whose build declares
@@ -1337,8 +1346,15 @@ collection, in its order, one group per part, its box the heading, each
 catalogue's lines once inside it, the loose ones after them (reviewer,
 2026-09-30: Redis's ninety requests had read A to Z beside the canvas's
 groups; freqtrade's had been headed by a catalogue's module); a kind of more
-than twelve inputs in several groups folds each group to its box. Each input's record, with its registration
-line as written, is its own reading.
+than twelve inputs in several groups folds each group to its box. A
+catalogue whose every input has no established handler says "Where these
+take effect is not established." once, under its own lines, never for the
+kind (owner, 2026-09-30: Redis's had followed serverCron, which is
+established). A kind chosen on the canvas or the home reads the collection
+headed "Inputs · {kind}", its section brought into sight and marked, as a
+connection opened from the home is: a one-second pale pulse, then a steady
+link-coloured bar at its left (only the bar under reduced motion). Each
+input's record, with its registration line as written, is its own reading.
 
 The component's "Entrypoints" link lands on the program's entry, from
 GroupsIndex's entries in the page data: the part holding every seed, the seed

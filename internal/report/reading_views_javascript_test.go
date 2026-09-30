@@ -101,15 +101,19 @@ func TestTheHomesProgramsFollowThePageData(t *testing.T) {
 	code := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading") +
 		systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "function rmCollectionView(") +
 		systemJSPiece(t, "31-reading-column.js", "var rmPendingKind=", "// The files a component's program reaches") +
+		systemJSPiece(t, "31-reading-column.js", "function rmLights(", "// Where a catalogue's inputs are declared") +
 		systemJSPiece(t, "31-reading-column.js", "// The home's table of programs", "// </reading-column>")
 	runSystemJS(t, readingViewElements+code+`
 const all={
- 'system-component-t1':{id:'system-component-t1',dataset:{title:'redis-server',owner:'t1',role:'Backend database server',children:'area core',entries:'[{"name":"main","callable":true}]',sources:'["adlist.c","redis.c"]'}},
+ 'system-component-t1':{id:'system-component-t1',dataset:{title:'redis-server',owner:'t1',role:'Backend database server',children:'area core',entries:'[{"name":"main","callable":true,"part":"#core","key":"h#main"}]',sources:'["adlist.c","redis.c"]'}},
+ 'core':{id:'core',dataset:{title:'Server core'},getAttribute:()=>'#core'},
+ 'outside':{id:'outside',dataset:{title:'Outside',branch:'outside'}},
  'system-inputs-t1':{id:'system-inputs-t1',dataset:{collection:'{"groups":[],"kinds":[{"kind":"request","inputs":["a","b"]},{"kind":"setting","inputs":["c"]}]}'}}};
 const opened=[];
-const context={nodeByHref:href=>all[href.slice(1)]||null,nodeById:id=>all[id]||null,readNode:n=>opened.push(n.dataset.title)};
+const context={nodeByHref:href=>all[href.slice(1)]||null,nodeById:id=>all[id]||null,readNode:n=>opened.push(n.dataset.title),light(){},
+ readDeclIn:(part,key)=>opened.push(part.dataset.title+' '+key),openConnection:(id,key)=>opened.push('connection '+key)};
 const holder=rmEl('div');
-rmProgramsTable(context,holder,[all['system-component-t1']],()=>[{incoming:true,title:'redis-cli'},{incoming:false,title:'TCP endpoint'}]);
+rmProgramsTable(context,holder,[all['system-component-t1']],()=>[{incoming:true,title:'redis-cli',key:'in:cli'},{incoming:false,title:'TCP endpoint',key:'out:outside',outside:'outside'}]);
 assert.deepEqual(holder.all(c=>c.has('model')).map(c=>c.textContent),['Backend database server'],'its role is the model\'s');
 const lines=holder.all(c=>c.tagName==='LI').map(c=>c.textContent);
 assert.deepEqual(lines,['main()','←\u00a0redis-cli','→\u00a0TCP endpoint','adlist.c','redis.c'],'its entry, connections by direction and files, one to a line, an arrow kept with its name');
@@ -117,6 +121,14 @@ assert.ok(holder.textContent.includes('Incoming requests · Settings'),'the kind
 assert.ok(!/\d/.test(holder.textContent),'no counts: '+holder.textContent);
 holder.all(c=>c.tagName==='BUTTON'&&c.textContent==='redis-server')[0].listeners.click();
 assert.deepEqual(opened.at(-1),'redis-server','its name reads it');
+// Every row does what a newcomer expects (owner, 2026-09-30: "ничего не
+// кликабельное"): its entry reads the function, a kind its inputs of that
+// kind, a connection its program at it, an Outside end that frame.
+const click=text=>{const b=holder.all(c=>c.tagName==='BUTTON'&&c.textContent.includes(text))[0];assert.ok(b,text+' is a button');b.listeners.click({stopPropagation(){}});};
+click('main()');assert.equal(opened.at(-1),'Server core h#main','the entry reads its function');
+click('Settings');assert.equal(rmPendingKind,'setting','a kind reads its inputs of that kind');
+click('redis-cli');assert.equal(opened.at(-1),'connection in:cli','a connection reads its program at it');
+click('TCP endpoint');assert.equal(opened.at(-1),'Outside','an Outside end reads that frame');
 `)
 }
 

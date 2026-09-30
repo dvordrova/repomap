@@ -5,17 +5,18 @@
 <template data-system-reading-home>
 <div class="system-reading-home">
 {{if .Summary}}<p class="system-repository-summary model" title="{{t "written by the model"}}" data-display-ref="{{.Summary.TextRef}}">{{.Summary.Text}}</p>{{else}}<p class="empty">{{.SummaryMissing}}</p>{{end}}
-<nav aria-label="{{t "Repository reference"}}">
-{{if .Questions}}<a href="#questions">{{t "Choose from {0} questions" (len .Questions)}} →</a>{{end}}
-<a href="{{.LearnRunHref}}">{{t "How do I run it?"}} →</a>
-{{if .Glossary}}<a href="#concepts">{{t "What does this term mean?"}} →</a>{{end}}
-<a href="#repository-gaps">{{t "What is missing"}} →</a>
-{{with .Summary}}{{if .Anchors}}<a href="#repository-summary-sources">{{t "Repository summary sources"}} →</a>{{end}}{{end}}
-{{if .Claims}}<a href="#repository-claims">{{t "What the people who wrote it said"}} →</a>{{end}}
-</nav>
+
 <div class="system-programs" data-programs-table></div>
 {{if .MutedCards}}<h4>{{t "This run could not read these targets"}}</h4>
 {{range .MutedCards}}<article><strong>{{.Name}}</strong><p class="meta">{{.Reason}}</p></article>{{end}}{{end}}
+<nav class="map-reading-home-links" aria-label="{{t "Repository reference"}}">{{$sep := false}}
+{{if .Questions}}<a href="#questions">{{t "Choose from {0} questions" (len .Questions)}}</a>{{$sep = true}}{{end}}
+{{if $sep}} · {{end}}<a href="{{.LearnRunHref}}">{{t "How do I run it?"}}</a>
+{{if .Glossary}} · <a href="#concepts">{{t "What does this term mean?"}}</a>{{end}}
+ · <a href="#repository-gaps">{{t "What is missing"}}</a>
+{{with .Summary}}{{if .Anchors}} · <a href="#repository-summary-sources">{{t "Repository summary sources"}}</a>{{end}}{{end}}
+{{if .Claims}} · <a href="#repository-claims">{{t "What the people who wrote it said"}}</a>{{end}}
+</nav>
 </div>
 </template>
 <details class="evidence-list"><summary>{{t "Component details"}} <span class="collapse-label">{{t "Collapse details"}}</span></summary>

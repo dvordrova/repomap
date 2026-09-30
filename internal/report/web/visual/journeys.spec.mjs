@@ -121,4 +121,69 @@ for(const [index,file] of reports.entries()){
     await leave();await agree('two searches in a row');
     expect(errors).toEqual([]);
   });
+
+  // Every name the home's programs list says does something, and a kind
+  // chosen on the canvas is marked where the column reads it (owner,
+  // 2026-09-30: "ничего не кликабельное", "я в колонке не вижу, что я
+  // тыкнул на канвасе"). Each row naming a program, an entry, an input kind
+  // or a connection is a link or a button with a name; a few of each, one
+  // per kind, clicked, change the column; a kind clicked on the canvas's
+  // Inputs card reads "Inputs · {kind}" with its section marked in sight.
+  test(`clickable rows of ${basename(file)}`,async({page})=>{
+    test.setTimeout(300_000);
+    const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    await open(page,index);await settle(page);
+    const rows=await page.evaluate(()=>{
+      const out=[];const list=document.querySelector('.map-inspector .system-programs-list');if(!list)return [{kind:'list',text:'no programs list',ok:false}];
+      let label='';
+      for(const el of list.children){
+        if(el.tagName==='DT'){label=el.classList.contains('system-program-name')?'program':el.textContent.trim();if(label==='program'){const b=el.querySelector('button,a[href]');out.push({kind:'program',text:el.textContent.trim(),ok:!!b&&!!(b.getAttribute('aria-label')||b.textContent.trim())});}continue;}
+        const kind=({Entry:'entry',Inputs:'input kind',Connections:'connection'})[label];if(!kind)continue;
+        const items=el.tagName==='DD'&&el.querySelector('ul')?[...el.querySelectorAll(':scope>ul>li')]:[el];
+        if(kind==='input kind'){const named=[...el.querySelectorAll('button,a[href]')];out.push({kind,text:el.textContent.trim().slice(0,60),ok:named.length>0&&named.length===el.textContent.split('·').length});continue;}
+        for(const item of items){const b=item.querySelector('button,a[href]');out.push({kind,text:item.textContent.trim().slice(0,60),ok:!!b&&!!b.textContent.trim()});}
+      }
+      return out;
+    });
+    const dead=rows.filter(row=>!row.ok);
+    expect(dead.map(row=>`${row.kind}: "${row.text}" is no link`),'every row of the programs list does something').toEqual([]);
+    // One of each kind, clicked from the home, changes the column.
+    for(const kind of ['entry','input kind','connection']){
+      await page.evaluate(()=>document.querySelector('[data-map-explorer]').showWholeMap());await settle(page);
+      const before=await page.evaluate(()=>document.querySelector('.map-inspector').innerText.length+':'+(document.querySelector('.map-inspector .map-card-kind')?.textContent||''));
+      const clicked=await page.evaluate(label=>{
+        let at='';for(const el of document.querySelector('.map-inspector .system-programs-list').children){if(el.tagName==='DT'){at=el.textContent.trim();continue;}
+          if(({Entry:'entry',Inputs:'input kind',Connections:'connection'})[at]===label){const b=el.querySelector('button,a[href]:not([target])');if(b){b.click();return true;}}}
+        return false;
+      },kind);
+      if(!clicked)continue;
+      await settle(page);
+      const after=await page.evaluate(()=>document.querySelector('.map-inspector').innerText.length+':'+(document.querySelector('.map-inspector .map-card-kind')?.textContent||''));
+      expect(after,`a ${kind} clicked in the programs list changes the column`).not.toEqual(before);
+    }
+    // A kind chosen on the canvas's Inputs card: its section marked in sight.
+    await page.evaluate(()=>document.querySelector('[data-map-explorer]').showWholeMap());await settle(page);
+    const kind=page.locator('.flow-root .flow-input-kind').first();
+    if(await kind.count()){
+      await kind.click();await settle(page);
+      const said=await page.evaluate(()=>{
+        const column=document.querySelector('.map-inspector-content'),box=column.getBoundingClientRect(),picked=column.querySelector('.map-reading-picked');
+        const r=picked?.getBoundingClientRect();
+        return {heading:document.querySelector('.map-inspector .map-card-kind')?.textContent||'',marked:!!picked,inSight:!!r&&r.top<box.bottom&&r.bottom>box.top};
+      });
+      expect(said.heading,'the heading says which kind was clicked').toMatch(/^Inputs · \S/);
+      expect(said.marked&&said.inSight,'the clicked kind is marked in sight').toBe(true);
+      const inputs=await page.evaluate(()=>[...document.querySelectorAll('.map-inspector-content .map-collection-names>li')].filter(li=>!li.querySelector('button,a[href]')).map(li=>li.textContent.trim().slice(0,60)));
+      expect(inputs.map(text=>`input "${text}" is no link`),'every input of the collection reading does something').toEqual([]);
+    }
+    // A program's reading: its entry and its input kinds do something.
+    await page.evaluate(()=>document.querySelector('[data-map-explorer]').showWholeMap());await settle(page);
+    const program=page.locator('.map-inspector .system-programs-list dt.system-program-name button').first();
+    if(await program.count()){
+      await program.click();await settle(page);
+      const deadRows=await page.evaluate(()=>[...document.querySelectorAll('.map-inspector-content .map-component-entry>div,.map-inspector-content .map-component-input-kinds>li')].filter(row=>!row.querySelector('button,a[href]')).map(row=>row.textContent.trim().slice(0,60)));
+      expect(deadRows.map(text=>`"${text}" is no link`),'every entry and input kind of a program reading does something').toEqual([]);
+    }
+    expect(errors).toEqual([]);
+  });
 }

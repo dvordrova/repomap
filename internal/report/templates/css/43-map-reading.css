@@ -476,6 +476,9 @@ a.map-decl-code:hover{text-decoration:underline}
 .system-programs td code{font-size:12px}
 .flow-enabled .system-programs button{border:0;background:transparent;padding:0;font:inherit;font-weight:600;color:var(--link);cursor:pointer;text-align:left}
 .system-programs button:hover{text-decoration:underline}
+/* A program's entry, input kinds and connections are links in its rows. */
+.flow-enabled .system-programs button.system-program-link{font-weight:400}
+.system-program-link svg{vertical-align:-2px;margin-right:4px}
 /* A part of several files lists its declarations file by file. */
 .map-reading-file{margin:8px 0 4px}
 .map-reading-file-name{margin:0 0 2px;font:600 13px/1.4 var(--mono);color:var(--ink)}
@@ -558,6 +561,9 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .flow-registers:hover{color:var(--link)}
 /* The home's text pages, one small line at the foot of every reading. */
 .map-reading-home-links{margin:18px 0 4px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;line-height:1.6;color:var(--muted)}
+/* The home's links stand at its foot as every reading's do (owner, 2026-09-30:
+   they had stood above the programs, a column of links). */
+.system-reading-home nav.map-reading-home-links{display:block;margin:18px 0 4px}
 /* A part's declarations reached from outside it stand first, their count
    in the heading; the rest follow after a gap. */
 .flow-enabled .map-inspector .map-reading-names.map-reading-reached{margin-bottom:8px;padding-bottom:6px;border-bottom:1px dotted var(--line)}
@@ -612,3 +618,8 @@ details.system-destination-calls>summary{cursor:pointer;font:600 12px/1.4 system
 details.map-connections-apart{border-top:1px solid var(--line);padding:6px 0}
 details.map-connections-apart>summary{cursor:pointer;font:600 12px/1.4 system-ui;color:var(--muted)}
 .map-collection-where details>summary{font:600 12px/1.4 system-ui;color:var(--muted);cursor:pointer}
+/* What a click chose, where the column reads it (rmPick): a one-second
+   pulse in the selection colour, then a steady mark at its left edge. */
+@keyframes rm-picked{from{background:var(--core-bg,#fbe9f1)}to{background:transparent}}
+.map-reading-picked{box-shadow:inset 3px 0 0 var(--link);padding-left:8px;animation:rm-picked 1s ease-out 1}
+@media (prefers-reduced-motion:reduce){.map-reading-picked{animation:none}}

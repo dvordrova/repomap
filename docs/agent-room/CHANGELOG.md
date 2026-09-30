@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — The home's programs do something; a click is marked in the column
+
+- **Owner (Redis):** "вопросы сверху и ещё перечислены файлы … и ничего не
+  кликабельное"; "я в колонке не вижу, что я тыкнул на канвасе".
+- **Home** (`overview.html`, `rmProgramsTable`): the question/run/glossary/
+  gaps/sources/claims links are one muted line at the foot. Every row of
+  Programs is a link: the name reads the program, Entry that function in its
+  part (else its source), an input kind the program's Inputs at that kind
+  (lighting its tiles), a connection that arrow (`openConnection`), an
+  Outside end that frame. "Built from" past a short list folds by top
+  folder (`rmFileTree`), names only.
+- **"Where these take effect is not established."** now stands once under a
+  catalogue whose every input is `handler_unknown`, never after the whole
+  collection (Redis's had followed serverCron, whose handler is known).
+- **Picked mark** (`rmPick`): a kind chosen on the canvas or the home reads
+  "Inputs · {kind}", its section in sight with a 1 s pulse, then a steady bar
+  (bar only with reduced motion); a connection opened from the home too.
+- **Checks:** journeys.spec "clickable rows" (home rows are links, one per
+  kind clicked changes the column, a canvas kind is headed and marked in
+  sight, program/collection rows are links): clean HEAD ce5554f0 fails on
+  all four (70 dead rows: redis 18, litestream 22, freqtrade 24, othello
+  6), now 4/4. Journeys 4/4 before and after; lints the same 104 long folds
+  before and after, nothing else. Page data identical. Canvas input tiles
+  clicked at whole-map zoom still land on the overview card (canvas side).
+
 ## 2026-09-30 — Leaving an input path, framing its destination, input kinds' hover lines
 
 - **Leave input path** (`29-operation-view.js`): opened by a link or a

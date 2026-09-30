@@ -452,7 +452,10 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode,group
     usesFold.appendChild(box);
   });
   if(usesFold)section.appendChild(usesFold);
-  section.appendChild(rmEl('p','meta',rmT('Where these take effect is not established.')));
+  // Said only when true: none of the catalogue's inputs has an established
+  // handler (owner, 2026-09-30).
+  var members=(catalogue.members||[]).map(inputNode).filter(Boolean);
+  if(members.length&&members.every(function(input){return input.dataset.handlerUnknown==='true';}))section.appendChild(rmEl('p','meta',rmT('Where these take effect is not established.')));
   return section;
 }
 // </catalogue>
@@ -821,6 +824,7 @@ function rmEntryLanding(link,nodes,component){
     readDeclIn:readDeclaration,
     readNode:function(n){surface?.clearMember?.();select(n,true,null,true);},
     light:function(ids){surface?.light?.(ids);},
+    openConnection:function(id,key){return openConnection(id,key);},
     inputGroups:function(id){return projection.inputGroups(id,function(part){return byID[part]?byID[part].dataset.title:'';});}
   };};
   // The frame holding what is read, and going up to it: from a declaration
@@ -911,6 +915,8 @@ function rmEntryLanding(link,nodes,component){
     if(n.dataset.branch==='area'||n.dataset.branch==='component'||partConnections){
       frameConnections=rmEl('div','map-frame-connections-holder');
       if(surface?.mountConnections&&surface.mountConnections(frameConnections,n.id,pendingConnection?.id===n.id?pendingConnection.key:'',function(part,key){readDeclaration(byID[part],key);},function(id){var input=byID[id];if(input&&input.dataset.activation)select(input,true,null,true);},function(id){return rmTestOnly(byID[id],byID);})){
+        // The connection a click on its arrow opened is marked in the column.
+        if(pendingConnection?.id===n.id&&pendingConnection.key){var opened=frameConnections.querySelector('[data-connection-key="'+CSS.escape(pendingConnection.key)+'"]');if(opened)rmPick(opened);}
         if(partConnections)partConnections.insertBefore(frameConnections,partConnections.querySelector(':scope>.map-reading-in')||partConnections.querySelector(':scope>.map-reading-out'));
         else (card.querySelector('.map-area-composition')||card.querySelector('.map-card-intro'))?.after(frameConnections);
       }else frameConnections=null;
@@ -1073,7 +1079,12 @@ function rmEntryLanding(link,nodes,component){
       // its component in its box on top; its records stay on the component's
       // page.
       card.querySelector('.map-card-actions')?.remove();
+      var pickedKind=rmPendingKind;
       card.querySelector('.map-card-intro').after(rmCollectionView(map.readingContext(),n,rmPage.data(n,'collection')));
+      // Read for one kind, its heading says which (owner, 2026-09-30: "Inputs"
+      // alone had not said what was clicked): "Inputs · Incoming requests".
+      var kindLine=map.querySelector('.map-inspector .map-card-kind'),first=[].concat(pickedKind||[])[0];
+      if(kindLine&&first&&rmInputKindTitles[first])kindLine.textContent=rmT('Inputs')+' · '+rmT(rmInputKindTitles[first]);
     }else if(n.dataset.branch==='component'&&details){
       rmComponentReading(map,n,card,details,byID['system-inputs-'+n.dataset.owner]||null,pendingEntry===n.id);
     }else if(details&&n.dataset.branch!=='outside'){
@@ -1132,7 +1143,7 @@ function rmEntryLanding(link,nodes,component){
       });
       map.visibleEdges=surface.layout.edges;
       if(map.hasAttribute('data-system-map'))rmProgramsTable(map.readingContext(),map.querySelector('[data-programs-table]'),nodes.filter(function(n){return n.dataset.branch==='component';}),
-        function(id){return surface.frameConnections(id).map(function(group){return {incoming:group.incoming,title:group.title};});});
+        function(id){return surface.frameConnections(id).map(function(group){return {incoming:group.incoming,title:group.title,key:group.key,outside:group.outside};});});
       emphasize();
     }catch(error){caption.textContent=rmT('Could not arrange this map. Reload to try again.');console.error(error);}
     map.setAttribute('aria-busy','false');

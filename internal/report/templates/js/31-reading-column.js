@@ -174,6 +174,11 @@ function rmNameGroup(decl){
 function rmFileGroup(decl){return String((decl||{}).file||'').split('/').pop();}
 // The part a declaration of a page's data stands in, by its title.
 function rmPartTitle(ctx,part){var node=part?(part.charAt(0)==='#'?ctx.nodeByHref(part):ctx.nodeById(part)):null;return node?node.dataset.title:'';}
+// What a click chose stands marked where the column reads it (owner,
+// 2026-09-30: "я в колонке не вижу, что я тыкнул на канвасе"): a short
+// pulse, then a steady mark while it stays read; without motion, the
+// steady mark alone (43-map-reading.css).
+function rmPick(element){if(element&&element.classList)element.classList.add('map-reading-picked');return element;}
 // One end of a relation: its name, and what the relation says of it when it
 // is not a call (a variable's readers say only who writes it: "Used by"
 // says the rest). A name is its link: the page prints no separate code
@@ -632,7 +637,7 @@ function rmCollectionView(ctx,node,collection){
   // collection (29-operation-view.js inputGroups), in the canvas's order,
   // each under its part's box, the loose ones after them; a kind of more
   // than twelve inputs in several groups folds each group to its box.
-  var parted=ctx.inputGroups?ctx.inputGroups(node.id):null;
+  var parted=ctx.inputGroups?ctx.inputGroups(node.id):null,unsaid=new Set();
   // Two inputs sharing a word are told apart by the subcommands they are
   // options of (reviewer, 2026-09-30: freqtrade's two "--erase", of
   // download-data and of install-ui): each subcommand's options name them
@@ -672,7 +677,7 @@ function rmCollectionView(ctx,node,collection){
     // collection's frame, lands on its own section: Background work on the
     // first of its scheduled and continuous sections.
     section.dataset.kind=kind;
-    if(rmPendingKind&&[].concat(rmPendingKind).indexOf(kind)>=0){section.dataset.readingAnchor='';rmPendingKind='';}
+    if(rmPendingKind&&[].concat(rmPendingKind).indexOf(kind)>=0){section.dataset.readingAnchor='';rmPick(section);rmPendingKind='';}
     heading.appendChild(rmEl('span','',rmT(rmInputKindTitles[kind]||'Inputs')));
     rmLights(ctx,heading,all);section.appendChild(heading);
     // A catalogue's lines stand once, above its first inputs read; the
@@ -712,7 +717,15 @@ function rmCollectionView(ctx,node,collection){
     function listed(into,among){
       groups.forEach(function(group){
         var ids=group.inputs.filter(among);if(!ids.length)return;
-        var box=rmEl('div','map-collection-catalogue');catalogueLines(group,box);box.appendChild(names(ids));into.appendChild(box);
+        var box=rmEl('div','map-collection-catalogue');catalogueLines(group,box);box.appendChild(names(ids));
+        // A catalogue none of whose inputs has an established handler says
+        // so under its own inputs, once (owner, 2026-09-30: the line had
+        // closed the whole reading, under serverCron, whose handler is
+        // established).
+        if(group.catalogue&&!unsaid.has(group)&&group.inputs.every(function(id){var input=ctx.nodeById(id);return input&&input.dataset.handlerUnknown==='true';})){
+          unsaid.add(group);box.appendChild(rmEl('p','meta map-collection-unknown',rmT('Where these take effect is not established.')));
+        }
+        into.appendChild(box);
       });
     }
     if(!inParts.length){listed(section,function(){return true;});view.appendChild(section);return;}
@@ -728,7 +741,6 @@ function rmCollectionView(ctx,node,collection){
     listed(section,function(id){return !inParts.some(function(part){return part.inputs.indexOf(id)>=0;});});
     view.appendChild(section);
   });
-  if(collection.groups.some(function(group){return group.catalogue;}))view.appendChild(rmEl('p','meta',rmT('Where these take effect is not established.')));
   rmPendingKind='';
   return view;
 }
@@ -996,10 +1008,16 @@ function rmOwnWorkLine(ctx,from){
 // and the files it is built from (page data: for C its link line's units),
 // a build fact: a model's summary had said all four Redis programs share
 // ae, sds, adlist, dict and anet, which their Makefile does not.
+// Every name in it does what a newcomer expects (owner, 2026-09-30:
+// "ничего не кликабельное"): a program's name reads it; its entry reads
+// that function in its part; an input kind reads its inputs of that kind;
+// a connection reads its program at that connection, and an Outside frame
+// at its other end reads that frame.
 function rmProgramsTable(ctx,holder,components,connections){
   if(!holder||!components.length)return;
   var table=rmEl('dl','system-programs-list');
   function line(label,content){if(!content)return;table.append(rmEl('dt','',rmT(label)),content);}
+  function button(text,go){var b=rmDotBreaks(rmEl('button','system-program-link',text));b.type='button';b.addEventListener('click',function(event){event.stopPropagation();go();});return b;}
   components.forEach(function(n){
     var head=rmEl('dt','system-program-name'),name=rmDotBreaks(rmEl('button','',n.dataset.title));name.type='button';
     name.addEventListener('click',function(){ctx.readNode(n);});head.appendChild(name);table.appendChild(head);
@@ -1007,31 +1025,69 @@ function rmProgramsTable(ctx,holder,components,connections){
     if(n.dataset.role)about.appendChild(rmModelText('span','',n.dataset.role,n.dataset.roleRef));
     table.appendChild(about);
     var entries=rmPage.data(n,'entries')||[];
-    if(entries.length){var starts=rmEl('ul','system-program-files');entries.forEach(function(entry){starts.appendChild(rmDotBreaks(rmEl('li','',entry.name+(entry.callable?'()':''))));});var at=rmEl('dd');at.appendChild(starts);line('Entry',at);}
+    if(entries.length){
+      var starts=rmEl('ul','system-program-files');
+      entries.forEach(function(entry){
+        var text=entry.name+(entry.callable?'()':''),item=rmEl('li'),part=entry.part&&ctx.nodeByHref(entry.part);
+        if(part&&entry.key)item.appendChild(button(text,function(){ctx.readDeclIn(part,entry.key);}));
+        else if(entry.href||entry.open){var link=repomapMembers.sourceLink({Href:entry.href,Open:entry.open,Text:text,NoSource:entry.no_source});item.appendChild(rmDotBreaks(link));}
+        else item.appendChild(button(text,function(){ctx.readNode(n);}));
+        starts.appendChild(item);
+      });
+      var at=rmEl('dd');at.appendChild(starts);line('Entry',at);
+    }
     var collection=ctx.nodeById('system-inputs-'+n.dataset.owner),kinds=(collection&&rmPage.data(collection,'collection')||{}).kinds||[];
     if(kinds.length){
       var kindList=rmEl('dd');
-      kinds.forEach(function(kind,i){if(i)kindList.append(' · ');var mark=globalThis.rmKindMark?.(kind.kind);if(mark)kindList.append(mark);kindList.append(rmT(rmInputKindTitles[kind.kind]||'Inputs'));});
+      kinds.forEach(function(kind,i){
+        if(i)kindList.append(' · ');
+        var b=button(rmT(rmInputKindTitles[kind.kind]||'Inputs'),function(){ctx.light([]);rmPendingKind=kind.kind;ctx.readNode(collection);});
+        var mark=globalThis.rmKindMark?.(kind.kind);if(mark)b.prepend(mark);
+        rmLights(ctx,b,kind.inputs||[]);kindList.append(b);
+      });
       line('Inputs',kindList);
     }
     var ends=connections(n.id);
     // An arrow stays with its name, which breaks only at its dots.
-    if(ends.length){var peers=rmEl('ul','system-program-files');ends.forEach(function(end){var item=rmEl('li','',end.incoming?'←\u00a0':'→\u00a0');item.appendChild(rmDotBreaks(rmEl('span','',end.title)));peers.appendChild(item);});var cell=rmEl('dd');cell.appendChild(peers);line('Connections',cell);}
-    // Its files one to a line, folded when many; no count.
+    if(ends.length){
+      var peers=rmEl('ul','system-program-files');
+      ends.forEach(function(end){
+        var item=rmEl('li'),other=end.outside&&ctx.nodeById(end.outside);
+        item.appendChild(button((end.incoming?'←\u00a0':'→\u00a0')+end.title,function(){
+          if(other&&(other.dataset.branch==='outside'||other.dataset.branch==='communication'))ctx.readNode(other);
+          else if(ctx.openConnection&&end.key)ctx.openConnection(n.id,end.key);
+          else if(other)ctx.readNode(other);
+        }));
+        peers.appendChild(item);
+      });
+      var cell=rmEl('dd');cell.appendChild(peers);line('Connections',cell);
+    }
+    // Its files by their top folder, each folder closed, opening to its
+    // files by name (owner, 2026-09-30: "что будет если файлов много?"); a
+    // folder of many files the same way inside; the files at the top first.
     var files=rmPage.data(n,'sources')||[];
     if(files.length){
-      // Many files by their folder, each folder closed under its path, the
-      // files in it by name (reviewer, 2026-09-30: 332 rows under "Files").
-      var built=rmEl('dd'),folder=function(file){var at=file.lastIndexOf('/');return at>0?file.slice(0,at)+'/':'./';};
-      var byFolder=files.length>rmLongList&&new Set(files.map(folder)).size>1;
-      var parts=rmFoldBy(files,folder,function(list){
-        var ul=rmEl('ul','system-program-files');list.forEach(function(file){ul.appendChild(rmDotBreaks(rmEl('li','',byFolder?file.split('/').pop():file)));});return [ul];
-      });
-      if(files.length<=rmShortSection)parts.forEach(function(part){built.appendChild(part);});
-      else{var fold=rmEl('details');fold.appendChild(rmEl('summary','',rmT('Files')));parts.forEach(function(part){fold.appendChild(part);});built.appendChild(fold);}
+      var built=rmEl('dd');
+      if(files.length<=rmShortSection){var ul=rmEl('ul','system-program-files');files.forEach(function(file){ul.appendChild(rmDotBreaks(rmEl('li','',file)));});built.appendChild(ul);}
+      else{var fold=rmEl('details','system-program-built');fold.appendChild(rmEl('summary','',rmT('Files')));rmFileTree(files).forEach(function(part){fold.appendChild(part);});built.appendChild(fold);}
       line('Built from',built);
     }
   });
   holder.replaceChildren(rmEl('h4','',rmT('Programs')),table);
+}
+// Paths by their top folder: the files at the top one to a line, then each
+// folder closed under its name, opening to what is in it the same way when
+// it holds more than a screen's worth, else its files by name.
+function rmFileTree(files){
+  var top=[],folders=new Map();
+  files.forEach(function(file){var at=file.indexOf('/');if(at<0){top.push(file);return;}var dir=file.slice(0,at+1);if(!folders.has(dir))folders.set(dir,[]);folders.get(dir).push(file.slice(at+1));});
+  var out=[];
+  if(top.length){var ul=rmEl('ul','system-program-files');top.forEach(function(file){ul.appendChild(rmDotBreaks(rmEl('li','',file)));});out.push(ul);}
+  folders.forEach(function(list,dir){
+    var fold=rmEl('details','map-reading-group system-program-folder');fold.appendChild(rmEl('summary','',dir));
+    (list.length>rmShortSection&&list.some(function(file){return file.indexOf('/')>=0;})?rmFileTree(list):[(function(){var ul=rmEl('ul','system-program-files');list.forEach(function(file){ul.appendChild(rmDotBreaks(rmEl('li','',file)));});return ul;})()]).forEach(function(part){fold.appendChild(part);});
+    out.push(fold);
+  });
+  return out;
 }
 // </reading-column>
