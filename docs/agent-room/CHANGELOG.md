@@ -1,5 +1,19 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — An entry the model says no word names is named by its handler (data 2)
+
+- **fe1ba202:** a name cell answered none no longer lets `FirstEntryWord`
+  pick a word over it. An entry with a handler is named by it (GroupsIndex,
+  as before); one whose handler is not established is no entry, journaled
+  `entry_unnamed`, its values standing alone. `FirstEntryWord` names only
+  an entry asked nothing (one word, without captions) or whose cell was
+  refused. Python fixture: `weekly_levels`' `token`, answered none, had read
+  `token` and is gone; the route answered none reads `weekly_levels`.
+- Ordinary runs (HEAD export, exit 0): freqtrade 290 s, redis 21 s. No input
+  name changed (freqtrade 359 + 7, redis 150 + 102 + 11 inputs by site) and
+  no `entry_unnamed`: freqtrade's description-only `Query` calls are already
+  no entries (the entry question's criteria, 7caf404a).
+
 ## 2026-09-30 — The Main flow is walked by code; the DeepSeek flow request is gone
 
 - **Rule** (`orientation/path.go`, `scope.go`, `groupindex.Walk`): from the
