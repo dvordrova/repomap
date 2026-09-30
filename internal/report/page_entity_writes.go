@@ -83,6 +83,7 @@ func (node pageMapNode) WritesJSON() string {
 type pageDataFacts struct {
 	writes    map[string][]int
 	data      map[string]bool
+	persisted map[string]bool
 	makes     map[string][]string
 	relations map[string]programindex.Relation
 	fieldsOf  map[string][]string
@@ -98,7 +99,7 @@ func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
 	if cached := builder.dataByTarget[targetID]; cached != nil {
 		return cached
 	}
-	facts := &pageDataFacts{writes: map[string][]int{}, data: map[string]bool{}, makes: map[string][]string{},
+	facts := &pageDataFacts{writes: map[string][]int{}, data: map[string]bool{}, persisted: map[string]bool{}, makes: map[string][]string{},
 		relations: map[string]programindex.Relation{}, fieldsOf: map[string][]string{}, typesOf: map[string][]string{}, reads: map[string][]int{}}
 	if builder.data != nil && builder.data.ProgramPortfolio != nil {
 		for _, entry := range builder.data.ProgramPortfolio.Entries {
@@ -151,17 +152,18 @@ func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
 	return facts
 }
 
-// dataTypes are the record types the report establishes as the program's
-// data, from its data inventory (GroupsIndex data records, the page's Data
-// section): a type owning a database table (a record's owner: freqtrade's
-// Trade), and the type of a field the code writing one of the program's own
-// files walks (a file record's calling functions, their own field reads and
-// writes, the field's declared type: redis's rdbSave reads server.db, a
-// redisDb, so the keyspace its RDB file is written from is data). A type
-// nothing the program stores walks into (redis's sharedObjectsStruct, its
-// shared replies; its server state redisServer itself) is no data of it.
+// dataTypes are what the report establishes as the program's data, from its
+// data inventory (GroupsIndex data records, the page's Data section): the
+// types owning a database table (a table record's owner: freqtrade's
+// Trade), whose fields the work writes; and the fields one of the program's
+// own files is written from, those the code making a call on that file
+// reads (a file record's calling functions, their own field reads: redis's
+// rdbSave reads redisDb.dict, the keyspace its RDB file holds), save the
+// field naming the file's path (server.dbfilename), which a change hands
+// to a helper writing them. In-memory configuration and counters
+// (litestream's DBConfig, redis's server.dirty) and a type nothing stored
+// reads (sharedObjectsStruct) are no data of it.
 func (facts *pageDataFacts) dataTypes(builder *pageBuilder, index *groupindex.Index) {
-	writers := map[string]bool{}
 	for _, record := range index.Data {
 		if record.Data == nil {
 			continue
@@ -169,18 +171,22 @@ func (facts *pageDataFacts) dataTypes(builder *pageBuilder, index *groupindex.In
 		if record.Data.Kind == "table" && record.OwnerSubjectID != "" {
 			facts.data[record.OwnerSubjectID] = true
 		}
-		if record.Data.Kind == "file" {
-			for _, subject := range record.CallSubjectIDs {
-				if subject != "" {
-					writers[subject] = true
-				}
-			}
+		if record.Data.Kind != "file" || record.Data.File == nil {
+			continue
 		}
-	}
-	for writer := range writers {
-		for _, position := range append(slices.Clone(facts.writes[writer]), facts.reads[writer]...) {
-			for _, typeID := range facts.typesOf[index.StructuralEdges[position].ToSubjectID] {
-				facts.data[typeID] = true
+		path := record.Data.File.Field
+		if at := strings.LastIndex(path, "."); at >= 0 {
+			path = path[at+1:]
+		}
+		for _, subject := range record.CallSubjectIDs {
+			if subject == "" {
+				continue
+			}
+			for _, position := range facts.reads[subject] {
+				field := index.StructuralEdges[position].ToSubjectID
+				if object, _, ok := builder.recordField(index.Target.ID, field); ok && object.Name != path {
+					facts.persisted[field] = true
+				}
 			}
 		}
 	}
@@ -308,7 +314,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		result = append(result, change)
 	}
 	// The program's data (dataTypes).
-	data := func(owner groupindex.Subject) bool { return facts.data[owner.ID] }
+	data := func(field string, owner groupindex.Subject) bool { return facts.data[owner.ID] || facts.persisted[field] }
 	typed := func(change pageEntityWrite, entity groupindex.Subject) (pageEntityWrite, bool) {
 		name, anchor := builder.subjectDisplay(entity)
 		if anchor == nil {
@@ -329,7 +335,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		for _, position := range facts.writes[id] {
 			edge := index.StructuralEdges[position]
 			field, owner, ok := builder.recordField(targetID, edge.ToSubjectID)
-			if !ok || constructs[id] == owner.ID || !data(owner) {
+			if !ok || constructs[id] == owner.ID || !facts.data[owner.ID] {
 				continue
 			}
 			if change, ok := typed(pageEntityWrite{Kind: "write", Field: field.Name, Possible: edge.Resolution != programindex.ResolutionExact}, owner); ok {
@@ -352,7 +358,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 			via, _ := builder.subjectDisplay(ref.subject)
 			for _, fieldID := range builder.handedFields(index, facts, edge) {
 				field, owner, ok := builder.recordField(targetID, fieldID)
-				if !ok || !data(owner) || !changesType(facts, types, fieldID) {
+				if !ok || !data(fieldID, owner) || !changesType(facts, types, fieldID) {
 					continue
 				}
 				if change, ok := typed(pageEntityWrite{Kind: "call", Field: field.Name, Via: []string{via}}, owner); ok {
@@ -374,8 +380,34 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 	for _, record := range index.Data {
 		records[record.ID] = record
 	}
+	// A query written at a place, by its statement (the SQL extractor's
+	// kind: INSERT, UPDATE, ALTER, …).
+	statements := map[string]string{}
+	for _, record := range index.Data {
+		if record.Data != nil && record.Data.Kind == "query" && record.Data.Statement != "" {
+			statements[record.Path+":"+strconv.Itoa(record.Line)] = strings.ToUpper(record.Data.Statement)
+		}
+	}
 	for _, call := range index.Outbound {
-		if call.Kind != "db" || !reached[call.SubjectID] {
+		if !reached[call.SubjectID] {
+			continue
+		}
+		// An outside system the reach calls, named once (the Outside
+		// frame's destination): a store it writes to, or a service it
+		// sends to; the facts do not tell them apart. A request asking
+		// with GET or HEAD reads, and a program it starts is no data.
+		if call.Kind != "db" {
+			if call.Kind == "runs_program" || call.Destination == "" || call.Method == "GET" || call.Method == "HEAD" {
+				continue
+			}
+			location := call.Location
+			add(pageEntityWrite{Kind: "sends", Destination: call.Destination}, call.SubjectID, &location)
+			continue
+		}
+		// A database call changes data when a query written there says
+		// so; a query only reading, or a call no statement is known for
+		// (an ORM's select), is no change.
+		if !writingStatement[statements[call.Location.Path+":"+strconv.Itoa(call.Location.Line)]] {
 			continue
 		}
 		change := pageEntityWrite{Kind: "db", Destination: cmp.Or(call.Destination, call.External)}
@@ -415,6 +447,10 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 	}
 	return result
 }
+
+// writingStatement are the SQL statements that change a database.
+var writingStatement = map[string]bool{"INSERT": true, "UPDATE": true, "DELETE": true, "REPLACE": true, "MERGE": true, "UPSERT": true,
+	"CREATE": true, "ALTER": true, "DROP": true, "TRUNCATE": true, "RENAME": true}
 
 // changesType says whether a helper writing the given record types changes
 // a field handed to it: the field's own type, or a record type one of that

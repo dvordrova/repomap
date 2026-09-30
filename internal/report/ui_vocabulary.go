@@ -886,6 +886,7 @@ var russianUI = map[string]string{
 	"Functions":                                       "Функции",
 	"Types":                                           "Типы",
 	"Variables":                                       "Переменные",
+	"Sends to":                                        "Отправляет в",
 	"handed to {0}":                                   "передаётся в {0}",
 	"by {0}":                                          "меняет: {0}",
 }

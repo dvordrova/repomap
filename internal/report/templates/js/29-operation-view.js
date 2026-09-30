@@ -734,7 +734,7 @@ function rmEntryLanding(link,nodes,component){
     function changes(into,writes){
       var typed=new Map(),stores=new Map(),lines=0;
       writes.forEach(function(write){
-        if(write.kind==='db'||write.kind==='file'){var key=write.kind==='db'?write.destination:rmT('Files');if(!stores.has(key))stores.set(key,[]);stores.get(key).push(write);return;}
+        if(write.kind==='db'||write.kind==='file'||write.kind==='sends'){var key=write.kind==='db'?write.destination:write.kind==='file'?rmT('Files'):rmT('Sends to');if(!stores.has(key))stores.set(key,[]);stores.get(key).push(write);return;}
         var key=repomapMembers.sourceKey(write.entity);if(!typed.has(key))typed.set(key,[]);typed.get(key).push(write);
       });
       typed.forEach(function(writes){
@@ -747,7 +747,7 @@ function rmEntryLanding(link,nodes,component){
         // database call naming no table is its function's.
         var items=[],named=new Map();
         writes.forEach(function(write){
-          var names=write.kind==='file'?[write.destination]:(write.tables||[]).length?write.tables:[''];
+          var names=write.kind==='file'||write.kind==='sends'?[write.destination]:(write.tables||[]).length?write.tables:[''];
           names.forEach(function(name){if(!named.has(name))named.set(name,[]);named.get(name).push(write);});
         });
         named.forEach(function(same,name){items.push(name?line(name,same):(function(){var item=rmEl('li');makers(item,same);var by=item.querySelector('.map-data-by');if(by){by.classList.remove('map-reading-relation');by.firstChild.remove();}item.append('\n');return item;})());});

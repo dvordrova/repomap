@@ -12,20 +12,16 @@ import (
 )
 
 // What an input changes in the program's data (critic, 2026-09-30: redis's
-// set had listed 80 field writes, its helpers' internals among them). The
-// data is what the report's data inventory establishes: a type owning a
-// table (Trade), a type of a field the code writing the program's file walks
-// (rdbSave reads server.db, a Db). Listed: its work's writes of such a
-// type's field (Trade.amount), each once with every function making it; a
-// field of it handed to a helper writing its type, as handed (db.dict to
-// dictAdd); the database its reach calls, with the table and the type
-// owning it. Never the program's other state (Server.dirty), a helper's
-// own writes (Dict.used), a field handed to a helper that writes nothing of
-// its type (addReply handed shared.ok) — one handed to a helper writing its
-// type is said as handed (dictAdd handed db.dict) — a field of another
-// object reached through a parameter (Client.argc), a
-// constructor setting up the object its call makes, or a call only
-// possibly made (a dispatch's alternatives).
+// set had listed 80 field writes, its helpers' internals among them; the
+// milestone review: litestream's config and metrics, freqtrade's reads). Only
+// writes, of the data the report's inventory establishes: its work's writes
+// of a table owner's field (Trade.amount); a field the program's file is
+// written from (rdbSave reads db.dict) handed to a helper writing its type,
+// as handed (dictAdd); a database call a writing statement is written at;
+// an outside system the reach sends to, named once. Never a config or
+// counter field (Server.dirty, Client.argc), a helper's own writes, a query
+// that only reads, a GET, a constructor setting up its own object, or a
+// call only possibly made.
 func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 	at := func(line int) *programindex.Location {
 		return &programindex.Location{Path: "server.c", Line: line, Column: 5}
@@ -97,11 +93,16 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 			edge("w7", "generic", "amount", programindex.RelationWrites, exact, 27),
 			edge("c7", "set", "maybe", programindex.RelationCalls, programindex.ResolutionAlternatives, 12),
 			edge("w4", "maybe", "dirty", programindex.RelationWrites, exact, 61, "server.dirty"),
-			edge("r1", "rdbSave", "db", programindex.RelationReads, exact, 71, "server.db"),
+			edge("r1", "rdbSave", "dict", programindex.RelationReads, exact, 71, "Db.dict"),
 		},
 		Operations: []groupindex.Operation{{ID: "o1", SubjectID: "set", Kind: "request", Name: "set"}},
-		Outbound:   []groupindex.OutboundCall{{ID: "d1", SubjectID: "generic", Kind: "db", Destination: "Database", DataIDs: []string{"y1"}, Location: *at(25)}},
+		Outbound: []groupindex.OutboundCall{{ID: "d1", SubjectID: "generic", Kind: "db", Destination: "Database", DataIDs: []string{"y1"}, Location: *at(25)},
+			{ID: "d2", SubjectID: "generic", Kind: "db", Destination: "Database", Location: *at(28)},
+			{ID: "d3", SubjectID: "generic", Kind: "sdk", Destination: "Amazon S3", Location: *at(29)},
+			{ID: "d4", SubjectID: "generic", Kind: "client_request", Destination: "Status API", Method: "GET", Location: *at(30)}},
 		Data: []groupindex.DataRecord{{DataRecord: atlas.DataRecord{ID: "y1", Path: "server.c", Line: 150, Data: &facts.DataObject{Kind: "table", Name: "trades"}}, OwnerSubjectID: "Trade"},
+			{DataRecord: atlas.DataRecord{ID: "q1", Path: "server.c", Line: 25, Data: &facts.DataObject{Kind: "query", Name: "trades", Statement: "INSERT", SQL: "INSERT INTO trades"}}},
+			{DataRecord: atlas.DataRecord{ID: "q2", Path: "server.c", Line: 28, Data: &facts.DataObject{Kind: "query", Name: "trades", Statement: "SELECT", SQL: "SELECT * FROM trades"}}},
 			{DataRecord: atlas.DataRecord{ID: "w1", Path: "server.c", Line: 72, Data: &facts.DataObject{Kind: "file", Name: "{server.dbfilename}", File: &facts.DataFile{Calls: []facts.DataCall{{}}}}}, CallSubjectIDs: []string{"rdbSave"}}},
 	}
 	b.data.ProgramPortfolio.Entries = []programindex.Index{{Target: programindex.Target{ID: "t1"}, Objects: native, Relations: []programindex.Relation{
@@ -120,7 +121,10 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 			line += " via " + strings.Join(change.Via, ", ")
 		}
 		if change.Destination != "" {
-			line = change.Kind + " " + change.Destination + " " + strings.Join(change.Tables, ",") + " of " + change.EntityName
+			line = strings.Join(slices.DeleteFunc([]string{change.Kind, change.Destination, strings.Join(change.Tables, ",")}, func(word string) bool { return word == "" }), " ")
+			if change.EntityName != "" {
+				line += " of " + change.EntityName
+			}
 		}
 		var by []string
 		for _, caller := range change.Callers {
@@ -129,7 +133,7 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 		line += " by " + strings.Join(by, ", ")
 		said = append(said, line)
 	}
-	want := []string{"call Db.dict via dictAdd by setGenericCommand", "write Trade.amount by setGenericCommand", "db Database trades of Trade by setGenericCommand"}
+	want := []string{"call Db.dict via dictAdd by setGenericCommand", "write Trade.amount by setGenericCommand", "db Database trades of Trade by setGenericCommand", "sends Amazon S3 by setGenericCommand"}
 	if !slices.Equal(said, want) {
 		t.Fatalf("changes = %q\nwant %q", said, want)
 	}

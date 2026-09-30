@@ -18,6 +18,32 @@
   State changes reads record fields only. "00:02" is the word the scheduled
   entry's call wrote, not code.
 
+## 2026-09-30 — State changes: only writes to the program's data
+
+- **Why:** the milestone review: litestream `replicate` listed ~60 config
+  and metrics fields and nothing about its WAL/LTX or replica stores;
+  freqtrade `forceenter` listed a select as a change.
+- **Rule** (`page_entity_writes.go`, facts only): a table owner's field the
+  work writes (GroupsIndex table record owner); a field an owned file is
+  written from (read by the file record's calling code, the path field
+  aside) handed to a helper writing its type, as handed; a database call
+  at which a writing query statement is written (the SQL extractor's
+  statement); each outside system the reach calls, named once under "Sends
+  to" (a GET/HEAD reads; runs_program aside); the files the reach calls
+  on. Config and counter structs are no data unless a table owns them.
+- **Rows** over all inputs (served runs 11:28–11:55, clean HEAD 438249d2 →
+  now): redis 433 → 238 (`set`: redisDb.dict handed to dictAdd, dictReplace,
+  dictDelete; the log file), litestream 625 → 325 (`replicate` 81 → 36:
+  SQLite _litestream_seq/_lock, sends to S3, GCS, Azure, SFTP, WebDAV, NATS,
+  OSS, the WAL/tmp files; no config field), freqtrade 200 → 247 (sends to
+  the exchanges and Telegram added; `forceenter`'s select gone), othello 0.
+  Journeys 4/4 before and after; lints unchanged but one repeat from
+  another agent's uncommitted Inputs change.
+- **Gaps:** no fact tells a file call's direction (config files still
+  listed) or a store from a service (Telegram "Sends to"); ORM calls carry
+  no statement, so freqtrade's Trade write waits for data 1's
+  execute_entry resolution.
+
 ## 2026-09-30 — Python: a field stored from a constructor parameter is what its constructions hand
 
 - **Rule** (`type_field_parameters`, PYTHON "Inherited members and fields"):

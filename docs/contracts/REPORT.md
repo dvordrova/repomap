@@ -1709,29 +1709,26 @@ contract above still applies.
 Reachability is not entity mutation. The concept projection reads accepted
 native type declarations only; value-based domain models without a named type
 are not invented during rendering. An input's "State changes" are its
-changes to the program's data (critic, 2026-09-30: they had listed every
-field write of the whole reach, 80 for redis's `set`, helper internals such
-as listNode.next among them; `page_entity_writes.go`). Its work is its
-handler and what it calls exactly, never entering a helper (a declaration
-the helper question decided serves others' work, in a part most of the
-program's parts call into, other than the handler's own). The program's
-data is what the report's data inventory establishes (GroupsIndex data
-records, the Data section): a type owning a database table (freqtrade's
-Trade), the declared type of a field that the code writing one of the
-program's own files reads or writes (redis's rdbSave reads server.db, a
-redisDb: the keyspace its RDB file is written from), the database and the
-files; a type nothing the program stores walks into (redis's
-sharedObjectsStruct, its shared replies) is not. Listed: fields of such
-types the work writes, save a constructor setting up the
-object its call makes; then the database calls anywhere in its reach with
-the tables their statements name, and the files it reaches. A helper's own
-writes are not listed. A field of such a type the work hands to a helper
-whose code writes that field's type is said as those facts, "handed to dictAdd, dictReplace",
-not as a change: no fact says the helper writes through that parameter
-rather than a local (it keeps redis `set`'s keyspace, redisDb.dict, named
-for the frozen journey). Each target once,
-with every function making the change, their names links into their code;
-a field or table links to where it is first changed, that place on its
+writes to the program's data, never its reads (critic, 2026-09-30; milestone
+review: litestream's config and metrics fields, freqtrade's select had stood
+there; `page_entity_writes.go`). Its work is its handler and what it calls
+exactly, never entering a helper (a declaration the helper question decided
+serves others' work, in a part most of the program's parts call into, other
+than the handler's own). Listed, from facts only:
+a field of a type owning a database table (a table record's owner) the work
+writes, save a constructor setting up the object its call makes; a field
+one of the program's own files is written from (read by the code making a
+call on that file, save the field naming its path: redis's rdbSave reads
+redisDb.dict) handed to a helper whose code writes its type, said as handed
+("redisDb.dict — handed to dictAdd, dictReplace"), no fact saying the helper
+writes through that parameter; a database call a writing query statement is
+written at (INSERT, UPDATE, ALTER, …), with its tables; every outside system
+the reach calls, named once under "Sends to" (a GET or HEAD request reads,
+and the facts tell no store from a service); the files the reach makes calls
+on (the facts give no file call's direction). In-memory configuration and
+counters are no data unless a table record owns their type. Each target
+once, with every function making the change, their names links into their
+code; a field or table links to where it is first changed, that place on its
 hover; no line is printed and no hedge line stands. A part's reading lists
 its types' changes, by input. A matched input's changes join as a possible
 integration; sibling inputs gain none.
