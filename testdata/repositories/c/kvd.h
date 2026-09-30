@@ -48,6 +48,7 @@ struct kvServer {
     long dirty;
     pid_t saveChild;
     volatile int shutdown;
+    int maxEntryValue;
 };
 
 extern struct kvServer server;

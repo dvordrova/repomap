@@ -184,6 +184,9 @@ func TestCFixturePresetReadingTurnsTableRowsIntoNamedRequests(t *testing.T) {
 		{kind: "setting", name: "port", source: "model"},
 		{kind: "setting", name: "dbfilename", source: "model"},
 		{kind: "setting", name: "persist", source: "model"},
+		// A key whose own name holds the word value is a setting: the
+		// reader is told so (entry_options setting).
+		{kind: "setting", name: "max-entry-value", source: "model"},
 		// persist's values, compared with the second word of the same
 		// line: its sub-arguments, no settings of their own.
 		{kind: "setting", name: "never", source: "model"},
@@ -364,7 +367,7 @@ func checkKvdReach(t *testing.T, program programindex.Index, index groupindex.In
 	}
 	// set's nx is declared by setCommand too: its catalogue is GroupsIndex's,
 	// and being nested under set it is no tile of its own.
-	if want := map[string][]string{"main command": {"--symbols"}, "loadConfig setting": {"port", "dbfilename", "persist"}, "setCommand request": {"nx"}}; !reflect.DeepEqual(catalogues, want) {
+	if want := map[string][]string{"main command": {"--symbols"}, "loadConfig setting": {"port", "dbfilename", "max-entry-value", "persist"}, "setCommand request": {"nx"}}; !reflect.DeepEqual(catalogues, want) {
 		t.Fatalf("catalogues = %v, want %v", catalogues, want)
 	}
 	// A directive's values compared with its line's second word (owner's
@@ -414,7 +417,7 @@ func checkKvdReach(t *testing.T, program programindex.Index, index groupindex.In
 			found[names[function.SubjectID]] = append(found[names[function.SubjectID]], operations[id])
 		}
 	}
-	if slices.Sort(found["loadConfig"]); !slices.Equal(found["loadConfig"], []string{"always", "dbfilename", "never", "persist", "port"}) || !slices.Contains(found["main"], "--symbols") {
+	if slices.Sort(found["loadConfig"]); !slices.Equal(found["loadConfig"], []string{"always", "dbfilename", "max-entry-value", "never", "persist", "port"}) || !slices.Contains(found["main"], "--symbols") {
 		t.Fatalf("the launch finds %v", found)
 	}
 	for position, operation := range index.Operations {
@@ -749,6 +752,16 @@ func (preset *kvdPreset) categorizer() *typesafetest.Categorizer {
 			preset.entered = append(preset.entered, symbol+" in "+strings.Fields(in + " ?")[0]+": "+arguments)
 			preset.mu.Unlock()
 			switch {
+			case strings.Contains(arguments, "result of calling splitLine") && strings.Contains(arguments, `value"`):
+				// A key whose own name holds the word value is a setting to
+				// a reader told so; otherwise it reads as a key's value
+				// (redis's hash-max-zipmap-value near-tie, 2026-09-30).
+				for _, option := range question.Options {
+					if option.Name == "setting" && option.Criteria != nil && strings.Contains(option.Criteria.Includes, "a key whose own name contains the word value") {
+						return typesafetest.Choose("setting"), true
+					}
+				}
+				return typesafetest.Choose("none"), true
 			case strings.Contains(arguments, "result of calling splitLine"):
 				return typesafetest.Choose("setting"), true
 			case strings.Contains(arguments, "of parameter #2 argv of main"), strings.Contains(arguments, "of parameter #2 argv of bench"):

@@ -36,9 +36,9 @@ Examples:
 
 What: What a person writes in the program's own configuration file to change how it runs.
 
-Includes: a directive or a key name the program looks for in a configuration file it reads, such as a word it compares with the first word of each line of that file; a key a structure the program decodes its configuration file into maps to one of its fields, such as the key a field's tag names or a schema's key; a configuration entry declared under its key with a settings facility
+Includes: a directive or a key name the program looks for in a configuration file it reads, such as a word it compares with the first word of each line of that file; a key a structure the program decodes its configuration file into maps to one of its fields, such as the key a field's tag names or a schema's key; a configuration entry declared under its key with a settings facility; a key whose own name contains the word value, which is still a key
 
-Not for: an option, a flag or a word given on the command line (command); an environment variable the program reads (none: reading it is already on the map as a configuration read beside the settings, while a setting is a key a person writes in a file); a key of data the program merely parses, stores or sends, such as a field of a message another program sends or receives, a record it saves or a file format it converts, which is not the program's own configuration (none); a word a client sends over a connection to read or change a setting while the program runs (none: it belongs to the request that carries it); a value a key may take: a word the program compares with what follows a key once it found the key, such as a later word of a configuration line whose first word named the key (none: the value belongs to its key, which is the setting)
+Not for: an option, a flag or a word given on the command line (command); an environment variable the program reads (none: reading it is already on the map as a configuration read beside the settings, while a setting is a key a person writes in a file); a key of data the program merely parses, stores or sends, such as a field of a message another program sends or receives, a record it saves or a file format it converts, which is not the program's own configuration (none); a word a client sends over a connection to read or change a setting while the program runs (none: it belongs to the request that carries it); a value a key may take: a word the program compares with what follows a key once it found the key, such as a later word of a configuration line whose first word named the key, as yes or no after appendonly (none: the value belongs to its key, which is the setting)
 
 Examples:
 - a key the program compares with the first word of each line of the configuration file it loads
@@ -51,7 +51,7 @@ What: A person's action in a window, a page or a screen this program itself draw
 
 Includes: a button click, a key press, a menu choice, a form submission handled in the interface this program draws
 
-Not for: an HTTP route a browser calls (request); an option given when starting the program (command); a press, a command or a message a person makes in another program's interface, which that program delivers to this one over a connection (request); a button, a keyboard or a menu this program puts into a message it sends to be shown by another program (none)
+Not for: an HTTP route a browser calls (request); an option given when starting the program (command); a press, a command or a message a person makes in another program's interface, which that program delivers to this one over a connection (request); a button, a keyboard or a menu this program puts into a message it sends to be shown by another program (none); a render, draw or update callback a UI or game framework calls every frame (extension)
 
 Examples:
 - a click handler of a button
@@ -62,7 +62,7 @@ What: A timer the program keeps for as long as it runs calls it again and again,
 
 Includes: a periodic job set up at start, a cron entry, an interval or a ticker callback
 
-Not for: a one-shot delay a step of work sets, such as a retry, an idle timeout or a debounce (none); a hook the program's loop runs on every turn (none); work on a thread of its own for the program's whole life (continuous)
+Not for: a one-shot delay a step of work sets, such as a retry, an idle timeout or a debounce (none); a hook the program's own loop runs on every turn (none); a render, draw or update callback a UI or game framework calls every frame (extension); work on a thread of its own for the program's whole life (continuous)
 
 Examples:
 - a housekeeping callback a timer calls every few milliseconds
@@ -94,7 +94,7 @@ Examples:
 
 What: A host program outside the repository calls it at its own points: the repository plugs into the host.
 
-Includes: registering a module or a plugin with a host runtime under a name, a hook or a selector a framework calls when it needs it
+Includes: registering a module or a plugin with a host runtime under a name, a hook or a selector a framework calls when it needs it; a render, draw or update callback a UI or game framework calls every frame
 
 Not for: a registry or an event list of the program's own, which its own code fills and later looks up or fires (none); a callable the repository's own code runs in place (none)
 

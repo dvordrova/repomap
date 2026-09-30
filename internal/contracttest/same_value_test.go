@@ -136,7 +136,7 @@ func TestEveryLanguageKeepsTheSpellingsOfOneValue(t *testing.T) {
 		index := buildCIndex(t, loadCFixture(t), "c:kvd")
 		got := spellingPairs(t, index, "kvd.c", "loadConfig")
 		want := map[string]string{
-			"r": "", "port": "", "dbfilename": "", "dbfile": "dbfilename", "persist": "", "never": "", "always": "",
+			"r": "", "port": "", "dbfilename": "", "dbfile": "dbfilename", "max-entry-value": "", "persist": "", "never": "", "always": "",
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("spellings read as one value: %v, want %v", got, want)

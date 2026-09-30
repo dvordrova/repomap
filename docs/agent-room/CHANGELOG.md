@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Entry criteria: a key named "value", a callback a framework calls every frame (this run's one question change)
+
+- **Why:** redis's `hash-max-zipmap-value` (setting 0.59/none 0.40, then
+  0.54/0.45 on the same item), othello's `quil.core.sketch.draw` (extension
+  0.46/0.33, 0.40/0.32, 0.34/0.32 across runs) and freqtrade's
+  REQUIRED_ORDERTYPES (none 0.52/setting 0.47) were near-ties the prompt
+  change of 7caf404a tipped under the 0.10 lead: poorly explained, not
+  misled by the new lines.
+- **Criteria (entry_options.md):** setting includes a key whose own name
+  contains the word value; its "value a key may take" says "as yes or no
+  after appendonly". extension includes a render, draw or update callback
+  a UI or game framework calls every frame; interaction and scheduled are
+  not for one (extension), and scheduled's per-turn hook is the program's
+  own loop's.
+- **Fixtures:** C `kvd.c` reads `max-entry-value` (a kvServer field), a
+  setting to a reader of the setting option; Clojure `core.clj`'s
+  `(q/sketch … :draw draw-greeting …)` an extension to a reader of the
+  extension option. Both tests fail with the old criteria.
+
 ## 2026-09-30 — Canvas batch 2: no merged arrows round a cycle, script cards to their summary, Outside at its program's scale, program-to-program cards, no line in a card's source
 
 - **Cycle:** a component whose cards call round a cycle is laid out

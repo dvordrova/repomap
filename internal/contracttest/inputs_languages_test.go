@@ -421,6 +421,21 @@ func TestCumulativeClojureInputsAreAskedPerCall(t *testing.T) {
 		}
 		return "", false
 	}}
+	// A reader of the sketch's :draw hand-over answers extension when the
+	// extension option includes a callback a framework calls every frame,
+	// and none, as othello's near-tie fell, when it does not.
+	preset.read = func(column string, item map[string]any, options []llm.Option) (string, bool) {
+		symbol, _ := item["symbol"].(string)
+		if column != "binds" || symbol != "quil.core.sketch.draw" {
+			return "", false
+		}
+		for _, option := range options {
+			if option.Name == "extension" && option.Criteria != nil && strings.Contains(option.Criteria.Includes, "calls every frame") {
+				return "extension", true
+			}
+		}
+		return "none", true
+	}
 	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "clojure", Kind: "executable", Name: index.Target.Name, Root: "."}, root, preset)
 	var compared []string
 	for _, item := range preset.asked["enters"] {
@@ -433,7 +448,12 @@ func TestCumulativeClojureInputsAreAskedPerCall(t *testing.T) {
 		t.Fatalf("= calls asked: %q, want %q", compared, want)
 	}
 	got := inputRows(projected, "src/example/core.clj")
-	if len(got) != 1 || got[0].kind != "command" || got[0].name != "--shout" || got[0].declaredBy != "example.core/shouted?" {
+	var shout, draw bool
+	for _, row := range got {
+		shout = shout || row.kind == "command" && row.name == "--shout" && row.declaredBy == "example.core/shouted?"
+		draw = draw || row.kind == "extension" && row.handler == "example.core/draw-greeting"
+	}
+	if len(got) != 2 || !shout || !draw {
 		t.Fatalf("core.clj's inputs: %+v", got)
 	}
 	if written := writtenRows(projected, "src/example/core.clj"); written["--shout"] != `(= (first args) "--shout")` {
