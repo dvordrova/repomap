@@ -1,5 +1,56 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — The canvas batch of the second human-eye review: packed programs, trunks, one note for unread targets, folded Outside cards
+
+- **Why:** the reviewer's canvas items 1–7 (crops in the scratchpad's
+  `eye2/`), then the column agent's `(inline)` tiles and the data agent's
+  kinds and spellings.
+- **Packed programs (1, 2; REPORT § whole-map fit):** a component whose
+  arrangements all leave its smallest card under 64 px where it is entered
+  whole packs its cards in a grid toward the canvas proportion; its arrows
+  run orthogonally in the gutters, every arrow at one side of a card meets
+  it at one point and runs in that card's one lane there (a lone arrow at a
+  side takes the lane it came by), gutters wide enough for lanes 5 px apart
+  where it is entered, the frame's 32 padding outside the outer lanes.
+  Layered arrangements merge arrows per side (ELK `mergeEdges`).
+  freqtrade's program entered (run 221230): smallest card 33×16 → 133×67
+  px, occupancy .07 → .38, no arrow over a card; on run 234529 its closed
+  areas' titles read at 12–16 px. Cards win clicks in all four programs (0
+  of 96 sampled points hit an arrow).
+- **Titles (3, 5, 6):** a path breaks only after "/", a segment only when it
+  alone is wider than the line, never before its extension; a program's
+  title grows only within its header band; a closed area's description
+  takes every whole line (counting the card's 8 px gap) and says itself
+  whole on hover when cut. A `breakWord` loop that could split a lone "."
+  hung litestream's page before it opened.
+- **Unread targets (4; page_system_map.go):** one "Not analysed" note
+  naming them, sized by its words with half again their room; litestream's
+  reads at 7.7/7.1 px at the whole map beside program headings at 8 px,
+  where two pale cards had read at 4.4 px.
+- **Smaller (7):** inputs list the column's kinds (Scheduled tasks apart
+  from Background work; Queue consumers, Extension points, Kind not
+  established), so redis-server's Inputs shows its four; `consumer` wears
+  the inbox mark (the key had been `queue_consumer`), `extension` the plug,
+  an unestablished kind a neutral dot, and the env key mark its paths (its
+  download had been a CDN error page). An arrow's card into an Outside frame
+  lists destinations under the parts calling them: litestream's 89 rows → 10
+  destinations. Input tiles name inline callables "anonymous function in
+  X", as the column does. An input's other spellings read "also written
+  storage-class" in its reading (`data-spellings`). A loose part's
+  magnifier lands with its head in sight again (the drawn-in-the-middle
+  offset is gone).
+- **Geometry lint (visual/geometry.mjs):** two legs are one trunk, not a
+  coincidence, when both routes go on from them along one path to a box
+  they share. On the newest saved runs (redis 234508, litestream 234245,
+  freqtrade 234529, othello 232515), HEAD 805dac34 → this change: redis
+  6 → 4 (the 4 left are Inputs part groups at 4–7 px when redis-server is
+  entered), litestream 64 → 1, freqtrade 62 → 0, othello 1 → 1 (the 2 left
+  are part declaration rows at the part level).
+- **Tests:** `npm test` 131/131, visual suite 55/55 (the dense fixture's
+  title floor is scoped: forty-two packed cards open at about 6 px, 4 px
+  before, where only an open Inputs group had met the floor), Go report
+  tests and vet.
+
 ## 2026-09-30 — The data batch of the second human-eye review: held code, test directories, self-launches, unread and template addresses, prose refs, entry names
 
 - **Why:** the reviewer's items 1–8 (crops in the scratchpad's `eye2/`)

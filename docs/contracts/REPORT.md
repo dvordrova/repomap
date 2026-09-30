@@ -126,7 +126,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   containment, not architectural areas, and add no relation. A tile says its
   kind by a small muted mark before its name (Primer Octicons, the kind's
   name on hover), never by a printed kind row; the same mark stands before
-  a kind's name in the reading column and the map's key. A program's Inputs
+  a kind's name in the reading column and the map's key, and a kind with
+  no mark of its own (an entry whose kind is not established) wears a
+  neutral dot. A collection lists its kinds as the column names its
+  sections (Scheduled tasks apart from Background work, Queue consumers,
+  Extension points, Kind not established): Redis's Inputs had listed three
+  kinds beside a column of four. A tile names a callable written inline as
+  the column does, "anonymous function in {function}". A program's Inputs
   and Outside frames are named with their program in Connections and cards
   ("← Inputs · redis-server"), and a part's reading is headed "Part".
 - An input whose handler is not established (GroupsIndex `handler_unknown`:
@@ -157,7 +163,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   A destination's calls are read in the column when its chip is clicked,
   the camera staying; no call tile is drawn, and the program's arrows to
   its destinations are one arrow to its Outside frame, the calls behind it
-  in its card. Equal destination text proves no identity: each program
+  in its card. That card reads the destinations the arrow reaches, each
+  under the parts calling it, not the calls one to a line: litestream's
+  had listed 89 calls over half the map; the calls are read in the column.
+  Equal destination text proves no identity: each program
   keeps its own destinations. One call written once (the same destination
   and symbol at the same saved path and line, owner, 2026-09-28) is one
   call, in the first program's destination, with an arrow from each program
@@ -387,7 +396,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   box. The arrows between a component's areas keep the interiors' spacing in
   the unit of those areas' median height. A closed card's title reads at
   twelve pixels where its layer opens, or where its program is entered
-  whole when that is closer. The magnifier frames a part whole only while
+  whole when that is closer; its description takes the whole lines left
+  under that title, cut short with its whole text on hover. A program's
+  title grows as the camera leaves it only within the band its frame keeps
+  for it: grown past it, "freqtrade" had stood over its first area. The
+  magnifier frames a part whole only while
   its declarations still read at eleven pixels there; else at that size,
   its head and first column in sight. A closed group shows its name and nested-content hint,
   then reveals its objects directly at the next common layer; there is no
@@ -543,7 +556,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   word before and an opening bracket with the word after, so no line starts
   with ")" or is ")" alone. A word breaks inside only when it alone is wider
   than the line, after a separator or between camelCase words when it can,
-  never before closing punctuation. Map titles are drawn as those measured
+  never before closing punctuation; a path breaks only after a "/", a
+  segment itself only when it alone is wider than the line, and never
+  before its extension ("scripts/ rest_client. py" had read on freqtrade's
+  map, 2026-09-30). Map titles are drawn as those measured
   lines, never broken again by the browser. A heading still short of its
   longest word shrinks its type until it fits; a part's title leaves room for
   its zoom button. A part's description takes at most three lines, the third
@@ -572,7 +588,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   readable after the correction, never laying an interior out again, and no
   zoom-time layout. A component grows whole, in the arrangement of its areas
   (of both directions, with and without unzipping, all prepared once) nearest
-  the box it grows to, so its open areas fill its frame with no empty band. Cross-participant labels take no interior
+  the box it grows to, so its open areas fill its frame with no empty band.
+  A component whose arrangements all leave its smallest card under 64
+  pixels tall where it is entered whole packs its cards instead (owner's
+  review, 2026-09-30: freqtrade's fourteen areas had covered 7% of their
+  frame inside a hundred crossing arrows): a grid toward the canvas's
+  proportion, in the reading order of the first arrangement, its arrows
+  orthogonal in the gutters between rows and columns, never over a card.
+  Every arrow at one side of a card meets it at one point and runs in that
+  card's one lane of the gutter, a trunk until they part, one arrowhead; a
+  gutter is wide enough for its lanes five pixels apart where the program
+  is entered, the frame's padding kept outside its outer lanes. In a
+  layered arrangement the arrows into one side of an area likewise merge
+  (ELK `mergeEdges`). Cross-participant labels take no interior
   space; their cards belong to the outer endpoints. Components and input
   collections show no empty padding around a long column and keep short
   catalogues compact. Their reserves are measured from the text, never a fixed
@@ -1010,8 +1038,11 @@ marked as the model's by its style alone, and entrances to the complete
 saved question menu, run material, terminology, missing observations and
 author claims: ordinary rendered content, not another model summary. The
 components, their areas and inputs are on the canvas and are not listed
-again (owner, 2026-09-28); a target the run could not read is named there
-with why. The introductory sentence has no model badge or source popover;
+again (owner, 2026-09-28); the targets the run could not read are named
+there with why. On the canvas they are one note, "Not analysed", naming
+them, sized with its words as a summary among the programs' and taking
+their connections: one pale card apiece, litestream's two failed packages
+had read at four pixels. The introductory sentence has no model badge or source popover;
 its saved citations and model attribution live in Repository summary
 sources, reachable from the home reading. The summary and useful links
 remain, with no "Understand this repository" or visible "Starting points"
@@ -1315,6 +1346,11 @@ ending at a value its adapter could not read (atlas `DestinationUse.Unread`,
 READING) reads "Address not established from code" with its steps, never
 the expression: Redis's connect had read "Address passes through (struct
 sockaddr*)&sa" (2026-09-30).
+
+An input its code reads under several spellings of one value (GroupsIndex
+`Operation.Aliases`) is named by the first; its reading says the others,
+each once in source order, in one muted line under its name: litestream's
+`storageClass`, "also written storage-class" (2026-09-30).
 
 An input's kind is named in the column by every kind GroupsIndex gives
 (31-reading-column.js `rmInputKindTitles`): Incoming requests, Commands,
