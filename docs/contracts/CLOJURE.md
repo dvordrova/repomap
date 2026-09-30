@@ -246,11 +246,23 @@ has no Clojure equivalent either. A `case` form whose tests are strings,
 or lists of strings, compares its value with those words: two or more
 words in two or more cases are one comparison of the enclosing var
 (PROGRAM_INDEX `comparisons`), each case's branch from its test to its
-result's last line, its value's origin the form as written (the adapter
-follows no Clojure value); `run-command`'s `(case (first args) "serve" …
+result's last line, its value's origin the form as written; `run-command`'s `(case (first args) "serve" …
 ("check" "verify") …)` is two cases, while `=` stays a call asked on its
 own; serve's case calls `shout`, so run-command handles serve there
-(READING). Not recorded yet:
+(READING).
+
+A call's argument written as its function's own parameter carries that
+parameter (clj-kondo's locals, linked to the parameter vectors of the
+`defn` as written), and `(:key event)` on one that field of it: deliver!'s
+`(spit destination message)` spits to the file -main passes,
+`greeting.txt`. A `def` of a map literal whose keys and values are keywords
+or strings is a table of words, each entry a row `:n :new-greeting`
+(`lines.RowText`). The sketch's key handler `on-key` hands `(:key event)` to
+`service/command-for`, which calls `(get key->command key)`: the table's keys
+n and u are the keys key-pressed takes (READING, tables a handler looks up
+with what it was handed), as othello's key->command. Other values (a let
+binding, a destructured parameter, a call's result) stay as written. Not
+recorded yet:
 
 - `-main`'s `& args` carry no argument vector origin;
 - a function started on its own other than by a `future`: `(Thread. f)`,

@@ -270,7 +270,9 @@ not. Not recorded yet:
   the dependency's declarations `request.path.endsWith(".csv")` and
   `response.send("…")` in an express handler name no outside symbol, and the
   route names none either, so nothing there is asked or established;
-- array-literal tables of names;
+- array-literal and object-literal tables of names, so a handler's lookup
+  of an object with what it was handed (`commands[req.params.name]`, an
+  index expression) lists no values (READING, tables a handler looks up);
 - object and `Map` registries;
 - a callable the repository's own function keeps (S1) is not enabled;
 - in every language, a symbol handed a callable at any call is asked what

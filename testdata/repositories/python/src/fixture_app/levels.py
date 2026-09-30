@@ -39,3 +39,15 @@ from fixture_client.rest import RestClient
 
 def level_status_url(base_url: str):
     return RestClient(base_url).status_url()
+
+
+# A route's handler looks the level up in a table of words with the name the
+# request hands it: easy and hard are the levels /levels/{level} takes.
+from fixture_app.http_registrations import application  # noqa: E402
+
+LEVEL_TITLES = {"easy": "Easy level", "hard": "Hard level"}
+
+
+@application.get("/levels/{level}")
+def level_title(request):
+    return LEVEL_TITLES.get(request.path_params["level"])

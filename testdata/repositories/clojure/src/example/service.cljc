@@ -27,3 +27,10 @@
 
 ;; Underscore is still a local binding; its runtime callback is unknown.
 (defn underscore-handler [_ value] (_ value))
+
+;; The keys the sketch's key handler reads: on-key hands the pressed key to
+;; command-for, which looks it up here, so n and u are the keys key-pressed
+;; takes, each with the command it names.
+(def ^:private key->command {:n :new-greeting :u :undo})
+
+(defn command-for [key] (get key->command key))

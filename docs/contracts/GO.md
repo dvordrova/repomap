@@ -252,7 +252,10 @@ handler to. Not recorded yet, and so asked nothing:
   (`var verbose = flag.Bool("verbose", …)` at the end of the same file):
   the synthetic initializer's outside calls stay its unresolved frontier
   (above), so the fixture's `flag.Bool` is not asked;
-- package-level composite tables of names and tables inside functions;
+- package-level composite tables of names and tables inside functions, so
+  a handler's lookup of a map with what it was handed (`commands[name]`, an
+  index expression and no call) lists no values (READING, tables a handler
+  looks up);
 - `handlers[name] = fn` registries;
 - a callable the repository's own function keeps (S1) is not enabled.
 

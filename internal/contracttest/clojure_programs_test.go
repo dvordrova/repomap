@@ -138,6 +138,34 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 	}; !slices.Equal(inputs, want) {
 		t.Fatalf("inputs:\n have %q\n want %q", inputs, want)
 	}
+	// on-key hands (:key event) to service/command-for, which looks it up
+	// in key->command: its keys are the keys key-pressed takes, listed
+	// under it with the command each names, and the table is no input of
+	// its own (othello's key->command).
+	names := map[string]string{}
+	for _, operation := range projected.Operations {
+		names[operation.ID] = operation.Name
+	}
+	for position, operation := range projected.Operations {
+		if operation.Location.Path != core || operation.Name != "key-pressed" {
+			continue
+		}
+		var keys []string
+		for _, id := range projected.Reach[position].SubArguments {
+			keys = append(keys, names[id])
+		}
+		if !slices.Equal(keys, []string{"n", "u"}) {
+			t.Fatalf("key-pressed's keys: %q, want n and u", keys)
+		}
+	}
+	for _, operation := range projected.Operations {
+		if operation.Location.Path == "src/example/service.cljc" && (operation.Kind != "interaction" || !operation.HandlerUnknown || !projected.Launch.Nested[operation.ID]) {
+			t.Fatalf("a key of key->command is no nested value of key-pressed: %+v", operation)
+		}
+	}
+	if written := writtenRows(projected, "src/example/service.cljc"); written["n"] != ":n :new-greeting" || written["u"] != ":u :undo" {
+		t.Fatalf("each key's row as written: %q", written)
+	}
 }
 
 // The shadow-cljs.edn's :app build is the fixture's browser program: the

@@ -82,9 +82,9 @@ func TestCFixtureFieldWritesKeepTheValueTheyStore(t *testing.T) {
 //     established. A field stored twice (MutableAdapter's url, default and
 //     replacement) is unknown to the Python adapter, so its file would be
 //     not established too; the fixture has no file read from a field.
-//   - Clojure: deliver! spits to destination, which core.clj passes as
-//     "greeting.txt", but the adapter records no parameter origin: not
-//     established. A Clojure value is no field.
+//   - Clojure: deliver! spits to destination, its own parameter, which
+//     core.clj's -main passes as "greeting.txt": the file. A Clojure value
+//     is no field.
 //   - JS/TS: the fixture's node:fs calls (prepare-readme.mjs's readFileSync
 //     through prepareReadme("README.md")) name no symbol without
 //     @types/node, so no talks answer makes them file calls (JSTS).
@@ -216,7 +216,7 @@ func TestEveryLanguageKeepsTheFilesItsCodeReaches(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := files(graph, index, []string{"clojure.core.spit"}, map[string]reading.ArgumentChoice{"clojure.core.spit": {Position: 1}})
-		if want := []string{fmt.Sprintf("(not established): clojure.core.spit example.service/deliver!@%d", fixtureLine(t, "clojure", "src/example/service.cljc", "(spit destination message)"))}; !reflect.DeepEqual(got, want) {
+		if want := []string{fmt.Sprintf("greeting.txt: clojure.core.spit example.service/deliver!@%d", fixtureLine(t, "clojure", "src/example/service.cljc", "(spit destination message)"))}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("the Clojure fixture's files = %q\nwant %q", got, want)
 		}
 	})

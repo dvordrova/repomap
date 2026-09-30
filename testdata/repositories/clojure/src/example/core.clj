@@ -161,7 +161,7 @@
 ;; Keyword arguments hand functions over under their keywords: the sketch is
 ;; given two of the repository's functions, and each is a registration of its
 ;; own, named by its keyword, as Quil's draw and key handlers are.
-(defn on-key [state event] (assoc state :key (:key event)))
+(defn on-key [state event] (assoc state :key (service/command-for (:key event))))
 (defn draw-greeting [state] (str "Hello " (:name state)))
 (defn start-sketch! []
   (q/sketch :title "Greeter" :draw draw-greeting :key-pressed on-key))

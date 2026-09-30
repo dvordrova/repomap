@@ -11,6 +11,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/dependencies"
 	p "github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
 type Result struct {
@@ -20,6 +21,7 @@ type Result struct {
 }
 
 func project(repository *corpus.Corpus, target Target, a analysis) (*Result, error) {
+	bindings := localBindings(a)
 	canonicalAnalysis(&a)
 	raw, _ := json.Marshal(a)
 	kind := "package"
@@ -152,6 +154,11 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			Macro: d.Macro && kind == p.ObjectFunction}
 		vars[d.NS+"/"+d.Name] = append(vars[d.NS+"/"+d.Name], ref)
 		definitions[d.Filename] = append(definitions[d.Filename], d)
+		if by == "clojure.core/def" && kind == p.ObjectVariable {
+			object := objects[ref]
+			object.Rows = sources[d.Filename].mapRows(d.Filename, d.site)
+			objects[ref] = object
+		}
 		switch by {
 		case "clojure.core/defn", "clojure.core/defn-", "clojure.core/defmacro":
 			loaded[ref] = sources[d.Filename].loadedHeaders(d.site, true)
@@ -252,9 +259,41 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			argumentTargets[site{Filename: u.Filename, Row: u.NameRow, Col: u.NameCol}] = resolve(u.To, u.Name)
 		}
 	}
+	// A function's own parameters, by where each is written: a local a call
+	// is given that is bound there carries that parameter (parameters.go).
+	type parameterSite struct {
+		position int
+		owner    site
+	}
+	parameterSites := map[string]map[[2]int]parameterSite{}
+	for _, d := range a.Definitions {
+		if !valid(d.site) || len(d.Arglists) == 0 {
+			continue
+		}
+		for at, position := range sources[d.Filename].parameters(d.Filename, d.site) {
+			if parameterSites[d.Filename] == nil {
+				parameterSites[d.Filename] = map[[2]int]parameterSite{}
+			}
+			parameterSites[d.Filename][at] = parameterSite{position: position, owner: d.site}
+		}
+	}
+	parameterAt := func(file string) func(row, col int) (string, int, *sourcevalue.Anchor, bool) {
+		return func(row, col int) (string, int, *sourcevalue.Anchor, bool) {
+			binding, ok := bindings[site{Filename: file, Row: row, Col: col}]
+			if !ok {
+				return "", 0, nil, false
+			}
+			parameter, ok := parameterSites[binding.filename][[2]int{binding.row, binding.col}]
+			if !ok {
+				return "", 0, nil, false
+			}
+			return binding.name, parameter.position, &sourcevalue.Anchor{Path: parameter.owner.Filename, Line: parameter.owner.Row, Column: parameter.owner.Col}, true
+		}
+	}
 	argumentsOf := func(u site) []p.PatternArgumentInput {
 		args := sources[u.Filename].arguments(u)
 		for i := range args {
+			args[i].Origin = parameterOrigin(args[i].Origin, parameterAt(u.Filename))
 			at := args[i].Origin.Anchor
 			if refs := argumentTargets[site{Filename: at.Path, Row: at.Line, Col: at.Column}]; len(refs) > 0 {
 				args[i].ObjectRefs, args[i].Resolution, args[i].ObjectsObserved = refs, p.ResolutionExact, len(refs)

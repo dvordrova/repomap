@@ -69,6 +69,9 @@ func (f *CallFile) Text(line, column int) string {
 // own braces, as CallText gives it. With no other position it is CallText.
 func (f *CallFile) RowText(line, column int, others [][2]int) string {
 	c := f.reader
+	if c != nil && line >= 1 && c.family == lispFamily && len(others) > 0 {
+		return c.lispRow(line, column, others)
+	}
 	if c == nil || line < 1 || c.family == lispFamily || len(others) == 0 {
 		return f.Text(line, column)
 	}
@@ -652,4 +655,32 @@ func renderTokens(src []byte, tokens []callToken, first, last int) string {
 		previous = token.kind
 	}
 	return text.String()
+}
+
+// lispRow is a row of a Lisp map or vector as written: its forms from its
+// first word up to the next row's first word, or to the group's end. A
+// Lisp form separates no element by commas: `{:n :new-game :u :undo}`'s
+// row at :n is `:n :new-game`, where CallText gives the whole map.
+func (c *callReader) lispRow(line, column int, others [][2]int) string {
+	offset, ok := lineOffset(c.src, line, column)
+	if !ok {
+		return ""
+	}
+	at := tokenAt(c.tokens, offset)
+	if at < 0 || c.parents[at] < 0 || c.matches[c.parents[at]] < 0 {
+		return ""
+	}
+	parent := c.parents[at]
+	last := c.matches[parent] - 1
+	for _, other := range others {
+		if offset, ok := lineOffset(c.src, other[0], other[1]); ok {
+			if token := tokenAt(c.tokens, offset); token > at && token-1 < last && c.parents[token] == parent {
+				last = token - 1
+			}
+		}
+	}
+	if last < at {
+		return ""
+	}
+	return renderTokens(c.src, c.tokens, at, last)
 }

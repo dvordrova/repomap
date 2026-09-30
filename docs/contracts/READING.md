@@ -988,6 +988,22 @@ command extras held 167 rows of these tables and its one trap hit
 (`backtest-filter`); every subcommand they duplicated is found at its
 `add_parser` call.
 
+A third table is not asked: one an established entry's handler looks up
+with part of what it was handed (K3 for a table; `handed_tables.go`): a
+call in the handler given both the table and a field or an element of one
+of its own parameters, or, when the handler hands such a part on to
+another declaration by an exact call, a call there given the table and
+that declaration's parameter at the position the part was handed at. A
+table is a call's argument or receiver where the code reads it (places
+`read_at`) or whose value the adapter traced to the table's own
+declaration. Each row is a value of the entry (`ValueOf`, listed under it
+and no tile), of its kind, named by its first word, handler not
+established, its row as written (`RowText`; a Lisp map's row is its key and
+value). othello's key-pressed handler `host/on-key` hands `(:key event)` to
+`events/on-key`, which calls `(get key->command key)`: n, u, h, 1 and 2 are
+the keys key-pressed takes, each with the command it names. A table two
+handlers look up is neither's and is asked.
+
 **Settings in tagged fields.** A repository structure field whose tag names a
 key (Go's object aliases, `yaml:"dbs"`) is asked on its own what that key is
 (`repomap.atlas.inputs.v1.field`, stage `atlas_inputs`, Jev, `Memoize`):

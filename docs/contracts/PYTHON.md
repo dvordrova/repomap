@@ -696,7 +696,10 @@ all read before any is bound (`command, rest = argv[0], argv[1:]`: element
 class body's are none. The fixture's `src/fixture_app/dispatch.py` holds
 `dispatch` (three cases), `describe` (`match`) and `is_default`'s lone
 comparison, which is none; init's case calls `run_init`, so dispatch handles
-init there (READING).
+init there (READING). `levels.py`'s route handler `level_title` calls
+`LEVEL_TITLES.get(request.path_params["level"])`: easy and hard are values
+of GET /levels/{level} (READING, tables a handler looks up with what it was
+handed); a subscript `T[key]` is no call and lists none.
 
 A module-level list, tuple, set or dict written once whose elements share
 one shape (every element a string, a call to one callee, or a tuple of

@@ -237,9 +237,10 @@ func (r *reader) applyStored() {
 func (r *reader) bindTableRows() {
 	defer r.bindSettingFields()
 	r.bindComparisons()
+	handed := r.bindHandedRows()
 	for _, place := range r.opts.Graph.Places {
 		kind := r.tableKinds[place.ID]
-		if place.Symbol == nil || kind == "" || kind == lines.APINone {
+		if place.Symbol == nil || kind == "" || kind == lines.APINone || handed[place.ID] {
 			continue
 		}
 		targets := runningTargets(place)
@@ -365,6 +366,13 @@ func (r *reader) tableReferences() map[string]string {
 			names = append(names, r.places[of].Symbol.Decl.Name)
 		}
 		result[place.ID] = "holds keys of " + strings.Join(names, ", ") + ", used by " + strings.Join(usedBy[place.ID], ", ")
+	}
+	// A table an established handler looks up with part of what it was
+	// handed holds that entry's values (handed_tables.go).
+	for table, handed := range r.handedTables() {
+		if handler := r.places[handed.handler]; handler.Symbol != nil {
+			result[table] = "is looked up with what " + handler.Symbol.Decl.Name + " is handed"
+		}
 	}
 	return result
 }

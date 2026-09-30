@@ -469,7 +469,11 @@ through the local `argv`, `main`'s `--symbols` as element "1" of parameter
 #2 `argv`, and kvcli's `bgsave` comparison as field `name` of the result
 of `lookupCommand(argv[first])` through the local `cmd`. Tables of names
 (S3) and callables the repository's own functions keep (S1) are asked in
-pass 2 (above). The object an input is declared on (K2) and J1, a word
+pass 2 (above). A table an entry's handler looks up with what it was
+handed lists its rows under that entry (READING); kvcli's `cmdTable` is
+looked up from `main`, the program's start and no entry's handler, and a
+table storing callables is a registration of each row (D1), so the C
+fixture has no such lookup. The object an input is declared on (K2) and J1, a word
 entry joined with the hand-over made on its result, have no C equivalent:
 C's option parsing compares words and makes no object options are declared
 on. A `switch` whose case labels are character literals compares its
