@@ -483,7 +483,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   a type with its fields and methods under it, a function or a module's
   variable alone. A module variable its file keeps only as its handle on the
   platform is no tile (GroupsIndex `PlatformHandles`: a standard-library
-  call's result only its file's functions read, Python's module logger;
+  call's result, handing over none of the program's callables, that only
+  its file's functions read, or nothing does, Python's module logger;
   freqtrade's Trading bot core had three "logger" tiles); the reading still
   lists it. A tile keeps its link column, the longest chain of calls,
   returns and takes leading to it, so a caller stands left of what it calls.

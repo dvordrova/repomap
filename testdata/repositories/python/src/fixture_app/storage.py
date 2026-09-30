@@ -49,3 +49,9 @@ def unrelated_text():
     __tablename__ = "not_a_table"
     id: Mapped[int] = mapped_column(primary_key=True)
 '''
+
+
+# A module logger nothing uses is its file's handle on the platform too.
+import logging
+
+logger = logging.getLogger(__name__)
