@@ -23,7 +23,8 @@ import (
 // handler reach (its sub-arguments, as SORT's asc) or only by its own
 // command's code (its options, as litestream's databases -json): each is
 // listed in that input's reading (Reach.SubArguments, Reach.Options) and is
-// no tile of its own.
+// no tile of its own. An option the program takes as well (a helper also
+// handed the program's own parser) is listed and stays a tile.
 //
 // Derived by Derive, never persisted.
 type Launch struct {
@@ -196,7 +197,8 @@ func (graph *reachGraph) launch(reaches []Reach) Launch {
 }
 
 // options nests a command's own options under it (owner, 2026-09-29: a
-// flag belongs to its subcommand), by two code facts:
+// flag belongs to its subcommand), by three code facts (the third, handed
+// to a parameter, in handedOptions):
 //
 //   - declared on the object an input's own call made: argparse's
 //     init.add_argument("--force") on commands.add_parser("init"), unless
@@ -319,13 +321,18 @@ func (graph *reachGraph) options(reaches []Reach, roots []int, nested map[string
 			handledOn[operationLocationKey(on.Location)] = true
 		}
 	}
-	nest := func(input, option int) {
+	// nest lists an option under an input (none when input is -1), and
+	// hides its tile when the rule establishing it says the option is only
+	// its inputs'.
+	nest := func(input, option int, only bool) {
 		id := index.Operations[option].ID
-		if slices.Contains(reaches[input].Options, id) {
+		if only {
+			nested[id] = true
+		}
+		if input < 0 || slices.Contains(reaches[input].Options, id) {
 			return
 		}
 		reaches[input].Options = append(reaches[input].Options, id)
-		nested[id] = true
 	}
 	for position, operation := range index.Operations {
 		if !operation.HandlerUnknown || operation.ValueOf != "" {
@@ -334,7 +341,7 @@ func (graph *reachGraph) options(reaches []Reach, roots []int, nested map[string
 		// Declared on the object an input's own call made.
 		if on := operation.DeclaredOn; on != nil && !handledOn[operationLocationKey(on.Location)] {
 			if input, ok := inputAt[operationLocationKey(on.Location)]; ok && input != position && index.Operations[input].Kind == operation.Kind {
-				nest(input, position)
+				nest(input, position, true)
 			}
 		}
 		declaredBy, known := graph.position[operation.DeclaredBy]
@@ -344,7 +351,7 @@ func (graph *reachGraph) options(reaches []Reach, roots []int, nested map[string
 		// Declared in a case's branch itself.
 		location := operation.Location
 		if input := owner(declaredBy, &location); input >= 0 && input != position && index.Operations[input].Kind == operation.Kind {
-			nest(input, position)
+			nest(input, position, true)
 		}
 		// Declared by code only a case's branch runs.
 		if launched[declaredBy] {
@@ -352,8 +359,141 @@ func (graph *reachGraph) options(reaches []Reach, roots []int, nested map[string
 		}
 		for input := range index.Operations {
 			if input != position && runs[input][declaredBy] && index.Operations[input].Kind == operation.Kind {
-				nest(input, position)
+				nest(input, position, true)
 			}
+		}
+	}
+	graph.handedOptions(inputAt, handledOn, nest)
+}
+
+// handedOptions nests what a declaration declares on the object it is
+// handed (owner's verdict, 2026-09-30) by a third code fact: an input a
+// declaration F declares on its own parameter P (a helper's
+// command.add_argument("--quiet")), or a row of a table F looks up with
+// keys it is handed while it makes calls on P (freqtrade's _build_args
+// adds AVAILABLE_CLI_OPTIONS[val] for each val of the optionlist it is
+// handed to the parser it is handed), is an option of each input whose
+// own call made the object a call of F hands P
+// (_build_args(optionlist=ARGS_TRADE, parser=trade_cmd), trade_cmd the
+// result of subparsers.add_parser("trade")); a row only under the calls
+// whose keys name it. It is no tile of its own only when every call of F
+// is followed: F reached by exact calls alone, each handing P an input's
+// object and, for a row, a list of keys the code wrote; and, for a row, F
+// alone reads the table. A call handing a parameter, a spread or a list
+// with no rows keeps the tile.
+func (graph *reachGraph) handedOptions(inputAt map[string]int, handledOn map[string]bool, nest func(input, option int, only bool)) {
+	index := graph.index
+	handed := index.Handed
+	if len(handed.Calls) == 0 {
+		return
+	}
+	callsOf := map[string][]HandedCall{}
+	for _, call := range handed.Calls {
+		callsOf[call.ToSubjectID] = append(callsOf[call.ToSubjectID], call)
+	}
+	onParameter := map[string]ParameterCall{}
+	parametersOf := map[string][]int{}
+	for _, call := range handed.OnParameter {
+		onParameter[operationLocationKey(call.Location)] = call
+		if !slices.Contains(parametersOf[call.SubjectID], call.Parameter) {
+			parametersOf[call.SubjectID] = append(parametersOf[call.SubjectID], call.Parameter)
+		}
+	}
+	// objectInput is the input of a kind whose own call made the object at
+	// a site, or -1: none, the option itself, or an object something
+	// handled is declared on.
+	objectInput := func(at programindex.Location, kind string, option int) int {
+		key := operationLocationKey(at)
+		input, ok := inputAt[key]
+		if !ok || handledOn[key] || input == option || index.Operations[input].Kind != kind {
+			return -1
+		}
+		return input
+	}
+	// Declared on a parameter.
+	for position, operation := range index.Operations {
+		if !operation.HandlerUnknown || operation.ValueOf != "" {
+			continue
+		}
+		call, ok := onParameter[operationLocationKey(operation.Location)]
+		if !ok || call.SubjectID != operation.DeclaredBy {
+			continue
+		}
+		calls := callsOf[call.SubjectID]
+		only := len(calls) > 0 && !handed.Unfollowed[call.SubjectID]
+		for _, into := range calls {
+			input := -1
+			if at, made := into.Made[call.Parameter]; made {
+				input = objectInput(at, operation.Kind, position)
+			}
+			if input < 0 {
+				only = false
+				continue
+			}
+			nest(input, position, false)
+		}
+		if only {
+			nest(-1, position, true)
+		}
+	}
+	// A table's rows, looked up with keys a declaration is handed.
+	readers := map[string][]string{}
+	for _, call := range handed.Calls {
+		for table := range call.Keys {
+			if !slices.Contains(readers[table], call.ToSubjectID) {
+				readers[table] = append(readers[table], call.ToSubjectID)
+			}
+		}
+	}
+	if len(readers) == 0 {
+		return
+	}
+	readAlso := map[string]bool{}
+	for _, edge := range index.StructuralEdges {
+		if edge.Role == EdgeRelationTarget && edge.RelationKind == programindex.RelationReads && len(readers[edge.ToSubjectID]) > 0 && !slices.Contains(readers[edge.ToSubjectID], edge.FromSubjectID) {
+			readAlso[edge.ToSubjectID] = true
+		}
+	}
+	rowAt := map[string]TableRowKey{}
+	for _, row := range handed.Rows {
+		rowAt[operationLocationKey(row.Location)] = row
+	}
+	for position, operation := range index.Operations {
+		row, ok := rowAt[operationLocationKey(operation.Location)]
+		if !ok || !operation.HandlerUnknown || operation.ValueOf != "" || row.TableID != operation.DeclaredBy {
+			continue
+		}
+		table := row.TableID
+		only, listed := !readAlso[table], false
+		for _, reader := range slices.Sorted(slices.Values(readers[table])) {
+			parameters := parametersOf[reader]
+			if len(parameters) != 1 || handed.Unfollowed[reader] {
+				only = false
+				continue
+			}
+			for _, into := range callsOf[reader] {
+				keys, known := into.Keys[table]
+				if !known || keys == nil {
+					only = false
+					continue
+				}
+				if !slices.Contains(keys, row.Key) {
+					continue
+				}
+				input := -1
+				if at, made := into.Made[parameters[0]]; made {
+					input = objectInput(at, operation.Kind, position)
+				}
+				if input < 0 {
+					only = false
+					continue
+				}
+				nest(input, position, false)
+				listed = true
+			}
+		}
+		if only && listed {
+			nest(-1, position, true)
 		}
 	}
 }

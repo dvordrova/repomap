@@ -11,7 +11,8 @@ import (
 )
 
 // ARGS_SERVE and ARGS_INIT are keys build_args (handed them by keyword and
-// by position) and init_flags look up in OPTIONS, and NO_CONFIG and KNOWN
+// by position, from build_subcommands and build_serve) and init_flags look
+// up in OPTIONS, and NO_CONFIG and KNOWN
 // are only tested for a subcommand's membership, "prune" naming no
 // subcommand: their reads say so with ProgramIndex's shared witnesses, and
 // none of them is asked what its rows become. HELP, looked up with its own
@@ -50,7 +51,7 @@ func TestPythonTablesNamingAnotherTablesRowsAreNoInputs(t *testing.T) {
 		slices.Sort(reads[name])
 	}
 	want := map[string][]string{
-		"ARGS_SERVE": {"build_subcommands keys OPTIONS"},
+		"ARGS_SERVE": {"build_serve keys OPTIONS", "build_subcommands keys OPTIONS"},
 		"ARGS_INIT":  {"build_subcommands keys OPTIONS", "init_flags keys OPTIONS"},
 		"NO_CONFIG":  {"needs_config membership"},
 		"KNOWN":      {"run_known membership"},

@@ -28,6 +28,11 @@ def build_parser():
     init = commands.add_parser("init")
     init.set_defaults(func=run_init)
     init.add_argument("--force", action="store_true")
+    add_common(init)
+    add_output(init)
+    status = commands.add_parser("status")
+    add_common(status)
+    add_output(parser)
     return parser
 
 
@@ -70,3 +75,16 @@ class RebuiltParser:
     def rebuild(self):
         self.parser = argparse.ArgumentParser("second")
         self.parser.add_argument("--again")
+
+
+def add_common(command: argparse.ArgumentParser):
+    """Declares --quiet on the parser it is handed. Every call hands it a
+    subcommand's own parser, init's and status's: --quiet is an option of
+    each, and no flag of the tool's own."""
+    command.add_argument("--quiet", action="store_true")
+
+
+def add_output(parser: argparse.ArgumentParser):
+    """Declares --json on init's parser and on the tool's own: an option of
+    init that the tool also takes."""
+    parser.add_argument("--json", action="store_true")

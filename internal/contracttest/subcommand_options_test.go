@@ -13,7 +13,8 @@ import (
 )
 
 // optionsOf names an input's options (GroupsIndex Reach.Options) as
-// "name by declarer", and says whether it is nested itself.
+// "name by declarer", "(also a tile)" after one that stays a tile of its
+// own, and says whether the input is nested itself.
 func optionsOf(t *testing.T, index groupindex.Index, name, declaredBy string) ([]string, bool) {
 	t.Helper()
 	names := map[string]string{}
@@ -33,10 +34,11 @@ func optionsOf(t *testing.T, index groupindex.Index, name, declaredBy string) ([
 		var options []string
 		for _, id := range index.Reach[position].Options {
 			option := operations[id]
+			listed := option.Name + " by " + names[option.DeclaredBy]
 			if !index.Launch.Nested[id] {
-				t.Fatalf("%s's option %s is still a tile of its own", name, option.Name)
+				listed += " (also a tile)"
 			}
-			options = append(options, option.Name+" by "+names[option.DeclaredBy])
+			options = append(options, listed)
 		}
 		return options, index.Launch.Nested[operation.ID]
 	}
@@ -70,16 +72,28 @@ func topLevelTwice(index groupindex.Index, path string) string {
 // its word alone.
 //
 //   - Go: RunSubcommand's switch runs runServe in case serve and runCheck in
-//     case check; each declares -verbose on its own flag set.
+//     case check; each declares -verbose on its own flag set and hands that
+//     flag set to addCommon, which declares -quiet on it: only the cases
+//     run addCommon, so -quiet is an option of both. (Its facts are the
+//     Python helper's too, a call on a parameter and a call_result
+//     argument; no flag set is an input's own call here.)
 //   - Python: argparse's --force is added to the parser add_parser("init")
 //     made; -v, on the program's own parser, stays the program's.
+//     add_common declares --quiet on the parser each of its calls hands it,
+//     init's and status's: an option of both, no tile. add_output is also
+//     handed the program's parser: --json is init's option and a tile.
+//     build_serve hands build_args ARGS_SERVE with serve's parser, so the
+//     OPTIONS rows it names are serve's options; build_subcommands hands
+//     build_args parameters, so they stay tiles.
 //   - C: kvcli's main runs bench in its bench branch, and bench compares its
 //     own arguments with --requests; --raw, which main compares, stays the
 //     client's.
 //
 // TypeScript's switch and Clojure's case form carry the same case branches
 // (ProgramIndex comparisons); their fixtures declare no option inside a
-// subcommand's own code yet.
+// subcommand's own code yet, and neither has a helper handed a
+// subcommand's object (JS declares its options on the root program alone;
+// the Clojure fixture uses no option library).
 func TestASubcommandsOptionsAreNestedUnderIt(t *testing.T) {
 	t.Run("go", func(t *testing.T) {
 		t.Setenv("CGO_ENABLED", "0")
@@ -103,8 +117,8 @@ func TestASubcommandsOptionsAreNestedUnderIt(t *testing.T) {
 		projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}, root, preset)
 		for _, command := range []struct{ name, option string }{{"serve", "verbose by runServe"}, {"check", "verbose by runCheck"}} {
 			options, nested := optionsOf(t, projected, command.name, "RunSubcommand")
-			if nested || !reflect.DeepEqual(options, []string{command.option}) {
-				t.Fatalf("%s: nested %v, options %q; want %q", command.name, nested, options, command.option)
+			if want := []string{"quiet by addCommon", command.option}; nested || !reflect.DeepEqual(options, want) {
+				t.Fatalf("%s: nested %v, options %q; want %q", command.name, nested, options, want)
 			}
 		}
 		// ToolCommand's strict, on the flag set its own function makes, is
@@ -132,15 +146,24 @@ func TestASubcommandsOptionsAreNestedUnderIt(t *testing.T) {
 				return "command", true
 			case column == "binds" && strings.HasSuffix(symbol, ".set_defaults"):
 				return "command", true
+			case column == "becomes" && item["table"] == "OPTIONS":
+				return "command", true
 			}
 			return "", false
 		}}
 		projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root, preset)
-		if options, nested := optionsOf(t, projected, "init", "build_parser"); nested || !slices.Equal(options, []string{"--force by build_parser"}) {
-			t.Fatalf("init: nested %v, options %q", nested, options)
-		}
-		if options, nested := optionsOf(t, projected, "-v", "build_parser"); nested || len(options) != 0 {
-			t.Fatalf("-v: nested %v, options %q", nested, options)
+		for _, command := range []struct {
+			name, by string
+			options  []string
+		}{
+			{"init", "build_parser", []string{"--force by build_parser", "--json by add_output (also a tile)", "--quiet by add_common"}},
+			{"status", "build_parser", []string{"--quiet by add_common"}},
+			{"-v", "build_parser", nil},
+			{"serve", "build_serve", []string{"force by OPTIONS (also a tile)", "verbose by OPTIONS (also a tile)"}},
+		} {
+			if options, nested := optionsOf(t, projected, command.name, command.by); nested || !slices.Equal(options, command.options) {
+				t.Fatalf("%s: nested %v, options %q; want %q", command.name, nested, options, command.options)
+			}
 		}
 		if word := topLevelTwice(projected, "src/fixture_app/tool_cli.py"); word != "" {
 			t.Fatalf("%s is twice among the tiles", word)

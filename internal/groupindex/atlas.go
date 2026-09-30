@@ -1057,6 +1057,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		Idioms:             idioms,
 		Unresolved:         compileUnresolvedCalls(program, retained),
 		Branches:           compileInputBranches(program, retained),
+		Handed:             compileHanded(program, retained),
 	}
 	return projectedTarget{index: index, groupOfBox: groupOfBox, operationOf: operationOf}, nil
 }

@@ -1,5 +1,38 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Options handed to a helper's parameter (skeptic's verdict on freqtrade's flags)
+
+- **Why:** freqtrade's 124 flags are rows of `AVAILABLE_CLI_OPTIONS` that
+  `_build_args(optionlist=ARGS_X, parser=P)` adds to the parser it is
+  handed; none had `declared_on`, so all stood as tiles beside the
+  subcommands, and READING said they "stay the program's".
+- **Handed (groupindex `handed.go`, derived):** the calls a declaration
+  makes on its own parameter, every call into it with the arguments a call
+  made (`call_result` anchors, by parameter; a method through its class
+  shifted) and the `keys` read of a list at that call, and the keyed
+  tables' rows by key. `options()` gains a third rule (`handedOptions`):
+  declared on a parameter, or a row looked up with handed keys, is an
+  option of each input whose own call made the object handed; its tile is
+  hidden only when every call is exact and followed and, for a row, the
+  helper alone reads the table and every list has rows.
+- **Fixtures:** Python `tool_cli.py` `add_common` (`--quiet`: init's and
+  status's, no tile) and `add_output` (`--json`: init's, stays a tile, the
+  program's parser too); `dispatch.py` `build_serve` (OPTIONS rows under
+  serve, tiles kept: `build_subcommands` hands parameters). Go
+  `addCommon(fs)` from runServe and runCheck: `-quiet` nested under both by
+  the branch rule (the Go facts carry the same parameter/`call_result`
+  joint). JS, Clojure, C: recorded in READING, nothing fabricated.
+- **freqtrade (saved run 234529, rendered):** 164 option rows under 27
+  subcommands (trade: `--db-url`, `--dry-run`, `--dry-run-wallet`,
+  `--fee`, `--sd-notify`); all 124 row tiles kept (7 subcommand calls hand
+  row-less lists, `ARGS_MAIN` the program's parser, two groups via
+  `parents=`). Left for the owner: rows through `*X` spreads, elements of
+  list-literal arguments, argparse `parents=`.
+- **Tests:** `TestASubcommandsOptionsAreNestedUnderIt` (Go, Python),
+  `TestAFlagDeclaredOnAHandedParserIsAnOptionOfTheSubcommandMakingIt`,
+  `TestARowLookedUpWithHandedKeysIsAnOptionOfTheSubcommandMakingTheParser`;
+  fixture expectations in the inputs, table-reads and word-given tests.
+
 ## 2026-09-30 — The canvas batch of the second human-eye review: packed programs, trunks, one note for unread targets, folded Outside cards
 
 - **Why:** the reviewer's canvas items 1–7 (crops in the scratchpad's

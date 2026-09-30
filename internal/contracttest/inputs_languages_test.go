@@ -98,7 +98,10 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 	want := []inputRow{
 		{kind: "command", name: "price-endpoint", declaredBy: "DestinationApplication", at: "internal/storefixture/destinations.go:28"},
 		{kind: "command", name: "verbose", declaredBy: "runServe", on: `flag.NewFlagSet("serve", flag.ContinueOnError)`, at: "internal/storefixture/tool_cli.go:100"},
-		{kind: "command", name: "verbose", declaredBy: "runCheck", on: `flag.NewFlagSet("check", flag.ContinueOnError)`, at: "internal/storefixture/tool_cli.go:111"},
+		{kind: "command", name: "verbose", declaredBy: "runCheck", on: `flag.NewFlagSet("check", flag.ContinueOnError)`, at: "internal/storefixture/tool_cli.go:112"},
+		// addCommon declares quiet on the flag set it is handed: a
+		// parameter is no object its own call made.
+		{kind: "command", name: "quiet", declaredBy: "addCommon", at: "internal/storefixture/tool_cli.go:126"},
 		{kind: "setting", name: "listen", declaredBy: "ServerConfig", on: "json.Unmarshal(raw, &config)", at: "internal/storefixture/tool_cli.go:15"},
 		{kind: "setting", name: "data_dir", declaredBy: "ServerConfig", on: "json.Unmarshal(raw, &config)", at: "internal/storefixture/tool_cli.go:16"},
 		{kind: "command", name: "port", declaredBy: "ToolCommand", on: `flag.NewFlagSet("serve", flag.ContinueOnError)`, at: "internal/storefixture/tool_cli.go:36"},
@@ -222,11 +225,16 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 		{kind: "command", name: "-v", declaredBy: "build_parser", on: `argparse.ArgumentParser("tool")`, at: "src/fixture_app/tool_cli.py:26"},
 		{kind: "command", name: "init", declaredBy: "build_parser", on: `parser.add_subparsers(dest="cmd")`, handler: "run_init", at: "src/fixture_app/tool_cli.py:28"},
 		{kind: "command", name: "--force", declaredBy: "build_parser", on: `commands.add_parser("init")`, at: "src/fixture_app/tool_cli.py:30"},
+		{kind: "command", name: "status", declaredBy: "build_parser", on: `parser.add_subparsers(dest="cmd")`, at: "src/fixture_app/tool_cli.py:33"},
 		// ServiceCommands keeps its parser and subcommands in fields, each
 		// stored once from argparse's call: serve joins its handler as init
 		// does. RebuiltParser stores its parser twice, so --again, on either
 		// parser, is no input.
-		{kind: "command", name: "serve", declaredBy: "build", on: `self.parser.add_subparsers(dest="cmd")`, handler: "run_serve", at: "src/fixture_app/tool_cli.py:58"},
+		{kind: "command", name: "serve", declaredBy: "build", on: `self.parser.add_subparsers(dest="cmd")`, handler: "run_serve", at: "src/fixture_app/tool_cli.py:63"},
+		// A helper declares on the parser it is handed: a parameter is no
+		// object its own call made (subcommand_options_test.go nests them).
+		{kind: "command", name: "--quiet", declaredBy: "add_common", at: "src/fixture_app/tool_cli.py:84"},
+		{kind: "command", name: "--json", declaredBy: "add_output", at: "src/fixture_app/tool_cli.py:90"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tool_cli.py's inputs:\n%+v\nwant\n%+v", got, want)

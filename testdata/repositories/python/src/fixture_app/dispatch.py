@@ -23,7 +23,13 @@ rows; `COMMANDS`, looked up in `HELP` only under a condition and handed
 to `Builder.build` through its class, where its position is not the
 parameter's; `READ_ONLY` and `WRITES`, tested for one value's membership
 case by case, as an if/elif chain compares words.
+
+`build_serve` hands `build_args` ARGS_SERVE with the parser its own call
+to add_parser made for `serve`: the OPTIONS rows ARGS_SERVE names are
+serve's options. They stay the program's too, since `build_subcommands`
+hands `build_args` parsers the code does not follow.
 """
+import argparse
 
 
 class Opt:
@@ -153,3 +159,11 @@ def access(command):
     elif command in WRITES:
         return "write"
     return "none"
+
+
+def build_serve():
+    parser = argparse.ArgumentParser("dispatch")
+    commands = parser.add_subparsers(dest="command")
+    serve = commands.add_parser("serve")
+    build_args(optionlist=ARGS_SERVE, parser=serve)
+    return parser

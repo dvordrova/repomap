@@ -587,9 +587,10 @@ The original AST call site, result identity, positional/keyword arguments and ca
 A call of an outside symbol given words is asked on its own what they
 become (READING, the `atlas_api` per-call question), beside its symbol's
 row with `result_receives`, the calls made on what the call returns. The
-fixture's `src/fixture_app/tool_cli.py` asks `argparse.ArgumentParser`
-(`add_argument ×1`, `add_subparsers ×2`), `add_argument`,
-`add_subparsers` (`add_parser ×2`) and `add_parser` (`set_defaults ×2`);
+fixture's `src/fixture_app/tool_cli.py` and `dispatch.py` ask
+`argparse.ArgumentParser` (`add_argument ×1`, `add_subparsers ×3`),
+`add_argument`, `add_subparsers` (`add_parser ×4`) and `add_parser`
+(`set_defaults ×2`);
 `set_defaults(func=…)` hands a callable and is asked what it becomes. A subcommand named by one
 call and handled through another is one input (READING, J1): `init`,
 named by `commands.add_parser("init")`, is handled by `run_init`, which
@@ -597,7 +598,17 @@ named by `commands.add_parser("init")`, is handled by `run_init`, which
 The inputs an object's calls declare are one catalogue of that object:
 `--verbose` is declared on `argparse.ArgumentParser("tool")` and `--force`
 on init's own parser, whose catalogue names `init` as what its members are
-declared on (`TestCumulativePythonInputsJoinAndCatalogue`).
+declared on (`TestCumulativePythonInputsJoinAndCatalogue`). A helper
+declaring on the parser it is handed (`add_common(command:
+argparse.ArgumentParser)`: a call whose receiver value is its own
+`parameter`) is declared on no object of its own; GroupsIndex nests it
+under each subcommand whose `add_parser` call made the parser a call hands
+it, and a row of a table looked up with a list of keys handed beside such
+a parser under that subcommand (`dispatch.py`'s `build_serve`:
+`build_args(optionlist=ARGS_SERVE, parser=serve)`; READING, options;
+`TestASubcommandsOptionsAreNestedUnderIt`). Not followed yet: rows
+through `*X` spreads, the elements of a list literal handed as an
+argument, and `parents=[...]` (a parser whose options another takes).
 
 A class's field stored exactly once, by a plain assignment of a call's
 result in `__init__` or any method (`self.parser =

@@ -411,6 +411,11 @@ type Index struct {
 	// guard declares is handled by the code written for it. Compiled from
 	// the bound ProgramIndex, never persisted.
 	Branches []InputBranch `json:"-"`
+	// Handed is what the declarations making calls on their own parameters,
+	// or looking a table up with keys they are handed, are handed by each
+	// call (handed.go). Compiled from the bound ProgramIndex, never
+	// persisted.
+	Handed Handed `json:"-"`
 }
 
 // UnresolvedCall is one call whose callee the ProgramIndex does not know.
@@ -734,6 +739,7 @@ func Build(program programindex.Index, accepted Proposals) (Index, []Diagnostic,
 		Connections:        connections,
 		Unresolved:         compileUnresolvedCalls(program, allSubjectIDs),
 		Branches:           compileInputBranches(program, allSubjectIDs),
+		Handed:             compileHanded(program, allSubjectIDs),
 	}
 	Derive(&index)
 	seal, err := indexDigest(index)
@@ -2468,6 +2474,7 @@ func (artifact Overlay) Hydrate(program programindex.Index) (Index, error) {
 		OffMap: artifact.OffMap, MapFailure: artifact.MapFailure, Unsure: artifact.Unsure, Idioms: artifact.Idioms, SHA256: artifact.SHA256,
 		Unresolved: compileUnresolvedCalls(program, retained),
 		Branches:   compileInputBranches(program, retained),
+		Handed:     compileHanded(program, retained),
 	}
 	// Derive writes the connections' derived fields: on a copy, so hydrating
 	// never changes the overlay it reads.

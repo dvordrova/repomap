@@ -737,7 +737,7 @@ handler; GroupsIndex nests it under the entry (`Launch.Nested`,
 
 A flag belongs to its subcommand (owner, 2026-09-29): GroupsIndex nests a
 handler-less input under an input of the same kind, as its option
-(`Reach.Options`, `Launch.Nested`; derived, never persisted), by two code
+(`Reach.Options`, `Launch.Nested`; derived, never persisted), by three code
 facts. It is declared on the object that input's own call made (argparse's
 `init.add_argument("--force")` on `commands.add_parser("init")`: the
 catalogue's `OnOperationID`), unless an input with its own handler is declared
@@ -755,11 +755,31 @@ in its `bench` branch, whose `--requests` is bench's. A line belongs to the
 branch starting last at or before it, so a nested branch is its own and
 `} else if (…) {` opens the next. An input of another kind is none (a replica
 URL's `endpoint` setting the subcommand's code reads), nor is a value of
-another input (`ValueOf`). Freqtrade's argparse options are rows of
-`AVAILABLE_CLI_OPTIONS` handed to each subparser through a list of keys, a
-value flow the code does not follow: they stay the program's. TypeScript's
-switch and Clojure's case form carry the same branches; their fixtures
-declare no option in a subcommand's own code yet.
+another input (`ValueOf`). Third, it is handed (`groupindex.Handed`,
+compiled from ProgramIndex): a declaration F declares it on its own
+parameter P (a call whose receiver value is that `parameter`), or it is a
+row of a table F looks up with keys it is handed while F makes calls on
+one parameter P (a `keys` read of a list at a call of F; the row's key is
+its first word), and a call of F hands P the object an input's own call
+made (a `call_result` argument anchored at that input): it is that input's
+option, a row only under the calls whose list names its key. It is no
+tile of its own only when every call of F is followed: F reached by exact
+calls alone, each handing P an input's object and, for a row, a list the
+code wrote rows for, F alone reading the table; otherwise it is listed and
+stays a tile, as the program takes it too. Freqtrade's
+`_build_args(optionlist=ARGS_TRADE, parser=trade_cmd)` lists 164 rows of
+`AVAILABLE_CLI_OPTIONS` under 27 subcommands (trade's `--db-url`,
+`--dry-run`, …); every row stays a tile, since 7 subcommand calls hand
+lists with no rows (`*ARGS_…` spreads, one-element and empty lists, a
+filtered comprehension), `ARGS_MAIN` goes to the program's parser and
+`ARGS_COMMON`/`ARGS_STRATEGY` to parser groups taken through `parents=`,
+none of them followed yet. Go's facts carry the same joint; its
+`addCommon(fs)`, handed each subcommand's own flag set in code only that
+case runs, is nested by the branch rule. JS declares options on the root
+program alone and the Clojure fixture uses no option library; C's helpers
+run in a case's branch (branch rule). TypeScript's switch and Clojure's
+case form carry the same branches; their fixtures declare no option in a
+subcommand's own code yet.
 
 A call whose answer makes its words an entry, and that no fact boundary, in or
 out, names at its line and column, is that entry: a model boundary, direction

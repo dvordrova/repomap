@@ -98,6 +98,7 @@ func RunSubcommand(args []string) string {
 func runServe(args []string) string {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	verbose := fs.Bool("verbose", false, "log each request")
+	addCommon(fs)
 	_ = fs.Parse(args)
 	if *verbose {
 		return "serve verbosely " + strings.Join(fs.Args(), " ")
@@ -109,11 +110,20 @@ func runServe(args []string) string {
 func runCheck(args []string) string {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	verbose := fs.Bool("verbose", false, "log each check")
+	addCommon(fs)
 	_ = fs.Parse(args)
 	if *verbose {
 		return "check verbosely"
 	}
 	return "check"
+}
+
+// addCommon declares -quiet on the flag set it is handed, as a tool shares
+// its subcommands' common flags: serve's and check's own code each hand it
+// their flag set, and only their cases run that code, so -quiet is an
+// option of each and no flag of the tool's own.
+func addCommon(fs *flag.FlagSet) {
+	fs.Bool("quiet", false, "print nothing")
 }
 
 // IsDefaultLevel compares a level with one word: a lone comparison is no
