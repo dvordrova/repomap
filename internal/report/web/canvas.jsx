@@ -283,7 +283,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // (owner, 2026-09-28): its arrows run out of its own border toward the
   // part or area at their other end, each end marked by its plaque, and
   // the location names it.
-  let deepPart='',shownNodes=null;
+  let deepPart='',shownNodes=null,enteredProgram='',ports=null;
   function deepPartAt(v){
     const width=host.clientWidth,height=host.clientHeight,centre={x:(width/2-v.x)/v.zoom,y:(height/2-v.y)/v.zoom};
     let best='',nearest=Infinity;
@@ -309,7 +309,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const now=lookedAt();
     if(now&&now!==before&&!byID.get(now)?.display&&byID.get(now)?.branch!=='inputs-part')callbacks.follow?.(now);
   }
+  // Where the camera stands, and the program it is in (programEntered).
   function updateLocation(event,subject=locationSubject){
+    placeLocation(event,subject);
+    const next=instance&&!layoutError?programEntered(instance.getViewport()):'';
+    if(next!==enteredProgram){enteredProgram=next;update?.();}
+  }
+  function placeLocation(event,subject){
     if(!instance)return;
     location.classList.toggle('flow-location-error',!!layoutError);
     if(layoutError){location.textContent=t('Could not arrange this map. Reload to try again.');return;}
@@ -515,6 +521,194 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const area=parentArea(id);if(area)return area;
     const root=rootOf(id);return byID.get(root)?.branch==='component'&&openComponents.has(root)?root:'';
   }
+  // The program the camera is in: the one the location names, open, its
+  // frame across or down three quarters of the canvas, the camera not on
+  // the whole map. Its Inputs and
+  // Outside stand on its own border as ports (owner, 2026-09-30: variant B);
+  // the whole map keeps their frames, and with them what programs share.
+  function programEntered(v){
+    const program=rootOf(locationID),n=placed.get(program);
+    // The whole map, even of one program, keeps its frames.
+    if(overviewFit||!n||byID.get(program)?.branch!=='component'||!openComponents.has(program))return '';
+    return n.width*v.zoom>=.75*host.clientWidth||n.height*v.zoom>=.75*host.clientHeight?program:'';
+  }
+  // An entered program's ports: its Inputs as one pill of their kinds' icons
+  // where their arrow met its border, its Outside as one pill of its
+  // systems' dots where its arrow left it, each item 24 pixels where the
+  // program is entered. `hidden` the frames the pills stand for; `ends`
+  // maps each of their members to the item an arrow into it lands on.
+  function programPorts(program){
+    const n=placed.get(program);if(!n)return null;
+    const pills=[],ends=new Map();
+    // Its Inputs name it as their program; its Outside is the frame of
+    // systems its parts call and no other program's do: one that programs
+    // share stays a frame, what they share in sight.
+    const inputs=[...byID.values()].find(item=>item.branch==='inputs'&&item.componentOwner===program)?.id||'';
+    const joined=frame=>[...new Set(layout.edges.flatMap(edge=>edge.outerFrom===frame?[edge.outerTo]:edge.outerTo===frame?[edge.outerFrom]:[]))];
+    const outside=[...byID.values()].find(item=>item.branch==='outside'&&placed.has(item.id)&&joined(item.id).length===1&&joined(item.id)[0]===program)?.id||'';
+    const unit=24/frameView(n,{width:layoutSize.width,height:layoutSize.height}).zoom;
+    // Where the frame's arrow meets the program's border, else the middle
+    // of that side.
+    const border=(frame,east)=>{
+      const x=east?n.absolute.x+n.width:n.absolute.x;
+      const edge=layout.edges.find(edge=>edge.outerSegments?.length&&[edge.outerFrom,edge.outerTo].includes(frame)&&[edge.outerFrom,edge.outerTo].includes(program));
+      const points=edge?[edge.outerSegments[0][0],edge.outerSegments.at(-1).at(-1)]:[];
+      return points.find(point=>Math.abs(point.x-x)<1)||{x,y:n.absolute.y+n.height/2};
+    };
+    for(const [frame,east] of [[inputs,false],[outside,true]]){
+      const item=byID.get(frame);if(!item||!placed.has(frame))continue;
+      const items=east?(children.get(frame)||[]).map(id=>({id,title:byID.get(id)?.name||byID.get(id)?.title||'',members:[id]}))
+        :(item.inputGroups||[]).map(group=>({id:`${frame}#${group.kind}`,kind:group.kind,title:group.title,members:group.inputs.map(input=>input.id),
+          activations:[...new Set(group.inputs.map(input=>input.activation))]}));
+      if(!items.length)continue;
+      // Below the program's title band, above its foot, and clear of every
+      // other arrow meeting that side, nearest where its frame's arrow met
+      // it: litestream's VFS core's arrow had entered under its last icon.
+      const at=border(frame,east),height=unit*(items.length+.5),low=n.absolute.y+unit*2,high=n.absolute.y+n.height-unit*.5-height;
+      const crossings=layout.edges.filter(edge=>edge.outerSegments?.length&&[edge.outerFrom,edge.outerTo].includes(program)&&![edge.outerFrom,edge.outerTo].includes(frame))
+        .flatMap(edge=>[edge.outerSegments[0][0],edge.outerSegments.at(-1).at(-1)]).filter(point=>Math.abs(point.x-at.x)<1).map(point=>point.y);
+      const clear=top=>crossings.every(y=>y<top-unit*.5||y>top+height+unit*.5);
+      const wanted=Math.max(low,Math.min(at.y-height/2,high));
+      const top=[wanted,...crossings.flatMap(y=>[y+unit*.51,y-unit*.51-height])].filter(top=>top>=low-1e-6&&top<=high+1e-6&&clear(top))
+        .sort((a,b)=>Math.abs(a-wanted)-Math.abs(b-wanted))[0]??wanted;
+      const pill={frame,east,x:at.x,top,unit,height,title:[t(east?'Outside':'Inputs'),byID.get(program)?.name||byID.get(program)?.title].filter(Boolean).join(' · '),
+        items:items.map((entry,k)=>({...entry,y:top+unit*(k+.75)}))};
+      pills.push(pill);
+      for(const entry of pill.items)for(const member of entry.members)ends.set(member,{pill,entry});
+    }
+    return {program,pills,ends,unit,hidden:new Set(pills.map(pill=>pill.frame))};
+  }
+  // A route as one line of points, no point repeated and no turn that goes
+  // on along the same line.
+  function straightened(points){
+    const out=[];
+    for(const point of points){
+      if(out.length&&Math.abs(point.x-out.at(-1).x)<1e-6&&Math.abs(point.y-out.at(-1).y)<1e-6)continue;
+      const [p,q]=out.slice(-2);
+      if(q&&(Math.abs(p.x-q.x)<1e-6&&Math.abs(q.x-point.x)<1e-6||Math.abs(p.y-q.y)<1e-6&&Math.abs(q.y-point.y)<1e-6))out.pop();
+      out.push({x:point.x,y:point.y});
+    }
+    return out;
+  }
+  // The arrows with a program entered (programPorts): its own arrows to its
+  // Inputs and Outside are the pills themselves; another program's arrow
+  // into one of their members crosses the frame no longer drawn and lands
+  // on its icon or dot, each in a lane of its own; an arrow between another
+  // program and one of this one's parts goes on inside it to the box it
+  // reaches (split-layout.mjs innerFrom, innerTo), no longer stopping on
+  // the bare border.
+  function portEdges(edges,ports){
+    const {program,hidden,ends,unit}=ports,lanes=new Map(),legs=[],n=placed.get(program);ports.legs=new Set();
+    const inside=id=>{while(placed.get(id)?.parentId&&placed.get(id).parentId!==program)id=placed.get(id).parentId;return placed.get(id)?.parentId===program?id:'';};
+    const line=segments=>segments.flat();
+    const staged=edges.flatMap(edge=>{
+      const from=rootOf(edge.from),to=rootOf(edge.to);
+      if(from===to)return hidden.has(from)?[]:[edge];
+      if([from,to].every(root=>root===program||hidden.has(root)))return [];
+      if(hidden.has(from)||hidden.has(to)){
+        const into=hidden.has(to),end=ends.get(into?edge.to:edge.from);
+        if(!end||!edge.outerSegments?.length)return [];
+        const {pill,entry}=end,toward=into?line(edge.outerSegments):line(edge.outerSegments).reverse(),last=toward.at(-1);
+        const west=last.x<pill.x,x=west?pill.x-pill.unit/2:pill.x+pill.unit/2;
+        const lane=lanes.get(pill.frame)||0;lanes.set(pill.frame,lane+1);
+        const across=west?Math.min(x-pill.unit*.3,last.x+pill.unit*(.5+.4*lane)):Math.max(x+pill.unit*.3,last.x-pill.unit*(.5+.4*lane));
+        const points=straightened([...toward,{x:across,y:last.y},{x:across,y:entry.y},{x,y:entry.y}]);
+        return [{...edge,outerSegments:[into?points:points.reverse()],[into?'outerTo':'outerFrom']:entry.id}];
+      }
+      const side=to===program?'To':from===program?'From':'';
+      if(!side)return [edge];
+      const child=inside(side==='To'?edge.to:edge.from),inner=edge[`inner${side}`];
+      if(!child||!inner?.length||!edge.outerSegments?.length)return [edge];
+      // The leg inside, from where the outer route meets the program's
+      // border in: the interior's port stands elsewhere on that border.
+      const outer=line(edge.outerSegments),leg=[side==='To'?outer.at(-1):outer[0],...(side==='To'?line(inner):line(inner).reverse())];
+      const stage={leg:true,edge,side,child,outer,points:leg,...alongBorder(leg)};
+      legs.push(stage);return [stage];
+    });
+    // The outer route meets the border where the whole map's layout put the
+    // program's port, the leg inside leaves it where the program's own
+    // layout did: joined along the border, redis-cli's and
+    // redis-benchmark's arrows into Core server infrastructure ran up the
+    // frame's own line, one over the other. A leg that runs on along the
+    // gutter between the border and the program's cards joins it there
+    // (freqtrade's packed gutters); any other joins in a lane of its own in
+    // that gutter, clear of the ports' pills, the leg turning off the border
+    // soonest nearest it, so that no two legs cross.
+    function alongBorder(leg){
+      const eps=1e-3,[first]=leg;
+      const on=Math.abs(first.x-n.absolute.x)<eps?{axis:'x',at:n.absolute.x,inward:1}:Math.abs(first.x-n.absolute.x-n.width)<eps?{axis:'x',at:n.absolute.x+n.width,inward:-1}
+        :Math.abs(first.y-n.absolute.y)<eps?{axis:'y',at:n.absolute.y,inward:1}:Math.abs(first.y-n.absolute.y-n.height)<eps?{axis:'y',at:n.absolute.y+n.height,inward:-1}:null;
+      let run=0;
+      if(on)while(run+1<leg.length&&Math.abs(leg[run+1][on.axis]-on.at)<eps)run++;
+      return {on,run};
+    }
+    const inner=layout.nodes.filter(node=>node.parentId===program);
+    const gutter=({axis,at,inward})=>inward>0?Math.min(...inner.map(node=>node.absolute[axis]))-at:at-Math.max(...inner.map(node=>node.absolute[axis]+(axis==='x'?node.width:node.height)));
+    for(const stage of legs)if(stage.run){
+      const {points,run,on}=stage,q1=points[run+1],q2=points[run+2];
+      stage.shortcut=!!q1&&!!q2&&Math.abs(q1[on.axis]-on.at)<gutter(on)&&Math.abs(q2[on.axis]-q1[on.axis])<1e-6;
+    }
+    const groups=new Map();
+    for(const stage of legs)if(stage.run&&!stage.shortcut){
+      const along=stage.on.axis==='x'?'y':'x',turn=stage.points[stage.run][along],up=turn<stage.points[0][along];
+      const key=`${stage.on.axis}:${stage.on.at}:${up}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push({stage,turn,up});
+    }
+    for(const group of groups.values()){
+      group.sort((a,b)=>a.up?a.turn-b.turn:b.turn-a.turn);
+      group.forEach(({stage},k)=>{stage.lane=Math.max(unit*.2,Math.min(gutter(stage.on)-unit*.2,unit*(.75+.4*k)));});
+    }
+    return staged.map(stage=>{
+      if(!stage.leg)return stage;
+      const {edge,side,child,outer,points,on,run,lane,shortcut}=stage,shift=point=>({...point,[on.axis]:on.at+on.inward*lane});
+      const inward=shortcut?[points[0],{...points[0],[on.axis]:points[run+1][on.axis]},...points.slice(run+2)]
+        :run?[points[0],shift(points[0]),...points.slice(1,run+1).map(shift),...points.slice(run+1)]:points;
+      const route=straightened(side==='To'?[...outer.slice(0,-1),...inward]:[...inward.slice().reverse(),...outer.slice(1)]);
+      ports.legs.add(edge.id);
+      return {...edge,outerSegments:[route],[`outer${side}`]:child};
+    });
+  }
+  // A leg drawn into an entered program runs where the program's own layout
+  // put its route, and that layout merges routes into one side of a box:
+  // litestream's VFS core's arrow into Replication core ran down Command
+  // line interface's own line. Each segment of it inside the program on
+  // another arrow's line steps aside, a lane at a time, onto a line no
+  // arrow takes and no card stands across. `drawn` the drawn routes.
+  function nudgeLegs(drawn,ports){
+    const {program,legs,unit}=ports,n=placed.get(program),px=unit/24;
+    if(!n||!legs?.size)return drawn;
+    const inside=p=>p.x>n.absolute.x+1e-3&&p.x<n.absolute.x+n.width-1e-3&&p.y>n.absolute.y+1e-3&&p.y<n.absolute.y+n.height-1e-3;
+    const within=(id,of)=>{for(let at=id;at;at=placed.get(at)?.parentId)if(at===of)return true;return false;};
+    const segments=route=>(route.points||[]).slice(1).map((b,i)=>[route.points[i],b]);
+    const same=([a,b],[c,d])=>{
+      const flat=Math.abs(a.y-b.y)<1e-6&&Math.abs(c.y-d.y)<1e-6&&Math.abs(a.y-c.y)<px,upright=Math.abs(a.x-b.x)<1e-6&&Math.abs(c.x-d.x)<1e-6&&Math.abs(a.x-c.x)<px;
+      const axis=flat?'x':upright?'y':'';if(!axis)return false;
+      return Math.min(Math.max(a[axis],b[axis]),Math.max(c[axis],d[axis]))-Math.max(Math.min(a[axis],b[axis]),Math.min(c[axis],d[axis]))>6*px;
+    };
+    const crosses=([a,b],box)=>Math.max(a.x,b.x)>box.absolute.x+px&&Math.min(a.x,b.x)<box.absolute.x+box.width-px&&Math.max(a.y,b.y)>box.absolute.y+px&&Math.min(a.y,b.y)<box.absolute.y+box.height-px;
+    return drawn.map(route=>{
+      if(!route.edgeIDs.some(id=>legs.has(id))||!route.points)return route;
+      const ends=route.boxes||[],points=route.points.map(p=>({...p}));
+      const cards=layout.nodes.filter(node=>node.id!==program&&within(node.id,program)&&!closed(node.id)&&!ends.some(end=>within(node.id,end)||within(end,node.id)));
+      const others=drawn.filter(other=>other!==route).flatMap(segments);
+      const target=placed.get(ends.at(-1));
+      const free=(i,list)=>[i-1,i,i+1].filter(k=>k>=0&&k<list.length-1).every(k=>{const seg=[list[k],list[k+1]];return !cards.some(card=>crosses(seg,card))&&!others.some(other=>same(seg,other));});
+      for(let i=1;i<points.length-1;i++){
+        const seg=[points[i],points[i+1]];
+        if(!inside(points[i])||!inside(points[i+1])&&i+1<points.length-1||!others.some(other=>same(seg,other)))continue;
+        const axis=Math.abs(seg[0].x-seg[1].x)<1e-6?'x':'y';
+        found:for(let k=1;k<=4;k++)for(const sign of [-1,1]){
+          const trial=points.map(p=>({...p})),shift=sign*k*8*px;
+          trial[i][axis]+=shift;trial[i+1][axis]+=shift;
+          // An arrow's end stays on the side of the box it points into.
+          const end=trial.at(-1);
+          if(i+1===trial.length-1&&target&&(end[axis]<target.absolute[axis]+2*px||end[axis]>target.absolute[axis]+(axis==='x'?target.width:target.height)-2*px))continue;
+          if(!free(i,trial))continue;
+          points.splice(0,points.length,...trial);break found;
+        }
+      }
+      return {...route,points,path:points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' '),start:points[0],end:points.at(-1)};
+    });
+  }
   function boundaryBetween(id,other){
     const shared=new Set();
     for(let at=other;at;at=placed.get(at)?.parentId)shared.add(at);
@@ -569,7 +763,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const n=placed.get(part),stubs=labels.filter(label=>label.stub);
     if(!n||!stubs.length)return [];
     const box={x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height};
-    const outsides=stubs.map(label=>{const other=placed.get(label.outside);return {key:label.id,incoming:label.incoming,box:{x:other.absolute.x,y:other.absolute.y,width:other.width,height:other.height}};});
+    // A frame an entered program stands as a port is pointed at where its
+    // pill or its item stands (programPorts).
+    const portBox=id=>{
+      const end=ports?.ends.get(id),pill=end?.pill||ports?.pills.find(pill=>pill.frame===id);if(!pill)return null;
+      return end?{x:pill.x-pill.unit/2,y:end.entry.y-pill.unit/2,width:pill.unit,height:pill.unit}:{x:pill.x-pill.unit/2,y:pill.top,width:pill.unit,height:pill.height};
+    };
+    const outsides=stubs.map(label=>{const other=placed.get(label.outside);return {key:label.id,incoming:label.incoming,box:portBox(label.outside)||{x:other.absolute.x,y:other.absolute.y,width:other.width,height:other.height}};});
     // Thirty screen pixels, its arrowhead in sight: at 6% of the part, a
     // part fitted across the canvas had its stubs run off it headless
     // (reviewer, 2026-09-30).
@@ -1015,6 +1215,26 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       </li>)}</ul>}
     </div>;
   }
+  // An entered program's Inputs or Outside as a pill on its border
+  // (programPorts): an input kind's icon reads that kind's inputs, a
+  // system's dot reads that system, the pill elsewhere reads them all; each
+  // named in one line when pointed at or reached by the keyboard.
+  function PortPill({pill,chosen,muted}){
+    const zoom=useStore(state=>state.transform[2]),[tip,setTip]=useState('');
+    const scale=pill.unit/24,all=event=>{event.stopPropagation();select(pill.frame,event,false);};
+    const read=(entry,event)=>{event.stopPropagation();if(pill.east)select(entry.id,event,false);else readKind(pill.frame,entry.activations,event);};
+    return <div className={`flow-port nopan ${pill.east?'flow-port-outside':'flow-port-inputs'} ${chosen?'flow-port-chosen':''} ${muted?'flow-node-muted':''}`}
+      data-port={pill.frame} role="group" aria-label={pill.title} tabIndex={0} onClick={all}
+      onKeyDown={event=>{if(event.target===event.currentTarget&&(event.key==='Enter'||event.key===' ')){event.preventDefault();all(event);}}}
+      style={{transform:`translate(${pill.x-pill.unit/2}px,${pill.top}px) scale(${scale})`,height:pill.height/scale}}>
+      {pill.items.map(entry=><button key={entry.id} type="button" className="flow-port-item" data-port-end={entry.id} data-port-looks={pill.east?entry.id:undefined}
+        style={{top:(entry.y-pill.top)/scale-12}} aria-label={entry.title} onClick={event=>read(entry,event)}
+        onMouseEnter={()=>setTip(entry.id)} onMouseLeave={()=>setTip('')} onFocus={event=>{if(event.currentTarget.matches(':focus-visible'))setTip(entry.id);}} onBlur={()=>setTip('')}>
+        {pill.east?<span className="flow-port-dot"/>:<KindMark kind={entry.kind==='background'?'continuous':entry.kind}/>}
+        {tip===entry.id&&<span className={`flow-port-tip ${pill.east?'flow-port-tip-left':''}`} style={{transform:`scale(${1/(scale*zoom)})`}}>{entry.title}</span>}
+      </button>)}
+    </div>;
+  }
   function ComponentPresentation({node,focused,muted}){
     const item=byID.get(node.id),open=item.branch==='component'?openComponents.has(node.id):communicationsOpen.has(node.id);
     const {fit,zoom}=useOverviewFit(node);
@@ -1031,13 +1251,18 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const rest=hoverArea?emphasis(view,'',leaves,layout.edges,memberFacts(memberChoice&&view.scope===memberChoice.part?memberChoice:null)):state;
     const recede=rest.mode==='all'?null:rest;
     const context=focusAncestors(state.focus,placed);
-    const visible=id=>!closed(id);
+    // The program the camera is in stands its Inputs and Outside as ports
+    // on its border (programPorts), their frames not drawn.
+    ports=useMemo(()=>enteredProgram?programPorts(enteredProgram):null,[layoutKey,enteredProgram]);
+    const ported=id=>!!ports&&ports.hidden.has(rootOf(id));
+    const visible=id=>!closed(id)&&!ported(id);
     const outsideFits=useMemo(()=>outsideShrink(layout,byID,placed,program=>frameView(program,{width:layoutSize.width,height:layoutSize.height}).zoom),[layoutKey]);
     // Beside its program entered, a program's Outside frame is drawn at the
     // size its chips read at there, the scale of the program's own cards,
     // anchored where the program's arrow enters it (outsideShrink).
-    const shrunk=new Map([...outsideFits].filter(([,fit])=>openComponents.has(fit.program)));
-    const outsideDrawn=shrunk.size?shrinkOutside(layout,shrunk,rootOf):layout;
+    const shrunk=new Map([...outsideFits].filter(([id,fit])=>openComponents.has(fit.program)&&!ports?.hidden.has(id)));
+    const shrunkDrawn=shrunk.size?shrinkOutside(layout,shrunk,rootOf):layout;
+    const outsideDrawn=ports?{...shrunkDrawn,edges:portEdges(shrunkDrawn.edges,ports)}:shrunkDrawn;
     // A loose part among open areas' parts is drawn as tall as its card.
     const looseCards=new Map(detailed.size?outsideDrawn.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&!byID.get(n.id)?.note&&byID.get(n.parentId)?.branch==='component'&&(children.get(n.parentId)||[]).some(id=>byID.get(id)?.branch==='area'))
       .map(n=>[n.id,(byID.get(n.id)?.originalHeight||n.height)*(byID.get(n.id)?.contentScale||1)]):[]);
@@ -1161,6 +1386,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const active=end?end.activeEdges:state.activeEdges;
     const drawn=[...(end?routeDrawing(drawing.edges,closed,end.activeEdges,recede,boundary,initVisible,null):routes),
       ...stubRoutes.map(route=>({...route,on:route.edgeIDs.some(id=>active.has(id))}))];
+    if(ports)drawn.splice(0,drawn.length,...nudgeLegs(drawn,ports));
     heads=drawnHeads(drawn);drawnRoutes=new Map(drawn.map(route=>[route.id,route]));
     const shownContext=end?focusAncestors(end.focus,placed):context;
     // Far enough into one part to read its declarations.
@@ -1256,6 +1482,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         if(frameTitle){enter(frameTitle.dataset.frameTitle);return;}
         const input=event.target.closest('[data-input-id]');
         if(input){enter(input.dataset.inputId);return;}
+        // A port's dot looks at its system: the parts calling it outlined.
+        const port=event.target.closest('[data-port-end]');
+        if(port){enter(port.dataset.portLooks||ports?.program||'');return;}
         const node=event.target.closest('.react-flow__node');
         if(node){enter(node.dataset.id);return;}
         const point=instance.screenToFlowPosition({x:event.clientX,y:event.clientY});
@@ -1296,12 +1525,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       <ViewportPortal>
         {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs','outside'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))&&!closedGroup(n.id)).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)} muted={muted(n.id)}/>)}
-        {drawing.nodes.filter(n=>byID.get(n.id)?.branch==='outside').map(n=><FrameTitle key={n.id} node={n} item={{...byID.get(n.id),...shrunkScale(byID.get(n.id),shrunk.get(n.id))}} focused={state.focus.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
+        {drawing.nodes.filter(n=>byID.get(n.id)?.branch==='outside'&&!ported(n.id)).map(n=><FrameTitle key={n.id} node={n} item={{...byID.get(n.id),...shrunkScale(byID.get(n.id),shrunk.get(n.id))}} focused={state.focus.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>(scales.has(n.id)&&!detailed.has(n.id)||closedGroup(n.id))&&visible(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>closedGroup(n.id)&&visible(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} muted={muted(n.id)}
           select={(id,event)=>{hover.remember(event.clientX,event.clientY);focus(id);}}/>)}
+        {(ports?.pills||[]).map(pill=><PortPill key={pill.frame} pill={pill} chosen={view.scope===pill.frame||pill.items.some(entry=>view.scope===entry.id)} muted={muted(pill.frame)}/>)}
         {cardLabels.filter(label=>look.key===`label:${label.id}`||pinnedLabels.has(label.id)).map(label=><LabelCard key={'card:'+label.id} label={label} frame={placed.get(label.root)} labels={cardLabels}/>)}
       </ViewportPortal>
     </ReactFlow>;
@@ -1419,7 +1649,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // The placed boxes as the canvas draws them, for the geometry checks
   // (visual/geometry.mjs): world rectangles, containment and what is shown.
   map.flowGeometry=()=>({nodes:(shownNodes||layout.nodes).map(n=>({id:n.id,parentId:n.parentId||'',frame:!!n.frame,branch:byID.get(n.id)?.branch||'',
-    x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height,shown:!closed(n.id),contentScale:(byID.get(n.id)?.contentScale||1)*n.width/(placed.get(n.id)?.width||n.width),originalWidth:byID.get(n.id)?.originalWidth}))});
+    x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height,shown:!closed(n.id)&&!ports?.hidden.has(rootOf(n.id)),contentScale:(byID.get(n.id)?.contentScale||1)*n.width/(placed.get(n.id)?.width||n.width),originalWidth:byID.get(n.id)?.originalWidth}))});
   const root=createRoot(host);flushSync(()=>root.render(<App/>));
   // A click on an arrow reads its connection in the column, the camera
   // staying (openEnd).

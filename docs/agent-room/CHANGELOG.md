@@ -1,5 +1,32 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — An entered program stands its Inputs and Outside as ports (variant B)
+
+- **Owner's pick B:** the whole map keeps its Inputs and Outside frames; a
+  program entered (the location names it, its frame across or down ¾ of the
+  canvas, not the whole-map fit) hides them and stands them on its border:
+  one blue pill of its input kinds' icons, one amber pill of its own
+  systems' dots (an Outside frame programs share stays a frame), each pill
+  clear of the arrows meeting that side. Hover or keyboard focus names an
+  item in one line; a click reads that kind (column grouped as before) or
+  that system, the pill elsewhere all of them, the camera staying.
+- **Arrows:** another program's arrow into its inputs lands on the kind's
+  icon; one into its parts goes on inside to the box it reaches (new
+  `innerFrom`/`innerTo` legs), joined along the border gutter because the
+  whole map's port and the program's own port stand apart, and stepping
+  aside from another arrow's line (litestream's VFS core had run down CLI's
+  own line). Its own arrows to its Inputs and Outside are the pills.
+- **Lint:** an arrow's end touches its shown box or port item, never
+  nothing drawn (0495a7f9); coincide stays at 6 px, trunks aside: 0 on the
+  four reports. Geometry: redis 1 → 0, litestream 6 → 1 small, freqtrade 0,
+  othello 1 clipped (the part level, as before).
+- **Checks:** fixture spec `ports.spec.mjs` (pill, hidden frame, one-line
+  name by pointer and by Tab, click reads, camera stays); visual suite 56
+  passed; journeys 4/4 PASS, lints long folds only (39/8/57/0, as before);
+  page shape unchanged; make test and make vet pass. Home unchanged.
+  Not done: a client's connection into a server part is drawn to that
+  part, not to an input icon (the data names the part, no input kind).
+
 ## 2026-09-30 — A Main flow split's same-named candidates are told apart
 
 - **Rule** (`groupindex.TellApart`, `Where`): entries of one list sharing a

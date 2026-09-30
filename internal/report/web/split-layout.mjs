@@ -981,10 +981,14 @@ export async function layoutPrepared(prepared,width=1200,height=700){
   // An arrow the other way along its pair's one route takes that route
   // reversed: it starts where the arrow does.
   const outerRoute=edge=>{const route=routes.get(`outer:${edge.aggregate}`)||[];return edge.againstOuter?reversed(route):route;};
+  // An arrow between two participants keeps, beside its outer route, its
+  // legs inside each of them (`innerFrom` from its end to the border,
+  // `innerTo` from the border in): a program entered draws the leg into it.
   const edges=prepared.edges.map(edge=>{
     const from=rootOf.get(edge.from),to=rootOf.get(edge.to);
     const segments=from===to?localRoute(from,edge.id):outerRoute(edge);
     return {...edge,segments,outerSegments:from!==to?outerRoute(edge):undefined,
+      innerFrom:from!==to?localRoute(from,edge.id):undefined,innerTo:from!==to?localRoute(to,edge.id):undefined,
       outerFrom:from!==to?from:undefined,outerTo:from!==to?to:undefined,path:path(segments)};
   });
   const children=new Map();

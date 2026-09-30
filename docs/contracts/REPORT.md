@@ -179,6 +179,19 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   arrows enter it, its own first ("redis-benchmark, redis-cli"), in its
   arrow cards, reading and breadcrumb. An Outside frame and its chips are
   display collections, not inferred components.
+- A program entered (the location names it, its frame across or down three
+  quarters of the canvas, the camera not on the whole map) stands its Inputs
+  and its own Outside on its border as ports (owner, 2026-09-30: variant B);
+  the whole map, and an Outside frame programs share, keep their frames.
+  Its Inputs are one blue pill of its input kinds' icons, its Outside one
+  amber pill of its systems' dots, each pill clear of the arrows meeting
+  that side. An icon or dot is named in one line when pointed at or
+  reached by the keyboard; a click reads that kind's inputs or that system,
+  the pill elsewhere all of them, the camera staying. Another program's
+  arrow into one of their members lands on its icon or dot; an arrow
+  between another program and one of this one's parts goes on inside it to
+  the box it reaches, never stopping on the bare border (its leg joined in a
+  lane of the border gutter, stepping aside from another arrow's line).
 - When a saved connection identifies one displayed peer in another target,
   the canvas connects the original caller straight to that peer/input, with
   no third participant; its outbound catalogue and source reading stay
