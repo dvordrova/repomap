@@ -97,3 +97,39 @@ func TestCallTextFollowsIndexesGenericsAndNew(t *testing.T) {
 		}
 	}
 }
+
+// A table's row is sent as its own element of the table, bounded by the
+// other rows' words: a Python dict's row from its key (CallText gave the
+// whole dict: 19.7 KB for each of freqtrade's 124 option rows), a list's
+// call or word, and a C row's own braces as CallText gives them.
+func TestRowTextIsTheRowAsWritten(t *testing.T) {
+	cases := []struct {
+		name, path, src, mark string
+		others               []string
+		want                 string
+	}{
+		{"a dict row from its key", "options.py", "OPTIONS = {\n    \"verbose\": Opt(\"-v\", \"--verbose\", help=\"print more\"),  # loud\n    \"force\": Opt(\"-f\", \"--force\", help=\"overwrite files\"),\n}\n",
+			`"force"`, []string{`"print more"`}, `"force": Opt("-f", "--force", help="overwrite files")`},
+		{"the first dict row", "options.py", "OPTIONS: dict[str, Opt] = {\n    \"verbose\": Opt(\n        \"-v\",\n        \"--verbose\",\n    ),\n    \"force\": Opt(\"-f\"),\n}\n",
+			`"verbose"`, []string{`"force"`}, `"verbose": Opt("-v", "--verbose",)`},
+		{"a list row of calls", "options.py", "OPTIONS = [\n    Opt(\"-v\", \"--verbose\"),\n    Opt(\"-f\", \"--force\"),\n]\n",
+			`"-f"`, []string{`"--verbose"`}, `Opt("-f", "--force")`},
+		{"a list row of words", "arguments.py", "ARGS = [\"db_url\", \"sd_notify\", \"fee\"]\n",
+			`"sd_notify"`, []string{`"db_url"`, `"fee"`}, `"sd_notify"`},
+		{"a C row's own braces", "kvd.c", "static kvCommand cmdTable[] = {\n    {\"get\", getCommand, 2},\n    {\"set\", setCommand, 3},\n};\n",
+			`"set"`, []string{`2}`}, `{"set", setCommand, 3}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			line, column := at(t, c.src, c.mark)
+			var others [][2]int
+			for _, other := range c.others {
+				otherLine, otherColumn := at(t, c.src, other)
+				others = append(others, [2]int{otherLine, otherColumn})
+			}
+			if got := NewCallFile([]byte(c.src), c.path).RowText(line, column, others); got != c.want {
+				t.Fatalf("RowText = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

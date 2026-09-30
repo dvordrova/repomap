@@ -674,8 +674,11 @@ type boundaryState struct {
 	// it is another spelling of (spellings.go).
 	sameValueAs *sourcevalue.Anchor
 	aliasOf     string
-	// tableRow marks an entry a row of an accepted table makes (inputs.go).
-	tableRow bool
+	// tableRow marks an entry a row of an accepted table makes (inputs.go);
+	// rowNeighbours are the neighbouring rows' nearest words, as line and
+	// column, which bound the row as written (declared.go).
+	tableRow      bool
+	rowNeighbours [][2]int
 }
 
 // destinationOf is what the row reaches in one of its programs.

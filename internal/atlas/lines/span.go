@@ -60,6 +60,85 @@ func (f *CallFile) Text(line, column int) string {
 	return renderTokens(c.src, c.tokens, first, last)
 }
 
+// RowText is a table's row as the code wrote it, from the position of its
+// first word: the widest element around that word (the tokens between two
+// commas of one group, or between a comma and the group's edge) holding
+// none of the other positions given, the other rows' words as line and
+// column. A dict's row is its `"verbosity": Arg(...)`, where CallText at
+// its key gives the whole dict; C's `{"get", getCommand, 2}` is the row's
+// own braces, as CallText gives it. With no other position it is CallText.
+func (f *CallFile) RowText(line, column int, others [][2]int) string {
+	c := f.reader
+	if c == nil || line < 1 || c.family == lispFamily || len(others) == 0 {
+		return f.Text(line, column)
+	}
+	offset, ok := lineOffset(c.src, line, column)
+	if !ok {
+		return ""
+	}
+	at := tokenAt(c.tokens, offset)
+	if at < 0 {
+		return ""
+	}
+	outside := map[int]bool{}
+	for _, other := range others {
+		if offset, ok := lineOffset(c.src, other[0], other[1]); ok {
+			if token := tokenAt(c.tokens, offset); token >= 0 {
+				outside[token] = true
+			}
+		}
+	}
+	first, last := at, at
+	for node := at; ; {
+		parent := c.parents[node]
+		if parent < 0 || c.matches[parent] < 0 || c.codeBlock(parent) {
+			break
+		}
+		low, high := c.element(parent, node)
+		held := false
+		for token := range outside {
+			if token >= low && token <= high {
+				held = true
+				break
+			}
+		}
+		if held {
+			break
+		}
+		first, last, node = low, high, parent
+	}
+	return renderTokens(c.src, c.tokens, first, last)
+}
+
+// element is the first and last token of the element of a group holding a
+// token: between the commas at the group's own depth, line breaks at its
+// edges left out.
+func (c *callReader) element(open, at int) (int, int) {
+	tokens := c.tokens
+	low, high := open+1, c.matches[open]-1
+	for i := open + 1; i < c.matches[open]; i++ {
+		if tokens[i].kind == 'o' && c.matches[i] > i {
+			i = c.matches[i]
+			continue
+		}
+		if tokens[i].kind == 'p' && c.text(i) == "," {
+			if i < at {
+				low = i + 1
+			} else {
+				high = i - 1
+				break
+			}
+		}
+	}
+	for low < high && tokens[low].kind == 'n' {
+		low++
+	}
+	for high > low && tokens[high].kind == 'n' {
+		high--
+	}
+	return low, high
+}
+
 // callReader holds one file's tokens while CallText finds a call in them.
 type callReader struct {
 	src              []byte

@@ -843,6 +843,10 @@ settings, so a value asked on its own, or a value no key comes before, is
 0.49/0.46 with its key shown, and is no longer asked. Every incoming boundary keeps its registration as written at its
 site (`atlas.Boundary.Written`, folded to one line, a command table row with
 its arity and flags), which the input's reading shows; no request carries it.
+A table's row is its own element of the table, bounded by the neighbouring
+rows' words (`lines.CallFile.RowText`): a dict's `"verbosity": Arg(...)`,
+never the whole dict (freqtrade's 124 rows each carried the 19.7 KB
+`AVAILABLE_CLI_OPTIONS`).
 
 **Programs started.** A call to a `runs_program` symbol is one outgoing
 boundary of that kind, unless its receiver is the result of such a call (a

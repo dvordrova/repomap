@@ -28,6 +28,13 @@
   row-less lists, `ARGS_MAIN` the program's parser, two groups via
   `parents=`). Left for the owner: rows through `*X` spreads, elements of
   list-literal arguments, argparse `parents=`.
+- **A row as written (skeptic's cheap win):** a table row's `written` was
+  the call text at its first word, which for a dict key is the whole dict:
+  each of freqtrade's 124 rows carried the 19.7 KB `AVAILABLE_CLI_OPTIONS`
+  (2.47 MB of `written` in its GroupsIndex). `lines.CallFile.RowText` takes
+  the widest element around the word holding no neighbouring row's word;
+  C rows keep their braces. `TestATableRowIsWrittenAsItsOwnRow` (fails
+  before), `TestRowTextIsTheRowAsWritten`.
 - **Tests:** `TestASubcommandsOptionsAreNestedUnderIt` (Go, Python),
   `TestAFlagDeclaredOnAHandedParserIsAnOptionOfTheSubcommandMakingIt`,
   `TestARowLookedUpWithHandedKeysIsAnOptionOfTheSubcommandMakingTheParser`;

@@ -185,8 +185,25 @@ func (r *reader) apiSymbols() []*apiSymbol {
 // sourceText is the call at a source position as the code wrote it
 // (lines.CallText), reading and lexing each file once.
 func (r *reader) sourceText(files map[string]*lines.CallFile, path string, line, column int) string {
-	if r.opts.ReadSource == nil || line < 1 {
-		return ""
+	if file := r.callFile(files, path); file != nil && line >= 1 {
+		return file.Text(line, column)
+	}
+	return ""
+}
+
+// rowText is a table's row as the code wrote it, bounded by the other
+// rows' words (lines.CallFile.RowText).
+func (r *reader) rowText(files map[string]*lines.CallFile, path string, line, column int, others [][2]int) string {
+	if file := r.callFile(files, path); file != nil && line >= 1 {
+		return file.RowText(line, column, others)
+	}
+	return ""
+}
+
+// callFile is a file lexed once, or nil when it cannot be read.
+func (r *reader) callFile(files map[string]*lines.CallFile, path string) *lines.CallFile {
+	if r.opts.ReadSource == nil {
+		return nil
 	}
 	file, read := files[path]
 	if !read {
@@ -195,10 +212,7 @@ func (r *reader) sourceText(files map[string]*lines.CallFile, path string, line,
 		}
 		files[path] = file
 	}
-	if file == nil {
-		return ""
-	}
-	return file.Text(line, column)
+	return file
 }
 
 // apiSubject is the knowledge subject of an outside symbol's row: no

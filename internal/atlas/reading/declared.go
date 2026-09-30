@@ -112,7 +112,14 @@ func (r *reader) markDeclaredOn() {
 		if facts == nil || facts.Direction != atlas.DirectionIn || state.place.LineNo < 1 {
 			continue
 		}
-		if written := r.sourceText(files, state.place.Path, state.place.LineNo, state.place.Column); atlas.ValidName(written) {
+		var written string
+		if state.tableRow {
+			// A row is its own element of the table, never the whole table.
+			written = r.rowText(files, state.place.Path, state.place.LineNo, state.place.Column, state.rowNeighbours)
+		} else {
+			written = r.sourceText(files, state.place.Path, state.place.LineNo, state.place.Column)
+		}
+		if atlas.ValidName(written) {
 			state.asWritten = written
 		}
 		on := r.declaredOn(state.place.Path, state.place.LineNo, state.place.Column)

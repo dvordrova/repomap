@@ -94,3 +94,28 @@ func TestPythonTablesNamingAnotherTablesRowsAreNoInputs(t *testing.T) {
 		t.Fatalf("dispatch.py's inputs are declared by %q, want %q", declaring, wantAsked)
 	}
 }
+
+// A row of an accepted table keeps its own row as written, never the
+// whole table: freqtrade's 124 option rows each carried the 19.7 KB
+// AVAILABLE_CLI_OPTIONS dict, 3.08 MB of its 11.8 MB page. C's rows keep
+// their braces (TestCFixtureInputsKeepTheirRegistrationAsWritten).
+func TestATableRowIsWrittenAsItsOwnRow(t *testing.T) {
+	root, repository := materializeFixtureRepository(t, "python")
+	index := pythonLibraryIndex(t)
+	graph := graphWithFacts(t, repository, places.TargetInput{Index: index, Root: "."})
+	preset := &inputsPreset{decide: func(column string, item map[string]any, _ []string) (string, bool) {
+		if column == "becomes" && item["table"] == "OPTIONS" {
+			return "command", true
+		}
+		return "", false
+	}}
+	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root, preset)
+	written := writtenRows(projected, "src/fixture_app/dispatch.py")
+	want := map[string]string{
+		"verbose": `"verbose": Opt("-v", "--verbose", help="print more")`,
+		"force":   `"force": Opt("-f", "--force", help="overwrite files")`,
+	}
+	if !reflect.DeepEqual(written, want) {
+		t.Fatalf("OPTIONS rows as written: %q, want %q", written, want)
+	}
+}
