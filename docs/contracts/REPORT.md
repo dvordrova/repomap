@@ -501,8 +501,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   A part most of whose declarations share one namespace (Clojure's
   `othello.ui.host/`) names those without it, the whole name on the tile's
   hover and in the reading; one of another namespace keeps its whole name. In the column a name breaks only after a dot or
-  a slash, never at an underscore, a hyphen or inside a word; a piece too
-  long for its line ends in "…", the whole name on its hover.
+  a slash, never at a hyphen or inside a word; a piece too long for its line
+  also breaks after its underscores, or at its words' humps when it has none,
+  and is never cut with "…" (reviewer, 2026-09-30), the whole name on its
+  hover.
   They stack in that order in their column, a column too tall spilling into
   the next. No name is cut, and the columns share the card's width. Tiles
   are drawn small enough to hold them all whole: nothing is counted away and
@@ -1668,16 +1670,20 @@ field write of the whole reach, 80 for redis's `set`, helper internals such
 as listNode.next among them; `page_entity_writes.go`). Its work is its
 handler and what it calls exactly, never entering a helper (a declaration
 the helper question decided serves others' work, in a part most of the
-program's parts call into, other than the handler's own). Listed, in the
-order the work makes them: a record field the work writes, save a
-constructor setting up the object its call makes (a call of a class and of
-its method at one place); a record field it hands to a helper whose own
-code writes that field's type or a record type one of its fields holds
-("redisDb.dict — through dictAdd, dictReplace"); then the database calls
-anywhere in its reach with the tables their statements name, and the files
-it reaches. Each type once with each field once; a name links to where the
-change is made, that place and who makes it on its hover; no line is
-printed and no hedge line stands. A helper's own writes, a possible call's
-and a field handed to a helper writing nothing of its type are never
-listed. A part's reading lists its types' changes, by input. A matched
-input's changes join as a possible integration; sibling inputs gain none.
+program's parts call into, other than the handler's own). The program's
+data is what outlives a call: a field reached through a file-scope
+variable (a `field_path` rooted at one: `server.dirty`), a field of a type
+owning a database table (freqtrade's Trade), the database and the files.
+Listed: such fields the work writes, save a constructor setting up the
+object its call makes; then the database calls anywhere in its reach with
+the tables their statements name, and the files it reaches. A helper's own
+writes are not listed. A field the work hands to a helper whose code writes
+that field's type is said as those facts, "handed to dictAdd, dictReplace",
+not as a change: no fact says the helper writes through that parameter
+rather than a local (it keeps redis `set`'s keyspace, redisDb.dict, named
+for the frozen journey). Each target once,
+with every function making the change, their names links into their code;
+a field or table links to where it is first changed, that place on its
+hover; no line is printed and no hedge line stands. A part's reading lists
+its types' changes, by input. A matched input's changes join as a possible
+integration; sibling inputs gain none.

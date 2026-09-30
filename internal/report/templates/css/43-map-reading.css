@@ -561,11 +561,11 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
    in the heading; the rest follow after a gap. */
 .flow-enabled .map-inspector .map-reading-names.map-reading-reached{margin-bottom:8px;padding-bottom:6px;border-bottom:1px dotted var(--line)}
 /* A name breaks only after a dot (31-reading-column.js), never inside a
-   word ("sql.Tx.Rollbac k"); a single word longer than a flow's row ends in
-   "…". In a connection's row each name moves to the next line whole. */
+   word ("sql.Tx.Rollbac k"), and is never cut. In a connection's row each
+   name moves to the next line whole; one longer than the row (a long route)
+   wraps where it must. */
 .map-card .map-reading-name:not(.map-decl-code),.map-card .map-flow-also .map-flow-plain{overflow-wrap:normal}
-.map-flow-head>.map-reading-name{overflow:hidden;text-overflow:ellipsis}
-.map-frame-connections .flow-card-reading .flow-card-row>:not(i){display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;white-space:normal;overflow-wrap:normal}
+.map-frame-connections .flow-card-reading .flow-card-row>:not(i){display:inline-block;max-width:100%;vertical-align:bottom;white-space:normal;overflow-wrap:anywhere}
 /* A step's calls into code the report names no declaration for: one muted
    line of names at its end, no marks. */
 .map-flow-also,.flow-enabled .map-inspector p.map-flow-also,.flow-enabled .map-inspector p.map-flow-itself{margin:0 0 4px 14px;font:12px/18px var(--mono);color:var(--muted)}
@@ -588,9 +588,10 @@ details.map-flow-row[open]>summary .map-flow-twist::before{content:"▾"}
 .map-name-piece{white-space:nowrap}
 .map-reading-flow>.map-flow-headline{justify-content:space-between}.map-reading-flow>.map-flow-headline>h6{margin:0;font:600 12px/1.4 system-ui;color:var(--muted);letter-spacing:.02em}
 .map-related-operations>button{display:block;margin:2px 0}
-/* A name piece longer than its line ends in "…", the whole name on hover
-   (rmDotBreaks); names never break inside a piece. */
-.map-name-long{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+/* A piece longer than its line breaks after its underscores or at its
+   humps (rmDotBreaks), each part whole; a part still longer than the line
+   wraps where it must, never cut. */
+.map-inspector-content .map-name-piece.map-name-part{white-space:normal;overflow-wrap:anywhere}
 .map-inspector-content .map-name-piece{overflow-wrap:normal;word-break:normal}
 /* An Inputs kind once, each catalogue's declaring code a quiet line over its
    inputs; a sentence-like input name in the reading's own type. */

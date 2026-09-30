@@ -51,6 +51,27 @@
   offenders; column 14 long names cut, 1 repeat (--erase). Geometry lint
   equal to HEAD's; page shape unchanged; visual 55 pass; make test/vet pass.
 
+## 2026-09-30 — Column: names never clipped; State changes write only the program's data, handed fields said as handed
+
+- **Names:** a name piece longer than its line breaks after its
+  underscores, or at its humps when it has none, each part whole; no "…"
+  (the "…" had been an agent's choice of f8a90126, not an owner rule). A
+  connection row's long route wraps instead of clipping.
+- **State changes:** writes only to the program's data: fields reached
+  through a file-scope variable (`field_path` root) or of a type owning a
+  table (data record owner), then the database and the files; each target
+  once with every function changing it. A field handed to a helper that
+  writes its type is said as that ("redisDb.dict — handed to dictAdd,
+  dictReplace, dictDelete"), not as a change: ProgramIndex roots a write
+  through a parameter at its type, like a local's, so no fact says the
+  helper changes the argument; dropping it failed the frozen redis `set`
+  journey, so it stays (shared.czero "handed to addReply" with it). Rows:
+  redis 1,239 → 693, freqtrade 742 → 200 (`trade` 52 → 17),
+  litestream 657 → 100.
+- **Lints and journeys** (clean HEAD af1fcbff → with this change, four
+  renders): cut 15 → 0, repeated 1 → 1 (freqtrade's two real `--erase`),
+  file:line 0 → 0; journeys the same (redis `set` passes).
+
 ## 2026-09-30 — A function's call of its own parameter, in Go and TypeScript too
 
 - 6484a3b7: Go (SSA: the call's value is the function's own parameter;

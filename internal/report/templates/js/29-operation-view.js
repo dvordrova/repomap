@@ -633,12 +633,13 @@ function rmEntryLanding(link,nodes,component){
   // What an input changes in the program's data (page_entity_writes.go;
   // critic, 2026-09-30: "State changes" had listed every field write of its
   // whole reach, eighty for redis's set): each record type its work
-  // changes, each field of it once, "written" or "through" the helpers
-  // handed it (dictAdd, dictReplace); then the database with the tables
-  // its statements name, and the files it reaches. A name is its link to
-  // where the change is made, that place and who makes it on its hover;
-  // no line is printed. A part's reading lists the changes of its types,
-  // by input.
+  // changes, each field of it once with the functions writing it, or the
+  // helpers it is handed to ("handed to dictAdd, dictReplace"); then the
+  // database with the tables its statements name, and the files it reaches,
+  // each with the functions reaching it. A field or table is its link to
+  // where the change is first made, that place on its hover; a function's
+  // name is its link into its code; no line is printed. A part's reading
+  // lists the changes of its types, by input.
   function entityWrites(n,card){
     var entityKeys=new Set(repomapMembers.items(n).map(function(item){return repomapMembers.sourceKey(item.source);}));
     var selectedKey=map.explorerMember?.owner===n.id?map.explorerMember.key:'';
@@ -649,7 +650,15 @@ function rmEntryLanding(link,nodes,component){
     // each heading and line), for a search or a copy of it.
     var section=rmEl('details','system-entity-writes'),head=rmEl('summary');head.append(rmEl('span','',rmT('State changes')),'\n');
     section.appendChild(head);
-    function hover(write){var by=(write.callers||[])[0];return [by?rmT('by {0}',by.name):'',write.source.Text].filter(Boolean).join('\n');}
+    // The functions making a change, each name its link into its code.
+    function makers(item,writes){
+      var names=[];writes.forEach(function(write){(write.callers||[]).forEach(function(step){if(!names.some(function(other){return other.name===step.name&&other.href===step.href;}))names.push(step);});});
+      if(!names.length)return;
+      var by=rmEl('span','map-reading-relation map-data-by'),words=rmT('by {0}','\u0001').split('\u0001');
+      by.append(words[0]);
+      names.forEach(function(step,i){if(i)by.append(', ');by.appendChild(repomapMembers.sourceLink({Href:step.href,Open:step.open,Text:step.name,NoSource:step.no_source}));});
+      by.append(words[1]||'');item.append(' ',by);
+    }
     function marks(item,writes){
       if(writes.some(function(write){return write.possible;}))item.appendChild(rmEl('span','possible',' · '+rmT('possible')));
       if(writes.some(function(write){return write.integration;}))item.appendChild(rmEl('span','possible',' · '+rmT('possible integration')));
@@ -662,9 +671,12 @@ function rmEntryLanding(link,nodes,component){
       var list=rmEl('ul','plain');lines.forEach(function(line){list.appendChild(line);});
       into.append(heading,list);
     }
-    function line(name,writes,words){
-      var item=rmEl('li'),link=rmPlaceLink(writes[0].source,name);link.title=hover(writes[0]);item.appendChild(link);
-      if(words)item.append(' ',rmEl('span','map-reading-relation',words));
+    function line(name,writes){
+      var item=rmEl('li');item.appendChild(rmPlaceLink(writes[0].source,name));
+      var made=writes.filter(function(write){return write.kind!=='call';}),handed=[];
+      writes.forEach(function(write){(write.via||[]).forEach(function(via){if(handed.indexOf(via)<0)handed.push(via);});});
+      if(made.length)makers(item,made);
+      if(handed.length)item.append(' ',rmEl('span','map-reading-relation',rmT('handed to {0}',handed.join(', '))));
       marks(item,writes);item.append('\n');return item;
     }
     function changes(into,writes){
@@ -675,19 +687,18 @@ function rmEntryLanding(link,nodes,component){
       });
       typed.forEach(function(writes){
         var fields=new Map();writes.forEach(function(write){if(!fields.has(write.field))fields.set(write.field,[]);fields.get(write.field).push(write);});
-        var items=[];fields.forEach(function(same,field){
-          var vias=[];same.forEach(function(write){if(write.via&&vias.indexOf(write.via)<0)vias.push(write.via);});
-          var words=[same.some(function(write){return write.kind==='write';})?rmT('written'):'',vias.length?rmT('through {0}',vias.join(', ')):''].filter(Boolean).join(', ');
-          items.push(line(field,same,words));
-        });
+        var items=[];fields.forEach(function(same,field){items.push(line(field,same));});
         lines+=items.length;group(into,writes[0].entity_name,writes[0].entity,items);
       });
       stores.forEach(function(writes,title){
-        var items=[],named=new Set();
+        // Each table or file once, with every function reaching it; a
+        // database call naming no table is its function's.
+        var items=[],named=new Map();
         writes.forEach(function(write){
-          var names=write.kind==='file'?[write.destination]:(write.tables||[]).length?write.tables:[((write.callers||[])[0]||{}).name||title];
-          names.forEach(function(name){if(named.has(name))return;named.add(name);items.push(line(name,[write],''));});
+          var names=write.kind==='file'?[write.destination]:(write.tables||[]).length?write.tables:[''];
+          names.forEach(function(name){if(!named.has(name))named.set(name,[]);named.get(name).push(write);});
         });
+        named.forEach(function(same,name){items.push(name?line(name,same):(function(){var item=rmEl('li');makers(item,same);var by=item.querySelector('.map-data-by');if(by){by.classList.remove('map-reading-relation');by.firstChild.remove();}item.append('\n');return item;})());});
         lines+=items.length;group(into,title,null,items);
       });
       return lines;

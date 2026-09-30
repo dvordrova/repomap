@@ -109,26 +109,39 @@ function rmEndTitle(ctx,decl){
 // A name as the column writes it: it breaks only after a dot or a slash,
 // never inside a word, at an underscore or at a hyphen (litestream's
 // "sql.Tx.Rollbac k", freqtrade's "process_open_trade / _positions",
-// "redis-" / "benchmark.c"); a piece longer than its line ends in "…", the
-// whole name on its hover (43-map-reading.css). A callable written inline
-// reads "anonymous function in ReplicateCommand.Run" (GroupsIndex names it
-// "ReplicateCommand.Run (inline)").
+// "redis-" / "benchmark.c"). A piece longer than its line is never cut
+// (reviewer, 2026-09-30: thirteen names had ended in "…"): it may also
+// break after its underscores, and one with none at its words' humps
+// ("zunionInter" / "BlockClient…"), each part of it whole; the whole name
+// stays on its hover. A callable written inline reads "anonymous function
+// in ReplicateCommand.Run" (GroupsIndex names it "ReplicateCommand.Run
+// (inline)").
 var rmLongPiece=24;
 function rmInlineText(text){return String(text).replace(/([^\s→(]+) \(inline\)/g,function(_,home){return rmT('anonymous function in {0}',home);});}
+// A long piece's words: after each underscore, else at each hump.
+function rmPieceWords(piece){
+  var words=piece.split(/(?<=_)(?=.)/);
+  if(words.length===1)words=piece.split(/(?<=[a-z0-9])(?=[A-Z])/);
+  return words;
+}
 function rmDotBreaks(element){
   var said=element.textContent,text=rmInlineText(said),inline=text!==said;
   if(!/[.\/-]/.test(text)&&text.length<=rmLongPiece){if(inline)element.textContent=text;return element;}
   element.textContent='';
   var long=false;
   // Words break at their spaces; a name within them only after its dots
-  // and slashes.
+  // and slashes, a long piece within it after its underscores or humps.
   text.split(/(\s+)/).forEach(function(word){
     if(!word)return;
     if(/^\s+$/.test(word)){element.appendChild(document.createTextNode(word));return;}
     word.split(/(?<=[.\/])/).forEach(function(piece,i){
       if(i)element.appendChild(document.createElement('wbr'));
-      var span=rmEl('span','map-name-piece',piece);if(piece.length>rmLongPiece){span.classList.add('map-name-long');long=true;}
-      element.appendChild(span);
+      if(piece.length<=rmLongPiece){element.appendChild(rmEl('span','map-name-piece',piece));return;}
+      long=true;
+      rmPieceWords(piece).forEach(function(part,j){
+        if(j)element.appendChild(document.createElement('wbr'));
+        element.appendChild(rmEl('span','map-name-piece map-name-part',part));
+      });
     });
   });
   if(long&&!element.title)element.title=text;

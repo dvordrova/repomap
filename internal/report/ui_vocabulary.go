@@ -883,8 +883,8 @@ var russianUI = map[string]string{
 	"write it":                                        "записывают его",
 	"source it":                                       "подключают его",
 	"connect to it":                                   "соединяются с ним",
-	"through {0}":                                     "через {0}",
-	"by {0}":                                          "делает {0}",
+	"handed to {0}":                                   "передаётся в {0}",
+	"by {0}":                                          "меняет: {0}",
 }
 
 // Optional English singular forms travel in the same vocabulary as the messages.

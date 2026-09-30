@@ -17,32 +17,43 @@ import (
 // them). An input's work is its handler and what it calls exactly, never
 // entering a helper: a declaration the helper question decided serves
 // others' work standing in a part most of the program's parts call into,
-// other than the handler's own (the flow's helper, page_flow.go). Its
+// other than the handler's own (the flow's helper, page_flow.go). The
+// program's data is what outlives one call: the fields reached through a
+// file-scope variable (ProgramIndex field_path rooted at a variable:
+// `server.dirty`), the fields of a type owning a database table (GroupsIndex
+// data record owner: freqtrade's Trade), the database and the files. Its
 // changes are, by Kind:
 //
-//   - "write": a record's field the work writes (`server.dirty`), save a
-//     constructor setting up the object its call makes (a call of a class
-//     and of its method at one place: RPCException(...) and its __init__);
-//   - "call": a record's field the work hands to a helper whose own code
-//     writes that field's type, or a record type one of its fields holds
-//     (`dictAdd` handed `redisDb.dict`, a `dict *`, which dictAdd writes);
+//   - "write": such a field the work writes, save a constructor setting up
+//     the object its call makes (a call of a class and of its method at one
+//     place: RPCException(...) and its __init__);
+//
 //   - "db": a database call anywhere in the input's reach, with the tables
 //     its statement names (GroupsIndex outbound `db` and its data records);
+//
 //   - "file": a file anywhere in the reach reaches (GroupsIndex data record
 //     of kind `file`, each call site's function).
 //
-// Entity is the record type holding the field or owning the table (a
-// part's reading lists the changes to its types); Destination names a
-// database or a file. Source is where the change is written; Callers are
-// the functions making it (one). Helper internals are never listed. The
-// changes stand in the order the work makes them, the handler's first,
-// then the database's and the files'.
+//   - "call": a field the work hands to a helper whose own code writes that
+//     field's type or a type one of its fields holds, said as those two facts
+//     ("redisDb.dict — handed to dictAdd, dictReplace"), Via the helpers:
+//     no fact says the helper writes through that parameter rather than a
+//     local (ProgramIndex roots such a write at its type), so it is not said
+//     to change. It stays for the frozen journey (redis `set` names its
+//     keyspace, redisDb.dict).
+//
+// A helper's own writes are never listed. Each target is one change with
+// every function making it
+// (Callers), in the order the work first makes it, the database's and the
+// files' after. Entity is the record type holding the field or owning the
+// table; Destination names a database or a file; Source is where the change
+// is first made.
 type pageEntityWrite struct {
 	Kind        string     `json:"kind"`
 	Entity      pageAnchor `json:"entity"`
 	EntityName  string     `json:"entity_name,omitempty"`
 	Field       string     `json:"field,omitempty"`
-	Via         string     `json:"via,omitempty"`
+	Via         []string   `json:"via,omitempty"`
 	Destination string     `json:"destination,omitempty"`
 	Tables      []string   `json:"tables,omitempty"`
 	Source      pageAnchor `json:"source"`
@@ -65,18 +76,19 @@ func (node pageMapNode) WritesJSON() string {
 	return string(raw)
 }
 
-// pageDataFacts are one program's facts the changes read, built once: its
-// calls by ID (their arguments), each record type's fields, each field's
-// record types, each function's field writes and reads (the reads name the
-// field an argument passes), and the classes a function calls at a place
-// (caller, path and line: a construction there).
+// pageDataFacts are one program's facts the changes read, built once: each
+// function's field writes, the types owning a table, the file-scope
+// variables' names, and the classes a function calls at a place (caller,
+// path and line: a construction there).
 type pageDataFacts struct {
+	writes    map[string][]int
+	tables    map[string]bool
+	globals   map[string]bool
+	makes     map[string][]string
 	relations map[string]programindex.Relation
 	fieldsOf  map[string][]string
 	typesOf   map[string][]string
-	writes    map[string][]int
 	reads     map[string][]int
-	makes     map[string][]string
 }
 
 func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
@@ -87,12 +99,21 @@ func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
 	if cached := builder.dataByTarget[targetID]; cached != nil {
 		return cached
 	}
-	facts := &pageDataFacts{relations: map[string]programindex.Relation{}, fieldsOf: map[string][]string{}, typesOf: map[string][]string{},
-		writes: map[string][]int{}, reads: map[string][]int{}, makes: map[string][]string{}}
+	facts := &pageDataFacts{writes: map[string][]int{}, tables: map[string]bool{}, globals: map[string]bool{}, makes: map[string][]string{},
+		relations: map[string]programindex.Relation{}, fieldsOf: map[string][]string{}, typesOf: map[string][]string{}, reads: map[string][]int{}}
+	for _, record := range index.Data {
+		if record.OwnerSubjectID != "" && record.Data != nil && record.Data.Kind == "table" {
+			facts.tables[record.OwnerSubjectID] = true
+		}
+	}
 	if builder.data != nil && builder.data.ProgramPortfolio != nil {
 		for _, entry := range builder.data.ProgramPortfolio.Entries {
 			if entry.Target.ID != targetID {
 				continue
+			}
+			kinds := make(map[string]programindex.ObjectKind, len(entry.Objects))
+			for _, object := range entry.Objects {
+				kinds[object.ID] = object.Kind
 			}
 			for _, relation := range entry.Relations {
 				if relation.Kind == programindex.RelationCalls || relation.Kind == programindex.RelationExecutes {
@@ -100,7 +121,13 @@ func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
 				}
 			}
 			for _, object := range entry.Objects {
-				if object.Kind != programindex.ObjectVariable || object.OwnerID == "" {
+				if object.Kind != programindex.ObjectVariable {
+					continue
+				}
+				if owner := kinds[object.OwnerID]; owner == programindex.ObjectModule || owner == programindex.ObjectPackage {
+					facts.globals[object.Name] = true
+				}
+				if kinds[object.OwnerID] != programindex.ObjectType {
 					continue
 				}
 				facts.fieldsOf[object.OwnerID] = append(facts.fieldsOf[object.OwnerID], object.ID)
@@ -188,10 +215,6 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		return order
 	}
 	work := walk(handler, func(callee string) bool { return !helper(callee) })
-	working := map[string]bool{}
-	for _, id := range work {
-		working[id] = true
-	}
 	// A constructor the work runs where it makes its class's object sets
 	// that object up; it changes nothing the program holds.
 	constructs := map[string]string{}
@@ -224,25 +247,47 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		return types
 	}
 	var result []pageEntityWrite
-	seen := map[string]bool{}
+	seen := map[string]int{}
+	// Each target once, with every function making the change.
 	add := func(change pageEntityWrite, maker string, at *programindex.Location) {
-		key := strings.Join([]string{change.Kind, change.Entity.Href + change.Entity.Open + change.EntityName, change.Field, change.Via, change.Destination, strings.Join(change.Tables, ",")}, "\x00")
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		if at != nil {
-			change.Source = builder.links.anchor(at.Path, at.Line, at.Column)
-		}
+		key := strings.Join([]string{change.Kind, change.Entity.Href + change.Entity.Open + change.EntityName, change.Field, change.Destination, strings.Join(change.Tables, ",")}, "\x00")
+		var step *pageCallStep
 		if ref, known := builder.subject(targetID, maker); known {
 			name, anchor := builder.subjectDisplay(ref.subject)
-			step := pageCallStep{Name: name}
+			step = &pageCallStep{Name: name}
 			if anchor != nil {
 				step.Href, step.Open, step.Source, step.NoSource = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource
 			}
-			change.Callers = []pageCallStep{step}
+		}
+		if listed, done := seen[key]; done {
+			if step != nil && !slices.ContainsFunc(result[listed].Callers, func(other pageCallStep) bool { return other.Name == step.Name && other.Href == step.Href }) {
+				result[listed].Callers = append(result[listed].Callers, *step)
+			}
+			for _, via := range change.Via {
+				if !slices.Contains(result[listed].Via, via) {
+					result[listed].Via = append(result[listed].Via, via)
+				}
+			}
+			result[listed].Possible = result[listed].Possible && change.Possible
+			return
+		}
+		seen[key] = len(result)
+		if at != nil {
+			change.Source = builder.links.anchor(at.Path, at.Line, at.Column)
+		}
+		if step != nil {
+			change.Callers = []pageCallStep{*step}
 		}
 		result = append(result, change)
+	}
+	// The program's data: a field reached through a file-scope variable, or
+	// a field of a type owning a table.
+	data := func(edge groupindex.StructuralEdge, owner groupindex.Subject) bool {
+		if facts.tables[owner.ID] {
+			return true
+		}
+		root, _, _ := strings.Cut(edge.FieldPath, ".")
+		return root != "" && facts.globals[root]
 	}
 	typed := func(change pageEntityWrite, entity groupindex.Subject) (pageEntityWrite, bool) {
 		name, anchor := builder.subjectDisplay(entity)
@@ -253,8 +298,9 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		return change, true
 	}
 	for _, id := range work {
-		// What the work writes and hands to helpers, in the order its code
-		// makes them.
+		// What the work writes of the program's data, and the fields it
+		// hands to a helper whose code writes their type, in the order its
+		// code makes them.
 		type made struct {
 			change pageEntityWrite
 			at     *programindex.Location
@@ -263,7 +309,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		for _, position := range facts.writes[id] {
 			edge := index.StructuralEdges[position]
 			field, owner, ok := builder.recordField(targetID, edge.ToSubjectID)
-			if !ok || constructs[id] == owner.ID {
+			if !ok || constructs[id] == owner.ID || !data(edge, owner) {
 				continue
 			}
 			if change, ok := typed(pageEntityWrite{Kind: "write", Field: field.Name, Possible: edge.Resolution != programindex.ResolutionExact}, owner); ok {
@@ -272,7 +318,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		}
 		for _, position := range calls[id] {
 			edge := index.StructuralEdges[position]
-			if working[edge.ToSubjectID] || !helper(edge.ToSubjectID) {
+			if !helper(edge.ToSubjectID) {
 				continue
 			}
 			types := writtenBy(edge.ToSubjectID)
@@ -289,7 +335,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 				if !ok || !changesType(facts, types, fieldID) {
 					continue
 				}
-				if change, ok := typed(pageEntityWrite{Kind: "call", Field: field.Name, Via: via}, owner); ok {
+				if change, ok := typed(pageEntityWrite{Kind: "call", Field: field.Name, Via: []string{via}}, owner); ok {
 					mine = append(mine, made{change, edge.Location})
 				}
 			}

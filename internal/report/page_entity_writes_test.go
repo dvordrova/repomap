@@ -13,14 +13,17 @@ import (
 
 // What an input changes in the program's data (critic, 2026-09-30: redis's
 // set had listed 80 field writes, its helpers' internals among them): its
-// work's writes (setGenericCommand's server.dirty); a field its work hands
-// to a helper whose code writes that field's record type (dictAdd handed
-// db.dict, a Dict it writes); the database its reach calls, with the table
-// and the type owning it. Never a helper's own writes (Dict.used,
-// Entry.next), a field handed to a helper that writes nothing of it
-// (addReply handed shared.ok), a constructor setting up the object its
-// call makes, or a call only possibly made (a dispatch's alternatives).
-func TestAnInputChangesTheDataItsWorkWritesOrHandsToAHelper(t *testing.T) {
+// work's writes of a field reached through a file-scope variable
+// (setGenericCommand's server.dirty) or of a type owning a table
+// (Trade.amount), each once with every function making it; the database
+// its reach calls, with the table and the type owning it. Never a helper's
+// own writes (Dict.used), a field handed to a helper that writes nothing of
+// its type (addReply handed shared.ok) — one handed to a helper writing its
+// type is said as handed (dictAdd handed db.dict) — a field of another
+// object reached through a parameter (Client.argc), a
+// constructor setting up the object its call makes, or a call only
+// possibly made (a dispatch's alternatives).
+func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 	at := func(line int) *programindex.Location {
 		return &programindex.Location{Path: "server.c", Line: line, Column: 5}
 	}
@@ -60,11 +63,15 @@ func TestAnInputChangesTheDataItsWorkWritesOrHandsToAHelper(t *testing.T) {
 	add("Shared", "Shared", programindex.ObjectType, "", 130, false)
 	add("ok", "ok", programindex.ObjectVariable, "Shared", 131, false, 140)
 	add("Reply", "Reply", programindex.ObjectType, "", 140, false)
+	add("file", "server.c", programindex.ObjectModule, "", 1, false)
+	add("server", "server", programindex.ObjectVariable, "file", 2, false)
+	add("Client", "Client", programindex.ObjectType, "", 160, false)
+	add("argc", "argc", programindex.ObjectVariable, "Client", 161, false)
 	add("Trade", "Trade", programindex.ObjectType, "", 150, false)
 	add("init", "__init__", programindex.ObjectMethod, "Trade", 151, false)
 	add("amount", "amount", programindex.ObjectVariable, "Trade", 152, false)
-	edge := func(id, from, to string, kind programindex.RelationKind, resolution programindex.Resolution, line int) groupindex.StructuralEdge {
-		return groupindex.StructuralEdge{RelationID: id, FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: kind, Resolution: resolution, Location: at(line)}
+	edge := func(id, from, to string, kind programindex.RelationKind, resolution programindex.Resolution, line int, path ...string) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{RelationID: id, FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: kind, Resolution: resolution, Location: at(line), FieldPath: strings.Join(path, "")}
 	}
 	exact := programindex.ResolutionExact
 	index := groupindex.Index{Target: programindex.Target{ID: "t1"},
@@ -73,15 +80,18 @@ func TestAnInputChangesTheDataItsWorkWritesOrHandsToAHelper(t *testing.T) {
 		StructuralEdges: []groupindex.StructuralEdge{
 			edge("c1", "set", "generic", programindex.RelationCalls, exact, 11),
 			edge("c2", "generic", "dictAdd", programindex.RelationCalls, exact, 21),
-			edge("w1", "generic", "dirty", programindex.RelationWrites, exact, 22),
+			edge("w1", "generic", "dirty", programindex.RelationWrites, exact, 22, "server.dirty"),
+			edge("w5", "generic", "argc", programindex.RelationWrites, exact, 26, "Client.argc"),
+			edge("w6", "set", "dirty", programindex.RelationWrites, exact, 13, "server.dirty"),
 			edge("c3", "generic", "addReply", programindex.RelationCalls, exact, 23),
-			edge("w2", "dictAdd", "used", programindex.RelationWrites, exact, 31),
+			edge("w2", "dictAdd", "used", programindex.RelationWrites, exact, 31, "Dict.used"),
 			edge("c4", "other", "dictAdd", programindex.RelationCalls, exact, 51),
 			edge("c5", "generic", "Trade", programindex.RelationCalls, exact, 24),
 			edge("c6", "generic", "init", programindex.RelationCalls, exact, 24),
 			edge("w3", "init", "amount", programindex.RelationWrites, exact, 153),
+			edge("w7", "generic", "amount", programindex.RelationWrites, exact, 27),
 			edge("c7", "set", "maybe", programindex.RelationCalls, programindex.ResolutionAlternatives, 12),
-			edge("w4", "maybe", "dirty", programindex.RelationWrites, exact, 61),
+			edge("w4", "maybe", "dirty", programindex.RelationWrites, exact, 61, "server.dirty"),
 		},
 		Operations: []groupindex.Operation{{ID: "o1", SubjectID: "set", Kind: "request", Name: "set"}},
 		Outbound:   []groupindex.OutboundCall{{ID: "d1", SubjectID: "generic", Kind: "db", Destination: "Database", DataIDs: []string{"y1"}, Location: *at(25)}},
@@ -99,19 +109,20 @@ func TestAnInputChangesTheDataItsWorkWritesOrHandsToAHelper(t *testing.T) {
 	var said []string
 	for _, change := range b.operationWrites(&index, index.Reach[0]) {
 		line := change.Kind + " " + change.EntityName + "." + change.Field
-		if change.Via != "" {
-			line += " via " + change.Via
+		if len(change.Via) > 0 {
+			line += " via " + strings.Join(change.Via, ", ")
 		}
 		if change.Destination != "" {
 			line = change.Kind + " " + change.Destination + " " + strings.Join(change.Tables, ",") + " of " + change.EntityName
 		}
-		if len(change.Callers) == 1 {
-			line += " by " + change.Callers[0].Name
+		var by []string
+		for _, caller := range change.Callers {
+			by = append(by, caller.Name)
 		}
+		line += " by " + strings.Join(by, ", ")
 		said = append(said, line)
 	}
-	// In the order the code makes them: dictAdd (line 21), then dirty (22).
-	want := []string{"call Db.dict via dictAdd by setGenericCommand", "write Server.dirty by setGenericCommand", "db Database trades of Trade by setGenericCommand"}
+	want := []string{"write Server.dirty by setCommand, setGenericCommand", "call Db.dict via dictAdd by setGenericCommand", "write Trade.amount by setGenericCommand", "db Database trades of Trade by setGenericCommand"}
 	if !slices.Equal(said, want) {
 		t.Fatalf("changes = %q\nwant %q", said, want)
 	}

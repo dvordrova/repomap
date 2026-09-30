@@ -7,17 +7,22 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// A name in the column breaks only after a dot or a slash, words at their
-// spaces, never inside a word, at an underscore or at a hyphen; a piece too
-// long for its line is marked to end in "…" with the whole name on hover;
-// a callable written inline reads as an anonymous function in its home.
-func TestAColumnNameBreaksOnlyAfterItsDotsAndSlashes(t *testing.T) {
+// A name in the column breaks after a dot or a slash, words at their
+// spaces, never at a hyphen; a piece too long for its line also after its
+// underscores, else at its humps, and is never cut with "…" (reviewer,
+// 2026-09-30), the whole name on hover; a callable written inline reads as
+// an anonymous function in its home.
+func TestAColumnNameBreaksAtItsBoundariesAndIsNeverCut(t *testing.T) {
 	runSystemJS(t, readingViewElements+nameBreaksJS(t)+`
 const pieces=e=>e.children.filter(c=>c.has&&c.has('map-name-piece')).map(c=>c.textContent);
 const a=rmDotBreaks(rmEl('a','','FreqtradeBot.process_open_trade_positions'));
-assert.deepEqual(pieces(a),['FreqtradeBot.','process_open_trade_positions'],'a break only after the dot');
-assert.ok(a.children.find(c=>c.has&&c.has('map-name-long')),'a piece longer than its line is marked to end in …');
+assert.deepEqual(pieces(a),['FreqtradeBot.','process_','open_','trade_','positions'],'a break after the dot, and in a piece longer than its line after its underscores');
+assert.ok(!a.children.some(c=>c.has&&c.has('map-name-long')),'no piece is cut with …');
 assert.equal(a.title,'FreqtradeBot.process_open_trade_positions','the whole name on its hover');
+const humps=rmDotBreaks(rmEl('a','','zunionInterBlockClientOnSwappedKeys()'));
+assert.deepEqual(pieces(humps),['zunion','Inter','Block','Client','On','Swapped','Keys()'],'a long piece with no underscore breaks at its humps');
+const short=rmDotBreaks(rmEl('a','','Store.process_open'));
+assert.deepEqual(pieces(short),['Store.','process_open'],'a piece that fits stays whole');
 const b=rmDotBreaks(rmEl('b','','build_helpers/create_command_partials.py:'));
 assert.deepEqual(pieces(b),['build_helpers/','create_command_partials.','py:']);
 const c=rmDotBreaks(rmEl('span','','redis-benchmark'));
