@@ -62,23 +62,40 @@ support for the call, not a second call at the constructor line. This recovers
 `quotaKVServer.Put -> kvServer.Put -> EtcdServer.Put` in etcd without any
 framework-specific rule.
 
-A store under a branch leaves its field open, as in the C adapter. A branch is
+A value stored under a branch is still a value of its field: a field's values
+are every value its stores put there, one exact, several alternatives (owner,
+2026-09-30: no cautious unknown; several targets are alternatives). A branch is
 an if, a case of a switch or type switch, or a select clause of the storing
 function; a loop body, a store after an early return and the body of a function
-literal are not. A nil store puts nothing callable there, so a branch around it
-opens nothing, as the C adapter keeps no null store. Every call through an open
-field is unresolved. Each repository implementation its stores can put there
-becomes an `interface_field_assignment` witness of that call at its store (`X
-stored in T.field under a condition`, without the last three words for a store
-no branch decides), never a target. The witness names the implementation by
-identity too (`object_id`), so the map draws the call's possible arrows as the
-C adapter's stores do; an implementation outside the repository
-gives no `invokes_external` fact there. When another package declares the
-field's interface, the call keeps its `invokes_external` fact of that method,
-and the unresolved `calls` relation with the witnesses is projected beside it.
-A store of a parameter joins every caller's argument whichever field the branch
-chose, so without this rule a `register(readable, h)` that stores `h` into
-`read` or `write` gave each field both handlers as alternatives.
+literal are not. litestream's `NewReplicaFromConfig` stores, in each case of a
+switch on the replica's type, what that case's factory returns into
+`Replica.Client`, so `Replica.Sync`'s `r.Client.WriteLTXFile` calls the file,
+S3, GCS, ABS, SFTP, WebDAV, NATS and OSS clients' `WriteLTXFile` as
+alternatives, each with an `interface_field_assignment` witness at its store
+(`observed receiver assignment for …`); the store of a value no one follows
+(a client its factory registry returns) keeps its unknown, so the call is
+alternatives with that target omitted. The fixture's `replica.sync`
+(`storefixture/command_table.go`) calls `bucketStore.Put` and `diskStore.Put`.
+Only a parameter stored under a branch leaves its field open, as in the C
+adapter: it joins every caller's argument whichever field the branch chose, so
+a `register(readable, h)` that stores `h` into `read` or `write` would give
+each field both handlers. What such a store brings becomes an
+`interface_field_assignment` witness of the calls through the field at its
+store (`X stored in T.field under a condition`), never a target, naming the
+implementation by identity too (`object_id`), so the map draws the call's
+possible arrows as the C adapter's stores do; an implementation outside the
+repository gives no `invokes_external` fact there. A nil store puts nothing
+callable there, so a branch around it opens nothing, as the C adapter keeps no
+null store. When another package declares the field's interface, the call
+keeps its `invokes_external` fact of that method, and the `calls` relation of
+the repository implementations is projected beside it. A function-typed field
+keeps its own rule (a call through it is exact after one store in the
+allocating block, else unresolved). The other languages have not applied the
+owner's 2026-09-30 decision yet, recorded missing rather than fabricated: the
+C adapter keeps a function pointer stored under a branch a witness (C),
+Python a name or attribute stored under a branch (PYTHON, Handler tables),
+JS/TS a property (JSTS), and Clojure's protocol dispatch stays unresolved
+(CLOJURE); their fixtures keep today's witnesses.
 
 Dynamic value traversal reuses immutable summaries within one root and exact
 interface method. The function key also retains `throughFlow`; factory result
@@ -426,17 +443,21 @@ cumulative fixture's `internal/storefixture/command_table.go` checks them:
   where the C adapter names each stored function as a witness. Each handler
   keeps its exact callback at its `register` call.
 - The same loop with interface-typed fields (`readyLoop`): `register` stores
-  its handler into `read` or `write` under a branch, and `RunChosenReady`
-  stores one into `read` under a branch. Every call through either field is
-  unresolved, and no handler is its target. Its witnesses are the handlers
-  that field's stores can put there, each at its store (`(acceptReady).Handle
-  stored in readyLoop.read under a condition`); `register`'s store joins the
-  handlers of both of its calls, as the C adapter joins what callers pass.
-  Each handler keeps its exact `binds_implementation` at its `register` call.
+  its handler parameter into `read` or `write` under a branch, and
+  `RunChosenReady` stores `acceptReady{}` into `read` under a branch. That
+  value is `read`'s: every call through `read` calls `acceptReady.Handle` as
+  an alternative, at its store (`observed receiver assignment for
+  (acceptReady).Handle`), and `register`'s parameter leaves both fields open,
+  its handlers their witnesses at its store (`(acceptReady).Handle stored in
+  readyLoop.read under a condition`), joined from both of its calls as the C
+  adapter joins what callers pass; the call through `write` stays
+  unresolved. Each handler keeps its exact `binds_implementation` at its
+  `register` call.
 - The same choice for fields whose interface `fmt` declares (`namedLoop`): the
-  call through the field a branch stored is unresolved with its witness beside
-  its `invokes_external` fact of `fmt.Stringer.String`, and a field cleared to
-  nil under a branch keeps the name stored before it as an alternative.
+  call through the field a branch stored calls `acceptName.String`, exactly,
+  beside its `invokes_external` fact of `fmt.Stringer.String`, and a field
+  cleared to nil under a branch keeps the name stored before it as an
+  alternative.
 
 - A call of a function's own func-typed parameter (the call's SSA value is
   the parameter, so the function never rebinds it) calls what every static

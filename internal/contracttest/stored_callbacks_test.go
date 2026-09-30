@@ -245,10 +245,13 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 	}
 
 	// Calls through stored function values: one store before the call is
-	// exact; a looked-up row, a field filled through a parameter and a store
-	// under a branch stay unresolved, never alternatives. The stores stay
-	// bindings where they are written, and each handler keeps its
-	// registration at its own call.
+	// exact; a looked-up row, a field filled through a parameter and a
+	// function-typed field stored under a branch stay unresolved. An
+	// interface field's values stored under a branch are its values, one
+	// exact, several alternatives (owner, 2026-09-30); only a parameter
+	// stored under a branch stays a witness. The stores stay bindings where
+	// they are written, and each handler keeps its registration at its own
+	// call.
 	unresolved, exact, alternatives := programindex.ResolutionUnresolved, programindex.ResolutionExact, programindex.ResolutionAlternatives
 	calls, callbacks := programindex.RelationCalls, programindex.RelationPassesCallback
 	assertStoredCallbackLines(t, relations, map[programindex.RelationKind]bool{calls: true, callbacks: true}, map[int]storedCallbackExpectation{
@@ -264,17 +267,17 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 		84: {callbacks, "RunChosenHandler", "acceptClient", exact},
 		86: {calls, "RunChosenHandler", "", unresolved},
 		// The same loop with interface-typed fields: readyLoop.register
-		// stores its handler into read or write under a branch, and
-		// RunChosenReady stores one under a branch. No call through a field
-		// gains a handler, not even the one registered for the other field.
-		114: {calls, "fire", "", unresolved},
+		// stores its handler parameter into read or write under a branch,
+		// a witness of both, and RunChosenReady stores acceptReady into read
+		// under a branch, the one value read's calls call.
+		114: {calls, "fire", "Handle", alternatives},
 		115: {calls, "fire", "", unresolved},
-		131: {calls, "RunChosenReady", "", unresolved},
+		131: {calls, "RunChosenReady", "Handle", alternatives},
 		// A field whose interface fmt declares: the call through the field
-		// the branch chose is unresolved too, and clearing the other field
+		// the branch chose calls what it stored, and clearing the other field
 		// under a branch stores nothing callable, so the name stored before
 		// it stays a possible value.
-		156: {calls, "RunNamedLoop", "", unresolved},
+		156: {calls, "RunNamedLoop", "String", exact},
 		157: {calls, "RunNamedLoop", "String", alternatives},
 		// A function calling its own parameter calls what every call into it
 		// hands there: two method values, one function, or, with a caller
@@ -282,6 +285,10 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 		185: {calls, "throttle", "processRunning,processStopped", alternatives},
 		192: {calls, "runOnce", "acceptJob", exact},
 		200: {calls, "runAny", "", unresolved},
+		// A switch storing each case's factory result into one interface
+		// field: the call through it calls each stored client (litestream's
+		// Replica.Client).
+		245: {calls, "sync", "Put,Put", alternatives},
 	})
 	throughFields := map[int]bool{40: true, 60: true, 61: true, 77: true, 86: true, 185: true, 192: true, 200: true}
 	for _, view := range relations {
@@ -302,13 +309,15 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 	stored := func(handler, field string, line int) string {
 		return fmt.Sprintf("(%s).Handle stored in readyLoop.%s under a condition@%d=%s.Handle", handler, field, line, handler)
 	}
-	read := []string{stored("acceptReady", "read", 107), stored("acceptReady", "read", 129), stored("flushReady", "read", 107)}
+	// RunChosenReady's own store under a branch is a value of read, its
+	// call's alternative, at its store; register's parameter stays a witness.
+	read := []string{stored("acceptReady", "read", 107), stored("flushReady", "read", 107), "observed receiver assignment for (acceptReady).Handle@129"}
 	openCalls := map[int][]string{
 		114: read,
 		115: {stored("acceptReady", "write", 109), stored("flushReady", "write", 109)},
 		131: read,
-		// A call of fmt.Stringer.String keeps these witnesses beside that fact.
-		156: {"(acceptName).String stored in namedLoop.chosen under a condition@151=acceptName.String"},
+		// A call of fmt.Stringer.String keeps its store beside that fact.
+		156: {"observed receiver assignment for (acceptName).String@151"},
 	}
 	// Each handler keeps its exact registration at its own call: call line
 	// to the line of the Handle method it binds.
@@ -335,9 +344,11 @@ func assertGoCommandTableAndStoredCallbacks(t *testing.T, repository *corpus.Cor
 			var witnesses []string
 			for _, witness := range relation.Witnesses {
 				if witness.Kind == "interface_field_assignment" && witness.Location != nil && witness.Location.Path == path {
-					named := objects[witness.ObjectID]
-					owner := objects[named.OwnerID].Name
-					witnesses = append(witnesses, strings.ReplaceAll(witness.Detail, fixturePackage, "")+"@"+strconv.Itoa(witness.Location.Line)+"="+owner+"."+named.Name)
+					said := strings.ReplaceAll(witness.Detail, fixturePackage, "") + "@" + strconv.Itoa(witness.Location.Line)
+					if named, ok := objects[witness.ObjectID]; ok {
+						said += "=" + objects[named.OwnerID].Name + "." + named.Name
+					}
+					witnesses = append(witnesses, said)
 				}
 			}
 			sort.Strings(witnesses)

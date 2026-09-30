@@ -12,8 +12,9 @@ import (
 
 // A summary is immutable after return. Unknown frontiers count paths, while
 // functions and assignment locations are the same sets sealed by the index.
-// witnesses are callables an interface field was given when a store under a
-// branch left that field open: evidence of the frontier, never candidates.
+// witnesses are callables an interface field was given when a parameter
+// stored under a branch left that field open: evidence of the frontier,
+// never candidates.
 type dynamicValueSummary struct {
 	functions   map[*ssa.Function]godynamichandoff.CandidateEvidence
 	assignments map[*ssa.Function]map[godynamichandoff.Location]struct{}
@@ -475,17 +476,21 @@ func (r *dynamicValueResolver) interfaceField(value *ssa.UnOp) dynamicValueSumma
 		return result
 	}
 	// Every store of this field in the analyzed program is observed. Their
-	// values are the field's values; a store whose value cannot be followed
-	// keeps its own unknown path.
+	// values are the field's values, alternatives when there are several,
+	// a store under a branch among them (owner, 2026-09-30: several targets
+	// are alternatives, never a cautious unknown; litestream's
+	// NewReplicaFromConfig stores one replica client per case of a switch
+	// into Replica.Client, and Replica.Sync's WriteLTXFile calls each); a
+	// store whose value cannot be followed keeps its own unknown path.
 	open := false
 	for _, store := range stores {
-		open = open || store.underBranch
+		open = open || store.underBranch && storedParameter(store.store.Val)
 	}
 	result = dynamicValueSummary{}
 	for _, store := range stores {
 		child := r.interfaceValue(store.store.Val)
 		location := dynamicLocation(r.analyzer.location(store.store.Pos()))
-		if !open {
+		if !store.underBranch || !storedParameter(store.store.Val) {
 			r.merge(&result, child)
 			for function := range child.functions {
 				// Attach the store to this parent, never to the cached value.
@@ -493,10 +498,11 @@ func (r *dynamicValueResolver) interfaceField(value *ssa.UnOp) dynamicValueSumma
 			}
 			continue
 		}
-		// A store under a branch gives the field its value on some paths
-		// only, and a parameter stored there joins every caller's argument,
-		// whichever field the branch chose for it. The field's value is then
-		// unknown: each stored callable is a witness, as in the C adapter.
+		// A parameter stored under a branch joins every caller's argument,
+		// whichever field the branch chose for it (readyLoop.register
+		// stores its handler into read or write): what it brings is no
+		// value of this field but a witness of it, as in the C adapter, and
+		// the field stays open.
 		r.merge(&result, dynamicValueSummary{witnesses: child.witnesses, cyclic: child.cyclic})
 		stored := dynamicFieldWitness{field: types.TypeString(container, packageQualifier) + "." + field.Name(),
 			location: location, underBranch: store.underBranch}
@@ -508,6 +514,25 @@ func (r *dynamicValueResolver) interfaceField(value *ssa.UnOp) dynamicValueSumma
 		result.unresolved = 1
 	}
 	return result
+}
+
+// storedParameter reports a stored value that is its function's own
+// parameter, converted to the field's interface or not.
+func storedParameter(value ssa.Value) bool {
+	for {
+		switch current := value.(type) {
+		case *ssa.Parameter:
+			return true
+		case *ssa.MakeInterface:
+			value = current.X
+		case *ssa.ChangeInterface:
+			value = current.X
+		case *ssa.ChangeType:
+			value = current.X
+		default:
+			return false
+		}
+	}
 }
 
 // A factory return is a possible value, not an execution or an instantiation.

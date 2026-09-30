@@ -86,9 +86,9 @@ func RunChosenHandler(readable bool) {
 	loop.onRead()
 }
 
-// The same event loop with interface-typed fields. A handler stored in one of
-// two fields under a branch leaves the calls through both fields unresolved;
-// each stored handler is a witness of those calls, never their alternative.
+// The same event loop with interface-typed fields. A handler parameter stored
+// in one of two fields under a branch leaves the calls through both open;
+// each handler it brings is a witness of those calls, never an alternative.
 type readyHandler interface{ Handle() }
 
 type acceptReady struct{}
@@ -122,7 +122,7 @@ func RunReadyLoop() {
 	loop.fire()
 }
 
-// A store under a branch leaves the call through the field unresolved.
+// A value stored under a branch is a value of the field: the call calls it.
 func RunChosenReady(readable bool) {
 	loop := &readyLoop{}
 	if readable {
@@ -133,7 +133,7 @@ func RunChosenReady(readable bool) {
 
 // The same choice for a field whose interface another package declares. A
 // call through it is a call of fmt.Stringer.String, and the name a branch
-// stored there is still its witness. Clearing a field stores nothing
+// stored there is what it calls. Clearing a field stores nothing
 // callable, so the branch that clears one leaves the name stored before it a
 // possible value.
 type namedLoop struct {
@@ -205,3 +205,47 @@ func StartAny(job func()) {
 }
 
 func flushJob() {}
+
+// A replica's client is chosen by a switch on its configured kind, each case
+// storing what its own factory returns into one interface field, as
+// litestream's NewReplicaFromConfig does: a call through the field calls each
+// stored client, alternatives, never an unknown.
+type objectStore interface{ Put(key string) }
+
+type bucketStore struct{}
+
+type diskStore struct{}
+
+func (*bucketStore) Put(string) {}
+
+func (*diskStore) Put(string) {}
+
+func newBucketStore() (*bucketStore, error) { return &bucketStore{}, nil }
+
+func newDiskStore() (*diskStore, error) { return &diskStore{}, nil }
+
+type replica struct{ client objectStore }
+
+func newReplica(kind string) (*replica, error) {
+	r := &replica{}
+	var err error
+	switch kind {
+	case "bucket":
+		if r.client, err = newBucketStore(); err != nil {
+			return nil, err
+		}
+	case "disk":
+		if r.client, err = newDiskStore(); err != nil {
+			return nil, err
+		}
+	}
+	return r, nil
+}
+
+func (r *replica) sync(key string) { r.client.Put(key) }
+
+func SyncReplica(kind, key string) {
+	if r, err := newReplica(kind); err == nil {
+		r.sync(key)
+	}
+}

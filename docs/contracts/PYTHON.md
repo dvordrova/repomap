@@ -141,7 +141,8 @@ deleted, wildcard or cyclic export bindings remain unresolved, and unrelated
 same-named classes gain no receiver authority. A factory with no declared
 return type gives a repository class none either; the outside call its one
 return statement returns does give its outside symbol (owner, 2026-09-16:
-no hedged resolution; [What a call produces](#what-a-call-produces)). No
+no cautious unknown where the code names the value, one target exact and
+several alternatives; [What a call produces](#what-a-call-produces)). No
 module is imported or executed to discover exports. TypeScript uses the compiler's
 existing barrel-export and declared-return resolution for the comparable case.
 
