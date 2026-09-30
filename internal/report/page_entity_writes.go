@@ -1,25 +1,53 @@
 package report
 
 import (
+	"cmp"
 	"encoding/json"
-	"sort"
+	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-// A write belongs to an entity only through the native field's exact owner.
-// Its callable must be in this input's reach; shared group/type membership
-// is not execution evidence. Callers are the reach's calls into the
-// writer (none when the handler writes itself); no route to it is chosen.
-// Source and possible dispatch survive both joins.
+// pageEntityWrite is one change an input makes to the program's data
+// (critic, 2026-09-30: State changes had listed every field write of the
+// whole reach, 80 for redis's `set`, listNode.next and dict.used among
+// them). An input's work is its handler and what it calls exactly, never
+// entering a helper: a declaration the helper question decided serves
+// others' work standing in a part most of the program's parts call into,
+// other than the handler's own (the flow's helper, page_flow.go). Its
+// changes are, by Kind:
+//
+//   - "write": a record's field the work writes (`server.dirty`), save a
+//     constructor setting up the object its call makes (a call of a class
+//     and of its method at one place: RPCException(...) and its __init__);
+//   - "call": a record's field the work hands to a helper whose own code
+//     writes that field's type, or a record type one of its fields holds
+//     (`dictAdd` handed `redisDb.dict`, a `dict *`, which dictAdd writes);
+//   - "db": a database call anywhere in the input's reach, with the tables
+//     its statement names (GroupsIndex outbound `db` and its data records);
+//   - "file": a file anywhere in the reach reaches (GroupsIndex data record
+//     of kind `file`, each call site's function).
+//
+// Entity is the record type holding the field or owning the table (a
+// part's reading lists the changes to its types); Destination names a
+// database or a file. Source is where the change is written; Callers are
+// the functions making it (one). Helper internals are never listed. The
+// changes stand in the order the work makes them, the handler's first,
+// then the database's and the files'.
 type pageEntityWrite struct {
-	Entity     pageAnchor `json:"entity"`
-	EntityName string     `json:"entity_name"`
-	Field      string     `json:"field"`
-	Source     pageAnchor `json:"source"`
-	Possible   bool       `json:"possible"`
-	// Integration marks a write of a matched input on another component:
+	Kind        string     `json:"kind"`
+	Entity      pageAnchor `json:"entity"`
+	EntityName  string     `json:"entity_name,omitempty"`
+	Field       string     `json:"field,omitempty"`
+	Via         string     `json:"via,omitempty"`
+	Destination string     `json:"destination,omitempty"`
+	Tables      []string   `json:"tables,omitempty"`
+	Source      pageAnchor `json:"source"`
+	Possible    bool       `json:"possible,omitempty"`
+	// Integration marks a change of a matched input on another component:
 	// an endpoint match, not a native call.
 	Integration bool           `json:"integration,omitempty"`
 	Callers     []pageCallStep `json:"callers,omitempty"`
@@ -37,81 +65,349 @@ func (node pageMapNode) WritesJSON() string {
 	return string(raw)
 }
 
-func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach groupindex.Reach) []pageEntityWrite {
-	reached := make(map[string]bool, len(reach.Subjects))
-	for _, subject := range reach.Subjects {
-		reached[subject.SubjectID] = true
+// pageDataFacts are one program's facts the changes read, built once: its
+// calls by ID (their arguments), each record type's fields, each field's
+// record types, each function's field writes and reads (the reads name the
+// field an argument passes), and the classes a function calls at a place
+// (caller, path and line: a construction there).
+type pageDataFacts struct {
+	relations map[string]programindex.Relation
+	fieldsOf  map[string][]string
+	typesOf   map[string][]string
+	writes    map[string][]int
+	reads     map[string][]int
+	makes     map[string][]string
+}
+
+func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
+	if builder.dataByTarget == nil {
+		builder.dataByTarget = map[string]*pageDataFacts{}
 	}
-	var result []pageEntityWrite
-	for _, edge := range index.StructuralEdges {
-		if edge.Role != groupindex.EdgeRelationTarget || edge.RelationKind != programindex.RelationWrites ||
-			!reached[edge.FromSubjectID] || edge.Location == nil {
-			continue
-		}
-		fieldRef, known := builder.subject(index.Target.ID, edge.ToSubjectID)
-		if !known {
-			continue
-		}
-		field := fieldRef.subject.Object
-		if field == nil || field.Kind != programindex.ObjectVariable || field.OwnerID == "" {
-			continue
-		}
-		entityRef, known := builder.subject(index.Target.ID, field.OwnerID)
-		if !known {
-			continue
-		}
-		entity := entityRef.subject
-		if entity.Object == nil || entity.Object.Kind != programindex.ObjectType {
-			continue
-		}
-		name, anchor := builder.subjectDisplay(entity)
-		if anchor == nil {
-			continue
-		}
-		// The write is possible when it is, or when no exact call of the
-		// reach enters its writer.
-		possible := edge.Resolution != programindex.ResolutionExact
-		var callers []pageCallStep
-		exact := len(reach.Subjects) > 0 && reach.Subjects[0].SubjectID == edge.FromSubjectID
-		for _, position := range reach.Edges {
-			call := index.StructuralEdges[position]
-			if call.ToSubjectID != edge.FromSubjectID || call.RelationKind == programindex.RelationReads {
+	targetID := index.Target.ID
+	if cached := builder.dataByTarget[targetID]; cached != nil {
+		return cached
+	}
+	facts := &pageDataFacts{relations: map[string]programindex.Relation{}, fieldsOf: map[string][]string{}, typesOf: map[string][]string{},
+		writes: map[string][]int{}, reads: map[string][]int{}, makes: map[string][]string{}}
+	if builder.data != nil && builder.data.ProgramPortfolio != nil {
+		for _, entry := range builder.data.ProgramPortfolio.Entries {
+			if entry.Target.ID != targetID {
 				continue
 			}
-			ref, known := builder.subject(index.Target.ID, call.FromSubjectID)
+			for _, relation := range entry.Relations {
+				if relation.Kind == programindex.RelationCalls || relation.Kind == programindex.RelationExecutes {
+					facts.relations[relation.ID] = relation
+				}
+			}
+			for _, object := range entry.Objects {
+				if object.Kind != programindex.ObjectVariable || object.OwnerID == "" {
+					continue
+				}
+				facts.fieldsOf[object.OwnerID] = append(facts.fieldsOf[object.OwnerID], object.ID)
+				for _, at := range object.Types {
+					if typeID := builder.subjectAt[subjectLocationKey(targetID, at.Path, at.Line)]; typeID != "" && !slices.Contains(facts.typesOf[object.ID], typeID) {
+						facts.typesOf[object.ID] = append(facts.typesOf[object.ID], typeID)
+					}
+				}
+			}
+		}
+	}
+	for position, edge := range index.StructuralEdges {
+		if edge.Role != groupindex.EdgeRelationTarget || edge.Location == nil {
+			continue
+		}
+		switch edge.RelationKind {
+		case programindex.RelationWrites:
+			facts.writes[edge.FromSubjectID] = append(facts.writes[edge.FromSubjectID], position)
+		case programindex.RelationReads:
+			facts.reads[edge.FromSubjectID] = append(facts.reads[edge.FromSubjectID], position)
+		case programindex.RelationCalls:
+			if ref, known := builder.subject(targetID, edge.ToSubjectID); known && ref.subject.Object != nil && ref.subject.Object.Kind == programindex.ObjectType {
+				key := constructionKey(edge.FromSubjectID, edge.Location)
+				facts.makes[key] = append(facts.makes[key], edge.ToSubjectID)
+			}
+		}
+	}
+	builder.dataByTarget[targetID] = facts
+	return facts
+}
+
+func constructionKey(caller string, at *programindex.Location) string {
+	return caller + "\x00" + at.Path + ":" + strconv.Itoa(at.Line)
+}
+
+// recordField is a field's record type, when the subject is a variable a
+// type owns.
+func (builder *pageBuilder) recordField(targetID, subjectID string) (field *groupindex.ObjectFacts, owner groupindex.Subject, ok bool) {
+	ref, known := builder.subject(targetID, subjectID)
+	if !known || ref.subject.Object == nil || ref.subject.Object.Kind != programindex.ObjectVariable || ref.subject.Object.OwnerID == "" {
+		return nil, groupindex.Subject{}, false
+	}
+	entity, known := builder.subject(targetID, ref.subject.Object.OwnerID)
+	if !known || entity.subject.Object == nil || entity.subject.Object.Kind != programindex.ObjectType {
+		return nil, groupindex.Subject{}, false
+	}
+	return ref.subject.Object, entity.subject, true
+}
+
+func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach groupindex.Reach) []pageEntityWrite {
+	if len(reach.Subjects) == 0 {
+		return nil
+	}
+	targetID := index.Target.ID
+	facts := builder.dataFacts(index)
+	flow := builder.flowIndex(index)
+	groupOf := builder.edgesBetweenGroups(*index).groupOf
+	handler := reach.Subjects[0].SubjectID
+	helper := func(id string) bool {
+		ref, known := builder.subject(targetID, id)
+		return known && ref.subject.Interpretation != nil && ref.subject.Interpretation.Helper &&
+			flow.shared[groupOf[id]] && groupOf[id] != groupOf[handler]
+	}
+	// The reach's exact calls by caller, in the order the walk met them: a
+	// dispatch's alternatives say which code may run, not what this input
+	// changes (redis's call() dispatches to every command).
+	calls := map[string][]int{}
+	for _, position := range reach.Edges {
+		edge := index.StructuralEdges[position]
+		if (edge.RelationKind == programindex.RelationCalls || edge.RelationKind == programindex.RelationExecutes) && edge.Resolution == programindex.ResolutionExact {
+			calls[edge.FromSubjectID] = append(calls[edge.FromSubjectID], position)
+		}
+	}
+	walk := func(from string, enter func(string) bool) []string {
+		order, seen := []string{from}, map[string]bool{from: true}
+		for at := 0; at < len(order); at++ {
+			for _, position := range calls[order[at]] {
+				callee := index.StructuralEdges[position].ToSubjectID
+				if !seen[callee] && enter(callee) {
+					seen[callee] = true
+					order = append(order, callee)
+				}
+			}
+		}
+		return order
+	}
+	work := walk(handler, func(callee string) bool { return !helper(callee) })
+	working := map[string]bool{}
+	for _, id := range work {
+		working[id] = true
+	}
+	// A constructor the work runs where it makes its class's object sets
+	// that object up; it changes nothing the program holds.
+	constructs := map[string]string{}
+	for _, id := range work {
+		for _, position := range calls[id] {
+			edge := index.StructuralEdges[position]
+			ref, known := builder.subject(targetID, edge.ToSubjectID)
+			if known && ref.subject.Object != nil && ref.subject.Object.Kind == programindex.ObjectMethod &&
+				slices.Contains(facts.makes[constructionKey(id, edge.Location)], ref.subject.Object.OwnerID) {
+				constructs[edge.ToSubjectID] = ref.subject.Object.OwnerID
+			}
+		}
+	}
+	// The record types a helper's own code writes, through the calls it
+	// makes in this reach.
+	written := map[string]map[string]bool{}
+	writtenBy := func(helperID string) map[string]bool {
+		if types, done := written[helperID]; done {
+			return types
+		}
+		types := map[string]bool{}
+		for _, id := range walk(helperID, func(string) bool { return true }) {
+			for _, position := range facts.writes[id] {
+				if _, owner, ok := builder.recordField(targetID, index.StructuralEdges[position].ToSubjectID); ok {
+					types[owner.ID] = true
+				}
+			}
+		}
+		written[helperID] = types
+		return types
+	}
+	var result []pageEntityWrite
+	seen := map[string]bool{}
+	add := func(change pageEntityWrite, maker string, at *programindex.Location) {
+		key := strings.Join([]string{change.Kind, change.Entity.Href + change.Entity.Open + change.EntityName, change.Field, change.Via, change.Destination, strings.Join(change.Tables, ",")}, "\x00")
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		if at != nil {
+			change.Source = builder.links.anchor(at.Path, at.Line, at.Column)
+		}
+		if ref, known := builder.subject(targetID, maker); known {
+			name, anchor := builder.subjectDisplay(ref.subject)
+			step := pageCallStep{Name: name}
+			if anchor != nil {
+				step.Href, step.Open, step.Source, step.NoSource = anchor.Href, anchor.Open, anchor.Text, anchor.NoSource
+			}
+			change.Callers = []pageCallStep{step}
+		}
+		result = append(result, change)
+	}
+	typed := func(change pageEntityWrite, entity groupindex.Subject) (pageEntityWrite, bool) {
+		name, anchor := builder.subjectDisplay(entity)
+		if anchor == nil {
+			return change, false
+		}
+		change.Entity, change.EntityName = *anchor, name
+		return change, true
+	}
+	for _, id := range work {
+		// What the work writes and hands to helpers, in the order its code
+		// makes them.
+		type made struct {
+			change pageEntityWrite
+			at     *programindex.Location
+		}
+		var mine []made
+		for _, position := range facts.writes[id] {
+			edge := index.StructuralEdges[position]
+			field, owner, ok := builder.recordField(targetID, edge.ToSubjectID)
+			if !ok || constructs[id] == owner.ID {
+				continue
+			}
+			if change, ok := typed(pageEntityWrite{Kind: "write", Field: field.Name, Possible: edge.Resolution != programindex.ResolutionExact}, owner); ok {
+				mine = append(mine, made{change, edge.Location})
+			}
+		}
+		for _, position := range calls[id] {
+			edge := index.StructuralEdges[position]
+			if working[edge.ToSubjectID] || !helper(edge.ToSubjectID) {
+				continue
+			}
+			types := writtenBy(edge.ToSubjectID)
+			if len(types) == 0 {
+				continue
+			}
+			ref, known := builder.subject(targetID, edge.ToSubjectID)
 			if !known {
 				continue
 			}
-			callerName, callerAnchor := builder.subjectDisplay(ref.subject)
-			step := pageCallStep{Name: callerName, Possible: call.Resolution != programindex.ResolutionExact}
-			if call.Location != nil {
-				site := builder.links.anchor(call.Location.Path, call.Location.Line, call.Location.Column)
-				step.Href, step.Open, step.Source, step.NoSource = site.Href, site.Open, site.Text, site.NoSource
-			} else if callerAnchor != nil {
-				step.Href, step.Open, step.Source, step.NoSource = callerAnchor.Href, callerAnchor.Open, callerAnchor.Text, callerAnchor.NoSource
+			via, _ := builder.subjectDisplay(ref.subject)
+			for _, fieldID := range builder.handedFields(index, facts, edge) {
+				field, owner, ok := builder.recordField(targetID, fieldID)
+				if !ok || !changesType(facts, types, fieldID) {
+					continue
+				}
+				if change, ok := typed(pageEntityWrite{Kind: "call", Field: field.Name, Via: via}, owner); ok {
+					mine = append(mine, made{change, edge.Location})
+				}
 			}
-			exact = exact || !step.Possible
-			callers = append(callers, step)
 		}
-		possible = possible || !exact
-		result = append(result, pageEntityWrite{Entity: *anchor, EntityName: name, Field: field.Name,
-			Source: builder.links.anchor(edge.Location.Path, edge.Location.Line, edge.Location.Column), Possible: possible, Callers: callers})
+		slices.SortStableFunc(mine, func(a, b made) int { return compareSites(a.at, b.at) })
+		for _, change := range mine {
+			add(change.change, id, change.at)
+		}
 	}
-	sort.SliceStable(result, func(i, j int) bool {
-		a, b := result[i], result[j]
-		if a.Entity.Path != b.Entity.Path {
-			return a.Entity.Path < b.Entity.Path
+	// The database and the files anywhere in its reach.
+	reached := map[string]bool{}
+	for _, subject := range reach.Subjects {
+		reached[subject.SubjectID] = true
+	}
+	records := map[string]groupindex.DataRecord{}
+	for _, record := range index.Data {
+		records[record.ID] = record
+	}
+	for _, call := range index.Outbound {
+		if call.Kind != "db" || !reached[call.SubjectID] {
+			continue
 		}
-		if a.Entity.Line != b.Entity.Line {
-			return a.Entity.Line < b.Entity.Line
+		change := pageEntityWrite{Kind: "db", Destination: cmp.Or(call.Destination, call.External)}
+		for _, id := range call.DataIDs {
+			record, known := records[id]
+			if !known || record.Data == nil || record.Data.Name == "" {
+				continue
+			}
+			if !slices.Contains(change.Tables, record.Data.Name) {
+				change.Tables = append(change.Tables, record.Data.Name)
+			}
+			if record.OwnerSubjectID != "" && change.EntityName == "" {
+				if ref, known := builder.subject(targetID, record.OwnerSubjectID); known {
+					change, _ = typed(change, ref.subject)
+				}
+			}
 		}
-		if a.Source.Path != b.Source.Path {
-			return a.Source.Path < b.Source.Path
+		location := call.Location
+		add(change, call.SubjectID, &location)
+	}
+	for _, record := range index.Data {
+		if record.Data == nil || record.Data.Kind != "file" || record.Data.File == nil {
+			continue
 		}
-		if a.Source.Line != b.Source.Line {
-			return a.Source.Line < b.Source.Line
+		name := cmp.Or(record.Data.Name, record.Data.File.Field)
+		if name == "" {
+			continue
 		}
-		return a.Field < b.Field
-	})
+		for i, subject := range record.CallSubjectIDs {
+			if subject == "" || !reached[subject] || i >= len(record.Data.File.Calls) {
+				continue
+			}
+			at := record.Data.File.Calls[i].Anchor
+			add(pageEntityWrite{Kind: "file", Destination: name}, subject, &programindex.Location{Path: at.Path, Line: at.Line, Column: at.Column})
+			break
+		}
+	}
 	return result
+}
+
+// changesType says whether a helper writing the given record types changes
+// a field handed to it: the field's own type, or a record type one of that
+// type's fields holds (a `redisDb *` whose dict dictAdd writes).
+func changesType(facts *pageDataFacts, written map[string]bool, fieldID string) bool {
+	for _, typeID := range facts.typesOf[fieldID] {
+		if written[typeID] {
+			return true
+		}
+		for _, inner := range facts.fieldsOf[typeID] {
+			for _, held := range facts.typesOf[inner] {
+				if written[held] {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// handedFields are the record fields a call passes as its arguments: an
+// argument naming its object (a Python or Go field), else the field its
+// expression ends in, read by the caller within the argument
+// (`c->db->dict`: the read of dict there).
+func (builder *pageBuilder) handedFields(index *groupindex.Index, facts *pageDataFacts, edge groupindex.StructuralEdge) []string {
+	relation, known := facts.relations[edge.RelationID]
+	if !known || len(relation.Patterns) == 0 {
+		return nil
+	}
+	arguments := relation.Patterns[0].Arguments
+	var fields []string
+	for i, argument := range arguments {
+		for _, id := range argument.ObjectIDs {
+			if _, _, ok := builder.recordField(index.Target.ID, id); ok && !slices.Contains(fields, id) {
+				fields = append(fields, id)
+			}
+		}
+		origin := argument.Origin
+		if len(argument.ObjectIDs) > 0 || origin == nil || origin.Kind != "field" || origin.Anchor == nil {
+			continue
+		}
+		end := 0
+		if i+1 < len(arguments) && arguments[i+1].Origin != nil && arguments[i+1].Origin.Anchor != nil && arguments[i+1].Origin.Anchor.Line == origin.Anchor.Line {
+			end = arguments[i+1].Origin.Anchor.Column
+		}
+		last := ""
+		for _, position := range facts.reads[edge.FromSubjectID] {
+			read := index.StructuralEdges[position]
+			at := read.Location
+			if at.Path != origin.Anchor.Path || at.Line != origin.Anchor.Line || at.Column < origin.Anchor.Column || end > 0 && at.Column >= end {
+				continue
+			}
+			if ref, known := builder.subject(index.Target.ID, read.ToSubjectID); known && ref.subject.Object != nil && ref.subject.Object.Name == origin.Text {
+				last = read.ToSubjectID
+			}
+		}
+		if last != "" && !slices.Contains(fields, last) {
+			fields = append(fields, last)
+		}
+	}
+	return fields
 }

@@ -303,6 +303,9 @@ type pageBuilder struct {
 	// fieldsByTarget are each program's reads and writes of record fields
 	// (page_field_uses.go), built once.
 	fieldsByTarget map[string]*pageFieldFacts
+	// dataByTarget are each program's facts an input's changes to its data
+	// read (page_entity_writes.go), built once.
+	dataByTarget map[string]*pageDataFacts
 }
 
 // subjectKey is the only identity used by the report projection. Subject IDs

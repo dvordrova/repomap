@@ -1,47 +1,124 @@
 package report
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-func TestEntityWritesRequireReachedCallableFieldOwnerAndWriteSite(t *testing.T) {
-	b := pageBuilder{data: &ReportData{}, subjects: map[string]subjectRef{}, links: pageLinks{sourceIDs: map[string]string{"state.py": "source"}}}
-	for id, kind := range map[string]programindex.ObjectKind{"input": programindex.ObjectFunction, "writer": programindex.ObjectMethod, "reader": programindex.ObjectMethod, "state": programindex.ObjectType, "field": programindex.ObjectVariable, "local": programindex.ObjectVariable} {
-		owner := ""
-		if id == "field" || id == "writer" || id == "reader" {
-			owner = "state"
+// What an input changes in the program's data (critic, 2026-09-30: redis's
+// set had listed 80 field writes, its helpers' internals among them): its
+// work's writes (setGenericCommand's server.dirty); a field its work hands
+// to a helper whose code writes that field's record type (dictAdd handed
+// db.dict, a Dict it writes); the database its reach calls, with the table
+// and the type owning it. Never a helper's own writes (Dict.used,
+// Entry.next), a field handed to a helper that writes nothing of it
+// (addReply handed shared.ok), a constructor setting up the object its
+// call makes, or a call only possibly made (a dispatch's alternatives).
+func TestAnInputChangesTheDataItsWorkWritesOrHandsToAHelper(t *testing.T) {
+	at := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "server.c", Line: line, Column: 5}
+	}
+	b := pageBuilder{data: &ReportData{ProgramPortfolio: &ProgramPortfolio{}}, subjects: map[string]subjectRef{}, subjectAt: map[string]string{},
+		links: pageLinks{sourceIDs: map[string]string{"server.c": "source"}}}
+	objects := map[string]*groupindex.ObjectFacts{}
+	var native []programindex.Object
+	add := func(id, name string, kind programindex.ObjectKind, owner string, line int, helper bool, types ...int) {
+		object := &groupindex.ObjectFacts{Name: name, Kind: kind, OwnerID: owner, Location: at(line)}
+		objects[id] = object
+		declared := programindex.Object{ID: id, Name: name, Kind: kind, OwnerID: owner, Location: at(line)}
+		for _, typeLine := range types {
+			declared.Types = append(declared.Types, *at(typeLine))
 		}
-		b.subjects[id] = subjectRef{subject: groupindex.Subject{ID: id, Object: &groupindex.ObjectFacts{Name: id, Kind: kind, OwnerID: owner, Location: &programindex.Location{Path: "state.py", Line: 3, Column: 1}}}}
+		native = append(native, declared)
+		subject := groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: object}
+		if helper {
+			subject.Interpretation = &groupindex.Interpretation{Helper: true}
+		}
+		b.subjects[subjectKey("t1", id)] = subjectRef{programTargetID: "t1", subject: subject}
+		if kind == programindex.ObjectType {
+			b.subjectAt[subjectLocationKey("t1", "server.c", line)] = id
+		}
 	}
-	call := groupindex.StructuralEdge{FromSubjectID: "input", ToSubjectID: "writer", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionAlternatives}
-	write := groupindex.StructuralEdge{FromSubjectID: "writer", ToSubjectID: "field", Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationWrites, Resolution: programindex.ResolutionExact, Location: &programindex.Location{Path: "state.py", Line: 17, Column: 5}}
-	other := write
-	other.FromSubjectID = "reader"
-	read := write
-	read.RelationKind = programindex.RelationReads
-	local := write
-	local.ToSubjectID = "local"
-	old := write
-	old.Location = nil
-	index := groupindex.Index{StructuralEdges: []groupindex.StructuralEdge{call, write, other, read, local, old},
-		Operations: []groupindex.Operation{{ID: "o1", SubjectID: "input", Kind: "request", Name: "input"}}}
-	for _, id := range []string{"input", "writer", "reader", "state", "field", "local"} {
-		index.Subjects = append(index.Subjects, b.subjects[id].subject)
+	add("set", "setCommand", programindex.ObjectFunction, "", 10, false)
+	add("generic", "setGenericCommand", programindex.ObjectFunction, "", 20, true)
+	add("dictAdd", "dictAdd", programindex.ObjectFunction, "", 30, true)
+	add("addReply", "addReply", programindex.ObjectFunction, "", 40, true)
+	add("other", "otherCommand", programindex.ObjectFunction, "", 50, false)
+	add("maybe", "maybeCommand", programindex.ObjectFunction, "", 60, false)
+	add("Server", "Server", programindex.ObjectType, "", 100, false)
+	add("dirty", "dirty", programindex.ObjectVariable, "Server", 101, false)
+	add("Db", "Db", programindex.ObjectType, "", 110, false)
+	add("dict", "dict", programindex.ObjectVariable, "Db", 111, false, 120)
+	add("Dict", "Dict", programindex.ObjectType, "", 120, false)
+	add("used", "used", programindex.ObjectVariable, "Dict", 121, false)
+	add("Shared", "Shared", programindex.ObjectType, "", 130, false)
+	add("ok", "ok", programindex.ObjectVariable, "Shared", 131, false, 140)
+	add("Reply", "Reply", programindex.ObjectType, "", 140, false)
+	add("Trade", "Trade", programindex.ObjectType, "", 150, false)
+	add("init", "__init__", programindex.ObjectMethod, "Trade", 151, false)
+	add("amount", "amount", programindex.ObjectVariable, "Trade", 152, false)
+	edge := func(id, from, to string, kind programindex.RelationKind, resolution programindex.Resolution, line int) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{RelationID: id, FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: kind, Resolution: resolution, Location: at(line)}
 	}
+	exact := programindex.ResolutionExact
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"},
+		Groups: []groupindex.Group{{ID: "g1", Title: "Strings", MemberSubjectIDs: []string{"set", "generic", "init", "maybe"}}, {ID: "g2", Title: "Structures", MemberSubjectIDs: []string{"dictAdd", "addReply"}},
+			{ID: "g3", Title: "Other", MemberSubjectIDs: []string{"other"}}},
+		StructuralEdges: []groupindex.StructuralEdge{
+			edge("c1", "set", "generic", programindex.RelationCalls, exact, 11),
+			edge("c2", "generic", "dictAdd", programindex.RelationCalls, exact, 21),
+			edge("w1", "generic", "dirty", programindex.RelationWrites, exact, 22),
+			edge("c3", "generic", "addReply", programindex.RelationCalls, exact, 23),
+			edge("w2", "dictAdd", "used", programindex.RelationWrites, exact, 31),
+			edge("c4", "other", "dictAdd", programindex.RelationCalls, exact, 51),
+			edge("c5", "generic", "Trade", programindex.RelationCalls, exact, 24),
+			edge("c6", "generic", "init", programindex.RelationCalls, exact, 24),
+			edge("w3", "init", "amount", programindex.RelationWrites, exact, 153),
+			edge("c7", "set", "maybe", programindex.RelationCalls, programindex.ResolutionAlternatives, 12),
+			edge("w4", "maybe", "dirty", programindex.RelationWrites, exact, 61),
+		},
+		Operations: []groupindex.Operation{{ID: "o1", SubjectID: "set", Kind: "request", Name: "set"}},
+		Outbound:   []groupindex.OutboundCall{{ID: "d1", SubjectID: "generic", Kind: "db", Destination: "Database", DataIDs: []string{"y1"}, Location: *at(25)}},
+		Data:       []groupindex.DataRecord{{DataRecord: atlas.DataRecord{ID: "y1", Path: "server.c", Line: 150, Data: &facts.DataObject{Kind: "table", Name: "trades"}}, OwnerSubjectID: "Trade"}},
+	}
+	b.data.ProgramPortfolio.Entries = []programindex.Index{{Target: programindex.Target{ID: "t1"}, Objects: native, Relations: []programindex.Relation{
+		{ID: "c2", Kind: programindex.RelationCalls, Patterns: []programindex.RelationPattern{{Arguments: []programindex.PatternArgument{{ObjectIDs: []string{"dict"}}}}}},
+		{ID: "c3", Kind: programindex.RelationCalls, Patterns: []programindex.RelationPattern{{Arguments: []programindex.PatternArgument{{ObjectIDs: []string{"ok"}}}}}},
+	}}}
+	for id := range objects {
+		index.Subjects = append(index.Subjects, b.subjects[subjectKey("t1", id)].subject)
+	}
+	slices.SortFunc(index.Subjects, func(a, b groupindex.Subject) int { return strings.Compare(a.ID, b.ID) })
 	groupindex.Derive(&index)
-	got := b.operationWrites(&index, index.Reach[0])
-	// The writer is reached by one possible call: the write is possible, and
-	// its callers are the reach's calls into it.
-	if len(got) != 1 || got[0].Source.Line != 17 || got[0].Source.Open != "state.py:17:5" || !got[0].Possible || len(got[0].Callers) != 1 || got[0].Callers[0].Name != "input" || got[0].EntityName != "state" {
-		t.Fatalf("effects borrowed membership, reads or lost source/uncertainty: %+v", got)
+	var said []string
+	for _, change := range b.operationWrites(&index, index.Reach[0]) {
+		line := change.Kind + " " + change.EntityName + "." + change.Field
+		if change.Via != "" {
+			line += " via " + change.Via
+		}
+		if change.Destination != "" {
+			line = change.Kind + " " + change.Destination + " " + strings.Join(change.Tables, ",") + " of " + change.EntityName
+		}
+		if len(change.Callers) == 1 {
+			line += " by " + change.Callers[0].Name
+		}
+		said = append(said, line)
+	}
+	// In the order the code makes them: dictAdd (line 21), then dirty (22).
+	want := []string{"call Db.dict via dictAdd by setGenericCommand", "write Server.dirty by setGenericCommand", "db Database trades of Trade by setGenericCommand"}
+	if !slices.Equal(said, want) {
+		t.Fatalf("changes = %q\nwant %q", said, want)
 	}
 }
 
 func TestSystemEntityWritesFollowMatchedInputAndPreserveOwnEvidence(t *testing.T) {
-	write := pageEntityWrite{EntityName: "State", Field: "position", Source: pageAnchor{Text: "state.py:17"}, Callers: []pageCallStep{{Name: "post"}}}
+	write := pageEntityWrite{Kind: "write", EntityName: "State", Field: "position", Source: pageAnchor{Text: "state.py:17"}, Callers: []pageCallStep{{Name: "post"}}}
 	view := pageMap{Nodes: []pageMapNode{{ID: "click", Activation: "interaction"}, {ID: "post", Activation: "request", Writes: []pageEntityWrite{write}}, {ID: "get", Activation: "request"}}, Edges: []pageMapEdge{{From: "ui", To: "post", Operations: "click"}, {From: "post", To: "state", Operations: "post"}, {From: "get", To: "state", Operations: "get"}}}
 	completeSystemPaths(&view)
 	got := view.Nodes[0].Writes

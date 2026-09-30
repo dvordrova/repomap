@@ -627,43 +627,78 @@ function rmEntryLanding(link,nodes,component){
     var key=map.explorerMember?.key||'';if(key===writeReading.key)return;
     writeReading.key=key;entityWrites(writeReading.node,writeReading.card);
   });
+  // What an input changes in the program's data (page_entity_writes.go;
+  // critic, 2026-09-30: "State changes" had listed every field write of its
+  // whole reach, eighty for redis's set): each record type its work
+  // changes, each field of it once, "written" or "through" the helpers
+  // handed it (dictAdd, dictReplace); then the database with the tables
+  // its statements name, and the files it reaches. A name is its link to
+  // where the change is made, that place and who makes it on its hover;
+  // no line is printed. A part's reading lists the changes of its types,
+  // by input.
   function entityWrites(n,card){
     var entityKeys=new Set(repomapMembers.items(n).map(function(item){return repomapMembers.sourceKey(item.source);}));
     var selectedKey=map.explorerMember?.owner===n.id?map.explorerMember.key:'';
-    var rows=inputWrites.flatMap(function(row){return row.writes.filter(function(write){return n.dataset.activation?row.input===n:entityKeys.has(repomapMembers.sourceKey(write.entity))&&(!selectedKey||repomapMembers.sourceKey(write.entity)===selectedKey);}).map(function(write){return {input:row.input,write:write};});});
+    var rows=inputWrites.flatMap(function(row){return row.writes.filter(function(write){return n.dataset.activation?row.input===n:!!write.entity_name&&entityKeys.has(repomapMembers.sourceKey(write.entity))&&(!selectedKey||repomapMembers.sourceKey(write.entity)===selectedKey);}).map(function(write){return {input:row.input,write:write};});});
     card.querySelector('.system-entity-writes')?.remove();
     if(!rows.length)return;
-    // Folded under its count, after what the part is made of: 97 inputs'
-    // writes into one type had stood above the part's own reading.
-    var section=rmEl('details','system-entity-writes'),head=rmEl('summary');head.appendChild(rmEl('span','',rmT('State changes')));
-    section.appendChild(head);section.open=rows.length<=rmShortSection;
-    section.appendChild(rmEl('p','meta',rmT('Writes reachable in code; a call path does not prove they execute on every run.')));
-    var entities=new Map();rows.forEach(function(row){var key=repomapMembers.sourceKey(row.write.entity);if(!entities.has(key))entities.set(key,[]);entities.get(key).push(row);});
-    entities.forEach(function(changes){
-      var heading=rmEl('h6'),entity=changes[0].write;
-      var source=repomapMembers.sourceLink(entity.entity);source.textContent=entity.entity_name;heading.appendChild(source);section.appendChild(heading);
-      var inputs=new Map();changes.forEach(function(row){if(!inputs.has(row.input.id))inputs.set(row.input.id,[]);inputs.get(row.input.id).push(row);});
-      inputs.forEach(function(evidence){
-        var input=evidence[0].input;
-        if(!n.dataset.activation){var jump=rmEl('button','system-write-input',owner(input)+' / '+input.dataset.title);jump.type='button';jump.addEventListener('click',function(){select(input,true,null,true);});section.appendChild(jump);}
-        // A field is its name, the link to where it is written, that place
-        // on its hover; a caller likewise (reviewer, 2026-09-30: each row
-        // had printed "adlist.c:86" under its name). No line is printed.
-        var fields=rmEl('ul','plain');evidence.forEach(function(row){
-          var write=row.write,field=rmEl('li'),name=rmEl('strong');name.appendChild(rmPlaceLink(write.source,write.field));field.appendChild(name);
-          if(write.possible)field.appendChild(rmEl('span','possible',' · '+rmT('possible')));
-          if(write.integration)field.appendChild(rmEl('span','possible',' · '+rmT('possible integration')));
-          // Its writer's callers on this input's path: every call into it,
-          // none chosen as its route.
-          if((write.callers||[]).length){
-            var callers=rmEl('details','call-path');callers.appendChild(rmEl('summary','',rmT('Called by')));var list=rmEl('ul');
-            write.callers.forEach(function(step){var li=rmEl('li');li.appendChild(rmPlaceLink({Href:step.href,Open:step.open,Text:step.source,NoSource:step.no_source},step.name));if(step.possible)li.appendChild(rmEl('span','possible',' · '+rmT('possible call')));list.appendChild(li);});
-            callers.appendChild(list);field.appendChild(callers);
-          }
-          fields.appendChild(field);
-        });section.appendChild(fields);
+    // Its words are apart in its text too, as they read (a line break after
+    // each heading and line), for a search or a copy of it.
+    var section=rmEl('details','system-entity-writes'),head=rmEl('summary');head.append(rmEl('span','',rmT('State changes')),'\n');
+    section.appendChild(head);
+    function hover(write){var by=(write.callers||[])[0];return [by?rmT('by {0}',by.name):'',write.source.Text].filter(Boolean).join('\n');}
+    function marks(item,writes){
+      if(writes.some(function(write){return write.possible;}))item.appendChild(rmEl('span','possible',' · '+rmT('possible')));
+      if(writes.some(function(write){return write.integration;}))item.appendChild(rmEl('span','possible',' · '+rmT('possible integration')));
+    }
+    // One group: its heading, then its lines, each a name once.
+    function group(into,title,link,lines){
+      var heading=rmEl('h6');
+      if(link){var source=repomapMembers.sourceLink(link);source.textContent=title;heading.appendChild(source);}else heading.textContent=title;
+      heading.append('\n');
+      var list=rmEl('ul','plain');lines.forEach(function(line){list.appendChild(line);});
+      into.append(heading,list);
+    }
+    function line(name,writes,words){
+      var item=rmEl('li'),link=rmPlaceLink(writes[0].source,name);link.title=hover(writes[0]);item.appendChild(link);
+      if(words)item.append(' ',rmEl('span','map-reading-relation',words));
+      marks(item,writes);item.append('\n');return item;
+    }
+    function changes(into,writes){
+      var typed=new Map(),stores=new Map(),lines=0;
+      writes.forEach(function(write){
+        if(write.kind==='db'||write.kind==='file'){var key=write.kind==='db'?write.destination:rmT('Files');if(!stores.has(key))stores.set(key,[]);stores.get(key).push(write);return;}
+        var key=repomapMembers.sourceKey(write.entity);if(!typed.has(key))typed.set(key,[]);typed.get(key).push(write);
       });
-    });
+      typed.forEach(function(writes){
+        var fields=new Map();writes.forEach(function(write){if(!fields.has(write.field))fields.set(write.field,[]);fields.get(write.field).push(write);});
+        var items=[];fields.forEach(function(same,field){
+          var vias=[];same.forEach(function(write){if(write.via&&vias.indexOf(write.via)<0)vias.push(write.via);});
+          var words=[same.some(function(write){return write.kind==='write';})?rmT('written'):'',vias.length?rmT('through {0}',vias.join(', ')):''].filter(Boolean).join(', ');
+          items.push(line(field,same,words));
+        });
+        lines+=items.length;group(into,writes[0].entity_name,writes[0].entity,items);
+      });
+      stores.forEach(function(writes,title){
+        var items=[],named=new Set();
+        writes.forEach(function(write){
+          var names=write.kind==='file'?[write.destination]:(write.tables||[]).length?write.tables:[((write.callers||[])[0]||{}).name||title];
+          names.forEach(function(name){if(named.has(name))return;named.add(name);items.push(line(name,[write],''));});
+        });
+        lines+=items.length;group(into,title,null,items);
+      });
+      return lines;
+    }
+    var count=0;
+    if(n.dataset.activation)count=changes(section,rows.map(function(row){return row.write;}));
+    else{
+      var inputs=new Map();rows.forEach(function(row){if(!inputs.has(row.input.id))inputs.set(row.input.id,[]);inputs.get(row.input.id).push(row);});
+      inputs.forEach(function(evidence){
+        var input=evidence[0].input,jump=rmEl('button','system-write-input',owner(input)+' / '+input.dataset.title);jump.type='button';jump.addEventListener('click',function(){select(input,true,null,true);});section.appendChild(jump);
+        count+=changes(section,evidence.map(function(row){return row.write;}));
+      });
+    }
+    section.open=count<=rmShortSection;
     var partReading=!n.dataset.activation&&card.querySelector('.map-part-reading');
     if(partReading)partReading.appendChild(section);else card.querySelector('.map-card-intro').after(section);
   }

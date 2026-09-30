@@ -151,7 +151,9 @@ func TestUIVocabularyCoversTemplateAndRuntimeMessages(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if entry.IsDir() && entry.Name() == "node_modules" {
+			// Dependencies and Playwright's run output (traces of pages
+			// rendered earlier) are no source of the report's messages.
+			if entry.IsDir() && (entry.Name() == "node_modules" || entry.Name() == "test-results" || entry.Name() == "playwright-report") {
 				return fs.SkipDir
 			}
 			if entry.IsDir() || (!strings.HasSuffix(path, ".html") && !strings.HasSuffix(path, ".js") && !strings.HasSuffix(path, ".jsx") && !strings.HasSuffix(path, ".mjs")) || strings.HasSuffix(path, "/27-report-ui.js") {

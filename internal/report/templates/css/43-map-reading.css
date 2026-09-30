@@ -412,6 +412,8 @@ details.map-reading-peer[open]>summary::before{content:'▼'}
 .map-reading-key{font-weight:750}
 .map-reading-name[aria-current]{outline:2px solid #243044;outline-offset:1px;border-radius:2px}
 .map-reading-relation{margin-left:.5em;color:var(--muted);font-size:12px}
+/* Where one of two declarations named alike stands (rmTellApart). */
+.map-reading-where{margin-left:.5em;color:var(--muted);font:12px system-ui}
 .map-reading-relation::before{content:'— '}
 /* A run's relations said once above its names (rmEndRuns). */
 .flow-enabled .map-inspector p.map-reading-run{margin:4px 0 0 14px;font:12px/1.4 system-ui;color:var(--muted)}

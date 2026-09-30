@@ -164,8 +164,7 @@ var russianUI = map[string]string{
 	"Zoom in":                               "Приблизить",
 	"Zoom into {0}":                         "Приблизить {0}",
 	"Reaching a part does not by itself establish a change to its entities.": "Путь до части сам по себе не доказывает изменение её сущностей.",
-	"State changes": "Изменения состояния",
-	"Writes reachable in code; a call path does not prove they execute on every run.": "Записи, достижимые по коду; путь вызовов не доказывает их выполнение при каждом запуске.",
+	"State changes":                           "Изменения состояния",
 	"possible integration":                    "предполагаемая интеграция",
 	"Inputs reaching this communication":      "Входы, достигающие этого обращения",
 	"Inputs reaching this part":               "Входы, достигающие этой части",
@@ -884,6 +883,8 @@ var russianUI = map[string]string{
 	"write it":                                        "записывают его",
 	"source it":                                       "подключают его",
 	"connect to it":                                   "соединяются с ним",
+	"through {0}":                                     "через {0}",
+	"by {0}":                                          "делает {0}",
 }
 
 // Optional English singular forms travel in the same vocabulary as the messages.

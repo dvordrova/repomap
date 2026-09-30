@@ -399,7 +399,8 @@ func TestAPartsMembersKeepTheirFilesPathAndTheirOwnNames(t *testing.T) {
 		}
 	}
 	slices.Sort(fields)
-	if !slices.Contains(fields, "argc") || !slices.Contains(fields, "mbargc") {
+	// Each named with its type, as a reading lists a field.
+	if !slices.Contains(fields, "redisClient.argc") || !slices.Contains(fields, "redisClient.mbargc") {
 		t.Fatalf("fields on one line read as %q, want argc and mbargc each", fields)
 	}
 }

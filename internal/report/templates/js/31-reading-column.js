@@ -48,7 +48,7 @@ function rmModelText(tag,cls,text,ref){
 // "Called by" row, null for none (the reading's own title).
 function rmDeclName(decl,text,go,title,bold,code){
   var link=decl.href||decl.open?repomapMembers.sourceLink({Href:decl.code||decl.href,Open:decl.open,Text:text}):rmEl('span','',text);
-  link.classList.add('map-reading-name');rmDotBreaks(link);
+  link.classList.add('map-reading-name');rmDotBreaks(link);link.rmDecl=decl;
   if(decl.key)link.dataset.declKey=decl.key;
   if(bold&&decl.bold)link.classList.add('map-reading-key');
   // A clipped name keeps its whole spelling on its hover, above the rest.
@@ -58,6 +58,24 @@ function rmDeclName(decl,text,go,title,bold,code){
     event.preventDefault();event.stopPropagation();go(decl);
   });
   return rmNameIcon(link,code===undefined?{href:decl.code||decl.href,open:decl.open}:code);
+}
+// Two declarations a list names alike are told apart by where they stand
+// (reviewer, 2026-09-30: litestream's "ReplicaClient" had stood twice in one
+// list, one per package): each gets its file's folder, or its file when the
+// folders are one, quiet after its name. No line is printed.
+function rmTellApart(list){
+  var byText=new Map();
+  Array.prototype.forEach.call(list.children,function(item){
+    var name=Array.prototype.find.call(item.children||[],function(child){return child.rmDecl;});if(!name)return;
+    var text=name.textContent;if(!byText.has(text))byText.set(text,[]);byText.get(text).push(name);
+  });
+  byText.forEach(function(names){
+    var files=names.map(function(name){return name.rmDecl.file||'';});
+    if(names.length<2||new Set(files).size<2)return;
+    var folders=files.map(function(file){var at=file.lastIndexOf('/');return at>0?file.slice(0,at):'';}),apart=new Set(folders).size===names.length;
+    names.forEach(function(name,i){var where=apart?folders[i]||files[i]:files[i];name.after(rmEl('span','map-reading-where',where));});
+  });
+  return list;
 }
 // The one slot beside a name for opening its code: an icon, being chosen
 // (owner, 2026-09-29), will open `code` ({href, open, title}). Until then a
@@ -193,7 +211,7 @@ function rmEndRuns(ctx,data,ends,side,head,quiet){
       });
       list.appendChild(item);
     });
-    parts.push(list);
+    parts.push(rmTellApart(list));
   });
   return {parts:parts,said:one||''};
 }
@@ -232,7 +250,7 @@ function rmNamesByPart(ctx,data,groups){
     if(group.part||group.title){var head=rmEl('div','map-reading-peer-head');head.appendChild(rmPartBox(ctx,group.part,group.title));peer.appendChild(head);}
     var list=rmEl('ul','map-reading-ends');
     group.decls.forEach(function(at){var decl=data.decls[at],item=rmEl('li');item.appendChild(rmDeclName(decl,rmCallableName(decl),ctx.goDecl(decl),rmEndTitle(ctx,decl)));list.appendChild(item);});
-    peer.appendChild(list);box.appendChild(peer);
+    peer.appendChild(rmTellApart(list));box.appendChild(peer);
   });
   return box;
 }
@@ -374,7 +392,7 @@ function rmPartView(ctx,node,data){
   function names(positions,cls){
     var ul=rmEl('ul','map-reading-names'+(cls?' '+cls:''));
     positions.forEach(function(position){var decl=data.decls[position],item=rmEl('li');item.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at,true));ul.appendChild(item);});
-    return ul;
+    return rmTellApart(ul);
   }
   // The ways in first, set apart from the rest by a rule.
   function listed(into,positions){

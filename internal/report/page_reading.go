@@ -298,6 +298,26 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		return ""
 	}
+	// A method or a field is named with its type wherever a reading lists
+	// it (reviewer, 2026-09-30: litestream's lists had read "OpenLTXFile()"
+	// twice and Main.Run's calls "Run()" twelve times, freqtrade's
+	// "ANALYZED_DF" twice, one per enum): "ReplicateCommand.Run",
+	// "RPCMessageType.ANALYZED_DF".
+	qualified := func(target, id, label string) string {
+		ref, known := builder.subject(target, id)
+		if !known || ref.subject.Object == nil || ref.subject.Object.OwnerID == "" {
+			return label
+		}
+		object := ref.subject.Object
+		if object.Kind != programindex.ObjectMethod && object.Kind != programindex.ObjectVariable {
+			return label
+		}
+		owner, known := builder.subject(target, object.OwnerID)
+		if !known || owner.subject.Object == nil || owner.subject.Object.Kind != programindex.ObjectType || strings.HasPrefix(label, owner.subject.Object.Name+".") {
+			return label
+		}
+		return owner.subject.Object.Name + "." + label
+	}
 	// declare names a declaration once, by the key the page's script keys
 	// it by; a later mention fills what an earlier one did not know.
 	declare := func(decl pageReadingDecl) int {
@@ -466,8 +486,8 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		fromPart, fromTitle := partOf(row.fromTarget, row.fromSubject)
 		toPart, toTitle := partOf(row.toTarget, row.toSubject)
-		from := fromAnchor(row.FromName, row.FromDecl, kindOf(row.fromTarget, row.fromSubject), fromPart)
-		to := fromAnchor(row.ToName, row.ToDecl, kindOf(row.toTarget, row.toSubject), toPart)
+		from := fromAnchor(qualified(row.fromTarget, row.fromSubject, row.FromName), row.FromDecl, kindOf(row.fromTarget, row.fromSubject), fromPart)
+		to := fromAnchor(qualified(row.toTarget, row.toSubject, row.ToName), row.ToDecl, kindOf(row.toTarget, row.toSubject), toPart)
 		if from < 0 || to < 0 {
 			continue
 		}
@@ -677,7 +697,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 			}
 			label, anchor := builder.subjectDisplay(ref.subject)
 			part, title := partOf(call.targetID, call.caller)
-			caller := fromAnchor(label, anchor, kindOf(call.targetID, call.caller), part)
+			caller := fromAnchor(qualified(call.targetID, call.caller, label), anchor, kindOf(call.targetID, call.caller), part)
 			if caller < 0 {
 				continue
 			}
@@ -714,7 +734,7 @@ func (builder *pageBuilder) groupReading(index groupindex.Index, group groupinde
 		}
 		label, anchor := builder.subjectDisplay(ref.subject)
 		part, _ := partOf(targetID, id)
-		position := fromAnchor(label, anchor, kindOf(targetID, id), part)
+		position := fromAnchor(qualified(targetID, id, label), anchor, kindOf(targetID, id), part)
 		if position >= 0 {
 			subjectAt[position] = id
 		}
