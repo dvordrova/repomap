@@ -89,4 +89,36 @@ for(const [index,file] of reports.entries()){
     expect(errors,'the page raises no error').toEqual([]);
     expect(unique.map(f=>`${f.kind} · ${f.level} · ${f.element}`)).toEqual([]);
   });
+
+  // Leaving an input's path shows on the canvas what the column then reads:
+  // opened by a link, or by one search after another, "Leave input path"
+  // had read System map while the canvas stayed on the old path, nothing
+  // marked (reviewer, 2026-09-30).
+  test(`leaving an input path of ${basename(file)}`,async({page})=>{
+    test.setTimeout(300_000);
+    const errors=[];page.on('pageerror',error=>errors.push(error.message));
+    await open(page,index);
+    const inputs=await page.evaluate(()=>[...document.querySelectorAll('[data-map-explorer] [data-node][data-activation]')].filter(n=>n.dataset.inputPath).map(n=>n.id).slice(0,2));
+    expect(inputs.length,'inputs with a path').toBeGreaterThan(1);
+    const agree=async how=>{
+      await settle(page);
+      const state=await page.evaluate(()=>{const map=document.querySelector('[data-map]');return {fit:!!map.captureViewport().fit,pinned:map.dataset.operationPinned};});
+      expect(state,`${how}: the column reads the whole map and the canvas shows it`).toEqual({fit:true,pinned:'false'});
+    };
+    const leave=async()=>{await page.locator('.map-input-context button:not(.system-input-start)').last().click();};
+    // By a link followed in the page, and by the page reloaded at it.
+    for(const how of ['a link','a reload']){
+      if(how==='a reload')await page.goto('about:blank');
+      await page.goto(`/journey-${index}.html#${inputs[0]}`);
+      await expect(page.locator('[data-map]')).toHaveClass(/flow-enabled/,{timeout:120_000});
+      await expect(page.locator('[data-map]')).not.toHaveClass(/flow-initializing/,{timeout:120_000});
+      await settle(page);
+      expect(await page.evaluate(()=>document.querySelector('[data-map]').dataset.operationPinned)).toBe('true');
+      await leave();await agree(`opened by ${how}`);
+    }
+    // By one search after another, from the whole map.
+    for(const id of inputs){await page.evaluate(id=>document.querySelector('[data-map]').findNode(document.getElementById(id)),id);await settle(page);}
+    await leave();await agree('two searches in a row');
+    expect(errors).toEqual([]);
+  });
 }

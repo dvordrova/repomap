@@ -260,30 +260,31 @@ const centred=(box,zoom,width,height)=>({x:width/2-(box.left+box.right)/2*zoom,y
 
 // An input is entered as its path. `nodes` are its parts in call-depth order,
 // the part holding its handler first; `steps` are the trace's arrows between
-// them. The camera takes the handler's part, then each part the trace reaches
-// from a part already taken while all of them still fit at a readable scale,
-// and frames them. When the next step does not fit, the camera stays at the
-// smallest readable scale and leans toward it, keeping what it took inside:
-// the dark arrows leaving the frame show the way. On the handler's part alone,
-// centred, GET showed four of its nine dark arrows and none of the parts they
-// reach. `taken` names the parts framed.
-// `least` is the zoom below which the parts' layer closes.
+// them. The parts the trace reaches from the handler's part are framed whole
+// at a readable scale when they fit. When they do not, its destination, the
+// deepest part it reaches, is framed first, then the handler's part, then
+// the others in call order, as many as fit: leaning from the handler toward
+// the next step, freqtrade's forceenter had cut its destination at the
+// canvas's edge ("Tr…"; reviewer, 2026-09-30). `taken` names the parts
+// framed. `least` is the zoom below which the parts' layer closes.
 export function pathViewport(nodes,steps,width,height,contentScale=1,{pad=24,floor=staysOpen,least=0}={}){
   if(!nodes.length)return null;
   const smallest=Math.max(floor/contentScale,least),reading=Math.max(1/contentScale,least);
-  const taken=[nodes[0]],next=[];
-  for(const node of nodes.slice(1)){
-    if(!steps.some(([from,to])=>to===node.id&&taken.some(n=>n.id===from)))continue;
-    if(fitZoom(bounds([...taken,node]),width,height,pad)>=smallest)taken.push(node);
-    else next.push(node);
-  }
-  const box=bounds(taken),fit=fitZoom(box,width,height,pad);
-  if(taken.length===1&&fit<smallest)return {...partViewport(nodes[0],reading,width,height),taken};
-  if(!next.length)return {...centred(box,Math.max(smallest,Math.min(reading,fit)),width,height),taken};
-  const zoom=smallest,ahead=bounds(next),half={x:(width/2-pad)/zoom,y:(height/2-pad)/zoom};
-  const cx=Math.min(Math.max((ahead.left+ahead.right)/2,box.right-half.x),box.left+half.x);
-  const cy=Math.min(Math.max((ahead.top+ahead.bottom)/2,box.bottom-half.y),box.top+half.y);
-  return {x:width/2-cx*zoom,y:height/2-cy*zoom,zoom,taken};
+  const reached=[nodes[0]];
+  for(const node of nodes.slice(1))if(steps.some(([from,to])=>to===node.id&&reached.some(n=>n.id===from)))reached.push(node);
+  const frame=taken=>{const box=bounds(taken),fit=fitZoom(box,width,height,pad);return {...centred(box,Math.max(smallest,Math.min(reading,fit)),width,height),taken};};
+  if(fitZoom(bounds(reached),width,height,pad)>=smallest)return frame(reached);
+  // The destination: the part the trace's arrows reach in most steps from
+  // the handler's, the first of equals in call order (forceenter's
+  // Persistence and database, not the exception type it also makes).
+  const depth=new Map([[nodes[0].id,0]]);
+  for(let changed=true;changed;){changed=false;
+    for(const [from,to] of steps)if(depth.has(from)&&reached.some(n=>n.id===to)&&(!depth.has(to)||depth.get(to)<depth.get(from)+1)&&depth.get(from)+1<reached.length){depth.set(to,depth.get(from)+1);changed=true;}}
+  const destination=reached.reduce((best,node)=>(depth.get(node.id)||0)>(depth.get(best.id)||0)?node:best,reached[0]),taken=[destination];
+  for(const node of reached)if(node!==destination&&fitZoom(bounds([...taken,node]),width,height,pad)>=smallest)taken.push(node);
+  if(taken.length===1&&fitZoom(bounds(taken),width,height,pad)<smallest)return {...partViewport(destination,reading,width,height),taken};
+  // At the smallest readable scale, which shows the most of the rest.
+  return {...centred(bounds(taken),smallest,width,height),taken};
 }
 
 // "Show input": the chosen input's tile among the inputs its handler's part

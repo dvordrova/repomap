@@ -195,7 +195,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   part calling it most. Every part calling a system or a program has its
   own line to that mark, straight across or turning once in a lane of the
   border's gutter, else along its own route inside; a program's arrows in
-  run from its mark to the parts they reach. These lines are quiet: drawn
+  run from its mark to the parts they reach, and an input kind's from its
+  icon to the parts its inputs reach. These lines are quiet: drawn
   only while their mark or part is pointed at, focused or chosen, the parts
   behind the mark outlined (owner: hover answers what is this). A mark is
   named in one line when pointed at or reached by the keyboard; a click
@@ -327,12 +328,18 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the column reads the input; its tile clicked on the canvas is read with its
   path pinned and the camera still, as every canvas click reads without
   moving (owner, 2026-09-29): a card's body anywhere reads its card with the
-  ordinary pointer, and only its magnifier zooms. Entering the path, the camera takes the part
-  holding its handler, then each part the trace reaches from a part already
-  taken while all fit at a scale where their headings stay about twelve
-  pixels (their layer open), and frames them; when the next step does not
-  fit, it stays at that scale leaning toward it, keeping what it took, so the
-  dark arrows leaving the frame show the way. The path's parts, and a closed
+  ordinary pointer, and only its magnifier zooms. Entering the path, the
+  camera frames every part the trace reaches from the handler's part when
+  they fit at a scale where their headings stay readable (their layer
+  open); when they do not, it frames the destination first, the part the
+  trace reaches in most steps (the first of equals in call order), then
+  the handler's part and the others as fit, at that scale, so the dark
+  arrows leaving the frame show the way back (reviewer, 2026-09-30:
+  freqtrade's forceenter had cut its destination at the edge). Leaving the
+  path returns to what was read before the first path entered, camera and
+  all (one search after another had returned to the first path); with
+  nothing read before it (a link, a reload), to the whole map the column
+  then names. The path's parts, and a closed
   frame standing for parts hidden in it, are outlined in the path's dark. An
   input without a trace is entered as its tile, and such a tile clicked keeps
   the camera. "Show input" stands in the reading card while the camera may be

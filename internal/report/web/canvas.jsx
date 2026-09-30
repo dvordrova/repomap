@@ -284,7 +284,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // (owner, 2026-09-28): its arrows run out of its own border toward the
   // part or area at their other end, each end marked by its plaque, and
   // the location names it.
-  let deepPart='',shownNodes=null,enteredProgram='',ports=null;
+  let deepPart='',shownNodes=null,enteredProgram='',ports=null,portHot='';
   function deepPartAt(v){
     const width=host.clientWidth,height=host.clientHeight,centre={x:(width/2-v.x)/v.zoom,y:(height/2-v.y)/v.zoom};
     let best='',nearest=Infinity;
@@ -665,7 +665,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const side=from===program?'From':to===program?'To':'';
       if(!side)return [];
       const other=side==='From'?to:from;
-      if(other===inputs)return [];
+      // Its own inputs' arrows run from their kind's icon to the parts they
+      // reach; a part's arrow back into its own input is that icon's.
+      if(other===inputs&&side==='From')return [];
       const end=hidden.has(other)?ends.get(side==='From'?edge.to:edge.from):ends.get(`program-${side==='To'?'in':'out'}:${programOf(other)}`);
       const child=inside(side==='From'?edge.from:edge.to),inner=edge[`inner${side}`];
       if(!end||!child)return [];
@@ -1303,8 +1305,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {portSegments(pill).map(([top,bottom])=><span key={top} className="flow-port-segment" style={{top:(top-pill.top)/scale,height:(bottom-top)/scale}}/>)}
       {pill.items.map(entry=><button key={entry.id} type="button" className="flow-port-item" data-port-end={entry.id} data-port-looks={pill.east&&!entry.program?entry.id:entry.program||undefined}
         style={{top:(entry.y-pill.top)/scale-12}} aria-label={entry.title} onClick={event=>read(entry,event)}
-        onMouseEnter={()=>setTip(entry.id)} onMouseLeave={()=>setTip('')} onBlur={()=>{setTip('');if(pill.east||entry.program)clearHover();}}
-        onFocus={event=>{if(!event.currentTarget.matches(':focus-visible'))return;setTip(entry.id);if(pill.east||entry.program)enter(entry.program||entry.id);}}>
+        onMouseEnter={()=>{setTip(entry.id);portHot=entry.id;update?.();}} onMouseLeave={()=>{setTip('');if(portHot===entry.id){portHot='';update?.();}}}
+        onBlur={()=>{setTip('');if(portHot===entry.id){portHot='';update?.();}if(pill.east||entry.program)clearHover();}}
+        onFocus={event=>{if(!event.currentTarget.matches(':focus-visible'))return;setTip(entry.id);portHot=entry.id;if(pill.east||entry.program)enter(entry.program||entry.id);else update?.();}}>
         {entry.program?<PortMark icon={systemIcons.program}/>:pill.east?<PortMark icon={systemIcons[entry.system]}/>:<KindMark kind={entry.kind==='background'?'continuous':entry.kind}/>}
         {tip===entry.id&&<span className={`flow-port-tip ${pill.east?'flow-port-tip-left':''}`} style={{transform:`scale(${1/(scale*zoom)})`}}>{entry.title}</span>}
       </button>)}
@@ -1449,9 +1452,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const quietEnds=deep?new Set([deep]):restFrame&&byID.get(restFrame)?.branch==='area'?new Set(leaves(restFrame)):null;
     // An entered program's lines to its ports are drawn for the mark or the
     // part pointed at, focused or chosen, not for the program read whole.
-    const portOn=ports&&state.subject&&state.subject!==ports.program?state.activeEdges:new Set();
+    // A mark pointed at or focused draws its own lines, an input kind's too,
+    // and outlines the parts they reach.
+    const hot=ports&&portHot?drawing.edges.filter(edge=>edge.quiet&&[edge.outerFrom,edge.outerTo].includes(portHot)):[];
+    const hotBoxes=new Set(hot.map(edge=>edge.outerFrom===portHot?edge.outerTo:edge.outerFrom));
+    const portOn=new Set([...(ports&&state.subject&&state.subject!==ports.program?state.activeEdges:[]),...hot.map(edge=>edge.id)]);
     const drawnEdges=ports?drawing.edges.filter(edge=>!edge.quiet||portOn.has(edge.id)):drawing.edges;
-    const routes=routeDrawing(drawnEdges,closed,state.activeEdges,recede,boundary,initVisible,quietEnds);
+    const routes=routeDrawing(drawnEdges,closed,new Set([...state.activeEdges,...portOn]),recede,boundary,initVisible,quietEnds);
     const matchingOf=routeIndex(routes);
     const labels=(area?connections(area,members,layout.edges,outsideOf(area)):[]).flatMap(group=>{
       // A label stands where its arrow meets the frame it marks.
@@ -1521,7 +1528,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       const contains=n.frame&&leaves(n.id).some(id=>shown.participants.has(id));
       // The other end of a looked-at end stays as it is: only the parts
       // behind the end are outlined.
-      const on=!end&&(shown.participants.has(n.id)||contains&&(overview||shut(n.id)));
+      const on=!end&&(shown.participants.has(n.id)||contains&&(overview||shut(n.id))||hotBoxes.has(n.id));
       return {...n,width:box.width,height:box.height,type:n.frame?'area':item?.branch==='chip'?'chip':'part',selected:reading,measured:{width:box.width,height:box.height},
         selectable:false,draggable:false,connectable:false,
         style:{width:box.width,height:box.height,visibility:visible(n.id)?'visible':'hidden'},

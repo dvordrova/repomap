@@ -1,5 +1,27 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Leaving an input path, framing its destination, input kinds' hover lines
+
+- **Leave input path** (`29-operation-view.js`): opened by a link or a
+  reload (no camera remembered) it goes to the whole map the column names;
+  one search after another keeps what was read before the first (the second
+  had overwritten it with the first path, so leaving stood the canvas on
+  that path under a column reading System map). Journey-style test on the
+  four reports: link, reload, two searches → leave → whole map, nothing
+  pinned (fails before on reload and two searches).
+- **Path camera** (`pathViewport`): the whole reached path when it fits
+  readable, else its destination first (the part reached in most steps,
+  first of equals in call order), then what fits beside it. freqtrade's
+  forceenter: Persistence and database whole, no longer "Tr…" at the edge.
+- **Input kinds' hover lines:** an entered program's input kind icon, pointed
+  at or focused, draws its lines to the parts its inputs reach and outlines
+  them (redis: Incoming requests → Core server infrastructure, Data type
+  commands, Client command handling); quiet at rest.
+- **Checks:** unit test of the path camera (fails before); geometry as
+  before (hover pass included); journeys 4/4 PASS, lints as before; visual
+  suite 56 passed; make vet passes; make test fails only in
+  pythonprogramindex (another agent's uncommitted Python work).
+
 ## 2026-09-30 — State changes: a created row, and the input's own path first
 
 - **Created rows:** a construct call (ProgramIndex invocation `construct`)

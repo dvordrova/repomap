@@ -625,7 +625,10 @@ function rmEntryLanding(link,nodes,component){
     var path=focus!=='input'&&rmInputPath(n,byID).length>0;
     // Reading anything else leaves the input's path (owner, 2026-09-28):
     // "serverCron ·" had prefixed every breadcrumb for four questions.
-    if(n.dataset.activation){if(!operation)beforeInput=map.readingState();operation=n;scope='';inputAway=path;}
+    // One input's path after another keeps what was read before the first:
+    // a search clears the pinned input first, and the second path had been
+    // taken for where the reader was (reviewer, 2026-09-30).
+    if(n.dataset.activation){if(!operation&&!beforeInput)beforeInput=map.readingState();operation=n;scope='';inputAway=path;}
     else{scope=n.id;operation=null;inputAway=false;beforeInput=null;}
     emphasize();if(navigate)address(n,!!(focus||path)&&!!map.captureViewport?.()?.overview);
     await ready;if(ticket!==selectionRevision)return false;map.showNode?.(n);if(source)map.explainSource?.(source);
@@ -666,9 +669,13 @@ function rmEntryLanding(link,nodes,component){
     selectionRevision++;scope='';surface?.clearHover();emphasize();map.clearInspection?.();
     address(operation||null);emit();
   };
+  // With nothing read before the path (a link, or a reload before the map
+  // had a camera to remember), leaving it goes to what the column then
+  // says, the whole map: the canvas had stayed on the old path, nothing
+  // marked (reviewer, 2026-09-30).
   clear.addEventListener('click',function(){
     var saved=operation&&beforeInput;
-    if(!saved){reset();address(null);return;}
+    if(!saved||!saved.viewport){beforeInput=null;map.showWholeMap();return;}
     beforeInput=null;
     map.restoreReadingState(Object.assign({},saved,{operation:''})).then(function(){address(byID[saved.scope]||null,true);});
   });

@@ -459,13 +459,14 @@ test('an input is entered as its path: the handler part and the parts it reaches
   for(const n of near.taken)assert.ok(inside(near,n),`${n.id} stands inside the camera`);
   assert.ok(near.zoom*scale>=staysOpen&&near.zoom<=1/scale,'the framed parts stay readable and no larger than reading scale');
   assert.ok(!near.taken.includes(lone),'a part no step of the trace reaches from the frame is not pulled in');
-  // The first step is farther than the canvas holds at a readable scale: the
-  // camera keeps the handler's part and leans toward that step.
-  const distant=part('distant',3000,100),lean=pathViewport([handler,distant],[['strings','distant']],width,height,scale);
-  assert.deepEqual(lean.taken.map(n=>n.id),['strings']);
-  assert.ok(inside(lean,handler),'the handler part stays in the camera');
-  assert.equal(lean.zoom,staysOpen/scale,'the smallest readable scale shows the most of the way');
-  assert.ok(handler.absolute.x*lean.zoom+lean.x<60,'the camera leans toward the next step: the handler stands at the near edge');
+  // The path is farther than the canvas holds at a readable scale: its
+  // destination is framed first, whole, then what fits beside it
+  // (freqtrade's forceenter had cut its destination at the edge).
+  const middle=part('middle',2300,100),distant=part('distant',3000,100);
+  const away=pathViewport([handler,middle,distant],[['strings','middle'],['middle','distant']],width,height,scale);
+  assert.deepEqual(away.taken.map(n=>n.id),['distant','middle'],'the destination, then what fits with it');
+  assert.ok(inside(away,distant),'the destination stands whole in the camera');
+  assert.ok(away.zoom*scale>=staysOpen-1e-9,'readable');
 });
 
 // Show input framed the get tile in a wall of 95 inputs.
