@@ -701,13 +701,15 @@ func assertCumulativePythonSemanticFacts(t *testing.T, index programindex.Index)
 		programindex.ResolutionExact,
 	)
 
+	// retrieve_level calls its parameter loader, and every call into it
+	// hands fetch_level there: the call runs fetch_level, a function value.
 	loaderCall := pythonRelation(
-		t, index, programindex.RelationCalls, retrieveLevel.ID, "", programindex.ResolutionUnresolved,
+		t, index, programindex.RelationCalls, retrieveLevel.ID, fetchLevel.ID, programindex.ResolutionExact,
 	)
 	loaderPattern := singlePythonPattern(t, loaderCall)
-	if loaderPattern.Selector != "loader" || len(loaderCall.ToIDs) != 0 ||
-		loaderCall.TargetsObserved != 1 || loaderCall.TargetsOmitted != 1 {
-		t.Fatalf("cumulative Python unresolved callback invocation = %#v", loaderCall)
+	if loaderPattern.Selector != "loader" || loaderCall.Dispatch != programindex.DispatchFunctionValue ||
+		loaderCall.TargetsObserved != 1 || loaderCall.TargetsOmitted != 0 {
+		t.Fatalf("cumulative Python callback invocation through a parameter = %#v", loaderCall)
 	}
 
 	outbound := pythonRelation(

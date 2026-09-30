@@ -265,3 +265,33 @@ func TestIndexKeepsSlotsTheIndexCannotSeeUnresolved(t *testing.T) {
 		}
 	}
 }
+
+// A call through a function's own pointer parameter calls what its direct
+// callers pass there, as Python's call of a def's own parameter does: one
+// function is its exact target, two are its alternatives.
+func TestIndexCallsWhatCallersPassAParameter(t *testing.T) {
+	x := indexProgram(t, map[string]string{"handed.c": `static void first(void) {}
+static void second(void) {}
+static void once(void (*job)(void)) { job(); }
+static void either(void (*job)(void)) { job(); }
+int main(void) {
+    once(first);
+    either(first);
+    either(second);
+    return 0;
+}
+`}, "c:handed.c")
+	for _, check := range []struct {
+		from       string
+		resolution programindex.Resolution
+		to         []string
+	}{
+		{"once", programindex.ResolutionExact, []string{"first"}},
+		{"either", programindex.ResolutionAlternatives, []string{"first", "second"}},
+	} {
+		call := x.one(t, programindex.RelationCalls, x.object(t, check.from, "handed.c").ID, "job")
+		if call.Resolution != check.resolution || !slices.Equal(x.names(call.ToIDs), check.to) || call.Dispatch != programindex.DispatchFunctionValue {
+			t.Fatalf("%s's job(): %s %v %q, want %s %v through a function value", check.from, call.Resolution, x.names(call.ToIDs), call.Dispatch, check.resolution, check.to)
+		}
+	}
+}

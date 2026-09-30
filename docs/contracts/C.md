@@ -175,7 +175,10 @@ seed.
   names its function by identity as well as by words, so `loop.c`'s
   `fe->rfileProc(...)` reaches the map as possible arrows to `acceptHandler`,
   `readQueryFromClient` and `sendReplyToClient` (READING), and stays
-  unresolved.
+  unresolved. A parameter's stored functions are what the direct callers pass
+  there: `once(first)` makes `once`'s `job()` exact, `either(first)` and
+  `either(second)` make `either`'s its alternatives (cproject
+  `TestIndexCallsWhatCallersPassAParameter`; the fixture has no such call).
 - A function cast to an integer is an address used as data, never a callable.
 - A function body that names a file-scope variable of the program reads it:
   one exact `reads` relation per place it names it (a `c_variable_read`

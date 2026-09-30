@@ -440,6 +440,12 @@ cumulative fixture's `internal/storefixture/command_table.go` checks them:
 
 Missing equivalents, recorded rather than fabricated:
 
+- A call of a function-typed parameter (`func run(job func()) { job() }`)
+  stays an unresolved `function_value` call. The SSA resolver joins what the
+  direct callers pass only for an interface-typed parameter, where the Python
+  and C adapters make the callables callers hand a parameter the targets of
+  its call (PYTHON, Handler tables and stored callbacks).
+
 - GroupsIndex derives no dispatch site on the fixture: `DispatchCommand`'s
   looked-up row call stays unresolved (below), so no input is dispatched from
   it, and only a field read (Field reads and writes, below) enters a part by

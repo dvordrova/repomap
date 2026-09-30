@@ -159,6 +159,10 @@ Missing equivalents, recorded rather than fabricated:
 - An unresolved `function_value` call names no function a binding could hold,
   so it draws none of the possible arrows the C, Go and Python store
   witnesses draw.
+- A call of a function's own parameter (`(defn run [job] (job))`) stays that
+  unresolved call: the vars its callers hand there are not joined to it, where
+  the Python and C adapters make them its targets (PYTHON, Handler tables and
+  stored callbacks).
 - A table row that stores two callables is one registration in C; Clojure
   has no table-row registration, so the rule has nothing to apply to here.
 - `(subscribe "topic" (partial handle-order store))` hands over `partial`'s

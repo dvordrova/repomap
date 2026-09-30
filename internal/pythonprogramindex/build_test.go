@@ -222,8 +222,9 @@ _hidden = 1
 	}
 	assertExactRelation(t, index, programindex.RelationInvokesExternal, run.ID, external.ID)
 
+	// invoke calls its parameter, and its one caller hands it cb there.
 	invoke := objectNamed(t, index, programindex.ObjectFunction, "invoke", "pkg/service.py")
-	assertUnresolvedFrom(t, index, programindex.RelationCalls, invoke.ID)
+	assertExactRelation(t, index, programindex.RelationCalls, invoke.ID, callback.ID)
 }
 
 func TestCompileParserViewRejectsMissingOrInvalidExternalAuthorityKind(t *testing.T) {

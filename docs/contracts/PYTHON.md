@@ -524,6 +524,25 @@ supports:
   `register_callback_aliases` passes its parameter `handler` after
   `if replace_handler: handler = handle_delivery`; the argument keeps the
   variable and gains no callback of `handle_delivery`.
+- A def calling its own parameter, which it never rebinds, calls what the
+  program's calls into the def hand that parameter, as the C adapter joins
+  what a function's callers pass (critic, 2026-09-30: freqtrade's
+  `Worker._throttle(func=self._process_running)` had hidden the bot loop).
+  A callable an argument names (a def, a method, a bound method, a lambda,
+  a `functools.partial` of one), matched by keyword or by position before
+  any `*` spread, is handed; one is the call's exact target, several its
+  alternatives (`Throttle.throttle`'s `step(...)`: `process_running` and
+  `process_stopped`; `levels.py`'s `loader(level_id)`: `fetch_level`), with
+  the `function_value` dispatch and a `function_value_store` witness at each
+  argument (`process_running passed to throttle`). A call handing any other
+  value, one leaving the parameter to its default or to a `*`/`**` spread,
+  and a def the program reaches otherwise than by a call of it (handed over
+  as a callable, a decorator, one of a call's alternatives) leave the call
+  unresolved, the callables handed still its witnesses (`run_any`). A call
+  in a test source hands a def outside the tests nothing: its values run
+  under the test runner only (the fixture's test hands `throttle` a lambda).
+  A closure calling its enclosing def's parameter (a decorator's `wrapper`)
+  and a lambda's parameter are not joined.
 
 A branch is the body of an `if`, a loop, a `try` (not its `finally`), a `with`
 or a `match` case, an arm of a conditional expression, an operand of a boolean
@@ -546,8 +565,8 @@ Missing equivalents, recorded rather than fabricated:
 - The fixture has no input of its own, so GroupsIndex's reach is checked by
   probing declarations as inputs (`flowtest.Probe`: `read_level_data` reads
   `READ_VALUES` and `READ_LIMIT`, `traced_level` does not reach `traced`); a
-  call through an attribute is never resolved as alternatives (below), so
-  there is no dispatch site.
+  call's alternatives are no input's handlers, so there is no dispatch
+  site.
 - No Python function is proven `unreachable` (the C adapter's per-program
   fact, PROGRAM_INDEX): `getattr`, `importlib`, entry points, decorators that
   register, special methods the interpreter calls and `eval` reach functions
@@ -564,8 +583,8 @@ Missing equivalents, recorded rather than fabricated:
   callables is one input has nothing to apply to.
 - A call through an attribute is never resolved from its stores, even from a
   single store in `__init__`. The C adapter makes one store exact and several
-  stores alternatives. The adapter sets no dispatch word, so no call says that
-  it runs a function value.
+  stores alternatives. Only a call of a def's own parameter says that it runs
+  a function value.
 - Assignments without a branch still resolve to the last one in the scope,
   even at a call written before it: after `handler = accept_client`,
   `handler()`, `handler = flush_replies`, the call is an exact call of

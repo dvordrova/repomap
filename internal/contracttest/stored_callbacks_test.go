@@ -91,8 +91,14 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 	kinds := map[programindex.RelationKind]bool{
 		programindex.RelationCalls: true, programindex.RelationWrites: true, programindex.RelationPassesCallback: true,
 	}
-	unresolved, exact := programindex.ResolutionUnresolved, programindex.ResolutionExact
+	unresolved, exact, alternatives := programindex.ResolutionUnresolved, programindex.ResolutionExact, programindex.ResolutionAlternatives
 	assertStoredCallbackLines(t, relations, kinds, map[int]storedCallbackExpectation{
+		// A def calling its own parameter calls what the program's calls
+		// into it hand there; the test's lambda is not one of them.
+		62: {programindex.RelationCalls, "throttle", "process_running,process_stopped", alternatives},
+		73: {programindex.RelationCalls, "run_once", "accept_client", exact},
+		// A call handing another value leaves it open.
+		83: {programindex.RelationCalls, "run_any", "", unresolved},
 		// Each store stays a write of its own attribute where it is written.
 		11: {programindex.RelationWrites, "register", "on_read", exact},
 		13: {programindex.RelationWrites, "register", "on_write", exact},
@@ -113,6 +119,23 @@ func assertPythonStoredCallbacks(t *testing.T, index programindex.Index) {
 		}
 		if view.relation.Kind == programindex.RelationPassesCallback && view.relation.SourceArgumentID == "" {
 			t.Fatalf("registration lost its source argument: %+v", view)
+		}
+		// Each callable a call into the def hands its parameter is named at
+		// the argument handing it, whether the call is resolved or open.
+		if handed, ok := map[int]string{
+			62: "57:32 process_running passed to throttle=process_running|59:27 process_stopped passed to throttle=process_stopped",
+			73: "77:14 accept_client passed to run_once=accept_client",
+			83: "87:13 flush_replies passed to run_any=flush_replies",
+		}[view.line]; ok && view.relation.Kind == programindex.RelationCalls {
+			var got []string
+			for _, witness := range view.relation.Witnesses {
+				if witness.Kind == "function_value_store" && witness.Location != nil && witness.Location.Path == path {
+					got = append(got, fmt.Sprintf("%d:%d %s=%s", witness.Location.Line, witness.Location.Column, witness.Detail, names[witness.ObjectID]))
+				}
+			}
+			if strings.Join(got, "|") != handed || view.relation.Dispatch != programindex.DispatchFunctionValue {
+				t.Fatalf("line %d: parameter call witnesses %q dispatch %q, want %q and a function value: %+v", view.line, got, view.relation.Dispatch, handed, view.relation)
+			}
 		}
 		if view.relation.Kind != programindex.RelationCalls || (view.line != 38 && view.line != 47) {
 			continue

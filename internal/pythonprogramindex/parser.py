@@ -371,6 +371,12 @@ class Analyzer:
         # None, the callable's scope), and the parameters of every def.
         self.return_nodes = {}
         self.parameter_refs = set()
+        # The keyword-only ones, which no positional argument fills; each
+        # call a def makes of its own parameter, and each call into a
+        # repository callable with what it hands (hand_parameter_calls).
+        self.keyword_only_parameters = set()
+        self.parameter_calls = []
+        self.calls_into = []
         # Each class's written bases with the scope and module that define
         # it, and the repository classes they resolve to there (class_bases);
         # the classes naming each class as a base, and every class deriving
@@ -627,6 +633,7 @@ class Analyzer:
         self.attach_comparisons()
         self.attach_memberships()
         self.attach_table_keys()
+        self.hand_parameter_calls()
         for ref, rows in self.table_rows.items():
             value = self.objects_by_ref.get(ref)
             if rows and value is not None and value["kind"] == "variable":
@@ -802,6 +809,72 @@ class Analyzer:
             if witness not in relation["witnesses"]:
                 relation["witnesses"].append(witness)
                 relation["witnesses_observed"] += 1
+
+    def hand_parameter_calls(self):
+        # A def calling its own parameter calls what the program's calls
+        # into the def hand that parameter, as the C adapter joins what a
+        # function's callers pass (PYTHON): one callable is the call's exact
+        # target, several its alternatives, each named by a
+        # function_value_store witness at the argument handing it. A call
+        # handing any other value, or leaving the parameter to its default
+        # or to a spread, and a def the program reaches otherwise than by a
+        # call of it (handed over as a callable, a decorator, one of a
+        # call's alternatives) leave the call unresolved, the callables
+        # handed still its witnesses. The call runs a function value either
+        # way. A test's code hands the program's own defs nothing: its
+        # values run only under the test runner (test_paths).
+        if not self.parameter_calls:
+            return
+        callees = {call[1] for call in self.parameter_calls}
+
+        def tested(ref):
+            location = (self.objects_by_ref.get(ref) or {}).get("location") or {}
+            return location.get("path", "") in self.test_paths
+
+        relations = {relation["source_ref"]: relation for relation in self.relations}
+        entering, direct = {}, set()
+        for call in self.calls_into:
+            if call["callee"] in callees:
+                entering.setdefault(call["callee"], []).append(call)
+                direct.add(call["relation"])
+        reached_otherwise = set()
+        for relation in self.relations:
+            if relation["kind"] == "imports" or relation["source_ref"] in direct:
+                continue
+            for callee in relation.get("to_refs", ()):
+                if callee in callees and not (tested(relation["from_ref"]) and not tested(callee)):
+                    reached_otherwise.add(callee)
+        for relation_ref, callee, position, name, positional in self.parameter_calls:
+            relation = relations[relation_ref]
+            relation["dispatch"] = "function_value"
+            targets, witnesses = [], []
+            known = callee not in reached_otherwise
+            for call in entering.get(callee, ()):
+                if tested(relations[call["relation"]]["from_ref"]) and not tested(callee):
+                    continue
+                hand = call["hands"].get(("keyword", name))
+                if hand is None and positional and position < call["positional"]:
+                    hand = call["hands"].get(("position", position))
+                if hand is None or not hand[0]:
+                    known = False
+                    continue
+                handed, location = hand
+                if handed not in targets:
+                    targets.append(handed)
+                witness = {
+                    "kind": "function_value_store", "object_ref": handed,
+                    "detail": bounded_text(self.objects_by_ref[handed]["name"] + " passed to " + self.objects_by_ref[callee]["name"]),
+                }
+                if location is not None:
+                    witness["location"] = location
+                if witness not in witnesses and witness not in relation["witnesses"]:
+                    witnesses.append(witness)
+            relation["witnesses"].extend(witnesses)
+            relation["witnesses_observed"] += len(witnesses)
+            if known and targets:
+                relation["to_refs"] = sorted(targets)
+                relation["resolution"] = "exact" if len(targets) == 1 else "alternatives"
+                relation["targets_observed"] = len(targets)
 
     def object_qname(self, ref):
         return self.qnames_by_ref.get(ref, "")
@@ -1131,6 +1204,8 @@ class Collector(ast.NodeVisitor):
         for argument in arguments:
             self.add_variable(argument.arg, argument, True)
             self.analyzer.parameter_refs.add(self.analyzer.node_refs[id(argument)])
+            if any(argument is value for value in node.args.kwonlyargs):
+                self.analyzer.keyword_only_parameters.add(self.analyzer.node_refs[id(argument)])
             if argument.annotation is not None:
                 self.analyzer.variable_annotations[self.analyzer.node_refs[id(argument)]] = (argument.annotation, parent)
         for statement in node.body:
@@ -3058,9 +3133,12 @@ class RelationVisitor(ast.NodeVisitor):
                     witness_callee=node.func, pattern=pattern, patterns_observed=patterns_observed,
                     extra_witnesses=self.stored_function_witnesses(node.func) if not resolved[1] else (),
                 )
+                parameter = self.called_parameter(node.func) if not resolved[1] else None
+                if parameter is not None and call_relation_ref:
+                    self.analyzer.parameter_calls.append((call_relation_ref, self.scope.ref) + parameter)
             initializer = self.class_member(resolved[1], "__init__", ("method",)) if constructed else ""
             if initializer:
-                self.analyzer.add_relation(
+                initializer_ref = self.analyzer.add_relation(
                     "calls", self.scope.ref, [initializer], "exact", node, "constructor",
                     name, invocation="construct", targets_observed=1,
                     source_expression=source_expression, witness_callee=node.func,
@@ -3079,10 +3157,23 @@ class RelationVisitor(ast.NodeVisitor):
         if callee is not None and callee["kind"] == "method" and isinstance(node.func, ast.Attribute) and \
                 (self.object(self.resolve(node.func.value)[1]) or {}).get("kind") == "type":
             positional = 1
+        # What the call hands each parameter it meets: the callable an
+        # argument names, or "" for any other value (hand_parameter_calls).
+        # A class's call hands its __init__ the same arguments.
+        entered = ""
+        if callee is not None and callee["kind"] in ("function", "method") and call_relation_ref:
+            entered = (resolved[1], call_relation_ref)
+        elif not dynamic_only and initializer:
+            entered = (initializer, initializer_ref)
+        hands = {}
         for argument, position, keyword in arguments:
             authority, ref = self.partial_callable(argument) or self.resolve(argument)
             value = self.object(ref) if ref else None
-            if authority in ("local", "literal") and value and value["kind"] in ("function", "method", "lambda"):
+            handed = authority in ("local", "literal") and value and value["kind"] in ("function", "method", "lambda")
+            if entered and (keyword or 0 < position < positional):
+                hands[("keyword", keyword) if keyword else ("position", position)] = \
+                    (ref if handed else "", source_location(self.module["path"], argument))
+            if handed:
                 source_argument = None
                 if pattern is not None and call_relation_ref and (position > 0 or keyword):
                     source_argument = {
@@ -3109,7 +3200,29 @@ class RelationVisitor(ast.NodeVisitor):
                     self.analyzer.handed_reads.append((resolved[1], position, keyword, read))
             else:
                 self.visit(argument)
+        if entered:
+            self.analyzer.calls_into.append({
+                "callee": entered[0], "relation": entered[1], "path": self.module["path"],
+                "positional": positional, "spread": any(value.arg is None for value in node.keywords),
+                "hands": hands,
+            })
         self.visit(node.func)
+
+    def called_parameter(self, func):
+        # A call of the def's own parameter, which the def never rebinds:
+        # the parameter's position (the receiver not counted), its name and
+        # whether a positional argument can fill it (hand_parameter_calls).
+        if not isinstance(func, ast.Name) or func.id in self.read_shadows:
+            return None
+        binding = self.scope.bindings.get(func.id)
+        if binding is None or binding["kind"] != "object" or binding["ref"] not in self.analyzer.parameter_refs:
+            return None
+        if self.scope.stores.get(func.id) or func.id in self.scope.opaque_names:
+            return None
+        origin = (self.current_pattern_bindings().get(func.id) or {}).get("source_origin") or {}
+        if origin.get("kind") != "parameter":
+            return None
+        return origin["position"], origin["text"], binding["ref"] not in self.analyzer.keyword_only_parameters
 
     def visit_Assign(self, node):
         for target in node.targets:

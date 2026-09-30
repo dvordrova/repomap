@@ -322,6 +322,11 @@ exact callback at its `register` call.
 
 Missing equivalents, recorded rather than fabricated:
 
+- A call of a function's own parameter (`function run(job) { job() }`) stays
+  an unresolved call with no dispatch word. The callables its callers hand are
+  not joined to it, where the Python and C adapters make them its targets
+  (PYTHON, Handler tables and stored callbacks).
+
 - The fixture has no input of its own and no relation resolved as several
   alternatives, so GroupsIndex's reach is checked by probing declarations as
   inputs (`flowtest.Probe`: `recordOrder` reads `handledOrderIds`,
