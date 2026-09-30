@@ -17,19 +17,27 @@ import (
 // Members are in reading order: the walk from the seeds, breadth first; then
 // the rest of the launch walk, from the load-time roots; then each input's
 // reach in operation order. A handed-over callable, and what it runs, follow
-// the callable that hands it over. HandedOver counts the members only a
-// hand-over brings in.
+// the callable that hands it over; the callable does even when a later walk
+// holds it: othello's start! hands setup, update-state and draw-state to
+// quil, which an input's reach had placed at 192, 194 and 174 of 197. Code in
+// the target's test sources is no member (a test file's module body and the
+// registrations it makes: othello's specs were 38 members and 57% of the
+// member bytes). HandedOver counts the members only a hand-over brings in.
 type flowScope struct {
 	Members    []string
 	HandedOver int
 }
 
 func scopeOf(index groupindex.Index, registrations []facts.Fact) flowScope {
+	tests := make(map[string]bool, len(index.Target.TestSources))
+	for _, path := range index.Target.TestSources {
+		tests[path] = true
+	}
 	position := make(map[string]int, len(index.Subjects))
 	executing := make([]bool, len(index.Subjects))
 	for at, subject := range index.Subjects {
 		position[subject.ID] = at
-		if subject.Object != nil {
+		if subject.Object != nil && (subject.Object.Location == nil || !tests[subject.Object.Location.Path]) {
 			switch subject.Object.Kind {
 			case programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectLambda, programindex.ObjectModule:
 				executing[at] = true
@@ -120,13 +128,17 @@ func scopeOf(index groupindex.Index, registrations []facts.Fact) flowScope {
 	scope := flowScope{Members: make([]string, 0, len(base))}
 	placed := make(map[string]bool, len(base))
 	for _, id := range base {
+		if placed[id] {
+			continue
+		}
 		placed[id] = true
 		scope.Members = append(scope.Members, id)
-		// What this member hands over, and what that runs and hands over in
-		// turn, breadth first, when nothing earlier holds it.
+		// What this member hands over, even when a later walk holds it; then
+		// what that runs and hands over in turn, breadth first, when no walk
+		// holds it: the walks keep their own order.
 		var queue []string
 		for _, to := range hands[id] {
-			if !inBase[to] && !placed[to] {
+			if callable(to) && !placed[to] {
 				placed[to] = true
 				queue = append(queue, to)
 			}
@@ -134,7 +146,9 @@ func scopeOf(index groupindex.Index, registrations []facts.Fact) flowScope {
 		for next := 0; next < len(queue); next++ {
 			current := queue[next]
 			scope.Members = append(scope.Members, current)
-			scope.HandedOver++
+			if !inBase[current] {
+				scope.HandedOver++
+			}
 			for _, to := range append(append([]string(nil), hands[current]...), calls[current]...) {
 				if !inBase[to] && !placed[to] {
 					placed[to] = true

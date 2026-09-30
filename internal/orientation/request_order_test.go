@@ -8,7 +8,9 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 func TestQualifiedCompactRefsUseNaturalOrder(t *testing.T) {
@@ -112,4 +114,35 @@ func groupRefsByTitle(wire overviewRequest) map[string]string {
 		refs[group.Target+" "+group.Title] = group.Ref
 	}
 	return refs
+}
+
+// A callable a member hands over follows it in the flow scope even when an
+// input's reach holds it later, and test code is no member (othello's
+// start! handed setup, update-state and draw-state to quil, which stood at
+// 192, 194 and 174 of 197 members; its specs were 38 members and 57% of the
+// member bytes, their registrations facts of the request).
+func TestTheFlowScopePlacesAHandOverAfterItsGiverAndHoldsNoTestCode(t *testing.T) {
+	subject := func(id, path string, kind programindex.ObjectKind) groupindex.Subject {
+		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id, Kind: kind, Location: &programindex.Location{Path: path, Line: 1, Column: 1}}}
+	}
+	edge := func(from, to string, kind programindex.RelationKind) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: kind, Resolution: programindex.ResolutionExact}
+	}
+	fn := programindex.ObjectFunction
+	index := groupindex.Index{
+		Target: programindex.Target{ID: "t1", TestSources: []string{"spec/sketch_spec.clj"}, Seeds: []programindex.TargetSeed{{ObjectID: "main"}}},
+		Subjects: []groupindex.Subject{subject("main", "src/core.clj", fn), subject("start", "src/sketch.clj", fn), subject("helper", "src/sketch.clj", fn),
+			subject("setup", "src/sketch.clj", fn), subject("update", "src/sketch.clj", fn), subject("tick", "src/events.clj", fn),
+			subject("spec", "spec/sketch_spec.clj", programindex.ObjectModule), subject("probe", "spec/sketch_spec.clj", fn)},
+		StructuralEdges: []groupindex.StructuralEdge{edge("main", "start", programindex.RelationCalls), edge("main", "helper", programindex.RelationCalls),
+			edge("start", "setup", programindex.RelationPassesCallback), edge("start", "update", programindex.RelationPassesCallback),
+			edge("update", "tick", programindex.RelationCalls), edge("spec", "start", programindex.RelationCalls)},
+		Launch: groupindex.Launch{Functions: []groupindex.LaunchFunction{{SubjectID: "spec"}}},
+		Reach:  []groupindex.Reach{{Subjects: []groupindex.ReachedSubject{{SubjectID: "update"}, {SubjectID: "tick"}}}},
+	}
+	registrations := []facts.Fact{{Kind: facts.KindRegistration, TargetID: "t1", OwnerID: "spec", ObjectID: "probe"}}
+	scope := scopeOf(index, registrations)
+	if want := []string{"main", "start", "setup", "update", "helper", "tick"}; !slices.Equal(scope.Members, want) {
+		t.Fatalf("scope = %v, want %v", scope.Members, want)
+	}
 }

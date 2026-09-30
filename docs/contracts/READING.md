@@ -1853,17 +1853,23 @@ module holds its file) and one complete row per member. The scope is Launch ∪
 every input's Reach ∪, transitively, every repository callable a member hands
 over (`passes_callback`) or registers (a registration fact's owner and
 object), with what that one runs; only this evidence scope follows a
-hand-over, GroupsIndex Reach does not. Members come in reading order: the seed
-walk breadth first, the rest of the launch walk, then each input's reach in
-operation order; a handed-over callable and what it runs follow the member
-handing it over. A member row is that of the declaration place with its
+hand-over, GroupsIndex Reach does not. Code in the target's test sources is
+no member (othello's specs had been 38 of 197 members and 57% of the member
+bytes, their registrations facts of the request). Members come in reading
+order: the seed walk breadth first, the rest of the launch walk, then each
+input's reach in operation order; a handed-over callable follows the member
+handing it over even when a later walk holds it (othello's setup,
+update-state and draw-state had stood at 192, 194 and 174), and what it runs
+that no walk holds follows it. A member row is that of the declaration place with its
 `groupindex.DeclarationKey` (path, line, column, kind, name), never looked up
 by the member's own object id (a place merged across programs keeps one
 program's). A row lists every call in written order as a lossless tuple
 (`name@line -> callee | …`, its non-default
-kind/invocation/dispatch/resolution words, then args, receiver, result, values
-that say more than the literal arguments, arguments, api, detail and evidence
-refs); only the call's and callee's columns and canonical ids stay local, and
+kind/invocation/dispatch/resolution words, then receiver, result, values (the
+literal words it is given), arguments, api, detail and evidence refs); the
+call's argument origins stay local (aa5f537d: half of othello's member bytes,
+and a change of their form alone had moved its main flow from 9 steps to 47),
+as do the call's and callee's columns and canonical ids, and
 no `called_by` is sent. A flow request the provider cannot hold is journaled
 under `flow_request` and the overview stands. Nothing is sampled, windowed or
 reduced. Fact rows identical but for ref and target are one row with a
