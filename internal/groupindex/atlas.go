@@ -921,31 +921,33 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		joinedInto[at], dropped[position] = true, true
 		standsFor[operation.ID] = entry.ID
 	}
-	// An input whose own call made an object only inputs of its kind with
-	// their own handlers are declared on names where the one chosen is
-	// kept, and is no input of its own: argparse's
-	// add_subparsers(dest="command"), on which freqtrade's 34 subcommands
-	// are joined to their handlers. Those inputs are its words, each its
-	// own tile. An object an option without a handler is declared on too
-	// is a command's own (a group taking options).
+	// An input whose own call made an object other inputs of its kind are
+	// declared on, and whose words that call is given only under a
+	// parameter's name, names where the one chosen is kept and is no input
+	// of its own: argparse's add_subparsers(dest="command"), on which
+	// freqtrade's 34 subcommands are declared. A word the call is given as
+	// its own, by position, is a word a person types: a command group's
+	// (commander's program.command("remote"), whose add and rm carry
+	// handlers) keeps its tile.
 	holds := make(map[string]bool)
 	for position, operation := range operations {
 		on := operation.DeclaredOn
 		if on == nil {
 			on = onOf[operation.ID]
 		}
-		if dropped[position] || on == nil {
-			continue
-		}
-		key := operation.Kind + "\x00" + operationLocationKey(on.Location)
-		if seen, known := holds[key]; !operation.HandlerUnknown && (!known || seen) {
-			holds[key] = true
-		} else if operation.HandlerUnknown {
-			holds[key] = false
+		if !dropped[position] && on != nil {
+			holds[operation.Kind+"\x00"+operationLocationKey(on.Location)] = true
 		}
 	}
+	holders := make(map[string]bool)
 	for position, operation := range operations {
 		if !dropped[position] && operation.HandlerUnknown && holds[operation.Kind+"\x00"+operationLocationKey(operation.Location)] {
+			holders[operationLocationKey(operation.Location)] = true
+		}
+	}
+	named := wordsByName(program, holders)
+	for position, operation := range operations {
+		if !dropped[position] && operation.HandlerUnknown && holders[operationLocationKey(operation.Location)] && named[operationLocationKey(operation.Location)] {
 			dropped[position] = true
 		}
 	}
@@ -1324,4 +1326,33 @@ func OperationKind(boundaryKind string) string {
 	default:
 		return ""
 	}
+}
+
+// wordsByName says, of the calls at the given sites, which are given
+// their words only under a parameter's name (a keyword argument): every
+// string literal among their arguments is a keyword's.
+func wordsByName(program programindex.Index, sites map[string]bool) map[string]bool {
+	result := make(map[string]bool)
+	if len(sites) == 0 {
+		return result
+	}
+	for _, relation := range program.Relations {
+		for _, pattern := range relation.Patterns {
+			if pattern.Location == nil || !sites[operationLocationKey(*pattern.Location)] {
+				continue
+			}
+			words, named := 0, 0
+			for _, argument := range pattern.Arguments {
+				if argument.Kind != programindex.PatternLiteralString {
+					continue
+				}
+				words++
+				if argument.Keyword != "" {
+					named++
+				}
+			}
+			result[operationLocationKey(*pattern.Location)] = words > 0 && named == words
+		}
+	}
+	return result
 }

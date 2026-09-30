@@ -88,3 +88,21 @@ def add_output(parser: argparse.ArgumentParser):
     """Declares --json on init's parser and on the tool's own: an option of
     init that the tool also takes."""
     parser.add_argument("--json", action="store_true")
+
+
+def build_remote():
+    """A command group: remote is a word a person types before its own
+    subcommands, add among them, which run_remote_add handles. Each
+    add_subparsers is given its word only as dest=, where the chosen word
+    is kept: no input of its own."""
+    parser = argparse.ArgumentParser("remote-tool")
+    commands = parser.add_subparsers(dest="cmd")
+    remote = commands.add_parser("remote")
+    remote_commands = remote.add_subparsers(dest="remote_cmd")
+    add = remote_commands.add_parser("add")
+    add.set_defaults(func=run_remote_add)
+    return parser
+
+
+def run_remote_add(arguments):
+    return arguments.cmd

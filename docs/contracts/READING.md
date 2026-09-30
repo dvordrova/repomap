@@ -756,12 +756,14 @@ facts. It is declared on the object that input's own call made (argparse's
 `init.add_argument("--force")` on `commands.add_parser("init")`: the
 catalogue's `OnOperationID`), unless an input with its own handler is declared
 on that object too (freqtrade's subparsers hold 34 handled subcommands); a
-handler-less input whose own call made an object only inputs of its kind
-with their own handlers are declared on names where the chosen one is kept
-and is no input at all (GroupsIndex projection, after the hand-over join:
-freqtrade's `add_subparsers(dest="command")`; the fixture's `cmd` beside the
-handler-less `status` stays); or it is declared in a case's branch, or by
-code only that branch runs: the calls written in the lines a comparison case or a
+handler-less input whose own call made an object other inputs of its kind
+are declared on, and whose words that call is given only under a
+parameter's name, names where the chosen one is kept and is no input at all
+(GroupsIndex projection, after the hand-over join: freqtrade's
+`add_subparsers(dest="command")`), while a command group given its word by
+position keeps it (commander's `program.command("remote")` before `add` and
+`rm`, argparse's `add_parser("remote")`); or it is declared in a case's
+branch, or by code only that branch runs: the calls written in the lines a comparison case or a
 guarding call selects (ProgramIndex comparison case and pattern `branch`,
 GroupsIndex `Branches`), followed as the launch walk follows calls, while the
 walk from the launch's roots that takes no call written in a case's branch

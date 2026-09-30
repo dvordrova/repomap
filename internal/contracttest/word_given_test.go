@@ -211,10 +211,10 @@ func TestEveryLanguageAsksItsWordGivenCallsTheEntryQuestion(t *testing.T) {
 		// RebuiltParser's add_argument, on a parser stored twice, does not.
 		// A symbol's row shows its first call by file (dispatch.py's
 		// build_serve before tool_cli.py).
-		expectAsked(t, asked, "argparse.ArgumentParser", "given", `argparse.ArgumentParser("dispatch")`, "add_argument ×1", "add_subparsers ×3")
+		expectAsked(t, asked, "argparse.ArgumentParser", "given", `argparse.ArgumentParser("dispatch")`, "add_argument ×1", "add_subparsers ×4")
 		expectAsked(t, asked, "argparse.ArgumentParser.add_argument", "given", `parser.add_argument("-v", "--verbose", action="store_true")`)
-		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers", "given", `parser.add_subparsers(dest="command")`, "add_parser ×4")
-		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers.add_parser", "given", `commands.add_parser("serve")`, "add_argument ×1", "set_defaults ×2")
+		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers", "given", `parser.add_subparsers(dest="command")`, "add_parser ×5")
+		expectAsked(t, asked, "argparse.ArgumentParser.add_subparsers.add_parser", "given", `commands.add_parser("serve")`, "add_argument ×1", "add_subparsers ×1", "set_defaults ×2")
 		// The subcommand's handler is handed over by another call: a second
 		// question; when both are accepted, one input (J1,
 		// TestCumulativePythonInputsJoinAndCatalogue).

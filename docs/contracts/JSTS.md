@@ -256,9 +256,11 @@ not. Not recorded yet:
   lone `===` is none);
 - the object an input is declared on (K2) and the join of a word entry
   with the hand-over made on its result (J1): commander's
-  `program.command("init").action(initProject)` is that shape, but with
-  its declarations not installed nothing of it is asked, so the fixture
-  has neither;
+  `program.command("init").action(initProject)` is that shape, and so is
+  the command group `remote` (its word given by position, `add` and `rm`
+  declared on its result: `TestACommandGroupsWordIsGivenByPositionAndADestsByName`),
+  but with its declarations not installed nothing of it is asked, so the
+  fixture has no such input;
 - a function started on its own: JS/TS has no statement that starts one
   (a `setInterval` callback and `new Worker(…)` are registrations of their
   outside symbols), so no call carries the `goroutine` or `async_task`

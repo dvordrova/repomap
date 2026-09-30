@@ -588,9 +588,9 @@ A call of an outside symbol given words is asked on its own what they
 become (READING, the `atlas_api` per-call question), beside its symbol's
 row with `result_receives`, the calls made on what the call returns. The
 fixture's `src/fixture_app/tool_cli.py` and `dispatch.py` ask
-`argparse.ArgumentParser` (`add_argument ×1`, `add_subparsers ×3`),
-`add_argument`, `add_subparsers` (`add_parser ×4`) and `add_parser`
-(`set_defaults ×2`);
+`argparse.ArgumentParser` (`add_argument ×1`, `add_subparsers ×4`),
+`add_argument`, `add_subparsers` (`add_parser ×5`) and `add_parser`
+(`add_subparsers ×1`, `set_defaults ×2`);
 `set_defaults(func=…)` hands a callable and is asked what it becomes. A subcommand named by one
 call and handled through another is one input (READING, J1): `init`,
 named by `commands.add_parser("init")`, is handled by `run_init`, which
