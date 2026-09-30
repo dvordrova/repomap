@@ -410,6 +410,7 @@ func TestAnInputsPathNamesItsDispatchThenItsOwnSteps(t *testing.T) {
 const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
 const decl=(name,part)=>({name,href:'h/'+name,source:'redis.c:1',part});
 const path={dispatched:[{site:0,of:94,handlers:94,inputs:95,shared:[{handler:11,inputs:['t1-sinter','t1-smembers']}],reached_from:['t1-exec']},{site:1,of:94,handlers:94,inputs:95}],registered_by:['t1-accept'],
+  spine:{steps:[{decl:2,part:'n-strings'},{decl:3,part:'n-strings'}],branches:[{decl:4,part:'n-keys'},{decl:5,part:'n-clients',helper:true},{decl:6,part:'n-clients',helper:true}]},
   parts:[{part:'n-strings',title:'String commands',depth:0,handler:2},{part:'n-dispatch',title:'Command dispatch',depth:1,entered:[[2,3,0]]},{part:'n-keys',title:'Keyspace',depth:2,entered:[[3,4,1]]},
     {part:'n-clients',title:'Client connections',depth:2,entered:[[3,5,0],[3,6,0],[3,7,0],[3,8,0],[3,9,0],[3,10,2]],others:3}],
   decls:[decl('call','n-clients'),decl('loadAppendOnlyFile','n-persist'),decl('getCommand','n-strings'),decl('getGenericCommand','n-strings'),decl('lookupKeyRead','n-keys'),
@@ -432,15 +433,20 @@ assert.deepEqual(chosen,['t1-accept'],'the input registering get leads to its re
 const steps=section.children.at(-1);
 const titles=box=>box.children.filter(c=>c.className==='system-path-part').map(c=>c.textContent);
 const said=box=>box.all(e=>e.className==='system-path-step').map(c=>c.textContent);
-// The handler's own part names it; the parts its handler calls directly
-// stand open, the parts reached deeper are folded under one line.
-assert.deepEqual(titles(steps),['String commands','Command dispatch']);
-assert.ok(said(steps)[0].includes('getCommand'),'the handler is named in its own part');
-assert.ok(said(steps).includes('getCommand → getGenericCommand'));
+// The handler's flow reads as its spine: getCommand, then getGenericCommand,
+// whose work splits into lookupKeyRead, its helpers named on one line.
+const spine=section.find(e=>e.className==='system-path-spine');
+assert.deepEqual(spine.all(e=>e.className==='system-path-spine-step').map(c=>c.textContent),['String commandsgetCommand','String commandsgetGenericCommand']);
+assert.deepEqual(spine.all(e=>e.className==='system-path-spine-branch').map(c=>c.textContent),['lookupKeyRead']);
+assert.ok(spine.find(e=>e.className==='system-path-spine-helpers').textContent.includes('addReply, addReplyBulk'),'the helpers are named, never counted');
+// The parts the path enters fold under one line that names them all.
 const deeper=steps.children.find(c=>c.className==='system-path-deeper');
-assert.equal(deeper.tagName,'DETAILS');assert.ok(!deeper.open,'the deeper parts start folded');
-assert.deepEqual(titles(deeper),['Keyspace','Client connections']);
-assert.equal(said(deeper).length,7,'every call entering a deeper part is kept');
+assert.equal(deeper.tagName,'DETAILS');assert.ok(!deeper.open,'the parts start folded');
+assert.ok(deeper.children[0].textContent.includes('String commands, Command dispatch, Keyspace, Client connections'),'the fold names its parts: '+deeper.children[0].textContent);
+assert.deepEqual(titles(deeper),['String commands','Command dispatch','Keyspace','Client connections']);
+assert.ok(said(deeper)[0].includes('getCommand'),'the handler is named in its own part');
+assert.ok(said(deeper).includes('getCommand → getGenericCommand'));
+assert.equal(said(deeper).length,9,'every call entering a part is kept');
 assert.equal(deeper.all(e=>e.className==='system-path-more').length,1,'past five, the rest of a part\'s calls fold');
 assert.equal(deeper.all(e=>e.className==='possible').length,2,'a possible call and a read say so');
 assert.ok(deeper.textContent.includes('3 more'),'the other calls into a part are counted');
@@ -455,7 +461,7 @@ assert.deepEqual(read,[['n-clients','h/addReply']]);
 assert.equal(name('lookupKeyRead').tagName,'SPAN','a declaration in a part the map does not draw is only named');
 steps.find(e=>e.tagName==='BUTTON'&&e.textContent==='String commands').listeners.click();
 assert.deepEqual(chosen,['t1-accept','n-strings'],'a part on the path leads to its reading');
-assert.equal(steps.find(e=>e.textContent==='Keyspace').tagName,'DIV','a part the map does not draw is only named');
+assert.equal(steps.find(e=>e.className==='system-path-part'&&e.textContent==='Keyspace').tagName,'DIV','a part the map does not draw is only named');
 // exec is dispatched from call and its handler calls call again: the two
 // lines say different things and do not read as a contradiction.
 const exec=rmInputPathSection({dispatched:[{site:0,of:94,handlers:94,inputs:95}],reaches:[{site:0,inputs:95,calls:[[1,0,0]]}],decls:[decl('call','n-clients'),decl('execCommand','n-strings')]},
@@ -466,37 +472,28 @@ assert.ok(own&&own.all(e=>e.className==='system-path-step').map(c=>c.textContent
 `)
 }
 
-// GET's path had listed thirteen parts, down to VM swap-in's
-// rdbLoadObject → zslInsert, with the few calls that answer "what does GET
-// do" buried. The parts its handler calls directly (depth 1) stand open and
-// every deeper part is folded under one line, with all its calls. The fold
-// is structural: by depth alone, never by how many calls a part holds or
-// how long a chain is, so no route is chosen; a path with no deeper part
-// has no fold.
-func TestAnInputsPathFoldsThePartsPastItsHandlersOwnCallsByDepthAlone(t *testing.T) {
+// freqtrade's trade had read its handler's first calls, then "Reaches 65
+// more parts deeper", the bot loop behind the count (critic, 2026-09-30).
+// An input's path reads its handler's flow as its spine: the steps whose
+// work is one call into the next, a class with the methods of it the step
+// before calls, then the branches its work splits into, helpers named on
+// one line; the parts it enters fold under one line naming every one.
+func TestAnInputsPathReadsItsSpineAndNamesItsParts(t *testing.T) {
 	code := nameBreaksJS(t) + systemJSPiece(t, "29-operation-view.js", "function rmInputPathSection(", "(function(){document.querySelectorAll('[data-map-explorer]')") +
 		systemJSPiece(t, "30-map.js", "function rmSiteHandlers(", "// A dispatch site read with its declaration")
 	runSystemJS(t, fakeElements+`
 const repomapMembers={sourceLink:s=>{const a=rmEl('a','',s.Text);a.href=s.Href;return a;}};
-const decls=['h','a','b','c','d','e','f','g','x','y'].map(name=>({name}));
-const many=[[0,1,0],[0,2,0],[0,3,0],[0,4,0],[0,5,0],[0,6,0],[0,7,0]];
+const decls=['start_trading','Worker','run','exit','__init__','FreqtradeBot','process','startup','Configuration','State'].map(name=>({name}));
 `+code+`
-const parts=path=>rmInputPathSection(path,'in',()=>null,()=>null,()=>{},()=>{}).children.at(-1);
-const titles=box=>box.children.filter(c=>c.className==='system-path-part').map(c=>c.textContent);
-// A depth-1 part with seven calls stays open; a depth-2 part with one call,
-// and a depth-3 part, are folded, whatever their size.
-let steps=parts({decls,parts:[{part:'p0',title:'Own',depth:0,handler:0},{part:'p1',title:'Wide',depth:1,entered:many},{part:'p2',title:'Near deep',depth:2,entered:[[1,8,0]]},{part:'p3',title:'Deeper',depth:3,entered:[[8,9,0]],others:4}]});
-assert.deepEqual(titles(steps),['Own','Wide']);
-const fold=steps.children.find(c=>c.className==='system-path-deeper');
-assert.deepEqual(titles(fold),['Near deep','Deeper']);
-assert.ok(fold.textContent.includes('a → x')&&fold.textContent.includes('x → y')&&fold.textContent.includes('4 more'),'the folded parts keep every call and count');
-// Order is the path's: a part the page data lists late at depth 1 (an
-// outside call the handler makes) still stands open, before the fold.
-steps=parts({decls,parts:[{part:'p0',title:'Own',depth:0,handler:0},{part:'p2',title:'Deep',depth:2,entered:[[1,8,0]]},{part:'out',title:'Outside',depth:1,entered:[[0,9,0]]}]});
-assert.deepEqual(titles(steps),['Own','Outside']);assert.equal(steps.children.at(-1).className,'system-path-deeper');
-// Nothing deeper: no fold.
-steps=parts({decls,parts:[{part:'p0',title:'Own',depth:0,handler:0},{part:'p1',title:'Wide',depth:1,entered:many}]});
-assert.equal(steps.children.find(c=>c.className==='system-path-deeper'),undefined);
+const section=rmInputPathSection({decls,parts:[{part:'p0',title:'CLI',depth:0,handler:0},{part:'p1',title:'Trading bot core',depth:1,entered:[[0,1,0]]},{part:'p2',title:'Configuration',depth:3,entered:[[1,8,0]]}],
+  spine:{steps:[{decl:0,part:'p0'},{decl:1,part:'p1',members:[4,2,3]}],branches:[{decl:5,part:'p1',members:[6,7]},{decl:8,part:'p2'},{decl:9,part:'p3',helper:true}]}},'trade',()=>null,()=>null,()=>{},()=>{});
+const spine=section.find(e=>e.className==='system-path-spine');
+assert.deepEqual(spine.all(e=>e.className==='system-path-spine-step').map(c=>c.textContent),['start_trading','Worker (__init__, run, exit)'],'a constructor call and its class are one step');
+assert.deepEqual(spine.all(e=>e.className==='system-path-spine-branch').map(c=>c.textContent),['FreqtradeBot (process, startup)','Configuration'],'the bot loop is one expand away');
+assert.equal(spine.find(e=>e.className==='system-path-spine-helpers').textContent.trim(),'helpers: State');
+const fold=section.children.at(-1).children.find(c=>c.className==='system-path-deeper');
+assert.ok(fold.children[0].textContent.includes('CLI, Trading bot core, Configuration'),'the fold names its parts, never counts them');
+assert.ok(!/\d+ more parts/.test(section.textContent),'no part is hidden behind a count');
 `)
 }
 

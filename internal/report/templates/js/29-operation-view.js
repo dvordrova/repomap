@@ -238,12 +238,13 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   if(!flowShown)(path.sent_by||[]).forEach(function(entry){section.appendChild(peer(entry,'Sent by {0}:'));});
   if((path.registered_by||[]).length)section.appendChild(inputs(path.registered_by,rmT('Registered by')));
   if((path.registers||[]).length)section.appendChild(inputs(path.registers,rmT('Registers')));
-  // The part holding the handler names it; the parts its handler calls
-  // directly (depth 1) stand open, and the parts reached deeper are folded
-  // under one line that opens them as they are. The fold is by depth alone,
-  // the handler's own calls against the rest: it chooses no route and
-  // drops no call. GET had listed thirteen parts down to VM swap-in's
-  // rdbLoadObject → zslInsert.
+  // The handler's flow, its spine (GroupsIndex Reach.Spine): each step
+  // whose work is one call into the next (a class with the methods of it
+  // the step before calls), then the branches its work splits into, the
+  // helpers among them named on one line. The parts the path enters stay
+  // under one fold that names them and opens them as they are: nothing is
+  // hidden behind a count (critic, 2026-09-30: freqtrade's trade had shown
+  // its handler's first calls, then "65 more parts deeper").
   var parts=rmEl('div','system-path-steps'),all=path.parts||[];
   function step(part,into){
     var node=partNode(part.part),head=rmEl(node?'button':'div','system-path-part',node?node.dataset.title:part.title||'');
@@ -253,12 +254,24 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     calls(part.entered||[],into);
     if(part.others)into.appendChild(rmEl('p','meta',rmT('{0} more calls into this part come from other code on this path',part.others)));
   }
-  var deep=all.filter(function(part){return part.depth>1;});
-  all.filter(function(part){return !(part.depth>1);}).forEach(function(part){step(part,parts);});
-  if(deep.length){
-    var deeper=rmEl('details','system-path-deeper');deeper.appendChild(rmEl('summary','',rmT('Reaches {0} more parts deeper',deep.length)));
-    deep.forEach(function(part){step(part,deeper);});parts.appendChild(deeper);
+  function spineLine(entry,cls){
+    var line=rmEl('div',cls),node=partNode(entry.part);
+    if(node){var box=rmEl('button','system-path-part',node.dataset.title);box.type='button';box.addEventListener('click',function(){choose(node);});line.appendChild(box);}
+    line.appendChild(name(entry.decl));
+    if((entry.members||[]).length){line.appendChild(document.createTextNode(' ('));entry.members.forEach(function(member,i){if(i)line.appendChild(document.createTextNode(', '));line.appendChild(name(member));});line.appendChild(document.createTextNode(')'));}
+    return line;
   }
+  var spine=path.spine;
+  if(spine&&(spine.steps||[]).length){
+    var flow=rmEl('div','system-path-spine');flow.appendChild(rmEl('p','map-reading-label',rmT('Its flow')));
+    spine.steps.forEach(function(entry){flow.appendChild(spineLine(entry,'system-path-spine-step'));});
+    var branches=(spine.branches||[]).filter(function(entry){return !entry.helper;}),helpers=(spine.branches||[]).filter(function(entry){return entry.helper;});
+    if(branches.length){flow.appendChild(rmEl('p','meta',rmT('then into:')));branches.forEach(function(entry){flow.appendChild(spineLine(entry,'system-path-spine-branch'));});}
+    if(helpers.length){var line=rmEl('p','system-path-spine-helpers');line.appendChild(rmEl('span','meta',rmT('helpers:')+' '));helpers.forEach(function(entry,i){if(i)line.appendChild(document.createTextNode(', '));line.appendChild(name(entry.decl));});flow.appendChild(line);}
+    section.appendChild(flow);
+    var named=all.map(function(part){var node=partNode(part.part);return node?node.dataset.title:part.title||'';}).filter(Boolean);
+    if(all.length){var more=rmEl('details','system-path-deeper');more.appendChild(rmEl('summary','',rmT('Parts on this path: {0}',named.join(', '))));all.forEach(function(part){step(part,more);});parts.appendChild(more);}
+  }else all.forEach(function(part){step(part,parts);});
   if(parts.childElementCount)section.appendChild(parts);
   return section;
 }

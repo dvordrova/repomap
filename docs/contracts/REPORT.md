@@ -1008,15 +1008,23 @@ reaches a site says so as its handler's own call back into it ("{input}'s
 handler itself calls {site}, where {n} inputs are dispatched:"), with those
 calls. An input a running declaration of another input's reach hands over
 reads "Registered by" with those inputs; the other reads "Registers".
-Then come the parts the input enters, nearest the handler first: each part's
+Then comes the handler's flow as its spine (GroupsIndex `Reach.Spine`,
+critic 2026-09-30): each step whose work is one call into the next, from the
+handler on, with its part; a class is one step with the methods of it the
+step before calls (a constructor call and its class: freqtrade's `Worker`
+with `__init__`, `run`, `exit`), a callable handed over is a registration
+(under "Registers"), no step, and an outside call is no work. Where the work
+splits, "then into:" names each branch with the members of it the step
+calls (`FreqtradeBot` with `process`, `startup`), the helpers among them on
+one line ("helpers: addReply, addReplyBulk"). Then the parts the input
+enters fold under one line naming every one ("Parts on this path: String
+commands, Keyspace, …"), each part, nearest the handler first, with its
 name (a link to its reading when the map draws it), the handler under its
 part ("handled by {handler}"), every call entering it from a part reached
-earlier (the first five, the rest under "+N"), and "{n} more calls into this
-part come from other code on this path" for calls into it from parts reached
-no earlier, none of them the handler's. The parts the handler calls directly
-(depth 1) stand open; every deeper part folds under one line, "Reaches {n}
-more parts deeper", opening them as they are. The fold is by depth alone: it
-chooses no route and drops no call. A call is its two declarations' names, a
+earlier (the first five, the rest under "+N"), and "{n} more calls into
+this part come from other code on this path" for calls into it from parts
+reached no earlier, none of them the handler's. Nothing is hidden behind a
+count: the fold chooses no route and drops no call. A call is its two declarations' names, a
 read or possible call marked as elsewhere; a name in a drawn part reads that
 declaration there, as a click on its tile does; a name in a part the map does
 not draw is only named. There are no "Shared by" or "through" words. The list

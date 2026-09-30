@@ -1,5 +1,31 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — An input's flow spine, and only its handler's own words (critic's verdict)
+
+- **Sub-arguments (9ac16afc):** "Words its handler checks" lists only the
+  words the handler's own body declares, each once; a word a helper deeper
+  in the reach checks is an input of its own, a configuration key the
+  reach reads a setting (freqtrade's `trade` had listed its 65 parts'
+  words). Python fixture `bare_variant`, unit test.
+- **Spine (groupindex `spine.go`, derived):** from the handler, follow a
+  step while its work is one call into the next; a class is one step with
+  the methods of it the step before calls (a constructor and its class), a
+  callable handed over is a registration, an outside call no work; where
+  the work splits, the branches are named with their members, helpers
+  marked. The input's path reads "Its flow" (steps, "then into:"
+  branches, "helpers:" named on one line) and folds its parts under
+  "Parts on this path: …" naming every one; u5's "Reaches {n} more parts
+  deeper" count is gone. Saved runs: freqtrade trade start_trading →
+  Worker (__init__, run, exit) → FreqtradeBot (…), Configuration;
+  helpers State, timeframe_to_next_date; redis set setCommand →
+  setGenericCommand → helpers dictAdd, dictReplace, addReply, …; othello
+  key-pressed on-key → events/on-key → handle-button → restart, undo-ui.
+  `FreqtradeBot.process` is reached only through `_throttle(func=
+  self._process_running)`, a handed callable no fact follows yet (data
+  2's dispatch-on-a-handed-value work); it joins FreqtradeBot's members
+  once that lands. Tests: `TestAnInputsSpineFollowsOneCallAtATime`,
+  `TestAnInputsPathReadsItsSpineAndNamesItsParts`.
+
 ## 2026-09-30 — Canvas batch 3 (cut to what was tested): quiet arrows by certainty, part-to-part cards, no repeated destination, the Not analysed note's names
 
 - **Quiet arrows** were drawn dotted (3/5 px) and read as the key's

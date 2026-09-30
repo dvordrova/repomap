@@ -361,6 +361,7 @@ body.reading-ready:not([data-reading-page="overview"]) #repository-map>.evidence
 .map-card .system-path-part{display:block;margin-top:6px;padding:0;border:0;border-radius:0;background:none;font:600 12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;text-align:left;color:#204a7b}
 .map-card button.system-path-part{cursor:pointer}.map-card button.system-path-part:hover{text-decoration:underline}
 .system-path-steps a,.map-area-members a{text-decoration:none}.system-path-steps a:hover,.map-area-members a:hover{text-decoration:underline}
+.system-path-spine{margin:6px 0;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.system-path-spine .system-path-part{margin-right:6px}.system-path-spine-branch{padding-left:12px}.system-path-spine a{text-decoration:none}.system-path-spine a:hover{text-decoration:underline}
 .system-path-deeper>summary{margin-top:6px;cursor:pointer;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--muted)}
 .system-catalogue{margin:14px 0;font-size:13px;line-height:1.55}.system-catalogue>p{margin:6px 0;overflow-wrap:anywhere}
 .system-catalogue a{text-decoration:none}.system-catalogue a:hover{text-decoration:underline}

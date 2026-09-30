@@ -168,8 +168,10 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
     `get_market_ohlcv` answered helper;
   - the no-users rule applies only to a kind whose uses its adapter records
     (`recordedUses`); other kinds are asked like types;
-  - u5's depth-1 fold: an input's path opens the parts its handler calls
-    directly and folds deeper ones under "Reaches {n} more parts deeper".
+  - an input's path reads its handler's flow as a spine (one call at a
+    time, a class and its constructor one step, then the named branches),
+    its parts folded under a line naming them; u5's "Reaches {n} more
+    parts deeper" count is gone (critic, 2026-09-30).
 - **Map reading on the canvas (2026-09-25):** a part's description stands on
   its box under its name, a closed area's line on the area's box; looking at
   an area or a component darkens only the arrows that cross its border

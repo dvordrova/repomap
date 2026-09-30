@@ -55,6 +55,9 @@ type Reach struct {
 	// the object its own call made, or by code only its branch runs, in
 	// operation order: a subcommand's flags (launch.go).
 	Options []string
+	// Spine is the handler's flow as a reader follows it, to where its
+	// work splits (spine.go).
+	Spine Spine
 }
 
 // ReachedSubject is one reached declaration and its depth: the fewest calls
@@ -252,6 +255,7 @@ func Derive(index *Index) {
 	index.Reach = make([]Reach, len(index.Operations))
 	for position, operation := range index.Operations {
 		index.Reach[position] = graph.reach(position, operation)
+		index.Reach[position].Spine = graph.spine(index.Reach[position])
 	}
 	graph.handOvers(index.Reach)
 	index.Dispatch = graph.dispatchSites(index.Reach)

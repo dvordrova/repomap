@@ -176,6 +176,28 @@ type pageInputPath struct {
 	Ways  []pageWay  `json:"ways,omitempty"`
 	Also  []string   `json:"also,omitempty"`
 	Decls []pageDecl `json:"decls,omitempty"`
+	// Spine is the handler's flow followed to where its work splits
+	// (GroupsIndex Reach.Spine): each step a declaration, its part and the
+	// members of it the previous step calls (a class's methods), then the
+	// branches the work splits into, helpers marked. The parts it names no
+	// branch of stay folded under their names (critic, 2026-09-30).
+	Spine *pageSpine `json:"spine,omitempty"`
+}
+
+// pageSpine is an input's flow spine: its steps, then its branches.
+type pageSpine struct {
+	Steps    []pageSpineStep `json:"steps"`
+	Branches []pageSpineStep `json:"branches,omitempty"`
+}
+
+// pageSpineStep is one step or branch of a spine: its declaration, the map
+// node of its part, the members of it the previous step calls besides
+// itself, and whether it is a helper.
+type pageSpineStep struct {
+	Decl    int    `json:"decl"`
+	Part    string `json:"part,omitempty"`
+	Members []int  `json:"members,omitempty"`
+	Helper  bool   `json:"helper,omitempty"`
 }
 
 // pageWay is one way a request reaches a dispatch site: the input it
@@ -391,6 +413,31 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 		path.Parts = append(path.Parts, part)
 	}
 	path.Parts = append(path.Parts, extra...)
+	if steps := reach.Spine.Steps; len(steps) > 0 {
+		partOf := map[string]string{}
+		for _, group := range index.Groups {
+			for _, member := range group.MemberSubjectIDs {
+				partOf[member] = nodeOf(group.ID)
+			}
+		}
+		spineStep := func(step groupindex.SpineStep) pageSpineStep {
+			result := pageSpineStep{Decl: decls.of(step.SubjectID), Part: partOf[step.SubjectID], Helper: step.Helper}
+			for _, member := range step.Members {
+				if member != step.SubjectID {
+					result.Members = append(result.Members, decls.of(member))
+				}
+			}
+			return result
+		}
+		spine := &pageSpine{}
+		for _, step := range steps {
+			spine.Steps = append(spine.Steps, spineStep(step))
+		}
+		for _, branch := range reach.Spine.Branches {
+			spine.Branches = append(spine.Branches, spineStep(branch))
+		}
+		path.Spine = spine
+	}
 	for _, id := range reach.SubArguments {
 		for _, other := range index.Operations {
 			if other.ID == id {
@@ -465,6 +512,15 @@ func (path *pageInputPath) renameNodes(rename func(string) string) {
 	}
 	ids(path.Registers)
 	ids(path.RegisteredBy)
+	if path.Spine != nil {
+		for _, steps := range [][]pageSpineStep{path.Spine.Steps, path.Spine.Branches} {
+			for i := range steps {
+				if steps[i].Part != "" {
+					steps[i].Part = rename(steps[i].Part)
+				}
+			}
+		}
+	}
 	parts := path.Parts[:0]
 	seen := map[string]bool{}
 	for _, part := range path.Parts {
