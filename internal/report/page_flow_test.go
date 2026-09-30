@@ -517,3 +517,47 @@ func TestAForksSameNamedCandidatesAreToldApart(t *testing.T) {
 		t.Fatalf("fork names = %q", names)
 	}
 }
+
+// A flow parting where the model is torn reads as its trunk, then, under
+// the step where it parts, each way a short path of its own: a way of a few
+// steps shows them, a long one its first step with the rest folded under
+// one line; the candidates no way follows stay one folded line of names,
+// one per line (owner, 2026-09-30).
+func TestAPartedFlowReadsAsItsTrunkThenEachWay(t *testing.T) {
+	builder, _ := flowFixture()
+	section := builder.byProgram["t1"]
+	step := func(id string) orientation.FlowStep {
+		return orientation.FlowStep{TargetID: "t1", SubjectID: id, Via: "called"}
+	}
+	fork := orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Via: "called",
+		Paths: []orientation.FlowPath{
+			{Steps: []orientation.FlowStep{step("h1")}},
+			{Steps: []orientation.FlowStep{step("h2"), step("lookup"), step("resize"), step("x4")}},
+		},
+		Branches: []orientation.FlowBranch{{SubjectID: "save", Via: "called"}, {SubjectID: "log", Via: "called"}}}
+	row := builder.flowStep(fork, section, &pageStepPath{runners: map[string]bool{}})
+	row.Ways = builder.flowWays(fork, section, &pageStepPath{runners: map[string]bool{}})
+	row.Fork = builder.flowFork(fork)
+	if len(row.Ways) != 2 || row.Ways[0].Head.Label != "getCommand" || row.Ways[0].Folded ||
+		row.Ways[1].Head.Label != "setCommand" || !row.Ways[1].Folded || len(row.Ways[1].Rest) != 3 {
+		t.Fatalf("ways = %+v", row.Ways)
+	}
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{},
+		Flow: &pageFlow{Steps: []pageFlowStep{{Label: "main"}, row}}}); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	if strings.Count(html, `<ol class="flow flow-way">`) != 2 || strings.Count(html, `<details class="flow-way-rest" data-folded>`) != 1 ||
+		!strings.Contains(html, "<summary>3 more steps</summary>") || strings.Count(html, `<span class="flow-fork-name">`) != 2 {
+		t.Fatalf("the parted flow does not read as its trunk and ways:\n%s", html)
+	}
+	// The trunk's steps come before the ways, which come before the fold.
+	if !(strings.Index(html, ">serverCron<") < strings.Index(html, `class="flow-ways"`) && strings.Index(html, `class="flow-ways"`) < strings.Index(html, `class="flow-fork"`)) {
+		t.Fatalf("the parted flow's order is wrong:\n%s", html)
+	}
+}

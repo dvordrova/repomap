@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/atlas/table"
@@ -33,13 +34,15 @@ type flowWalk struct {
 	met []flowCandidate
 }
 
-// flowAsk is one split the categorizer was asked about.
+// flowAsk is one split the categorizer was asked about: the one it
+// decided, or, under the margin, the ways followed.
 type flowAsk struct {
 	step       string
 	candidates int
 	chosen     string
 	lead       float64
 	decided    bool
+	followed   []string
 }
 
 // walkFlow is a target's Main flow, walked by code from the target's entry
@@ -109,46 +112,91 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 		}
 		return steps
 	}
-	pick := func(step groupindex.SpineStep, candidates []groupindex.SpineStep) (int, bool) {
+	pick := func(step groupindex.SpineStep, candidates []groupindex.SpineStep) []int {
 		if failure != nil || categorizer == nil {
-			return 0, false
+			return nil
 		}
-		chosen, ask, rejected, err := chooseNext(ctx, executor, categorizer, graph, index, step, candidates, walk.met)
+		followed, ask, rejected, err := chooseNext(ctx, executor, categorizer, graph, index, step, candidates, walk.met)
 		if err != nil {
 			failure = err
-			return 0, false
+			return nil
 		}
 		walk.asked = append(walk.asked, ask)
 		walk.rejected = append(walk.rejected, rejected...)
-		return chosen, ask.decided
+		return followed
 	}
-	spine := groupindex.Walk(groupindex.SpineStep{SubjectID: graph.unit(start), Members: []string{start}, Edge: -1}, next, pick)
+	path := groupindex.WalkPaths(groupindex.SpineStep{SubjectID: graph.unit(start), Members: []string{start}, Edge: -1}, next, pick)
 	if failure != nil {
 		return flowWalk{}, failure
 	}
-	for position, step := range spine.Steps {
+	walk.flow.Steps = walk.flowSteps(path, targetID, graph)
+	walk.flow.Title = flowTitle(walk.flow.Steps, graph)
+	return walk, nil
+}
+
+// flowSteps are a walked path's steps: each its declaration, its own line
+// and how the step before reaches it; the last, where the path parts, holds
+// each way followed as a path of its own and the candidates none follows.
+func (walk *flowWalk) flowSteps(path groupindex.SpinePath, targetID string, graph *flowGraph) []FlowStep {
+	var rows []FlowStep
+	for position, step := range path.Steps {
 		row := FlowStep{TargetID: targetID, SubjectID: stepSubject(step), Explanation: graph.line(stepSubject(step))}
 		if step.Edge >= 0 {
 			row.Via, row.Site = walk.met[step.Edge].reach.via, walk.met[step.Edge].reach.site
 		}
 		// A class step going on through one of its members is that
-		// member's step, reached as the class was.
-		if len(walk.flow.Steps) > 0 && strings.HasPrefix(row.Via, "its member ") {
-			previous := walk.flow.Steps[len(walk.flow.Steps)-1]
-			row.Via, row.Site = previous.Via, previous.Site
-			walk.flow.Steps = walk.flow.Steps[:len(walk.flow.Steps)-1]
+		// member's step, reached as the class was; a way that starts at
+		// one of the class's members is reached as its member.
+		if strings.HasPrefix(row.Via, "its member ") {
+			if len(rows) > 0 {
+				previous := rows[len(rows)-1]
+				row.Via, row.Site = previous.Via, previous.Site
+				rows = rows[:len(rows)-1]
+			} else {
+				row.Via = "its member"
+			}
 		}
-		if position == len(spine.Steps)-1 {
-			for _, branch := range spine.Branches {
+		if position == len(path.Steps)-1 {
+			for _, branch := range path.Rest {
 				reach := walk.met[branch.Edge].reach
 				row.Branches = append(row.Branches, FlowBranch{SubjectID: stepSubject(branch), Via: reach.via, Site: reach.site})
 			}
+			for _, way := range path.Paths {
+				row.Paths = append(row.Paths, FlowPath{Steps: walk.flowSteps(way, targetID, graph)})
+			}
 		}
-		walk.flow.Steps = append(walk.flow.Steps, row)
+		rows = append(rows, row)
 	}
-	first, last := walk.flow.Steps[0], walk.flow.Steps[len(walk.flow.Steps)-1]
-	walk.flow.Title = fmt.Sprintf("From %s to %s", graph.qualified(first.SubjectID), graph.qualified(last.SubjectID))
-	return walk, nil
+	return rows
+}
+
+// flowTitle is "From <first> to <last>", naming each end of a flow that
+// parts ("From main to DB.Pos or s3.ReplicaClient.LTXFiles"), or, past
+// three ends, the step where it parts and how many ways go on.
+func flowTitle(steps []FlowStep, graph *flowGraph) string {
+	var ends []string
+	var collect func([]FlowStep)
+	collect = func(steps []FlowStep) {
+		last := steps[len(steps)-1]
+		if len(last.Paths) == 0 {
+			if name := graph.qualified(last.SubjectID); !slices.Contains(ends, name) {
+				ends = append(ends, name)
+			}
+			return
+		}
+		for _, path := range last.Paths {
+			collect(path.Steps)
+		}
+	}
+	collect(steps)
+	first := graph.qualified(steps[0].SubjectID)
+	switch {
+	case len(ends) == 1:
+		return fmt.Sprintf("From %s to %s", first, ends[0])
+	case len(ends) <= 3:
+		return fmt.Sprintf("From %s to %s or %s", first, strings.Join(ends[:len(ends)-1], ", "), ends[len(ends)-1])
+	}
+	return fmt.Sprintf("From %s to %s, then %d ways", first, graph.qualified(steps[len(steps)-1].SubjectID), len(ends))
 }
 
 // flowEntry is where a target's Main flow starts: its first seed that runs
@@ -277,7 +325,7 @@ func (graph *flowGraph) toldApart(candidates []groupindex.SpineStep) []string {
 // candidate with its name, signature, part, atlas line and how it is
 // reached. No docstring enters.
 func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Categorizer, graph *flowGraph, index *groupindex.Index,
-	step groupindex.SpineStep, candidates []groupindex.SpineStep, met []flowCandidate) (int, flowAsk, []RejectedRow, error) {
+	step groupindex.SpineStep, candidates []groupindex.SpineStep, met []flowCandidate) ([]int, flowAsk, []RejectedRow, error) {
 	var core []string
 	for _, group := range index.Groups {
 		if group.Core {
@@ -336,7 +384,7 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 	window := table.Window{Stage: flowStage, Rows: []table.Row{{ID: index.Target.ID + "." + subject, Fields: item}}}
 	call, err := table.ClassifierCall(categorizer, def, window)
 	if err != nil {
-		return 0, flowAsk{}, nil, err
+		return nil, flowAsk{}, nil, err
 	}
 	var verdicts map[string]llm.Verdict
 	decode := call.DecodeValidate
@@ -345,34 +393,78 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 		return decode(raw)
 	}
 	ask := flowAsk{step: graph.name(subject), candidates: len(candidates)}
+	key := index.Target.ID + "." + subject + "|next"
 	outcome, err := llm.ExecuteJSON(ctx, executor, categorizer, call)
 	if err == nil && len(outcome.Value.Answers) == 1 && outcome.Value.Answers[0] != nil {
 		chosen := outcome.Value.Answers[0]["next"]
 		for position := range candidates {
 			if fmt.Sprintf("c%d", position+1) == chosen {
 				ask.chosen, ask.decided = names[position], true
-				ask.lead = leadOf(verdicts, index.Target.ID+"."+subject+"|next")
-				return position, ask, nil, nil
+				ask.lead = leadOf(verdicts, key)
+				return []int{position}, ask, nil, nil
 			}
 		}
 	}
 	if ctx.Err() != nil {
-		return 0, flowAsk{}, nil, ctx.Err()
+		return nil, flowAsk{}, nil, ctx.Err()
 	}
-	// No decision: the path ends at this step, a named fork.
+	// Under the margin the path parts: each candidate the categorizer
+	// holds within the margin of its leader is a way of its own, the margin
+	// bounding how many (owner, 2026-09-30); with no verdict the path ends
+	// here, a named fork.
 	reason := "the categorizer did not answer"
 	if err != nil {
 		reason = err.Error()
 	} else if len(outcome.Value.Rejections) > 0 {
 		reason = outcome.Value.Rejections[0].Reason
 	}
-	ask.lead = leadOf(verdicts, index.Target.ID+"."+subject+"|next")
+	ask.lead = leadOf(verdicts, key)
+	followed := withinMargin(verdicts[key], names)
+	for _, position := range followed {
+		ask.followed = append(ask.followed, names[position])
+	}
 	raw, _ := json.Marshal(struct {
 		Step       string   `json:"step"`
 		Candidates []string `json:"candidates"`
 		Lead       float64  `json:"lead"`
-	}{graph.name(subject), names, ask.lead})
-	return 0, ask, []RejectedRow{{Stage: StageName, Section: sectionFlowFork, Raw: raw, Reason: reason}}, nil
+		Followed   []string `json:"followed,omitempty"`
+	}{graph.name(subject), names, ask.lead, ask.followed})
+	return followed, ask, []RejectedRow{{Stage: StageName, Section: sectionFlowFork, Raw: raw, Reason: reason}}, nil
+}
+
+// withinMargin are the candidates a verdict holds within the classifier
+// margin of its leader, leader first, by the name or ref each was offered
+// under; none when there is no verdict or only its leader.
+func withinMargin(verdict llm.Verdict, names []string) []int {
+	probability := func(position int) (float64, bool) {
+		for _, label := range []string{names[position], fmt.Sprintf("c%d", position+1)} {
+			if value, ok := verdict.Probabilities[label]; ok {
+				return value, true
+			}
+		}
+		return 0, false
+	}
+	top := 0.0
+	for position := range names {
+		if value, ok := probability(position); ok && value > top {
+			top = value
+		}
+	}
+	var followed []int
+	for position := range names {
+		if value, ok := probability(position); ok && top > 0 && value > top-table.ClassifierMargin {
+			followed = append(followed, position)
+		}
+	}
+	sort.SliceStable(followed, func(i, j int) bool {
+		a, _ := probability(followed[i])
+		b, _ := probability(followed[j])
+		return a > b
+	})
+	if len(followed) < 2 {
+		return nil
+	}
+	return followed
 }
 
 // leadOf is how far a verdict's choice leads the runner-up.

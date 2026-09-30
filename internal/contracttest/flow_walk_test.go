@@ -104,13 +104,22 @@ func flowPath(indexes []groupindex.Index, flow orientation.MainFlow) []string {
 		}
 		return via
 	}
+	// Where the flow parts, each way's steps are numbered by the way ("2:
+	// setCommand"), then come the fork's unfollowed candidates ("? ...").
 	var path []string
-	for _, step := range flow.Steps {
-		path = append(path, fmt.Sprintf("%s (%s)", names[step.TargetID+"."+step.SubjectID], reached(step.TargetID, step.Via, step.Site)))
-		for _, branch := range step.Branches {
-			path = append(path, fmt.Sprintf("? %s (%s)", names[step.TargetID+"."+branch.SubjectID], reached(step.TargetID, branch.Via, branch.Site)))
+	var walk func(prefix string, steps []orientation.FlowStep)
+	walk = func(prefix string, steps []orientation.FlowStep) {
+		for _, step := range steps {
+			path = append(path, fmt.Sprintf("%s%s (%s)", prefix, names[step.TargetID+"."+step.SubjectID], reached(step.TargetID, step.Via, step.Site)))
+			for number, way := range step.Paths {
+				walk(fmt.Sprintf("%s%d: ", prefix, number+1), way.Steps)
+			}
+			for _, branch := range step.Branches {
+				path = append(path, fmt.Sprintf("%s? %s (%s)", prefix, names[step.TargetID+"."+branch.SubjectID], reached(step.TargetID, branch.Via, branch.Site)))
+			}
 		}
 	}
+	walk("", flow.Steps)
 	return path
 }
 
@@ -243,7 +252,8 @@ func TestPythonFixtureMainFlowsWalkByCode(t *testing.T) {
 		t.Fatalf("Loop.run's flow = %q after %d questions, want accept_client with none", got, len(loop.asked))
 	}
 	throttle := &flowPreset{tie: map[string]bool{"run": true}}
-	if got := flowPath([]groupindex.Index{index}, walkFixtureFrom(t, index, layer, graph, subjectAt(t, index, "run", "src/fixture_app/stored_callbacks.py", 55), throttle)); !slices.Equal(got, []string{"run ()", "? throttle (called)", "? process_running (handed to throttle)", "? process_stopped (handed to throttle)"}) {
+	if got := flowPath([]groupindex.Index{index}, walkFixtureFrom(t, index, layer, graph, subjectAt(t, index, "run", "src/fixture_app/stored_callbacks.py", 55), throttle)); !slices.Equal(got, []string{"run ()", "1: process_running (handed to throttle)", "1: accept_client (called)",
+		"2: process_stopped (handed to throttle)", "2: flush_replies (called)", "? throttle (called)"}) {
 		t.Fatalf("Throttle.run's flow = %q", got)
 	}
 	assertNoTestCode(t, throttle, "lambda", "throttle_a_lambda")
@@ -298,7 +308,7 @@ func TestGoFixtureMainFlowsWalkByCode(t *testing.T) {
 	app, layer, graph := goFlowFixture(t, goFixtureAppPackage)
 	tie := &flowPreset{tie: map[string]bool{"Exercise": true}}
 	if got := flowPath([]groupindex.Index{app}, walkFixtureFrom(t, app, layer, graph, subjectNamed(t, app, "main", "cmd/app/main.go"), tie)); !slices.Equal(got, []string{"main ()", "Exercise (called)",
-		"? Name (called)", "? registerSignalConsumer (called)", "? createFixtureState (called)", "? OpenUserRows (called)"}) || len(tie.asked) != 1 {
+		"1: Name (called)", "2: OpenUserRows (called)", "2: newUserRows (called)", "? registerSignalConsumer (called)", "? createFixtureState (called)"}) || len(tie.asked) != 1 {
 		t.Fatalf("the app's flow = %q after %d questions", got, len(tie.asked))
 	}
 	route := &flowPreset{}

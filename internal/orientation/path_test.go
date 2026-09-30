@@ -2,6 +2,7 @@ package orientation
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -71,16 +72,24 @@ func flowProgram() Input {
 	}}}
 }
 
-// flowNames are a walked flow's steps by declaration, then its fork's
-// branches, each with how it is reached.
+// flowNames are a walked flow's steps by declaration, each with how it is
+// reached, then, where it parts, each way's steps numbered by the way
+// ("2: on_move"), then its fork's unfollowed candidates ("? draw").
 func flowNames(flow MainFlow) []string {
 	var names []string
-	for _, step := range flow.Steps {
-		names = append(names, step.SubjectID+" ("+step.Via+")")
-		for _, branch := range step.Branches {
-			names = append(names, "? "+branch.SubjectID+" ("+branch.Via+")")
+	var walk func(prefix string, steps []FlowStep)
+	walk = func(prefix string, steps []FlowStep) {
+		for _, step := range steps {
+			names = append(names, prefix+step.SubjectID+" ("+step.Via+")")
+			for number, path := range step.Paths {
+				walk(fmt.Sprintf("%s%d: ", prefix, number+1), path.Steps)
+			}
+			for _, branch := range step.Branches {
+				names = append(names, prefix+"? "+branch.SubjectID+" ("+branch.Via+")")
+			}
 		}
 	}
+	walk("", flow.Steps)
 	return names
 }
 
@@ -126,37 +135,62 @@ func TestAMainFlowIsWalkedByCodeAndAsksOneQuestionPerSplit(t *testing.T) {
 	}
 }
 
-// A split the categorizer leaves under the margin ends the path there, a
-// named fork keeping its candidates, and the split is journaled with its
-// lead; so does a walk with no categorizer, which asks nothing.
-func TestAnUndecidedSplitEndsTheFlowAtANamedFork(t *testing.T) {
-	close := &typesafetest.Categorizer{Decide: func(string, llm.Question) (llm.Verdict, bool) {
-		return llm.Verdict{Choice: "on_click", Probabilities: map[string]float64{"on_click": 0.52, "on_move": 0.48}}, true
+// A split the categorizer leaves under the margin parts the flow: each
+// candidate within the margin of the leader is a way of its own, walked with
+// its own visited set, so neither way walks back through the trunk or into
+// the other's start (play calls on_click again); the split is journaled with
+// its lead and the ways followed. A walk with no categorizer asks nothing
+// and ends there, a named fork of the candidates.
+func TestATornSplitPartsTheFlowIntoWays(t *testing.T) {
+	torn := &typesafetest.Categorizer{Decide: func(_ string, question llm.Question) (llm.Verdict, bool) {
+		if question.Item["step"] == "start" {
+			return llm.Verdict{Choice: "on_click", Probabilities: map[string]float64{"on_click": 0.52, "on_move": 0.48}}, true
+		}
+		return typesafetest.Choose(question.Options[0].Name), true
 	}}
-	want := []string{"main ()", "start (called)", "? on_click (handed to loop.on.on_click)", "? on_move (handed to loop.on.on_move)"}
-	for _, categorizer := range []llm.Categorizer{close, nil} {
-		walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, flowProgram(), "t1")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := flowNames(walk.flow); !slices.Equal(got, want) {
-			t.Fatalf("flow = %q, want %q", got, want)
-		}
-		if categorizer == nil {
-			if len(walk.rejected) != 0 || len(walk.asked) != 0 {
-				t.Fatalf("a walk with no categorizer asked or journaled: %+v", walk)
-			}
-			continue
-		}
-		var fork struct {
-			Step       string
-			Candidates []string
-			Lead       float64
-		}
-		if len(walk.rejected) != 1 || walk.rejected[0].Section != sectionFlowFork || json.Unmarshal(walk.rejected[0].Raw, &fork) != nil ||
-			fork.Step != "start" || len(fork.Candidates) != 2 || fork.Lead < 0.03 || fork.Lead > 0.05 {
-			t.Fatalf("the undecided split was not journaled with its lead: %+v", walk.rejected)
-		}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, torn, flowProgram(), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"main ()", "start (called)",
+		"1: on_click (handed to loop.on.on_click)", "1: Game.move (called)", "1: play (called)",
+		"2: on_move (handed to loop.on.on_move)", "2: Game.move (called)", "2: play (called)"}
+	if got := flowNames(walk.flow); !slices.Equal(got, want) {
+		t.Fatalf("flow = %q\nwant %q", got, want)
+	}
+	if walk.flow.Title != "From main to play" || validFlowSteps(walk.flow.Steps) != nil {
+		t.Fatalf("title %q", walk.flow.Title)
+	}
+	var fork struct {
+		Step       string
+		Candidates []string
+		Lead       float64
+		Followed   []string
+	}
+	if len(walk.rejected) != 1 || walk.rejected[0].Section != sectionFlowFork || json.Unmarshal(walk.rejected[0].Raw, &fork) != nil ||
+		fork.Step != "start" || len(fork.Candidates) != 2 || fork.Lead < 0.03 || fork.Lead > 0.05 || !slices.Equal(fork.Followed, []string{"on_click", "on_move"}) {
+		t.Fatalf("the torn split was not journaled with its lead and ways: %+v", walk.rejected)
+	}
+	unasked, err := walkFlow(t.Context(), llm.Executor{}, nil, flowProgram(), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := flowNames(unasked.flow); !slices.Equal(got, []string{"main ()", "start (called)", "? on_click (handed to loop.on.on_click)", "? on_move (handed to loop.on.on_move)"}) ||
+		len(unasked.rejected) != 0 || len(unasked.asked) != 0 {
+		t.Fatalf("a walk with no categorizer = %q, %+v", got, unasked)
+	}
+}
+
+// Only the candidates within the margin of the leader are ways; the rest
+// stay the fork's folded candidates.
+func TestWithinMarginFollowsOnlyTheCandidatesNearTheLeader(t *testing.T) {
+	names := []string{"DB", "s3.ReplicaClient", "gs.ReplicaClient", "Pos"}
+	verdict := llm.Verdict{Choice: "DB", Probabilities: map[string]float64{"DB": 0.40, "s3.ReplicaClient": 0.34, "c3": 0.31, "Pos": 0.05}}
+	if got := withinMargin(verdict, names); !slices.Equal(got, []int{0, 1, 2}) {
+		t.Fatalf("within the margin: %v", got)
+	}
+	if got := withinMargin(llm.Verdict{Probabilities: map[string]float64{"DB": 0.9, "Pos": 0.1}}, names); got != nil {
+		t.Fatalf("a confident verdict parts: %v", got)
 	}
 }
 

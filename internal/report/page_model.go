@@ -877,6 +877,7 @@ func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, *pageStepPath
 	var subjects []string
 	for _, step := range orient.MainFlow.Steps {
 		row := builder.flowStep(step, section, path)
+		row.Ways = builder.flowWays(step, section, path)
 		if row.Target == "" {
 			here = true
 		}
@@ -895,6 +896,32 @@ func (builder *pageBuilder) flow(section *pageSection) (*pageFlow, *pageStepPath
 		return nil, nil
 	}
 	return flow, path
+}
+
+// flowWayShown is how many steps a way of a parted flow shows before the
+// rest fold under one line, its first step always shown: a way reads as a
+// short named path beside the others, never a wall.
+const flowWayShown = 3
+
+// flowWays are the ways a flow goes on from the step where it parts, each
+// read as the trunk's steps are, a way parting again holding its own.
+func (builder *pageBuilder) flowWays(step orientation.FlowStep, section *pageSection, path *pageStepPath) []pageFlowWay {
+	var ways []pageFlowWay
+	for _, way := range step.Paths {
+		var rows []pageFlowStep
+		var subjects []string
+		for _, wayStep := range way.Steps {
+			row := builder.flowStep(wayStep, section, path)
+			row.Ways = builder.flowWays(wayStep, section, path)
+			rows, subjects = append(rows, row), append(subjects, builder.flowStepSubject(wayStep))
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		builder.qualifySharedLabels(rows, subjects)
+		ways = append(ways, pageFlowWay{Head: rows[0], Rest: rows[1:], Folded: len(rows) > flowWayShown})
+	}
+	return ways
 }
 
 // qualifySharedLabels names two different declarations a flow's steps call

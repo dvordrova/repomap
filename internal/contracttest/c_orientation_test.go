@@ -79,20 +79,25 @@ func TestCFixtureMainFlowWalksWhatMainHandsOver(t *testing.T) {
 		"readQueryFromClient": "processInputBuffer", "processInputBuffer": "processCommand"}, tie: map[string]bool{"processCommand": true}}
 	result := walkFixtureFlow(t, run.layer, run.indexes, run.graph, run.server, preset)
 	want := []string{"main ()", "loopMain (called)", "loopProcessEvents (called)", "readQueryFromClient (one of 3 from loopProcessEvents)",
-		"processInputBuffer (called)", "processCommand (called)", "? addReply (called)",
+		"processInputBuffer (called)", "processCommand (called)",
+		// The tie parts the flow: addReply and bgsaveCommand are ways of
+		// their own, the other commands the fork's folded candidates.
+		"1: addReply (called)", "1: ? sendReplyToClient (handed to loopCreateFileEvent)", "1: ? loopCreateFileEvent (called)", "1: ? sbAppend (called)",
+		"2: bgsaveCommand (one of 6 from processCommand)",
 		"? delCommand (one of 6 from processCommand)", "? keysCommand (one of 6 from processCommand)", "? pingCommand (one of 6 from processCommand)",
-		"? bgsaveCommand (one of 6 from processCommand)", "? getCommand (one of 6 from processCommand)", "? setCommand (one of 6 from processCommand)"}
+		"? getCommand (one of 6 from processCommand)", "? setCommand (one of 6 from processCommand)"}
 	if got := flowPath(run.indexes, result.MainFlow); !slices.Equal(got, want) {
 		t.Fatalf("kvd's flow = %q\nwant %q", got, want)
 	}
-	// One question per split, the loop's rfileProc among them. The
+	// One question per split, the loop's rfileProc among them, and the way
+	// through addReply asks its own. The
 	// categorizer reads the site's file and line; the flow keeps its
 	// function, the reader's column printing no line.
 	var steps []string
 	for _, split := range preset.asked {
 		steps = append(steps, split.step)
 	}
-	if !slices.Equal(steps, []string{"main", "loopMain", "loopProcessEvents", "readQueryFromClient", "processInputBuffer", "processCommand"}) ||
+	if !slices.Equal(steps, []string{"main", "loopMain", "loopProcessEvents", "readQueryFromClient", "processInputBuffer", "processCommand", "addReply"}) ||
 		!slices.Equal(preset.asked[2].options, []string{"acceptHandler", "loopApiPoll", "readQueryFromClient", "sendReplyToClient"}) ||
 		!strings.Contains(preset.asked[2].meanings[2], "reached: one of 3 at loop.c:58") {
 		t.Fatalf("splits asked: %+v", preset.asked)

@@ -198,6 +198,79 @@ func Walk(start SpineStep, next func(SpineStep) []SpineStep, pick func(SpineStep
 	}
 }
 
+// SpinePath is a walked path that may part: its steps, then, where its last
+// step's split is followed several ways, each way a path of its own
+// (Paths), and the candidates no way follows (Rest).
+type SpinePath struct {
+	Steps []SpineStep
+	Paths []SpinePath
+	Rest  []SpineStep
+}
+
+// WalkPaths walks as Walk does, pick naming the candidates to follow at a
+// split: one is followed; several are each followed as a path of its own,
+// each with its own visited set (the path before the split, the first step
+// of every way and its own steps), so no way goes back through the trunk,
+// another way's start or its own steps, while two ways may each meet a unit
+// further on; none ends the path at a named fork of every candidate. Owner, 2026-09-30: several main paths are allowed where the
+// model is torn between them.
+func WalkPaths(start SpineStep, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int) SpinePath {
+	return walkPath(start, map[string]bool{}, next, pick)
+}
+
+func walkPath(step SpineStep, seen map[string]bool, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) []int) SpinePath {
+	visited := make(map[string]bool, len(seen)+1)
+	for id := range seen {
+		visited[id] = true
+	}
+	visited[step.SubjectID] = true
+	var result SpinePath
+	for {
+		result.Steps = append(result.Steps, step)
+		var candidates []SpineStep
+		for _, candidate := range next(step) {
+			if !visited[candidate.SubjectID] {
+				candidates = append(candidates, candidate)
+			}
+		}
+		if len(candidates) == 0 {
+			return result
+		}
+		var chosen []int
+		if len(candidates) == 1 {
+			chosen = []int{0}
+		} else if pick != nil {
+			for _, at := range pick(step, candidates) {
+				if at >= 0 && at < len(candidates) && !containsInt(chosen, at) {
+					chosen = append(chosen, at)
+				}
+			}
+		}
+		switch len(chosen) {
+		case 0:
+			result.Rest = candidates
+			return result
+		case 1:
+			step = candidates[chosen[0]]
+			visited[step.SubjectID] = true
+			continue
+		}
+		// Each way is walked apart; none walks into another's first step.
+		for _, at := range chosen {
+			visited[candidates[at].SubjectID] = true
+		}
+		for _, at := range chosen {
+			result.Paths = append(result.Paths, walkPath(candidates[at], visited, next, pick))
+		}
+		for position, candidate := range candidates {
+			if !containsInt(chosen, position) {
+				result.Rest = append(result.Rest, candidate)
+			}
+		}
+		return result
+	}
+}
+
 // Units maps a declaration to the unit a walk steps through: a method whose
 // owner is a class is that class, which folds its methods (Worker(args),
 // worker.run() and worker.exit() are one step); any other declaration is

@@ -54,8 +54,10 @@ type RecipeStep struct {
 // reaches it, as code says it ("called", "one of 3", "handed to
 // quil.core.sketch.setup"), Site, for one of a dispatch site's alternatives,
 // the declaration of the target holding that site (its function, never its
-// line), and Branches, on the last step of a flow that ends at an undecided
-// split, the candidates it could continue through.
+// line). On the last step of a flow, or of one of its paths, that ends at an
+// undecided split: Paths, the ways followed from it, each a path of its own
+// (owner, 2026-09-30: several main paths are allowed where the model is torn
+// between them), and Branches, the candidates no way follows.
 type FlowStep struct {
 	TargetID    string       `json:"target_id"`
 	FactID      string       `json:"fact_id,omitempty"`
@@ -64,6 +66,13 @@ type FlowStep struct {
 	Via         string       `json:"via,omitempty"`
 	Site        string       `json:"site,omitempty"`
 	Branches    []FlowBranch `json:"branches,omitempty"`
+	Paths       []FlowPath   `json:"paths,omitempty"`
+}
+
+// FlowPath is one way a Main flow goes on from a split: its steps, the last
+// of which may part again.
+type FlowPath struct {
+	Steps []FlowStep `json:"steps"`
 }
 
 // FlowBranch is one candidate of a named fork: the declaration and how the
@@ -205,7 +214,26 @@ func (result Result) Validate() error {
 	if result.MainFlow.Title != "" && !validSentence(result.MainFlow.Title) {
 		return fmt.Errorf("orientation: main flow title is invalid")
 	}
-	for position, step := range result.MainFlow.Steps {
+	if err := validFlowSteps(result.MainFlow.Steps); err != nil {
+		return err
+	}
+	if result.RejectedCount < 0 {
+		return fmt.Errorf("orientation: negative rejected count")
+	}
+	digest, err := resultDigest(result)
+	if err != nil {
+		return err
+	}
+	if digest != result.SHA256 {
+		return fmt.Errorf("orientation: digest mismatch")
+	}
+	return nil
+}
+
+// validFlowSteps checks a flow's steps and, on a step that parts, each of
+// its paths the same way.
+func validFlowSteps(steps []FlowStep) error {
+	for position, step := range steps {
 		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) || step.Site != "" && !validText(step.Site) {
 			return fmt.Errorf("orientation: flow step %d is invalid", position)
 		}
@@ -220,16 +248,17 @@ func (result Result) Validate() error {
 		if step.FactID != "" && !validText(step.FactID) || step.SubjectID != "" && !validText(step.SubjectID) {
 			return fmt.Errorf("orientation: flow step %d ref is invalid", position)
 		}
-	}
-	if result.RejectedCount < 0 {
-		return fmt.Errorf("orientation: negative rejected count")
-	}
-	digest, err := resultDigest(result)
-	if err != nil {
-		return err
-	}
-	if digest != result.SHA256 {
-		return fmt.Errorf("orientation: digest mismatch")
+		if len(step.Paths) > 0 && position != len(steps)-1 {
+			return fmt.Errorf("orientation: flow step %d parts before the path ends", position)
+		}
+		for _, path := range step.Paths {
+			if len(path.Steps) == 0 {
+				return fmt.Errorf("orientation: flow step %d has an empty path", position)
+			}
+			if err := validFlowSteps(path.Steps); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -300,9 +329,21 @@ func clone(result Result) Result {
 		copied.FactIDs = cloneSlice(step.FactIDs)
 		owned.RunRecipe[position] = copied
 	}
-	owned.MainFlow.Steps = cloneSlice(result.MainFlow.Steps)
-	for position := range owned.MainFlow.Steps {
-		owned.MainFlow.Steps[position].Branches = cloneSlice(result.MainFlow.Steps[position].Branches)
+	owned.MainFlow.Steps = cloneFlowSteps(result.MainFlow.Steps)
+	return owned
+}
+
+// cloneFlowSteps copies a flow's steps, their branches and paths.
+func cloneFlowSteps(steps []FlowStep) []FlowStep {
+	owned := cloneSlice(steps)
+	for position := range owned {
+		owned[position].Branches = cloneSlice(steps[position].Branches)
+		if steps[position].Paths != nil {
+			owned[position].Paths = make([]FlowPath, len(steps[position].Paths))
+			for at, path := range steps[position].Paths {
+				owned[position].Paths[at] = FlowPath{Steps: cloneFlowSteps(path.Steps)}
+			}
+		}
 	}
 	return owned
 }

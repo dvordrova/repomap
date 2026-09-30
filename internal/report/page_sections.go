@@ -359,6 +359,18 @@ type pageFlowStep struct {
 	Via     string
 	ViaFrom *pageStepName
 	Fork    *pageFlowFork
+	// Ways are, on the step where the flow parts, each way it goes on, read
+	// after the step (owner, 2026-09-30: several main paths are allowed
+	// where the model is torn between them).
+	Ways []pageFlowWay
+}
+
+// pageFlowWay is one way a Main flow goes on where it parts: its first step,
+// always shown, then the rest, folded when the way is long.
+type pageFlowWay struct {
+	Head   pageFlowStep
+	Rest   []pageFlowStep
+	Folded bool
 }
 
 // pageFlowFork is a Main flow's named fork: its line ("one of 94" from

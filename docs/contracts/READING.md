@@ -1909,10 +1909,20 @@ own atlas line, else, for a member of another class, that class's line
 Main.Run's lead fell from 0.94 to 0.47–0.62); a member of the step's own
 class takes no class line, which would tell its siblings nothing apart
 ("The main class of the bot" on every FreqtradeBot method), and a step's
-`Explanation` is its own line only. A lead under
-`ClassifierMargin` or no answer ends the path there, a named fork keeping its
-candidates, the split journaled under `flow_fork` with its lead. There is no
-count cap, and no unit is on the path twice. No step is written by a model:
+`Explanation` is its own line only. A program may have several main paths
+where the model is torn between them (owner decision, 2026-09-30): at a
+split whose lead is under `ClassifierMargin`, each candidate the categorizer
+holds within the margin of its leader is a way of its own, walked on as the
+trunk is, with its own visited set (the trunk, every way's first step and
+its own steps), its later splits parting the same way; the margin bounds how
+many, and a confident split still follows one (`groupindex.WalkPaths`). The
+candidates no way follows stay the step's folded "one of N" line, and the
+split is journaled under `flow_fork` with its lead and the ways followed. No
+answer at all ends the path at a named fork of every candidate. The report
+reads the trunk, then, under the step where it parts, each way as a short
+path of its own, one name per line; a way longer than three steps shows its
+first step and folds the rest. There is no count cap, and no unit is on a
+path twice. No step is written by a model:
 each is its declaration with its accepted atlas line (`Explanation`) and how
 the step before reaches it (`Via`: "called", "one of 94", "handed to …"); one
 of a dispatch site's alternatives keeps the declaration holding the site
@@ -1921,7 +1931,9 @@ Candidates of one split sharing a name are told apart
 (`groupindex.TellApart`) by the first spelling that differs for each: the
 type (Worker.run), the folder (s3.ReplicaClient), the file, then the part
 ("handle in Commands"); the option's title and name term and the report's
-fork read the same spelling. The title is "From <first> to <last>".
+fork read the same spelling. The title is "From <first> to <last>", naming
+each end of a parted flow up to three ("From -main to timed-deepen or
+choose-at-depth"), past three the step where it parts and how many ways.
 Measured on the saved inputs with the cache off, five draws each
 (2026-09-30): redis main → aeMain → aeProcessEvents → readQueryFromClient →
 processInputBuffer → processCommand → call → setCommand, 5 of 5; freqtrade

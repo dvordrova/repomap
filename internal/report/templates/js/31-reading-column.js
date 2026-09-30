@@ -906,6 +906,8 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     // A named fork's candidates stay folded under its line: a flow never
     // ends in a wall of names (copy opens every fold).
     steps.querySelectorAll('details.flow-fork').forEach(function(fork){fork.open=false;});
+    // A long way of a parted flow shows its first step, the rest folded.
+    steps.querySelectorAll('details.flow-way-rest[data-folded]').forEach(function(rest){rest.open=false;});
     // Each step opens in place to its code flow (32-flow.js), the model's
     // sentence kept in its style above it.
     var toggle=rmEl('div','map-flow-headline');toggle.appendChild(rmFlowToggle(null));steps.insertBefore(toggle,steps.children[1]||null);

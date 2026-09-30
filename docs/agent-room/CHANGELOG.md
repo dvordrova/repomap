@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — A Main flow parts where the model is torn
+
+- **Owner, 2026-09-30:** several main paths are allowed. At a split whose
+  lead is under the margin, every candidate within the margin of the leader
+  is a way of its own (`groupindex.WalkPaths`: own visited set, no way into
+  another's start or back through the trunk); a confident split follows
+  one; the rest stay the folded "one of N" line; no answer is a named fork.
+  `FlowStep.Paths`; the report reads the trunk, then each way under the
+  step where it parts, a way over three steps folded after its first.
+- **Draws** (saved inputs, cache off, 5 each; trunk identical in every
+  draw): redis and freqtrade never part; litestream parts at Replica.Sync
+  into {Replica.MaxLTXFileInfo → …LTXLevelDir | s3.WriteLTXFile → Init} in
+  4/5, the fifth taking MaxLTXFileInfo alone (lead 0.11); othello parts at
+  search/choose into {timed-deepen | choose-at-depth} in 3/5, the other two
+  taking timed-deepen → choose-at-depth (0.12, 0.14).
+- **Tests:** a torn split parts into two ways that do not walk into each
+  other or the trunk, a confident split follows one, the margin rule; the
+  fixtures' tied splits now part (kvd, Throttle, the Go app).
+
 ## 2026-09-30 — A member step's public in-class calls are flow steps
 
 - **Why:** freqtrade's Main flow ended at the strategy's dataframe helper.
