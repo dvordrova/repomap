@@ -262,7 +262,14 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 		var handlerSource pageAnchor
 		if ref, known := builder.subject(index.Target.ID, operation.SubjectID); known {
 			if display, anchor := builder.subjectDisplay(ref.subject); display != "" {
-				handler = display
+				// A method is named with its type wherever it handles an
+				// input ("handled by ReplicateCommand.Run", not "Run"); an
+				// input one case of its handler declares says that case, as
+				// written: "Main.Run (case "replicate")".
+				handler = builder.withType(index.Target.ID, ref.subject, display)
+				if written := strings.TrimRight(strings.TrimSpace(operation.Written), ":{ "); operation.Branch != nil && written != "" && !strings.Contains(written, "\n") && len(written) <= 40 {
+					handler += " (" + written + ")"
+				}
 				if anchor != nil {
 					handlerSource = *anchor
 				}

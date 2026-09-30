@@ -972,8 +972,10 @@ line, its line link going with it.
 An input's reading is drawn in the Inputs blue of its tile and collection,
 never core's rose: its heading's bar and kind and its links. A chosen input's
 reading opens at its path (owner, 2026-09-27). It names its handler ("handled
-by {handler}"), reading that declaration in its part when the part lists
-it. An input whose handler is not established says so ("handler not
+by {handler}"), a method with its type and an input one case of its
+handler declares with that case as written ("Main.Run (case "replicate")";
+never a bare "Run"), reading that declaration in its part when the part
+lists it. An input whose handler is not established says so ("handler not
 established") and where it is declared: "declared in" the part its call is
 written in, with the call's source link; some code acts on it and the facts
 do not yet say which. Its options, the inputs nested under it as a
@@ -1086,7 +1088,13 @@ stand between the names, the relation's kind when the phrase wraps the callee
 keeps them. Rows of one caller and one relation kind in one evidence list fold
 into one line with their count and callees, each row inside with its sources.
 A list with folds has one "Open all" control that opens and closes them
-together. Every closed section shows its ▶ (▼ open), the same wherever it
+together. A list longer than forty stands by groups, each closed under its
+name (reviewer, 2026-09-30: lists of up to 336 rows had stood under one
+heading): inputs reaching a part by program, kind and the canvas's input
+group; a declaration's other users and a catalogue's inputs by part; a
+part's declarations by type and kind; its callers and callees by file, its
+variables by type; a path's calls by caller and many parts each closed; a
+program's files by folder. Every closed section shows its ▶ (▼ open), the same wherever it
 stands (reviewer, 2026-09-30: "Called from" and "Calls into" had read as
 empty headings between two rules); a flow's call and a connection's line
 open by their own twist and link. What a reader opens in the column (a fold, Open all, any disclosure)
@@ -1671,14 +1679,18 @@ as listNode.next among them; `page_entity_writes.go`). Its work is its
 handler and what it calls exactly, never entering a helper (a declaration
 the helper question decided serves others' work, in a part most of the
 program's parts call into, other than the handler's own). The program's
-data is what outlives a call: a field reached through a file-scope
-variable (a `field_path` rooted at one: `server.dirty`), a field of a type
-owning a database table (freqtrade's Trade), the database and the files.
-Listed: such fields the work writes, save a constructor setting up the
+data is what the report's data inventory establishes (GroupsIndex data
+records, the Data section): a type owning a database table (freqtrade's
+Trade), the declared type of a field that the code writing one of the
+program's own files reads or writes (redis's rdbSave reads server.db, a
+redisDb: the keyspace its RDB file is written from), the database and the
+files; a type nothing the program stores walks into (redis's
+sharedObjectsStruct, its shared replies) is not. Listed: fields of such
+types the work writes, save a constructor setting up the
 object its call makes; then the database calls anywhere in its reach with
 the tables their statements name, and the files it reaches. A helper's own
-writes are not listed. A field the work hands to a helper whose code writes
-that field's type is said as those facts, "handed to dictAdd, dictReplace",
+writes are not listed. A field of such a type the work hands to a helper
+whose code writes that field's type is said as those facts, "handed to dictAdd, dictReplace",
 not as a change: no fact says the helper writes through that parameter
 rather than a local (it keeps redis `set`'s keyspace, redisDb.dict, named
 for the frozen journey). Each target once,

@@ -273,8 +273,16 @@ const inputs=rmReachingInputs({dataset:{}},[get,cron],()=>'redis-server',input=>
 assert.equal(inputs.tagName,'DETAILS');assert.ok(!inputs.open,'the list is folded');
 assert.equal(inputs.children[0].tagName,'SUMMARY');assert.ok(!/\d/.test(inputs.children[0].textContent),'counting nothing: '+inputs.children[0].textContent);
 assert.equal(inputs.all(e=>e.tagName==='H6').length,2,'by kind');
-inputs.find(e=>e.tagName==='BUTTON'&&e.textContent==='redis-server / serverCron').listeners.click();
-assert.equal(chosen,cron);
+inputs.find(e=>e.tagName==='BUTTON'&&e.textContent==='serverCron').listeners.click();
+assert.equal(chosen,cron,'each input by its own name, the program said once');
+// Past twelve, a kind's inputs stand in the canvas's groups, each closed
+// under its part's name (reviewer, 2026-09-30: ninety-six rows in one list);
+// several programs are each named once.
+const many=Array.from({length:14},(_,i)=>({dataset:{activation:'request',title:'cmd'+i}}));
+const grouped=rmReachingInputs({dataset:{}},many,input=>input.dataset.title==='cmd13'?'redis-cli':'redis-server',()=>{},input=>Number(input.dataset.title.slice(3))<7?'String commands':'List commands');
+assert.deepEqual(grouped.all(e=>e.tagName==='H5').map(e=>e.textContent),['redis-server','redis-cli'],'each program once');
+assert.deepEqual(grouped.all(e=>e.className==='system-reaching-group').map(e=>e.children[0].textContent),['String commands','List commands'],'the canvas groups, each closed');
+assert.equal(grouped.all(e=>e.tagName==='BUTTON').length,14,'no input dropped');
 `)
 }
 

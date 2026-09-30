@@ -1,5 +1,33 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Column batch 4: a handler with its type and case, State changes from the data inventory, same-named options apart, long lists by groups
+
+- **Handler:** "handled by" names a method with its type and a case input
+  with its case (`Main.Run (case "replicate")`, from the operation's branch
+  and written line); the litestream journey now asks for that and for
+  ReplicateCommand.Run on the path (journeys.mjs, with the coordinator's
+  leave).
+- **State changes:** the program's data is what the report's data
+  inventory establishes: a table's owner type, and the declared type of a
+  field the code writing one of the program's own files reads or writes
+  (GroupsIndex data records: table owner, file call subjects; ProgramIndex
+  field reads/writes and field types). redis `set`: redisDb.dict and
+  .expires (handed to dictAdd, dictReplace, dictDelete), the log file;
+  sharedObjectsStruct.czero and server.dirty gone. Litestream's replica
+  storage calls (S3, SFTP, …) are no data record, so no change names them.
+- **Options:** inputs sharing a word show the subcommands they are options
+  of (freqtrade's `--erase`: convert-trade-data, download-data / install-ui).
+- **Long lists:** past forty rows, by groups, each closed: reaching inputs
+  by program, kind and canvas group; other users and catalogue inputs by
+  part; declarations by type/kind; callers and callees by file; path calls
+  by caller, many parts each closed; a program's files by folder.
+- **Lints and journeys** (served runs 20260930-0632…0638, clean HEAD →
+  now): journeys 2/4 → 4/4 pass; long folds 129 → 104 (79 of those
+  are arrow-card rows, canvas-drawn); repeated 1 → 0; path 5 → 0 (b2bcea8c).
+  Left in the column: single-group lists (a part's 158 reaching commands,
+  a catalogue's 124 commands, redisServer's 92 variables, Exchange's 112
+  methods) and freqtrade's REST API group of 87 requests.
+
 ## 2026-09-30 — Journeys test the answer, not a name in a list; path parts and long folds as lints
 
 - **Journeys** (critic): othello `key-pressed` each key with its command;

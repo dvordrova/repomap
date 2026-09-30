@@ -25,9 +25,12 @@ export const journeys=[
       }
       return [bare.length===0,bare.length?`no command beside ${bare.join(', ')}`:'every key with its command'];
     })},
-  {repo:/^litestream/i,input:'replicate',says:'handled by ReplicateCommand.Run, and among its State changes the replica, WAL or snapshots',
+  // The replicate input is one case of Main.Run (data 2's design): its
+  // handler is named with its type and case, never a bare "Run", and its
+  // path reaches ReplicateCommand.Run.
+  {repo:/^litestream/i,input:'replicate',says:'handled by Main.Run (case "replicate") reaching ReplicateCommand.Run, and among its State changes the replica, WAL or snapshots',
     check:page=>page.evaluate(()=>{
-      const handler=window.__journey.handler(),named=/\bReplicateCommand\.Run\b/.test(handler);
+      const handler=window.__journey.handler(),named=/\w\.\w/.test(handler)&&!/^Run\b/.test(handler)&&window.__journey.visible(/\bReplicateCommand\.Run\b/);
       // A change of the replica, the WAL or snapshots, named by what changes
       // or by how (SQLite changed through checkpointV3, setPersistWAL), not
       // a command's or a config's fields.

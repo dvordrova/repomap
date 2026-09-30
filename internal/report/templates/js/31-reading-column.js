@@ -147,6 +147,33 @@ function rmDotBreaks(element){
   if(long&&!element.title)element.title=text;
   return element;
 }
+// A long list said by groups (reviewer, 2026-09-30: lists of up to 336
+// rows had stood under one heading): past rmLongList items and with two
+// keys or more, each key's items under a closed fold named by the key, in
+// the order the keys first come, the items with no key after them; else
+// the one list. `render(items)` draws a list's elements.
+var rmLongList=40;
+function rmFoldBy(items,keyOf,render){
+  if(items.length<=rmLongList)return render(items);
+  var keys=[],by=new Map(),loose=[];
+  items.forEach(function(item){var key=keyOf(item);if(!key){loose.push(item);return;}if(!by.has(key)){by.set(key,[]);keys.push(key);}by.get(key).push(item);});
+  if(keys.length<2)return render(items);
+  var out=[];
+  keys.forEach(function(key){var fold=rmEl('details','map-reading-group');fold.appendChild(rmEl('summary','',key));render(by.get(key)).forEach(function(part){fold.appendChild(part);});out.push(fold);});
+  if(loose.length)out=out.concat(render(loose));
+  return out;
+}
+// The group a declaration's name puts it in: a method or a field its type
+// ("VFSFile" for VFSFile.Lock), anything else its kind.
+var rmKindPlurals={function:'Functions',type:'Types',variable:'Variables',field:'Fields'};
+function rmNameGroup(decl){
+  var name=String((decl||{}).name||'').replace(/\(\)$/,''),at=name.lastIndexOf('.');
+  return at>0?name.slice(0,at):rmT(rmKindPlurals[(decl||{}).kind]||'Declarations');
+}
+// The file a declaration stands in, by its name.
+function rmFileGroup(decl){return String((decl||{}).file||'').split('/').pop();}
+// The part a declaration of a page's data stands in, by its title.
+function rmPartTitle(ctx,part){var node=part?(part.charAt(0)==='#'?ctx.nodeByHref(part):ctx.nodeById(part)):null;return node?node.dataset.title:'';}
 // One end of a relation: its name, and what the relation says of it when it
 // is not a call (a variable's readers say only who writes it: "Used by"
 // says the rest). A name is its link: the page prints no separate code
@@ -407,11 +434,15 @@ function rmPartView(ctx,node,data){
     positions.forEach(function(position){var decl=data.decls[position],item=rmEl('li');item.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at,true));ul.appendChild(item);});
     return rmTellApart(ul);
   }
+  // A long list by its types and kinds (rmFoldBy).
+  function grouped(into,positions,cls){
+    rmFoldBy(positions,function(position){return rmNameGroup(data.decls[position]);},function(list){return [names(list,cls)];}).forEach(function(part){into.appendChild(part);});
+  }
   // The ways in first, set apart from the rest by a rule.
   function listed(into,positions){
     var reached=positions.filter(function(position){return outside.has(position);}),other=positions.filter(function(position){return !outside.has(position);});
-    if(reached.length&&other.length)into.append(names(reached,'map-reading-reached'),names(other));
-    else into.appendChild(names(positions));
+    if(reached.length&&other.length){grouped(into,reached,'map-reading-reached');grouped(into,other);}
+    else grouped(into,positions);
   }
   if(shown.length){var members=rmEl('section','map-reading-members');members.appendChild(names(shown));view.appendChild(members);}
   if(rest.length){
@@ -435,7 +466,8 @@ function rmPartView(ctx,node,data){
     data.in.forEach(function(peer){
       var box=rmEl(long?'details':'div','map-reading-peer'),head=rmEl(long?'summary':'div','map-reading-peer-head');
       head.appendChild(rmPeerBox(ctx,peer));box.appendChild(head);
-      peer.lines.forEach(function(line){box.appendChild(rmCallerLine(ctx,data,line));});
+      // Many callers of one part by the file each stands in.
+      rmFoldBy(peer.lines,function(line){return rmFileGroup(data.decls[line.caller]);},function(lines){return lines.map(function(line){return rmCallerLine(ctx,data,line);});}).forEach(function(part){box.appendChild(part);});
       incoming.appendChild(box);
     });
     view.appendChild(incoming);
@@ -450,8 +482,14 @@ function rmPartView(ctx,node,data){
       head.appendChild(rmPeerBox(ctx,peer));box.appendChild(head);
       var ends=peer.lines[0].ends,calls=ends.filter(function(end){return !rmUsesVariable(end.kind);}),uses=rmEl('ul','map-reading-ends');
       ends.forEach(function(end){if(rmUsesVariable(end.kind))uses.appendChild(rmEndItem(ctx,data,end,'out'));});
-      if(calls.length)rmEndRuns(ctx,data,calls,'out').parts.forEach(function(part){box.appendChild(part);});
-      if(uses.childElementCount){uses.querySelectorAll('.map-reading-relation').forEach(function(word){word.remove();});box.append(rmEl('p','map-reading-uses',rmT('Uses variables')),uses);}
+      // Many callees of one part by the file each stands in; many variables
+      // by their type.
+      if(calls.length)rmFoldBy(calls,function(end){return rmFileGroup(data.decls[end.decl]);},function(list){return rmEndRuns(ctx,data,list,'out').parts;}).forEach(function(part){box.appendChild(part);});
+      if(uses.childElementCount){
+        uses.querySelectorAll('.map-reading-relation').forEach(function(word){word.remove();});box.appendChild(rmEl('p','map-reading-uses',rmT('Uses variables')));
+        var usedEnds=ends.filter(function(end){return rmUsesVariable(end.kind);});
+        rmFoldBy(usedEnds,function(end){return rmNameGroup(data.decls[end.decl]);},function(list){var ul=rmEl('ul','map-reading-ends');list.forEach(function(end){var item=rmEndItem(ctx,data,end,'out');var word=item.querySelector&&item.querySelector('.map-reading-relation');if(word)word.remove();ul.appendChild(item);});return [ul];}).forEach(function(part){box.appendChild(part);});
+      }
       outgoing.appendChild(box);
     });
     view.appendChild(outgoing);
@@ -593,6 +631,26 @@ function rmCollectionView(ctx,node,collection){
   // each under its part's box, the loose ones after them; a kind of more
   // than twelve inputs in several groups folds each group to its box.
   var parted=ctx.inputGroups?ctx.inputGroups(node.id):null;
+  // Two inputs sharing a word are told apart by the subcommands they are
+  // options of (reviewer, 2026-09-30: freqtrade's two "--erase", of
+  // download-data and of install-ui): each subcommand's options name them
+  // at their source (page_input_path.go Options).
+  var every=[].concat.apply([],collection.groups.map(function(group){return group.inputs;})),titles={},holders={};
+  every.forEach(function(id){
+    var input=ctx.nodeById(id);if(!input)return;
+    titles[input.dataset.title]=(titles[input.dataset.title]||0)+1;
+    var path=rmPage.data(input,'inputPath');
+    ((path&&path.options)||[]).forEach(function(option){if(!option.source)return;(holders[option.source]=holders[option.source]||[]).push(input.dataset.title);});
+  });
+  // One of no subcommand says its registration as written, up to its
+  // first comma ("version_main": Arg("-V" beside "version": Arg("-V").
+  function ofWhich(input){
+    if(titles[input.dataset.title]<2)return null;
+    var of=holders[input.dataset.sourceText||''];
+    if(of&&of.length)return rmEl('span','map-reading-where',of.join(', '));
+    var written=(input.dataset.written||'').split(',')[0].trim();
+    return written&&written!==input.dataset.title&&written.length<=40?rmEl('code','map-reading-where',written):null;
+  }
   kinds.forEach(function(kind){
     var groups=collection.groups.filter(function(group){return group.kind===kind;}),all=[].concat.apply([],groups.map(function(group){return group.inputs;}));
     var inParts=parted?parted.groups.filter(function(part){return part.inputs.some(function(id){return all.indexOf(id)>=0;});}):[],fold=inParts.length>1&&all.length>12;
@@ -631,7 +689,9 @@ function rmCollectionView(ctx,node,collection){
         // A name that is a sentence (a query parameter's description) is
         // prose, not code.
         if(rmProse(input.dataset.title))button.classList.add('map-collection-prose');
-        button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);list.appendChild(item);
+        button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);
+        var of=ofWhich(input);if(of)item.append(' ',of);
+        list.appendChild(item);
       });
       return list;
     }
@@ -705,8 +765,10 @@ function rmCatalogueLines(ctx,catalogue){
       var row=line('uses {0}',[name(use.decl)]);
       if((use.users||[]).length){
         var users=rmEl('details','map-collection-users'),head=rmEl('summary','',rmT('also used by'));users.appendChild(head);
-        var names=rmEl('ul','map-reading-ends map-collection-callers');use.users.forEach(function(user){var item=rmEl('li');item.appendChild(name(user));names.appendChild(item);});
-        users.appendChild(names);row.appendChild(users);
+        rmFoldBy(use.users,function(user){return rmPartTitle(ctx,(decls[user]||{}).part);},function(list){
+          var names=rmEl('ul','map-reading-ends map-collection-callers');list.forEach(function(user){var item=rmEl('li');item.appendChild(name(user));names.appendChild(item);});return [names];
+        }).forEach(function(part){users.appendChild(part);});
+        row.appendChild(users);
       }
       usesFold.appendChild(row);
     });
@@ -940,10 +1002,15 @@ function rmProgramsTable(ctx,holder,components,connections){
     // Its files one to a line, folded when many; no count.
     var files=rmPage.data(n,'sources')||[];
     if(files.length){
-      var built=rmEl('dd'),list=rmEl('ul','system-program-files');
-      files.forEach(function(file){list.appendChild(rmDotBreaks(rmEl('li','',file)));});
-      if(files.length<=rmShortSection)built.appendChild(list);
-      else{var fold=rmEl('details');fold.append(rmEl('summary','',rmT('Files')),list);built.appendChild(fold);}
+      // Many files by their folder, each folder closed under its path, the
+      // files in it by name (reviewer, 2026-09-30: 332 rows under "Files").
+      var built=rmEl('dd'),folder=function(file){var at=file.lastIndexOf('/');return at>0?file.slice(0,at)+'/':'./';};
+      var byFolder=files.length>rmLongList&&new Set(files.map(folder)).size>1;
+      var parts=rmFoldBy(files,folder,function(list){
+        var ul=rmEl('ul','system-program-files');list.forEach(function(file){ul.appendChild(rmDotBreaks(rmEl('li','',byFolder?file.split('/').pop():file)));});return [ul];
+      });
+      if(files.length<=rmShortSection)parts.forEach(function(part){built.appendChild(part);});
+      else{var fold=rmEl('details');fold.appendChild(rmEl('summary','',rmT('Files')));parts.forEach(function(part){fold.appendChild(part);});built.appendChild(fold);}
       line('Built from',built);
     }
   });

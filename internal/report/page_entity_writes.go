@@ -77,13 +77,12 @@ func (node pageMapNode) WritesJSON() string {
 }
 
 // pageDataFacts are one program's facts the changes read, built once: each
-// function's field writes, the types owning a table, the file-scope
-// variables' names, and the classes a function calls at a place (caller,
-// path and line: a construction there).
+// function's field writes and reads, its data types (dataTypes), and the
+// classes a function calls at a place (caller, path and line: a
+// construction there).
 type pageDataFacts struct {
 	writes    map[string][]int
-	tables    map[string]bool
-	globals   map[string]bool
+	data      map[string]bool
 	makes     map[string][]string
 	relations map[string]programindex.Relation
 	fieldsOf  map[string][]string
@@ -99,13 +98,8 @@ func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
 	if cached := builder.dataByTarget[targetID]; cached != nil {
 		return cached
 	}
-	facts := &pageDataFacts{writes: map[string][]int{}, tables: map[string]bool{}, globals: map[string]bool{}, makes: map[string][]string{},
+	facts := &pageDataFacts{writes: map[string][]int{}, data: map[string]bool{}, makes: map[string][]string{},
 		relations: map[string]programindex.Relation{}, fieldsOf: map[string][]string{}, typesOf: map[string][]string{}, reads: map[string][]int{}}
-	for _, record := range index.Data {
-		if record.OwnerSubjectID != "" && record.Data != nil && record.Data.Kind == "table" {
-			facts.tables[record.OwnerSubjectID] = true
-		}
-	}
 	if builder.data != nil && builder.data.ProgramPortfolio != nil {
 		for _, entry := range builder.data.ProgramPortfolio.Entries {
 			if entry.Target.ID != targetID {
@@ -123,9 +117,6 @@ func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
 			for _, object := range entry.Objects {
 				if object.Kind != programindex.ObjectVariable {
 					continue
-				}
-				if owner := kinds[object.OwnerID]; owner == programindex.ObjectModule || owner == programindex.ObjectPackage {
-					facts.globals[object.Name] = true
 				}
 				if kinds[object.OwnerID] != programindex.ObjectType {
 					continue
@@ -155,8 +146,44 @@ func (builder *pageBuilder) dataFacts(index *groupindex.Index) *pageDataFacts {
 			}
 		}
 	}
+	facts.dataTypes(builder, index)
 	builder.dataByTarget[targetID] = facts
 	return facts
+}
+
+// dataTypes are the record types the report establishes as the program's
+// data, from its data inventory (GroupsIndex data records, the page's Data
+// section): a type owning a database table (a record's owner: freqtrade's
+// Trade), and the type of a field the code writing one of the program's own
+// files walks (a file record's calling functions, their own field reads and
+// writes, the field's declared type: redis's rdbSave reads server.db, a
+// redisDb, so the keyspace its RDB file is written from is data). A type
+// nothing the program stores walks into (redis's sharedObjectsStruct, its
+// shared replies; its server state redisServer itself) is no data of it.
+func (facts *pageDataFacts) dataTypes(builder *pageBuilder, index *groupindex.Index) {
+	writers := map[string]bool{}
+	for _, record := range index.Data {
+		if record.Data == nil {
+			continue
+		}
+		if record.Data.Kind == "table" && record.OwnerSubjectID != "" {
+			facts.data[record.OwnerSubjectID] = true
+		}
+		if record.Data.Kind == "file" {
+			for _, subject := range record.CallSubjectIDs {
+				if subject != "" {
+					writers[subject] = true
+				}
+			}
+		}
+	}
+	for writer := range writers {
+		for _, position := range append(slices.Clone(facts.writes[writer]), facts.reads[writer]...) {
+			for _, typeID := range facts.typesOf[index.StructuralEdges[position].ToSubjectID] {
+				facts.data[typeID] = true
+			}
+		}
+	}
 }
 
 func constructionKey(caller string, at *programindex.Location) string {
@@ -280,15 +307,8 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		}
 		result = append(result, change)
 	}
-	// The program's data: a field reached through a file-scope variable, or
-	// a field of a type owning a table.
-	data := func(edge groupindex.StructuralEdge, owner groupindex.Subject) bool {
-		if facts.tables[owner.ID] {
-			return true
-		}
-		root, _, _ := strings.Cut(edge.FieldPath, ".")
-		return root != "" && facts.globals[root]
-	}
+	// The program's data (dataTypes).
+	data := func(owner groupindex.Subject) bool { return facts.data[owner.ID] }
 	typed := func(change pageEntityWrite, entity groupindex.Subject) (pageEntityWrite, bool) {
 		name, anchor := builder.subjectDisplay(entity)
 		if anchor == nil {
@@ -309,7 +329,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		for _, position := range facts.writes[id] {
 			edge := index.StructuralEdges[position]
 			field, owner, ok := builder.recordField(targetID, edge.ToSubjectID)
-			if !ok || constructs[id] == owner.ID || !data(edge, owner) {
+			if !ok || constructs[id] == owner.ID || !data(owner) {
 				continue
 			}
 			if change, ok := typed(pageEntityWrite{Kind: "write", Field: field.Name, Possible: edge.Resolution != programindex.ResolutionExact}, owner); ok {
@@ -332,7 +352,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 			via, _ := builder.subjectDisplay(ref.subject)
 			for _, fieldID := range builder.handedFields(index, facts, edge) {
 				field, owner, ok := builder.recordField(targetID, fieldID)
-				if !ok || !changesType(facts, types, fieldID) {
+				if !ok || !data(owner) || !changesType(facts, types, fieldID) {
 					continue
 				}
 				if change, ok := typed(pageEntityWrite{Kind: "call", Field: field.Name, Via: []string{via}}, owner); ok {

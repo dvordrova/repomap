@@ -104,16 +104,35 @@ function rmKey(nodes,edges,category){
   });
   return key;
 }
-// The inputs that reach a part, by kind, folded under their count: most
-// commands reach most parts through the one dispatcher, and Client
-// connections' list of 95 stood open between the part's callers and its
-// own connections.
-function rmReachingInputs(n,reaching,owner,choose){
+// The inputs that reach a part, folded: most commands reach most parts
+// through the one dispatcher, and Client connections' list of 95 stood
+// open between the part's callers and its own connections. By program when
+// several reach it, then by kind, then, past twelve, by the part handling
+// them as the canvas groups them (groupOf), each group closed under its
+// part's name (reviewer, 2026-09-30: ninety-six "redis-server / …" rows in
+// one list). Each input once, by its own name.
+function rmReachingInputs(n,reaching,owner,choose,groupOf){
   var inputs=rmEl('details','system-reaching-inputs');inputs.appendChild(rmEl('summary','',rmT(n.dataset.itemKind==='External communication'?'Inputs reaching this communication':'Inputs reaching this part')));
-  if(reaching.length){
-    var types=new Map();reaching.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
-    types.forEach(function(choices,type){var typeHeading=rmEl('h6','',rmT(rmInputKindTitles[type]||'Kind not established')),typeMark=globalThis.rmKindMark?.(type);if(typeMark)typeHeading.prepend(typeMark);inputs.appendChild(typeHeading);var links=rmEl('div','system-neighbours');choices.forEach(function(input){var b=rmEl('button','',owner(input)+' / '+input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});inputs.appendChild(links);});
-  }else inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));
+  if(!reaching.length){inputs.appendChild(rmEl('p','meta',rmT('No input path to this item is recorded.')));return inputs;}
+  function buttons(into,list){
+    var links=rmEl('div','system-neighbours');
+    list.forEach(function(input){var b=rmEl('button','',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});links.appendChild(b);});
+    into.appendChild(links);
+  }
+  var programs=new Map();reaching.forEach(function(input){var of=owner(input)||'';if(!programs.has(of))programs.set(of,[]);programs.get(of).push(input);});
+  programs.forEach(function(list,program){
+    var into=inputs;
+    if(programs.size>1){var head=rmEl('h5','system-reaching-program',program);inputs.appendChild(head);}
+    var types=new Map();list.forEach(function(input){var type=input.dataset.activation;if(!types.has(type))types.set(type,[]);types.get(type).push(input);});
+    types.forEach(function(choices,type){
+      var typeHeading=rmEl('h6','',rmT(rmInputKindTitles[type]||'Kind not established')),typeMark=globalThis.rmKindMark?.(type);if(typeMark)typeHeading.prepend(typeMark);into.appendChild(typeHeading);
+      var groups=new Map(),loose=[];
+      if(groupOf&&choices.length>12)choices.forEach(function(input){var title=groupOf(input);if(!title){loose.push(input);return;}if(!groups.has(title))groups.set(title,[]);groups.get(title).push(input);});
+      if(groups.size<2){buttons(into,choices);return;}
+      groups.forEach(function(members,title){var fold=rmEl('details','system-reaching-group');fold.appendChild(rmEl('summary','',title));buttons(fold,members);into.appendChild(fold);});
+      if(loose.length)buttons(into,loose);
+    });
+  });
   return inputs;
 }
 // An input's reading of its saved reach (page_input_path.go; owner's 3c).
@@ -153,7 +172,10 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     list.slice(0,5).forEach(function(entry){box.appendChild(call(entry));});
     if(list.length>5){
       var more=rmEl('details','system-path-more');more.appendChild(rmEl('summary','','+'+(list.length-5)));
-      list.slice(5).forEach(function(entry){more.appendChild(call(entry));});box.appendChild(more);
+      // Many calls by their caller, each once, closed under its name, its
+      // calls under it (reviewer, 2026-09-30: "+168" had stood as one list).
+      rmFoldBy(list.slice(5),function(entry){return (decls[entry[0]]||{}).name||'';},function(entries){return entries.map(call);}).forEach(function(part){more.appendChild(part);});
+      box.appendChild(more);
     }
   }
   function inputs(ids,label){
@@ -249,10 +271,14 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   // hidden behind a count (critic, 2026-09-30: freqtrade's trade had shown
   // its handler's first calls, then "65 more parts deeper").
   var parts=rmEl('div','system-path-steps'),all=path.parts||[];
-  function step(part,into){
+  // Many parts on the path each stand closed under their name; a click on
+  // a part's name in its fold's summary reads the part, the fold staying.
+  function closedHead(head){return !!head.parentElement&&head.parentElement.tagName==='SUMMARY';}
+  function step(part,into,closed){
     var node=partNode(part.part),head=rmEl(node?'button':'div','system-path-part',node?node.dataset.title:part.title||'');
-    if(node){head.type='button';head.addEventListener('click',function(){choose(node);});}
-    into.appendChild(head);
+    if(node){head.type='button';head.addEventListener('click',function(event){if(event&&closedHead(head))event.preventDefault();choose(node);});}
+    if(closed){var fold=rmEl('details','map-reading-group system-path-part-fold'),summary=rmEl('summary');summary.appendChild(head);fold.appendChild(summary);into.appendChild(fold);into=fold;}
+    else into.appendChild(head);
     if(part.handler!=null){var own=rmEl('div','system-path-step');own.append(rmEl('span','meta',rmT('handled by')+' '),name(part.handler));into.appendChild(own);}
     calls(part.entered||[],into);
     if(part.others)into.appendChild(rmEl('p','meta',rmT('{0} more calls into this part come from other code on this path',part.others)));
@@ -287,8 +313,9 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     });
     if(all.length){
       var more=rmEl('details','system-path-deeper');more.appendChild(rmEl('summary','',rmT('Parts on this path: {0}',named.join(', '))));
-      own.forEach(function(part){step(part,more);});
-      if(outside.length){more.appendChild(rmEl('p','map-reading-label',rmT('Outside')));outside.forEach(function(part){step(part,more);});}
+      var closed=own.length+outside.length>12;
+      own.forEach(function(part){step(part,more,closed);});
+      if(outside.length){more.appendChild(rmEl('p','map-reading-label',rmT('Outside')));outside.forEach(function(part){step(part,more,closed);});}
       parts.appendChild(more);
     }
   }else all.forEach(function(part){step(part,parts);});
@@ -318,7 +345,7 @@ function rmSettingWrites(sets,partNode,read){
 // they are declared and where that code is called from, what else it uses
 // and who else uses that, then once that where these inputs take effect is
 // not established. "Uses" is never read as "takes effect".
-function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
+function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode,groupOf){
   var section=rmEl('section','system-catalogue'),decls=catalogue.decls||[];
   function name(index){
     var decl=decls[index]||{name:''},key=decl.href||decl.open,at=key&&partNode(decl.part);
@@ -375,15 +402,19 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
   if(members.length>=2){
     var of=({command:'One of these commands',request:'One of these requests',setting:'One of these settings'})[catalogue.kind]||'One of these inputs';
     var fold=rmEl('details','system-catalogue-members');fold.appendChild(rmEl('summary','',rmT(of)));
-    var list=rmEl('ul','map-reading-ends');
-    members.forEach(function(id){
-      var input=inputNode(id);if(!input)return;
-      var item=rmEl('li');
-      if(input.dataset.title===title)item.appendChild(rmEl('b','',input.dataset.title));
-      else{var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});item.appendChild(b);}
-      list.appendChild(item);
-    });
-    fold.appendChild(list);section.appendChild(fold);
+    // Past rmLongList, by the canvas's groups (the part handling each).
+    rmFoldBy(members,function(id){return groupOf?groupOf(id):'';},function(ids){
+      var list=rmEl('ul','map-reading-ends');
+      ids.forEach(function(id){
+        var input=inputNode(id);if(!input)return;
+        var item=rmEl('li');
+        if(input.dataset.title===title)item.appendChild(rmEl('b','',input.dataset.title));
+        else{var b=rmEl('button','system-catalogue-member',input.dataset.title);b.type='button';b.addEventListener('click',function(){choose(input);});item.appendChild(b);}
+        list.appendChild(item);
+      });
+      return [list];
+    }).forEach(function(part){fold.appendChild(part);});
+    section.appendChild(fold);
   }
   if(onInput&&catalogue.on_handler!=null)section.appendChild(line('system-catalogue-handled','{0} is handled by {1}',onInput.dataset.title,name(catalogue.on_handler)));
   // What else the declaring code uses, folded under its count: each
@@ -406,9 +437,13 @@ function rmCatalogueSection(catalogue,title,inputNode,choose,read,partNode){
       summary.textContent=rmT('{0} is also used by',(decls[use.decl]||{}).name||'');
       more.appendChild(summary);
       var byPart=new Map();use.users.forEach(function(user){var part=(decls[user]||{}).part||'';if(!byPart.has(part))byPart.set(part,[]);byPart.get(part).push(user);});
+      // Many parts' users each under their part's closed fold, the part's
+      // name its summary (reviewer, 2026-09-30: 116 rows under one line).
+      var folded=use.users.length>rmLongList&&byPart.size>1;
       byPart.forEach(function(users,part){
-        var row=rmEl('div','system-neighbours'),node=partNode(part);
-        if(node){var b=rmEl('button','',node.dataset.title);b.type='button';b.addEventListener('click',function(){choose(node);});row.appendChild(b);}
+        var node=partNode(part),row=rmEl(folded?'details':'div',folded?'map-reading-group':'system-neighbours');
+        if(folded)row.appendChild(rmEl('summary','',node?node.dataset.title:rmT('Declarations')));
+        else if(node){var b=rmEl('button','',node.dataset.title);b.type='button';b.addEventListener('click',function(){choose(node);});row.appendChild(b);}
         var list=rmEl('ul','map-reading-ends');users.forEach(function(user){var item=rmEl('li');item.append(name(user));list.appendChild(item);});
         row.appendChild(list);more.appendChild(row);
       });
@@ -735,6 +770,16 @@ function rmEntryLanding(link,nodes,component){
   }
   // A name linking to a place in the code, the place said on its hover.
   function rmPlaceLink(source,name){var link=repomapMembers.sourceLink(Object.assign({},source,{Text:name}));link.title=[source.Text,link.title].filter(Boolean).join('\n');return link;}
+  // The group each input stands in on the canvas (projection.inputGroups),
+  // by its part's title; built once.
+  var groupTitles=null;
+  function inputGroupTitle(id){
+    if(!groupTitles){
+      groupTitles={};
+      nodes.forEach(function(frame){if(frame.dataset.branch!=='inputs')return;var parted=projection.inputGroups(frame.id,function(part){return byID[part]?byID[part].dataset.title:'';});if(parted)parted.groups.forEach(function(group){group.inputs.forEach(function(input){groupTitles[input]=group.title;});});});
+    }
+    return groupTitles[id]||'';
+  }
   function nodeByHref(href){return href?nodes.find(function(n){return n.getAttribute('href')===href||'#'+n.id===href;})||null:null;}
   // What the reading column reads with (31-reading-column.js): every name
   // it reads is read in the report and shown on the canvas, the camera
@@ -846,7 +891,7 @@ function rmEntryLanding(link,nodes,component){
       if(!n.dataset.branch)card.querySelector('.map-related-operations')?.remove();
       var selectedMembers=new Set(projection.leaves(n.id));selectedMembers.add(n.id);
       var reaching=nodes.filter(function(candidate){if(!candidate.dataset.activation)return false;return Array.from(projection.selection('',candidate.id).active).some(function(id){return selectedMembers.has(id);});});
-      var inputs=rmReachingInputs(n,reaching,owner,function(input){select(input,true,null,true);});
+      var inputs=rmReachingInputs(n,reaching,owner,function(input){select(input,true,null,true);},function(input){return inputGroupTitle(input.id);});
       if((rmPage.data(n,'concepts')||[]).length)inputs.appendChild(rmEl('p','meta',rmT('Reaching a part does not by itself establish a change to its entities.')));
       var partReading=card.querySelector('.map-part-reading');
       if(partReading)partReading.appendChild(inputs);
@@ -923,7 +968,7 @@ function rmEntryLanding(link,nodes,component){
     }
     var catalogueSection=null;
     if(n.dataset.activation&&catalogue){
-      catalogueSection=rmCatalogueSection(catalogue,n.dataset.title,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);},readDeclaration,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;});
+      catalogueSection=rmCatalogueSection(catalogue,n.dataset.title,function(id){return byID[id]&&byID[id].dataset.activation?byID[id]:null;},function(input){select(input,true,null,true);},readDeclaration,function(id){return byID[id]&&!byID[id].dataset.activation?byID[id]:null;},inputGroupTitle);
       catalogueSection.dataset.readingAnchor='';
       card.querySelector('.map-card-intro').after(catalogueSection);
     }

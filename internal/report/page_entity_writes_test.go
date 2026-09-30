@@ -12,11 +12,14 @@ import (
 )
 
 // What an input changes in the program's data (critic, 2026-09-30: redis's
-// set had listed 80 field writes, its helpers' internals among them): its
-// work's writes of a field reached through a file-scope variable
-// (setGenericCommand's server.dirty) or of a type owning a table
-// (Trade.amount), each once with every function making it; the database
-// its reach calls, with the table and the type owning it. Never a helper's
+// set had listed 80 field writes, its helpers' internals among them). The
+// data is what the report's data inventory establishes: a type owning a
+// table (Trade), a type of a field the code writing the program's file walks
+// (rdbSave reads server.db, a Db). Listed: its work's writes of such a
+// type's field (Trade.amount), each once with every function making it; a
+// field of it handed to a helper writing its type, as handed (db.dict to
+// dictAdd); the database its reach calls, with the table and the type
+// owning it. Never the program's other state (Server.dirty), a helper's
 // own writes (Dict.used), a field handed to a helper that writes nothing of
 // its type (addReply handed shared.ok) — one handed to a helper writing its
 // type is said as handed (dictAdd handed db.dict) — a field of another
@@ -65,6 +68,8 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 	add("Reply", "Reply", programindex.ObjectType, "", 140, false)
 	add("file", "server.c", programindex.ObjectModule, "", 1, false)
 	add("server", "server", programindex.ObjectVariable, "file", 2, false)
+	add("db", "db", programindex.ObjectVariable, "Server", 102, false, 110)
+	add("rdbSave", "rdbSave", programindex.ObjectFunction, "", 70, false)
 	add("Client", "Client", programindex.ObjectType, "", 160, false)
 	add("argc", "argc", programindex.ObjectVariable, "Client", 161, false)
 	add("Trade", "Trade", programindex.ObjectType, "", 150, false)
@@ -92,10 +97,12 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 			edge("w7", "generic", "amount", programindex.RelationWrites, exact, 27),
 			edge("c7", "set", "maybe", programindex.RelationCalls, programindex.ResolutionAlternatives, 12),
 			edge("w4", "maybe", "dirty", programindex.RelationWrites, exact, 61, "server.dirty"),
+			edge("r1", "rdbSave", "db", programindex.RelationReads, exact, 71, "server.db"),
 		},
 		Operations: []groupindex.Operation{{ID: "o1", SubjectID: "set", Kind: "request", Name: "set"}},
 		Outbound:   []groupindex.OutboundCall{{ID: "d1", SubjectID: "generic", Kind: "db", Destination: "Database", DataIDs: []string{"y1"}, Location: *at(25)}},
-		Data:       []groupindex.DataRecord{{DataRecord: atlas.DataRecord{ID: "y1", Path: "server.c", Line: 150, Data: &facts.DataObject{Kind: "table", Name: "trades"}}, OwnerSubjectID: "Trade"}},
+		Data: []groupindex.DataRecord{{DataRecord: atlas.DataRecord{ID: "y1", Path: "server.c", Line: 150, Data: &facts.DataObject{Kind: "table", Name: "trades"}}, OwnerSubjectID: "Trade"},
+			{DataRecord: atlas.DataRecord{ID: "w1", Path: "server.c", Line: 72, Data: &facts.DataObject{Kind: "file", Name: "{server.dbfilename}", File: &facts.DataFile{Calls: []facts.DataCall{{}}}}}, CallSubjectIDs: []string{"rdbSave"}}},
 	}
 	b.data.ProgramPortfolio.Entries = []programindex.Index{{Target: programindex.Target{ID: "t1"}, Objects: native, Relations: []programindex.Relation{
 		{ID: "c2", Kind: programindex.RelationCalls, Patterns: []programindex.RelationPattern{{Arguments: []programindex.PatternArgument{{ObjectIDs: []string{"dict"}}}}}},
@@ -122,7 +129,7 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 		line += " by " + strings.Join(by, ", ")
 		said = append(said, line)
 	}
-	want := []string{"write Server.dirty by setCommand, setGenericCommand", "call Db.dict via dictAdd by setGenericCommand", "write Trade.amount by setGenericCommand", "db Database trades of Trade by setGenericCommand"}
+	want := []string{"call Db.dict via dictAdd by setGenericCommand", "write Trade.amount by setGenericCommand", "db Database trades of Trade by setGenericCommand"}
 	if !slices.Equal(said, want) {
 		t.Fatalf("changes = %q\nwant %q", said, want)
 	}

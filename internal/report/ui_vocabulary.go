@@ -883,6 +883,9 @@ var russianUI = map[string]string{
 	"write it":                                        "записывают его",
 	"source it":                                       "подключают его",
 	"connect to it":                                   "соединяются с ним",
+	"Functions":                                       "Функции",
+	"Types":                                           "Типы",
+	"Variables":                                       "Переменные",
 	"handed to {0}":                                   "передаётся в {0}",
 	"by {0}":                                          "меняет: {0}",
 }
