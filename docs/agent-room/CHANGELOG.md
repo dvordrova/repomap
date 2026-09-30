@@ -1,5 +1,34 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Canvas, reviewer pass 3: quiet arrows of a read area, shared Outside names, gutters, whole Inputs, brief arrow cards
+
+- **Quiet arrows:** an area chosen or zoomed into looks at its parts
+  whatever the pointer crosses; othello's Game logic had drawn 2 of its 4
+  arrows (AI search → AI evaluation → Board and rules are quiet).
+- **Outside:** a frame holding a call several programs write once is named
+  after each ("redis-benchmark, redis-cli") in cards, column and
+  breadcrumb (`nameSharedOutside`); a program dependency already drawn
+  from a part into an input is no second arrow (ws_client's e562).
+- **Program level:** packed gutters' lanes 10 px apart and 16 px from the
+  cards; Core/entry marks moved to the top border's left end (arrowheads
+  had been under them); closed cards' descriptions in measured whole-word
+  lines, the heading up to 0.6 smaller (title ≥11 px where entered);
+  neighbour Outside/Inputs titles capped at 20 px, chips at 16 px.
+- **Inputs:** the magnifier enters an Inputs/Outside frame whole; each
+  collection opens its groups by its own inputs; a group is at least a
+  150×56 px card there (Redis's Replication 4.9 px → readable).
+- **Cards:** an arrow's canvas card names each part it goes into and what
+  it reaches there once (≤12, then "…"); the column keeps every call. A
+  part's short arrows are 30 px with heads, and they and its off-canvas
+  arrows open that part's connection card. Tiles drop the namespace most of
+  a part shares; a program card lists no part named as itself and no role
+  equal to a listed area.
+- **Checks:** geometry lint on the four renders: redis 4→3, litestream 1,
+  freqtrade 0, othello 1 (all remaining pre-existing); page shape: only the
+  Outside rename; make test/vet pass. Not done: entered programs' arrows from off-canvas
+  Inputs/Outside (framing them costs 31–64% of the zoom); redis-server's
+  back edge around Data type commands (ELK merged edges).
+
 ## 2026-09-30 — Options handed to a helper's parameter, a row's own text, no dest or copied-row tiles (skeptic's verdict on freqtrade's flags)
 
 - **Why:** freqtrade's 124 flags are rows of `AVAILABLE_CLI_OPTIONS` that

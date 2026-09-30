@@ -119,8 +119,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   arrow goes into, each group framed, titled and ordered by that part's name,
   its inputs in rows wider than tall; choosing its title
   reads that part. The collection opens to its groups first, each closed like
-  a closed area with a zoom mark entering it; a group opens to its inputs
-  when their headings read (14px to open, 12px to stay open). An input with
+  a closed area with a zoom mark entering it, no smaller than a card its
+  title reads in where the collection is entered whole; a collection's
+  groups open to their inputs together when its own inputs' headings read
+  (14px to open, 12px to stay open), whatever another collection's do.
+  Its magnifier, as an Outside frame's, enters it whole, its tiles at most
+  at their own size. An input with
   neither stays loose after the groups and opens with them; a collection
   whose inputs share one part keeps them loose. The groups are display
   containment, not architectural areas, and add no relation. A tile says its
@@ -170,24 +174,29 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   keeps its own destinations. One call written once (the same destination
   and symbol at the same saved path and line, owner, 2026-09-28) is one
   call, in the first program's destination, with an arrow from each program
-  making it. An Outside frame and its chips are display collections, not
-  inferred components.
+  making it; that Outside frame is then named after every program whose
+  arrows enter it, its own first ("redis-benchmark, redis-cli"), in its
+  arrow cards, reading and breadcrumb. An Outside frame and its chips are
+  display collections, not inferred components.
 - When a saved connection identifies one displayed peer in another target,
   the canvas connects the original caller straight to that peer/input, with
   no third participant; its outbound catalogue and source reading stay
   intact. Missing, partial or ambiguous matches stay separate; equal
   destination text never establishes the link. Both endpoint sources,
   operation membership and possible status survive the display projection.
-  Source-owned cross-component links connect the same common canvas.
+  Source-owned cross-component links connect the same common canvas. A
+  dependency between two programs already drawn between one's part and the
+  other's part or input is not drawn again between the programs.
 
 - Outside frames and their chips are amber, parts and area frames neutral; core parts are
   rose, entry parts green, inputs blue and external communications amber,
   identities the saved lanes supply. Each colour means one thing (owner,
   2026-09-28): purple is a link and nothing else, a key declaration is bold
   ink with no colour of its own, and an input's name on the canvas is the
-  inputs' blue. Core/entry cards carry distinct diamond/arrow glyphs, shared
-  with the legend and accessible names, instead of Core/Entrypoints above
-  every title. The border stops at the entry arrow, and the legend draws the
+  inputs' blue. Core/entry cards carry distinct diamond/arrow glyphs on the
+  top border near its left end, clear of an arrow entering at its middle,
+  shared with the legend and accessible names, instead of Core/Entrypoints
+  above every title. The border stops at the entry arrow, and the legend draws the
   same arrow.
 - An area's mark is its GroupsIndex container's (READING): the core mark when
   any part in it is the domain, the entry's area included (owner,
@@ -264,7 +273,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Quiet: initialization or a call into a helper, only in a target that serves
   something, never emptying a map); a call into a helper stays quiet even on
   an input's path. The canvas draws a quiet arrow only while one of its ends
-  is looked at and decides nothing of its own. An arrow drawing several
+  is looked at (the part the camera stands in, or a part of the area chosen
+  or zoomed into, whatever the pointer crosses; a whole program looks at
+  nothing in particular) and decides nothing of its own. An arrow drawing several
   relations is quiet only when all of them are. The system canvas is the
   page's one figure; the page writes no static picture of it.
 - Hover temporarily replaces the dark emphasis and never unions another
@@ -329,7 +340,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   head stands for the incoming
   connection of the area or component it points into; a head on a destination,
   the inputs or a loose part, for the outgoing connection of the frame at the
-  other end; on the looked-at frame's border, for its own direction. An arrow between two parts of one frame has no card. An
+  other end; on the looked-at frame's border, for its own direction; an
+  arrow of the part the camera stands in, a short one or one whose head is
+  beyond the canvas, for that part's connection. A part's short arrows are
+  thirty screen pixels, their heads in sight, and its magnifier leaves room
+  for them. An arrow between two parts of one frame has no card. An
   arrowhead stands outside its frame's border. A card stands flush with its
   handle, outside the frame being read so it covers none of its parts, clear
   of the handle, on the side with room and wholly inside the canvas; a label's
@@ -351,7 +366,14 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   are rows of it, never drawn over its rows, and the card prints no count. The pause, the
   linger and the triangle are interaction timing, not evidence limits.
 
-  A label's card (owner, 2026-09-27) is headed by the two frames its arrow
+  On the canvas an arrow's card answers what it is (reviewer, 2026-09-30):
+  headed by the two frames its arrow joins, it names each part the arrow
+  goes into and under it what it reaches there, each name once (a callee, a
+  field, the inputs a handler takes), one to a line in columns, the first
+  dozen then "…"; every call and its caller are read in the column, a
+  click on the arrow away. Litestream's CLI → Core database engine card had
+  listed 174 caller → callee rows.
+  In the column a connection (owner, 2026-09-27) is headed by the two frames its arrow
   joins, from → into, and one line of counts: calls of each kind, from how
   many parts of one frame into how many of the other ("{n} calls, from all
   {a} parts into {b} of {c}"), and how many go the other way, a link opening
@@ -397,7 +419,10 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   the unit of those areas' median height. A closed card's title reads at
   twelve pixels where its layer opens, or where its program is entered
   whole when that is closer; its description takes the whole lines left
-  under that title, cut short with its whole text on hover. A program's
+  under that title, the last ending after a whole word with "…", its whole
+  text on hover. When that cuts it, the heading is drawn up to two fifths
+  smaller, its title still eleven pixels where its program is entered, if
+  that lets it read whole, or else in two lines. A program's
   title grows as the camera leaves it only within the band its frame keeps
   for it: grown past it, "freqtrade" had stood over its first area. The
   magnifier frames a part whole only while
@@ -462,9 +487,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   Tiles stand by file, the files in the order their first declaration is
   listed, each file's declarations in the page's order: the model's keys,
   then the types, then the rest (owner, 2026-09-28); the file is a hint.
-  A part whose declarations share one namespace (Clojure's
-  `othello.ui.host/`) names them without it, the whole name on the tile's
-  hover and in the reading. In the column a name breaks only after a dot or
+  A part most of whose declarations share one namespace (Clojure's
+  `othello.ui.host/`) names those without it, the whole name on the tile's
+  hover and in the reading; one of another namespace keeps its whole name. In the column a name breaks only after a dot or
   a slash, never at an underscore, a hyphen or inside a word; a piece too
   long for its line ends in "…", the whole name on its hover.
   They stack in that order in their column, a column too tall spilling into
@@ -573,8 +598,13 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   size, as a small group keeps a smaller complete label; a frame too narrow
   for its text at full size keeps that smaller summary rather than stand
   blank. Compact component purposes use
-  the remaining whole lines, with an ellipsis when shortened, hidden if fewer
-  than two lines fit; the complete purpose stays in the reading column.
+  the remaining whole lines, at most three, the last ending after a whole
+  word with "…", hidden if fewer than two lines fit; the complete purpose
+  stays in the reading column. A program's card lists no part named as the
+  program is (a script's one part, named by its file) and shows no role
+  worded as one of the areas it lists. Beside an entered program, a
+  neighbour's Inputs and Outside titles and chips grow with the camera only
+  to a program heading's size.
   An Outside frame's summary is its chips, at their own size at the
   preferred camera.
   The fixed world places frames, parts, complete input cards, component
@@ -601,8 +631,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   orthogonal in the gutters between rows and columns, never over a card.
   Every arrow at one side of a card meets it at one point and runs in that
   card's one lane of the gutter, a trunk until they part, one arrowhead; a
-  gutter is wide enough for its lanes five pixels apart where the program
-  is entered, the frame's padding kept outside its outer lanes. In a
+  gutter is wide enough for its lanes ten pixels apart and sixteen from the
+  cards where the program is entered (an arrowhead crosses no lane), the
+  frame's padding kept outside its outer lanes. In a
   layered arrangement the arrows into one side of an area likewise merge
   (ELK `mergeEdges`). Cross-participant labels take no interior
   space; their cards belong to the outer endpoints. Components and input
