@@ -126,6 +126,12 @@
   had stood; redis-server's Primary stays outside. The question's redraw
   renamed freqtrade's own destinations (Webhook Endpoint, Binance Public
   Data, External Message Producer; Update Server → GitHub).
+- **Regression fixed (dfc3583a):** redis-cli's and redis-benchmark's
+  `gethostbyname` (talks `sdk`) had been offered redis-server and drawn
+  into it. Only a destination with a `client_request` call is offered a
+  program now. Warm redis run 031534 (exit 0, 2 live rows): connect →
+  redis-server, gethostbyname → DNS Resolver in both clients, as in 234508.
+  freqtrade's offered rows are all `client_request`: unchanged.
 - **Module loggers (e78c9af2; REPORT § tiles):** a module variable whose
   value is a standard-library call's result and that only its file's
   functions read is no tile (GroupsIndex `PlatformHandles`, derived):
