@@ -800,7 +800,10 @@ one with calls the code cannot follow once, with their count. A variable
 read by a hundred functions folds each larger part to its line. Choosing a
 name reads that declaration in its own part, in place when that is the part
 being read, so a chain is followed one call at a time; equal names with different source locations stay
-separate.
+separate. A method or a field is named with its type ("ReplicateCommand.Run",
+"RPCMessageType.ANALYZED_DF"); two declarations one list still names alike
+are told apart by their file's folder, or their file, quiet after the name
+(litestream's ReplicaClient, one per package).
 
 Who writes and reads a field (owner, 2026-09-29) comes from the program's
 exact reads and writes of record fields (`page_field_uses.go`): a C or Go
@@ -872,8 +875,10 @@ count or meta word. The calls stand under each part's box once (its
 description on hover, a click reads it), the parts in the order of their
 first call, each part's calls in written order (reviewer, 2026-09-30: redis
 main had shown "Server lifecycle and cron" four times). A library call is no row:
-one muted line ends the step, "also calls: …", each name once in
-written order, its library on hover. A declaration no part holds is a plain
+one muted line ends the flow, "also calls: …", each name once in
+written order, its library on hover, gathering those of every call opened
+in place too, each such name's hover saying who calls it (reviewer,
+2026-09-30: othello's key-pressed had stacked three). A declaration no part holds is a plain
 name whose own flow still opens, carried in the calling reading, so no call
 is dropped. A call a macro's expansion makes is shown as the code writes it:
 the macro, once (C's `macro_expansion` witness and the call's selector),
@@ -1254,7 +1259,7 @@ whole page ("Component details") first. Its areas and parts are the
 canvas's. What its entrypoints do not reach, its TODOs and its analysis
 coverage stand on the "What is missing" page, under the program's name
 (`component-gaps`), and nowhere else. An area's reading lists its parts,
-each in its box with its description on one line and its key declarations
+each in its box with its description whole, wrapped between words, and its key declarations
 alone, bold, one to a line; the rest is the part's own reading.
 
 An Inputs collection is read by its catalogues: its component first, in its
@@ -1267,10 +1272,11 @@ another program's inputs, and its inputs one to a line, each reading its
 input, a name that is a sentence (a query parameter's description) in the
 reading's own type, not code; then the inputs no catalogue holds; requests
 first. Within each, the inputs stand in the groups the canvas draws in the
-collection, in its order, each under its part's box, the loose ones after
-them (reviewer, 2026-09-30: Redis's ninety requests had read A to Z beside
-the canvas's groups); a kind of more than twelve inputs in several groups
-folds each group to its box. Each input's record, with its registration
+collection, in its order, one group per part, its box the heading, each
+catalogue's lines once inside it, the loose ones after them (reviewer,
+2026-09-30: Redis's ninety requests had read A to Z beside the canvas's
+groups; freqtrade's had been headed by a catalogue's module); a kind of more
+than twelve inputs in several groups folds each group to its box. Each input's record, with its registration
 line as written, is its own reading.
 
 The component's "Entrypoints" link lands on the program's entry, from
@@ -1651,14 +1657,22 @@ contract above still applies.
 
 Reachability is not entity mutation. The concept projection reads accepted
 native type declarations only; value-based domain models without a named type
-are not invented during rendering. Target-bound native writes carry their
-original call-site location into GroupsIndex. The report lists writes only
-when the input's saved reach holds the writer and the written variable has an
-exact native type owner. It keeps possible receiver/call resolution, the
-write source, and the writer's callers on the path (every call of the reach
-into it, none chosen as a route; none when the handler writes itself);
-reachability does not claim execution on every request. Entity readings
-reverse these same records. A matched input's writes join as a possible
-integration; sibling inputs gain no effects. Unresolved writes, ordinary reads
-and mere membership in a type-bearing part do not establish mutation. Saved
-graphs without write locations produce no invented evidence.
+are not invented during rendering. An input's "State changes" are its
+changes to the program's data (critic, 2026-09-30: they had listed every
+field write of the whole reach, 80 for redis's `set`, helper internals such
+as listNode.next among them; `page_entity_writes.go`). Its work is its
+handler and what it calls exactly, never entering a helper (a declaration
+the helper question decided serves others' work, in a part most of the
+program's parts call into, other than the handler's own). Listed, in the
+order the work makes them: a record field the work writes, save a
+constructor setting up the object its call makes (a call of a class and of
+its method at one place); a record field it hands to a helper whose own
+code writes that field's type or a record type one of its fields holds
+("redisDb.dict — through dictAdd, dictReplace"); then the database calls
+anywhere in its reach with the tables their statements name, and the files
+it reaches. Each type once with each field once; a name links to where the
+change is made, that place and who makes it on its hover; no line is
+printed and no hedge line stands. A helper's own writes, a possible call's
+and a field handed to a helper writing nothing of its type are never
+listed. A part's reading lists its types' changes, by input. A matched
+input's changes join as a possible integration; sibling inputs gain none.

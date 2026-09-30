@@ -1,5 +1,37 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Column, reviewer pass 4: State changes as changes to the program's data; no place, cut or repeat in the column
+
+- **State changes** (`page_entity_writes.go`, replaced): an input's work is
+  its handler and its exact calls, never entering a helper (helper answer +
+  a part most parts call into, not the handler's); listed are its field
+  writes (a constructor setting up its own new object aside), the fields it
+  hands to a helper that writes their type ("redisDb.dict — through
+  dictAdd, dictReplace, dictDelete"), then db calls with their tables and
+  files anywhere in the reach. No helper internals, no hedge line, no line
+  numbers. Rows at HEAD → now: redis 11,145 → 1,239 (`set` 74 → 7:
+  redisDb.dict/.expires, server.dirty, shared.czero via addReply, the log
+  file), freqtrade 2,452 → 742 (forceenter: the database; trade: 97),
+  litestream 990 → 657; litestream `replicate` has no
+  handler in the saved run (data), `POST /sync` stays long (writes to its
+  own result structs, which the facts do not tell from program state).
+- **Pass-4 items** (00889151): State changes names are links, the place on
+  hover; area part descriptions wrap; one Inputs group per part; one "also
+  calls:" line per flow; a browser test over the fixture page (and
+  REPOMAP_COLUMN_REPORTS) fails on "file.ext:line" or words cut.
+- **Repeats:** methods and fields are named with their type
+  ("ReplicateCommand.Run"); two list entries still named alike get their
+  folder or file, quiet (ReplicaClient per package).
+- **Lints** (journeys.spec on the four renders): clean HEAD file:line 0,
+  repeated 8, cut 15 → after: 0, 1, 14. Left: freqtrade's two `--erase`
+  (two real flags, `erase` and `erase_ui_only`; they part once nested under
+  their subcommands, which the saved runs predate), 13 long names clipped by
+  the owner's "…" rule, one canvas chip. Redis `set` journey now passes.
+- **Not mine:** the Related operations buttons (30-map.js) print
+  "save · redis.c:781" for two same-named inputs; the arrow card rows
+  (call-card-view.jsx) clip route names in the column; othello's written
+  registration dumps the whole `q/sketch` call (data).
+
 ## 2026-09-30 — A def's call of its own parameter, and a case input's What it does
 
 - **Parameter calls (ae9186f5):** the Python adapter makes a def's call of
