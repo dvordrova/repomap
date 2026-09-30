@@ -47,9 +47,9 @@ type Reach struct {
 	// a table the reach only reads registers nothing.
 	HandsOver    []int
 	HandedOverBy []string
-	// SubArguments are the handler-less inputs declared by code only this
-	// reach (and no launch) holds, in operation order: words the handler
-	// itself checks (launch.go).
+	// SubArguments are the handler-less inputs the handler's own body
+	// declares (and no launch reaches), in operation order, each word
+	// once: words the handler itself checks (launch.go).
 	SubArguments []string
 	// Options are the handler-less inputs of this input's kind declared on
 	// the object its own call made, or by code only its branch runs, in

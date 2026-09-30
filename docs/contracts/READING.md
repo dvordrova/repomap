@@ -747,7 +747,11 @@ a call to a `talks` symbol stays that outgoing boundary. The call is an entry
 of the handler's kind whose handler is not established, declared by the
 handler; GroupsIndex nests it under the entry (`Launch.Nested`,
 `Reach.SubArguments`). Redis's SORT (7 words), DEBUG (5) and SLAVEOF (2) were
-14 near-tie questions.
+14 near-tie questions. Only the handler's own body's words are its
+sub-arguments, each word once: a word a helper deeper in the reach checks
+is an input of its own, and a configuration key the reach reads a setting
+(critic, 2026-09-30: freqtrade's `trade` had listed every word of its 65
+parts as "Words its handler checks"; the Python fixture's `bare_variant`).
 
 A flag belongs to its subcommand (owner, 2026-09-29): GroupsIndex nests a
 handler-less input under an input of the same kind, as its option

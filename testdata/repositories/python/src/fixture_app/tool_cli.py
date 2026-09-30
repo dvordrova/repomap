@@ -18,7 +18,7 @@ import subprocess
 def run_init(arguments):
     if fnmatch.fnmatch(arguments.cmd, "init-*"):
         return "variant"
-    return arguments.cmd
+    return bare_variant(arguments) or arguments.cmd
 
 
 def build_parser():
@@ -106,3 +106,9 @@ def build_remote():
 
 def run_remote_add(arguments):
     return arguments.cmd
+
+
+def bare_variant(arguments):
+    """A helper init's handler calls: the word it checks is its own, no
+    word init's handler itself checks."""
+    return fnmatch.fnmatch(arguments.cmd, "init-bare")

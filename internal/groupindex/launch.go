@@ -19,8 +19,8 @@ import (
 // (could not look inside: its unresolved calls), or nothing, counted only. It is how the inputs
 // were found, never a gate: no input outside it is hidden.
 //
-// Nested are the handler-less inputs declared only inside an input's
-// handler reach (its sub-arguments, as SORT's asc) or only by its own
+// Nested are the handler-less inputs an input's handler's own body declares
+// (its sub-arguments, as SORT's asc) or only by its own
 // command's code (its options, as litestream's databases -json): each is
 // listed in that input's reading (Reach.SubArguments, Reach.Options) and is
 // no tile of its own. An option the program takes as well (a helper also
@@ -150,27 +150,33 @@ func (graph *reachGraph) launch(reaches []Reach) Launch {
 			result.Functions[function].Closed = append(result.Functions[function].Closed, position)
 		}
 	}
-	// Sub-arguments: a handler-less input whose declaring code only an
-	// input's handler reaches, and the launch walk does not, is that
-	// input's.
+	// Sub-arguments: a handler-less input the handler's own body declares
+	// (its own comparisons and lookups: SORT's asc in sortCommand), and
+	// the launch walk does not reach, is that input's, each word once.
+	// Code deeper in the reach checks its own words: a key the reach's
+	// configuration reads is a setting, a word a helper compares is an
+	// input of its own (critic, 2026-09-30: freqtrade's trade had listed
+	// every word of its 65 parts as "Words its handler checks").
 	for position := range reaches {
 		reach := &reaches[position]
-		reached := map[string]bool{}
-		for _, subject := range reach.Subjects {
-			reached[subject.SubjectID] = true
-		}
-		if len(reached) == 0 {
+		operation := index.Operations[position]
+		if operation.SubjectID == "" || operation.HandlerUnknown {
 			continue
 		}
-		for _, operation := range index.Operations {
-			if !operation.HandlerUnknown || operation.DeclaredBy == "" || operation.ID == reach.OperationID || !reached[operation.DeclaredBy] {
+		if _, launched := at[operation.SubjectID]; launched {
+			continue
+		}
+		words := map[string]bool{}
+		for _, word := range index.Operations {
+			if !word.HandlerUnknown || word.DeclaredBy != operation.SubjectID || word.ID == reach.OperationID {
 				continue
 			}
-			if _, launched := at[operation.DeclaredBy]; launched {
+			result.Nested[word.ID] = true
+			if words[word.Kind+"\x00"+word.Name] {
 				continue
 			}
-			reach.SubArguments = append(reach.SubArguments, operation.ID)
-			result.Nested[operation.ID] = true
+			words[word.Kind+"\x00"+word.Name] = true
+			reach.SubArguments = append(reach.SubArguments, word.ID)
 		}
 	}
 	// A value of another input's words (appendfsync's always) is that

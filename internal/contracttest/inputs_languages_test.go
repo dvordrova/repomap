@@ -234,6 +234,11 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 				strings.HasSuffix(symbol, ".add_subparsers") || strings.HasSuffix(symbol, ".pop") {
 				return "command", true
 			}
+			// bare_variant's fnmatch, a helper init's handler calls, is
+			// asked and answered a command.
+			if symbol == "fnmatch.fnmatch" {
+				return "command", true
+			}
 		case "binds":
 			if strings.HasSuffix(symbol, ".set_defaults") {
 				return "command", true
@@ -314,6 +319,9 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 		// stays an input; each add_subparsers(dest=…) is none.
 		{kind: "command", name: "remote", declaredBy: "build_remote", on: `parser.add_subparsers(dest="cmd")`, at: "src/fixture_app/tool_cli.py:100"},
 		{kind: "command", name: "add", declaredBy: "build_remote", on: `remote.add_subparsers(dest="remote_cmd")`, handler: "run_remote_add", at: "src/fixture_app/tool_cli.py:102"},
+		// A word a helper init's handler calls checks: an input of its own,
+		// no word init's handler checks.
+		{kind: "command", name: "init-bare", declaredBy: "bare_variant", at: "src/fixture_app/tool_cli.py:114"},
 		// run_init, init's handler, compares its argument's cmd with
 		// init-*: a word only it checks, init's sub-argument (K3), never
 		// asked what it becomes.
@@ -339,7 +347,7 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 		t.Fatalf("registrations as written: %q", written)
 	}
 	for _, item := range preset.asked["enters"] {
-		if symbol, _ := item["symbol"].(string); symbol == "fnmatch.fnmatch" {
+		if symbol, _ := item["symbol"].(string); symbol == "fnmatch.fnmatch" && strings.HasPrefix(stringOf(item["in"]), "run_init") {
 			t.Fatalf("a word init's handler compares with what it was handed was asked: %v", item)
 		}
 	}
@@ -468,4 +476,10 @@ func TestCumulativeClojureInputsAreAskedPerCall(t *testing.T) {
 	if !slices.Contains(programs, "git") {
 		t.Fatalf("programs started: %v", programs)
 	}
+}
+
+// stringOf is an item's field as text, or "".
+func stringOf(value any) string {
+	text, _ := value.(string)
+	return text
 }

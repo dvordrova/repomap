@@ -218,21 +218,24 @@ func TestLoadTimeCodeIsALaunchRoot(t *testing.T) {
 	}
 }
 
-// Words only an input's handler checks are that input's sub-arguments
-// (SORT's asc): listed in its reach, never tiles. Words the launch reaches
-// too stay inputs of their own.
-func TestAnEntryInAHandlersReachIsItsSubArgument(t *testing.T) {
+// Words an input's handler's own body checks are that input's
+// sub-arguments (SORT's asc), each word once: listed in its reach, never
+// tiles. A word a helper deeper in the reach checks stays an input of its
+// own, and so do words the launch reaches too (critic, 2026-09-30:
+// freqtrade's trade had listed every word of its 65 parts).
+func TestAnEntryInAHandlersOwnBodyIsItsSubArgument(t *testing.T) {
 	g := newReachGraphTest()
 	g.functions("main", "parseOptions", "sortCommand", "parseSortArgs")
-	g.call("main", "parseOptions")
+	g.call("main", "parseOptions", "sortCommand")
 	g.call("sortCommand", "parseSortArgs")
-	g.call("parseOptions", "parseSortArgs")
 	g.functions("limitCommand", "parseLimit")
 	g.call("limitCommand", "parseLimit")
 	g.input("sort", "sortCommand")
 	g.input("limit", "limitCommand")
-	g.declared("asc", "command", "parseSortArgs", 60, 0)
-	g.declared("count", "command", "parseLimit", 61, 0)
+	g.declared("asc", "command", "sortCommand", 60, 0)
+	g.declared("count", "command", "limitCommand", 61, 0)
+	g.declared("count", "command", "limitCommand", 62, 0)
+	g.declared("offset", "command", "parseLimit", 63, 0)
 	g.seed("main")
 	g.derive()
 	if got := g.operationNames(g.reachOf("sort").SubArguments); len(got) != 0 {
@@ -245,7 +248,7 @@ func TestAnEntryInAHandlersReachIsItsSubArgument(t *testing.T) {
 	for id := range g.index.Launch.Nested {
 		nested = append(nested, id)
 	}
-	if got := g.operationNames(nested); !reflect.DeepEqual(got, []string{"count"}) {
+	if got := g.operationNames(nested); !reflect.DeepEqual(got, []string{"count", "count"}) {
 		t.Fatalf("nested: %v", got)
 	}
 }
