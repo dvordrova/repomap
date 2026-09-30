@@ -1130,7 +1130,14 @@ Two kinds are two exchanges even on one value: redis-server's
 `gethostbyname(server.masterhost)` (sdk) is answered by the resolver, the
 `connect` after it (client_request) by the primary, and the destination
 criteria say a lookup of an address ends where it is answered
-(`TestALookupOfAnAddressEndsAtTheResolver`). No fixture looks an address up
+(`TestALookupOfAnAddressEndsAtTheResolver`). An sdk call reaches the
+service behind its package whatever value it hands it, so sdk rows of one
+package no system named, none of whose walks ends at an address the same
+wherever written (a URL's host, a setting), are one destination in every
+program: asked once, where asked first, and named alike everywhere by that
+answer (2026-09-30: redis-server's `gethostbyname` had read "Resolver",
+redis-cli's and redis-benchmark's "System Resolver";
+`TestOneServiceBehindAPackageIsOneDestinationInEveryProgram`). No fixture looks an address up
 yet: C's `netConnect` converts one with `inet_pton`, no lookup (sdk is not
 for a conversion), and the Go, Python, JS/TS and Clojure fixtures resolve
 no host. An

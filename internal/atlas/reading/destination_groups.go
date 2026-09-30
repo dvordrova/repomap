@@ -199,6 +199,28 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 			}
 		}
 	}
+	// An sdk row reaches the service behind its outside package, whatever
+	// value it hands that package (the resolver answers gethostbyname for
+	// any host), unless an address decides it (sdkService): rows of one
+	// package no system named are one destination in every program, asked
+	// once, where they are asked first, and named the same everywhere by
+	// that answer. redis-server's resolver had read
+	// "Resolver", redis-cli's and redis-benchmark's "System Resolver".
+	followers := make(map[int][]asked)
+	first := make(map[string]int)
+	kept := questions[:0:0]
+	for _, question := range questions {
+		service := sdkService(question.members)
+		if at, seen := first[service]; seen && service != "" {
+			followers[at] = append(followers[at], question)
+			continue
+		}
+		if service != "" {
+			first[service] = len(kept)
+		}
+		kept = append(kept, question)
+	}
+	questions = kept
 	if len(questions) == 0 {
 		return nil
 	}
@@ -235,8 +257,16 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 	}
 	// The answers come back in the groups' row order.
 	var ordered []asked
+	var orderedFollowers [][]asked
+	position := make(map[string]int, len(questions))
+	for i, question := range questions {
+		position[question.key] = i
+	}
 	for _, group := range members {
 		ordered = append(ordered, group...)
+		for _, question := range group {
+			orderedFollowers = append(orderedFollowers, followers[position[question.key]])
+		}
 	}
 	outgoing := 0
 	for _, state := range states {
@@ -258,7 +288,11 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 			if program != "" {
 				chosen = named
 			}
-			for _, member := range question.members {
+			all := slices.Clone(question.members)
+			for _, follower := range orderedFollowers[i] {
+				all = append(all, follower.members...)
+			}
+			for _, member := range all {
 				name(member, chosen)
 				if program != "" {
 					if member.state.destinationTargets == nil {
@@ -269,9 +303,39 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 			}
 		}
 		fmt.Fprintf(&r.tables, "%s: destination %s · %d calls · %s\n", lines.StageBoundaries, readable.Replace(question.key), len(question.members), chosen)
+		for _, follower := range orderedFollowers[i] {
+			fmt.Fprintf(&r.tables, "%s: destination %s · %d calls · %s, as named first\n", lines.StageBoundaries, readable.Replace(follower.key), len(follower.members), chosen)
+		}
 	}
 	fmt.Fprintln(&r.tables)
 	return nil
+}
+
+// sdkService is the outside package a destination's rows all reach a
+// service through, when every row is an sdk call (their external, for a
+// fact naming no package) and no walk of theirs ends at an address that is
+// the same wherever it is written (a URL's host, a setting): such an
+// address decides what the call reaches, and its own destination key
+// stays. "" otherwise.
+func sdkService(members []destinationMember) string {
+	service := ""
+	for _, member := range members {
+		state := member.state
+		through := state.outside
+		if through == "" && state.place.Boundary != nil {
+			through = state.place.Boundary.External
+		}
+		if state.kind != atlas.BoundarySDK || through == "" || service != "" && through != service {
+			return ""
+		}
+		for _, use := range state.exchangeEnds() {
+			if addressKey(use.Address) != "" {
+				return ""
+			}
+		}
+		service = through
+	}
+	return service
 }
 
 // destinationRow is one destination's item: where its value ends in its

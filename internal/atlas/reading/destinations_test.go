@@ -526,3 +526,72 @@ func TestALookupOfAnAddressEndsAtTheResolver(t *testing.T) {
 		t.Fatalf("destinations = %v, want %v", got, want)
 	}
 }
+
+// An sdk call reaches the service behind its package whatever value it
+// hands it: two programs looking up two hosts with gethostbyname reach one
+// resolver, asked once and named alike in both (redis-server's had read
+// "Resolver", redis-cli's "System Resolver"). Their connects, to two ends,
+// stay two destinations, each asked.
+func TestOneServiceBehindAPackageIsOneDestinationInEveryProgram(t *testing.T) {
+	call := func(pkg, name string, line int, host string) atlas.SymbolCall {
+		return atlas.SymbolCall{Kind: "invokes_external", Name: name, Line: line, Column: 9, API: &atlas.CallAPI{Package: pkg, Name: name},
+			SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: host}}}}
+	}
+	symbol := func(id, path, target string, host string) atlas.Place {
+		return atlas.Place{ID: "symbol:" + id, Kind: atlas.PlaceSymbol, Path: path, LineNo: 10, Parent: "file:" + id, TargetIDs: []string{target},
+			Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:" + id, Name: id}, Calls: []atlas.SymbolCall{call("netdb.h", "gethostbyname", 12, host), call("sys/socket.h", "connect", 13, host)}}}
+	}
+	server, client := symbol("syncWithMaster", "replication.c", "server", "primary.example"), symbol("cliConnect", "redis-cli.c", "cli", "127.0.0.1")
+	var mu sync.Mutex
+	resolvers := 0
+	provider := &mutatedTableProvider{}
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		mu.Lock()
+		defer mu.Unlock()
+		if input["table"] == "atlas_systems" {
+			for i := range rows {
+				rows[i]["system"] = "none"
+			}
+			return
+		}
+		named := false
+		for _, column := range input["fill"].([]any) {
+			named = named || column.(map[string]any)["name"] == "destination"
+		}
+		for i, source := range input["rows"].([]any) {
+			row := source.(map[string]any)
+			if !named {
+				rows[i]["line"], rows[i]["address"] = "sends", "unknown"
+				continue
+			}
+			rows[i]["destination"] = "other: Server"
+			if strings.Contains(string(mustJSON(row)), `"kind":"sdk"`) {
+				// Each window names the resolver its own way.
+				resolvers++
+				rows[i]["destination"] = []string{"other: Resolver", "other: System Resolver"}[min(resolvers-1, 1)]
+			}
+		}
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through, r.opts.Graph.Places = "", []atlas.Place{server, client}
+	r.opts.Targets = []TargetMeta{{ID: "cli"}, {ID: "server"}}
+	r.opts.ReadSource = func(string) ([]byte, error) { return nil, nil }
+	r.places = map[string]atlas.Place{server.ID: server, client.ID: client}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	r.api = map[string]apiRole{"netdb.h.gethostbyname": {talks: atlas.BoundarySDK}, "sys/socket.h.connect": {talks: atlas.BoundaryClientRequest}}
+	r.arguments = map[string]ArgumentChoice{"netdb.h.gethostbyname": {Position: 1}, "sys/socket.h.connect": {Position: 1}}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, state := range r.boundaries {
+		for _, target := range rowTargets(state) {
+			got[fmt.Sprintf("%s:%d", state.place.Path, state.place.LineNo)] = state.destinationOf(target)
+		}
+	}
+	want := map[string]string{"redis-cli.c:12": "Resolver", "replication.c:12": "Resolver", "redis-cli.c:13": "Server", "replication.c:13": "Server"}
+	if !maps.Equal(got, want) || resolvers != 1 {
+		t.Fatalf("destinations = %v, resolver asked %d times; want %v, asked once", got, resolvers, want)
+	}
+}
