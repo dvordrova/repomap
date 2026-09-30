@@ -1,5 +1,54 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Data batch of the third human-eye review: example parts, client and server joined, module loggers, a destination's value
+
+- **Why:** the reviewer's data items 1–4 (crops in the scratchpad's
+  `eye3/`); two question changes, each its own freqtrade run.
+- **Example parts (cd732b6a, core v6; READING § Core):** the core
+  question gains `example` (code the program ships for users to copy, with
+  criteria in `core_options.md`). Re-asked over 99 saved core rows of four
+  repos: freqtrade's Strategy templates example at 1.00, no other part
+  example, three former near-ties moved. Run 014615 (its one question
+  change): Strategy templates has no core mark; Backtest reporting, a
+  near-tie before (0.55/0.38), was refused at 0.44/0.43 and carries none
+  either. Redis's core parts are unchanged.
+- **Another project's package (20816eb8; PYTHON):** freqtrade's
+  `scripts/rest_client.py` imports and calls `freqtrade_client.ft_client.main`,
+  an outside symbol in freqtrade's project index. places joins a call or an
+  import of an outside package symbol to the one file other targets declare
+  under that dotted name; each file stays its own target's. Run 014615:
+  scripts/rest_client.py → freqtrade-client's Command line client (calls,
+  imports). The version-align helper's import of `freqtrade_client.__version__`
+  lands in `__init__.py`, a file with no part: no arrow, as for any joint.
+- **Programs as destinations (428248da, destinations v2; READING § Outside
+  systems) — run 015713's one question change:** the destination catalogue
+  lists the repository's other programs that serve requests or listen, with
+  what they take, never the caller itself; a chosen one is the boundary's
+  `destination_target` and the report draws the destination into it.
+  freqtrade-client's generic `_call` matched no one of freqtrade's inputs
+  (peers said none in four windows) and stood as "Freqtrade Server".
+  Run 015713 drew "other: Freqtrade" for it (d1 was freqtrade); an offered
+  program named after `other: ` is that program (6d5fbf2d, a form
+  difference). Acceptance run 020933 (`.bin/repomap`, exit 0, 0 live
+  calls, 11 artifact refs verified): freqtrade-client → freqtrade, no
+  Outside frame; ws_client → freqtrade's websocket input. Redis run 021445
+  (3 live destination rows): redis-cli's and redis-benchmark's connect and
+  host lookups reach redis-server, where "Redis Server" and "DNS Resolver"
+  had stood; redis-server's Primary stays outside. The question's redraw
+  renamed freqtrade's own destinations (Webhook Endpoint, Binance Public
+  Data, External Message Producer; Update Server → GitHub).
+- **Module loggers (e78c9af2; REPORT § tiles):** a module variable whose
+  value is a standard-library call's result and that only its file's
+  functions read is no tile (GroupsIndex `PlatformHandles`, derived):
+  192 of freqtrade's 196 loggers; Trading bot core's three "logger" tiles
+  are gone (render of saved run 234529). Python only: Go, Clojure and C
+  record no call for a package variable, JS/TS none with its outside
+  symbol.
+- **A destination's value (e332ada0; REPORT § Outside):** a destination whose
+  records' readable walks end at one address or expression says it under
+  its name, linked: Redis's Primary reads `server.masterhost`
+  (redis.c:7219), then Called from Replication `syncWithMaster()`.
+
 ## 2026-09-30 — A command group keeps its word; marks, sentences and pattern re-registrations name no input
 
 - **Command group (coordinator's item 1, 4075c377):** the dest drop now
