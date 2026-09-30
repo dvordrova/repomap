@@ -21,8 +21,11 @@ test('native routes remain painted through wheel reveal and collapse',async({pag
   await expect(map).toHaveAttribute('data-fixture-ready','true');
   await settled(page);
   const world=await geometry(page);
+  // An arrow from front into backend: drawn between the two programs on the
+  // whole map, and from front's mark on backend's port once backend is
+  // entered (canvas.jsx programPorts), never gone on the way.
   const ids=await map.evaluate(map=>({
-    outer:map.visibleEdges.find(edge=>edge.from==='submission'&&edge.to==='api').id,
+    outer:map.visibleEdges.find(edge=>edge.outerFrom==='front'&&edge.outerTo==='backend').id,
     between:map.visibleEdges.find(edge=>edge.from==='routes'&&edge.to==='queue').id,
   }));
   await expect(page.locator(`[data-edge-ids~="${ids.outer}"] path[marker-end]`)).toHaveCount(1);

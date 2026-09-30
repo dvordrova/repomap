@@ -171,27 +171,33 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   in its card. That card reads the destinations the arrow reaches, each
   under the parts calling it, not the calls one to a line: litestream's
   had listed 89 calls over half the map; the calls are read in the column.
-  Equal destination text proves no identity: each program
-  keeps its own destinations. One call written once (the same destination
-  and symbol at the same saved path and line, owner, 2026-09-28) is one
-  call, in the first program's destination, with an arrow from each program
-  making it; that Outside frame is then named after every program whose
-  arrows enter it, its own first ("redis-benchmark, redis-cli"), in its
-  arrow cards, reading and breadcrumb. An Outside frame and its chips are
-  display collections, not inferred components.
+  One call written once (the same destination and symbol at the same saved
+  path and line, owner, 2026-09-28) is one call, in the first program's
+  destination, with an arrow from each program making it. A system several
+  programs call (the same destination name in each: the reading names one
+  service behind a package alike in every program) stands once too, each
+  program's calls its own tiles and arrows (owner, 2026-09-30: "both
+  targets use the database"; litestream's SQLite had stood twice). Such
+  systems stand in an Outside frame of the programs calling them, named
+  after them, its first program first ("cmd/litestream,
+  cmd/litestream-test"), in its arrow cards, reading and breadcrumb; a
+  system one program calls stays in that program's frame. An Outside frame
+  and its chips are display collections, not inferred components.
 - A program entered (the location names it, its frame across or down three
-  quarters of the canvas, the camera not on the whole map) stands its Inputs
-  and its own Outside on its border as ports (owner, 2026-09-30: variant B);
-  the whole map, and an Outside frame programs share, keep their frames.
-  Its Inputs are one blue pill of its input kinds' icons, its Outside one
-  amber pill of its systems' dots, each pill clear of the arrows meeting
-  that side. An icon or dot is named in one line when pointed at or
-  reached by the keyboard; a click reads that kind's inputs or that system,
-  the pill elsewhere all of them, the camera staying. Another program's
-  arrow into one of their members lands on its icon or dot; an arrow
-  between another program and one of this one's parts goes on inside it to
-  the box it reaches, never stopping on the bare border (its leg joined in a
-  lane of the border gutter, stepping aside from another arrow's line).
+  quarters of the canvas, the camera not on the whole map, which leaves
+  room beside it) stands its Inputs and every Outside frame it calls into
+  as ports just outside its border (owner, 2026-09-30: variant B); the
+  whole map keeps their frames. Nothing beyond the program is drawn: on
+  its left its input kinds' icons and one mark for each program whose
+  arrows come in, on its right its systems, each wearing the mark of the
+  kind its calls' facts give (database, request, queue, SDK; a plain dot
+  for none), and one mark for each program it calls, each level with the
+  part calling it most. Every part calling a system or a program has its
+  own line to that mark, straight across or turning once in a lane of the
+  border's gutter, else along its own route inside; a program's arrows in
+  run from its mark to the parts they reach. A mark is named in one line
+  when pointed at or reached by the keyboard; a click reads that kind,
+  system or program, a capsule elsewhere all of them, the camera staying.
 - When a saved connection identifies one displayed peer in another target,
   the canvas connects the original caller straight to that peer/input, with
   no third participant; its outbound catalogue and source reading stay

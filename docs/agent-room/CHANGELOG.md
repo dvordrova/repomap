@@ -1,5 +1,36 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Shared systems once on the whole map; an entered program's ports draw every line (milestone review)
+
+- **Whole map** (`shareOutside`): a system several programs call (the same
+  destination name, as the reading names one service alike) stands once,
+  each program's calls its own tiles and arrows, in an Outside frame of
+  those programs named after them; a system one program calls stays in its
+  own frame. litestream: SQLite (cmd/litestream, cmd/litestream-test) and
+  Amazon S3 (cmd/litestream, etc/s3_mock.py) once each; redis: Resolver in
+  one frame of the three programs, Primary in redis-server's; freqtrade and
+  othello unchanged.
+- **Entered program:** nothing beyond it is drawn. Left port: input kinds and
+  a mark per program calling in; right port: every system it calls, from
+  its own and shared frames, wearing its calls' kind (`DestinationKind`:
+  database, request, queue, SDK; Octicons database, globe, inbox, package)
+  and a mark per program it calls, each level with the part calling it
+  most. Every calling part has its line to the mark: straight across, else
+  along its own route joined in a lane spread across the gutter. Ports
+  straddle the border where the gutter holds them, else stand just outside
+  it with room left by the camera. Click and hover as before.
+- **Lint:** `off-canvas` (a program entered whole draws no arrow starting or
+  ending out of sight): 0 on the four reports.
+- **Checks:** 3221d4ed Go test of one shared system (fails before);
+  `ports.spec.mjs` (dots each with a line, only the program's boxes);
+  route-transition spec now follows a cross-program arrow, since the old one
+  (front's own Outside) is no longer drawn with backend entered.
+  geometry redis 0, litestream 1 small, freqtrade 0, othello 1 clipped (as
+  before; off-canvas, coincide and loose-end 0); journeys 4/4 PASS, lints
+  long folds (freqtrade's one repeated "-V --version" is in both renders);
+  page shape: litestream's and redis's shared frames and one more
+  Connections row; visual suite 56 passed; make test and make vet pass.
+
 ## 2026-09-30 — A Main flow parts where the model is torn
 
 - **Owner, 2026-09-30:** several main paths are allowed. At a split whose

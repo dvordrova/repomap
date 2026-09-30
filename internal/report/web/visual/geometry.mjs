@@ -13,6 +13,8 @@
 //   coincide  two arrows run on one line;
 //   loose-end an arrow's end is not on the border of the box, port icon or
 //             dot it ends at, or ends on nothing drawn;
+//   off-canvas with a program entered whole, an arrow starts or ends out
+//             of sight (its ports stand for everything beyond it);
 //   label     the canvas prints a kind label, a plaque or a lone number;
 //   card      a card's heading and rows, or two rows, intersect;
 //   small     a name on the canvas reads under 11 CSS pixels, a part's
@@ -119,6 +121,13 @@ export function lintCanvas(level,near=3,readNames=true){
       if(!on&&inside({left:point.x-1,right:point.x+1,top:point.y-1,bottom:point.y+1}))out.push({kind:'loose-end',element:`${route.id} at ${id}`,level});
     }
   }
+  // 4b': with a program entered whole, every arrow starts and ends in sight: one
+  // from or to another program ends on the program's port (canvas.jsx
+  // programPorts); arrows had come from off the canvas (reviewer,
+  // 2026-09-30).
+  const entered=placed.get(map.dataset.enteredProgram||''),whole=entered&&(r=>r.left>=canvas.left-1&&r.right<=canvas.right+1&&r.top>=canvas.top-1&&r.bottom<=canvas.bottom+1)(rect(entered));
+  if(whole)for(const route of routes)for(const point of [route.points[0],route.points.at(-1)])
+    if(point.x<canvas.left-1||point.x>canvas.right+1||point.y<canvas.top-1||point.y>canvas.bottom+1){out.push({kind:'off-canvas',element:`${route.id} (${route.ends.join('→')})`,level});break;}
   // 4c: no two arrows run on one line, but for a trunk: arrows leaving one
   // box, or reaching one, along one path until they part (split-layout.mjs:
   // one lane, one point on a side, one arrowhead), not two arrows drawn
