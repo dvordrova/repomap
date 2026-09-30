@@ -654,7 +654,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       return blocked(a,b,child)?null:[b,a];
     }
     const drawn=(edge,side,points,entry,child)=>{ports.legs.add(edge.id);
-      return {...edge,outerSegments:[side==='To'?points:points.slice().reverse()],outerFrom:side==='To'?entry.id:child,outerTo:side==='To'?child:entry.id};};
+      return {...edge,quiet:true,outerSegments:[side==='To'?points:points.slice().reverse()],outerFrom:side==='To'?entry.id:child,outerTo:side==='To'?child:entry.id};};
     // Else along the program's own route to its border, joined to its item
     // on the gutter's line that route runs on, or in a lane of the item's
     // own, the lanes of a side spread across its gutter (two had stood a
@@ -1303,7 +1303,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {portSegments(pill).map(([top,bottom])=><span key={top} className="flow-port-segment" style={{top:(top-pill.top)/scale,height:(bottom-top)/scale}}/>)}
       {pill.items.map(entry=><button key={entry.id} type="button" className="flow-port-item" data-port-end={entry.id} data-port-looks={pill.east&&!entry.program?entry.id:entry.program||undefined}
         style={{top:(entry.y-pill.top)/scale-12}} aria-label={entry.title} onClick={event=>read(entry,event)}
-        onMouseEnter={()=>setTip(entry.id)} onMouseLeave={()=>setTip('')} onFocus={event=>{if(event.currentTarget.matches(':focus-visible'))setTip(entry.id);}} onBlur={()=>setTip('')}>
+        onMouseEnter={()=>setTip(entry.id)} onMouseLeave={()=>setTip('')} onBlur={()=>{setTip('');if(pill.east||entry.program)clearHover();}}
+        onFocus={event=>{if(!event.currentTarget.matches(':focus-visible'))return;setTip(entry.id);if(pill.east||entry.program)enter(entry.program||entry.id);}}>
         {entry.program?<PortMark icon={systemIcons.program}/>:pill.east?<PortMark icon={systemIcons[entry.system]}/>:<KindMark kind={entry.kind==='background'?'continuous':entry.kind}/>}
         {tip===entry.id&&<span className={`flow-port-tip ${pill.east?'flow-port-tip-left':''}`} style={{transform:`scale(${1/(scale*zoom)})`}}>{entry.title}</span>}
       </button>)}
@@ -1446,7 +1447,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     // A whole program looks at nothing in particular.
     const restFrame=quietFrame(rest,view.scope,detailed.size===1?[...detailed][0]:'',frameOf);
     const quietEnds=deep?new Set([deep]):restFrame&&byID.get(restFrame)?.branch==='area'?new Set(leaves(restFrame)):null;
-    const routes=routeDrawing(drawing.edges,closed,state.activeEdges,recede,boundary,initVisible,quietEnds);
+    // An entered program's lines to its ports are drawn for the mark or the
+    // part pointed at, focused or chosen, not for the program read whole.
+    const portOn=ports&&state.subject&&state.subject!==ports.program?state.activeEdges:new Set();
+    const drawnEdges=ports?drawing.edges.filter(edge=>!edge.quiet||portOn.has(edge.id)):drawing.edges;
+    const routes=routeDrawing(drawnEdges,closed,state.activeEdges,recede,boundary,initVisible,quietEnds);
     const matchingOf=routeIndex(routes);
     const labels=(area?connections(area,members,layout.edges,outsideOf(area)):[]).flatMap(group=>{
       // A label stands where its arrow meets the frame it marks.
@@ -1470,7 +1475,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const end=endLabel?endEmphasis(endLabel,layout.edges):null;
     const shown=end||state;
     const active=end?end.activeEdges:state.activeEdges;
-    const drawn=[...(end?routeDrawing(drawing.edges,closed,end.activeEdges,recede,boundary,initVisible,null):routes),
+    const drawn=[...(end?routeDrawing(drawnEdges,closed,end.activeEdges,recede,boundary,initVisible,null):routes),
       ...stubRoutes.map(route=>({...route,on:route.edgeIDs.some(id=>active.has(id))}))];
     if(ports)drawn.splice(0,drawn.length,...nudgeLegs(drawn,ports));
     heads=drawnHeads(drawn);drawnRoutes=new Map(drawn.map(route=>[route.id,route]));

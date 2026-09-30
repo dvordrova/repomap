@@ -1,5 +1,21 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — An entered program's port lines are quiet
+
+- At rest no part→system or part→program line is drawn; pointing at or
+  focusing a dot or mark draws its lines to the parts calling it and
+  outlines them, pointing at a part draws its lines, choosing keeps them
+  (a quiet route, `route-drawing.mjs`; the program read whole draws none).
+- freqtrade entered at rest: 37 → 27 lines, 8 → 0 dashed, port lines
+  10 → 0, 17,449 → 9,815 px of line.
+- **Lint:** at each entered program every port mark is pointed at in turn
+  and its lines checked for loose ends, off-canvas ends and coincidence:
+  0 on the four reports. route-transition spec: front's arrow is kept
+  until backend is entered, then its mark stands on the port.
+- **Checks:** geometry as before (litestream 1 small, othello 1 clipped);
+  journeys 4/4 PASS, lints as before; page shape unchanged; visual suite
+  passes; make test and make vet pass.
+
 ## 2026-09-30 — Shared systems once on the whole map; an entered program's ports draw every line (milestone review)
 
 - **Whole map** (`shareOutside`): a system several programs call (the same

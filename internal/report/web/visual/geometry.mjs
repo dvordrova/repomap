@@ -241,6 +241,14 @@ export async function lintReport(page,{repo='',areas=2,cards=3,programs=4}={}){
     if(!await mark.count())continue;
     await whole();await mark.first().click();await settle();await lint(root.id);
     if(root.branch!=='component')continue;
+    // Its port's marks pointed at: the quiet lines they draw end where they
+    // should, in sight (canvas.jsx PortPill).
+    const marks=await page.evaluate(()=>[...document.querySelectorAll('[data-port-end]')].map(item=>{const r=item.getBoundingClientRect();return {id:item.dataset.portEnd,x:r.x+r.width/2,y:r.y+r.height/2};}));
+    for(const mark of marks){
+      await page.mouse.move(mark.x,mark.y,{steps:2});await page.waitForTimeout(150);
+      findings.push(...(await page.evaluate(([level])=>window.__lintCanvas(level,3,false),[`${repo} ${root.id} pointing at ${mark.id}`])).filter(finding=>['loose-end','off-canvas','coincide'].includes(finding.kind)));
+    }
+    await page.mouse.move(2,2);
     const inner=await page.evaluate(id=>document.querySelector('[data-map]').flowGeometry().nodes.filter(n=>n.parentId===id&&n.branch==='area').map(n=>n.id),root.id);
     for(const area of inner.slice(0,areas)){
       await whole();await mark.first().click();await settle();

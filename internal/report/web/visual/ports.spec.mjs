@@ -31,13 +31,19 @@ test('an entered program stands its inputs as ports on its border, named and rea
   await expect(icons.first()).toBeFocused();
   await expect(tip,'the keyboard names it too').toHaveCount(1);
   expect(await map.evaluate(map=>JSON.stringify(map.captureViewport())),'the camera stays').toBe(before);
-  // Its Outside stands as dots on its other side, each with a line from a
-  // part calling it; nothing beyond the program is drawn.
+  // Its Outside stands as dots on its other side. At rest no line reaches
+  // them; pointed at, each draws its lines from the parts calling it
+  // (owner: hover answers what is this). Nothing beyond the program is drawn.
   const dots=page.locator('[data-port="outside"] [data-port-end]');
   await expect(dots).not.toHaveCount(0);
-  const lines=await page.evaluate(()=>[...document.querySelectorAll('g.flow-edge[data-edge-ends]')].map(g=>g.dataset.edgeEnds.split(' ')));
-  for(const id of await dots.evaluateAll(items=>items.map(item=>item.dataset.portEnd)))
-    expect(lines.some(ends=>ends.includes(id)),`a line reaches ${id}`).toBe(true);
+  const ids=await dots.evaluateAll(items=>items.map(item=>item.dataset.portEnd));
+  const lines=()=>page.evaluate(()=>[...document.querySelectorAll('g.flow-edge[data-edge-ends]')].map(g=>g.dataset.edgeEnds.split(' ')));
+  await page.mouse.move(2,2);
+  expect((await lines()).some(ends=>ends.some(end=>ids.includes(end))),'no line to a dot at rest').toBe(false);
+  for(const id of ids){
+    await page.locator(`[data-port-end="${id}"]`).hover();
+    await expect.poll(async()=>(await lines()).some(ends=>ends.includes(id)),{message:`a line reaches ${id} pointed at`}).toBe(true);
+  }
   const program=await page.evaluate(()=>{const nodes=document.querySelector('[data-map]').flowGeometry().nodes,parent=new Map(nodes.map(n=>[n.id,n.parentId]));
     const ports=new Set([...document.querySelectorAll('[data-port-end]')].map(item=>item.dataset.portEnd));
     return [...document.querySelectorAll('g.flow-edge[data-edge-ends]')].flatMap(g=>g.dataset.edgeEnds.split(' ')).filter(id=>parent.has(id)&&!ports.has(id)).map(id=>{while(parent.get(id))id=parent.get(id);return id;});});

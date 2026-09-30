@@ -22,8 +22,9 @@ test('native routes remain painted through wheel reveal and collapse',async({pag
   await settled(page);
   const world=await geometry(page);
   // An arrow from front into backend: drawn between the two programs on the
-  // whole map, and from front's mark on backend's port once backend is
-  // entered (canvas.jsx programPorts), never gone on the way.
+  // whole map, never gone on the way in; once backend is entered, front is
+  // a mark on its port whose line is drawn when pointed at (canvas.jsx
+  // programPorts).
   const ids=await map.evaluate(map=>({
     outer:map.visibleEdges.find(edge=>edge.outerFrom==='front'&&edge.outerTo==='backend').id,
     between:map.visibleEdges.find(edge=>edge.from==='routes'&&edge.to==='queue').id,
@@ -38,7 +39,7 @@ test('native routes remain painted through wheel reveal and collapse',async({pag
       const path=id=>document.querySelector(`[data-edge-ids~="${id}"] path[marker-end]`);
       const outer=path(ids.outer),between=path(ids.between);
       if(between)routeTransition.betweenSeen=true;
-      routeTransition.frames.push({zoom:viewport.zoom,outer:!!outer,
+      routeTransition.frames.push({zoom:viewport.zoom,outer:!!outer,entered:!!document.querySelector('[data-map]').dataset.enteredProgram,
         betweenRequired:routeTransition.betweenSeen&&viewport.openComponents.includes('backend'),
         between:between?.getAttribute('d')||null});
       routeTransition.frame=requestAnimationFrame(sample);
@@ -48,6 +49,7 @@ test('native routes remain painted through wheel reveal and collapse',async({pag
   try{
     await page.locator('[data-zoom-into="backend"]').click();
     await settled(page);
+    await expect(page.locator('[data-port-end="program-in:front"]')).toBeVisible();
     const canvas=await page.locator('.flow-root').boundingBox();
     await page.mouse.move(canvas.x+canvas.width*.45,canvas.y+canvas.height*.5);
     async function wheel(delta){
@@ -78,7 +80,7 @@ test('native routes remain painted through wheel reveal and collapse',async({pag
     await testInfo.attach('Route paint during every animation frame',{
       body:JSON.stringify(frames,null,2),contentType:'application/json',
     });
-    expect(frames.filter(frame=>!frame.outer),'The outer arrow never disappears during a repaint').toEqual([]);
+    expect(frames.filter(frame=>!frame.outer&&!frame.entered),'The outer arrow never disappears during a repaint').toEqual([]);
     expect(frames.filter(frame=>frame.betweenRequired&&!frame.between),'The visible group connection never disappears during a repaint').toEqual([]);
     const paths=new Set(frames.filter(frame=>frame.between).map(frame=>frame.between));
     expect(paths.size,'Revealing parts preserves the route between their existing groups').toBe(1);

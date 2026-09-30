@@ -195,9 +195,12 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   part calling it most. Every part calling a system or a program has its
   own line to that mark, straight across or turning once in a lane of the
   border's gutter, else along its own route inside; a program's arrows in
-  run from its mark to the parts they reach. A mark is named in one line
-  when pointed at or reached by the keyboard; a click reads that kind,
-  system or program, a capsule elsewhere all of them, the camera staying.
+  run from its mark to the parts they reach. These lines are quiet: drawn
+  only while their mark or part is pointed at, focused or chosen, the parts
+  behind the mark outlined (owner: hover answers what is this). A mark is
+  named in one line when pointed at or reached by the keyboard; a click
+  reads that kind, system or program, a capsule elsewhere all of them, the
+  camera staying.
 - When a saved connection identifies one displayed peer in another target,
   the canvas connects the original caller straight to that peer/input, with
   no third participant; its outbound catalogue and source reading stay
