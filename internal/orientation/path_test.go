@@ -174,3 +174,37 @@ func TestAChainOfSingleCandidatesAsksNothing(t *testing.T) {
 		t.Fatalf("flow = %q after %d requests, want five steps and none", got, categorizer.Calls())
 	}
 }
+
+// Candidates sharing a name are offered told apart (groupindex.TellApart),
+// never as refs the categorizer cannot read: litestream's Sync had offered
+// eight options titled ReplicaClient.
+func TestASplitsSameNamedCandidatesAreToldApart(t *testing.T) {
+	input := flowProgram()
+	for position := range input.Groups[0].Subjects {
+		if subject := &input.Groups[0].Subjects[position]; subject.ID == "on_move" {
+			subject.Object.Name, subject.Object.Location.Path = "on_click", "app/touch/ui.py"
+		}
+	}
+	var asked []llm.Question
+	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		asked = append(asked, question)
+		return llm.Verdict{Choice: "app.on_click", Probabilities: map[string]float64{"app.on_click": 0.8, "touch.on_click": 0.2}}, true
+	}}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, input, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 1 {
+		t.Fatalf("asked %d questions, want the split at start", len(asked))
+	}
+	var options []string
+	for _, option := range asked[0].Options {
+		options = append(options, option.Name)
+		if !strings.HasPrefix(option.Meaning, option.Name+";") {
+			t.Fatalf("an option's criteria do not name it as told apart: %+v", option)
+		}
+	}
+	if !slices.Equal(options, []string{"app.on_click", "touch.on_click"}) || len(walk.asked) != 1 || walk.asked[0].chosen != "app.on_click" {
+		t.Fatalf("the split offered %v and chose %+v", options, walk.asked)
+	}
+}

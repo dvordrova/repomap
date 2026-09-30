@@ -497,3 +497,23 @@ func TestAFlowsViaAndForkNameTheSitesFunctionNotItsLine(t *testing.T) {
 		t.Fatal("a step with no branches has a fork")
 	}
 }
+
+// A fork's candidates sharing a name are told apart as the categorizer
+// read them, by where they stand: litestream's Sync fork had listed
+// ReplicaClient eight times.
+func TestAForksSameNamedCandidatesAreToldApart(t *testing.T) {
+	builder, _ := flowFixture()
+	for id, file := range map[string]string{"c1": "s3/replica_client.go", "c2": "gs/replica_client.go"} {
+		builder.subjects[subjectKey("t1", id)] = subjectRef{programTargetID: "t1", subject: groupindex.Subject{ID: id, Kind: groupindex.SubjectObject,
+			Object: &groupindex.ObjectFacts{Name: "ReplicaClient", Kind: programindex.ObjectType, Location: &programindex.Location{Path: file, Line: 20, Column: 6}}}}
+	}
+	fork := builder.flowFork(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Branches: []orientation.FlowBranch{
+		{SubjectID: "lookup", Via: "called"}, {SubjectID: "c1", Via: "called"}, {SubjectID: "c2", Via: "called"}}})
+	var names []string
+	for _, name := range fork.Names {
+		names = append(names, name.Name)
+	}
+	if !slices.Equal(names, []string{"lookupKeyRead", "s3.ReplicaClient", "gs.ReplicaClient"}) {
+		t.Fatalf("fork names = %q", names)
+	}
+}

@@ -234,6 +234,29 @@ func (graph *flowGraph) signature(id string) string {
 	return ""
 }
 
+// toldApart are a split's candidates by name, those sharing one told apart
+// by their type, folder, file or part (groupindex.TellApart): litestream's
+// Sync had offered eight options titled ReplicaClient, which the
+// categorizer could only read by ref.
+func (graph *flowGraph) toldApart(candidates []groupindex.SpineStep) []string {
+	names := make([]string, 0, len(candidates))
+	spellings := make([][]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		id := stepSubject(candidate)
+		name, file := graph.name(id), ""
+		if subject := graph.subjects[id]; subject != nil && subject.Object != nil && subject.Object.Location != nil {
+			file = subject.Object.Location.Path
+		}
+		typed := ""
+		if qualified := graph.qualified(id); qualified != name {
+			typed = qualified
+		}
+		names = append(names, name)
+		spellings = append(spellings, append([]string{typed}, groupindex.Where(name, file, graph.part(id))...))
+	}
+	return groupindex.TellApart(names, spellings)
+}
+
 // chooseNext asks the categorizer which candidate the path continues
 // through, one closed question (table.ClassifierCall): the task names the
 // program and its core parts, the item is the step, and each option is a
@@ -254,11 +277,11 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 	system := fmt.Sprintf("We trace the one path a newcomer follows from where %s starts to the work it exists for, once. Its domain parts: %s.", index.Target.Name, domain)
 	subject := stepSubject(step)
 	options := make([]map[string]any, 0, len(candidates))
-	names := make([]string, 0, len(candidates))
+	names := graph.toldApart(candidates)
 	for position, candidate := range candidates {
 		id := stepSubject(candidate)
 		ref := fmt.Sprintf("c%d", position+1)
-		terms := []string{graph.name(id)}
+		terms := []string{names[position]}
 		if signature := graph.signature(id); signature != "" {
 			terms = append(terms, "signature "+signature)
 		}
@@ -283,8 +306,7 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 			terms = append(terms, "handles: "+strings.Join(handles, ", "))
 		}
 
-		options = append(options, map[string]any{"ref": ref, "title": graph.name(id), "criteria": strings.Join(terms, "; ")})
-		names = append(names, graph.name(id))
+		options = append(options, map[string]any{"ref": ref, "title": names[position], "criteria": strings.Join(terms, "; ")})
 	}
 	item := []table.Field{{Name: "step", Value: graph.name(subject)}}
 	if signature := graph.signature(subject); signature != "" {

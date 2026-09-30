@@ -1046,10 +1046,29 @@ func (builder *pageBuilder) flowFork(step orientation.FlowStep) *pageFlowFork {
 			}
 		}
 	}
+	// Candidates sharing a name are told apart as the categorizer read
+	// them (groupindex.TellApart): s3.ReplicaClient, gs.ReplicaClient.
+	var names []string
+	var spellings [][]string
 	for _, branch := range step.Branches {
-		if name, ok := builder.flowName(step.TargetID, branch.SubjectID); ok {
-			fork.Names = append(fork.Names, name)
+		name, ok := builder.flowName(step.TargetID, branch.SubjectID)
+		if !ok {
+			continue
 		}
+		file, part := "", ""
+		if ref, known := builder.subject(step.TargetID, branch.SubjectID); known && ref.subject.Object != nil && ref.subject.Object.Location != nil {
+			file = ref.subject.Object.Location.Path
+			if index := builder.graphIndex(ref.programTargetID); index != nil {
+				if group := builder.edgesBetweenGroups(*index).groupOf[branch.SubjectID]; group != "" {
+					part = builder.groupTitles[groupindex.Endpoint{TargetID: ref.programTargetID, GroupID: group}]
+				}
+			}
+		}
+		fork.Names = append(fork.Names, name)
+		names, spellings = append(names, name.Name), append(spellings, groupindex.Where(name.Name, file, part))
+	}
+	for position, told := range groupindex.TellApart(names, spellings) {
+		fork.Names[position].Name = told
 	}
 	return fork
 }

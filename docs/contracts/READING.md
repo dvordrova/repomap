@@ -1900,7 +1900,11 @@ each is its declaration with its accepted atlas line (`Explanation`) and how
 the step before reaches it (`Via`: "called", "one of 94", "handed to …"); one
 of a dispatch site's alternatives keeps the declaration holding the site
 (`Site`), never its file and line, which only the categorizer's option reads.
-The title is "From <first> to <last>".
+Candidates of one split sharing a name are told apart
+(`groupindex.TellApart`) by the first spelling that differs for each: the
+type (Worker.run), the folder (s3.ReplicaClient), the file, then the part
+("handle in Commands"); the option's title and name term and the report's
+fork read the same spelling. The title is "From <first> to <last>".
 Measured on the saved inputs with the cache off, five draws each
 (2026-09-30): redis main → aeMain → aeProcessEvents → readQueryFromClient →
 processInputBuffer → processCommand → call → setCommand, 5 of 5; freqtrade

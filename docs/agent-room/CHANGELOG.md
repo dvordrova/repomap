@@ -1,5 +1,17 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — A Main flow split's same-named candidates are told apart
+
+- **Rule** (`groupindex.TellApart`, `Where`): entries of one list sharing a
+  name take the first spelling that differs for each: type, folder, file,
+  part. litestream's Sync split had offered eight options titled
+  ReplicaClient, which the classifier table could only offer as refs
+  c2…c9; they now read s3.ReplicaClient, gs.ReplicaClient, … in Jev's
+  option (title and name term: a request change for that split alone) and
+  in the report's fork.
+- **Checks:** unit test of the rule; a split offering two on_click
+  (orientation) and a fork of two ReplicaClient (report) fail before.
+
 ## 2026-09-30 — One service behind a package, one name in every program (data 2)
 
 - Measured on the latest four runs (outgoing boundaries by program): redis
