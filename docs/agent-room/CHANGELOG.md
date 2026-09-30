@@ -1,5 +1,25 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Canvas batch 3 (cut to what was tested): quiet arrows by certainty, part-to-part cards, no repeated destination, the Not analysed note's names
+
+- **Quiet arrows** were drawn dotted (3/5 px) and read as the key's
+  "returns or takes a type": othello's exact negamax → evaluate. They are
+  now drawn as their calls are (solid, or dashed when possible); the key
+  names every style shown. Not data: GroupsIndex marks the call quiet (a
+  call into a helper).
+- **Part to part:** an arrow between two parts opens the calling part's
+  connection card (inside Game logic none had).
+- **Cards:** the destination the heading names is not repeated as a row;
+  one name to a line (redis's Virtual memory card had two columns).
+- **Not analysed:** the note draws the targets it names (it had been an
+  empty box since the measured-lines change of 06e44215).
+- **Dropped:** one title size per Inputs collection: it drew redis's group
+  titles at 9.9 px at the program level (geometry lint); reverted. The
+  wire mazes were left untouched (critic's verdict: what is drawn, not
+  layout).
+- **Checks:** geometry lint equal to HEAD's renders; page shape unchanged;
+  web unit 139, visual 55 pass.
+
 ## 2026-09-30 — A lookup of an address ends at the resolver (this run's one question change)
 
 - **Why:** redis-server's `gethostbyname(server.masterhost)` in anet.c

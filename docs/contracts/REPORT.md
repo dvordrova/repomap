@@ -275,7 +275,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   an input's path. The canvas draws a quiet arrow only while one of its ends
   is looked at (the part the camera stands in, or a part of the area chosen
   or zoomed into, whatever the pointer crosses; a whole program looks at
-  nothing in particular) and decides nothing of its own. An arrow drawing several
+  nothing in particular) and decides nothing of its own: it is drawn as its
+  calls are, solid or dashed, never in a style the key does not name. An arrow drawing several
   relations is quiet only when all of them are. The system canvas is the
   page's one figure; the page writes no static picture of it.
 - Hover temporarily replaces the dark emphasis and never unions another
@@ -345,7 +346,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   arrow of the part the camera stands in, a short one or one whose head is
   beyond the canvas, for that part's connection. A part's short arrows are
   thirty screen pixels, their heads in sight, and its magnifier leaves room
-  for them. An arrow between two parts of one frame has no card. An
+  for them. An arrow between two parts of one frame is the calling part's
+  connection to the other and opens its card (othello's Game logic had
+  opened none). An
   arrowhead stands outside its frame's border. A card stands flush with its
   handle, outside the frame being read so it covers none of its parts, clear
   of the handle, on the side with room and wholly inside the canvas; a label's
@@ -369,11 +372,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
 
   On the canvas an arrow's card answers what it is (reviewer, 2026-09-30):
   headed by the two frames its arrow joins, it names each part the arrow
-  goes into and under it what it reaches there, each name once (a callee, a
+  goes into (not the one its heading names) and under it what it reaches
+  there, one name to a line, each name once (a callee, a
   field, the inputs a handler takes; a call leaving its program as the
   function asking on one side and the one answering on the other,
-  "cliConnect ⇢ acceptHandler"), one to a line in columns, the first
-  dozen then "…"; every call and its caller are read in the column, a
+  "cliConnect ⇢ acceptHandler"), the first dozen then "…"; every call and its caller are read in the column, a
   click on the arrow away. Litestream's CLI → Core database engine card had
   listed 174 caller → callee rows.
   In the column a connection (owner, 2026-09-27) is headed by the two frames its arrow
