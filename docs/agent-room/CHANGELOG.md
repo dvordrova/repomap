@@ -1,5 +1,33 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — freqtrade's Main flow: two option-fact probes, both failed; DCA path accepted
+
+- **Question:** at FreqtradeBot.process, Jev takes process_open_trade_positions
+  (then check_and_call_adjust_trade_position → IStrategy.adjust_trade_position,
+  the DCA hook) over enter_positions/exit_positions (4f9edab0: 5/5, lead
+  0.30–0.37). Each probe added one term to the options' criteria, freqtrade's
+  saved inputs, cache off, 3 draws; neither was committed.
+- **Closure effects** (tables written, systems sent to, programs run, over
+  each option's whole closure): the four trading methods reach 241–252
+  declarations and all read "writes Order, Trade; sends to cryptocurrency
+  exchanges (create_order among 19–23 calls)".
+
+  | variant | process_open_trade_positions | manage_open_orders | enter_positions | exit_positions | lead |
+  |---|---|---|---|---|---|
+  | destinations | 0.69 | 0.09 | 0.07 | 0.01 | 0.60–0.65 |
+  | with call names | 0.66 | 0.09 | 0.07 | 0.01 | 0.55–0.57 |
+
+- **Direct work** (own body plus one hop: tables constructed or written,
+  functions called, callables handed over, outside calls; ≤ 5 names): the
+  options now differ (enter_positions calls create_trade, exit_positions
+  writes Trade), yet process_open_trade_positions 0.52, update_trades…
+  0.15, IStrategy 0.08, manage_open_orders 0.07, enter_positions 0.04,
+  exit_positions 0.02; lead 0.31–0.37, 3/3.
+- **Conclusion:** Jev picks by name when the options' facts do not separate
+  them, and extra facts only firmed the same choice. The DCA path is honest:
+  process_open_trade_positions reaches FreqtradeBot.execute_entry →
+  Exchange.create_order through check_and_call_adjust_trade_position. Kept.
+
 ## 2026-09-30 — An entered program's port lines are quiet
 
 - At rest no part→system or part→program line is drawn; pointing at or
