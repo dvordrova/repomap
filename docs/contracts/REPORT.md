@@ -833,7 +833,14 @@ being read, so a chain is followed one call at a time; equal names with differen
 separate. A method or a field is named with its type ("ReplicateCommand.Run",
 "RPCMessageType.ANALYZED_DF"); two declarations one list still names alike
 are told apart by their file's folder, or their file, quiet after the name
-(litestream's ReplicaClient, one per package).
+(litestream's ReplicaClient, one per package). Two inputs of one kind in an
+Inputs reading sharing a word are told apart by the subcommands they are
+options of, else by the declaration declaring each when those differ
+(freqtrade's dataformat_ohlcv in SCHEMA_TRADE_REQUIRED), in words only:
+never by their code as written, which stays behind their link (owner's
+review, 2026-09-30: redis's setting "save strcasecmp(argv[0]" and
+freqtrade's "-V --version "version": Arg("-V""); inputs of two kinds (redis's
+command save and setting save) are not taken for each other.
 
 Who writes and reads a field (owner, 2026-09-29) comes from the program's
 exact reads and writes of record fields (`page_field_uses.go`): a C or Go

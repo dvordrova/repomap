@@ -637,21 +637,28 @@ function rmCollectionView(ctx,node,collection){
   // options of (reviewer, 2026-09-30: freqtrade's two "--erase", of
   // download-data and of install-ui): each subcommand's options name them
   // at their source (page_input_path.go Options).
-  var every=[].concat.apply([],collection.groups.map(function(group){return group.inputs;})),titles={},holders={};
+  // Only inputs of one kind can be taken for each other: redis's setting
+  // save and its command save stand under two headings.
+  var every=[].concat.apply([],collection.groups.map(function(group){return group.inputs;})),titles={},declarers={},holders={};
+  function shared(input){return (input.dataset.activation||'')+'\u0000'+input.dataset.title;}
   every.forEach(function(id){
     var input=ctx.nodeById(id);if(!input)return;
-    titles[input.dataset.title]=(titles[input.dataset.title]||0)+1;
+    titles[shared(input)]=(titles[shared(input)]||0)+1;
+    (declarers[shared(input)]=declarers[shared(input)]||new Set()).add(input.dataset.declaredBy||'');
     var path=rmPage.data(input,'inputPath');
     ((path&&path.options)||[]).forEach(function(option){if(!option.source)return;(holders[option.source]=holders[option.source]||[]).push(input.dataset.title);});
   });
-  // One of no subcommand says its registration as written, up to its
-  // first comma ("version_main": Arg("-V" beside "version": Arg("-V").
+  // One of no subcommand says the declaration declaring it, when theirs
+  // differ (dataformat_ohlcv in SCHEMA_TRADE_REQUIRED): words only, never
+  // its code as written, which stays behind its link (owner's review,
+  // 2026-09-30: "save strcasecmp(argv[0]" and "-V --version "version":
+  // Arg("-V"" had read as names).
   function ofWhich(input){
-    if(titles[input.dataset.title]<2)return null;
+    if(titles[shared(input)]<2)return null;
     var of=holders[input.dataset.sourceText||''];
     if(of&&of.length)return rmEl('span','map-reading-where',of.join(', '));
-    var written=(input.dataset.written||'').split(',')[0].trim();
-    return written&&written!==input.dataset.title&&written.length<=40?rmEl('code','map-reading-where',written):null;
+    var by=input.dataset.declaredBy||'';
+    return by&&declarers[shared(input)].size>1?rmEl('span','map-reading-where',by):null;
   }
   kinds.forEach(function(kind){
     var groups=collection.groups.filter(function(group){return group.kind===kind;}),all=[].concat.apply([],groups.map(function(group){return group.inputs;}));

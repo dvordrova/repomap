@@ -52,6 +52,26 @@ assert.deepEqual(buttons.filter(b=>b.has('map-collection-prose')).map(b=>b.textC
 `)
 }
 
+// Two inputs of one kind sharing a word are told apart by the declaration
+// declaring each, in words; inputs of two kinds are not taken for each
+// other, and no input reads its code as written beside its name (owner's
+// review, 2026-09-30: redis's "save strcasecmp(argv[0]").
+func TestSameNamedInputsAreToldApartInWordsOnly(t *testing.T) {
+	code := nameBreaksJS(t) + systemJSPiece(t, "31-reading-column.js", "var rmLanguageNames=", "// Where a catalogue's inputs are declared") + "\nvar rmPendingKind='';\n"
+	runSystemJS(t, readingViewElements+code+`
+const input=(title,kind,by,written)=>({dataset:{title,activation:kind,declaredBy:by,written}});
+const inputs={a:input('save','request','cmdTable','{"save",saveCommand,1}'),b:input('save','setting','loadServerConfig','strcasecmp(argv[0],"save")'),
+ c:input('dataformat_ohlcv','setting','SCHEMA_TRADE_REQUIRED','"dataformat_ohlcv"'),d:input('dataformat_ohlcv','setting','SCHEMA_BACKTEST_REQUIRED','"dataformat_ohlcv"'),
+ e:input('-V --version','command','AVAILABLE_CLI_OPTIONS','"version": Arg("-V", "--version")'),f:input('-V --version','command','AVAILABLE_CLI_OPTIONS','"version_main": Arg("-V", "--version")')};
+const node={dataset:{owner:'t1',collection:JSON.stringify({groups:[{kind:'request',inputs:['a']},{kind:'setting',inputs:['b','c','d']},{kind:'command',inputs:['e','f']}]})}};
+const context={nodeById:id=>inputs[id]||null,nodeByHref:()=>null,light(){},readNode(){}};
+const view=rmCollectionView(context,node,rmPage.data(node,'collection'));
+const where=view.all(c=>c.has&&c.has('map-reading-where')).map(c=>c.textContent);
+assert.deepEqual(where,['SCHEMA_TRADE_REQUIRED','SCHEMA_BACKTEST_REQUIRED'],'told apart by their declarations only: '+JSON.stringify(where));
+assert.ok(!view.textContent.includes('strcasecmp')&&!view.textContent.includes('Arg('),'no code as written beside a name');
+`)
+}
+
 // The callers of a destination's calls read as one "Called from": each
 // record's reach joined by program and part, each caller once.
 func TestADestinationsCallersAreJoinedByPart(t *testing.T) {

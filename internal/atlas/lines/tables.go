@@ -315,7 +315,7 @@ func FirstEntryWord(facts *atlas.BoundaryFacts) string {
 		words = facts.Values
 	}
 	for _, value := range words {
-		if nameable(value) {
+		if nameable(value) && !pattern(value) {
 			return value
 		}
 	}
@@ -336,7 +336,11 @@ func nameable(value string) bool {
 
 // EntryName restores a name cell: the chosen words as written, joined by one
 // space in the order the model wrote them. No word is translated, recased,
-// trimmed or composed any other way.
+// trimmed or composed any other way. A pattern a value is matched against
+// (a word written with a backslash escape, freqtrade's
+// CallbackQueryHandler(pattern=r"force_enter__\S+")) is code, never part
+// of a name: chosen alone, it names nothing, and the entry is named by its
+// handler.
 func EntryName(words []EntryWord, cell string) string {
 	values := make(map[string]string, len(words))
 	for _, word := range words {
@@ -344,12 +348,16 @@ func EntryName(words []EntryWord, cell string) string {
 	}
 	var chosen []string
 	for _, ref := range strings.Fields(cell) {
-		if value, ok := values[ref]; ok {
+		if value, ok := values[ref]; ok && !pattern(value) {
 			chosen = append(chosen, value)
 		}
 	}
 	return strings.Join(chosen, " ")
 }
+
+// pattern reports a word written with a backslash escape: a regular
+// expression or a format, which no name holds.
+func pattern(value string) bool { return strings.ContainsRune(value, '\\') }
 
 // DestinationOther prefixes a destination the catalogue does not name.
 const DestinationOther = "other: "

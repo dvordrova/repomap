@@ -540,7 +540,11 @@ names is never named by a word the code picks over that answer (owner,
 2026-09-30; freqtrade's `Query(…, description=…)` had been named by its
 description): it is named by its handler, and one whose handler is not
 established is no entry, journaled (`entry_unnamed`), its values standing
-alone. The first nameable word is: a flag's name before its default and usage
+alone. A pattern a value is matched against (a word written with a
+backslash escape: freqtrade's `CallbackQueryHandler(pattern=r"force_enter__\S+")`)
+is code, never part of a name (`lines.EntryName`, `FirstEntryWord`):
+chosen alone it names nothing, and the entry is named by its handler. The
+first nameable word is: a flag's name before its default and usage
 (`fs.String("socket", "/var/run/litestream.sock", "control socket path")` is
 `socket`), a row's first field, a case's first spelling. The other words are
 its registration as written (`Written`), which its reading shows, never its

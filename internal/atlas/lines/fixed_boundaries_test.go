@@ -295,6 +295,10 @@ func TestEntryNamesAreChosenWordsRestoredAsWritten(t *testing.T) {
 		{entry(atlas.BoundaryRequest, "GET", "/users/:id"), "w2 w1", "/users/:id GET"},
 		{entry(atlas.BoundaryContinuous, "pthread_create"), "", ""},
 		{entry(atlas.BoundaryRequest, "GET", "/users/:id"), "w3 w1", "GET"},
+		// A pattern a value is matched against is code, never a name:
+		// freqtrade's CallbackQueryHandler(pattern=r"force_enter__\S+").
+		{entry(atlas.BoundaryRequest, `force_enter__\S+`), "w1", ""},
+		{entry(atlas.BoundaryRequest, "forcebuy", `force_\w+`), "w1 w2", "forcebuy"},
 	} {
 		if got := EntryName(EntryWords(tc.place), tc.cell); got != tc.want {
 			t.Fatalf("%v chose %q: %q, want %q", tc.place.Boundary.Words, tc.cell, got, tc.want)
