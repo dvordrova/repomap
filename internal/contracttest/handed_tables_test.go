@@ -30,9 +30,10 @@ func TestAHandlersTableLookupListsTheValuesItTakes(t *testing.T) {
 		return "", false
 	}}
 	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root, preset)
+	// Each value is its key with what the key names: easy names "Easy level".
 	names := map[string]string{}
 	for _, operation := range projected.Operations {
-		names[operation.ID] = operation.Name
+		names[operation.ID] = strings.Join(append([]string{operation.Name}, operation.Names...), " -> ")
 	}
 	found := false
 	for position, operation := range projected.Operations {
@@ -44,8 +45,8 @@ func TestAHandlersTableLookupListsTheValuesItTakes(t *testing.T) {
 		for _, id := range projected.Reach[position].SubArguments {
 			values = append(values, names[id])
 		}
-		if !slices.Equal(values, []string{"easy", "hard"}) {
-			t.Fatalf("%s's values: %q, want easy and hard", operation.Name, values)
+		if !slices.Equal(values, []string{"easy -> Easy level", "hard -> Hard level"}) {
+			t.Fatalf("%s's values: %q, want easy and hard with the titles they name", operation.Name, values)
 		}
 	}
 	if !found {

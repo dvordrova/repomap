@@ -22,6 +22,10 @@ type pageDecl struct {
 	Part     string `json:"part,omitempty"`
 	// Code is the link to all of its lines, where Href names the first.
 	Code string `json:"code,omitempty"`
+	// Named is, for a key of a table its input's handler looks up, what the
+	// key names, the row's other words joined by one space (GroupsIndex
+	// Operation.Names): othello's n → new-game.
+	Named string `json:"named,omitempty"`
 }
 
 // pageCall is one relation the reading lists: the caller's and the callee's
@@ -445,13 +449,22 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 		}
 		path.Spine = spine
 	}
+	// In the order the code writes them: othello's keys n, u, h, 1, 2 as
+	// key->command lists them, never sorted by name.
+	var checks []groupindex.Operation
 	for _, id := range reach.SubArguments {
 		for _, other := range index.Operations {
 			if other.ID == id {
-				anchor := builder.links.anchor(other.Location.Path, other.Location.Line, other.Location.Column)
-				path.Checks = append(path.Checks, pageDecl{Name: other.Name, Href: anchor.Href, Open: anchor.Open, Source: anchor.Text, NoSource: anchor.NoSource})
+				checks = append(checks, other)
 			}
 		}
+	}
+	slices.SortStableFunc(checks, func(a, b groupindex.Operation) int {
+		return cmp.Or(cmp.Compare(a.Location.Path, b.Location.Path), cmp.Compare(a.Location.Line, b.Location.Line), cmp.Compare(a.Location.Column, b.Location.Column))
+	})
+	for _, other := range checks {
+		anchor := builder.links.anchor(other.Location.Path, other.Location.Line, other.Location.Column)
+		path.Checks = append(path.Checks, pageDecl{Name: other.Name, Href: anchor.Href, Open: anchor.Open, Source: anchor.Text, NoSource: anchor.NoSource, Named: strings.Join(other.Names, " ")})
 	}
 	path.Values = operation.HandlerUnknown && len(path.Checks) > 0
 	for _, id := range reach.Options {

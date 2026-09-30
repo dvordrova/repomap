@@ -241,3 +241,33 @@ func TestADispatchersReadingListsItsInputsByName(t *testing.T) {
 		t.Fatalf("dispatched: %v", listed)
 	}
 }
+
+// The keys of a table an input's handler looks up stand in the order the
+// table writes them, each with what it names (othello's key-pressed had
+// read "1 2 h n u", bare and sorted, for key->command's n → new-game, u →
+// undo, h → hints, 1 → play-black, 2 → play-white).
+func TestAnInputsKeysStandAsWrittenWithWhatEachNames(t *testing.T) {
+	row := func(id, name, named string, line int) groupindex.Operation {
+		return groupindex.Operation{ID: id, Kind: "interaction", Name: name, Names: []string{named}, HandlerUnknown: true, ValueOf: "key", Location: programindex.Location{Path: "events.cljc", Line: line, Column: 4}}
+	}
+	index := groupindex.Index{Target: programindex.Target{ID: "t1"}, Operations: []groupindex.Operation{
+		row("o1", "1", "play-black", 214), row("o2", "2", "play-white", 215), row("o3", "h", "hints", 213), row("o4", "n", "new-game", 211), row("o5", "u", "undo", 212),
+		{ID: "key", Kind: "interaction", Name: "key-pressed", SubjectID: "on-key", Location: programindex.Location{Path: "sketch.clj", Line: 45, Column: 18}},
+	}}
+	builder := &pageBuilder{indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{}}
+	decls := builder.pathDecls("t1", func(string) string { return "" })
+	raw := builder.inputPath(&builder.indexes[0], index.Operations[5], groupindex.Reach{OperationID: "key", SubArguments: []string{"o1", "o2", "o3", "o4", "o5"}}, decls, func(string) string { return "" }, func(id string) string { return "n-" + id }, nil)
+	var path struct {
+		Checks []pageDecl `json:"checks"`
+	}
+	if err := json.Unmarshal([]byte(raw), &path); err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, check := range path.Checks {
+		keys = append(keys, check.Name+" → "+check.Named)
+	}
+	if want := "n → new-game, u → undo, h → hints, 1 → play-black, 2 → play-white"; strings.Join(keys, ", ") != want {
+		t.Fatalf("key-pressed's keys: %q, want %q", strings.Join(keys, ", "), want)
+	}
+}

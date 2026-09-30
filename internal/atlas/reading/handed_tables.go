@@ -180,9 +180,10 @@ func (r *reader) handedEntry(handler, kind string) string {
 // (handedTables): an entry of the entry's kind at its first word, named by
 // that word, the key the lookup finds it by, whose handler is not
 // established, listed under the entry (ValueOf) and never asked, neither
-// what it is nor its name. The row's other words, what the key names, stay
-// its row as written (othello's `:n :new-game`: the key n; the model had
-// named it "n new-game"). It reports the tables it bound.
+// what it is nor its name. The row's other words are what the key names
+// (Names), and the row stays as written (othello's `:n :new-game`: the key
+// n, naming new-game; the model had named it "n new-game"). It reports the
+// tables it bound.
 func (r *reader) bindHandedRows() map[string]bool {
 	bound := map[string]bool{}
 	for tableID, handed := range r.handedTables() {
@@ -222,7 +223,7 @@ func (r *reader) bindHandedRows() map[string]bool {
 			}
 			// No words to name it by: a row the model made with none is not
 			// asked (readBoundaries).
-			r.boundaries[id] = &boundaryState{kind: handed.kind, name: nameable[0], handlerUnknown: true, tableRow: true, rowNeighbours: neighbours, valueOf: entry, place: atlas.Place{
+			r.boundaries[id] = &boundaryState{kind: handed.kind, name: nameable[0], names: slices.Clone(nameable[1:]), handlerUnknown: true, tableRow: true, rowNeighbours: neighbours, valueOf: entry, place: atlas.Place{
 				ID: id, Kind: atlas.PlaceBoundary, Path: place.Path, LineNo: first.LineNo, Column: first.Column,
 				Parent: place.Parent, TargetIDs: slices.Clone(targets), Boundary: &atlas.BoundaryFacts{
 					Source: "model", ObjectID: decl.ObjectID, Caller: decl.Name,

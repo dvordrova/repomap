@@ -1009,7 +1009,11 @@ Lisp map's row is its key and value); the row is asked nothing, neither
 its line nor its name (a live run had named the key n "n new-game").
 othello's key-pressed handler `host/on-key` hands `(:key event)` to
 `events/on-key`, which calls `(get key->command key)`: n, u, h, 1 and 2 are
-the keys key-pressed takes, each with the command it names. A table two
+the keys key-pressed takes, each with the command it names: the row's
+other words are what its key names (atlas `Boundary.Names`, GroupsIndex
+`Operation.Names`), and the input's reading lists its keys in the order
+the table writes them, each with them (`n → new-game`, `u → undo`, …; it
+had read `1 2 h n u`, bare and sorted by name). A table two
 handlers look up is neither's and is asked.
 
 **Settings in tagged fields.** A repository structure field whose tag names a

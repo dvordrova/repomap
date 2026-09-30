@@ -148,9 +148,9 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 	// in key->command: its keys are the keys key-pressed takes, listed
 	// under it with the command each names, and the table is no input of
 	// its own (othello's key->command).
-	names := map[string]string{}
+	names, keyNames := map[string]string{}, map[string][]string{}
 	for _, operation := range projected.Operations {
-		names[operation.ID] = operation.Name
+		names[operation.ID], keyNames[operation.ID] = operation.Name, operation.Names
 	}
 	for position, operation := range projected.Operations {
 		if operation.Location.Path != core || operation.Name != "key-pressed" {
@@ -158,10 +158,10 @@ func TestCumulativeClojureKeywordHandoffsAndFutures(t *testing.T) {
 		}
 		var keys []string
 		for _, id := range projected.Reach[position].SubArguments {
-			keys = append(keys, names[id])
+			keys = append(keys, names[id]+" -> "+strings.Join(keyNames[id], " "))
 		}
-		if !slices.Equal(keys, []string{"n", "u"}) {
-			t.Fatalf("key-pressed's keys: %q, want n and u", keys)
+		if !slices.Equal(keys, []string{"n -> new-greeting", "u -> undo"}) {
+			t.Fatalf("key-pressed's keys with what each names: %q, want n -> new-greeting and u -> undo", keys)
 		}
 	}
 	for _, operation := range projected.Operations {

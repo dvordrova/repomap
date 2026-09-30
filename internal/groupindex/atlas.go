@@ -839,7 +839,7 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			if byID[declaredBy] == nil {
 				declaredBy = ""
 			}
-			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary), Written: boundary.Written, ValueOf: boundary.ValueOf}
+			operation := Operation{ID: boundary.ID, FactID: boundary.FactID, GroupID: groupID, Kind: kind, Name: boundary.Name, Address: boundary.Address, Summary: boundary.Line, Source: source, Location: location, HandlerUnknown: true, DeclaredBy: declaredBy, DeclaredOn: declaredOn(boundary), Written: boundary.Written, ValueOf: boundary.ValueOf, Names: slices.Clone(boundary.Names)}
 			if boundary.AliasOf != "" {
 				aliasOf[boundary.ID] = boundary.AliasOf
 			}

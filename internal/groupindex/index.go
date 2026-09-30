@@ -259,6 +259,10 @@ type Operation struct {
 	// another (atlas Boundary.ValueOf: "always" after "appendfsync"), that
 	// input: it is listed as its sub-argument (Launch.Nested).
 	ValueOf string `json:"value_of,omitempty"`
+	// Names are, for a value of an input that is a row of a table its
+	// handler looks up by its key, what the key names (atlas Boundary.Names:
+	// othello's n names new-game).
+	Names []string `json:"names,omitempty"`
 	// Aliases are, for a handler-less input its code reads under several
 	// spellings of one value (atlas Boundary.AliasOf: litestream's
 	// query.Get("storage-class") in the else-if arm after

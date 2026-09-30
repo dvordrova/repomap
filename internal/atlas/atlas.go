@@ -974,6 +974,11 @@ type Boundary struct {
 	// entries and each other element's words values of the entry written
 	// last before them. A code fact: its answer is still the model's.
 	ValueOf string `json:"value_of,omitempty"`
+	// Names are, for a row of a table a handler looks up by its key (a
+	// value of that handler's entry, reading handed_tables.go), the row's
+	// other words as written: what the key names (othello's n names
+	// new-game). A code fact.
+	Names []string `json:"names,omitempty"`
 	// AliasOf is, for an entry a call's words make, the entry it is
 	// another spelling of: its call reads the same value as that entry's
 	// call (ProgramIndex SameValueAs), both answered the same kind, and
@@ -1768,6 +1773,11 @@ func Validate(value Atlas) error {
 			}
 			if boundary.ValueOf != "" && (!boundary.HandlerUnknown || boundary.ValueOf == boundary.ID) {
 				return fmt.Errorf("atlas: boundary %q is a value of an invalid entry", boundary.ID)
+			}
+			for _, name := range boundary.Names {
+				if boundary.ValueOf == "" || !ValidName(name) {
+					return fmt.Errorf("atlas: boundary %q names an invalid word", boundary.ID)
+				}
 			}
 		}
 		// An alias names an entry of the same kind whose handler is not

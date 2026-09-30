@@ -217,7 +217,10 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
   function words(list,title,cls){
     var box=rmEl('div',cls);box.appendChild(rmEl('p','map-reading-label',rmT(title)));
     var names=rmEl('ul','map-reading-ends');
-    list.forEach(function(word){var item=rmEl('li'),link=word.href||word.open?repomapMembers.sourceLink({Href:word.href,Open:word.open,Text:word.name,NoSource:word.no_source}):rmEl('span','',word.name);rmDotBreaks(link);link.classList.add('map-reading-name');if(word.source)link.title=word.source;item.appendChild(link);names.appendChild(item);});
+    list.forEach(function(word){var item=rmEl('li'),link=word.href||word.open?repomapMembers.sourceLink({Href:word.href,Open:word.open,Text:word.name,NoSource:word.no_source}):rmEl('span','',word.name);rmDotBreaks(link);link.classList.add('map-reading-name');if(word.source)link.title=word.source;item.appendChild(link);
+      // A key of a table the handler looks up, with what it names (n → new-game).
+      if(word.named)item.append(document.createTextNode(' \u2192 '),rmEl('span','map-reading-named',word.named));
+      names.appendChild(item);});
     box.appendChild(names);return box;
   }
   if((path.checks||[]).length)section.appendChild(words(path.checks,path.values?'Its values':'Words its handler checks','system-path-checks'));

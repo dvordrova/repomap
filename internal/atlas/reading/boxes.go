@@ -686,6 +686,8 @@ type boundaryState struct {
 	// column, which bound the row as written (declared.go).
 	tableRow      bool
 	rowNeighbours [][2]int
+	// names are a handed row's words after its key (handed_tables.go).
+	names []string
 }
 
 // destinationOf is what the row reaches in one of its programs.
