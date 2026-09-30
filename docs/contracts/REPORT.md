@@ -370,7 +370,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   On the canvas an arrow's card answers what it is (reviewer, 2026-09-30):
   headed by the two frames its arrow joins, it names each part the arrow
   goes into and under it what it reaches there, each name once (a callee, a
-  field, the inputs a handler takes), one to a line in columns, the first
+  field, the inputs a handler takes; a call leaving its program as the
+  function asking on one side and the one answering on the other,
+  "cliConnect ⇢ acceptHandler"), one to a line in columns, the first
   dozen then "…"; every call and its caller are read in the column, a
   click on the arrow away. Litestream's CLI → Core database engine card had
   listed 174 caller → callee rows.
@@ -603,11 +605,17 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   word with "…", hidden if fewer than two lines fit; the complete purpose
   stays in the reading column. A program's card lists no part named as the
   program is (a script's one part, named by its file) and shows no role
-  worded as one of the areas it lists. Beside an entered program, a
-  neighbour's Inputs and Outside titles and chips grow with the camera only
-  to a program heading's size.
+  worded as one of the areas it lists. A program of one or two parts and no
+  area (a script) takes its summary's proportion, its title, role and
+  description (at most three lines) with no empty card under them, its
+  parts in the middle of its frame. A program is a member of its own connections: a call reaching a
+  running copy of it (page_system_map.go) has its card and column line.
+  Beside an entered program, a neighbour's Inputs and Outside titles and
+  chips grow with the camera only to a program heading's size.
   An Outside frame's summary is its chips, at their own size at the
-  preferred camera.
+  preferred camera; beside its program entered it is drawn smaller about
+  where the program's arrow enters it, its chips at their own size there
+  and no larger, its other arrows' ends moved onto its drawn border.
   The fixed world places frames, parts, complete input cards, component
   purposes and grouped labels. The outer layout prefers readable text, then
   a smaller world; unzipping is not forced on small maps. Arrows keep room
@@ -636,7 +644,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   cards where the program is entered (an arrowhead crosses no lane), the
   frame's padding kept outside its outer lanes. In a
   layered arrangement the arrows into one side of an area likewise merge
-  (ELK `mergeEdges`). Cross-participant labels take no interior
+  (ELK `mergeEdges`), unless the component's cards call round a cycle: the
+  arrow closing it, forced through the others' point, had gone round a
+  third card (redis-server's Data type commands). Cross-participant labels take no interior
   space; their cards belong to the outer endpoints. Components and input
   collections show no empty padding around a long column and keep short
   catalogues compact. Their reserves are measured from the text, never a fixed
@@ -720,7 +730,9 @@ input is read and marked, the camera moving only when it is out of sight,
 and the address follows (a new declaration in the same part is a new visit,
 so Back returns to the one read before). Every name in the column links to
 all of its declaration's code: a plain click reads it, a modifier-click
-opens the code. No name carries a line number and the page prints no
+opens the code. No name, and no card's source, carries a line number (a
+card's source reads as its file, linking to the line, and not at all under
+its linked code as written) and the page prints no
 separate code marks (owner, 2026-09-29): a caller, callee or variable is its
 name, once however many places the relation is written, its part named on
 its hover; where each relation is written is on its name's hover. Of those

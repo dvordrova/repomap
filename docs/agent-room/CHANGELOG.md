@@ -1,5 +1,28 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Canvas batch 2: no merged arrows round a cycle, script cards to their summary, Outside at its program's scale, program-to-program cards, no line in a card's source
+
+- **Cycle:** a component whose cards call round a cycle is laid out
+  without ELK `mergeEdges` (`cyclic`); redis-server's Client command
+  handling → Core server infrastructure no longer boxes in Data type
+  commands.
+- **Scripts:** a program of one or two parts and no area takes its
+  summary's proportion (`widenTo`), its preferred room holding its role and
+  up to three description lines; freqtrade's scripts stood 2.5× their text.
+- **Outside:** beside its program entered, an Outside frame is drawn about
+  where the program's arrow enters it, its chips at their own size there
+  (`outsideShrink`/`shrinkOutside`); redis-server's had stood 2.6× them.
+- **Program to program:** a program counts as its own connection's member,
+  so freqtrade-client → freqtrade has a card; a call leaving its program
+  reads "cliConnect ⇢ acceptHandler". Data: redis-cli's and
+  redis-benchmark's gethostbyname now joins redis-server (the model's
+  "Redis server (host lookup)"), shown as such on their cards.
+- **Card source (30-map.js):** no `:line`; under a linked code-as-written
+  it is not printed (`TestACardSourcePrintsNoLineNumber`, fails before).
+- **Checks:** geometry lint equal to HEAD's renders (redis 2, litestream 1,
+  othello 1, all pre-existing); page shape: freqtrade's Connections gain
+  freqtrade-client, Remote Pairlist Server loses its line.
+
 ## 2026-09-30 — One input per word: a handler's registrations fold only under the same word
 
 - **Coordinator's decision:** 7caf404a's (kind, handler) fold erased typed
