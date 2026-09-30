@@ -133,6 +133,10 @@ type ObjectFacts struct {
 	// (inline.go): its one repository callee, or "Run (inline)". Compiled
 	// from the bound ProgramIndex, never persisted: Name stays native.
 	Inline string `json:"-"`
+	// PlatformHandle marks a variable its file keeps only as its handle on
+	// the platform (PlatformHandles): a module logger. Compiled from the
+	// bound ProgramIndex, never persisted.
+	PlatformHandle bool `json:"-"`
 }
 
 // PatternValueCandidate retains one adapter-proven value reconstruction. Its
@@ -1377,6 +1381,7 @@ func compileRetainedSubjects(index programindex.Index, retained map[string]struc
 	}
 	result := make([]Subject, 0, len(retained))
 	inline := inlineNames(index)
+	handles := PlatformHandles(index)
 	for _, object := range index.Objects {
 		if _, ok := retained[object.ID]; !ok {
 			continue
@@ -1393,7 +1398,7 @@ func compileRetainedSubjects(index programindex.Index, retained map[string]struc
 				Parameters: append([]programindex.TypedName(nil), object.Parameters...),
 				Results:    append([]programindex.TypedName(nil), object.Results...),
 				External:   cloneExternal(object.External), Location: cloneLocation(object.Location),
-				Inline: inline[object.ID],
+				Inline: inline[object.ID], PlatformHandle: handles[object.ID],
 			},
 		})
 	}

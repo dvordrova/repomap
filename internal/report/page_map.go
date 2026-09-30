@@ -2161,7 +2161,10 @@ func (builder *pageBuilder) groupSymbols(targetID string, group groupindex.Group
 				kind := container.subject.Object.Kind
 				moduleLevel = moduleLevel || kind == programindex.ObjectModule || kind == programindex.ObjectPackage
 			}
-			if !moduleLevel {
+			// A file's own handle on the platform (a module logger) is no
+			// declaration to look for, as its calls into the platform are
+			// no rows: freqtrade's Trading bot core had three "logger" tiles.
+			if !moduleLevel || object.PlatformHandle {
 				continue
 			}
 		default:

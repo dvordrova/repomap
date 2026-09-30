@@ -453,7 +453,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   A part with declarations has a zoom button; zoomed far in, its
   declarations stand inside its card as tiles, each a declaration to choose:
   a type with its fields and methods under it, a function or a module's
-  variable alone. A tile keeps its link column, the longest chain of calls,
+  variable alone. A module variable its file keeps only as its handle on the
+  platform is no tile (GroupsIndex `PlatformHandles`: a standard-library
+  call's result only its file's functions read, Python's module logger;
+  freqtrade's Trading bot core had three "logger" tiles); the reading still
+  lists it. A tile keeps its link column, the longest chain of calls,
   returns and takes leading to it, so a caller stands left of what it calls.
   Tiles stand by file, the files in the order their first declaration is
   listed, each file's declarations in the page's order: the model's keys,
