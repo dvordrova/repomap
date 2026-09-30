@@ -32,7 +32,7 @@ const text=value=>({textContent:value});
 const document={createElement:tag=>new El(tag),createTextNode:text};
 const names=el=>el.all(c=>c.has('map-reading-name')).map(c=>c.textContent);
 function rmEl(tag,cls,value){const item=document.createElement(tag);if(cls)item.className=cls;if(value!==undefined)item.textContent=value;return item;}
-function rmT(key,...values){return values.reduce((s,v,i)=>s.replace('{'+i+'}',v),key);}
+function rmT(key,...values){let used=0;const out=values.reduce((s,v,i)=>{if(s.includes('{'+i+'}'))used++;return s.replace('{'+i+'}',v);},key);if(used!==values.length)throw new Error('Extra report UI parameter: '+key);return out;}
 const repomapMembers={sourceLink(s){const a=rmEl(s.Href||s.Open?'a':'span','',s.Text);a.href=s.Href;return a;},sourceKey(s){return s.Href||s.Open||'';}};
 const nodes={'#own':{dataset:{title:'Server lifecycle and cron',summary:'Keeps the server running.',summaryRef:'s1',lane:'',symbols:'[{"name":"serverCron","kind":"function","text":"(id: long)","href":"h#serverCron"}]'},getAttribute:()=>'#own'},
  '#main':{dataset:{title:'main',lane:'triggers'},getAttribute:()=>'#main'},
@@ -143,6 +143,11 @@ const head=lines[0].children[0];
 assert.deepEqual(names(head),['loadAppendOnlyFile()','cmdTable'],'the caller and the site it dispatches through');
 assert.equal(head.textContent,'loadAppendOnlyFile() calls one of these request handlers through cmdTable','in plain words, not counted: '+head.textContent);
 assert.equal(lines[0].all(c=>c.has('possible')||c.has('map-reading-relation')).length,0,'"one of these" says they are possible; no row repeats it');
+// A fan through no dispatch site (an interface field's alternatives) names
+// none and still reads.
+fanned.in[0].lines[0].fan={of:5,noun:'',via:[]};
+const plain=rmPartView(ctx,nodes['#own'],fanned).view.all(c=>c.has('map-reading-caller'))[0].children[0];
+assert.equal(plain.textContent,'loadAppendOnlyFile() calls one of these','no site: '+plain.textContent);
 `)
 }
 

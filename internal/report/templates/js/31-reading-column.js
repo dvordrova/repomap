@@ -268,7 +268,9 @@ function rmCallerLine(ctx,data,line){
   var runs=rmEndRuns(ctx,data,line.fan?line.ends.map(function(end){return Object.assign({},end,{possible:false});}):line.ends,'out',!line.fan);
   if(line.fan){
     var fan=line.fan,say=rmEl('span','map-reading-fan'),via=(fan.via||[]).map(function(at){return data.decls[at];}).filter(Boolean);
-    var words=rmT((rmFanWords[fan.noun]||'calls one of these')+(via.length?' through {0}':''),'\u0001').split('\u0001');
+    // A fan with no dispatch site names none (litestream's r.Client.WriteLTXFile
+    // calls one of its eight replica clients): its words take no parameter.
+    var key=rmFanWords[fan.noun]||'calls one of these',words=(via.length?rmT(key+' through {0}','\u0001'):rmT(key)).split('\u0001');
     say.append(document.createTextNode(' '+words[0]));
     if(via.length){
       via.forEach(function(decl,i){if(i)say.append(document.createTextNode(', '));say.appendChild(rmDeclName(decl,decl.name,ctx.goDecl(decl),decl.at));});
