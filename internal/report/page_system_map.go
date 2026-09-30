@@ -320,7 +320,8 @@ func (view *pageView) SystemMap() *pageMap {
 			}
 			if len(children) > 0 {
 				id := "system-" + group.Rows[0].ID + "-destination"
-				add(pageMapNode{ID: id, Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies", Unestablished: group.Destination == ""})
+				written, at := destinationWritten(group.Rows)
+				add(pageMapNode{ID: id, Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies", Unestablished: group.Destination == "", Written: written, Source: at})
 				destinations = append(destinations, id)
 			}
 		}

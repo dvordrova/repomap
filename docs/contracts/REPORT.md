@@ -1313,7 +1313,11 @@ A program's Outside frame is read by its destinations, one to a line, each
 reading its own, then "Called from" joined over all their calls; a
 destination by that "Called from" of its calls and the calls themselves, one
 name to a line under one closed "Its calls", each reading its record (owner,
-2026-09-30: freqtrade's Outside had opened every record, 59,592 px). No
+2026-09-30: freqtrade's Outside had opened every record, 59,592 px). Under
+its name a destination says where the value naming what its calls reach
+ends, as written, linked to that line, when all its records' readable walks
+end at one address or expression (`destinationWritten`): Redis's Primary
+reads `server.masterhost`, where it had read its name alone. No
 record opens by default and nothing is counted. A call's own reading names a
 callable written inline as "anonymous function in {function}" (GroupsIndex
 `ObjectFacts.Inline`), in its address sources too, with no place and no
