@@ -7,6 +7,13 @@ that instance, so a call on it is the class's method, an inherited one
 included; a store of None does not count, since None has no method to call.
 A name stored twice holds either instance, and a call on it stays
 unresolved.
+
+A field an __init__ stores once from its own parameter holds what every
+construction hands it, as freqtrade's RPC keeps the FreqtradeBot that
+RPCManager(self) hands on: Rpc's bot is the Bot, handed through Manager's
+own parameter, so force_entry calls Bot.execute_entry; Replay is built
+with a Bot and a Backtest, either one's execute_entry; Loose is built only
+with a value nothing types, and its call stays unresolved.
 """
 
 
@@ -63,3 +70,57 @@ def start_either(name, fast):
 
 def make_plain():
     return Plain()
+
+
+class Rpc:
+    def __init__(self, bot):
+        self._bot = bot
+
+    def force_entry(self, pair):
+        return self._bot.execute_entry(pair)
+
+
+class Manager:
+    def __init__(self, bot):
+        self._rpc = Rpc(bot)
+
+
+class Bot:
+    def __init__(self):
+        self.rpc = Manager(self)
+
+    def execute_entry(self, pair):
+        return pair
+
+
+class Backtest:
+    def execute_entry(self, pair):
+        return pair * 2
+
+
+class Replay:
+    def __init__(self, engine):
+        self.engine = engine
+
+    def replay(self, pair):
+        return self.engine.execute_entry(pair)
+
+
+class Loose:
+    def __init__(self, engine):
+        self.engine = engine
+
+    def replay_loose(self, pair):
+        return self.engine.execute_entry(pair)
+
+
+def replay_live(pair):
+    return Replay(Bot()).replay(pair)
+
+
+def replay_backtest(pair):
+    return Replay(Backtest()).replay(pair)
+
+
+def replay_any(engine, pair):
+    return Loose(engine).replay_loose(pair)

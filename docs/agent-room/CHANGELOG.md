@@ -1,5 +1,18 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Python: a field stored from a constructor parameter is what its constructions hand
+
+- **Rule** (`type_field_parameters`, PYTHON "Inherited members and fields"):
+  an `__init__` field stored once from its own never-rebound parameter holds
+  the instance every static construction hands it, through the calling
+  def's own parameters transitively; one class exact, several alternatives,
+  `interface_field_assignment` witnesses at the handing arguments (Go's
+  constructor-injection rule). freqtrade's `RPC._rpc_force_entry` calling
+  `self._freqtrade.execute_entry` had been unresolved: `RPC(freqtrade)` in
+  `RPCManager.__init__`, `RPCManager(self)` in `FreqtradeBot.__init__`.
+- **Fixture:** `workers.py` Rpc/Manager/Bot (exact), Replay (alternatives),
+  Loose (unresolved). JS/TS and Clojure equivalents recorded in PYTHON.
+
 ## 2026-09-30 — An entered program stands its Inputs and Outside as ports (variant B)
 
 - **Owner's pick B:** the whole map keeps its Inputs and Outside frames; a

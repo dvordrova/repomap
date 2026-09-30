@@ -377,6 +377,11 @@ class Analyzer:
         self.keyword_only_parameters = set()
         self.parameter_calls = []
         self.calls_into = []
+        # Each field an __init__ stores from its own parameter, by the stored
+        # name's node, and each call on such a field's method whose class no
+        # store names (type_field_parameters).
+        self.stored_parameters = {}
+        self.field_parameter_calls = []
         # Each class's written bases with the scope and module that define
         # it, and the repository classes they resolve to there (class_bases);
         # the classes naming each class as a base, and every class deriving
@@ -634,6 +639,7 @@ class Analyzer:
         self.attach_memberships()
         self.attach_table_keys()
         self.hand_parameter_calls()
+        self.type_field_parameters()
         for ref, rows in self.table_rows.items():
             value = self.objects_by_ref.get(ref)
             if rows and value is not None and value["kind"] == "variable":
@@ -875,6 +881,98 @@ class Analyzer:
                 relation["to_refs"] = sorted(targets)
                 relation["resolution"] = "exact" if len(targets) == 1 else "alternatives"
                 relation["targets_observed"] = len(targets)
+
+    def type_field_parameters(self):
+        # A field an __init__ stores once from its own parameter, never
+        # rebound, holds the instance every static construction hands that
+        # parameter (freqtrade's RPC.__init__(self, freqtrade) storing
+        # self._freqtrade, built only by RPCManager(self) in FreqtradeBot, as
+        # RPC(freqtrade) with RPCManager's own parameter): a call on the
+        # field's method is that class's method, its own or inherited, exact
+        # for one class and alternatives for several, each named by an
+        # interface_field_assignment witness at the argument handing it, as
+        # Go's constructor-injected interface fields are (GO). A parameter of
+        # the calling def, never rebound, hands what that def's callers hand
+        # it. A call handing any other value, or leaving the parameter to its
+        # default or a spread, a construction the program never makes and a
+        # test's construction of the program's class leave the call
+        # unresolved.
+        if not self.field_parameter_calls:
+            return
+
+        def tested(ref):
+            location = (self.objects_by_ref.get(ref) or {}).get("location") or {}
+            return location.get("path", "") in self.test_paths
+
+        relations = {relation["source_ref"]: relation for relation in self.relations}
+        entering = {}
+        for call in self.calls_into:
+            entering.setdefault(call["callee"], []).append(call)
+
+        def handed(callee, position, name, positional, seen):
+            # The classes every call into callee hands its parameter, each
+            # with the argument handing it; None when any hands another value.
+            if callee in seen:
+                return None
+            seen = seen | {callee}
+            calls = [call for call in entering.get(callee, ())
+                     if not (tested(relations[call["relation"]]["from_ref"]) and not tested(callee))]
+            if not calls:
+                return None
+            found = []
+            for call in calls:
+                hand = call["instances"].get(("keyword", name))
+                if hand is None and positional and position < call["positional"]:
+                    hand = call["instances"].get(("position", position))
+                if hand is None or hand[0] is None:
+                    return None
+                instance, location = hand
+                if instance[0] == "class":
+                    found.append((instance[1], location, callee))
+                    continue
+                nested = handed(*instance[1:], seen)
+                if nested is None:
+                    return None
+                found.extend(nested)
+            return found
+
+        for relation_ref, stored, method in self.field_parameter_calls:
+            parameter = self.stored_parameters.get(stored)
+            relation = relations.get(relation_ref)
+            if parameter is None or relation is None or relation["resolution"] != "unresolved":
+                continue
+            found = handed(*parameter, frozenset())
+            if not found:
+                continue
+            targets, witnesses = [], []
+            for class_ref, location, callee in found:
+                target = ""
+                for member in self.base_chain(class_ref):
+                    target = self.objects_by_qname.get(self.object_qname(member) + "." + method, "")
+                    if target:
+                        break
+                if not target or self.objects_by_ref[target]["kind"] not in ("function", "method"):
+                    targets = []
+                    break
+                if target not in targets:
+                    targets.append(target)
+                witness = {
+                    "kind": "interface_field_assignment", "object_ref": class_ref,
+                    "detail": bounded_text(self.objects_by_ref[class_ref]["name"] + " handed to " + self.object_qname(callee)),
+                }
+                if location is not None:
+                    witness["location"] = location
+                if witness not in witnesses:
+                    witnesses.append(witness)
+            if not targets:
+                continue
+            relation["to_refs"] = sorted(targets)
+            relation["resolution"] = "exact" if len(targets) == 1 else "alternatives"
+            relation["targets_observed"] = len(targets)
+            if len(targets) > 1:
+                relation["dispatch"] = "interface"
+            relation["witnesses"].extend(witnesses)
+            relation["witnesses_observed"] += len(witnesses)
 
     def object_qname(self, ref):
         return self.qnames_by_ref.get(ref, "")
@@ -1966,6 +2064,12 @@ class RelationVisitor(ast.NodeVisitor):
         if not ref:
             return
         owner = self.object(self.scope.ref)
+        if owner and owner.get("name") == "__init__" and isinstance(value, ast.Name):
+            # A field stored from the __init__'s own parameter holds what
+            # the class's constructions hand it (type_field_parameters).
+            parameter = self.called_parameter(value)
+            if parameter is not None:
+                self.analyzer.stored_parameters[id(value)] = (self.scope.ref,) + parameter
         if owner and owner.get("name") == "__init__":
             self.analyzer.constructor_fields.setdefault(self.scope.class_ref, {})[target.attr] = {
                 "kind": "field_value", "text": target.attr,
@@ -3136,6 +3240,9 @@ class RelationVisitor(ast.NodeVisitor):
                 parameter = self.called_parameter(node.func) if not resolved[1] else None
                 if parameter is not None and call_relation_ref:
                     self.analyzer.parameter_calls.append((call_relation_ref, self.scope.ref) + parameter)
+                stored = self.field_parameter_store(node.func) if not resolved[1] else None
+                if stored is not None and call_relation_ref:
+                    self.analyzer.field_parameter_calls.append((call_relation_ref,) + stored)
             initializer = self.class_member(resolved[1], "__init__", ("method",)) if constructed else ""
             if initializer:
                 initializer_ref = self.analyzer.add_relation(
@@ -3165,14 +3272,15 @@ class RelationVisitor(ast.NodeVisitor):
             entered = (resolved[1], call_relation_ref)
         elif not dynamic_only and initializer:
             entered = (initializer, initializer_ref)
-        hands = {}
+        hands, instances = {}, {}
         for argument, position, keyword in arguments:
             authority, ref = self.partial_callable(argument) or self.resolve(argument)
             value = self.object(ref) if ref else None
             handed = authority in ("local", "literal") and value and value["kind"] in ("function", "method", "lambda")
             if entered and (keyword or 0 < position < positional):
-                hands[("keyword", keyword) if keyword else ("position", position)] = \
-                    (ref if handed else "", source_location(self.module["path"], argument))
+                key = ("keyword", keyword) if keyword else ("position", position)
+                hands[key] = (ref if handed else "", source_location(self.module["path"], argument))
+                instances[key] = (self.instance_handed(argument), source_location(self.module["path"], argument))
             if handed:
                 source_argument = None
                 if pattern is not None and call_relation_ref and (position > 0 or keyword):
@@ -3204,9 +3312,49 @@ class RelationVisitor(ast.NodeVisitor):
             self.analyzer.calls_into.append({
                 "callee": entered[0], "relation": entered[1], "path": self.module["path"],
                 "positional": positional, "spread": any(value.arg is None for value in node.keywords),
-                "hands": hands,
+                "hands": hands, "instances": instances,
             })
         self.visit(node.func)
+
+    def instance_handed(self, argument):
+        # The instance an argument hands a parameter (type_field_parameters):
+        # self in a method is its class's; a name bound once to a class's
+        # construction, or a parameter annotated with a repository class, is
+        # that class's; a class call, or a factory declared to return a
+        # repository class, makes one. A parameter of the calling def, never
+        # rebound, hands what that def's callers hand it. None for anything
+        # else.
+        if isinstance(argument, ast.Name):
+            if argument.id == "self" and self.scope.class_ref:
+                return ("class", self.scope.class_ref)
+            binding = self.pattern_binding(argument.id)
+            typed = binding and binding.get("annotation_origin")
+            origins = binding.get("origin_refs", []) if binding and (not origins_invalidated(binding) or typed) else []
+            if len(origins) == 1:
+                owner = self.produced_class(origins[0])
+                if owner:
+                    return ("class", owner)
+            parameter = self.called_parameter(argument)
+            if parameter is not None:
+                return ("parameter", self.scope.ref) + parameter
+            return None
+        if isinstance(argument, ast.Call):
+            authority, ref = self.resolved_call_target(argument.func)
+            owner = self.produced_class(ref) if authority == "local" else ""
+            return ("class", owner) if owner else None
+        return None
+
+    def field_parameter_store(self, func):
+        # A call of a method on self.<field> whose one store it may see is a
+        # plain name (the __init__'s parameter, type_field_parameters): the
+        # store's node and the method's name.
+        if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Attribute) and
+                isinstance(func.value.value, ast.Name) and func.value.value.id == "self" and self.scope.class_ref):
+            return None
+        stores = self.field_stores_seen(self.scope.class_ref, func.value.attr)
+        if len(stores) != 1 or not isinstance(stores[0][0], ast.Name):
+            return None
+        return id(stores[0][0]), func.attr
 
     def called_parameter(self, func):
         # A call of the def's own parameter, which the def never rebinds:

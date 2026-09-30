@@ -284,6 +284,33 @@ stores its own client, and `MaybePrices.ask` because its factory declares
 `httpx.Client | None`
 (`TestCumulativePythonSelfCallsAndFieldsFollowTheBaseChain`).
 
+A field an `__init__` stores once from its own parameter, never rebound
+(`RPC.__init__(self, freqtrade)` storing `self._freqtrade = freqtrade`),
+holds the instance every static construction of the class hands that
+parameter, as Go's constructor-injected interface fields do (GO): a call on
+the field's method (`self._freqtrade.execute_entry(...)`) is that class's
+method, its own or inherited, exact for one class and `alternatives` for
+several (dispatch `interface`), each named by an
+`interface_field_assignment` witness at the argument handing it. An
+argument hands an instance when it is `self` in a method, a name bound once
+to a class's construction or annotated with a repository class, a class
+call or a factory declared to return a repository class; a parameter of the
+calling def, never rebound, hands what that def's callers hand it
+(freqtrade's `RPCManager(self)` in `FreqtradeBot.__init__` hands the bot on
+through `RPC(freqtrade)`). A construction handing any other value, or
+leaving the parameter to its default or a spread, a class never constructed
+and a test's construction of the program's class leave the call unresolved.
+`workers.py`'s `Rpc.force_entry` calls `Bot.execute_entry`, `Replay.replay`
+either `Bot`'s or `Backtest`'s, and `Loose.replay_loose` stays unresolved
+(`TestCumulativePythonFieldStoredFromAConstructorParameterIsWhatItsConstructionsHand`).
+Native equivalents: Go (above); TypeScript types `this.bot` by the
+constructor parameter's declared type, so a class type resolves by the
+compiler, while an interface type is not joined with the constructions'
+classes (a recorded missing equivalent), and untyped JavaScript leaves the
+call open (missing); Clojure keeps no fields, a component handed to a
+record's constructor is read by keyword and called through a protocol,
+unresolved: no equivalent.
+
 A method reading a field that the classes deriving from its class also
 store reads one of those stores. The field's source value keeps the store
 of the reading class, or the base it inherits the field from, and the
