@@ -231,8 +231,10 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 			t.Fatalf("dispatch.py's input %+v", row)
 		}
 	}
-	// The dest of add_subparsers, on which subcommands with their own
-	// handlers are declared (init, serve), is none of their tiles.
+	// The dest of add_subparsers only subcommands with their own handlers
+	// are declared on is no input (ServiceCommands' cmd, serve's); one a
+	// subcommand without a handler is declared on too stays (build_parser's
+	// cmd: init and status).
 	got := inputRows(projected, "src/fixture_app/tool_cli.py")
 	want := []inputRow{
 		// run_init, init's handler, compares its argument's cmd with
@@ -240,6 +242,7 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 		// asked what it becomes.
 		{kind: "command", name: "init-*", declaredBy: "run_init", at: "src/fixture_app/tool_cli.py:19"},
 		{kind: "command", name: "-v", declaredBy: "build_parser", on: `argparse.ArgumentParser("tool")`, at: "src/fixture_app/tool_cli.py:26"},
+		{kind: "command", name: "cmd", declaredBy: "build_parser", on: `argparse.ArgumentParser("tool")`, at: "src/fixture_app/tool_cli.py:27"},
 		{kind: "command", name: "init", declaredBy: "build_parser", on: `parser.add_subparsers(dest="cmd")`, handler: "run_init", at: "src/fixture_app/tool_cli.py:28"},
 		{kind: "command", name: "--force", declaredBy: "build_parser", on: `commands.add_parser("init")`, at: "src/fixture_app/tool_cli.py:30"},
 		{kind: "command", name: "status", declaredBy: "build_parser", on: `parser.add_subparsers(dest="cmd")`, at: "src/fixture_app/tool_cli.py:33"},
@@ -284,7 +287,7 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 	}
 	catalogues := catalogueRows(projected)
 	for _, row := range []string{
-		`command on argparse.ArgumentParser("tool"): -v`,
+		`command on argparse.ArgumentParser("tool"): -v cmd`,
 		`command on commands.add_parser("init") (init): --force`,
 	} {
 		if !slices.Contains(catalogues, row) {

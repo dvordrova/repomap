@@ -921,20 +921,27 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 		joinedInto[at], dropped[position] = true, true
 		standsFor[operation.ID] = entry.ID
 	}
-	// An input whose own call made the object inputs of its kind with
+	// An input whose own call made an object only inputs of its kind with
 	// their own handlers are declared on names where the one chosen is
 	// kept, and is no input of its own: argparse's
-	// add_subparsers(dest="command"), on which freqtrade's 33 subcommands
+	// add_subparsers(dest="command"), on which freqtrade's 34 subcommands
 	// are joined to their handlers. Those inputs are its words, each its
-	// own tile.
+	// own tile. An object an option without a handler is declared on too
+	// is a command's own (a group taking options).
 	holds := make(map[string]bool)
 	for position, operation := range operations {
 		on := operation.DeclaredOn
 		if on == nil {
 			on = onOf[operation.ID]
 		}
-		if !dropped[position] && !operation.HandlerUnknown && on != nil {
-			holds[operation.Kind+"\x00"+operationLocationKey(on.Location)] = true
+		if dropped[position] || on == nil {
+			continue
+		}
+		key := operation.Kind + "\x00" + operationLocationKey(on.Location)
+		if seen, known := holds[key]; !operation.HandlerUnknown && (!known || seen) {
+			holds[key] = true
+		} else if operation.HandlerUnknown {
+			holds[key] = false
 		}
 	}
 	for position, operation := range operations {

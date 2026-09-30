@@ -748,12 +748,13 @@ handler-less input under an input of the same kind, as its option
 facts. It is declared on the object that input's own call made (argparse's
 `init.add_argument("--force")` on `commands.add_parser("init")`: the
 catalogue's `OnOperationID`), unless an input with its own handler is declared
-on that object too (freqtrade's subparsers hold 33 handled subcommands); a
-handler-less input whose own call made an object inputs of its kind with
-their own handlers are declared on names where the chosen one is kept and
-is no input at all (GroupsIndex projection, after the hand-over join:
-freqtrade's `add_subparsers(dest="command")`); or it is declared in a case's
-branch, or by code only that branch runs: the calls written in the lines a comparison case or a
+on that object too (freqtrade's subparsers hold 34 handled subcommands); a
+handler-less input whose own call made an object only inputs of its kind
+with their own handlers are declared on names where the chosen one is kept
+and is no input at all (GroupsIndex projection, after the hand-over join:
+freqtrade's `add_subparsers(dest="command")`; the fixture's `cmd` beside the
+handler-less `status` stays); or it is declared in a case's branch, or by
+code only that branch runs: the calls written in the lines a comparison case or a
 guarding call selects (ProgramIndex comparison case and pattern `branch`,
 GroupsIndex `Branches`), followed as the launch walk follows calls, while the
 walk from the launch's roots that takes no call written in a case's branch

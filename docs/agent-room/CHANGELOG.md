@@ -39,9 +39,11 @@
   `command` was `add_subparsers(dest="command")` answered command; it made
   the object freqtrade's 33 handled subcommands are declared on, so after
   the hand-over join GroupsIndex drops a handler-less input whose own call
-  made an object inputs of its kind with their own handlers are declared
-  on (`onOf`/`wordless` now keyed by boundary ID: folding spellings had
-  shifted the positions J1 read). `help` was `options.pop("help", None)`
+  made an object only inputs of its kind with their own handlers are
+  declared on; one a handler-less input shares stays (the fixture's `cmd`
+  beside `status`; a command group with options of its own). `onOf` and
+  `wordless` are now keyed by boundary ID: folding spellings had shifted
+  the positions J1 read. `help` was `options.pop("help", None)`
   on `deepcopy(AVAILABLE_CLI_OPTIONS[val].kwargs)`: a call made on the
   code's own table (read at a table read site, through elements, fields
   and an outside call naming nothing) is not asked (`onOwnTable`).
