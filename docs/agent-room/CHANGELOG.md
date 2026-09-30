@@ -37,7 +37,7 @@
   before), `TestRowTextIsTheRowAsWritten`.
 - **False tiles `command` and `help` (code facts, no question change):**
   `command` was `add_subparsers(dest="command")` answered command; it made
-  the object freqtrade's 33 handled subcommands are declared on, so after
+  the object freqtrade's 34 handled subcommands are declared on, so after
   the hand-over join GroupsIndex drops a handler-less input whose own call
   made an object only inputs of its kind with their own handlers are
   declared on; one a handler-less input shares stays (the fixture's `cmd`
@@ -50,10 +50,18 @@
   Fixture: `dispatch.py` `option_help`; `TestCumulativePythonInputsJoinAndCatalogue`
   answers `add_subparsers` and `pop` as freqtrade's reading did and fails
   without either fix.
+- **Acceptance** (ordinary binary at 88555fea plus the display agent's
+  uncommitted edits, default cache, `--no-serve --no-open`): freqtrade
+  `20260930-011248` exit 0, 202 s, 0 live calls, 7 targets. 371 inputs
+  (`command` and the pop's `help` gone; telegram's `/help` stays); 164
+  options under 27 subcommands, 124 row tiles kept; `written` 2.47 MB →
+  34 KB (`--verbose`: 115 bytes); report.html 11.78 → 8.75 MB,
+  groups-index.json 7.56 → 4.99 MB, atlas.json 4.70 → 2.12 MB.
 - **Tests:** `TestASubcommandsOptionsAreNestedUnderIt` (Go, Python),
   `TestAFlagDeclaredOnAHandedParserIsAnOptionOfTheSubcommandMakingIt`,
   `TestARowLookedUpWithHandedKeysIsAnOptionOfTheSubcommandMakingTheParser`;
-  fixture expectations in the inputs, table-reads and word-given tests.
+  fixture expectations in the inputs, table-reads and word-given tests;
+  `make test` and `make vet` (package parallelism 2) pass.
 
 ## 2026-09-30 — The canvas batch of the second human-eye review: packed programs, trunks, one note for unread targets, folded Outside cards
 
