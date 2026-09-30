@@ -107,6 +107,22 @@ nearer ordinary package/module does not authorize an unknown child. Importing
 an unknown member directly from a known namespace keeps only that known
 boundary; it does not invent a declaration or a callable.
 
+A target indexes only its own project, so another project's package it
+imports stays an outside `package` symbol there, named by its dotted path.
+The places graph joins such a call or import to the one file another target
+declares under that name (a module, or a module's function, type or
+variable; `places/package_members.go`): Python resolves the import there once
+both are installed. A name the importing target declares itself, or two
+files declare, joins nothing, and a package's shorter re-export
+(`freqtrade_client.FtRestClient`) names no module member and stays outside.
+Each file stays its own target's, so the call is a joint between the two:
+freqtrade's `scripts/rest_client.py` calling
+`freqtrade_client.ft_client.main` had drawn no arrow
+(`TestACallIntoAnotherTargetsPackageJoinsTheirFiles`, the fixture's
+`levels.py` into `client/fixture_client/rest.py`). Go and JS/TS index another
+module's or workspace package's source themselves; the Clojure and C
+fixtures import no other target's code.
+
 ## Typed parameters and explicit re-exports
 
 Python HTTP facts follow observed single base-class chains to external methods,

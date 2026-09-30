@@ -155,6 +155,7 @@ func Build(input Input) (atlas.Graph, error) {
 		}
 		b.collectObjects(target)
 		b.collectEdges(target)
+		b.collectPackageMembers(target)
 		b.collectImports(target)
 		b.collectSeeds(target)
 		b.collectSymbolCallers(b.symbolCallerRows, target)
@@ -166,6 +167,7 @@ func Build(input Input) (atlas.Graph, error) {
 		b.collectScriptImports(target)
 	}
 	b.releaseTargetObjects()
+	b.joinPackageUses()
 	// A located seed may refer to a file supplied by a later target. Resolve
 	// that membership after collecting the complete file inventory, without
 	// loading every target again just to read its relations and seeds.
@@ -270,6 +272,11 @@ type builder struct {
 	// its entry files' code imports, the entry files included.
 	scriptImports map[string]map[string]bool
 	entryImports  map[string]map[string]bool
+
+	// packageMembers and packageUses join a call or an import into another
+	// target's package (package_members.go).
+	packageMembers map[string]map[packageMember]bool
+	packageUses    []packageUse
 }
 
 type typeField struct {
