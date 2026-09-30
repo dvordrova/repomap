@@ -1723,8 +1723,12 @@ review: litestream's config and metrics fields, freqtrade's select had stood
 there; `page_entity_writes.go`). Its work is its handler and what it calls
 exactly, never entering a helper (a declaration the helper question decided
 serves others' work, in a part most of the program's parts call into, other
-than the handler's own). Listed, from facts only:
-a field of a type owning a database table (a table record's owner) the work
+than the handler's own). Listed, from facts only: a row of a table the
+reach creates, a construct call (ProgramIndex invocation `construct`) of a
+type owning a table ("Trade — new row", by execute_entry; Python and
+TypeScript construct; a Go struct literal and C's allocation of a record
+are no construct, so they create none yet); a field of a type owning a
+database table (a table record's owner) the work
 writes, save a constructor setting up the object its call makes; a field
 one of the program's own files is written from (read by the code making a
 call on that file, save the field naming its path: redis's rdbSave reads
@@ -1735,7 +1739,12 @@ written at (INSERT, UPDATE, ALTER, …), with its tables; every outside system
 the reach calls, named once under "Sends to" (a GET or HEAD request reads,
 and the facts tell no store from a service); the files the reach makes calls
 on (the facts give no file call's direction). In-memory configuration and
-counters are no data unless a table record owns their type. Each target
+counters are no data unless a table record owns their type. What
+functions on the input's own path make (its spine's steps and branches and
+their members) comes first; what only deeper code makes folds under "also
+deeper in its reach", by name alone, unless nothing on the path changes
+anything (milestone review, 2026-09-30: an entry's exit fields had stood
+before its new Trade). Each target
 once, with every function making the change, their names links into their
 code; a field or table links to where it is first changed, that place on its
 hover; no line is printed and no hedge line stands. A part's reading lists

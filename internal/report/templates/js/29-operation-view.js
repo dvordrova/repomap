@@ -731,15 +731,38 @@ function rmEntryLanding(link,nodes,component){
       if(handed.length)item.append(' ',rmEl('span','map-reading-relation',rmT('handed to {0}',handed.join(', '))));
       marks(item,writes);item.append('\n');return item;
     }
+    // What its own path changes first; what only deeper code changes folds
+    // under "also deeper in its reach", by name alone (milestone review,
+    // 2026-09-30: an entry's exit fields had stood before its new Trade).
     function changes(into,writes){
+      var near=writes.filter(function(write){return !write.deeper;}),far=writes.filter(function(write){return write.deeper;});
+      if(!near.length)return listed(into,far);
+      var lines=listed(into,near);
+      if(far.length){
+        var fold=rmEl('details','map-reading-group system-deeper-changes');fold.appendChild(rmEl('summary','',rmT('also deeper in its reach')));
+        var names=[],list=rmEl('ul','plain');
+        far.forEach(function(write){
+          var name=write.kind==='creates'?write.entity_name:write.field?write.entity_name+'.'+write.field:(write.tables||[]).length?write.tables.join(', '):write.destination;
+          if(!name||names.indexOf(name)>=0)return;names.push(name);
+          var item=rmEl('li');item.appendChild(rmPlaceLink(write.source,name));list.appendChild(item);
+        });
+        fold.appendChild(list);into.appendChild(fold);
+      }
+      return lines;
+    }
+    function listed(into,writes){
       var typed=new Map(),stores=new Map(),lines=0;
       writes.forEach(function(write){
         if(write.kind==='db'||write.kind==='file'||write.kind==='sends'){var key=write.kind==='db'?write.destination:write.kind==='file'?rmT('Files'):rmT('Sends to');if(!stores.has(key))stores.set(key,[]);stores.get(key).push(write);return;}
         var key=repomapMembers.sourceKey(write.entity);if(!typed.has(key))typed.set(key,[]);typed.get(key).push(write);
       });
       typed.forEach(function(writes){
-        var fields=new Map();writes.forEach(function(write){if(!fields.has(write.field))fields.set(write.field,[]);fields.get(write.field).push(write);});
-        var items=[];fields.forEach(function(same,field){items.push(line(field,same));});
+        // A row it creates first ("new row — by execute_entry"), then each
+        // field once.
+        var created=writes.filter(function(write){return write.kind==='creates';}),fields=new Map();
+        writes.forEach(function(write){if(write.kind==='creates')return;if(!fields.has(write.field))fields.set(write.field,[]);fields.get(write.field).push(write);});
+        var items=[];if(created.length)items.push(line(rmT('new row'),created));
+        fields.forEach(function(same,field){items.push(line(field,same));});
         lines+=items.length;group(into,writes[0].entity_name,writes[0].entity,items);
       });
       stores.forEach(function(writes,title){

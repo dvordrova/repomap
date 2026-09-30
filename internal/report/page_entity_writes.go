@@ -58,6 +58,10 @@ type pageEntityWrite struct {
 	Tables      []string   `json:"tables,omitempty"`
 	Source      pageAnchor `json:"source"`
 	Possible    bool       `json:"possible,omitempty"`
+	// Deeper marks a change no function on the input's own path makes
+	// (its spine's steps and branches, their members): the column folds it
+	// under "also deeper in its reach".
+	Deeper bool `json:"deeper,omitempty"`
 	// Integration marks a change of a matched input on another component:
 	// an endpoint match, not a native call.
 	Integration bool           `json:"integration,omitempty"`
@@ -281,8 +285,19 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 	}
 	var result []pageEntityWrite
 	seen := map[string]int{}
-	// Each target once, with every function making the change.
+	// The input's own path: its spine's steps and branches and the members
+	// of each the step before calls (execute_entry, create_order).
+	onPath := map[string]bool{}
+	for _, step := range append(slices.Clone(reach.Spine.Steps), reach.Spine.Branches...) {
+		onPath[step.SubjectID] = true
+		for _, member := range step.Members {
+			onPath[member] = true
+		}
+	}
+	// Each target once, with every function making the change; it is
+	// deeper while none of them is on the path.
 	add := func(change pageEntityWrite, maker string, at *programindex.Location) {
+		change.Deeper = !onPath[maker]
 		key := strings.Join([]string{change.Kind, change.Entity.Href + change.Entity.Open + change.EntityName, change.Field, change.Destination, strings.Join(change.Tables, ",")}, "\x00")
 		var step *pageCallStep
 		if ref, known := builder.subject(targetID, maker); known {
@@ -302,6 +317,7 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 				}
 			}
 			result[listed].Possible = result[listed].Possible && change.Possible
+			result[listed].Deeper = result[listed].Deeper && change.Deeper
 			return
 		}
 		seen[key] = len(result)
@@ -322,6 +338,20 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 		}
 		change.Entity, change.EntityName = *anchor, name
 		return change, true
+	}
+	// A row of a table the reach creates: a construct call of a type owning a
+	// table (ProgramIndex invocation `construct`; the table record's owner):
+	// freqtrade's Trade(...) in execute_entry.
+	for _, position := range reach.Edges {
+		edge := index.StructuralEdges[position]
+		if edge.RelationKind != programindex.RelationCalls || !facts.data[edge.ToSubjectID] || facts.relations[edge.RelationID].Invocation != programindex.InvocationConstruct {
+			continue
+		}
+		if ref, known := builder.subject(targetID, edge.ToSubjectID); known {
+			if change, ok := typed(pageEntityWrite{Kind: "creates", Possible: edge.Resolution != programindex.ResolutionExact}, ref.subject); ok {
+				add(change, edge.FromSubjectID, edge.Location)
+			}
+		}
 	}
 	for _, id := range work {
 		// What the work writes of the program's data, and the fields it
@@ -445,6 +475,18 @@ func (builder *pageBuilder) operationWrites(index *groupindex.Index, reach group
 			break
 		}
 	}
+	// What its own path makes first, in the order above (a created row, the
+	// fields, the database, the systems, the files); what only deeper code
+	// makes after it.
+	slices.SortStableFunc(result, func(a, b pageEntityWrite) int {
+		deeper := func(change pageEntityWrite) int {
+			if change.Deeper {
+				return 1
+			}
+			return 0
+		}
+		return cmp.Compare(deeper(a), deeper(b))
+	})
 	return result
 }
 

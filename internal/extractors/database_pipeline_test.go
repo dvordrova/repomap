@@ -123,6 +123,26 @@ func TestCumulativeDataSurvivesNativeGraphReadingAndSavedGroupsIndex(t *testing.
 	if owners != 2 {
 		t.Fatalf("ORM owners=%d", owners)
 	}
+	// A row created is a construct call of the class owning its table
+	// (open_trade's Trade(note=note)): the report's "creates Trade".
+	tableOwners := map[string]bool{}
+	for _, row := range index.Data {
+		if row.Data.Kind == "table" && row.OwnerSubjectID != "" {
+			tableOwners[row.OwnerSubjectID] = true
+		}
+	}
+	created := false
+	for _, relation := range program.Relations {
+		if relation.Invocation != programindex.InvocationConstruct || relation.Location == nil || relation.Location.Path != "src/fixture_app/storage.py" {
+			continue
+		}
+		for _, id := range relation.ToIDs {
+			created = created || tableOwners[id]
+		}
+	}
+	if !created {
+		t.Fatal("open_trade's Trade(...) is no construct call of the table's owner")
+	}
 	if literalQueries != 12 {
 		t.Fatalf("persisted SQL literals=%d; expected twelve supported source statements", literalQueries)
 	}

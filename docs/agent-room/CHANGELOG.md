@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — State changes: a created row, and the input's own path first
+
+- **Created rows:** a construct call (ProgramIndex invocation `construct`)
+  of a type owning a table (table record owner) in the reach is "Trade —
+  new row, by execute_entry". Python fixture: storage.py `open_trade`'s
+  `Trade(note=note)` (database_pipeline_test). Equivalents: TypeScript
+  `new` is a construct; a Go struct literal and C's allocation of a
+  record are no construct call, so neither creates a row yet (recorded,
+  not faked).
+- **Order:** changes made by functions on the input's own path (spine
+  steps, branches, their members) first; the rest under a closed "also
+  deeper in its reach", names only; all shown when nothing on the path
+  changes anything (litestream replicate, freqtrade trade).
+- **freqtrade, clean HEAD 1b8f1687 → now:** forceenter first row
+  `Order.ft_cancel_reason` (by handle_cancel_exit) → `Trade — new row` (by
+  execute_entry), the rest folded; trade starts with its created rows
+  (Trade, PairLock, WalletHistory, KeyValueStore) before the exit fields.
+  Lints (long 104 → 104) and journeys (4/4 → 4/4) unchanged.
+
 ## 2026-09-30 — freqtrade's Main flow: two option-fact probes, both failed; DCA path accepted
 
 - **Question:** at FreqtradeBot.process, Jev takes process_open_trade_positions

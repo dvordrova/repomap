@@ -94,6 +94,7 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 			edge("c7", "set", "maybe", programindex.RelationCalls, programindex.ResolutionAlternatives, 12),
 			edge("w4", "maybe", "dirty", programindex.RelationWrites, exact, 61, "server.dirty"),
 			edge("r1", "rdbSave", "dict", programindex.RelationReads, exact, 71, "Db.dict"),
+			edge("c9", "generic", "Trade", programindex.RelationCalls, exact, 20),
 		},
 		Operations: []groupindex.Operation{{ID: "o1", SubjectID: "set", Kind: "request", Name: "set"}},
 		Outbound: []groupindex.OutboundCall{{ID: "d1", SubjectID: "generic", Kind: "db", Destination: "Database", DataIDs: []string{"y1"}, Location: *at(25)},
@@ -108,6 +109,7 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 	b.data.ProgramPortfolio.Entries = []programindex.Index{{Target: programindex.Target{ID: "t1"}, Objects: native, Relations: []programindex.Relation{
 		{ID: "c2", Kind: programindex.RelationCalls, Patterns: []programindex.RelationPattern{{Arguments: []programindex.PatternArgument{{ObjectIDs: []string{"dict"}}}}}},
 		{ID: "c3", Kind: programindex.RelationCalls, Patterns: []programindex.RelationPattern{{Arguments: []programindex.PatternArgument{{ObjectIDs: []string{"ok"}}}}}},
+		{ID: "c9", Kind: programindex.RelationCalls, Invocation: programindex.InvocationConstruct},
 	}}}
 	for id := range objects {
 		index.Subjects = append(index.Subjects, b.subjects[subjectKey("t1", id)].subject)
@@ -115,8 +117,15 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 	slices.SortFunc(index.Subjects, func(a, b groupindex.Subject) int { return strings.Compare(a.ID, b.ID) })
 	groupindex.Derive(&index)
 	var said []string
-	for _, change := range b.operationWrites(&index, index.Reach[0]) {
+	changes := b.operationWrites(&index, index.Reach[0])
+	if len(changes) == 0 || changes[0].Deeper {
+		t.Fatalf("the row its own path creates is not first: %+v", changes)
+	}
+	for _, change := range changes {
 		line := change.Kind + " " + change.EntityName + "." + change.Field
+		if change.Kind == "creates" {
+			line = "creates " + change.EntityName
+		}
 		if len(change.Via) > 0 {
 			line += " via " + strings.Join(change.Via, ", ")
 		}
@@ -133,7 +142,7 @@ func TestAnInputChangesOnlyTheProgramsDataItsOwnWorkWrites(t *testing.T) {
 		line += " by " + strings.Join(by, ", ")
 		said = append(said, line)
 	}
-	want := []string{"call Db.dict via dictAdd by setGenericCommand", "write Trade.amount by setGenericCommand", "db Database trades of Trade by setGenericCommand", "sends Amazon S3 by setGenericCommand"}
+	want := []string{"creates Trade by setGenericCommand", "call Db.dict via dictAdd by setGenericCommand", "write Trade.amount by setGenericCommand", "db Database trades of Trade by setGenericCommand", "sends Amazon S3 by setGenericCommand"}
 	if !slices.Equal(said, want) {
 		t.Fatalf("changes = %q\nwant %q", said, want)
 	}

@@ -25,6 +25,12 @@ class Trade(StoreBase):
         return "SELECT id, order_id FROM trades JOIN orders ON orders.id = trades.order_id"
 
 
+# A row of a table created: a construct call of the class owning it. The
+# report reads it as "creates Trade" among an input's State changes.
+def open_trade(note):
+    return Trade(note=note)
+
+
 class ArchiveTrade(ArchiveBase):
     __tablename__ = "trades"
     __table_args__ = {"schema": "archive"}
