@@ -416,7 +416,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   bundling.
   An area's layout fits the initial canvas with its part headings readable
   at the size their layer stays open at, then takes the fewest detours, then
-  the squarer box. Its parts keep their own size, that of the loose parts
+  the squarer box; when none fits, the one shrinking least, but never a
+  wrapped arrangement whose arrows run more than half again as long as the
+  same direction unwrapped (measured: a wrap that changes anything runs 2.2
+  to 4.3 times as long; Redis's Core server infrastructure had looped 16 of
+  its 27 arrows round the whole area). Its parts keep their own size, that of the loose parts
   beside it, so an area is as large as what it holds, with no second
   member-list height; but no closed card of a component (an area or a loose
   part) is smaller than nine twentieths of its largest area on either side,

@@ -1,0 +1,330 @@
+{
+"about": "Redis 1.3.6 redis-server's Core server infrastructure area as split-layout.mjs hands it to ELK (captured 2026-09-30): its eight parts and 27 arrows, laid out RIGHT without wrapping; the test sets the direction and wrapping as tree() does.",
+"layoutOptions": {
+"elk.algorithm": "layered",
+"elk.direction": "RIGHT",
+"elk.edgeRouting": "ORTHOGONAL",
+"elk.hierarchyHandling": "INCLUDE_CHILDREN",
+"elk.randomSeed": "1",
+"elk.padding": "[top=64,left=32,bottom=32,right=32]",
+"elk.spacing.nodeNode": "40",
+"elk.spacing.edgeNode": "28",
+"elk.spacing.edgeEdge": "16",
+"elk.layered.spacing.nodeNodeBetweenLayers": "70",
+"elk.layered.spacing.edgeNodeBetweenLayers": "28",
+"elk.layered.spacing.edgeEdgeBetweenLayers": "16",
+"elk.layered.mergeEdges": "false",
+"elk.separateConnectedComponents": "true"
+},
+"area": {
+"id": "t1-area-k1",
+"layoutOptions": {
+"elk.algorithm": "layered",
+"elk.edgeRouting": "ORTHOGONAL",
+"elk.hierarchyHandling": "SEPARATE_CHILDREN",
+"elk.randomSeed": "1",
+"elk.padding": "[top=64,left=32,bottom=32,right=32]",
+"elk.spacing.nodeNode": "40",
+"elk.spacing.edgeNode": "28",
+"elk.spacing.edgeEdge": "16",
+"elk.layered.spacing.nodeNodeBetweenLayers": "70",
+"elk.layered.spacing.edgeNodeBetweenLayers": "28",
+"elk.layered.spacing.edgeEdgeBetweenLayers": "16",
+"elk.layered.mergeEdges": "false",
+"elk.separateConnectedComponents": "true",
+"elk.nodeSize.constraints": "MINIMUM_SIZE",
+"elk.nodeSize.minimum": "(400,0)"
+},
+"children": [
+{
+"id": "n-t1-g2",
+"width": 260,
+"height": 146
+},
+{
+"id": "n-t1-g3",
+"width": 260,
+"height": 142
+},
+{
+"id": "n-t1-g5",
+"width": 260,
+"height": 146
+},
+{
+"id": "n-t1-g9",
+"width": 260,
+"height": 128
+},
+{
+"id": "n-t1-g10",
+"width": 260,
+"height": 124
+},
+{
+"id": "n-t1-g12",
+"width": 260,
+"height": 124
+},
+{
+"id": "n-t1-g18",
+"width": 260,
+"height": 124
+},
+{
+"id": "n-t1-g19",
+"width": 260,
+"height": 146
+}
+]
+},
+"wrap": {
+"elk.layered.wrapping.strategy": "MULTI_EDGE",
+"elk.aspectRatio": "1.7110389610389611"
+},
+"edges": [
+{
+"id": "e4",
+"sources": [
+"n-t1-g10"
+],
+"targets": [
+"n-t1-g12"
+]
+},
+{
+"id": "e5",
+"sources": [
+"n-t1-g10"
+],
+"targets": [
+"n-t1-g2"
+]
+},
+{
+"id": "e6",
+"sources": [
+"n-t1-g10"
+],
+"targets": [
+"n-t1-g3"
+]
+},
+{
+"id": "e7",
+"sources": [
+"n-t1-g10"
+],
+"targets": [
+"n-t1-g5"
+]
+},
+{
+"id": "e8",
+"sources": [
+"n-t1-g10"
+],
+"targets": [
+"n-t1-g9"
+]
+},
+{
+"id": "e17",
+"sources": [
+"n-t1-g12"
+],
+"targets": [
+"n-t1-g18"
+]
+},
+{
+"id": "e18",
+"sources": [
+"n-t1-g12"
+],
+"targets": [
+"n-t1-g2"
+]
+},
+{
+"id": "e19",
+"sources": [
+"n-t1-g12"
+],
+"targets": [
+"n-t1-g3"
+]
+},
+{
+"id": "e20",
+"sources": [
+"n-t1-g12"
+],
+"targets": [
+"n-t1-g5"
+]
+},
+{
+"id": "e43",
+"sources": [
+"n-t1-g18"
+],
+"targets": [
+"n-t1-g3"
+]
+},
+{
+"id": "e44",
+"sources": [
+"n-t1-g18"
+],
+"targets": [
+"n-t1-g5"
+]
+},
+{
+"id": "e45",
+"sources": [
+"n-t1-g18"
+],
+"targets": [
+"n-t1-g9"
+]
+},
+{
+"id": "e46",
+"sources": [
+"n-t1-g19"
+],
+"targets": [
+"n-t1-g10"
+]
+},
+{
+"id": "e47",
+"sources": [
+"n-t1-g19"
+],
+"targets": [
+"n-t1-g12"
+]
+},
+{
+"id": "e48",
+"sources": [
+"n-t1-g19"
+],
+"targets": [
+"n-t1-g18"
+]
+},
+{
+"id": "e50",
+"sources": [
+"n-t1-g19"
+],
+"targets": [
+"n-t1-g2"
+]
+},
+{
+"id": "e51",
+"sources": [
+"n-t1-g19"
+],
+"targets": [
+"n-t1-g3"
+]
+},
+{
+"id": "e53",
+"sources": [
+"n-t1-g19"
+],
+"targets": [
+"n-t1-g9"
+]
+},
+{
+"id": "e57",
+"sources": [
+"n-t1-g2"
+],
+"targets": [
+"n-t1-g18"
+]
+},
+{
+"id": "e59",
+"sources": [
+"n-t1-g2"
+],
+"targets": [
+"n-t1-g3"
+]
+},
+{
+"id": "e60",
+"sources": [
+"n-t1-g2"
+],
+"targets": [
+"n-t1-g5"
+]
+},
+{
+"id": "e62",
+"sources": [
+"n-t1-g2"
+],
+"targets": [
+"n-t1-g9"
+]
+},
+{
+"id": "e77",
+"sources": [
+"n-t1-g9"
+],
+"targets": [
+"n-t1-g3"
+]
+},
+{
+"id": "e78",
+"sources": [
+"n-t1-g9"
+],
+"targets": [
+"n-t1-g5"
+]
+},
+{
+"id": "e215",
+"sources": [
+"n-t1-g19"
+],
+"targets": [
+"n-t1-g5"
+]
+},
+{
+"id": "e230",
+"sources": [
+"n-t1-g5"
+],
+"targets": [
+"n-t1-g3"
+]
+},
+{
+"id": "e233",
+"sources": [
+"n-t1-g9"
+],
+"targets": [
+"n-t1-g12"
+]
+}
+]
+}

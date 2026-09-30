@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {prepareCards,wrapText,overviewScale} from './cards.mjs';
-import {prepareInteriors,layoutPrepared,overviewInset,readableScale,cyclic} from './split-layout.mjs';
+import {prepareInteriors,layoutPrepared,overviewInset,readableScale,cyclic,areaScore,chooseAreaLayout,wrapLengthLimit} from './split-layout.mjs';
 import {outsideChips,inputGroupsByPart} from './overview.mjs';
 import {systemViewport} from './semantic.mjs';
 import {denseInventory,manyExternalInventory,records as ordinaryRecords,relations as ordinaryRelations,areas as ordinaryAreas} from './visual/two-systems-five-externals.mjs';
@@ -548,4 +548,24 @@ test('a program of one card is as tall as its summary, not as its laid-out card'
   const wanted=summary.overviewHeightAtWidth(summary.overviewPreferredWidth,{preferred:true});
   assert.ok(Math.abs(frame.height*.44-wanted)<1,`${Math.round(frame.height*.44)}px tall for a ${Math.round(wanted)}px summary`);
   assert.ok(frame.width*.44>=summary.overviewPreferredWidth-1);
+});
+
+// Redis's Core server infrastructure, as captured: nothing fits the canvas,
+// and wrapping, shrinking least, had won and looped 16 of its 27 arrows round
+// the whole block (56k of arrows against 26k unwrapped).
+test('a wrapped area arrangement whose arrows run far longer does not win on shrinking alone',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const captured=JSON.parse(await readFile(new URL('./fixtures/redis-core-area.json',import.meta.url),'utf8'));
+  const elk=new ELK(),room={width:(1054-48)/readableScale,height:(600-48)/readableScale};
+  const scores=[];
+  for(const direction of ['RIGHT','DOWN'])for(const wrap of [false,true]){
+    const area={...captured.area,layoutOptions:{...captured.area.layoutOptions,'elk.direction':direction,...(wrap?captured.wrap:{})}};
+    const result=await elk.layout({id:'area',layoutOptions:captured.layoutOptions,children:[structuredClone(area)],edges:structuredClone(captured.edges)});
+    scores.push(areaScore(result,room,direction,wrap));
+  }
+  assert.ok(scores.every(score=>!score.fits),'nothing fits: shrinking decides');
+  const wrapped=scores.find(score=>score.direction==='RIGHT'&&score.wrap),plain=scores.find(score=>score.direction==='RIGHT'&&!score.wrap);
+  assert.ok(wrapped.shrink<plain.shrink&&wrapped.length>2*plain.length,'wrapping shrinks less and runs its arrows twice as long');
+  const chosen=chooseAreaLayout(scores);
+  assert.equal(chosen.wrap,false,`chose ${chosen.direction} wrapped, ${Math.round(chosen.length)} long`);
 });

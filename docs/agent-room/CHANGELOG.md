@@ -1,5 +1,23 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — No wrapped area arrangement wins on shrinking alone
+
+- **Cause** (debug agent): when no arrangement of an area fits the canvas,
+  the least shrinking one won; wrapping shrinks least and routes every arrow
+  crossing a row split round the whole block. Redis's Core server
+  infrastructure: RIGHT wrapped, 16 of 27 arrows looping outside its parts,
+  56k of arrows against 26k unwrapped.
+- **Fix** (`chooseAreaLayout`): a wrapped arrangement that does not fit is
+  refused when its arrows run more than 1.5× the same direction unwrapped.
+  Measured on the four reports: wraps that change anything run 2.2–4.3×,
+  those that do not run 1.0×; only redis's Core area and litestream's
+  Command line interface change (both now RIGHT unwrapped: redis 5 loops,
+  litestream 1). freqtrade's program bus is its packed gutters, not this.
+- **Checks:** test on the captured graph (`fixtures/redis-core-area.json`);
+  geometry lint redis 3 → 2, litestream 6 → 2 small texts; page shape
+  unchanged; journeys 4/4 PASS (column batch 4), lints long folds only;
+  make test and make vet pass.
+
 ## 2026-09-30 — An interface field's stored implementations are its call's alternatives (data 2)
 
 - **655a1985:** a store under a branch puts its value in an interface field

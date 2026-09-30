@@ -18,6 +18,35 @@ const options={
   'elk.layered.mergeEdges':'false','elk.separateConnectedComponents':'true',
 };
 const key=(...parts)=>JSON.stringify(parts);
+
+// How one arrangement of an area (ELK's `result` for it) fits `room`: its
+// shrink to fit, its arrows' total length and its squareness.
+export function areaScore(result,room,direction,wrap){
+  const laid=result.children[0],fits=laid.width<=room.width&&laid.height<=room.height;
+  return {direction,wrap,fits,shrink:Math.max(laid.width/room.width,laid.height/room.height),length:routeLength(result),
+    square:Math.abs(Math.log(laid.width/laid.height))};
+}
+// When it does not fit the canvas either, a wrapped arrangement whose arrows
+// run more than half again as long as the same direction's unwrapped one is
+// refused: wrapping splits the layer
+// chain into rows, and every arrow crossing a split is routed round the whole
+// block. On the four reports of 2026-09-30 a wrap that changed anything ran
+// 2.2 to 4.3 times as long (Redis's Core server infrastructure 56k against
+// 26k, 16 of its 27 arrows looping outside its parts) and one that did not
+// ran exactly as long; won on shrinking alone when nothing fitted, it had
+// drawn that area's maze.
+export const wrapLengthLimit=1.5;
+// Of an area's arrangements (`areaScore` each), the one that fits the canvas
+// with its parts readable, then the one whose arrows run shortest, then the
+// squarer; when none fits, the one shrinking least.
+export function chooseAreaLayout(scores){
+  const plain=direction=>scores.find(score=>score.direction===direction&&!score.wrap);
+  const allowed=scores.filter(score=>!score.wrap||score.fits||!plain(score.direction)||score.length<=wrapLengthLimit*plain(score.direction).length);
+  let best=null;
+  for(const score of allowed)
+    if(!best||(score.fits!==best.fits?score.fits:!score.fits?score.shrink<best.shrink:score.length!==best.length?score.length<best.length:score.square<best.square))best=score;
+  return best;
+}
 // The lanes of a packed program's gutters, in its own units where it is
 // entered at `zoom`: ten screen pixels apart and sixteen from the cards,
 // clear of a 10.5px arrowhead (canvas.jsx).
@@ -360,15 +389,13 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       // drawn Server runtime 1300 px wide in a 1214 px canvas.
       if(canvas)for(const area of ownAreas){
         const room={width:Math.max(1,canvas.width-48)/readableScale,height:Math.max(1,canvas.height-48)/readableScale};
-        let best=null;
+        const scores=[];
         for(const direction of ['RIGHT','DOWN'])for(const wrap of [false,true]){
           areaLayouts.set(area.id,{direction,wrap});
           const result=await native({id:`area:${area.id}`,layoutOptions:options,children:[tree(area.id)],edges:interiorEdges(edge=>childOfRoot(edge.from)===area.id)});
-          const laid=result.children[0],fits=laid.width<=room.width&&laid.height<=room.height;
-          const score={direction,wrap,fits,shrink:Math.max(laid.width/room.width,laid.height/room.height),length:routeLength(result),
-            square:Math.abs(Math.log(laid.width/laid.height))};
-          if(!best||(fits!==best.fits?fits:!fits?score.shrink<best.shrink:score.length!==best.length?score.length<best.length:score.square<best.square))best=score;
+          scores.push(areaScore(result,room,direction,wrap));
         }
+        const best=chooseAreaLayout(scores);
         areaLayouts.set(area.id,{direction:best.direction,wrap:best.wrap});
       }
       placed=(await native(graph())).children[0];
