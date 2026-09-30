@@ -1,5 +1,22 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — A function's call of its own parameter, in Go and TypeScript too
+
+- 6484a3b7: Go (SSA: the call's value is the function's own parameter;
+  every static call's function, closure or method value; a function used as
+  a value or a method an interface call may invoke stays open, with
+  `function_value_store` witnesses) and JS/TS (the helper's
+  `callee_parameter`, the projection's `handParameterCalls`; a test's call
+  hands nothing). Only the call through the parameter joins; stores and
+  hand-ons keep their frontier. Fixtures: Go storefixture and TS
+  stored-callbacks `throttle`/`runOnce`/`runAny`. Clojure stays missing.
+- litestream-v24 20260930-054045 (binary from 6484a3b7) exit 0, 38 live
+  calls: 1 of its 32 function-value calls resolves (`FindLTXFiles`'
+  `filter(item)` → `findBestLTXSnapshotForTimestamp`'s closure). The only
+  other parameter call, `UnmarshalYAML`'s `unmarshal`, is a method yaml
+  invokes through an interface and stays open; the rest are cancel funcs,
+  fields and a variadic element.
+
 ## 2026-09-30 — Column, reviewer pass 4: State changes as changes to the program's data; no place, cut or repeat in the column
 
 - **State changes** (`page_entity_writes.go`, replaced): an input's work is
