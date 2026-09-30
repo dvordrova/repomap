@@ -966,6 +966,11 @@ func (builder *pageBuilder) flowStepSubject(step orientation.FlowStep) string {
 
 func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSection, path *pageStepPath) pageFlowStep {
 	row := pageFlowStep{Explanation: step.Explanation, Via: step.Via}
+	if step.Site != "" {
+		if name, ok := builder.flowName(step.TargetID, step.Site); ok {
+			row.ViaFrom = &name
+		}
+	}
 	row.Fork = builder.flowFork(step)
 	var owner *pageSection
 	switch {
@@ -1024,39 +1029,51 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 }
 
 // flowFork is a walked flow's fork, when its last step ends at one: one
-// line, the candidates' shared "one of N at <site>" when they share it,
-// else "one of N", and each candidate's name reading its declaration.
+// line, the candidates' shared "one of N" and the function holding their
+// dispatch site when they share them, else "one of N", and each
+// candidate's name reading its declaration.
 func (builder *pageBuilder) flowFork(step orientation.FlowStep) *pageFlowFork {
 	if len(step.Branches) == 0 {
 		return nil
 	}
 	fork := &pageFlowFork{Label: fmt.Sprintf("one of %d", len(step.Branches))}
-	if via := step.Branches[0].Via; strings.HasPrefix(via, "one of ") && slices.IndexFunc(step.Branches, func(branch orientation.FlowBranch) bool { return branch.Via != via }) < 0 {
-		fork.Label = via
+	first := step.Branches[0]
+	if strings.HasPrefix(first.Via, "one of ") && slices.IndexFunc(step.Branches, func(branch orientation.FlowBranch) bool { return branch.Via != first.Via || branch.Site != first.Site }) < 0 {
+		fork.Label = first.Via
+		if first.Site != "" {
+			if name, ok := builder.flowName(step.TargetID, first.Site); ok {
+				fork.From = &name
+			}
+		}
 	}
 	for _, branch := range step.Branches {
-		ref, ok := builder.subject(step.TargetID, branch.SubjectID)
-		if !ok {
-			continue
+		if name, ok := builder.flowName(step.TargetID, branch.SubjectID); ok {
+			fork.Names = append(fork.Names, name)
 		}
-		label, anchor := builder.subjectDisplay(ref.subject)
-		name := pageStepName{Name: builder.withType(ref.programTargetID, ref.subject, label)}
-		if anchor != nil {
-			name.Code, name.Open = anchor.Code, anchor.Open
-			if name.Code == "" {
-				name.Code = anchor.Href
-			}
-			if index := builder.graphIndex(ref.programTargetID); index != nil {
-				if section := builder.byProgram[ref.programTargetID]; section != nil {
-					if group := builder.edgesBetweenGroups(*index).groupOf[branch.SubjectID]; group != "" {
-						name.Part, name.Key = "#"+groupAnchorID(section.ID, group), declarationKey(anchor)
-					}
-				}
-			}
-		}
-		fork.Names = append(fork.Names, name)
 	}
 	return fork
+}
+
+// flowName is a declaration a walked flow names beside a step (a fork's
+// candidate, the function holding a dispatch site), by its target: its name
+// with its type, a link into all of its code, read in its part.
+func (builder *pageBuilder) flowName(targetID, subjectID string) (pageStepName, bool) {
+	ref, ok := builder.subject(targetID, subjectID)
+	if !ok {
+		return pageStepName{}, false
+	}
+	label, anchor := builder.subjectDisplay(ref.subject)
+	name := pageStepName{Name: builder.withType(ref.programTargetID, ref.subject, label)}
+	if anchor == nil {
+		return name, true
+	}
+	name.Code, name.Open = cmp.Or(anchor.Code, anchor.Href), anchor.Open
+	if index, section := builder.graphIndex(ref.programTargetID), builder.byProgram[ref.programTargetID]; index != nil && section != nil {
+		if group := builder.edgesBetweenGroups(*index).groupOf[subjectID]; group != "" {
+			name.Part, name.Key = "#"+groupAnchorID(section.ID, group), declarationKey(anchor)
+		}
+	}
+	return name, true
 }
 
 // builtFrom lists the files a program is built from, by path (pageSection

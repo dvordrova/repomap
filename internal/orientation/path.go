@@ -100,7 +100,7 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 				if member == unit || len(graph.candidates(unit, []string{member})) == 0 {
 					continue
 				}
-				steps = append(steps, meet(flowCandidate{unit: member, members: []string{member}, via: "its member " + graph.name(member)}))
+				steps = append(steps, meet(flowCandidate{unit: member, members: []string{member}, reach: flowEdge{to: member, via: "its member " + graph.name(member)}}))
 			}
 			return steps
 		}
@@ -129,18 +129,19 @@ func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Ca
 	for position, step := range spine.Steps {
 		row := FlowStep{TargetID: targetID, SubjectID: stepSubject(step), Explanation: graph.line(stepSubject(step))}
 		if step.Edge >= 0 {
-			row.Via = walk.met[step.Edge].via
+			row.Via, row.Site = walk.met[step.Edge].reach.via, walk.met[step.Edge].reach.site
 		}
 		// A class step going on through one of its members is that
 		// member's step, reached as the class was.
 		if len(walk.flow.Steps) > 0 && strings.HasPrefix(row.Via, "its member ") {
 			previous := walk.flow.Steps[len(walk.flow.Steps)-1]
-			row.Via = previous.Via
+			row.Via, row.Site = previous.Via, previous.Site
 			walk.flow.Steps = walk.flow.Steps[:len(walk.flow.Steps)-1]
 		}
 		if position == len(spine.Steps)-1 {
 			for _, branch := range spine.Branches {
-				row.Branches = append(row.Branches, FlowBranch{SubjectID: stepSubject(branch), Via: walk.met[branch.Edge].via})
+				reach := walk.met[branch.Edge].reach
+				row.Branches = append(row.Branches, FlowBranch{SubjectID: stepSubject(branch), Via: reach.via, Site: reach.site})
 			}
 		}
 		walk.flow.Steps = append(walk.flow.Steps, row)
@@ -267,7 +268,7 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 		if line := graph.line(id); line != "" {
 			terms = append(terms, "role: "+line)
 		}
-		reached := met[candidate.Edge].via
+		reached := met[candidate.Edge].reach.asked()
 		if len(step.Members) > 1 {
 			var by []string
 			for _, member := range met[candidate.Edge].by {

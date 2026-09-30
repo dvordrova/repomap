@@ -29,6 +29,8 @@ import (
 type flowSplit struct {
 	step    string
 	options []string
+	// meanings are the options' criteria, as the categorizer reads them.
+	meanings []string
 }
 
 // flowPreset decides each split of a fixture's Main flow: the option to go
@@ -44,12 +46,12 @@ type flowPreset struct {
 func (preset *flowPreset) categorizer() *typesafetest.Categorizer {
 	return &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
 		step, _ := question.Item["step"].(string)
-		var options []string
+		var options, meanings []string
 		for _, option := range question.Options {
-			options = append(options, option.Name)
+			options, meanings = append(options, option.Name), append(meanings, option.Meaning)
 		}
 		preset.mu.Lock()
-		preset.asked = append(preset.asked, flowSplit{step: step, options: options})
+		preset.asked = append(preset.asked, flowSplit{step: step, options: options, meanings: meanings})
 		preset.mu.Unlock()
 		if preset.tie[step] && len(options) > 1 {
 			return llm.Verdict{Choice: options[0], Probabilities: map[string]float64{options[0]: 0.5, options[1]: 0.45}}, true
@@ -94,11 +96,19 @@ func flowPath(indexes []groupindex.Index, flow orientation.MainFlow) []string {
 			}
 		}
 	}
+	// A dispatch site's alternative is said with the declaration holding
+	// the site: "one of 3 from loopProcessEvents".
+	reached := func(targetID, via, site string) string {
+		if site != "" {
+			return via + " from " + names[targetID+"."+site]
+		}
+		return via
+	}
 	var path []string
 	for _, step := range flow.Steps {
-		path = append(path, fmt.Sprintf("%s (%s)", names[step.TargetID+"."+step.SubjectID], step.Via))
+		path = append(path, fmt.Sprintf("%s (%s)", names[step.TargetID+"."+step.SubjectID], reached(step.TargetID, step.Via, step.Site)))
 		for _, branch := range step.Branches {
-			path = append(path, fmt.Sprintf("? %s (%s)", names[step.TargetID+"."+branch.SubjectID], branch.Via))
+			path = append(path, fmt.Sprintf("? %s (%s)", names[step.TargetID+"."+branch.SubjectID], reached(step.TargetID, branch.Via, branch.Site)))
 		}
 	}
 	return path

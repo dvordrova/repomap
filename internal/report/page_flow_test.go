@@ -1,8 +1,11 @@
 package report
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"html/template"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -435,24 +438,59 @@ func TestWorkARunsOnItsOwnReadsAfterTheMainFlow(t *testing.T) {
 	}
 }
 
-// A walked Main flow ending at an undecided split names its fork on one
-// line, the candidates' shared "one of N at <site>", with each candidate's
-// name reading its declaration in its part; candidates reached otherwise
-// read "one of N" (design skeptic, 2026-09-30: never a wall of names).
-func TestAFlowsNamedForkIsOneLineOfItsCandidates(t *testing.T) {
+// A walked flow says how a step is reached as its code does, and a
+// dispatch site by the function holding it, a name read as a step's is,
+// never a file and line (owner: no line numbers in the column; redis's
+// flow had read "one of 94 at redis.c:2054"). A named fork is one folded
+// line of its candidates.
+func TestAFlowsViaAndForkNameTheSitesFunctionNotItsLine(t *testing.T) {
 	builder, _ := flowFixture()
+	section := builder.byProgram["t1"]
+	step := builder.flowStep(orientation.FlowStep{TargetID: "t1", SubjectID: "h2", Via: "one of 2", Site: "cron"}, section, &pageStepPath{runners: map[string]bool{}})
 	fork := builder.flowFork(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Branches: []orientation.FlowBranch{
-		{SubjectID: "h1", Via: "one of 2 at redis.c:1360"}, {SubjectID: "h2", Via: "one of 2 at redis.c:1360"}}})
+		{SubjectID: "h1", Via: "one of 2", Site: "cron"}, {SubjectID: "h2", Via: "one of 2", Site: "cron"}}})
 	var names []string
 	for _, name := range fork.Names {
 		names = append(names, name.Name+" "+name.Part)
 	}
-	if fork.Label != "one of 2 at redis.c:1360" || !slices.Equal(names, []string{"getCommand #t1-g5", "setCommand #t1-g5"}) {
-		t.Fatalf("fork = %q %q", fork.Label, names)
+	if step.ViaFrom == nil || step.ViaFrom.Name != "serverCron" || fork.From == nil || fork.From.Name != "serverCron" || fork.Label != "one of 2" ||
+		!slices.Equal(names, []string{"getCommand #t1-g5", "setCommand #t1-g5"}) {
+		t.Fatalf("step via %q from %+v; fork %q from %+v, %q", step.Via, step.ViaFrom, fork.Label, fork.From, names)
+	}
+	step.Fork = fork
+	parsed, err := template.New("report").Funcs(pageTemplateFuncs(English)).ParseFS(reportTemplateFS, "templates/html/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := parsed.ExecuteTemplate(&out, "target.html", &pageSection{ID: "t1", ShortLabel: "redis-server", Map: &pageMap{}, Flow: &pageFlow{Steps: []pageFlowStep{step}}}); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	read := func(from, to string) string {
+		at := strings.Index(html, from)
+		if at < 0 {
+			t.Fatalf("the step lost %s: %s", from, html)
+		}
+		end := strings.Index(html[at:], to)
+		if end < 0 {
+			t.Fatalf("%s is not closed: %s", from, html[at:])
+		}
+		return regexp.MustCompile(`<[^>]+>`).ReplaceAllString(html[at:at+end], "")
+	}
+	via, summary := read(`<span class="flow-via">`, `</span>`), read(`<summary>`, `</summary>`)
+	if !strings.Contains(via, "one of 2 from serverCron") || !strings.Contains(summary, "one of 2 from serverCron") ||
+		!strings.Contains(html, `<details class="flow-fork">`) {
+		t.Fatalf("via %q, fork %q", via, summary)
+	}
+	for _, text := range []string{via, summary} {
+		if regexp.MustCompile(`\S+\.\w+:\d+`).MatchString(text) {
+			t.Fatalf("a flow row prints a file and line: %q", text)
+		}
 	}
 	mixed := builder.flowFork(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Branches: []orientation.FlowBranch{
 		{SubjectID: "h1", Via: "called"}, {SubjectID: "save", Via: "handed to aeCreateTimeEvent"}}})
-	if mixed.Label != "one of 2" || len(mixed.Names) != 2 {
+	if mixed.Label != "one of 2" || mixed.From != nil || len(mixed.Names) != 2 {
 		t.Fatalf("mixed fork = %+v", mixed)
 	}
 	if builder.flowFork(orientation.FlowStep{TargetID: "t1", SubjectID: "cron"}) != nil {

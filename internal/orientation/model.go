@@ -51,16 +51,18 @@ type RecipeStep struct {
 // is set; SubjectID names a GroupsIndex subject (object or pattern) of the
 // target in TargetID. A walked flow (path.go) writes no prose: Explanation
 // is the atlas line accepted for the declaration, Via how the step before
-// reaches it, as code says it ("called", "one of 3 at server.c:88",
-// "handed to quil.core.sketch.setup"), and Branches, on the last step of a
-// flow that ends at an undecided split, the candidates it could continue
-// through.
+// reaches it, as code says it ("called", "one of 3", "handed to
+// quil.core.sketch.setup"), Site, for one of a dispatch site's alternatives,
+// the declaration of the target holding that site (its function, never its
+// line), and Branches, on the last step of a flow that ends at an undecided
+// split, the candidates it could continue through.
 type FlowStep struct {
 	TargetID    string       `json:"target_id"`
 	FactID      string       `json:"fact_id,omitempty"`
 	SubjectID   string       `json:"subject_id,omitempty"`
 	Explanation string       `json:"explanation,omitempty"`
 	Via         string       `json:"via,omitempty"`
+	Site        string       `json:"site,omitempty"`
 	Branches    []FlowBranch `json:"branches,omitempty"`
 }
 
@@ -69,6 +71,7 @@ type FlowStep struct {
 type FlowBranch struct {
 	SubjectID string `json:"subject_id"`
 	Via       string `json:"via,omitempty"`
+	Site      string `json:"site,omitempty"`
 }
 
 // MainFlow is the one end-to-end path the reader should follow first.
@@ -203,11 +206,11 @@ func (result Result) Validate() error {
 		return fmt.Errorf("orientation: main flow title is invalid")
 	}
 	for position, step := range result.MainFlow.Steps {
-		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) {
+		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) || step.Site != "" && !validText(step.Site) {
 			return fmt.Errorf("orientation: flow step %d is invalid", position)
 		}
 		for _, branch := range step.Branches {
-			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) {
+			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) || branch.Site != "" && !validText(branch.Site) {
 				return fmt.Errorf("orientation: flow step %d branch is invalid", position)
 			}
 		}

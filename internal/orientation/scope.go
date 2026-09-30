@@ -29,12 +29,26 @@ type flowGraph struct {
 	core map[string]bool
 }
 
-// flowEdge is one way a declaration reaches another: Via says it as the
-// code does ("called", "one of 3 at server.c:88", "handed to
-// quil.core.sketch.setup").
+// flowEdge is one way a declaration reaches another: via says it as the
+// code does ("called", "one of 3", "handed to quil.core.sketch.setup"); an
+// alternative of a dispatch site, or a possible end of an open call, is
+// said with the declaration holding the site (site) and, to the
+// categorizer alone, the site's file and line (at: "server.c:88"). The
+// reader's column prints no line.
 type flowEdge struct {
-	to  string
-	via string
+	to   string
+	via  string
+	site string
+	at   string
+}
+
+// asked is how a candidate is reached as the categorizer reads it: "one of
+// 94 at redis.c:2054".
+func (edge flowEdge) asked() string {
+	if edge.at == "" {
+		return edge.via
+	}
+	return edge.via + " at " + edge.at
 }
 
 // flowCandidate is one unit a step's work enters: the unit, the members of
@@ -43,7 +57,7 @@ type flowEdge struct {
 type flowCandidate struct {
 	unit    string
 	members []string
-	via     string
+	reach   flowEdge
 	through string
 	// roots are, by member entered, the member of the step whose work
 	// entered it first; by are every member of the step reaching it.
@@ -86,12 +100,12 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 		}
 	}
 	seen := map[[2]string]bool{}
-	add := func(from, to, via string) {
-		if !graph.member(from) || !graph.member(to) || from == to || seen[[2]string{from, to}] {
+	add := func(from string, edge flowEdge) {
+		if !graph.member(from) || !graph.member(edge.to) || from == edge.to || seen[[2]string{from, edge.to}] {
 			return
 		}
-		seen[[2]string{from, to}] = true
-		graph.out[from] = append(graph.out[from], flowEdge{to: to, via: via})
+		seen[[2]string{from, edge.to}] = true
+		graph.out[from] = append(graph.out[from], edge)
 	}
 	// A registration fact says what the callable is registered as
 	// (quil.core.sketch.mouse-pressed): it names the hand-over first.
@@ -103,7 +117,7 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 		if api == "" {
 			api = fact.Key
 		}
-		add(fact.OwnerID, fact.ObjectID, "handed to "+api)
+		add(fact.OwnerID, flowEdge{to: fact.ObjectID, via: "handed to " + api})
 	}
 	for _, edge := range index.StructuralEdges {
 		if edge.Role != groupindex.EdgeRelationTarget || edge.Resolution == programindex.ResolutionUnresolved {
@@ -111,11 +125,11 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 		}
 		switch edge.RelationKind {
 		case programindex.RelationCalls, programindex.RelationExecutes:
-			via := "called"
+			reach := flowEdge{to: edge.ToSubjectID, via: "called"}
 			if edge.Resolution == programindex.ResolutionAlternatives {
-				via = fmt.Sprintf("one of %d at %s", alternatives[edge.RelationID], siteOf(edge.Location))
+				reach = flowEdge{to: edge.ToSubjectID, via: fmt.Sprintf("one of %d", alternatives[edge.RelationID]), site: edge.FromSubjectID, at: siteOf(edge.Location)}
 			}
-			add(edge.FromSubjectID, edge.ToSubjectID, via)
+			add(edge.FromSubjectID, reach)
 		case programindex.RelationPassesCallback:
 			via := "handed over"
 			if relation, _, found := strings.Cut(edge.SourceArgumentID, "p"); found && calledBy[relation] != "" {
@@ -133,7 +147,7 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 					via = "handed to " + nearest.name
 				}
 			}
-			add(edge.FromSubjectID, edge.ToSubjectID, via)
+			add(edge.FromSubjectID, flowEdge{to: edge.ToSubjectID, via: via})
 		}
 	}
 	// A call through a function value the index leaves open reaches, as one
@@ -142,7 +156,7 @@ func newFlowGraph(index *groupindex.Index, registrations []facts.Fact) *flowGrap
 	// which acceptHandler, readQueryFromClient and sendReplyToClient fill.
 	for _, call := range index.Unresolved {
 		for _, end := range call.Possible {
-			add(call.FromSubjectID, end, fmt.Sprintf("one of %d at %s", len(call.Possible), siteOf(call.Location)))
+			add(call.FromSubjectID, flowEdge{to: end, via: fmt.Sprintf("one of %d", len(call.Possible)), site: call.FromSubjectID, at: siteOf(call.Location)})
 		}
 	}
 	graph.core = graph.closuresEnteringCore()
@@ -229,7 +243,7 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 				if !known {
 					position = len(result)
 					at[target] = position
-					result = append(result, flowCandidate{unit: target, via: edge.via, through: start, roots: map[string]string{}})
+					result = append(result, flowCandidate{unit: target, reach: edge, through: start, roots: map[string]string{}})
 				}
 				candidate := &result[position]
 				if _, known := candidate.roots[edge.to]; !known {

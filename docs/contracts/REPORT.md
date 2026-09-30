@@ -1632,9 +1632,11 @@ render failed, is rendered by the server through the same `RenderServedPage`.
   orientation, the refusal in `rejected.jsonl` and an `unavailable` state in
   the console. A flow ending at a split the categorizer left undecided is
   journaled under `flow_fork`: its last step shows the fork on one folded
-  line ("one of 96 at redis.c:1033 ▸"), its candidates' names inside, never a
+  line ("one of 94 from `call` ▸"), its candidates' names inside, never a
   wall of names; each step shows how the step before reaches it ("called",
-  "handed to quil.core.sketch.setup") under its name. Unknown or incompatible set refs are recorded and removed; repeated
+  "handed to quil.core.sketch.setup", "one of 94 from `call`") under its
+  name. A dispatch site is said by the function holding it, a name read as a
+  step's is, never by a file and line. Unknown or incompatible set refs are recorded and removed; repeated
   refs are deduplicated. A row with no required evidence, an invalid scalar
   choice or a conflicting interpretation goes to `rejected.jsonl` with its raw
   output and reason. Independent sections and rows survive a bad neighbour.

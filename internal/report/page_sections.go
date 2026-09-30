@@ -351,17 +351,21 @@ type pageFlowStep struct {
 	Registers []pageStepRegistration
 	RunBy     [][]pageStepName
 	// Via is how the step before reaches it, as code says it ("called",
-	// "one of 96 at redis.c:1033", "handed to quil.core.sketch.setup"), and
-	// Fork, on the last step of a flow ending at an undecided split, the
-	// candidates it could go on through, read folded under one line.
-	Via  string
-	Fork *pageFlowFork
+	// "one of 94", "handed to quil.core.sketch.setup"); ViaFrom, for one of
+	// a dispatch site's alternatives, the function holding the site, a name
+	// read as a step's is ("one of 94 from call"), never a file and line.
+	// Fork, on the last step of a flow ending at an undecided split, holds
+	// the candidates it could go on through, read folded under one line.
+	Via     string
+	ViaFrom *pageStepName
+	Fork    *pageFlowFork
 }
 
-// pageFlowFork is a Main flow's named fork: its line ("one of 96 at
-// redis.c:1033", "one of 5") and each candidate's name.
+// pageFlowFork is a Main flow's named fork: its line ("one of 94" from
+// call, "one of 5") and each candidate's name.
 type pageFlowFork struct {
 	Label string
+	From  *pageStepName
 	Names []pageStepName
 }
 

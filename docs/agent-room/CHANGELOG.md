@@ -57,6 +57,12 @@
   JS/TS, Clojure and C (kvd main → … → processCommand, a fork of its six
   commands) with fail-closed Jev presets; provider bodies test covers the
   walk's questions.
+- **Site by its function:** the first ordinary runs printed "one of 94 at
+  redis.c:2054" in redis's column (the file:line lint). A step keeps `Site`,
+  the declaration holding the dispatch site, and reads "one of 94 from
+  `call`", the function a step name's link; the fork's line likewise. Only
+  the categorizer's option still reads the file and line (unchanged, so
+  its answers stay cached). Reader test renders the step and the fork.
 
 ## 2026-09-30 — An area no arrangement fits is packed like a program's areas
 

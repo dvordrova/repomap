@@ -1897,7 +1897,10 @@ process, …), the path then going on through the one chosen. A lead under
 candidates, the split journaled under `flow_fork` with its lead. There is no
 count cap, and no unit is on the path twice. No step is written by a model:
 each is its declaration with its accepted atlas line (`Explanation`) and how
-the step before reaches it (`Via`); the title is "From <first> to <last>".
+the step before reaches it (`Via`: "called", "one of 94", "handed to …"); one
+of a dispatch site's alternatives keeps the declaration holding the site
+(`Site`), never its file and line, which only the categorizer's option reads.
+The title is "From <first> to <last>".
 Measured on the saved inputs with the cache off, five draws each
 (2026-09-30): redis main → aeMain → aeProcessEvents → readQueryFromClient →
 processInputBuffer → processCommand → call → setCommand, 5 of 5; freqtrade

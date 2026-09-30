@@ -78,20 +78,23 @@ func TestCFixtureMainFlowWalksWhatMainHandsOver(t *testing.T) {
 	preset := &flowPreset{choose: map[string]string{"main": "loopMain", "loopMain": "loopProcessEvents", "loopProcessEvents": "readQueryFromClient",
 		"readQueryFromClient": "processInputBuffer", "processInputBuffer": "processCommand"}, tie: map[string]bool{"processCommand": true}}
 	result := walkFixtureFlow(t, run.layer, run.indexes, run.graph, run.server, preset)
-	want := []string{"main ()", "loopMain (called)", "loopProcessEvents (called)", "readQueryFromClient (one of 3 at loop.c:58)",
+	want := []string{"main ()", "loopMain (called)", "loopProcessEvents (called)", "readQueryFromClient (one of 3 from loopProcessEvents)",
 		"processInputBuffer (called)", "processCommand (called)", "? addReply (called)",
-		"? delCommand (one of 6 at kvd.c:181)", "? keysCommand (one of 6 at kvd.c:181)", "? pingCommand (one of 6 at kvd.c:181)",
-		"? bgsaveCommand (one of 6 at kvd.c:181)", "? getCommand (one of 6 at kvd.c:181)", "? setCommand (one of 6 at kvd.c:181)"}
+		"? delCommand (one of 6 from processCommand)", "? keysCommand (one of 6 from processCommand)", "? pingCommand (one of 6 from processCommand)",
+		"? bgsaveCommand (one of 6 from processCommand)", "? getCommand (one of 6 from processCommand)", "? setCommand (one of 6 from processCommand)"}
 	if got := flowPath(run.indexes, result.MainFlow); !slices.Equal(got, want) {
 		t.Fatalf("kvd's flow = %q\nwant %q", got, want)
 	}
-	// One question per split, the loop's rfileProc among them.
+	// One question per split, the loop's rfileProc among them. The
+	// categorizer reads the site's file and line; the flow keeps its
+	// function, the reader's column printing no line.
 	var steps []string
 	for _, split := range preset.asked {
 		steps = append(steps, split.step)
 	}
 	if !slices.Equal(steps, []string{"main", "loopMain", "loopProcessEvents", "readQueryFromClient", "processInputBuffer", "processCommand"}) ||
-		!slices.Equal(preset.asked[2].options, []string{"acceptHandler", "loopApiPoll", "readQueryFromClient", "sendReplyToClient"}) {
+		!slices.Equal(preset.asked[2].options, []string{"acceptHandler", "loopApiPoll", "readQueryFromClient", "sendReplyToClient"}) ||
+		!strings.Contains(preset.asked[2].meanings[2], "reached: one of 3 at loop.c:58") {
 		t.Fatalf("splits asked: %+v", preset.asked)
 	}
 	assertNoRepeats(t, result.MainFlow)
