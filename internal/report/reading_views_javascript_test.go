@@ -265,7 +265,7 @@ data.own[0].flow=[{decl:log,helper:true,sites:[{at:'server.c:1273'},{at:'server.
   {decl:lookup,sites:[{at:'server.c:1350'}]},{decl:0,sites:[{at:'server.c:1360'}]},{decl:0,arity:'[b n]',sites:[{at:'server.c:1362'}]},{decl:free,helper:true,sites:[{at:'server.c:1365'}]},
   {macro:'assert',lib:'assert.h',sites:[{at:'server.c:1370'}]},{decl:1,macro:'redisAssert',sites:[{at:'server.c:1380'}]}];
 data.own.push({decl:save,flow:[{decl:log,helper:true,sites:[{at:'server.c:3010'}]}]});
-data.own.push({decl:lookup,flow:[{decl:log,helper:true,sites:[{at:'server.c:904'}]},{decl:1,sites:[{at:'server.c:905'}]},{decl:0,sites:[{at:'server.c:906'}]}]});
+data.own.push({decl:lookup,flow:[{decl:log,helper:true,sites:[{at:'server.c:904'}]},{decl:1,sites:[{at:'server.c:905'}]},{decl:0,sites:[{at:'server.c:906'}]},{name:'strerror',lib:'string.h',kind:'invokes_external',sites:[{at:'server.c:907'}]}]});
 const view=rmDeclView(ctx,nodes['#own'],data,{name:'serverCron',source:{Href:'h#serverCron',Text:'server.c:1'}});
 const said=view.textContent;
 assert.ok(!/serverCron calls|in order|steps|\d+ helpers|only helpers|not on the map|also from/.test(said),'no caption repeats its name and no meta word: '+said);
@@ -311,6 +311,15 @@ const lookupOpen=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('lo
 lookupOpen.open=true;
 assert.ok(lookupOpen.all(c=>c.has('map-flow-row')).some(r=>r.textContent==='redisLog()'&&!r.has('map-flow-helper'))&&lookupOpen.all(c=>c.has('map-flow-helpers')).length===0,'a lone helper call stands as a row');
 assert.ok(lookupOpen.all(c=>c.has('map-flow-above')).length===1&&lookupOpen.all(c=>c.has('map-flow-itself')).length===0,'a call back into an ancestor is shown above, not "itself"');
+// One "also calls:" line under the whole flow, gathering what the opened
+// calls reach outside the report, its hover naming who calls it
+// (reviewer, 2026-09-30: othello's key-pressed had stacked three).
+const alsoLines=root.all(c=>c.has('map-flow-also'));
+assert.equal(alsoLines.length,1,'one line for the whole flow');
+assert.deepEqual(alsoLines[0].all(c=>c.has('map-flow-plain')).map(c=>c.textContent),['wait3','assert','strerror'],'its own, then the opened call\'s');
+assert.ok(alsoLines[0].all(c=>c.textContent==='strerror')[0].title.includes('lookupKeyRead'),'the opened call\'s names say who calls them');
+lookupOpen.open=false;
+assert.deepEqual(root.all(c=>c.has('map-flow-also'))[0].all(c=>c.has('map-flow-plain')).map(c=>c.textContent),['wait3','assert'],'closed, its names go');
 // The declaration no part holds is a plain name that still opens.
 const lookupRow=root.all(c=>c.tagName==='DETAILS'&&c.textContent.startsWith('lookupKeyRead()'))[0];
 assert.ok(lookupRow&&lookupRow.all(c=>c.has('map-flow-plain')).length>0,'a declaration no part holds keeps its call, a plain name');

@@ -88,7 +88,7 @@ function rmFlowRow(ctx,data,call,opts,helper){
       var ancestors=new Set(opts.ancestors);ancestors.add(key);
       row.appendChild(rmFlowList(ctx,target.data,target.own,{parentPart:decl.part||'',ancestors:ancestors,open:opts.open,path:path,auto:opts.single&&opts.auto>0?opts.auto-1:0}));
     };
-    row.addEventListener('toggle',function(){if(row.open){opts.open.add(path);draw();}else opts.open.delete(path);});
+    row.addEventListener('toggle',function(){if(row.open){opts.open.add(path);draw();}else opts.open.delete(path);if(opts.changed)opts.changed();});
     // A handler's single call opens by itself, as far as its calls go one
     // at a time (get → getGenericCommand → lookupKeyReadOrReply).
     if(opts.single&&opts.auto>0)opts.open.add(path);
@@ -119,7 +119,14 @@ function rmFlowList(ctx,data,own,opts){
   var marked=calls.filter(function(call){return call.helper;}),fold=marked.length>rmFlowFoldAbove&&marked.length<calls.length;
   var work=fold?calls.filter(function(call){return !call.helper;}):calls,helpers=fold?marked:[];
   opts=Object.assign({},opts,{single:work.length===1,auto:(opts.auto||0)});
-  var key=opts.path+'\u0000helpers';
+  var key=opts.path+'\u0000helpers',root=!opts.path;
+  // One "also calls:" line under the whole flow (reviewer, 2026-09-30:
+  // othello's key-pressed had stacked three, one per call opened in place):
+  // the calls into code the report names no declaration for, of this
+  // function and of every call opened under it, each name once, its hover
+  // naming who calls it; it follows what is opened and closed.
+  list.rmOutside=outside;list.rmCaller=(data.decls[own.decl]||{}).name||'';
+  if(root)opts.changed=function(){var line=Array.prototype.find.call(list.children,function(child){return child.classList&&child.classList.contains('map-flow-also');});if(line)line.remove();var also=alsoLine();if(also)list.appendChild(also);};
   function partOf(call){
     if(call.decl!==undefined)return (data.decls[call.decl]||{}).part||'';
     if(call.one)return (data.decls[call.one[0]]||{}).part||'';
@@ -141,19 +148,32 @@ function rmFlowList(ctx,data,own,opts){
     });
     if(helpers.length&&!rmFlowHelpers)list.appendChild(helperLine(opened));
     itself.forEach(function(said){list.appendChild(rmEl('p','map-flow-itself',said));});
-    if(outside.length)list.appendChild(alsoLine());
+    if(root){var also=alsoLine();if(also)list.appendChild(also);}
+  }
+  // The lists shown under this one: its own, then each opened call's.
+  function shownLists(){
+    var lists=[list];
+    Array.prototype.forEach.call(list.querySelectorAll('.map-flow-list'),function(inner){
+      for(var at=inner.parentElement||inner.parent;at&&at!==list;at=at.parentElement||at.parent)if(at.tagName==='DETAILS'&&!at.open)return;
+      lists.push(inner);
+    });
+    return lists;
   }
   function alsoLine(){
-    var line=rmEl('p','map-flow-also'),names=[];line.appendChild(rmEl('span','map-flow-also-label',rmT('also calls:')));
-    outside.forEach(function(call){
-      var name=call.macro||call.name||'';if(!name||names.indexOf(name)>=0)return;
-      line.appendChild(document.createTextNode(names.length?', ':' '));names.push(name);
-      var said=rmDotBreaks(rmEl('span','map-flow-plain',name));said.title=[said.title,call.lib,call.macro?rmT('a macro'):''].filter(Boolean).join('\n');line.appendChild(said);
-      // A program the code does not name is no outside system: its call
-      // says so here (page_outbound.go unnamedLaunch).
-      if(call.launch)line.appendChild(rmEl('span','map-flow-launch',' ('+rmT('starts a program the code does not name')+')'));
+    var line=rmEl('p','map-flow-also'),names=[],spans={};line.appendChild(rmEl('span','map-flow-also-label',rmT('also calls:')));
+    shownLists().forEach(function(shown){
+      (shown.rmOutside||[]).forEach(function(call){
+        var name=call.macro||call.name||'';if(!name)return;
+        var by=shown===list?'':rmT('called from {0}',shown.rmCaller);
+        if(names.indexOf(name)>=0){if(by&&spans[name].title.indexOf(by)<0)spans[name].title+='\n'+by;return;}
+        line.appendChild(document.createTextNode(names.length?', ':' '));names.push(name);
+        var said=rmDotBreaks(rmEl('span','map-flow-plain',name));said.title=[said.title,call.lib,call.macro?rmT('a macro'):'',by].filter(Boolean).join('\n');line.appendChild(said);spans[name]=said;
+        // A program the code does not name is no outside system: its call
+        // says so here (page_outbound.go unnamedLaunch).
+        if(call.launch)line.appendChild(rmEl('span','map-flow-launch',' ('+rmT('starts a program the code does not name')+')'));
+      });
     });
-    return line;
+    return names.length?line:null;
   }
   function helperLine(opened){
     // The step's helper calls, folded: "+ helpers" opens them into rows in

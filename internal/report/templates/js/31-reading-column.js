@@ -573,10 +573,13 @@ function rmCollectionView(ctx,node,collection){
     if(rmPendingKind&&[].concat(rmPendingKind).indexOf(kind)>=0){section.dataset.readingAnchor='';rmPendingKind='';}
     heading.appendChild(rmEl('span','',rmT(rmInputKindTitles[kind]||'Inputs')));
     rmLights(ctx,heading,all);section.appendChild(heading);
-    groups.forEach(function(group){
-      var box=rmEl('div','map-collection-catalogue');
+    // A catalogue's lines stand once, above its first inputs read; the
+    // model's match of a catalogue's inputs likewise.
+    var said=new Set();
+    function catalogueLines(group,into){
+      if(said.has(group))return;said.add(group);
       var first=group.catalogue&&ctx.nodeById(group.catalogue),catalogue=first?rmPage.data(first,'catalogue'):null;
-      if(catalogue){var where=rmEl('div','map-collection-where');rmCatalogueLines(ctx,catalogue).forEach(function(line){where.appendChild(line);});box.appendChild(where);}
+      if(catalogue){var where=rmEl('div','map-collection-where');rmCatalogueLines(ctx,catalogue).forEach(function(line){where.appendChild(line);});into.appendChild(where);}
       // Matched by the model to another program's inputs of the same name:
       // one line, the model's.
       var matched=0,programs=[];
@@ -584,33 +587,41 @@ function rmCollectionView(ctx,node,collection){
         var input=ctx.nodeById(id),path=input?rmPage.data(input,'inputPath'):null;
         if(path&&(path.sent_to||[]).length){matched++;path.sent_to.forEach(function(entry){if(programs.indexOf(entry.program)<0)programs.push(entry.program);});}
       });
-      if(matched)box.appendChild(rmModelText('p','map-collection-matched',rmT('Matched to inputs of {0} by name',programs.join(', '))));
-      function names(ids){
-        var list=rmEl('ul','map-collection-names');
-        ids.forEach(function(id){
-          var input=ctx.nodeById(id);if(!input)return;
-          // A directive with its values: "appendfsync: always | everysec | no".
-          var path=rmPage.data(input,'inputPath'),values=path&&path.values?(path.checks||[]).map(function(check){return check.name;}):[];
-          var title=input.dataset.title+(values.length?': '+values.join(' | '):'');
-          var item=rmEl('li'),button=rmDotBreaks(rmEl('button','',title));button.type='button';
-          // A name that is a sentence (a query parameter's description) is
-          // prose, not code.
-          if(rmProse(input.dataset.title))button.classList.add('map-collection-prose');
-          button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);list.appendChild(item);
-        });
-        return list;
-      }
-      if(!inParts.length){box.appendChild(names(group.inputs));section.appendChild(box);return;}
-      inParts.forEach(function(part){
-        var ids=group.inputs.filter(function(id){return part.inputs.indexOf(id)>=0;});if(!ids.length)return;
-        var holder=ctx.nodeById(part.part),peer=rmEl(fold?'details':'div','map-reading-peer map-collection-part'),head=rmEl(fold?'summary':'div','map-reading-peer-head');
-        head.appendChild(rmPartBox(ctx,holder?holder.getAttribute('href')||'#'+holder.id:'',part.title,fold));rmLights(ctx,head,ids);
-        peer.append(head,names(ids));box.appendChild(peer);
+      if(matched)into.appendChild(rmModelText('p','map-collection-matched',rmT('Matched to inputs of {0} by name',programs.join(', '))));
+    }
+    function names(ids){
+      var list=rmEl('ul','map-collection-names');
+      ids.forEach(function(id){
+        var input=ctx.nodeById(id);if(!input)return;
+        // A directive with its values: "appendfsync: always | everysec | no".
+        var path=rmPage.data(input,'inputPath'),values=path&&path.values?(path.checks||[]).map(function(check){return check.name;}):[];
+        var title=input.dataset.title+(values.length?': '+values.join(' | '):'');
+        var item=rmEl('li'),button=rmDotBreaks(rmEl('button','',title));button.type='button';
+        // A name that is a sentence (a query parameter's description) is
+        // prose, not code.
+        if(rmProse(input.dataset.title))button.classList.add('map-collection-prose');
+        button.addEventListener('click',function(){ctx.light([]);ctx.readNode(input);});rmLights(ctx,button,[id]);item.appendChild(button);list.appendChild(item);
       });
-      var loose=group.inputs.filter(function(id){return !inParts.some(function(part){return part.inputs.indexOf(id)>=0;});});
-      if(loose.length)box.appendChild(names(loose));
-      section.appendChild(box);
+      return list;
+    }
+    // Some inputs of the kind, each catalogue's under its lines.
+    function listed(into,among){
+      groups.forEach(function(group){
+        var ids=group.inputs.filter(among);if(!ids.length)return;
+        var box=rmEl('div','map-collection-catalogue');catalogueLines(group,box);box.appendChild(names(ids));into.appendChild(box);
+      });
+    }
+    if(!inParts.length){listed(section,function(){return true;});view.appendChild(section);return;}
+    // One group per part, its box its heading (reviewer, 2026-09-30:
+    // freqtrade's requests had been headed "declared in
+    // freqtrade.rpc.api_server.api_auth", with "REST API server" twice, once
+    // per catalogue).
+    inParts.forEach(function(part){
+      var holder=ctx.nodeById(part.part),peer=rmEl(fold?'details':'div','map-reading-peer map-collection-part'),head=rmEl(fold?'summary':'div','map-reading-peer-head');
+      head.appendChild(rmPartBox(ctx,holder?holder.getAttribute('href')||'#'+holder.id:'',part.title,fold));rmLights(ctx,head,part.inputs.filter(function(id){return all.indexOf(id)>=0;}));
+      peer.appendChild(head);listed(peer,function(id){return part.inputs.indexOf(id)>=0;});section.appendChild(peer);
     });
+    listed(section,function(id){return !inParts.some(function(part){return part.inputs.indexOf(id)>=0;});});
     view.appendChild(section);
   });
   if(collection.groups.some(function(group){return group.catalogue;}))view.appendChild(rmEl('p','meta',rmT('Where these take effect is not established.')));

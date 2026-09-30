@@ -646,16 +646,18 @@ function rmEntryLanding(link,nodes,component){
       inputs.forEach(function(evidence){
         var input=evidence[0].input;
         if(!n.dataset.activation){var jump=rmEl('button','system-write-input',owner(input)+' / '+input.dataset.title);jump.type='button';jump.addEventListener('click',function(){select(input,true,null,true);});section.appendChild(jump);}
+        // A field is its name, the link to where it is written, that place
+        // on its hover; a caller likewise (reviewer, 2026-09-30: each row
+        // had printed "adlist.c:86" under its name). No line is printed.
         var fields=rmEl('ul','plain');evidence.forEach(function(row){
-          var write=row.write,field=rmEl('li');field.appendChild(rmEl('strong','',write.field));
+          var write=row.write,field=rmEl('li'),name=rmEl('strong');name.appendChild(rmPlaceLink(write.source,write.field));field.appendChild(name);
           if(write.possible)field.appendChild(rmEl('span','possible',' · '+rmT('possible')));
-          field.appendChild(document.createElement('br'));field.appendChild(repomapMembers.sourceLink(write.source));
           if(write.integration)field.appendChild(rmEl('span','possible',' · '+rmT('possible integration')));
           // Its writer's callers on this input's path: every call into it,
           // none chosen as its route.
           if((write.callers||[]).length){
             var callers=rmEl('details','call-path');callers.appendChild(rmEl('summary','',rmT('Called by')));var list=rmEl('ul');
-            write.callers.forEach(function(step){var li=rmEl('li');li.appendChild(rmEl('strong','',step.name));if(step.possible)li.appendChild(rmEl('span','possible',' · '+rmT('possible call')));li.appendChild(document.createElement('br'));li.appendChild(repomapMembers.sourceLink({Href:step.href,Open:step.open,Text:step.source,NoSource:step.no_source}));list.appendChild(li);});
+            write.callers.forEach(function(step){var li=rmEl('li');li.appendChild(rmPlaceLink({Href:step.href,Open:step.open,Text:step.source,NoSource:step.no_source},step.name));if(step.possible)li.appendChild(rmEl('span','possible',' · '+rmT('possible call')));list.appendChild(li);});
             callers.appendChild(list);field.appendChild(callers);
           }
           fields.appendChild(field);
@@ -665,6 +667,8 @@ function rmEntryLanding(link,nodes,component){
     var partReading=!n.dataset.activation&&card.querySelector('.map-part-reading');
     if(partReading)partReading.appendChild(section);else card.querySelector('.map-card-intro').after(section);
   }
+  // A name linking to a place in the code, the place said on its hover.
+  function rmPlaceLink(source,name){var link=repomapMembers.sourceLink(Object.assign({},source,{Text:name}));link.title=[source.Text,link.title].filter(Boolean).join('\n');return link;}
   function nodeByHref(href){return href?nodes.find(function(n){return n.getAttribute('href')===href||'#'+n.id===href;})||null:null;}
   // What the reading column reads with (31-reading-column.js): every name
   // it reads is read in the report and shown on the canvas, the camera
