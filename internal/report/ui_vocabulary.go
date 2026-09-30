@@ -842,6 +842,7 @@ var russianUI = map[string]string{
 	// The reading column's calls said once, in plain words (31-reading-column.js
 	// rmCallerLine, 32-flow.js).
 	"calls itself":                                    "вызывает сама себя",
+	"calls its {0} form":                              "вызывает свою форму {0}",
 	"passes itself as a callback":                     "передаёт себя как колбэк",
 	"calls one of these":                              "вызывает одну из этих",
 	"calls one of these through {0}":                  "вызывает одну из этих через {0}",

@@ -245,7 +245,8 @@ assert.deepEqual(read.slice(reads),['redisClient'],'a written field reads the ty
 // place. A call opens in place to its callee's flow, a call its ancestors
 // make says it is shown above, a call of itself is no row but one quiet
 // line (reviewer, 2026-09-30: othello.ai/move's calls had opened with
-// "othello.ai/move() ↑ shown above"), and a library's call is a plain row.
+// "othello.ai/move() ↑ shown above"), a call of its other arity names the
+// form it calls, and a library's call is a plain row.
 func TestAFunctionsReadingIsItsFlow(t *testing.T) {
 	reading := systemJSPiece(t, "31-reading-column.js", "function rmGroupReading(", "// An Inputs collection's reading")
 	flow := systemJSPiece(t, "32-flow.js", "var rmFlowHelpers", "// </flow>")
@@ -261,7 +262,7 @@ d.push(decl('redisLog','function','#core'),decl('rdbSave','function','#persist')
 const log=d.length-6,save=d.length-5,lookup=d.length-4,used=d.length-3,random=d.length-2,free=d.length-1;
 data.own[0].flow=[{decl:log,helper:true,sites:[{at:'server.c:1273'},{at:'server.c:1288'}]},{decl:2,sites:[{at:'server.c:1284'}]},{name:'wait3',lib:'sys/wait.h',kind:'invokes_external',sites:[{at:'server.c:1304'}]},
   {decl:used,helper:true,sites:[{at:'server.c:1310'}]},{decl:save,sites:[{at:'server.c:1322'}]},{decl:save,kind:'passes_callback',sites:[{at:'server.c:1330'}]},{decl:random,helper:true,sites:[{at:'server.c:1340'}]},
-  {decl:lookup,sites:[{at:'server.c:1350'}]},{decl:0,sites:[{at:'server.c:1360'}]},{decl:free,helper:true,sites:[{at:'server.c:1365'}]},
+  {decl:lookup,sites:[{at:'server.c:1350'}]},{decl:0,sites:[{at:'server.c:1360'}]},{decl:0,arity:'[b n]',sites:[{at:'server.c:1362'}]},{decl:free,helper:true,sites:[{at:'server.c:1365'}]},
   {macro:'assert',lib:'assert.h',sites:[{at:'server.c:1370'}]},{decl:1,macro:'redisAssert',sites:[{at:'server.c:1380'}]}];
 data.own.push({decl:save,flow:[{decl:log,helper:true,sites:[{at:'server.c:3010'}]}]});
 data.own.push({decl:lookup,flow:[{decl:log,helper:true,sites:[{at:'server.c:904'}]},{decl:1,sites:[{at:'server.c:905'}]},{decl:0,sites:[{at:'server.c:906'}]}]});
@@ -272,7 +273,7 @@ const root=view.all(c=>c.has('map-flow-root'))[0];
 const rows=()=>root.all(c=>c.has('map-flow-row')&&!c.has('map-flow-helper')).map(c=>c.all(x=>x.has('map-reading-name')||x.has('map-flow-plain'))[0].textContent);
 assert.deepEqual(rows(),['beforeSleep()','rdbSave()','rdbSave()','lookupKeyRead()','redisAssert'],'the calls in the order Go wrote them, helpers folded, a macro as written, and never itself');
 const itself=root.all(c=>c.has('map-flow-itself'));
-assert.ok(itself.length===1&&itself[0].textContent==='calls itself','its call of itself is said once, plainly');
+assert.deepEqual(itself.map(c=>c.textContent),['calls itself','calls its [b n] form'],'its call of itself is said once, plainly, and a call of its other arity names that form');
 const macro=root.all(c=>c.has('map-reading-name')&&c.textContent==='redisAssert')[0];
 assert.ok(macro.title.includes('initServer'),'a macro names what its expansion calls on its hover: '+macro.title);
 // A call into code the report names no declaration for (wait3, the

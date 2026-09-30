@@ -65,6 +65,20 @@ adapters record it and their fixtures check it.
 Java instance dispatch and dynamic function targets remain unresolved. The
 adapter has no runtime macroexpander; definition/control macro syntax is not
 promoted into runtime calls (a `future`'s use is the one exception, below).
+A special form (`if`, `do`, `recur`, `fn*`, `try`, `.`) is the language's
+syntax, no call: clj-kondo knows an arity for every function of
+`clojure.core` and `cljs.core` and none for a special form, so a core usage
+with neither `fixed-arities` nor `varargs-min-arity` leaves no relation, as
+an `if` or a loop is no call fact in Go, Python, JS/TS or C. clojure.core's
+functions (`=`, `str`, `dec`) stay platform calls, read in a flow's "also
+calls" line as a C program's libc calls are. A definition's call of itself
+written in one arity that its argument count sends to another (othello's
+`move` `[board player]` calling `[board player opts]`) keeps its relation
+and carries an `arity` witness naming the parameters called, so its reading
+says it calls that form, not itself; a call its own arity takes is a
+recursion. Only Clojure writes several arities of one definition
+(`TestAClojureSpecialFormIsNoCallAndAnotherArityIsNoRecursion`,
+`greet-times` in `core.clj`).
 
 Map/vector values returned by functions remain values in native observations;
 their constructors are functions, not invented named types. The ordinary

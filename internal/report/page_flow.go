@@ -57,6 +57,11 @@ type pageFlowCall struct {
 	// (unnamedLaunch): its function's reading says so, where no outside
 	// system stands for it.
 	Launch bool `json:"launch,omitempty"`
+	// Arity is, for a definition's call of itself written in one arity that
+	// its argument count sends to another (a Clojure `arity` witness), the
+	// parameters of the arity called: "[board player opts]". Its reading
+	// says it calls that form, not itself.
+	Arity string `json:"arity,omitempty"`
 }
 
 // builtinPackage is the package the C adapter gives a compiler builtin
@@ -100,6 +105,35 @@ func (builder *pageBuilder) macroCalls(targetID string) map[string]pageMacroCall
 		}
 	}
 	builder.macros[targetID] = calls
+	return calls
+}
+
+// arityCalls are a program's calls of another arity of the definition
+// making them, by relation ID: the parameters of the arity called (the
+// relation's `arity` witness), built once from its ProgramIndex.
+func (builder *pageBuilder) arityCalls(targetID string) map[string]string {
+	if builder.arities == nil {
+		builder.arities = map[string]map[string]string{}
+	}
+	if cached, done := builder.arities[targetID]; done {
+		return cached
+	}
+	calls := map[string]string{}
+	if builder.data != nil && builder.data.ProgramPortfolio != nil {
+		for _, entry := range builder.data.ProgramPortfolio.Entries {
+			if entry.Target.ID != targetID {
+				continue
+			}
+			for _, relation := range entry.Relations {
+				for _, witness := range relation.Witnesses {
+					if witness.Kind == "arity" && witness.Detail != "" {
+						calls[relation.ID] = witness.Detail
+					}
+				}
+			}
+		}
+	}
+	builder.arities[targetID] = calls
 	return calls
 }
 
@@ -187,6 +221,7 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 	flow := builder.flowIndex(index)
 	groupOf := builder.edgesBetweenGroups(*index).groupOf
 	macros := builder.macroCalls(index.Target.ID)
+	arities := builder.arityCalls(index.Target.ID)
 	var calls []pageFlowCall
 	at := map[string]int{}
 	byRelation := map[string]int{}
@@ -251,7 +286,8 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 			}
 		}
 		callee := declare(edge.ToSubjectID)
-		key := edge.ToSubjectID + "\x00" + kind
+		arity := arities[edge.RelationID]
+		key := edge.ToSubjectID + "\x00" + kind + "\x00" + arity
 		launch := edge.Location != nil && flow.launches[programindex.Location{Path: edge.Location.Path, Line: edge.Location.Line, Column: max(1, edge.Location.Column)}]
 		if listed, seen := at[key]; seen && calls[listed].One == nil {
 			if site != nil && !slices.ContainsFunc(calls[listed].Sites, func(other pageReadingSite) bool { return other.At == site.At }) {
@@ -261,7 +297,7 @@ func (builder *pageBuilder) flowOf(index *groupindex.Index, callerID string, dec
 			calls[listed].Launch = calls[listed].Launch || launch
 			continue
 		}
-		call := pageFlowCall{Kind: kind, Possible: possible, Launch: launch}
+		call := pageFlowCall{Kind: kind, Possible: possible, Launch: launch, Arity: arity}
 		if site != nil {
 			call.Sites = []pageReadingSite{*site}
 		}

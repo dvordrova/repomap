@@ -187,3 +187,10 @@
   {:storage-class (or (get params "storageClass") (get params "storage-class"))
    :region (get params "region")
    :credentials (and (get params "user") (get params "password"))})
+
+;; Two arities: the short one calls the long one, a call of that arity and
+;; no recursion; the long one's `if` and `recur` are the language's syntax,
+;; no calls, and its `=`, `str` and `dec` are clojure.core's functions.
+(defn greet-times
+  ([name] (greet-times name 1))
+  ([name times] (if (= times 0) name (recur (str name "!") (dec times)))))

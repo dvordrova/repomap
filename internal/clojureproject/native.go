@@ -42,6 +42,10 @@ type usage struct {
 	FromVar        string `json:"from-var"`
 	Arity          *int   `json:"arity"`
 	Macro          bool   `json:"macro"`
+	// FixedArities and VarargsMinArity are the arities clj-kondo knows the
+	// used var takes; a special form has none.
+	FixedArities    []int `json:"fixed-arities"`
+	VarargsMinArity *int  `json:"varargs-min-arity"`
 }
 type local struct {
 	site

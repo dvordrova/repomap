@@ -22,6 +22,7 @@ var nativeFields = map[string]bool{
 	"name": true, "from": true, "to": true, "ns": true, "defined-by": true, "defined-by->lint-as": true, "arglist-strs": true,
 	"doc": true, "private": true, "macro": true, "from-var": true, "arity": true, "id": true, "scope-end-row": true, "scope-end-col": true,
 	"class": true, "method-name": true, "call": true, "type": true, "message": true,
+	"fixed-arities": true, "varargs-min-arity": true,
 }
 var nativeCollections = map[string]bool{
 	"namespace-definitions": true, "namespace-usages": true, "var-definitions": true, "var-usages": true,
@@ -96,7 +97,16 @@ func (d *ednDecoder) value(level int) (any, error) {
 			}
 			out[key] = value
 		}
-	case '[':
+	case '[', '#':
+		// A set (#{1 2}) is read as the vector of its members.
+		closing := ']'
+		if d.text[d.at] == '#' {
+			if d.at+1 >= len(d.text) || d.text[d.at+1] != '{' {
+				return d.scalar()
+			}
+			d.at++
+			closing = '}'
+		}
 		d.at++
 		var out []any
 		for {
@@ -104,7 +114,7 @@ func (d *ednDecoder) value(level int) (any, error) {
 			if d.at >= len(d.text) {
 				return nil, fmt.Errorf("unterminated native EDN vector")
 			}
-			if d.text[d.at] == ']' {
+			if d.text[d.at] == closing {
 				d.at++
 				return out, nil
 			}

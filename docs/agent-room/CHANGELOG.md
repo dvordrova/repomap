@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Clojure: a special form is no call; a call of another arity is no recursion
+
+- **Special forms:** clj-kondo reports `if`, `recur`, `fn*`, `do`, `try`
+  and `.` as usages of `clojure.core`/`cljs.core` with no arity (it knows
+  one for every core function): such a usage leaves no relation (the EDN
+  reader now reads `#{…}` sets for `fixed-arities`). othello had 50 `if`,
+  17 `fn*`, 5 `recur` and 2 `.` calls into clojure.core, as many into
+  cljs.core. `=`, `str`, `dec` stay platform calls in a flow's "also calls"
+  line, exactly as redis's libc calls are (`stdio.h`, `string.h`): no
+  change there.
+- **Arity:** a definition's call of itself that its argument count sends
+  to an arity other than the one it is written in carries an `arity`
+  witness naming the parameters called (`source.arityCalled`); the column
+  says "calls its [board player opts] form" instead of "calls itself"
+  (`pageFlowCall.Arity`, 32-flow.js). Fixture `greet-times` in `core.clj`,
+  `TestAClojureSpecialFormIsNoCallAndAnotherArityIsNoRecursion`, the JS
+  flow test. Only Clojure writes several arities of one definition; if
+  and loops are no call facts in Go, Python, JS/TS or C.
+
 ## 2026-09-30 — The skeptic's verdict on 682dfbd5: the entry question, not a text filter; one handler's registrations fold with their words
 
 - **Reverted** 682dfbd5's marks/sentences filter (`NamesAnInput`: a text

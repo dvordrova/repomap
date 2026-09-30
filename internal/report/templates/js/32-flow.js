@@ -112,7 +112,9 @@ function rmFlowList(ctx,data,own,opts){
   // is one quiet line (reviewer, 2026-09-30: othello.ai/move's calls had
   // opened with "othello.ai/move() ↑ shown above").
   // A callback of itself (a timer re-arming its own function) says so.
-  var itself=[];all.forEach(function(call){if(call.decl===undefined||call.decl!==own.decl)return;var said=call.kind==='passes_callback'?'passes itself as a callback':'calls itself';if(itself.indexOf(said)<0)itself.push(said);});
+  // A call of its other arity (a Clojure definition's [b] calling its
+  // [b n]) says which form it calls, not itself.
+  var itself=[];all.forEach(function(call){if(call.decl===undefined||call.decl!==own.decl)return;var said=call.arity?rmT('calls its {0} form',call.arity):call.kind==='passes_callback'?rmT('passes itself as a callback'):rmT('calls itself');if(itself.indexOf(said)<0)itself.push(said);});
   var outside=all.filter(function(call){return call.decl===undefined&&!call.one;}),calls=all.filter(function(call){return outside.indexOf(call)<0&&!(call.decl!==undefined&&call.decl===own.decl);});
   var marked=calls.filter(function(call){return call.helper;}),fold=marked.length>rmFlowFoldAbove&&marked.length<calls.length;
   var work=fold?calls.filter(function(call){return !call.helper;}):calls,helpers=fold?marked:[];
@@ -138,7 +140,7 @@ function rmFlowList(ctx,data,own,opts){
       group.appendChild(rmFlowRow(ctx,data,call,opts,call.helper&&fold));
     });
     if(helpers.length&&!rmFlowHelpers)list.appendChild(helperLine(opened));
-    itself.forEach(function(said){list.appendChild(rmEl('p','map-flow-itself',rmT(said)));});
+    itself.forEach(function(said){list.appendChild(rmEl('p','map-flow-itself',said));});
     if(outside.length)list.appendChild(alsoLine());
   }
   function alsoLine(){

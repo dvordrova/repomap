@@ -580,3 +580,62 @@ func (s source) joinedCalls(at site) map[[2]int][2]int {
 	}
 	return joined
 }
+
+// arityCalled is, for a call at site written inside one arity of a
+// multi-arity definition (`(defn move ([board player] (move board player
+// {…})) ([board player opts] …))`), the parameter vector of the other arity
+// its argument count selects, as written ("[board player opts]"); "" when
+// the definition has one arity, the call is written in the arity it
+// selects (recursion), or no arity takes that many arguments.
+func (s source) arityCalled(definition, call site, arguments int) string {
+	start, end := s.offset(definition.Row, definition.Col), s.offset(definition.EndRow, definition.EndCol)
+	at := s.offset(call.Row, call.Col)
+	if start < 0 || end <= start || at < start || at >= end || s.text[start] != '(' {
+		return ""
+	}
+	nodes, _ := forms(s.text[start:end], 0, 0)
+	if len(nodes) != 1 {
+		return ""
+	}
+	type arity struct {
+		params     string
+		fixed, min int
+		holds      bool
+	}
+	var arities []arity
+	for _, child := range nodes[0].children {
+		if len(child.children) == 0 || s.text[start+child.start] != '(' || s.text[start+child.children[0].start] != '[' {
+			continue
+		}
+		vector := child.children[0]
+		entry := arity{params: string(s.text[start+vector.start : start+vector.end]), fixed: len(vector.children), min: -1,
+			holds: at >= start+child.start && at < start+child.end}
+		for i, param := range vector.children {
+			if string(s.text[start+param.start:start+param.end]) == "&" {
+				entry.fixed, entry.min = -1, i
+				break
+			}
+		}
+		arities = append(arities, entry)
+	}
+	if len(arities) < 2 {
+		return ""
+	}
+	selected := -1
+	for i, entry := range arities {
+		if entry.fixed == arguments {
+			selected = i
+		}
+	}
+	if selected < 0 {
+		for i, entry := range arities {
+			if entry.min >= 0 && arguments >= entry.min {
+				selected = i
+			}
+		}
+	}
+	if selected < 0 || arities[selected].holds {
+		return ""
+	}
+	return arities[selected].params
+}

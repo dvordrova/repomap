@@ -177,6 +177,12 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			input.Target.Seeds = append(input.Target.Seeds, p.TargetSeedInput{ObjectRef: ref, Kind: seed, Location: object.Location})
 		}
 	}
+	definitionOf := map[string]definition{}
+	for _, d := range a.Definitions {
+		if valid(d.site) {
+			definitionOf[objectRef(d)] = d
+		}
+	}
 	ownerAt := func(at site) string {
 		best := fileModules[at.Filename]
 		start := 0
@@ -310,6 +316,12 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if u.Macro {
 			continue
 		}
+		// A special form (if, do, recur, fn*, try, `.`) is the language's
+		// syntax, no var and no call: clj-kondo knows an arity for every
+		// function of the core namespaces and none for a special form.
+		if u.Arity != nil && (u.To == "clojure.core" || u.To == "cljs.core") && len(u.FixedArities) == 0 && u.VarargsMinArity == nil {
+			continue
+		}
 		targets := resolve(u.To, u.Name)
 		if u.Arity == nil {
 			addRelation(p.RelationReads, owner, targets, u.site, "", nil)
@@ -328,6 +340,16 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 			kind = p.RelationInvokesExternal
 		}
 		addRelation(kind, owner, targets, u.site, "", &pattern)
+		// A definition's call of itself written in one arity that its
+		// argument count sends to another is a call of that arity, not a
+		// recursion: its relation says which (an `arity` witness).
+		if d, ok := definitionOf[owner]; ok && len(targets) == 1 && targets[0] == owner {
+			if params := sources[u.Filename].arityCalled(d.site, u.site, *u.Arity); params != "" {
+				relation := &input.Relations[len(input.Relations)-1]
+				relation.Witnesses = append(relation.Witnesses, p.Witness{Kind: "arity", Detail: params, Location: location(u.site)})
+				relation.WitnessesObserved++
+			}
+		}
 	}
 	for _, u := range a.Java {
 		// A static method call names its method. clj-kondo also reports, as
