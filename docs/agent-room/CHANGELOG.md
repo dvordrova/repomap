@@ -1,5 +1,28 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — A def's call of its own parameter, and a case input's What it does
+
+- **Parameter calls (ae9186f5):** the Python adapter makes a def's call of
+  its own parameter a call of what the program's calls into the def hand
+  there, as the C adapter joins what callers pass (a new cproject test pins
+  C's exact and alternatives cases). freqtrade's `_throttle`'s `func(...)` is
+  alternatives `_process_stopped`/`_process_running` (`function_value`), so
+  `trade`'s spine reads Worker → FreqtradeBot (…, process_stopped,
+  process); 3 of freqtrade's 29 parameter calls resolve, the rest are
+  closures, spreads or callers handing other values. Tests' calls hand a
+  program def nothing. Go, JS/TS and Clojure record it missing.
+- **Case inputs (d25ec2dc):** a part's reading keeps each case's flow of a
+  function beside its whole flow, and an input a case declares reads that
+  in "What it does": litestream's replicate is NewReplicateCommand,
+  ParseFlags, SetDone, Run, Close… (of Main.Run's 29 calls).
+- Runs (binary from HEAD d25ec2dc): freqtrade 20260930-050708 exit 0, 6
+  live calls; litestream-v24 20260930-051303 exit 0, 238 live (cold after
+  others' changes). Reports in the scratchpad's eye7-data1. The frozen
+  journeys read FAIL on both, because `journeys.mjs`'s `visible` tests
+  leaves while `rmDotBreaks` splits a dotted name into pieces; counting a
+  name of pieces as one leaf, trade → FreqtradeBot.process and replicate →
+  ReplicateCommand.Run PASS (the previous freqtrade report still FAILs).
+
 ## 2026-09-30 — Frozen journey check and reading lints (visual/journeys.spec.mjs)
 
 - `REPOMAP_JOURNEY_REPORTS=a.html,… npx playwright test journeys` on

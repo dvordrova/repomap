@@ -171,7 +171,11 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   - an input's path reads its handler's flow as a spine (one call at a
     time, a class and its constructor one step, then the named branches),
     its parts folded under a line naming them; u5's "Reaches {n} more
-    parts deeper" count is gone (critic, 2026-09-30).
+    parts deeper" count is gone (critic, 2026-09-30). A call of a def's own
+    parameter calls what the program's calls into the def hand there
+    (Python, as C already did), so freqtrade's `Worker._throttle(func=…)`
+    no longer ends the spine; an input a case declares does what its case's
+    lines call ("What it does" too).
 - **Map reading on the canvas (2026-09-25):** a part's description stands on
   its box under its name, a closed area's line on the area's box; looking at
   an area or a component darkens only the arrows that cross its border
