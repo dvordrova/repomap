@@ -1,5 +1,30 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — A member step's public in-class calls are flow steps
+
+- **Why:** freqtrade's Main flow ended at the strategy's dataframe helper.
+  The split under FreqtradeBot.process offered ten other classes (IStrategy
+  0.34, Exchange 0.12, …; IStrategy 5/5, lead 0.16–0.22): the class had
+  folded the 48 methods process reaches, enter/exit positions among them.
+  Criteria terms did not help (3 draws each: "enters:" IStrategy 0.59–0.62;
+  "talks to:" Exchange 0.20 vs 0.33–0.37); unfolding every in-class call
+  forked at Worker._worker (≤ 0.09).
+- **Rule** (`candidates`, `role`): from a member step, public members of its
+  own class that its work calls are candidates; private helpers stay
+  folded. An option's role is its own line, else another class's line for
+  that class's member, never its own class's; a step's Explanation is its
+  own line.
+- **Draws** (saved inputs, cache off, 5 each): freqtrade 5/5 main →
+  get_parsed_arg → start_trading → Worker.run → FreqtradeBot.process →
+  process_open_trade_positions → check_and_call_adjust_trade_position →
+  IStrategy._adjust_trade_position_internal → adjust_trade_position (min
+  lead 0.25); redis 5/5 unchanged (0.13); othello 5/5 unchanged to
+  search/choose, then the fork; litestream Run(11) at the margin either
+  way: 6/10 through Replica.Sync (HEAD 7/10), the rest a fork at Run.
+- **Fixture:** stored_callbacks.py's Loop keeps freqtrade's private
+  `_throttle`/`_process` (one step, no question); Throttle's public members
+  split. Test: a class step's public calls, a folded helper, roles.
+
 ## 2026-09-30 — No code in input names (data 2, milestone review)
 
 - **6be81334:** same-named inputs are told apart only within one kind, by

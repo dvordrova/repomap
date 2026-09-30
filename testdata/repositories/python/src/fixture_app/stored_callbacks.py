@@ -89,15 +89,16 @@ def start_any(name):
 
 
 # A loop throttling its one step, as freqtrade's Worker hands its bot's
-# process to _throttle(func=...): run hands process to throttle, which calls
-# it, and process does the work. A Main flow walked through run follows func
-# to process's accept_client and asks nothing.
+# process to _throttle(func=...): run hands _process to _throttle, which
+# calls it, and _process does the work. Both are private helpers folded into
+# run, so a Main flow walked through run follows func to _process's
+# accept_client and asks nothing.
 class Loop:
     def run(self):
-        return self.throttle(func=self.process)
+        return self._throttle(func=self._process)
 
-    def throttle(self, func):
+    def _throttle(self, func):
         return func()
 
-    def process(self):
+    def _process(self):
         return accept_client()

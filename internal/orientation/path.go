@@ -178,12 +178,26 @@ func stepSubject(step groupindex.SpineStep) string {
 	return step.SubjectID
 }
 
-// line is the atlas line accepted for a declaration, or its unit's.
+// line is the atlas line accepted for a declaration itself: a member step
+// does not read as its class (FreqtradeBot's process, enter_positions and
+// exit_positions had each read "The main class of the bot").
 func (graph *flowGraph) line(id string) string {
-	for _, candidate := range []string{id, graph.unit(id)} {
-		if subject := graph.subjects[candidate]; subject != nil && subject.Interpretation != nil && strings.TrimSpace(subject.Interpretation.Line) != "" {
-			return strings.TrimSpace(subject.Interpretation.Line)
-		}
+	if subject := graph.subjects[id]; subject != nil && subject.Interpretation != nil {
+		return strings.TrimSpace(subject.Interpretation.Line)
+	}
+	return ""
+}
+
+// role is what a split's option says it does: its own line, else, for a
+// member of another class, its class's (litestream's RestoreCommand.Run is
+// "a command to restore a database from a backup"); members of the step's
+// own class take none of it, since it would tell them nothing apart.
+func (graph *flowGraph) role(id, stepUnit string) string {
+	if line := graph.line(id); line != "" {
+		return line
+	}
+	if unit := graph.unit(id); unit != id && unit != stepUnit {
+		return graph.line(unit)
 	}
 	return ""
 }
@@ -288,7 +302,7 @@ func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Cate
 		if part := graph.part(id); part != "" {
 			terms = append(terms, "in part "+part)
 		}
-		if line := graph.line(id); line != "" {
+		if line := graph.role(id, graph.unit(subject)); line != "" {
 			terms = append(terms, "role: "+line)
 		}
 		reached := met[candidate.Edge].reach.asked()

@@ -2,6 +2,7 @@ package orientation
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -206,5 +207,68 @@ func TestASplitsSameNamedCandidatesAreToldApart(t *testing.T) {
 	}
 	if !slices.Equal(options, []string{"app.on_click", "touch.on_click"}) || len(walk.asked) != 1 || walk.asked[0].chosen != "app.on_click" {
 		t.Fatalf("the split offered %v and chose %+v", options, walk.asked)
+	}
+}
+
+// A class member step's public calls of its own class's members are steps of
+// their own, while its private helpers stay folded into it (FreqtradeBot's
+// process had folded enter_positions and exit_positions, offering only the
+// classes they call), and a member reads its own line, never its class's:
+// the class's line on each of its members tells them nothing apart, while
+// another class's member keeps its class's line.
+func TestAClassStepsPublicCallsAreStepsAndItsHelpersFold(t *testing.T) {
+	object := func(id, kind, owner string, visibility programindex.Visibility) groupindex.Subject {
+		return groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id[strings.LastIndex(id, ".")+1:], Kind: programindex.ObjectKind(kind),
+			OwnerID: owner, Visibility: visibility, Location: &programindex.Location{Path: "bot.py", Line: 1, Column: 1}}}
+	}
+	lined := func(subject groupindex.Subject, line string) groupindex.Subject {
+		subject.Interpretation = &groupindex.Interpretation{Line: line}
+		return subject
+	}
+	calls := func(from, to string) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: programindex.RelationCalls, Resolution: programindex.ResolutionExact}
+	}
+	public, private := programindex.VisibilityPublic, programindex.VisibilityInternal
+	index := groupindex.Index{
+		Target: programindex.Target{ID: "t1", Name: "bot", Seeds: []programindex.TargetSeed{{ObjectID: "main", Kind: programindex.SeedCallable}}},
+		Subjects: []groupindex.Subject{
+			object("main", "function", "", public),
+			lined(object("Bot", "type", "", public), "The main class of the bot."),
+			object("Bot.process", "method", "Bot", public), object("Bot.enter", "method", "Bot", public), object("Bot.exit", "method", "Bot", public),
+			object("Bot._refresh", "method", "Bot", private),
+			lined(object("Strategy", "type", "", public), "Decides entry and exit signals."),
+			object("Strategy.analyze", "method", "Strategy", public), object("Exchange", "type", "", public), object("Exchange.place", "method", "Exchange", public),
+		},
+		Groups: []groupindex.Group{{ID: "g1", Title: "Bot", Core: true, MemberSubjectIDs: []string{"main", "Bot", "Bot.process", "Bot.enter", "Bot.exit", "Bot._refresh", "Strategy", "Strategy.analyze", "Exchange", "Exchange.place"}}},
+		StructuralEdges: []groupindex.StructuralEdge{
+			calls("main", "Bot.process"), calls("Bot.process", "Bot._refresh"), calls("Bot._refresh", "Strategy.analyze"),
+			calls("Bot.process", "Bot.enter"), calls("Bot.process", "Bot.exit"), calls("Bot.enter", "Exchange.place"),
+		},
+	}
+	var asked []llm.Question
+	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		asked = append(asked, question)
+		return llm.Verdict{Choice: "enter", Probabilities: map[string]float64{"enter": 0.7, "exit": 0.2}}, true
+	}}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, Input{Groups: []groupindex.Index{index}}, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := flowNames(walk.flow); !slices.Equal(got, []string{"main ()", "Bot.process (called)", "Bot.enter (called)", "Exchange.place (called)"}) {
+		t.Fatalf("flow = %q", got)
+	}
+	if len(asked) != 1 {
+		t.Fatalf("asked %d questions, want the split at process", len(asked))
+	}
+	roles := map[string]string{}
+	for _, option := range asked[0].Options {
+		_, role, _ := strings.Cut(option.Meaning, "role: ")
+		role, _, _ = strings.Cut(role, ";")
+		roles[option.Name] = role
+	}
+	// _refresh is folded: its call of Strategy is process's own.
+	want := map[string]string{"analyze": "Decides entry and exit signals.", "enter": "", "exit": ""}
+	if !maps.Equal(roles, want) || walk.flow.Steps[1].Explanation != "" {
+		t.Fatalf("options %q, want %q; process reads %q", roles, want, walk.flow.Steps[1].Explanation)
 	}
 }

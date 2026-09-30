@@ -1896,7 +1896,20 @@ line, how it is reached ("called", "one of 96 at redis.c:1033", "handed to
 quil.core.sketch.mouse-pressed", with the members of a class step reaching
 it) and the inputs it handles. A class entered through several members is a
 split between those members first (freqtrade's FreqtradeBot: __init__,
-process, …), the path then going on through the one chosen. A lead under
+process, …), the path then going on through the one chosen. From a member
+step, the public members of its own class that its work calls are
+candidates of their own, while its private helpers stay folded into it:
+FreqtradeBot.process had folded 48 methods, enter_positions and
+exit_positions among them, and offered only the ten classes they call, so
+IStrategy won 5/5 (lead 0.16–0.22); it now offers process_open_trade_positions,
+enter_positions, exit_positions and the others beside those classes, and
+process_open_trade_positions wins 5/5 (0.25–0.44). An option's role is its
+own atlas line, else, for a member of another class, that class's line
+(litestream's RestoreCommand.Run reads as a restore command; without it,
+Main.Run's lead fell from 0.94 to 0.47–0.62); a member of the step's own
+class takes no class line, which would tell its siblings nothing apart
+("The main class of the bot" on every FreqtradeBot method), and a step's
+`Explanation` is its own line only. A lead under
 `ClassifierMargin` or no answer ends the path there, a named fork keeping its
 candidates, the split journaled under `flow_fork` with its lead. There is no
 count cap, and no unit is on the path twice. No step is written by a model:

@@ -220,11 +220,11 @@ func walkFixtureFrom(t *testing.T, index groupindex.Index, layer facts.Result, g
 // 2026-09-30): tool_cli's main calls build_parser, its one candidate, with
 // no question; build_parser's work splits between the parser helpers it
 // calls and run_init, which it hands to argparse's set_defaults. A class's
-// member handing another of its members to a third that calls it is one
-// step: Loop.run's throttle(func=self.process) goes on to process's
-// accept_client with no question. Throttle.run's two steps are
-// alternatives: its work splits between their callees, and the test's
-// lambda it is also handed is no candidate.
+// member handing a private helper of its class to another that calls it is
+// one step: Loop.run's _throttle(func=self._process) goes on to _process's
+// accept_client with no question. Throttle.run's public members are steps
+// of their own: its work splits between throttle and the two it hands
+// throttle, and the test's lambda it is also handed is no candidate.
 func TestPythonFixtureMainFlowsWalkByCode(t *testing.T) {
 	index, layer, graph := pythonFlowFixture(t)
 	tool := &flowPreset{choose: map[string]string{"build_parser": "run_init"}}
@@ -238,12 +238,12 @@ func TestPythonFixtureMainFlowsWalkByCode(t *testing.T) {
 	}
 	assertNoRepeats(t, flow)
 	loop := &flowPreset{}
-	if got := flowPath([]groupindex.Index{index}, walkFixtureFrom(t, index, layer, graph, subjectAt(t, index, "run", "src/fixture_app/stored_callbacks.py", 96), loop)); len(loop.asked) != 0 ||
+	if got := flowPath([]groupindex.Index{index}, walkFixtureFrom(t, index, layer, graph, subjectAt(t, index, "run", "src/fixture_app/stored_callbacks.py", 97), loop)); len(loop.asked) != 0 ||
 		!slices.Equal(got[len(got)-1:], []string{"accept_client (called)"}) {
 		t.Fatalf("Loop.run's flow = %q after %d questions, want accept_client with none", got, len(loop.asked))
 	}
 	throttle := &flowPreset{tie: map[string]bool{"run": true}}
-	if got := flowPath([]groupindex.Index{index}, walkFixtureFrom(t, index, layer, graph, subjectAt(t, index, "run", "src/fixture_app/stored_callbacks.py", 55), throttle)); !slices.Equal(got, []string{"run ()", "? accept_client (called)", "? flush_replies (called)"}) {
+	if got := flowPath([]groupindex.Index{index}, walkFixtureFrom(t, index, layer, graph, subjectAt(t, index, "run", "src/fixture_app/stored_callbacks.py", 55), throttle)); !slices.Equal(got, []string{"run ()", "? throttle (called)", "? process_running (handed to throttle)", "? process_stopped (handed to throttle)"}) {
 		t.Fatalf("Throttle.run's flow = %q", got)
 	}
 	assertNoTestCode(t, throttle, "lambda", "throttle_a_lambda")

@@ -218,8 +218,12 @@ func (graph *flowGraph) closuresEnteringCore() map[string]bool {
 // candidates are the units a step's work enters: what its entered members,
 // and the unit's own members they call or hand over in turn, reach in other
 // units, each once with the members of it entered and how the first is
-// reached, in the order the code's relations list them. A helper unit and
-// one whose closure enters no core part are none.
+// reached, in the order the code's relations list them. A public member of
+// the step's own class that its work calls is a candidate of its own, a step
+// of the class's work (FreqtradeBot.process calls enter_positions and
+// exit_positions, which had been folded into it with 46 others); a private
+// helper stays folded into the step. A helper unit and one whose closure
+// enters no core part are none.
 func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidate {
 	var result []flowCandidate
 	at := map[string]int{}
@@ -232,6 +236,9 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 		for next := 0; next < len(queue); next++ {
 			for _, edge := range graph.out[queue[next]] {
 				target := graph.unit(edge.to)
+				if target == unit && start != unit && graph.public(edge.to) {
+					target = edge.to
+				}
 				if target == unit {
 					if !seen[edge.to] {
 						seen[edge.to] = true
@@ -261,6 +268,13 @@ func (graph *flowGraph) candidates(unit string, entered []string) []flowCandidat
 	return slices.DeleteFunc(result, func(candidate flowCandidate) bool {
 		return graph.helper(candidate) || graph.core != nil && !slices.ContainsFunc(candidate.members, func(id string) bool { return graph.core[id] })
 	})
+}
+
+// public says a declaration is its class's public member: the class's own
+// operation, not a helper of it.
+func (graph *flowGraph) public(id string) bool {
+	subject := graph.subjects[id]
+	return subject != nil && subject.Object != nil && subject.Object.Visibility == programindex.VisibilityPublic
 }
 
 // coreParts are the core parts a candidate's closure enters, by title, in
