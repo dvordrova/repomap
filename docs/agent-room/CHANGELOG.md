@@ -1,5 +1,28 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — An area no arrangement fits is packed like a program's areas
+
+- **Rule** (`packedArea`): an area none of whose layered arrangements fits
+  the canvas packs its parts in the program grid (`packCards`, extracted
+  from the program packing) when, entered whole, its part headings read at
+  ≥ 11 px and its arrows run shorter than the chosen arrangement's.
+  `packCards` now scores each column count with its gutters' lanes in
+  place: scored by the plain gap, Core took 3×3 and its lanes left it at
+  11.9 px, under the 12.2 px it is entered whole at (freqtrade's program
+  keeps 4×2).
+- **All 25 areas of the four reports:** 23 fit and keep their arrangement;
+  2 switch. Redis's Core server infrastructure goes from 6.0 px whole
+  (entered at its first part) to 12.7 px whole, 4×2, arrows 25.8k → 14.7k.
+  litestream's Command line interface goes from 10.4 px to 17.0 px, 3×2,
+  arrows 3.4k → 2.3k.
+- **Checks:** test on `fixtures/redis-core-area.json` (it fails with the
+  old column choice: a part off the canvas); geometry lint redis 3 → 1
+  small; litestream 2 → 6 small, which are the Inputs frame's group texts
+  (8–9 px) that now show beside a narrower program; page shape unchanged;
+  journeys 4/4 PASS, lints long folds only; visual suite 55 passed; make
+  vet passes; make test fails only in contracttest and orientation, which
+  hold other agents' uncommitted work.
+
 ## 2026-09-30 — freqtrade's program bus and the area entry camera, measured: no change
 
 - **Program bus** (freqtrade's program: 8 areas, 27 of their 28 pairs

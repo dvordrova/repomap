@@ -47,6 +47,19 @@ export function chooseAreaLayout(scores){
     if(!best||(score.fits!==best.fits?score.fits:!score.fits?score.shrink<best.shrink:score.length!==best.length?score.length<best.length:score.square<best.square))best=score;
   return best;
 }
+// An area no arrangement fits packs its parts as a program packs its areas
+// (packCards) when, entered whole, its part headings read at least this
+// size in pixels and its arrows run shorter than its chosen arrangement's:
+// Redis's Core server infrastructure, laid out to the right, was entered at
+// its first part, half of it and every arrow to the rest off the canvas,
+// and fitted whole it read at 6 pixels; packed four by two it reads at
+// 12.7 with its arrows 14k long against 26k.
+export const packedTitles=11;
+export function packedArea(packed,best,room){
+  const titles=12/readableScale*Math.min(room.width/packed.width,room.height/packed.height);
+  return !best.fits&&titles>=packedTitles&&routesLength(packed.routes)<best.length;
+}
+const routesLength=routes=>[...routes.values()].flat().reduce((sum,points)=>sum+points.slice(1).reduce((length,point,i)=>length+Math.abs(point.x-points[i].x)+Math.abs(point.y-points[i].y),0),0);
 // The lanes of a packed program's gutters, in its own units where it is
 // entered at `zoom`: ten screen pixels apart and sixteen from the cards,
 // clear of a 10.5px arrowhead (canvas.jsx).
@@ -239,6 +252,155 @@ function localGeometry(root){
   return {nodes,edges,labels,ports:root.ports||[],width:root.width,height:root.height};
 }
 
+// Cards packed in a grid, their arrows in the gutters between the grid's
+// rows and columns (prepareInteriors: a program or an area whose layered
+// arrangements leave its cards too small): `cards` [{id, width, height}] in
+// the order they fill the grid, `bundles` [{id, sources, targets}] one per
+// pair of ends, `ports` the frame's own, `gap` between cards, `top` its title
+// band, `room` the canvas it is entered in. Of every column count, the one
+// whose smallest card stands tallest there with its gutters' lanes in place.
+// Returns the packing, its routes by bundle, where each port stands and each
+// gutter's lanes.
+export function packCards({cards:order,bundles,ports:portList,gap,top,room}){
+  // Gutter k runs before column (row) k, the last one after the last,
+  // `gutters` wide: by default `gap` between cards, and the frame's
+  // own 32 padding outside them.
+  const pack=(columns,gutters={},room=0)=>{
+    const rows=Math.ceil(order.length/columns),cell=new Map(order.map((node,i)=>[node.id,{row:Math.floor(i/columns),column:i%columns}]));
+    const widths=Array(columns).fill(0),heights=Array(rows).fill(0);
+    order.forEach((node,i)=>{widths[i%columns]=Math.max(widths[i%columns],node.width);heights[Math.floor(i/columns)]=Math.max(heights[Math.floor(i/columns)],node.height);});
+    const across=(gutters.column||[]).concat(),down=(gutters.row||[]).concat();
+    for(let k=0;k<=columns;k++)across[k]??=k===0||k===columns?32:gap;for(let k=0;k<=rows;k++)down[k]??=k===0||k===rows?32:gap;
+    const xs=[across[0]],ys=[top+down[0]];
+    widths.forEach((w,k)=>xs.push(xs.at(-1)+w+across[k+1]));heights.forEach((h,k)=>ys.push(ys.at(-1)+h+down[k+1]));
+    const boxes=new Map(order.map(node=>{const {row,column}=cell.get(node.id);
+      return [node.id,{x:xs[column]+(widths[column]-node.width)/2,y:ys[row]+(heights[row]-node.height)/2,width:node.width,height:node.height,row,column}];}));
+    return {columns,rows,room,boxes,xs,ys,size:{row:down,column:across},width:xs.at(-1),height:ys.at(-1)};
+  };
+  const fit=packed=>Math.min(room.width/packed.width,room.height/packed.height);
+  const middle=box=>({x:box.x+box.width/2,y:box.y+box.height/2});
+  // The routes over one packing: a route is its turning points; a
+  // coordinate that is a lane in a gutter is settled once every route
+  // has claimed its lanes.
+  const route=({boxes,xs,ys,size,width,height,columns,rows,room})=>{
+    const sides={EAST:[],WEST:[]},portAt=new Map();
+    for(const port of portList)(sides[port.layoutOptions['elk.port.side']]||sides.WEST).push(port);
+    // Under the title band: an arrow from a port runs down the
+    // frame's outer gutter, never through the program's title.
+    for(const [name,list] of Object.entries(sides))list.forEach((port,i)=>portAt.set(port.id,{x:name==='EAST'?width:0,y:top+size.row[0]+(height-top-size.row[0])*(i+1)/(list.length+1),east:name==='EAST'}));
+    const lanes=new Map(),claim=(key,id)=>{if(!lanes.has(key))lanes.set(key,[]);if(!lanes.get(key).includes(id))lanes.get(key).push(id);return {key,id};};
+    // A card meets the gutter above or below it at one point and has
+    // one lane in that gutter: every arrow at that side is one trunk
+    // there until they part. The point stands an eighth of the card
+    // left of the middle below it and right of it above, so the stubs
+    // of two cards facing each other across a gutter never run on one
+    // line.
+    const side=(id,down)=>{const box=boxes.get(id);return {x:middle(box).x+(down?-1:1)*box.width/8,y:down?box.y+box.height:box.y};};
+    const lane=(row,id)=>claim(`row:${row}`,id);
+    // How many arrows meet a card's side in a gutter: an arrow alone
+    // at a card's side goes in along the lane it came by, taking no
+    // lane of the card's own (forty cards called from one had widened
+    // every gutter by forty lanes).
+    const meeting=new Map(),meet=(id,row)=>meeting.set(`${id}:${row}`,(meeting.get(`${id}:${row}`)||0)+1);
+    for(const bundle of bundles){
+      const a=boxes.get(bundle.sources[0]),b=boxes.get(bundle.targets[0]);
+      if(!a||!b)continue;
+      meet(bundle.sources[0],b.row>a.row?a.row+1:a.row);meet(bundle.targets[0],b.row>a.row?b.row:b.row===a.row?b.row:b.row+1);
+    }
+    const plans=new Map();
+    for(const bundle of bundles){
+      const [source,target]=[bundle.sources[0],bundle.targets[0]],a=boxes.get(source),b=boxes.get(target);
+      if(a&&b){
+        if(a.row===b.row&&Math.abs(a.column-b.column)===1){
+          // Neighbours in a row face each other across one gutter.
+          const low=Math.max(a.y,b.y),high=Math.min(a.y+a.height,b.y+b.height);
+          if(high-low>gap/2){
+            const right=b.column>a.column,y=(low+high)/2;
+            plans.set(bundle.id,[{x:right?a.x+a.width:a.x,y},{x:right?b.x:b.x+b.width,y}]);continue;
+          }
+        }
+        // Out of the source toward the target's row, along the
+        // source's lane, through a column gutter when the rows differ,
+        // along the target's lane and into it from the gutter on the
+        // source's side.
+        const exit=side(source,b.row>a.row),entry=side(target,b.row<a.row);
+        const from=b.row>a.row?a.row+1:a.row,to=b.row>a.row?b.row:b.row===a.row?b.row:b.row+1;
+        const first=lane(from,source),second=meeting.get(`${target}:${to}`)>1?lane(to,target):from===to?first:lane(to,source);
+        if(from===to)plans.set(bundle.id,[exit,{x:exit.x,y:first},{x:entry.x,y:first},{x:entry.x,y:second},entry]);
+        else{
+          const column=b.column>a.column?b.column:b.column<a.column?b.column+1:a.column+1,across=claim(`column:${column}`,source);
+          plans.set(bundle.id,[exit,{x:exit.x,y:first},{x:across,y:first},{x:across,y:second},{x:entry.x,y:second},entry]);
+        }
+        continue;
+      }
+      // A port on the frame's side: through the outer column gutter on
+      // that side, from the card's lane beside it.
+      const card=a?source:target,port=portAt.get(a?target:source);if(!boxes.has(card)||!port)continue;
+      const box=boxes.get(card),below=port.y>middle(box).y,exit=side(card,below),own=lane(below?box.row+1:box.row,card),across=claim(`column:${port.east?columns:0}`,card);
+      const path=[exit,{x:exit.x,y:own},{x:across,y:own},{x:across,y:port.y},{x:port.x,y:port.y}];
+      plans.set(bundle.id,a?path:path.reverse());
+    }
+    // Each route's lane in a gutter: a gutter between cards shared
+    // evenly, a gutter outside them from the cards outward, the frame's
+    // padding kept beyond its last lane. In a row gutter the lanes of
+    // the cards above it run above the lanes of the cards below it: a
+    // card's stub into its lane never runs along the stub of the card
+    // facing it across the gutter.
+    // Lanes stand `room.step` apart and `room.margin` from the cards,
+    // so an arrowhead entering a card crosses no lane (packedRoom).
+    const place=({key,id})=>{
+      const [kind,at]=key.split(':'),index=Number(at),edges=kind==='row'?ys:xs,wide=size[kind][index],last=kind==='row'?rows:columns;
+      const list=kind==='row'?[...lanes.get(key)].sort((a,b)=>(boxes.get(b).row<index)-(boxes.get(a).row<index)):lanes.get(key),k=list.indexOf(id)+1,n=list.length;
+      if(!room)return index===0?edges[0]-wide*(n+1-k)/(n+2):index===last?edges[index]-wide+wide*k/(n+2):edges[index]-wide+wide*k/(n+1);
+      const {step,margin}=room;
+      if(index===0)return edges[0]-margin-step*(n-k);
+      if(index===last)return edges[index]-wide+margin+step*(k-1);
+      return edges[index]-wide+(wide-step*(n-1))/2+step*(k-1);
+    };
+    const routes=new Map();
+    for(const [id,plan] of plans){
+      // A turn that goes on along the same line is no turn: dropped,
+      // a lane farther from the card than the arrow's own does not
+      // make it double back.
+      const points=[];
+      for(const point of plan.map(point=>({x:typeof point.x==='object'?place(point.x):point.x,y:typeof point.y==='object'?place(point.y):point.y}))){
+        if(points.length&&point.x===points.at(-1).x&&point.y===points.at(-1).y)continue;
+        const [p,q]=points.slice(-2);
+        if(q&&(p.x===q.x&&q.x===point.x||p.y===q.y&&q.y===point.y))points.pop();
+        points.push(point);
+      }
+      routes.set(id,[points]);
+    }
+    return {routes,lanes,portAt};
+  };
+  // A gutter is wide enough for its lanes ten pixels apart and
+  // sixteen from the cards where the program is entered: five apart
+  // and five from the cards, freqtrade's seven arrows between its two
+  // rows had read as one bus, and an arrowhead into a card had crossed
+  // the lanes above it into a broken chevron (reviewer, 2026-09-30).
+  const laned=columns=>{
+    let packed=pack(columns),routed=route(packed);
+    for(let pass=0;pass<3;pass++){
+      const room=packedRoom(fit(packed)),gutters={row:[],column:[]};
+      for(const [key,list] of routed.lanes){
+        const [kind,at]=key.split(':'),index=Number(at),outer=index===0||index===(kind==='row'?packed.rows:packed.columns);
+        gutters[kind][index]=outer?32+room.margin+room.step*(list.length-1):Math.max(gap,2*room.margin+room.step*(list.length-1));
+      }
+      packed=pack(columns,gutters,room);routed=route(packed);
+    }
+    return {...packed,routes:routed.routes,portAt:routed.portAt,lanes:routed.lanes};
+  };
+  // Scored with its lanes in place: scored by the cards' gap alone, Redis's
+  // Core server infrastructure took three columns, and its lanes then left
+  // its titles at 11.9 pixels where four columns read at 12.7.
+  let best=null;
+  for(let columns=1;columns<=order.length;columns++){
+    const packed=laned(columns),score=Math.min(...[...packed.boxes.values()].map(box=>box.height))*fit(packed);
+    if(!best||score>best.score)best={...packed,score};
+  }
+  return best;
+}
+
 // ELK prepares each participant and its original boundary ports independently.
 // Cross-root continuations provide placement evidence but are not painted.
 export async function prepareInteriors(items,relations,areas,{availableHeight=Infinity,canvas=null}={}){
@@ -298,9 +460,16 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     // How each area lays out its own parts: its direction and whether a long
     // chain wraps into rows. Chosen per area below.
     const areaLayouts=new Map();
+    // The areas packed instead (packedArea): their packing and, for each of
+    // their arrows, its pair's route and whether it runs against it.
+    const areaPacks=new Map();
     let twins=new Map();
     function tree(id,minimum){
         const record=localRecords.get(id),scale=record.contentScale||1;
+        if(areaPacks.has(id)){
+          const {packed}=areaPacks.get(id);
+          return {id,width:Math.max(packed.width,record.minimumWidth||0),height:Math.max(packed.height,record.minimumHeight||0)};
+        }
         const local={...options,'elk.padding':`[top=${record.headerHeight||64},left=${32*scale},bottom=${32*scale},right=${32*scale}]`};
         for(const name of Object.keys(local))if(name.includes('spacing.'))local[name]=String(Number(local[name])*scale);
         const derived=id===root.id?minimum:null;
@@ -338,7 +507,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       const laid=new Map();twins=new Map();
       return ownEdges.flatMap(edge=>{
         const from=rootOf(edge.from),to=rootOf(edge.to),cross=from!==to;
-        if(ownInteriors&&(cross||childOfRoot(edge.from)!==childOfRoot(edge.to)))return [];
+        if(ownInteriors&&(cross||childOfRoot(edge.from)!==childOfRoot(edge.to)||areaPacks.has(childOfRoot(edge.from))))return [];
         if(cross&&(!children.has(root.id)||(from===root.id&&edge.from===root.id)||(to===root.id&&edge.to===root.id)))return [];
         if(!inside(edge))return [];
         const port=cross?aggregates.get(edge.aggregate).portOf.get(root.id):null;
@@ -349,6 +518,21 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         laid.set(pair,{id:edge.id,source});
         return [{id:edge.id,sources:[source],targets:[target]}];
       });
+    }
+    // An area's arrows between its parts, one bundle per pair of parts, and
+    // each arrow's bundle; null when an arrow ends on the area itself or on
+    // something inside a part.
+    function areaBundles(area){
+      const bundles=new Map(),of=new Map();
+      for(const edge of ownEdges){
+        if(rootOf(edge.from)!==root.id||rootOf(edge.to)!==root.id||childOfRoot(edge.from)!==area||childOfRoot(edge.to)!==area)continue;
+        if(parent.get(edge.from)!==area||parent.get(edge.to)!==area)return null;
+        if(edge.from===edge.to)continue;
+        const identity=pairKey(edge.from,edge.to);
+        if(!bundles.has(identity))bundles.set(identity,{id:`area:${area}:${identity}`,sources:[edge.from],targets:[edge.to]});
+        of.set(edge.id,{id:bundles.get(identity).id,reversed:bundles.get(identity).sources[0]!==edge.from});
+      }
+      return {bundles:[...bundles.values()],of};
     }
     function graph(minimum){
       const actual=tree(root.id,minimum);
@@ -389,14 +573,23 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       // drawn Server runtime 1300 px wide in a 1214 px canvas.
       if(canvas)for(const area of ownAreas){
         const room={width:Math.max(1,canvas.width-48)/readableScale,height:Math.max(1,canvas.height-48)/readableScale};
-        const scores=[];
+        const scores=[],results=[];
         for(const direction of ['RIGHT','DOWN'])for(const wrap of [false,true]){
           areaLayouts.set(area.id,{direction,wrap});
           const result=await native({id:`area:${area.id}`,layoutOptions:options,children:[tree(area.id)],edges:interiorEdges(edge=>childOfRoot(edge.from)===area.id)});
-          scores.push(areaScore(result,room,direction,wrap));
+          scores.push(areaScore(result,room,direction,wrap));results.push(result);
         }
         const best=chooseAreaLayout(scores);
         areaLayouts.set(area.id,{direction:best.direction,wrap:best.wrap});
+        // Packed in the reading order of its chosen arrangement.
+        const parts=children.get(area.id)||[],own=parts.length>2&&parts.every(id=>!children.has(id))&&areaBundles(area.id);
+        if(!best.fits&&own){
+          const laid=new Map(results[scores.indexOf(best)].children[0].children.map(child=>[child.id,child]));
+          const cards=parts.map(id=>({id,width:laid.get(id).width,height:laid.get(id).height})).sort((a,b)=>laid.get(a.id).x-laid.get(b.id).x||laid.get(a.id).y-laid.get(b.id).y);
+          const screen={width:Math.max(1,canvas.width-48),height:Math.max(1,canvas.height-48)};
+          const packed=packCards({cards,bundles:own.bundles,ports:[],gap:2*Number(options['elk.spacing.nodeNode']),top:64,room:screen});
+          if(packedArea(packed,best,screen))areaPacks.set(area.id,{packed,of:own.of});
+        }
       }
       placed=(await native(graph())).children[0];
       // The closed cards of one component share one size rule: none is
@@ -439,6 +632,19 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
     }
     let local=localGeometry(placed);
     for(const [id,twin] of twins)local.edges.set(id,twin.reversed?reversed(local.edges.get(twin.id)||[]):local.edges.get(twin.id)||[]);
+    // A packed area's parts and arrows where ELK placed the area, in its
+    // middle when a floor made it larger than its packing.
+    for(const [id,{packed,of}] of areaPacks){
+      const at=local.nodes.findIndex(node=>node.id===id),area=local.nodes[at];if(at<0)continue;
+      const dx=(area.width-packed.width)/2,dy=(area.height-packed.height)/2;
+      local.nodes.splice(at,1,{...area,frame:true},...[...packed.boxes].map(([child,box])=>({id:child,parentId:id,position:{x:box.x+dx,y:box.y+dy},
+        absolute:{x:area.absolute.x+box.x+dx,y:area.absolute.y+box.y+dy},width:box.width,height:box.height,frame:false})));
+      const shift=point=>({x:area.absolute.x+dx+point.x,y:area.absolute.y+dy+point.y});
+      for(const [edge,bundle] of of){
+        const route=(packed.routes.get(bundle.id)||[]).map(points=>points.map(shift));
+        local.edges.set(edge,bundle.reversed?reversed(route):route);
+      }
+    }
     if(root.branch==='component'&&children.get(root.id)?.length){
       // Areas already own their native interiors. Place only these ready
       // rectangles, so an interior edge cannot stretch the whole component.
@@ -539,138 +745,8 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         const reference=new Map(variants[0].nodes.map(node=>[node.id,node.absolute]));
         const order=[...ready].sort((a,b)=>reference.get(a.id).x-reference.get(b.id).x||reference.get(a.id).y-reference.get(b.id).y);
         const gap=Number(componentOptions['elk.spacing.nodeNode'])*2,top=localRecords.get(root.id).headerHeight||64;
-        // Gutter k runs before column (row) k, the last one after the last,
-        // `gutters` wide: by default `gap` between cards, and the frame's
-        // own 32 padding outside them.
-        const pack=(columns,gutters={},room=0)=>{
-          const rows=Math.ceil(order.length/columns),cell=new Map(order.map((node,i)=>[node.id,{row:Math.floor(i/columns),column:i%columns}]));
-          const widths=Array(columns).fill(0),heights=Array(rows).fill(0);
-          order.forEach((node,i)=>{widths[i%columns]=Math.max(widths[i%columns],node.width);heights[Math.floor(i/columns)]=Math.max(heights[Math.floor(i/columns)],node.height);});
-          const across=(gutters.column||[]).concat(),down=(gutters.row||[]).concat();
-          for(let k=0;k<=columns;k++)across[k]??=k===0||k===columns?32:gap;for(let k=0;k<=rows;k++)down[k]??=k===0||k===rows?32:gap;
-          const xs=[across[0]],ys=[top+down[0]];
-          widths.forEach((w,k)=>xs.push(xs.at(-1)+w+across[k+1]));heights.forEach((h,k)=>ys.push(ys.at(-1)+h+down[k+1]));
-          const boxes=new Map(order.map(node=>{const {row,column}=cell.get(node.id);
-            return [node.id,{x:xs[column]+(widths[column]-node.width)/2,y:ys[row]+(heights[row]-node.height)/2,width:node.width,height:node.height,row,column}];}));
-          return {columns,rows,room,boxes,xs,ys,size:{row:down,column:across},width:xs.at(-1),height:ys.at(-1)};
-        };
-        const fit=packed=>Math.min(room.width/packed.width,room.height/packed.height);
-        let best=null;
-        for(let columns=1;columns<=order.length;columns++){
-          const packed=pack(columns),score=Math.min(...[...packed.boxes.values()].map(box=>box.height))*fit(packed);
-          if(!best||score>best.score)best={...packed,score};
-        }
         const portList=[...ports.get(root.id).values()];
-        const middle=box=>({x:box.x+box.width/2,y:box.y+box.height/2});
-        // The routes over one packing: a route is its turning points; a
-        // coordinate that is a lane in a gutter is settled once every route
-        // has claimed its lanes.
-        const route=({boxes,xs,ys,size,width,height,columns,rows,room})=>{
-          const sides={EAST:[],WEST:[]},portAt=new Map();
-          for(const port of portList)(sides[port.layoutOptions['elk.port.side']]||sides.WEST).push(port);
-          // Under the title band: an arrow from a port runs down the
-          // frame's outer gutter, never through the program's title.
-          for(const [name,list] of Object.entries(sides))list.forEach((port,i)=>portAt.set(port.id,{x:name==='EAST'?width:0,y:top+size.row[0]+(height-top-size.row[0])*(i+1)/(list.length+1),east:name==='EAST'}));
-          const lanes=new Map(),claim=(key,id)=>{if(!lanes.has(key))lanes.set(key,[]);if(!lanes.get(key).includes(id))lanes.get(key).push(id);return {key,id};};
-          // A card meets the gutter above or below it at one point and has
-          // one lane in that gutter: every arrow at that side is one trunk
-          // there until they part. The point stands an eighth of the card
-          // left of the middle below it and right of it above, so the stubs
-          // of two cards facing each other across a gutter never run on one
-          // line.
-          const side=(id,down)=>{const box=boxes.get(id);return {x:middle(box).x+(down?-1:1)*box.width/8,y:down?box.y+box.height:box.y};};
-          const lane=(row,id)=>claim(`row:${row}`,id);
-          // How many arrows meet a card's side in a gutter: an arrow alone
-          // at a card's side goes in along the lane it came by, taking no
-          // lane of the card's own (forty cards called from one had widened
-          // every gutter by forty lanes).
-          const meeting=new Map(),meet=(id,row)=>meeting.set(`${id}:${row}`,(meeting.get(`${id}:${row}`)||0)+1);
-          for(const bundle of bundled.values()){
-            const a=boxes.get(bundle.sources[0]),b=boxes.get(bundle.targets[0]);
-            if(!a||!b)continue;
-            meet(bundle.sources[0],b.row>a.row?a.row+1:a.row);meet(bundle.targets[0],b.row>a.row?b.row:b.row===a.row?b.row:b.row+1);
-          }
-          const plans=new Map();
-          for(const bundle of bundled.values()){
-            const [source,target]=[bundle.sources[0],bundle.targets[0]],a=boxes.get(source),b=boxes.get(target);
-            if(a&&b){
-              if(a.row===b.row&&Math.abs(a.column-b.column)===1){
-                // Neighbours in a row face each other across one gutter.
-                const low=Math.max(a.y,b.y),high=Math.min(a.y+a.height,b.y+b.height);
-                if(high-low>gap/2){
-                  const right=b.column>a.column,y=(low+high)/2;
-                  plans.set(bundle.id,[{x:right?a.x+a.width:a.x,y},{x:right?b.x:b.x+b.width,y}]);continue;
-                }
-              }
-              // Out of the source toward the target's row, along the
-              // source's lane, through a column gutter when the rows differ,
-              // along the target's lane and into it from the gutter on the
-              // source's side.
-              const exit=side(source,b.row>a.row),entry=side(target,b.row<a.row);
-              const from=b.row>a.row?a.row+1:a.row,to=b.row>a.row?b.row:b.row===a.row?b.row:b.row+1;
-              const first=lane(from,source),second=meeting.get(`${target}:${to}`)>1?lane(to,target):from===to?first:lane(to,source);
-              if(from===to)plans.set(bundle.id,[exit,{x:exit.x,y:first},{x:entry.x,y:first},{x:entry.x,y:second},entry]);
-              else{
-                const column=b.column>a.column?b.column:b.column<a.column?b.column+1:a.column+1,across=claim(`column:${column}`,source);
-                plans.set(bundle.id,[exit,{x:exit.x,y:first},{x:across,y:first},{x:across,y:second},{x:entry.x,y:second},entry]);
-              }
-              continue;
-            }
-            // A port on the frame's side: through the outer column gutter on
-            // that side, from the card's lane beside it.
-            const card=a?source:target,port=portAt.get(a?target:source);if(!boxes.has(card)||!port)continue;
-            const box=boxes.get(card),below=port.y>middle(box).y,exit=side(card,below),own=lane(below?box.row+1:box.row,card),across=claim(`column:${port.east?columns:0}`,card);
-            const path=[exit,{x:exit.x,y:own},{x:across,y:own},{x:across,y:port.y},{x:port.x,y:port.y}];
-            plans.set(bundle.id,a?path:path.reverse());
-          }
-          // Each route's lane in a gutter: a gutter between cards shared
-          // evenly, a gutter outside them from the cards outward, the frame's
-          // padding kept beyond its last lane. In a row gutter the lanes of
-          // the cards above it run above the lanes of the cards below it: a
-          // card's stub into its lane never runs along the stub of the card
-          // facing it across the gutter.
-          // Lanes stand `room.step` apart and `room.margin` from the cards,
-          // so an arrowhead entering a card crosses no lane (packedRoom).
-          const place=({key,id})=>{
-            const [kind,at]=key.split(':'),index=Number(at),edges=kind==='row'?ys:xs,wide=size[kind][index],last=kind==='row'?rows:columns;
-            const list=kind==='row'?[...lanes.get(key)].sort((a,b)=>(boxes.get(b).row<index)-(boxes.get(a).row<index)):lanes.get(key),k=list.indexOf(id)+1,n=list.length;
-            if(!room)return index===0?edges[0]-wide*(n+1-k)/(n+2):index===last?edges[index]-wide+wide*k/(n+2):edges[index]-wide+wide*k/(n+1);
-            const {step,margin}=room;
-            if(index===0)return edges[0]-margin-step*(n-k);
-            if(index===last)return edges[index]-wide+margin+step*(k-1);
-            return edges[index]-wide+(wide-step*(n-1))/2+step*(k-1);
-          };
-          const routes=new Map();
-          for(const [id,plan] of plans){
-            // A turn that goes on along the same line is no turn: dropped,
-            // a lane farther from the card than the arrow's own does not
-            // make it double back.
-            const points=[];
-            for(const point of plan.map(point=>({x:typeof point.x==='object'?place(point.x):point.x,y:typeof point.y==='object'?place(point.y):point.y}))){
-              if(points.length&&point.x===points.at(-1).x&&point.y===points.at(-1).y)continue;
-              const [p,q]=points.slice(-2);
-              if(q&&(p.x===q.x&&q.x===point.x||p.y===q.y&&q.y===point.y))points.pop();
-              points.push(point);
-            }
-            routes.set(id,[points]);
-          }
-          return {routes,lanes,portAt};
-        };
-        // A gutter is wide enough for its lanes ten pixels apart and
-        // sixteen from the cards where the program is entered: five apart
-        // and five from the cards, freqtrade's seven arrows between its two
-        // rows had read as one bus, and an arrowhead into a card had crossed
-        // the lanes above it into a broken chevron (reviewer, 2026-09-30).
-        let packed=best,routed=route(best);
-        for(let pass=0;pass<3;pass++){
-          const room=packedRoom(fit(packed)),gutters={row:[],column:[]};
-          for(const [key,list] of routed.lanes){
-            const [kind,at]=key.split(':'),index=Number(at),outer=index===0||index===(kind==='row'?best.rows:best.columns);
-            gutters[kind][index]=outer?32+room.margin+room.step*(list.length-1):Math.max(gap,2*room.margin+room.step*(list.length-1));
-          }
-          packed=pack(best.columns,gutters,room);routed=route(packed);
-        }
-        const {boxes,width,height}=packed,{routes,portAt}=routed;
+        const {boxes,width,height,routes,portAt}=packCards({cards:order,bundles:[...bundled.values()],ports:portList,gap,top,room});
         const packedLocal=finish({width,height,labels:[],edges:routes,
           ports:portList.map(port=>({...port,x:portAt.get(port.id).x,y:portAt.get(port.id).y})),
           nodes:[{id:root.id,position:{x:0,y:0},absolute:{x:0,y:0},width,height,frame:true},

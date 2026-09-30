@@ -420,7 +420,11 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   wrapped arrangement whose arrows run more than half again as long as the
   same direction unwrapped (measured: a wrap that changes anything runs 2.2
   to 4.3 times as long; Redis's Core server infrastructure had looped 16 of
-  its 27 arrows round the whole area). Its parts keep their own size, that of the loose parts
+  its 27 arrows round the whole area). An area none of whose arrangements
+  fits packs its parts in a grid as a program packs its areas (below) when,
+  entered whole, their headings read at 11 pixels or more and its arrows
+  run shorter than the chosen arrangement's (Redis's Core: 6 → 12.7 pixels,
+  26k → 15k; litestream's Command line interface: 10.4 → 17). Its parts keep their own size, that of the loose parts
   beside it, so an area is as large as what it holds, with no second
   member-list height; but no closed card of a component (an area or a loose
   part) is smaller than nine twentieths of its largest area on either side,
@@ -651,7 +655,9 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   review, 2026-09-30: freqtrade's fourteen areas had covered 7% of their
   frame inside a hundred crossing arrows): a grid toward the canvas's
   proportion, in the reading order of the first arrangement, its arrows
-  orthogonal in the gutters between rows and columns, never over a card.
+  orthogonal in the gutters between rows and columns, never over a card;
+  of every column count, the one whose smallest card stands tallest with
+  its gutters' lanes in place.
   Every arrow at one side of a card meets it at one point and runs in that
   card's one lane of the gutter, a trunk until they part, one arrowhead; a
   gutter is wide enough for its lanes ten pixels apart and sixteen from the
