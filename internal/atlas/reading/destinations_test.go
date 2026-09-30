@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas"
+	"github.com/dvordrova/repomap/internal/atlas/lines"
 	"github.com/dvordrova/repomap/internal/sourcevalue"
 )
 
@@ -463,5 +464,65 @@ func TestDestinationKeyIsWhereTheWalksEnd(t *testing.T) {
 	server, client := destinationKey(destinationMember{shared, "server"}), destinationKey(destinationMember{shared, "client"})
 	if server == client || !strings.Contains(server, "masterhost") || strings.Contains(server, "hostip") || !strings.Contains(client, "hostip") {
 		t.Fatalf("the shared row's destinations are %q and %q", server, client)
+	}
+}
+
+// A lookup of a host's addresses and the connection made after it are two
+// exchanges even on one value: the lookup (sdk) is answered by the
+// resolver, the connect (client_request) by the host (redis's
+// gethostbyname(server.masterhost) had read "Primary" beside the connect
+// to the master). Each is its own destination, and a reader told that a
+// lookup ends where it is answered names the resolver for the lookup.
+func TestALookupOfAnAddressEndsAtTheResolver(t *testing.T) {
+	call := func(pkg, name string, line int) atlas.SymbolCall {
+		return atlas.SymbolCall{Kind: "invokes_external", Name: name, Line: line, Column: 9, API: &atlas.CallAPI{Package: pkg, Name: name},
+			SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "literal", Text: "redis://primary.example:6379"}}}}
+	}
+	sync := atlas.Place{ID: "symbol:syncWithMaster", Kind: atlas.PlaceSymbol, Path: "replication.c", LineNo: 10, Parent: "file:replication", TargetIDs: []string{"server"},
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:syncWithMaster", Name: "syncWithMaster"}, Calls: []atlas.SymbolCall{call("netdb.h", "gethostbyname", 12), call("sys/socket.h", "connect", 13)}}}
+	resolver := strings.Contains(strings.Join(strings.Fields(lines.DestinationNames().System), " "), "A lookup of an address ends where the lookup is answered")
+	provider := &mutatedTableProvider{}
+	provider.mutate = func(input map[string]any, rows []map[string]any) {
+		if input["table"] == "atlas_systems" {
+			// The libc headers name no system: the destination is asked.
+			for i := range rows {
+				rows[i]["system"] = "none"
+			}
+			return
+		}
+		named := false
+		for _, column := range input["fill"].([]any) {
+			named = named || column.(map[string]any)["name"] == "destination"
+		}
+		for i, source := range input["rows"].([]any) {
+			row := source.(map[string]any)
+			if !named {
+				rows[i]["line"], rows[i]["address"] = "sends", "unknown"
+				continue
+			}
+			rows[i]["destination"] = "other: Primary"
+			if resolver && strings.Contains(string(mustJSON(row)), `"kind":"sdk"`) {
+				rows[i]["destination"] = "other: Name resolver"
+			}
+		}
+	}
+	r := answerTestReader(t, nil, provider)
+	r.opts.Through, r.opts.Graph.Places = "", []atlas.Place{sync}
+	r.opts.Targets = []TargetMeta{{ID: "server"}}
+	r.opts.ReadSource = func(string) ([]byte, error) { return nil, nil }
+	r.places = map[string]atlas.Place{sync.ID: sync}
+	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
+	r.responseTables = map[string]rememberedTable{}
+	r.api = map[string]apiRole{"netdb.h.gethostbyname": {talks: atlas.BoundarySDK}, "sys/socket.h.connect": {talks: atlas.BoundaryClientRequest}}
+	r.arguments = map[string]ArgumentChoice{"netdb.h.gethostbyname": {Position: 1}, "sys/socket.h.connect": {Position: 1}}
+	if err := r.readBoundaries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, state := range r.boundaries {
+		got[fmt.Sprintf("%s:%d", state.place.Path, state.place.LineNo)] = state.destinationOf("server")
+	}
+	if want := map[string]string{"replication.c:12": "Name resolver", "replication.c:13": "Primary"}; !maps.Equal(got, want) {
+		t.Fatalf("destinations = %v, want %v", got, want)
 	}
 }

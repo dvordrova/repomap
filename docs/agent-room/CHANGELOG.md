@@ -1,5 +1,19 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — A lookup of an address ends at the resolver (this run's one question change)
+
+- **Why:** redis-server's `gethostbyname(server.masterhost)` in anet.c
+  (sdk, from syncWithMaster) shared the `connect` row's destination key
+  (both walk to `server.masterhost`) and so its name, "Primary".
+- **Code fact:** the destination key includes the row's kind (the talks
+  answer): a lookup and the connect after it are two destinations.
+- **Criteria (destinations.md):** a lookup of an address ends where it is
+  answered: a resolver lookup reaches the resolver, named by its role,
+  never the host it looks up.
+- **Test:** `TestALookupOfAnAddressEndsAtTheResolver` (a reader of the
+  destination prompt); it fails without either the kind in the key or the
+  criterion. No fixture resolves a host (READING records it).
+
 ## 2026-09-30 — Entry criteria: a key named "value", a callback a framework calls every frame (this run's one question change)
 
 - **Why:** redis's `hash-max-zipmap-value` (setting 0.59/none 0.40, then

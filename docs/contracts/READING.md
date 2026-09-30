@@ -1079,8 +1079,16 @@ program's (2026-09-30): a row written in code several programs share
 (Redis's anet.c `connect`) is each program's own call, reached from that
 program's callers and walked to that program's values, so it is named once
 per program. Rows are one destination when the code knows they reach one
-place: the same program and the same walk ends there of their reaching
-call's decided argument (DestinationReader). An
+place: the same program, the same kind (the talks answer) and the same walk
+ends there of their reaching call's decided argument (DestinationReader).
+Two kinds are two exchanges even on one value: redis-server's
+`gethostbyname(server.masterhost)` (sdk) is answered by the resolver, the
+`connect` after it (client_request) by the primary, and the destination
+criteria say a lookup of an address ends where it is answered
+(`TestALookupOfAnAddressEndsAtTheResolver`). No fixture looks an address up
+yet: C's `netConnect` converts one with `inet_pton`, no lookup (sdk is not
+for a conversion), and the Go, Python, JS/TS and Clojure fixtures resolve
+no host. An
 end is an absolute URL by its scheme and host as written (cut at the first
 `/`, `?` or `#`), a setting by the setting that begins it (`{--socket}`,
 `{env:API}/users` as `{env:API}`), and any other address or an unresolved

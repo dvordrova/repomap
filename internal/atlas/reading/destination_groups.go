@@ -24,9 +24,13 @@ type destinationMember struct {
 }
 
 // destinationKey is what an outgoing row reaches in one program as the
-// code knows it: the program and the places the walks of its reaching
-// call's value end there (destinationEnd), each once and sorted. Rows with
-// one key reach one destination and are named by one answer. A row with no
+// code knows it: the program, the row's kind and the places the walks of
+// its reaching call's value end there (destinationEnd), each once and
+// sorted. Rows with one key reach one destination and are named by one
+// answer. Rows of two kinds are two exchanges even on one value: a lookup
+// of a host's addresses (sdk, redis's gethostbyname(server.masterhost))
+// is answered by the resolver, the connect made after it (client_request)
+// by the host. A row with no
 // reaching call at its site, or whose walk read nothing in the program, is
 // its own destination: the walk of another call there (the fmt.Sprintf
 // formatting a query's text) says nothing about what the row reaches.
@@ -44,7 +48,7 @@ func destinationKey(member destinationMember) string {
 		return "row\x00" + state.place.ID + "\x00" + member.target
 	}
 	slices.Sort(ends)
-	return member.target + "\x02" + strings.Join(slices.Compact(ends), "\x01")
+	return member.target + "\x02" + state.kind + "\x02" + strings.Join(slices.Compact(ends), "\x01")
 }
 
 // exchangeEnds are the walks a row's destination is keyed and named by:

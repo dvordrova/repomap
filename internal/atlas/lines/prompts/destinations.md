@@ -44,4 +44,8 @@ proper name: a capital first letter and no article. Name it by what it is
 to this program: a vendor's service by its product name, any other system
 by its role for this program, such as the server a client sends its
 commands to or the primary a replica copies from. A package, a protocol, a
-host, a URL, a file path or a key is not a system's name.
+host, a URL, a file path or a key is not a system's name. A lookup of an
+address ends where the lookup is answered: calls looking up a host name's
+addresses through the system's resolver reach that resolver, named by its
+role, never the host they look up, which the connection made after them
+reaches.
