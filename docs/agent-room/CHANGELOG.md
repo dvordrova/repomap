@@ -1,5 +1,23 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — No code in input names (data 2, milestone review)
+
+- **6be81334:** same-named inputs are told apart only within one kind, by
+  their subcommands or declaring declaration, never by code as written;
+  a backslash pattern never names an entry. Runs (clean HEAD export, exit
+  0): redis 46 s, othello 20 s, freqtrade 964 s (load 100+). freqtrade's
+  `force_enter__\S+` / `force_exit__\S+` → `_force_enter_inline` /
+  `_force_exit_inline`; redis's "save strcasecmp(argv[0]" and freqtrade's
+  "-V --version "version": Arg("-V"" / "dataformat_ohlcv
+  "dataformat_ohlcv"" no longer print (Inputs readings hold no code text;
+  redis-cli's two monitor read "cmdTable" / "cliSendCommand").
+- Not done, for decision: WEIGHTS under zunion/zinter contradicts 9ac16afc
+  (a helper's words are its own inputs; `TestAnEntryInAHandlersOwnBodyIsItsSubArgument`
+  pins parseLimit's offset). othello has no atom var: its state is the value
+  its Quil fun-mode handlers return, and its one atom is a local in web.cljs;
+  State changes reads record fields only. "00:02" is the word the scheduled
+  entry's call wrote, not code.
+
 ## 2026-09-30 — Python: a field stored from a constructor parameter is what its constructions hand
 
 - **Rule** (`type_field_parameters`, PYTHON "Inherited members and fields"):
