@@ -1,5 +1,20 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — One service behind a package, one name in every program (data 2)
+
+- Measured on the latest four runs (outgoing boundaries by program): redis
+  shares gethostbyname in 3 programs ("Resolver" / "System Resolver", the one
+  drift) and connect (Primary / redis-server: different ends, kept);
+  freqtrade its own program and websockets.connect (different ends);
+  litestream Amazon S3 and SQLite (named by package, alike); othello none.
+- **4718bcfc:** sdk rows of one package no system named, whose walks end at
+  no address the same wherever written, are one destination in every
+  program, asked once where asked first. redis run 20260930-111000 (clean
+  HEAD export, exit 0, 17 s): gethostbyname "Resolver" in redis-server,
+  redis-cli and redis-benchmark (4 rows "as named first"); connects stay
+  Primary / redis-server. Journey set PASS; lints 41 (39 long folds, 2
+  file:line), the same on the previous run.
+
 ## 2026-09-30 — An entry the model says no word names is named by its handler (data 2)
 
 - **fe1ba202:** a name cell answered none no longer lets `FirstEntryWord`
