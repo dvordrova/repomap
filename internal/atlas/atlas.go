@@ -525,6 +525,11 @@ type BoundaryFacts struct {
 	// The model names an entry by choosing among them; nothing here says
 	// which is a verb, a path, a command or a topic.
 	Words []string `json:"words,omitempty"`
+	// WordsGiven are, beside Words, the parameter the call gives each word
+	// under when it names one (a keyword argument: description, alias,
+	// dest), "" for a word given by position or written otherwise: the
+	// reading shows it with the word it offers to name the entry by.
+	WordsGiven []string `json:"words_given,omitempty"`
 	// Holder is the value the call acts on, as path:line:column of the call
 	// that produced it; registrations on one holder belong together.
 	Holder string `json:"holder,omitempty"`

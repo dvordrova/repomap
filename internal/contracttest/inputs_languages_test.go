@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlas/places"
 	"github.com/dvordrova/repomap/internal/atlas/reading"
 	"github.com/dvordrova/repomap/internal/clojureproject"
+	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programindex/goadapter"
 	"github.com/dvordrova/repomap/internal/pythonprogramindex"
@@ -70,9 +72,6 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 				return "command", true
 			case strings.HasSuffix(symbol, "strings.EqualFold") && strings.Contains(callText(item), "os.Args"):
 				return "command", true
-			case strings.HasSuffix(symbol, "strings.HasPrefix"):
-				// As litestream's reading answered strings.HasPrefix(u, "-").
-				return "command", true
 			}
 		case "program":
 			if slices.Contains(options, "git") {
@@ -85,6 +84,18 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 		}
 		return "", false
 	}}
+	// A reader of LooksLikeFlag's strings.HasPrefix(arg, "-") answers none
+	// when the command option is not for a prefix a word is tested to start
+	// with, and command, as litestream's reading did, when it is.
+	preset.read = func(column string, item map[string]any, options []llm.Option) (string, bool) {
+		if symbol, _ := item["symbol"].(string); column == "enters" && strings.HasSuffix(symbol, "strings.HasPrefix") {
+			if strings.Contains(notFor(options, "command"), "a character or prefix a word is tested to start with") {
+				return "none", true
+			}
+			return "command", true
+		}
+		return "", false
+	}
 	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "go", Kind: "executable", Name: index.Target.Name, Root: "."}, root, preset)
 	// Each EqualFold call was asked on its own.
 	var equalFolds []string
@@ -97,11 +108,13 @@ func TestCumulativeGoInputsAreAskedPerCallAndCatalogued(t *testing.T) {
 	if want := []string{`strings.EqualFold(level, "default")`, `strings.EqualFold(os.Args[1], "check")`}; !slices.Equal(equalFolds, want) {
 		t.Fatalf("EqualFold calls asked: %q, want %q", equalFolds, want)
 	}
-	// LooksLikeFlag's "-" is a mark, no word: no input, whatever its call
-	// was answered.
+	// LooksLikeFlag's "-" is asked with its call as written and is no input.
+	if !slices.ContainsFunc(preset.asked["enters"], func(item map[string]any) bool { return callText(item) == `strings.HasPrefix(arg, "-")` }) {
+		t.Fatal(`strings.HasPrefix(arg, "-") was not asked`)
+	}
 	for _, row := range inputRows(projected, "internal/storefixture/tool_cli.go") {
 		if row.name == "-" {
-			t.Fatalf("a mark is an input: %+v", row)
+			t.Fatalf("a prefix a word is tested to start with is an input: %+v", row)
 		}
 	}
 	got := inputRows(projected, "internal/storefixture/tool_cli.go", "internal/storefixture/destinations.go")
@@ -221,10 +234,6 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 				strings.HasSuffix(symbol, ".add_subparsers") || strings.HasSuffix(symbol, ".pop") {
 				return "command", true
 			}
-			// As freqtrade's reading answered Query(…, description=…).
-			if strings.HasSuffix(symbol, ".Query") {
-				return "request", true
-			}
 		case "binds":
 			if strings.HasSuffix(symbol, ".set_defaults") {
 				return "command", true
@@ -232,6 +241,33 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 		}
 		return "", false
 	}}
+	// A reader of a Query call answers none when its only words are given
+	// as a description, help or usage and the request option is not for
+	// one, else request, as freqtrade's reading did.
+	preset.read = func(column string, item map[string]any, options []llm.Option) (string, bool) {
+		if symbol, _ := item["symbol"].(string); column != "enters" || !strings.HasSuffix(symbol, ".Query") {
+			return "", false
+		}
+		arguments, _ := item["arguments"].([]any)
+		literals, _ := item["literals"].([]any)
+		described := false
+		for _, literal := range literals {
+			word, _ := literal.(string)
+			for _, argument := range arguments {
+				text, _ := argument.(string)
+				if given, value, _ := strings.Cut(text, ": "); value == strconv.Quote(word) {
+					if given != "description" && given != "help" && given != "usage" {
+						return "request", true
+					}
+					described = true
+				}
+			}
+		}
+		if described && strings.Contains(notFor(options, "request"), "a parameter's description, help or usage text") {
+			return "none", true
+		}
+		return "request", true
+	}
 	projected := readInputs(t, graph, index, reading.TargetMeta{ID: index.Target.ID, Language: "python", Kind: "library", Name: index.Target.Name, Root: "."}, root, preset)
 	// A pop out of a copy of the code's own table row (dispatch.py's
 	// option_help, freqtrade's options.pop("help")) is not asked.
@@ -245,7 +281,21 @@ func TestCumulativePythonInputsJoinAndCatalogue(t *testing.T) {
 			t.Fatalf("dispatch.py's input %+v", row)
 		}
 	}
-	// A query parameter's description names no input; its alias does.
+	// A query parameter's description names no input; its alias does, and
+	// the name column offers each word with the parameter it is given as.
+	offered := false
+	for _, item := range preset.asked["atlas_boundaries.name"] {
+		words, _ := item["words"].([]any)
+		given := map[any]bool{}
+		for _, word := range words {
+			offered, _ := word.(map[string]any)
+			given[offered["given"]] = true
+		}
+		offered = offered || given["description"] && given["alias"]
+	}
+	if !offered {
+		t.Fatalf("no name row offers a word with its parameter: %v", preset.items("atlas_boundaries.name"))
+	}
 	var queries []string
 	for _, row := range inputRows(projected, "src/fixture_app/cli.py") {
 		if row.kind == "request" && row.declaredBy != "" && !strings.HasPrefix(row.name, "/") {

@@ -760,11 +760,14 @@ handler-less input whose own call made an object other inputs of its kind
 are declared on, and whose words that call is given only under a
 parameter's name, names where the chosen one is kept and is no input at all
 (GroupsIndex projection, after the hand-over join: freqtrade's
-`add_subparsers(dest="command")`), while a command group given its word by
-position keeps it (commander's `program.command("remote")` before `add` and
-`rm`, argparse's `add_parser("remote")`); or it is declared in a case's
-branch, or by code only that branch runs: the calls written in the lines a comparison case or a
-guarding call selects (ProgramIndex comparison case and pattern `branch`,
+`add_subparsers(dest="command")`; every pattern written at the call's site
+counts), while a command group given its word by position keeps it
+(commander's `program.command("remote")` before `add` and `rm`, argparse's
+`add_parser("remote")`; a limit: Go struct fields, C designated initializers
+and Clojure maps give every word by name, and the rule is safe there only
+while no handler-less holder is made in those languages); or it is declared
+in a case's branch, or by code only that branch runs: the calls written in
+the lines a comparison case or a guarding call selects (ProgramIndex comparison case and pattern `branch`,
 GroupsIndex `Branches`), followed as the launch walk follows calls, while the
 walk from the launch's roots that takes no call written in a case's branch
 never reaches that code. litestream's `Main.Run` switch runs
@@ -814,23 +817,26 @@ is declared where its call is written, in its caller's part, and binds to no
 part. It has no subject, reach or phase in GroupsIndex; it does not make its
 caller a key's entry, its part the side work comes in at or a core part's
 entry, and gives no address to a holder's entries. A call none of whose words
-can name an entry (a format ending in a line break; a mark, which holds no
-letter or digit and is no path, as litestream's `strings.HasPrefix(u, "-")`
-and a configuration line's `"#"`; a sentence, three or more words of
-letters alone, as freqtrade's `Query(3, description="Number of months to
-fetch data for")`: `lines.NamesAnInput`) makes none, recorded as
+can name an entry (a format ending in a line break) makes none, recorded as
 `entry_unnamed`, and is read as any other call; a call in a test file makes
-none, and a chosen mark or sentence is left out of a name. The line is
-measured: descriptions run five to eight words, flag usages three or four,
-an event's name (`"chat message"`) two. GroupsIndex keeps one input per
-kind, words as written and declaring caller: an option written twice in
-one function is one input at its first site; the same word in another
-caller is another. A handler registered again by a call given its words
-only under a parameter's name (freqtrade's `CallbackQueryHandler(
-self._profit, pattern="update_profit$")` beside `CommandHandler("profit",
-self._profit)`) is that handler's one input, the other registration of
-its kind standing for it; a handler only such a call registers keeps its
-own (`force_exit__\S+`). A name that cannot stand refuses that entry alone.
+none. The entry question's command and request options are not for a
+parameter's description, help or usage text, nor for a character or prefix a
+word is tested to start with (litestream's `strings.HasPrefix(u, "-")`); the
+call's arguments show each literal with the parameter it is given as
+(`description: "Number of months to fetch data for"`), and the name column
+offers each word with it (`given`, `atlas.BoundaryFacts.WordsGiven`, from
+the call's keyword arguments) and never takes a description, help or usage
+text. Only Python and Clojure write keyword arguments; Go, C and JS/TS words
+are positional, so their words carry none. GroupsIndex keeps one input per
+kind, words as written and declaring caller: an option written twice in one
+function is one input at its first site; the same word in another caller is
+another. One handler registered by several calls of one kind is one input:
+the registration written first stands, and each other is among its
+`Aliases` with its name, site and call as written (freqtrade's
+`CallbackQueryHandler(self._profit, pattern="update_profit$")` under
+`CommandHandler("profit", self._profit)`, redis's `smembers` row under
+`sinter`'s, two routes of one handler), so no word or site is lost. A name
+that cannot stand refuses that entry alone.
 
 Spellings of one value are one input, as a case listing several words is
 (reviewer's item 6a, 2026-09-30). A call whose ProgramIndex pattern

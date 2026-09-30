@@ -29,8 +29,21 @@ import (
 // areas, a destination written as other:, no system, no joint and no peer.
 type inputsPreset struct {
 	decide func(column string, item map[string]any, options []string) (string, bool)
-	mu     sync.Mutex
-	asked  map[string][]map[string]any
+	// read, when set, is asked first with each option's criteria: a reader
+	// deciding by what an option is not for.
+	read  func(column string, item map[string]any, options []llm.Option) (string, bool)
+	mu    sync.Mutex
+	asked map[string][]map[string]any
+}
+
+// notFor is an option's "not for" criteria, or "".
+func notFor(options []llm.Option, name string) string {
+	for _, option := range options {
+		if option.Name == name && option.Criteria != nil {
+			return option.Criteria.NotFor
+		}
+	}
+	return ""
 }
 
 func (*inputsPreset) State() []byte { return []byte(`{"provider":"inputs-preset"}`) }
@@ -107,10 +120,19 @@ func (p *inputsPreset) Complete(_ context.Context, prepared llm.Prepared) (llm.C
 				p.record(request.Table+"."+name, row)
 				switch {
 				case name == "name":
-					// An entry is named by the first word its call wrote.
-					if words, _ := row["words"].([]any); len(words) > 0 {
-						first, _ := words[0].(map[string]any)
-						cells[name] = []any{first["ref"]}
+					// An entry is named by the first word its call wrote,
+					// past a description, help or usage text when the
+					// column says never one and the word says what it is
+					// given as.
+					words, _ := row["words"].([]any)
+					note, _ := column["note"].(string)
+					for _, word := range words {
+						offered, _ := word.(map[string]any)
+						if given, _ := offered["given"].(string); strings.Contains(note, "never a description, help or usage text") && (given == "description" || given == "help" || given == "usage") {
+							continue
+						}
+						cells[name] = []any{offered["ref"]}
+						break
 					}
 				case name == "destination":
 					cells[name] = "other: preset system"
@@ -157,6 +179,11 @@ func (p *inputsPreset) categorizer() *typesafetest.Categorizer {
 		var options []string
 		for _, option := range question.Options {
 			options = append(options, option.Name)
+		}
+		if p.read != nil {
+			if choice, ok := p.read(column, question.Item, question.Options); ok {
+				return typesafetest.Choose(choice), true
+			}
 		}
 		if choice, ok := p.decide(column, question.Item, options); ok {
 			return typesafetest.Choose(choice), true

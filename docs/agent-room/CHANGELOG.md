@@ -1,5 +1,38 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — The skeptic's verdict on 682dfbd5: the entry question, not a text filter; one handler's registrations fold with their words
+
+- **Reverted** 682dfbd5's marks/sentences filter (`NamesAnInput`: a text
+  shape overriding the model's word; it would drop MQTT `#`, NATS `>`,
+  `app.get("*")`, `case "-"`, multi-word events). `NameableWords` decides
+  again in the word-call, comparison and table-row paths, `FirstEntryWord`
+  and `EntryName`.
+- **This run's one question change (entry question):** `entry_options.md`
+  command and request are not for a parameter's description, help or
+  usage text, nor for a character or prefix a word is tested to start
+  with; the name column never takes a description, help or usage text.
+  Offered words carry `given`, the parameter the call gives them under
+  (`atlas.BoundaryFacts.WordsGiven` from the call's keyword arguments,
+  `labelWordsGiven`); positional-only words carry none, so only rows with
+  keyword words change. Tests read the fixture with fail-closed readers of
+  the options' criteria (`inputsPreset.read`): Go `LooksLikeFlag`'s
+  `strings.HasPrefix(arg, "-")` and Python `weekly_levels`' `Query(…,
+  description=…)` fail without the new criteria.
+- **One handler's registrations:** `foldRegistrations` replaces both the
+  keyword-only fold and the same-name dedup: one (kind, handler) is one
+  input, the registration written first stands, each other is in its
+  `Aliases` (name, site, call as written; aliases now allowed on handled
+  inputs). Saved runs projected: freqtrade 20 differently named folds
+  (12 telegram `update_*`, `head /api/v1/ping`, `forcebuy`/`forcesell`/
+  `stopbuy`/`stopentry` routes, `forceshort`), redis 1 (`smembers` under
+  `sinter`), litestream and othello 0. Python fixture `latest_levels`
+  (two routes, `TestAHandlerRegisteredTwiceIsOneInput`); Go, C, JS/TS and
+  Clojure fixtures register no handler twice (unit test).
+- **4075c377 follow-ups:** `wordsByName` counts every pattern at a site;
+  READING records the limit (Go struct fields, C designated initializers,
+  Clojure maps give every word by name; safe only while no handler-less
+  holder is made there).
+
 ## 2026-09-30 — Data batch of the third human-eye review: example parts, client and server joined, module loggers, a destination's value
 
 - **Why:** the reviewer's data items 1–4 (crops in the scratchpad's

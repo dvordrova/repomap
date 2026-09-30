@@ -264,7 +264,9 @@ type Operation struct {
 	// query.Get("storage-class") in the else-if arm after
 	// query.Get("storageClass")), its other spellings in source order, each
 	// named by its words and kept with its call as written. The input is
-	// named by its first spelling, as a case listing several words is.
+	// named by its first spelling, as a case listing several words is. For
+	// an input with its handler they are the handler's other registrations
+	// of its kind (freqtrade's update_profit$ under profit).
 	Aliases []OperationAlias `json:"aliases,omitempty"`
 	// DeclaredBy is the subject whose code makes the call declaring or
 	// registering the input: the caller of that call. For an input whose
@@ -1006,7 +1008,7 @@ func (index Index) Validate() error {
 			return fmt.Errorf("group index: operation %q is declared on an invalid object", operation.ID)
 		}
 		for _, alias := range operation.Aliases {
-			if !operation.HandlerUnknown || !validText(alias.Name) || !validOptionalText(alias.Written) || alias.Location.Path == "" || alias.Location.Line < 1 || alias.Location.Column < 1 {
+			if !validText(alias.Name) || !validOptionalText(alias.Written) || alias.Location.Path == "" || alias.Location.Line < 1 || alias.Location.Column < 1 {
 				return fmt.Errorf("group index: operation %q has an invalid other spelling", operation.ID)
 			}
 		}

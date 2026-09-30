@@ -12,7 +12,7 @@ What: Work another running program sends, where its connection or message first 
 
 Includes: the handler each new connection another program opens gets, such as the callable the program's own event loop runs when its listening socket has a connection to accept; a handler of one route, RPC method or protocol command a client names; a table row pairing such a command with its function; a message, a command or a button press a person makes in another program's interface, which that program delivers to this one over a connection
 
-Not for: opening or binding the listening socket (none); reading from or writing to a connection an earlier entry accepted or this program opened (none); what this program sends to another program, such as the names of the commands it sends, even when it looks them up in a table of its own first (command when a person types them to this program); a command a person types to this program (command); code run around every handler (middleware)
+Not for: opening or binding the listening socket (none); reading from or writing to a connection an earlier entry accepted or this program opened (none); what this program sends to another program, such as the names of the commands it sends, even when it looks them up in a table of its own first (command when a person types them to this program); a command a person types to this program (command); code run around every handler (middleware); a parameter's description, help or usage text (none); a character or prefix a word is tested to start with (none)
 
 Examples:
 - a handler registered for GET /users
@@ -25,7 +25,7 @@ What: What a person types or passes to the program: when starting it from a comm
 
 Includes: an option, a flag, a positional argument, a subcommand or a task; a word the program checks among its command-line arguments; the names of the commands among which the program looks up what was typed; declaring an option or a subcommand with a command-line parser; a subcommand's handler; the commands a person types into a client program, which it looks up, checks and sends on to another program: they are that client's commands
 
-Not for: the command line this program gives another program it starts, or the name of a program it looks up or starts (none); the name a parser or an option set is given for its own messages (none); text the program prints, such as a usage line, a format or an error message (none); the program's own name (none); an environment variable (none); a command another program sends to this one over a network connection (request); a directive or key a person writes in the program's configuration file (setting)
+Not for: the command line this program gives another program it starts, or the name of a program it looks up or starts (none); the name a parser or an option set is given for its own messages (none); text the program prints, such as a usage line, a format or an error message (none); a parameter's description, help or usage text (none); a character or prefix a word is tested to start with, such as the dash options begin with (none); the program's own name (none); an environment variable (none); a command another program sends to this one over a network connection (request); a directive or key a person writes in the program's configuration file (setting)
 
 Examples:
 - declaring a --verbose flag with a parser

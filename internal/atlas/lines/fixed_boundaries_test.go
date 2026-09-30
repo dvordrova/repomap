@@ -356,26 +356,3 @@ func TestFirstEntryWordIsTheFirstWordItsCodeWrote(t *testing.T) {
 		}
 	}
 }
-
-// A word names an input; a mark or a sentence names none. A mark holds no
-// letter or digit and is no path (litestream's strings.HasPrefix(u, "-"),
-// a configuration line's "#"); a sentence is three or more words of
-// letters alone (freqtrade's Query(3, description="Number of months to
-// fetch data for")). A chosen mark or sentence is left out of a name.
-func TestAMarkOrASentenceNamesNoInput(t *testing.T) {
-	for value, want := range map[string]bool{
-		"-": false, "#": false, "[": false, "--": false, "Number of months to fetch data for": false, "control socket path": false,
-		"/": true, "-v": true, "--force": true, "token": true, "chat message": true, "-p, --port <n>": true, "GET /users": true, "update_profit$": true,
-	} {
-		if got := NamesAnInput(value); got != want {
-			t.Errorf("NamesAnInput(%q) = %v, want %v", value, got, want)
-		}
-	}
-	if got := InputWords([]string{"-", "Optional key to filter data", "token"}); !reflect.DeepEqual(got, []string{"token"}) {
-		t.Fatalf("InputWords = %q", got)
-	}
-	words := []EntryWord{{Ref: "w1", Value: "json"}, {Ref: "w2", Value: "output raw JSON"}}
-	if got := EntryName(words, "w1 w2"); got != "json" {
-		t.Fatalf("EntryName = %q, want json", got)
-	}
-}

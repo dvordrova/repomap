@@ -951,37 +951,6 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 			dropped[position] = true
 		}
 	}
-	// The same handler registered again by a call given its words only
-	// under a parameter's name (a pattern what it is handed is matched
-	// against: freqtrade's CallbackQueryHandler(self._profit,
-	// pattern="update_profit$") beside CommandHandler("profit",
-	// self._profit)) is that handler's input, once: a registration of its
-	// kind given its words otherwise stands for it. A handler no such
-	// registration names keeps its own input.
-	registrations := make(map[string]bool)
-	for position, operation := range operations {
-		if !dropped[position] && !operation.HandlerUnknown && operation.SubjectID != "" {
-			registrations[operationLocationKey(operation.Location)] = true
-		}
-	}
-	patterned := wordsByName(program, registrations)
-	standing := make(map[string]int)
-	for position, operation := range operations {
-		if !dropped[position] && registrations[operationLocationKey(operation.Location)] && !patterned[operationLocationKey(operation.Location)] {
-			if _, seen := standing[operation.Kind+"\x00"+operation.SubjectID]; !seen {
-				standing[operation.Kind+"\x00"+operation.SubjectID] = position
-			}
-		}
-	}
-	for position, operation := range operations {
-		if dropped[position] || operation.HandlerUnknown || operation.SubjectID == "" || !patterned[operationLocationKey(operation.Location)] {
-			continue
-		}
-		if at, ok := standing[operation.Kind+"\x00"+operation.SubjectID]; ok {
-			dropped[position] = true
-			standsFor[operation.ID] = operations[at].ID
-		}
-	}
 	if len(dropped) > 0 {
 		kept := operations[:0]
 		for position, operation := range operations {
@@ -993,25 +962,17 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 	}
 	// A declaration with an observed route already has an operation carrying
 	// that route's syntax. Keep its interpretation on the subject, without
-	// presenting the declaration as a second route. Multiple observed routes
-	// on the same handler remain distinct.
+	// presenting the declaration as a second route. Several registrations
+	// of one handler (`GET("")` and `GET("/")`, two routes) are one input
+	// that keeps each other's word and site (foldRegistrations).
 	uniqueOperations := operations[:0]
-	sameOperation := make(map[string]string)
 	for _, operation := range operations {
 		if operation.ID == operation.SubjectID && boundRequests[operation.SubjectID] {
 			continue
 		}
-		// The same handler registered twice under one name (`GET("")` and
-		// `GET("/")`) is one operation; the first site stands for it.
-		key := strings.Join([]string{operation.Kind, operation.Name, operation.SubjectID, operation.Address}, "\x00")
-		if first, seen := sameOperation[key]; operation.SubjectID != "" && seen {
-			standsFor[operation.ID] = first
-			continue
-		}
-		sameOperation[key] = operation.ID
 		uniqueOperations = append(uniqueOperations, operation)
 	}
-	operations = uniqueOperations
+	operations = foldRegistrations(uniqueOperations, standsFor)
 	sort.Slice(operations, func(i, j int) bool { return operationKey(operations[i]) < operationKey(operations[j]) })
 	operationOf := make(map[string]string, len(operations)+len(standsFor))
 	for position := range operations {
@@ -1367,23 +1328,82 @@ func wordsByName(program programindex.Index, sites map[string]bool) map[string]b
 	if len(sites) == 0 {
 		return result
 	}
+	// Every pattern written at a site counts: a word any of them gives by
+	// position is the call's own.
+	words, named := make(map[string]int), make(map[string]int)
 	for _, relation := range program.Relations {
 		for _, pattern := range relation.Patterns {
 			if pattern.Location == nil || !sites[operationLocationKey(*pattern.Location)] {
 				continue
 			}
-			words, named := 0, 0
+			site := operationLocationKey(*pattern.Location)
 			for _, argument := range pattern.Arguments {
 				if argument.Kind != programindex.PatternLiteralString {
 					continue
 				}
-				words++
+				words[site]++
 				if argument.Keyword != "" {
-					named++
+					named[site]++
 				}
 			}
-			result[operationLocationKey(*pattern.Location)] = words > 0 && named == words
 		}
 	}
+	for site, count := range words {
+		result[site] = count > 0 && named[site] == count
+	}
 	return result
+}
+
+// foldRegistrations makes one input of one handler's registrations of one
+// kind: the registration written first stands for it, and each other is
+// kept among its Aliases with its name, site and call as written
+// (freqtrade's CallbackQueryHandler(self._profit, pattern="update_profit$")
+// under CommandHandler("profit", self._profit); redis's smembers row under
+// sinter's), as spellings of one value are (foldSpellings): no word or site
+// is lost.
+func foldRegistrations(operations []Operation, standsFor map[string]string) []Operation {
+	standing := make(map[string]int)
+	for position, operation := range operations {
+		if operation.HandlerUnknown || operation.SubjectID == "" {
+			continue
+		}
+		key := operation.Kind + "\x00" + operation.SubjectID
+		if at, seen := standing[key]; !seen || locationBefore(&operation.Location, &operations[at].Location) {
+			standing[key] = position
+		}
+	}
+	folded := make(map[int]bool)
+	for position, operation := range operations {
+		if operation.HandlerUnknown || operation.SubjectID == "" {
+			continue
+		}
+		at := standing[operation.Kind+"\x00"+operation.SubjectID]
+		if at == position {
+			continue
+		}
+		stands := &operations[at]
+		stands.Aliases = append(stands.Aliases, OperationAlias{Name: operation.Name, Location: operation.Location, Written: operation.Written})
+		stands.Aliases = append(stands.Aliases, operation.Aliases...)
+		folded[position] = true
+		standsFor[operation.ID] = stands.ID
+	}
+	if len(folded) == 0 {
+		return operations
+	}
+	kept := operations[:0]
+	for position, operation := range operations {
+		if !folded[position] {
+			slices.SortStableFunc(operation.Aliases, func(a, b OperationAlias) int {
+				if locationBefore(&a.Location, &b.Location) {
+					return -1
+				}
+				if locationBefore(&b.Location, &a.Location) {
+					return 1
+				}
+				return 0
+			})
+			kept = append(kept, operation)
+		}
+	}
+	return kept
 }

@@ -140,3 +140,48 @@ func (r *reader) declaredOnSite(files map[string]*lines.CallFile, path string, l
 	}
 	return &atlas.DeclaredOn{Path: path, LineNo: line, Column: column, Text: text}
 }
+
+// labelWordsGiven gives every incoming boundary's words, beside them, the
+// parameter its call gives each under when it names one (a keyword
+// argument: Query(4, description="Number of weeks to fetch data for")),
+// so the reading of the words shows it. A boundary whose words are all
+// given by position keeps none.
+func (r *reader) labelWordsGiven() {
+	sites := r.callSites()
+	for _, state := range r.boundaries {
+		facts := state.place.Boundary
+		if facts == nil || facts.Direction != atlas.DirectionIn || len(facts.Words) == 0 || len(facts.WordsGiven) > 0 {
+			continue
+		}
+		call := sites[sourceSite{state.place.Path, state.place.LineNo, state.place.Column}]
+		if call == nil {
+			continue
+		}
+		type literal struct{ text, keyword string }
+		var literals []literal
+		named := false
+		for _, argument := range call.SourceArguments {
+			if argument.Origin != nil && argument.Origin.Kind == "literal" {
+				literals = append(literals, literal{argument.Origin.Text, argument.Keyword})
+				named = named || argument.Keyword != ""
+			}
+		}
+		if !named {
+			continue
+		}
+		given := make([]string, len(facts.Words))
+		used := make([]bool, len(literals))
+		for position, word := range facts.Words {
+			for at, value := range literals {
+				if !used[at] && value.text == word {
+					used[at], given[position] = true, value.keyword
+					break
+				}
+			}
+		}
+		labelled := *facts
+		labelled.WordsGiven = given
+		state.place.Boundary = &labelled
+	}
+}
+

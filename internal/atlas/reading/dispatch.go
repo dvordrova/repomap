@@ -126,7 +126,7 @@ func (r *reader) bindComparisons() {
 				continue
 			}
 			for _, item := range comparison.Cases {
-				if len(lines.InputWords(item.Words)) == 0 {
+				if len(lines.NameableWords(item.Words)) == 0 {
 					r.noEntryWithoutWords(atlas.Place{ID: place.ID, Path: place.Path, LineNo: item.LineNo}, kind)
 					continue
 				}

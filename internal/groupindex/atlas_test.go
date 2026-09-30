@@ -98,12 +98,14 @@ func TestObservedRoutesReplaceTheDeclarationOperationAndKeepAliases(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	// One handler's two routes are one input, the route written first
+	// standing and the other among its Aliases.
 	operations := indexes[0].Operations
-	if len(operations) != 2 {
+	if len(operations) != 1 || len(operations[0].Aliases) != 1 || operations[0].Aliases[0].Name != "GET /health" || operations[0].Aliases[0].Location.Line != 3 {
 		t.Fatalf("routes were duplicated or aliases lost: %+v", operations)
 	}
 	for _, operation := range operations {
-		if operation.Source != "fact" || operation.FactID != "fact" || operation.SubjectID != p.Objects[0].ID || !strings.HasPrefix(operation.Name, "GET /") {
+		if operation.Source != "fact" || operation.FactID != "fact" || operation.SubjectID != p.Objects[0].ID || operation.Name != "GET /status" {
 			t.Fatalf("route lost native binding: %+v", operation)
 		}
 	}
@@ -371,18 +373,18 @@ func TestProjectAtlasMakesGroupsContainersAndConnections(t *testing.T) {
 // restored them, or by its handler: never by composing the fact's method and
 // values, which would give every protocol HTTP's shape.
 func TestEntryOperationsTakeTheChosenNameOrTheHandler(t *testing.T) {
-	p := atlasTestProgram(t, "server", "api/handler.go")
+	p := atlasTestProgram(t, "server", "api/handler.go", "api/users.go")
 	target := atlas.Target{ID: p.Target.ID, Name: p.Target.Name, Language: "go", Kind: "executable", Root: "api", Zones: []atlas.Zone{}, Arrows: []atlas.Arrow{},
-		Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, MemberIDs: []string{p.Objects[0].ID},
+		Boxes: []atlas.Box{{ID: "api", Dir: "api", Title: "API", Line: "Answers requests.", Side: atlas.SideIn, MemberIDs: []string{p.Objects[0].ID, p.Objects[1].ID},
 			Files: []atlas.File{{Path: "api/handler.go", Line: "Handles requests.", Source: atlas.SourceModel, Symbols: []atlas.Symbol{}}}}}}
-	entry := func(id string, line int, name string, kind string, values ...string) atlas.Boundary {
-		return atlas.Boundary{ID: id, ObjectID: p.Objects[0].ID, BoxID: "api", Path: "api/handler.go", LineNo: line, Column: 1, Caller: "FA",
+	entry := func(id string, line int, handler int, name string, kind string, values ...string) atlas.Boundary {
+		return atlas.Boundary{ID: id, ObjectID: p.Objects[handler].ID, BoxID: "api", Path: "api/handler.go", LineNo: line, Column: 1, Caller: "FA",
 			Direction: atlas.DirectionIn, Kind: kind, Method: "GET", Values: values, Name: name, Line: "Answers.", FactID: "fact-" + id}
 	}
 	target.Boundaries = []atlas.Boundary{
-		entry("chosen", 4, "get", atlas.BoundaryRequest, "get", "kvCommand"),
-		entry("unchosen", 5, "", atlas.BoundaryRequest, "/users"),
-		entry("worker", 6, "", atlas.BoundaryContinuous, []string{}...),
+		entry("chosen", 4, 0, "get", atlas.BoundaryRequest, "get", "kvCommand"),
+		entry("unchosen", 5, 1, "", atlas.BoundaryRequest, "/users"),
+		entry("worker", 6, 0, "", atlas.BoundaryContinuous, []string{}...),
 	}
 	indexes, err := ProjectAtlas(map[string]programindex.Index{p.Target.ID: p}, atlas.Atlas{Version: atlas.Version, Repository: "test", Targets: []atlas.Target{target}, Joints: []atlas.Joint{}, Diagnostics: []atlas.Diagnostic{}})
 	if err != nil {
@@ -393,7 +395,7 @@ func TestEntryOperationsTakeTheChosenNameOrTheHandler(t *testing.T) {
 		got = append(got, operation.Kind+" "+operation.Name+" @"+strconv.Itoa(operation.Location.Line))
 	}
 	sort.Strings(got)
-	if want := []string{"continuous FA @6", "request FA @5", "request get @4"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"continuous FA @6", "request FB @5", "request get @4"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("operations = %v, want %v", got, want)
 	}
 }

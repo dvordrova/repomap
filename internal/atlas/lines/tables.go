@@ -247,7 +247,7 @@ func FixedBoundaries(outgoing bool) table.Definition {
 		return def
 	}
 	def.Columns = append(def.Columns, table.Column{Name: "name", Kind: table.Sequence, OptionsFrom: "word_options", WhenOptionsFrom: "word_options", ValuesFrom: "words", Alone: true,
-		Note: "the w* refs of the words that name this entry as its sender names it, in the order they are read; none when no word names it"})
+		Note: "the w* refs of the words that name this entry as its sender names it, in the order they are read; never a description, help or usage text; none when no word names it"})
 	return def
 }
 
@@ -257,6 +257,9 @@ func FixedBoundaries(outgoing bool) table.Definition {
 type EntryWord struct {
 	Ref   string `json:"ref"`
 	Value string `json:"value"`
+	// Given is the parameter the call gives the word under, when it names
+	// one (a keyword argument: description, alias, dest).
+	Given string `json:"given,omitempty"`
 }
 
 // EntryWords are the words an incoming entry may be named by, as w1, w2, ...
@@ -270,11 +273,15 @@ func EntryWords(place atlas.Place) []EntryWord {
 		return nil
 	}
 	words := make([]EntryWord, 0, len(facts.Words))
-	for _, value := range facts.Words {
+	for position, value := range facts.Words {
 		if !nameable(value) {
 			continue
 		}
-		words = append(words, EntryWord{Ref: fmt.Sprintf("w%d", len(words)+1), Value: value})
+		word := EntryWord{Ref: fmt.Sprintf("w%d", len(words)+1), Value: value}
+		if position < len(facts.WordsGiven) {
+			word.Given = facts.WordsGiven[position]
+		}
+		words = append(words, word)
 	}
 	return words
 }
@@ -289,46 +296,6 @@ func NameableWords(values []string) []string {
 		}
 	}
 	return words
-}
-
-// InputWords are the words, as written and in order, that can name an
-// input (NamesAnInput): the words an entry is made of.
-func InputWords(values []string) []string {
-	var words []string
-	for _, value := range values {
-		if NamesAnInput(value) {
-			words = append(words, value)
-		}
-	}
-	return words
-}
-
-// NamesAnInput says a word can name an input: it can stand in a one-line
-// name and is neither a mark nor a sentence. A mark holds no letter or
-// digit and is no path: what a word starts with ("-", "#", "["), never a
-// word a person types or a program is sent; "/" is a path. A sentence is
-// three or more words of letters alone, one space between them: a
-// parameter's description ("Number of weeks to fetch data for", five to
-// eight words in freqtrade) or a flag's usage ("control socket path",
-// three or four in litestream), never its name; an event's two-word name
-// ("chat message") is a name.
-func NamesAnInput(value string) bool {
-	if !nameable(value) {
-		return false
-	}
-	if !strings.HasPrefix(value, "/") && !strings.ContainsFunc(value, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
-		return false
-	}
-	fields := strings.Split(value, " ")
-	if len(fields) < 3 {
-		return true
-	}
-	for _, field := range fields {
-		if field == "" || strings.ContainsFunc(field, func(r rune) bool { return !unicode.IsLetter(r) }) {
-			return true
-		}
-	}
-	return false
 }
 
 // FirstEntryWord names an entry whose handler is not established when no word
@@ -348,7 +315,7 @@ func FirstEntryWord(facts *atlas.BoundaryFacts) string {
 		words = facts.Values
 	}
 	for _, value := range words {
-		if NamesAnInput(value) {
+		if nameable(value) {
 			return value
 		}
 	}
@@ -369,8 +336,7 @@ func nameable(value string) bool {
 
 // EntryName restores a name cell: the chosen words as written, joined by one
 // space in the order the model wrote them. No word is translated, recased,
-// trimmed or composed any other way. A chosen word that names no input (a
-// mark, a sentence: NamesAnInput) is left out of the name.
+// trimmed or composed any other way.
 func EntryName(words []EntryWord, cell string) string {
 	values := make(map[string]string, len(words))
 	for _, word := range words {
@@ -378,7 +344,7 @@ func EntryName(words []EntryWord, cell string) string {
 	}
 	var chosen []string
 	for _, ref := range strings.Fields(cell) {
-		if value, ok := values[ref]; ok && NamesAnInput(value) {
+		if value, ok := values[ref]; ok {
 			chosen = append(chosen, value)
 		}
 	}

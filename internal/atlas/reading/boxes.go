@@ -735,6 +735,7 @@ func (r *reader) readBoundaries(ctx context.Context) error {
 	r.foldSpellings()
 	r.bindTableRows()
 	r.markDeclaredOn()
+	r.labelWordsGiven()
 	if err := r.readPrograms(ctx); err != nil {
 		return err
 	}

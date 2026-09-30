@@ -110,11 +110,20 @@ def mixed_level():
 @app.get("/api/weekly")
 def weekly_levels(
     weeks: int = Query(4, ge=1, description="Number of weeks to fetch levels for"),
-    token: str = Query(None, alias="token"),
+    token: str = Query(None, description="Session token of the caller", alias="token"),
 ):
     """A query parameter's description is no word of its request: the
-    parameter is named by its alias, or by nothing its call writes."""
+    reading shows each word with the parameter it is given as, and names
+    the parameter by its alias."""
     return weeks
+
+
+@app.get("/api/levels/latest")
+@app.get("/api/levels/newest")
+def latest_levels():
+    """One handler registered at two routes: one input, the route written
+    first standing, the other kept as its other registration."""
+    return []
 
 
 if __name__ == "__main__":
