@@ -353,7 +353,7 @@ func TestSystemPathWitnessRetainsBothSidesAndTheIntegrationUncertainty(t *testin
 
 func TestSystemOutboundGroupingRetainsRecordsAndTheirExactPeerInputs(t *testing.T) {
 	view := pageView{Sections: []*pageSection{
-		{ID: "front", Map: &pageMap{Nodes: []pageMapNode{
+		{ID: "front", ShortLabel: "front", Map: &pageMap{Nodes: []pageMapNode{
 			{ID: "click", Activation: "interaction"},
 			{ID: "n-http", FullTitle: "Client"}, {ID: "remote-post", Remote: true, Href: "#post", Activation: "request"},
 		}, Edges: []pageMapEdge{{ConnectionID: "post-match", From: "n-http", To: "remote-post", Scope: "operation", Operations: "click", Possible: true}}}, Outbound: []pageOutbound{
@@ -362,7 +362,7 @@ func TestSystemOutboundGroupingRetainsRecordsAndTheirExactPeerInputs(t *testing.
 			{ID: "unmatched", Destination: "backend API", Method: "GET", Address: "/unknown", NativeLabel: "GET /unknown", Source: "fact"},
 		}},
 		{ID: "backend", Map: &pageMap{Nodes: []pageMapNode{{ID: "post", Activation: "request", FullTitle: "POST /items"}}}},
-		{ID: "other", Outbound: []pageOutbound{{ID: "other-get", Destination: "backend API", NativeLabel: "GET /items"}}},
+		{ID: "other", ShortLabel: "other", Outbound: []pageOutbound{{ID: "other-get", Destination: "backend API", NativeLabel: "GET /items"}}},
 	}}
 	got := view.SystemMap()
 	nodes := map[string]pageMapNode{}
@@ -371,17 +371,20 @@ func TestSystemOutboundGroupingRetainsRecordsAndTheirExactPeerInputs(t *testing.
 	}
 	// One frame per destination a component's records name; each record
 	// keeps its own tile and component. Another component naming the same
-	// destination keeps its own, in its own Outside frame.
+	// destination shares it (owner, 2026-09-30): one system, both
+	// components' tiles, in one Outside frame named after both.
 	group := nodes["system-get-destination"]
-	if group.Branch != "communication" || group.FullTitle != "backend API" || group.Children != "system-get system-unmatched" || group.Owner != "front" {
+	if group.Branch != "communication" || group.FullTitle != "backend API" || group.Children != "system-get system-unmatched system-other-get" || group.Owner != "front" {
 		t.Fatalf("external catalogue grouping lost: %+v", group)
 	}
-	other := nodes["system-other-get-destination"]
-	if other.Owner != "other" || other.Children != "system-other-get" || nodes["system-other-get"].Owner != "other" {
-		t.Fatalf("another component's records joined this one's destination: %+v", other)
+	if _, apart := nodes["system-other-get-destination"]; apart || nodes["system-other-get"].Owner != "other" {
+		t.Fatalf("another component's records stand apart, or its tile left it: %+v", nodes["system-other-get"])
 	}
-	if nodes["system-outside-front"].Children != group.ID || nodes["system-outside-other"].Children != other.ID {
-		t.Fatalf("each component's destinations stand in its own Outside frame: %+v %+v", nodes["system-outside-front"], nodes["system-outside-other"])
+	if frame := nodes["system-outside-front"]; frame.Children != group.ID || frame.FullTitle != "front, other" {
+		t.Fatalf("the shared system stands in one frame named after both: %+v", frame)
+	}
+	if _, own := nodes["system-outside-other"]; own {
+		t.Fatal("a component calling only a shared system kept a frame of its own")
 	}
 	if _, exists := nodes["system-post"]; exists {
 		t.Fatal("known backend input was drawn as another external participant")
@@ -790,6 +793,49 @@ func TestASharedOutsideFrameIsNamedAfterEveryProgramReachingIt(t *testing.T) {
 	}
 	if !slices.Equal(into, []string{"n-tb-net", "n-tc-net"}) {
 		t.Fatalf("each program keeps its own arrow into the one tile: %v", into)
+	}
+}
+
+// A system several programs call from their own places stands once, in an
+// Outside frame named after them, with each program's own tile and arrow;
+// a system one program calls stays in its own frame (owner, 2026-09-30:
+// litestream's SQLite had stood in cmd/litestream's frame and in
+// cmd/litestream-test's). Its mark is the kind its calls' facts give.
+func TestASystemSeveralProgramsCallStandsOnceInTheirFrame(t *testing.T) {
+	row := func(id, destination, kind, path string) pageOutbound {
+		return pageOutbound{ID: id, Destination: destination, KindLabel: kind, External: "open", MapGroup: "db", Source: "model",
+			Anchor: pageAnchor{Path: path, Line: 10, Text: path + ":10"}}
+	}
+	section := func(id, label string, rows ...pageOutbound) *pageSection {
+		return &pageSection{ID: id, ShortLabel: label, programTargetID: id, Outbound: rows,
+			Map: &pageMap{Nodes: []pageMapNode{{ID: "n-" + id + "-db", FullTitle: "Storage"}}}}
+	}
+	view := pageView{Sections: []*pageSection{
+		section("tt", "cmd/litestream-test", row("tt-b1", "SQLite", "Database", "test.go")),
+		section("tl", "cmd/litestream", row("tl-b1", "SQLite", "Database", "db.go"), row("tl-b2", "SFTP", "SDK", "sftp.go")),
+	}}
+	got := view.SystemMap()
+	nodes := map[string]pageMapNode{}
+	for _, n := range got.Nodes {
+		nodes[n.ID] = n
+	}
+	sqlite := nodes["system-tt-b1-destination"]
+	if sqlite.Children != "system-tt-b1 system-tl-b1" || sqlite.DestinationKind != "database" {
+		t.Fatalf("SQLite is not one system of both programs: %+v", sqlite)
+	}
+	if _, twice := nodes["system-tl-b1-destination"]; twice {
+		t.Fatal("SQLite stands twice")
+	}
+	if shared := nodes["system-outside-tt"]; shared.Children != sqlite.ID || shared.FullTitle != "cmd/litestream-test, cmd/litestream" {
+		t.Fatalf("the shared frame: %+v", shared)
+	}
+	if own := nodes["system-outside-tl"]; own.Children != "system-tl-b2-destination" || own.FullTitle != "cmd/litestream" {
+		t.Fatalf("cmd/litestream's own frame: %+v", own)
+	}
+	for tile, from := range map[string]string{"system-tt-b1": "n-tt-db", "system-tl-b1": "n-tl-db"} {
+		if !slices.ContainsFunc(got.Edges, func(edge pageMapEdge) bool { return edge.From == from && edge.To == tile }) {
+			t.Fatalf("%s lost its arrow into %s: %+v", from, tile, got.Edges)
+		}
 	}
 }
 

@@ -1083,7 +1083,7 @@ function rmEntryLanding(link,nodes,component){
         summary:n.dataset.summary,symbols:rmPage.data(n,'symbols')||[],symbolCalls:rmPage.data(n,'symbolCalls')||[],subtitle:n.dataset.subtitle,sourceKind:n.dataset.sourceKind,
         role:n.dataset.role,roleRef:n.dataset.roleRef,language:n.dataset.language,componentKind:n.dataset.componentKind,
         trace:n.dataset.activation?rmInputPath(n,byID):[],unestablished:n.dataset.unestablished==='true',
-        componentOwner:component?.id||'',componentName:component?.dataset.title||'',
+        componentOwner:component?.id||'',componentName:component?.dataset.title||'',destinationKind:n.dataset.destinationKind||'',
         children:(n.dataset.children||'').split(/\s+/).filter(function(id){return id&&(n.dataset.branch==='inputs'||!byID[id]?.dataset.activation);}),kind:kind(n),category:category(n)};
     });
     var relations=rawEdges;

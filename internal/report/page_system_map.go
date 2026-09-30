@@ -335,7 +335,7 @@ func (view *pageView) SystemMap() *pageMap {
 			if len(children) > 0 {
 				id := "system-" + group.Rows[0].ID + "-destination"
 				written, at := destinationWritten(group.Rows)
-				add(pageMapNode{ID: id, Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies", Unestablished: group.Destination == "", Written: written, Source: at})
+				add(pageMapNode{ID: id, Owner: section.ID, Branch: "communication", ItemKind: "External communication", FullTitle: name, Children: strings.Join(children, " "), Lane: "dependencies", Unestablished: group.Destination == "", Written: written, Source: at, DestinationKind: destinationKind(group.Rows)})
 				destinations = append(destinations, id)
 			}
 		}
@@ -349,6 +349,7 @@ func (view *pageView) SystemMap() *pageMap {
 	for _, tile := range tileOrder {
 		result.Nodes[positions[tile]].Reached = reachedReading(tileRows[tile])
 	}
+	shareOutside(result, positions, view.Sections, add)
 	nameSharedOutside(result, positions, view.Sections)
 	// An input's path into a folded record leads to the tile that stands for
 	// it: reading that tile on the input's path keeps "Why it appears".
@@ -592,6 +593,192 @@ func outsideGroups(rows []pageOutbound) []pageOutboundGroup {
 	return named
 }
 
+// destinationKind is the kind most of a destination's calls are, as their
+// facts give it (outboundKindLabel), a database first on a tie, or empty
+// when none gives one: the mark its system wears on an entered program's
+// port.
+func destinationKind(rows []pageOutbound) string {
+	kinds := map[string]string{"Database": "database", "Queue": "queue", "Request": "request", "SDK": "sdk", "Runs a program": "started"}
+	counts := map[string]int{}
+	for _, row := range rows {
+		if kind := kinds[row.KindLabel]; kind != "" {
+			counts[kind]++
+		}
+	}
+	kind := ""
+	for _, candidate := range []string{"database", "queue", "request", "sdk", "started"} {
+		if counts[candidate] > counts[kind] {
+			kind = candidate
+		}
+	}
+	return kind
+}
+
+// shareOutside stands a system several programs call once, in an Outside
+// frame of those programs, with each program's arrows into it (owner,
+// 2026-09-30: "both targets use the database" was nowhere to see):
+// litestream's SQLite and Amazon S3 had stood twice, in cmd/litestream's
+// frame and in cmd/litestream-test's and etc/s3_mock.py's. A destination
+// is the same system in every program naming it alike (the reading names
+// one service behind a package alike in every program); the records naming
+// none are no system. A system one program calls stays in that program's
+// frame; a frame whose program calls only shared systems is the frame of
+// those programs (Redis's resolver of redis-benchmark and redis-cli). The
+// frame of several programs is named after them (nameSharedOutside).
+func shareOutside(result *pageMap, positions map[string]int, sections []*pageSection, add func(pageMapNode)) {
+	order := map[string]int{}
+	for i, section := range sections {
+		order[section.ID] = i
+	}
+	var destinations []string
+	destinationOf := map[string]string{}
+	frames := map[string]string{}
+	for _, node := range result.Nodes {
+		if node.Branch != "outside" {
+			continue
+		}
+		frames[node.Owner] = node.ID
+		for _, id := range strings.Fields(node.Children) {
+			if at, ok := positions[id]; ok {
+				destinations = append(destinations, id)
+				for _, tile := range strings.Fields(result.Nodes[at].Children) {
+					destinationOf[tile] = id
+				}
+			}
+		}
+	}
+	if len(destinations) == 0 {
+		return
+	}
+	callers := map[string]map[string]bool{}
+	call := func(destination, owner string) {
+		if callers[destination] == nil {
+			callers[destination] = map[string]bool{}
+		}
+		callers[destination][owner] = true
+	}
+	// A program calls a system when a tile of it is the program's record or
+	// the program's arrow enters one.
+	for tile, destination := range destinationOf {
+		if at, ok := positions[tile]; ok && result.Nodes[at].Owner != "" {
+			call(destination, result.Nodes[at].Owner)
+		}
+	}
+	for _, edge := range result.Edges {
+		from, known := positions[edge.From]
+		if destination := destinationOf[edge.To]; destination != "" && known && result.Nodes[from].Owner != "" {
+			call(destination, result.Nodes[from].Owner)
+		}
+	}
+	// Alike-named destinations of different programs are the first one.
+	gone := map[string]bool{}
+	first := map[string]string{}
+	for _, id := range destinations {
+		node := result.Nodes[positions[id]]
+		if node.Unestablished {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(node.FullTitle))
+		keeper, seen := first[name]
+		if !seen {
+			first[name] = id
+			continue
+		}
+		kept := &result.Nodes[positions[keeper]]
+		if kept.Owner == node.Owner {
+			continue
+		}
+		kept.Children = joinUniqueFields(kept.Children, node.Children)
+		if kept.DestinationKind == "" {
+			kept.DestinationKind = node.DestinationKind
+		}
+		for owner := range callers[id] {
+			call(keeper, owner)
+		}
+		gone[id] = true
+	}
+	// Each system's frame: its one program's own, or its programs'.
+	programsOf := func(id string) []string {
+		var owners []string
+		for owner := range callers[id] {
+			owners = append(owners, owner)
+		}
+		if len(owners) == 0 {
+			owners = []string{result.Nodes[positions[id]].Owner}
+		}
+		sort.Slice(owners, func(i, j int) bool { return order[owners[i]] < order[owners[j]] })
+		return owners
+	}
+	held := map[string][]string{}
+	var keys []string
+	for _, id := range destinations {
+		if gone[id] {
+			continue
+		}
+		key := strings.Join(programsOf(id), " ")
+		if _, known := held[key]; !known {
+			keys = append(keys, key)
+		}
+		held[key] = append(held[key], id)
+	}
+	used := map[string]bool{}
+	frameFor := map[string]string{}
+	for _, key := range keys {
+		if owners := strings.Fields(key); len(owners) == 1 {
+			frameFor[key] = frames[owners[0]]
+			used[frames[owners[0]]] = frameFor[key] != ""
+		}
+	}
+	for _, key := range keys {
+		owners := strings.Fields(key)
+		if frameFor[key] != "" {
+			continue
+		}
+		// A frame its program no longer needs for its own systems holds
+		// the systems it shares, first come.
+		if own := frames[owners[0]]; own != "" && !used[own] {
+			frameFor[key], used[own] = own, true
+			continue
+		}
+		var section *pageSection
+		for _, candidate := range sections {
+			if candidate.ID == owners[0] {
+				section = candidate
+			}
+		}
+		id := "system-outside-" + strings.Join(owners, "-")
+		if len(owners) == 1 {
+			id = "system-outside-" + owners[0]
+		}
+		title := owners[0]
+		if section != nil {
+			title = componentTitle(section, sections)
+		}
+		add(pageMapNode{ID: id, Owner: owners[0], Branch: "outside", ItemKind: "External communication", FullTitle: title,
+			Href: "#" + owners[0] + "-external", DetailsID: owners[0] + "-external", Lane: "dependencies"})
+		frameFor[key], used[id] = id, true
+	}
+	children := map[string]string{}
+	for _, key := range keys {
+		children[frameFor[key]] = joinUniqueFields(children[frameFor[key]], strings.Join(held[key], " "))
+	}
+	kept := result.Nodes[:0]
+	for _, node := range result.Nodes {
+		if gone[node.ID] || node.Branch == "outside" && children[node.ID] == "" {
+			continue
+		}
+		if node.Branch == "outside" {
+			node.Children = children[node.ID]
+		}
+		kept = append(kept, node)
+	}
+	result.Nodes = kept
+	clear(positions)
+	for i, node := range result.Nodes {
+		positions[node.ID] = i
+	}
+}
+
 // nameSharedOutside names an Outside frame after every program whose arrows
 // enter its tiles, its own first, then in the page's order. A call written
 // once stands once, in the first program's frame (SystemMap), so Redis's
@@ -613,17 +800,26 @@ func nameSharedOutside(result *pageMap, positions map[string]int, sections []*pa
 		}
 	}
 	reaching := map[int]map[string]bool{}
-	for _, edge := range result.Edges {
-		frame, into := frameOf[edge.To]
-		from, known := positions[edge.From]
-		if !into || !known {
-			continue
-		}
-		if owner := result.Nodes[from].Owner; owner != "" && owner != result.Nodes[frame].Owner {
+	reach := func(frame int, owner string) {
+		if owner != "" && owner != result.Nodes[frame].Owner {
 			if reaching[frame] == nil {
 				reaching[frame] = map[string]bool{}
 			}
 			reaching[frame][owner] = true
+		}
+	}
+	// A program reaches the frame by its arrows, and by its own records'
+	// tiles standing there (shareOutside).
+	for tile, frame := range frameOf {
+		if at, ok := positions[tile]; ok {
+			reach(frame, result.Nodes[at].Owner)
+		}
+	}
+	for _, edge := range result.Edges {
+		frame, into := frameOf[edge.To]
+		from, known := positions[edge.From]
+		if into && known {
+			reach(frame, result.Nodes[from].Owner)
 		}
 	}
 	for frame, owners := range reaching {

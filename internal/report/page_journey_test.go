@@ -156,15 +156,14 @@ func TestInputPathIsTheWitnessTraceOrderedByCallDepth(t *testing.T) {
 	}
 }
 
-// One "TCP endpoint" box took arrows from all three Redis programs, though
-// for redis-cli that endpoint is redis-server and for redis-server its
-// master: equal destination text proves no identity. Each program keeps its
-// own destination, tile and arrow, its destinations in its own Outside
-// frame. One call written once is one tile (owner's
-// decision a): Redis's three programs each drew a "DNS resolver" frame with
-// gethostbyname, called at anet.c:146 by all three and at anet.c:115 by
-// redis-benchmark and redis-cli; it stands once, with an arrow from each
-// program.
+// One call written once is one tile (owner's decision a): Redis's three
+// programs each drew a "DNS resolver" frame with gethostbyname, called at
+// anet.c:146 by all three and at anet.c:115 by redis-benchmark and
+// redis-cli; it stands once, with an arrow from each program. A system
+// several programs call from their own places is one system too (owner,
+// 2026-09-30: "both targets use the database"): one destination holding
+// each program's own tile and arrow, in one Outside frame of those
+// programs; a system one program calls stays in that program's frame.
 func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 	part := func(target string) *pageMap {
 		m := &pageMap{Nodes: []pageMapNode{{ID: "n-g1", FullTitle: "Networking"}}}
@@ -225,35 +224,38 @@ func TestSystemMapKeepsEachProgramsOutsideDestinationItsOwn(t *testing.T) {
 		t.Fatalf("the arrows to the shared tile come from %v", from)
 	}
 
-	// Different call sites: each program keeps its own frame, tile and arrow.
+	// Different call sites: one system, each program's own tile and arrow.
 	apart := view(resolve("t1", "anet.c", 115), []pageOutbound{resolve("t2", "benchmark.c", 20)}, []pageOutbound{resolve("t4", "cli.c", 30)})
 	got = apart.SystemMap()
 	frames, tiles = drawn(got)
 	outside := map[string]pageMapNode{}
 	for _, node := range got.Nodes {
 		if node.Branch == "outside" {
-			outside[node.Owner] = node
+			outside[node.ID] = node
 		}
 	}
+	system := frames["system-t1-out-b108-destination"]
+	if system.Owner != "t1" || system.FullTitle != "DNS resolver" || system.Children != "system-t1-out-b108 system-t2-out-b108 system-t4-out-b108" {
+		t.Fatalf("the system the three programs call is not one: %+v", system)
+	}
 	for _, target := range []string{"t1", "t2", "t4"} {
-		frame, tile := frames["system-"+target+"-out-b108-destination"], tiles["system-"+target+"-out-b108"]
-		if frame.Owner != target || tile.Owner != target || frame.Children != tile.ID || frame.FullTitle != "DNS resolver" {
-			t.Fatalf("program %s lost its own destination: frame %+v tile %+v", target, frame, tile)
+		tile := tiles["system-"+target+"-out-b108"]
+		if tile.Owner != target {
+			t.Fatalf("program %s lost its own tile: %+v", target, tile)
 		}
 		if from := callers(got, tile.ID); len(from) != 1 || !from[targetMapNodeID(target, "n-g1")] {
 			t.Fatalf("the arrows to %s's tile come from %v", target, from)
 		}
-		// Each program's destinations stand in its own Outside frame, read
-		// as its external catalogue.
-		want := frame.ID
-		if target == "t1" {
-			want += " system-t1-out-b120-destination"
-		}
-		if box := outside[target]; box.ID != "system-outside-"+target || box.Children != want || box.DetailsID != target+"-external" {
-			t.Fatalf("program %s's Outside frame: %+v", target, box)
-		}
 	}
-	if len(frames) != 4 || len(tiles) != 4 || len(outside) != 3 {
+	// redis-server's own system stays in its own frame; the shared one
+	// stands in a frame of the three programs, named after them.
+	if own := outside["system-outside-t1"]; own.Children != "system-t1-out-b120-destination" || own.DetailsID != "t1-external" {
+		t.Fatalf("redis-server's Outside frame: %+v", own)
+	}
+	if shared := outside["system-outside-t1-t2-t4"]; shared.Children != system.ID || shared.FullTitle != "redis-server, redis-benchmark, redis-cli" {
+		t.Fatalf("the shared Outside frame: %+v", shared)
+	}
+	if len(frames) != 2 || len(tiles) != 4 || len(outside) != 2 {
 		t.Fatalf("frames %d, tiles %d, Outside frames %d", len(frames), len(tiles), len(outside))
 	}
 }

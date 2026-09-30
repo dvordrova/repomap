@@ -147,9 +147,13 @@ type pageMapNode struct {
 	InputOwner                             string
 	Owner, ItemKind, DetailsID             string
 	Role, RoleRef, Language, ComponentKind string
-	Aliases                                []string
-	SummaryRef                             string
-	InitiallyHidden                        bool
+	// DestinationKind is the kind most of an outside system's calls' facts
+	// give it (database, queue, request, sdk, started), its mark on an
+	// entered program's port; empty when none gives one.
+	DestinationKind string
+	Aliases         []string
+	SummaryRef      string
+	InitiallyHidden bool
 	// Frame is true of an endpoint that is a zone rather than a box: an
 	// arrow to it stops short of its outline instead of landing on it.
 	Frame bool
@@ -425,7 +429,7 @@ func (builder *pageBuilder) buildZoneMap(section *pageSection, index *groupindex
 			X:       mapPadding + float64(column)*(mapNodeWidth+mapColumnGap),
 			Y:       mapPadding + mapLaneLabelSpace + entry.y,
 			Width:   mapNodeWidth, Height: mapNodeHeight,
-			Test:    builder.testOnly(section.programTargetID, group),
+			Test: builder.testOnly(section.programTargetID, group),
 		}
 		if entry.container != nil {
 			growFrame(frames, index, entry.container, node)
