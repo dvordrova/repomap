@@ -279,7 +279,7 @@ func (builder *pageBuilder) buildOperationMap(section *pageSection, index *group
 			Lane:           "triggers", X: mapPadding, Y: 40 + float64(i)*84, Width: mapNodeWidth, Height: 68,
 			Neighbours: strings.Join(nearIDs, " "), Degree: len(near), Members: 1,
 			Trace:   strings.Join(trace, " "),
-			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown, Written: operation.Written,
+			Handler: handler, HandlerSource: handlerSource, HandlerUnknown: operation.HandlerUnknown, Written: operation.Written, Spellings: operationSpellings(operation),
 			Sets:      builder.settingSets(index, operation, decls),
 			Catalogue: catalogueOf[operation.ID], DeclaredBy: declaredByOf[operation.ID], Declares: strings.Join(declaresOf[operation.ID], " "),
 		})
@@ -579,4 +579,16 @@ func foreignNodeID(sectionID, targetID, groupID string) string {
 // bare ID, the system map moved one's arrow onto the other's peer.
 func connectionKey(targetID, id string) string {
 	return targetID + "/" + id
+}
+
+// operationSpellings are an input's other spellings, each once, in source
+// order, joined as its reading says them ("also written storage-class").
+func operationSpellings(operation groupindex.Operation) string {
+	var names []string
+	for _, alias := range operation.Aliases {
+		if alias.Name != "" && alias.Name != operation.Name && !slices.Contains(names, alias.Name) {
+			names = append(names, alias.Name)
+		}
+	}
+	return strings.Join(names, ", ")
 }

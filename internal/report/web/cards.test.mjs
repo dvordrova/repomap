@@ -159,13 +159,12 @@ test('bound inputs retain their exact identity outside their implementation',()=
   assert.equal(cards.find(n=>n.id==='part').inputs,undefined,'implementation does not embed a duplicate input');
 });
 
-test('the input catalogue preserves original kinds and combines only scheduled and continuous display types',()=>{
+test('the input catalogue lists the kinds the reading column names',()=>{
   const inputs=['request','command','scheduled','continuous','interaction','unclassified'].map((activation,i)=>({id:'input'+i,activation}));
   const groups=groupInputs(inputs,text=>'translated '+text);
-  assert.deepEqual(groups.map(g=>g.kind),['request','command','background','interaction','other']);
-  assert.deepEqual(groups[2].inputs.map(n=>n.activation),['scheduled','continuous']);
+  assert.deepEqual(groups.map(g=>g.kind),['request','command','scheduled','continuous','interaction','entry']);
+  assert.deepEqual(groups.map(g=>g.title.replace('translated ','')),['Incoming requests','Commands','Scheduled tasks','Background work','User interactions','Kind not established']);
   assert.deepEqual(groups.flatMap(g=>g.inputs.map(n=>n.id)),inputs.map(n=>n.id));
-  assert.equal(groups[4].title,'translated Other operations');
   assert.deepEqual(groupInputs([{id:'one',activation:'request'}]).map(g=>g.kind),['request'],'absent types are not invented');
 });
 
@@ -189,7 +188,7 @@ test('one root input collection retains every original input and implementation 
   assert.equal(cards.find(c=>c.id==='input1').title.replace(/\s/g,''),records.find(c=>c.id==='input1').title.replace(/\s/g,''),'complete literal survives wrapping');
   assert.deepEqual(cards.map(n=>n.id),records.map(n=>n.id),'no item is dropped, merged by name, or added');
   const collection=cards.find(c=>c.id==='inputs');
-  assert.deepEqual(collection.inputGroups.map(g=>g.kind),['request','command','background','interaction']);
+  assert.deepEqual(collection.inputGroups.map(g=>g.kind),['request','command','scheduled','continuous','interaction']);
   assert.ok(collection.overviewHeightAtWidth(collection.overviewMinWidth)>80,'the whole type list has reserved height');
   assert.equal(cards.find(n=>n.id==='out1').subtitle.replace(/\n/g,''),'https://queue.example/work');
   assert.equal(cards.find(n=>n.id==='failed').description,'No compiler');
@@ -213,7 +212,7 @@ test('an input tile prints no kind and keeps room for its kind mark',()=>{
   const cards=new Map(prepareCards(records,{},text=>String(text).length*7,text=>text).map(card=>[card.id,card]));
   for(const id of ['get','set','thread'])assert.equal(cards.get(id).kindLabel,undefined,`${id} names no kind`);
   assert.equal(cards.get('get').height,cards.get('thread').height,'every tile of one line is one height');
-  assert.deepEqual(cards.get('inputs').inputGroups.map(group=>group.kind),['request','background'],'the collection still lists every kind it holds');
+  assert.deepEqual(cards.get('inputs').inputGroups.map(group=>group.kind),['request','continuous'],'the collection still lists every kind it holds');
   const [long]=prepareCards([{id:'long',title:'a'.repeat(30),activation:'command'}],{},text=>String(text).length*7,text=>text);
   assert.ok(long.title.split('\n').every(line=>line.length*7<=cardText-kindMark),'the title wraps beside the kind mark');
 });
@@ -243,4 +242,12 @@ test('an input collection is headed Inputs, whatever the page titles it',()=>{
   assert.equal(card.heading,'Входы');
   assert.equal(card.name,'redis-server (executable)');
   assert.deepEqual(overviewHeading(card,card.overviewMinWidth,measure).lines,['Входы']);
+});
+
+// The canvas names an inline callable as the column does (owner,
+// 2026-09-30: tiles still read "ReplicateCommand.Run (inline)").
+test('an input written inline is named as the reading names it',()=>{
+  const [input]=prepareCards([{id:'run',title:'ReplicateCommand.Run (inline)',activation:'command'}],{},text=>String(text).length*7,(key,...values)=>values.reduce((text,value,i)=>text.replace(`{${i}}`,value),'translated '+key));
+  assert.equal(input.name,'translated anonymous function in ReplicateCommand.Run');
+  assert.doesNotMatch(input.title,/inline/);
 });

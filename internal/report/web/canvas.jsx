@@ -119,13 +119,13 @@ function Part({data}) {
   const standaloneLines=heading?Math.floor((heading.height-12-heading.title.split('\n').length*16-16)/15):0;
   const standaloneText=standaloneLines>0;
   if(deep)return <div className={`flow-part flow-part-deep flow-${data.category} ${data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''}`}
-      style={{width:box.width,height:box.height,transform:`translate(${data.fillOffset?.x||0}px,${data.fillOffset?.y||0}px) scale(${scale})`,transformOrigin:'top left'}}>
+      style={{width:box.width,height:box.height,transform:`scale(${scale})`,transformOrigin:'top left'}}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     <strong style={{fontSize:28/grid.divisor,lineHeight:`${40/grid.divisor}px`,padding:`${20/grid.divisor}px ${32/grid.divisor}px 0`}}>{data.name||data.title}</strong>
     <PartSymbols symbols={data.symbols} calls={data.symbolCalls} width={box.width} height={box.height} grid={grid} member={data.member}/>
     <Handle type="source" position={Position.Bottom} isConnectable={false}/>
   </div>;
-  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''} ${data.member?.alone?'flow-part-has-chosen':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`translate(${data.fillOffset?.x||0}px,${data.fillOffset?.y||0}px) scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
+  return <div className={`flow-part flow-${data.category} ${data.category==='input'?'':data.lane==='core'?'flow-core':data.lane==='triggers'?'flow-entry':''} ${heading?'flow-standalone-part':''} ${data.member?.alone?'flow-part-has-chosen':''}`} data-input-id={data.activation?data.id:undefined} style={heading?{width:heading.width,height:heading.height,transform:`scale(${scale})`,transformOrigin:'top left'}:data.fill?{width:data.fill.width,height:data.fill.height,transform:`scale(${scale||1})`,transformOrigin:'top left'}:scale&&scale!==1?{width:data.originalWidth,height:data.originalHeight,transform:`scale(${scale})`,transformOrigin:'top left'}:undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false}/>
     {data.roleLabel&&<span className={`flow-role-symbol flow-role-${data.lane}`} role="img" aria-label={data.roleLabel}/> }
     <strong data-input-name={data.activation?'':undefined}>{data.activation&&<KindMark kind={data.activation}/>}{heading?.title||data.title}</strong>
@@ -133,7 +133,8 @@ function Part({data}) {
         browser that draws the 1.5px border 1px wide leaves a 226px column,
         where pykrx's 225.39px "Fetches Korean market fundamentals" fit whole
         and the card kept an empty line. */}
-    {data.description&&(!heading||standaloneText)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines,maxHeight:standaloneLines*15}:{WebkitLineClamp:data.descriptionMost||undefined,maxWidth:cardText}}>{data.description}</div>}
+    {data.description&&(!heading||standaloneText)&&<div className="flow-description" style={heading?{WebkitLineClamp:standaloneLines,maxHeight:standaloneLines*15}:{WebkitLineClamp:data.descriptionMost||undefined,maxWidth:cardText}}
+      title={heading?data.description:undefined}>{data.description}</div>}
     {data.subtitle&&<div className="flow-address">{data.subtitle}</div>}
     {/* A part too dense to read its tiles where it fits shows the chosen one alone. */}
     {data.member?.alone&&data.symbols?.[data.member.chosen]&&<span className="flow-part-chosen">{data.symbols[data.member.chosen].name}{data.symbols[data.member.chosen].text&&<em>{data.symbols[data.member.chosen].text}</em>}</span>}
@@ -165,14 +166,17 @@ function Area({data}) {
 function AreaSummary({node,item,heading,enter,select,muted}){
   const {scale,title}=heading;
   // A closed area says what it is: its one-line description takes the whole
-  // lines left under its title.
-  const lines=Math.floor((node.height/scale-12-title.split('\n').length*16-32)/15);
+  // lines left under its title, inside the 6px padding, the card's 8px gap
+  // and the description's 2px margin (canvas.css), a pixel spare: othello's
+  // areas had cut their descriptions a line short over an empty strip. Cut
+  // short, its title says it whole.
+  const lines=Math.floor((node.height/scale-12-title.split('\n').length*16-11)/15);
   return <div className={`flow-area-summary nopan ${muted?'flow-node-muted':''}`} data-summary-area={node.id}
     style={{transform:`translate(${node.absolute.x}px,${node.absolute.y}px) scale(${scale})`,transformOrigin:'top left',
       width:node.width/scale,height:node.height/scale}}
     onMouseEnter={()=>enter(node.id)} onClick={event=>{event.stopPropagation();select(node.id,event,false);}}>
     <div className="flow-part flow-overview-card flow-overview-compact"><strong>{title}</strong>
-      {item?.summary&&lines>0&&<p className="flow-description" style={{WebkitLineClamp:lines,maxHeight:lines*15}}>{item.summary}</p>}</div>
+      {item?.summary&&lines>0&&<p className="flow-description" style={{WebkitLineClamp:lines,maxHeight:lines*15}} title={item.summary}>{item.summary}</p>}</div>
     {['core','triggers'].includes(item?.lane)&&<span className={`flow-role-symbol flow-role-${item.lane}`} role="img" aria-label={item.roleLabel||item.lane}/>}
   </div>;
 }
@@ -202,6 +206,10 @@ function FrameTitle({node,item,focused,enter,select,muted}) {
   return <div className={`flow-area-title nopan ${focused?'flow-area-title-focus':''} ${muted?'flow-node-muted':''} ${component?'flow-component-title':communication?'flow-communication-title':inputs?'flow-input-collection':item.lane==='core'?'flow-core-title':item.lane==='triggers'?'flow-entry-title':''}`}
     data-frame-title={node.id}
     style={{transform:`translate(${x}px,${node.absolute.y+12*scale}px) scale(${scale})`,transformOrigin:'top left',maxWidth:node.width/scale-36,
+      // A program's title grows as the camera leaves it only as far as the
+      // band its frame keeps for it: grown past it, "freqtrade" had stood
+      // over its first area and "cmd/litestream" on its border.
+      '--flow-title-max':`${Math.max(17,((item.headerHeight||64)-18)/1.3/Math.max(1,String(item.heading||item.title).split('\n').length))}px`,
       '--flow-zoom':viewport.zoom*scale,
       '--flow-secondary-text':viewport.zoom*scale*13>=12?'visible':'hidden',
       '--flow-small-text':viewport.zoom*scale*12>=12?'visible':'hidden'}}
@@ -400,9 +408,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     }
     const {inset,columnGap:gap}=tileRoom,rect=host.getBoundingClientRect(),margin=24;
     // The declarations stand inside the part's 1px border (canvas.css).
-    const shift=data.fillOffset||{x:0,y:0};
-    const point={x:n.absolute.x+shift.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor),
-      y:n.absolute.y+shift.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor)};
+    const point={x:n.absolute.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor),
+      y:n.absolute.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor)};
     overviewFit=false;hover.pause();preview='';map.clearMapPreview?.();
     arrive([part]);locationSubject=part;
     const drawn=860*1.02/(box.width*scale),across=(rect.width-2*margin)/n.width;
@@ -435,9 +442,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const symbols=data.symbols||[],row=grid.rows[index]||grid.rows[(symbols[index]?.owner||0)-1];
     if(!row)return false;
     const {inset,columnGap:gap}=tileRoom;
-    const shift=data.fillOffset||{x:0,y:0};
-    const x=(n.absolute.x+shift.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor))*v.zoom+v.x;
-    const y=(n.absolute.y+shift.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor))*v.zoom+v.y;
+    const x=(n.absolute.x+scale*(1+(inset+row.column*(grid.tileWidth+gap)+grid.tileWidth/2)/grid.divisor))*v.zoom+v.x;
+    const y=(n.absolute.y+scale*(1+tileHeader(grid.divisor)+(inset+row.y+row.height/2)/grid.divisor))*v.zoom+v.y;
     return x>24&&y>24&&x<host.clientWidth-24&&y<host.clientHeight-24;
   }
   // Whether a frame (a component, an area, an Inputs collection) is drawn
@@ -1009,7 +1015,14 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     },[layoutKey]);
     const standaloneHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
-      return new Map(layout.nodes.filter(n=>!n.frame&&!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component').map(n=>{
+      // The note naming the targets not analysed fills its box with its
+      // words at the size they were measured at (cards.mjs).
+      const note=n=>{
+        const {note}=byID.get(n.id),scale=Math.min(n.width/note.width,n.height/note.height);
+        return [n.id,{scale,title:note.title.join('\n'),width:n.width/scale,height:n.height/scale}];
+      };
+      return new Map(layout.nodes.filter(n=>!n.frame&&(!byID.get(n.id).activation&&byID.get(n.parentId)?.branch==='component'||byID.get(n.id).note)).map(n=>{
+        if(byID.get(n.id).note)return note(n);
         const item=byID.get(n.id),heading=groupHeading(n,item.name||item.title,scale,measure,50,15,58);
         return [n.id,{...heading,width:n.width/heading.scale,height:n.height/heading.scale}];
       }));
@@ -1025,11 +1038,10 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       if(!heading)return {};
       const holdsAreas=(children.get(placed.get(n.id)?.parentId)||[]).some(id=>byID.get(id)?.branch==='area');
       if(!holdsAreas||!detailed.size)return {standaloneHeading:heading};
-      // Among open areas' parts it is a part of their size, in the middle
-      // of the box its closed card shares with them.
-      const item=byID.get(n.id),scale=item?.contentScale||1;
-      const width=Math.min(n.width/scale,item?.originalWidth||n.width/scale),height=Math.min(n.height/scale,item?.originalHeight||n.height/scale);
-      return {fill:{width,height},fillOffset:{x:(n.width-width*scale)/2,y:(n.height-height*scale)/2}};
+      // Among open areas' parts it fills its box, at most half again their
+      // size (split-layout.mjs).
+      const scale=byID.get(n.id)?.contentScale||1;
+      return {fill:{width:n.width/scale,height:n.height/scale}};
     };
     looseOf=looseLook;
     // Every part can be zoomed into until its declarations read at their own size.
@@ -1302,6 +1314,20 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       <div className="flow-card-title">{name(fromFrame)}<i>→</i>{name(intoFrame)}</div>
       {back>0&&<p className="flow-card-count"><button type="button" onClick={openReverse}>{t('Calls the other way')}</button></p>}
     </header>;
+    // An arrow into a program's Outside frame reads as the systems it
+    // reaches, each under the parts calling it: litestream's card had
+    // listed its 89 calls and covered half the map. The calls themselves
+    // are read in the column.
+    const destinations=byID.get(intoFrame)?.branch==='outside'?(()=>{
+      const by=new Map(),reach=(name,from)=>{const parts=by.get(name)||new Set();if(from)parts.add(from);by.set(name,parts);};
+      for(const group of card.groups){
+        for(const pair of group.pairs)reach(pair.name,group.name);
+        for(const fold of group.folds)for(const part of fold.parts)reach(part.name,group.name);
+      }
+      // The most called first, as the card's own index orders them.
+      const order=new Map(card.into.map((part,i)=>[part.name,i]));
+      return [...by].sort((a,b)=>(order.get(a[0])??Infinity)-(order.get(b[0])??Infinity));
+    })():null;
     // It stands by the point of the arrow the pointer rested on.
     const via=lookHandle?.key===key?lookHandle:null;
     return <FloatingCard cardKey={key} side={via?.side||label.side} frame={via?.box||frame} content={String(pinned)} className="flow-arrow-card" head={head}
@@ -1311,7 +1337,9 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         <i>→</i>
         <ul>{card.into.map(part=><li key={part.id}><span>{part.name}</span></li>)}</ul>
       </div>}
-      <CallRows card={card} counts={false}/></FloatingCard>;
+      {destinations?<ul className="flow-card-destinations">{destinations.map(([name,parts])=><li key={name}>
+        <b>{name}</b>{parts.size>0&&<span>← {[...parts].join(', ')}</span>}</li>)}</ul>
+        :<CallRows card={card} counts={false}/>}</FloatingCard>;
   }
   // A click on an arrow end, its chip or its arrowhead, reads its frame's
   // connections in the column, that connection open (owner's 3b); its card

@@ -33,7 +33,8 @@ func TestAnInputWhoseHandlerIsNotEstablishedIsTakenInWhereItsCodeReadsIt(t *test
 			{ID: "g2", Title: "Lookup", Lane: groupindex.LaneCore, MemberSubjectIDs: []string{"lookup"}, EvidenceSubjectIDs: []string{}},
 		},
 		Operations: []groupindex.Operation{
-			{ID: "o1", GroupID: "g1", Name: "-v --verbose", Kind: "command", Source: "model", Location: location(7), HandlerUnknown: true, DeclaredBy: "parse"},
+			{ID: "o1", GroupID: "g1", Name: "-v --verbose", Kind: "command", Source: "model", Location: location(7), HandlerUnknown: true, DeclaredBy: "parse",
+				Aliases: []groupindex.OperationAlias{{Name: "--loud", Location: location(9)}, {Name: "--loud", Location: location(10)}, {Name: "-V", Location: location(11)}}},
 			{ID: "o2", GroupID: "g1", SubjectID: "run", Name: "run", Kind: "command", Source: "fact", Location: location(3)},
 			{ID: "o3", GroupID: "g1", Name: "get", Kind: "request", Source: "model", Location: location(21), HandlerUnknown: true, DeclaredBy: "table"},
 		},
@@ -65,6 +66,11 @@ func TestAnInputWhoseHandlerIsNotEstablishedIsTakenInWhereItsCodeReadsIt(t *test
 	}
 	if !option.HandlerUnknown || option.InputOwner != "" || option.OperationGroup != "Command line" {
 		t.Fatalf("the option's node: %+v", option)
+	}
+	// Its other spellings of one value are read with it, each once, in
+	// source order ("also written --loud, -V").
+	if option.Spellings != "--loud, -V" {
+		t.Fatalf("the option's other spellings: %q", option.Spellings)
 	}
 	if handled.HandlerUnknown || handled.InputOwner == "" {
 		t.Fatalf("the handled input lost its part: %+v", handled)

@@ -242,6 +242,10 @@ type pageMapNode struct {
 	// Written is an input's registration as the code wrote it: a table's
 	// row with its arity and flags.
 	Written string
+	// Spellings are an input's other spellings of one value, in source
+	// order (GroupsIndex Operation.Aliases: litestream's storageClass is
+	// also read as storage-class), joined for its reading.
+	Spellings string
 	// Sets are, for a setting, the fields its branch writes (settingSets),
 	// one JSON list.
 	Sets string

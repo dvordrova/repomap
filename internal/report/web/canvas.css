@@ -68,7 +68,7 @@
 .flow-defs{position:absolute;width:0;height:0}
 /* An arrow's handle: a wide unpainted stroke over it takes the pointer
    (canvas.jsx RoutedEdge); the arrow itself is what the reader points at. */
-.flow-enabled .flow-edge .flow-edge-hit{stroke:transparent;stroke-width:calc(14px / var(--flow-zoom,1));fill:none;pointer-events:stroke!important;cursor:pointer}
+.flow-enabled .flow-edge .flow-edge-hit{stroke:transparent;stroke-width:calc(10px / var(--flow-zoom,1));fill:none;pointer-events:stroke!important;cursor:pointer}
 .flow-enabled .system-selection{min-height:32px;margin:8px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .flow-enabled .system-path-note{font-size:13px}
 .flow-enabled .system-results{max-height:190px;overflow:auto}
@@ -125,7 +125,7 @@
 .flow-color-key{margin-left:auto}
 .flow-component-meta{font-size:12px;font-weight:400;line-height:16px;color:#66758a;margin-top:8px}
 .flow-component-role{font-size:13px;line-height:18px;font-weight:600;white-space:pre-line;color:#39455a;margin-top:8px}
-.flow-component-title>strong{font-size:max(17px,calc(17px / var(--flow-zoom,1)));line-height:1.3}
+.flow-component-title>strong{font-size:min(var(--flow-title-max,40px),max(17px,calc(17px / var(--flow-zoom,1))));line-height:1.3}
 
 .system-reaching-inputs{border-top:1px solid #d4dce6;margin-top:16px;padding-top:12px}.system-reaching-inputs h6{margin:12px 0 6px;color:#536176}.system-reaching-inputs .system-neighbours{margin:0}
 .system-reading-home h4{font-size:15px;margin:0 0 12px;color:#243044}
@@ -226,7 +226,11 @@
 .flow-card-rows>.flow-card-sides{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;grid-column:1/-1}
 .flow-card-sides>b.flow-card-program{font-weight:600}
 .flow-card-sides>em{font-style:normal;color:#8492a6}
-.flow-card-row em{font-style:normal;color:#8492a6;font-size:11.5px}
+.flow-card-row em{font-style:normal;color:#8492a6;font-size:11.5px;margin-left:.6em}
+.flow-card-destinations{list-style:none;margin:0;padding:6px 14px 6px 22px;font:400 13px/19px system-ui;color:#243044}
+.flow-card-destinations>li{margin:0 0 6px}
+.flow-card-destinations b{font-weight:600}
+.flow-card-destinations span{display:block;font-size:12px;line-height:17px;color:#66758a}
 .flow-card-fold{padding:2px 14px 4px 22px}
 .flow-card-fold>.flow-card-row{display:flex;align-items:baseline;flex-wrap:wrap}
 .flow-card-say{font:400 13px/21px system-ui;color:#39455a}

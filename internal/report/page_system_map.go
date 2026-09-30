@@ -491,18 +491,30 @@ func (view *pageView) SystemMap() *pageMap {
 		result.Nodes[positions["system-component-"+section.ID]].Children = strings.Join(append(areas, loose...), " ")
 	}
 	if view.RepoMap != nil {
+		// The targets the run could not read are one small note, "Not
+		// analysed", naming each of them: drawn one card apiece, litestream's
+		// two failed packages had stood as pale cards whose words read at
+		// four pixels. Their connections are the note's.
 		components := map[string]string{}
-		for i, node := range view.RepoMap.Nodes {
+		var unread []string
+		for _, node := range view.RepoMap.Nodes {
 			id := destinations[node.Href]
 			if !node.Analyzed {
-				id = fmt.Sprintf("system-unread-%d", i)
-				add(pageMapNode{ID: id, ItemKind: "Component", FullTitle: node.FullName, Summary: node.Note, Lane: "dependencies"})
+				id = "system-unread"
+				unread = append(unread, node.FullName)
 			}
 			components[node.ID] = id
 		}
+		if len(unread) > 0 {
+			title, err := uiText(view.Language, "Not analysed")
+			if err != nil {
+				title = "Not analysed"
+			}
+			add(pageMapNode{ID: "system-unread", ItemKind: "Component", FullTitle: title, Summary: strings.Join(unread, ", "), Lane: "dependencies"})
+		}
 		for _, e := range view.RepoMap.Edges {
 			from, to := components[e.From], components[e.To]
-			if from != "" && to != "" {
+			if from != "" && to != "" && from != to {
 				result.Edges = append(result.Edges, pageMapEdge{From: from, To: to, Scope: "component", Label: e.Label, Possible: e.Possible})
 			}
 		}

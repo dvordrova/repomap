@@ -16,19 +16,18 @@ test('the closed input collection lists existing catalogue types without duplica
   const records=[{id:'part',title:'Handler',kind:'Core'},...kinds.map((activation,i)=>({id:`input-${i}`,title:i>1?'Same label':`${activation} entry`,activation}))];
   const cards=prepareCards(records,Object.fromEntries(kinds.map((_,i)=>[`input-${i}`,'part'])),text=>text.length*7,text=>text);
   const grouped=groupInputs(cards.filter(n=>n.activation));
-  assert.equal(grouped.length,4);
+  assert.equal(grouped.length,5);
   assert.equal(grouped.find(g=>g.kind==='interaction').inputs.length,2);
-  assert.equal(grouped.find(g=>g.kind==='background').inputs.length,2);
   const html=renderToStaticMarkup(React.createElement(InputTypes,{groups:grouped}));
-  for(const kind of ['request','command','background','interaction'])assert.equal(html.split(`data-input-group-kind="${kind}"`).length-1,1);
+  for(const kind of ['request','command','scheduled','continuous','interaction'])assert.equal(html.split(`data-input-group-kind="${kind}"`).length-1,1);
   assert.match(html,/Incoming requests/);assert.match(html,/Background work/);assert.match(html,/User interactions/);
   assert.doesNotMatch(html,/Same label|data-input-id/,'named inputs are the original graph children, not summary duplicates');
-  // A kind chosen reads the collection at that kind's section: Background
-  // work names its inputs' own kinds (owner, 2026-09-29).
+  // A kind chosen reads the collection at that kind's section (owner,
+  // 2026-09-29).
   const chosen=[];
   const list=InputTypes({groups:grouped,choose:kinds=>chosen.push(kinds)});
   for(const item of list.props.children)item.props.onClick({stopPropagation(){}});
-  assert.deepEqual(chosen,[['request'],['command'],['scheduled','continuous'],['interaction']]);
+  assert.deepEqual(chosen,[['request'],['command'],['scheduled'],['continuous'],['interaction']]);
 });
 
 // A call that leaves its program reads from each program's own code, not

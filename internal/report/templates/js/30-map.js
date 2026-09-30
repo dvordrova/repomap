@@ -562,6 +562,10 @@ function rmDeclarationRelations(map,node,key,nodes){
         html+='<span class="map-card-kind">'+(current?'':rmT('Preview')+' · ')+(node.dataset.itemKind?rmT(node.dataset.itemKind):node.dataset.activation?rmKindHeading(node.dataset.activation):node.dataset.branch==='component'?rmT('Component'):node.dataset.branch?rmT('Area'):rmT('Part'))+'</span>';
       }
       html += '<b>' + escapeText(titleOf(node)) + '</b>';
+      // An input its code reads under several spellings of one value is
+      // named by the first; the others say so in one muted line (litestream's
+      // storageClass, also written storage-class).
+      if (node.dataset.spellings) html += '<p class="map-card-meta map-card-spellings">' + escapeText(rmT('also written {0}', node.dataset.spellings)) + '</p>';
       var summary = node.getAttribute('data-summary');
       // The model's words, told apart by their style alone (a component's
       // role before its purpose); a part's stand under its box.

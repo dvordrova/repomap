@@ -1,9 +1,13 @@
 // Every card represents one saved report item, including each original input.
 export function groupInputs(inputs=[],translate=text=>text) {
-  const kinds=[['request','Incoming requests'],['command','Commands'],['setting','Settings'],['background','Background work'],['interaction','User interactions'],['other','Other operations']];
+  // The kinds as the reading column names its sections (31-reading-column.js
+  // rmInputKindTitles): Redis's Inputs had listed three kinds, scheduled
+  // and continuous work as one, beside a column of four.
+  const kinds=[['request','Incoming requests'],['command','Commands'],['setting','Settings'],['scheduled','Scheduled tasks'],['continuous','Background work'],
+    ['interaction','User interactions'],['consumer','Queue consumers'],['extension','Extension points'],['entry','Kind not established']];
   const groups=new Map(kinds.map(([kind,title])=>[kind,{kind,title:translate(title),inputs:[]}]));
   for(const input of inputs){
-    const kind=['scheduled','continuous'].includes(input.activation)?'background':groups.has(input.activation)?input.activation:'other';
+    const kind=input.activation==='background'?'continuous':input.activation==='queue_consumer'?'consumer':groups.has(input.activation)?input.activation:'entry';
     groups.get(kind).inputs.push(input);
   }
   return [...groups.values()].filter(group=>group.inputs.length);
@@ -27,25 +31,44 @@ export function titleWords(text){
 export function widestWord(text,font,measure){
   return Math.max(0,...titleWords(text).map(word=>measure(word,font)));
 }
-// The widest piece a title can be broken into: a path or an identifier
-// breaks after its separators (breakWord), so "build_helpers/
+// The widest piece a title can be broken into: a path breaks after its
+// slashes (breakWord), so "build_helpers/
 // freqtrade_client_version_align.py" needs its longest piece's width, not
 // the whole name's (owner's reviewer, 2026-09-29: it ran into the zoom
 // mark and pushed its frame 500 pixels wide).
-const separated=/(?<=[/_.:])/u;
+const separated=/(?<=\/)/u;
 export function widestPiece(text,font,measure){
   return Math.max(0,...titleWords(text).flatMap(word=>word.split(separated)).map(piece=>measure(piece,font)));
 }
+// A path breaks after its slashes first ("scripts/rest_client.py", never
+// "scripts/ rest_client. py"); a piece still too wide breaks as any other
+// word, keeping every character. Any other word breaks after a separator or
+// between camelCase words, never before a file's extension; with no such
+// place, where the line ends.
 function breakWord(word,width,font,measure){
+  if(word.includes('/')){
+    const pieces=[''];
+    for(const segment of word.split(/(?<=\/)/)){
+      const last=pieces.length-1;
+      if(measure(pieces[last]+segment,font)<=width){pieces[last]+=segment;continue;}
+      pieces.push(segment);
+    }
+    return pieces.filter(Boolean).flatMap(piece=>measure(piece,font)<=width?[piece]:breakWord(piece.replace(/\//g,'\u2215'),width,font,measure).map(part=>part.replace(/\u2215/g,'/')));
+  }
   const letters=Array.from(word),pieces=[];
+  const extension=at=>letters[at-1]==='.'&&/^[A-Za-z0-9]{1,5}$/.test(letters.slice(at).join(''));
   for(let start=0;start<letters.length;){
     let end=start+1;
     while(end<letters.length&&measure(letters.slice(start,end+1).join(''),font)<=width)end++;
     if(end<letters.length){
-      for(let at=end;at>start+(end-start)/2;at--){
+      let found=false;
+      for(let at=end;at>start;at--){
         const before=letters[at-1],after=letters[at];
-        if(/[/_\-.:]/.test(before)||/[\p{Ll}\d]/u.test(before)&&/\p{Lu}/u.test(after)||after==='('){end=at;break;}
+        if((/[_\-.:]/.test(before)&&!extension(at))||/[\p{Ll}\d]/u.test(before)&&/\p{Lu}/u.test(after)||after==='('){end=at;found=true;break;}
       }
+      // A word with no such place keeps every character, broken where the
+      // line ends: an input's literal is its identity.
+      if(!found&&end>start+1&&extension(end))end--;
       while(end>start+1&&(closing.test(letters[end])||opening.test(letters[end-1])))end--;
     }
     pieces.push(letters.slice(start,end).join(''));start=end;
@@ -96,6 +119,9 @@ export function chipGrid(count){
 // column and those widths broke again in the browser: "Implements Redis set
 // commands and" (225.84px in a 225px column) left "and" alone on a line.
 export const card={width:260,border:1.5,padding:16,zoom:34};
+// The room the note of targets not analysed keeps at the whole map, over
+// its words' own size.
+const noteRoom=1.5;
 export const cardText=card.width-2*card.border-2*card.padding;
 // An input's kind mark before its name: 14px, a 6px gap (canvas.css) and
 // the browser's rounding.
@@ -147,8 +173,17 @@ export function groupHeading(node,title,maxScale,measure,reservedWidth=44,reserv
   return {scale,title:lines(scale).join('\n')};
 }
 
+// A callable written inline is named as the reading column names it
+// (31-reading-column.js rmInlineText): "anonymous function in
+// ReplicateCommand.Run", never GroupsIndex's "ReplicateCommand.Run
+// (inline)" on the canvas beside it.
+export function inlineName(text,translate=text=>text){
+  return typeof text==='string'?text.replace(/([^\s→(]+) \(inline\)/g,(_,home)=>translate('anonymous function in {0}',home).replace('{0}',home)):text;
+}
+
 export function prepareCards(records, _inputOwner, measure, translate) {
   const wrap=(text,width,font)=>wrapText(text,width,font,measure);
+  records=records.map(n=>n.title&&n.title.includes(' (inline)')?{...n,title:inlineName(n.title,translate)}:n);
   const byID=new Map(records.map(n=>[n.id,n]));
   // An input collection's inputs, through the part groups inside it.
   const leavesOf=id=>{const n=byID.get(id);return n?.children?.length?n.children.flatMap(leavesOf):[id];};
@@ -188,7 +223,13 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     // they read at their own size, and the frame keeps their proportion.
     const grid=n.branch==='outside'?chipGrid((n.children||[]).length):null;
     const cardHeight=66-(input?24:0)+title.length*22+descriptionLines*18+(subtitleLines.length?8+subtitleLines.length*18:0);
-    const overviewMinWidth=!n.branch&&!frame&&n.category==='component'?Math.ceil(card.width*.7):grid?grid.width:Math.ceil(Math.max(widestPiece(heading||n.title,collection?'700 13px system-ui':'700 18px system-ui',measure)+(collection?16:64),
+    const unread=!n.branch&&!frame&&n.category==='component';
+    // The note's own words at their own size: its title, and the targets'
+    // names under it (canvas.jsx Part, a standalone heading).
+    const noteWidth=unread?Math.ceil(Math.max(widest(n.title,'600 12px system-ui'),widest(n.summary||'','11px system-ui'))+14):0;
+    const unreadNote=unread?{width:noteWidth,title:wrap(n.title,noteWidth-14,'600 12px system-ui'),
+      height:12+wrap(n.title,noteWidth-14,'600 12px system-ui').length*16+16+wrap(n.summary||'',noteWidth-14,'11px system-ui').length*15+4}:null;
+    const overviewMinWidth=unread?Math.ceil(unreadNote.width*noteRoom):grid?grid.width:Math.ceil(Math.max(widestPiece(heading||n.title,collection?'700 13px system-ui':'700 18px system-ui',measure)+(collection?16:64),
       ...names.map(name=>widest(name,'500 13px system-ui')+32),
       ...inputGroups.map(group=>widest(group.title,'500 13px system-ui')+32+kindMark)));
     // A short target name must not squeeze its area inventory into a column
@@ -203,11 +244,12 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     };
     const overviewPreferredWidth=grid?grid.width:Math.ceil(Math.max(overviewMinWidth,
       ...names.map(name=>32+Math.min(304,twoLineWidth(name)))));
-    // A component the run could not read stands as a card with its name and
-    // why: at the whole map it keeps seven tenths of its size, its name at
-    // twelve pixels, not three (litestream's failed packages/python).
-    const unread=!n.branch&&!frame&&n.category==='component';
-    const overviewHeightAtWidth=unread?width=>width*cardHeight/card.width:grid?width=>width*grid.height/grid.width:['component','communication','inputs'].includes(n.branch)?(width,{availableHeight=Infinity}={})=>{
+    // The targets the run could not read are one note, "Not analysed",
+    // naming them (page_system_map.go): at the whole map it stands among
+    // the programs' summaries with half again their room, its words read
+    // as their headings do (canvas.jsx standaloneHeadings), not as a pale
+    // card read at four pixels.
+    const overviewHeightAtWidth=unread?width=>width*unreadNote.height/unreadNote.width:grid?width=>width*grid.height/grid.width:['component','communication','inputs'].includes(n.branch)?(width,{availableHeight=Infinity}={})=>{
       const heading=overviewHeading(n,width,measure);
       // As the summary draws it (canvas.jsx ComponentOverview): inset 8px in
       // its frame and padded 8px, its heading, a 10px gap, and its kinds 6px
@@ -226,7 +268,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       const controlHeight=28+(n.branch==='communication'?16:32);
       return Math.max(controlHeight,base+(base+list>availableHeight&&rows.length?17+rows[0]:list));
     }:undefined;
-    return {...n,heading,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
+    return {...n,heading,note:unreadNote,category:input?'input':n.category,name:n.title,title:title.join('\n'),labelTitle:label.join('\n'),inputGroups,metadata,role:roleLines.join('\n'),overviewHeightAtWidth,overviewMinWidth,overviewPreferredWidth,
       roleLabel:!input&&['core','triggers'].includes(n.lane)?translate(n.lane==='core'?'Core':'Entrypoints'):'',
       description,descriptionMost,subtitle:subtitleLines.join('\n'),
       labelWidth:180,labelHeight:label.length*16,

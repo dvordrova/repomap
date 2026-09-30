@@ -57,13 +57,16 @@ func TestSystemMapKeepsInventoryAndExactCrossComponentDestinations(t *testing.T)
 	if nodes["system-out-1"].FullTitle != "Queue" || nodes["system-out-2"].FullTitle != "Queue" {
 		t.Fatal("equal destination names merged unrelated records")
 	}
-	for _, id := range []string{"system-component-front", "system-component-backend", "system-component-worker", "system-unread-0", "system-unread-1"} {
+	for _, id := range []string{"system-component-front", "system-component-backend", "system-component-worker", "system-unread"} {
 		if _, ok := nodes[id]; !ok {
 			t.Fatalf("component %s absent", id)
 		}
 	}
 	if nodes["system-inputs-worker"].Children != "task" || nodes["system-inputs-worker"].Owner != "worker" || strings.Contains(nodes["system-component-worker"].Children, "task") {
 		t.Fatal("input lost its owning catalogue or remained inside the component")
+	}
+	if nodes["system-unread"].FullTitle != "Not analysed" || nodes["system-unread"].Summary != "failed, failed2" {
+		t.Fatalf("the targets not read are not one note naming them: %+v", nodes["system-unread"])
 	}
 	if view.Sections[0].Map.Edges[0].To != "remote" {
 		t.Fatal("display mutated the original component view")
@@ -284,7 +287,7 @@ func TestSystemMapKeepsConnectionsToUnreadComponents(t *testing.T) {
 		Edges: []pageRepoEdge{{From: "source", To: "failed", Label: "uses", Possible: true}},
 	}}
 	got := view.SystemMap()
-	if len(got.Edges) != 1 || got.Edges[0].From != "system-component-front" || got.Edges[0].To != "system-unread-1" || !got.Edges[0].Possible {
+	if len(got.Edges) != 1 || got.Edges[0].From != "system-component-front" || got.Edges[0].To != "system-unread" || !got.Edges[0].Possible {
 		t.Fatalf("unread component lost its original connection: %+v", got.Edges)
 	}
 }

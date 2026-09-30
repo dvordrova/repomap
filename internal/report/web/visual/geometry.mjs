@@ -86,7 +86,7 @@ export function lintCanvas(level,near=3,readNames=true){
     const points=[...d.matchAll(/([ML])\s*([-\d.e]+)[ ,]([-\d.e]+)/g)].map(m=>({move:m[1]==='M',...screen({x:+m[2],y:+m[3]})}));
     return {id:g.dataset.edgeId,ends:(g.dataset.edgeEnds||'').split(' ').filter(Boolean),points,hit:!!g.querySelector('[data-edge-hit]')};
   }).filter(route=>route.points.length>1);
-  const segments=route=>route.points.slice(1).flatMap((p,i)=>p.move?[]:[[route.points[i],p]]);
+  const segments=route=>route.points.slice(1).flatMap((p,i)=>p.move?[]:[[route.points[i],p,i]]);
   const distance=([a,b],r)=>{
     const x1=Math.min(a.x,b.x),x2=Math.max(a.x,b.x),y1=Math.min(a.y,b.y),y2=Math.max(a.y,b.y);
     return Math.hypot(Math.max(0,r.left-x2,x1-r.right),Math.max(0,r.top-y2,y1-r.bottom));
@@ -110,12 +110,24 @@ export function lintCanvas(level,near=3,readNames=true){
       if(!on&&inside({left:point.x-1,right:point.x+1,top:point.y-1,bottom:point.y+1}))out.push({kind:'loose-end',element:`${route.id} at ${box.id}`,level});
     }
   }
-  // 4c: no two arrows run on one line.
-  for(let i=0;i<routes.length;i++)for(let j=i+1;j<routes.length;j++)for(const [a,b] of segments(routes[i]))for(const [c,d] of segments(routes[j])){
-    const flat=(p,q)=>Math.abs(p.y-q.y)<.5,upright=(p,q)=>Math.abs(p.x-q.x)<.5;
-    const span=(p,q,r,s,axis)=>Math.min(Math.max(p[axis],q[axis]),Math.max(r[axis],s[axis]))-Math.max(Math.min(p[axis],q[axis]),Math.min(r[axis],s[axis]));
-    if(flat(a,b)&&flat(c,d)&&Math.abs(a.y-c.y)<1&&span(a,b,c,d,'x')>6||upright(a,b)&&upright(c,d)&&Math.abs(a.x-c.x)<1&&span(a,b,c,d,'y')>6){
-      if(inside({left:Math.min(a.x,b.x),right:Math.max(a.x,b.x)+1,top:Math.min(a.y,b.y),bottom:Math.max(a.y,b.y)+1})){out.push({kind:'coincide',element:`${routes[i].id} and ${routes[j].id}`,level});break;}
+  // 4c: no two arrows run on one line, but for a trunk: arrows leaving one
+  // box, or reaching one, along one path until they part (split-layout.mjs:
+  // one lane, one point on a side, one arrowhead), not two arrows drawn
+  // over each other.
+  // Two legs are one trunk when both routes go on from them to one box
+  // they share along one path.
+  const same=(p,q)=>Math.abs(p.x-q.x)<.5&&Math.abs(p.y-q.y)<.5;
+  const walks=(route,index)=>[[route.ends[0],route.points.slice(0,index+1).reverse()],[route.ends.at(-1),route.points.slice(index+1)]];
+  const trunk=(r,q,si,sj)=>walks(r,si).some(([box,path])=>walks(q,sj).some(([other,rest])=>box&&box===other&&path.length===rest.length&&path.every((p,k)=>same(p,rest[k]))));
+  for(let i=0;i<routes.length;i++)for(let j=i+1;j<routes.length;j++){
+    const first=segments(routes[i]),second=segments(routes[j]);
+    for(const [a,b,si] of first)for(const [c,d,sj] of second){
+      if(trunk(routes[i],routes[j],si,sj))continue;
+      const flat=(p,q)=>Math.abs(p.y-q.y)<.5,upright=(p,q)=>Math.abs(p.x-q.x)<.5;
+      const span=(p,q,r,s,axis)=>Math.min(Math.max(p[axis],q[axis]),Math.max(r[axis],s[axis]))-Math.max(Math.min(p[axis],q[axis]),Math.min(r[axis],s[axis]));
+      if(flat(a,b)&&flat(c,d)&&Math.abs(a.y-c.y)<1&&span(a,b,c,d,'x')>6||upright(a,b)&&upright(c,d)&&Math.abs(a.x-c.x)<1&&span(a,b,c,d,'y')>6){
+        if(inside({left:Math.min(a.x,b.x),right:Math.max(a.x,b.x)+1,top:Math.min(a.y,b.y),bottom:Math.max(a.y,b.y)+1})){out.push({kind:'coincide',element:`${routes[i].id} and ${routes[j].id}`,level});break;}
+      }
     }
   }
   // 7: every text reads at 11px or more where the camera stands, at the

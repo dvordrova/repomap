@@ -1,5 +1,5 @@
 import React from 'react';
-import {kindIcon,kindNames} from './kind-icons.mjs';
+import {kindIcon,kindIcons,kindNames} from './kind-icons.mjs';
 const t=(...args)=>globalThis.rmT?globalThis.rmT(...args):args[0];
 // An input's kind as a small muted mark before its name, the kind's name on
 // hover (kind-icons.mjs).
@@ -9,7 +9,7 @@ const t=(...args)=>globalThis.rmT?globalThis.rmT(...args):args[0];
 if(typeof window!=='undefined'){
   window.rmKindNames=kindNames;
   window.rmKindMark=kind=>{
-    const icon=kindIcon(kind==='background'?'continuous':kind);if(!icon||typeof document==='undefined')return null;
+    const icon=kindIcons[kind==='background'?'continuous':kind];if(!icon||typeof document==='undefined')return null;
     const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
     svg.setAttribute('viewBox','0 0 16 16');svg.setAttribute('width','13');svg.setAttribute('height','13');
     svg.setAttribute('class','flow-kind-mark');svg.setAttribute('aria-hidden','true');svg.dataset.kindMark=kind;
@@ -19,7 +19,7 @@ if(typeof window!=='undefined'){
 }
 export function KindMark({kind}){
   const icon=kindIcon(kind);if(!icon)return null;
-  const title=t(kindNames[kind]);
+  const title=t(kindNames[kind]||'Kind not established');
   return <svg className="flow-kind-mark" data-kind-mark={kind} viewBox="0 0 16 16" width="14" height="14" role="img" aria-label={title}>
     <title>{title}</title>{icon.paths.map((d,i)=><path key={i} d={d}/>)}</svg>;
 }
@@ -30,8 +30,8 @@ export function scrollInventory(event){
 }
 // A collection's kinds of inputs; a kind chosen reads the collection at
 // that kind's section (owner, 2026-09-29: "Settings" had opened the
-// reading at its 96 requests). Its kinds are its inputs' own, in order:
-// Background work is scheduled and continuous work.
+// reading at its 96 requests), the kinds the column names (cards.mjs
+// groupInputs).
 export function InputTypes({groups,lit=new Set(),choose}){
   const pick=(group,event)=>{event.stopPropagation();choose([...new Set(group.inputs.map(input=>input.activation))],event);};
   return <ul className="flow-input-types" onWheelCapture={scrollInventory}>{groups.map(group=><li key={group.kind} data-input-group-kind={group.kind}

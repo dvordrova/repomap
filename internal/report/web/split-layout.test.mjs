@@ -213,10 +213,8 @@ test('connected dense component inventories keep All readable without stretching
   const span=axis=>Math.max(...roots.map(node=>node.absolute[axis]+node[axis==='x'?'width':'height']))-Math.min(...roots.map(node=>node.absolute[axis]));
   const zoom=Math.min(.44,(width-2*overviewInset)/span('x'),(height-2*overviewInset)/span('y'));
   for(const node of roots){
-    const record=records.find(record=>record.id===node.id),physicalWidth=node.width*zoom,physicalHeight=node.height*zoom;
-    assert.ok(physicalWidth+1e-7>=record.overviewMinWidth,`${node.id}: the complete heading fits at All`);
-    assert.ok(physicalHeight+1e-7>=record.overviewHeightAtWidth(physicalWidth,{availableHeight:height-2*overviewInset}),
-      `${node.id}: the heading and inventory entrance fit at All`);
+    const record=records.find(record=>record.id===node.id);
+    assert.ok(overviewScale(record,node.width*zoom,node.height*zoom,height-2*overviewInset)>=.5,`${node.id}: its summary is drawn at half its size or more at All`);
   }
   assert.equal(layout.nodes.length,fixture.records.length);
   assert.equal(layout.edges.flatMap(edge=>edge.relations).length,fixture.relations.length);
