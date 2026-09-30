@@ -49,6 +49,37 @@
   its name, linked: Redis's Primary reads `server.masterhost`
   (redis.c:7219), then Called from Replication `syncWithMaster()`.
 
+## 2026-09-30 — Column, reviewer pass 3: fold markers, calls under each part once, no call of itself, relations said once, Inputs grouped as on the canvas
+
+- **Folds:** "Called from", "Calls into", Main flow, Files, State changes,
+  "Its handlers by input" and a caller's dispatch line show their ▶ again
+  (flex layout and an outside marker had hidden it); a CSS test fails any
+  column summary laid out without a marker. Connection lines and flow rows
+  keep their own link and twist.
+- **Calls:** a flow stands under each part once, parts by first call
+  (`groupFlowByPart`): redis main's "Server lifecycle and cron" 4→1,
+  FreqtradeBot.process's "Trading bot core" 3→1, litestream
+  NewReplicaFromConfig's "Replication and restore" 2→1. A call of itself is
+  one quiet "calls itself" line (othello.ai/move, undo-turn).
+- **Relations:** said once per run of names (`rmEndRuns`): "cmdTable passes
+  these as callbacks", "call() calls one of these request handlers through
+  cmdTable"; Client I/O's "Calls into" names each command once under
+  "possibly called, passed as callbacks:"; callers read "may call it:". No
+  list in the four renders repeats one relation word on three rows.
+- **Inputs:** each kind's inputs in the canvas's groups and order
+  (projection `inputGroups`, tested equal to `inputGroupsByPart`), each
+  group folded to its part's box past twelve inputs: Inputs screens redis
+  6.5→3, litestream 9.8→5.3, freqtrade 16.8→10.9.
+- **Key:** the legend's Core/entry mark stands near its small card's left
+  end, as on the cards since 06e44215.
+- **Data, not fixed here:** freqtrade's two `--all` (and `--print-json`) are
+  two rows (cli_options.py `list_exchanges_all`, `list_pairs_all`); they part
+  once nested under their subcommands (476f0e69), which the saved runs
+  predate. move's call of itself is a call of its other arity, which the
+  Clojure facts do not tell from recursion.
+- **Checks:** page shape on the four saved renders changed only by the above
+  (and 06e44215's Outside rename); make test / make vet pass (7e936508).
+
 ## 2026-09-30 — A command group keeps its word; marks, sentences and pattern re-registrations name no input
 
 - **Command group (coordinator's item 1, 4075c377):** the dest drop now

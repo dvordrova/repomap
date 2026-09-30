@@ -290,7 +290,8 @@ experiments are in the [non-normative archive](../archive/2026-09-10/README.md).
   background and readable role/purpose text. No duplicate `Reading` line or
   close action takes space above the canvas; that space holds the map's one
   key, not hover prose: each kind of card as a small card in the fill and
-  border the canvas paints it with, its mark on its border; the solid "calls"
+  border the canvas paints it with, its mark on its top border near its
+  left end as on the cards; the solid "calls"
   and dashed "possible calls" strokes; and, when a part's tiles draw one, the
   dotted slate link from a function to the type it returns or from a type to
   the function taking it ("returns or takes a type"), drawn as the tiles
@@ -729,9 +730,18 @@ with every place in its words (`site`).
 A part's reading heading gives its kind and its frame as a link up ("Part ·
 {frame} ↑"). "Called from" lists the parts calling into it, each
 in its box with its caller → callee pairs, and under each caller the
-declarations of this part it reaches, calls first, then other relations in
-their own words, each list by name; every input registered at the part is one
-neighbour, Inputs. Many callers fold each part to its line. Then come the
+declarations of this part it reaches, each list by name; every input
+registered at the part is one neighbour, Inputs. A relation is said once
+for its run of names, in plain words (reviewer, 2026-09-30: "— passed as a
+callback" had followed each of thirteen names): each name once with every
+relation it has there, plain calls first, then the names of one set of
+relations under one quiet line ("possibly called, passed as callbacks:"),
+a lone name keeping its words on its row; a caller whose names are one run
+says it on its own line ("cmdTable passes these as callbacks"), and a
+caller dispatching into the part through one site reads "call() calls one
+of these request handlers through cmdTable", folded. Callers of a
+declaration and "Called from" of an outside call are said alike ("may
+call it:"). Many callers fold each part to its line. Then come the
 part's box, the model's description, its files one to a line, its key
 declarations in bold one to a line, and every other declaration under one
 closed "Other declarations" fold, file by file, those reached from outside (a
@@ -843,8 +853,10 @@ are written: GroupsIndex's calls, callbacks, executions and library calls
 from the declaration, ordered by their first call site's file, line and
 column, each callee once with every place it is called, a dispatch site one
 call ("one of {n}"). It has no caption repeating the function's name and no
-count or meta word. Each run of calls into one part stands under that part's
-box (its description on hover, a click reads it). A library call is no row:
+count or meta word. The calls stand under each part's box once (its
+description on hover, a click reads it), the parts in the order of their
+first call, each part's calls in written order (reviewer, 2026-09-30: redis
+main had shown "Server lifecycle and cron" four times). A library call is no row:
 one muted line ends the step, "also calls: …", each name once in
 written order, its library on hover. A declaration no part holds is a plain
 name whose own flow still opens, carried in the calling reading, so no call
@@ -857,7 +869,9 @@ compiler builtin (the adapter's `builtin` package) is never a call of its
 own. A twist, shown while an openable call is pointed at or focused, opens
 the call in place to its callee's flow, grouped the same way, with no box
 repeated when all stay in its part. A call one of its ancestors makes says
-"↑ shown above" instead. What a call hands over ("passed as a callback") and
+"↑ shown above" instead. A function never lists itself among its calls: its
+call of itself is one quiet line, "calls itself" (othello.ai/move's calls
+had opened with "othello.ai/move() ↑ shown above"). What a call hands over ("passed as a callback") and
 where it is written ("called at {file}:{line} · {line}") are on its name's
 hover.
 A function's calls stand under "Calls". Its helper calls fold under one
@@ -1033,7 +1047,10 @@ stand between the names, the relation's kind when the phrase wraps the callee
 keeps them. Rows of one caller and one relation kind in one evidence list fold
 into one line with their count and callees, each row inside with its sources.
 A list with folds has one "Open all" control that opens and closes them
-together. What a reader opens in the column (a fold, Open all, any disclosure)
+together. Every closed section shows its ▶ (▼ open), the same wherever it
+stands (reviewer, 2026-09-30: "Called from" and "Calls into" had read as
+empty headings between two rules); a flow's call and a connection's line
+open by their own twist and link. What a reader opens in the column (a fold, Open all, any disclosure)
 comes into view: the column scrolls by what it overflows at its foot, no
 further than bringing the opened summary to its top; closing scrolls nothing,
 and a reading restored with its evidence open keeps its place. The column
@@ -1222,7 +1239,11 @@ declaring code uses, the model's words that some are matched by name to
 another program's inputs, and its inputs one to a line, each reading its
 input, a name that is a sentence (a query parameter's description) in the
 reading's own type, not code; then the inputs no catalogue holds; requests
-first. Each input's record, with its registration
+first. Within each, the inputs stand in the groups the canvas draws in the
+collection, in its order, each under its part's box, the loose ones after
+them (reviewer, 2026-09-30: Redis's ninety requests had read A to Z beside
+the canvas's groups); a kind of more than twelve inputs in several groups
+folds each group to its box. Each input's record, with its registration
 line as written, is its own reading.
 
 The component's "Entrypoints" link lands on the program's entry, from
