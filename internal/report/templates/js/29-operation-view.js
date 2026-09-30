@@ -272,8 +272,25 @@ function rmInputPathSection(path,title,partNode,inputNode,choose,read,flowShown)
     if(branches.length){flow.appendChild(rmEl('p','meta',rmT('then into:')));branches.forEach(function(entry){flow.appendChild(spineLine(entry,'system-path-spine-branch'));});}
     if(helpers.length){var line=rmEl('p','system-path-spine-helpers');line.appendChild(rmEl('span','meta',rmT('helpers:')+' '));helpers.forEach(function(entry,i){if(i)line.appendChild(document.createTextNode(', '));line.appendChild(name(entry.decl));});flow.appendChild(line);}
     section.appendChild(flow);
-    var named=all.map(function(part){var node=partNode(part.part);return node?node.dataset.title:part.title||'';}).filter(Boolean);
-    if(all.length){var more=rmEl('details','system-path-deeper');more.appendChild(rmEl('summary','',rmT('Parts on this path: {0}',named.join(', '))));all.forEach(function(part){step(part,more);});parts.appendChild(more);}
+    // The line names the program's parts the path enters, each once; what
+    // it calls outside the program stands in the fold under "Outside", one
+    // head per destination with its calls (critic, 2026-09-30: litestream's
+    // replicate had named "init" four times and raw calls among its parts).
+    var title=function(part){var node=partNode(part.part);return node?node.dataset.title:part.title||'';};
+    var own=all.filter(function(part){return !part.outside;}),named=[],outside=[],at={};
+    own.forEach(function(part){var t=title(part);if(t&&named.indexOf(t)<0)named.push(t);});
+    all.forEach(function(part){
+      if(!part.outside)return;
+      var t=title(part);
+      if(at[t]===undefined){at[t]=outside.length;outside.push({part:part.part,title:part.title,entered:[]});}
+      outside[at[t]].entered=outside[at[t]].entered.concat(part.entered||[]);
+    });
+    if(all.length){
+      var more=rmEl('details','system-path-deeper');more.appendChild(rmEl('summary','',rmT('Parts on this path: {0}',named.join(', '))));
+      own.forEach(function(part){step(part,more);});
+      if(outside.length){more.appendChild(rmEl('p','map-reading-label',rmT('Outside')));outside.forEach(function(part){step(part,more);});}
+      parts.appendChild(more);
+    }
   }else all.forEach(function(part){step(part,parts);});
   if(parts.childElementCount)section.appendChild(parts);
   return section;

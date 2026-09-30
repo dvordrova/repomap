@@ -271,3 +271,28 @@ func TestAnInputsKeysStandAsWrittenWithWhatEachNames(t *testing.T) {
 		t.Fatalf("key-pressed's keys: %q, want %q", strings.Join(keys, ", "), want)
 	}
 }
+
+// The tiles and peers a reach enters beyond the program's parts are marked
+// outside, so "Parts on this path" names the parts only (critic,
+// 2026-09-30: litestream's replicate had named "init" four times and raw
+// calls among its parts).
+func TestAnInputsPathMarksWhatItEntersOutsideTheParts(t *testing.T) {
+	index := groupindex.Index{Target: programindex.Target{ID: "server"}, Groups: []groupindex.Group{{ID: "g1", Title: "Replication daemon"}},
+		Operations: []groupindex.Operation{{ID: "replicate", Kind: "command", SubjectID: "run"}}}
+	builder := &pageBuilder{indexes: []groupindex.Index{index}, subjects: map[string]subjectRef{}}
+	decls := builder.pathDecls("server", func(string) string { return "" })
+	reach := groupindex.Reach{OperationID: "replicate", Groups: []groupindex.ReachedGroup{{GroupID: "g1"}}}
+	extra := []pageInputPart{{Part: "system-server-out-b1", Title: "sql.Open", Depth: 1, Entered: []pageCall{{0, 0, 0}}}}
+	raw := builder.inputPath(&builder.indexes[0], index.Operations[0], reach, decls, func(id string) string { return "n-" + id }, func(id string) string { return "n-" + id }, extra)
+	var path pageInputPath
+	if err := json.Unmarshal([]byte(raw), &path); err != nil {
+		t.Fatal(err)
+	}
+	var said []string
+	for _, part := range path.Parts {
+		said = append(said, fmt.Sprintf("%s outside=%t", part.Title, part.Outside))
+	}
+	if strings.Join(said, "; ") != "Replication daemon outside=false; sql.Open outside=true" {
+		t.Fatalf("parts = %q", said)
+	}
+}

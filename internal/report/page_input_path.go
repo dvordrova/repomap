@@ -145,6 +145,10 @@ type pageInputPart struct {
 	// Handler names the input's handler in the part holding it, the one
 	// part the reach enters at depth 0, so its heading is not left empty.
 	Handler *int `json:"handler,omitempty"`
+	// Outside marks a tile or peer the reach enters beyond the program's
+	// parts: an outside call's destination, never one of the parts on the
+	// path (critic, 2026-09-30).
+	Outside bool `json:"outside,omitempty"`
 }
 
 // pageInputPath is an input's reading of its reach (GroupsIndex's Reach and
@@ -423,7 +427,10 @@ func (builder *pageBuilder) inputPath(index *groupindex.Index, operation groupin
 		}
 		path.Parts = append(path.Parts, part)
 	}
-	path.Parts = append(path.Parts, extra...)
+	for _, part := range extra {
+		part.Outside = true
+		path.Parts = append(path.Parts, part)
+	}
 	if steps := reach.Spine.Steps; len(steps) > 0 {
 		partOf := map[string]string{}
 		for _, group := range index.Groups {

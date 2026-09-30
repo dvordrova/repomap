@@ -494,6 +494,19 @@ assert.equal(spine.find(e=>e.className==='system-path-spine-helpers').textConten
 const fold=section.children.at(-1).children.find(c=>c.className==='system-path-deeper');
 assert.ok(fold.children[0].textContent.includes('CLI, Trading bot core, Configuration'),'the fold names its parts, never counts them');
 assert.ok(!/\d+ more parts/.test(section.textContent),'no part is hidden behind a count');
+// The line names the program's parts only, each once; the calls outside the
+// program stand under "Outside" in the fold, one head per destination with
+// its calls (critic, 2026-09-30: litestream's replicate had named "init"
+// four times and raw calls among its parts).
+const outside=rmInputPathSection({decls:decls.concat([{name:'sql.Open'},{name:'sql.DB.BeginTx'},{name:'exec.CommandContext'}]),
+  parts:[{part:'p0',title:'CLI',depth:0,handler:0},{part:'p1',title:'Trading bot core',depth:1,entered:[[0,1,0]]},{part:'p1',title:'Trading bot core',depth:2},
+    {part:'t1',title:'Database',depth:3,entered:[[5,10,0]],outside:true},{part:'t2',title:'Database',depth:4,entered:[[5,11,0]],outside:true},{part:'t3',title:'exec.CommandContext',depth:2,entered:[[1,12,0]],outside:true}],
+  spine:{steps:[{decl:0,part:'p0'},{decl:1,part:'p1'}]}},'trade',()=>null,()=>null,()=>{},()=>{});
+const folded=outside.children.at(-1).children.find(c=>c.className==='system-path-deeper');
+assert.equal(folded.children[0].textContent,'Parts on this path: CLI, Trading bot core','the parts only, each once: '+folded.children[0].textContent);
+const heads=folded.all(e=>e.className==='system-path-part').map(e=>e.textContent);
+assert.deepEqual(heads,['CLI','Trading bot core','Trading bot core','Database','exec.CommandContext'],'each outside destination once, after the parts');
+assert.ok(folded.children.some(c=>c.className==='map-reading-label'&&c.textContent==='Outside'),'the destinations stand under Outside');
 `)
 }
 
