@@ -18,6 +18,16 @@
   setting to a reader of the setting option; Clojure `core.clj`'s
   `(q/sketch … :draw draw-greeting …)` an extension to a reader of the
   extension option. Both tests fail with the old criteria.
+- **Runs (2e3fe992, default cache, `--no-serve --no-open`; reports in the
+  scratchpad's `eye5-data1/`):** redis `032743` exit 0, 39 live calls:
+  `hash-max-zipmap-value` setting 0.67/0.32 (was 0.54/0.45, refused);
+  `weights` command 0.53/0.43 (a 0.48/0.48 near-tie before). freqtrade
+  `032756` exit 0, 245 live calls: REQUIRED_ORDERTYPES still none
+  0.52/setting 0.48 (refused); DUST_PER_COIN back as settings at 0.61;
+  `allow` (0.51/0.49) and `amount_precision` (0.49/0.45) refused;
+  `syslog`/`journald` answered none. othello `033203` exit 0, 22 live
+  calls: `:draw` extension (named `draw`), and `:setup`, `:update`
+  extensions too.
 
 ## 2026-09-30 — Canvas batch 2: no merged arrows round a cycle, script cards to their summary, Outside at its program's scale, program-to-program cards, no line in a card's source
 
