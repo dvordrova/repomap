@@ -5,47 +5,77 @@
 // whole map, each program, area, part, Inputs and Outside frame, the
 // destinations) and the cards of a few arrows there.
 
-// The journeys, by the repository a report reads (its toolbar's name).
+// The journeys, by the repository a report reads (its toolbar's name): the
+// answer a newcomer came for, read in the rendered column after the clicks
+// a journey allows (choosing the input, and opening its State changes). A
+// name merely appearing in a list is no answer (critic, 2026-09-30).
+// `check` returns [passed, what it found].
+const helperInternals=/^(list|listNode|listIter|dict|dictEntry|dictht|dictIterator|sds|sdshdr|robj|redisObject|zskiplist|zskiplistNode|intset|sharedObjectsStruct|aeEventLoop)$/;
 export const journeys=[
-  {repo:/^litestream/i,input:'replicate',says:'the column shows the handler ReplicateCommand.Run, not folded',
-    check:page=>page.evaluate(()=>window.__journey.visible(/\bReplicateCommand\.Run\b/)?'visible':'')},
-  {repo:/^freqtrade/i,input:'trade',says:'FreqtradeBot.process is visible within one expand',
-    check:async page=>{
-      if(await page.evaluate(()=>window.__journey.visible(/\bFreqtradeBot\.process\b/)))return 'visible';
-      const opened=await page.evaluate(()=>window.__journey.expandTo(/\bFreqtradeBot\.process\b/));
-      if(!opened)return '';
-      await page.waitForTimeout(400);
-      return await page.evaluate(()=>window.__journey.visible(/\bFreqtradeBot\.process\b/))?'after one expand':'';
-    }},
-  {repo:/^redis/i,input:'set',says:'redisDb or dict is named among its State changes',
-    check:page=>page.evaluate(()=>window.__journey.inSection('State changes',/\b(redisDb|dict)\b/)?'named':'')},
-  {repo:/^othello/i,input:'key-pressed',says:'its keys are listed (n, u, h, 1, 2)',
-    check:page=>page.evaluate(()=>{const found=window.__journey.listed(['n','u','h','1','2']);return found.length===5?'all five':found.length?`only ${found.join(', ')}`:'';})},
+  {repo:/^othello/i,input:'key-pressed',says:'each key with the command it maps to (n new game, u undo, h, 1, 2)',
+    check:page=>page.evaluate(()=>{
+      const want={n:/new|restart/i,u:/undo/i,h:/\p{L}{3}/u,1:/\p{L}{3}/u,2:/\p{L}{3}/u};
+      const lines=window.__journey.lines(),pairs=[],bare=[];
+      for(const [key,command] of Object.entries(want)){
+        // A row starting with the key ("n → new-game", ":n new-game"),
+        // the command after it.
+        const token=new RegExp(`^[\\s"':\\\\]*${key}["']?(?=$|[\\s:,→=-])`);
+        const paired=lines.find(line=>token.test(line)&&command.test(line.replace(token,'')));
+        if(paired)pairs.push(key);else bare.push(key);
+      }
+      return [bare.length===0,bare.length?`no command beside ${bare.join(', ')}`:'every key with its command'];
+    })},
+  {repo:/^litestream/i,input:'replicate',says:'handled by ReplicateCommand.Run, and among its State changes the replica, WAL or snapshots',
+    check:page=>page.evaluate(()=>{
+      const handler=window.__journey.handler(),named=/\bReplicateCommand\.Run\b/.test(handler);
+      // A change of the replica, the WAL or snapshots, named by what changes
+      // or by how (SQLite changed through checkpointV3, setPersistWAL), not
+      // a command's or a config's fields.
+      const about=/replica|wal|snapshot|ltx|checkpoint/i;
+      const effects=window.__journey.effects().filter(effect=>!/command|config|settings|options/i.test(effect.owner)&&effect.rows.length&&(about.test(effect.owner)||effect.rows.some(row=>about.test(row))));
+      return [named&&effects.length>0,`handled by "${handler||'?'}"; ${effects.length?effects.map(effect=>effect.owner).slice(0,4).join(', '):'no replica/WAL/snapshot change'}`];
+    })},
+  {repo:/^freqtrade/i,input:'trade',says:'FreqtradeBot.process reached, and among its State changes the database (Trade) or exchange orders',
+    check:page=>page.evaluate(()=>{
+      const reached=window.__journey.visible(/\bFreqtradeBot\.process\b/);
+      const effects=window.__journey.effects().filter(effect=>/^(Trade|Order|Database|LocalTrade)$/.test(effect.owner)&&effect.rows.length);
+      return [reached&&effects.length>0,`${reached?'process reached':'process not shown'}; ${effects.length?effects.map(effect=>effect.owner).join(', '):'no Trade, Order or Database change'}`];
+    })},
+  {repo:/^redis/i,input:'set',says:'redisDb.dict among its State changes, and no helper internals (listNode, dict.used)',
+    check:page=>page.evaluate(helpers=>{
+      const effects=window.__journey.effects(),internals=new RegExp(helpers);
+      const dict=effects.some(effect=>effect.owner==='redisDb'&&effect.rows.some(row=>/^dict\b/.test(row)));
+      const inner=effects.filter(effect=>internals.test(effect.owner)).map(effect=>`${effect.owner}.${effect.rows[0]?.split(' ')[0]||''}`);
+      return [dict&&!inner.length,`${dict?'redisDb.dict':'no redisDb.dict'}${inner.length?`; helper internals: ${inner.join(', ')}`:''}`];
+    },helperInternals.source)},
 ];
 
-// Page side: what a journey looks for in the reading column.
+// Page side: what a journey reads in the column.
 export function journeyHelpers(){
   const column=()=>document.querySelector('.map-inspector');
-  const shown=el=>el.checkVisibility?.({checkOpacity:true,checkVisibilityCSS:true})!==false&&el.getClientRects().length>0;
-  const leaves=()=>[...column().querySelectorAll('*')].filter(el=>![...el.children].some(child=>child.textContent.trim()));
   // The column's text as a reader sees it: what is rendered (no closed
   // fold's content), a dotted name whole across the pieces its line breaks
   // split it into (rmDotBreaks).
   const read=()=>column().innerText.replace(/[\u200b\u00ad]/g,'');
+  const text=el=>el.innerText.replace(/[\u200b\u00ad]/g,'').replace(/\s+/g,' ').trim();
   window.__journey={
     visible:pattern=>pattern.test(read()),
-    // One click: the closed fold whose content names it.
-    expandTo:pattern=>{
-      const fold=[...column().querySelectorAll('details:not([open])')].find(details=>pattern.test(details.textContent));
-      if(!fold)return false;
-      fold.querySelector(':scope>summary')?.click();return true;
+    lines:()=>read().split('\n').map(line=>line.trim()).filter(Boolean),
+    // What the input's reading says handles it: "handled by X".
+    handler:()=>{const lines=[...column().querySelectorAll('.map-card-handler,p,div')].map(text).filter(said=>/^handled by /.test(said)).sort((a,b)=>a.length-b.length);return lines.length?lines[0].replace(/^handled by /,''):'';},
+    // Its State changes, the fold opened (the one click a journey allows):
+    // each owner (a type, the database, the files) with its rows.
+    effects:()=>{
+      const fold=[...column().querySelectorAll('details')].find(details=>text(details.querySelector(':scope>summary')||details)==='State changes');
+      if(!fold)return [];
+      fold.open=true;
+      const out=[];
+      for(const el of fold.children){
+        if(el.tagName==='H6')out.push({owner:text(el),rows:[]});
+        else if(out.length&&(el.tagName==='UL'||el.tagName==='OL'))out.at(-1).rows.push(...[...el.children].map(text));
+      }
+      return out;
     },
-    inSection:(title,pattern)=>{
-      const head=[...column().querySelectorAll('h4,h5,h6,summary,strong')].find(el=>el.textContent.trim()===title);
-      const section=head?.closest('section,details')||head?.parentElement;
-      return !!section&&pattern.test(section.textContent);
-    },
-    listed:keys=>keys.filter(key=>leaves().some(el=>shown(el)&&el.textContent.trim().replace(/^[:\\"'`]+|["'`]+$/g,'')===key)),
   };
 }
 
@@ -140,4 +170,54 @@ export function levels(){
   const of=test=>nodes.filter(test).map(n=>({id:n.id,title:n.dataset.title,branch:n.dataset.branch||(n.dataset.activation?'input':n.id.startsWith('n-')?'part':n.dataset.itemKind||'')}));
   return [...of(n=>n.dataset.branch==='component'),...of(n=>n.dataset.branch==='inputs'),...of(n=>n.dataset.branch==='outside'),
     ...of(n=>n.dataset.branch==='communication'),...of(n=>n.dataset.branch==='area'),...of(n=>!n.dataset.branch&&!n.dataset.activation&&n.id.startsWith('n-'))];
+}
+
+// Page side: "Parts on this path" names parts only, each once: no raw
+// calls, no "init" four times (critic, 2026-09-30).
+export function lintPath(level){
+  const out=[];
+  const parts=new Set([...document.querySelectorAll('[data-map-explorer] [data-node]')].filter(n=>n.id.startsWith('n-')&&!n.dataset.activation&&!n.dataset.branch).map(n=>n.dataset.title));
+  for(const summary of document.querySelectorAll('.map-inspector details>summary')){
+    const said=/^Parts on this path:\s*(.*)$/.exec(summary.innerText.replace(/[​­]/g,'').replace(/\s+/g,' ').trim());
+    if(!said)continue;
+    const count=new Map();
+    for(const name of said[1].split(/,\s*/).map(name=>name.trim()).filter(Boolean))count.set(name,(count.get(name)||0)+1);
+    const raw=[...count.keys()].filter(name=>!parts.has(name)),twice=[...count].filter(([,n])=>n>1).map(([name,n])=>`${name} ×${n}`);
+    if(raw.length)out.push({kind:'path parts',element:`not parts: ${raw.slice(0,6).join(', ')}${raw.length>6?` and ${raw.length-6} more`:''}`,level});
+    if(twice.length)out.push({kind:'path parts',element:`more than once: ${twice.slice(0,6).join(', ')}`,level});
+  }
+  return out;
+}
+
+// A folded list longer than this is a wall behind its fold: the 95th
+// percentile of the 2,592 distinct lists folded away in the four reports
+// of 2026-09-30 10:17 (redis, litestream, freqtrade, othello; rows of li,
+// div, p or button runs at every level and a sample of inputs: p50 6, p90
+// 37, p95 67, p99 136, the longest 336 call rows under one heading).
+export const longestFold=67;
+
+// Page side: the lists folded away as the column is rendered (inside a
+// closed fold, not inside a fold of their own within it): each run of
+// sibling rows of one kind, and its fold's name.
+export function collapsedLists(){
+  const out=[];
+  for(const details of document.querySelectorAll('.map-inspector details:not([open])')){
+    const name=(details.querySelector(':scope>summary')?.textContent||'').replace(/\s+/g,' ').trim().slice(0,50);
+    for(const container of [details,...details.querySelectorAll('*')]){
+      if(container!==details&&container.closest('details')!==details)continue;
+      const runs=new Map();
+      for(const row of container.children){if(row.tagName==='SUMMARY')continue;const key=`${row.tagName}.${row.className}`;runs.set(key,(runs.get(key)||0)+1);}
+      for(const [kind,rows] of runs)if(rows>=2&&/^(LI|DIV|P|BUTTON)\./.test(kind))out.push({fold:name,kind,rows});
+    }
+  }
+  return out;
+}
+
+// Page side: a few inputs to read, spread over the report, the journeys'
+// among them.
+export function inputSample(named,count=6){
+  const inputs=[...document.querySelectorAll('[data-map-explorer] [data-node]')].filter(n=>n.dataset.activation);
+  const chosen=inputs.filter(n=>named.includes(n.dataset.title));
+  for(let i=0;i<count&&inputs.length;i++){const n=inputs[Math.floor(i*inputs.length/count)];if(!chosen.includes(n))chosen.push(n);}
+  return chosen.map(n=>({id:n.id,title:n.dataset.title,branch:'input'}));
 }

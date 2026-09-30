@@ -201,17 +201,25 @@ named by `REPOMAP_JOURNEY_REPORTS` (a comma list, served as
 8875 (with `--output` in a directory of its own).
 
 Its frozen journeys print PASS or FAIL per repository and never fail the
-run, reading the column as it is rendered (a dotted name whole across its
-line breaks): litestream's `replicate` shows its handler
-`ReplicateCommand.Run` in the column, unfolded; freqtrade's `trade` shows `FreqtradeBot.process`
-within one expand; redis's `set` names `redisDb` or `dict` among its State
-changes; othello's `key-pressed` lists its keys n, u, h, 1 and 2. Its
-reading lints are tests, walking the whole map and every program, Inputs,
-Outside, destination, area and part as the explorer reads them, with two
+run. Each tests the answer a newcomer came for in the rendered column
+(dotted names whole across their line breaks) after the clicks it allows,
+choosing the input and opening its State changes, never a name merely
+listed: othello's `key-pressed` shows each key with its command (n with a
+new game, u with undo, h, 1, 2); litestream's `replicate` is handled by
+`ReplicateCommand.Run`, not a bare `Run`, and changes the replica, WAL or
+snapshots; freqtrade's `trade` reaches `FreqtradeBot.process` and changes
+the database (Trade, Order) or its orders; redis's `set` changes
+`redisDb.dict` and lists no helper internals (`listNode`, `dict.used`,
+shared reply objects). Its reading lints are tests, walking the whole map,
+every program, Inputs, Outside, destination, area and part and a sample of
+inputs (the journeys' among them) as the explorer reads them, with two
 arrow cards at each frame: no `file:line` in a row of the column or a
 card, no entry twice in one list, no word cut by an ellipsis or the
-browser, no Outside chip naming its own program, and no empty card or
-frame in sight. Each offender is printed with its level.
+browser, no Outside chip naming its own program, no empty card or frame in
+sight, "Parts on this path" naming parts only, each once, and no fold
+holding more than 67 rows of one kind (the 95th percentile of the folded
+lists of the four reports measured on 2026-09-30) under no named fold of
+their own. Each offender is printed with its level.
 
 Each system has one compact input collection outside its component frame on
 the initial map. Its existing input types remain readable; opening the collection

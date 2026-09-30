@@ -1,5 +1,24 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — Journeys test the answer, not a name in a list; path parts and long folds as lints
+
+- **Journeys** (critic): othello `key-pressed` each key with its command;
+  litestream `replicate` handled by `ReplicateCommand.Run` (not a bare
+  `Run`) and changing the replica, WAL or snapshots; freqtrade `trade`
+  reaching `FreqtradeBot.process` and changing Trade/Order/Database; redis
+  `set` changing `redisDb.dict` with no helper internals. Clicks allowed:
+  the input, then its State changes.
+- **Lints:** "Parts on this path" names parts only, each once; no fold
+  holds more than 67 rows of one kind (p95 of 2,592 distinct folded lists
+  in the four reports: p50 6, p90 37, p99 136, max 336). A sample of
+  inputs is read too; settling waits for the drawing as well (a card
+  measured mid-redraw had read as half empty).
+- **Served reports of 10:38:** othello PASS, freqtrade PASS, litestream
+  FAIL (handled by "Run"), redis FAIL (sharedObjectsStruct.czero). Lints:
+  long folds redis 51, litestream 10, freqtrade 68; path parts litestream
+  2 (init ×4, raw calls), freqtrade 3; repeated 1 (--erase); no canvas
+  offender, no cut.
+
 ## 2026-09-30 — A handler's table keys, a program's exchange with itself, a keyword entry as written (data 2)
 
 - **Handed tables (53059a16, f5de6e86):** a table a handler looks up with

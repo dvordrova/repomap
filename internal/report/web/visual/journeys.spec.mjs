@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {basename} from 'node:path';
-import {journeys,journeyHelpers,lintLevel,lintOutside,levels} from './journeys.mjs';
+import {journeys,journeyHelpers,lintLevel,lintOutside,lintPath,collapsedLists,longestFold,inputSample,levels} from './journeys.mjs';
 
 // The frozen journey check and the reading lints (journeys.mjs) on reports
 // rendered by `repomap render` (no provider call), named by
@@ -21,7 +21,9 @@ async function open(page,index){
 async function settle(page){
   let previous='',stable=0;
   for(let i=0;i<100&&stable<2;i++){
-    const v=await page.evaluate(()=>JSON.stringify(document.querySelector('[data-map]').captureViewport?.())+document.querySelector('.map-inspector')?.textContent.length);
+    // The camera, the reading and the drawing all at rest: a layer opening
+    // after the camera stops redraws the cards.
+    const v=await page.evaluate(()=>JSON.stringify(document.querySelector('[data-map]').captureViewport?.())+document.querySelector('.map-inspector')?.textContent.length+':'+document.querySelector('.flow-root')?.innerHTML.length);
     stable=v===previous?stable+1:0;previous=v;await page.waitForTimeout(120);
   }
 }
@@ -39,9 +41,9 @@ for(const [index,file] of reports.entries()){
         if(n)document.querySelector('[data-map-explorer]').exploreNode(n.id);
         return n?.id||'';
       },journey.input);
-      let result='';
-      if(id){await settle(page);result=await journey.check(page);}
-      lines.push(`${result?'PASS':'FAIL'}  ${repo} · ${journey.input} → ${journey.says}${result?` (${result})`:id?'':' (no such input)'}`);
+      let [passed,found]=[false,'no such input'];
+      if(id){await settle(page);[passed,found]=await journey.check(page);}
+      lines.push(`${passed?'PASS':'FAIL'}  ${repo} · ${journey.input} → ${journey.says} (${found})`);
     }
     console.log(lines.join('\n'));
     test.info().annotations.push(...lines.map(line=>({type:'journey',description:line})));
@@ -52,9 +54,12 @@ for(const [index,file] of reports.entries()){
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await open(page,index);
     const repo=await repoOf(page),findings=[];
-    await page.evaluate(`window.__lintLevel=${lintLevel.toString()}`);
+    await page.evaluate(`window.__lintLevel=${lintLevel.toString()};window.__lintPath=${lintPath.toString()};window.__collapsedLists=${collapsedLists.toString()}`);
     const lint=async(level,cards=2)=>{
       findings.push(...await page.evaluate(level=>window.__lintLevel(level),`${repo} ${level}`));
+      findings.push(...await page.evaluate(level=>window.__lintPath(level),`${repo} ${level}`));
+      findings.push(...(await page.evaluate(()=>window.__collapsedLists())).filter(list=>list.rows>longestFold)
+        .map(list=>({kind:'long fold',element:`"${list.fold}" folds ${list.rows} rows (${list.kind}) under no named fold`,level:`${repo} ${level}`})));
       // The cards of a few arrows in sight, opened as the pointer opens them.
       const hits=await page.evaluate(()=>{
         const canvas=document.querySelector('.flow-root').getBoundingClientRect();
@@ -72,7 +77,8 @@ for(const [index,file] of reports.entries()){
     };
     findings.push(...await page.evaluate(lintOutside));
     await lint('whole map');
-    for(const level of await page.evaluate(levels)){
+    const named=journeys.map(journey=>journey.input);
+    for(const level of [...await page.evaluate(levels),...await page.evaluate(`(${inputSample.toString()})(${JSON.stringify(named)})`)]){
       await page.evaluate(id=>document.querySelector('[data-map-explorer]').goToLevel({id,kind:'frame'}),level.id);
       await settle(page);
       await lint(`${level.branch} ${level.title}`,level.branch==='part'?0:2);
