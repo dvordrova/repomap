@@ -1,5 +1,21 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — An interface field's stored implementations are its call's alternatives (data 2)
+
+- **655a1985:** a store under a branch puts its value in an interface field
+  like any store (owner: several targets are alternatives, no cautious
+  unknown); only a parameter stored under a branch stays a witness.
+  litestream: `Replica.Sync`'s `r.Client.WriteLTXFile` calls the 8 replica
+  clients; calls 40 unresolved → alternatives (122 → 82 unresolved, 51 of
+  them interface calls no store names), +272 quiet binds_implementation
+  connections; drawn arrows whole map 9 → 9, program level +1.
+  replicate's Outside: SQLite, litestream, heartbeat → also S3, GCS, Azure
+  Blob, OSS, NATS, SFTP, WebDAV. Go fixture `replica.sync`.
+- **2ca48544:** a fan with no dispatch site no longer throws "Extra report
+  UI parameter" (it stopped litestream's reading lints).
+- Run 20260930-091021 exit 0, 47 s; journeys: replicate PASS; lints 8 long
+  folds (as before).
+
 ## 2026-09-30 — Column batch 4: a handler with its type and case, State changes from the data inventory, same-named options apart, long lists by groups
 
 - **Handler:** "handled by" names a method with its type and a case input
