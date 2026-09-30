@@ -918,11 +918,14 @@ type Boundary struct {
 	Source string `json:"source,omitempty"`
 	// Destination and Basis are MODEL. Address is one original observed value
 	// selected by a closed ref; empty means its runtime address is unknown.
-	Destination string   `json:"destination,omitempty"`
-	Address     string   `json:"address,omitempty"`
-	Basis       string   `json:"basis,omitempty"`
-	Method      string   `json:"method,omitempty"`
-	Values      []string `json:"values"`
+	// DestinationTarget is MODEL: the target of this repository's program
+	// the destination is, when the destination question chose one.
+	Destination       string   `json:"destination,omitempty"`
+	DestinationTarget string   `json:"destination_target,omitempty"`
+	Address           string   `json:"address,omitempty"`
+	Basis             string   `json:"basis,omitempty"`
+	Method            string   `json:"method,omitempty"`
+	Values            []string `json:"values"`
 	// Name is an entry's name: the words of its registration the model
 	// chose, restored as written and joined by one space in the order it
 	// wrote them. Empty when no choice was accepted.

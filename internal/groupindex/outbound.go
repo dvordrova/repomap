@@ -21,10 +21,13 @@ type OutboundCall struct {
 	Kind        string                 `json:"kind"`
 	External    string                 `json:"external,omitempty"`
 	Destination string                 `json:"destination,omitempty"`
-	Address     string                 `json:"address,omitempty"`
-	Basis       string                 `json:"basis,omitempty"`
-	Method      string                 `json:"method,omitempty"`
-	Values      []string               `json:"values"`
+	// DestinationTarget is the target of this repository's program the
+	// destination is (atlas Boundary.DestinationTarget), a model choice.
+	DestinationTarget string   `json:"destination_target,omitempty"`
+	Address           string   `json:"address,omitempty"`
+	Basis             string   `json:"basis,omitempty"`
+	Method            string   `json:"method,omitempty"`
+	Values            []string `json:"values"`
 	// DataIDs are the data records this call names: the tables of its
 	// statement, joined by name to the extracted schema.
 	DataIDs  []string              `json:"data_ids,omitempty"`
@@ -81,7 +84,7 @@ func projectOutbound(program programindex.Index, target atlas.Target, groups map
 			Uses: uses,
 			ID:   boundary.ID, SubjectID: local[sourceRefs[boundary.ObjectID]], GroupID: groups[boundary.BoxID],
 			FactID: boundary.FactID, Kind: boundary.Kind, External: boundary.External,
-			Destination: boundary.Destination, Address: boundary.Address, Basis: boundary.Basis,
+			Destination: boundary.Destination, DestinationTarget: boundary.DestinationTarget, Address: boundary.Address, Basis: boundary.Basis,
 			Method: boundary.Method, Values: cloneStrings(boundary.Values), Summary: boundary.Line, Source: source,
 			Location:        programindex.Location{Path: boundary.Path, Line: boundary.LineNo, Column: max(1, boundary.Column)},
 			ProgramNotNamed: boundary.ProgramNotNamed,

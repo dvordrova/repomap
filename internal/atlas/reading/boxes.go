@@ -641,8 +641,11 @@ type boundaryState struct {
 	// program's destination is named (destination_groups.go); a program
 	// not listed takes destination.
 	destinations map[string]string
-	address      string
-	basis        string
+	// destinationTargets are, by program, the target of this repository's
+	// program an outgoing row's destination is (programDestinations).
+	destinationTargets map[string]string
+	address            string
+	basis              string
 	// handlerUnknown marks an entry whose handler is not established: an
 	// option a call declares, a value handed over. It stays where its call
 	// is written and binds to no part.

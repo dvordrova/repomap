@@ -318,6 +318,18 @@ func (builder *pageBuilder) joinOwnPrograms(index *groupindex.Index, section *pa
 		}
 	}
 	reached := make(map[string]map[string]bool)
+	// A destination the reading chose as one of the report's programs
+	// (GroupsIndex DestinationTarget) is that program: freqtrade-client's
+	// one generic request, whose path the code computes, reaches no one of
+	// freqtrade's inputs, and it had stood as "Freqtrade Server" outside.
+	for _, call := range index.Outbound {
+		if name := strings.ToLower(canonicalDestination(call.Destination)); call.DestinationTarget != "" && name != "" && call.Kind != atlas.BoundaryRunsProgram {
+			if reached[name] == nil {
+				reached[name] = make(map[string]bool)
+			}
+			reached[name][call.DestinationTarget] = true
+		}
+	}
 	for _, row := range section.Outbound {
 		name := strings.ToLower(canonicalDestination(row.Destination))
 		if row.Program || name == "" {

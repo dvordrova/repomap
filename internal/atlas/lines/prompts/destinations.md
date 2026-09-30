@@ -34,11 +34,14 @@ all of its calls.
 Fill `destination` with the outside system these calls reach, the service
 or program at the other end as a newcomer would name it.
 `context.destination_catalog` lists, as `d*` refs, the systems the
-program's outside packages reach, each with its `packages`. Choose the
-entry that is the system these calls reach. When no entry is, write
-`other: ` and that system's short name, written as a proper name: a
-capital first letter and no article. Name it by what it is to this
-program: a vendor's service by its product name, any other system by its
-role for this program, such as the server a client sends its commands to
-or the primary a replica copies from. A package, a protocol, a host, a
-URL, a file path or a key is not a system's name.
+program's outside packages reach, each with its `packages`, and, marked
+`program`, this repository's other programs, each with what it `takes` in
+while it runs: the requests it serves and the addresses it listens on.
+Choose the entry that is the system these calls reach; when they reach a
+running copy of one of those programs, choose that program's ref. When no
+entry is, write `other: ` and that system's short name, written as a
+proper name: a capital first letter and no article. Name it by what it is
+to this program: a vendor's service by its product name, any other system
+by its role for this program, such as the server a client sends its
+commands to or the primary a replica copies from. A package, a protocol, a
+host, a URL, a file path or a key is not a system's name.

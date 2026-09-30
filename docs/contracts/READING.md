@@ -1110,7 +1110,7 @@ window ("Freqtrade database" 39 rows, "Database" 24); its 61 rows (two
 `func.count` rows are now part of their `select`) are one destination,
 "Database", asked once. A destination whose rows' packages
 name exactly one system gives it to its rows without a package; one naming
-none is asked once (`repomap.atlas.destinations.v1`, table
+none is asked once (`repomap.atlas.destinations.v2`, table
 `atlas_boundaries`, round 3, the text model, `Memoize` by the item under the
 subject `destination:<key>`, `lines/prompts/destinations.md`); one naming
 several is shown by the facts not to be one destination, so each row keeps
@@ -1127,8 +1127,17 @@ once). No author documentation, README claim or source context is sent. The
 catalogue is built from the systems' names for the destination's program
 (`destination_catalog`, `destination_options`): one `d*` entry per name
 (case-insensitively), in name order, listing the `packages` reaching it; a
-package answered `none` gives none. It offers names only; no entry
-establishes a call's runtime role. One program's destinations of one
+package answered `none` gives none. After them, marked `program`, come the
+repository's other programs that serve requests or listen while they run,
+each with what it `takes` (those entries by kind, method and name); never
+the destination's own program (a replica's primary is another copy of it),
+and a fixture only to fixtures of its root. A program chosen is the
+boundary's `destination_target`, and the report draws the destination into
+that program: freqtrade-client's one request, whose path the code computes,
+matched none of freqtrade's inputs and had stood as "Freqtrade Server"
+beside it (5 of 5 draws chose freqtrade, and scripts/ws_client.py's
+WebSocket 5 of 5). It offers names only; no entry establishes a call's
+runtime role. One program's destinations of one
 catalogue share windows, whose context names the program (`program`, its
 target name); another program's never see them: beside the clients'
 identical calls in one window, redis-server's connect to its master was

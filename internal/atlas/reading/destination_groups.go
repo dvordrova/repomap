@@ -188,10 +188,10 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 				}
 			}
 		case len(systems) == 0:
-			questions = append(questions, asked{key: key, members: unnamed, catalog: catalog})
+			questions = append(questions, asked{key: key, members: unnamed, catalog: lines.WithPrograms(catalog, r.programDestinations(group[0].target))})
 		default:
 			for _, member := range unnamed {
-				questions = append(questions, asked{key: "row\x00" + member.state.place.ID + "\x00" + member.target, members: []destinationMember{member}, catalog: catalog})
+				questions = append(questions, asked{key: "row\x00" + member.state.place.ID + "\x00" + member.target, members: []destinationMember{member}, catalog: lines.WithPrograms(catalog, r.programDestinations(member.target))})
 			}
 		}
 	}
@@ -250,8 +250,15 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 		chosen := "not decided"
 		if answer := answers[i].answer; answer != nil {
 			chosen = destinationChoice(def, question.catalog, answer["destination"])
+			program := lines.DestinationTarget(question.catalog, answer["destination"])
 			for _, member := range question.members {
 				name(member, chosen)
+				if program != "" {
+					if member.state.destinationTargets == nil {
+						member.state.destinationTargets = make(map[string]string)
+					}
+					member.state.destinationTargets[member.target] = program
+				}
 			}
 		}
 		fmt.Fprintf(&r.tables, "%s: destination %s · %d calls · %s\n", lines.StageBoundaries, readable.Replace(question.key), len(question.members), chosen)

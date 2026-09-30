@@ -11,13 +11,13 @@ var destinationsPrompt string
 
 // DestinationsContract names the question asking what the outgoing calls
 // of one destination reach.
-const DestinationsContract = "repomap.atlas.destinations.v1"
+const DestinationsContract = "repomap.atlas.destinations.v2"
 
 // DestinationNames asks, of each destination of the outgoing calls, which
-// outside system it is (repomap.atlas.destinations.v1, in the boundaries
-// stage, the text model). A destination is the calls whose walked values
-// end at the same place, a code fact; its name is asked once for all of
-// them, never per call. The one cell chooses a catalogue entry or writes a
+// outside system it is, or which of this repository's other programs
+// (repomap.atlas.destinations.v2, in the boundaries stage, the text model).
+// A destination is the calls whose walked values end at the same place, a
+// code fact; its name is asked once for all of them, never per call. The one cell chooses a catalogue entry or writes a
 // name after the free prefix; refused, it names none.
 func DestinationNames() table.Definition {
 	return table.Definition{Stage: StageBoundaries, Contract: DestinationsContract, System: destinationsPrompt, Memoize: true,

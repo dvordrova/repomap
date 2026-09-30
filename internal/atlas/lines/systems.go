@@ -63,11 +63,38 @@ func SystemName(cell string) string {
 }
 
 // Destination is one entry of a boundary row's closed catalogue: a system
-// the outside packages of the row's programs reach, and those packages.
+// the outside packages of the row's programs reach, and those packages, or
+// one of this repository's other programs (Program) with what it takes in
+// while it runs (Takes). Target is that program's target, never sent.
 type Destination struct {
 	Ref      string   `json:"ref"`
 	Value    string   `json:"value"`
-	Packages []string `json:"packages"`
+	Packages []string `json:"packages,omitempty"`
+	Program  bool     `json:"program,omitempty"`
+	Takes    []string `json:"takes,omitempty"`
+	Target   string   `json:"-"`
+}
+
+// WithPrograms appends this repository's other programs to a catalogue of
+// systems, their refs going on from the catalogue's last.
+func WithPrograms(catalog, programs []Destination) []Destination {
+	offered := append([]Destination(nil), catalog...)
+	for _, program := range programs {
+		program.Ref = fmt.Sprintf("d%d", len(offered)+1)
+		offered = append(offered, program)
+	}
+	return offered
+}
+
+// DestinationTarget is the target of the program a chosen ref names; empty
+// for a system, an unknown ref or a name after the free prefix.
+func DestinationTarget(catalog []Destination, ref string) string {
+	for _, entry := range catalog {
+		if entry.Ref == ref && entry.Program {
+			return entry.Target
+		}
+	}
+	return ""
 }
 
 // Destinations is the closed catalogue of the named packages: one entry per
