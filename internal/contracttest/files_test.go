@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -176,7 +177,8 @@ func TestEveryLanguageKeepsTheFilesItsCodeReaches(t *testing.T) {
 		got := files(graph, index, []string{"os.Create", "os.ReadFile"}, map[string]reading.ArgumentChoice{"os.Create": {Position: 1}, "os.ReadFile": {Position: 1}})
 		want := []string{
 			fmt.Sprintf("fixture-state.db: os.Create createFixtureState@%d", fixtureLine(t, "go", "internal/storefixture/fixtures.go", `os.Create("fixture-state.db")`)),
-			fmt.Sprintf("{store.path}-journal: os.ReadFile ReadFixtureJournal@%d", fixtureLine(t, "go", "internal/storefixture/fixtures.go", "os.ReadFile(store.journalPath())")),
+			fmt.Sprintf("{path}-journal: os.ReadFile ReadFixtureJournal@%d", fixtureLine(t, "go", "internal/storefixture/fixtures.go", "os.ReadFile(store.journalPath())")),
+			fmt.Sprintf("{path}.tmp: os.ReadFile ReadFirstStagedJournal@%d", fixtureLine(t, "go", "internal/storefixture/fixtures.go", `os.ReadFile(stagedJournals()[0].path + ".tmp")`)),
 			fmt.Sprintf("(not established): os.ReadFile LoadServerConfig@%d", fixtureLine(t, "go", "internal/storefixture/tool_cli.go", "os.ReadFile(path)")),
 		}
 		if !reflect.DeepEqual(got, want) {
@@ -195,6 +197,13 @@ func TestEveryLanguageKeepsTheFilesItsCodeReaches(t *testing.T) {
 		got := files(graph, index, []string{"pathlib.Path.open"}, map[string]reading.ArgumentChoice{"pathlib.Path.open": {Receiver: true}, "pathlib.Path": {Position: 1}})
 		if want := []string{fmt.Sprintf("(not established): pathlib.Path.open read_settings@%d", fixtureLine(t, "python", "src/fixture_app/outside_results.py", "with Path(name).open()"))}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("the Python fixture's files = %q\nwant %q", got, want)
+		}
+		// create_datadir's datadir=None names no file, and its f-string reads
+		// by the key it looks config up by.
+		got = files(graph, index, []string{"pathlib.Path"}, map[string]reading.ArgumentChoice{"pathlib.Path": {Position: 1}})
+		datadir := fixtureLine(t, "python", "src/fixture_app/outside_results.py", "return Path(datadir) if datadir")
+		if want := fmt.Sprintf("{user_data_dir}/data: pathlib.Path create_datadir@%d", datadir); !slices.Contains(got, want) || slices.ContainsFunc(got, func(file string) bool { return strings.HasPrefix(file, "None:") }) {
+			t.Fatalf("create_datadir's files = %q, want %q and no None", got, want)
 		}
 	})
 	t.Run("clojure", func(t *testing.T) {

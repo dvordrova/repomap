@@ -59,3 +59,13 @@ class Bot:
 
     def _status(self, update):
         return update
+
+
+def create_datadir(config, datadir=None):
+    """A path whose value is None names no file; one the walk writes around a
+    value it cannot follow reads by its key: {user_data_dir}/data."""
+    return Path(datadir) if datadir else Path(f"{config['user_data_dir']}/data")
+
+
+def default_datadir(config):
+    return create_datadir(config, None)

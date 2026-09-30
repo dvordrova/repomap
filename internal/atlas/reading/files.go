@@ -20,8 +20,8 @@ import (
 // its decided argument (DestinationReader) to where the path ends, and the
 // calls are grouped by that end:
 //
-//   - a literal or a template as the walk writes it (`dump.kv`,
-//     `{db.path}-wal`, `{--config}`, `{env:KVD_CONFIG}`) is one file;
+//   - a literal or a template as the walk writes it, each unresolved part by its plainest word (`dump.kv`,
+//     `{path}-wal`, `{--config}`, `{env:KVD_CONFIG}`) is one file;
 //   - a field the walk cannot follow further (`server.dbfile`, a field of a
 //     file-scope variable whose accesses the program records by that path)
 //     is one file, whose values are the field's writes in the program, each
@@ -110,19 +110,24 @@ func (reader *FileReader) Files(targetID string) []atlas.DataRecord {
 				}
 				var found *dataFile
 				switch path, stored := strings.CutPrefix(use.Frontier, "initializer: "); {
+				case nullPath(use.Address):
+					// None, nil or null names no file.
+					continue
 				case use.Address != "":
 					found = gather("path\x00"+use.Address, use.Address, "")
-				case stored && path != "":
+				case stored && path != "" && plainTemplate(path) != "":
 					// A field whose receiver the walk cannot follow holds
 					// what its one store, or each store, puts in it
 					// (DestinationReader "initializer").
-					found = gather("path\x00"+path, path, "")
+					found = gather("path\x00"+plainTemplate(path), plainTemplate(path), "")
 				case use.Frontier != "" && len(reader.fields[use.Frontier]) > 0:
 					found = gather("field\x00"+use.Frontier, "{"+use.Frontier+"}", use.Frontier)
-				case writtenTemplate(use.Frontier):
+				case writtenTemplate(use.Frontier) && plainTemplate(use.Frontier) != "":
 					// A template the walk wrote around a part it could not
-					// resolve is one file: `{db.path}-wal`.
-					found = gather("path\x00"+use.Frontier, use.Frontier, "")
+					// resolve is one file, the part read by its plainest
+					// word: `{path}-wal`. Templates alike once read so are
+					// one file, each site one of its calls.
+					found = gather("path\x00"+plainTemplate(use.Frontier), plainTemplate(use.Frontier), "")
 				default:
 					found = gather("unknown\x00"+place.ID, "", "")
 				}
@@ -160,6 +165,138 @@ func writtenTemplate(frontier string) bool {
 	return open >= 0 && closing > open && (open > 0 || closing < len(frontier)-1)
 }
 
+// nullPath reports a path whose value is the language's null: Python's
+// None, Go's and Clojure's nil, JS's null or undefined. It names no file
+// (freqtrade's create_datadir's datadir=None had stood as a file "None").
+func nullPath(address string) bool {
+	switch address {
+	case "None", "nil", "null", "undefined":
+		return true
+	}
+	return false
+}
+
+// plainTemplate is a path template with each part the walk could not
+// resolve read by the plainest word it gives (templateWord): its last field
+// or variable, or a key it is looked up by; a setting's part (`{--config}`,
+// `{env:API}`) stays. Never an internal expression, a type path or a
+// diagnostic phrase: litestream's
+// `{Clone[[]*…/litestream.DB …]()[?].metaPath}.tmp`, `{write not
+// established before read.metaPath}.tmp` and `{db.metaPath}.tmp` are all
+// `{metaPath}.tmp`. "" when a part gives no word: the path is not
+// established.
+func plainTemplate(template string) string {
+	var out strings.Builder
+	for len(template) > 0 {
+		open := strings.IndexByte(template, '{')
+		if open < 0 {
+			out.WriteString(template)
+			break
+		}
+		out.WriteString(template[:open])
+		depth, closing := 0, -1
+		for i := open; i < len(template) && closing < 0; i++ {
+			switch template[i] {
+			case '{':
+				depth++
+			case '}':
+				if depth--; depth == 0 {
+					closing = i
+				}
+			}
+		}
+		if closing < 0 {
+			out.WriteString(template[open:])
+			break
+		}
+		part := template[open+1 : closing]
+		if !strings.HasPrefix(part, "--") && !strings.HasPrefix(part, "env:") {
+			if part = templateWord(part); part == "" {
+				return ""
+			}
+		}
+		out.WriteString("{" + part + "}")
+		template = template[closing+1:]
+	}
+	return out.String()
+}
+
+// templateWord is the plainest word an expression gives: from its last
+// segment back, a field or variable name, or a key it indexes by as a
+// quoted word; a call's name and an unknown ("?", a diagnostic phrase)
+// give none of their own. "" when none does.
+func templateWord(expression string) string {
+	identifier := func(text string) bool {
+		if text == "" {
+			return false
+		}
+		for i, r := range text {
+			if !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || i > 0 && r >= '0' && r <= '9') {
+				return false
+			}
+		}
+		return true
+	}
+	// The top-level segments, split at the dots outside brackets, quotes
+	// and parentheses.
+	var segments []string
+	depth, quote, start := 0, byte(0), 0
+	for i := 0; i < len(expression); i++ {
+		c := expression[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '[' || c == '(':
+			depth++
+		case c == ']' || c == ')':
+			depth--
+		case c == '.' && depth == 0:
+			segments = append(segments, expression[start:i])
+			start = i + 1
+		}
+	}
+	segments = append(segments, expression[start:])
+	for i := len(segments) - 1; i >= 0; i-- {
+		segment, called := strings.TrimSpace(segments[i]), false
+		for strings.HasSuffix(segment, "]") || strings.HasSuffix(segment, ")") {
+			closing := segment[len(segment)-1]
+			opening := byte('[')
+			if closing == ')' {
+				opening, called = '(', true
+			}
+			depth, at := 0, -1
+			for j := len(segment) - 1; j >= 0 && at < 0; j-- {
+				switch segment[j] {
+				case closing:
+					depth++
+				case opening:
+					if depth--; depth == 0 {
+						at = j
+					}
+				}
+			}
+			if at < 0 {
+				break
+			}
+			inner := segment[at+1 : len(segment)-1]
+			if closing == ']' && len(inner) > 2 && (inner[0] == '"' || inner[0] == '\'') && inner[len(inner)-1] == inner[0] {
+				if key := inner[1 : len(inner)-1]; identifier(key) {
+					return key
+				}
+			}
+			segment = segment[:at]
+		}
+		if identifier(segment) && !called {
+			return segment
+		}
+	}
+	return ""
+}
+
 // values are the writes of a field in one program, in site order, each with
 // the path its stored value walks to: a literal or a template, the value a
 // field's store holds, or nothing established. A write the adapter recorded
@@ -189,10 +326,10 @@ func (reader *FileReader) values(targetID, field string) []facts.DataValue {
 				continue
 			}
 			value := at
-			if path, stored := strings.CutPrefix(use.Frontier, "initializer: "); use.Address != "" {
+			if path, stored := strings.CutPrefix(use.Frontier, "initializer: "); use.Address != "" && !nullPath(use.Address) {
 				value.Value = use.Address
 			} else if stored {
-				value.Value = path
+				value.Value = plainTemplate(path)
 			}
 			add(value)
 			walked = true

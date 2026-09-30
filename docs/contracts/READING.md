@@ -1292,7 +1292,23 @@ the code wrote it there when it names a value (a field, a parameter, a
 receiver, an element), else where its walk ended, so litestream's
 `db.path + "-wal"` is `{db.path}-wal` however deep `db.path`'s walk went (it
 had read `-wal` through a failing Go return, GO § Source values,
-2026-09-30); a walk ending at a value its adapter could not read (kind
+2026-09-30); a file's name reads each such part by the plainest word it
+gives (`plainTemplate`): its last field or variable, or a key it is looked
+up by (`{db.path}-wal` is `{path}-wal`, freqtrade's
+`{config["user_data_dir"]}/data` is `{user_data_dir}/data`), a setting's
+part as written, never an internal expression, a type path or a diagnostic
+phrase (owner's review, 2026-09-30: litestream's replicate listed nine
+variants of `{metaPath}.tmp`, one
+`{Clone[[]*github.com/…DB …]()[?].metaPath}.tmp`, one `{write not
+established before read.metaPath}.tmp`); templates alike once read so are
+one file, each site one of its calls, and a part giving no word leaves the
+path not established. A path whose value is the language's null (Python's
+`None`, `nil`, `null`, `undefined`) names no file (freqtrade's
+`create_datadir(config, datadir=None)` had listed a file "None"). Go's
+fixture: `{path}.tmp` (`ReadFirstStagedJournal`); Python's: `create_datadir`;
+the C, Clojure and JS/TS fixtures write no template around an unresolved
+part and no null path. The destinations question keeps the part as
+written; a walk ending at a value its adapter could not read (kind
 `unknown`, C's `(struct sockaddr*)&sa`) is `Unread`: its expression stays
 its frontier for the destinations question, and the page says the address
 is not established from code (REPORT); a field the walk cannot follow further whose accesses the

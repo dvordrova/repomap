@@ -159,3 +159,13 @@ func (store *fixtureJournal) journalPath() string { return store.path + "-journa
 func ReadFixtureJournal(store *fixtureJournal) ([]byte, error) {
 	return os.ReadFile(store.journalPath())
 }
+
+// Where the walk stops at a value it cannot name, a path reads by the
+// plainest word it gives: the first journal's temporary file is {path}.tmp,
+// as litestream's replicas' is {metaPath}.tmp, never the expression the walk
+// stopped at.
+func stagedJournals() []*fixtureJournal { return nil }
+
+func ReadFirstStagedJournal() ([]byte, error) {
+	return os.ReadFile(stagedJournals()[0].path + ".tmp")
+}
