@@ -99,10 +99,10 @@ missing, not fabricated.
 Each var carries `code_lines`: the lines of its form holding a character
 outside `;` comments and outside the docstring of an `ns`, `defn`, `defn-`,
 `defmacro`, `defmulti` or `defprotocol` form (the reader's own docstring
-spans); a namespace counts its whole file. Since `defmethod` is no
-declaration, the in-file repeat the fixture asserts is a `declare` and its
-`defn` (`example.core/shout` in `src/example/core.clj`, 1 and 4 code lines),
-which the map of parts reads as one unit.
+spans); a namespace counts its whole file. A `declare` is a forward
+declaration and no var of its own: `example.core/shout` in
+`src/example/core.clj` is its `defn` alone (4 code lines); othello's
+`(declare negamax)` had stood as a second tile beside the defn.
 
 ## Keyword arguments
 

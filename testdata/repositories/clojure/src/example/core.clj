@@ -49,8 +49,8 @@
 (defn ensured-limit []
   (ensure! (read-limit)))
 
-;; A forward declaration and its definition repeat one name: the map of parts
-;; reads them as one unit.
+;; A forward declaration defines nothing: shout is one declaration, the defn
+;; below, and loud-greeting's call reaches it.
 (declare shout)
 
 (defn loud-greeting [name]

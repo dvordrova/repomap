@@ -116,12 +116,18 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		if owner == "" {
 			continue
 		}
-		ref := objectRef(d)
-		kind := p.ObjectVariable
 		by := d.LintAs
 		if by == "" {
 			by = d.DefinedBy
 		}
+		// A forward declaration names a var its defn defines later: it is
+		// no definition of its own (othello's (declare negamax) had stood
+		// as a second tile "negamax: negamax" beside the defn).
+		if by == "clojure.core/declare" {
+			continue
+		}
+		ref := objectRef(d)
+		kind := p.ObjectVariable
 		switch by {
 		case "clojure.core/defn", "clojure.core/defn-", "clojure.core/defmacro", "clojure.core/defmulti":
 			kind = p.ObjectFunction

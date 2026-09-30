@@ -192,8 +192,9 @@ method of its file, by the adapter's positions and end lines: Go `f$1`
 closures, nested JS or Python functions) takes its parent's part and is no
 row, name or unit. A declaration repeating the name of an earlier unit of its
 file follows that unit: a second Go `init`, Python `@overload` stubs and
-implementation, TypeScript overload signatures, a Clojure `declare` and its
-`defn` are one unit and name, with the first signature (C has no such repeat).
+implementation, TypeScript overload signatures are one unit and name, with
+the first signature (C has no such repeat, and a Clojure `declare` is no
+declaration).
 
 `calls` counts, per exact call site, each distinct other listed row the site
 reaches (`"f3 -> c7 (12)"`), from the unit whose code holds the site (a

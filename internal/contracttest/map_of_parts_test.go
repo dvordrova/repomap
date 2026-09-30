@@ -419,9 +419,9 @@ func TestCumulativeClojureMapOfParts(t *testing.T) {
 	}
 	graph := graphWithFacts(t, repository, places.TargetInput{Index: index})
 	// The reader counts code lines outside the docstring, the ;; comment and
-	// the blank line.
+	// the blank line; shout's (declare shout) is no declaration of its own.
 	adaptertest.AssertDeclarationCodeLines(t, graph, "src/example/core.clj", map[string][]int{
-		"example.core/shout": {1, 4}, "example.core/loud-greeting": {2},
+		"example.core/shout": {4}, "example.core/loud-greeting": {2},
 	})
 	// The graph records what a function reads in another namespace and the
 	// function it hands to clojure.core/map.

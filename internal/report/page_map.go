@@ -2090,9 +2090,12 @@ func symbolText(object *groupindex.ObjectFacts, name string) string {
 	case programindex.ObjectVariable:
 		// The adapter's own words for the declaration, without the name they
 		// begin with: "Model gorm.Model", "body: string;", "name = Field()".
+		// A Clojure var is named in its namespace after "/": its def's
+		// words, "alpha-min", are its name alone, which had read
+		// "alpha-min: alpha-min".
 		short := name
-		if dot := strings.LastIndex(short, "."); dot >= 0 {
-			short = short[dot+1:]
+		if at := strings.LastIndexAny(short, "./"); at >= 0 {
+			short = short[at+1:]
 		}
 		rest := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(object.Signature), short)), ";"))
 		switch {
