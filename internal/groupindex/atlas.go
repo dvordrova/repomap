@@ -393,6 +393,15 @@ func projectTarget(program programindex.Index, target atlas.Target, sourceRefs m
 				}
 			}
 			if key == "" || !declarations[key] {
+				// A file two targets index is one file of the map, listing
+				// the declarations of both views; one only the other
+				// target's view declares is none of this program's (a
+				// .cljc file's :cljs branch, a forward declaration one
+				// Clojure view reads and the other does not: othello's
+				// cljs view of (declare negamax) in its clj view's part).
+				if scope, _, scoped := strings.Cut(id, "."); scoped && scope != program.Target.ID {
+					continue
+				}
 				return projectedTarget{}, fmt.Errorf("atlas projection: part %q names an unknown declaration %q", box.ID, id)
 			}
 			if previous := boxOfDeclaration[key]; previous != nil && previous.ID != box.ID {

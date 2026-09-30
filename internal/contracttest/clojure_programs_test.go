@@ -184,4 +184,15 @@ func TestCumulativeClojureShadowBuild(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("web build facts:\n have %q\n want %q", got, want)
 	}
+	// ClojureScript reads a forward declaration as cljs.core/declare: no
+	// var of its own, as in the JVM view (othello's (declare negamax)).
+	var ticks []string
+	for _, object := range index.Objects {
+		if object.Name == "example.web/tick" {
+			ticks = append(ticks, fmt.Sprintf("%s %d", object.Kind, object.Location.Line))
+		}
+	}
+	if !slices.Equal(ticks, []string{"function 19"}) {
+		t.Fatalf("example.web/tick declarations: %q, want its defn alone", ticks)
+	}
 }

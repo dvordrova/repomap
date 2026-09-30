@@ -122,8 +122,9 @@ func project(repository *corpus.Corpus, target Target, a analysis) (*Result, err
 		}
 		// A forward declaration names a var its defn defines later: it is
 		// no definition of its own (othello's (declare negamax) had stood
-		// as a second tile "negamax: negamax" beside the defn).
-		if by == "clojure.core/declare" {
+		// as a second tile "negamax: negamax" beside the defn), in either
+		// view: a ClojureScript view reads it as cljs.core/declare.
+		if by == "clojure.core/declare" || by == "cljs.core/declare" {
 			continue
 		}
 		ref := objectRef(d)
