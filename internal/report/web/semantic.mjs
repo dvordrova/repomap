@@ -387,3 +387,64 @@ export function visibleSegments(edge, fromBox, toBox) {
 export function visibleRoute(edge,fromBox,toBox){
   return visibleSegments(edge,fromBox,toBox).map(points=>points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')).join(' ');
 }
+
+// A program's Outside frame is laid out for the whole map, its chips at
+// their own size at the preferred camera. Entered, a program is drawn at the
+// zoom that fits it, and its Outside beside it at that zoom: redis-server's
+// had read "Outside" at 50px and "Primary" at 30px beside 17px cards
+// (reviewer, 2026-09-30). `outsideShrink` gives each Outside frame the factor
+// that draws its chips at their own size where its program is entered
+// (`entry(program)`, its zoom), no larger, and the point it is drawn
+// smaller about: where its program's arrow enters it, so that arrow still
+// ends on its border. `layout` {nodes, edges}; `byID` the records.
+export function outsideShrink(layout,byID,placed,entry){
+  const fits=new Map();
+  for(const node of layout.nodes){
+    if(byID.get(node.id)?.branch!=='outside')continue;
+    const program=placed.get(node.id.replace(/^system-outside-/,'system-component-'));
+    const chip=layout.nodes.find(other=>other.parentId===node.id);
+    if(!program||!chip)continue;
+    const f=Math.min(1,1/((byID.get(chip.id)?.contentScale||1)*entry(program)));
+    if(!(f<.95))continue;
+    const edge=layout.edges.find(edge=>edge.outerTo===node.id&&edge.outerFrom===program.id&&edge.outerSegments?.at(-1)?.length);
+    const anchor=edge?edge.outerSegments.at(-1).at(-1):{x:node.absolute.x,y:node.absolute.y+node.height/2};
+    fits.set(node.id,{program:program.id,f,anchor:{x:anchor.x,y:anchor.y}});
+  }
+  return fits;
+}
+
+// The layout with the Outside frames in `fits` drawn smaller about their
+// anchors: their boxes and chips, and the ends of the arrows meeting them,
+// each end's last leg keeping its direction.
+export function shrinkOutside(layout,fits,rootOf){
+  const at=(point,fit)=>({x:fit.anchor.x+(point.x-fit.anchor.x)*fit.f,y:fit.anchor.y+(point.y-fit.anchor.y)*fit.f});
+  const nodes=layout.nodes.map(node=>{
+    const fit=fits.get(rootOf(node.id));if(!fit)return node;
+    const absolute=at(node.absolute,fit);
+    return {...node,absolute,position:node.parentId?{x:node.position.x*fit.f,y:node.position.y*fit.f}:absolute,width:node.width*fit.f,height:node.height*fit.f};
+  });
+  const move=(points,fit,end)=>{
+    const route=points.map(point=>({...point})),i=end?route.length-1:0,j=end?route.length-2:1;
+    if(!route[j])return route;
+    const was=route[i],now=at(was,fit),next=route[j];
+    if(Math.abs(next.y-was.y)<1e-6)next.y=now.y;else if(Math.abs(next.x-was.x)<1e-6)next.x=now.x;
+    route[i]=now;return route;
+  };
+  const reshape=(segments,into,from)=>segments&&segments.map((points,k)=>{
+    let route=points;
+    if(into&&k===segments.length-1)route=move(route,into,true);
+    if(from&&k===0)route=move(route,from,false);
+    return route;
+  });
+  const edges=layout.edges.map(edge=>{
+    const into=fits.get(edge.outerTo),from=fits.get(edge.outerFrom);
+    if(!into&&!from)return edge;
+    return {...edge,segments:reshape(edge.segments,into,from),outerSegments:reshape(edge.outerSegments,into,from)};
+  });
+  return {...layout,nodes,edges};
+}
+
+// A record drawn in a shrunk Outside frame takes its scale with it.
+export function shrunkScale(item,fit){
+  return fit?{contentScale:(item?.contentScale||1)*fit.f,summaryScale:(item?.summaryScale||1)*fit.f}:{};
+}

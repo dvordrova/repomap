@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,pathViewport,tileViewport,staysOpen,layerFloor,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition,deepViewport,detailLevel,pinchZoom,zoomBelow} from './semantic.mjs';
+import {outsideShrink,shrinkOutside,semanticLayout,detailLayers,firstDetailZoom,detailedAreas,componentContents,componentTextSize,componentTextSizes,componentDetails,framedComponents,communicationDetails,frameViewport,partViewport,pathViewport,tileViewport,staysOpen,layerFloor,closedContainer,readableFocus,frameInventory,visibleRoute,overviewViewport,systemViewport,zoomMarkPosition,deepViewport,detailLevel,pinchZoom,zoomBelow} from './semantic.mjs';
 
 test('approaching a target reveals its diagram before its smallest descendant text is readable',()=>{
   const nodes=[{id:'target',frame:true,absolute:{x:0,y:0},width:900,height:600}];
@@ -579,4 +579,27 @@ test('an input collection opens its groups when its own inputs read, not another
   const open=detailLayers(nodes,records,{x:0,y:0,zoom:2},1000,700);
   assert.ok(open.has('b1'),'the collection whose inputs read opens to them');
   assert.ok(open.has('small')&&!open.has('s1'),'the other stays at its named groups');
+});
+
+// Beside redis-server entered, its Outside had stood 2.6 times its chips'
+// own size. Drawn smaller about where the program's arrow enters it, the
+// chips read at their own size there and the arrow still ends on its border.
+test('an Outside frame beside its entered program is drawn at its chips\' own size, its arrow still on its border',()=>{
+  const box=(id,parentId,x,y,width,height,frame=false)=>({id,parentId,absolute:{x,y},position:{x,y},width,height,frame});
+  const nodes=[box('system-component-t1',undefined,0,0,1000,1000,true),box('system-outside-t1',undefined,1200,300,800,500,true),box('chip','system-outside-t1',60,150,650,230)];
+  nodes[2].absolute={x:1260,y:450};
+  const edges=[{id:'e',outerFrom:'system-component-t1',outerTo:'system-outside-t1',outerSegments:[[{x:1000,y:500},{x:1100,y:500},{x:1100,y:600},{x:1200,y:600}]],segments:[[{x:1000,y:500},{x:1100,y:500},{x:1100,y:600},{x:1200,y:600}]]},
+    {id:'other',outerFrom:'elsewhere',outerTo:'system-outside-t1',outerSegments:[[{x:1500,y:0},{x:1500,y:300}]],segments:[[{x:1500,y:0},{x:1500,y:300}]]}];
+  const byID=new Map([['system-outside-t1',{branch:'outside'}],['chip',{contentScale:5.8}]]),placed=new Map(nodes.map(node=>[node.id,node]));
+  const fits=outsideShrink({nodes,edges},byID,placed,()=>.4);
+  const fit=fits.get('system-outside-t1');
+  assert.ok(Math.abs(fit.f*5.8*.4-1)<1e-9,'its chips read at their own size where the program is entered');
+  const rootOf=id=>placed.get(id)?.parentId||id;
+  const shown=shrinkOutside({nodes,edges},fits,rootOf),frame=shown.nodes.find(node=>node.id==='system-outside-t1');
+  const end=shown.edges[0].outerSegments[0].at(-1);
+  assert.deepEqual(end,{x:1200,y:600},'the program\'s arrow ends where it did, on the frame\'s left border');
+  assert.ok(end.y>=frame.absolute.y&&end.y<=frame.absolute.y+frame.height&&frame.absolute.x===1200);
+  const top=shown.edges[1].outerSegments[0];
+  assert.ok(Math.abs(top.at(-1).y-frame.absolute.y)<1e-9&&top.at(-2).x===top.at(-1).x,'another arrow ends on the drawn border, its last leg still upright');
+  assert.equal(outsideShrink({nodes,edges},byID,placed,()=>.1).size,0,'no larger than laid out');
 });

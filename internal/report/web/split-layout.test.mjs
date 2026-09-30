@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {prepareCards,wrapText,overviewScale} from './cards.mjs';
-import {prepareInteriors,layoutPrepared,overviewInset,readableScale} from './split-layout.mjs';
+import {prepareInteriors,layoutPrepared,overviewInset,readableScale,cyclic} from './split-layout.mjs';
 import {outsideChips,inputGroupsByPart} from './overview.mjs';
 import {systemViewport} from './semantic.mjs';
 import {denseInventory,manyExternalInventory,records as ordinaryRecords,relations as ordinaryRelations,areas as ordinaryAreas} from './visual/two-systems-five-externals.mjs';
@@ -525,4 +525,27 @@ test('no closed card of a component is smaller than nine twentieths of its large
     assert.ok(node.width>=Math.min(.45*largest.width,1.5*own.get(id).width)-1e-6&&node.height>=Math.min(.45*largest.height,1.5*own.get(id).height)-1e-6,`${id} is ${node.width.toFixed(0)} by ${node.height.toFixed(0)} beside ${largest.width.toFixed(0)} by ${largest.height.toFixed(0)}`);
   }
   for(const part of types.map(id=>nodes.get(id)))assert.ok(part.absolute.x>=nodes.get('types').absolute.x&&part.absolute.x+part.width<=nodes.get('types').absolute.x+nodes.get('types').width+1e-6,'a grown area holds its parts');
+});
+
+// redis-server's Client command handling → Core server infrastructure →
+// Data type commands → Client command handling: merged, the arrow closing
+// the cycle had boxed Data type commands in.
+test('a component whose cards call round a cycle is laid out without merged arrows',()=>{
+  const edge=(from,to)=>({sources:[from],targets:[to]});
+  const cards=new Set(['core','types','clients','crash']);
+  assert.equal(cyclic([edge('clients','core'),edge('core','types'),edge('types','clients')],cards),true);
+  assert.equal(cyclic([edge('core','types'),edge('core','crash'),edge('crash','clients'),edge('port','core'),edge('clients','port')],cards),false,'a port outside the cards closes no cycle');
+});
+
+// freqtrade's scripts stood two and a half times as tall as their title and
+// description: a program of one card takes its summary's proportion.
+test('a program of one card is as tall as its summary, not as its laid-out card',async()=>{
+  const title='build_helpers/freqtrade_client_version_align.py';
+  const items=[{id:'script',title,branch:'component',role:'Version alignment script',summary:'Aligns the client version during the build.',children:['part']},
+    {id:'part',title,summary:'Reads the version and writes it into the client package.'}];
+  const records=cards(items),prepared=await prepareInteriors(records,[],areas(items),{availableHeight:600});
+  const frame=prepared.interiors.get('script'),summary=records.find(record=>record.id==='script');
+  const wanted=summary.overviewHeightAtWidth(summary.overviewPreferredWidth,{preferred:true});
+  assert.ok(Math.abs(frame.height*.44-wanted)<1,`${Math.round(frame.height*.44)}px tall for a ${Math.round(wanted)}px summary`);
+  assert.ok(frame.width*.44>=summary.overviewPreferredWidth-1);
 });

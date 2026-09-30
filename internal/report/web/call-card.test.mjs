@@ -164,3 +164,10 @@ test('an arrow card on the canvas names each callee once under the part it goes 
   assert.deepEqual(brief[0].names.map(entry=>entry.name),['dictNext','sdsnew']);
   assert.deepEqual(brief[1].names.map(entry=>entry.name),['sdsnew']);
 });
+
+// redis-cli → redis-server: the exchange, each side's own function.
+test('an arrow card names a call leaving its program by the functions on each side',()=>{
+  const relations=[{from:'clients',to:'data',calls:[call('anetTcpGenericConnect connects_to anetAccept','anet.c:158',{sides:[
+    {program:'redis-cli',path:[{name:'cliConnect'},{name:'anetTcpConnect'}]},{program:'redis-server',path:[{name:'acceptHandler'},{name:'anetAccept'}]}]})]}];
+  assert.deepEqual(briefCard(callCard(relations,{nameOf})).map(part=>part.names.map(entry=>entry.name)),[['cliConnect ⇢ acceptHandler']]);
+});

@@ -7,10 +7,10 @@ import {connections, borderCrossing, stubEnds} from './layout.mjs';
 import {tileGrid,tileRoom,tileHeader} from './symbols.mjs';
 import {createLook} from './look.mjs';
 import {emphasis, focusAncestors, endEmphasis, recedes, quietFrame} from './emphasis.mjs';
-import {createSemanticLayout, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport, detailLevel, pinchZoom, zoomBelow} from './semantic.mjs';
+import {createSemanticLayout, outsideShrink, shrinkOutside, shrunkScale, detailLayers, firstDetailZoom, componentTextSizes, frameViewport, partViewport, pathViewport, tileViewport, deepViewport, pointViewport, staysOpen, layerFloor, closedContainer, readableFocus, frameInventory, systemViewport, detailLevel, pinchZoom, zoomBelow} from './semantic.mjs';
 import {routeDrawing} from './route-drawing.mjs';
 import {inputGroupsByPart,outsideChips} from './overview.mjs';
-import {prepareCards,wrapText,overviewHeading,overviewScale,describedHeading,descriptionLines as wholeLines,cardText} from './cards.mjs';
+import {prepareCards,wrapText,overviewHeading,overviewScale,describedHeading,descriptionLines as wholeLines,sameWords,cardText} from './cards.mjs';
 import {overviewInset} from './split-layout.mjs';
 import {HoverGate} from './hover.mjs';
 import {placeCard} from './card-place.mjs';
@@ -279,7 +279,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   // (owner, 2026-09-28): its arrows run out of its own border toward the
   // part or area at their other end, each end marked by its plaque, and
   // the location names it.
-  let deepPart='';
+  let deepPart='',shownNodes=null;
   function deepPartAt(v){
     const width=host.clientWidth,height=host.clientHeight,centre={x:(width/2-v.x)/v.zoom,y:(height/2-v.y)/v.zoom};
     let best='',nearest=Infinity;
@@ -520,8 +520,11 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   }
   // A frame's parts as its connections count them: an area's, or every part
   // in a component's areas and beside them.
+  // A program is one of its own: a call reaching a running copy of it
+  // ends at the program (page_system_map.go), and freqtrade-client's arrow
+  // into freqtrade had no card.
   function frameMembers(id){
-    return byID.get(id)?.branch==='component'?layout.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&rootOf(n.id)===id).map(n=>n.id)
+    return byID.get(id)?.branch==='component'?[id,...layout.nodes.filter(n=>!n.frame&&!byID.get(n.id)?.activation&&rootOf(n.id)===id).map(n=>n.id)]
       :leaves(id).filter(leaf=>!byID.get(leaf)?.activation);
   }
   // What stands at a frame's connection's other end: another component, or
@@ -971,7 +974,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       // A part named as its program is (a script's one part, named by its
       // file) is not listed again under it: freqtrade's scripts had printed
       // their path twice.
-      const words=text=>String(text||'').trim().replace(/\s+/g,' ').toLowerCase(),same=(a,b)=>words(a)===words(b);
+      const same=sameWords;
       const communication=item.branch==='communication',inputs=item.branch==='inputs',areaIDs=communication||inputs?[]:
         // Areas first, then the loose parts beside them.
         [...(children.get(n.id)||[])].filter(id=>!same(byID.get(id)?.name||byID.get(id)?.title,item.name||item.title))
@@ -998,7 +1001,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       {heading.lines.length>0&&<div className="flow-component-overview-heading" style={{maxWidth:heading.width,minHeight:inputs?32:undefined,paddingTop:heading.clearZoom?32:undefined}}>
         <strong style={heading.scale<1?{fontSize:heading.fontSize,lineHeight:`${heading.lineHeight}px`}:undefined}>{heading.lines.join('\n')}</strong></div>}
       {showRole&&<div className="flow-component-role" data-display-ref={item.roleRef}>{role}</div>}
-      {!communication&&!inputs&&descriptionLines>=2&&item.description&&<p className="flow-description flow-description-lines" title={item.description}>{wholeLines(item.description,contentWidth-1,Math.min(3,descriptionLines),measure,'13px system-ui').join('\n')}</p>}
+      {!communication&&!inputs&&item.description&&descriptionLines>=Math.min(2,wrapText(item.description,contentWidth-1,'13px system-ui',measure).length)&&<p className="flow-description flow-description-lines" title={item.description}>{wholeLines(item.description,contentWidth-1,Math.min(3,descriptionLines),measure,'13px system-ui').join('\n')}</p>}
       {inputs&&<InputTypes groups={item.inputGroups} lit={lit} choose={(kinds,event)=>readKind(n.id,kinds,event)}/>}
       {areaIDs.length>0&&<ul className={`flow-component-areas ${listOverflow?'flow-scrollable':''}`} onWheelCapture={scrollInventory}>{areaIDs.map(id=><li key={id}>
         <button type="button" className="nopan" data-overview-area={id} onClick={event=>{event.stopPropagation();select(id,event,false);}}>{byID.get(id).name||byID.get(id).title}</button>
@@ -1022,7 +1025,13 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
     const recede=rest.mode==='all'?null:rest;
     const context=focusAncestors(state.focus,placed);
     const visible=id=>!closed(id);
-    const drawing=layout;
+    const outsideFits=useMemo(()=>outsideShrink(layout,byID,placed,program=>frameView(program,{width:layoutSize.width,height:layoutSize.height}).zoom),[layoutKey]);
+    // Beside its program entered, a program's Outside frame is drawn at the
+    // size its chips read at there, the scale of the program's own cards,
+    // anchored where the program's arrow enters it (outsideShrink).
+    const shrunk=new Map([...outsideFits].filter(([,fit])=>openComponents.has(fit.program)));
+    const drawing=shrunk.size?shrinkOutside(layout,shrunk,rootOf):layout;
+    shownNodes=drawing.nodes;
     const groupHeadings=useMemo(()=>{
       const scale=1/firstDetailZoom(layout.nodes,semantic.records,layoutSize.width,layoutSize.height);
       // The closed card is a title over a foot row and the role mark: the
@@ -1186,7 +1195,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
         selectable:false,draggable:false,connectable:false,
         style:{width:box.width,height:box.height,visibility:visible(n.id)?'visible':'hidden'},
         className:`${muted(n.id)?'flow-node-muted':''} ${subjects.has(n.id)?'flow-node-focus':on&&!focused?'flow-node-connected':''} ${shownContext.has(n.id)?'flow-node-context':''} ${reading?'flow-node-reading':''} ${lit.has(n.id)?'flow-node-lit':''}`,
-        data:{...item,...looseLook(n),operation:view.operation,reading,zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true),
+        data:{...item,...shrunkScale(item,shrunk.get(rootOf(n.id))),...looseLook(n),operation:view.operation,reading,zoomInto:()=>deepInto(n),open:(id,event)=>select(id,event,true),
           member:item?.symbols?.length?{hot:pointed?.part===n.id?pointed.index:-1,chosen:memberChoice?.part===n.id&&view.scope===n.id?memberChoice.index:-1,
             alone:memberChoice?.part===n.id&&view.scope===n.id&&tooDense(n.id),
             point:index=>pointMember(n.id,index),choose:(index,event)=>chooseMember(n.id,index,event)}:undefined}};
@@ -1273,7 +1282,7 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
       <ViewportPortal>
         {drawing.nodes.filter(n=>n.frame&&!n.display&&visible(n.id)&&!['component','communication','inputs','outside'].includes(byID.get(n.id).branch)&&(componentsOpen||scales.has(n.id)||byID.get(n.id).branch==='inputs-part')&&(!scales.has(n.id)||detailed.has(n.id))&&!closedGroup(n.id)).map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)||context.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&['component','communication','inputs'].includes(byID.get(n.id).branch)).map(n=><ComponentPresentation key={'component-'+n.id} node={n} focused={state.focus.has(n.id)||context.has(n.id)} muted={muted(n.id)}/>)}
-        {drawing.nodes.filter(n=>byID.get(n.id)?.branch==='outside').map(n=><FrameTitle key={n.id} node={n} item={byID.get(n.id)} focused={state.focus.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
+        {drawing.nodes.filter(n=>byID.get(n.id)?.branch==='outside').map(n=><FrameTitle key={n.id} node={n} item={{...byID.get(n.id),...shrunkScale(byID.get(n.id),shrunk.get(n.id))}} focused={state.focus.has(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>(scales.has(n.id)&&!detailed.has(n.id)||closedGroup(n.id))&&visible(n.id)).map(n=><AreaSummary key={'summary-'+n.id}
           node={n} item={byID.get(n.id)} heading={groupHeadings.get(n.id)} enter={enter} select={select} muted={muted(n.id)}/>)}
         {drawing.nodes.filter(n=>n.frame&&visible(n.id)&&scales.has(n.id)&&!detailed.has(n.id)).map(n=><ZoomMark key={'zoom-'+n.id} node={n} item={byID.get(n.id)} compactScale={groupHeadings.get(n.id).scale} enter={enter} select={select} muted={muted(n.id)}/>)}
@@ -1395,8 +1404,8 @@ window.rmCreateFlow = async function(map, stage, records, relations, areas, inpu
   map.classList.add('flow-enabled');source.style.display='none';source.setAttribute('aria-hidden','true');
   // The placed boxes as the canvas draws them, for the geometry checks
   // (visual/geometry.mjs): world rectangles, containment and what is shown.
-  map.flowGeometry=()=>({nodes:layout.nodes.map(n=>({id:n.id,parentId:n.parentId||'',frame:!!n.frame,branch:byID.get(n.id)?.branch||'',
-    x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height,shown:!closed(n.id),contentScale:byID.get(n.id)?.contentScale,originalWidth:byID.get(n.id)?.originalWidth}))});
+  map.flowGeometry=()=>({nodes:(shownNodes||layout.nodes).map(n=>({id:n.id,parentId:n.parentId||'',frame:!!n.frame,branch:byID.get(n.id)?.branch||'',
+    x:n.absolute.x,y:n.absolute.y,width:n.width,height:n.height,shown:!closed(n.id),contentScale:(byID.get(n.id)?.contentScale||1)*n.width/(placed.get(n.id)?.width||n.width),originalWidth:byID.get(n.id)?.originalWidth}))});
   const root=createRoot(host);flushSync(()=>root.render(<App/>));
   // A click on an arrow reads its connection in the column, the camera
   // staying (openEnd).

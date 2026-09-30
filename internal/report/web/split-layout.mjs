@@ -22,6 +22,21 @@ const key=(...parts)=>JSON.stringify(parts);
 // entered at `zoom`: ten screen pixels apart and sixteen from the cards,
 // clear of a 10.5px arrowhead (canvas.jsx).
 export const packedRoom=zoom=>({step:10/zoom,margin:16/zoom});
+// Whether the arrows (`{sources:[from],targets:[to]}`) among `nodes` run
+// round a directed cycle.
+export function cyclic(edges,nodes){
+  const next=new Map([...nodes].map(id=>[id,[]]));
+  for(const edge of edges)if(next.has(edge.sources[0])&&next.has(edge.targets[0]))next.get(edge.sources[0]).push(edge.targets[0]);
+  const state=new Map();
+  const visit=id=>{
+    if(state.get(id)===1)return true;
+    if(state.get(id)===2)return false;
+    state.set(id,1);
+    if(next.get(id).some(visit))return true;
+    state.set(id,2);return false;
+  };
+  return [...next.keys()].some(visit);
+}
 // The drawing shares one route between the two directions of a pair of ends
 // (route-drawing.mjs), so ELK lays out one edge per pair. Laying out both
 // made it reverse one of every such pair into an arrow wrapped around the
@@ -156,6 +171,20 @@ function chipInterior(frame,order){
     else{port.y=at==='SOUTH'?grid.height:0;port.x*=grid.width/frame.width;}
   }
   frame.width=grid.width;frame.height=grid.height;frame.edges=[];
+}
+
+// A participant's drawing widened to `ratio` (width over height), its
+// contents moved to the middle; its ports stay on their sides.
+function widenTo(local,ratio){
+  const width=Math.max(local.width,local.height*ratio),dx=(width-local.width)/2;
+  if(dx<=0)return local;
+  const root=local.nodes.find(node=>!node.parentId);
+  const shift=point=>({...point,x:point.x+dx});
+  return {...local,width,
+    nodes:local.nodes.map(node=>node===root?{...node,width}:{...node,absolute:shift(node.absolute),position:node.parentId===root?.id?shift(node.position):node.position}),
+    edges:new Map([...local.edges].map(([id,segments])=>[id,segments.map(points=>points.map(shift))])),
+    labels:local.labels.map(shift),
+    ports:local.ports.map(port=>{const side=port.layoutOptions?.['elk.port.side'];return side==='EAST'?{...port,x:width}:side==='WEST'?port:{...port,x:port.x+dx};})};
 }
 
 function localGeometry(root){
@@ -360,7 +389,7 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       if(floored)placed=(await native(graph())).children[0];
     }
     const preferredWidth=root.overviewPreferredWidth||root.overviewMinWidth||(root.branch==='component'?220:160);
-    const preferredHeight=root.overviewHeightAtWidth?.(preferredWidth,{availableHeight})||Math.min(180,placed.height);
+    const preferredHeight=root.overviewHeightAtWidth?.(preferredWidth,{availableHeight,preferred:true})||Math.min(180,placed.height);
     const ratio=preferredWidth/preferredHeight;
     // Cross-frame arrows are drawn by the outer routes alone, so a frame whose
     // tiles no arrow joins needs no interior legs.
@@ -411,8 +440,12 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
       for(const name of Object.keys(componentOptions))if(name.includes('spacing.'))componentOptions[name]=String(Math.round(Number(componentOptions[name])*unit));
       // Arrows into one side of an area meet it at one point, and out of one
       // side leave it at one: one arrowhead per side, not five to eight
-      // stacked on an area's top, and a lane per trunk, not per pair.
-      componentOptions['elk.layered.mergeEdges']='true';
+      // stacked on an area's top, and a lane per trunk, not per pair. Not
+      // when the component's cards call round a cycle: the arrow closing it
+      // runs against the others and, forced through their point, went round
+      // a third card (redis-server's Client command handling → Core server
+      // infrastructure boxed Data type commands in; reviewer, 2026-09-30).
+      componentOptions['elk.layered.mergeEdges']=cyclic(bundled.values(),new Set(ready.map(node=>node.id)))?'false':'true';
       if(root.minimumWidth||root.minimumHeight){
         componentOptions['elk.nodeSize.constraints']='MINIMUM_SIZE';
         componentOptions['elk.nodeSize.minimum']=`(${root.minimumWidth||0},${root.minimumHeight||0})`;
@@ -615,6 +648,16 @@ export async function prepareInteriors(items,relations,areas,{availableHeight=In
         variants.length=0;variants.push(packedLocal);compact=packedLocal;
       }
       local=compact;
+      // A program of one or two parts and no area (a script) takes its
+      // summary's proportion, its parts in the middle: laid out to their
+      // own, freqtrade's scripts had stood two and a half times as tall as
+      // their title and description, an empty card under them (reviewer,
+      // 2026-09-30).
+      if(ready.length<=2&&ready.every(node=>!node.frame)&&local.width/local.height<ratio){
+        const widened=new Map(variants.map(variant=>[variant,widenTo(variant,ratio)]));
+        variants.splice(0,variants.length,...variants.map(variant=>widened.get(variant)));
+        local=widened.get(local)||widenTo(local,ratio);
+      }
     }
     // A fixed unit conversion permits the ordinary .44 overview camera to
     // display the preferred text size. It never uses the eventual fit zoom.

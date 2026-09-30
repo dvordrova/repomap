@@ -592,9 +592,15 @@ function rmDeclarationRelations(map,node,key,nodes){
       var source=node.getAttribute('data-source');
       // An input with no handler established says where it is parsed.
       var parsed=node.dataset.activation&&node.dataset.handlerUnknown==='true'?rmT.html('parsed at')+' ':'';
-      if(source) html += '<p class="map-card-source">'+parsed+'<a target="_blank" href="'+escapeText(source)+'">'+escapeText(node.getAttribute('data-source-text')||rmT('Source'))+'</a></p>';
-      else if(node.dataset.open) html += '<p class="map-card-source"><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</a></p>';
-      else if(node.dataset.noSource==='true') html += '<p class="map-card-source"><span title="'+escapeText(rmT('No source'))+'">'+escapeText(node.dataset.sourceText||rmT('Source'))+'</span></p>';
+      // A card prints no line number (owner: the purple name is the link):
+      // its source reads as its file, linking to the line, and not at all
+      // when the code as written above already links there. freqtrade's
+      // Remote Pairlist Server had read "…/RemotePairList.py:46" under its
+      // linked get().
+      var place=function(text){return String(text||'').replace(/:\d+(?::\d+)?$/,'')||rmT('Source');};
+      if(source) {if(!node.dataset.written) html += '<p class="map-card-source">'+parsed+'<a target="_blank" href="'+escapeText(source)+'">'+escapeText(place(node.getAttribute('data-source-text')))+'</a></p>';}
+      else if(node.dataset.open) html += '<p class="map-card-source"><a href="#" data-open="'+escapeText(node.dataset.open)+'">'+escapeText(place(node.dataset.sourceText))+'</a></p>';
+      else if(node.dataset.noSource==='true') html += '<p class="map-card-source"><span title="'+escapeText(rmT('No source'))+'">'+escapeText(place(node.dataset.sourceText))+'</span></p>';
       html += '</div>';
       var concepts = map.exploreNode ? repomapMembers.items(node) : rmPage.data(node,'concepts') || [];
       card.classList.toggle('map-card-has-concepts', concepts.length > 0);

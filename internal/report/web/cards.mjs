@@ -20,6 +20,8 @@ export function groupInputs(inputs=[],translate=text=>text) {
 // line: after a separator or between camelCase words when it can, and never
 // so that a line starts with closing punctuation or ends with an opening one.
 const closing=/^[)\]}»›”’,.;:!?…%]/u,opening=/[(\[{«‹“‘]$/u;
+// Whether two names say the same words, whatever their case and spacing.
+export const sameWords=(a,b)=>String(a||'').trim().replace(/\s+/g,' ').toLowerCase()===String(b||'').trim().replace(/\s+/g,' ').toLowerCase();
 export function titleWords(text){
   const words=[];
   for(const word of String(text||'').split(/\s+/).filter(Boolean)){
@@ -242,7 +244,15 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     const descriptionLines=description?Math.min(descriptionMost||Infinity,wrap(description,cardText,'13px system-ui').length):0;
     const subtitle=n.category==='external'&&!n.title.endsWith(n.subtitle||'')?n.subtitle:'';
     const subtitleLines=subtitle?wrap(subtitle,cardText,'13px system-ui'):[];
-    const names=n.branch==='component'?childNames(n.id):[];
+    // A part named as its program is (a script's one part, named by its
+    // file) is not listed again under it (canvas.jsx ComponentOverview).
+    const names=n.branch==='component'?childNames(n.id).filter(name=>!sameWords(name,n.title)):[];
+    // A program of one or two parts and no area (a script) prefers room
+    // for its role and its description, at most three lines: its box takes
+    // its summary's proportion (split-layout.mjs widenTo), and freqtrade's
+    // scripts had dropped their descriptions.
+    const small=n.branch==='component'&&(n.children||[]).length<=2&&(n.children||[]).every(id=>byID.get(id)?.branch!=='area');
+    const shownRole=small&&n.role&&!names.some(name=>sameWords(name,n.role))?n.role:'';
     // External headings may use the full width below the zoom mark. Its extra
     // row is reserved by overviewHeading, not by forcing a wider frame.
     const input=!!n.activation,collection=['communication','inputs'].includes(n.branch);
@@ -285,7 +295,7 @@ export function prepareCards(records, _inputOwner, measure, translate) {
     // the programs' summaries with half again their room, its words read
     // as their headings do (canvas.jsx standaloneHeadings), not as a pale
     // card read at four pixels.
-    const overviewHeightAtWidth=unread?width=>width*unreadNote.height/unreadNote.width:grid?width=>width*grid.height/grid.width:['component','communication','inputs'].includes(n.branch)?(width,{availableHeight=Infinity}={})=>{
+    const overviewHeightAtWidth=unread?width=>width*unreadNote.height/unreadNote.width:grid?width=>width*grid.height/grid.width:['component','communication','inputs'].includes(n.branch)?(width,{availableHeight=Infinity,preferred=false}={})=>{
       const heading=overviewHeading(n,width,measure);
       // As the summary draws it (canvas.jsx ComponentOverview): inset 8px in
       // its frame and padded 8px, its heading, a 10px gap, and its kinds 6px
@@ -299,7 +309,11 @@ export function prepareCards(records, _inputOwner, measure, translate) {
       // entrance sets the minimum usable height; fitting the entire list would
       // enlarge the world and make its fitted text smaller again.
       const rows=names.map(name=>10+wrap(name,Math.max(1,Math.min(304,width-32)),'500 13px system-ui').length*18);
-      const base=(n.branch==='communication'?16:32)+heading.height;
+      const text=Math.max(1,Math.min(304,width-32));
+      // Its preferred room only: the fit's minimum stays its heading and list.
+      const roleRows=preferred&&shownRole?wrap(shownRole,text,'600 13px system-ui').length*18+10:0;
+      const descriptionRows=preferred&&small&&description?10+Math.min(3,wrap(description,text,'13px system-ui').length)*18:0;
+      const base=(n.branch==='communication'?16:32)+heading.height+roleRows+descriptionRows;
       const list=rows.length?17+rows.reduce((sum,row)=>sum+row,0):0;
       const controlHeight=28+(n.branch==='communication'?16:32);
       return Math.max(controlHeight,base+(base+list>availableHeight&&rows.length?17+rows[0]:list));
