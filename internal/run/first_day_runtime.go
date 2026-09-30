@@ -47,6 +47,8 @@ type firstDayOptions struct {
 	ProviderFactory  targetPortfolioProviderFactory
 	Runner           orientationRunner
 	Output           *runOutput
+	// Categorizer chooses where the Main flow goes on at a split.
+	Categorizer llm.Categorizer
 }
 
 // repositoryFactSources are the repository-wide fact inputs no target page
@@ -220,6 +222,7 @@ func runRepositoryOrientation(
 		Claims:         claimsResult,
 		Groups:         indexes,
 		Graph:          options.Graph,
+		Categorizer:    options.Categorizer,
 	})
 	if err != nil {
 		return orientation.Result{}, nil, fmt.Errorf("orientation: %w", err)
@@ -236,9 +239,10 @@ func runRepositoryOrientation(
 			details = append(details, fmt.Sprintf("ignored response items: %d; accepted overview text is kept", len(rejected)))
 		}
 		for _, row := range rejected {
-			if row.Section == "flow_request" {
-				// The overview stands; the report opens its entry's calls.
-				details = append(details, "the main flow request was refused by size or context: "+row.Reason)
+			if row.Section == "flow_fork" {
+				// The walked flow ends at a split the categorizer left
+				// undecided, a named fork.
+				details = append(details, "the main flow ends at an undecided split: "+row.Reason)
 			}
 			if row.Section == "request" {
 				// The overview did not fit: the report is published without

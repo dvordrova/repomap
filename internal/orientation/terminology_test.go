@@ -15,7 +15,6 @@ import (
 
 type terminologyProvider struct {
 	result map[string]any
-	flow   map[string]any
 	names  []string
 	calls  int
 }
@@ -35,11 +34,7 @@ func (p *terminologyProvider) Complete(_ context.Context, prepared llm.Prepared)
 		return llm.Completion{}, err
 	}
 	if !strings.Contains(prompt.User, `"prose":`) {
-		answer := p.result
-		if strings.Contains(prompt.User, `"members":`) {
-			answer = p.flow
-		}
-		raw, err := json.Marshal(answer)
+		raw, err := json.Marshal(p.result)
 		return llm.Completion{Response: raw, FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1}}, err
 	}
 	var request struct {
@@ -83,17 +78,14 @@ func TestOrientationTermsUseOnlyAcceptedOriginalSlotsLiveAndCached(t *testing.T)
 			map[string]any{"command": "GoodRecipe", "refs": []string{refs.fact("entrypoint")}},
 		},
 		"main_flow_target": refs.target("alpha"),
-	}, flow: map[string]any{"main_flow": map[string]any{"title": "GoodTitle", "steps": []any{
-		map[string]any{"ref": "f999", "explanation": "BadStep", "key": "main_flow.steps[1]"},
-		map[string]any{"ref": refs.fact("route"), "explanation": "GoodStep"},
-	}}}, names: []string{"BadSummary", "BadRole", "NestedBadRole", "GoodRole", "BadRecipe", "GoodRecipe", "BadStep", "GoodStep", "GoodTitle"}}
+	}, names: []string{"BadSummary", "BadRole", "NestedBadRole", "GoodRole", "BadRecipe", "GoodRecipe"}}
 	executor := llm.Executor{Enabled: true, RootDir: t.TempDir()}
 	var first []terminology.Candidate
 	for run := 0; run < 2; run++ {
-		// The flow request quotes no README; its target's manifest is its source.
+		// The walked flow writes no prose, so it names no term.
 		collector := terminology.NewCollector([]string{"README.md", "alpha/go.mod"})
 		result, rejected, err := Run(t.Context(), executor, collector.Wrap(provider), fixture.input)
-		if err != nil || len(rejected) != 4 || result.Summary != "" || len(result.Roles) != 1 || len(result.RunRecipe) != 1 || len(result.MainFlow.Steps) != 1 {
+		if err != nil || len(rejected) != 3 || result.Summary != "" || len(result.Roles) != 1 || len(result.RunRecipe) != 1 || len(result.MainFlow.Steps) != 2 {
 			t.Fatalf("partial orientation lost valid siblings: %+v, %v", result, err)
 		}
 		concept := &typesafetest.Categorizer{Decide: typesafetest.ByColumn(map[string]llm.Verdict{"term": typesafetest.Choose(terminology.TermDomainConcept)})}
@@ -101,7 +93,7 @@ func TestOrientationTermsUseOnlyAcceptedOriginalSlotsLiveAndCached(t *testing.T)
 			t.Fatal(err)
 		}
 		terms := collector.Snapshot()
-		want := map[string]string{"GoodRole": "roles[1]", "GoodRecipe": "run_recipe[1]", "GoodStep": "main_flow.steps[1]", "GoodTitle": "main_flow.title"}
+		want := map[string]string{"GoodRole": "roles[1]", "GoodRecipe": "run_recipe[1]"}
 		if len(terms) != len(want) {
 			t.Fatalf("refused text supplied a term or accepted term was lost: %+v", terms)
 		}
@@ -116,9 +108,9 @@ func TestOrientationTermsUseOnlyAcceptedOriginalSlotsLiveAndCached(t *testing.T)
 			t.Fatal("cache replay changed accepted term origins")
 		}
 	}
-	// The overview, the flow, names and explanations, each once: the second
-	// run is warm.
-	if provider.calls != 4 {
+	// The overview, names and explanations, each once: the second run is
+	// warm.
+	if provider.calls != 3 {
 		t.Fatalf("cached partial orientation made another provider call: %d calls", provider.calls)
 	}
 }

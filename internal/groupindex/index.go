@@ -438,6 +438,10 @@ type UnresolvedCall struct {
 	RelationID    string
 	FromSubjectID string
 	Location      *programindex.Location
+	// Possible are the retained declarations the witnesses of its stores
+	// name (drawnEnds): what a call through a function value the index
+	// leaves open may reach, never its targets.
+	Possible []string
 }
 
 // InputBranch is one case's or guard's branch: SubjectID compares at
@@ -489,7 +493,13 @@ func compileUnresolvedCalls(program programindex.Index, retained map[string]stru
 		if _, ok := retained[relation.FromID]; !ok {
 			continue
 		}
-		result = append(result, UnresolvedCall{RelationID: relation.ID, FromSubjectID: relation.FromID, Location: cloneLocation(relation.Location)})
+		call := UnresolvedCall{RelationID: relation.ID, FromSubjectID: relation.FromID, Location: cloneLocation(relation.Location)}
+		for _, end := range drawnEnds(relation) {
+			if _, kept := retained[end]; kept {
+				call.Possible = append(call.Possible, end)
+			}
+		}
+		result = append(result, call)
 	}
 	return result
 }

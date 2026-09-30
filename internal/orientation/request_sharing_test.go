@@ -48,12 +48,6 @@ func TestAMergedDeclarationPlaceGivesEachOwningTargetItsEvidence(t *testing.T) {
 	if want := map[string]bool{"t2.n1": true, "t3.n59": true}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("seed rows = %v, want %v", got, want)
 	}
-	for _, target := range []string{"t2", "t3"} {
-		flow, _, _, err := buildFlow(input, target)
-		if err != nil || len(flow.Members) != 1 || len(flow.Members[0].Calls) != 1 {
-			t.Fatalf("%s's flow lost the merged declaration's calls: %+v, %v", target, flow.Members, err)
-		}
-	}
 }
 
 // Targets holding the same fact see it once; a response row naming one of

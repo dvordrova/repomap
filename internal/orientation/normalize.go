@@ -21,9 +21,6 @@ const (
 	sectionRunRecipe = "run_recipe"
 	sectionMainFlow  = "main_flow"
 	sectionRequest   = "request"
-	// sectionFlowRequest journals a flow request the provider could not
-	// hold; the overview stands.
-	sectionFlowRequest = "flow_request"
 
 	classFact    = 'f'
 	classClaim   = 'c'
@@ -36,11 +33,6 @@ type modelResponse struct {
 	Roles          []json.RawMessage `json:"roles"`
 	RunRecipe      []json.RawMessage `json:"run_recipe"`
 	MainFlowTarget string            `json:"main_flow_target"`
-}
-
-type flowResponse struct {
-	Title string            `json:"title"`
-	Steps []json.RawMessage `json:"steps"`
 }
 
 type roleResponse struct {
@@ -79,11 +71,6 @@ func (refs *refList) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-type flowStepResponse struct {
-	Ref         string `json:"ref"`
-	Explanation string `json:"explanation"`
-}
-
 // normalized is the accepted, restored part of one model response together
 // with every row that was refused.
 type normalized struct {
@@ -91,8 +78,7 @@ type normalized struct {
 	summaryRefs    []string
 	roles          []Role
 	recipe         []RecipeStep
-	flowTarget     string // the target id the Main flow is asked for
-	flow           MainFlow
+	flowTarget     string // the target id whose Main flow is walked
 	rejected       []RejectedRow
 	ambiguousRoles map[string]bool
 	accepted       map[string]bool
@@ -145,31 +131,6 @@ func normalizeOverview(raw []byte, cat catalog) (normalized, error) {
 	if result.decodeField(sectionMainFlow, "main_flow_target", fields, &response.MainFlowTarget) {
 		result.acceptFlowTarget(fields["main_flow_target"], response.MainFlowTarget, cat)
 	}
-	return result.done()
-}
-
-// normalizeFlow is the flow's pure decoder. The answer is a main_flow
-// object; the same title and steps written without it are the same answer.
-// Every step names the one target the request shows.
-func normalizeFlow(raw []byte, cat catalog, targetRef string) (normalized, error) {
-	fields, err := decodeResponse(raw)
-	if err != nil {
-		return normalized{}, err
-	}
-	if wrapped, present := fields["main_flow"]; present {
-		var inner map[string]json.RawMessage
-		if json.Unmarshal(wrapped, &inner) != nil || inner == nil {
-			result := newNormalized()
-			result.reject(sectionMainFlow, wrapped, "main_flow has an invalid shape")
-			return result.done()
-		}
-		fields = inner
-	}
-	result := newNormalized()
-	var flow flowResponse
-	result.decodeField(sectionMainFlow, "title", fields, &flow.Title)
-	result.decodeField(sectionMainFlow, "steps", fields, &flow.Steps)
-	result.acceptFlow(flow, cat, targetRef)
 	return result.done()
 }
 
@@ -447,54 +408,6 @@ func citesRunEvidence(refs []resolvedRef) bool {
 		}
 	}
 	return false
-}
-
-func (result *normalized) acceptFlow(flow flowResponse, cat catalog, targetRef string) {
-	flow.Title = strings.Join(strings.Fields(flow.Title), " ")
-	for i, raw := range flow.Steps {
-		result.acceptFlowStep(raw, cat, targetRef, fmt.Sprintf("main_flow.steps[%d]", i))
-	}
-	if flow.Title == "" {
-		return
-	}
-	raw, _ := json.Marshal(map[string]any{"title": flow.Title})
-	switch {
-	case !validSentence(flow.Title):
-		result.reject(sectionMainFlow, raw, sentenceReason("title"))
-	case len(result.flow.Steps) == 0:
-		result.reject(sectionMainFlow, raw, "the main flow has no accepted steps")
-	default:
-		result.flow.Title = flow.Title
-		result.accepted["main_flow.title"] = true
-	}
-}
-
-func (result *normalized) acceptFlowStep(raw json.RawMessage, cat catalog, targetRef, slot string) {
-	var row flowStepResponse
-	if err := decodeStrict(raw, &row); err != nil {
-		result.reject(sectionMainFlow, raw, "row does not match the requested shape: "+err.Error())
-		return
-	}
-	row.Explanation = strings.TrimSpace(row.Explanation)
-	if !validSentence(row.Explanation) {
-		result.reject(sectionMainFlow, raw, sentenceReason("explanation"))
-		return
-	}
-	refs, _, err := cat.resolve([]string{strings.TrimSpace(row.Ref)}, targetRef, classFact, classSubject)
-	if err != nil {
-		result.reject(sectionMainFlow, raw, err.Error())
-		return
-	}
-	ref := refs[0]
-	step := FlowStep{TargetID: cat.targets[targetRef], Explanation: row.Explanation}
-	switch ref.class {
-	case classFact:
-		step.FactID = ref.id
-	case classSubject:
-		step.SubjectID = ref.id
-	}
-	result.flow.Steps = append(result.flow.Steps, step)
-	result.accepted[slot] = true
 }
 
 // resolve keeps the advertised set. An unusable additional ref does not undo

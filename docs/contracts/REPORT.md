@@ -1626,13 +1626,15 @@ render failed, is rendered by the server through the same `RenderServedPage`.
   the GroupsIndex operations and outbound rows and joined on literals in the
   report. `claims.json` holds quotes with their source path, date and age.
   `orientation.json` holds the model's repository summary, roles, run recipe
-  and main flow; every row cites fact, claim or subject ids. The orientation
-  asks an overview, then the main flow of the target it names (READING §
-  Orientation). When the overview is refused by size or context, the report
-  is published with an empty orientation, the refusal in `rejected.jsonl` and
-  an `unavailable` state in the console; a refused flow request is journaled
-  under `flow_request`, the overview stands, and the report opens its entry's
-  calls. Unknown or incompatible set refs are recorded and removed; repeated
+  and the main flow code walks from the target it names (READING §
+  Orientation); every row cites fact, claim or subject ids. When the overview
+  is refused by size or context, the report is published with an empty
+  orientation, the refusal in `rejected.jsonl` and an `unavailable` state in
+  the console. A flow ending at a split the categorizer left undecided is
+  journaled under `flow_fork`: its last step shows the fork on one folded
+  line ("one of 96 at redis.c:1033 ▸"), its candidates' names inside, never a
+  wall of names; each step shows how the step before reaches it ("called",
+  "handed to quil.core.sketch.setup") under its name. Unknown or incompatible set refs are recorded and removed; repeated
   refs are deduplicated. A row with no required evidence, an invalid scalar
   choice or a conflicting interpretation goes to `rejected.jsonl` with its raw
   output and reason. Independent sections and rows survive a bad neighbour.

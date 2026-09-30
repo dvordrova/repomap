@@ -118,18 +118,6 @@ type overviewRequest struct {
 	Seeds             []memberRow      `json:"seeds"`
 }
 
-// flowRequest is the second: the one target the overview chose for the Main
-// flow, the facts anchored in its flow scope and every member of that scope
-// (flowScope), each complete, in reading order.
-type flowRequest struct {
-	Version      int         `json:"version"`
-	Repository   string      `json:"repository,omitempty"`
-	ContentTrust string      `json:"content_trust"`
-	Target       targetWire  `json:"target"`
-	Facts        []factWire  `json:"facts"`
-	Members      []memberRow `json:"members"`
-}
-
 // factEntry is one advertised fact row. A row several targets share restores,
 // for a response row naming one of them, that target's own fact id.
 type factEntry struct {
@@ -230,40 +218,6 @@ func buildOverview(input Input) (overviewRequest, catalog, error) {
 	return wire, builder.catalog, nil
 }
 
-// buildFlow compiles the flow request for one target. Its catalogue holds
-// that target, the facts it lists and the scope's members.
-func buildFlow(input Input, targetID string) (flowRequest, catalog, flowScope, error) {
-	builder := newRequestBuilder(input)
-	targets := builder.targets()
-	var index *groupindex.Index
-	for position := range input.Groups {
-		if input.Groups[position].Target.ID == targetID {
-			index = &input.Groups[position]
-		}
-	}
-	targetRef := builder.targetRefs[targetID]
-	if index == nil || targetRef == "" {
-		return flowRequest{}, catalog{}, flowScope{}, fmt.Errorf("orientation: flow target %q has no groups index", targetID)
-	}
-	flow := newCatalog()
-	flow.targets[targetRef] = targetID
-	builder.catalog = flow
-	var target targetWire
-	for _, row := range targets {
-		if row.Ref == targetRef {
-			target = row
-		}
-	}
-	scope := scopeOf(*index, input.Facts.OfKind(facts.KindRegistration))
-	writer := newRowWriter(input.Graph)
-	members := builder.members(writer, *index, scope.Members)
-	wire := flowRequest{
-		Version: requestVersion, Repository: input.RepositoryName, ContentTrust: contentTrust,
-		Target: target, Facts: builder.scopeFacts(*index, writer), Members: members,
-	}
-	return wire, builder.catalog, scope, nil
-}
-
 // members writes the rows of one program's subjects, in the given order,
 // and closes the catalogue over them. A call into one of them names its
 // ref. A member is its declaration place by declaration identity: a place
@@ -355,70 +309,6 @@ func (input Input) declarationPlaces(targetID string, subjectIDs []string) map[s
 		}
 	}
 	return result
-}
-
-// scopeFacts lists the target's own facts anchored inside the flow scope:
-// those whose line lies in a listed member's declaration and in no
-// declaration nested inside it. A module holds its whole file; a declaration
-// whose last line is unknown holds its first line only.
-func (builder *requestBuilder) scopeFacts(index groupindex.Index, writer *rowWriter) []factWire {
-	type span struct {
-		first, last int
-		listed      bool
-	}
-	listed := make(map[string]bool, len(writer.refs))
-	for placeID := range writer.refs {
-		listed[placeID] = true
-	}
-	spans := make(map[string][]span)
-	for _, place := range builder.input.Graph.Places {
-		if place.Symbol == nil || len(place.TargetIDs) > 0 && !slices.Contains(place.TargetIDs, index.Target.ID) {
-			continue
-		}
-		decl := place.Symbol.Decl
-		switch programindex.ObjectKind(decl.Kind) {
-		case programindex.ObjectModule:
-			spans[place.Path] = append(spans[place.Path], span{first: 0, last: int(^uint(0) >> 1), listed: listed[place.ID]})
-		case programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectLambda:
-			last := max(decl.EndLine, place.LineNo)
-			spans[place.Path] = append(spans[place.Path], span{first: place.LineNo, last: last, listed: listed[place.ID]})
-		}
-	}
-	inside := func(anchor *facts.Anchor) bool {
-		if anchor == nil {
-			return false
-		}
-		found, innermost := false, span{first: -1}
-		for _, candidate := range spans[anchor.Path] {
-			if anchor.Line < candidate.first || anchor.Line > candidate.last {
-				continue
-			}
-			if candidate.first > innermost.first || candidate.first == innermost.first && candidate.last < innermost.last {
-				found, innermost = true, candidate
-			}
-		}
-		return found && innermost.listed
-	}
-	var listedFacts []facts.Fact
-	for _, fact := range builder.input.Facts.Facts {
-		if fact.TargetID == index.Target.ID && advertises(fact.Kind) && inside(fact.Anchor) {
-			listedFacts = append(listedFacts, fact)
-		}
-	}
-	rows := make([]factWire, 0, len(listedFacts))
-	for _, fact := range listedFacts {
-		builder.catalog.facts[fact.ID] = factEntry{id: fact.ID, kind: fact.Kind}
-	}
-	for _, fact := range listedFacts {
-		row := builder.factWire(fact)
-		for _, linked := range fact.Refs {
-			if _, known := builder.catalog.facts[linked]; known && !slices.Contains(row.Links, linked) {
-				row.Links = append(row.Links, linked)
-			}
-		}
-		rows = append(rows, row)
-	}
-	return rows
 }
 
 func (builder *requestBuilder) targets() []targetWire {

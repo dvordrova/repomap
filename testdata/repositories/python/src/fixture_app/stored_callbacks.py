@@ -86,3 +86,18 @@ def run_any(job):
 def start_any(name):
     run_any(flush_replies)
     run_any(name)
+
+
+# A loop throttling its one step, as freqtrade's Worker hands its bot's
+# process to _throttle(func=...): run hands process to throttle, which calls
+# it, and process does the work. A Main flow walked through run follows func
+# to process's accept_client and asks nothing.
+class Loop:
+    def run(self):
+        return self.throttle(func=self.process)
+
+    def throttle(self, func):
+        return func()
+
+    def process(self):
+        return accept_client()

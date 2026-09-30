@@ -119,10 +119,6 @@ func TestTargetRefAndCwdAreTrimmedButStillChecked(t *testing.T) {
 			},
 			"main_flow_target": " " + refs.target("alpha"),
 		})
-	}, flow: func([]byte) []byte {
-		return encodeResponse(t, map[string]any{"title": "Items", "steps": []any{
-			map[string]any{"ref": " " + refs.subject("alpha", "core"), "explanation": "Apply computes the items."},
-		}})
 	}}
 	result, rejected, err := Run(t.Context(), llm.Executor{}, provider, fixture.input)
 	if err != nil || result.Validate() != nil {
@@ -134,7 +130,7 @@ func TestTargetRefAndCwdAreTrimmedButStillChecked(t *testing.T) {
 	if len(result.RunRecipe) != 1 || result.RunRecipe[0].Cwd != "alpha" || result.RunRecipe[0].TargetID != fixture.targetID("alpha") {
 		t.Fatalf("a padded cwd was not trimmed: %+v", result.RunRecipe)
 	}
-	if len(result.MainFlow.Steps) != 1 || result.MainFlow.Steps[0].TargetID != fixture.targetID("alpha") {
+	if len(result.MainFlow.Steps) != 2 || result.MainFlow.Steps[0].TargetID != fixture.targetID("alpha") {
 		t.Fatalf("a padded flow target was not trimmed: %+v", result.MainFlow)
 	}
 	if len(rejected) != 2 || !strings.Contains(rejected[0].Reason, `unknown target ref "t9"`) || !strings.Contains(rejected[1].Reason, "cwd") {

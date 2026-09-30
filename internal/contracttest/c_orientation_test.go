@@ -56,100 +56,45 @@ func TestCFixtureOrientationReadsMainsCallsInWrittenOrder(t *testing.T) {
 	t.Fatalf("kvd's main is not a seed row: %+v", overview.Seeds)
 }
 
-// kvd's Main flow is asked over what kvd runs: main and what it calls, the
-// load-time code, each command's reach, and what a callable hands over:
-// main hands acceptHandler to the event loop, which hands
-// readQueryFromClient on, which runs processCommand. No call reaches them,
-// so without the hand-over the flow could not go past loopMain. Every one
-// is listed with all of its calls, in reading order.
-func TestCFixtureMainFlowScopeFollowsWhatMainHandsOver(t *testing.T) {
+// kvd's Main flow is walked by code from main (design skeptic, 2026-09-30):
+// main hands acceptHandler to the event loop's loopCreateFileEvent, and the
+// loop's one call through a file event's rfileProc, which the index leaves
+// open, reaches each handler a file event is given (acceptHandler,
+// readQueryFromClient) as one of them: a split, one question. Past it
+// readQueryFromClient runs processInputBuffer and processCommand with no
+// question; processCommand's dispatch over the command table is the next
+// split. No declaration is on the path twice.
+func TestCFixtureMainFlowWalksWhatMainHandsOver(t *testing.T) {
 	run := runKvdOrientation(t)
-	bodies := run.asked.bodies(t)
-	if len(bodies) != 2 {
-		t.Fatalf("the orientation asked %d times, want the overview then the flow", len(bodies))
+	if bodies := run.asked.bodies(t); len(bodies) != 1 {
+		t.Fatalf("the orientation asked the model %d times, want the overview alone", len(bodies))
 	}
-	var flow struct {
-		Target  struct{ Ref, Name string }
-		Members []struct {
-			Ref, Name, Anchor string
-			Calls             []any
-		}
+	// With no categorizer the flow ends at main's split, a named fork of
+	// its candidates, acceptHandler among them as main hands it over.
+	if path := flowPath(run.indexes, run.result.MainFlow); len(path) < 2 || path[0] != "main ()" ||
+		!slices.Contains(path, "? acceptHandler (handed to loopCreateFileEvent)") || !slices.Contains(path, "? loopMain (called)") {
+		t.Fatalf("the walk with no categorizer = %q", path)
 	}
-	if err := json.Unmarshal(bodies[1], &flow); err != nil {
-		t.Fatal(err)
+	preset := &flowPreset{choose: map[string]string{"main": "loopMain", "loopMain": "loopProcessEvents", "loopProcessEvents": "readQueryFromClient",
+		"readQueryFromClient": "processInputBuffer", "processInputBuffer": "processCommand"}, tie: map[string]bool{"processCommand": true}}
+	result := walkFixtureFlow(t, run.layer, run.indexes, run.graph, run.server, preset)
+	want := []string{"main ()", "loopMain (called)", "loopProcessEvents (called)", "readQueryFromClient (one of 3 at loop.c:58)",
+		"processInputBuffer (called)", "processCommand (called)", "? addReply (called)",
+		"? delCommand (one of 6 at kvd.c:181)", "? keysCommand (one of 6 at kvd.c:181)", "? pingCommand (one of 6 at kvd.c:181)",
+		"? bgsaveCommand (one of 6 at kvd.c:181)", "? getCommand (one of 6 at kvd.c:181)", "? setCommand (one of 6 at kvd.c:181)"}
+	if got := flowPath(run.indexes, result.MainFlow); !slices.Equal(got, want) {
+		t.Fatalf("kvd's flow = %q\nwant %q", got, want)
 	}
-	if flow.Target.Name != "kvd" {
-		t.Fatalf("the flow was asked for %+v, not kvd", flow.Target)
+	// One question per split, the loop's rfileProc among them.
+	var steps []string
+	for _, split := range preset.asked {
+		steps = append(steps, split.step)
 	}
-	at := map[string]int{}
-	for position, member := range flow.Members {
-		if _, repeated := at[member.Ref]; repeated {
-			t.Fatalf("%s is listed twice", member.Ref)
-		}
-		at[member.Ref] = position
+	if !slices.Equal(steps, []string{"main", "loopMain", "loopProcessEvents", "readQueryFromClient", "processInputBuffer", "processCommand"}) ||
+		!slices.Equal(preset.asked[2].options, []string{"acceptHandler", "loopApiPoll", "readQueryFromClient", "sendReplyToClient"}) {
+		t.Fatalf("splits asked: %+v", preset.asked)
 	}
-	var index groupindex.Index
-	for _, candidate := range run.indexes {
-		if candidate.Target.Name == "kvd" {
-			index = candidate
-		}
-	}
-	subjects := map[string]groupindex.Subject{}
-	byName := map[string]string{}
-	for _, subject := range index.Subjects {
-		subjects[subject.ID] = subject
-		if subject.Object != nil {
-			byName[subject.Object.Name] = index.Target.ID + "." + subject.ID
-		}
-	}
-	runs := func(id string) bool {
-		object := subjects[id].Object
-		return object != nil && slices.Contains([]programindex.ObjectKind{programindex.ObjectFunction, programindex.ObjectMethod, programindex.ObjectLambda, programindex.ObjectModule}, object.Kind)
-	}
-	for _, function := range index.Launch.Functions {
-		if _, listed := at[index.Target.ID+"."+function.SubjectID]; runs(function.SubjectID) && !listed {
-			t.Fatalf("launch function %s is not listed", function.SubjectID)
-		}
-	}
-	for _, reach := range index.Reach {
-		for _, reached := range reach.Subjects {
-			if _, listed := at[index.Target.ID+"."+reached.SubjectID]; runs(reached.SubjectID) && !listed {
-				t.Fatalf("%s, reached by %s, is not listed", reached.SubjectID, reach.OperationID)
-			}
-		}
-	}
-	order := []string{"main", "acceptHandler", "readQueryFromClient", "processInputBuffer", "processCommand"}
-	for i, name := range order {
-		position, listed := at[byName[name]]
-		if !listed {
-			t.Fatalf("%s is not in kvd's flow scope", name)
-		}
-		if i == 0 && position != 0 {
-			t.Fatalf("main is member %d, not the first", position)
-		}
-		if i > 0 && position < at[byName[order[i-1]]] {
-			t.Fatalf("%s (member %d) comes before %s, which hands it over or calls it", name, position, order[i-1])
-		}
-	}
-	// Every listed member has every call its declaration makes.
-	calls := map[string]int{}
-	for _, place := range run.graph.Places {
-		if place.Symbol != nil {
-			calls[fmt.Sprintf("%s %s:%d", place.Symbol.Decl.Name, place.Path, place.LineNo)] = len(place.Symbol.Calls)
-		}
-	}
-	for _, member := range flow.Members {
-		if want, placed := calls[member.Name+" "+member.Anchor]; placed && len(member.Calls) != want {
-			t.Fatalf("%s lists %d of its %d calls", member.Name, len(member.Calls), want)
-		}
-	}
-	for _, body := range bodies {
-		for _, cut := range []string{"calls_omitted", "called_by", "callee_id"} {
-			if strings.Contains(string(body), cut) {
-				t.Fatalf("a request carries %q", cut)
-			}
-		}
-	}
+	assertNoRepeats(t, result.MainFlow)
 }
 
 // callHeads reads each call tuple's called name and line.
@@ -174,6 +119,9 @@ type kvdOrientation struct {
 	graph   atlas.Graph
 	indexes []groupindex.Index
 	asked   *capturedOrientation
+	layer   facts.Result
+	server  string
+	result  orientation.Result
 }
 
 // runKvdOrientation runs the orientation over kvd and kvcli as an ordinary
@@ -214,16 +162,17 @@ func runKvdOrientation(t *testing.T) kvdOrientation {
 		t.Fatal(err)
 	}
 	asked := &capturedOrientation{flowTarget: server.Target.ID}
-	if _, _, err := orientation.Run(t.Context(), llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}}, asked,
-		orientation.Input{RepositoryName: "kvd", Facts: layer, Claims: noClaims, Groups: indexes, Graph: graph}); err != nil {
+	result, _, err := orientation.Run(t.Context(), llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}}, asked,
+		orientation.Input{RepositoryName: "kvd", Facts: layer, Claims: noClaims, Groups: indexes, Graph: graph})
+	if err != nil {
 		t.Fatal(err)
 	}
-	return kvdOrientation{fixture: fixture, graph: graph, indexes: indexes, asked: asked}
+	return kvdOrientation{fixture: fixture, graph: graph, indexes: indexes, asked: asked, layer: layer, server: server.Target.ID, result: result}
 }
 
-// capturedOrientation keeps the orientation's requests. It answers the
-// overview by choosing flowTarget's Main flow, when one is set, and the flow
-// with the legitimate empty answer.
+// capturedOrientation keeps the orientation's one provider request, the
+// overview, answering it by choosing flowTarget's Main flow when one is set;
+// the flow is walked by code.
 type capturedOrientation struct {
 	flowTarget string
 	mu         sync.Mutex
@@ -239,8 +188,8 @@ func (*capturedOrientation) Prepare(prompt llm.Prompt, _ llm.Limits) (llm.Prepar
 func (asked *capturedOrientation) Complete(_ context.Context, prepared llm.Prepared) (llm.Completion, error) {
 	asked.mu.Lock()
 	defer asked.mu.Unlock()
-	if len(asked.users) == 2 {
-		return llm.Completion{}, fmt.Errorf("the orientation was asked a third time")
+	if len(asked.users) == 1 {
+		return llm.Completion{}, fmt.Errorf("the orientation was asked a second time")
 	}
 	asked.users = append(asked.users, slices.Clone(prepared.Bytes()))
 	response := []byte(`{}`)

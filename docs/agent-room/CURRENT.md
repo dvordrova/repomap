@@ -299,13 +299,17 @@ never in a hidden join key ([ProgramIndex](../contracts/PROGRAM_INDEX.md)).
   An exact request already in the air is asked once and its twins read that
   answer, so targets sharing a part get one description and a warm rerun
   makes no live call.
-- **Orientation stage 2 (2026-09-29):** an overview (facts, claims,
-  connections, groups without members, seed rows) answers summary, roles,
-  recipe and `main_flow_target`; a second request asks that target's main
-  flow over Launch ∪ Reach ∪ hand-overs, every member complete as a lossless
-  tuple row in reading order. The member ladder is gone. A flow request the
-  provider cannot hold is journaled under `flow_request` while its overview
-  stands ([Reading](../contracts/READING.md) "Orientation").
+- **Orientation stage 2 (2026-09-29, flow walked 2026-09-30):** an overview
+  (facts, claims, connections, groups without members, seed rows) answers
+  summary, roles, recipe and `main_flow_target`; there is no DeepSeek flow
+  request. That target's Main flow is walked by code from its first callable
+  seed over spine units (a class folds its methods): exact calls, every
+  alternative of a dispatch site, every possible end of an open call and
+  every hand-over are candidates; helpers, test code and units whose closure
+  enters no Core part are not. One candidate is followed; two or more are one
+  Jev choice, and a lead under the classifier margin (or no answer) ends the
+  flow at a named fork, journaled under `flow_fork`
+  ([Reading](../contracts/READING.md) "Orientation").
 - **Glossary:** only accepted prose enters a separate p-ref
   generation/reduction pass. Generation is three steps, each one decision
   (owner, 2026-09-28): DeepSeek lists names, Jev decides per name domain

@@ -1,0 +1,176 @@
+package orientation
+
+import (
+	"encoding/json"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/typesafe/typesafetest"
+)
+
+// flowProgram is a small program to walk: main calls start, which registers
+// three callbacks with an outside loop (on_click, on_move, draw) and calls a
+// helper; on_click runs play in the game's core part through the Game class
+// (its constructor and move), play calls back into on_click (a cycle), and a
+// test module drives start too.
+func flowProgram() Input {
+	subject := func(id, kind, path string, extra ...func(*groupindex.Subject)) groupindex.Subject {
+		result := groupindex.Subject{ID: id, Kind: groupindex.SubjectObject, Object: &groupindex.ObjectFacts{Name: id, Kind: programindex.ObjectKind(kind), Location: &programindex.Location{Path: path, Line: 1, Column: 1}}}
+		for _, apply := range extra {
+			apply(&result)
+		}
+		return result
+	}
+	helper := func(s *groupindex.Subject) {
+		s.Interpretation = &groupindex.Interpretation{Line: "Formats a message.", Helper: true}
+	}
+	line := func(text string) func(*groupindex.Subject) {
+		return func(s *groupindex.Subject) { s.Interpretation = &groupindex.Interpretation{Line: text} }
+	}
+	method := func(owner string) func(*groupindex.Subject) {
+		return func(s *groupindex.Subject) { s.Object.OwnerID = owner }
+	}
+	edge := func(from, to string, kind programindex.RelationKind) groupindex.StructuralEdge {
+		return groupindex.StructuralEdge{FromSubjectID: from, ToSubjectID: to, Role: groupindex.EdgeRelationTarget, RelationKind: kind, Resolution: programindex.ResolutionExact}
+	}
+	calls := programindex.RelationCalls
+	index := groupindex.Index{
+		Target: programindex.Target{ID: "t1", Name: "game", TestSources: []string{"test/start_test.py"},
+			Seeds: []programindex.TargetSeed{{ObjectID: "main", Kind: programindex.SeedCallable}}},
+		Subjects: []groupindex.Subject{
+			subject("main", "function", "app/main.py"), subject("start", "function", "app/ui.py", line("Opens the window and registers its handlers.")),
+			subject("format", "function", "app/ui.py", helper), subject("on_click", "function", "app/ui.py", line("Handles a click on the board.")),
+			subject("on_move", "function", "app/ui.py"), subject("draw", "function", "app/ui.py"), subject("paint", "function", "app/ui.py"),
+			subject("Game", "type", "app/game.py"), subject("Game.__init__", "method", "app/game.py", method("Game")),
+			subject("Game.move", "method", "app/game.py", method("Game")), subject("play", "function", "app/game.py", line("Plays one move.")),
+			subject("test_start", "function", "test/start_test.py"),
+		},
+		Groups: []groupindex.Group{
+			{ID: "g1", Title: "User interface", MemberSubjectIDs: []string{"main", "start", "format", "on_click", "on_move", "draw", "paint"}},
+			{ID: "g2", Title: "Game state", Core: true, MemberSubjectIDs: []string{"Game", "Game.__init__", "Game.move", "play"}},
+		},
+		StructuralEdges: []groupindex.StructuralEdge{
+			edge("main", "start", calls), edge("start", "format", calls),
+			edge("on_click", "Game.__init__", calls), edge("on_click", "Game.move", calls), edge("Game.move", "play", calls), edge("play", "on_click", calls),
+			edge("draw", "paint", calls), edge("on_move", "Game.move", calls),
+			edge("test_start", "start", calls), edge("test_start", "play", programindex.RelationPassesCallback),
+		},
+	}
+	registration := func(object string) facts.Fact {
+		return facts.Fact{Kind: facts.KindRegistration, TargetID: "t1", OwnerID: "start", ObjectID: object, Key: "loop.on", Text: "loop.on." + object}
+	}
+	return Input{Groups: []groupindex.Index{index}, Facts: facts.Result{Facts: []facts.Fact{
+		registration("on_click"), registration("on_move"), registration("draw"),
+		{Kind: facts.KindRegistration, TargetID: "t1", OwnerID: "test_start", ObjectID: "on_move", Text: "loop.on.move"},
+	}}}
+}
+
+// flowNames are a walked flow's steps by declaration, then its fork's
+// branches, each with how it is reached.
+func flowNames(flow MainFlow) []string {
+	var names []string
+	for _, step := range flow.Steps {
+		names = append(names, step.SubjectID+" ("+step.Via+")")
+		for _, branch := range step.Branches {
+			names = append(names, "? "+branch.SubjectID+" ("+branch.Via+")")
+		}
+	}
+	return names
+}
+
+// A Main flow is walked by code: a step with one candidate is followed with
+// no question, a split is one closed question whose options are the
+// candidates (a helper, a unit whose closure enters no core part and test
+// code are none), a class is one step of the members of it entered, and no
+// declaration is on the path twice.
+func TestAMainFlowIsWalkedByCodeAndAsksOneQuestionPerSplit(t *testing.T) {
+	var asked []llm.Question
+	categorizer := &typesafetest.Categorizer{Decide: func(key string, question llm.Question) (llm.Verdict, bool) {
+		asked = append(asked, question)
+		return llm.Verdict{Choice: "on_click", Probabilities: map[string]float64{"on_click": 0.8, "on_move": 0.2}}, true
+	}}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, flowProgram(), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"main ()", "start (called)", "on_click (handed to loop.on.on_click)", "Game.move (called)", "play (called)"}
+	if got := flowNames(walk.flow); !slices.Equal(got, want) {
+		t.Fatalf("flow = %q, want %q", got, want)
+	}
+	if categorizer.Calls() != 1 || len(asked) != 1 {
+		t.Fatalf("asked %d requests (%d questions), want the one split at start", categorizer.Calls(), len(asked))
+	}
+	var options []string
+	for _, option := range asked[0].Options {
+		options = append(options, option.Name)
+		if option.Name == "on_click" && (!strings.Contains(option.Meaning, "role: Handles a click on the board.") || !strings.Contains(option.Meaning, "reached: handed to loop.on.on_click")) {
+			t.Fatalf("an option lost its terms: %+v", option)
+		}
+	}
+	// format is a helper, draw's closure enters no core part, and the test's
+	// registration of on_move is no hand-over of the program's.
+	if !slices.Equal(options, []string{"on_click", "on_move"}) || asked[0].Item["step"] != "start" {
+		t.Fatalf("the split offered %v about %v", options, asked[0].Item)
+	}
+	if len(walk.asked) != 1 || !walk.asked[0].decided || walk.asked[0].lead < 0.59 {
+		t.Fatalf("the split's decision was not kept: %+v", walk.asked)
+	}
+	if walk.flow.Title != "From main to play" || walk.flow.Steps[1].Explanation != "Opens the window and registers its handlers." {
+		t.Fatalf("the flow's title or a step's accepted line is wrong: %+v", walk.flow)
+	}
+}
+
+// A split the categorizer leaves under the margin ends the path there, a
+// named fork keeping its candidates, and the split is journaled with its
+// lead; so does a walk with no categorizer, which asks nothing.
+func TestAnUndecidedSplitEndsTheFlowAtANamedFork(t *testing.T) {
+	close := &typesafetest.Categorizer{Decide: func(string, llm.Question) (llm.Verdict, bool) {
+		return llm.Verdict{Choice: "on_click", Probabilities: map[string]float64{"on_click": 0.52, "on_move": 0.48}}, true
+	}}
+	want := []string{"main ()", "start (called)", "? on_click (handed to loop.on.on_click)", "? on_move (handed to loop.on.on_move)"}
+	for _, categorizer := range []llm.Categorizer{close, nil} {
+		walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, flowProgram(), "t1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := flowNames(walk.flow); !slices.Equal(got, want) {
+			t.Fatalf("flow = %q, want %q", got, want)
+		}
+		if categorizer == nil {
+			if len(walk.rejected) != 0 || len(walk.asked) != 0 {
+				t.Fatalf("a walk with no categorizer asked or journaled: %+v", walk)
+			}
+			continue
+		}
+		var fork struct {
+			Step       string
+			Candidates []string
+			Lead       float64
+		}
+		if len(walk.rejected) != 1 || walk.rejected[0].Section != sectionFlowFork || json.Unmarshal(walk.rejected[0].Raw, &fork) != nil ||
+			fork.Step != "start" || len(fork.Candidates) != 2 || fork.Lead < 0.03 || fork.Lead > 0.05 {
+			t.Fatalf("the undecided split was not journaled with its lead: %+v", walk.rejected)
+		}
+	}
+}
+
+// A chain whose every step has one candidate asks nothing.
+func TestAChainOfSingleCandidatesAsksNothing(t *testing.T) {
+	input := flowProgram()
+	index := &input.Groups[0]
+	// start registers on_click alone.
+	input.Facts.Facts = input.Facts.Facts[:1]
+	categorizer := &typesafetest.Categorizer{}
+	walk, err := walkFlow(t.Context(), llm.Executor{}, categorizer, input, index.Target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := flowNames(walk.flow); len(got) != 5 || categorizer.Calls() != 0 {
+		t.Fatalf("flow = %q after %d requests, want five steps and none", got, categorizer.Calls())
+	}
+}

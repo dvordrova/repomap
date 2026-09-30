@@ -1,5 +1,34 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — The Main flow is walked by code; the DeepSeek flow request is gone
+
+- **Rule** (`orientation/path.go`, `scope.go`, `groupindex.Walk`): from the
+  overview's target's first callable seed the flow steps over spine units (a
+  class folds its methods). Candidates are exact calls, every alternative of
+  a dispatch site, every possible end of an open call (`Unresolved.Possible`)
+  and every hand-over (passes_callback, a registration's owner → object),
+  executing non-test members only; helper units and units whose closure
+  enters no Core part are dropped. 0 ends, 1 is followed, ≥ 2 is one Jev
+  choice (`orientation_flow`, per-option criteria: name, signature, part,
+  role line, how reached, what it handles). A lead under the margin or no
+  answer ends at a named fork (`flow_fork` in rejected.jsonl); the report
+  folds it into one line. `flow-prompt.md`, its example and the flow decoder
+  are deleted.
+- **Five cache-off draws on saved inputs** (min lead): redis 5/5 main → aeMain
+  → aeProcessEvents → readQueryFromClient → processInputBuffer →
+  processCommand → call → setCommand (0.13); freqtrade 5/5 main →
+  get_parsed_arg → start_trading → Worker.run → FreqtradeBot.process →
+  analyze → populate_dataframe_with_trades (0.19); litestream 4/5 main →
+  Main.Run → ReplicateCommand.Run → Replica.Sync → ReplicaClient, the fifth
+  a fork at Run's 11 candidates (0.07); othello 5/5 -main → start! → setup →
+  play-ai → ai/move → search/choose, then a fork (2), timed-deepen or
+  choose-at-depth. Othello's click handler is not chosen (setup → play-ai
+  leads 0.52–0.69). Requests = splits in every draw; no step repeats.
+- **Fixtures:** walked flows in Python (`Loop.run`/`throttle` added), Go,
+  JS/TS, Clojure and C (kvd main → … → processCommand, a fork of its six
+  commands) with fail-closed Jev presets; provider bodies test covers the
+  walk's questions.
+
 ## 2026-09-30 — An area no arrangement fits is packed like a program's areas
 
 - **Rule** (`packedArea`): an area none of whose layered arrangements fits

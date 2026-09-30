@@ -9,6 +9,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/facts"
 	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/orientation"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -431,5 +432,30 @@ func TestWorkARunsOnItsOwnReadsAfterTheMainFlow(t *testing.T) {
 	}
 	if !slices.Equal(said, want) {
 		t.Fatalf("it runs on its own:\n%s\nwant\n%s", strings.Join(said, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// A walked Main flow ending at an undecided split names its fork on one
+// line, the candidates' shared "one of N at <site>", with each candidate's
+// name reading its declaration in its part; candidates reached otherwise
+// read "one of N" (design skeptic, 2026-09-30: never a wall of names).
+func TestAFlowsNamedForkIsOneLineOfItsCandidates(t *testing.T) {
+	builder, _ := flowFixture()
+	fork := builder.flowFork(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Branches: []orientation.FlowBranch{
+		{SubjectID: "h1", Via: "one of 2 at redis.c:1360"}, {SubjectID: "h2", Via: "one of 2 at redis.c:1360"}}})
+	var names []string
+	for _, name := range fork.Names {
+		names = append(names, name.Name+" "+name.Part)
+	}
+	if fork.Label != "one of 2 at redis.c:1360" || !slices.Equal(names, []string{"getCommand #t1-g5", "setCommand #t1-g5"}) {
+		t.Fatalf("fork = %q %q", fork.Label, names)
+	}
+	mixed := builder.flowFork(orientation.FlowStep{TargetID: "t1", SubjectID: "cron", Branches: []orientation.FlowBranch{
+		{SubjectID: "h1", Via: "called"}, {SubjectID: "save", Via: "handed to aeCreateTimeEvent"}}})
+	if mixed.Label != "one of 2" || len(mixed.Names) != 2 {
+		t.Fatalf("mixed fork = %+v", mixed)
+	}
+	if builder.flowFork(orientation.FlowStep{TargetID: "t1", SubjectID: "cron"}) != nil {
+		t.Fatal("a step with no branches has a fork")
 	}
 }

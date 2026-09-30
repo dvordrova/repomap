@@ -49,12 +49,26 @@ type RecipeStep struct {
 
 // FlowStep is one step of the main flow. Exactly one of FactID or SubjectID
 // is set; SubjectID names a GroupsIndex subject (object or pattern) of the
-// target in TargetID.
+// target in TargetID. A walked flow (path.go) writes no prose: Explanation
+// is the atlas line accepted for the declaration, Via how the step before
+// reaches it, as code says it ("called", "one of 3 at server.c:88",
+// "handed to quil.core.sketch.setup"), and Branches, on the last step of a
+// flow that ends at an undecided split, the candidates it could continue
+// through.
 type FlowStep struct {
-	TargetID    string `json:"target_id"`
-	FactID      string `json:"fact_id,omitempty"`
-	SubjectID   string `json:"subject_id,omitempty"`
-	Explanation string `json:"explanation"`
+	TargetID    string       `json:"target_id"`
+	FactID      string       `json:"fact_id,omitempty"`
+	SubjectID   string       `json:"subject_id,omitempty"`
+	Explanation string       `json:"explanation,omitempty"`
+	Via         string       `json:"via,omitempty"`
+	Branches    []FlowBranch `json:"branches,omitempty"`
+}
+
+// FlowBranch is one candidate of a named fork: the declaration and how the
+// fork's step reaches it.
+type FlowBranch struct {
+	SubjectID string `json:"subject_id"`
+	Via       string `json:"via,omitempty"`
 }
 
 // MainFlow is the one end-to-end path the reader should follow first.
@@ -189,8 +203,13 @@ func (result Result) Validate() error {
 		return fmt.Errorf("orientation: main flow title is invalid")
 	}
 	for position, step := range result.MainFlow.Steps {
-		if !validText(step.TargetID) || !validSentence(step.Explanation) {
+		if !validText(step.TargetID) || step.Explanation != "" && !validSentence(step.Explanation) || step.Via != "" && !validSentence(step.Via) {
 			return fmt.Errorf("orientation: flow step %d is invalid", position)
+		}
+		for _, branch := range step.Branches {
+			if !validText(branch.SubjectID) || branch.Via != "" && !validSentence(branch.Via) {
+				return fmt.Errorf("orientation: flow step %d branch is invalid", position)
+			}
 		}
 		if (step.FactID == "") == (step.SubjectID == "") {
 			return fmt.Errorf("orientation: flow step %d needs exactly one of fact_id or subject_id", position)
@@ -279,6 +298,9 @@ func clone(result Result) Result {
 		owned.RunRecipe[position] = copied
 	}
 	owned.MainFlow.Steps = cloneSlice(result.MainFlow.Steps)
+	for position := range owned.MainFlow.Steps {
+		owned.MainFlow.Steps[position].Branches = cloneSlice(result.MainFlow.Steps[position].Branches)
+	}
 	return owned
 }
 

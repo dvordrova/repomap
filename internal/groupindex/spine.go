@@ -134,41 +134,87 @@ func (graph *reachGraph) spine(reach Reach) Spine {
 		}
 		return result
 	}
+	next := func(step SpineStep) []SpineStep {
+		unit := graph.position[step.SubjectID]
+		var entered []int
+		for _, member := range step.Members {
+			entered = append(entered, graph.position[member])
+		}
+		work := workOf(unit, entered)
+		var onward, helpers []SpineStep
+		for _, target := range work.units {
+			candidate := SpineStep{SubjectID: id(target), Members: ids(work.members[target]), Edge: work.edge[target]}
+			if helper(target) {
+				candidate.Helper = true
+				helpers = append(helpers, candidate)
+				continue
+			}
+			onward = append(onward, candidate)
+		}
+		// The work is one call only when no helper stands beside it; a
+		// step whose one call is into a helper delegates to it too.
+		return append(onward, helpers...)
+	}
+	start := unitOf(root)
+	return Walk(SpineStep{SubjectID: id(start), Members: []string{id(root)}, Edge: -1}, next, nil)
+}
+
+// Walk follows a path from start, one step at a time: next lists what a
+// step's work enters, each a step of its own (a unit, the members of it
+// entered, the edge first entering it); a unit already on the path is no
+// candidate. A step with no candidate ends the path, one is followed, and
+// of several pick chooses the one to follow, or none: the candidates are
+// then the path's branches, where it ends. A nil pick ends the path at its
+// first split, as an input's spine does. The path never holds a unit twice.
+func Walk(start SpineStep, next func(SpineStep) []SpineStep, pick func(SpineStep, []SpineStep) (int, bool)) Spine {
 	var result Spine
-	unit, entered, edge := unitOf(root), []int{root}, -1
-	visited := map[int]bool{}
+	visited := map[string]bool{start.SubjectID: true}
+	step := start
 	for {
-		visited[unit] = true
-		result.Steps = append(result.Steps, SpineStep{SubjectID: id(unit), Members: ids(entered), Edge: edge})
-		next := workOf(unit, entered)
-		var onward, helpers []int
-		for _, target := range next.units {
-			switch {
-			case visited[target]:
-			case helper(target):
-				helpers = append(helpers, target)
-			default:
-				onward = append(onward, target)
+		result.Steps = append(result.Steps, step)
+		var candidates []SpineStep
+		for _, candidate := range next(step) {
+			if !visited[candidate.SubjectID] {
+				candidates = append(candidates, candidate)
 			}
 		}
-		// The work is one call only when no helper stands beside it; a step
-		// whose one call is into a helper delegates to it too.
-		if len(onward)+len(helpers) == 1 {
-			onward, helpers = append(onward, helpers...), nil
-		} else if len(onward) == 1 {
-			onward = append(onward, -1)
+		chosen := -1
+		switch {
+		case len(candidates) == 0:
+			return result
+		case len(candidates) == 1:
+			chosen = 0
+		case pick != nil:
+			if at, decided := pick(step, candidates); decided && at >= 0 && at < len(candidates) {
+				chosen = at
+			}
 		}
-		if len(onward) != 1 {
-			onward = slicesDeleteSentinel(onward)
-			for _, target := range onward {
-				result.Branches = append(result.Branches, SpineStep{SubjectID: id(target), Members: ids(next.members[target]), Edge: next.edge[target]})
-			}
-			for _, target := range helpers {
-				result.Branches = append(result.Branches, SpineStep{SubjectID: id(target), Members: ids(next.members[target]), Edge: next.edge[target], Helper: true})
-			}
+		if chosen < 0 {
+			result.Branches = candidates
 			return result
 		}
-		unit, entered, edge = onward[0], next.members[onward[0]], next.edge[onward[0]]
+		step = candidates[chosen]
+		visited[step.SubjectID] = true
+	}
+}
+
+// Units maps a declaration to the unit a walk steps through: a method whose
+// owner is a class is that class, which folds its methods (Worker(args),
+// worker.run() and worker.exit() are one step); any other declaration is
+// its own unit.
+func Units(index *Index) func(subjectID string) string {
+	objects := make(map[string]*ObjectFacts, len(index.Subjects))
+	for _, subject := range index.Subjects {
+		objects[subject.ID] = subject.Object
+	}
+	return func(subjectID string) string {
+		object := objects[subjectID]
+		if object != nil && object.Kind == programindex.ObjectMethod && object.OwnerID != "" {
+			if owner := objects[object.OwnerID]; owner != nil && owner.Kind == programindex.ObjectType {
+				return object.OwnerID
+			}
+		}
+		return subjectID
 	}
 }
 
@@ -180,16 +226,3 @@ func containsInt(values []int, value int) bool {
 	}
 	return false
 }
-
-// slicesDeleteSentinel drops the -1 marking work that is more than one
-// call.
-func slicesDeleteSentinel(values []int) []int {
-	result := values[:0]
-	for _, value := range values {
-		if value >= 0 {
-			result = append(result, value)
-		}
-	}
-	return result
-}
-

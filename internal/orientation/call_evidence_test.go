@@ -26,20 +26,14 @@ func TestOrientationUsesOriginalMemberCallsWithoutImportingNeighbourBehavior(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	flow, _, _, err := buildFlow(fixture.input, programTargetID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, row := range overview.Seeds {
 		if _, ok := catalog.subjects[row.Ref]; !ok {
 			t.Fatalf("uncitable seed row: %s", row.Ref)
 		}
 	}
 	seeds, _ := encodeWire(overview.Seeds)
-	members, _ := encodeWire(flow.Members)
-	// A seed's callee outside the request is named by its declaration; in
-	// the flow, where Apply is a member, by its ref.
-	for raw, callee := range map[string]string{string(seeds): "Apply (alpha/core.go:8)", string(members): fixture.objectID("alpha", "core")} {
+	// A seed's callee outside the request is named by its declaration.
+	for raw, callee := range map[string]string{string(seeds): "Apply (alpha/core.go:8)"} {
 		for _, want := range []string{"alternatives", "goroutine", "Apply@5 -> " + callee} {
 			if !strings.Contains(raw, want) {
 				t.Fatalf("original observation %q missing: %s", want, raw)

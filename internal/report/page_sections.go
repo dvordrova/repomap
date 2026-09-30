@@ -350,6 +350,19 @@ type pageFlowStep struct {
 	// callable it names is registered and what runs it (registeredStep).
 	Registers []pageStepRegistration
 	RunBy     [][]pageStepName
+	// Via is how the step before reaches it, as code says it ("called",
+	// "one of 96 at redis.c:1033", "handed to quil.core.sketch.setup"), and
+	// Fork, on the last step of a flow ending at an undecided split, the
+	// candidates it could go on through, read folded under one line.
+	Via  string
+	Fork *pageFlowFork
+}
+
+// pageFlowFork is a Main flow's named fork: its line ("one of 96 at
+// redis.c:1033", "one of 5") and each candidate's name.
+type pageFlowFork struct {
+	Label string
+	Names []pageStepName
 }
 
 // pageGroup is one responsibility card. Members are grouped by file so the

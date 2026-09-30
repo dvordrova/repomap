@@ -965,7 +965,8 @@ func (builder *pageBuilder) flowStepSubject(step orientation.FlowStep) string {
 }
 
 func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSection, path *pageStepPath) pageFlowStep {
-	row := pageFlowStep{Explanation: step.Explanation}
+	row := pageFlowStep{Explanation: step.Explanation, Via: step.Via}
+	row.Fork = builder.flowFork(step)
 	var owner *pageSection
 	switch {
 	case step.FactID != "":
@@ -1020,6 +1021,42 @@ func (builder *pageBuilder) flowStep(step orientation.FlowStep, section *pageSec
 		}
 	}
 	return row
+}
+
+// flowFork is a walked flow's fork, when its last step ends at one: one
+// line, the candidates' shared "one of N at <site>" when they share it,
+// else "one of N", and each candidate's name reading its declaration.
+func (builder *pageBuilder) flowFork(step orientation.FlowStep) *pageFlowFork {
+	if len(step.Branches) == 0 {
+		return nil
+	}
+	fork := &pageFlowFork{Label: fmt.Sprintf("one of %d", len(step.Branches))}
+	if via := step.Branches[0].Via; strings.HasPrefix(via, "one of ") && slices.IndexFunc(step.Branches, func(branch orientation.FlowBranch) bool { return branch.Via != via }) < 0 {
+		fork.Label = via
+	}
+	for _, branch := range step.Branches {
+		ref, ok := builder.subject(step.TargetID, branch.SubjectID)
+		if !ok {
+			continue
+		}
+		label, anchor := builder.subjectDisplay(ref.subject)
+		name := pageStepName{Name: builder.withType(ref.programTargetID, ref.subject, label)}
+		if anchor != nil {
+			name.Code, name.Open = anchor.Code, anchor.Open
+			if name.Code == "" {
+				name.Code = anchor.Href
+			}
+			if index := builder.graphIndex(ref.programTargetID); index != nil {
+				if section := builder.byProgram[ref.programTargetID]; section != nil {
+					if group := builder.edgesBetweenGroups(*index).groupOf[branch.SubjectID]; group != "" {
+						name.Part, name.Key = "#"+groupAnchorID(section.ID, group), declarationKey(anchor)
+					}
+				}
+			}
+		}
+		fork.Names = append(fork.Names, name)
+	}
+	return fork
 }
 
 // builtFrom lists the files a program is built from, by path (pageSection

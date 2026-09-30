@@ -331,6 +331,7 @@ func orientAtlasRuns(
 		ProviderFactory:  options.Deps.newCubeProvider,
 		Runner:           options.Deps.runOrientation,
 		Output:           options.Output,
+		Categorizer:      options.Categorizer,
 	}
 	orientationResult, rejected, err := runRepositoryOrientation(ctx, firstDay, outcome.Facts, outcome.Claims)
 	outcome.Graph = atlas.Graph{}

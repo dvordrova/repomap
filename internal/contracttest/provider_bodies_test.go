@@ -20,7 +20,7 @@ import (
 // name the function by its canonical place ID. Every body a run of kvd sends
 // (the reading's tables, Jev's questions and the orientation) names code by
 // path, line and name, never by an ID or a host path (the orientation's
-// overview and flow alike). Redis's orientation
+// overview and its Main flow's splits alike). Redis's orientation
 // once sent "callee_id":"sym:redis.c:1398:beforeSleep".
 func TestProviderBodiesCarryNoCanonicalIDsOrHostPaths(t *testing.T) {
 	fixture := loadCFixture(t)
@@ -69,19 +69,23 @@ func TestProviderBodiesCarryNoCanonicalIDsOrHostPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	asked := &capturedOrientation{flowTarget: server.Target.ID}
+	readCalls, readRequests := categorizer.Calls(), len(categorizer.Requests())
 	if _, _, err := orientation.Run(t.Context(), llm.Executor{BatchConcurrency: 1, BatchController: &llm.BatchController{}}, asked,
-		orientation.Input{RepositoryName: "kvd", Facts: layer, Claims: noClaims, Groups: indexes, Graph: graph}); err != nil {
+		orientation.Input{RepositoryName: "kvd", Facts: layer, Claims: noClaims, Groups: indexes, Graph: graph, Categorizer: categorizer}); err != nil {
 		t.Fatal(err)
 	}
 	preset.mu.Lock()
 	bodies := append(preset.requests, categorizer.Requests()...)
 	preset.mu.Unlock()
-	if len(bodies) == 0 || categorizer.Calls() == 0 {
-		t.Fatalf("the reading sent %d bodies, %d to Jev", len(bodies), categorizer.Calls())
+	if len(bodies) == 0 || readCalls == 0 {
+		t.Fatalf("the reading sent %d bodies, %d to Jev", len(bodies), readCalls)
+	}
+	if len(categorizer.Requests()) == readRequests {
+		t.Fatal("the Main flow's walk asked Jev nothing: the test no longer covers its splits")
 	}
 	orientationBodies := asked.bodies(t)
-	if len(orientationBodies) != 2 {
-		t.Fatalf("the orientation sent %d bodies, want the overview and the flow", len(orientationBodies))
+	if len(orientationBodies) != 1 {
+		t.Fatalf("the orientation sent %d bodies to the provider, want the overview alone", len(orientationBodies))
 	}
 	bodies = append(bodies, orientationBodies...)
 	assertNoLocalIdentities(t, bodies, fixture.root, repositoryRoot(t))

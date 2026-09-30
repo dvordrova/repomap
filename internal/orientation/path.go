@@ -1,0 +1,354 @@
+package orientation
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/dvordrova/repomap/internal/atlas/table"
+	"github.com/dvordrova/repomap/internal/facts"
+	"github.com/dvordrova/repomap/internal/groupindex"
+	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/programindex"
+)
+
+// flowStage names the categorizer's choices of a Main flow.
+const flowStage = "orientation_flow"
+
+// sectionFlowFork journals a split the categorizer did not decide: the path
+// ends there, a named fork.
+const sectionFlowFork = "flow_fork"
+
+// flowWalk is one walked Main flow: its steps, the splits it asked about
+// and the lead of each decided choice (for measurement; the artifact keeps
+// the steps).
+type flowWalk struct {
+	flow     MainFlow
+	rejected []RejectedRow
+	asked    []flowAsk
+	// met are the candidates the walk met, by the index a candidate step
+	// carries as its Edge.
+	met []flowCandidate
+}
+
+// flowAsk is one split the categorizer was asked about.
+type flowAsk struct {
+	step       string
+	candidates int
+	chosen     string
+	lead       float64
+	decided    bool
+}
+
+// walkFlow is a target's Main flow, walked by code from the target's entry
+// over flowGraph (design skeptic, 2026-09-30: a model writing the whole flow
+// had given othello 23 to 107 steps on one request and freqtrade's bot loop
+// in 1 of 7 answers). A step with no candidate is the flow's result, one is
+// followed with no request, and of several the categorizer chooses the one
+// the path to the program's work passes through: one closed question per
+// split. A lead under table.ClassifierMargin, or no answer, ends the path
+// there as a named fork, its candidates kept and the split journaled. No
+// step is written by a model: each is its declaration, with the atlas line
+// already accepted for it and how the step before reaches it.
+func walkFlow(ctx context.Context, executor llm.Executor, categorizer llm.Categorizer, input Input, targetID string) (flowWalk, error) {
+	return walkFlowFrom(ctx, executor, categorizer, input, targetID, "")
+}
+
+// WalkFlow walks a target's Main flow as Run does, from entry, a subject of
+// the target, or from the target's entry when entry is empty: a program's
+// flow read from a function of it (a fixture's tool_cli.main in a library).
+func WalkFlow(ctx context.Context, executor llm.Executor, categorizer llm.Categorizer, input Input, targetID, entry string) (MainFlow, []RejectedRow, error) {
+	walk, err := walkFlowFrom(ctx, executor, categorizer, input, targetID, entry)
+	return walk.flow, walk.rejected, err
+}
+
+func walkFlowFrom(ctx context.Context, executor llm.Executor, categorizer llm.Categorizer, input Input, targetID, entry string) (flowWalk, error) {
+	var index *groupindex.Index
+	for position := range input.Groups {
+		if input.Groups[position].Target.ID == targetID {
+			index = &input.Groups[position]
+		}
+	}
+	if index == nil {
+		return flowWalk{}, fmt.Errorf("orientation: flow target %q has no groups index", targetID)
+	}
+	graph := newFlowGraph(index, input.Facts.OfKind(facts.KindRegistration))
+	start := entry
+	if start == "" {
+		start = flowEntry(index, graph)
+	}
+	if start == "" || !graph.member(start) {
+		return flowWalk{}, nil
+	}
+	var walk flowWalk
+	var failure error
+	meet := func(candidate flowCandidate) groupindex.SpineStep {
+		walk.met = append(walk.met, candidate)
+		return groupindex.SpineStep{SubjectID: candidate.unit, Members: candidate.members, Edge: len(walk.met) - 1}
+	}
+	next := func(step groupindex.SpineStep) []groupindex.SpineStep {
+		var steps []groupindex.SpineStep
+		unit := graph.unit(step.Members[0])
+		// A class entered through several of its members goes on through
+		// one of them: the bot's process loop, not its constructor's
+		// schedule (Worker's run, exit and __init__ are one step, whose
+		// work the member chosen does).
+		if class := graph.subjects[unit]; len(step.Members) > 1 && class != nil && class.Object != nil && class.Object.Kind == programindex.ObjectType {
+			for _, member := range step.Members {
+				if member == unit || len(graph.candidates(unit, []string{member})) == 0 {
+					continue
+				}
+				steps = append(steps, meet(flowCandidate{unit: member, members: []string{member}, via: "its member " + graph.name(member)}))
+			}
+			return steps
+		}
+		for _, candidate := range graph.candidates(unit, step.Members) {
+			steps = append(steps, meet(candidate))
+		}
+		return steps
+	}
+	pick := func(step groupindex.SpineStep, candidates []groupindex.SpineStep) (int, bool) {
+		if failure != nil || categorizer == nil {
+			return 0, false
+		}
+		chosen, ask, rejected, err := chooseNext(ctx, executor, categorizer, graph, index, step, candidates, walk.met)
+		if err != nil {
+			failure = err
+			return 0, false
+		}
+		walk.asked = append(walk.asked, ask)
+		walk.rejected = append(walk.rejected, rejected...)
+		return chosen, ask.decided
+	}
+	spine := groupindex.Walk(groupindex.SpineStep{SubjectID: graph.unit(start), Members: []string{start}, Edge: -1}, next, pick)
+	if failure != nil {
+		return flowWalk{}, failure
+	}
+	for position, step := range spine.Steps {
+		row := FlowStep{TargetID: targetID, SubjectID: stepSubject(step), Explanation: graph.line(stepSubject(step))}
+		if step.Edge >= 0 {
+			row.Via = walk.met[step.Edge].via
+		}
+		// A class step going on through one of its members is that
+		// member's step, reached as the class was.
+		if len(walk.flow.Steps) > 0 && strings.HasPrefix(row.Via, "its member ") {
+			previous := walk.flow.Steps[len(walk.flow.Steps)-1]
+			row.Via = previous.Via
+			walk.flow.Steps = walk.flow.Steps[:len(walk.flow.Steps)-1]
+		}
+		if position == len(spine.Steps)-1 {
+			for _, branch := range spine.Branches {
+				row.Branches = append(row.Branches, FlowBranch{SubjectID: stepSubject(branch), Via: walk.met[branch.Edge].via})
+			}
+		}
+		walk.flow.Steps = append(walk.flow.Steps, row)
+	}
+	first, last := walk.flow.Steps[0], walk.flow.Steps[len(walk.flow.Steps)-1]
+	walk.flow.Title = fmt.Sprintf("From %s to %s", graph.qualified(first.SubjectID), graph.qualified(last.SubjectID))
+	return walk, nil
+}
+
+// flowEntry is where a target's Main flow starts: its first seed that runs
+// and is no test code, a callable before a module body.
+func flowEntry(index *groupindex.Index, graph *flowGraph) string {
+	entry := ""
+	for _, seed := range index.Target.Seeds {
+		if !graph.member(seed.ObjectID) {
+			continue
+		}
+		if seed.Kind == "callable" {
+			return seed.ObjectID
+		}
+		if entry == "" {
+			entry = seed.ObjectID
+		}
+	}
+	return entry
+}
+
+// stepSubject is the declaration a step names: the one member of its unit
+// entered (FreqtradeBot.process, not FreqtradeBot), else the unit.
+func stepSubject(step groupindex.SpineStep) string {
+	if len(step.Members) == 1 {
+		return step.Members[0]
+	}
+	return step.SubjectID
+}
+
+// line is the atlas line accepted for a declaration, or its unit's.
+func (graph *flowGraph) line(id string) string {
+	for _, candidate := range []string{id, graph.unit(id)} {
+		if subject := graph.subjects[candidate]; subject != nil && subject.Interpretation != nil && strings.TrimSpace(subject.Interpretation.Line) != "" {
+			return strings.TrimSpace(subject.Interpretation.Line)
+		}
+	}
+	return ""
+}
+
+// part is the title of the part holding a declaration, or "".
+func (graph *flowGraph) part(id string) string {
+	for _, group := range graph.index.Groups {
+		for _, member := range group.MemberSubjectIDs {
+			if member == id || member == graph.unit(id) {
+				return group.Title
+			}
+		}
+	}
+	return ""
+}
+
+// handles are the inputs a candidate's members handle, each as its kind and
+// name ("interaction mouse-pressed"), each once.
+func (graph *flowGraph) handles(candidate flowCandidate) []string {
+	var result []string
+	for _, operation := range graph.index.Operations {
+		if operation.SubjectID == "" || operation.HandlerUnknown || !slices.Contains(candidate.members, operation.SubjectID) && operation.SubjectID != candidate.unit {
+			continue
+		}
+		said := strings.TrimSpace(operation.Kind + " " + operation.Name)
+		if said != "" && !slices.Contains(result, said) {
+			result = append(result, said)
+		}
+	}
+	if len(result) > 6 {
+		result = append(result[:6], fmt.Sprintf("and %d more", len(result)-6))
+	}
+	return result
+}
+
+// qualified is a declaration's name with its class's (FreqtradeBot.process).
+func (graph *flowGraph) qualified(id string) string {
+	if unit := graph.unit(id); unit != id {
+		return graph.name(unit) + "." + graph.name(id)
+	}
+	return graph.name(id)
+}
+
+func (graph *flowGraph) signature(id string) string {
+	if subject := graph.subjects[id]; subject != nil && subject.Object != nil {
+		return subject.Object.Signature
+	}
+	return ""
+}
+
+// chooseNext asks the categorizer which candidate the path continues
+// through, one closed question (table.ClassifierCall): the task names the
+// program and its core parts, the item is the step, and each option is a
+// candidate with its name, signature, part, atlas line and how it is
+// reached. No docstring enters.
+func chooseNext(ctx context.Context, executor llm.Executor, categorizer llm.Categorizer, graph *flowGraph, index *groupindex.Index,
+	step groupindex.SpineStep, candidates []groupindex.SpineStep, met []flowCandidate) (int, flowAsk, []RejectedRow, error) {
+	var core []string
+	for _, group := range index.Groups {
+		if group.Core {
+			core = append(core, group.Title)
+		}
+	}
+	domain := "none named"
+	if len(core) > 0 {
+		domain = strings.Join(core, "; ")
+	}
+	system := fmt.Sprintf("We trace the one path a newcomer follows from where %s starts to the work it exists for, once. Its domain parts: %s.", index.Target.Name, domain)
+	subject := stepSubject(step)
+	options := make([]map[string]any, 0, len(candidates))
+	names := make([]string, 0, len(candidates))
+	for position, candidate := range candidates {
+		id := stepSubject(candidate)
+		ref := fmt.Sprintf("c%d", position+1)
+		terms := []string{graph.name(id)}
+		if signature := graph.signature(id); signature != "" {
+			terms = append(terms, "signature "+signature)
+		}
+		if part := graph.part(id); part != "" {
+			terms = append(terms, "in part "+part)
+		}
+		if line := graph.line(id); line != "" {
+			terms = append(terms, "role: "+line)
+		}
+		reached := met[candidate.Edge].via
+		if len(step.Members) > 1 {
+			var by []string
+			for _, member := range met[candidate.Edge].by {
+				by = append(by, graph.qualified(member))
+			}
+			reached += " by " + strings.Join(by, ", ")
+		}
+		terms = append(terms, "reached: "+reached)
+		// An input it handles, as the reading decided it (a user's mouse
+		// press is an interaction, a sketch's setup an extension).
+		if handles := graph.handles(met[candidate.Edge]); len(handles) > 0 {
+			terms = append(terms, "handles: "+strings.Join(handles, ", "))
+		}
+
+		options = append(options, map[string]any{"ref": ref, "title": graph.name(id), "criteria": strings.Join(terms, "; ")})
+		names = append(names, graph.name(id))
+	}
+	item := []table.Field{{Name: "step", Value: graph.name(subject)}}
+	if signature := graph.signature(subject); signature != "" {
+		item = append(item, table.Field{Name: "signature", Value: signature})
+	}
+	if part := graph.part(subject); part != "" {
+		item = append(item, table.Field{Name: "part", Value: part})
+	}
+	item = append(item, table.Field{Name: "candidates", Value: options})
+	def := table.Definition{Stage: flowStage, Contract: "repomap.orientation.flow.v1", System: system, Classifier: true,
+		Columns: []table.Column{{Name: "next", Kind: table.Choice, OptionsFrom: "candidates", CriteriaFrom: "criteria", Item: "step",
+			Ask: "Which of `candidates` does the path from `step` continue through to do the program's core work once: one run of a command, one request or message a server handles, or one user action carried to its visible result?"}}}
+	window := table.Window{Stage: flowStage, Rows: []table.Row{{ID: index.Target.ID + "." + subject, Fields: item}}}
+	call, err := table.ClassifierCall(categorizer, def, window)
+	if err != nil {
+		return 0, flowAsk{}, nil, err
+	}
+	var verdicts map[string]llm.Verdict
+	decode := call.DecodeValidate
+	call.DecodeValidate = func(raw []byte) (table.Result, error) {
+		verdicts, _ = categorizer.Verdicts(raw)
+		return decode(raw)
+	}
+	ask := flowAsk{step: graph.name(subject), candidates: len(candidates)}
+	outcome, err := llm.ExecuteJSON(ctx, executor, categorizer, call)
+	if err == nil && len(outcome.Value.Answers) == 1 && outcome.Value.Answers[0] != nil {
+		chosen := outcome.Value.Answers[0]["next"]
+		for position := range candidates {
+			if fmt.Sprintf("c%d", position+1) == chosen {
+				ask.chosen, ask.decided = names[position], true
+				ask.lead = leadOf(verdicts, index.Target.ID+"."+subject+"|next")
+				return position, ask, nil, nil
+			}
+		}
+	}
+	if ctx.Err() != nil {
+		return 0, flowAsk{}, nil, ctx.Err()
+	}
+	// No decision: the path ends at this step, a named fork.
+	reason := "the categorizer did not answer"
+	if err != nil {
+		reason = err.Error()
+	} else if len(outcome.Value.Rejections) > 0 {
+		reason = outcome.Value.Rejections[0].Reason
+	}
+	ask.lead = leadOf(verdicts, index.Target.ID+"."+subject+"|next")
+	raw, _ := json.Marshal(struct {
+		Step       string   `json:"step"`
+		Candidates []string `json:"candidates"`
+		Lead       float64  `json:"lead"`
+	}{graph.name(subject), names, ask.lead})
+	return 0, ask, []RejectedRow{{Stage: StageName, Section: sectionFlowFork, Raw: raw, Reason: reason}}, nil
+}
+
+// leadOf is how far a verdict's choice leads the runner-up.
+func leadOf(verdicts map[string]llm.Verdict, key string) float64 {
+	verdict, ok := verdicts[key]
+	if !ok {
+		return 0
+	}
+	top, rival := verdict.Probabilities[verdict.Choice], 0.0
+	for option, probability := range verdict.Probabilities {
+		if option != verdict.Choice && probability > rival {
+			rival = probability
+		}
+	}
+	return top - rival
+}

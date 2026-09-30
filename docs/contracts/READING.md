@@ -1811,11 +1811,11 @@ failure is still the reported cause and publishes nothing of the report.
 ## Orientation
 
 `orientation` is one model-assisted stage over facts, claims and the complete
-matched GroupsIndex set, asked twice, each with one embedded prompt and
-response shape. The overview returns one repository summary, one role per
-target, a run recipe and a closed-ref `main_flow_target`; the flow request
-then returns the main flow's title and steps over that target's flow scope. No
-target, or an unknown one (refused), asks no flow. The model selects
+matched GroupsIndex set. The overview is asked once, with its embedded prompt
+and response shape, and returns one repository summary, one role per target,
+a run recipe and a closed-ref `main_flow_target`; that target's Main flow is
+then walked by code (below). No target, or an unknown one (refused), walks no
+flow. The model selects
 request-local refs from the exact advertised artifact identities: `t*`
 targets, `a*` facts, `h*` claims and target-qualified graph subjects such as
 `t1.n22`; groups likewise use qualified IDs such as `t1.g3`. Go allocates no
@@ -1852,20 +1852,7 @@ and no replacement is invented.
 
 The overview carries the complete facts, claims and connections, the groups
 with title, summary and `member_count` but no member lists, and each seed's
-complete row. The flow request carries the chosen target, its facts anchored
-inside the scope (the innermost declaration holding the anchor is a member; a
-module holds its file) and one complete row per member. The scope is Launch ∪
-every input's Reach ∪, transitively, every repository callable a member hands
-over (`passes_callback`) or registers (a registration fact's owner and
-object), with what that one runs; only this evidence scope follows a
-hand-over, GroupsIndex Reach does not. Code in the target's test sources is
-no member (othello's specs had been 38 of 197 members and 57% of the member
-bytes, their registrations facts of the request). Members come in reading
-order: the seed walk breadth first, the rest of the launch walk, then each
-input's reach in operation order; a handed-over callable follows the member
-handing it over even when a later walk holds it (othello's setup,
-update-state and draw-state had stood at 192, 194 and 174), and what it runs
-that no walk holds follows it. A member row is that of the declaration place with its
+complete row. A member row is that of the declaration place with its
 `groupindex.DeclarationKey` (path, line, column, kind, name), never looked up
 by the member's own object id (a place merged across programs keeps one
 program's). A row lists every call in written order as a lossless tuple
@@ -1874,9 +1861,46 @@ kind/invocation/dispatch/resolution words, then receiver, result, values (the
 literal words it is given), arguments, api, detail and evidence refs); the
 call's argument origins stay local (aa5f537d: half of othello's member bytes,
 and a change of their form alone had moved its main flow from 9 steps to 47),
-as do the call's and callee's columns and canonical ids, and
-no `called_by` is sent. A flow request the provider cannot hold is journaled
-under `flow_request` and the overview stands. Nothing is sampled, windowed or
+as do the call's and callee's columns and canonical ids, and no `called_by` is
+sent.
+
+The Main flow is a code walk (orientation `path.go`, design skeptic,
+2026-09-30: a model writing the whole flow had given othello 23 to 107 steps
+on requests differing only in member order, and reached freqtrade's bot loop
+in 1 of 7 answers). It starts at the target's first callable seed and steps
+through units (`groupindex.Walk`; a class folds its methods). A step's
+candidates are the executing members, outside the target's test sources and
+not yet on the path, that its exact calls, every alternative of a dispatch
+site, the possible targets of a function-value call the index leaves open
+(the witnesses of its stores, GroupsIndex `UnresolvedCall.Possible`: redis's
+fe->rfileProc) and its hand-overs (a passed callable, a registration fact's
+owner handing its object) reach; a unit the helper question decided is
+none, nor one whose closure enters no part the program exists for
+(`Group.Core`), when it has one. None ends the path, the step being its
+result; one is followed with no request; of several, the categorizer answers
+one closed question (stage `orientation_flow`, `table.ClassifierCall`): the
+task names the program and its core parts, the item is the step's name,
+signature and part, each option a candidate's name, signature, part, atlas
+line, how it is reached ("called", "one of 96 at redis.c:1033", "handed to
+quil.core.sketch.mouse-pressed", with the members of a class step reaching
+it) and the inputs it handles. A class entered through several members is a
+split between those members first (freqtrade's FreqtradeBot: __init__,
+process, …), the path then going on through the one chosen. A lead under
+`ClassifierMargin` or no answer ends the path there, a named fork keeping its
+candidates, the split journaled under `flow_fork` with its lead. There is no
+count cap, and no unit is on the path twice. No step is written by a model:
+each is its declaration with its accepted atlas line (`Explanation`) and how
+the step before reaches it (`Via`); the title is "From <first> to <last>".
+Measured on the saved inputs with the cache off, five draws each
+(2026-09-30): redis main → aeMain → aeProcessEvents → readQueryFromClient →
+processInputBuffer → processCommand → call → setCommand, 5 of 5; freqtrade
+main → Arguments.get_parsed_arg → start_trading → Worker.run →
+FreqtradeBot.process → IStrategy.analyze → …, 5 of 5; litestream main →
+Main.Run → ReplicateCommand.Run → Replica.Sync → ReplicaClient, 4 of 5 (one
+fork at ReplicateCommand.Run's eleven); othello -main → start! → setup →
+play-ai → ai/move → search/choose, 5 of 5, its tail (a fork or
+timed-deepen) near the margin; the click handler is not chosen at start!.
+Nothing is sampled, windowed or
 reduced. Fact rows identical but for ref and target are one row with a
 `targets` list and the first target's fact id as ref; a role or recipe step
 naming one of those targets keeps that target's own fact id. Connections are

@@ -892,6 +892,9 @@ function rmComponentReading(map,n,card,details,collectionNode,anchorEntry){
     var steps=rmEl('details','map-component-section'),head=rmEl('summary');head.appendChild(rmEl('span','',rmT('Main flow')));steps.appendChild(head);
     Array.from(flow.querySelectorAll(':scope>.flow-title,:scope>p.meta,:scope>ol')).forEach(function(part){steps.appendChild(copy(part));});
     steps.open=true;place(steps);
+    // A named fork's candidates stay folded under its line: a flow never
+    // ends in a wall of names (copy opens every fold).
+    steps.querySelectorAll('details.flow-fork').forEach(function(fork){fork.open=false;});
     // Each step opens in place to its code flow (32-flow.js), the model's
     // sentence kept in its style above it.
     var toggle=rmEl('div','map-flow-headline');toggle.appendChild(rmFlowToggle(null));steps.insertBefore(toggle,steps.children[1]||null);

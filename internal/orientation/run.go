@@ -34,18 +34,14 @@ const (
 	maxOutputTokens = 16384
 )
 
-// The stage asks twice, one decision each: the overview (summary, roles,
-// run recipe and which target's Main flow to read), then that Main flow over
-// the target's flow scope.
+// The stage asks the model once: the overview (summary, roles, run recipe
+// and which target's Main flow to read). That Main flow is walked by code
+// (path.go), the categorizer choosing at each split.
 var (
 	//go:embed overview-prompt.md
 	overviewPrompt string
 	//go:embed overview-response-example.json
 	overviewExample string
-	//go:embed flow-prompt.md
-	flowPrompt string
-	//go:embed flow-response-example.json
-	flowExample string
 )
 
 // Input is everything the stage may show the model. Groups is the complete
@@ -56,15 +52,20 @@ type Input struct {
 	Claims         claims.Result
 	Groups         []groupindex.Index
 	// Graph is the already-built source graph used by atlas reading. Only
-	// the seeds' and the flow scope's rows enter the orientation requests.
+	// the seeds' rows enter the orientation request.
 	Graph atlas.Graph
+	// Categorizer chooses where the Main flow continues at a split
+	// (walkFlow); without one the flow ends at its first split, a named
+	// fork.
+	Categorizer llm.Categorizer
 }
 
-// Run makes the overview call and, when it names a target, the flow call; it
-// validates every returned row against the request's catalogue, restores
-// accepted refs to exact ids, and seals the result against the inputs.
-// Rejected rows are returned, never repaired, and never abort the run. A
-// flow request or answer that fails leaves the overview standing.
+// Run makes the overview call and, when it names a target, walks that
+// target's Main flow; it validates every returned row against the request's
+// catalogue, restores accepted refs to exact ids, and seals the result
+// against the inputs. Rejected rows are returned, never repaired, and never
+// abort the run. A split the categorizer leaves undecided ends the flow
+// there and is journaled.
 func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, input Input) (Result, []RejectedRow, error) {
 	if err := validateInput(input); err != nil {
 		return Result{}, nil, fmt.Errorf("orientation: input: %w", err)
@@ -99,12 +100,12 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 	rejected := accepted.rejected
 	var flow MainFlow
 	if accepted.flowTarget != "" {
-		steps, flowRejected, err := askFlow(ctx, executor, provider, input, digests, accepted.flowTarget)
+		walk, err := walkFlow(ctx, executor, input.Categorizer, input, accepted.flowTarget)
 		if err != nil {
 			return Result{}, nil, err
 		}
-		flow = steps
-		rejected = append(rejected, flowRejected...)
+		flow = walk.flow
+		rejected = append(rejected, walk.rejected...)
 	}
 	result, err := Seal(Result{
 		FactsSHA256:   input.Facts.SHA256,
@@ -121,30 +122,6 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, inpu
 		return Result{}, nil, fmt.Errorf("orientation: seal: %w", err)
 	}
 	return result, rejected, nil
-}
-
-// askFlow asks for the Main flow over one target's flow scope. A request the
-// provider cannot hold is journaled under flow_request, one whose rows are
-// all refused journals each; either leaves no flow.
-func askFlow(ctx context.Context, executor llm.Executor, provider llm.Provider, input Input, digests []string, targetID string) (MainFlow, []RejectedRow, error) {
-	request, cat, _, err := buildFlow(input, targetID)
-	if err != nil {
-		return MainFlow{}, nil, err
-	}
-	wire, err := encodeWire(request)
-	if err != nil {
-		return MainFlow{}, nil, fmt.Errorf("orientation: encode flow request: %w", err)
-	}
-	outcome, err := ask(ctx, executor, provider, input, digests, wire, "flow", flowPrompt, flowExample,
-		func(raw []byte) (normalized, error) { return normalizeFlow(raw, cat, request.Target.Ref) })
-	if err != nil {
-		rejected, refused := refusal(ctx, err, outcome, sectionFlowRequest, len(wire))
-		if !refused {
-			return MainFlow{}, nil, fmt.Errorf("orientation: flow model call: %w", err)
-		}
-		return MainFlow{}, rejected, nil
-	}
-	return outcome.Value.flow, outcome.Value.rejected, nil
 }
 
 // encodeWire writes a request as the model reads it: a call's "->" and a
