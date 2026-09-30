@@ -16,7 +16,9 @@ import (
 // one that takes nothing a call reaches; the chosen one is recorded as the
 // boundary's destination target. freqtrade-client's one generic request,
 // whose path the code computes, had stood as "Freqtrade Server" outside
-// freqtrade.
+// freqtrade. Only a destination with a request sent or a connection opened
+// is offered a program: a host lookup through a library is answered by the
+// resolver (redis-cli's gethostbyname had been drawn into redis-server).
 func TestADestinationCanBeAnotherProgramOfTheRepository(t *testing.T) {
 	get := atlas.SymbolCall{Kind: "invokes_external", Name: "Get", Line: 7, Column: 9, API: &atlas.CallAPI{Package: "net/http", Receiver: "*Client", Name: "Get"},
 		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "parameter", Text: "url", Position: 1, Anchor: &sourcevalue.Anchor{Path: "client/call.go", Line: 5, Column: 11}}}}}
@@ -26,9 +28,14 @@ func TestADestinationCanBeAnotherProgramOfTheRepository(t *testing.T) {
 		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "server", FactID: "status"}}, Method: "GET", Values: []string{"/api/status"}, Direction: atlas.DirectionIn, GivenKind: atlas.BoundaryRequest}}
 	option := atlas.Place{ID: "fact:verbose", Kind: atlas.PlaceBoundary, Path: "tool/main.go", LineNo: 4, Column: 2, Parent: "file:tool", TargetIDs: []string{"tool"},
 		Boundary: &atlas.BoundaryFacts{Source: "fact", Origins: []atlas.BoundaryOrigin{{TargetID: "tool", FactID: "verbose"}}, Values: []string{"-verbose"}, Direction: atlas.DirectionIn, GivenKind: atlas.BoundaryCommand}}
-	graph := []atlas.Place{call, route, option}
+	lookup := atlas.SymbolCall{Kind: "invokes_external", Name: "LookupHost", Line: 12, Column: 9, API: &atlas.CallAPI{Package: "net", Name: "LookupHost"},
+		SourceArguments: []atlas.SourceArgument{{Position: 1, Origin: &sourcevalue.Value{Kind: "parameter", Text: "host", Position: 1, Anchor: &sourcevalue.Anchor{Path: "client/resolve.go", Line: 10, Column: 14}}}}}
+	resolve := atlas.Place{ID: "symbol:Resolve", Kind: atlas.PlaceSymbol, Path: "client/resolve.go", LineNo: 10, Parent: "file:resolve", TargetIDs: []string{"client"},
+		Symbol: &atlas.SymbolFacts{Decl: atlas.Decl{ObjectID: "object:Resolve", Name: "Resolve"}, Calls: []atlas.SymbolCall{lookup}}}
+	graph := []atlas.Place{call, resolve, route, option}
 	var mu sync.Mutex
 	var offered []any
+	lookupOffered := -1
 	provider := &mutatedTableProvider{}
 	provider.mutate = func(input map[string]any, rows []map[string]any) {
 		mu.Lock()
@@ -43,8 +50,14 @@ func TestADestinationCanBeAnotherProgramOfTheRepository(t *testing.T) {
 			if column.(map[string]any)["name"] != "destination" {
 				continue
 			}
-			offered = input["context"].(map[string]any)["destination_catalog"].([]any)
-			for i := range rows {
+			catalog, _ := input["context"].(map[string]any)["destination_catalog"].([]any)
+			for i, source := range input["rows"].([]any) {
+				if strings.Contains(string(mustJSON(source)), "LookupHost") {
+					lookupOffered = len(catalog)
+					rows[i]["destination"] = "other: DNS Resolver"
+					continue
+				}
+				offered = catalog
 				rows[i]["destination"] = destinationRef(input, "server")
 			}
 		}
@@ -59,8 +72,8 @@ func TestADestinationCanBeAnotherProgramOfTheRepository(t *testing.T) {
 	}
 	r.knowledge, r.knowledgeSubjects = map[string]*Knowledge{}, map[string]*Knowledge{}
 	r.responseTables = map[string]rememberedTable{}
-	r.api = map[string]apiRole{"net/http.Client.Get": {talks: atlas.BoundaryClientRequest}}
-	r.arguments = map[string]ArgumentChoice{"net/http.Client.Get": {Position: 1}}
+	r.api = map[string]apiRole{"net/http.Client.Get": {talks: atlas.BoundaryClientRequest}, "net.LookupHost": {talks: atlas.BoundarySDK}}
+	r.arguments = map[string]ArgumentChoice{"net/http.Client.Get": {Position: 1}, "net.LookupHost": {Position: 1}}
 	if err := r.readBoundaries(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -72,9 +85,12 @@ func TestADestinationCanBeAnotherProgramOfTheRepository(t *testing.T) {
 	if entry["value"] != "server" || entry["program"] != true || len(takes) != 1 || !strings.Contains(takes[0].(string), "request GET") {
 		t.Fatalf("the server's entry %s, want the program with what it takes", mustJSON(entry))
 	}
+	if lookupOffered != 0 {
+		t.Fatalf("the host lookup was offered %d entries, want none", lookupOffered)
+	}
 	var found bool
 	for _, state := range r.boundaries {
-		if state.place.Boundary.Direction == atlas.DirectionOut {
+		if state.place.Boundary.Direction == atlas.DirectionOut && state.kind == atlas.BoundaryClientRequest {
 			found = true
 			if state.destinationOf("client") != "server" || state.destinationTargets["client"] != "server" {
 				t.Fatalf("the client's call reaches %q (%v), want the server program", state.destinationOf("client"), state.destinationTargets)

@@ -1150,7 +1150,11 @@ package answered `none` gives none. After them, marked `program`, come the
 repository's other programs that serve requests or listen while they run,
 each with what it `takes` (those entries by kind, method and name); never
 the destination's own program (a replica's primary is another copy of it),
-and a fixture only to fixtures of its root. A program chosen, by its ref
+and a fixture only to fixtures of its root. Only a destination with a
+`client_request` call (a request sent or a connection opened, the talks
+answer of its symbol) is offered them: a call through a library reaches
+the system the library talks to, and redis-cli's `gethostbyname`, offered
+redis-server, had been drawn into it where it had been "DNS Resolver". A program chosen, by its ref
 or by its name after `other: ` (case aside: freqtrade's run drew "other:
 Freqtrade" once), is the boundary's `destination_target`, and the report
 draws the destination into

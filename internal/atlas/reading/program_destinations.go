@@ -21,7 +21,18 @@ import (
 // had reached "Freqtrade Server", an outside system beside freqtrade: its
 // one call is a generic request whose path the code computes, and no one
 // of freqtrade's inputs is its counterpart.
-func (r *reader) programDestinations(target string) []lines.Destination {
+//
+// A program is reached by a request sent or a connection opened to it
+// (client_request, the talks answer an earlier step gave the call's
+// symbol), so only a destination with such a call is offered one. A call
+// through a library (sdk) reaches the system the library talks to:
+// redis-cli's gethostbyname of the server's host is answered by the
+// resolver, and offered redis-server it had been drawn into redis-server
+// ("Redis server (host lookup)"), where it had been "DNS Resolver".
+func (r *reader) programDestinations(target string, members []destinationMember) []lines.Destination {
+	if !slices.ContainsFunc(members, func(member destinationMember) bool { return member.state.kind == atlas.BoundaryClientRequest }) {
+		return nil
+	}
 	role := func(meta TargetMeta) string {
 		if meta.SelectedRole != "" {
 			return meta.SelectedRole

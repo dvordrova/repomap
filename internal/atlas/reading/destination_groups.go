@@ -188,10 +188,10 @@ func (r *reader) nameDestinations(ctx context.Context, states []*boundaryState, 
 				}
 			}
 		case len(systems) == 0:
-			questions = append(questions, asked{key: key, members: unnamed, catalog: lines.WithPrograms(catalog, r.programDestinations(group[0].target))})
+			questions = append(questions, asked{key: key, members: unnamed, catalog: lines.WithPrograms(catalog, r.programDestinations(group[0].target, unnamed))})
 		default:
 			for _, member := range unnamed {
-				questions = append(questions, asked{key: "row\x00" + member.state.place.ID + "\x00" + member.target, members: []destinationMember{member}, catalog: lines.WithPrograms(catalog, r.programDestinations(member.target))})
+				questions = append(questions, asked{key: "row\x00" + member.state.place.ID + "\x00" + member.target, members: []destinationMember{member}, catalog: lines.WithPrograms(catalog, r.programDestinations(member.target, []destinationMember{member}))})
 			}
 		}
 	}
