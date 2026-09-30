@@ -1,5 +1,25 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — freqtrade's program bus and the area entry camera, measured: no change
+
+- **Program bus** (freqtrade's program: 8 areas, 27 of their 28 pairs
+  connected, 40 routes): packed 4×2 and entered at 0.21, cards ≥ 96 px,
+  arrows 17.7k px, 81 bends; the row gutter's 8 lanes are one per card and
+  each spans the whole gutter (density 9 = lines: shared lanes save none).
+  On the captured input: ELK layered at best (RIGHT) 60 px cards, 30.4k px,
+  200 bends, 14 parallel lines; the shortest of all 40,320 card orders
+  −6% length, the same 8 lanes and bends, reading order lost; 3 columns
+  6 lanes but 80 px cards and +17% bends; one trunk 8.1k → 1.0k px of
+  gutter ink with 32 routes on one line (a new arrow kind). Kept.
+- **Area entry:** entering at the first part is an agent rule (c911dd71,
+  193dea3f: fitted at its floor, redis's Server runtime read at 4–8 px), not
+  an owner decision. Part titles with the whole area fitted: redis's Core
+  6.0 px (its best ELK arrangement 6.7), litestream 10.4, freqtrade k8 11.7,
+  the rest ≥ 12. An 11 px rule changes only freqtrade's k8 and needs the
+  12 px stays-open threshold lowered for every layer (else a pan closes it):
+  not done. Core's eight parts in the program grid would enter whole at
+  11.9 px (3×3, arrows 12k against 26k units): open for decision.
+
 ## 2026-09-30 — No wrapped area arrangement wins on shrinking alone
 
 - **Cause** (debug agent): when no arrangement of an area fits the canvas,
