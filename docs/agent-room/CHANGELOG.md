@@ -1,5 +1,32 @@
 # Implementation and acceptance journal
 
+## 2026-09-30 — A handler's table keys, a program's exchange with itself, a keyword entry as written (data 2)
+
+- **Handed tables (53059a16, f5de6e86):** a table a handler looks up with
+  part of what it was handed (K3 for a table) is no input of its own and is
+  asked nothing; each row is a value of the entry, named by its key (the
+  model had named othello's n "n new-game"), its row as written
+  (`:n :new-game`). Clojure adapter: parameter origins from clj-kondo
+  locals, def map literals as rows. Fixtures: Clojure key->command,
+  Python LEVEL_TITLES; Go/JS/C recorded missing (index expressions, no
+  handed lookup).
+- **Self exchange (a7129fd3):** a request to this machine (a path with no
+  host, loopback, unix) with the method and path of one of the same
+  target's routes, or the value of its listening address, is an
+  integration joint of the target with itself, by code; a unix socket is
+  possible. The map draws the calling part's arrow into its own input,
+  with no outside tile. litestream: 7 posts to /start, /info, … joined to
+  server.go's routes, 7 unix dials possibly to its socket; no Outside
+  "Litestream". Go fixture fetchLevels → getLevel.
+- **Keyword entry as written (f6a3ba2d):** `lines.CallFile.EntryText`
+  writes an entry a Lisp form hands over under a keyword as that pair:
+  othello's key-pressed is `:key-pressed host/on-key`, not the whole
+  q/sketch form.
+- Runs (HEAD export, exit 0): litestream-v24 34 s, othello 10 s.
+  Journeys: litestream replicate PASS, othello key-pressed PASS (all five); lints othello 0, litestream 7 (display: empty box 6, cut 1), no own-program chip. othello's orientation main flow: one fresh run was
+  refused by output tokens (the model listed ~every function), the next
+  accepted 47 steps; not rescued.
+
 ## 2026-09-30 — Canvas side of the reading lints: cards to their words, chip names whole, no line on a related operation
 
 - **Loose parts:** a script's part is a card of its own size (no 400×200
